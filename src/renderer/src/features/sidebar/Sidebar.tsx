@@ -172,7 +172,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
       <div className="v3-side-top">
         <span className="v3-side-brand">
           <BrandMark size={16} decorative />
-          <span className="v3-side-name">砚</span>
+          <span className="v3-side-name">Inkstone</span>
         </span>
         <div className="v3-side-top-actions">
           <IconTip label={text.newChatShortcut}>

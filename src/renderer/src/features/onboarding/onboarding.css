@@ -52,16 +52,23 @@
   }
 
   .v3-ob-step__dot {
-    display: grid;
-    place-items: center;
+    display: block;
+    align-content: center;
     flex: none;
     width: 18px;
     height: 18px;
     border: 1px solid var(--line2);
     border-radius: var(--r-full);
     font-size: 11px;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
+    text-align: center;
+    text-box: trim-both cap alphabetic;
     color: var(--fg3);
+  }
+
+  .v3-ob-step__dot > svg {
+    margin-inline: auto;
   }
 
   .v3-ob-step[data-active='1'] .v3-ob-step__dot {

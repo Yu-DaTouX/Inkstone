@@ -31,6 +31,8 @@ export interface V3Text {
   groupUngrouped: string
   newInProject: string
   settingsEntryHint: string
+  showSessionBar: string
+  hideSessionBar: string
   sessionMenu: string
   dragToSplit: string
   dropLeft: string
@@ -80,6 +82,8 @@ const ZH: V3Text = {
   groupUngrouped: '未归类',
   newInProject: '在此项目新建对话',
   settingsEntryHint: '打开设置',
+  showSessionBar: '显示会话栏',
+  hideSessionBar: '隐藏会话栏',
   sessionMenu: '会话操作',
   dragToSplit: '拖到对话区左右两侧可分屏打开',
   dropLeft: '放到左侧',
@@ -129,6 +133,8 @@ const EN: V3Text = {
   groupUngrouped: 'Ungrouped',
   newInProject: 'New chat in this project',
   settingsEntryHint: 'Open settings',
+  showSessionBar: 'Show session bar',
+  hideSessionBar: 'Hide session bar',
   sessionMenu: 'Chat actions',
   dragToSplit: 'Drag onto the left or right of the chat to open side by side',
   dropLeft: 'Drop on the left',

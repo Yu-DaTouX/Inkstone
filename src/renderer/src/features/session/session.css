@@ -74,9 +74,24 @@
 
   .v3-subagents { display: flex; flex-direction: column; gap: var(--s-6); margin: var(--s-6) 0; }
   .v3-subagents-sum { padding: 0 var(--s-8); }
+  .v3-subagents-head.ui-btn, .v3-subagents-more.ui-btn { align-self: flex-start; }
+  .v3-subagents-progress { padding: 0 var(--s-8); }
+  .v3-sa-stack { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: var(--s-4); }
+  .v3-sa-ticks { display: flex; flex-direction: column; justify-content: center; min-height: 0; overflow: hidden; padding: var(--s-6) 0; }
+  .v3-sa-tick { flex: 1 1 0; display: flex; align-items: center; width: 24px; min-height: 3px; max-height: 10px; padding: 0 var(--s-2); cursor: pointer; }
+  .v3-sa-cards { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
+  .v3-sa-cards > .v3-subagent { position: relative; z-index: 1; }
+  .v3-sa-pile { position: relative; flex: none; height: calc(var(--s-10) + var(--s-4)); }
+  .v3-sa-pile[data-side='above'] { margin-bottom: calc(-1 * (var(--s-6) + var(--s-6))); }
+  .v3-sa-pile[data-side='below'] { margin-top: calc(-1 * (var(--s-6) + var(--s-6))); }
+  .v3-sa-sliver { position: absolute; left: calc(var(--s-12) * var(--depth)); right: calc(var(--s-12) * var(--depth)); height: var(--s-10); }
+  .v3-sa-pile[data-side='above'] .v3-sa-sliver { bottom: calc(var(--s-4) * (var(--depth) - 1)); }
+  .v3-sa-pile[data-side='below'] .v3-sa-sliver { top: calc(var(--s-4) * (var(--depth) - 1)); }
+  .v3-sa-sliver[data-depth='1'] { --depth: 1; }
+  .v3-sa-sliver[data-depth='2'] { --depth: 2; }
   .v3-subagent { display: flex; min-width: 0; }
   .v3-subagent-toggle { display: flex; align-items: center; gap: var(--s-10); flex: 1 1 auto; min-width: 0; min-height: 48px; padding: var(--s-8) var(--s-10); }
-  .v3-subagent-kind, .v3-subagent-code, .v3-subagent-status, .v3-subagent-time { flex: none; }
+  .v3-subagent-kind, .v3-subagent-think, .v3-subagent-code, .v3-subagent-status, .v3-subagent-time, .v3-subagent-tokens, .v3-subagent-ctx { flex: none; }
   .v3-subagent-task { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .v3-session { position: relative; container-type: inline-size; --rail-gutter: calc(var(--s-8) + 28px + var(--s-8)); }

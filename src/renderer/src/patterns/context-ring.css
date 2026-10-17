@@ -56,6 +56,18 @@
     text-align: left;
   }
 
+  .ctx-gauge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    color: inherit;
+  }
+
+  .ctx-gauge-text {
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
   .ctx-pop {
     z-index: 40;
     max-width: min(360px, calc(100vw - 16px));

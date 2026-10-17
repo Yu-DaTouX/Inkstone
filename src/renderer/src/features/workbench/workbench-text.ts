@@ -9,6 +9,8 @@ export interface OverviewText {
   tiles: {
     env: string
     context: string
+    todos: string
+    tasks: string
     mcp: string
     changes: string
     quota: string
@@ -18,8 +20,15 @@ export interface OverviewText {
   branchLabel: string
   permissionLabel: string
   contextUsed: string
+  lastCompaction: string
+  stopTask: string
+  taskDetail: string
+  runningCount: (n: number) => string
+  doneCount: (n: number) => string
   moreTools: string
   quotaFailed: string
+  quotaExpired: string
+  balance: string
   mcpFailed: string
   mcpConnected: (ready: number, total: number) => string
   mcpTools: (n: number) => string
@@ -86,6 +95,8 @@ const ZH: WorkbenchText = {
     tiles: {
       env: '环境',
       context: '上下文',
+      todos: '待办',
+      tasks: '任务',
       mcp: 'MCP',
       changes: '更改',
       quota: '额度'
@@ -95,8 +106,15 @@ const ZH: WorkbenchText = {
     branchLabel: '分支',
     permissionLabel: '权限',
     contextUsed: '已用',
+    lastCompaction: '上次压缩',
+    stopTask: '停止任务',
+    taskDetail: '查看详情',
+    runningCount: (n) => `运行中 ${n}`,
+    doneCount: (n) => `${n} 项已结束`,
     moreTools: '更多工具',
     quotaFailed: '额度查询失败',
+    quotaExpired: '登录已过期',
+    balance: '余额',
     mcpFailed: 'MCP 状态读取失败',
     mcpConnected: (ready, total) => `已连接 ${ready}/${total}`,
     mcpTools: (n) => `${n} 个工具`,
@@ -144,6 +162,8 @@ const EN: WorkbenchText = {
     tiles: {
       env: 'Environment',
       context: 'Context',
+      todos: 'Todos',
+      tasks: 'Tasks',
       mcp: 'MCP',
       changes: 'Changes',
       quota: 'Quota'
@@ -153,8 +173,15 @@ const EN: WorkbenchText = {
     branchLabel: 'Branch',
     permissionLabel: 'Permission',
     contextUsed: 'Used',
+    lastCompaction: 'Last compaction',
+    stopTask: 'Stop task',
+    taskDetail: 'View details',
+    runningCount: (n) => `${n} running`,
+    doneCount: (n) => `${n} finished`,
     moreTools: 'More tools',
     quotaFailed: 'Quota check failed',
+    quotaExpired: 'Sign-in expired',
+    balance: 'Balance',
     mcpFailed: 'Could not read MCP status',
     mcpConnected: (ready, total) => `${ready}/${total} connected`,
     mcpTools: (n) => `${n} tools`,

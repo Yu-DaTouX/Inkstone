@@ -510,10 +510,6 @@
     min-width: 0;
   }
 
-  .wb-back {
-    flex: none;
-  }
-
   .wb-overview {
     flex: 1;
     display: flex;
@@ -523,25 +519,6 @@
     min-width: 0;
     padding: var(--s-8);
     overflow-y: auto;
-  }
-
-  .wb-panel[data-mode='tiles'] {
-    position: absolute;
-    top: 0;
-    right: var(--s-12);
-    width: var(--size-tiles);
-    height: auto;
-    max-height: 100%;
-    z-index: 6;
-  }
-
-  .wb-panel[data-mode='tiles'] .wb-body {
-    padding: 0;
-  }
-
-  .wb-panel[data-mode='tiles'] .wb-overview {
-    padding: var(--s-16) 0 var(--s-16);
-    scrollbar-width: none;
   }
 
   .wb-tile {
@@ -677,6 +654,100 @@
     font-size: var(--t-meta);
     overflow-wrap: anywhere;
   }
+
+  .wb-ov-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-ov-ctx,
+  .wb-ov-quota {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .wb-ov-ctx .wb-ctx-bar,
+  .wb-ov-quota .ui-progress__track {
+    height: 4px;
+  }
+
+  .wb-ov-ctx .wb-ctx-legend {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto auto;
+    gap: var(--s-4) var(--s-8);
+  }
+
+  .wb-ov-ctx .wb-ctx-legend li {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
+  .wb-ov-ctx .wb-ctx-legend-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-ov-quota {
+    gap: var(--s-8);
+    font-size: var(--t-meta);
+  }
+
+  .wb-tile[data-tile='todos'] .v3-todo-list {
+    padding: 0;
+  }
+
+  .wb-tile[data-tile='todos'] .v3-todo-row {
+    padding-inline: 0;
+  }
+
+  .wb-ov-task {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .wb-ov-task-main {
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-start;
+    margin-left: calc(-1 * var(--s-4));
+    padding: 0 var(--s-4);
+    font-size: var(--t-body);
+  }
+
+  .wb-ov-task-main:last-child {
+    margin-right: calc(-1 * var(--s-4));
+  }
+
+  .wb-ov-task-main > .ui-btn__label {
+    flex: 1;
+    min-width: 0;
+    gap: var(--s-8);
+  }
+
+  .wb-ov-task-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-ov-task-time {
+    flex: none;
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-ov-task-stop {
+    flex: none;
+    margin-right: calc(-1 * var(--s-6));
+  }
 }
 
 @layer patterns {
@@ -728,5 +799,13 @@
 
   .wb-ov-dot.is-err {
     background: var(--fail);
+  }
+
+  .wb-ov-task-time {
+    color: var(--fg3);
+  }
+
+  .wb-ov-task[data-selected='1'] .wb-ov-task-main {
+    background: var(--sel);
   }
 }

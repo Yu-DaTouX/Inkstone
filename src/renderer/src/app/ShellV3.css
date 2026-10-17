@@ -30,9 +30,40 @@
   .v3-body[data-workspace='open'][data-workspace-mode='docked'] {
     grid-template-columns: minmax(0, 1fr) var(--workspace-width, var(--size-panel));
   }
-  .v3-body[data-workspace='open'][data-workspace-mode='tiles'] .v3-chat {
-    --tiles-reserve: calc(var(--size-tiles) + var(--s-16));
+  .v3-chat {
+    --tiles-reserve: calc(var(--bar-reserve, 0px) + var(--side-reserve, 0px));
+  }
+  .v3-chat[data-sessionbar='1'] {
+    --bar-reserve: calc(var(--size-tiles) + var(--s-16));
     --tiles-on: 1;
+  }
+  .v3-chat[data-side-panel='1'] {
+    --side-reserve: calc(var(--subagent-width, 360px) + var(--s-16));
+  }
+  .v3-sessionbar {
+    position: absolute;
+    top: 0;
+    right: var(--s-12);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    width: var(--size-tiles);
+    max-height: 100%;
+    min-height: 0;
+  }
+  .v3-chat[data-side-panel='1'] .v3-sessionbar {
+    right: calc(var(--subagent-width, 360px) + var(--s-16));
+  }
+  .v3-sessionbar > .wb-overview {
+    padding: var(--s-16) 0;
+    scrollbar-width: none;
+  }
+  .v3-chat > .v3-sap {
+    z-index: 6;
+  }
+  .v3-head-sep.ui-separator {
+    align-self: center;
+    height: var(--s-16);
   }
   .v3-workspace-resizer.ui-splitter { position: absolute; top: 0; bottom: 0; right: calc(var(--workspace-width) - 1px); z-index: 22; }
 
@@ -141,16 +172,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-  }
-
-  .v3-head-proj {
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    color: var(--fg3);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 40%;
   }
 
   .v3-head-actions {

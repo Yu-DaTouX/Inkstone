@@ -1,16 +1,32 @@
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } from 'lucide-react'
 import { Button, IconButton, Meter } from '../../ui'
-import { useI18n, useT } from '../../i18n'
+import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
-import { useContextUsage } from '../../patterns/ContextRing'
+import type { ContextCategory } from '../../state/context-breakdown'
+import {
+  compactionGrowthText,
+  compactionReclaimText,
+  compactionSummary,
+  compactionTokensText
+} from '../../state/compaction-view'
+import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
+import { visibleSubagentRuns } from '../../state/subagent-view'
+import { sessionViewIdentity } from '../session/view-state'
+import { useSubagentPanel } from '../session/subagent-panel-state'
+import { compactTaskPaths, subagentTitle } from '../session/SubagentLine'
+import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
+import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
+import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
+import { formatDuration } from '../../../../shared/duration'
 import { normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
-import { accountCardTitle, orderAccountCardsForProvider, type AccountQuotaCard } from '../../../../shared/account-quota'
-import { windowPct } from '../../../../shared/quota-mini'
+import type { AccountQuotaCard } from '../../../../shared/account-quota'
+import { money } from '../../../../shared/quota-mini'
+import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
-import type { CapabilityMcpServerSettingView } from '../../../../shared/ipc'
-import { shortTokens } from './context-pane-view'
-import { workbenchText } from './workbench-text'
+import type { CapabilityMcpServerSettingView, CompactionRun, ProviderQuota, QuotaWindow, SubagentRun } from '../../../../shared/ipc'
+import { contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
+import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
 import './workbench.css'
 
@@ -20,9 +36,10 @@ export interface OverviewPaneProps {
   onPreview?: (path: string) => void
 }
 
-type TileId = 'env' | 'context' | 'mcp' | 'changes' | 'quota'
+type TileId = 'env' | 'context' | 'todos' | 'tasks' | 'mcp' | 'changes' | 'quota'
 
 const FOLD_KEY = 'inkstone.v3.overview.folds'
+const QUOTA_TICK_MS = 30_000
 
 type FoldMap = Partial<Record<TileId, boolean>>
 
@@ -84,31 +101,129 @@ function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null
   return repo
 }
 
-interface QuotaSnapshot {
-  state: 'loading' | 'ready' | 'error'
+interface QuotaTileModel {
+  windows: QuotaWindow[]
+  balance?: { label: string; amount: number; currency: string }
+  checkedAt: number
+  staleError?: string
+  problem?: { tone: 'warn' | 'err'; text: string }
+}
+
+interface AccountCardSnapshot {
+  provider: string
+  state: 'ready' | 'error'
   card: AccountQuotaCard | null
 }
 
-function useQuotaSnapshot(provider: string): QuotaSnapshot {
-  const [snap, setSnap] = useState<QuotaSnapshot>({ state: 'loading', card: null })
+function refreshLive(provider: string, force = false): Promise<unknown> {
+  return refreshLiveQuota(provider, { force, budget: useStore.getState().settings?.providerBudgets?.[provider] })
+}
+
+function useRunEnded(running: boolean): number {
+  const [ended, setEnded] = useState(0)
+  const wasRunning = useRef(running)
   useEffect(() => {
-    let alive = true
-    setSnap({ state: 'loading', card: null })
+    if (wasRunning.current && !running) setEnded((n) => n + 1)
+    wasRunning.current = running
+  }, [running])
+  return ended
+}
+
+function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: number): AccountCardSnapshot | null {
+  const [snap, setSnap] = useState<AccountCardSnapshot | null>(null)
+  const [poll, setPoll] = useState(0)
+  const last = useRef({ provider: '', at: 0 })
+  const seq = useRef(0)
+
+  useEffect(() => {
+    if (!enabled) return undefined
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') setPoll((n) => n + 1)
+    }, LIVE_QUOTA_POLL_MS)
+    return () => clearInterval(timer)
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) return
+    if (last.current.provider === provider && Date.now() - last.current.at < LIVE_QUOTA_MIN_GAP_MS) return
+    last.current = { provider, at: Date.now() }
+    const id = ++seq.current
+    const want = provider.trim().toLowerCase()
     window.yan
       .accountQuota()
       .then((report) => {
-        if (!alive) return
-        const card = orderAccountCardsForProvider(report.cards ?? [], provider)[0] ?? null
-        setSnap({ state: 'ready', card })
+        if (id !== seq.current) return
+        const matches = (report.cards ?? []).filter((card) => card.provider.trim().toLowerCase() === want)
+        setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches[0] ?? null })
       })
       .catch(() => {
-        if (alive) setSnap({ state: 'error', card: null })
+        if (id !== seq.current) return
+        setSnap((prev) => (prev?.provider === provider && prev.card ? prev : { provider, state: 'error', card: null }))
       })
+  }, [provider, enabled, runEnded, poll])
+
+  return snap?.provider === provider ? snap : null
+}
+
+function liveQuotaModel(snapshot: ProviderQuota | null | undefined, t: TFunc, text: OverviewText): QuotaTileModel | null {
+  if (!snapshot?.supported) return null
+  const windows = snapshot.windows ?? []
+  const balance =
+    !windows.length && typeof snapshot.remaining === 'number' && snapshot.currency && snapshot.currency !== 'PERCENT'
+      ? { label: snapshot.label || text.balance, amount: snapshot.remaining, currency: snapshot.currency }
+      : undefined
+  const problem = snapshot.error && !windows.length && !balance ? { tone: 'err' as const, text: t('acct.failed', { msg: snapshot.error }) } : undefined
+  if (!windows.length && !balance && !problem) return null
+  return { windows, balance, checkedAt: snapshot.checkedAt, staleError: snapshot.staleError, problem }
+}
+
+function cardQuotaModel(card: AccountQuotaCard, t: TFunc, text: OverviewText): QuotaTileModel | null {
+  const problem =
+    card.status === 'error'
+      ? { tone: 'err' as const, text: t('acct.failed', { msg: card.error ?? '' }) }
+      : card.status === 'expired'
+        ? { tone: 'warn' as const, text: card.hint || text.quotaExpired }
+        : undefined
+  if (!card.windows.length && !card.balance && !problem) return null
+  return { windows: card.windows, balance: card.balance, checkedAt: card.checkedAt, staleError: card.staleError, problem }
+}
+
+function useQuotaTile(provider: string, running: boolean, t: TFunc, text: OverviewText): { model: QuotaTileModel | null; now: number } {
+  const live = liveQuotaSupported(provider)
+  const entry = useLiveQuota((s) => (live ? s.entries[provider] : undefined))
+  const runEnded = useRunEnded(running)
+  const account = useAccountQuotaCard(provider, !!provider && !live, runEnded)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!live) return undefined
+    let alive = true
+    void refreshLive(provider).then(() => {
+      if (alive) setNow(Date.now())
+    })
     return () => {
       alive = false
     }
-  }, [provider])
-  return snap
+  }, [provider, live, runEnded])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now())
+      if (!live || document.visibilityState !== 'visible') return
+      const fetchedAt = useLiveQuota.getState().entries[provider]?.fetchedAt ?? 0
+      if (Date.now() - fetchedAt >= LIVE_QUOTA_POLL_MS) void refreshLive(provider)
+    }, QUOTA_TICK_MS)
+    return () => clearInterval(timer)
+  }, [provider, live])
+
+  const model = live
+    ? liveQuotaModel(entry?.snapshot, t, text)
+    : account?.card
+      ? cardQuotaModel(account.card, t, text)
+      : account?.state === 'error'
+        ? { windows: [], checkedAt: 0, problem: { tone: 'err' as const, text: text.quotaFailed } }
+        : null
+  return { model, now }
 }
 
 interface McpSnapshot {
@@ -148,6 +263,32 @@ const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], string> = {
   error: 'is-err'
 }
 
+const RUN_DOT: Record<SubagentRun['status'], string> = {
+  starting: 'is-run',
+  running: 'is-run',
+  done: 'is-ok',
+  error: 'is-err',
+  cancelled: 'is-warn'
+}
+
+const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
+  system: 'ctx.cat.system',
+  user: 'ctx.cat.user',
+  assistant: 'ctx.cat.assistant',
+  thinking: 'ctx.cat.thinking',
+  tools: 'ctx.cat.tools',
+  free: 'ctx.cat.free'
+}
+
+function isLiveRun(run: SubagentRun): boolean {
+  return run.status === 'running' || run.status === 'starting'
+}
+
+function compareRuns(a: SubagentRun, b: SubagentRun): number {
+  const live = Number(isLiveRun(b)) - Number(isLiveRun(a))
+  return live !== 0 ? live : b.startedAt - a.startedAt
+}
+
 interface TileProps {
   id: TileId
   title: string
@@ -180,15 +321,144 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
   )
 }
 
+function ContextDetail({ data, last, text }: { data: ContextPaneData; last: CompactionRun | undefined; text: OverviewText }): ReactElement {
+  const t = useT()
+  const { usage, slices } = data
+  const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
+  const rows = [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, usage.windowSize - usage.tokens) }]
+  const record = last
+    ? [compactionSummary(t, last), compactionTokensText(last), compactionReclaimText(t, last), compactionGrowthText(t, last, usage.tokens)]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
+  return (
+    <div className="wb-ov-ctx" data-testid="wb-ov-ctx">
+      <div
+        className="wb-ctx-bar"
+        role="img"
+        aria-label={t('ctx.tip', { used: shortTokens(usage.tokens), win: shortTokens(usage.windowSize), pct: Math.round(usage.percent ?? 0) })}
+      >
+        {slices.map((s) => (s.tokens > 0 ? <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} /> : null))}
+      </div>
+      <p className="wb-ov-note">{`${text.contextUsed} ${shortTokens(usage.tokens)} / ${shortTokens(usage.windowSize)}`}</p>
+      <ul className="wb-ctx-legend" data-testid="wb-ov-ctx-breakdown">
+        {rows.map((row) => {
+          const name = t(CATEGORY_LABEL[row.id])
+          return (
+            <li key={row.id} className={row.id === 'free' ? 'free' : undefined} title={name}>
+              <i className={`wb-ctx-swatch c-${row.id}`} aria-hidden />
+              <span className="wb-ctx-legend-name">{name}</span>
+              <span className="wb-ctx-legend-num">{shortTokens(row.tokens)}</span>
+              <span className="wb-ctx-legend-num">{`${share(row.tokens).toFixed(1)}%`}</span>
+            </li>
+          )
+        })}
+      </ul>
+      {record ? (
+        <p className="wb-ov-note wb-ov-line" title={record} data-testid="wb-ov-ctx-compaction">
+          {`${text.lastCompaction} · ${record}`}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function TaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; text: OverviewText }): ReactElement {
+  const selectedId = useSubagentPanel((s) => (s.owner === owner ? s.runId : null))
+  const anyLive = runs.some(isLiveRun)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!anyLive) return undefined
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [anyLive])
+
+  return (
+    <ul className="wb-ov-items" data-testid="wb-ov-tasks">
+      {runs.map((run) => {
+        const live = isLiveRun(run)
+        const selected = selectedId === run.id
+        const label = compactTaskPaths(subagentTitle(run.task))
+        const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
+        return (
+          <li key={run.id} className="wb-ov-task" data-status={run.status} data-selected={selected ? '1' : undefined}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="wb-ov-task-main"
+              title={run.task}
+              aria-label={`${text.taskDetail}: ${label}`}
+              aria-haspopup="dialog"
+              aria-expanded={selected}
+              onPress={(event) => useSubagentPanel.getState().toggle(run.id, owner, event.target as HTMLElement)}
+            >
+              <span className="wb-ov-item-icon">
+                <span className={`wb-ov-dot ${RUN_DOT[run.status]}`} aria-hidden />
+              </span>
+              <span className="wb-ov-task-name">{label}</span>
+              <span className="wb-ov-task-time">{elapsed}</span>
+            </Button>
+            {live ? (
+              <IconButton
+                variant="ghost"
+                size="sm"
+                className="wb-ov-task-stop"
+                aria-label={text.stopTask}
+                onPress={() => void window.yan.subagents.stop(run.id)}
+              >
+                <Square size={12} aria-hidden />
+              </IconButton>
+            ) : null}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): ReactElement {
+  const t = useT()
+  const stale = quotaReadingStale(model.checkedAt, now, !!model.staleError)
+  const hasData = model.windows.length > 0 || !!model.balance
+  return (
+    <div className="wb-ov-quota" data-testid="wb-ov-quota">
+      {stale && hasData ? (
+        <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="wb-ov-quota-stale">
+          {[quotaReadAgo(t, model.checkedAt, now), model.staleError ? t('quota.readFailed', { msg: model.staleError }) : ''].filter(Boolean).join(' · ')}
+        </p>
+      ) : null}
+      {model.windows.map((window) => (
+        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`wb-ov-quota-win-${window.id}`} />
+      ))}
+      {model.balance ? (
+        <div className="quota-win" data-tone={stale ? 'stale' : 'ok'} data-testid="wb-ov-quota-balance">
+          <div className="quota-win-top">
+            <span className="quota-win-label">{model.balance.label}</span>
+            <span className="quota-win-value ui-meta-num">{money(model.balance.amount, model.balance.currency)}</span>
+          </div>
+        </div>
+      ) : null}
+      {model.problem ? <p className="wb-quota-msg">{model.problem.text}</p> : null}
+    </div>
+  )
+}
+
 export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = useMemo(() => workbenchText(lang).overview, [lang])
+  const todoText = useMemo(() => todoTileText(lang), [lang])
 
   const cwd = owner?.cwd || ''
   const session = useStore((s) => s.session)
+  const stats = useStore((s) => s.stats)
   const settings = useStore((s) => s.settings)
   const messages = useStore((s) => s.messages)
+  const todos = useStore((s) => s.todos)
+  const subagents = useStore((s) => s.subagents)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
   const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
   const provider = session?.model?.provider ?? ''
 
@@ -211,20 +481,46 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
   const changesSummary = !repo ? undefined : repo.changedCount > 0 ? text.changesFiles(repo.changedCount) : text.changesNone
 
-  const usage = useContextUsage()
+  const contextFolded = isFolded('context')
+  const contextData = useMemo(
+    () => (contextFolded ? null : contextPaneData({ session, stats, messages })),
+    [contextFolded, session, stats, messages]
+  )
+  const usage = contextData?.usage ?? contextUsageSummary(session, stats)
   const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : undefined
   const contextTone = usage.tone !== 'ok' && usage.known ? usage.tone : undefined
+
+  const hasTodos = hasTodoTileContent(todos)
+  const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
+
+  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
+  const sessionIds = view.sessionId ? [view.sessionId] : []
+  const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
+  const runningCount = runs.filter(isLiveRun).length
+  const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : text.doneCount(runs.length)
 
   const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
   const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
   const mcpSummary = mcp.state === 'ready' && mcp.servers.length > 0 ? text.mcpConnected(mcpReady, mcp.servers.length) : undefined
   const mcpTone = mcp.servers.some((server) => server.status === 'error') ? 'err' : mcp.servers.some((server) => server.status === 'needs-auth') ? 'warn' : undefined
 
-  const quota = useQuotaSnapshot(provider)
-  const primaryWindow = quota.card?.windows.find((w) => w.id === 'fiveHour' || w.id === 'primary') ?? quota.card?.windows[0]
-  const primaryPct = primaryWindow ? windowPct(primaryWindow) : null
-  const balance = quota.card?.balance
-  const quotaSummary = primaryPct !== null ? `${primaryPct}%` : balance ? `${balance.amount.toFixed(2)} ${balance.currency}` : undefined
+  const quota = useQuotaTile(provider, agentRunning, t, text)
+  const quotaModel = quota.model
+  const quotaStale = quotaModel ? quotaReadingStale(quotaModel.checkedAt, quota.now, !!quotaModel.staleError) : false
+  const quotaWindows = quotaModel?.windows ?? []
+  const binding = bindingQuotaWindow(quotaWindows.filter((w) => !windowAwaitingReset(w, quota.now))) ?? bindingQuotaWindow(quotaWindows)
+  const bindingAwaiting = binding ? windowAwaitingReset(binding, quota.now) : false
+  const bindingTone = binding ? quotaWindowTone(binding, quotaStale, quota.now) : null
+  const quotaSummary = binding
+    ? `${quotaShortLabel(t, binding)} ${bindingAwaiting ? '—' : `${Math.round(windowUsedPct(binding) ?? 0)}%`}`
+    : quotaModel?.balance
+      ? money(quotaModel.balance.amount, quotaModel.balance.currency)
+      : quotaModel?.problem
+        ? quotaModel.problem.tone === 'warn'
+          ? text.quotaExpired
+          : text.quotaFailed
+        : undefined
+  const quotaTone = bindingTone === 'warn' || bindingTone === 'err' ? bindingTone : !binding && !quotaModel?.balance ? quotaModel?.problem?.tone : undefined
 
   return (
     <div className="wb-overview" data-testid="wb-overview">
@@ -254,23 +550,30 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         id="context"
         title={text.tiles.context}
         summary={contextSummary}
-        folded={isFolded('context')}
+        folded={contextFolded}
         onToggle={toggle}
         onOpen={() => onOpenView('context')}
         openLabel={`${text.openFull} ${text.tiles.context}`}
         tone={contextTone}
       >
-        <Meter
-          aria-label={text.tiles.context}
-          className="wb-ov-meter"
-          value={usage.known && usage.percent !== null ? Math.min(100, Math.max(0, usage.percent)) : 0}
-          minValue={0}
-          maxValue={100}
-        />
-        {usage.known ? (
-          <p className="wb-ov-note">{`${text.contextUsed} ${shortTokens(usage.tokens)} / ${shortTokens(usage.windowSize)}`}</p>
-        ) : null}
+        {contextData && usage.known ? (
+          <ContextDetail data={contextData} last={session?.lastCompaction} text={text} />
+        ) : (
+          <Meter aria-label={text.tiles.context} className="wb-ov-meter" value={0} minValue={0} maxValue={100} />
+        )}
       </Tile>
+
+      {hasTodos ? (
+        <Tile id="todos" title={text.tiles.todos} summary={`${todoModel.done}/${todoModel.total}`} folded={isFolded('todos')} onToggle={toggle}>
+          <TodoTileRows model={todoModel} text={todoText} />
+        </Tile>
+      ) : null}
+
+      {runs.length > 0 ? (
+        <Tile id="tasks" title={text.tiles.tasks} summary={taskSummary} folded={isFolded('tasks')} onToggle={toggle}>
+          <TaskRows runs={runs} owner={view.key} text={text} />
+        </Tile>
+      ) : null}
 
       {mcp.state === 'error' || mcp.servers.length > 0 ? (
         <Tile id="mcp" title={text.tiles.mcp} summary={mcpSummary} folded={isFolded('mcp')} onToggle={toggle} tone={mcpTone}>
@@ -318,7 +621,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         </Tile>
       ) : null}
 
-      {quota.card || quota.state === 'error' ? (
+      {quotaModel ? (
         <Tile
           id="quota"
           title={text.tiles.quota}
@@ -327,26 +630,9 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           onToggle={toggle}
           onOpen={() => onOpenView('quota')}
           openLabel={`${text.openFull} ${text.tiles.quota}`}
+          tone={quotaTone}
         >
-          {quota.card && primaryWindow ? (
-            <Meter
-              aria-label={`${accountCardTitle(quota.card)} ${primaryWindow.label}`}
-              className="wb-ov-meter"
-              value={primaryPct ?? 0}
-              minValue={0}
-              maxValue={100}
-              label={primaryWindow.label}
-            />
-          ) : quota.card && balance ? (
-            <ul className="wb-ov-items">
-              <li className="wb-ov-item">
-                <span className="wb-ov-item-label">{balance.label}</span>
-                <span className="wb-ov-item-value">{`${balance.amount.toFixed(2)} ${balance.currency}`}</span>
-              </li>
-            </ul>
-          ) : (
-            <p className="wb-ov-note">{text.quotaFailed}</p>
-          )}
+          <QuotaDetail model={quotaModel} now={quota.now} />
         </Tile>
       ) : null}
     </div>
