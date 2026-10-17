@@ -39,6 +39,9 @@ export interface PiMessage {
   cancelled?: boolean
   details?: unknown
   nestedCalls?: { calls?: unknown[]; complete?: boolean }
+  customType?: string
+  display?: boolean
+  summary?: string
 }
 
 export function assistantError(m: PiMessage): string | undefined {
@@ -207,6 +210,41 @@ export function normalizeMessage(
     }
   }
 
+  if (m.role === 'custom' && m.display === true) {
+    const text = typeof m.content === 'string'
+      ? m.content
+      : Array.isArray(m.content) ? m.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('') : ''
+    const images = imagesOf(m.content, localizeImage)
+    if (!text.trim() && !images) return null
+    return {
+      id,
+      ...entry,
+      role: 'note',
+      note: { kind: 'custom', ...(m.customType ? { customType: m.customType } : {}) },
+      text,
+      ...(images ? { images } : {}),
+      timestamp: m.timestamp
+    }
+  }
+
+  if (m.role === 'branchSummary' && typeof m.summary === 'string' && m.summary.trim()) {
+    return { id, ...entry, role: 'note', note: { kind: 'branchSummary' }, text: m.summary, timestamp: m.timestamp }
+  }
+
+  return null
+}
+
+export function entryMessage(entry: unknown): unknown {
+  if (!entry || typeof entry !== 'object') return null
+  const e = entry as Record<string, unknown>
+  if (e.message && typeof e.message === 'object') return e.message
+  const timestamp = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) || undefined : undefined
+  if (e.type === 'custom_message') {
+    return { role: 'custom', customType: e.customType, content: e.content, display: e.display === true, timestamp }
+  }
+  if (e.type === 'branch_summary') {
+    return { role: 'branchSummary', summary: e.summary, fromId: e.fromId ?? null, timestamp }
+  }
   return null
 }
 

@@ -320,6 +320,8 @@
   "cap.importPreservedNotice": "The old entry is still active; credentials are not moved automatically. Handle it manually as described.",
   "cap.importManualHint": "This needs manual handling (sign in again / unsupported / untrusted directory / verification unavailable); Inkstone will not move credentials for you.",
   "chat.bash": "command",
+  "chat.noteCustom": "Extension message",
+  "chat.noteBranchSummary": "Branch summary",
   "chat.cmds": "Commands",
   "chat.draft1": "Walk me through this folder: what files are here and what are they for?",
   "chat.draft2": "Help me analyze this problem:",
