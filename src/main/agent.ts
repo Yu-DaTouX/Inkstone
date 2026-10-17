@@ -4190,40 +4190,43 @@ export class AgentController extends EventEmitter {
     return this.enqueueCapabilityChange(() => this.cycleModelNow(dir))
   }
 
+  private async nativeCycleLength(): Promise<number> {
+    const models = await this.listModels()
+    if (!this.nativeRuntime) return models.length
+    const scoped = await this.nativeRuntime.getScopedModels()
+    if (!scoped.scopedModels.length) return models.length
+    const available = new Set(models.map(model => `${model.provider}/${model.id}`))
+    return scoped.scopedModels.filter(item => available.has(item.key)).length
+  }
+
   private async cycleModelNow(dir: 1 | -1): Promise<{ ok: boolean; error?: string; to?: string }> {
-    let models = await this.listModels()
-    if (this.nativeRuntime) {
-      const scoped = await this.nativeRuntime.getScopedModels()
-      if (scoped.scopedModels.length) {
-        const keys = new Set(scoped.scopedModels.map(item => item.key))
-        models = models.filter(model => keys.has(`${model.provider}/${model.id}`))
-      }
+    if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+    const steps = dir === 1 ? 1 : (await this.nativeCycleLength()) - 1
+    if (steps < 1) return { ok: false, error: '只有一个可用模型' }
+    this.loopGuardContinuationVersion += 1
+    let landed: { name?: string; id?: string } | undefined
+    for (let i = 0; i < steps; i += 1) {
+      const res = await this.requireRpc().command<{ model?: { name?: string; id?: string } } | null>('cycle_model')
+      if (!res.success) return { ok: false, error: res.error }
+      if (!res.data?.model) return { ok: false, error: '只有一个可用模型' }
+      landed = res.data.model
     }
-    if (models.length < 2) return { ok: false, error: '只有一个可用模型' }
-
-    const cur = this.state?.model
-    const i = models.findIndex((m) => m.provider === cur?.provider && m.id === cur?.id)
-    const next = models[i < 0 ? 0 : (i + dir + models.length) % models.length]
-
-    const changed = await this.applyModel(next.provider, next.id)
-    return changed.ok ? { ok: true, to: next.name } : changed
+    await this.refreshState()
+    await this.listThinkingLevels()
+    await this.refreshStats()
+    return { ok: true, to: landed?.name || landed?.id }
   }
 
   async cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }> {
     return this.enqueueCapabilityChange(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-      const levels = await this.listThinkingLevels()
-      if (levels.length < 2) return { ok: false, error: '当前模型不支持思考' }
-
-      const cur = this.state?.thinkingLevel ?? 'off'
-      const i = levels.indexOf(cur)
-      const next = levels[i < 0 ? 0 : (i + 1) % levels.length]
-
-      const res = await this.requireRpc().command('set_thinking_level', { level: next })
+      const res = await this.rpc.command<{ level?: string } | null>('cycle_thinking_level')
       if (!res.success) return { ok: false, error: res.error }
-
+      const level = res.data?.level
+      if (!level) return { ok: false, error: '当前模型不支持思考' }
+      this.loopGuardContinuationVersion += 1
       await this.refreshState()
-      return { ok: true, to: next }
+      return { ok: true, to: level }
     })
   }
 
