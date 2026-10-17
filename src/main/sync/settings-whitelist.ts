@@ -33,6 +33,7 @@ export const SYNC_SETTINGS_WHITELIST = [
   'workModeShortcutEnabled',
   'subagentNotify',
   'usageUnderInput',
+  'workspaceTiles',
   'workModeShortcut',
   'sendKey',
   'responseDetail',

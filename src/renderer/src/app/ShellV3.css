@@ -30,6 +30,10 @@
   .v3-body[data-workspace='open'][data-workspace-mode='docked'] {
     grid-template-columns: minmax(0, 1fr) var(--workspace-width, var(--size-panel));
   }
+  .v3-body[data-workspace='open'][data-workspace-mode='tiles'] .v3-chat {
+    --tiles-reserve: calc(var(--size-tiles) + var(--s-16));
+    --tiles-on: 1;
+  }
   .v3-workspace-resizer.ui-splitter { position: absolute; top: 0; bottom: 0; right: calc(var(--workspace-width) - 1px); z-index: 22; }
 
   .v3-chat {
@@ -58,7 +62,7 @@
 
   .v3-pillbar {
     flex: none;
-    padding: var(--s-8) var(--s-24) 0;
+    padding: var(--s-8) calc(var(--s-24) + var(--tiles-reserve, 0px)) 0 var(--s-24);
   }
 
   .v3-conv {
@@ -78,9 +82,9 @@
   .v3-composer {
     flex: none;
     width: 100%;
-    max-width: calc(var(--size-comp) + var(--s-48));
+    max-width: calc(var(--size-comp) + var(--s-48) + var(--tiles-reserve, 0px));
     margin: 0 auto;
-    padding: var(--s-6) var(--s-24) var(--s-20);
+    padding: var(--s-6) calc(var(--s-24) + var(--tiles-reserve, 0px)) var(--s-20) var(--s-24);
   }
 
   .v3-composer:has(.composer-usage) {

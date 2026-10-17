@@ -53,6 +53,8 @@ export interface SettingsText {
   motionNote: string
   asciiBackground: string
   asciiBackgroundDesc: string
+  workspaceTiles: string
+  workspaceTilesDesc: string
   language: string
 
   sectionContext: string
@@ -184,6 +186,8 @@ const ZH: SettingsText = {
   motionNote: '动效跟随系统的「减少动态效果」设置，在系统里修改即可。',
   asciiBackground: '动态背景',
   asciiBackgroundDesc: '新会话空态铺一层随噪声缓慢流动的 ASCII 字符；发送第一条消息后淡出。',
+  workspaceTiles: '工具磁贴',
+  workspaceTilesDesc: '在消息旁显示环境、上下文、MCP、更改和额度磁贴；新会话和未配置的项目不显示。',
   language: '语言',
 
   sectionContext: '上下文',
@@ -315,6 +319,8 @@ const EN: SettingsText = {
   motionNote: 'Motion follows the system “Reduce motion” setting; change it in the system settings.',
   asciiBackground: 'Dynamic background',
   asciiBackgroundDesc: 'A slowly drifting ASCII noise layer behind the empty new-session view; it fades once the first message is sent.',
+  workspaceTiles: 'Tool tiles',
+  workspaceTilesDesc: 'Show environment, context, MCP, changes and quota tiles beside messages; hidden in new sessions and for anything not configured.',
   language: 'Language',
 
   sectionContext: 'Context',

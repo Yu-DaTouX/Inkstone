@@ -48,6 +48,10 @@
     inset: calc(-1 * var(--s-4)) 0;
   }
 
+  .ui-splitter[data-quiet]::after {
+    background: transparent;
+  }
+
   .ui-splitter:hover::after,
   .ui-splitter[data-dragging]::after,
   .ui-splitter:focus-visible::after {

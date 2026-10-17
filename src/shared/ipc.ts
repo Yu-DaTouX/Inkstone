@@ -694,6 +694,7 @@ export interface AppSettings {
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
   usageUnderInput?: boolean
+  workspaceTiles?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
   voiceInput?: import('./voice-input').VoiceInputSettings

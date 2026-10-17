@@ -1,21 +1,14 @@
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
-import type { PressEvent } from 'react-aria-components'
-import { Check, ChevronDown, ChevronRight, Square } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck } from 'lucide-react'
 import { Button, IconButton, Meter } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useContextUsage } from '../../patterns/ContextRing'
-import { visibleSubagentRuns } from '../../state/subagent-view'
-import { sessionViewIdentity } from '../session/view-state'
-import { useSubagentPanel } from '../session/subagent-panel-state'
-import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
-import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
-import { formatDuration } from '../../../../shared/duration'
 import { normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 import { accountCardTitle, orderAccountCardsForProvider, type AccountQuotaCard } from '../../../../shared/account-quota'
 import { windowPct } from '../../../../shared/quota-mini'
 import type { GitRepoState } from '../../../../shared/git'
-import type { SubagentRun } from '../../../../shared/ipc'
+import type { CapabilityMcpServerSettingView } from '../../../../shared/ipc'
 import { shortTokens } from './context-pane-view'
 import { workbenchText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
@@ -27,7 +20,7 @@ export interface OverviewPaneProps {
   onPreview?: (path: string) => void
 }
 
-type TileId = 'env' | 'context' | 'quota' | 'tasks' | 'todos'
+type TileId = 'env' | 'context' | 'mcp' | 'changes' | 'quota'
 
 const FOLD_KEY = 'inkstone.v3.overview.folds'
 
@@ -54,6 +47,13 @@ function writeFolds(folds: FoldMap): void {
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
   return parts[parts.length - 1] ?? path
+}
+
+function pathRoot(path: string): string {
+  const drive = /^[A-Za-z]:/.exec(path)
+  if (drive) return drive[0]
+  const parts = path.split(/[\\/]+/).filter(Boolean)
+  return parts.length > 1 ? parts[parts.length - 2] : ''
 }
 
 function useGitRepo(cwd: string | null, refreshKey: string): GitRepoState | null {
@@ -111,13 +111,41 @@ function useQuotaSnapshot(provider: string): QuotaSnapshot {
   return snap
 }
 
-function isLiveRun(run: SubagentRun): boolean {
-  return run.status === 'running' || run.status === 'starting'
+interface McpSnapshot {
+  state: 'loading' | 'ready' | 'error'
+  servers: CapabilityMcpServerSettingView[]
 }
 
-function compareRuns(a: SubagentRun, b: SubagentRun): number {
-  const live = Number(isLiveRun(b)) - Number(isLiveRun(a))
-  return live !== 0 ? live : b.startedAt - a.startedAt
+function useMcpServers(refreshKey: string): McpSnapshot {
+  const [snap, setSnap] = useState<McpSnapshot>({ state: 'loading', servers: [] })
+  useEffect(() => {
+    const capabilities = window.yan?.capabilities
+    if (!capabilities) {
+      setSnap({ state: 'error', servers: [] })
+      return undefined
+    }
+    let alive = true
+    capabilities
+      .snapshot()
+      .then((next) => {
+        if (alive) setSnap({ state: 'ready', servers: next.servers.filter((server) => server.enabled) })
+      })
+      .catch(() => {
+        if (alive) setSnap((prev) => ({ state: prev.servers.length ? 'ready' : 'error', servers: prev.servers }))
+      })
+    return () => {
+      alive = false
+    }
+  }, [refreshKey])
+  return snap
+}
+
+const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], string> = {
+  ready: 'is-ok',
+  connecting: 'is-run',
+  disconnected: '',
+  'needs-auth': 'is-warn',
+  error: 'is-err'
 }
 
 interface TileProps {
@@ -137,8 +165,8 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
     <section className="wb-tile" data-tile={id} data-folded={folded ? '1' : '0'} data-tone={tone} data-testid={`wb-tile-${id}`}>
       <div className="wb-tile-head">
         <Button variant="ghost" size="sm" className="wb-tile-toggle" aria-expanded={!folded} onPress={() => onToggle(id)}>
-          {folded ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
           <span className="wb-tile-title">{title}</span>
+          {folded ? <ChevronRight size={12} className="wb-tile-chevron" aria-hidden /> : <ChevronDown size={12} className="wb-tile-chevron" aria-hidden />}
           {summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
         {onOpen ? (
@@ -156,16 +184,11 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const { lang } = useI18n()
   const t = useT()
   const text = useMemo(() => workbenchText(lang).overview, [lang])
-  const todoText = useMemo(() => todoTileText(lang), [lang])
 
   const cwd = owner?.cwd || ''
   const session = useStore((s) => s.session)
   const settings = useStore((s) => s.settings)
   const messages = useStore((s) => s.messages)
-  const todos = useStore((s) => s.todos)
-  const subagents = useStore((s) => s.subagents)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
   const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
   const provider = session?.model?.provider ?? ''
 
@@ -186,64 +209,45 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const gitRefresh = `${messages.length}:${agentRunning ? 1 : 0}`
   const repo = useGitRepo(cwd || null, gitRefresh)
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
-
-  const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
-  const hasTodos = hasTodoTileContent(todos)
+  const changesSummary = !repo ? undefined : repo.changedCount > 0 ? text.changesFiles(repo.changedCount) : text.changesNone
 
   const usage = useContextUsage()
-  const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : '—'
+  const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : undefined
   const contextTone = usage.tone !== 'ok' && usage.known ? usage.tone : undefined
 
-  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
-  const sessionIds = view.sessionId ? [view.sessionId] : []
-  const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
-  const runningCount = runs.filter(isLiveRun).length
-  const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : runs.length > 0 ? text.doneCount(runs.length) : undefined
-  const liveRuns = runningCount > 0
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!liveRuns) return undefined
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [liveRuns])
+  const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
+  const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
+  const mcpSummary = mcp.state === 'ready' && mcp.servers.length > 0 ? text.mcpConnected(mcpReady, mcp.servers.length) : undefined
+  const mcpTone = mcp.servers.some((server) => server.status === 'error') ? 'err' : mcp.servers.some((server) => server.status === 'needs-auth') ? 'warn' : undefined
 
   const quota = useQuotaSnapshot(provider)
   const primaryWindow = quota.card?.windows.find((w) => w.id === 'fiveHour' || w.id === 'primary') ?? quota.card?.windows[0]
   const primaryPct = primaryWindow ? windowPct(primaryWindow) : null
-
-  const toggleRun = (run: SubagentRun, event: PressEvent): void => {
-    useSubagentPanel.getState().toggle(run.id, view.key, event.target as HTMLElement)
-  }
+  const balance = quota.card?.balance
+  const quotaSummary = primaryPct !== null ? `${primaryPct}%` : balance ? `${balance.amount.toFixed(2)} ${balance.currency}` : undefined
 
   return (
     <div className="wb-overview" data-testid="wb-overview">
-      <Tile id="env" title={text.tiles.env} summary={branch ?? undefined} folded={isFolded('env')} onToggle={toggle}>
-        <dl className="wb-ov-rows">
-          {projectName ? (
-            <div className="wb-ov-row">
-              <dt>{text.projectLabel}</dt>
-              <dd>{projectName}</dd>
-            </div>
-          ) : null}
+      <Tile id="env" title={text.tiles.env} folded={isFolded('env')} onToggle={toggle}>
+        <ul className="wb-ov-items">
           {cwd ? (
-            <div className="wb-ov-row">
-              <dt>{text.pathLabel}</dt>
-              <dd className="wb-ov-path" title={cwd} data-testid="wb-ov-path">
-                {cwd}
-              </dd>
-            </div>
+            <li className="wb-ov-item" title={cwd} data-testid="wb-ov-path">
+              <Folder size={14} className="wb-ov-item-icon" aria-hidden />
+              <span className="wb-ov-item-label">{projectName}</span>
+              {pathRoot(cwd) ? <span className="wb-ov-item-value">{pathRoot(cwd)}</span> : null}
+            </li>
           ) : null}
           {branch ? (
-            <div className="wb-ov-row">
-              <dt>{text.branchLabel}</dt>
-              <dd>{branch}</dd>
-            </div>
+            <li className="wb-ov-item" title={`${text.branchLabel} ${branch}`}>
+              <GitBranch size={14} className="wb-ov-item-icon" aria-hidden />
+              <span className="wb-ov-item-label">{branch}</span>
+            </li>
           ) : null}
-          <div className="wb-ov-row">
-            <dt>{text.permissionLabel}</dt>
-            <dd>{modeLabel}</dd>
-          </div>
-        </dl>
+          <li className="wb-ov-item" title={`${text.permissionLabel} ${modeLabel}`}>
+            <ShieldCheck size={14} className="wb-ov-item-icon" aria-hidden />
+            <span className="wb-ov-item-label">{modeLabel}</span>
+          </li>
+        </ul>
       </Tile>
 
       <Tile
@@ -268,102 +272,83 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         ) : null}
       </Tile>
 
-      {quota.card && primaryWindow ? (
+      {mcp.state === 'error' || mcp.servers.length > 0 ? (
+        <Tile id="mcp" title={text.tiles.mcp} summary={mcpSummary} folded={isFolded('mcp')} onToggle={toggle} tone={mcpTone}>
+          {mcp.state === 'error' ? <p className="wb-ov-note">{text.mcpFailed}</p> : null}
+          {mcp.servers.length > 0 ? (
+            <ul className="wb-ov-items">
+              {mcp.servers.map((server) => (
+                <li key={server.id} className="wb-ov-item" title={text.mcpStatus[server.status]}>
+                  <span className="wb-ov-item-icon">
+                    <span className={`wb-ov-dot ${MCP_DOT[server.status]}`} aria-hidden />
+                  </span>
+                  <span className="wb-ov-item-label">{server.title || server.id}</span>
+                  <span className="wb-ov-item-value">
+                    {server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Tile>
+      ) : null}
+
+      {repo ? (
+        <Tile
+          id="changes"
+          title={text.tiles.changes}
+          summary={changesSummary}
+          folded={isFolded('changes')}
+          onToggle={toggle}
+          onOpen={() => onOpenView('changes')}
+          openLabel={`${text.openFull} ${text.tiles.changes}`}
+        >
+          <ul className="wb-ov-items">
+            {([
+              [text.changesStaged, repo.stagedCount],
+              [text.changesUnstaged, repo.unstagedCount],
+              [text.changesUntracked, repo.untrackedCount]
+            ] as const).map(([label, count]) => (
+              <li key={label} className="wb-ov-item">
+                <span className="wb-ov-item-label">{label}</span>
+                <span className="wb-ov-item-value">{count}</span>
+              </li>
+            ))}
+          </ul>
+        </Tile>
+      ) : null}
+
+      {quota.card || quota.state === 'error' ? (
         <Tile
           id="quota"
           title={text.tiles.quota}
-          summary={primaryPct !== null ? `${primaryPct}%` : '—'}
+          summary={quotaSummary}
           folded={isFolded('quota')}
           onToggle={toggle}
           onOpen={() => onOpenView('quota')}
           openLabel={`${text.openFull} ${text.tiles.quota}`}
         >
-          <Meter
-            aria-label={`${accountCardTitle(quota.card)} ${primaryWindow.label}`}
-            className="wb-ov-meter"
-            value={primaryPct ?? 0}
-            minValue={0}
-            maxValue={100}
-            label={primaryWindow.label}
-          />
-        </Tile>
-      ) : quota.state === 'loading' || quota.state === 'error' ? (
-        <Tile id="quota" title={text.tiles.quota} folded={isFolded('quota')} onToggle={toggle}>
-          <p className="wb-ov-note">{quota.state === 'loading' ? text.quotaChecking : text.quotaFailed}</p>
+          {quota.card && primaryWindow ? (
+            <Meter
+              aria-label={`${accountCardTitle(quota.card)} ${primaryWindow.label}`}
+              className="wb-ov-meter"
+              value={primaryPct ?? 0}
+              minValue={0}
+              maxValue={100}
+              label={primaryWindow.label}
+            />
+          ) : quota.card && balance ? (
+            <ul className="wb-ov-items">
+              <li className="wb-ov-item">
+                <span className="wb-ov-item-label">{balance.label}</span>
+                <span className="wb-ov-item-value">{`${balance.amount.toFixed(2)} ${balance.currency}`}</span>
+              </li>
+            </ul>
+          ) : (
+            <p className="wb-ov-note">{text.quotaFailed}</p>
+          )}
         </Tile>
       ) : null}
-
-      <Tile id="tasks" title={text.tiles.tasks} summary={taskSummary} folded={isFolded('tasks')} onToggle={toggle}>
-        {runs.length === 0 ? <p className="wb-ov-note">{text.noTasks}</p> : null}
-        {runs.length > 0 ? (
-          <ul className="wb-ov-list">
-            {runs.map((run) => {
-              const live = isLiveRun(run)
-              const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
-              return (
-                <li key={run.id} className="wb-ov-task" data-status={run.status}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="wb-ov-task-main"
-                    title={run.task}
-                    aria-label={`${text.taskDetail}: ${run.task}`}
-                    onPress={(event) => toggleRun(run, event)}
-                  >
-                    <TaskStatus status={run.status} />
-                    <span className="wb-ov-task-name">{run.task}</span>
-                    <span className="wb-ov-task-time">{elapsed}</span>
-                  </Button>
-                  {live ? (
-                    <IconButton variant="ghost" size="sm" aria-label={text.stopTask} onPress={() => void window.yan.subagents.stop(run.id)}>
-                      <Square size={12} aria-hidden />
-                    </IconButton>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        ) : null}
-      </Tile>
-
-      <Tile
-        id="todos"
-        title={text.tiles.todos}
-        summary={hasTodos ? `${todoModel.done}/${todoModel.total}` : undefined}
-        folded={isFolded('todos')}
-        onToggle={toggle}
-      >
-        {hasTodos ? <TodoTileRows model={todoModel} text={todoText} /> : <p className="wb-ov-note">{text.noTodos}</p>}
-      </Tile>
     </div>
-  )
-}
-
-function TaskStatus({ status }: { status: SubagentRun['status'] }): ReactElement {
-  if (status === 'running' || status === 'starting') {
-    return (
-      <span className="wb-ov-status" aria-hidden>
-        <span className="wb-ov-dot is-run" />
-      </span>
-    )
-  }
-  if (status === 'done') {
-    return (
-      <span className="wb-ov-status" aria-hidden>
-        <Check size={12} className="wb-ov-check" />
-      </span>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <span className="wb-ov-status" aria-hidden>
-        <span className="wb-ov-dot is-err" />
-      </span>
-    )
-  }
-  return (
-    <span className="wb-ov-status" aria-hidden>
-      <span className="wb-ov-dot is-warn" />
-    </span>
   )
 }

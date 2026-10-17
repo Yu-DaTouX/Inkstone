@@ -130,7 +130,7 @@
 
     const workspaceButton = query('v3-header-workspace')
     check(!!workspaceButton, '工作区有明确打开入口')
-    workspaceButton?.click()
+    if (workspaceButton?.getAttribute('aria-pressed') !== 'true') workspaceButton?.click()
     check(await until(() => {
       const panel = document.querySelector('.wb-panel')
       return panel && !panel.hidden && panel.getBoundingClientRect().width > 0

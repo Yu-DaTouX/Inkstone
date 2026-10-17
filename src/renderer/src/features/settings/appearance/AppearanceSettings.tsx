@@ -211,6 +211,26 @@ function DynamicBackgroundRow(): ReactElement {
   )
 }
 
+function WorkspaceTilesRow(): ReactElement {
+  const { lang } = useI18n()
+  const text = settingsText(lang)
+  const patchSettings = useStore((s) => s.patchSettings)
+  const enabled = useStore((s) => s.settings?.workspaceTiles !== false)
+
+  return (
+    <SettingsRow label={text.workspaceTiles} description={text.workspaceTilesDesc}>
+      <Switch
+        aria-label={text.workspaceTiles}
+        isSelected={enabled}
+        onChange={(next) => {
+          void patchSettings({ workspaceTiles: next }).catch(() => undefined)
+        }}
+        data-testid="v3-workspace-tiles-toggle"
+      />
+    </SettingsRow>
+  )
+}
+
 export function AppearanceSettings(): ReactElement {
   const { lang, setLang } = useI18n()
   const text = settingsText(lang)
@@ -271,6 +291,7 @@ export function AppearanceSettings(): ReactElement {
 
       <SoundRow />
       <DynamicBackgroundRow />
+      <WorkspaceTilesRow />
 
       <SettingsRow label={text.motion} description={text.motionNote}>
         <span className="settings-value">{prefersReducedMotion() ? text.motionReduced : text.motionFull}</span>
