@@ -10,9 +10,9 @@ export function Panel({ children, label }: { children: ReactNode; label: string 
   )
 }
 
-export function Note({ children }: { children: ReactNode }): ReactElement {
+export function Note({ children, tone }: { children: ReactNode; tone?: 'caution' }): ReactElement {
   return (
-    <p className="caps-note" role="note">
+    <p className={cx('caps-note', tone === 'caution' && 'caps-note--caution')} role="note">
       {children}
     </p>
   )
@@ -34,11 +34,13 @@ export function Group({
   title,
   desc,
   actions,
+  card,
   children
 }: {
   title: string
   desc?: string
   actions?: ReactNode
+  card?: boolean
   children: ReactNode
 }): ReactElement {
   return (
@@ -50,7 +52,7 @@ export function Group({
         </div>
         {actions ? <div className="caps-actions">{actions}</div> : null}
       </div>
-      {children}
+      {card ? <div className="caps-card">{children}</div> : children}
     </section>
   )
 }

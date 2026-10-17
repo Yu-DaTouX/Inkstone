@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import { Badge, Button, Separator } from '../../../ui'
+import { Badge, Button } from '../../../ui'
 import type { SyncConflictView, SyncResolution, SyncStatusView } from '../../../../../shared/sync'
 import { syncBridge } from './bridge'
 import { syncText } from './text'
@@ -174,7 +174,7 @@ export function SyncSettings(): ReactElement {
   if (!bridge) {
     return (
       <section className="sync-page" data-testid="v3-sync-settings" data-wired="0">
-        <p className="sync-note" role="note">
+        <p className="settings-section__lede" role="note">
           {text.bridgeMissing}
         </p>
       </section>
@@ -186,7 +186,7 @@ export function SyncSettings(): ReactElement {
 
   return (
     <section className="sync-page" data-testid="v3-sync-settings" data-wired="1">
-      <p className="sync-note" role="note">
+      <p className="settings-section__lede" role="note">
         {text.note}
       </p>
 
@@ -240,8 +240,6 @@ export function SyncSettings(): ReactElement {
           </div>
         )}
       </div>
-
-      <Separator />
 
       <div className="sync-card" data-testid="v3-sync-conflicts">
         <h3 className="sync-card__title">{text.conflictsTitle}</h3>
@@ -309,8 +307,6 @@ export function SyncSettings(): ReactElement {
           </ul>
         )}
       </div>
-
-      <Separator />
 
       <div className="sync-card" data-testid="v3-sync-session">
         <h3 className="sync-card__title">{text.sessionTitle}</h3>

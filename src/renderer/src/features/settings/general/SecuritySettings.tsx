@@ -5,7 +5,7 @@ import { useStore } from '../../../state/store'
 import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm, removeAllowRoot } from './general-model'
-import { SettingsRow, Segmented } from '../root/controls'
+import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
 
 export interface AllowRootsListProps {
   roots: readonly string[]
@@ -54,7 +54,7 @@ export function SecuritySettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-security-settings">
-      <div className="settings-rows">
+      <SettingsGroup label={text.securityMode}>
         <SettingsRow
           block
           label={text.securityMode}
@@ -76,6 +76,14 @@ export function SecuritySettings(): ReactElement {
           />
         </SettingsRow>
 
+        <SettingsRow label={text.securityDangerConfirm} description={text.securityDangerConfirmDesc}>
+          <span className="settings-value" data-testid="v3-security-danger-note">
+            {mode === 'danger' ? text.enabled : '—'}
+          </span>
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup label={text.securityOutside}>
         <SettingsRow
           label={text.securityOutside}
           description={mode === 'all' ? text.securityOutsideDisabled : text.securityOutsideDesc}
@@ -97,13 +105,7 @@ export function SecuritySettings(): ReactElement {
             onRemove={(path) => void patchSettings({ guardAllowRoots: removeAllowRoot(roots, path) })}
           />
         </SettingsRow>
-
-        <SettingsRow label={text.securityDangerConfirm} description={text.securityDangerConfirmDesc}>
-          <span className="settings-value" data-testid="v3-security-danger-note">
-            {mode === 'danger' ? text.enabled : '—'}
-          </span>
-        </SettingsRow>
-      </div>
+      </SettingsGroup>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
         <Modal className="settings-confirm-modal">

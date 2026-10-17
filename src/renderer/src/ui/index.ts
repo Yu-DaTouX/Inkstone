@@ -15,6 +15,11 @@ export {
 } from './TextField'
 export { Checkbox, CheckboxGroup, type CheckboxGroupProps, type CheckboxProps } from './Checkbox'
 export { Switch, type SwitchProps } from './Switch'
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+  type SegmentedControlProps
+} from './SegmentedControl'
 export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from './Radio'
 export { Select, type SelectProps } from './Select'
 export { ComboBox, type ComboBoxProps } from './ComboBox'

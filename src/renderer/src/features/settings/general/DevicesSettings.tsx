@@ -11,7 +11,7 @@ import { useStore } from '../../../state/store'
 import { Badge, Button, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { formatWhen } from './general-model'
-import { SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
 
 export interface DeviceListProps {
   devices: readonly RemoteDeviceRecord[]
@@ -164,7 +164,7 @@ export function DevicesSettings(): ReactElement {
         </p>
       ) : null}
 
-      <div className="settings-rows">
+      <SettingsGroup label={text.devicesEnable}>
         <SettingsRow
           label={text.devicesEnable}
           description={
@@ -233,7 +233,9 @@ export function DevicesSettings(): ReactElement {
             </div>
           )}
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.devicesList}>
         <SettingsRow block label={text.devicesList} description={text.devicesListDesc}>
           <DeviceList
             devices={status?.devices ?? []}
@@ -244,7 +246,9 @@ export function DevicesSettings(): ReactElement {
             onForget={(id) => run(() => window.yan.remote.forget(id))}
           />
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.devicesPeer}>
         <SettingsRow block label={text.devicesPeer} description={text.devicesPeerDesc}>
           {grants.length === 0 ? (
             <p className="settings-row__desc" data-testid="v3-devices-peer-empty">
@@ -277,7 +281,7 @@ export function DevicesSettings(): ReactElement {
             </ul>
           )}
         </SettingsRow>
-      </div>
+      </SettingsGroup>
     </section>
   )
 }

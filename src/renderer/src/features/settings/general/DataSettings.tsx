@@ -6,7 +6,7 @@ import { useStore } from '../../../state/store'
 import { Button } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { bytesText } from './general-model'
-import { SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
 
 export interface StorageFactsProps {
   info: StorageInfoView | null
@@ -126,11 +126,7 @@ export function DataSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-data-settings">
-      <p className="settings-note" role="note">
-        {text.dataNote}
-      </p>
-
-      <div className="settings-rows">
+      <SettingsGroup label={text.dataLocation}>
         <SettingsRow block label={text.dataLocation} description={text.dataLocationDesc}>
           <StorageFacts info={info} text={text} />
           <div className="settings-actions">
@@ -163,7 +159,9 @@ export function DataSettings(): ReactElement {
           </div>
           {target ? <span className="settings-row__desc">{text.dataTarget.replace('{path}', target)}</span> : null}
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.dataBackup}>
         <SettingsRow block label={text.dataBackup} description={text.dataBackupDesc}>
           <div className="settings-actions">
             <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => void backup('create')}>
@@ -202,7 +200,7 @@ export function DataSettings(): ReactElement {
             {text.dataExportAction}
           </Button>
         </SettingsRow>
-      </div>
+      </SettingsGroup>
 
       <p className="settings-note" role="note">
         {text.dataDangerNote}

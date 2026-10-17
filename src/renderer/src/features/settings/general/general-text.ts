@@ -6,7 +6,6 @@ export interface GeneralText {
   confirm: string
   enabled: string
 
-  sessionNote: string
   sessionAutoArchive: string
   sessionAutoArchiveDesc: string
   archiveNever: string
@@ -22,7 +21,6 @@ export interface GeneralText {
   sessionLoopAutoContinue: string
   sessionLoopAutoContinueDesc: string
 
-  notifNote: string
   notifSystem: string
   notifSystemDesc: string
   notifSystemTest: string
@@ -80,7 +78,6 @@ export interface GeneralText {
   devicesPeerRevoke: string
   devicesSyncConfigured: string
 
-  dataNote: string
   dataLocation: string
   dataLocationDesc: string
   dataSize: string
@@ -106,7 +103,6 @@ export interface GeneralText {
   dataDangerNote: string
   dataUnavailable: string
 
-  aboutNote: string
   aboutVersion: string
   aboutBuild: string
   aboutOpenSource: string
@@ -144,9 +140,8 @@ const ZH: GeneralText = {
   confirm: '确定',
   enabled: '已开启',
 
-  sessionNote: '这些是会话的通用行为；默认模型与权限档在各自分区，改动立即写入设置。',
   sessionAutoArchive: '自动归档闲置会话',
-  sessionAutoArchiveDesc: '超过天数没有动静、没置顶、没有运行实例的会话会被归档，随时可在「已归档」找回。',
+  sessionAutoArchiveDesc: '闲置会话自动归档，可在「已归档」找回。',
   archiveNever: '从不',
   archiveDays: '{n} 天',
   sessionKeepAwake: '有会话在跑时保持电脑不睡眠',
@@ -154,17 +149,16 @@ const ZH: GeneralText = {
   sessionKeepAwakeBattery: '靠电池供电时也保持唤醒',
   sessionKeepAwakeBatteryDesc: '关闭后，拔掉电源时不再阻止睡眠。',
   sessionCheckpoints: '发送前给项目文件存检查点',
-  sessionCheckpointsDesc: '每轮发送前留一次可回退的影子快照；关掉后回退能力不可用。',
+  sessionCheckpointsDesc: '每轮发送前存可回退快照；关闭后无法回退。',
   sessionSubagentNotify: '子 Agent 结束时通知发起会话',
   sessionSubagentNotifyDesc: '子 Agent 跑完后唤醒父会话继续汇总。',
   sessionLoopAutoContinue: '循环中止后自动继续',
-  sessionLoopAutoContinueDesc: '安全中止后同一任务最多自动续一次，再次循环即停；关闭后等你发送。排队含图片时只告警，不自动中止。',
+  sessionLoopAutoContinueDesc: '循环被安全中止后自动续一次；关闭则等你发送。',
 
-  notifNote: '提醒按事件分别开关；系统通知只会在窗口不在前台时弹出。',
   notifSystem: '系统通知',
-  notifSystemDesc: '窗口不在前台时，用 Windows 通知中心提醒回合完成 / 需要回答 / 出错。',
+  notifSystemDesc: '窗口在后台时弹出系统通知。',
   notifSystemTest: '试发一条',
-  notifSystemHelp: '用于确认系统允许砚发通知；只在当前设备上弹一次。',
+  notifSystemHelp: '确认系统允许砚发通知。',
   notifSound: '提示音总开关',
   notifSoundDesc: '总开关关闭后，下面各事件既不出声也不通知。',
   notifEventDone: '回合完成',
@@ -178,24 +172,24 @@ const ZH: GeneralText = {
   securityModeAll: '不受限制',
   securityModeAllDesc: '砚不再审批也不拦截；需要一次确认。',
   securityAllConfirmTitle: '切到「不受限制」？',
-  securityAllConfirmBody: '高危命令、写入项目之外等操作将不再询问。可随时切回。',
+  securityAllConfirmBody: '高危命令和项目外写入将不再询问，可随时切回。',
   securityAllConfirmContinue: '仍然切换',
   securityOutside: '写入项目之外时确认',
-  securityOutsideDesc: '在「自动批准」档下，写到项目之外的路径前也弹确认卡。',
+  securityOutsideDesc: '「自动批准」档下，写项目之外前也要确认。',
   securityOutsideDisabled: '仅在「自动批准」档生效。',
   securityAllowRoots: '已记住的允许目录',
-  securityAllowRootsDesc: '在确认卡里选「允许并记住」后加入；这里只能移除，移除后下次写入会重新询问。',
+  securityAllowRootsDesc: '在确认卡选「允许并记住」后加入；只能移除。',
   securityAllowRootsEmpty: '还没有记住任何目录。',
   securityAllowRootsRemove: '移除',
   securityDangerConfirm: '危险操作确认',
-  securityDangerConfirmDesc: '强制推送、删除等危险命令在「自动批准」档下始终先问，不提供「全部允许」。',
+  securityDangerConfirmDesc: '强制推送、删除等危险命令始终先问。',
 
   devicesEnable: '手机接入',
-  devicesEnableDesc: '允许手机查看电脑上的会话、回复问题、发送文字；任务仍在这台电脑执行。',
+  devicesEnableDesc: '允许手机查看会话、回复、发文字；任务仍在本机运行。',
   devicesRunning: '运行中',
   devicesStopped: '已停止',
   devicesPair: '配对新手机',
-  devicesPairDesc: '用手机扫二维码，或复制链接；令牌只在配对那一刻交给手机。',
+  devicesPairDesc: '用手机扫码或复制链接。',
   devicesPairStart: '生成配对码',
   devicesPairCancel: '取消配对',
   devicesPairCode: '配对码',
@@ -218,9 +212,8 @@ const ZH: GeneralText = {
   devicesPeerRevoke: '断开',
   devicesSyncConfigured: '已配置：{path}',
 
-  dataNote: '数据默认在本机用户目录；移动目录与备份都是未来动作，需要你明确点击后才会执行。',
   dataLocation: '数据位置',
-  dataLocationDesc: '会话、凭证、语音模型与浏览器配置的实际位置。',
+  dataLocationDesc: '会话、凭证等数据的存放位置。',
   dataSize: '占用',
   dataMove: '移动到其它盘',
   dataPick: '选择目标目录',
@@ -229,7 +222,7 @@ const ZH: GeneralText = {
   dataMoving: '正在安排迁移…',
   dataOpen: '打开位置',
   dataNotMovable: '当前环境不支持移动数据目录。',
-  dataStranded: '原位置不在，迁移前的备份还在：{path}',
+  dataStranded: '原位置丢失，迁移前备份在：{path}',
   dataLastFailed: '上次迁移失败：{error}',
   dataBackup: '备份与校验',
   dataBackupDesc: '把设置与会话打成一个可校验的备份包。',
@@ -238,13 +231,12 @@ const ZH: GeneralText = {
   dataBackupWorking: '处理中…',
   dataBackupChecked: '已校验 {files} 个文件 · {size}',
   dataExport: '导出会话',
-  dataExportDesc: '把当前会话导出成文件，便于备份或换机；登录凭证不随会话导出。',
+  dataExportDesc: '导出当前会话为文件；登录凭证不会导出。',
   dataExportAction: '导出当前会话',
   dataExportDone: '已导出：{path}',
-  dataDangerNote: '迁移数据目录属于危险动作，只在上面的确认按钮被点击后才提交。',
-  dataUnavailable: '数据接口尚未接线，暂时不能读取位置或备份。',
+  dataDangerNote: '迁移数据目录有风险，确认后才执行。',
+  dataUnavailable: '数据功能暂不可用。',
 
-  aboutNote: '版本与构建信息来自当前安装包。',
   aboutVersion: '正式版本',
   aboutBuild: '构建',
   aboutOpenSource: '开源与仓库',
@@ -255,7 +247,7 @@ const ZH: GeneralText = {
   aboutRedetecting: '检测中…',
   aboutUpdates: '应用更新',
   aboutUpdateAuto: '启动时检查更新',
-  aboutUpdateAutoDesc: '发现新版本时在通知区留一条提醒；不自动下载。',
+  aboutUpdateAutoDesc: '有新版本时提醒，不自动下载。',
   aboutUpdateState: '更新状态',
   aboutUpdateCheck: '检查更新',
   aboutUpdateDownload: '下载',
@@ -263,7 +255,7 @@ const ZH: GeneralText = {
   aboutUpdateReleases: '打开发布页',
   aboutUpdateInstallConfirm: '现在安装并重启？请先保存正在编辑的内容。',
   aboutCredentials: '模型凭证',
-  aboutCredentialsDesc: '登录与 API Key 只在「模型与服务」分区配置，这里不重复。',
+  aboutCredentialsDesc: '登录与 API Key 请到「模型与服务」配置。',
   aboutCredentialsAction: '去「模型与服务」',
   aboutPhaseIdle: '未检查',
   aboutPhaseChecking: '检查中…',
@@ -273,7 +265,7 @@ const ZH: GeneralText = {
   aboutPhaseDownloaded: '已下载，待安装',
   aboutPhaseError: '检查失败',
   aboutPhaseManual: '请到发布页手动更新',
-  aboutUnavailable: '更新接口尚未接线，暂时不能检查。'
+  aboutUnavailable: '更新功能暂不可用。'
 }
 
 const EN: GeneralText = {
@@ -282,9 +274,8 @@ const EN: GeneralText = {
   confirm: 'Confirm',
   enabled: 'On',
 
-  sessionNote: 'General session behaviour. Default model and permission tier live in their own sections; changes save immediately.',
   sessionAutoArchive: 'Auto-archive idle sessions',
-  sessionAutoArchiveDesc: 'Sessions idle past the limit, not pinned and with no running instance are archived and can be restored from Archived.',
+  sessionAutoArchiveDesc: 'Idle sessions are archived; restore from Archived.',
   archiveNever: 'Never',
   archiveDays: '{n} days',
   sessionKeepAwake: 'Keep the computer awake while running',
@@ -292,17 +283,16 @@ const EN: GeneralText = {
   sessionKeepAwakeBattery: 'Also on battery',
   sessionKeepAwakeBatteryDesc: 'When off, unplugging no longer blocks sleep.',
   sessionCheckpoints: 'Snapshot project files before sending',
-  sessionCheckpointsDesc: 'Takes a rewindable shadow snapshot before each turn; rewind is unavailable when off.',
+  sessionCheckpointsDesc: 'Snapshot before each turn; rewind is off when disabled.',
   sessionSubagentNotify: 'Notify the parent session when a subagent finishes',
   sessionSubagentNotifyDesc: 'Wakes the parent session to summarise after a subagent completes.',
   sessionLoopAutoContinue: 'Auto-continue after a loop stop',
-  sessionLoopAutoContinueDesc: 'After a safe stop the same task continues at most once; a second loop stops. Off waits for you. With queued images it only warns and does not auto-stop.',
+  sessionLoopAutoContinueDesc: 'Continue once after a safe loop stop; off waits for you.',
 
-  notifNote: 'Alerts are toggled per event; system notifications only fire when the window is not focused.',
   notifSystem: 'System notifications',
-  notifSystemDesc: 'Use the Windows notification centre for turn done / needs you / error while the window is unfocused.',
+  notifSystemDesc: 'System notification when the window is in background.',
   notifSystemTest: 'Send one',
-  notifSystemHelp: 'Checks that the system allows Inkstone notifications; shown once on this device.',
+  notifSystemHelp: 'Check that Inkstone may notify.',
   notifSound: 'Sound',
   notifSoundDesc: 'When off, events neither chime nor notify.',
   notifEventDone: 'Turn done',
@@ -316,24 +306,24 @@ const EN: GeneralText = {
   securityModeAll: 'Unrestricted',
   securityModeAllDesc: 'Inkstone no longer approves or blocks; requires one confirmation.',
   securityAllConfirmTitle: 'Switch to “Unrestricted”?',
-  securityAllConfirmBody: 'Dangerous commands and writes outside the project will no longer ask. You can switch back at any time.',
+  securityAllConfirmBody: 'Dangerous commands and writes outside the project will no longer ask. You can switch back.',
   securityAllConfirmContinue: 'Switch anyway',
   securityOutside: 'Confirm writes outside the project',
-  securityOutsideDesc: 'In the auto-approve tier, also show a confirmation card before writing outside the project.',
+  securityOutsideDesc: 'In auto-approve, also confirm writes outside the project.',
   securityOutsideDisabled: 'Only applies in the auto-approve tier.',
   securityAllowRoots: 'Remembered allowed folders',
-  securityAllowRootsDesc: 'Added when you pick “allow and remember” on a confirmation card. You can only remove here; the next write asks again.',
+  securityAllowRootsDesc: 'Added via “allow and remember”; you can only remove here.',
   securityAllowRootsEmpty: 'No folders remembered yet.',
   securityAllowRootsRemove: 'Remove',
   securityDangerConfirm: 'Dangerous-operation confirmation',
-  securityDangerConfirmDesc: 'Force-push, delete and similar always ask in auto-approve; there is no “allow all”.',
+  securityDangerConfirmDesc: 'Force-push, delete and similar always ask.',
 
   devicesEnable: 'Phone access',
-  devicesEnableDesc: 'Lets a phone view sessions, answer questions and send text; work still runs on this computer.',
+  devicesEnableDesc: 'Phone can view sessions, reply and send text; tasks run here.',
   devicesRunning: 'Running',
   devicesStopped: 'Stopped',
   devicesPair: 'Pair a new phone',
-  devicesPairDesc: 'Scan the QR with the phone or copy the link. The token is handed over only at pairing time.',
+  devicesPairDesc: 'Scan the QR code or copy the link.',
   devicesPairStart: 'Generate pairing code',
   devicesPairCancel: 'Cancel pairing',
   devicesPairCode: 'Pairing code',
@@ -356,9 +346,8 @@ const EN: GeneralText = {
   devicesPeerRevoke: 'Disconnect',
   devicesSyncConfigured: 'Configured: {path}',
 
-  dataNote: 'Data lives in the local user folder by default; moving and backups are future actions that require an explicit click.',
   dataLocation: 'Data location',
-  dataLocationDesc: 'Where sessions, credentials, voice models and browser profile actually live.',
+  dataLocationDesc: 'Where sessions, credentials and other data live.',
   dataSize: 'Size',
   dataMove: 'Move to another drive',
   dataPick: 'Choose target folder',
@@ -367,7 +356,7 @@ const EN: GeneralText = {
   dataMoving: 'Scheduling move…',
   dataOpen: 'Open location',
   dataNotMovable: 'Moving the data folder is not supported in this environment.',
-  dataStranded: 'The old location is gone; the pre-move backup is still here: {path}',
+  dataStranded: 'Old location is gone; pre-move backup: {path}',
   dataLastFailed: 'Last move failed: {error}',
   dataBackup: 'Backup and verify',
   dataBackupDesc: 'Pack settings and sessions into a verifiable backup.',
@@ -376,13 +365,12 @@ const EN: GeneralText = {
   dataBackupWorking: 'Working…',
   dataBackupChecked: 'Verified {files} files · {size}',
   dataExport: 'Export session',
-  dataExportDesc: 'Export the current session for backup or another machine; credentials never travel with it.',
+  dataExportDesc: 'Export the current session; credentials are not included.',
   dataExportAction: 'Export current session',
   dataExportDone: 'Exported: {path}',
-  dataDangerNote: 'Moving the data folder is dangerous and is only submitted after the confirmation button above is clicked.',
-  dataUnavailable: 'The data bridge is not wired, so location and backup cannot be read yet.',
+  dataDangerNote: 'Moving the data folder is risky; it runs only after you confirm.',
+  dataUnavailable: 'Data tools are unavailable.',
 
-  aboutNote: 'Version and build information come from the installed package.',
   aboutVersion: 'Release',
   aboutBuild: 'Build',
   aboutOpenSource: 'Open source & repository',
@@ -393,7 +381,7 @@ const EN: GeneralText = {
   aboutRedetecting: 'Detecting…',
   aboutUpdates: 'App updates',
   aboutUpdateAuto: 'Check for updates on start',
-  aboutUpdateAutoDesc: 'Leaves a notice when a new version exists; never auto-downloads.',
+  aboutUpdateAutoDesc: 'Notify on new versions; never auto-download.',
   aboutUpdateState: 'Update state',
   aboutUpdateCheck: 'Check',
   aboutUpdateDownload: 'Download',
@@ -401,7 +389,7 @@ const EN: GeneralText = {
   aboutUpdateReleases: 'Open releases',
   aboutUpdateInstallConfirm: 'Install and restart now? Save anything you are editing first.',
   aboutCredentials: 'Model credentials',
-  aboutCredentialsDesc: 'Sign-in and API keys are configured under Models & services only; not duplicated here.',
+  aboutCredentialsDesc: 'Sign-in and API keys are under Models & services.',
   aboutCredentialsAction: 'Open Models & services',
   aboutPhaseIdle: 'Not checked',
   aboutPhaseChecking: 'Checking…',
@@ -411,7 +399,7 @@ const EN: GeneralText = {
   aboutPhaseDownloaded: 'Downloaded, ready to install',
   aboutPhaseError: 'Check failed',
   aboutPhaseManual: 'Update manually from the releases page',
-  aboutUnavailable: 'The update bridge is not wired; cannot check yet.'
+  aboutUnavailable: 'Updates are unavailable.'
 }
 
 export function generalText(lang: Lang): GeneralText {

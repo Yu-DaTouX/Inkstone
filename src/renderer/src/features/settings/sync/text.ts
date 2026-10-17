@@ -53,16 +53,16 @@ export interface SyncText {
 }
 
 const ZH: SyncText = {
-  note: '同步文件夹把设置、提示词模板、技能、书签与定时任务定义在几台电脑之间保持一致。文件夹由你选择：放在 OneDrive、坚果云或 Syncthing 管理的目录里，传输交给它们，砚只按文件读写。',
-  bridgeMissing: '当前构建还没有接入同步（preload 未暴露 window.yan.sync）。这里只说明限制，不显示假状态。',
+  note: '选一个文件夹，在多台电脑间同步设置、技能等。',
+  bridgeMissing: '当前版本尚未接入同步。',
   folder: '同步文件夹',
   folderUnset: '尚未选择文件夹',
   folderPick: '选择文件夹',
   folderClear: '清除',
-  folderRecommend: '推荐放在云盘（OneDrive / 坚果云）或 Syncthing 管理的目录里；两端指向同一个文件夹即可，不需要登录任何账号。',
+  folderRecommend: '两台电脑选同一个云盘文件夹即可，无需登录。',
   contentTitle: '同步哪些内容',
-  contentList: '设置（仅跨设备有意义的偏好）、提示词模板、技能、书签、定时任务定义。新增设置字段默认不同步，逐个显式放行。',
-  credentialNote: '模型凭证（pi 的 auth.json）、路径、窗口几何、会话本体都不参与同步。',
+  contentList: '设置、提示词模板、技能、书签、定时任务；新设置默认不同步。',
+  credentialNote: '模型凭证、路径、窗口位置和会话本体不同步。',
   syncNow: '立即同步',
   syncing: '正在同步…',
   refresh: '刷新',
@@ -82,7 +82,7 @@ const ZH: SyncText = {
   loadFailed: '读取同步状态失败。',
   conflictsTitle: '冲突',
   conflictsNone: '没有待处理的冲突。',
-  conflictsHint: '两端自上次同步后都改过同一条时，双方版本都保留，等待你逐条选择。',
+  conflictsHint: '两端都改了同一条时，双方版本都保留，由你逐条选择。',
   localSide: '本机',
   remoteSide: '来自 {device}',
   noLocal: '本机没有这一条',
@@ -92,7 +92,7 @@ const ZH: SyncText = {
   resolving: '处理中…',
   resolveFailed: '处理冲突失败。',
   sessionTitle: '会话导出 / 导入',
-  sessionNote: '会话本体体积大、含本机路径，不参与同步。需要搬运时导出成会话包，在另一台电脑导入；导入会生成新会话，不覆盖同名。',
+  sessionNote: '会话体积大且含本机路径，不同步；请导出会话包，在另一台导入（生成新会话）。',
   exportSession: '导出当前会话',
   importSession: '导入会话包',
   exporting: '正在导出…',
@@ -110,19 +110,19 @@ const ZH: SyncText = {
 }
 
 const EN: SyncText = {
-  note: 'A sync folder keeps settings, prompt templates, skills, bookmarks and scheduled-task definitions aligned across computers. You choose the folder: put it in a directory managed by OneDrive, Nutstore or Syncthing — they handle transfer, Inkstone only reads and writes files.',
+  note: 'Pick a folder to sync settings, skills and more across computers.',
   bridgeMissing:
-    'This build has not wired sync yet (preload does not expose window.yan.sync). This page only states the limitation instead of showing a fake status.',
+    'Sync is not available in this build.',
   folder: 'Sync folder',
   folderUnset: 'No folder selected yet',
   folderPick: 'Choose folder',
   folderClear: 'Clear',
   folderRecommend:
-    'Put it in a folder managed by a cloud drive (OneDrive / Nutstore) or Syncthing; point both machines at the same folder — no account sign-in required.',
+    'Point both computers at the same cloud-drive folder; no sign-in.',
   contentTitle: 'What gets synced',
   contentList:
-    'Settings (only device-independent preferences), prompt templates, skills, bookmarks and scheduled-task definitions. New settings keys stay out until explicitly allow-listed.',
-  credentialNote: 'Model credentials (pi auth.json), paths, window geometry and session bodies never sync.',
+    'Settings, prompts, skills, bookmarks, schedules; new settings are not synced by default.',
+  credentialNote: 'Credentials, paths, window layout and sessions never sync.',
   syncNow: 'Sync now',
   syncing: 'Syncing…',
   refresh: 'Refresh',
@@ -143,7 +143,7 @@ const EN: SyncText = {
   conflictsTitle: 'Conflicts',
   conflictsNone: 'No conflicts waiting.',
   conflictsHint:
-    'When both machines changed the same item since the last sync, both versions are kept until you choose per item.',
+    'If both sides changed an item, both versions are kept for you to pick.',
   localSide: 'This device',
   remoteSide: 'From {device}',
   noLocal: 'No local copy',
@@ -154,7 +154,7 @@ const EN: SyncText = {
   resolveFailed: 'Could not resolve the conflict.',
   sessionTitle: 'Session export / import',
   sessionNote:
-    'Session bodies are large and contain local paths, so they never sync. Export a session bundle to move one, then import it on the other machine; import creates a new session and never overwrites an existing name.',
+    'Sessions are not synced; export a bundle and import it elsewhere as a new session.',
   exportSession: 'Export current session',
   importSession: 'Import session bundle',
   exporting: 'Exporting…',

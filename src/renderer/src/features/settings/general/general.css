@@ -13,12 +13,13 @@
   .settings-root,
   .settings-device {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--s-12);
+    gap: var(--s-8) var(--s-12);
     min-width: 0;
-    padding: var(--s-8) var(--s-10);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
+    padding: var(--s-8) var(--s-12);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
   }
 
   .settings-root__path {

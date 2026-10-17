@@ -35,33 +35,33 @@ const ZH: Record<CapsTextKey, string> = {
   extensions: '扩展',
   prompts: '提示词',
   sectionReload: '重新读取',
-  mcpHostNote: '这些是砚自己管理的 MCP 服务，与 pi 原生的 MCP 配置分开，两边不会自动互相迁移。',
+  mcpHostNote: '砚管理的 MCP 服务，与 pi 原生配置分开。',
   mcpNativeNote:
-    'pi 原生 MCP 由 pi 自己管理（mcp.json）；这里是只读状态，与上面的砚宿主服务分开。',
+    'pi 原生 MCP，只读展示。',
   mcpNativeUnavailable:
-    '当前运行实例未提供 pi 原生 MCP 命令，暂无法读取原生服务器状态。',
-  mcpRunningBlock: '有会话正在运行任务，导入会断开旧连接，请等任务空闲后再试。',
+    '当前无法读取 pi 原生 MCP 状态。',
+  mcpRunningBlock: '有任务在运行，导入会断开旧连接，请空闲后再试。',
   skillsLoadedNote:
-    '列出的是当前运行实例已加载的技能。新装或改动的技能要等 pi 下次加载（新会话或重启运行实例）才生效。',
+    '仅列出已加载的技能；新装或改动的需新会话才生效。',
   extensionsBuiltinNote: '随砚分发，无需安装，也没有卸载入口。',
   extensionsPackagesNote:
-    'pi 扩展以你的身份运行代码，砚没有沙箱。安装、更新、卸载都只在点击后执行，且对新会话生效。',
+    '扩展以你的身份运行代码，无沙箱；对新会话生效。',
   marketNoAutoNote:
-    '打开本页不会自动联网；只有点「搜索」或「下载」才会请求目录 / 写盘。',
+    '打开本页不联网；点「搜索」「下载」才请求。',
   promptsNote:
-    '提示词来自当前 pi 会话的命令注册表（与技能 / 扩展同源），这里只读展示。',
-  promptsNoSession: '需要已连接 pi 会话才能读取提示词；先开始或打开一个会话再看。',
-  promptsReadonly: '提示词没有独立的安装 / 卸载接口；编辑请按它声明的位置在原处进行。',
+    '来自当前会话，只读。',
+  promptsNoSession: '请先打开一个会话再查看提示词。',
+  promptsReadonly: '提示词需在其声明位置编辑。',
   promptHiddenTag: '隐藏于菜单',
   promptsHiddenHint:
-    '标为「隐藏于菜单」的提示词只是不出现在补全菜单里，仍可正常调用，并非停用。',
+    '「隐藏于菜单」只是不进补全，并非停用，仍可调用。',
   promptsEmpty: '当前会话没有注册提示词。',
   skillRemoveConfirm:
-    '将删除本次会话的技能文件，不能撤销。想保留请先选「保留到我的技能」。',
+    '将删除该技能文件，不能撤销；想保留先选「保留到我的技能」。',
   skillRemoveScopeChanged:
-    '会话在确认前后发生了变化，本次移除未执行；请在新会话里重新确认。',
+    '会话已变化，未执行移除，请重新确认。',
   pkgStaleResult:
-    '项目在操作完成前已切换，本次结果未应用到当前列表；请确认新项目的状态。',
+    '项目已切换，结果未应用，请核对新项目。',
   importFieldDescription: '说明',
   importFieldTransport: '传输方式',
   importFieldCommand: '命令',
@@ -78,36 +78,36 @@ const EN: Record<CapsTextKey, string> = {
   prompts: 'Prompts',
   sectionReload: 'Reload',
   mcpHostNote:
-    'These MCP servers are managed by Inkstone, separate from pi’s native MCP configuration. The two never migrate into each other automatically.',
+    'MCP servers managed by Inkstone, separate from pi’s.',
   mcpNativeNote:
-    'Native MCP is managed by pi itself (mcp.json); this is a read-only status view, kept separate from the host servers above.',
+    'pi native MCP, read-only.',
   mcpNativeUnavailable:
-    'This runner does not expose pi’s native MCP command, so native server status cannot be read yet.',
+    'Native MCP status is unavailable.',
   mcpRunningBlock:
-    'A session is running; importing disconnects old connections. Try again when tasks are idle.',
+    'A task is running; importing drops connections. Retry when idle.',
   skillsLoadedNote:
-    'These are the skills loaded by the current runner. New or changed skills take effect after pi next loads (new session or runner restart).',
+    'Loaded skills only; new or changed ones apply in a new session.',
   extensionsBuiltinNote: 'Shipped with Inkstone; nothing to install and no uninstall entry.',
   extensionsPackagesNote:
-    'pi extensions run code as you; Inkstone has no sandbox. Install, update and remove run only on click and take effect for new sessions.',
+    'Extensions run code as you, with no sandbox; apply to new sessions.',
   marketNoAutoNote:
-    'Opening this page makes no network calls; only Search or Download performs a request or writes to disk.',
+    'No network until you click Search or Download.',
   promptsNote:
-    'Prompts come from the current pi session’s command registry (same source as skills / extensions); shown read-only here.',
+    'From the current session; read-only.',
   promptsNoSession:
-    'Connect a pi session first to read prompts; start or open a session.',
+    'Open a session to view prompts.',
   promptsReadonly:
-    'Prompts have no separate install / uninstall API; edit them where they are declared.',
+    'Edit prompts where they are declared.',
   promptHiddenTag: 'Hidden from menu',
   promptsHiddenHint:
-    'Prompts marked “Hidden from menu” are only omitted from the completion menu; they still work and are not disabled.',
+    '“Hidden from menu” only skips completion; it still works.',
   promptsEmpty: 'No prompts are registered in the current session.',
   skillRemoveConfirm:
-    'This deletes the skill files for this session and cannot be undone. To keep it, choose “Keep in my skills” first.',
+    'Deletes the skill files and cannot be undone; to keep, choose “Keep in my skills” first.',
   skillRemoveScopeChanged:
-    'The session changed while confirming, so nothing was removed. Confirm again in the new session.',
+    'Session changed; nothing removed. Confirm again.',
   pkgStaleResult:
-    'The project changed before the operation finished, so the result was not applied to the current list. Check the new project’s state.',
+    'Project changed; result not applied. Check the new project.',
   importFieldDescription: 'Description',
   importFieldTransport: 'Transport',
   importFieldCommand: 'Command',

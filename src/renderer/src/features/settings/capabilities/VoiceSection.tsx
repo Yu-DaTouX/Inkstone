@@ -127,8 +127,8 @@ export function VoiceSection(): ReactElement {
 
   return (
     <Panel label={t('voice.title')}>
-      <div data-testid="settings-voice">
-        <Group title={t('voice.title')} desc={t('voice.desc')}>
+      <div className="caps-stack" data-testid="settings-voice">
+        <Group title={t('voice.title')} desc={t('voice.desc')} card>
           <p className="caps-meta" data-testid="voice-state">
             {status?.ready ? <Badge tone="run">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
             {status?.model ? <span> {status.model.label}</span> : null}
@@ -164,47 +164,51 @@ export function VoiceSection(): ReactElement {
 
         <div data-testid="voice-models">
         <Group title={t('voice.models')} desc={t('voice.modelsDesc')}>
-          {status?.candidates.map((candidate) => {
-            const selected = status.model?.catalogId === candidate.spec.id
-            return (
-              <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
-                <ItemHead>
-                  <strong>{tierLabel(candidate.spec.tier)}</strong>
-                  {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
-                  {selected ? <Badge tone="run">{t('voice.inUse')}</Badge> : null}
-                </ItemHead>
-                <Meta>
-                  {t('voice.modelLine', {
-                    file: candidate.spec.file,
-                    size: fmtBytes(candidate.spec.approxBytes),
-                    mem: candidate.spec.approxMemoryMB
-                  })}
-                </Meta>
-                {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
-                <Actions>
-                  {candidate.installed ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isDisabled={selected}
-                      onPress={() => void save({ ...(saved ?? {}), model: { kind: 'catalog', id: candidate.spec.id } })}
-                    >
-                      {selected ? t('voice.inUse') : t('voice.use')}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isDisabled={busy || downloading}
-                      onPress={() => void askPlan({ kind: 'model', id: candidate.spec.id })}
-                    >
-                      {t('voice.download')}
-                    </Button>
-                  )}
-                </Actions>
-              </Item>
-            )
-          })}
+          {status?.candidates.length ? (
+            <div className="caps-list">
+              {status.candidates.map((candidate) => {
+                const selected = status.model?.catalogId === candidate.spec.id
+                return (
+                  <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
+                    <ItemHead>
+                      <strong>{tierLabel(candidate.spec.tier)}</strong>
+                      {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
+                      {selected ? <Badge tone="run">{t('voice.inUse')}</Badge> : null}
+                    </ItemHead>
+                    <Meta>
+                      {t('voice.modelLine', {
+                        file: candidate.spec.file,
+                        size: fmtBytes(candidate.spec.approxBytes),
+                        mem: candidate.spec.approxMemoryMB
+                      })}
+                    </Meta>
+                    {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
+                    <Actions>
+                      {candidate.installed ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={selected}
+                          onPress={() => void save({ ...(saved ?? {}), model: { kind: 'catalog', id: candidate.spec.id } })}
+                        >
+                          {selected ? t('voice.inUse') : t('voice.use')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={busy || downloading}
+                          onPress={() => void askPlan({ kind: 'model', id: candidate.spec.id })}
+                        >
+                          {t('voice.download')}
+                        </Button>
+                      )}
+                    </Actions>
+                  </Item>
+                )
+              })}
+            </div>
+          ) : null}
           <Actions>
             <Button size="sm" variant="secondary" onPress={() => void pick('model')}>
               {t('voice.pickModel')}

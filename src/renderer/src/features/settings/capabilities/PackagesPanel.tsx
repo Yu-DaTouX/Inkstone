@@ -153,7 +153,7 @@ export function PackagesPanel({
 
   return (
     <Panel label={t('pkg.install')}>
-      {note ? <Note>{note}</Note> : null}
+      {note ? <Note tone="caution">{note}</Note> : null}
       <Group title={t('pkg.install')} desc={t('pkg.installDesc')}>
         <div className="caps-field">
           <TextField

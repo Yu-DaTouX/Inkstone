@@ -7,7 +7,7 @@ import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel } from './general-model'
-import { SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
 
 const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
   idle: 'aboutPhaseIdle',
@@ -95,17 +95,13 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
 
   return (
     <section className="settings-section" data-testid="v3-about-settings">
-      <p className="settings-note" role="note">
-        {text.aboutNote}
-      </p>
-
       {error ? (
         <p className="settings-row__desc settings-row__desc--error" role="alert">
           {error}
         </p>
       ) : null}
 
-      <div className="settings-rows">
+      <SettingsGroup label={text.aboutVersion}>
         <SettingsRow
           label={`${text.aboutVersion} ${BUILD_INFO.version || '—'}`}
           description={`${text.aboutBuild} ${formatBuildTime(BUILD_INFO.buildTime) || '—'}${
@@ -145,7 +141,9 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
             {detecting ? text.aboutRedetecting : text.aboutRedetect}
           </Button>
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.aboutUpdates}>
         <SettingsRow label={text.aboutUpdates} description={<span data-testid="v3-about-update-state">{phase}</span>}>
           <Switch
             aria-label={text.aboutUpdateAuto}
@@ -194,7 +192,9 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
             </Button>
           ) : null}
         </SettingsRow>
+      </SettingsGroup>
 
+      <SettingsGroup label={text.aboutCredentials}>
         <SettingsRow label={text.aboutCredentials} description={text.aboutCredentialsDesc}>
           {onOpenModels ? (
             <Button size="sm" variant="secondary" data-testid="v3-about-models" onPress={onOpenModels}>
@@ -212,7 +212,7 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
             </Button>
           </SettingsRow>
         ) : null}
-      </div>
+      </SettingsGroup>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmInstall} onOpenChange={setConfirmInstall}>
         <Modal className="settings-confirm-modal">

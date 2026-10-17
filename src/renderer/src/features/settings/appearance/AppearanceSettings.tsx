@@ -12,7 +12,7 @@ import { Switch } from '../../../ui'
 import { prefersReducedMotion } from '../../../lib/usePresence'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { settingsText } from '../settings-text'
-import { Segmented, SettingsRow } from '../root/controls'
+import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 
 type Density = 'compact' | 'standard' | 'comfortable'
@@ -67,22 +67,29 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
         ]
 
   return (
-    <SettingsRow
-      block
-      label={kind === 'ui' ? text.fontRead : text.fontCode}
-      description={kind === 'ui' ? text.fontReadDesc : text.fontCodeDesc}
-    >
-      <Segmented
+    <>
+      <SettingsRow
+        block
         label={kind === 'ui' ? text.fontRead : text.fontCode}
-        value={preset as FontChoice}
-        options={options}
-        onChange={(value) => {
-          if (value !== 'custom') setDraft(null)
-          void patchSettings(fontPatch(kind, value))
-        }}
-      />
-      {preset === 'custom' ? (
-        <div className="settings-font-custom">
+        description={kind === 'ui' ? text.fontReadDesc : text.fontCodeDesc}
+      >
+        <Segmented
+          label={kind === 'ui' ? text.fontRead : text.fontCode}
+          value={preset as FontChoice}
+          options={options}
+          onChange={(value) => {
+            if (value !== 'custom') setDraft(null)
+            void patchSettings(fontPatch(kind, value))
+          }}
+        />
+      </SettingsRow>
+      <SettingsReveal open={preset === 'custom'}>
+        <SettingsRow
+          label={text.fontCustom}
+          description={
+            !valid ? <span className="settings-row__desc--error">{text.fontInvalid}</span> : undefined
+          }
+        >
           <input
             className="settings-input"
             value={shown}
@@ -100,10 +107,9 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
               }
             }}
           />
-          {!valid ? <span className="settings-row__desc settings-row__desc--error">{text.fontInvalid}</span> : null}
-        </div>
-      ) : null}
-    </SettingsRow>
+        </SettingsRow>
+      </SettingsReveal>
+    </>
   )
 }
 
@@ -159,7 +165,7 @@ function SoundRow(): ReactElement {
   }
 
   return (
-    <>
+    <SettingsGroup label={text.soundEnable}>
       <SettingsRow label={text.soundEnable} description={text.soundEnableDesc}>
         <Switch
           aria-label={text.soundEnable}
@@ -171,22 +177,24 @@ function SoundRow(): ReactElement {
           data-testid="v3-sound-toggle"
         />
       </SettingsRow>
-      <SettingsRow label={text.soundVolume} description={`${Math.round(shown * 100)}%`}>
-        <input
-          className="settings-range"
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={shown}
-          disabled={!enabled}
-          aria-label={text.soundVolume}
-          onChange={(event) => setDraft(Number(event.target.value))}
-          onPointerUp={commit}
-          onKeyUp={commit}
-        />
-      </SettingsRow>
-    </>
+      <SettingsReveal open={enabled}>
+        <SettingsRow label={text.soundVolume} description={`${Math.round(shown * 100)}%`}>
+          <input
+            className="settings-range"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={shown}
+            disabled={!enabled}
+            aria-label={text.soundVolume}
+            onChange={(event) => setDraft(Number(event.target.value))}
+            onPointerUp={commit}
+            onKeyUp={commit}
+          />
+        </SettingsRow>
+      </SettingsReveal>
+    </SettingsGroup>
   )
 }
 
@@ -241,62 +249,62 @@ export function AppearanceSettings(): ReactElement {
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>
-      <p className="settings-note" role="note">
-        {text.appearanceNote}
-      </p>
+      <div className="settings-rows">
+        <SettingsRow label={text.theme}>
+          <Segmented
+            label={text.theme}
+            value={theme}
+            options={[
+              { value: 'light', label: text.themeLight, testId: 'v3-theme-light' },
+              { value: 'dark', label: text.themeDark, testId: 'v3-theme-dark' }
+            ]}
+            onChange={(value) => void patchSettings({ theme: value })}
+          />
+        </SettingsRow>
 
-      <SettingsRow label={text.theme}>
-        <Segmented
-          label={text.theme}
-          value={theme}
-          options={[
-            { value: 'light', label: text.themeLight, testId: 'v3-theme-light' },
-            { value: 'dark', label: text.themeDark, testId: 'v3-theme-dark' }
-          ]}
-          onChange={(value) => void patchSettings({ theme: value })}
-        />
-      </SettingsRow>
+        <SettingsRow label={text.density}>
+          <Segmented
+            label={text.density}
+            value={density}
+            options={[
+              { value: 'compact', label: text.densityCompact },
+              { value: 'standard', label: text.densityStandard },
+              { value: 'comfortable', label: text.densityComfortable }
+            ]}
+            onChange={(value) => void patchSettings({ density: value })}
+          />
+        </SettingsRow>
 
-      <SettingsRow label={text.density}>
-        <Segmented
-          label={text.density}
-          value={density}
-          options={[
-            { value: 'compact', label: text.densityCompact },
-            { value: 'standard', label: text.densityStandard },
-            { value: 'comfortable', label: text.densityComfortable }
-          ]}
-          onChange={(value) => void patchSettings({ density: value })}
-        />
-      </SettingsRow>
+        <UiSizeRow />
+        <FontRow kind="ui" />
+        <FontRow kind="code" />
+      </div>
 
-      <UiSizeRow />
-      <FontRow kind="ui" />
-      <FontRow kind="code" />
+      <div className="settings-rows">
+        <SettingsRow label={text.language}>
+          <Segmented
+            label={text.language}
+            value={lang}
+            options={[
+              { value: 'zh-CN', label: '中文' },
+              { value: 'en-US', label: 'English' }
+            ]}
+            onChange={(value) => {
+              setLang(value)
+              void patchSettings({ lang: value })
+            }}
+          />
+        </SettingsRow>
 
-      <SettingsRow label={text.language}>
-        <Segmented
-          label={text.language}
-          value={lang}
-          options={[
-            { value: 'zh-CN', label: '中文' },
-            { value: 'en-US', label: 'English' }
-          ]}
-          onChange={(value) => {
-            setLang(value)
-            void patchSettings({ lang: value })
-          }}
-        />
-      </SettingsRow>
+        <DynamicBackgroundRow />
+        <WorkspaceTilesRow />
+
+        <SettingsRow label={text.motion} description={text.motionNote}>
+          <span className="settings-value">{prefersReducedMotion() ? text.motionReduced : text.motionFull}</span>
+        </SettingsRow>
+      </div>
 
       <SoundRow />
-      <DynamicBackgroundRow />
-      <WorkspaceTilesRow />
-
-      <SettingsRow label={text.motion} description={text.motionNote}>
-        <span className="settings-value">{prefersReducedMotion() ? text.motionReduced : text.motionFull}</span>
-      </SettingsRow>
-
     </section>
   )
 }

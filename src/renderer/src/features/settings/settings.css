@@ -156,13 +156,6 @@
     accent-color: var(--accent);
   }
 
-  .settings-font-custom {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
-    margin-top: var(--s-8);
-  }
-
   .settings-input {
     width: 280px;
     max-width: 100%;
@@ -201,12 +194,6 @@
     display: flex;
     align-items: center;
     gap: var(--s-8);
-  }
-
-  .settings-rows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-16);
   }
 
   .settings-shortcut-keys {
@@ -343,7 +330,268 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .settings-main__col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    max-width: var(--size-col);
+    animation: settings-enter var(--dur-panel) var(--ease-in);
+  }
+
+  .settings-main__title {
+    margin: 0;
+  }
+
+  .settings-section__lede {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
+  }
+
+  .settings-group,
+  .settings-rows {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .settings-group > * + *:not(.settings-reveal),
+  .settings-rows > * + *:not(.settings-reveal) {
+    border-top: 1px solid var(--line);
+  }
+
+  .settings-group .settings-row,
+  .settings-rows .settings-row {
+    flex-wrap: wrap;
+    padding: var(--s-12) var(--s-16);
+    transition: background-color var(--dur-hover) var(--ease);
+  }
+
+  .settings-group .settings-row__text,
+  .settings-rows .settings-row__text {
+    flex: 1 1 200px;
+  }
+
+  .settings-group .settings-row[data-block='1'] > .settings-row__text,
+  .settings-rows .settings-row[data-block='1'] > .settings-row__text {
+    flex: none;
+  }
+
+  @media (hover: hover) {
+    .settings-group .settings-row:hover,
+    .settings-rows .settings-row:hover {
+      background: color-mix(in srgb, var(--hover) 45%, transparent);
+    }
+  }
+
+  .settings-reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows var(--dur-expand) var(--ease),
+      opacity var(--dur-expand) var(--ease);
+  }
+
+  .settings-reveal[data-open='1'] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .settings-reveal__inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .settings-reveal__inner > .settings-row,
+  .settings-row[data-nested='1'] {
+    position: relative;
+    border-top: 1px solid var(--line);
+    padding-left: calc(var(--s-16) + var(--s-16));
+  }
+
+  .settings-reveal__inner > .settings-row::before,
+  .settings-row[data-nested='1']::before {
+    content: '';
+    position: absolute;
+    left: var(--s-16);
+    top: var(--s-12);
+    bottom: var(--s-12);
+    width: 2px;
+    border-radius: var(--r-full);
+    background: var(--line2);
+  }
+
+  .settings-usage-card {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--s-16);
+    padding: var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .settings-usage {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    --usage-fill: var(--ink);
+  }
+
+  .settings-usage[data-level='warn'] {
+    --usage-fill: var(--ask);
+  }
+
+  .settings-usage__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .settings-usage__label {
+    margin-right: var(--s-4);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .settings-usage__value {
+    color: var(--fg);
+    font-size: var(--t-h2);
+    line-height: var(--t-h2-lh);
+    font-weight: var(--t-h2-w);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .settings-usage__window {
+    color: var(--fg3);
+    font-size: var(--t-body);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .settings-usage__pct {
+    margin-left: auto;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .settings-usage__track {
+    position: relative;
+    height: 8px;
+    border-radius: var(--r-full);
+    background: var(--sunken);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  .settings-usage__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--usage-fill);
+    transition:
+      width 600ms var(--ease),
+      background-color var(--dur-expand) var(--ease);
+    animation: settings-fill-in 600ms var(--ease);
+  }
+
+  .settings-usage__mark {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    left: var(--at);
+    width: 2px;
+    margin-left: -1px;
+    border-radius: var(--r-full);
+    background: var(--mark-color);
+    box-shadow: 0 0 0 2px var(--surface);
+    transition: left var(--dur-expand) var(--ease);
+  }
+
+  .settings-usage [data-mark='trim'] {
+    --mark-color: var(--data-2);
+  }
+
+  .settings-usage [data-mark='compact'] {
+    --mark-color: var(--ask);
+  }
+
+  .settings-usage__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4) var(--s-16);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .settings-usage__legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .settings-usage__legend li::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: var(--r-full);
+    background: var(--mark-color);
+  }
+
+  .settings-usage__legend b {
+    color: var(--fg2);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @keyframes settings-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes settings-fill-in {
+    from {
+      width: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-main__col,
+    .settings-usage__fill {
+      animation: none;
+    }
+
+    .settings-reveal,
+    .settings-group .settings-row,
+    .settings-rows .settings-row,
+    .settings-usage__fill,
+    .settings-usage__mark {
+      transition: none;
+    }
+  }
+
   @media (max-width: 720px) {
+    .settings-usage-card {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
     .settings-page {
       flex-direction: column;
     }

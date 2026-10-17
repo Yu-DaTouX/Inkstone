@@ -101,6 +101,7 @@ function SearchBackendGroup(): ReactElement {
       <Group
         title={t('set.searchBackend')}
         desc={t('set.extToolsDesc')}
+        card
         actions={
           <Button size="sm" variant="ghost" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
             {checking ? t('set.searchBackendChecking') : t('set.extRecheck')}
