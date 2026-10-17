@@ -213,7 +213,7 @@ export interface Store {
   uiDrafts: Record<string, string>
   composerInsert: string | null
   notices: Notice[]
-  nativeMcpStatus: { sessionId: string; pending: boolean; text: string } | null
+  nativeMcpStatus: { sessionId: string; pending: boolean; text: string; action?: 'login' | 'logout' | 'reconnect' } | null
   statuses: Record<string, string>
   editorInject: { text: string; mode: 'replace' | 'append' } | null
   composerFocus: { tick: number; at: number; sessionId?: string; path?: string }
