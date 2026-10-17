@@ -15,6 +15,7 @@ import { CompletionMenu } from './CompletionMenu'
 import { ComposerUsage } from './ComposerUsage'
 import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
+import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
@@ -63,6 +64,7 @@ export function Composer({ className }: { className?: string } = {}) {
     const sid = s.session?.sessionId ?? runner?.sessionId
     return sid || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
   })
+  const freshSession = useStore((s) => s.messages.length === 0 && !s.peekedSessionId)
   const conversationKey = useStore((s) => s.peekedSessionId ?? s.session?.conversationId) ?? runtimeKey
   const cachedDraft = useStore((s) => (runtimeKey ? s.sessionRuntimes[runtimeKey]?.draft ?? '' : ''))
   const setSessionDraft = useStore((s) => s.setSessionDraft)
@@ -404,6 +406,7 @@ export function Composer({ className }: { className?: string } = {}) {
                 </span>
               ) : null}
               <PermissionToggle />
+              {freshSession ? <ProjectPicker /> : null}
               <PlusMenu onInsert={insertAtCursor} />
               {sendKeyHint ? (
                 <span className="composer-keyhint" data-testid="composer-keyhint">

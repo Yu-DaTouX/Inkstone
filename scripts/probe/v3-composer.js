@@ -80,6 +80,17 @@
       JSON.stringify(leftIds()) === JSON.stringify(['permission-picker', 'composer-plus']),
       `默认左侧顺序：权限 → ＋（实际 ${JSON.stringify(leftIds())}）`
     )
+    if (store.getState().messages.length === 0) {
+      const peeked = store.getState().peekedSessionId
+      store.setState({ peekedSessionId: null })
+      check(await until(() => !!q('composer-project')), '新会话底栏有项目选择')
+      q('composer-project')?.click()
+      check(await until(() => !!q('composer-project-browse')), '项目菜单里有「选择文件夹」')
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await until(() => !q('composer-project-menu'), 2000)
+      store.setState({ peekedSessionId: peeked })
+      check(await until(() => !q('composer-project')), '查看其他会话时不显示项目选择')
+    }
     const textarea = q('composer-input')
     setValue(textarea, '!echo hi')
     check(
