@@ -551,6 +551,20 @@ const api: YanBridge = {
     revealImport: (importId) => invoke('yan:peer:revealImport', importId)
   } as YanBridge['peer'],
 
+  collab: {
+    overview: () => invoke('yan:collab:overview'),
+    remoteProject: (peerId, projectId) => invoke('yan:collab:remoteProject', peerId, projectId),
+    link: (peerId, projectId, localProjectId) => invoke('yan:collab:link', peerId, projectId, localProjectId),
+    fetch: (peerId, projectId, branch) => invoke('yan:collab:fetch', peerId, projectId, branch),
+    compare: (localProjectId, ref) => invoke('yan:collab:compare', localProjectId, ref),
+    fileDiff: (localProjectId, ref, path) => invoke('yan:collab:fileDiff', localProjectId, ref, path),
+    merge: (localProjectId, ref, requestId) => invoke('yan:collab:merge', localProjectId, ref, requestId),
+    abortMerge: (localProjectId) => invoke('yan:collab:abortMerge', localProjectId),
+    push: (input) => invoke('yan:collab:push', input),
+    closeRequest: (requestId) => invoke('yan:collab:closeRequest', requestId),
+    continueFrom: (localProjectId, ref, importId) => invoke('yan:collab:continueFrom', localProjectId, ref, importId)
+  } as YanBridge['collab'],
+
   consent: {
     list: () => invoke<ConsentEntryView[]>('yan:consent:list'),
     change: (key, action) => invoke<ConsentEntryView[]>('yan:consent:change', key, action)

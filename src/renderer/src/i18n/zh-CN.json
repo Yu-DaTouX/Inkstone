@@ -1644,6 +1644,8 @@
   "peer.op.read": "查看会话与成果",
   "peer.op.transfer": "复制会话、成果与项目记忆",
   "peer.op.send": "发消息、新开任务、中止任务",
+  "peer.op.pull": "拉取代码与相关会话",
+  "peer.op.push": "推送分支、发合并请求",
   "peer.approveNotShared": "凭证与个人记忆不会开放",
   "peer.deny": "拒绝",
   "peer.approve": "批准本次连接",

@@ -1644,6 +1644,8 @@
   "peer.op.read": "View sessions and outputs",
   "peer.op.transfer": "Copy sessions, outputs and project memory",
   "peer.op.send": "Send messages, start and stop tasks",
+  "peer.op.pull": "Pull code and related sessions",
+  "peer.op.push": "Push branches and open merge requests",
   "peer.approveNotShared": "Credentials and personal memory are never shared",
   "peer.deny": "Deny",
   "peer.approve": "Approve this connection",

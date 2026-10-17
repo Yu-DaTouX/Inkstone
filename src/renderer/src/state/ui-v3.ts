@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView } from '../features/workbench/types'
 
-export type V3RouteName = 'chat' | 'runs' | 'settings' | 'schedule' | 'review' | 'usage'
+export type V3RouteName = 'chat' | 'runs' | 'settings' | 'schedule' | 'review' | 'collab' | 'usage'
 
 export interface V3Route {
   name: V3RouteName
@@ -140,6 +140,7 @@ export function routeFromHash(hash: string): V3Route {
   if (name === 'runs') return { name: 'runs' }
   if (name === 'schedule') return { name: 'schedule' }
   if (name === 'review') return { name: 'review' }
+  if (name === 'collab') return { name: 'collab' }
   if (name === 'usage') return { name: 'usage' }
   return { name: 'chat' }
 }

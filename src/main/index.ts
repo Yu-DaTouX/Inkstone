@@ -94,6 +94,7 @@ import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
+import { registerCollabIpc } from './ipc/collab-ipc'
 import type { ConsentDecision } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
@@ -2647,6 +2648,8 @@ function registerIpc(): void {
   registerPeerIpc(ipc, peerClient)
 
   registerPeerHostIpc(ipc, { grants: peerGrants })
+
+  registerCollabIpc(ipc, { peerClient, peerHost: peerHostHandlers, worktreeLinks: worktreeOrigins, win: () => win })
 
   registerConsentIpc(ipc)
 

@@ -1,8 +1,12 @@
 import { safeStorage } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { COLLAB_BUNDLE_MAX_BYTES } from '../shared/collab'
 import {
   PEER_APPROVAL_TIMEOUT_MS,
   PEER_ARTIFACT_MAX_BYTES,
@@ -30,7 +34,15 @@ interface PeersFile {
   peers: StoredPeer[]
 }
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
+export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: string }
+
+export type PeerDownload<T> = { kind: 'file'; bytes: number } | { kind: 'json'; data: T }
+
+export interface PeerTransport {
+  call<T>(peerId: string, path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<Result<T>>
+  download<T>(peerId: string, path: string, body: unknown, file: string): Promise<Result<PeerDownload<T>>>
+  upload<T>(peerId: string, path: string, file: string | null): Promise<Result<T>>
+}
 
 function sealToken(token: string): string {
   if (safeStorage.isEncryptionAvailable()) return `enc:${safeStorage.encryptString(token).toString('base64')}`
@@ -64,7 +76,9 @@ function safeFileName(name: string): string {
   return (cleaned || 'file').slice(0, 120)
 }
 
-export class PeerClient {
+const TRANSFER_TIMEOUT_MS = 30 * 60_000
+
+export class PeerClient implements PeerTransport {
   private peers: StoredPeer[] | null = null
   private readonly connections = new Map<string, PeerConnectionState>()
   private readonly streams = new Map<string, AbortController>()
@@ -182,6 +196,79 @@ export class PeerClient {
     }
   }
 
+  call<T>(peerId: string, path: string, init: { method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<Result<T>> {
+    return this.request<T>(peerId, path, init)
+  }
+
+  private async authHeaders(peerId: string): Promise<{ address: string; headers: Record<string, string> } | null> {
+    const auth = await this.credentials(peerId)
+    if (!auth) return null
+    const connection = this.connections.get(peerId)
+    return {
+      address: auth.peer.address,
+      headers: {
+        authorization: `Bearer ${auth.token}`,
+        ...(connection?.state === 'connected' ? { [PEER_CONNECTION_HEADER]: connection.grant.connectionId } : {})
+      }
+    }
+  }
+
+  private async failureOf(response: Response): Promise<{ ok: false; error: string; code?: string }> {
+    const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string }
+    if (body.code === 'peer_connection_required') return { ok: false, error: body.error ?? '对方已结束本次连接', code: body.code }
+    return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, ...(body.code ? { code: body.code } : {}) }
+  }
+
+  async download<T>(peerId: string, path: string, body: unknown, file: string): Promise<Result<PeerDownload<T>>> {
+    const auth = await this.authHeaders(peerId)
+    if (!auth) return { ok: false, error: '找不到这台砚，或令牌已失效（请重新配对）' }
+    try {
+      const response = await fetch(`${auth.address}${path}`, {
+        method: 'POST',
+        headers: { ...auth.headers, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS)
+      })
+      if (!response.ok) return this.failureOf(response)
+      if ((response.headers.get('content-type') ?? '').includes('application/json')) {
+        const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
+        return parsed.ok ? { ok: true, data: { kind: 'json', data: parsed.data as T } } : { ok: false, error: parsed.error ?? '对方返回失败' }
+      }
+      const declared = Number(response.headers.get('content-length') ?? NaN)
+      if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) return { ok: false, error: '代码包超过 512MB 上限' }
+      if (!response.body) return { ok: false, error: '对方没有返回代码包' }
+      await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), createWriteStream(file))
+      const info = await stat(file)
+      if (info.size > COLLAB_BUNDLE_MAX_BYTES) return { ok: false, error: '代码包超过 512MB 上限' }
+      return { ok: true, data: { kind: 'file', bytes: info.size } }
+    } catch (error) {
+      return { ok: false, error: `下载失败：${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
+  async upload<T>(peerId: string, path: string, file: string | null): Promise<Result<T>> {
+    const auth = await this.authHeaders(peerId)
+    if (!auth) return { ok: false, error: '找不到这台砚，或令牌已失效（请重新配对）' }
+    try {
+      const size = file ? (await stat(file)).size : 0
+      const init: RequestInit & { duplex?: 'half' } = {
+        method: 'POST',
+        headers: { ...auth.headers, 'content-type': 'application/octet-stream', 'content-length': String(size) },
+        signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS)
+      }
+      if (file) {
+        init.body = Readable.toWeb(createReadStream(file)) as unknown as NonNullable<RequestInit['body']>
+        init.duplex = 'half'
+      }
+      const response = await fetch(`${auth.address}${path}`, init)
+      if (!response.ok) return this.failureOf(response)
+      const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
+      return parsed.ok ? { ok: true, data: parsed.data as T } : { ok: false, error: parsed.error ?? '对方返回失败' }
+    } catch (error) {
+      return { ok: false, error: `上传失败：${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
   async connect(peerId: string, operations: PeerOperation[], note: string): Promise<Result<PeerGrantView>> {
     this.disconnect(peerId)
     this.setState(peerId, { state: 'waiting', since: Date.now() })
@@ -272,8 +359,11 @@ export class PeerClient {
     return this.request(peerId, '/remote/v1/peer/runs/abort', { method: 'POST', body: { runId }, idempotent: true })
   }
 
-  async importSession(peerId: string, sessionId: string): Promise<Result<PeerImportView>> {
-    const exported = await this.request<PeerSessionExport>(peerId, `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/export`, { timeoutMs: 60_000 })
+  async importSession(peerId: string, sessionId: string, via: 'transfer' | 'collab' = 'transfer'): Promise<Result<PeerImportView>> {
+    const exportPath = via === 'collab'
+      ? `/remote/v1/peer/collab/sessions/${encodeURIComponent(sessionId)}/export`
+      : `/remote/v1/peer/sessions/${encodeURIComponent(sessionId)}/export`
+    const exported = await this.request<PeerSessionExport>(peerId, exportPath, { timeoutMs: 60_000 })
     if (!exported.ok) return exported
     const pack = exported.data
     if (pack?.version !== 1 || !pack.source || !Array.isArray(pack.messages)) return { ok: false, error: '对方返回的导出包格式不对' }

@@ -23,6 +23,7 @@ import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { RunsPage } from '../features/runs/RunsPage'
 import { ReviewPage } from '../features/review'
+import { CollabPage } from '../features/collab'
 import { ScheduleTasksPage } from '../features/schedule'
 import { RunPill } from '../patterns/RunPill'
 import { Header } from './Header'
@@ -456,6 +457,7 @@ export default function ShellV3(): ReactElement {
     onRuns: () => useUiV3.getState().navigate({ name: 'runs' }),
     onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
     onReview: () => useUiV3.getState().navigate({ name: 'review' }),
+    onCollab: () => useUiV3.getState().navigate({ name: 'collab' }),
     onSettings: () => useUiV3.getState().navigate({ name: 'settings' })
   }), [])
 
@@ -503,6 +505,8 @@ export default function ShellV3(): ReactElement {
               <ScheduleTasksPage />
             ) : route.name === 'review' ? (
               <ReviewPage />
+            ) : route.name === 'collab' ? (
+              <CollabPage />
             ) : route.name === 'usage' ? (
               <UsagePage />
             ) : (
