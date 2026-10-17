@@ -506,9 +506,14 @@ export class RunnerRegistry {
       idle.projectId = target.projectId
       this.opts.onChanged?.()
 
-      let res = target.sessionFile
-        ? await idle.agent.switchSession(target.sessionFile)
-        : await idle.agent.newSession()
+      let res: { ok: boolean; error?: string }
+      try {
+        res = target.sessionFile
+          ? await idle.agent.switchSession(target.sessionFile)
+          : await idle.agent.newSession()
+      } catch (error) {
+        res = { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
       if (res.ok) {
         this.notifyRunnerOrigin(idle, target.origin, { sessionId: idle.agent.getState()?.sessionId })
       }
@@ -516,7 +521,7 @@ export class RunnerRegistry {
       if (!res.ok) {
         this.notifyRunnerOrigin(idle, undefined, { sessionId: idle.agent.getState()?.sessionId })
         const currentFile = idle.agent.getState()?.sessionFile
-        if (!target.sessionFile && oldSessionFile && currentFile !== oldSessionFile) {
+        if (oldSessionFile && currentFile !== oldSessionFile) {
           try { await idle.agent.switchSession(oldSessionFile) } catch { }
         }
         if ((oldQueue.steering.length || oldQueue.followUp.length) && typeof idle.agent.restoreQueueSnapshot === 'function') {
