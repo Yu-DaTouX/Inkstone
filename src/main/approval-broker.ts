@@ -35,6 +35,12 @@ export class ApprovalBroker {
     return this.settle(id, choice)
   }
 
+  cancel(match: (request: ApprovalRequest) => boolean): number {
+    const ids = [...this.pending.values()].filter((entry) => match(entry.request)).map((entry) => entry.request.id)
+    for (const id of ids) this.settle(id, null)
+    return ids.length
+  }
+
   list(): ApprovalRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
   }

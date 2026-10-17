@@ -353,9 +353,15 @@ export default function dangerGuardExtension(pi) {
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
     if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }
     const mcpReasons = name.startsWith('mcp__') ? mcpCallDanger(name, toolAnnotations(pi, name)) : []
-    const reasons = [...detectDanger(name, event?.input ?? {}, ctx?.cwd), ...delegation, ...mcpReasons]
+    const outside = outsideWrites(name, event?.input ?? {}, ctx?.cwd, prefs)
+    const reasons = [
+      ...detectDanger(name, event?.input ?? {}, ctx?.cwd),
+      ...delegation,
+      ...mcpReasons,
+      ...outside.map((target) => `写入项目之外的路径：${target}`)
+    ]
     if (reasons.length === 0) return undefined
-    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)])
+    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside)
     if (answer.allowed) return undefined
     return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
   })
