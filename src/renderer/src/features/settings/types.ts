@@ -81,6 +81,7 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   knowledge: 'capabilities',
   packages: 'capabilities',
   market: 'capabilities',
+  git: 'capabilities',
   usage: 'usage',
   ...GENERAL_LEGACY_MAP
 }
