@@ -3,19 +3,17 @@ import { join } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import { getSettings } from '../settings'
 import { completePath } from '../credentials'
-import { listDir, searchFiles } from '../files'
+import { listDir } from '../files'
 import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
-import type { FileSearchRequest } from '../../shared/ipc'
 import type { FileRequestContext } from '../../shared/ipc'
 
 export type FileContextResult =
   | { ok: true; context: FileRequestContext }
   | { ok: false; context: FileRequestContext; error: string }
 
-const activeFileSearches = new Map<string, AbortController>()
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -81,38 +79,6 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       }
     }
     return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
-  })
-  rawHandle('yan:searchFiles', async (_e, rawRequest: unknown) => {
-    const s = await getSettings()
-    const input = isObject(rawRequest) ? rawRequest : {}
-    const requestId = typeof input.requestId === 'string' ? input.requestId.trim().slice(0, 160) : ''
-    const query = typeof input.query === 'string' ? input.query.slice(0, 240) : ''
-    const requestedCwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd : s.cwd
-    const resolved = await resolveFileContext(s, requestedCwd, input)
-    const request: FileSearchRequest = {
-      ...resolved.context,
-      requestId,
-      query,
-      ...(typeof input.limit === 'number' && Number.isFinite(input.limit) ? { limit: input.limit } : {})
-    }
-    if (!resolved.ok) {
-      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
-    }
-    if (!requestId) {
-      return { request, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
-    }
-    activeFileSearches.get(requestId)?.abort()
-    const controller = new AbortController()
-    activeFileSearches.set(requestId, controller)
-    try {
-      return await searchFiles(request, controller.signal)
-    } finally {
-      if (activeFileSearches.get(requestId) === controller) activeFileSearches.delete(requestId)
-    }
-  })
-  rawHandle('yan:cancelFileSearch', async (_e, rawRequestId: unknown) => {
-    if (typeof rawRequestId !== 'string') return
-    activeFileSearches.get(rawRequestId)?.abort()
   })
 
   handle('yan:attachments:usage', () => attachmentsUsage(join(YAN_DIR, 'attachments')))

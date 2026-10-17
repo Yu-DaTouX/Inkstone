@@ -55,9 +55,6 @@ import { SessionEntriesLite } from './session-entries-lite'
 import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
-import { agentProfileSnapshotPath } from './agent-profile-store'
-import { decideTaskCreation, taskCreationRefusal } from '../shared/activity-flow'
-import { isAgentActivity, isAgentProfileKind, type AgentActivity, type AgentProfileKind } from '../shared/agent-profile'
 import { isSafeSessionId } from './session-id'
 
 import { questionLog } from './question-log'
@@ -65,8 +62,6 @@ import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarize
 
 import { requestedTimeout } from '../shared/ui-timeout'
 import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
-import { buildCatalog } from './capabilities/catalog'
-import { webSearchAvailability, type WebSearchAvailability } from '../shared/web-search'
 import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
@@ -146,7 +141,6 @@ import type {
   UIToolCall,
   Usage
 } from '../shared/ipc'
-import type { CapabilityStrategy, WorkMode } from '../shared/ipc'
 import { hasUsageNumbers } from '../shared/turns'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
@@ -215,13 +209,6 @@ export interface SubagentCommandHost {
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
 }
 
-export interface ResearchCommandHost {
-  run(
-    command: string,
-    params: Record<string, unknown>,
-    context: { sessionId: string; projectId: string }
-  ): Promise<{ data?: unknown; summary: Record<string, unknown> }>
-}
 
 export interface ExternalApiConfirmationRequest {
   provider: 'openai' | 'compatible' | 'google' | 'doubao' | 'local'
@@ -321,8 +308,6 @@ export interface CapabilityRunOptions {
   binDir: string
   artifactDir: string
   devResourcesDir?: string
-  getWorkMode?: () => Promise<WorkMode>
-  getCapabilityStrategy?: () => Promise<CapabilityStrategy>
   execution?: ExecuteAdmissionPort
   onBashSettled?: () => void
   trashItem?: (path: string) => Promise<void>
@@ -352,13 +337,10 @@ export class AgentController extends EventEmitter {
   private piBin?: string
   private codemodeExtension?: string
   private questionExtension?: string
-  private workModeExtension?: string
   private shellFallbackExtension?: string
-  private agentProfileExtension?: string
   private responseDetailExtension?: string
   private preambleExtension?: string
   private languageExtension?: string
-  private temperatureExtension?: string
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
   private mcpAppToolsSnapshot?: string
@@ -372,7 +354,6 @@ export class AgentController extends EventEmitter {
   private getBrowserHost?: () => BrowserCommandHost | null
   private subagentHost?: SubagentCommandHost
   private scheduleHost?: ScheduleService
-  private researchHost?: ResearchCommandHost
   private confirmCapabilityAuthorization?: (
     request: CapabilityAuthorizationPrompt
   ) => Promise<CapabilityAuthorizationChoice>
@@ -384,7 +365,6 @@ export class AgentController extends EventEmitter {
   private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
   private dangerGuardExtension?: string
-  private permissionGuardExtension?: string
   private providerExtensions: string[] = []
   private yanCliEnv?: YanCliEnv
   private capabilityServer?: CapabilityServer
@@ -532,13 +512,10 @@ export class AgentController extends EventEmitter {
     piBin?: string
     codemodeExtension?: string
     questionExtension?: string
-    workModeExtension?: string
     shellFallbackExtension?: string
-    agentProfileExtension?: string
     responseDetailExtension?: string
     preambleExtension?: string
     languageExtension?: string
-    temperatureExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
     mcpAppToolsSnapshot?: string
@@ -553,7 +530,6 @@ export class AgentController extends EventEmitter {
     browserHost?: () => BrowserCommandHost | null
     subagentHost?: SubagentCommandHost
     scheduleHost?: ScheduleService
-  researchHost?: ResearchCommandHost
     confirmCapabilityAuthorization?: (
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
@@ -564,7 +540,6 @@ export class AgentController extends EventEmitter {
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
-    permissionGuardExtension?: string
     providerExtensions?: string[]
     yanCliEnv?: YanCliEnv
     capability?: {
@@ -575,8 +550,6 @@ export class AgentController extends EventEmitter {
       artifactDir: string
       runnerGeneration?: number
       devResourcesDir?: string
-      getWorkMode?: () => Promise<WorkMode>
-      getCapabilityStrategy?: () => Promise<CapabilityStrategy>
       onBashSettled?: () => void
       trashItem?: (path: string) => Promise<void>
     }
@@ -593,13 +566,10 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.codemodeExtension = opts.codemodeExtension
     this.questionExtension = opts.questionExtension
-    this.workModeExtension = opts.workModeExtension
     this.shellFallbackExtension = opts.shellFallbackExtension
-    this.agentProfileExtension = opts.agentProfileExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
     this.languageExtension = opts.languageExtension
-    this.temperatureExtension = opts.temperatureExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
@@ -614,7 +584,6 @@ export class AgentController extends EventEmitter {
     this.getBrowserHost = opts.browserHost
     this.subagentHost = opts.subagentHost
     this.scheduleHost = opts.scheduleHost
-    this.researchHost = opts.researchHost
     this.confirmCapabilityAuthorization = opts.confirmCapabilityAuthorization
     this.confirmExternalApi = opts.confirmExternalApi
     this.confirmToolConsent = opts.confirmToolConsent
@@ -623,7 +592,6 @@ export class AgentController extends EventEmitter {
     this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
-    this.permissionGuardExtension = opts.permissionGuardExtension
     this.providerExtensions = opts.providerExtensions ?? []
     this.yanCliEnv = opts.yanCliEnv
     this.capabilityOpts = opts.capability
@@ -754,12 +722,9 @@ export class AgentController extends EventEmitter {
         ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
         ...(this.shellFallbackExtension ? ['--extension', this.shellFallbackExtension] : []),
-        ...(this.workModeExtension ? ['--extension', this.workModeExtension] : []),
-        ...(this.agentProfileExtension ? ['--extension', this.agentProfileExtension] : []),
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
-        ...(this.temperatureExtension ? ['--extension', this.temperatureExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
@@ -767,7 +732,6 @@ export class AgentController extends EventEmitter {
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
-        ...(this.permissionGuardExtension ? ['--extension', this.permissionGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
         ...managedSkillArgs,
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
@@ -1076,15 +1040,6 @@ export class AgentController extends EventEmitter {
     }
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
-    if (command.startsWith('research.')) {
-      if (!this.researchHost) {
-        throw new CapabilityCommandError('research_unavailable', '研究入口当前不可用（宿主未注入）')
-      }
-      return this.researchHost.run(command, params, {
-        sessionId: this.capabilityOpts?.sessionId ?? 'primary',
-        projectId: this.capabilityOpts?.projectId ?? ''
-      })
-    }
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
@@ -1125,13 +1080,6 @@ export class AgentController extends EventEmitter {
       if (error instanceof QuestionFormError) throw new CapabilityCommandError('question_form_invalid', error.message)
       throw error
     }
-    const mode = await this.capabilityOpts?.getWorkMode?.()
-    if (mode === 'autonomous') {
-      return {
-        data: { question, fields, answers: null, answer: null, autonomous: true, cancelled: false },
-        summary: { kind: 'question', action: 'ask', mode, form: true, answered: false, autonomous: true }
-      }
-    }
     const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout) })
     const answers = typeof response.value === 'string' ? parseQuestionAnswers(fields, response.value) : null
     const answer = answers ? summarizeAnswers(fields, answers) : null
@@ -1140,7 +1088,7 @@ export class AgentController extends EventEmitter {
     if (entries) this.pushQuestionLog()
     return {
       data: { question, fields, answers, answer, cancelled, autonomous: false },
-      summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', form: true, answered: answers !== null, cancelled }
+      summary: { kind: 'question', action: 'ask', mode: 'standard', form: true, answered: answers !== null, cancelled }
     }
   }
 
@@ -1166,14 +1114,6 @@ export class AgentController extends EventEmitter {
     if (options.length > 3) throw new CapabilityCommandError('question_options_too_many', '问题最多提供 3 个选项')
     if (options.some((option) => option.length > 500)) {
       throw new CapabilityCommandError('question_option_too_long', '问题选项不能超过 500 个字符')
-    }
-
-    const mode = await this.capabilityOpts?.getWorkMode?.()
-    if (mode === 'autonomous') {
-      return {
-        data: { question, options, answer: null, autonomous: true, cancelled: false },
-        summary: { kind: 'question', action: 'ask', mode, answered: false, autonomous: true }
-      }
     }
 
     const timeout = requestedTimeout(params.timeout)
@@ -1209,7 +1149,7 @@ export class AgentController extends EventEmitter {
     if (entries) this.pushQuestionLog()
     return {
       data: { question, options, answer, cancelled, autonomous: false },
-      summary: { kind: 'question', action: 'ask', mode: mode ?? 'standard', answered: answer !== null, cancelled }
+      summary: { kind: 'question', action: 'ask', mode: 'standard', answered: answer !== null, cancelled }
     }
   }
 
@@ -1462,17 +1402,6 @@ export class AgentController extends EventEmitter {
       throw failure
     } finally {
       this.imageRequests.delete(controller)
-    }
-  }
-
-  async webSearchAvailability(): Promise<WebSearchAvailability> {
-    try {
-      const commands = await this.rawCommands()
-      const mcp = await this.acquisition.collectMcpCatalog()
-      const catalog = buildCatalog(commands, mcp.tools)
-      return webSearchAvailability(catalog.capabilities)
-    } catch {
-      return { available: false }
     }
   }
 
@@ -1879,15 +1808,6 @@ export class AgentController extends EventEmitter {
     if (migratedToNative) {
       throw new CapabilityCommandError('mcp_migrated_to_native', migratedMcpCommandNotice(serverId, migratedToNative))
     }
-    if (action === 'call' && (await this.capabilityOpts?.getWorkMode?.()) === 'clarify') {
-      const server = manager.list().find((entry) => entry.id === serverId)
-      if (server?.effect !== 'read') {
-        throw new CapabilityCommandError(
-          'capability_mode_clarify',
-          '计划模式只允许调用配置明确标记为 read 的 MCP 工具；当前服务的副作用未被确认为只读。'
-        )
-      }
-    }
     try {
       if (action === 'describe') {
         const described = await describeMcpTool(manager, serverId, toolName)
@@ -1979,41 +1899,6 @@ export class AgentController extends EventEmitter {
       operationId: rawOperationId || randomUUID()
     }
 
-    if (request.action === 'add' || request.action === 'set') {
-      const snapshot = await this.readAgentProfileSnapshot()
-      if (snapshot) {
-        const itemCount = Array.isArray(params.items) ? params.items.length : 0
-        const existing = await currentTaskPlan(sessionId).catch(() => null)
-        const decision = decideTaskCreation({
-          profile: snapshot.profile,
-          activity: snapshot.activity,
-          itemCount,
-          existingItems: request.action === 'add' ? (existing?.state.todos.length ?? 0) : 0
-        })
-        if (!decision.create) {
-          const current = await currentTaskPlan(sessionId).catch(() => null)
-          return {
-            data: {
-              ok: true,
-              skipped: true,
-              reason: decision.reason,
-              message: taskCreationRefusal(decision.reason),
-              operationId: current?.state.operationId ?? null,
-              revision: current?.state.revision ?? 0,
-              todos: current?.state.todos ?? []
-            },
-            summary: {
-              kind: 'task-plan',
-              action: request.action,
-              skipped: true,
-              reason: decision.reason,
-              items: current?.state.todos.length ?? 0
-            }
-          }
-        }
-      }
-    }
-
     const round = await this.currentUserRound()
     const outcome = await applyTaskPlanOperation({ sessionId, round, request }).catch(
       (err: unknown): never => {
@@ -2053,18 +1938,6 @@ export class AgentController extends EventEmitter {
         done: state.todos.filter((t) => t.done).length,
         changed: outcome.changed.length
       }
-    }
-  }
-
-  private async readAgentProfileSnapshot(): Promise<{ profile: AgentProfileKind; activity: AgentActivity } | null> {
-    const key = this.capabilityOpts?.sessionId
-    if (!key) return null
-    try {
-      const raw = JSON.parse(await readFile(agentProfileSnapshotPath(key), 'utf8')) as Record<string, unknown>
-      if (!isAgentProfileKind(raw.profile) || !isAgentActivity(raw.activity)) return null
-      return { profile: raw.profile, activity: raw.activity }
-    } catch {
-      return null
     }
   }
 
@@ -2485,7 +2358,7 @@ export class AgentController extends EventEmitter {
         this.timingContinues = false
         void this.persistTurnTiming()
         void this.refreshState()
-        void this.refreshStats({ allowPolicyTrigger: true })
+        void this.refreshStats()
         void this.refreshTodos()
         void this.maybeGenerateTitle({ force: true, onlyIfSamplesChanged: true })
         const task = continuation ? this.continueAfterLoopGuard(continuation)
@@ -4200,15 +4073,15 @@ export class AgentController extends EventEmitter {
     return this.state
   }
 
-  async refreshStats(_opts: { allowPolicyTrigger?: boolean; expectGeneration?: number } = {}): Promise<SessionStats | null> {
+  async refreshStats(opts: { expectGeneration?: number } = {}): Promise<SessionStats | null> {
     try {
       const generation = this.capabilityOpts?.runnerGeneration
       const res = await this.rpc?.command<SessionStats>('get_session_stats')
       if (res?.success && res.data) {
-        if (_opts.expectGeneration !== undefined && generation !== _opts.expectGeneration) return null
-        if (_opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== _opts.expectGeneration) return null
+        if (opts.expectGeneration !== undefined && generation !== opts.expectGeneration) return null
+        if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         const stats = await this.withOverheadUsage(this.statsForCurrentModel(res.data))
-        if (_opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== _opts.expectGeneration) return null
+        if (opts.expectGeneration !== undefined && this.capabilityOpts?.runnerGeneration !== opts.expectGeneration) return null
         this.push({ ch: 'stats', payload: stats })
         return stats
       }

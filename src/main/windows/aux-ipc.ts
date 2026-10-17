@@ -34,5 +34,4 @@ export function registerAuxIpc(aux: AuxWindows): void {
   ipcMain.on('yan:aux:mini:set-enabled', (event, enabled: unknown) => {
     if (aux.owns(event.sender)) aux.setMiniEnabled(!!enabled)
   })
-  ipcMain.handle('yan:aux:mini:enabled', (event) => guard(event.sender, () => aux.miniState().enabled))
 }

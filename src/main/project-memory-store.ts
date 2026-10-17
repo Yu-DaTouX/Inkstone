@@ -2,7 +2,7 @@ import { hostname } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { link, mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { PROJECT_KNOWLEDGE_ROOT, projectKnowledgeDir } from './paths'
+import { projectKnowledgeDir } from './paths'
 import {
   applyKnowledgeCommit,
   applyKnowledgeDelete,
@@ -50,10 +50,6 @@ export interface ProjectKnowledgeStoreOptions {
   root?: string
   lockWaitMs?: number
   lockTtlMs?: number
-}
-
-export function projectMemoryRoot(root?: string): string {
-  return root ?? PROJECT_KNOWLEDGE_ROOT
 }
 
 export function projectMemoryDir(projectId: string, root?: string): string {
@@ -662,15 +658,6 @@ export async function readKnowledge(
   }
   if (loaded.status === 'missing') return undefined
   return (await loadEntry(dir, findKnowledgePointer(loaded.manifest, id), false)) ?? undefined
-}
-
-export async function listKnowledgeIds(
-  identity: ProjectIdentity,
-  opts: ProjectKnowledgeStoreOptions = {}
-): Promise<string[]> {
-  const dir = projectMemoryDir(identity.projectId, opts.root)
-  const names = await readdir(entriesDir(dir)).catch(() => [] as string[])
-  return names.filter((name) => isSafeKnowledgeId(name)).sort()
 }
 
 function describe(err: unknown): string {

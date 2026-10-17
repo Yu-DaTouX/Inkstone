@@ -5,13 +5,12 @@ import type { CustomProviderInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from '../credentials'
 import { detectToolchain } from '../toolchain'
-import { detectLocalModelServers, readLocalModelUrls, saveLocalModelUrls } from '../local-models'
+import { detectLocalModelServers } from '../local-models'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
 import { answerOAuthPrompt, cancelOAuthLogin, startOAuthLogin } from '../oauth-providers'
 import type { OAuthLoginEvent } from '../../shared/ipc'
-import { ACCOUNT_QUOTA_CLI_SOURCES, type AccountQuotaCliSource } from '../../shared/account-quota'
-import { accountQuotaReport, failoverCodexAccount, readAccountQuotaPrefs, setAccountLabel, setAccountQuotaSource } from '../account-quota'
-import { captureActiveCodexAccount, listCodexAccounts, removeCodexAccount, switchCodexAccount } from '../codex-accounts'
+import { accountQuotaReport } from '../account-quota'
+import { captureActiveCodexAccount, switchCodexAccount } from '../codex-accounts'
 
 export interface AuthIpcDeps {
   restartAgent(reason: string): Promise<void>
@@ -48,8 +47,6 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   })
   handle('yan:discoverCustomModels', async (input: Partial<CustomProviderInput>) => discoverCustomProviderModels(input))
   handle('yan:detectLocalModels', async () => detectLocalModelServers())
-  handle('yan:localModelUrls', async () => readLocalModelUrls())
-  handle('yan:saveLocalModelUrls', async (urls: unknown) => saveLocalModelUrls(Array.isArray(urls) ? urls : []))
   handle('yan:removeCustomProvider', async (id: string) => {
     const r = await removeCustomProvider(id)
     if (r.ok) void restartAgent('自定义服务已移除').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))
@@ -94,22 +91,7 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   })
 
   handle('yan:accountQuota', async () => accountQuotaReport())
-  handle('yan:accountQuotaSource', async (source: unknown, enabled: unknown) => {
-    const id = String(source ?? '') as AccountQuotaCliSource
-    if (!ACCOUNT_QUOTA_CLI_SOURCES.includes(id)) throw new Error('未知的账号来源')
-    return setAccountQuotaSource(id, enabled === true)
-  })
-  handle('yan:accountLabel', async (key: unknown, label: unknown) => setAccountLabel(String(key ?? ''), String(label ?? '')))
-  handle('yan:codexAccounts', async () => listCodexAccounts((await readAccountQuotaPrefs()).labels))
   handle('yan:codexAccountSwitch', async (key: unknown) => {
     return switchCodexAccount(String(key ?? ''))
-  })
-  handle('yan:codexAccountFailover', async (skip: unknown) =>
-    failoverCodexAccount(Array.isArray(skip) ? skip.filter((k): k is string => typeof k === 'string') : [])
-  )
-  handle('yan:codexAccountRemove', async (key: unknown) => {
-    const r = await removeCodexAccount(String(key ?? ''))
-    if (r.ok && r.wasActive) void restartAgent('ChatGPT 账号已移除').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))
-    return { ok: r.ok, error: r.error }
   })
 }

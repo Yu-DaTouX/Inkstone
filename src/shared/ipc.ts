@@ -31,9 +31,7 @@ export type {
   GitFailure,
   GitFailureCode
 } from './git-actions'
-import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from './git-actions'
-import type { WorkMode, WorkModeState } from './work-mode'
-import type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
+import type { GitActionExpected, GitActionRequest, GitActionResult } from './git-actions'
 import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
 import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
@@ -42,46 +40,9 @@ import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
-import type { WebSearchAvailability } from './web-search'
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
-import type { ToolLayout } from './tool-layout'
-import type { AgentProfileState } from './agent-profile'
-import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
-import type { CodexFailoverResult } from './quota-failover'
+import type { AccountQuotaReport } from './account-quota'
 import type { QuotaForecast } from './quota-forecast'
-export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
-export type { WorkMode, WorkModeState } from './work-mode'
-export type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
-
-export interface SessionQuestionFrequencyView {
-  runnerId: string
-  sessionId?: string
-  sessionFile?: string
-  key: string
-  revision: number
-  preference: SessionQuestionFrequency
-  effective: QuestionFrequency
-  global: QuestionFrequency
-}
-
-export interface SessionQuestionFrequencyInput {
-  runnerId?: string
-  sessionId?: string
-  sessionFile?: string
-  expectedRevision?: number
-  questionFrequency: SessionQuestionFrequency
-}
-
-export type SessionQuestionFrequencyResult =
-  | ({ ok: true } & SessionQuestionFrequencyView)
-  | {
-      ok: false
-      error: string
-      revision?: number
-      preference?: SessionQuestionFrequency
-      effective?: QuestionFrequency
-      global?: QuestionFrequency
-    }
 
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
@@ -625,7 +586,6 @@ export interface ProjectRecord {
   id: string
   cwd: string
   name: string
-  groupId?: string
   archived: boolean
   createdAt: number
   updatedAt: number
@@ -638,14 +598,6 @@ export interface ProjectDirectoryChange {
 }
 
 export type ProjectDirectoryResult = { ok: true; settings: AppSettings } | { ok: false; error: string }
-
-export interface ProjectGroup {
-  id: string
-  name: string
-  createdAt: number
-}
-
-export type CapabilityStrategy = 'existing-only' | 'search-and-recommend' | 'auto-connect'
 
 export interface AppSettings {
   lastMainModel?: import('./model-selection').ModelChoice
@@ -664,16 +616,10 @@ export interface AppSettings {
   contextTrim?: boolean
   contextTrimTokens?: number
   autoCompactTokens?: number
-  processLayout?: 'inline' | 'side' | 'left'
-  liveThinking?: boolean
-  backgroundPreset?: string
-  backgroundCustom?: string
-  backgroundCustomLight?: string
   fontUi?: 'sans' | 'serif' | 'maple' | 'custom'
   fontUiCustom?: string
   fontCode?: 'maple' | 'custom'
   fontCodeCustom?: string
-  fontSizeBody?: number
   fontSizeUi?: number
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
@@ -683,29 +629,12 @@ export interface AppSettings {
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
-  projectGroups: ProjectGroup[]
-  projectOrder: string[]
   providerBudgets: Record<string, number>
   rightPanelOpen: boolean
   workspaceMode?: WorkspaceMode
   alwaysOnTop: boolean
   uiScale: number
   profile: UserProfile
-  railWidth: number
-  panelWidth: number
-  browserHeight: number
-  toolOrder: string[]
-  toolHidden: string[]
-  toolLayout?: ToolLayout
-  toolDetail: boolean
-  toolDetailExplicit?: boolean
-  toolHeights: Record<string, number>
-  streamWidth: number
-  autonomous: boolean
-  defaultWorkMode: WorkMode
-  questionFrequency?: QuestionFrequency
-  capabilityStrategy: CapabilityStrategy
-  workModeShortcutEnabled?: boolean
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
   usageUnderInput?: boolean
@@ -713,11 +642,9 @@ export interface AppSettings {
   usageCurrency?: import('./currency').UsageCurrencySettings
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
   voiceInput?: import('./voice-input').VoiceInputSettings
-  workModeShortcut?: string
   sendKey: 'auto' | 'enter' | 'ctrlEnter'
   responseDetail: 'brief' | 'standard' | 'detailed'
   density: 'compact' | 'standard' | 'comfortable'
-  temperatureByModel?: Record<string, number>
   sound: SoundSettings
   shortcutOverrides?: import('../renderer/src/app/shortcuts').ShortcutOverrides
 }
@@ -739,9 +666,6 @@ export interface AttentionNotify {
 
 export const SOUND_VOLUME_MIN = 0
 export const SOUND_VOLUME_MAX = 1
-
-export const TOOL_SECTIONS = ['todo', 'context', 'files', 'quota', 'queue', 'ext', 'log', 'actions'] as const
-export type ToolSectionId = (typeof TOOL_SECTIONS)[number]
 
 export interface ProviderQuota {
   provider: string
@@ -768,50 +692,6 @@ export interface QuotaWindow {
   estimated?: boolean
   durationMs?: number
   forecast?: QuotaForecast
-}
-
-export function normalizeToolOrder(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  const known = new Set<string>(TOOL_SECTIONS)
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const x of v) {
-    if (typeof x !== 'string' || !known.has(x) || seen.has(x)) continue
-    seen.add(x)
-    out.push(x)
-  }
-  for (const id of TOOL_SECTIONS) if (!seen.has(id)) out.push(id)
-  return out
-}
-
-export function normalizeToolHidden(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  const known = new Set<string>(TOOL_SECTIONS)
-  const seen = new Set<string>()
-  for (const x of v) {
-    if (typeof x === 'string' && known.has(x)) seen.add(x)
-  }
-  return [...seen]
-}
-
-export const RAIL_MIN = 200
-export const RAIL_MAX = 1200
-export const PANEL_MIN = 220
-export const PANEL_MAX = 1200
-
-export function clampPanelWidth(v: unknown, min: number, max: number): number {
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  return Math.round(Math.min(max, Math.max(min, n)))
-}
-
-export const STREAM_MIN = 560
-export const STREAM_MAX = 1600
-
-export function clampStreamWidth(v: unknown): number {
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  return Math.round(Math.min(STREAM_MAX, Math.max(STREAM_MIN, n)))
 }
 
 export interface TrustStatusView {
@@ -1162,11 +1042,9 @@ export type MainPushBody =
   | { ch: 'queue'; payload: QueueState }
   | { ch: 'queue-reclaimed'; payload: QueueSnapshot & { sessionId: string } }
   | { ch: 'todos'; payload: SessionTodo[] }
-  | { ch: 'work-mode'; payload: WorkModeState }
   | { ch: 'approval'; payload: ApprovalRequest }
   | { ch: 'approval-close'; payload: { id: string } }
   | { ch: 'git-install'; payload: GitInstallProgress }
-  | { ch: 'agent-profile'; payload: AgentProfileState }
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
@@ -1215,103 +1093,10 @@ export interface GitBridge {
   refs(cwd: string): Promise<{ ok: boolean; refs: GitRefOption[]; busyBranches: string[]; error?: string }>
   action(req: GitActionRequest): Promise<GitActionResult>
   remotes(cwd: string): Promise<string[]>
-  prStatus(cwd: string): Promise<{
-    ok: boolean
-    state: 'none' | 'draft' | 'open' | 'merged' | 'closed'
-    checks: 'none' | 'pending' | 'success' | 'failure'
-    title?: string
-    number?: number
-    url?: string
-    base?: string
-    localAhead?: boolean
-    host?: string
-    owner?: string
-    repo?: string
-    error?: 'unsupported' | 'auth' | 'rate-limit' | 'network' | 'not-found' | 'unknown'
-    message?: string
-  }>
-  remoteWeb(cwd: string): Promise<{ ok: boolean; web?: string | null; remote?: string | null; error?: string }>
   untracked(cwd: string): Promise<string[]>
   changes(cwd: string): Promise<GitChangesResult>
   diff(req: { cwd: string; path: string }): Promise<GitDiffResult>
   worktrees(cwd: string): Promise<WorktreeListing>
-  worktreeCreate(req: WorktreeCreateRequest): Promise<WorktreeCreateResult>
-  worktreeRemove(req: WorktreeRemoveRequest): Promise<WorktreeRemoveResult>
-  worktreeLink(req: {
-    sessionId: string
-    sessionFile?: string
-    worktree: string
-    branch?: string
-    fromSessionId?: string
-    fromSessionFile?: string
-    fromCwd?: string
-  }): Promise<{ ok: boolean; link?: WorktreeLinkView; error?: string }>
-  worktreeLinks(): Promise<WorktreeLinkView[]>
-  forkFileRefs(input: {
-    worktree: string
-    sourceFile?: string
-    sourceCwd?: string
-    explicitRefs?: string[]
-  }): Promise<ForkRefsReportView>
-  forkContext(input: {
-    worktree: string
-    sourceFile?: string
-    sourceCwd?: string
-    sourceSessionId?: string
-    explicitAttachmentCount?: number
-  }): Promise<ForkContextResultView>
-}
-
-export interface WorktreeLinkView {
-  sessionId: string
-  sessionFile: string
-  worktree: string
-  branch: string
-  fromSessionId: string
-  fromSessionFile: string
-  fromCwd: string
-  at: number
-}
-
-export interface ForkRefsResolutionView {
-  ref: string
-  state: 'resolved' | 'missing' | 'type-mismatch' | 'outside'
-  abs: string | null
-  kind: 'file' | 'dir' | null
-}
-
-export interface ForkRefsSummaryView {
-  total: number
-  resolved: number
-  missing: number
-  mismatch: number
-  outside: number
-  problems: ForkRefsResolutionView[]
-}
-
-export interface ForkRefsReportView {
-  worktree: string
-  root: string | null
-  sourceRoot: string | null
-  sourceFile: string | null
-  refs: ForkRefsResolutionView[]
-  summary: ForkRefsSummaryView
-  error?: string
-}
-
-export interface ForkContextResultView {
-  forkId: string
-  text: string
-  branch: string | null
-  head: string | null
-  detached: boolean
-  changedCount: number
-  ahead: number
-  behind: number
-  refsTotal: number
-  refsResolved: number
-  attachments: number
-  error?: string
 }
 
 export interface WorktreeInfo {
@@ -1330,47 +1115,6 @@ export interface WorktreeListing {
   repoRoot: string
   worktrees: WorktreeInfo[]
   error?: string
-}
-
-export interface CarryChanges {
-  staged: boolean
-  unstaged: boolean
-  untracked: string[]
-}
-
-export interface WorktreeCreateRequest {
-  cwd: string
-  branch: string
-  startPoint: string | null
-  targetPath: string | null
-  carry?: CarryChanges | null
-}
-
-export interface WorktreeCreateResult {
-  ok: boolean
-  path?: string
-  branch?: string
-  notes?: string[]
-  failure?: GitFailure
-}
-
-export interface WorktreeBlocker {
-  kind: 'running' | 'dirty' | 'unpushed' | 'main' | 'locked' | 'missing'
-  message: string
-  count?: number
-}
-
-export interface WorktreeRemoveRequest {
-  cwd: string
-  path: string
-  deleteBranch?: boolean
-}
-
-export interface WorktreeRemoveResult {
-  ok: boolean
-  blockers?: WorktreeBlocker[]
-  summary?: string
-  failure?: GitFailure
 }
 
 export interface PackageEntryView {
@@ -1552,8 +1296,6 @@ export interface SourcesBridge {
   verifyFiles(req: { sessionId: string; entries: { path: string; name?: string; addedAt?: number }[] }): Promise<SourceRefView[]>
   link(req: { sessionId: string; sourceIds: string[]; messageId: string }): Promise<{ ok: boolean; added: number; skipped: number; error?: string }>
   removeImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; error?: string }>
-  readImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; base64?: string; mime?: string; error?: string }>
-  webSearch(): Promise<WebSearchAvailability>
 }
 
 export interface AttachmentUsage {
@@ -1723,19 +1465,6 @@ export interface YanBridge {
 
   answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
-  getWorkMode(): Promise<WorkModeState>
-  setWorkMode(mode: WorkMode, expectedRevision?: number): Promise<{
-    ok: boolean
-    state: WorkModeState
-    error?: string
-  }>
-
-  getSessionQuestionFrequency(runnerId?: string): Promise<
-    | ({ ok: true } & SessionQuestionFrequencyView)
-    | { ok: false; error: string }
-  >
-  setSessionQuestionFrequency(input: SessionQuestionFrequencyInput): Promise<SessionQuestionFrequencyResult>
-
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
@@ -1758,7 +1487,6 @@ export interface YanBridge {
   manualTitles(): Promise<Record<string, string>>
   setManualTitle(sessionId: string, name: string): Promise<{ ok: boolean; error?: string }>
   regenerateTitle(sessionId: string): Promise<{ ok: boolean; title?: string; error?: string }>
-  getCustomEntries(): Promise<CustomEntry[]>
   refreshTodos(): Promise<SessionTodo[]>
 
   listSessions(): Promise<SessionSummary[]>
@@ -1784,12 +1512,7 @@ export interface YanBridge {
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
   accountQuota(): Promise<AccountQuotaReport>
-  accountQuotaSource(source: AccountQuotaCliSource, enabled: boolean): Promise<AccountQuotaPrefs>
-  accountLabel(key: string, label: string): Promise<AccountQuotaPrefs>
-  codexAccounts(): Promise<CodexAccountView[]>
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
-  codexAccountFailover(skip: string[]): Promise<CodexFailoverResult>
-  codexAccountRemove(key: string): Promise<{ ok: boolean; error?: string }>
   toolchainStatus(): Promise<ToolchainStatus>
   gitRuntimeStatus(): Promise<GitRuntimeStatus>
   gitRuntimeInstall(): Promise<{ ok: boolean; error?: string }>
@@ -1801,8 +1524,6 @@ export interface YanBridge {
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>
   detectLocalModels(): Promise<LocalModelServer[]>
-  localModelUrls(): Promise<string[]>
-  saveLocalModelUrls(urls: string[]): Promise<string[]>
   testCustomProvider(
     id: string,
     mode: 'endpoint' | 'billable',
@@ -1810,8 +1531,6 @@ export interface YanBridge {
   ): Promise<CustomProviderTestResult>
 
   completePath(prefix: string, cwd?: string, context?: FileRequestContext): Promise<PathCompletionResult>
-  cancelFileSearch(requestId: string): Promise<void>
-  searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
 
   pickImages(): Promise<Attachment[]>
   pickFilePaths(): Promise<string[]>
@@ -1829,14 +1548,8 @@ export interface YanBridge {
 
   notifyAttention(n: AttentionNotify): Promise<{ shown: boolean; simulated?: boolean; error?: string }>
 
-  probePi(): Promise<PiProbe>
   openPath(p: string): Promise<{ ok: boolean; error?: string }>
-  openFileDefault(p: string, cwd?: string): Promise<{ ok: boolean; revealed?: boolean; error?: string }>
   revealPath(p: string): Promise<{ ok: boolean }>
-  interactions: {
-    get(session: string): Promise<import('./interaction-state').InteractionValues>
-    set(session: string, key: string, value: string | null): Promise<import('./interaction-state').InteractionValues>
-  }
   backup(action: 'create' | 'verify'): Promise<import('./data-backup').BackupResult>
   storage: {
     info(): Promise<StorageInfoView>
@@ -1874,7 +1587,6 @@ export interface YanBridge {
   releaseHtmlArtifact(url: string): Promise<void>
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
-  compactionInfo(contextWindow: number): Promise<CompactionInfo>
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
@@ -1931,7 +1643,6 @@ export interface YanBridge {
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
-    setUserControl(value: boolean): Promise<BrowserState>
     setBounds(bounds: BrowserBounds): Promise<void>
     setVisible(visible: boolean): Promise<void>
   }
@@ -1954,8 +1665,6 @@ export interface YanBridge {
     startSession(peerId: string, projectId: string, text: string): Promise<PeerResult<{ sessionId: string | null; runId: string; projectId: string }>>
     abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
     importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
-    readImport(importId: string): Promise<PeerResult<{ dir: string; messages: PeerHistoryMessage[] }>>
-    revealImport(importId: string): Promise<boolean>
   }
   consent: {
     list(): Promise<import('./tool-consent').ConsentEntryView[]>

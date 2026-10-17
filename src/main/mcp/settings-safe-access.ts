@@ -44,14 +44,6 @@ export function managedConfigById(
   return config && isInkstoneManaged(config) ? config : null
 }
 
-export function isManagedServer(
-  access: SettingsSafeAccess,
-  serverId: string,
-  projectId?: string
-): boolean {
-  return managedConfigOf(access, serverId, projectId) !== null
-}
-
 export interface LegacyReconcileResult {
   managed: boolean
   config: McpAppServerConfig | null

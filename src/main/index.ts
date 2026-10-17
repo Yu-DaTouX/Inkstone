@@ -3,7 +3,7 @@ import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs'
-import { access, appendFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { loadModelPricing } from './model-pricing'
 import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service'
@@ -78,19 +78,14 @@ import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
-import { registerWorkModeIpc } from './ipc/work-mode-ipc'
-import { registerQuestionFrequencyIpc } from './ipc/question-frequency-ipc'
 import { registerFilesIpc } from './ipc/files-ipc'
 import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
-import { canOpenDocument } from '../shared/document-open'
-import { normalizeQuestionFrequency } from '../shared/question-frequency'
 import { lockDataRoot } from '../core/data-root-lock'
 import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
-import { configureWorkModeCoordinator, setDefaultWorkMode, workModeKeyFor, resolveWorkMode, pushWorkMode, resolveAgentProfile, pushAgentProfile } from './work-mode-coordinator'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
@@ -110,7 +105,6 @@ import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGE
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
-import { WorkModeStore } from './work-mode-service'
 import { ApprovalBroker } from './approval-broker'
 import { refreshManagedGit } from './git-runtime'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
@@ -364,7 +358,6 @@ const subagentService: SubagentService = new SubagentService({
   onEvent: (runId, evt) => {
     reviewRuns?.observe(runId, evt)
   },
-  resolveAgentProfile: (id) => resolveAgentProfile(id),
   onFinished: (run) => {
     reviewRuns?.settle(
       run.id,
@@ -473,10 +466,6 @@ function languageExtensionPath(): string | undefined {
   return yanThinResourcePath('language.js')
 }
 
-function temperatureExtensionPath(): string | undefined {
-  return yanThinResourcePath('temperature.js')
-}
-
 function capabilityGuideExtensionPath(): string | undefined {
   return yanThinResourcePath('capability-guide.js')
 }
@@ -509,7 +498,6 @@ function yanThinExtensionPaths(): string[] {
     responseDetailExtensionPath(),
     preambleExtensionPath(),
     languageExtensionPath(),
-    temperatureExtensionPath(),
     capabilityGuideExtensionPath(),
     mcpAppProxyExtensionPath(),
     contextTrimExtensionPath(),
@@ -994,8 +982,6 @@ async function syncKeepAwake(working: boolean): Promise<void> {
   updateKeepAwake({ working, whileWorking: s?.keepAwakeWhileWorking, onBatteryAllowed: s?.keepAwakeOnBattery })
 }
 
-const workModes = new WorkModeStore()
-
 async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } = {}): Promise<void> {
   const ag = runners?.agentOf(id)
   if (!ag) return
@@ -1021,8 +1007,6 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
     })
     .catch(() => {})
   void ag.refreshTodos().catch(() => {})
-  await pushWorkMode(id)
-  await pushAgentProfile(id)
   pushRunners()
 }
 
@@ -1585,7 +1569,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   const settings = await getSettings()
   await refreshManagedGit().catch(() => undefined)
   agentResponseDetail = settings.responseDetail
-  setDefaultWorkMode(settings.defaultWorkMode)
 
   runners = new RunnerRegistry({
     isSessionVisible: (state) => runnerVisibility.includes(state),
@@ -1640,7 +1623,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         scheduleHost: scheduleService,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
-        temperatureExtension: temperatureExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
         nativeSessionExtension: nativeSessionExtensionPath(),
@@ -1660,8 +1642,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           binDir: join(YAN_DIR, 'bin'),
           artifactDir: join(YAN_DIR, 'artifacts'),
           devResourcesDir: join(app.getAppPath(), 'resources'),
-          getWorkMode: async () => (await resolveWorkMode(id ?? 'primary')).mode,
-          getCapabilityStrategy: async () => (await getSettings()).capabilityStrategy,
           ...(id
             ? {
                 execution: runners?.executionPort(id) ?? {
@@ -2109,20 +2089,6 @@ function registerIpc(): void {
     async (enabled: boolean) => ac()?.setAutoRetry(enabled) ?? { ok: false, error: 'pi 未运行' }
   )
 
-  registerWorkModeIpc(ipc, {
-    registry: () => runners,
-    workModes,
-    pushFrom
-  })
-
-  registerQuestionFrequencyIpc(ipc, {
-    registry: () => runners,
-    workModes,
-    workModeKeyFor,
-    globalQuestionFrequency: async () => normalizeQuestionFrequency((await getSettings()).questionFrequency),
-    pushFrom
-  })
-
 
   handle(
     'yan:setSteeringMode',
@@ -2302,7 +2268,6 @@ function registerIpc(): void {
     if (patch.responseDetail !== undefined) agentResponseDetail = next.responseDetail
     if ('autoCompactTokens' in patch) void ac()?.listModels().then(syncCompactionLines)
     if ('keepAwakeWhileWorking' in patch || 'keepAwakeOnBattery' in patch) void syncKeepAwake((runners?.statuses() ?? []).some((r) => r.running))
-    if (patch.defaultWorkMode !== undefined) setDefaultWorkMode(next.defaultWorkMode)
     return next
   })
 
@@ -2373,43 +2338,11 @@ function registerIpc(): void {
     pushRunners()
   })
 
-  handle('yan:probePi', async () => {
-    const settings = await getSettings()
-    const probe = resolvePi({ override: settings.piBin })
-    return probe
-  })
-
   handle('yan:openPath', async (p: string) => {
     if (typeof p !== 'string' || !p.trim()) return { ok: false, error: 'empty path' }
     if (/^[\\/]{2}/.test(p.trim())) return { ok: false, error: 'network path' }
     if (!existsSync(p)) return { ok: false, error: 'missing' }
     const err = await shell.openPath(existsSync(dirname(p)) ? dirname(p) : p)
-    return err ? { ok: false, error: err } : { ok: true }
-  })
-
-  handle('yan:openFileDefault', async (p: string, cwd?: string) => {
-    const raw = String(p ?? '').trim()
-    if (!raw) return { ok: false, error: 'empty path' }
-    if (/^[\\/]{2}/.test(raw)) return { ok: false, error: 'network path' }
-    const base = typeof cwd === 'string' && cwd.trim() ? cwd : (await getSettings()).cwd
-    const target = isAbsolute(raw) ? raw : resolve(base || process.cwd(), raw)
-    let st
-    try {
-      st = await stat(target)
-    } catch {
-      return { ok: false, error: 'missing' }
-    }
-    if (!st.isFile()) {
-      const err = await shell.openPath(target)
-      return err ? { ok: false, error: err } : { ok: true }
-    }
-    let real = target
-    try { real = await realpath(target) } catch { }
-    if (!canOpenDocument(target) || !canOpenDocument(real)) {
-      shell.showItemInFolder(target)
-      return { ok: true, revealed: true }
-    }
-    const err = await shell.openPath(target)
     return err ? { ok: false, error: err } : { ok: true }
   })
 
@@ -2545,8 +2478,6 @@ function registerIpc(): void {
   })
 
   registerGitIpc(ipc, {
-    isCwdBusy: (dir: string) => (runners?.statuses() ?? []).some((st) => st.running && samePathKind(st.cwd, dir)),
-    worktreeOrigins,
     authorizeReadCwd: async (cwd: string) => {
       const st = await getSettings()
       const resolved = await resolveFileContext(st, st.cwd, { cwd })
@@ -2630,7 +2561,7 @@ function registerIpc(): void {
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
-  registerSourcesIpc(ipc, { webSearchAvailability: async () => ac()?.webSearchAvailability() })
+  registerSourcesIpc(ipc)
 
   registerCapabilitiesIpc(ipc, {
     currentAgent: () => ac() ?? undefined,
@@ -3031,12 +2962,6 @@ function createWindow(): void {
     })
   }
 }
-
-configureWorkModeCoordinator({
-  runners: () => runners,
-  workModes,
-  pushFrom
-})
 
 const sessionHost: SessionHost = {
   runners: () => runners,

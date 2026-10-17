@@ -220,7 +220,6 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (!manual) host.push({ ch: 'session-title', payload: { sessionId: sid, title: result.title } })
     return { ok: true, title: result.title }
   })
-  handle('yan:getCustomEntries', async () => host.ac()?.getCustomEntries() ?? [])
   handle('yan:refreshTodos', async () => host.ac()?.refreshTodos() ?? [])
   handle('yan:searchSessions', async (query: unknown, limit?: unknown) =>
     searchSessionText(typeof query === 'string' ? query.slice(0, 200) : '', typeof limit === 'number' ? limit : 30))
