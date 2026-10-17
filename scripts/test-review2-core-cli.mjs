@@ -25,14 +25,6 @@ try {
   assert.equal(remote.messages[0].role, 'system')
   pass('repeat guard local reminder appends to user without changing message prefix')
 
-  const { isAllowedBashCommand } = await import(pathToFileURL(resolve('resources/pi-extensions/work-mode.js')).href + `?t=${Date.now()}`)
-  assert.equal(isAllowedBashCommand('yan question ask'), true)
-  assert.equal(isAllowedBashCommand('yan goal status'), false)
-  assert.equal(isAllowedBashCommand('"relative\\yan" question ask'), false)
-  assert.equal(isAllowedBashCommand('"C:\\Program Files\\Inkstone\\yan.exe" question ask'), true)
-  assert.equal(isAllowedBashCommand('/opt/inkstone/resources/yan-cli/yan.mjs question ask'), true)
-  pass('work mode accepts bare or absolute host CLI only, rejects relative quoted prefix')
-
   const lockOut = join(temp, 'lock.mjs')
   await build({ entryPoints: ['src/core/data-root-lock.ts'], outfile: lockOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   const { lockDataRoot } = await import(pathToFileURL(lockOut).href)

@@ -93,8 +93,6 @@ export async function runSnapshotIdentityTests(ok) {
         if (opts.chainRead) await opts.chainRead(registryRef)
         return opts.chain ?? null
       },
-      pushWorkMode: async () => {},
-      pushAgentProfile: async () => {},
       emptyGoal: () => ({}),
       sameRuntimeEnvelope
     }

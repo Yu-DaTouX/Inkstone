@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import codemodePolicy from '../resources/pi-extensions/codemode-policy.js'
-import workMode from '../resources/pi-extensions/work-mode.js'
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-codemode-policy-'))
 process.env.YAN_DATA_DIR = dir
@@ -24,7 +23,6 @@ const pi = {
 const before = () => hooks.get('before_agent_start').forEach(handler => handler({}))
 const blocked = () => hooks.get('tool_call').some(handler => handler({ toolName: 'codemode' })?.block)
 codemodePolicy(pi)
-workMode(pi)
 before()
 assert(active.includes('codemode') && active.includes('custom'), 'default enables codemode without replacing other tools')
 await writeFile(desktop, JSON.stringify({ codemodeEnabled: false }))
@@ -35,15 +33,6 @@ assert(!active.includes('codemode') && active.includes('custom'))
 await writeFile(desktop, JSON.stringify({ codemodeEnabled: true }))
 before()
 assert(active.includes('codemode') && !blocked())
-await mkdir(join(dir, 'work-mode'))
-const modeFile = join(dir, 'work-mode', 'fixture.json')
-await writeFile(modeFile, JSON.stringify({ mode: 'clarify' }))
-before()
-assert(!active.includes('codemode') && !active.includes('write') && blocked())
-await writeFile(desktop, JSON.stringify({ codemodeEnabled: false }))
-await writeFile(modeFile, JSON.stringify({ mode: 'standard' }))
-before()
-assert(!active.includes('codemode') && active.includes('write') && active.includes('custom'), 'plan exit does not restore a disabled codemode')
 await writeFile(desktop, JSON.stringify({ codemodeEnabled: true }))
 available = available.filter(name => name !== 'codemode')
 before()

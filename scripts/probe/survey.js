@@ -49,7 +49,7 @@
   push(0, JSON.stringify(s.session, null, 1).slice(0, 900))
   lines.push('')
 
-  lines.push('════ 四 · settings（工具分区顺序看 toolOrder）════')
+  lines.push('════ 四 · settings════')
   push(0, JSON.stringify(s.settings).slice(0, 1200))
   lines.push('')
 
