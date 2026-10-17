@@ -1784,7 +1784,53 @@ export class AgentController extends EventEmitter {
     })
   }
 
+  private async runMcpList() {
+    const manager = this.mcpConnectionManager()
+    const usable = manager.list().filter((server) => server.enabled !== false && !server.migratedToNative)
+    const servers = await Promise.all(
+      usable.map(async (server) => {
+        try {
+          const tools = await manager.listToolsCached(server.id)
+          return {
+            serverId: server.id,
+            title: server.title ?? server.id,
+            effect: server.effect ?? 'unknown',
+            status: manager.statusOf(server.id).status,
+            tools: tools.map((tool) => ({
+              name: tool.name,
+              ...(tool.description ? { description: tool.description.replace(/\s+/g, ' ').slice(0, 200) } : {})
+            }))
+          }
+        } catch (error) {
+          return {
+            serverId: server.id,
+            title: server.title ?? server.id,
+            effect: server.effect ?? 'unknown',
+            status: manager.statusOf(server.id).status,
+            tools: [],
+            error: error instanceof Error ? error.message : String(error)
+          }
+        }
+      })
+    )
+    return {
+      data: { servers },
+      summary: {
+        kind: 'mcp',
+        action: 'list',
+        servers: servers.map((server) => ({
+          serverId: server.serverId,
+          status: server.status,
+          tools: server.tools.map((tool) => tool.name),
+          ...('error' in server ? { error: server.error } : {})
+        })),
+        ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
+      }
+    }
+  }
+
   private async runMcpCommand(action: string, params: Record<string, unknown>) {
+    if (action === 'list') return this.runMcpList()
     if (action !== 'describe' && action !== 'call') {
       throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：mcp.${action}`)
     }

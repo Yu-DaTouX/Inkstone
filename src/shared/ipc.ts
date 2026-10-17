@@ -1,7 +1,8 @@
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type {
   NativeMcpImportCommitResponse,
-  NativeMcpImportPrepareResponse
+  NativeMcpImportPrepareResponse,
+  NativeMcpServerListView
 } from './mcp-native-import'
 import type { McpAppBridge } from './mcp-app-switch'
 import type { McpAppViewApi } from './mcp-app-view'
@@ -538,6 +539,7 @@ export interface ComputerUseStatusView {
   uvx: string | null
   enabled: boolean
   canInstallUv: boolean
+  interactionUncertain: boolean
 }
 
 export interface ComputerUseActionResult {
@@ -1493,6 +1495,7 @@ export interface CapabilitiesBridge {
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
   prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
   commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
+  nativeServers(): Promise<NativeMcpServerListView>
 }
 
 export type SourceKindView = 'image' | 'file' | 'web'
@@ -1873,6 +1876,7 @@ export interface YanBridge {
   computerUse: {
     status(): Promise<ComputerUseStatusView>
     installUv(): Promise<ComputerUseActionResult>
+    resolveInteraction(): Promise<ComputerUseStatusView>
     set(enabled: boolean): Promise<ComputerUseActionResult>
   }
   capabilities: CapabilitiesBridge

@@ -14,10 +14,11 @@ const desktop = join(dir, 'desktop.json')
 const hooks = new Map()
 let active = ['read', 'bash', 'edit', 'write', 'custom']
 let available = [...active, 'codemode']
+let deferred = []
 const pi = {
   on(name, handler) { hooks.set(name, [...(hooks.get(name) ?? []), handler]) },
   getActiveTools: () => active,
-  getAllTools: () => available.map(name => ({ name })),
+  getAllTools: () => [...available.map(name => ({ name })), ...deferred],
   setActiveTools(names) { active = [...names] }
 }
 const before = () => hooks.get('before_agent_start').forEach(handler => handler({}))
@@ -52,6 +53,31 @@ await writeFile(desktop, '{broken')
 before()
 assert(!active.includes('codemode') && blocked(), 'unreadable preference cannot undo an opt-out')
 
+await writeFile(desktop, JSON.stringify({ codemodeEnabled: false }))
+available.push('tool_search')
+before()
+assert(!active.includes('tool_search'), 'tool_search stays inactive without deferred tools')
+deferred = [{ name: 'mcp__hosted__note', exposure: 'deferred' }]
+before()
+assert(active.includes('tool_search') && !active.includes('codemode') && !active.includes('mcp__hosted__note'), 'deferred tools stay reachable through tool_search when codemode is off')
+active.push('mcp__hosted__note')
+before()
+assert(active.includes('mcp__hosted__note') && active.filter(name => name === 'tool_search').length === 1, 'tools loaded by tool_search survive the next turn without duplicating tool_search')
+await writeFile(desktop, JSON.stringify({ codemodeEnabled: true }))
+before()
+assert(active.includes('tool_search') && active.includes('codemode'), 'codemode and tool_search coexist')
+await writeFile(modeFile, JSON.stringify({ mode: 'clarify' }))
+before()
+assert(!active.includes('tool_search') && !active.includes('codemode'), 'plan mode drops tool_search with other non-read-only tools')
+await writeFile(modeFile, JSON.stringify({ mode: 'standard' }))
+before()
+assert(active.includes('tool_search') && active.includes('codemode'), 'plan exit restores tool_search for deferred tools')
+available = available.filter(name => name !== 'tool_search')
+active = active.filter(name => name !== 'tool_search')
+before()
+assert(!active.includes('tool_search'), 'a replaced tool-search extension is not activated')
+deferred = []
+
 await writeFile(desktop, JSON.stringify({ theme: 'light' }))
 const outfile = resolve('out/test/codemode-settings.mjs')
 await build({ entryPoints: ['src/main/settings.ts'], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'electron-locale', setup(build) {
@@ -65,4 +91,4 @@ await settings.patchSettings({ theme: 'dark' })
 assert.equal(JSON.parse(await readFile(desktop, 'utf8')).codemodeEnabled, false, 'an unrelated patch preserves the explicit opt-out')
 assert.equal((await settings.patchSettings({ codemodeEnabled: true })).codemodeEnabled, true)
 assert.equal((await settings.patchSettings({ codemodeEnabled: 'invalid' })).codemodeEnabled, true)
-console.log(`PASS: Codemode default, hot toggle, execution gate, plan restore, native disable, fail-closed settings and persistence; isolated data: ${dir}`)
+console.log(`PASS: Codemode default, hot toggle, execution gate, plan restore, native disable, fail-closed settings, deferred-tool search and persistence; isolated data: ${dir}`)

@@ -2174,18 +2174,18 @@ await runGitRepoTests(ok)
 
   ok(/yan --help/.test(guide), '能力说明：告诉模型按需查完整用法')
   ok(
-    /resultFile/.test(guide) && /不要把整个结果文件/.test(guide),
+    /resultFile/.test(guide) && /never the whole result file/.test(guide),
     '能力说明：写明「摘要 + 结果文件，别整份读进上下文」'
   )
-  ok(/yan <组> --help/.test(guide) && /SKILL\.md/.test(guide), '能力说明：目录式，用法按需读组帮助或技能文件')
+  ok(/yan <group> --help/.test(guide) && /SKILL\.md/.test(guide), '能力说明：目录式，用法按需读组帮助或技能文件')
   for (const group of ['capabilities', 'browser', 'search', 'question', 'tasks', 'subagent', 'image', 'artifact', 'file', 'session', 'operations']) {
-    ok(new RegExp(`- ${group}：|；${group}：`).test(guide), `能力说明：目录列出 ${group}`)
+    ok(new RegExp(`- ${group}: |; ${group}: `).test(guide), `能力说明：目录列出 ${group}`)
   }
-  ok(/技能 subagent/.test(guide) && /不要 sleep 轮询/.test(guide) && !/yan research read/.test(guide), '能力说明：子代理指向随包技能并说明不轮询，不推荐已退出的资料库研究入口')
+  ok(/skill subagent/.test(guide) && /do not sleep-poll/.test(guide) && !/yan research read/.test(guide), '能力说明：子代理指向随包技能并说明不轮询，不推荐已退出的资料库研究入口')
   ok(!/ctx:\/\//.test(guide) && !/yan context/.test(guide), '能力说明：不再引用已退役的上下文召回')
-  ok(/Skill/.test(guide) && /MCP/.test(guide), '能力说明：写明能力选择优先顺序')
+  ok(/fitting skill/.test(guide) && /MCP only when needed/.test(guide), '能力说明：写明能力选择优先顺序')
   const visual = mod.VISUAL_ANSWER_GUIDE
-  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /数据出处/.test(visual) && /技能 visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
+  ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /data source/.test(visual) && /skill visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
   {
     const probeHandlers = {}
     mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })

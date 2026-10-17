@@ -5,6 +5,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { mcpServersFile } from './mcp/config'
+import { INTERACTIVE_RESOURCE, sharedResources } from './interactive-resources'
 
 export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 
@@ -29,6 +30,7 @@ export interface ComputerUseStatus {
   uvx: string | null
   enabled: boolean
   canInstallUv: boolean
+  interactionUncertain: boolean
 }
 
 export interface ComputerUseResult {
@@ -95,7 +97,17 @@ export async function computerUseStatus(): Promise<ComputerUseStatus> {
     enabled = (await readRawServers()).list.some((item) => isOurs(item) && (item as { enabled?: unknown }).enabled !== false)
   } catch {
   }
-  return { supported, uvx: supported ? findUvx() : null, enabled, canInstallUv: supported && !!findOnPath('winget') }
+  return {
+    supported,
+    uvx: supported ? findUvx() : null,
+    enabled,
+    canInstallUv: supported && !!findOnPath('winget'),
+    interactionUncertain: sharedResources.snapshot().some((r) => r.resourceId === INTERACTIVE_RESOURCE && r.uncertain)
+  }
+}
+
+export function resolveComputerUseInteraction(): void {
+  sharedResources.resolveUncertain(INTERACTIVE_RESOURCE)
 }
 
 function killProcessTree(child: ReturnType<typeof spawn>): void {

@@ -328,7 +328,13 @@ try {
   {
     const makePi = () => {
       const registered = new Map()
-      return { registered, registerTool: (definition) => registered.set(definition.name, definition) }
+      const hooks = new Map()
+      return {
+        registered,
+        hooks,
+        registerTool: (definition) => registered.set(definition.name, definition),
+        on: (name, handler) => hooks.set(name, [...(hooks.get(name) ?? []), handler])
+      }
     }
     const writeSnapshot = async (file, tools, generatedAt = new Date().toISOString()) => {
       await writeFile(file, JSON.stringify({ version: 1, generatedAt, source: 'x', tools, servers: [], excluded: [] }), 'utf8')
@@ -346,7 +352,7 @@ try {
     delete process.env.YAN_MCP_APP_TOOLS
     const nonePi = makePi()
     extension.default(nonePi)
-    ok(nonePi.registered.size === 0, '扩展：没有快照 → 不注册任何工具')
+    ok(nonePi.registered.size === 0 && nonePi.hooks.size === 0, '扩展：没有快照 → 不注册任何工具，也不加提示')
 
     const snapshotA = join(root, 'ext-a.json')
     await writeSnapshot(snapshotA, [
@@ -364,6 +370,18 @@ try {
 
     const fallbackDef = piA.registered.get('mcp__app_stdio__no_visibility_note')
     ok(fallbackDef?.parameters?.type === 'object' && fallbackDef?.annotations === undefined, '扩展：缺 schema 补成空对象；缺注解不臆造')
+    ok(/^[\x20-\x7e]+$/.test(fallbackDef?.description ?? '') && fallbackDef.description.includes('app-stdio'), '扩展：缺描述时补英文描述，带服务器名供检索', fallbackDef?.description)
+    ok([...piA.registered.values()].every((definition) => definition.exposure === 'deferred'), '扩展：托管工具一律 deferred，不预先声明')
+    ok(readOnlyDef?.namespace?.name === 'app-stdio' && /^[\x20-\x7e]+$/.test(readOnlyDef.namespace.description ?? ''), '扩展：namespace 按服务器归组，说明为英文')
+
+    const startHooks = piA.hooks.get('before_agent_start') ?? []
+    ok(startHooks.length === 1, '扩展：有托管工具时登记一个提示钩子')
+    const sections = {}
+    const injected = startHooks[0]({ systemPrompt: 'BASE', systemPromptOptions: { sections } })
+    ok(injected?.systemPrompt?.startsWith('BASE\n\n') && injected.systemPrompt.includes('app-stdio') && injected.systemPrompt.includes('tool_search'), '扩展：系统提示追加托管服务器名与 tool_search 用法', injected?.systemPrompt)
+    ok(/^[\x20-\x7e]+$/.test(sections.inkstone_hosted_mcp ?? ''), '扩展：分区内容为英文')
+    ok(startHooks[0]({ systemPrompt: injected.systemPrompt, systemPromptOptions: { sections: {} } }) === undefined, '扩展：已含说明时不重复追加')
+    ok(extension.hostedServersNote([]) === '', '扩展：没有托管工具时不加说明')
 
     const calls = []
     const hostServer = createServer((req, res) => {
@@ -480,11 +498,19 @@ try {
       let body = ''
       req.on('data', (part) => { body += part })
       req.on('end', () => {
-        try { providerRequests.push(JSON.parse(body)) } catch { }
+        let request = null
+        try { request = JSON.parse(body) } catch { }
+        if (request) providerRequests.push(request)
         const sse = (delta, finish) => `data: ${JSON.stringify({ id: 'proxy-fix', object: 'chat.completion.chunk', created: 0, model: 'proxy-physical', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
         res.writeHead(200, { 'content-type': 'text/event-stream' })
-        res.write(sse({ role: 'assistant', content: 'PROXY-BOOT-OK' }))
-        res.write(sse({}, 'stop'))
+        const searched = (request?.messages ?? []).some((message) => message?.role === 'tool')
+        if (searched) {
+          res.write(sse({ role: 'assistant', content: 'PROXY-BOOT-OK' }))
+          res.write(sse({}, 'stop'))
+        } else {
+          res.write(sse({ role: 'assistant', tool_calls: [{ index: 0, id: 'search-1', type: 'function', function: { name: 'tool_search', arguments: JSON.stringify({ query: 'read only note' }) } }] }))
+          res.write(sse({}, 'tool_calls'))
+        }
         res.end('data: [DONE]\n\n')
       })
     })
@@ -510,6 +536,7 @@ try {
       JSON.stringify({ packages: [], defaultProvider: 'proxy-fixture', defaultModel: 'proxy-fixture/proxy-physical', defaultTools: ['read'], compaction: { enabled: false } })
     )
     await copyFile(proxyExtension, join(extDir, 'mcp-app-proxy.js'))
+    await copyFile(resolve('resources/pi-extensions/codemode-policy.js'), join(extDir, 'codemode-policy.js'))
     await copyFile(resolve('scripts/fixtures/mcp-app-proxy-probe.mjs'), join(extDir, '0-mcp-app-proxy-probe.js'))
 
     const cleanEnv = {}
@@ -573,7 +600,7 @@ try {
 
     try {
       const ready = await command('get_state')
-      ok(ready.success === true, '真实 pi：get_state 成功（随包 1.2.0 + 本机隔离目录）', ready.error)
+      ok(ready.success === true, '真实 pi：get_state 成功（随包 pi + 本机隔离目录）', ready.error)
       await command('set_model', { provider: 'proxy-fixture', modelId: 'proxy-physical' }).catch(() => undefined)
       const before = frames.length
       await command('prompt', { message: 'MCP_APP_PROXY_BOOT' }, 60000)
@@ -597,6 +624,19 @@ try {
       ok(readOnly?.description === '只读工具（fixture）：返回文本并声明 App 页面。', '真实 pi：getAllTools() 保留描述')
       ok(!tools.some((tool) => tool.name.includes('app_only_refresh')), '真实 pi：app-only 工具没有注册')
       ok(tools.some((tool) => tool.name === 'mcp__app_stdio__slow'), '真实 pi：缺 visibility 的工具按最严仍给模型')
+      ok(tools.length > 0 && tools.every((tool) => tool.exposure === 'deferred'), '真实 pi：托管工具的 exposure 保留为 deferred', tools.map((tool) => `${tool.name}=${tool.exposure}`).join(','))
+
+      const declared = (request) => (request?.tools ?? []).map((tool) => tool?.function?.name ?? tool?.name).filter(Boolean)
+      const [first, second] = providerRequests
+      const firstTools = declared(first)
+      ok(firstTools.includes('tool_search'), '真实 pi：存在 deferred 工具时首个请求就声明 tool_search', firstTools.join(','))
+      ok(!firstTools.some((name) => name.startsWith('mcp__app_stdio__')), '真实 pi：首个请求不预先声明托管工具 schema', firstTools.join(','))
+      const systemText = (first?.messages ?? []).filter((message) => message?.role === 'system' || message?.role === 'developer').map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n')
+      ok(systemText.includes('Inkstone-hosted MCP servers: app-stdio'), '真实 pi：系统提示列出托管服务器名')
+      const secondTools = declared(second)
+      ok(secondTools.includes('mcp__app_stdio__read_only_note'), '真实 pi：tool_search 命中后下一次请求声明该工具', secondTools.join(','))
+      const searchResult = (second?.messages ?? []).find((message) => message?.role === 'tool')
+      ok(String(typeof searchResult?.content === 'string' ? searchResult.content : JSON.stringify(searchResult?.content)).includes('mcp__app_stdio__read_only_note'), '真实 pi：tool_search 结果里列出加载的工具')
     } finally {
       try { child.stdin.end() } catch { }
       const exited = new Promise((done) => child.once('exit', done))

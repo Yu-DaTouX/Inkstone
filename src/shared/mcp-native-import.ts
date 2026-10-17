@@ -2,6 +2,27 @@ import type { McpMigratedToNativeMark, McpServerConfig } from './mcp'
 
 export const WINDOWS_MCP_SERVER_ID = 'windows-mcp'
 
+export interface NativeMcpServerView {
+  name: string
+  scope: 'global' | 'project'
+  path: string
+  transport: 'stdio' | 'http'
+  command?: string
+  argCount: number
+  endpointOrigin?: string
+  exposure?: string
+  enabled: boolean
+  overriddenBy?: string
+}
+
+export interface NativeMcpServerListView {
+  servers: NativeMcpServerView[]
+  globalPath: string
+  projectPath?: string
+  projectUntrusted?: boolean
+  errors?: string[]
+}
+
 const NATIVE_SERVER_NAME = /^[A-Za-z0-9_-]+$/
 
 export function nativeMcpServerName(id: string): { ok: true; name: string } | { ok: false; reason: string } {

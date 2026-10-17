@@ -12,10 +12,12 @@ export function codemodeEnabled() {
 }
 
 export function applyCodemodePreference(pi, names) {
+  const all = pi.getAllTools?.() ?? []
+  const available = name => all.some(tool => (typeof tool === 'string' ? tool : tool.name) === name)
   const without = names.filter(name => name !== 'codemode')
-  if (!codemodeEnabled()) return without
-  const available = (pi.getAllTools?.() ?? []).some(tool => (typeof tool === 'string' ? tool : tool.name) === 'codemode')
-  return available ? (names.includes('codemode') ? names : [...without, 'codemode']) : without
+  const target = codemodeEnabled() && available('codemode') ? (names.includes('codemode') ? names : [...without, 'codemode']) : without
+  const hasDeferred = all.some(tool => typeof tool === 'object' && tool?.exposure === 'deferred')
+  return hasDeferred && available('tool_search') && !target.includes('tool_search') ? [...target, 'tool_search'] : target
 }
 
 export default function codemodePolicy(pi) {

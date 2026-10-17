@@ -841,14 +841,16 @@ export function mcpAppOwnershipView(input: {
       : managed && !record
         ? '缺少 appHost 回退记录，不能在未保存原条目的情况下交回 pi。'
         : undefined
+  const inkstoneConnection = !managed && !config.migratedToNative && config.enabled !== false
   const inkstoneOnly = config.id === WINDOWS_MCP_SERVER_ID
   return {
     serverId: config.id,
     title: config.title ?? config.id,
     ownedBy: managed ? 'inkstone' : 'pi',
     managed,
+    inkstoneConnection,
     inkstoneOnly,
-    nativeName: record?.name ?? config.id,
+    nativeName: record?.name ?? config.migratedToNative?.nativeName ?? config.id,
     scope: config.projectScope ? 'project' : 'global',
     projectScoped,
     hasNativeRecord: Boolean(record),

@@ -3,7 +3,8 @@ import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type {
   NativeMcpImportCommitResponse,
-  NativeMcpImportPrepareResponse
+  NativeMcpImportPrepareResponse,
+  NativeMcpServerListView
 } from '../shared/mcp-native-import'
 import type {
   McpAppOwnershipResponse,
@@ -405,6 +406,7 @@ const api: YanBridge = {
   computerUse: {
     status: () => invoke<ComputerUseStatusView>('yan:computerUse:status'),
     installUv: () => invoke<ComputerUseActionResult>('yan:computerUse:installUv'),
+    resolveInteraction: () => invoke<ComputerUseStatusView>('yan:computerUse:resolveInteraction'),
     set: (enabled: boolean) => invoke<ComputerUseActionResult>('yan:computerUse:set', enabled)
   },
   capabilities: {
@@ -420,7 +422,8 @@ const api: YanBridge = {
     prepareNativeImport: (serverId: string) =>
       invoke<NativeMcpImportPrepareResponse>('yan:capabilities:prepareNativeImport', serverId),
     commitNativeImport: (token: string) =>
-      invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token)
+      invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token),
+    nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers')
   },
   mcpApp: {
     ownership: () => invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership'),

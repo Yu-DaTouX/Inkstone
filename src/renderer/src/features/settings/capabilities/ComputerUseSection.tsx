@@ -11,7 +11,7 @@ const RELEASES = 'https://pypi.org/project/windows-mcp/#history'
 export function ComputerUseSection(): ReactElement | null {
   const t = useT()
   const [status, setStatus] = useState<ComputerUseStatusView | null>(null)
-  const [busy, setBusy] = useState<'uv' | 'toggle' | null>(null)
+  const [busy, setBusy] = useState<'uv' | 'toggle' | 'resolve' | null>(null)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [manual, setManual] = useState(false)
   const [statusError, setStatusError] = useState('')
@@ -72,6 +72,18 @@ export function ComputerUseSection(): ReactElement | null {
     if (alive.current) await refresh()
   }
 
+  const resolveInteraction = async (): Promise<void> => {
+    setBusy('resolve')
+    try {
+      const next = await window.yan.computerUse.resolveInteraction()
+      if (alive.current) setStatus(next)
+    } catch (cause) {
+      if (alive.current) setResult({ ok: false, text: cause instanceof Error ? cause.message : String(cause) })
+    } finally {
+      if (alive.current) setBusy(null)
+    }
+  }
+
   return (
     <div data-testid="cap-computer-use">
       <Group
@@ -108,6 +120,23 @@ export function ComputerUseSection(): ReactElement | null {
           </>
         ) : null}
         {result ? (result.ok ? <Meta>{result.text}</Meta> : <Warn>{result.text}</Warn>) : null}
+        {status?.interactionUncertain ? (
+          <>
+            <Warn>{t('cu.uncertain')}</Warn>
+            <Actions>
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={busy !== null}
+                isPending={busy === 'resolve'}
+                onPress={() => void resolveInteraction()}
+                data-testid="cap-computer-use-resolve"
+              >
+                {t('cu.resolveUncertain')}
+              </Button>
+            </Actions>
+          </>
+        ) : null}
         <Meta>{t('cu.scope')}</Meta>
         <Actions>
           <Button size="sm" variant="ghost" isDisabled={busy !== null} onPress={() => void refresh()}>
