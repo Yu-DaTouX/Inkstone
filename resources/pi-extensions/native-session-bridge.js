@@ -185,7 +185,7 @@ export default function nativeSessionBridge(pi) {
           reason,
           version: ENVELOPE_VERSION,
           command: NATIVE_COMMAND,
-          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save']
+          capabilities: ['navigate_tree', 'reload', 'scoped_models_read', 'scoped_models_set', 'trust_read', 'trust_save', 'navigate_tree_summary', 'set_label']
         }
       }),
       'info'
@@ -219,7 +219,8 @@ export default function nativeSessionBridge(pi) {
       case 'navigate_tree': {
         const targetId = String(args?.targetId ?? '')
         if (!targetId) throw new Error('缺少 targetId')
-        const outcome = await ctx.navigateTree(targetId, { summarize: false })
+        const summarize = args?.summarize === true
+        const outcome = await ctx.navigateTree(targetId, { summarize })
         const leafId = ctx.sessionManager.getLeafId()
         const branch = ctx.sessionManager.getBranch()
         return {
@@ -229,6 +230,13 @@ export default function nativeSessionBridge(pi) {
           branchIds: Array.isArray(branch) ? branch.map((entry) => entry?.id).filter((id) => typeof id === 'string') : [],
           sessionFile: ctx.sessionManager.getSessionFile()
         }
+      }
+      case 'set_label': {
+        const targetId = String(args?.targetId ?? '')
+        if (!targetId) throw new Error('缺少 targetId')
+        const label = typeof args?.label === 'string' ? args.label.trim() : ''
+        pi.setLabel(targetId, label || undefined)
+        return { targetId, label: label || null }
       }
       case 'reload': {
         await ctx.reload()

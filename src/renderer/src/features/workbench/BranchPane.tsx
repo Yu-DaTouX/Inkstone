@@ -2,13 +2,31 @@ import { useMemo, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
+import { IconButton, Switch } from '../../ui'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
 import { BranchTree, branchText, type BranchTransport } from '../session/BranchTree'
 import type { BranchPaneProps } from './types'
 
 interface NativeSessionIpc {
   nativeSession?: (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
+}
+
+const SUMMARIZE_KEY = 'inkstone.branch.summarizeOnLeave'
+
+function readSummarize(): boolean {
+  try {
+    return localStorage.getItem(SUMMARIZE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeSummarize(on: boolean): void {
+  try {
+    localStorage.setItem(SUMMARIZE_KEY, on ? '1' : '0')
+  } catch {
+    return
+  }
 }
 
 function bridge(): NativeSessionIpc['nativeSession'] {
@@ -34,6 +52,7 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
   )
 
   const [reloadToken, setReloadToken] = useState(0)
+  const [summarize, setSummarize] = useState(readSummarize)
 
   const busy = useStore((s) => {
     if (!owner.sessionId || s.session?.sessionId !== owner.sessionId) return false
@@ -61,12 +80,24 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
           <RefreshCw size={14} aria-hidden="true" />
         </IconButton>
       </header>
-      <p className="wb-branch__hint">{text.hint}</p>
+      <Switch
+        className="wb-branch__summarize"
+        isSelected={summarize}
+        onChange={(on) => {
+          setSummarize(on)
+          writeSummarize(on)
+        }}
+        data-testid="branch-summarize"
+      >
+        {text.summarize}
+      </Switch>
+      <p className="wb-branch__hint">{summarize ? text.hintSummarize : text.hint}</p>
       <BranchTree
         className="wb-branch__tree"
         owner={owner}
         transport={transport}
         busy={busy}
+        summarize={summarize}
         reloadToken={reloadToken}
         onNavigated={onNavigated}
       />

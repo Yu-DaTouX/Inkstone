@@ -132,6 +132,60 @@ try {
     ok(signals.length === 1 && signals[0].op === 'model_select', '未登记的收据交给信号回调')
   }
 
+  console.log('原生桥分支摘要与书签')
+  {
+    const ext = await import(`${pathToFileURL(join(process.cwd(), 'resources', 'pi-extensions', 'native-session-bridge.js')).href}?t=${Date.now()}-tree`)
+    const handlers = {}
+    const commands = {}
+    const labels = []
+    const navigations = []
+    const prev = process.env.YAN_NATIVE_BRIDGE
+    process.env.YAN_NATIVE_BRIDGE = '1'
+    ext.default({
+      on: (name, fn) => { handlers[name] = fn },
+      registerCommand: (name, def) => { commands[name] = def },
+      setLabel: (id, label) => labels.push([id, label])
+    })
+    process.env.YAN_NATIVE_BRIDGE = prev
+    const timeouts = []
+    let runtime
+    const ctx = {
+      ui: { notify: (message) => runtime.handleUi({ method: 'notify', message }) },
+      isIdle: () => true,
+      navigateTree: async (id, options) => { navigations.push([id, options]); return { cancelled: false } },
+      sessionManager: { getLeafId: () => 'leaf', getBranch: () => [{ id: 'leaf' }], getSessionFile: () => 'f.jsonl' }
+    }
+    const transport = {
+      command: async (_type, { message }, opts) => {
+        timeouts.push(opts?.timeoutMs)
+        const [name, ...rest] = message.slice(1).split(' ')
+        await commands[name].handler(rest.join(' '), ctx)
+        return { success: true, data: { disposition: 'handled' } }
+      }
+    }
+    runtime = new NativeSessionRuntime(transport)
+    handlers.session_start({ reason: 'startup' }, ctx)
+    ok(runtime.bridgeCapabilities.includes('set_label') && runtime.bridgeCapabilities.includes('navigate_tree_summary'), '桥报到含 set_label 能力')
+    await runtime.navigateTree('e1')
+    await runtime.navigateTree('e2', { summarize: true })
+    ok(navigations[0][1].summarize === false && navigations[1][1].summarize === true, 'navigate_tree 按请求决定是否摘要', navigations)
+    ok(timeouts[1] >= 300000 && timeouts[0] < timeouts[1], '摘要切换放宽超时到 5 分钟', timeouts)
+    const set = await runtime.setLabel('e1', '  里程碑  ')
+    await runtime.setLabel('e1', '')
+    ok(set.label === '里程碑' && labels[0][1] === '里程碑' && labels[1][1] === undefined, 'set_label 去空格写入、空值清除', labels)
+  }
+
+  console.log('原生会话请求校验')
+  {
+    const { validateNativeSessionRequest } = await bundle('src/main/native-session-guard.ts', 'pi-native-guard.mjs', 'node')
+    const idle = { sessionId: 's1', isStreaming: false, isCompacting: false, messageCount: 0, pendingMessageCount: 0, cwd: '' }
+    ok(validateNativeSessionRequest({ action: 'set-label', expectedSessionId: 's1', entryId: 'e1', label: 'x' }, idle).ok, '书签请求通过校验')
+    ok(!validateNativeSessionRequest({ action: 'set-label', expectedSessionId: 's1', label: 'x' }, idle).ok, '书签请求缺 entryId 被拒')
+    ok(!validateNativeSessionRequest({ action: 'set-label', expectedSessionId: 's1', entryId: 'e1', label: 'x'.repeat(201) }, idle).ok, '书签名过长被拒')
+    ok(!validateNativeSessionRequest({ action: 'set-label', expectedSessionId: 's1', entryId: 'e1', label: 'x' }, { ...idle, isAgentRunning: true }).ok, '运行中不能改书签')
+    ok(!validateNativeSessionRequest({ action: 'navigate', expectedSessionId: 's1', entryId: 'e1', summarize: 'yes' }, idle).ok, 'summarize 必须是布尔值')
+  }
+
   console.log('事件处理')
   {
     const pushes = []

@@ -85,6 +85,38 @@
     flex: none;
   }
 
+  .wb-branch__summarize {
+    flex: none;
+    margin-top: var(--s-8);
+  }
+
+  .branch-bookmark {
+    flex: none;
+    margin-left: auto;
+    opacity: 0;
+  }
+
+  .ui-tree__item:hover .branch-bookmark,
+  .ui-tree__item[data-selected] .branch-bookmark,
+  .ui-tree__item[data-focus-visible] .branch-bookmark,
+  .branch-bookmark[data-focus-visible],
+  .branch-bookmark[aria-expanded="true"] {
+    opacity: 1;
+  }
+
+  .branch-bookmark-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    width: min(260px, calc(100vw - 32px));
+  }
+
+  .branch-bookmark-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s-6);
+  }
+
   .branch-status {
     display: flex;
     flex-direction: column;

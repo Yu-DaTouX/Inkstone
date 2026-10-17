@@ -91,6 +91,8 @@ export interface ProjectTrustSnapshot {
   entry: string | null
 }
 
+const NAVIGATE_SUMMARY_TIMEOUT_MS = 5 * 60_000
+
 export interface NavigateTreeResult {
   ok: boolean
   cancelled: boolean
@@ -295,8 +297,16 @@ export class NativeSessionRuntime {
     return receiptPromise
   }
 
-  async navigateTree(entryId: string, _options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
-    const receipt = await this.invoke('navigate_tree', { targetId: entryId }, this.defaultTimeoutMs)
+  async navigateTree(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
+    const summarize = options?.summarize === true
+    if (summarize && !this.capabilities.includes('navigate_tree_summary')) {
+      throw new NativeBridgeError('当前 pi 原生桥不支持切换时生成分支摘要', 'bridge_unavailable')
+    }
+    const receipt = await this.invoke(
+      'navigate_tree',
+      summarize ? { targetId: entryId, summarize } : { targetId: entryId },
+      summarize ? NAVIGATE_SUMMARY_TIMEOUT_MS : this.defaultTimeoutMs
+    )
     const result = (receipt.result ?? {}) as Record<string, unknown>
     return {
       ok: true,
@@ -327,6 +337,13 @@ export class NativeSessionRuntime {
       ? result.enabledModels.filter((item): item is string => typeof item === 'string')
       : []
     return { scopedModels, enabledModels, scopeIsAll: enabledModels.length === 0 }
+  }
+
+  async setLabel(entryId: string, label: string): Promise<{ ok: true; label: string | null }> {
+    if (!this.capabilities.includes('set_label')) throw new NativeBridgeError('当前 pi 原生桥不支持书签', 'bridge_unavailable')
+    const receipt = await this.invoke('set_label', { targetId: entryId, label }, this.defaultTimeoutMs)
+    const result = (receipt.result ?? {}) as Record<string, unknown>
+    return { ok: true, label: typeof result.label === 'string' ? result.label : null }
   }
 
   async saveScopedModels(modelIds: string[]): Promise<ScopedModelsSaveResult> {
