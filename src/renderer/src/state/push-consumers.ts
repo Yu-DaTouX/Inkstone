@@ -1,7 +1,7 @@
 import type { AppSettings, MainPush, SoundEvent, SubagentRun } from '../../../shared/ipc'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
-import { isNativeMcpStatus } from '../lib/native-mcp-status'
+import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } from '../lib/native-mcp-status'
 
 export interface PushContext {
   get(): Store
@@ -147,8 +147,8 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
     case 'notify': {
       const text = m.payload.message ?? ''
       const query = s.nativeMcpStatus
-      if (query?.pending && m.runtime?.sessionId === query.sessionId && isNativeMcpStatus(text)) {
-        set({ nativeMcpStatus: { ...query, pending: false, text } })
+      if (query?.pending && m.runtime?.sessionId === query.sessionId && (query.action ? isNativeMcpActionResult(text) : isNativeMcpStatus(text))) {
+        set({ nativeMcpStatus: { ...query, pending: query.action === 'login' && isNativeMcpSignInPrompt(text), text } })
         break
       }
 

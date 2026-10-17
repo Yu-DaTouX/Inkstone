@@ -18,7 +18,7 @@ import { Actions, Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, Panel,
 import { canImportMcp, mcpStatusTone, verificationTone } from './model'
 import { McpAppOwnership } from './McpAppOwnership'
 import { McpAppRefresh } from './McpAppRefresh'
-import { NativeMcpList } from './NativeMcpList'
+import { NativeMcpList, type NativeMcpAction } from './NativeMcpList'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -462,10 +462,38 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
     }
   }
 
+  const runAction = async (action: NativeMcpAction, server: string): Promise<void> => {
+    setError(null)
+    try {
+      if (!(await ensureActivated()) || !mounted.current) return
+      const sessionId = useStore.getState().session?.sessionId
+      if (!sessionId) return
+      const request = { sessionId, pending: true, text: '', action }
+      useStore.setState({ nativeMcpStatus: request })
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => {
+        const current = useStore.getState().nativeMcpStatus
+        if (current?.pending && current.sessionId === sessionId && current.action === action) {
+          useStore.setState({ nativeMcpStatus: { ...current, pending: false, text: current.text || t('cap.nativeMcpActionTimeout') } })
+        }
+      }, action === 'login' ? 300_000 : 90_000)
+      if (!(await send(`/mcp ${action} ${server}`))) {
+        if (useStore.getState().nativeMcpStatus === request) useStore.setState({ nativeMcpStatus: null })
+        if (mounted.current) setError(t('cap.nativeMcpActionFailed'))
+      }
+    } catch (cause) {
+      if (useStore.getState().nativeMcpStatus?.pending) useStore.setState({ nativeMcpStatus: null })
+      if (mounted.current) setError(errorText(cause))
+    }
+  }
+
   return (
     <Group title={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
       <Note>{text('mcpNativeNote')}</Note>
-      <NativeMcpList />
+      <NativeMcpList
+        actionable={available && !busy && !busySession && !!session?.sessionId && !nativeMcpStatus?.pending}
+        onAction={available ? runAction : undefined}
+      />
       {available ? (
         <>
           <IndividualAction>
@@ -481,7 +509,7 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
           </IndividualAction>
           {nativeMcpStatus && nativeMcpStatus.sessionId === session?.sessionId ? (
             <p className="caps-result" role="status" data-testid="caps-native-mcp-status">
-              {nativeMcpStatus.pending ? t('cap.nativeMcpLoading') : nativeMcpStatus.text}
+              {nativeMcpStatus.text || (nativeMcpStatus.action ? t('cap.nativeMcpActionRunning') : t('cap.nativeMcpLoading'))}
             </p>
           ) : null}
         </>

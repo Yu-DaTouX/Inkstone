@@ -365,6 +365,18 @@ try {
     const missing = await readPiRuntimePrefs(join(dataDir, 'no-such-settings.json'))
     ok(missing.autoRetry === true, '设置文件缺失时回落缺省')
   }
+
+  console.log('原生 MCP 操作结果识别')
+  {
+    const { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } = await bundle('src/renderer/src/lib/native-mcp-status.ts', 'pi-native-mcp-status.mjs', 'neutral')
+    ok(isNativeMcpActionResult('Reconnected to MCP server "docs" (connected).'), '识别重连结果')
+    ok(isNativeMcpActionResult('Signed out of MCP server "docs".') && isNativeMcpActionResult('No stored credentials for MCP server "docs".'), '识别登出结果')
+    ok(isNativeMcpActionResult('Sign-in cancelled.') && isNativeMcpActionResult('No enabled MCP server uses OAuth. Only HTTP servers without an Authorization header do.'), '识别取消与不支持 OAuth')
+    ok(!isNativeMcpActionResult('已切换模型'), '无关通知不截获')
+    ok(isNativeMcpSignInPrompt('Sign in to MCP server "docs" in your browser:\nhttps://auth.example/x'), '识别浏览器登录提示，继续等结果')
+    ok(!isNativeMcpStatus('Reconnected to MCP server "docs" (connected).'), '状态查询不误收操作结果')
+  }
+
 } finally {
   await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
 }

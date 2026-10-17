@@ -2,14 +2,34 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type { NativeMcpServerListView } from '../../../../../shared/mcp-native-import'
-import { Empty, Item, ItemHead, ListSkeleton, Meta, StatusBadge, Warn } from './parts'
+import { Button } from '../../../ui'
+import { Actions, Empty, Item, ItemHead, ListSkeleton, Meta, StatusBadge, Warn } from './parts'
 
-export function NativeMcpList(): ReactElement {
+export type NativeMcpAction = 'login' | 'logout' | 'reconnect'
+
+export function NativeMcpList({
+  actionable = false,
+  onAction
+}: {
+  actionable?: boolean
+  onAction?: (action: NativeMcpAction, server: string) => Promise<void>
+}): ReactElement {
   const t = useT()
   const sessionId = useStore((s) => s.session?.sessionId)
   const [list, setList] = useState<NativeMcpServerListView | null>(null)
   const [error, setError] = useState('')
   const alive = useRef(true)
+  const [running, setRunning] = useState<string | null>(null)
+
+  const act = async (action: NativeMcpAction, server: string): Promise<void> => {
+    if (!onAction || running) return
+    setRunning(`${action}:${server}`)
+    try {
+      await onAction(action, server)
+    } finally {
+      if (alive.current) setRunning(null)
+    }
+  }
 
   useEffect(() => {
     alive.current = true
@@ -59,6 +79,42 @@ export function NativeMcpList(): ReactElement {
                 </Meta>
               ) : server.endpointOrigin ? (
                 <Meta title={server.path}>{server.endpointOrigin}</Meta>
+              ) : null}
+              {onAction && server.enabled && !/\s/.test(server.name) ? (
+                <Actions>
+                  {server.transport === 'http' ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={!actionable || running !== null}
+                        title={t('cap.nativeMcpLoginHint')}
+                        onPress={() => void act('login', server.name)}
+                        data-testid="caps-native-mcp-login"
+                      >
+                        {t('cap.nativeMcpLogin')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        isDisabled={!actionable || running !== null}
+                        onPress={() => void act('logout', server.name)}
+                        data-testid="caps-native-mcp-logout"
+                      >
+                        {t('cap.nativeMcpLogout')}
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    isDisabled={!actionable || running !== null}
+                    onPress={() => void act('reconnect', server.name)}
+                    data-testid="caps-native-mcp-reconnect"
+                  >
+                    {t('cap.nativeMcpReconnect')}
+                  </Button>
+                </Actions>
               ) : null}
             </Item>
           ))}
