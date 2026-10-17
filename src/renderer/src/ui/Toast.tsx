@@ -7,6 +7,7 @@ import {
 } from 'react-aria-components'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
 import { cx } from './cx'
+import { Button } from './Button'
 import { IconButton } from './IconButton'
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger'
@@ -15,6 +16,7 @@ export interface ToastContent {
   title: string
   description?: string
   tone?: ToastTone
+  action?: { label: string; onAction: () => void }
 }
 
 export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3 })
@@ -61,6 +63,19 @@ export function ToastRegion({ className }: { className?: string } = {}) {
               ) : null}
             </span>
           </RACToastContent>
+          {toast.content.action ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="ui-toast__action"
+              onPress={() => {
+                toast.content.action?.onAction()
+                toastQueue.close(toast.key)
+              }}
+            >
+              {toast.content.action.label}
+            </Button>
+          ) : null}
           <IconButton
             aria-label="关闭提示"
             variant="ghost"
