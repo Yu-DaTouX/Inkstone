@@ -44,6 +44,12 @@ export function useContextUsage() {
 export function ContextRing({ className }: { className?: string } = {}) {
   const t = useT()
   const { session, usage, matches, windowSize, known, tokens, percent, tone, windowAssumed } = useContextUsage()
+  const lastShown = useRef<{ sessionId: string; percent: number; tone: typeof tone } | null>(null)
+  const sessionId = session?.sessionId ?? ''
+  if (known && percent !== null) lastShown.current = { sessionId, percent, tone }
+  const held = !known && !!usage && !matches && lastShown.current?.sessionId === sessionId ? lastShown.current : null
+  const ringPercent = held ? held.percent : percent
+  const ringTone = held ? held.tone : tone
   const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
   const compact = useStore((s) => s.compact)
@@ -61,7 +67,7 @@ export function ContextRing({ className }: { className?: string } = {}) {
     ? [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, windowSize - tokens) }]
     : []
   const busy = !!session?.isAgentRunning || !!session?.isStreaming || !!session?.isCompacting
-  const text = known ? `${Math.round(percent!)}%` : '—'
+  const text = ringPercent !== null ? `${Math.round(ringPercent)}%` : '—'
   const title = known
     ? t('ctx.tip', { used: shortTokens(tokens), win: shortTokens(windowSize), pct: Math.round(percent!) })
     : t('ctx.usageUnknown')
@@ -72,14 +78,14 @@ export function ContextRing({ className }: { className?: string } = {}) {
         ref={triggerRef}
         type="button"
         className="ctx-ring"
-        data-tone={known ? tone : ''}
+        data-tone={ringPercent !== null ? ringTone : ''}
         aria-label={t('rp.context')}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={title}
         onClick={() => setOpen((v) => !v)}
       >
-        <ContextRingGlyph percent={percent} tone={tone} />
+        <ContextRingGlyph percent={ringPercent} tone={ringTone} />
         <span className="ctx-ring-text ui-meta-num" data-testid="ctx-ring-text">
           {text}
         </span>
