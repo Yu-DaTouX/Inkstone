@@ -106,6 +106,7 @@ const STUBS = {
   'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
   'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
   'src/renderer/src/features/composer/QueueEditor.tsx': 'export function QueueEditor(){ return null }',
+  'src/renderer/src/features/composer/QuotaResumeBar.tsx': 'export function QuotaResumeBar(){ return null }',
   'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }'
 }
 
