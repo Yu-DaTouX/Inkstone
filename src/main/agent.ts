@@ -585,7 +585,7 @@ export class AgentController extends EventEmitter {
     super()
     const emit = opts.push
     this.push = (msg) => {
-      if (this.suppressPush) return
+      if (this.suppressPush && msg.ch !== 'ui-request' && msg.ch !== 'ui-resolved' && msg.ch !== 'notify') return
       this.observeRunPush(msg)
       emit(msg)
     }
@@ -3795,8 +3795,7 @@ export class AgentController extends EventEmitter {
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
-      this.ui.seen.clear()
-      this.ui.pending.clear()
+      this.ui.cancelPending()
       this.resetSessionScope()
       await this.hydrate()
       return { ok: true }
@@ -3816,8 +3815,7 @@ export class AgentController extends EventEmitter {
       if ((res.data as { cancelled?: boolean } | undefined)?.cancelled) {
         return { ok: false, error: '会话切换被扩展取消' }
       }
-      this.ui.seen.clear()
-      this.ui.pending.clear()
+      this.ui.cancelPending()
       this.resetSessionScope()
       await this.hydrate()
       return { ok: true }
@@ -3859,8 +3857,7 @@ export class AgentController extends EventEmitter {
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
       this.resetSessionScope()
-      this.ui.seen.clear()
-      this.ui.pending.clear()
+      this.ui.cancelPending()
       await this.hydrate()
       return { ok: true, text: res.data?.text }
     } finally {
@@ -3876,8 +3873,7 @@ export class AgentController extends EventEmitter {
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
       this.resetSessionScope()
-      this.ui.seen.clear()
-      this.ui.pending.clear()
+      this.ui.cancelPending()
       await this.hydrate()
       return { ok: true }
     } finally {
@@ -3971,8 +3967,7 @@ export class AgentController extends EventEmitter {
     if (!result.cancelled) {
       this.nativeBranchView = true
       this.resetQueue()
-      this.ui.seen.clear()
-      this.ui.pending.clear()
+      this.ui.cancelPending()
       await this.hydrate()
     }
     return result

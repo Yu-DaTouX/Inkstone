@@ -32,6 +32,7 @@ const MAX_CONCURRENT = 24
 const STALL_TIMEOUT_MS = 10 * 60 * 1000
 const GRACE_MS = 75 * 1000
 const TOOL_RUNNING_STALL_FACTOR = 6
+const DIALOG_UI_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
 const PROGRESS_EVENTS = new Set(['agent_start', 'turn_start', 'turn_end', 'message_start', 'message_update', 'message_end',
   'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'auto_compaction_start', 'auto_compaction_end',
   'agent_end', 'auto_retry_start', 'auto_retry_end'])
@@ -596,6 +597,10 @@ export class SubagentController {
           YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id }
       })
       rpc.on('exit', () => approval.stop())
+      rpc.on('ui', (req: Record<string, unknown>) => {
+        const requestId = typeof req.id === 'string' ? req.id : ''
+        if (requestId && DIALOG_UI_METHODS.has(String(req.method ?? ''))) rpc.respondUi({ id: requestId, cancelled: true })
+      })
       const close = rpc.close.bind(rpc)
       rpc.close = async () => { approval.stop(); await close() }
       return rpc

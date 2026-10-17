@@ -200,6 +200,13 @@ export class UiRequests {
     if (wasPending) this.host.push({ ch: 'ui-resolved', payload: { id: res.id, by } })
   }
 
+  cancelPending(): void {
+    for (const id of [...this.pending]) this.respondUi({ id, cancelled: true })
+    this.pending.clear()
+    this.payloads.clear()
+    this.seen.clear()
+  }
+
   rejectPendingHostUi(reason: string): void {
     const error = new Error(reason)
     for (const [id, pending] of this.pendingHostUi) {
