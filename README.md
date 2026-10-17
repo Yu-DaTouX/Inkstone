@@ -19,34 +19,37 @@
 <br>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-e-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-e-light.png">
-  <img src="assets/inkstone/workspace-e-light.png" alt="砚的界面：左边是会话列表，中间是对话，右边并排打开文件和另一个 AI 的工作结果。" width="1280">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-v3-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-v3-light.png">
+  <img src="assets/inkstone/workspace-v3-light.png" alt="砚的界面：左边是按项目分组的会话列表，中间是对话和折叠起来的工具过程，右边是环境、上下文和更改磁贴。" width="1280">
 </picture>
 
 <p align="center"><sub>界面示意 · 图中内容均为演示数据</sub></p>
 
 ## 它能帮你做什么
 
-- **聊着把活干了**：像聊天一样交代任务，可以贴图片、用 `@` 指定文件。AI 每一步做了什么都能点开看。
-- **一个窗口就够**：对话、文件、网页、终端并排摆在一起，想怎么摆就怎么摆，不用来回切窗口。
+- **聊着把活干了**：像聊天一样交代任务，可以贴图片、用 `@` 指定文件、用 `/` 调命令。AI 读了什么、改了什么、跑了什么，都收在一行里，点开就能看。
+- **会话按项目整理**：左栏按项目文件夹分组；新会话可以直接在输入框底栏选项目或打开一个新文件夹。
+- **状态一眼看清**：消息旁的磁贴显示环境、上下文占用、MCP、改动和模型额度；工具也能拆成分屏磁贴，拖动换位。
+- **交给子 Agent**：为子任务指定模型，子 Agent 在旁边并行干活，图标会跟着它正在读、写或跑命令。
+- **两档权限**：「自动批准」下常规操作直接执行、危险操作先问你；「不受限制」则完全按 pi 原生行为执行。
 - **改坏了能退回**：发送前尝试为符合条件的项目保存本地快照；可先预览变更，再确认回退。
-- **危险操作先问你**：大范围删除、丢弃改动这类操作，会先停下来等你点头。
-- **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换。
+- **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换；输入框旁有上下文圆环和额度圆环。
+- **和别人一起做**：「多人协作」用类似 Git 的方式在两台电脑之间拉取、比较、合并分支；邀请链接或二维码就能连上。
 - **插件按需添加**：在插件市场下载砚适配的插件，或搜索、安装和管理 pi 生态包。
 - **以前聊过的都找得到**：按 `Ctrl+K`，搜标题或聊天内容。
 
 ## 产品方向
 
-目标是简单易读的 UI、危险审批与原生模式两档权限、指定模型的子 Agent，以及轻量和性能。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
+目标是简单易读的 UI、两档权限、指定模型的子 Agent，以及轻量和性能；上下文、压缩、技能与 MCP 交给 pi 原生管理。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
 
 当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。
 
 ## 开始使用
 
 1. 到 [发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest) 下载安装包，双击安装（之后会在软件里自动更新）。也有免安装的便携版。
-2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
-3. 新建对话，说出你要做的事。
+2. 打开砚，在 **设置 → 模型与服务** 里登录，或填入 API Key。
+3. 新建对话，在输入框底栏选好项目文件夹，说出你要做的事。
 
 安装包还没有数字签名，Windows 可能会弹出“未知发布者”提示，请只从本页下载。
 
@@ -55,7 +58,7 @@
 - 目前只有 Windows 版。
 - 聊天记录和设置都存在你自己的电脑上。你发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
 - 换电脑或换版本前，先备份砚的数据目录。
-- 安卓手机可以在 **设置 → 远程** 里扫码配对电脑，看进度、回消息，目前还在测试。
+- 安卓手机可以在 **设置 → 设备与同步** 里扫码配对电脑（局域网、Tailscale 或 Radmin VPN），看进度、回消息，目前还在测试。
 - Hermes 可通过 `integrations/hermes-inkstone/` 下的独立插件查看会话、选择模型和提交任务。
 
 遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，写上版本号和操作步骤，截图时记得遮住密钥。
