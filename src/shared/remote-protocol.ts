@@ -58,12 +58,16 @@ export interface RemoteDeviceRecord extends RemoteDeviceSummary {
   revokedAt: number | null
 }
 
+export type RemoteAddressKind = 'tailscale' | 'radmin' | 'lan' | 'loopback'
+
+export type RemoteBindMode = 'tailscale' | 'radmin' | 'loopback'
+
 export interface RemoteAccessStatus {
   enabled: boolean
   running: boolean
   host: string
   port: number
-  addresses: Array<{ kind: 'tailscale' | 'lan' | 'loopback'; address: string }>
+  addresses: Array<{ kind: RemoteAddressKind; address: string }>
   pairing: { code: string; expiresAt: number } | null
   devices: RemoteDeviceRecord[]
   grants: import('./peer-protocol').PeerGrantView[]
@@ -97,7 +101,7 @@ export interface RemoteRelayStatus {
 
 export interface RemoteAccessSettings {
   enabled: boolean
-  bind: 'tailscale' | 'loopback' | string
+  bind: RemoteBindMode | string
   port: number
   relay?: RemoteRelaySettings
 }

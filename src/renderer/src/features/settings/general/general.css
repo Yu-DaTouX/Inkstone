@@ -30,6 +30,21 @@
     overflow-wrap: anywhere;
   }
 
+  .settings-bind {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8) var(--s-12);
+    min-width: 0;
+  }
+
+  .settings-pair-qr {
+    flex: none;
+    line-height: 0;
+    border-radius: var(--r-sm);
+    overflow: hidden;
+  }
+
   .settings-device__main {
     display: flex;
     flex-direction: column;

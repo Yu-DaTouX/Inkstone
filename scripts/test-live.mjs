@@ -90,6 +90,7 @@ const CASES = {
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
+  'v3-devices-bind': { probe: 'scripts/probe/v3-devices-bind.js', delay: 9000, cost: 0, budget: 90000 },
   'v3-collab-invite': {
     probe: 'scripts/probe/v3-collab-invite.js', delay: 9000, cost: 0, budget: 60000,
     args: ['inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=246810']

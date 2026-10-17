@@ -63,6 +63,18 @@ export interface GeneralText {
   devicesPairCopy: string
   devicesPairCopied: string
   devicesPairNeedsRunning: string
+  devicesPairLoopback: string
+  devicesPairQr: string
+  devicesBind: string
+  devicesBindDesc: string
+  devicesBindTailscale: string
+  devicesBindRadmin: string
+  devicesBindLan: string
+  devicesBindLoopback: string
+  devicesBindLanAddress: string
+  devicesBindLanNone: string
+  devicesBindRadminNone: string
+  devicesStartFailed: string
   devicesList: string
   devicesListDesc: string
   devicesNone: string
@@ -197,6 +209,18 @@ const ZH: GeneralText = {
   devicesPairCopy: '复制链接',
   devicesPairCopied: '已复制',
   devicesPairNeedsRunning: '先打开上面的「手机接入」开关。',
+  devicesPairLoopback: '现在只监听本机，手机和其他电脑连不上；请先改选其他监听地址。',
+  devicesPairQr: '配对链接二维码',
+  devicesBind: '监听地址',
+  devicesBindDesc: '手机或其他电脑通过哪张网络连进来。Tailscale 与 Radmin VPN 只在各自的虚拟局域网内可见；局域网对同一网络内的设备可见。',
+  devicesBindTailscale: 'Tailscale',
+  devicesBindRadmin: 'Radmin VPN',
+  devicesBindLan: '局域网',
+  devicesBindLoopback: '仅本机',
+  devicesBindLanAddress: '局域网地址',
+  devicesBindLanNone: '没有找到局域网地址，请确认已连上网络。',
+  devicesBindRadminNone: '没有找到 Radmin VPN 地址，请先在 Radmin VPN 里连上网络。',
+  devicesStartFailed: '没能开启：{error}',
   devicesList: '已配对设备',
   devicesListDesc: '撤销后设备需要重新配对才能连接。',
   devicesNone: '还没有配对过设备。',
@@ -331,6 +355,18 @@ const EN: GeneralText = {
   devicesPairCopy: 'Copy link',
   devicesPairCopied: 'Copied',
   devicesPairNeedsRunning: 'Turn on Phone access above first.',
+  devicesPairLoopback: 'Only this computer is listening, so phones and other computers cannot connect. Pick another listen address first.',
+  devicesPairQr: 'Pairing link QR code',
+  devicesBind: 'Listen address',
+  devicesBindDesc: 'The network phones or other computers use to reach this one. Tailscale and Radmin VPN are only visible inside their virtual networks; LAN is visible to devices on the same network.',
+  devicesBindTailscale: 'Tailscale',
+  devicesBindRadmin: 'Radmin VPN',
+  devicesBindLan: 'LAN',
+  devicesBindLoopback: 'This computer only',
+  devicesBindLanAddress: 'LAN address',
+  devicesBindLanNone: 'No LAN address found. Check that you are connected to a network.',
+  devicesBindRadminNone: 'No Radmin VPN address found. Join a network in Radmin VPN first.',
+  devicesStartFailed: 'Could not turn on: {error}',
   devicesList: 'Paired devices',
   devicesListDesc: 'A revoked device must pair again before it can connect.',
   devicesNone: 'No devices paired yet.',

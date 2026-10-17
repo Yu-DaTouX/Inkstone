@@ -1,4 +1,4 @@
-import type { RemoteAccessStatus } from './remote-protocol'
+import type { RemoteAccessStatus, RemoteAddressKind } from './remote-protocol'
 
 export const PAIR_CODE_LENGTH = 6
 
@@ -7,7 +7,11 @@ export interface PairInvite {
   code: string
 }
 
-export type PairInviteAddress = { ok: true; address: string; kind: 'tailscale' | 'lan' | 'bound' } | { ok: false; reason: 'stopped' | 'loopback' }
+export type PairInviteKind = Exclude<RemoteAddressKind, 'loopback'> | 'bound'
+
+export type PairInviteAddress = { ok: true; address: string; kind: PairInviteKind } | { ok: false; reason: 'stopped' | 'loopback' }
+
+const INVITE_PREFERENCE: readonly Exclude<RemoteAddressKind, 'loopback'>[] = ['tailscale', 'radmin', 'lan']
 
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', ''])
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
@@ -18,12 +22,14 @@ export function pairInviteAddress(status: Pick<RemoteAccessStatus, 'running' | '
   if (LOOPBACK_HOSTS.has(host)) return { ok: false, reason: 'loopback' }
   if (!WILDCARD_HOSTS.has(host)) {
     const known = status.addresses.find((entry) => entry.address === host)
-    const kind = known?.kind === 'tailscale' || known?.kind === 'lan' ? known.kind : 'bound'
+    const kind: PairInviteKind = known && known.kind !== 'loopback' ? known.kind : 'bound'
     return { ok: true, address: `http://${host}:${status.port}`, kind }
   }
-  const reachable = status.addresses.find((entry) => entry.kind === 'tailscale') ?? status.addresses.find((entry) => entry.kind === 'lan')
-  if (!reachable) return { ok: false, reason: 'loopback' }
-  return { ok: true, address: `http://${reachable.address}:${status.port}`, kind: reachable.kind === 'tailscale' ? 'tailscale' : 'lan' }
+  for (const kind of INVITE_PREFERENCE) {
+    const reachable = status.addresses.find((entry) => entry.kind === kind)
+    if (reachable) return { ok: true, address: `http://${reachable.address}:${status.port}`, kind }
+  }
+  return { ok: false, reason: 'loopback' }
 }
 
 export function pairInviteLink(invite: PairInvite): string {
