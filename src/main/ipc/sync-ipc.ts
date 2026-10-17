@@ -3,15 +3,18 @@ import type { IpcRegistrar } from './registrar'
 import { SyncConfigStore } from '../sync/config'
 import { exportSession, importSession } from '../sync/session-transfer'
 import type { ConflictRecord, SyncReport } from '../sync/types'
-import type {
-  SyncConflictView,
-  SyncConfigureResult,
-  SyncExportSessionResult,
-  SyncImportSessionResult,
-  SyncNowResult,
-  SyncResolution,
-  SyncResolveResult,
-  SyncStatusView
+import {
+  AUTO_SYNC_INTERVAL_MS,
+  isSyncMode,
+  type SyncConflictView,
+  type SyncConfigureResult,
+  type SyncExportSessionResult,
+  type SyncImportSessionResult,
+  type SyncNowResult,
+  type SyncResolution,
+  type SyncResolveResult,
+  type SyncSetModeResult,
+  type SyncStatusView
 } from '../../shared/sync'
 
 export interface SyncServiceLike {
@@ -30,11 +33,13 @@ export interface SyncIpcDeps {
   currentSessionPath?(): string | undefined
   config?: SyncConfigStore
   now?: () => number
+  autoIntervalMs?: number
   log?: (message: string, error?: unknown) => void
 }
 
 export interface SyncController {
-  runStartupSync(): Promise<void>
+  start(): void
+  stop(): void
 }
 
 function describe(error: unknown): string {
@@ -90,19 +95,19 @@ function isResolution(value: unknown): value is SyncResolution {
   return value === 'local' || value === 'remote' || value === 'both'
 }
 
-export async function runStartupSync(deps: SyncIpcDeps, injected?: SyncConfigStore): Promise<void> {
+export async function runAutoSync(deps: SyncIpcDeps, injected?: SyncConfigStore): Promise<void> {
   const config = injected ?? deps.config ?? new SyncConfigStore(deps.dataDir)
   const log = deps.log ?? ((message: string, error?: unknown) => console.warn(message, error ?? ''))
   try {
     const current = await config.read()
-    if (!current.syncRoot) return
+    if (!current.syncRoot || current.mode !== 'auto') return
     const report = await deps.makeService(current.syncRoot).sync()
     await config.recordSync(summarize(report))
     if (!report.ok || report.errors.length) {
-      log(`[sync] 启动同步未完成：${report.errors.join('；') || '同步目录不可用'}`, undefined)
+      log(`[sync] 自动同步未完成：${report.errors.join('；') || '同步目录不可用'}`, undefined)
     }
   } catch (error) {
-    log('[sync] 启动同步失败', error)
+    log('[sync] 自动同步失败', error)
   }
 }
 
@@ -110,6 +115,16 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
   const { handle } = ipc
   const config = deps.config ?? new SyncConfigStore(deps.dataDir)
   const now = deps.now ?? Date.now
+  const autoIntervalMs = deps.autoIntervalMs ?? AUTO_SYNC_INTERVAL_MS
+  let queue: Promise<unknown> = Promise.resolve()
+  let timer: ReturnType<typeof setInterval> | null = null
+
+  const exclusive = <T>(task: () => Promise<T>): Promise<T> => {
+    const next = queue.then(task, task)
+    queue = next.catch(() => undefined)
+    return next
+  }
+  const autoSync = (): Promise<void> => exclusive(() => runAutoSync(deps, config))
 
   const configuredService = async (): Promise<SyncServiceLike | null> => {
     const current = await config.read()
@@ -121,6 +136,8 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
       const current = await config.read()
       const status: SyncStatusView = {
         configured: Boolean(current.syncRoot),
+        mode: current.mode,
+        autoIntervalMs,
         ...(current.syncRoot ? { syncRoot: current.syncRoot } : {}),
         ...(current.lastSync ? { lastSync: current.lastSync } : {}),
         conflictCount: 0
@@ -134,7 +151,17 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
       }
       return status
     } catch (error) {
-      return { configured: false, conflictCount: 0, error: describe(error) }
+      return { configured: false, mode: 'manual', autoIntervalMs, conflictCount: 0, error: describe(error) }
+    }
+  })
+
+  handle('yan:sync:setMode', async (mode?: unknown): Promise<SyncSetModeResult> => {
+    if (!isSyncMode(mode)) return { ok: false, error: '未知的同步方式' }
+    try {
+      const next = await config.setMode(mode)
+      return { ok: true, mode: next.mode }
+    } catch (error) {
+      return { ok: false, error: describe(error) }
     }
   })
 
@@ -162,9 +189,13 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
     if (!current.syncRoot) {
       return { ok: false, pushed: 0, pulled: 0, conflicts: 0, skipped: 0, errors: [], error: '还没有配置同步文件夹' }
     }
+    const syncRoot = current.syncRoot
     try {
-      const report = await deps.makeService(current.syncRoot).sync()
-      await config.recordSync(summarize(report))
+      const report = await exclusive(async () => {
+        const result = await deps.makeService(syncRoot).sync()
+        await config.recordSync(summarize(result))
+        return result
+      })
       return {
         ok: report.ok,
         pushed: report.pushed.length,
@@ -230,5 +261,16 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
     }
   })
 
-  return { runStartupSync: () => runStartupSync(deps, config) }
+  return {
+    start: () => {
+      if (timer) return
+      void autoSync()
+      timer = setInterval(() => void autoSync(), autoIntervalMs)
+      timer.unref?.()
+    },
+    stop: () => {
+      if (timer) clearInterval(timer)
+      timer = null
+    }
+  }
 }

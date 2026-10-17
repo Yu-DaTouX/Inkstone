@@ -208,6 +208,7 @@ const api: YanBridge = {
   sync: {
     status: () => invoke<Awaited<ReturnType<YanBridge['sync']['status']>>>('yan:sync:status'),
     configure: (root) => invoke<Awaited<ReturnType<YanBridge['sync']['configure']>>>('yan:sync:configure', root),
+    setMode: (mode) => invoke<Awaited<ReturnType<YanBridge['sync']['setMode']>>>('yan:sync:setMode', mode),
     now: () => invoke<Awaited<ReturnType<YanBridge['sync']['now']>>>('yan:sync:now'),
     conflicts: () => invoke<Awaited<ReturnType<YanBridge['sync']['conflicts']>>>('yan:sync:conflicts'),
     resolve: (id, resolution) =>

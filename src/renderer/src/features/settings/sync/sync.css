@@ -61,6 +61,12 @@
     gap: var(--s-8);
   }
 
+  .sync-mode {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8) var(--s-16);
+  }
+
   .sync-last {
     display: flex;
     flex-direction: column;

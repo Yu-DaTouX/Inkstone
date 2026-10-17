@@ -7,6 +7,7 @@ export function syncBridge(): SyncBridge | null {
     !sync ||
     typeof sync.status !== 'function' ||
     typeof sync.configure !== 'function' ||
+    typeof sync.setMode !== 'function' ||
     typeof sync.now !== 'function' ||
     typeof sync.conflicts !== 'function' ||
     typeof sync.resolve !== 'function' ||

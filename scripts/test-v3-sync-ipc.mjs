@@ -25,7 +25,7 @@ async function bundle(entry) {
 
 const ipcMod = await bundle('../src/main/ipc/sync-ipc.ts')
 const syncMod = await bundle('../src/main/sync/index.ts')
-const { registerSyncIpc, runStartupSync } = ipcMod
+const { registerSyncIpc, runAutoSync } = ipcMod
 const { SyncService, SyncConfigStore } = syncMod
 
 const report = { pass: 0, fail: 0 }
@@ -341,13 +341,66 @@ try {
     assert.match(result.error, /取消/)
   })
 
-  section('启动同步 runStartupSync：失败只记日志')
+  section('同步方式：默认手动，自动每小时')
+  await check('新配置默认手动，status 带 mode 与 1 小时间隔', async () => {
+    const status = await registrar.invoke('yan:sync:status')
+    assert.equal(status.mode, 'manual')
+    assert.equal(status.autoIntervalMs, 60 * 60_000)
+  })
+  await check('手动模式下自动同步不调用 sync', async () => {
+    syncCalls = 0
+    await runAutoSync({ ...deps, config })
+    assert.equal(syncCalls, 0)
+  })
+  await check('setMode 拒绝未知值', async () => {
+    const result = await registrar.invoke('yan:sync:setMode', 'hourly')
+    assert.equal(result.ok, false)
+    assert.equal((await registrar.invoke('yan:sync:status')).mode, 'manual')
+  })
+  await check('旧配置（已选文件夹、无 mode 字段）视为自动', async () => {
+    const legacyDir = join(root, 'data-legacy')
+    await mkdir(legacyDir, { recursive: true })
+    await writeFile(join(legacyDir, 'sync-config.json'), JSON.stringify({ v: 1, syncRoot }))
+    const legacy = new SyncConfigStore(legacyDir)
+    assert.equal((await legacy.read()).mode, 'auto')
+    const cleared = new SyncConfigStore(legacyDir)
+    await cleared.setSyncRoot(undefined)
+    const reread = JSON.parse(await readFile(join(legacyDir, 'sync-config.json'), 'utf8'))
+    assert.equal(reread.mode, 'auto')
+  })
+  await check('控制器按间隔触发自动同步，切回手动后停止调用', async () => {
+    const timedDir = join(root, 'data-timed')
+    await mkdir(timedDir, { recursive: true })
+    const timedConfig = new SyncConfigStore(timedDir)
+    await timedConfig.setSyncRoot(syncRoot)
+    await timedConfig.setMode('auto')
+    let calls = 0
+    const timedDeps = {
+      ...deps,
+      config: timedConfig,
+      autoIntervalMs: 20,
+      makeService: () => ({ sync: async () => { calls += 1; return makeReport() }, listConflicts: async () => [], resolveConflict: async () => ({ ok: true }) })
+    }
+    const local = captureRegistrar()
+    const timed = registerSyncIpc(local.ipc, timedDeps)
+    timed.start()
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    assert.ok(calls >= 2, `期望启动加定时至少 2 次，实际 ${calls}`)
+    assert.equal((await local.invoke('yan:sync:setMode', 'manual')).mode, 'manual')
+    const settled = calls
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    timed.stop()
+    assert.equal(calls, settled)
+  })
+
+  section('自动同步 runAutoSync：失败只记日志')
   await check('已配置且 sync 成功：写 lastSync，不抛', async () => {
+    assert.equal((await registrar.invoke('yan:sync:setMode', 'auto')).mode, 'auto')
     syncResult = makeReport({ pushed: ['p1'], pulled: [], conflicts: [], skipped: [], errors: [] })
     syncCalls = 0
     const messages = []
     const startupDeps = { ...deps, log: (message, error) => messages.push(`${message}${error ? `:${error}` : ''}`), config }
-    await runStartupSync(startupDeps)
+    await runAutoSync(startupDeps)
     assert.equal(syncCalls, 1)
     assert.deepEqual(messages, [])
     const status = await registrar.invoke('yan:sync:status')
@@ -361,7 +414,7 @@ try {
       log: (message, error) => messages.push(`${message}:${error instanceof Error ? error.message : error}`),
       config
     }
-    await runStartupSync(failingDeps)
+    await runAutoSync(failingDeps)
     assert.equal(messages.length, 1)
     assert.match(messages[0], /offline/)
   })
@@ -369,7 +422,7 @@ try {
     const emptyConfig = new SyncConfigStore(join(root, 'data-empty'))
     const messages = []
     const emptyDeps = { ...deps, config: emptyConfig, log: (message) => messages.push(message), makeService: () => { throw new Error('不该被调用') } }
-    await runStartupSync(emptyDeps)
+    await runAutoSync(emptyDeps)
     assert.deepEqual(messages, [])
   })
 

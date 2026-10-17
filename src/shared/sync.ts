@@ -1,5 +1,13 @@
 export type SyncResolution = 'local' | 'remote' | 'both'
 
+export type SyncMode = 'manual' | 'auto'
+
+export const AUTO_SYNC_INTERVAL_MS = 60 * 60_000
+
+export function isSyncMode(value: unknown): value is SyncMode {
+  return value === 'manual' || value === 'auto'
+}
+
 export type SyncRecordKindView = 'settings' | 'prompt' | 'skill' | 'bookmark' | 'schedule'
 
 export interface SyncLastSummary {
@@ -14,6 +22,8 @@ export interface SyncLastSummary {
 
 export interface SyncStatusView {
   configured: boolean
+  mode: SyncMode
+  autoIntervalMs: number
   syncRoot?: string
   lastSync?: SyncLastSummary
   conflictCount: number
@@ -28,6 +38,12 @@ export interface SyncNowResult {
   skipped: number
   errors: string[]
   at?: number
+  error?: string
+}
+
+export interface SyncSetModeResult {
+  ok: boolean
+  mode?: SyncMode
   error?: string
 }
 
@@ -76,6 +92,7 @@ export interface SyncImportSessionResult {
 export interface SyncBridge {
   status(): Promise<SyncStatusView>
   configure(root?: string | null): Promise<SyncConfigureResult>
+  setMode(mode: SyncMode): Promise<SyncSetModeResult>
   now(): Promise<SyncNowResult>
   conflicts(): Promise<SyncConflictView[]>
   resolve(id: string, resolution: SyncResolution): Promise<SyncResolveResult>

@@ -1,5 +1,4 @@
 import {
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -8,11 +7,10 @@ import {
   realpathSync,
   renameSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync
 } from 'node:fs'
-import { readdir, stat, statfs } from 'node:fs/promises'
+import { cp, lstat, readdir, rm, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
@@ -59,20 +57,28 @@ function readJson<T>(file: string): T | undefined {
   }
 }
 
-function tally(dir: string): { files: number; bytes: number } {
+export interface StorageMoveProgress {
+  phase: 'scan' | 'copy' | 'verify' | 'cleanup'
+  files: number
+  bytes: number
+  totalFiles: number
+  totalBytes: number
+}
+
+async function tally(dir: string): Promise<{ files: number; bytes: number }> {
   let files = 0
   let bytes = 0
-  const walk = (d: string): void => {
-    for (const ent of readdirSync(d, { withFileTypes: true })) {
+  const walk = async (d: string): Promise<void> => {
+    for (const ent of await readdir(d, { withFileTypes: true })) {
       const p = join(d, ent.name)
-      if (ent.isDirectory()) walk(p)
+      if (ent.isDirectory()) await walk(p)
       else if (ent.isFile()) {
         files++
-        bytes += statSync(p).size
+        bytes += (await stat(p)).size
       }
     }
   }
-  walk(dir)
+  await walk(dir)
   return { files, bytes }
 }
 
@@ -105,44 +111,68 @@ function findBackup(from: string): string | undefined {
   }
 }
 
-export function runPendingStorageMove(): void {
+export function hasPendingStorageMove(): boolean {
+  return !!readJson<{ target?: string }>(PENDING_FILE())?.target
+}
+
+export async function runPendingStorageMove(onProgress?: (progress: StorageMoveProgress) => void): Promise<StorageMoveResult | undefined> {
   const pending = readJson<{ target?: string }>(PENDING_FILE())
-  if (!pending?.target) return
+  if (!pending?.target) return undefined
   rmSync(PENDING_FILE(), { force: true })
-  if (!storageMovable()) return
+  if (!storageMovable()) return undefined
   const from = defaultAgentDir()
   const to = resolve(pending.target)
-  const write = (r: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): void => {
+  const write = (r: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): StorageMoveResult => {
+    const result = { ...r, at: Date.now(), from, to }
     try {
       mkdirSync(controlDir(), { recursive: true })
-      writeFileSync(RESULT_FILE(), JSON.stringify({ ...r, at: Date.now(), from, to }, null, 2))
+      writeFileSync(RESULT_FILE(), JSON.stringify(result, null, 2))
     } catch {
     }
+    return result
   }
   try {
     if (isJunction(from)) return write({ ok: false, error: '数据目录已经迁移过了' })
     if (!existsSync(from)) return write({ ok: false, error: '原数据目录不存在' })
     const bad = checkTarget(from, to)
     if (bad) return write({ ok: false, error: bad })
-    const before = tally(from)
+    const progress: StorageMoveProgress = { phase: 'scan', files: 0, bytes: 0, totalFiles: 0, totalBytes: 0 }
+    const report = (patch: Partial<StorageMoveProgress>): void => {
+      Object.assign(progress, patch)
+      onProgress?.({ ...progress })
+    }
+    report({})
+    const before = await tally(from)
+    report({ phase: 'copy', totalFiles: before.files, totalBytes: before.bytes })
     mkdirSync(dirname(to), { recursive: true })
     const createdTarget = !existsSync(to)
     try {
-      cpSync(from, to, { recursive: true, preserveTimestamps: true, errorOnExist: true, force: false })
-    const after = tally(to)
-    if (after.files !== before.files || after.bytes !== before.bytes) {
-      rmSync(to, { recursive: true, force: true })
-      return write({ ok: false, error: `复制核对不一致（${before.files} → ${after.files} 个文件），已撤回，原数据未动` })
-    }
+      await cp(from, to, {
+        recursive: true,
+        preserveTimestamps: true,
+        errorOnExist: true,
+        force: false,
+        filter: async (source) => {
+          const entry = await lstat(source)
+          if (entry.isFile()) report({ files: progress.files + 1, bytes: progress.bytes + entry.size })
+          return true
+        }
+      })
+      report({ phase: 'verify' })
+      const [source, after] = await Promise.all([tally(from), tally(to)])
+      if (after.files !== source.files || after.bytes !== source.bytes) {
+        await rm(to, { recursive: true, force: true })
+        return write({ ok: false, error: `复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动` })
+      }
     } catch (error) {
-      if (createdTarget) rmSync(to, { recursive: true, force: true })
+      if (createdTarget) await rm(to, { recursive: true, force: true })
       throw error
     }
     const backup = `${from}.迁移前备份-${Date.now()}`
     try {
       renameSync(from, backup)
     } catch (e) {
-      rmSync(to, { recursive: true, force: true })
+      await rm(to, { recursive: true, force: true })
       return write({ ok: false, error: `原目录被占用，无法切换（请关掉终端里的 pi 后重试）：${e instanceof Error ? e.message : String(e)}` })
     }
     try {
@@ -154,18 +184,19 @@ export function runPendingStorageMove(): void {
       } catch (e2) {
         return write({ ok: false, leftover: backup, error: `无法建立联接，也无法自动恢复原目录。你的数据完整保存在：${backup}（把它改回「agent」即可恢复）。${why}；${e2 instanceof Error ? e2.message : String(e2)}` })
       }
-      rmSync(to, { recursive: true, force: true })
+      await rm(to, { recursive: true, force: true })
       return write({ ok: false, error: `无法在原位置建立联接，已恢复原状：${why}` })
     }
+    report({ phase: 'cleanup' })
     try {
-      rmSync(backup, { recursive: true, force: true, maxRetries: 3 })
-      write({ ok: true })
+      await rm(backup, { recursive: true, force: true, maxRetries: 3 })
+      return write({ ok: true })
     } catch {
-      write({ ok: true, leftover: backup })
+      return write({ ok: true, leftover: backup })
     }
   } catch (e) {
     const stranded = !existsSync(from) ? findBackup(from) : undefined
-    write({ ok: false, ...(stranded ? { leftover: stranded } : {}), error: e instanceof Error ? e.message : String(e) })
+    return write({ ok: false, ...(stranded ? { leftover: stranded } : {}), error: e instanceof Error ? e.message : String(e) })
   }
 }
 
