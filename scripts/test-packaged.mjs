@@ -322,8 +322,6 @@ if (!exeFromArg) {
     const asar = readFileSync(asarPath)
     for (const [needle, label] of [
       ['session-chains.json', '会话链文件名'],
-      ['resumeAttempts', '防盲发两遍的尝试计数'],
-      ['src-websearch', '来源菜单里的搜索入口（实施-07 S4）'],
       ['worktree-links.json', '工作树来源关系表（实施-07 S2a）'],
       ['/remote/v1/health', '远程管理路由（实施-08 第一阶段）']
     ]) {
