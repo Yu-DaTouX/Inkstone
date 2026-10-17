@@ -70,6 +70,7 @@ export function cx(...a){ return a.filter(Boolean).join(' ') }`,
   i18n: `export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }`,
   lucide: `export function X(){ return null }
 export function Rows2(){ return null }
+export function Columns2(){ return null }
 export function Maximize2(){ return null }
 export function Minimize2(){ return null }
 export function ExternalLink(){ return null }

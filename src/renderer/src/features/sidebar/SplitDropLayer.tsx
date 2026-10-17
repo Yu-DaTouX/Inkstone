@@ -1,6 +1,7 @@
-import type { JSX } from 'react'
+import { useEffect, type JSX } from 'react'
 import { useI18n } from '../../i18n'
 import { v3Text } from '../../app/v3-text'
+import { useStore } from '../../state/store'
 import { useSessionDrag } from './session-drag'
 import './split-drop.css'
 
@@ -12,6 +13,8 @@ export function SplitDropLayer(): JSX.Element | null {
   const hit = useSessionDrag((s) => s.hit)
   const x = useSessionDrag((s) => s.x)
   const y = useSessionDrag((s) => s.y)
+  const dragging = !!item
+  useEffect(() => (dragging ? useStore.getState().acquireOverlayBlocker('split-drag') : undefined), [dragging])
   if (!item) return null
   return (
     <div className="v3-drop-layer" aria-hidden data-testid="v3-split-drop">

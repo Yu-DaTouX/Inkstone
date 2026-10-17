@@ -27,6 +27,48 @@
     padding: var(--s-4) var(--s-12) var(--s-4) var(--s-20);
   }
 
+  .v3-split-head[data-movable='1'] {
+    padding-left: var(--s-8);
+    cursor: grab;
+    user-select: none;
+  }
+
+  .v3-split-head[data-movable='1'] .v3-split-title {
+    cursor: default;
+  }
+
+  .v3-split-grip {
+    flex: none;
+    cursor: grab;
+  }
+
+  .v3-split-action {
+    flex: none;
+  }
+
+  .v3-split-icon {
+    flex: none;
+    color: var(--fg2);
+  }
+
+  .v3-split-col[data-kind='tool'] {
+    position: relative;
+    outline: none;
+    transition: box-shadow var(--dur-hover) var(--ease);
+  }
+
+  .v3-split-col[data-kind='tool'][data-flash='1'] {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  .v3-tool-tile-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    margin: 0 var(--s-8) var(--s-8);
+  }
+
   .v3-split-title {
     flex: 1 1 auto;
     min-width: 0;
@@ -80,6 +122,12 @@
 
   .v3-split-resizer {
     display: contents;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-split-col[data-kind='tool'] {
+      transition: none;
+    }
   }
 
   .v3-split-empty {
