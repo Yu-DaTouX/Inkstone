@@ -1,4 +1,5 @@
 import type { QuotaWindow } from './ipc'
+import { WINDOW_DURATION } from './quota-forecast'
 
 export type AccountQuotaSource = 'yan' | 'codex-cli' | 'claude-code' | 'gemini-cli'
 export type AccountQuotaCliSource = Exclude<AccountQuotaSource, 'yan'>
@@ -27,6 +28,7 @@ export interface AccountQuotaCard {
   error?: string
   windows: QuotaWindow[]
   balance?: { label: string; amount: number; currency: string }
+  staleError?: string
   checkedAt: number
 }
 
@@ -153,13 +155,18 @@ export function codexUsageWindows(payload: CodexUsagePayload): { plan?: string; 
   const windows: QuotaWindow[] = []
   const add = (id: string, w?: CodexUsageWindow): void => {
     if (!w || !Number.isFinite(Number(w.used_percent))) return
+    const seconds = Number(w.limit_window_seconds)
+    const durationMs = Number.isFinite(seconds) && seconds > 0
+      ? seconds * 1000
+      : id === 'primary' ? WINDOW_DURATION.fiveHour : id === 'secondary' ? WINDOW_DURATION.week : undefined
     windows.push({
       id,
-      label: id === 'primary' ? '五小时' : id === 'secondary' ? '本周' : quotaWindowLabel(Number(w.limit_window_seconds)),
+      label: id === 'primary' ? '五小时' : id === 'secondary' ? '本周' : quotaWindowLabel(seconds),
       used: Number(w.used_percent),
       total: 100,
       resetAt: Number.isFinite(Number(w.reset_at)) ? Number(w.reset_at) * 1000 : undefined,
-      exceeded: false
+      exceeded: false,
+      ...(durationMs ? { durationMs } : {})
     })
   }
   add('primary', rl?.primary_window)
@@ -187,6 +194,7 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
     if (!w || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue
     const resetAt = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN
     const listed = key in CLAUDE_WINDOW_LABELS
+    const durationMs = key === 'five_hour' ? WINDOW_DURATION.fiveHour : key.startsWith('seven_day') ? WINDOW_DURATION.week : undefined
     windows.push({
       id: key,
       ...(listed ? {} : { informational: true }),
@@ -194,7 +202,8 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
       used: w.utilization,
       total: 100,
       resetAt: Number.isFinite(resetAt) ? resetAt : undefined,
-      exceeded: listed && w.utilization >= 100
+      exceeded: listed && w.utilization >= 100,
+      ...(durationMs ? { durationMs } : {})
     })
   }
   return windows

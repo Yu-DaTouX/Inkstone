@@ -351,14 +351,6 @@
 }
 
 @layer patterns {
-  .wb-quota-win[data-tone='warn'] .ui-progress__fill {
-    background: var(--ask);
-  }
-
-  .wb-quota-win[data-tone='err'] .ui-progress__fill {
-    background: var(--fail);
-  }
-
   .wb-quota-msg {
     color: var(--fail-t);
   }
@@ -455,8 +447,7 @@
   }
 
   .wb-quota-head,
-  .wb-quota-id,
-  .wb-quota-win-top {
+  .wb-quota-id {
     display: flex;
     align-items: center;
     gap: var(--s-8);
@@ -487,8 +478,7 @@
     font-weight: 600;
   }
 
-  .wb-quota-meta,
-  .wb-quota-win-sub {
+  .wb-quota-meta {
     overflow: hidden;
     color: var(--fg3);
     font-size: var(--t-meta);
@@ -496,30 +486,15 @@
     white-space: nowrap;
   }
 
-  .wb-quota-win {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
-  }
-
-  .wb-quota-win-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--fg2);
-    font-size: var(--t-meta);
-  }
-
-  .wb-quota-win-value {
-    flex: none;
-  }
-
-  .wb-quota-msg {
+  .wb-quota-msg,
+  .wb-quota-stale {
     margin: 0;
     font-size: var(--t-meta);
     overflow-wrap: anywhere;
+  }
+
+  .wb-quota-stale {
+    color: var(--fg3);
   }
 
   .wb-view[hidden],

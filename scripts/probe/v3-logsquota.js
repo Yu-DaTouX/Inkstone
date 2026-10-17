@@ -107,7 +107,7 @@
       check(q('v3-wb-quota-win-monthly')?.dataset.tone === 'err', '用尽窗口为 err 色调')
       check(q('v3-wb-quota-win-monthly')?.textContent?.includes('100.0%'), '显示精确百分比')
       check(q('v3-wb-quota')?.textContent?.includes('3.50') || q('v3-wb-quota')?.textContent?.includes('$3.5'), '显示余额')
-      check((q('v3-wb-quota-win-five_hour')?.querySelector('.wb-quota-win-sub')?.textContent ?? '').length > 0, '窗口显示重置倒计时')
+      check((q('v3-wb-quota-win-five_hour')?.querySelector('.quota-win-sub')?.textContent ?? '').length > 0, '窗口显示重置倒计时')
       check(!!q('v3-wb-quota-win-monthly')?.querySelector('.ui-badge'), '推算窗口带「推算」标记')
       check(document.querySelectorAll('[data-testid="v3-wb-quota-switch"]').length === 1, '只有可切换且非活跃的账号显示切换按钮')
       check(

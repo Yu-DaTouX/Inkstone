@@ -1,0 +1,123 @@
+import type { QuotaWindow } from './ipc'
+
+export interface QuotaSample {
+  at: number
+  pct: number
+}
+
+export type QuotaForecast =
+  | { kind: 'sampling'; needMs: number }
+  | { kind: 'steady'; atResetPct: number }
+  | { kind: 'exhaust'; exhaustAt: number }
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+export const QUOTA_STALE_MS = 30 * MINUTE
+export const QUOTA_SAMPLE_GAP_MS = 4 * MINUTE
+export const QUOTA_SAMPLE_KEEP_MS = 8 * DAY
+export const QUOTA_SAMPLE_MAX = 2500
+export const QUOTA_RESET_DROP_PCT = 5
+export const QUOTA_EXHAUSTED_MARGIN_PCT = 0.5
+
+export const WINDOW_DURATION = {
+  fiveHour: 5 * HOUR,
+  day: DAY,
+  week: 7 * DAY,
+  month: 30 * DAY
+} as const
+
+export function forecastSpan(durationMs: number): { lookbackMs: number; minSpanMs: number } {
+  if (durationMs <= 12 * HOUR) return { lookbackMs: HOUR, minSpanMs: 15 * MINUTE }
+  if (durationMs <= 2 * DAY) return { lookbackMs: 6 * HOUR, minSpanMs: HOUR }
+  if (durationMs <= 8 * DAY) return { lookbackMs: DAY, minSpanMs: HOUR }
+  return { lookbackMs: 7 * DAY, minSpanMs: HOUR }
+}
+
+export function windowUsedPct(window: Pick<QuotaWindow, 'used' | 'total'>): number | null {
+  if (!(window.total > 0) || !Number.isFinite(window.used)) return null
+  return (window.used / window.total) * 100
+}
+
+export function appendQuotaSample(samples: readonly QuotaSample[], sample: QuotaSample): QuotaSample[] {
+  const kept = samples.filter((s) => s.at <= sample.at && sample.at - s.at <= QUOTA_SAMPLE_KEEP_MS)
+  const tail = kept[kept.length - 1]
+  if (tail && sample.pct < tail.pct - QUOTA_RESET_DROP_PCT) return [sample]
+  const beforeTail = kept[kept.length - 2]
+  if (tail && beforeTail && sample.at - tail.at < QUOTA_SAMPLE_GAP_MS && tail.at - beforeTail.at < QUOTA_SAMPLE_GAP_MS) {
+    kept[kept.length - 1] = sample
+  } else {
+    kept.push(sample)
+  }
+  return kept.length > QUOTA_SAMPLE_MAX ? kept.slice(kept.length - QUOTA_SAMPLE_MAX) : kept
+}
+
+export function forecastQuota(
+  samples: readonly QuotaSample[],
+  window: Pick<QuotaWindow, 'used' | 'total' | 'resetAt' | 'durationMs' | 'informational' | 'exceeded'>,
+  now: number
+): QuotaForecast | undefined {
+  const pct = windowUsedPct(window)
+  if (pct === null || window.informational || window.exceeded) return undefined
+  if (!window.durationMs || window.resetAt === undefined || window.resetAt <= now) return undefined
+  if (100 - pct <= QUOTA_EXHAUSTED_MARGIN_PCT) return undefined
+  const { lookbackMs, minSpanMs } = forecastSpan(window.durationMs)
+  const recent = samples.filter((s) => s.at >= now - lookbackMs && s.at <= now)
+  const first = recent[0]
+  const last = recent[recent.length - 1]
+  const span = first && last ? last.at - first.at : 0
+  if (!first || !last || span < minSpanMs) return { kind: 'sampling', needMs: minSpanMs - span }
+  const rate = (last.pct - first.pct) / span
+  if (!(rate > 0)) return { kind: 'steady', atResetPct: Math.round(pct) }
+  const projected = pct + rate * (window.resetAt - now)
+  if (projected < 100) return { kind: 'steady', atResetPct: Math.round(projected) }
+  return { kind: 'exhaust', exhaustAt: Math.round(now + (100 - pct) / rate) }
+}
+
+export function forecastProjectionPct(forecast: QuotaForecast | undefined): number | null {
+  if (!forecast || forecast.kind === 'sampling') return null
+  return forecast.kind === 'exhaust' ? 100 : Math.min(100, forecast.atResetPct)
+}
+
+export function quotaReadingStale(checkedAt: number, now: number, failed: boolean): boolean {
+  return failed || now - checkedAt > QUOTA_STALE_MS
+}
+
+export function windowAwaitingReset(window: Pick<QuotaWindow, 'resetAt'>, now: number): boolean {
+  return window.resetAt !== undefined && window.resetAt <= now
+}
+
+export function bindingQuotaWindow(windows: readonly QuotaWindow[] | undefined): QuotaWindow | null {
+  let best: QuotaWindow | null = null
+  let bestPct = -1
+  for (const window of windows ?? []) {
+    if (window.informational) continue
+    const pct = windowUsedPct(window)
+    if (pct === null) continue
+    if (pct > bestPct) {
+      best = window
+      bestPct = pct
+    }
+  }
+  return best
+}
+
+export type WindowSpan = 'fiveHour' | 'day' | 'week' | 'month' | 'hours' | 'other'
+
+export function windowSpan(window: Pick<QuotaWindow, 'durationMs' | 'id' | 'label'>): { span: WindowSpan; hours?: number } {
+  const ms = window.durationMs
+  if (ms) {
+    const near = (target: number): boolean => Math.abs(ms - target) <= target * 0.05
+    if (near(WINDOW_DURATION.fiveHour)) return { span: 'fiveHour' }
+    if (near(WINDOW_DURATION.day)) return { span: 'day' }
+    if (near(WINDOW_DURATION.week)) return { span: 'week' }
+    if (ms >= 28 * DAY && ms <= 31 * DAY) return { span: 'month' }
+    if (ms < DAY) return { span: 'hours', hours: Math.max(1, Math.round(ms / HOUR)) }
+    return { span: 'other' }
+  }
+  if (window.id === 'fiveHour' || window.id === 'five_hour' || /五小时|5\s*小时|\b5\s*h/i.test(window.label)) return { span: 'fiveHour' }
+  if (window.id === 'weekly' || /每周|本周|weekly|\bweek\b/i.test(window.label)) return { span: 'week' }
+  if (window.id === 'monthly' || /本月|月度|monthly|\bmonth\b/i.test(window.label)) return { span: 'month' }
+  return { span: 'other' }
+}

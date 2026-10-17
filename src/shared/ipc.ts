@@ -47,6 +47,7 @@ import type { ToolLayout } from './tool-layout'
 import type { AgentProfileState } from './agent-profile'
 import type { AccountQuotaCliSource, AccountQuotaPrefs, AccountQuotaReport, CodexAccountView } from './account-quota'
 import type { CodexFailoverResult } from './quota-failover'
+import type { QuotaForecast } from './quota-forecast'
 export type { AgentActivity, AgentProfile, AgentProfileKind, AgentProfilePatch, AgentProfileState } from './agent-profile'
 export type { WorkMode, WorkModeState } from './work-mode'
 export type { QuestionFrequency, SessionQuestionFrequency } from './question-frequency'
@@ -751,6 +752,8 @@ export interface QuotaWindow {
   exceeded?: boolean
   informational?: boolean
   estimated?: boolean
+  durationMs?: number
+  forecast?: QuotaForecast
 }
 
 export function normalizeToolOrder(v: unknown): string[] {

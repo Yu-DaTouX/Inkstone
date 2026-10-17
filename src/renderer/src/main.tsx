@@ -4,6 +4,7 @@ import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
 import { useSplitView } from './state/split-view'
 import { useRunsV3 } from './state/runs-v3'
+import { useLiveQuota } from './state/live-quota'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
@@ -16,6 +17,7 @@ declare global {
     __yanStore: typeof useStore
     __yanSplit: typeof useSplitView
     __yanRuns: typeof useRunsV3
+    __yanLiveQuota: typeof useLiveQuota
   }
 }
 const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
@@ -23,6 +25,7 @@ if (probeMode) {
   window.__yanStore = useStore
   window.__yanSplit = useSplitView
   window.__yanRuns = useRunsV3
+  window.__yanLiveQuota = useLiveQuota
 }
 
 installAudioUnlock()

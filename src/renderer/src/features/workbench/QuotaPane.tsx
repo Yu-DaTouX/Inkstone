@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
+import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, IconButton, Meter, Spinner } from '../../ui'
-import { quotaTone } from '../../../../shared/quota-tone'
-import { money, windowPct } from '../../../../shared/quota-mini'
+import { Badge, Button, IconButton, Spinner } from '../../ui'
+import { money } from '../../../../shared/quota-mini'
+import { quotaReadingStale } from '../../../../shared/quota-forecast'
 import {
   accountCardTitle,
   orderAccountCardsForProvider,
@@ -12,7 +12,7 @@ import {
   type AccountQuotaReport,
   type AccountQuotaSource
 } from '../../../../shared/account-quota'
-import type { QuotaWindow } from '../../../../shared/ipc'
+import { QuotaWindowRow, quotaReadAgo } from '../../patterns/QuotaWindowRow'
 import { workbenchPaneText } from './pane-text'
 import type { QuotaPaneProps } from './types'
 
@@ -20,28 +20,6 @@ const AUTO_REFRESH_MS = 5 * 60_000
 
 const sourceKey = (source: AccountQuotaSource): MessageKey => `acct.source.${source}` as MessageKey
 const cap = (value?: string): string => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
-
-function countdown(t: TFunc, ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const d = Math.floor(total / 86400)
-  const h = Math.floor((total % 86400) / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  if (d > 0) return t('quota.durDH', { d, h })
-  if (h > 0) return t('quota.durHM', { h, m })
-  return t('quota.durM', { m: Math.max(1, m) })
-}
-
-export function resetLine(t: TFunc, window: QuotaWindow): { text: string; tip: string } {
-  if (window.resetAt === undefined) return { text: '', tip: '' }
-  const now = Date.now()
-  const tip = t('quota.resetAtTip', { time: new Date(window.resetAt).toLocaleString(undefined, { hour12: false }) })
-  if (window.resetAt <= now) return { text: t('quota.resetDue'), tip }
-  if (window.id === 'monthly') {
-    const date = new Date(window.resetAt)
-    return { text: t('quota.resetOn', { d: `${date.getMonth() + 1}/${date.getDate()}` }), tip }
-  }
-  return { text: t('quota.resetIn', { t: countdown(t, window.resetAt - now) }), tip }
-}
 
 export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   const t = useT()
@@ -159,6 +137,8 @@ export function QuotaCard({
   onSwitch: () => void
 }): ReactElement {
   const t = useT()
+  const now = Date.now()
+  const stale = quotaReadingStale(card.checkedAt, now, !!card.staleError)
   const title = accountCardTitle(card)
   const meta = [
     title !== card.email ? card.email : '',
@@ -189,31 +169,20 @@ export function QuotaCard({
       {card.status === 'error' ? <p className="wb-quota-msg">{t('acct.failed', { msg: card.error ?? '' })}</p> : null}
       {card.status === 'expired' ? <p className="wb-quota-msg">{card.hint}</p> : null}
 
-      {card.windows.map((window) => {
-        const pct = windowPct(window, 1) ?? 0
-        const tone = window.informational ? 'ok' : quotaTone(pct, window.exceeded)
-        const reset = resetLine(t, window)
-        return (
-          <div key={window.id} className="wb-quota-win" data-tone={tone} data-testid={`v3-wb-quota-win-${window.id}`}>
-            <div className="wb-quota-win-top">
-              <span className="wb-quota-win-label">{window.label}</span>
-              {window.estimated ? (
-                <span title={t('quota.estimatedTip')}>
-                  <Badge>{t('quota.estimated')}</Badge>
-                </span>
-              ) : null}
-              <span className="wb-quota-win-value ui-meta-num">{pct.toFixed(1)}%</span>
-            </div>
-            <Meter aria-label={window.label} value={Math.min(100, Math.max(0, pct))} minValue={0} maxValue={100} />
-            {reset.text ? <div className="wb-quota-win-sub" title={reset.tip}>{reset.text}</div> : null}
-          </div>
-        )
-      })}
+      {stale && (card.windows.length || card.balance) ? (
+        <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="v3-wb-quota-stale">
+          {[quotaReadAgo(t, card.checkedAt, now), card.staleError ? t('quota.readFailed', { msg: card.staleError }) : ''].filter(Boolean).join(' · ')}
+        </p>
+      ) : null}
+
+      {card.windows.map((window) => (
+        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`v3-wb-quota-win-${window.id}`} />
+      ))}
       {card.balance ? (
-        <div className="wb-quota-win">
-          <div className="wb-quota-win-top">
-            <span className="wb-quota-win-label">{card.balance.label}</span>
-            <span className="wb-quota-win-value ui-meta-num">{money(card.balance.amount, card.balance.currency)}</span>
+        <div className="quota-win" data-tone={stale ? 'stale' : 'ok'}>
+          <div className="quota-win-top">
+            <span className="quota-win-label">{card.balance.label}</span>
+            <span className="quota-win-value ui-meta-num">{money(card.balance.amount, card.balance.currency)}</span>
           </div>
         </div>
       ) : null}

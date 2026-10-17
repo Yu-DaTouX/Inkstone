@@ -1,0 +1,71 @@
+@layer patterns {
+  .quota-win {
+    --ui-meter-projection: var(--ink);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .quota-win-top {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .quota-win-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+  }
+
+  .quota-win-value {
+    flex: none;
+  }
+
+  .quota-win-sub {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--s-8);
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .quota-win[data-tone='warn'] {
+    --ui-meter-projection: var(--ask);
+  }
+
+  .quota-win[data-tone='warn'] .ui-progress__fill {
+    background: var(--ask);
+  }
+
+  .quota-win[data-tone='err'] {
+    --ui-meter-projection: var(--fail);
+  }
+
+  .quota-win[data-tone='err'] .ui-progress__fill {
+    background: var(--fail);
+  }
+
+  .quota-win[data-tone='stale'] .ui-progress__fill {
+    background: var(--fg3);
+  }
+
+  .quota-win[data-tone='stale'] .quota-win-value {
+    color: var(--fg3);
+  }
+
+  .quota-win[data-forecast='exhaust'] {
+    --ui-meter-projection: var(--ask);
+  }
+
+  .quota-win[data-forecast='exhaust'] .quota-win-forecast {
+    color: var(--ask-t);
+  }
+}
