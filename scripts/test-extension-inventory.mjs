@@ -34,12 +34,12 @@ export async function runExtensionInventoryTests(ok) {
     ok(withUser[0].includes('--no-extensions') && withUser[0].includes('不自动加载'), '旧版诊断与隔离发现参数一致')
     ok(withUser[1].includes('language.js') && withUser[1].includes('薄层'), '第二行是砚薄层（用 basename）')
     ok(
-      withUser[1].includes('yan context recall'),
-      '薄层诊断点明归档回读走宿主 CLI'
+      !withUser[1].includes('yan context recall'),
+      '薄层诊断不再提已退役的归档回读'
     )
     ok(
       withUser[1].includes('yan question ask') && withUser[1].includes('不注册模型工具'),
-      '薄层诊断说明提问 / 回读都走宿主 CLI，薄层不注册模型工具'
+      '薄层诊断说明提问走宿主 CLI，薄层不注册模型工具'
     )
     ok(
       withUser[2].includes('left-panel-tasks') && withUser[2].includes('只读'),

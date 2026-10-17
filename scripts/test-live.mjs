@@ -3240,98 +3240,6 @@ async function main() {
       console.log(`  N05 项目会话：${made.map((m) => m.tag.toUpperCase() + '→' + m.cwd).join('，')}`)
     }
 
-    const piDirNoAuth = join(sandboxRoot, 'pi-agent-no-auth')
-    mkdirSync(piDirNoAuth, { recursive: true })
-    const modelsForNoAuth = join(sourceAgentDir, 'models.json')
-    if (existsSync(modelsForNoAuth)) copyFileSync(modelsForNoAuth, join(piDirNoAuth, 'models.json'))
-    CASES.auth.env = { YAN_PI_DIR: piDirNoAuth }
-    CASES.newuser.env = { YAN_PI_DIR: piDirNoAuth }
-    const pathWithoutGit = (process.env.PATH ?? '')
-      .split(';')
-      .filter((dir) => dir && !existsSync(join(dir, 'git.exe')) && !existsSync(join(dir, 'bash.exe')))
-      .join(';')
-    CASES.gitinstall.env = {
-      YAN_PI_DIR: piDirNoAuth,
-      PATH: pathWithoutGit,
-      ProgramFiles: join(sandboxRoot, 'no-program-files'),
-      PROGRAMFILES: join(sandboxRoot, 'no-program-files'),
-      ProgramW6432: join(sandboxRoot, 'no-program-files'),
-      'ProgramFiles(x86)': join(sandboxRoot, 'no-program-files-x86'),
-      'PROGRAMFILES(X86)': join(sandboxRoot, 'no-program-files-x86')
-    }
-    CASES.nogit.env = {
-      YAN_PI_DIR: piDirNoAuth,
-      PATH: pathWithoutGit,
-      ProgramFiles: join(sandboxRoot, 'no-program-files'),
-      PROGRAMFILES: join(sandboxRoot, 'no-program-files'),
-      ProgramW6432: join(sandboxRoot, 'no-program-files'),
-      'ProgramFiles(x86)': join(sandboxRoot, 'no-program-files-x86'),
-      'PROGRAMFILES(X86)': join(sandboxRoot, 'no-program-files-x86')
-    }
-
-
-    const piDirSkill = join(sandboxRoot, 'pi-agent-skill')
-    for (const d of [piDirSkill, join(piDirSkill, 'skills', 'probe-skill')]) mkdirSync(d, { recursive: true })
-    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
-      const src = join(sourceAgentDir, f)
-      if (existsSync(src)) copyFileSync(src, join(piDirSkill, f))
-    }
-    writeFileSync(
-      join(piDirSkill, 'skills', 'probe-skill', 'SKILL.md'),
-      [
-        '---',
-        'name: probe-skill',
-        'description: 仅用于验证「运行时技能会被报告进命令列表」的探测技能，没有任何实际能力。',
-        '---',
-        '',
-        '这个技能存在的唯一目的：证明 pi 会把 `<agentDir>/skills` 下的 SKILL.md 变成命令列表里的 skill 来源条目。'
-      ].join('\n'),
-      'utf8'
-    )
-    CASES.slashcmd.env = {
-      YAN_PI_DIR: piDirSkill,
-      YAN_PROBE_SKILL: join(piDirSkill, 'skills', 'probe-skill', 'SKILL.md')
-    }
-
-    const piDirCustomApi = join(sandboxRoot, 'pi-agent-custom-api')
-    mkdirSync(piDirCustomApi, { recursive: true })
-    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
-      const src = join(sourceAgentDir, f)
-      if (existsSync(src)) copyFileSync(src, join(piDirCustomApi, f))
-    }
-    let customApiKey = ''
-    try {
-      const auth = JSON.parse(readFileSync(join(sourceAgentDir, 'auth.json'), 'utf8'))
-      customApiKey = auth?.deepseek?.key ?? ''
-    } catch {
-      customApiKey = ''
-    }
-    if (customApiKey) {
-      const modelsPath = join(piDirCustomApi, 'models.json')
-      let models = { providers: {} }
-      try {
-        models = JSON.parse(readFileSync(modelsPath, 'utf8'))
-      } catch {
-        models = { providers: {} }
-      }
-      models.providers = models.providers ?? {}
-      models.providers['yan-dp'] = {
-        api: 'openai-completions',
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: customApiKey,
-        models: [
-          {
-            id: 'deepseek-chat',
-            name: 'DeepSeek Chat（自定义接入）',
-            contextWindow: 65536,
-            maxTokens: 8192
-          }
-        ]
-      }
-      writeFileSync(modelsPath, JSON.stringify(models, null, 2), 'utf8')
-    }
-    CASES.customapie2e.env = { YAN_PI_DIR: piDirCustomApi }
-
     const piDirCapability = join(sandboxRoot, 'pi-agent-capability')
     for (const d of [piDirCapability, join(piDirCapability, 'skills', 'yan-capability-probe')])
       mkdirSync(d, { recursive: true })
@@ -3390,8 +3298,6 @@ async function main() {
       'utf8'
     )
     CASES.mcpcli.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
-    CASES.capsettings.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
-    CASES.sourcecap.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
 
     if (names.some((n) => CASES[n].usesMcpRegisterFixture)) {
       const MCP_REG_FIXTURE_PORT = 39341
@@ -3478,22 +3384,6 @@ async function main() {
       YAN_MCP_SERVERS_FILE: mcpServersFile,
       YAN_MCP_FIXTURE_MARKER: join(sandboxRoot, 'mcp-probe-marker.txt')
     }
-
-    const piDirTaskExt = join(sandboxRoot, 'pi-agent-task-ext')
-    for (const d of [piDirTaskExt, join(piDirTaskExt, 'extensions')]) mkdirSync(d, { recursive: true })
-    for (const f of ['auth.json', 'models.json', 'models-store.json']) {
-      const src = join(sourceAgentDir, f)
-      if (existsSync(src)) copyFileSync(src, join(piDirTaskExt, f))
-    }
-    copyFileSync(
-      join(root, 'scripts', 'fixtures', 'task-ext', 'left-info-panel.ts'),
-      join(piDirTaskExt, 'extensions', 'left-info-panel.ts')
-    )
-    copyFileSync(
-      join(root, 'scripts', 'fixtures', 'task-ext', 'notes-panel.ts'),
-      join(piDirTaskExt, 'extensions', 'notes-panel.ts')
-    )
-    CASES.taskext.env = { YAN_PI_DIR: piDirTaskExt }
 
     console.log(`隔离目录：${sandboxRoot}`)
     console.log(`  fixture：${seeded} 份（${SYNTHETIC_ONLY ? '仅合成，无个人凭证/会话' : '真实会话只读拷贝 + 合成；原件不受影响'}）`)

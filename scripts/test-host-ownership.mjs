@@ -162,7 +162,7 @@ export async function runHostOwnershipTests(ok) {
     async send(text) { sink.push({ sessionId: this.state.sessionId, kind: 'send', text }); return { ok: true } },
     get workingDirectory() { return this.state.cwd }
   })
-  const makeSendEnv = ({ abandonHandoff } = {}) => {
+  const makeSendEnv = () => {
     const deliveries = []
     const checkpoints = []
     const gate = deferred()
@@ -172,8 +172,6 @@ export async function runHostOwnershipTests(ok) {
     })
     const context = vm.createContext({
       runners: registry,
-      handoffPending: new Map(),
-      abandonHandoff: abandonHandoff ?? (async () => {}),
       startAgent: async () => ({ ok: true }),
       getSettings: () => gate.promise,
       captureCheckpoint: (...args) => { checkpoints.push(args) },
@@ -273,8 +271,6 @@ export async function runHostOwnershipTests(ok) {
     const registry = new RunnerRegistry({ limit: 3, createAgent: (id, cwd, generation) => mkSendAgent(id, cwd, generation, deliveries) })
     const context = vm.createContext({
       runners: registry,
-      handoffPending: new Map(),
-      abandonHandoff: async () => {},
       startAgent: async () => ({ ok: true }),
       getSettings: () => Promise.resolve({ checkpointsEnabled: true }),
       captureCheckpoint: () => {},
@@ -288,63 +284,6 @@ export async function runHostOwnershipTests(ok) {
     const res = await sending
     ok(res.ok === true && deliveries.length === 1 && deliveries[0].sessionId === 'sess-A',
       '[handler] settings 缓存命中（微任务）时仍发给 A', JSON.stringify(deliveries))
-  }
-
-  {
-    const env = makeSendEnv()
-    const destId = await seedDistinct(env.registry, 'C:/dest', 'D.jsonl')
-    const sourceId = await seedDistinct(env.registry)
-    setIsAgentRunning(env.registry, sourceId, false)
-    const settled = deferred()
-    env.ctx.handoffPending.set(sourceId, { collecting: true, settled: settled.promise, destinationRunId: destId, request: { operationId: 'op' } })
-    const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await reuseSameCwd(env.registry)
-    settled.resolve()
-    env.gate.resolve({ checkpointsEnabled: true })
-    const res = await sending
-    ok(res.ok === true && env.deliveries.length === 1 && env.deliveries[0].sessionId === 'sess-D',
-      '[handoff] 合法迁移：source 等待期复用仍按目的绑定发给 D', JSON.stringify({ res, deliveries: env.deliveries }))
-  }
-  {
-    const env = makeSendEnv()
-    const destId = await seedDistinct(env.registry, 'C:/dest', 'D.jsonl')
-    const sourceId = await seedDistinct(env.registry)
-    setIsAgentRunning(env.registry, destId, false)
-    const settled = deferred()
-    env.ctx.handoffPending.set(sourceId, { collecting: true, settled: settled.promise, destinationRunId: destId, request: { operationId: 'op' } })
-    const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await env.registry.select({ cwd: 'C:/dest', sessionFile: 'C:/dest/D2.jsonl' })
-    settled.resolve()
-    const res = await sending
-    ok(res.ok === false && env.deliveries.length === 0,
-      '[handoff] 目的在等待期被复用 → 零派发（不拿 source pin 盲套 dest）', JSON.stringify({ res, deliveries: env.deliveries }))
-  }
-  {
-    const env = makeSendEnv()
-    const sourceId = await seedSend(env.registry)
-    const settled = deferred()
-    env.ctx.handoffPending.set(sourceId, { collecting: true, settled: settled.promise, request: { operationId: 'op' } })
-    const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await reuseSameCwd(env.registry)
-    settled.resolve()
-    const res = await sending
-    ok(res.ok === false && env.deliveries.length === 0,
-      '[handoff] 无目的可迁移且原目标被复用 → 零派发', JSON.stringify({ res, deliveries: env.deliveries }))
-  }
-  {
-    const abandonEntered = deferred()
-    const abandonGate = deferred()
-    const env = makeSendEnv({ abandonHandoff: async () => { abandonEntered.resolve(); await abandonGate.promise } })
-    const id = await seedSend(env.registry)
-    const op = { collecting: false, request: { operationId: 'op' } }
-    env.ctx.handoffPending.set(id, op)
-    const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await abandonEntered.promise
-    await reuseSameCwd(env.registry)
-    abandonGate.resolve()
-    const res = await sending
-    ok(res.ok === false && env.deliveries.length === 0,
-      '[handoff] abandonHandoff await 期间复用 → 零派发', JSON.stringify({ res, deliveries: env.deliveries }))
   }
 }
 
