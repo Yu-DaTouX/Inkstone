@@ -298,6 +298,32 @@
   gap: 0;
 }
 
+.v3-visual-bars.is-valued {
+  padding-top: var(--s-24);
+}
+
+.v3-visual-bars.is-valued .v3-visual-col-bars {
+  position: relative;
+}
+
+.v3-visual-col-value {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding-bottom: var(--s-2);
+  overflow: hidden;
+  color: var(--fg2);
+  font-size: var(--t-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-visual-bars .v3-visual-col-label {
+  max-width: 100%;
+}
+
 .v3-visual-bar {
   display: block;
   flex: 1 1 auto;

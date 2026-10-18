@@ -199,6 +199,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
   const split = flow ? splitTurnProcess(flow) : null
   const processSegs = split?.process ?? []
   const thinkingInProcess = !streaming && processSegs.length > 0
+  const thinkingAfterProcess = !!streaming && processSegs.length > 0
   const thinkingLine = <ThinkingLine text={turn.thinking ?? ''} ms={turn.thinkingMs} live={turn.thinkingLive} />
 
   return (
@@ -206,7 +207,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
       <div className="v3-assistant-body">
         {edge.first ? <BranchSummary /> : null}
         <TurnActivity turn={turn} streaming={streaming} />
-        {thinkingInProcess ? null : thinkingLine}
+        {thinkingInProcess || thinkingAfterProcess ? null : thinkingLine}
 
         {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
 
@@ -221,6 +222,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
                 sessionId={sessionId}
               />
             ) : null}
+            {thinkingAfterProcess ? thinkingLine : null}
             {split.reply ? (
               <div className="v3-seg" data-testid="v3-seg">
                 <div className="v3-para">

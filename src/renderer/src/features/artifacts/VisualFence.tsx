@@ -355,7 +355,7 @@ function DataBlock({
   }
   switch (parsed.block.kind) {
     case 'chart':
-      return <VisualChart block={parsed.block} />
+      return <VisualChart block={parsed.block} sources={<VisualSources items={parsed.block.sources} />} />
     case 'stats':
       return <Stats block={parsed.block} />
     case 'cards':

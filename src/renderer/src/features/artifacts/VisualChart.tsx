@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type JSX } from 'react'
+import { useMemo, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { niceScale, type ChartBlock } from '../../../../shared/visual-blocks'
 
@@ -89,11 +89,17 @@ function VerticalPlot({ block }: { block: ChartBlock }): JSX.Element {
     )
   }
 
+  const valued = block.series.length === 1 && block.labels.length <= 12
   return (
-    <div className={`v3-visual-plot v3-visual-bars${stack ? ' is-stacked' : ''}`} role="img" aria-label={block.title}>
+    <div className={`v3-visual-plot v3-visual-bars${stack ? ' is-stacked' : ''}${valued ? ' is-valued' : ''}`} role="img" aria-label={block.title}>
       {block.labels.map((label, j) => (
         <div className="v3-visual-col" key={j}>
           <div className="v3-visual-col-bars">
+            {valued ? (
+              <span className="v3-visual-col-value" style={{ bottom: `${Math.max(1, (Math.abs(block.series[0].values[j]) / max) * 100)}%` } as CSSProperties}>
+                {fmtValue(block.series[0].values[j], block.unit)}
+              </span>
+            ) : null}
             {block.series.map((s, i) => (
               <span
                 key={i}
@@ -160,7 +166,7 @@ function HorizontalPlot({ block }: { block: ChartBlock }): JSX.Element {
   )
 }
 
-export function VisualChart({ block }: { block: ChartBlock }): JSX.Element {
+export function VisualChart({ block, sources }: { block: ChartBlock; sources?: ReactNode }): JSX.Element {
   const t = useT()
   const horizontal = block.type === 'hbar' || block.type === 'dumbbell' || block.type === 'diverging'
   const n = block.series.length
@@ -181,7 +187,7 @@ export function VisualChart({ block }: { block: ChartBlock }): JSX.Element {
           ))}
         </div>
       ) : null}
-      {n > 1 ? (
+      {n > 1 || block.series[0]?.name ? (
         <div className="v3-visual-legend">
           {block.series.map((s, i) => (
             <span className="v3-visual-legend-item" key={i}>
@@ -202,6 +208,7 @@ export function VisualChart({ block }: { block: ChartBlock }): JSX.Element {
           <ChartTable block={block} />
         </details>
       </footer>
+      {sources}
     </section>
   )
 }

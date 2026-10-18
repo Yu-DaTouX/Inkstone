@@ -41,11 +41,13 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   const current = live ? runningTool(tools) : null
   const summary = processSummaryLabel(tools, zh, t('proc.title'))
   const latest = notes.length ? narrationLine(notes[notes.length - 1]) : ''
-  const label = current
-    ? `${current.name} ${generatingArgs(current) ? t('tool2.generatingArgs') : summarize(current)}`.trim()
-    : live && latest && !open
-      ? latest
-      : summary
+  const label = open
+    ? t('proc.title')
+    : current
+      ? `${current.name} ${generatingArgs(current) ? t('tool2.generatingArgs') : summarize(current)}`.trim()
+      : live && latest
+        ? latest
+        : summary
   const time = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
   const merged = mergeQuietSegments(process)
   const { shown: groups, hidden } = open && live && manual === null ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
