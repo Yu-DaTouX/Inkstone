@@ -89,6 +89,10 @@ const CASES = {
     keys: 'ctrl+b', keysDelay: 20000,
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
+  'v3-tiles-width': {
+    probe: 'scripts/probe/v3-tiles-width.js', delay: 9000, cost: 0, budget: 90000,
+    afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
+  },
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
   'v3-devices-bind': { probe: 'scripts/probe/v3-devices-bind.js', delay: 9000, cost: 0, budget: 90000 },
   'v3-collab-invite': {

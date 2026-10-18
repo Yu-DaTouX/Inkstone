@@ -29,6 +29,27 @@ const EN: Record<Exclude<Kind, 'other'>, (n: number) => string> = {
   edit: (n) => `Edited ${n} ${n === 1 ? 'file' : 'files'}`
 }
 
+const ZH_RUN: Record<Exclude<Kind, 'other'>, (n: number) => string> = {
+  read: (n) => `读取 ${n} 个文件`,
+  search: (n) => `搜索 ${n} 次`,
+  fetch: (n) => `获取 ${n} 个页面`,
+  run: (n) => `运行 ${n} 个命令`,
+  edit: (n) => `编辑 ${n} 个文件`
+}
+const EN_RUN: Record<Exclude<Kind, 'other'>, (n: number) => string> = {
+  read: (n) => `Read ${n} files`,
+  search: (n) => `Searched ${n} times`,
+  fetch: (n) => `Fetched ${n} pages`,
+  run: (n) => `Ran ${n} commands`,
+  edit: (n) => `Edited ${n} files`
+}
+
+export function toolRunLabel(name: string, count: number, zh: boolean): string {
+  const kind = toolKind(name)
+  if (kind === 'other') return `${name} × ${count}`
+  return (zh ? ZH_RUN : EN_RUN)[kind](count)
+}
+
 export function generatingArgs(call: UIToolCall): boolean {
   return (call.status === 'running' || call.status === 'pending') && call.args === undefined && !call.incomplete
 }

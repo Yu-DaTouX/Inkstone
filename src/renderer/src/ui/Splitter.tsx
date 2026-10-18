@@ -164,6 +164,7 @@ export interface SplitterProps
   step?: number
   isDisabled?: boolean
   quiet?: boolean
+  grip?: boolean
   onChange?: (value: number) => void
   onReset?: () => void
 }
@@ -181,6 +182,7 @@ export function Splitter({
   step = 1,
   isDisabled = false,
   quiet = false,
+  grip = false,
   onChange,
   onReset,
   className,
@@ -284,6 +286,7 @@ export function Splitter({
       aria-disabled={isDisabled || undefined}
       data-dragging={dragging || undefined}
       data-quiet={quiet || undefined}
+      data-grip={grip || undefined}
       className={cx('ui-splitter', `ui-splitter--${orientation}`, className)}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

@@ -7,6 +7,7 @@ export type SessionTextKey =
   | 'toolDetail'
   | 'outputMore'
   | 'outputLess'
+  | 'moreItems'
   | 'placeholder'
   | 'subagentOpen'
   | 'subagentDetails'
@@ -19,6 +20,7 @@ export type SessionTextKey =
   | 'subagentPanel'
   | 'subagentKind'
   | 'subagentClose'
+  | 'subagentResize'
   | 'subagentConclusion'
   | 'subagentSources'
   | 'subagentArtifacts'
@@ -27,16 +29,13 @@ export type SessionTextKey =
   | 'subagentLatest'
   | 'subagentTranscript'
   | 'subagentDetailHint'
-  | 'subagentGroup'
   | 'subagentCount'
   | 'subagentLiveCount'
   | 'subagentDoneCount'
   | 'subagentFailedCount'
-  | 'subagentShowAll'
+  | 'subagentMoreRuns'
+  | 'subagentBringFront'
   | 'subagentShowLess'
-  | 'subagentStackPosition'
-  | 'subagentStackOlder'
-  | 'subagentStackNewer'
   | 'subagentRetried'
   | 'subagentResumed'
   | 'subagentNotRetried'
@@ -61,6 +60,7 @@ const ZH: Record<SessionTextKey, string> = {
   toolDetail: '差异与终端详情将在右侧面板打开；这里先显示已记录的命令与输出。',
   outputMore: '展开全部输出（{n} 行）',
   outputLess: '收起输出',
+  moreItems: '另外 {n} 项',
   placeholder: '此内容暂未在 v3 渲染。',
   subagentOpen: '并排打开（未迁移）',
   subagentDetails: '摘要',
@@ -73,6 +73,7 @@ const ZH: Record<SessionTextKey, string> = {
   subagentPanel: '子代理详情',
   subagentKind: '子代理',
   subagentClose: '关闭详情',
+  subagentResize: '调整大小',
   subagentConclusion: '结论',
   subagentSources: '来源',
   subagentArtifacts: '成果',
@@ -81,16 +82,13 @@ const ZH: Record<SessionTextKey, string> = {
   subagentLatest: '最近动作',
   subagentTranscript: '分屏查看完整转录',
   subagentDetailHint: '查看详情',
-  subagentGroup: '{n} 个子代理 · {live} 个进行中',
   subagentCount: '{n} 个子代理',
   subagentLiveCount: '{n} 进行中',
   subagentDoneCount: '{n} 完成',
   subagentFailedCount: '{n} 失败',
-  subagentShowAll: '显示全部 {n} 个',
+  subagentMoreRuns: '另外 {n} 个子代理',
+  subagentBringFront: '置于最前',
   subagentShowLess: '收起',
-  subagentStackPosition: '子代理 {from}–{to} / {n}，滚轮或 ↑↓ 翻看',
-  subagentStackOlder: '上面还有 {n} 个更早的，向上滚动查看',
-  subagentStackNewer: '下面还有 {n} 个较新的',
   subagentRetried: '已自动重试 {n} 次',
   subagentResumed: '已自动续跑 1 次',
   subagentNotRetried: '未自动重试',
@@ -116,6 +114,7 @@ const EN: Record<SessionTextKey, string> = {
   toolDetail: 'Diffs and terminal details open in the side panel; recorded command and output are shown here.',
   outputMore: 'Show all output ({n} lines)',
   outputLess: 'Collapse output',
+  moreItems: '{n} more',
   placeholder: 'This content is not rendered in v3 yet.',
   subagentOpen: 'Open side-by-side (not migrated)',
   subagentDetails: 'Summary',
@@ -128,6 +127,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentPanel: 'Subagent details',
   subagentKind: 'Subagent',
   subagentClose: 'Close details',
+  subagentResize: 'Resize',
   subagentConclusion: 'Conclusion',
   subagentSources: 'Sources',
   subagentArtifacts: 'Outputs',
@@ -136,16 +136,13 @@ const EN: Record<SessionTextKey, string> = {
   subagentLatest: 'Latest step',
   subagentTranscript: 'Open full transcript side by side',
   subagentDetailHint: 'View details',
-  subagentGroup: '{n} subagents · {live} in progress',
   subagentCount: '{n} subagents',
   subagentLiveCount: '{n} in progress',
   subagentDoneCount: '{n} done',
   subagentFailedCount: '{n} failed',
-  subagentShowAll: 'Show all {n}',
+  subagentMoreRuns: '{n} more subagents',
+  subagentBringFront: 'Bring to front',
   subagentShowLess: 'Show less',
-  subagentStackPosition: 'Subagents {from}–{to} of {n}; scroll or use ↑↓',
-  subagentStackOlder: '{n} older above; scroll up to see them',
-  subagentStackNewer: '{n} newer below',
   subagentRetried: 'Retried {n} times',
   subagentResumed: 'Auto-continued once',
   subagentNotRetried: 'Not retried',

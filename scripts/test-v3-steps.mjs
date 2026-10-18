@@ -376,6 +376,52 @@ async function main() {
     ok(byTestId(pending.tree, 'v3-steps-live') !== null, 'pending 也算进行中')
   }
 
+  group('并行大量调用：连续同类合并成一行，点开才逐条看')
+  {
+    const cmds = Array.from({ length: 7 }, (_, i) => tool({ id: `run-${i}`, name: 'bash', args: { command: `echo ${i}` } }))
+    const reads = Array.from({ length: 5 }, (_, i) => tool({ id: `rd-${i}`, name: 'read', args: { path: `f${i}.ts` } }))
+    const { tree } = renderStepsOpen([...cmds, ...reads])
+    const groupEls = byTypeName(tree, 'StepGroupRow')
+    ok(groupEls.length === 2, '7 个命令与 5 个读取各合并成一行', groupEls.length)
+    ok(byTypeName(tree, 'StepNode').length === 0, '合并行折叠时不铺逐条步骤')
+    const renderGroup = (el) => {
+      const rt = makeHookRuntime()
+      return { rt, el, tree: renderComponent(rt, el.type, el.props) }
+    }
+    const first = renderGroup(groupEls[0])
+    const second = renderGroup(groupEls[1])
+    ok(textOf(byTestId(first.tree, 'v3-step-group')) === '运行 7 个命令' && textOf(byTestId(second.tree, 'v3-step-group')) === '读取 5 个文件', '合并行写类别与数量', [textOf(byTestId(first.tree, 'v3-step-group')), textOf(byTestId(second.tree, 'v3-step-group'))])
+    ok(byTestId(first.tree, 'v3-step-group').props['aria-expanded'] === false, '合并行默认折叠')
+    byTestId(first.tree, 'v3-step-group').props.onClick()
+    const opened = renderComponent(first.rt, first.el.type, first.el.props)
+    ok(byTypeName(opened, 'StepNode').length === 7, '点开后逐条展示 7 个命令', byTypeName(opened, 'StepNode').length)
+
+    const few = renderStepsOpen([tool({ id: 'a', name: 'bash' }), tool({ id: 'b', name: 'bash' }), tool({ id: 'c', name: 'read' })])
+    ok(byTypeName(few.tree, 'StepGroupRow').length === 0 && byTypeName(few.tree, 'StepNode').length === 3, '不足 3 个同类时保持逐条', byTypeName(few.tree, 'StepNode').length)
+
+    const broken = renderStepsOpen([...cmds.slice(0, 3), tool({ id: 'g', name: 'grep' }), ...cmds.slice(3, 6)])
+    ok(byTypeName(broken.tree, 'StepGroupRow').length === 2 && byTypeName(broken.tree, 'StepNode').length === 1, '被别的类别打断后分别合并', byTypeName(broken.tree, 'StepNode').length)
+
+    const mixed = cmds.slice(0, 4).map((c, i) => i === 1 ? { ...c, status: 'error', output: 'boom' } : i === 3 ? { ...c, status: 'running', startedAt: 1 } : c)
+    const gt = renderSteps(mixed).tree
+    const failing = renderGroup(byTypeName(gt, 'StepGroupRow')[0])
+    const extraIds = byTypeName(failing.tree, 'StepNode').map((el) => el.props.node.call.id)
+    ok(extraIds.join() === 'run-1,run-3', '折叠的合并行下仍露出失败与进行中的那几条', extraIds)
+    ok(collect(failing.tree, (el) => el.props && el.props.className === 'v3-badge err').length === 1, '合并行头部带失败徽标')
+  }
+
+
+  group('运行中折叠态：进行中的步骤最多露出最近几条')
+  {
+    const running = Array.from({ length: 7 }, (_, i) => tool({ id: `live-${i}`, name: 'bash', args: { command: `sleep ${i}` }, status: 'running', startedAt: 1 }))
+    const { tree } = renderSteps(running)
+    const live = byTestId(tree, 'v3-steps-live')
+    const ids = byTypeName(live, 'StepNode').map((el) => el.props.node.call.id)
+    ok(ids.join() === 'live-4,live-5,live-6', '只露最近 3 条进行中的', ids)
+    const more = byTypeName(live, 'MoreRow')[0]
+    ok(!!more && more.props.count === 4, '其余收进「另外 4 项」', more && more.props)
+  }
+
   group('长输出：先截断预览，展开后铺全（键盘可达的共享按钮）')
   {
     const output = longOutput(60)

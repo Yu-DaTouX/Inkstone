@@ -465,6 +465,7 @@
   "ctx.statusDeclined": "已跳过",
   "ctx.statusFailed": "失败",
   "ctx.statusRunning": "压缩中",
+  "ctx.limitNote": "模型窗口 {model} · 自动压缩上限 {limit}，条满即触发压缩",
   "ctx.tip": "已用 {used} / {win}（{pct}%）",
   "ctx.usedOf": "已用 {used} / {win}",
   "ctx.window": "上下文窗口",

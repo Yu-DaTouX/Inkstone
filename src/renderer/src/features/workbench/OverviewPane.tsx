@@ -13,20 +13,22 @@ import {
 } from '../../state/compaction-view'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { visibleSubagentRuns } from '../../state/subagent-view'
+import { phaseWord, runTone, useRunsV3, type RunTone } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
 import { useSubagentPanel } from '../session/subagent-panel-state'
-import { compactTaskPaths, subagentTitle } from '../session/SubagentLine'
+import { compactTaskPaths, firstLine } from '../session/SubagentLine'
 import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import { formatDuration } from '../../../../shared/duration'
 import { normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
+import type { RunSnapshot } from '../../../../shared/runs'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
 import type { CapabilityMcpServerSettingView, CompactionRun, ProviderQuota, QuotaWindow, SubagentRun } from '../../../../shared/ipc'
-import { contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
+import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
 import './workbench.css'
@@ -286,6 +288,58 @@ function isLiveRun(run: SubagentRun): boolean {
   return run.status === 'running' || run.status === 'starting'
 }
 
+const BACKGROUND_RUN_KINDS: ReadonlySet<RunSnapshot['kind']> = new Set(['scheduled', 'review'])
+const MAX_FINISHED_BACKGROUND = 5
+
+const BACKGROUND_DOT: Record<RunTone, string> = {
+  run: 'is-run',
+  ask: 'is-warn',
+  stall: 'is-warn',
+  fail: 'is-err',
+  done: 'is-ok',
+  idle: ''
+}
+
+function isSettledRun(run: SubagentRun): boolean {
+  if (run.status === 'cancelled') return true
+  return run.status === 'done' && run.review !== 'pending' && run.review !== 'conflict'
+}
+
+function isSettledBackground(run: RunSnapshot): boolean {
+  const phase = run.phase
+  return phase.kind === 'done' || phase.kind === 'stopped' || (phase.kind === 'failed' && phase.seen)
+}
+
+function modelShortName(model: string | undefined): string {
+  if (!model) return ''
+  const parts = model.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? model
+}
+
+function subagentLabels(runs: SubagentRun[]): Map<string, string> {
+  const base = new Map<string, string>()
+  const seen = new Map<string, number>()
+  for (const run of runs) {
+    const label = compactTaskPaths(firstLine(run.task || run.brief?.goal || ''))
+    base.set(run.id, label)
+    seen.set(label, (seen.get(label) ?? 0) + 1)
+  }
+  const counter = new Map<string, number>()
+  const labels = new Map<string, string>()
+  for (const run of [...runs].sort((a, b) => a.startedAt - b.startedAt)) {
+    const label = base.get(run.id) ?? ''
+    if ((seen.get(label) ?? 0) < 2) {
+      labels.set(run.id, label)
+      continue
+    }
+    const n = (counter.get(label) ?? 0) + 1
+    counter.set(label, n)
+    const model = modelShortName(run.model)
+    labels.set(run.id, model ? `${label} · ${model} #${n}` : `${label} #${n}`)
+  }
+  return labels
+}
+
 function compareRuns(a: SubagentRun, b: SubagentRun): number {
   const live = Number(isLiveRun(b)) - Number(isLiveRun(a))
   return live !== 0 ? live : b.startedAt - a.startedAt
@@ -328,6 +382,9 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
   const { usage, slices, compacted } = data
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
   const rows = [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, usage.windowSize - usage.tokens) }]
+  const limitNote = usage.cappedByLimit
+    ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
+    : ''
   const record = last
     ? [compactionSummary(t, last), compactionTokensText(last), compactionReclaimText(t, last), compactionGrowthText(t, last, usage.tokens)]
         .filter(Boolean)
@@ -335,6 +392,10 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
     : ''
   return (
     <div className="wb-ov-ctx" data-testid="wb-ov-ctx">
+      <div className="wb-ov-ctx-head" title={limitNote || undefined}>
+        <span className="wb-ov-ctx-used">{`${text.contextUsed} ${Math.round(usage.percent ?? share(usage.tokens))}%`}</span>
+        <span className="wb-ov-ctx-total">{`${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</span>
+      </div>
       <div
         className="wb-ctx-bar"
         role="img"
@@ -342,7 +403,6 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
       >
         {slices.map((s) => (s.tokens > 0 ? <i key={s.id} className={`wb-ctx-seg c-${s.id}`} style={{ width: `${share(s.tokens)}%` }} /> : null))}
       </div>
-      <p className="wb-ov-note">{`${text.contextUsed} ${shortTokens(usage.tokens)} / ${usage.windowAssumed ? '~' : ''}${shortTokens(usage.windowSize)}`}</p>
       <ul className="wb-ctx-legend" data-testid="wb-ov-ctx-breakdown">
         {rows.map((row) => {
           const name = t(row.id === 'system' && compacted ? 'ctx.cat.systemSummary' : CATEGORY_LABEL[row.id])
@@ -365,7 +425,7 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
   )
 }
 
-function TaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; text: OverviewText }): ReactElement {
+function SubagentTaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; text: OverviewText }): ReactElement {
   const selectedId = useSubagentPanel((s) => (s.owner === owner ? s.runId : null))
   const anyLive = runs.some(isLiveRun)
   const [now, setNow] = useState(() => Date.now())
@@ -375,13 +435,15 @@ function TaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; t
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [anyLive])
+  const labels = subagentLabels(runs)
 
   return (
     <ul className="wb-ov-items" data-testid="wb-ov-tasks">
       {runs.map((run) => {
         const live = isLiveRun(run)
         const selected = selectedId === run.id
-        const label = compactTaskPaths(subagentTitle(run.task))
+        const label = labels.get(run.id) ?? ''
+        const model = modelShortName(run.model)
         const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
         return (
           <li key={run.id} className="wb-ov-task" data-status={run.status} data-selected={selected ? '1' : undefined}>
@@ -389,7 +451,7 @@ function TaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; t
               variant="ghost"
               size="sm"
               className="wb-ov-task-main"
-              title={run.task}
+              title={model ? `${run.task}\n${model}` : run.task}
               aria-label={`${text.taskDetail}: ${label}`}
               aria-haspopup="dialog"
               aria-expanded={selected}
@@ -416,6 +478,76 @@ function TaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; t
         )
       })}
     </ul>
+  )
+}
+
+function BackgroundTaskRows({ runs, lang }: { runs: RunSnapshot[]; lang: 'zh-CN' | 'en-US' }): ReactElement {
+  return (
+    <ul className="wb-ov-items" data-testid="wb-ov-background">
+      {runs.map((run) => {
+        const label = run.title || run.code
+        const status = phaseWord(lang, run.phase)
+        return (
+          <li key={run.runId} className="wb-ov-item wb-ov-bg" data-kind={run.kind} title={`${run.code} ${label}`}>
+            <span className="wb-ov-item-icon">
+              <span className={`wb-ov-dot ${BACKGROUND_DOT[runTone(run.phase)]}`} aria-hidden />
+            </span>
+            <span className="wb-ov-task-name">{label}</span>
+            <span className="wb-ov-task-time">{status}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function TaskGroups({
+  subagents,
+  background,
+  owner,
+  lang,
+  text
+}: {
+  subagents: SubagentRun[]
+  background: RunSnapshot[]
+  owner: string
+  lang: 'zh-CN' | 'en-US'
+  text: OverviewText
+}): ReactElement {
+  const [showFinished, setShowFinished] = useState(false)
+  const finishedBackground = background.filter(isSettledBackground).slice(0, MAX_FINISHED_BACKGROUND)
+  const finishedCount = subagents.filter(isSettledRun).length + finishedBackground.length
+  const shownSubagents = showFinished ? subagents : subagents.filter((run) => !isSettledRun(run))
+  const shownBackground = background.filter((run) => !isSettledBackground(run) || (showFinished && finishedBackground.includes(run)))
+  const grouped = shownBackground.length > 0 && shownSubagents.length > 0
+
+  return (
+    <div className="wb-ov-tasks" data-testid="wb-ov-task-groups">
+      {shownSubagents.length > 0 ? (
+        <div className="wb-ov-group">
+          {grouped ? <p className="wb-ov-group-title">{text.subagentGroup}</p> : null}
+          <SubagentTaskRows runs={shownSubagents} owner={owner} text={text} />
+        </div>
+      ) : null}
+      {shownBackground.length > 0 ? (
+        <div className="wb-ov-group">
+          <p className="wb-ov-group-title">{text.backgroundGroup}</p>
+          <BackgroundTaskRows runs={shownBackground} lang={lang} />
+        </div>
+      ) : null}
+      {finishedCount > 0 ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="wb-ov-finished-toggle"
+          aria-pressed={showFinished}
+          data-testid="wb-ov-finished-toggle"
+          onPress={() => setShowFinished((prev) => !prev)}
+        >
+          {showFinished ? text.hideFinished : text.showFinished(finishedCount)}
+        </Button>
+      ) : null}
+    </div>
   )
 }
 
@@ -486,11 +618,12 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const changesSummary = !repo ? undefined : repo.changedCount > 0 ? text.changesFiles(repo.changedCount) : text.changesNone
 
   const contextFolded = isFolded('context')
+  const autoCompactLimit = autoCompactLimitOf(session, settings)
   const contextData = useMemo(
-    () => (contextFolded ? null : contextPaneData({ session, stats, messages })),
-    [contextFolded, session, stats, messages]
+    () => (contextFolded ? null : contextPaneData({ session, stats, messages, autoCompactLimit })),
+    [contextFolded, session, stats, messages, autoCompactLimit]
   )
-  const usage = contextData?.usage ?? contextUsageSummary(session, stats)
+  const usage = contextData?.usage ?? contextUsageSummary(session, stats, autoCompactLimit)
   const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : undefined
   const contextTone = usage.tone !== 'ok' && usage.known ? usage.tone : undefined
 
@@ -500,8 +633,11 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const sessionIds = view.sessionId ? [view.sessionId] : []
   const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
-  const runningCount = runs.filter(isLiveRun).length
-  const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : text.doneCount(runs.length)
+  const allRuns = useRunsV3((s) => s.runs)
+  const backgroundRuns = useMemo(() => allRuns.filter((run) => BACKGROUND_RUN_KINDS.has(run.kind)), [allRuns])
+  const runningCount = runs.filter(isLiveRun).length + backgroundRuns.filter((run) => !isSettledBackground(run)).length
+  const taskTotal = runs.length + backgroundRuns.length
+  const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : text.doneCount(taskTotal)
 
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
@@ -575,9 +711,9 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         </Tile>
       ) : null}
 
-      {runs.length > 0 ? (
+      {taskTotal > 0 ? (
         <Tile id="tasks" title={text.tiles.tasks} summary={taskSummary} folded={isFolded('tasks')} onToggle={toggle}>
-          <TaskRows runs={runs} owner={view.key} text={text} />
+          <TaskGroups subagents={runs} background={backgroundRuns} owner={view.key} lang={lang} text={text} />
         </Tile>
       ) : null}
 

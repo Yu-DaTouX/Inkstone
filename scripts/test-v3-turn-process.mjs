@@ -61,7 +61,7 @@ function seg(id, { commentary = [], tools = [], response = null } = {}) {
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processTools, processNotes, processSummaryLabel, runningTool, narrationLine, failedCount } = mod
+const { splitTurnProcess, processTools, processNotes, processSummaryLabel, runningTool, narrationLine, failedCount, pickLiveSegments } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -143,6 +143,26 @@ group('标签：工具汇总、失败数与空过程')
   ok(processSummaryLabel([tool('a', 'bash')], false, 'Process') === 'Ran 1 command', '英文汇总单数', processSummaryLabel([tool('a', 'bash')], false, 'Process'))
   const empty = splitTurnProcess([])
   ok(empty.process.length === 0 && empty.reply === null && empty.tail.length === 0, '空回合不出过程也没有回复', empty)
+}
+
+group('运行中默认展开：只留最近几段，其余收进「另外 N 项」')
+{
+  const many = Array.from({ length: 6 }, (_, i) => seg('s' + i, { commentary: [text('c' + i, '步骤' + i)], tools: [tool('a' + i, 'bash'), tool('b' + i, 'read')] }))
+  const picked = pickLiveSegments(many)
+  ok(picked.shown.map((x) => x.id).join() === 's3,s4,s5', '默认只留最近 3 段', picked.shown.map((x) => x.id))
+  ok(picked.hidden === 6, '隐藏数按被收起的工具数计', picked.hidden)
+  const short = pickLiveSegments(many.slice(0, 3))
+  ok(short.shown.length === 3 && short.hidden === 0, '不超过上限时不隐藏', short)
+  const pinned = pickLiveSegments([
+    seg('p0', { tools: [tool('x', 'bash', 'error')] }),
+    seg('p1', { tools: [tool('y', 'bash', 'error', { cancelled: true })] }),
+    seg('p2', { tools: [tool('z', 'bash', 'running')] }),
+    ...many.slice(0, 3)
+  ])
+  ok(pinned.shown.map((x) => x.id).join() === 'p0,p2,s0,s1,s2', '失败与进行中的段即使较早也保留，已取消的不算', pinned.shown.map((x) => x.id))
+  ok(pinned.hidden === 1, '被收起的只剩已取消的那段', pinned.hidden)
+  const quiet = pickLiveSegments(Array.from({ length: 5 }, (_, i) => seg('n' + i, { commentary: [text('k' + i, '想法')] })))
+  ok(quiet.shown.length === 3 && quiet.hidden === 2, '只有旁白的段按段数计', quiet)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

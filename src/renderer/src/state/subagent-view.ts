@@ -124,6 +124,19 @@ export function selectSubagentRuns(runs: SubagentRun[], scope: SubagentScope): S
   }
 }
 
+export interface TurnSubagentScope {
+  sessionIds: string[]
+  parentRunIds?: string[]
+}
+
+export function subagentRunsForTurnScope(runs: SubagentRun[], scope: TurnSubagentScope): SubagentRun[] {
+  const ids = new Set(scope.sessionIds.filter(Boolean))
+  const parents = new Set((scope.parentRunIds ?? []).filter(Boolean))
+  return dedupeRuns(runs).filter(
+    (run) => (!!run.parentSessionId && ids.has(run.parentSessionId)) || (!!run.parentRunId && parents.has(run.parentRunId))
+  )
+}
+
 export function subagentTabId(runId: string): string {
   return `subagent:${runId}`
 }

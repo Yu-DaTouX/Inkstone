@@ -4,7 +4,8 @@ import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, isSettledToolNode, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
-import { generatingArgs, summarize, toolGroupLabel } from './tool-summary'
+import { generatingArgs, summarize, toolGroupLabel, toolRunLabel } from './tool-summary'
+import { GROUP_EXTRAS, LIVE_STEPS, capRecent, groupConsecutive, groupExtras, isFailedCall, isLiveCall, type StepGroup } from './tool-groups'
 import { Icon } from './Icon'
 import { Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
@@ -107,6 +108,8 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
   const failed = tools.filter((c) => c.status === 'error' && !c.cancelled).length
   const open = manual ?? failed > 0
   const { label, stats } = summaryText(t, zh, tools, failed)
+  const liveNodes = forest.filter((node) => !isSettledToolNode(node) || lingering.has(node.call.id))
+  const liveCap = capRecent(liveNodes, LIVE_STEPS)
 
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
@@ -118,12 +121,15 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
 
       {open ? (
         <div className="v3-steps-list" data-testid="v3-steps-list">
-          {forest.map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
+          {groupConsecutive(forest).map((item) => item.type === 'group'
+            ? <StepGroupRow key={item.group.id} group={item.group} />
+            : <StepNode key={item.node.call.id} node={item.node} depth={0} />)}
         </div>
       ) : (
         running.length || lingering.size ? (
           <div className="v3-steps-live" data-testid="v3-steps-live">
-            {forest.filter((node) => !isSettledToolNode(node) || lingering.has(node.call.id)).map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
+            {liveCap.hidden > 0 ? <MoreRow count={liveCap.hidden} onOpen={() => setManual(true)} testId="v3-steps-more" /> : null}
+            {liveCap.shown.map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
           </div>
         ) : null
       )}
@@ -132,6 +138,48 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
         <div className="v3-steps-note"><Icon name="external" size={13} /><span>{tt('toolDetail')}</span></div>
       ) : null}
     </section>
+  )
+}
+
+function MoreRow({ count, onOpen, testId }: { count: number; onOpen: () => void; testId: string }): JSX.Element {
+  const tt = useSessionText()
+  return (
+    <Button size="sm" variant="ghost" className="v3-steps-more" onPress={onOpen} data-testid={testId}>
+      {tt('moreItems', { n: count })}
+    </Button>
+  )
+}
+
+function StepGroupRow({ group }: { group: StepGroup }): JSX.Element {
+  const t = useT()
+  const zh = useI18n().lang !== 'en-US'
+  const [manual, setManual] = useState<boolean | null>(null)
+  const open = manual ?? false
+  const failed = group.nodes.filter(isFailedCall).length
+  const running = group.nodes.some(isLiveCall)
+  const state = running ? 'run' : failed ? 'err' : 'ok'
+  const label = toolRunLabel(group.name, group.nodes.length, zh)
+  const extras = open ? { shown: [], hidden: 0 } : capRecent(groupExtras(group), GROUP_EXTRAS)
+
+  return (
+    <div className="v3-step v3-step-group" data-state={state} data-tool={group.name} data-depth={0}>
+      <button className="v3-step-head" aria-expanded={open} onClick={() => setManual(!open)} title={label} data-testid="v3-step-group">
+        <span className={`v3-dot ${state}`} aria-hidden />
+        <span className="v3-step-target">{label}</span>
+        {failed ? <span className="v3-badge err">{failed} {t('tool.failed')}</span> : null}
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
+      </button>
+      {open ? (
+        <div className="v3-step-nest" role="group" aria-label={label} data-testid="v3-step-group-list">
+          {group.nodes.map((node) => <StepNode key={node.call.id} node={node} depth={1} />)}
+        </div>
+      ) : extras.shown.length ? (
+        <div className="v3-step-nest" role="group" aria-label={label}>
+          {extras.hidden > 0 ? <MoreRow count={extras.hidden} onOpen={() => setManual(true)} testId="v3-step-group-more" /> : null}
+          {extras.shown.map((node) => <StepNode key={node.call.id} node={node} depth={1} />)}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

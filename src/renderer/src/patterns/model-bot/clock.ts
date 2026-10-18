@@ -16,6 +16,7 @@ import {
   type BotLook,
   type BotMood,
   type BotPose,
+  type PoseClock,
   type ToolState
 } from './draw'
 
@@ -27,10 +28,11 @@ export interface BotOptions {
   size: number
   seed: number
   tool?: BotActivity | null
+  corner?: boolean
 }
 
 export interface BotHandle {
-  update(options: Omit<BotOptions, 'seed'>): void
+  update(options: Omit<BotOptions, 'seed' | 'corner'>): void
   dispose(): void
 }
 
@@ -40,6 +42,7 @@ interface BotEntry {
   brand: ModelBrand
   mood: BotMood
   size: number
+  corner: boolean
   seed: number
   since: number
   entrance: boolean
@@ -114,6 +117,7 @@ function lookOf(brand: ModelBrand): BotLook {
   const look: BotLook = {
     form,
     paint,
+    ink: MONO_INK[theme],
     dark: luminance(paint) < 0.35,
     art: art && form.mono ? tinted(art, paint) : art,
     field
@@ -122,8 +126,8 @@ function lookOf(brand: ModelBrand): BotLook {
   return look
 }
 
-function clockOf(entry: BotEntry, t: number): { t: number; seed: number; since: number; entrance: boolean; restTurn: number; still: boolean } {
-  return { t, seed: entry.seed, since: entry.since, entrance: entry.entrance, restTurn: entry.restTurn, still: reduced }
+function clockOf(entry: BotEntry, t: number): PoseClock {
+  return { t, seed: entry.seed, since: entry.since, entrance: entry.entrance, restTurn: entry.restTurn, still: reduced, size: entry.size }
 }
 
 function poseOf(entry: BotEntry, t: number): BotPose {
@@ -166,7 +170,7 @@ function paint(entry: BotEntry, t: number): void {
   if (!entry.ctx) return
   const pose = poseOf(entry, t)
   entry.shown = pose
-  drawBot(entry.ctx, lookOf(entry.brand), entry.canvas.width, pose)
+  drawBot(entry.ctx, lookOf(entry.brand), entry.canvas.height, pose, entry.corner)
 }
 
 function tick(): void {
@@ -260,6 +264,7 @@ export function mountBot(canvas: HTMLCanvasElement, options: BotOptions): BotHan
     brand: options.brand,
     mood: options.mood,
     size: options.size,
+    corner: !!options.corner,
     seed: options.seed,
     since: t,
     entrance: options.mood === 'wake' && !reduced,
@@ -292,7 +297,7 @@ export function mountBot(canvas: HTMLCanvasElement, options: BotOptions): BotHan
       if (next.mood !== entry.mood) {
         retarget(entry, at)
         entry.mood = next.mood
-        entry.entrance = !reduced && (next.mood === 'wake' || next.mood === 'fail')
+        entry.entrance = !reduced && (next.mood === 'wake' || next.mood === 'fail' || next.mood === 'done')
         entry.tool = followTool(IDLE_TOOL, toolOf(entry), at)
       } else trackTool(entry, at)
       if (entry.dirty) schedule()

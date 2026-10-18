@@ -5,8 +5,10 @@ import { formatDuration } from '../../../../shared/duration'
 import { Markdown } from './Markdown'
 import { Icon } from './Icon'
 import { ToolSteps } from './ToolSteps'
+import { Button } from '../../ui'
+import { useSessionText } from './text'
 import { generatingArgs, summarize } from './tool-summary'
-import { narrationLine, processNotes, processSummaryLabel, processTools, runningTool } from './turn-process'
+import { narrationLine, pickLiveSegments, processNotes, processSummaryLabel, processTools, runningTool } from './turn-process'
 
 function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
   const merged: TurnSegment[] = []
@@ -29,6 +31,7 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   sessionId: string | null
 }): JSX.Element {
   const t = useT()
+  const tt = useSessionText()
   const zh = useI18n().lang !== 'en-US'
   const [manual, setManual] = useState<boolean | null>(null)
   const open = manual ?? live
@@ -44,7 +47,8 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
       ? latest
       : summary
   const time = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
-  const groups = mergeQuietSegments(process)
+  const merged = mergeQuietSegments(process)
+  const { shown: groups, hidden } = open && live && manual === null ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
 
   return (
     <section className="v3-steps v3-process" data-testid="v3-process" aria-label={t('proc.title')}>
@@ -62,6 +66,11 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
       {open ? (
         <div className="v3-process-body" data-testid="v3-process-body">
           {thinking}
+          {hidden > 0 ? (
+            <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setManual(true)} data-testid="v3-process-more">
+              {tt('moreItems', { n: hidden })}
+            </Button>
+          ) : null}
           {groups.map((segment) => (
             <div key={segment.id} className="v3-process-seg">
               {segment.commentary.length ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { formatTokens } from '../../state/compaction-view'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -6,7 +6,7 @@ import { useRunsV3, phaseWord, runTone } from '../../state/runs-v3'
 import { displayedSessionOf, useSplitView } from '../../state/split-view'
 import { subagentTileRef } from '../../app/SideBySideLayout'
 import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from './turn-lines'
-import { selectSubagentRuns, subagentTokens } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentRunsForTurnScope, subagentTokens, type TurnSubagentScope } from '../../state/subagent-view'
 import { sessionViewIdentity } from './view-state'
 import { formatDuration } from '../../../../shared/duration'
 import type { SubagentOutcomeKey } from '../../../../shared/subagent-outcome'
@@ -73,7 +73,8 @@ export function openSubagentPane(runId: string): void {
   useSplitView.getState().open(subagentTileRef(runId), current)
 }
 
-export const SUBAGENT_FOLD_AT = 3
+export const SUBAGENT_STRIP_MAX = 6
+const SUBAGENT_STRIP_BOT = 22
 
 const isLiveRun = (run: SubagentRun): boolean => run.status === 'running' || run.status === 'starting'
 
@@ -84,206 +85,216 @@ export function subagentStackOrder(runs: SubagentRun[]): SubagentRun[] {
   return [...failed, ...rest]
 }
 
-export function subagentStackWindow(total: number, offset: number): { start: number; end: number; max: number } {
-  const max = Math.max(0, total - SUBAGENT_FOLD_AT)
-  const start = Math.min(Math.max(0, offset), max)
-  return { start, end: Math.min(total, start + SUBAGENT_FOLD_AT), max }
+export function subagentDefaultFront(runs: SubagentRun[], selectedId: string | null): string | null {
+  if (!runs.length) return null
+  if (selectedId && runs.some((run) => run.id === selectedId)) return selectedId
+  const newest = (list: SubagentRun[]): SubagentRun => list.reduce((best, run) => (run.startedAt >= best.startedAt ? run : best))
+  const live = runs.filter(isLiveRun)
+  return newest(live.length ? live : runs).id
 }
 
-const WHEEL_STEP = 40
-
-function tickTone(run: SubagentRun): string {
-  if (run.status === 'error') return 'err'
-  if (isLiveRun(run)) return 'run'
-  if (run.status === 'cancelled') return 'warn'
-  return 'ok'
+export function subagentDeck(runs: SubagentRun[], frontId: string | null): { front: SubagentRun | null; strips: SubagentRun[]; hidden: number } {
+  const front = runs.find((run) => run.id === frontId) ?? null
+  const others = subagentStackOrder(runs.filter((run) => run.id !== front?.id))
+  const strips = others.slice(0, SUBAGENT_STRIP_MAX)
+  return { front, strips, hidden: others.length - strips.length }
 }
 
-export function SubagentLine({ turn }: { turn: AssistantTurn }): JSX.Element | null {
+const SUBAGENT_DEPTH_MAX = 3
+
+export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
   const tt = useSessionText()
   const subagents = useStore((s) => s.subagents)
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
   const runs = useRunsV3((s) => s.runs)
-  const [expanded, setExpanded] = useState(false)
+  const [flat, setFlat] = useState(false)
+  const [picked, setPicked] = useState<string | null>(null)
+  const deckRef = useRef<HTMLDivElement | null>(null)
+  const refocus = useRef(false)
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
+  const selectedRunId = useSubagentPanel((s) => (s.owner === view.key ? s.runId : null))
   const sessionIds = view.sessionId ? [view.sessionId] : []
   const ids = new Set([turn.id, ...turn.sourceIds])
-  const mine = selectSubagentRuns(subagents, { sessionIds }).all.filter(
+  const mine = (scope ? subagentRunsForTurnScope(subagents, scope) : selectSubagentRuns(subagents, { sessionIds }).all).filter(
     (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
   )
-  if (!mine.length) return null
   const ordered = [...mine].sort((a, b) => a.startedAt - b.startedAt)
-  const live = ordered.filter(isLiveRun).length
-  const foldable = ordered.length > SUBAGENT_FOLD_AT
-  const rows = ordered.map((run) => <SubagentRow key={run.id} run={run} owner={view.key} snapshot={findSubagentSnapshot(runs, run.id)} />)
+  const pickedValid = picked !== null && ordered.some((run) => run.id === picked)
+  const frontId = pickedValid ? picked : subagentDefaultFront(ordered, selectedRunId)
+  const selectedInGroup = selectedRunId !== null && ordered.some((run) => run.id === selectedRunId)
 
-  if (!foldable) {
+  useEffect(() => {
+    if (selectedInGroup) setPicked(null)
+  }, [selectedInGroup, selectedRunId])
+
+  useEffect(() => {
+    if (!refocus.current) return
+    refocus.current = false
+    deckRef.current?.querySelector<HTMLElement>('[data-front="1"] .v3-subagent-toggle')?.focus()
+  }, [frontId])
+
+  if (!ordered.length) return null
+  const live = ordered.filter(isLiveRun).length
+  const renderRow = (run: SubagentRun, extra?: { front?: boolean; lift?: boolean }): JSX.Element => (
+    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={findSubagentSnapshot(runs, run.id)} front={extra?.front} lift={extra?.lift} />
+  )
+
+  if (ordered.length === 1) {
     return (
-      <div className="v3-subagents" data-testid="v3-subagents">
-        {ordered.length > 1 ? (
-          <div className="v3-subagents-sum" data-testid="v3-subagents-sum">{tt('subagentGroup', { n: ordered.length, live })}</div>
-        ) : null}
-        {rows}
+      <div className="v3-subagents" data-testid="v3-subagents" data-layout="single">
+        {renderRow(ordered[0])}
       </div>
     )
   }
 
   const failed = ordered.filter((run) => run.status === 'error').length
   const finished = ordered.length - live
+  const legend = [
+    live ? { tone: 'run', label: tt('subagentLiveCount', { n: live }) } : null,
+    failed ? { tone: 'err', label: tt('subagentFailedCount', { n: failed }) } : null
+  ].filter((item): item is { tone: string; label: string } => item !== null)
   const counts = [
     tt('subagentCount', { n: ordered.length }),
     live ? tt('subagentLiveCount', { n: live }) : null,
     finished - failed ? tt('subagentDoneCount', { n: finished - failed }) : null,
     failed ? tt('subagentFailedCount', { n: failed }) : null
   ].filter(Boolean).join(' · ')
-  const toggle = (): void => setExpanded((value) => !value)
-  return (
-    <div className="v3-subagents" data-testid="v3-subagents" data-folded={expanded ? undefined : '1'}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="v3-subagents-head"
-        aria-expanded={expanded}
-        onPress={toggle}
-        trailingIcon={<Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={13} />}
-        data-testid="v3-subagents-sum"
-      >
-        {counts}
-      </Button>
-      <ProgressBar
-        className="v3-subagents-progress"
-        aria-label={counts}
-        value={finished}
-        maxValue={ordered.length}
-        data-testid="v3-subagents-progress"
-      />
-      {expanded ? rows : <SubagentStack runs={ordered} owner={view.key} snapshots={runs} />}
-      <Button variant="ghost" size="sm" className="v3-subagents-more" onPress={toggle} data-testid="v3-subagents-more">
-        {expanded ? tt('subagentShowLess') : tt('subagentShowAll', { n: ordered.length })}
-      </Button>
-    </div>
-  )
-}
-
-function SubagentStack({ runs, owner, snapshots }: { runs: SubagentRun[]; owner: string; snapshots: RunSnapshot[] }): JSX.Element {
-  const tt = useSessionText()
-  const sequence = subagentStackOrder(runs)
-  const [offset, setOffset] = useState(0)
-  const [direction, setDirection] = useState<'up' | 'down'>('up')
-  const selectedId = useSubagentPanel((s) => (s.owner === owner ? s.runId : null))
-  const stackRef = useRef<HTMLDivElement>(null)
-  const wheelRef = useRef(0)
-  const { start, end, max } = subagentStackWindow(sequence.length, offset)
-  const maxRef = useRef(max)
-  const offsetRef = useRef(start)
-  maxRef.current = max
-  offsetRef.current = start
-
-  const moveTo = useCallback((next: number) => {
-    const current = offsetRef.current
-    const clamped = Math.min(Math.max(0, next), maxRef.current)
-    if (clamped === current) return
-    offsetRef.current = clamped
-    setDirection(clamped > current ? 'up' : 'down')
-    setOffset(clamped)
-  }, [])
-
-  const selectedIndex = selectedId ? sequence.findIndex((run) => run.id === selectedId) : -1
-  useEffect(() => {
-    if (selectedIndex < 0) return
-    const current = offsetRef.current
-    if (selectedIndex >= current && selectedIndex < current + SUBAGENT_FOLD_AT) return
-    moveTo(selectedIndex - 1)
-  }, [selectedIndex, moveTo])
-
-  useEffect(() => {
-    const node = stackRef.current
-    if (!node) return undefined
-    const onWheel = (event: WheelEvent): void => {
-      if (event.deltaY === 0) return
-      const goingUp = event.deltaY < 0
-      const current = offsetRef.current
-      if ((goingUp && current >= maxRef.current) || (!goingUp && current <= 0)) {
-        wheelRef.current = 0
-        return
-      }
-      event.preventDefault()
-      if (Math.sign(wheelRef.current) !== Math.sign(event.deltaY)) wheelRef.current = 0
-      wheelRef.current += event.deltaY
-      if (Math.abs(wheelRef.current) < WHEEL_STEP) return
-      wheelRef.current = 0
-      moveTo(current + (goingUp ? 1 : -1))
-    }
-    node.addEventListener('wheel', onWheel, { passive: false })
-    return () => node.removeEventListener('wheel', onWheel)
-  }, [moveTo])
-
-  const older = sequence.length - end
-  const visible = sequence.slice(start, end).reverse()
-  const ticks = [...sequence].reverse()
-  const tabStop = sequence.length - 1 - start
-  const position = tt('subagentStackPosition', { from: start + 1, to: end, n: sequence.length })
+  const toggle = (): void => setFlat((value) => !value)
+  const deck = subagentDeck(ordered, frontId)
+  const pick = (id: string): void => {
+    refocus.current = true
+    setPicked(id)
+  }
+  const navigate = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-nav="1"]'))
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    if (at < 0) return
+    const next = items[at + (event.key === 'ArrowDown' ? 1 : -1)]
+    if (!next) return
+    event.preventDefault()
+    next.focus()
+  }
 
   return (
-    <div
-      ref={stackRef}
-      className="v3-sa-stack"
-      data-testid="v3-subagent-stack"
-      data-direction={direction}
-      onKeyDown={(event) => {
-        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-        event.preventDefault()
-        moveTo(offsetRef.current + (event.key === 'ArrowUp' ? 1 : -1))
-      }}
-    >
-      <nav className="v3-sa-ticks" aria-label={position} data-testid="v3-subagent-ticks">
-        {ticks.map((run, index) => {
-          const seqIndex = sequence.length - 1 - index
-          const inView = seqIndex >= start && seqIndex < end
-          return (
-            <button
-              key={run.id}
-              type="button"
-              className="v3-sa-tick"
-              data-testid="v3-subagent-tick"
-              data-tone={tickTone(run)}
-              data-view={inView ? '1' : undefined}
-              aria-current={inView ? 'true' : undefined}
-              aria-label={compactTaskPaths(subagentTitle(run.task))}
-              title={compactTaskPaths(subagentTitle(run.task))}
-              tabIndex={index === tabStop ? 0 : -1}
-              onClick={() => moveTo(seqIndex - 1)}
-            >
-              <span className="v3-sa-bar" />
-            </button>
-          )
-        })}
-      </nav>
-      <div className="v3-sa-cards">
-        {older > 0 ? (
-          <div className="v3-sa-pile" data-side="above" data-testid="v3-subagent-pile" title={tt('subagentStackOlder', { n: older })} aria-hidden>
-            {older > 1 ? <span className="v3-sa-sliver" data-depth="2" /> : null}
-            <span className="v3-sa-sliver" data-depth="1" />
-          </div>
-        ) : null}
-        {visible.map((run) => (
-          <SubagentRow key={run.id} run={run} owner={owner} snapshot={findSubagentSnapshot(snapshots, run.id)} />
-        ))}
-        {start > 0 ? (
-          <div className="v3-sa-pile" data-side="below" data-testid="v3-subagent-pile-below" title={tt('subagentStackNewer', { n: start })} aria-hidden>
-            <span className="v3-sa-sliver" data-depth="1" />
-            {start > 1 ? <span className="v3-sa-sliver" data-depth="2" /> : null}
-          </div>
+    <div className="v3-subagents" data-testid="v3-subagents" data-layout={flat ? 'flat' : 'stack'}>
+      <div className="v3-subagents-top">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="v3-subagents-head"
+          aria-expanded={flat}
+          onPress={toggle}
+          aria-label={counts}
+          trailingIcon={<Icon name={flat ? 'chevron-up' : 'chevron-down'} size={13} />}
+          data-testid="v3-subagents-sum"
+        >
+          {tt('subagentCount', { n: ordered.length })}
+        </Button>
+        <ProgressBar
+          className="v3-subagents-progress"
+          aria-label={counts}
+          value={finished}
+          maxValue={ordered.length}
+          data-testid="v3-subagents-progress"
+        />
+        {legend.length ? (
+          <span className="v3-subagents-legend" aria-hidden="true" data-testid="v3-subagents-legend">
+            {legend.map((item) => (
+              <span key={item.tone} className="v3-subagents-legend-item">
+                <span className={`v3-dot ${item.tone}`} />
+                {item.label}
+              </span>
+            ))}
+          </span>
         ) : null}
       </div>
+      {flat ? (
+        <>
+          {ordered.map((run) => renderRow(run))}
+          <Button variant="ghost" size="sm" className="v3-subagents-more" onPress={toggle} data-testid="v3-subagents-more">
+            {tt('subagentShowLess')}
+          </Button>
+        </>
+      ) : (
+        <div className="v3-sa-deck" role="group" aria-label={counts} ref={deckRef} onKeyDown={navigate} data-testid="v3-subagent-deck">
+          {deck.front ? renderRow(deck.front, { front: true, lift: pickedValid }) : null}
+          {deck.strips.map((run, index) => (
+            <SubagentStrip
+              key={run.id}
+              run={run}
+              owner={view.key}
+              snapshot={findSubagentSnapshot(runs, run.id)}
+              depth={Math.min(index + 1, SUBAGENT_DEPTH_MAX)}
+              layer={deck.strips.length - index + 1}
+              onPick={() => pick(run.id)}
+            />
+          ))}
+          {deck.hidden > 0 ? (
+            <button
+              type="button"
+              className="v3-sa-strip v3-sa-more"
+              data-depth={SUBAGENT_DEPTH_MAX}
+              data-nav="1"
+              style={{ zIndex: 1 }}
+              onClick={() => setFlat(true)}
+              data-testid="v3-subagents-more"
+            >
+              <span className="v3-sa-strip-task">{tt('subagentMoreRuns', { n: deck.hidden })}</span>
+              <Icon name="chevron-down" size={13} />
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
 
-function SubagentRow({ run, owner, snapshot }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot }): JSX.Element {
+function SubagentStrip({ run, owner, snapshot, depth, layer, onPick }: {
+  run: SubagentRun
+  owner: string
+  snapshot?: RunSnapshot
+  depth: number
+  layer: number
+  onPick: () => void
+}): JSX.Element {
+  const tt = useSessionText()
+  const { model, status, dotClass } = useSubagentView(run, snapshot)
+  const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
+  const title = compactTaskPaths(subagentTitle(model.task))
+  const time = formatDuration(model.elapsedMs, { minSeconds: 1 })
+  return (
+    <button
+      type="button"
+      className="v3-sa-strip"
+      data-testid="v3-subagent-strip"
+      data-run-id={run.id}
+      data-depth={depth}
+      data-state={model.outcomeKey}
+      data-tone={dotClass || undefined}
+      data-selected={selected ? '1' : undefined}
+      data-attention={model.attention || !!model.error ? '1' : undefined}
+      data-nav="1"
+      style={{ zIndex: layer }}
+      aria-label={`${title} · ${status} · ${time} · ${tt('subagentBringFront')}`}
+      title={`${model.task}\n${tt('subagentBringFront')}`}
+      onClick={onPick}
+    >
+      <span className="v3-sa-strip-mark" aria-hidden="true">
+        <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_STRIP_BOT} />
+        <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
+      </span>
+      <span className="v3-sa-strip-task" data-testid="v3-subagent-task">{title}</span>
+      <span className="v3-sa-strip-status" data-testid="v3-subagent-status">{status}</span>
+      <span className="v3-sa-strip-time" data-testid="v3-subagent-time">{time}</span>
+    </button>
+  )
+}
+
+function SubagentRow({ run, owner, snapshot, front, lift }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot; front?: boolean; lift?: boolean }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { model, status, dotClass } = useSubagentView(run, snapshot)
@@ -302,9 +313,12 @@ function SubagentRow({ run, owner, snapshot }: { run: SubagentRun; owner: string
       data-terminal={model.terminal ? '1' : '0'}
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
+      data-front={front ? '1' : undefined}
+      data-lift={lift ? '1' : undefined}
     >
       <button
         className="v3-subagent-toggle"
+        data-nav={front ? '1' : undefined}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={selected}

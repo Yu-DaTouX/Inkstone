@@ -87,6 +87,9 @@ import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
+import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
+import type { ModelRef } from '../shared/model-brand'
+import type { ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
@@ -102,6 +105,7 @@ import { localCommandDescriptors } from './command-registry'
 import { writeExitSnapshot } from './exit-snapshot'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
+import { smoothTextEnabledSync } from './early-switches'
 import { DOWNLOADS_DIR, ELECTRON_CRASH_DUMPS_DIR, ELECTRON_USER_DATA_DIR, PI_AGENT_DIR, YAN_DIR } from './paths'
 import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
@@ -190,6 +194,7 @@ if (process.env.YAN_PROBE) {
 }
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+if (smoothTextEnabledSync()) app.commandLine.appendSwitch('disable-lcd-text')
 
 const APP_ID = 'com.yudatoux.yan'
 
@@ -537,6 +542,19 @@ function push(msg: MainPush): void {
   win.webContents.send('yan:push', msg)
 }
 
+function botNotificationIcon(model: ModelRef, kind: NotificationBotKind): string | undefined {
+  const dir = botIconDirs(process.resourcesPath, __dirname_, process.cwd()).find((candidate) => existsSync(candidate))
+  if (!dir) return undefined
+  return botIconFile(model, notificationBotMood(kind), nativeTheme.shouldUseDarkColorsForSystemIntegratedUI, { dir }) ?? undefined
+}
+
+function approvalModel(request: ApprovalRequest): ModelRef {
+  if (request.subagentId) return subagentService.current()?.get(request.subagentId)?.model
+  const agent = (request.runId ? runners?.agentOf(request.runId) : null) ??
+    (request.sessionId ? runners?.agentForSession(request.sessionId) : null)
+  return agent?.getState()?.model
+}
+
 const approvals = new ApprovalBroker({
   canAsk: () => !!win && !win.isDestroyed(),
   open: (request) => {
@@ -546,7 +564,8 @@ const approvals = new ApprovalBroker({
       attention?.flash()
       void getSettings().then((settings) => {
         if (settings.sound?.notifications === false || !Notification.isSupported()) return
-        const notice = new Notification({ title: '砚需要你确认', body: request.title })
+        const icon = botNotificationIcon(approvalModel(request), 'question')
+        const notice = new Notification({ title: '砚需要你确认', body: request.title, ...(icon ? { icon } : {}) })
         notice.on('click', () => {
           if (!win || win.isDestroyed()) return
           if (win.isMinimized()) win.restore()
@@ -2327,14 +2346,19 @@ function registerIpc(): void {
     const title = typeof n?.title === 'string' && n.title.trim() ? n.title : '砚'
     const body = typeof n?.body === 'string' && n.body.trim() ? n.body : undefined
 
+    const icon = botNotificationIcon(
+      typeof n?.model?.provider === 'string' || typeof n?.model?.id === 'string' ? n.model : undefined,
+      kind
+    )
+
     if (process.env.YAN_PROBE) {
-      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}` } })
+      push({ ch: 'log', payload: { text: `[通知] ${kind} | ${title} | ${body ?? ''}${icon ? ` | icon=${basename(icon)}` : ''}` } })
       return { shown: true, simulated: true }
     }
 
     if (!Notification.isSupported()) return { shown: false, error: '系统不支持通知' }
     try {
-      const notification = new Notification({ title, body, silent: true })
+      const notification = new Notification({ title, body, silent: true, ...(icon ? { icon } : {}) })
       notification.on('click', () => {
         if (!win || win.isDestroyed()) return
         if (win.isMinimized()) win.restore()

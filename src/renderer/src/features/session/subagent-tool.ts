@@ -4,7 +4,9 @@ import type { BotActivity, BotTool } from '../../patterns/model-bot/draw'
 import { toolKind } from './tool-summary'
 
 const COMMAND_NAMES = /^(bash|sh|zsh|cmd|pwsh|powershell|shell|terminal|exec|execute|run|codemode)(_|$)|_(command|cmd|shell|terminal)$/
-const READ_NAMES = /^(read|view|cat|open|grep|glob|find|search|ls|list_dir|list_directory|list_files|fetch|web_fetch|web_search|browse)(_|$)/
+const READ_NAMES = /^(read|view|cat|open|ls|list_dir|list_directory|list_files)(_|$)/
+const SEARCH_NAMES = /^(grep|rg|ripgrep|glob|find|search|fetch|web_fetch|webfetch|web_search|websearch|browse)(_|$)|_(search|fetch)$/
+const SEARCH_COMMAND = /(^|[\s;&|(])yan(\.cmd|\.exe)?\s+(search|fetch|web)\b/
 const EDIT_NAMES = /^(edit|write|multi_edit|multiedit|str_replace|apply_patch|patch|notebook_edit|create_file|delete_file|move_file|rename_file)(_|$)/
 
 function bareToolName(name: string): string {
@@ -12,22 +14,37 @@ function bareToolName(name: string): string {
   return tail.toLowerCase().replace(/-/g, '_')
 }
 
-export function subagentToolLook(name: string): BotTool | null {
-  const bare = bareToolName(name)
+function commandText(args: unknown): string {
+  if (typeof args === 'string') return args
+  if (!args || typeof args !== 'object') return ''
+  const { command, cmd, script } = args as Record<string, unknown>
+  const text = command ?? cmd ?? script
+  return typeof text === 'string' ? text : ''
+}
+
+function lookByName(bare: string): BotTool | null {
   switch (toolKind(bare)) {
     case 'run':
       return 'command'
     case 'read':
-    case 'search':
-    case 'fetch':
       return 'read'
+    case 'search':
+      return bare === 'ls' ? 'read' : 'search'
+    case 'fetch':
+      return 'search'
     case 'edit':
       return 'edit'
   }
   if (COMMAND_NAMES.test(bare)) return 'command'
   if (EDIT_NAMES.test(bare)) return 'edit'
+  if (SEARCH_NAMES.test(bare)) return 'search'
   if (READ_NAMES.test(bare)) return 'read'
   return null
+}
+
+export function subagentToolLook(name: string, args?: unknown): BotTool | null {
+  const look = lookByName(bareToolName(name))
+  return look === 'command' && SEARCH_COMMAND.test(commandText(args)) ? 'search' : look
 }
 
 function pendingCall(calls: readonly UIToolCall[] | undefined): BotActivity | null {
@@ -35,7 +52,7 @@ function pendingCall(calls: readonly UIToolCall[] | undefined): BotActivity | nu
   for (let i = calls.length - 1; i >= 0; i--) {
     const call = calls[i]
     if (call.output !== undefined || call.cancelled || call.parentToolCallId) continue
-    const look = subagentToolLook(call.name)
+    const look = subagentToolLook(call.name, call.args)
     if (look) return { look, id: call.id }
   }
   return null
@@ -44,7 +61,7 @@ function pendingCall(calls: readonly UIToolCall[] | undefined): BotActivity | nu
 export function subagentActiveTool(run: Pick<SubagentRun, 'transcript'>, snapshot?: Pick<RunSnapshot, 'phase'>): BotActivity | null {
   const phase = snapshot?.phase
   if (phase?.kind === 'running' && phase.tool) {
-    const look = subagentToolLook(phase.tool.name)
+    const look = subagentToolLook(phase.tool.name, phase.tool.label)
     if (look) return { look, id: phase.tool.callId }
   }
   for (let i = run.transcript.length - 1; i >= 0; i--) {

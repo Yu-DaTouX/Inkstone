@@ -5,7 +5,7 @@ import { useT, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import type { ContextCategory } from '../state/context-breakdown'
 import type { UIMessage } from '../../../shared/ipc'
-import { contextPaneData, contextUsageSummary } from '../features/workbench/context-pane-view'
+import { autoCompactLimitOf, contextPaneData, contextUsageSummary } from '../features/workbench/context-pane-view'
 import { ContextRingGlyph } from './ContextGauge'
 import './context-ring.css'
 
@@ -30,8 +30,12 @@ export function useContextUsage() {
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
   const usage = stats?.contextUsage
-  const summary = contextUsageSummary(session, stats)
+  const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
+  const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
+  const summary = contextUsageSummary(session, stats, autoCompactLimit)
   return {
+    autoCompactLimit,
+    summary,
     session,
     usage,
     matches: summary.matchesModel,
@@ -46,7 +50,8 @@ export function useContextUsage() {
 
 export function ContextRing({ className }: { className?: string } = {}) {
   const t = useT()
-  const { session, usage, matches, windowSize, known, tokens, percent, tone, windowAssumed } = useContextUsage()
+  const { session, usage, matches, windowSize, known, tokens, percent, tone, windowAssumed, summary, autoCompactLimit } =
+    useContextUsage()
   const lastShown = useRef<{ sessionId: string; percent: number; tone: typeof tone } | null>(null)
   const sessionId = session?.sessionId ?? ''
   if (known && percent !== null) lastShown.current = { sessionId, percent, tone }
@@ -65,8 +70,8 @@ export function ContextRing({ className }: { className?: string } = {}) {
   }, [boundKey])
 
   const { slices, compacted } = useMemo(
-    () => (open ? contextPaneData({ session, stats, messages }) : { slices: [], compacted: false }),
-    [open, session, stats, messages]
+    () => (open ? contextPaneData({ session, stats, messages, autoCompactLimit }) : { slices: [], compacted: false }),
+    [open, session, stats, messages, autoCompactLimit]
   )
   const share = (n: number): number => (windowSize > 0 ? (n / windowSize) * 100 : 0)
   const rows = known
@@ -74,9 +79,14 @@ export function ContextRing({ className }: { className?: string } = {}) {
     : []
   const busy = !!session?.isAgentRunning || !!session?.isStreaming || !!session?.isCompacting
   const text = ringPercent !== null ? `${Math.round(ringPercent)}%` : '—'
-  const title = known
+  const limitNote = summary.cappedByLimit
+    ? t('ctx.limitNote', { model: shortTokens(summary.modelWindow), limit: shortTokens(windowSize) })
+    : ''
+  const tip = known
     ? t('ctx.tip', { used: shortTokens(tokens), win: shortTokens(windowSize), pct: Math.round(percent!) })
     : t('ctx.usageUnknown')
+  const title = known && limitNote ? `${tip}
+${limitNote}` : tip
 
   return (
     <div className={`ctx-ring-wrap ${className ?? ''}`}>
@@ -111,6 +121,11 @@ export function ContextRing({ className }: { className?: string } = {}) {
               {known ? `${shortTokens(tokens)} / ${windowAssumed ? '~' : ''}${shortTokens(windowSize)} (${Math.round(percent!)}%)` : '—'}
             </span>
           </div>
+          {known && limitNote ? (
+            <div className="ctx-note" data-testid="ctx-limit-note">
+              {limitNote}
+            </div>
+          ) : null}
           {windowAssumed ? (
             <div className="ctx-note" data-testid="ctx-window-assumed">
               {t('ctx.windowAssumed', { win: shortTokens(windowSize) })}

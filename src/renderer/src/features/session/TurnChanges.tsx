@@ -60,12 +60,13 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const { lang } = useI18n()
   const checkpoints = useStore((s) => s.checkpoints)
   const openRewind = useStore((s) => s.openRewind)
+  const sessionCwd = useStore((s) => s.session?.cwd)
   const [expanded, setExpanded] = useState(false)
-  const changes = collectTurnChanges(turn.tools)
+  const cwd = turn.response?.sourceCwd || sessionCwd || undefined
+  const changes = collectTurnChanges(turn.tools, cwd)
   if (!changes) return null
 
   const text = changesText(lang)
-  const cwd = turn.response?.sourceCwd
   const prompt = !readOnly && rewindOwner ? promptBefore(turn.sourceIds) : null
   const checkpoint = prompt ? matchCheckpoint(checkpoints.filter((r) => r.sessionKey === rewindOwner), prompt.text, prompt.timestamp) : null
   const shown = expanded ? changes.files : changes.files.slice(0, VISIBLE_FILES)

@@ -45,9 +45,11 @@ import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../f
 import { panePopoutBridge, paneTerminalBridge } from '../../auxwin/pane-bridge'
 import { pickOwnedTerminal, selectOwnedTerminals } from '../features/terminal/terminal-session'
 import { resourceOwner } from '../state/resource-owners'
-import { contextPaneData } from '../features/workbench/context-pane-view'
+import { autoCompactLimitOf, contextPaneData } from '../features/workbench/context-pane-view'
 import type { ContextSlice } from '../state/context-breakdown'
 import type { PaneContextSegment } from '../../../shared/pane-popout'
+import { sessionText } from '../features/session/text'
+import { TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import './ShellV3.css'
 
 let bootstrapStarted = false
@@ -99,6 +101,17 @@ export default function ShellV3(): ReactElement {
     const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.workspaceWidth', String(workspaceWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
   }, [workspaceWidth])
+  const [tilesWidth, setTilesWidth] = useState(() => readTilesWidth(localStorage))
+  const tilesFrame = useRef(0)
+  const resizeTiles = useCallback((next: number) => {
+    cancelAnimationFrame(tilesFrame.current)
+    tilesFrame.current = requestAnimationFrame(() => setTilesWidth(clampTilesWidth(next)))
+  }, [])
+  useEffect(() => () => cancelAnimationFrame(tilesFrame.current), [])
+  useEffect(() => {
+    const timer = setTimeout(() => writeTilesWidth(localStorage, tilesWidth), 150)
+    return () => clearTimeout(timer)
+  }, [tilesWidth])
   const bodyRef = useRef<HTMLDivElement>(null)
   const [bodyWidth, setBodyWidth] = useState(1000)
   useLayoutEffect(() => {
@@ -195,7 +208,12 @@ export default function ShellV3(): ReactElement {
         snapshot: () => {
           const s = useStore.getState()
           const locale: Lang = s.settings?.lang === 'en-US' ? 'en-US' : 'zh-CN'
-          const context = contextPaneData({ session: s.session, stats: s.stats, messages: s.messages })
+          const context = contextPaneData({
+            session: s.session,
+            stats: s.stats,
+            messages: s.messages,
+            autoCompactLimit: autoCompactLimitOf(s.session, s.settings)
+          })
           return {
             locale,
             context: {
@@ -325,6 +343,10 @@ export default function ShellV3(): ReactElement {
   const sideInLane = sideOpen && panelInChat
   const sessionBarFits = (!sideOpen || sideInLane) && chatWidth - (sideInLane ? sideReserve : 0) - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
   const sessionBarShown = route.name === 'chat' && singlePane && hasMessages && sessionBarOn && sessionBarFits && !(workspaceShown && panelMode === 'full')
+  const tilesRoom = tilesWidthRoom(chatWidth - (sideInLane ? sideReserve : 0), LANE_GAP, MESSAGE_MIN_WIDTH)
+  const shownTilesWidth = clampTilesWidth(tilesWidth, tilesRoom)
+  const tilesMaxShown = clampTilesWidth(TILES_WIDTH_MAX, tilesRoom)
+  const tilesAxis = TILES_WIDTH_MAX + TILES_WIDTH_MIN
 
   useEffect(() => {
     if (!settings) return
@@ -551,7 +573,7 @@ export default function ShellV3(): ReactElement {
             ) : route.name === 'usage' ? (
               <UsagePage />
             ) : (
-              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined}>
+              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
                 <RunPill
                   className="v3-pillbar"
                   onOpen={openRunFromPill}
@@ -562,6 +584,9 @@ export default function ShellV3(): ReactElement {
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
                   </aside>
+                ) : null}
+                {sessionBarShown ? (
+                  <Splitter className="v3-tiles-resizer" grip title={sessionText(lang, 'subagentResize')} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize tiles' : '调整磁贴宽度'} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                 ) : null}
               </div>
             )}

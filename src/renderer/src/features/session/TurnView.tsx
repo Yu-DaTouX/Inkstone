@@ -22,16 +22,17 @@ import { LiveRunNotice } from './RunNotice'
 import { CompactionMarker } from './CompactionMarker'
 import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
+import type { TurnSubagentScope } from '../../state/subagent-view'
 import { TurnChanges } from './TurnChanges'
 import { viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, UserTurn } from '../../../../shared/turns'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
-  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} />
 })
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
@@ -185,7 +186,7 @@ export function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null }): JSX.Element | null {
+function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, subagentScope }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope }): JSX.Element | null {
   useStore((s) => s.messages.length)
   const messages = useStore.getState().messages
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
@@ -277,7 +278,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner }
         {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
         {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
 
-        <SubagentLine turn={turn} />
+        <SubagentLine turn={turn} scope={subagentScope} />
 
         {edge.last ? <CompactionMarker /> : null}
 
