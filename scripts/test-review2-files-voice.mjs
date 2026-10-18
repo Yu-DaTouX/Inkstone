@@ -50,6 +50,30 @@ try {
   const origin = join(root, 'agent')
   assert.match(storageMove.checkTarget(origin, join(origin, '..-named-sibling')), /不能迁移到原数据目录里面/)
   assert.equal(storageMove.checkTarget(origin, join(root, 'target')), undefined)
+  const envBefore = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME, APPDATA: process.env.APPDATA }
+  try {
+    const home = join(root, 'move-home')
+    process.env.USERPROFILE = home
+    process.env.HOME = home
+    process.env.APPDATA = join(home, 'AppData', 'Roaming')
+    const agentDir = join(home, '.pi', 'agent')
+    await mkdir(join(agentDir, 'sessions'), { recursive: true })
+    await writeFile(join(agentDir, 'settings.json'), '{}')
+    await writeFile(join(agentDir, 'sessions', 'a.jsonl'), 'line\n')
+    const existingEmpty = join(root, 'move-target')
+    await mkdir(existingEmpty)
+    await mkdir(join(process.env.APPDATA, 'yan-desktop'), { recursive: true })
+    await writeFile(join(process.env.APPDATA, 'yan-desktop', 'storage-move.json'), JSON.stringify({ target: existingEmpty }))
+    const moved = await storageMove.runPendingStorageMove()
+    assert.equal(moved?.ok, true, `moving into an existing empty folder succeeds: ${moved?.error ?? ''}`)
+    assert.equal(await readFile(join(existingEmpty, 'sessions', 'a.jsonl'), 'utf8'), 'line\n')
+    assert.equal(await readFile(join(agentDir, 'settings.json'), 'utf8'), '{}', 'old agent path resolves through the junction')
+  } finally {
+    for (const [key, value] of Object.entries(envBefore)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
 
   const taskPlans = await load('task-plan-store')
   const taskOpts = { dir: join(root, 'plans') }
