@@ -5,7 +5,7 @@ import { formatDuration } from '../../../../shared/duration'
 import { Markdown } from './Markdown'
 import { Icon } from './Icon'
 import { ToolSteps } from './ToolSteps'
-import { summarize } from './tool-summary'
+import { generatingArgs, summarize } from './tool-summary'
 import { narrationLine, processNotes, processSummaryLabel, processTools, runningTool } from './turn-process'
 
 export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
@@ -18,7 +18,7 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   const t = useT()
   const zh = useI18n().lang !== 'en-US'
   const [manual, setManual] = useState<boolean | null>(null)
-  const open = manual ?? false
+  const open = manual ?? live
 
   const tools = processTools(process)
   const notes = processNotes(process)
@@ -26,7 +26,7 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   const summary = processSummaryLabel(tools, zh, t('proc.title'))
   const latest = notes.length ? narrationLine(notes[notes.length - 1]) : ''
   const label = current
-    ? `${current.name} ${summarize(current)}`.trim()
+    ? `${current.name} ${generatingArgs(current) ? t('tool2.generatingArgs') : summarize(current)}`.trim()
     : live && latest
       ? latest
       : summary

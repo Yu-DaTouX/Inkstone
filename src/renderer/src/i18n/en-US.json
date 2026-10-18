@@ -1503,6 +1503,7 @@
   "tool2.done": "{what}",
   "tool2.doneIn": "{what} in {n}s",
   "tool2.noTarget": "(no args)",
+  "tool2.generatingArgs": "Generating arguments…",
   "tool2.historySummary": "History contains only a call summary; full output was not recorded.",
   "tool2.incomplete": "Incomplete record",
   "tool2.nestedIncomplete": "The child-call record is incomplete; some calls or arguments were not saved.",
