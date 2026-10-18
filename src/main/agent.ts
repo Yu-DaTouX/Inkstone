@@ -14,6 +14,7 @@ import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
+import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
@@ -474,7 +475,7 @@ export class AgentController extends EventEmitter {
   private loopGuardContinuationVersion = 0
   private sessionMoveFailureVersion = 0
   private loopGuardResumeVersion = -1
-  private loopGuardContinueTask?: Promise<void>
+  private loopGuardContinueTask?: Promise<boolean>
   private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
   private retrySeenThisRun = false
   private pendingModelError?: { text: string; retried: boolean }
@@ -2381,6 +2382,8 @@ export class AgentController extends EventEmitter {
             runId: this.turn.runId, version: this.loopGuardResumeVersion }
           : null
         const modelError = this.pendingModelError
+        const settledSessionId = this.state?.sessionId
+        const outcome = settledTurnOutcome({ aborted: evt.aborted === true, terminal: this.turn.terminal, modelError: !!modelError })
         const errorContinuation = !continuation && modelError && !modelError.retried && isTransientModelError(modelError.text) &&
           this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
@@ -2410,9 +2413,13 @@ export class AgentController extends EventEmitter {
           : errorContinuation ? this.continueAfterModelError(errorContinuation) : undefined
         if (task) {
           this.loopGuardContinueTask = task
-          void task.finally(() => {
+          void task.then((resumed) => {
+            if (!resumed) this.push({ ch: 'turn-settled', payload: { sessionId: settledSessionId, outcome } })
+          }).finally(() => {
             if (this.loopGuardContinueTask === task) this.loopGuardContinueTask = undefined
           }).catch(() => undefined)
+        } else {
+          this.push({ ch: 'turn-settled', payload: { sessionId: settledSessionId, outcome } })
         }
         break
       }
@@ -3008,16 +3015,16 @@ export class AgentController extends EventEmitter {
 
   private async continueAfterLoopGuard(scope: {
     rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number
-  }): Promise<void> {
+  }): Promise<boolean> {
     try {
       await this.loopGuardStopTask
-      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return
-      if (!this.canContinueAfterLoopGuard(scope)) return
+      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
+      if (!this.canContinueAfterLoopGuard(scope)) return false
       if (this.loopGuardAutoContinueCount >= 1) {
         this.logStreamLoopGuard('auto-continue-limit', { sessionId: scope.sessionId, runId: scope.runId, outcome: 'not-resumed' })
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'warning',
           message: '自动继续后再次检测到循环，已停止；同一任务最多自动续一次，请手动决定。' } })
-        return
+        return false
       }
       const prompt = '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要复述循环内容或空转宣称调用工具。回收的排队消息不在本次续跑范围内。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
       const result = await this.send(prompt, undefined, undefined, scope)
@@ -3026,6 +3033,7 @@ export class AgentController extends EventEmitter {
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
       }
+      return result.ok
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       this.logStreamLoopGuard('auto-continue-failed', { sessionId: scope.sessionId, runId: scope.runId, detail, outcome: 'not-resumed' })
@@ -3033,24 +3041,27 @@ export class AgentController extends EventEmitter {
         this.push({ ch: 'notify', payload: { id: `loop-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: `未能自动继续（${detail}），请手动决定。` } })
       }
+      return false
     }
   }
 
-  private async continueAfterModelError(scope: AutoContinueScope): Promise<void> {
+  private async continueAfterModelError(scope: AutoContinueScope): Promise<boolean> {
     try {
-      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return
-      if (!this.canContinueAfterLoopGuard(scope) || this.loopGuardAutoContinueCount >= 1) return
+      if (!this.canContinueAfterLoopGuard(scope) || !(await this.readStreamLoopAutoContinue())) return false
+      if (!this.canContinueAfterLoopGuard(scope) || this.loopGuardAutoContinueCount >= 1) return false
       const prompt = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，在当前会话继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成、需要用户决定或无法安全继续，请简短说明并结束。'
       const result = await this.send(prompt, undefined, undefined, scope)
       if (!result.ok && this.loopGuardContinuationVersion === scope.version) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: `未能自动继续（${result.error ?? '发送失败'}），请手动决定。` } })
       }
+      return result.ok
     } catch (error) {
       if (this.canContinueAfterLoopGuard(scope)) {
         this.push({ ch: 'notify', payload: { id: `error-continue-${Date.now()}`, method: 'notify', notifyType: 'error',
           message: `未能自动继续（${error instanceof Error ? error.message : String(error)}），请手动决定。` } })
       }
+      return false
     }
   }
 

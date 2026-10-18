@@ -43,6 +43,7 @@ export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
 import type { AccountQuotaReport } from './account-quota'
 import type { QuotaForecast } from './quota-forecast'
+import type { TurnOutcome } from './turn-outcome'
 
 export type { GitChangeEntry, GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 
@@ -1088,6 +1089,7 @@ export type MainPushBody =
   | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
   | { ch: 'notify'; payload: ExtensionUiRequest }
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
+  | { ch: 'turn-settled'; payload: { sessionId?: string; outcome: TurnOutcome } }
   | { ch: 'status'; payload: { key: string; text?: string } }
   | { ch: 'title'; payload: string }
   | { ch: 'win-state'; payload: { maximized: boolean; alwaysOnTop: boolean } }
