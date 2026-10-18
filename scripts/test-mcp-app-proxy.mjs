@@ -377,9 +377,11 @@ try {
     const startHooks = piA.hooks.get('before_agent_start') ?? []
     ok(startHooks.length === 1, '扩展：有托管工具时登记一个提示钩子')
     const sections = {}
-    const injected = startHooks[0]({ systemPrompt: 'BASE', systemPromptOptions: { sections } })
-    ok(injected?.systemPrompt?.startsWith('BASE\n\n') && injected.systemPrompt.includes('app-stdio') && injected.systemPrompt.includes('tool_search'), '扩展：系统提示追加托管服务器名与 tool_search 用法', injected?.systemPrompt)
+    ok(startHooks[0]({ systemPrompt: 'BASE', systemPromptOptions: { sections } }) === undefined, '扩展：有具名分区时只写分区、不返回整段提示')
+    ok((sections.inkstone_hosted_mcp ?? '').includes('app-stdio') && sections.inkstone_hosted_mcp.includes('tool_search'), '扩展：分区写明托管服务器名与 tool_search 用法', sections.inkstone_hosted_mcp)
     ok(/^[\x20-\x7e]+$/.test(sections.inkstone_hosted_mcp ?? ''), '扩展：分区内容为英文')
+    const injected = startHooks[0]({ systemPrompt: 'BASE' })
+    ok(injected?.systemPrompt?.startsWith('BASE\n\n') && injected.systemPrompt.includes('app-stdio') && injected.systemPrompt.includes('tool_search'), '扩展：旧版 pi 没有分区时追加到系统提示末尾', injected?.systemPrompt)
     ok(startHooks[0]({ systemPrompt: injected.systemPrompt, systemPromptOptions: { sections: {} } }) === undefined, '扩展：已含说明时不重复追加')
     ok(extension.hostedServersNote([]) === '', '扩展：没有托管工具时不加说明')
 

@@ -49,7 +49,7 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text'
+  'test-turn-outcome-title-text', 'test-system-prompt-sections'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -2060,8 +2060,8 @@ await runGitRepoTests(ok)
     mod.default({ on: (name, fn) => { probeHandlers[name] = fn } })
     const options = { sections: { preamble: 'x' } }
     const result = probeHandlers.before_agent_start({ systemPrompt: 'base', systemPromptOptions: options })
-    ok(options.sections.inkstone_visual_answer === visual && result.systemPrompt.includes(visual) && result.systemPrompt.split(visual).length === 2,
-      '能力说明：结构化回答说明同时写进具名分区（只转发结构化部分的 provider 也能收到），整段文本中只出现一次')
+    ok(options.sections.inkstone_visual_answer === visual && options.sections.inkstone_capabilities === mod.CAPABILITY_GUIDE && result === undefined,
+      '能力说明：有具名分区时只写分区、不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
   }
 
   const handlers = {}

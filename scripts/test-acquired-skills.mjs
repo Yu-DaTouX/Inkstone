@@ -140,7 +140,9 @@ try {
   guide.default({ on: (name, fn) => { if (name === 'before_agent_start') hook = fn } })
   const sections = {}
   const result = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections } }, { sessionManager: { getSessionId: () => sessionId } })
-  ok(result.systemPrompt.includes(session.skillFile) && sections.inkstone_session_skills === block, '每轮注入系统提示与具名分区')
+  ok(result === undefined && sections.inkstone_session_skills === block && block.includes(session.skillFile), '每轮写入具名分区，不返回整段提示')
+  const legacy = hook({ systemPrompt: 'BASE' }, { sessionManager: { getSessionId: () => sessionId } })
+  ok(legacy?.systemPrompt?.includes(session.skillFile), '旧版 pi 没有分区时追加到系统提示')
 
   await mkdir(join(root, 'skills', 'xlsx'), { recursive: true })
   await writeFile(join(root, 'skills', 'xlsx', 'SKILL.md'), '---\nname: xlsx\ndescription: mine\n---\n')

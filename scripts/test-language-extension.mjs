@@ -42,6 +42,11 @@ export async function runLanguageExtensionTests(ok, mod) {
   ok(zhNoBase?.systemPrompt === zh, '没有原提示时也能注入', String(zhNoBase?.systemPrompt))
   const enOut = run('en-US', 'BASE')
   ok(enOut?.systemPrompt === `BASE\n\n${en}`, '英文界面：注入英文要求', String(enOut?.systemPrompt))
+  {
+    const sections = {}
+    const sectioned = withSettings('zh-CN', () => handlers.before_agent_start({ type: 'before_agent_start', systemPrompt: 'BASE', systemPromptOptions: { sections } }, {}))
+    ok(sectioned === undefined && sections.inkstone_language === zh, '有具名分区时只写分区、不返回整段提示')
+  }
   ok(run('ja-JP', 'BASE') === undefined, '不认识的语言：返回 undefined（不写 systemPrompt）')
   ok(run(null, 'BASE') === undefined, '设置读不到：返回 undefined（不猜语言）')
   ok(

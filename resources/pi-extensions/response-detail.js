@@ -39,7 +39,10 @@ export default function responseDetailExtension(pi) {
     const base = String(event?.systemPrompt ?? '')
     const extra = mode === 'brief' ? BRIEF : DETAILED
     const sections = event?.systemPromptOptions?.sections
-    if (sections && typeof sections === 'object') sections.inkstone_response_detail = extra
+    if (sections && typeof sections === 'object') {
+      sections.inkstone_response_detail = extra
+      return
+    }
     return { systemPrompt: base ? `${base}\n\n${extra}` : extra }
   })
 }

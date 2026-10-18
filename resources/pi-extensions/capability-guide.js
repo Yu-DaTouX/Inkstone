@@ -110,6 +110,7 @@ export default function capabilityGuideExtension(pi) {
       if (computerUse) sections[COMPUTER_USE_SECTION] = computerUseGuide(ctx?.model)
       if (visual) sections[VISUAL_SECTION] = VISUAL_ANSWER_GUIDE
       if (sessionSkills) sections[SESSION_SKILLS_SECTION] = sessionSkills
+      return
     }
     const guide = [CAPABILITY_GUIDE, computerUse ? computerUseGuide(ctx?.model) : '', visual ? VISUAL_ANSWER_GUIDE : '', sessionSkills].filter(Boolean).join('\n\n')
     return { systemPrompt: base ? `${base}\n\n${guide}` : guide }

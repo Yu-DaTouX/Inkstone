@@ -16,7 +16,10 @@ export default function question(pi) {
   pi.on('before_agent_start', (event) => {
     const base = String(event?.systemPrompt ?? '')
     const sections = event?.systemPromptOptions?.sections
-    if (sections && typeof sections === 'object') sections.inkstone_question = GUIDANCE
+    if (sections && typeof sections === 'object') {
+      sections.inkstone_question = GUIDANCE
+      return
+    }
     return { systemPrompt: `${base}\n\n${GUIDANCE}` }
   })
 }

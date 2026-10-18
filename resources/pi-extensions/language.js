@@ -43,7 +43,10 @@ export default function languageExtension(pi) {
     if (!text) return
     const base = String(event?.systemPrompt ?? '')
     const sections = event?.systemPromptOptions?.sections
-    if (sections && typeof sections === 'object') sections.inkstone_language = text
+    if (sections && typeof sections === 'object') {
+      sections.inkstone_language = text
+      return
+    }
     return { systemPrompt: base ? `${base}\n\n${text}` : text }
   })
 }

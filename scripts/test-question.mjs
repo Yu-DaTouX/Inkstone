@@ -30,4 +30,8 @@ export async function runQuestionTests(ok) {
     '提示词把选项上限写成 3（与宿主硬校验同口径）'
   )
   ok(/BALANCED/.test(std?.systemPrompt ?? ''), '提问频率按默认适中')
+
+  const sections = {}
+  const sectioned = handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } })
+  ok(sectioned === undefined && /yan question ask/.test(sections.inkstone_question ?? ''), '有具名分区时只写分区、不返回整段提示')
 }

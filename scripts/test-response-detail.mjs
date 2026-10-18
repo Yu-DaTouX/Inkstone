@@ -30,6 +30,9 @@ export async function runResponseDetailTests(ok) {
     )
     ok(/BRIEF/.test(brief?.systemPrompt ?? ''), 'brief 档写明了 BRIEF')
     ok(!/DETAILED/.test(brief?.systemPrompt ?? ''), 'brief 档不含 DETAILED')
+    const sections = {}
+    const sectioned = await list[0]({ systemPrompt: 'BASE PROMPT', systemPromptOptions: { sections } })
+    ok(sectioned === undefined && /BRIEF/.test(sections.inkstone_response_detail ?? ''), '有具名分区时只写分区、不返回整段提示')
 
     await setMode('detailed')
     const detailed = await list[0]({ systemPrompt: 'BASE PROMPT' })
