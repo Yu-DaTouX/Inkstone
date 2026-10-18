@@ -102,6 +102,8 @@ const CASES = {
   'v3-sendkey': { probe: 'scripts/probe/v3-sendkey.js', delay: 9000, cost: 0 },
   'v3-completion': { probe: 'scripts/probe/v3-completion.js', delay: 9000, cost: 0 },
   'v3-projectmenu': { probe: 'scripts/probe/v3-projectmenu.js', delay: 9000, cost: 0 },
+  'v3-switch-slashpath': { probe: 'scripts/probe/v3-switch-slashpath.js', delay: 9000, cost: 0 },
+  'v3-workspacefit': { probe: 'scripts/probe/v3-workspacefit.js', fixture: true, bigFileFixture: true, delay: 9000, cost: 0 },
   'v3-logsquota': { probe: 'scripts/probe/v3-logsquota.js', delay: 9000, cost: 0 },
   'v3-delegate': { probe: 'scripts/probe/v3-delegate.js', delay: 9000, cost: 0 },
   'v3-voicecu': { probe: 'scripts/probe/v3-voicecu.js', delay: 9000, cost: 0 },
@@ -3336,6 +3338,12 @@ async function main() {
     let hint
     let lastProbeText = ''
     const caseCwd = c.fixture ? (c.fixtureSub ? join(fixtureProject, c.fixtureSub) : fixtureProject) : root
+    if (c.bigFileFixture && fixtureProject) {
+      mkdirSync(join(fixtureProject, 'bigdata', 'Paks'), { recursive: true })
+      writeFileSync(join(fixtureProject, 'bigdata', 'Paks', 'game.pak'), Buffer.alloc(21 * 1024 * 1024, 7))
+      mkdirSync(join(fixtureProject, 'smalldata'), { recursive: true })
+      writeFileSync(join(fixtureProject, 'smalldata', 'notes.txt'), 'small\n', 'utf8')
+    }
 
     const piSettingsFile = sandboxRoot ? join(sandboxRoot, 'pi-agent', 'settings.json') : null
     if (piSettingsFile) {
