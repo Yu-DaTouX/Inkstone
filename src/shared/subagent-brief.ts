@@ -1,4 +1,5 @@
 export interface SubagentBrief {
+  title?: string
   goal: string
   deliverables: string[]
   sources: string[]
@@ -8,6 +9,7 @@ export interface SubagentBrief {
 }
 
 export const SUBAGENT_BRIEF_LIMITS = {
+  maxTitle: 40,
   maxGoal: 4000,
   maxBoundary: 2000,
   maxDeliverables: 8,
@@ -65,9 +67,11 @@ export function parseSubagentBrief(
   }
   const minutes = optionalInt(box.timeoutMinutes, '时间上限', 1, SUBAGENT_BRIEF_LIMITS.maxTimeoutMinutes)
   if (!minutes.ok) return minutes
+  const title = typeof box.title === 'string' ? [...box.title.replace(/\s+/g, ' ').trim()].slice(0, SUBAGENT_BRIEF_LIMITS.maxTitle).join('') : ''
   return {
     ok: true,
     brief: {
+      ...(title ? { title } : {}),
       goal,
       deliverables: deliverables.items,
       sources: sources.items,

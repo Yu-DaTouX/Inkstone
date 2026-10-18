@@ -162,9 +162,10 @@ function PaneFrame({
   const sessionTitle = useSplitTitle(tool ? owner : target)
   const agentTask = useStore((s) => {
     const id = subagentRunIdOf(target)
-    return id ? s.subagents.find((item) => item.id === id)?.task ?? '' : ''
+    const run = id ? s.subagents.find((item) => item.id === id) : undefined
+    return run ? run.brief?.title || subagentTitle(run.task) : ''
   })
-  const title = agentTask ? subagentTitle(agentTask) : sessionTitle
+  const title = agentTask || sessionTitle
   const project = useSplitProject(target)
   const key = splitTileKey(target)
   const ToolIcon = tool ? TOOL_ICONS[tool] : undefined

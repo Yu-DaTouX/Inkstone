@@ -276,11 +276,11 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  start --task <任务> [--model <模型>] [--read-only] [--isolation worktree]
+  start --task <任务> [--title <短标题>] [--model <模型>] [--read-only] [--isolation worktree]
        或 --request-file subagent.json
-       请求文件示例：{"task":"检查当前项目的测试入口","readOnly":true}
-       带上任务输入（P15 推荐，免得并行的子任务跑偏）：
-       {"task":"查一下这两个模块的错误处理",
+       请求文件示例：{"task":"检查当前项目的测试入口","title":"查测试入口","readOnly":true}
+       带上任务输入（并行的子任务建议都带，免得跑偏）：
+       {"task":"查一下这两个模块的错误处理","title":"对比错误处理",
         "brief":{"goal":"摸清两个模块的错误处理是否一致",
                   "deliverables":["一段结论","不一致的具体位置"],
                   "sources":["src/main/agent.ts","src/main/index.ts"],
@@ -291,6 +291,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：
+  · title 是界面上显示的 2–8 字短标题，并行派多个时每个都写，互相区分；
+  · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
   · start 默认在当前目录执行，可能直接改文件；未指定 --model 时跟随当前会话模型；
     readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · 任务要窄（一个文件或一个问题，结论几行说完）；

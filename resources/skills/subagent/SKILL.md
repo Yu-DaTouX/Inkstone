@@ -9,7 +9,7 @@ description: 用户指定另一个模型完成任务，或需要独立上下文�
 
 1. 用户指定了模型时使用该模型；没有指定时跟随当前会话模型，不按旧活动配置切换。
 2. 任务说明写清目标、必要上下文、输入文件和期望结果。只传有用材料，子 Agent 不自动获得完整主会话历史。
-3. 启动：`yan subagent start --task "任务" --model "provider/model"`。默认在当前文件夹执行，可能直接修改文件；只分析时加 `--read-only`。代码修改需要隔离时加 `--isolation worktree`，该选项才要求 Git。
+3. 启动：`yan subagent start --task "任务" --title "短标题" --model "provider/model"`。`--title` 是界面显示的 2–8 字短标题，并行派多个时各写一个能区分的；`--model` 用完整的「供应商/模型」（不确定时只写模型名，宿主按已登录模型匹配，有歧义会列出候选，从中选一个重试）。一次派多个独立子 Agent 时，在同一条消息里并行发出。默认在当前文件夹执行，可能直接修改文件；只分析时加 `--read-only`。代码修改需要隔离时加 `--isolation worktree`，该选项才要求 Git。
    `claude-bridge/*` 模型不支持 `--read-only`，用它时不要加该选项。启动报错时如实告诉用户原因，不要自行省略 `--model` 或换成别的模型重试。
 4. 查询用 `yan subagent list` / `yan subagent get --id <ID>`，停止用 `yan subagent stop --id <ID>`。不用固定间隔 sleep 轮询；开启完成通知时结果会回到父会话。
 5. 不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent 不再派出子 Agent。

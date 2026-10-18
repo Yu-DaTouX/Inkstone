@@ -238,6 +238,7 @@ export class SubagentController {
       startedAt: run.startedAt,
       endedAt: run.endedAt,
       endReason: run.endReason,
+      ...(run.launchFailed ? { launchFailed: true } : {}),
       dismissedAt: run.dismissedAt,
       toolCalls: run.toolCalls,
       wrapUp: run.wrapUp,
@@ -670,6 +671,7 @@ export class SubagentController {
   private handleProcessGone(run: Run): void {
     if (run.status !== 'running' && run.status !== 'starting') return
     clearTimeout(run.timer)
+    if (run.status === 'starting') run.launchFailed = true
     run.status = 'error'
     run.endReason = 'exited'
     run.wrapUp = undefined
@@ -688,6 +690,7 @@ export class SubagentController {
     if (!run) return
     if (run.status === 'done' || run.status === 'error' || run.settling) return
     clearTimeout(run.timer)
+    if (run.status === 'starting') run.launchFailed = true
     const settling = (async () => {
       await run.rpc.close()
       if (run.settled || run.status === 'done' || run.status === 'error') return

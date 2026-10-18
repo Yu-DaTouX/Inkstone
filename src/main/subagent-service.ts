@@ -1,7 +1,8 @@
 import { SubagentController, type SubagentApprovalOrigin } from './subagents'
 import { getSettings } from './settings'
 import { CapabilityCommandError } from './capability-server'
-import type { SubagentCommandHost } from './agent'
+import type { SubagentCommandContext, SubagentCommandHost } from './agent'
+import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
 
 const SUBAGENT_SYSTEM_PROMPT = [
@@ -19,6 +20,7 @@ export interface SubagentServiceDeps {
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
+  resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
   onChange(run: SubagentRun): void
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
@@ -85,9 +87,17 @@ export class SubagentService {
           '子代理任务不能超过 12000 个字符'
         )
       }
-      const model = typeof params.model === 'string' && params.model.length <= 200 ? params.model : undefined
+      const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
+      let model = requested
+      if (requested && this.deps.resolveModelLabel) {
+        const resolved = await this.deps.resolveModelLabel(requested, context)
+        if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
+        model = resolved.label
+      }
       const readOnly = params.readOnly === true || params['read-only'] === true
-      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', params.brief)
+      const title = typeof params.title === 'string' ? params.title : undefined
+      const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
+      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',
