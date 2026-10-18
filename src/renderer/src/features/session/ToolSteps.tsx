@@ -4,7 +4,7 @@ import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, isSettledToolNode, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
-import { summarize, toolGroupLabel } from './tool-summary'
+import { generatingArgs, summarize, toolGroupLabel } from './tool-summary'
 import { Icon } from './Icon'
 import { Button, IconButton } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
@@ -106,7 +106,7 @@ function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.E
   const failed = call.status === 'error' && !call.cancelled
   const open = manual ?? failed
   const secs = durationSecs(call)
-  const target = summarize(call) || t('tool2.noTarget')
+  const target = generatingArgs(call) ? t('tool2.generatingArgs') : summarize(call) || t('tool2.noTarget')
   const state = running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
 

@@ -39,6 +39,7 @@
   }
   .v3-chat[data-side-panel='1'] {
     --side-reserve: calc(var(--subagent-width, 360px) + var(--s-16));
+    --tiles-on: 1;
   }
   .v3-sessionbar {
     position: absolute;

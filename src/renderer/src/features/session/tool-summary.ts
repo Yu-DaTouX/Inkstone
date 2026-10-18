@@ -29,6 +29,10 @@ const EN: Record<Exclude<Kind, 'other'>, (n: number) => string> = {
   edit: (n) => `Edited ${n} ${n === 1 ? 'file' : 'files'}`
 }
 
+export function generatingArgs(call: UIToolCall): boolean {
+  return (call.status === 'running' || call.status === 'pending') && call.args === undefined && !call.incomplete
+}
+
 export function summarize(call: UIToolCall): string {
   const a = call.args as Record<string, unknown> | undefined
   if (!a || typeof a !== 'object') return ''

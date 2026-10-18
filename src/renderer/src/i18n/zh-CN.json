@@ -1503,6 +1503,7 @@
   "tool2.done": "已{what}",
   "tool2.doneIn": "已在 {n}s 内{what}",
   "tool2.noTarget": "（无参数）",
+  "tool2.generatingArgs": "生成参数中…",
   "tool2.historySummary": "历史仅保存调用摘要，完整输出未记录。",
   "tool2.incomplete": "记录未完成",
   "tool2.nestedIncomplete": "子调用记录不完整，部分调用或参数未保存。",
