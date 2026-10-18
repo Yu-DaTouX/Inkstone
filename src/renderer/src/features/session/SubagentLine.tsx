@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { formatTokens } from '../../state/compaction-view'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -17,6 +17,19 @@ import { Icon } from './Icon'
 import { SubagentBot } from './SubagentBot'
 import { useSessionText } from './text'
 import { useSubagentPanel } from './subagent-panel-state'
+import {
+  DECK_DOTS_MAX,
+  DECK_EDGES_MAX,
+  DECK_ROWS_MAX,
+  createDeckWheelState,
+  deckKeyTarget,
+  deckSlot,
+  deckStripDepth,
+  deckTouchStep,
+  deckVisible,
+  deckWheelDelta,
+  deckWheelStep
+} from './subagent-deck'
 import { turnModelLabel } from './turn-model-label'
 import { contextUsageSummary } from '../workbench/context-pane-view'
 import { ThinkingBadge } from '../../patterns/ThinkingBadge'
@@ -73,16 +86,12 @@ export function openSubagentPane(runId: string): void {
   useSplitView.getState().open(subagentTileRef(runId), current)
 }
 
-export const SUBAGENT_STRIP_MAX = 6
 const SUBAGENT_STRIP_BOT = 22
 
 const isLiveRun = (run: SubagentRun): boolean => run.status === 'running' || run.status === 'starting'
 
-export function subagentStackOrder(runs: SubagentRun[]): SubagentRun[] {
-  const recent = (run: SubagentRun): number => run.endedAt ?? run.startedAt
-  const failed = runs.filter((run) => run.status === 'error').sort((a, b) => recent(b) - recent(a))
-  const rest = runs.filter((run) => run.status !== 'error').sort((a, b) => b.startedAt - a.startedAt)
-  return [...failed, ...rest]
+export function subagentDeckOrder(runs: SubagentRun[]): SubagentRun[] {
+  return [...runs].sort((a, b) => b.startedAt - a.startedAt)
 }
 
 export function subagentDefaultFront(runs: SubagentRun[], selectedId: string | null): string | null {
@@ -93,14 +102,7 @@ export function subagentDefaultFront(runs: SubagentRun[], selectedId: string | n
   return newest(live.length ? live : runs).id
 }
 
-export function subagentDeck(runs: SubagentRun[], frontId: string | null): { front: SubagentRun | null; strips: SubagentRun[]; hidden: number } {
-  const front = runs.find((run) => run.id === frontId) ?? null
-  const others = subagentStackOrder(runs.filter((run) => run.id !== front?.id))
-  const strips = others.slice(0, SUBAGENT_STRIP_MAX)
-  return { front, strips, hidden: others.length - strips.length }
-}
-
-const SUBAGENT_DEPTH_MAX = 3
+type DeckRefocus = 'deck' | 'card' | null
 
 export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
   const tt = useSessionText()
@@ -112,7 +114,8 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const [flat, setFlat] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const deckRef = useRef<HTMLDivElement | null>(null)
-  const refocus = useRef(false)
+  const refocus = useRef<DeckRefocus>(null)
+  const latest = useRef<{ index: number; ids: string[] }>({ index: 0, ids: [] })
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const selectedRunId = useSubagentPanel((s) => (s.owner === view.key ? s.runId : null))
@@ -121,25 +124,75 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const mine = (scope ? subagentRunsForTurnScope(subagents, scope) : selectSubagentRuns(subagents, { sessionIds }).all).filter(
     (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
   )
-  const ordered = [...mine].sort((a, b) => a.startedAt - b.startedAt)
+  const ordered = subagentDeckOrder(mine)
   const pickedValid = picked !== null && ordered.some((run) => run.id === picked)
   const frontId = pickedValid ? picked : subagentDefaultFront(ordered, selectedRunId)
   const selectedInGroup = selectedRunId !== null && ordered.some((run) => run.id === selectedRunId)
+  const current = Math.max(0, ordered.findIndex((run) => run.id === frontId))
+  const deckOn = ordered.length > 1 && !flat
+  latest.current = { index: current, ids: ordered.map((run) => run.id) }
 
   useEffect(() => {
-    if (selectedInGroup) setPicked(null)
+    if (selectedInGroup) setPicked(selectedRunId)
   }, [selectedInGroup, selectedRunId])
 
   useEffect(() => {
-    if (!refocus.current) return
-    refocus.current = false
-    deckRef.current?.querySelector<HTMLElement>('[data-front="1"] .v3-subagent-toggle')?.focus()
+    const node = deckRef.current
+    if (!node) return undefined
+    const wheel = createDeckWheelState()
+    let touchY: number | null = null
+    const go = (target: number | null): void => {
+      const id = target === null ? undefined : latest.current.ids[target]
+      if (id) setPicked(id)
+    }
+    const onWheel = (event: WheelEvent): void => {
+      if (event.ctrlKey) return
+      const step = deckWheelStep(wheel, deckWheelDelta(event, node.clientHeight), performance.now(), latest.current.index, latest.current.ids.length)
+      if (step.prevent) event.preventDefault()
+      go(step.target)
+    }
+    const onTouchStart = (event: TouchEvent): void => {
+      touchY = event.touches[0]?.clientY ?? null
+    }
+    const onTouchMove = (event: TouchEvent): void => {
+      const y = event.touches[0]?.clientY
+      if (touchY === null || y === undefined) return
+      const step = deckTouchStep(touchY, y, latest.current.index, latest.current.ids.length)
+      if (step.prevent && event.cancelable) event.preventDefault()
+      touchY = step.startY
+      go(step.target)
+    }
+    const onTouchEnd = (): void => {
+      touchY = null
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    node.addEventListener('touchstart', onTouchStart, { passive: true })
+    node.addEventListener('touchmove', onTouchMove, { passive: false })
+    node.addEventListener('touchend', onTouchEnd)
+    node.addEventListener('touchcancel', onTouchEnd)
+    return () => {
+      node.removeEventListener('wheel', onWheel)
+      node.removeEventListener('touchstart', onTouchStart)
+      node.removeEventListener('touchmove', onTouchMove)
+      node.removeEventListener('touchend', onTouchEnd)
+      node.removeEventListener('touchcancel', onTouchEnd)
+    }
+  }, [deckOn])
+
+  useEffect(() => {
+    const mode = refocus.current
+    if (!mode) return
+    refocus.current = null
+    const node = deckRef.current
+    if (!node) return
+    if (mode === 'deck') node.focus({ preventScroll: true })
+    else node.querySelector<HTMLElement>('[data-slot="0"] .v3-subagent-toggle')?.focus({ preventScroll: true })
   }, [frontId])
 
   if (!ordered.length) return null
   const live = ordered.filter(isLiveRun).length
-  const renderRow = (run: SubagentRun, extra?: { front?: boolean; lift?: boolean }): JSX.Element => (
-    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={findSubagentSnapshot(runs, run.id)} front={extra?.front} lift={extra?.lift} />
+  const renderRow = (run: SubagentRun, extra?: { front?: boolean; inert?: boolean }): JSX.Element => (
+    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={findSubagentSnapshot(runs, run.id)} front={extra?.front} inert={extra?.inert} />
   )
 
   if (ordered.length === 1) {
@@ -163,21 +216,21 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     failed ? tt('subagentFailedCount', { n: failed }) : null
   ].filter(Boolean).join(' · ')
   const toggle = (): void => setFlat((value) => !value)
-  const deck = subagentDeck(ordered, frontId)
-  const pick = (id: string): void => {
-    refocus.current = true
-    setPicked(id)
+  const flip = (index: number, mode: DeckRefocus): void => {
+    const run = ordered[index]
+    if (!run || run.id === frontId) return
+    refocus.current = mode
+    setPicked(run.id)
   }
-  const navigate = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-nav="1"]'))
-    const at = items.indexOf(document.activeElement as HTMLElement)
-    if (at < 0) return
-    const next = items[at + (event.key === 'ArrowDown' ? 1 : -1)]
-    if (!next) return
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    const target = deckKeyTarget(event.key, current, ordered.length)
+    if (target === null) return
     event.preventDefault()
-    next.focus()
+    flip(target, event.target === event.currentTarget ? null : 'card')
   }
+  const rows = Math.min(ordered.length, DECK_ROWS_MAX)
+  const edges = Math.min(Math.max(ordered.length - DECK_ROWS_MAX, 0), DECK_EDGES_MAX)
 
   return (
     <div className="v3-subagents" data-testid="v3-subagents" data-layout={flat ? 'flat' : 'stack'}>
@@ -215,50 +268,71 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
       {flat ? (
         <>
           {ordered.map((run) => renderRow(run))}
-          <Button variant="ghost" size="sm" className="v3-subagents-more" onPress={toggle} data-testid="v3-subagents-more">
+          <Button variant="ghost" size="sm" className="v3-subagents-less" onPress={toggle} data-testid="v3-subagents-less">
             {tt('subagentShowLess')}
           </Button>
         </>
       ) : (
-        <div className="v3-sa-deck" role="group" aria-label={counts} ref={deckRef} onKeyDown={navigate} data-testid="v3-subagent-deck">
-          {deck.front ? renderRow(deck.front, { front: true, lift: pickedValid }) : null}
-          {deck.strips.map((run, index) => (
-            <SubagentStrip
-              key={run.id}
-              run={run}
-              owner={view.key}
-              snapshot={findSubagentSnapshot(runs, run.id)}
-              depth={Math.min(index + 1, SUBAGENT_DEPTH_MAX)}
-              layer={deck.strips.length - index + 1}
-              onPick={() => pick(run.id)}
-            />
-          ))}
-          {deck.hidden > 0 ? (
-            <button
-              type="button"
-              className="v3-sa-strip v3-sa-more"
-              data-depth={SUBAGENT_DEPTH_MAX}
-              data-nav="1"
-              style={{ zIndex: 1 }}
-              onClick={() => setFlat(true)}
-              data-testid="v3-subagents-more"
-            >
-              <span className="v3-sa-strip-task">{tt('subagentMoreRuns', { n: deck.hidden })}</span>
-              <Icon name="chevron-down" size={13} />
-            </button>
-          ) : null}
+        <div
+          className="v3-sa-deck"
+          role="group"
+          aria-label={tt('subagentDeckLabel')}
+          tabIndex={0}
+          ref={deckRef}
+          onKeyDown={onKeyDown}
+          data-testid="v3-subagent-deck"
+        >
+          <div className="v3-sa-window" style={{ '--sa-rows': rows, '--sa-edges': edges } as CSSProperties}>
+            {ordered.map((run, index) => {
+              const slot = deckSlot(index, current)
+              if (!deckVisible(slot)) return null
+              const snapshot = findSubagentSnapshot(runs, run.id)
+              return (
+                <div
+                  key={run.id}
+                  className="v3-sa-slot"
+                  data-slot={slot}
+                  data-testid="v3-subagent-slot"
+                  aria-hidden={slot < -1 || slot > 2 ? true : undefined}
+                >
+                  {Math.abs(slot) <= 1 ? renderRow(run, { front: slot === 0, inert: slot !== 0 }) : null}
+                  <SubagentStrip run={run} owner={view.key} snapshot={snapshot} slot={slot} onPick={() => flip(index, 'deck')} />
+                </div>
+              )
+            })}
+          </div>
+          <div className="v3-sa-nav" data-testid="v3-subagent-nav">
+            <span className="v3-sa-hint">{tt('subagentDeckHint')}</span>
+            <span className="v3-sa-where">
+              {ordered.length <= DECK_DOTS_MAX ? (
+                <span className="v3-sa-dots" data-testid="v3-subagent-dots">
+                  {ordered.map((run, index) => (
+                    <button
+                      key={run.id}
+                      type="button"
+                      className="v3-sa-dot"
+                      data-on={index === current ? '1' : undefined}
+                      tabIndex={-1}
+                      aria-label={tt('subagentDeckGo', { n: index + 1 })}
+                      onClick={() => flip(index, 'deck')}
+                    />
+                  ))}
+                </span>
+              ) : null}
+              <span className="v3-sa-pos" aria-live="polite" data-testid="v3-subagent-pos">{`${current + 1} / ${ordered.length}`}</span>
+            </span>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function SubagentStrip({ run, owner, snapshot, depth, layer, onPick }: {
+function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
   run: SubagentRun
   owner: string
   snapshot?: RunSnapshot
-  depth: number
-  layer: number
+  slot: number
   onPick: () => void
 }): JSX.Element {
   const tt = useSessionText()
@@ -272,15 +346,16 @@ function SubagentStrip({ run, owner, snapshot, depth, layer, onPick }: {
       className="v3-sa-strip"
       data-testid="v3-subagent-strip"
       data-run-id={run.id}
-      data-depth={depth}
+      data-depth={deckStripDepth(slot)}
+      data-edge={slot < 0 ? 'top' : 'bottom'}
       data-state={model.outcomeKey}
       data-tone={dotClass || undefined}
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
-      data-nav="1"
-      style={{ zIndex: layer }}
-      aria-label={`${title} · ${status} · ${time} · ${tt('subagentBringFront')}`}
-      title={`${model.task}\n${tt('subagentBringFront')}`}
+      inert={slot === 0}
+      tabIndex={-1}
+      aria-label={`${title} · ${status} · ${time} · ${tt('subagentDeckJump')}`}
+      title={`${model.task}\n${tt('subagentDeckJump')}`}
       onClick={onPick}
     >
       <span className="v3-sa-strip-mark" aria-hidden="true">
@@ -294,7 +369,7 @@ function SubagentStrip({ run, owner, snapshot, depth, layer, onPick }: {
   )
 }
 
-function SubagentRow({ run, owner, snapshot, front, lift }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot; front?: boolean; lift?: boolean }): JSX.Element {
+function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot; front?: boolean; inert?: boolean }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { model, status, dotClass } = useSubagentView(run, snapshot)
@@ -314,11 +389,10 @@ function SubagentRow({ run, owner, snapshot, front, lift }: { run: SubagentRun; 
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
       data-front={front ? '1' : undefined}
-      data-lift={lift ? '1' : undefined}
+      inert={inert || undefined}
     >
       <button
         className="v3-subagent-toggle"
-        data-nav={front ? '1' : undefined}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={selected}
