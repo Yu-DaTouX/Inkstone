@@ -68,6 +68,7 @@ export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastCo
 export { Badge, Kbd, type BadgeProps, type BadgeTone } from './Badge'
 export { Meter, ProgressBar, Spinner, type MeterProps, type ProgressBarProps, type SpinnerProps } from './Progress'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
+export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
 export { Slider, type SliderProps } from './Slider'
 export {

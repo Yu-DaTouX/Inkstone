@@ -16,7 +16,6 @@
 
   .run-dot[data-kind='running'] {
     background: var(--run);
-    animation: run-dot-breathe var(--dur-breathe) var(--ease) infinite;
   }
 
   .run-dot[data-kind='queued'] {
@@ -57,24 +56,6 @@
     margin: 1px;
     border-radius: var(--r-full);
     background: var(--accent);
-  }
-
-  @keyframes run-dot-breathe {
-    0%,
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.4;
-      transform: scale(0.78);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .run-dot[data-kind='running'] {
-      animation: none;
-    }
   }
 
   .run-pills {

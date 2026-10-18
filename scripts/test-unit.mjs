@@ -49,7 +49,7 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-system-prompt-sections'
+  'test-turn-outcome-title-text', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)

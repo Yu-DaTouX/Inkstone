@@ -106,6 +106,8 @@ const REQUIRED = {
   ProgressBar: ['default', 'value-known', 'value-unknown'],
   Spinner: ['default', 'loading'],
   Skeleton: ['default', 'shape-text', 'shape-rect', 'shape-circle'],
+  ShimmerText: ['default', 'loading'],
+  CompletionSweep: ['default', 'tone-success'],
   Separator: ['default', 'orientation-horizontal', 'orientation-vertical'],
   Slider: ['default', 'disabled', 'invalid', 'orientation-vertical'],
   Tree: ['default', 'selected', 'disabled', 'empty'],

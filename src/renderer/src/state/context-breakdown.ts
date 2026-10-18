@@ -57,18 +57,35 @@ function argsText(args: unknown): string {
   try { return JSON.stringify(args) ?? '' } catch { return '' }
 }
 
-export function contextBreakdown(messages: readonly UIMessage[], total: number): ContextSlice[] {
-  const sums: Record<Exclude<ContextCategory, 'system'>, number> = { user: 0, assistant: 0, thinking: 0, tools: 0 }
-  for (const m of messages) {
-    if (m.role === 'user' || m.role === 'note') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
-    else if (m.role === 'bash') sums.tools += estimateTokens(m.bash?.command) + estimateTokens(m.text)
-    else {
-      sums.assistant += estimateTokens(m.text)
-      sums.thinking += estimateTokens(m.thinking)
-      for (const call of m.toolCalls ?? []) {
-        sums.tools += estimateTokens(call.argsRaw ?? argsText(call.args)) + estimateTokens(call.output) + (call.images?.length ?? 0) * IMAGE_TOKENS
-      }
+type MessageSums = Record<Exclude<ContextCategory, 'system'>, number>
+
+const messageSums = new WeakMap<UIMessage, MessageSums>()
+
+function sumsOf(m: UIMessage): MessageSums {
+  const hit = messageSums.get(m)
+  if (hit) return hit
+  const sums: MessageSums = { user: 0, assistant: 0, thinking: 0, tools: 0 }
+  if (m.role === 'user' || m.role === 'note') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
+  else if (m.role === 'bash') sums.tools += estimateTokens(m.bash?.command) + estimateTokens(m.text)
+  else {
+    sums.assistant += estimateTokens(m.text)
+    sums.thinking += estimateTokens(m.thinking)
+    for (const call of m.toolCalls ?? []) {
+      sums.tools += estimateTokens(call.argsRaw ?? argsText(call.args)) + estimateTokens(call.output) + (call.images?.length ?? 0) * IMAGE_TOKENS
     }
+  }
+  messageSums.set(m, sums)
+  return sums
+}
+
+export function contextBreakdown(messages: readonly UIMessage[], total: number): ContextSlice[] {
+  const sums: MessageSums = { user: 0, assistant: 0, thinking: 0, tools: 0 }
+  for (const m of messages) {
+    const own = sumsOf(m)
+    sums.user += own.user
+    sums.assistant += own.assistant
+    sums.thinking += own.thinking
+    sums.tools += own.tools
   }
   const counted = sums.user + sums.assistant + sums.thinking + sums.tools
   const scale = counted > total ? total / counted : 1

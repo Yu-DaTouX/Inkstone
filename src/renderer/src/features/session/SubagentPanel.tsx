@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
-import { Button, IconButton, Splitter } from '../../ui'
+import { Button, IconButton, ShimmerText, Splitter } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { findSubagentSnapshot } from './turn-lines'
 import { SubagentReview } from './SubagentReview'
@@ -12,7 +12,6 @@ import { SUBAGENT_LANE_EDGE, SUBAGENT_PANEL_EDGE, SUBAGENT_PANEL_WIDTH, subagent
 import { sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { useSessionText } from './text'
 import { Icon } from './Icon'
-import { Busy } from './Busy'
 import { SubagentBot } from './SubagentBot'
 import { Markdown } from './Markdown'
 import type { SubagentRun } from '../../../../shared/ipc'
@@ -159,7 +158,7 @@ function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: bo
 
         {model.latest && (model.live || !model.summary) ? (
           <section className="v3-sap-card" data-live={model.live ? '1' : undefined}>
-            <h4 className="v3-sap-label">{model.live ? <Busy /> : null}{tt('subagentLatest')}</h4>
+            <h4 className="v3-sap-label"><ShimmerText active={model.live}>{tt('subagentLatest')}</ShimmerText></h4>
             <p className="v3-subagent-latest">{model.latest}</p>
           </section>
         ) : null}

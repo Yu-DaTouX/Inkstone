@@ -249,6 +249,16 @@ async function main() {
     ok(inContextMessages(approx, undefined).length === approx.length, '没有压缩时全部计入')
     const compactedData = contextPaneData({ session: { model, lastCompaction: null, contextFrom: { compactedAt: 50 } }, stats, messages: approx })
     ok(compactedData.compacted === true, '压缩过时标记，系统一栏改称含压缩摘要')
+
+    const settled = contextPaneData({ session, stats, messages: messages.slice(0, -1) })
+    const streamingSession = { ...session, isStreaming: true }
+    const growing = (text) => contextPaneData({ session: streamingSession, stats, messages: [...messages.slice(0, -1), { ...messages[1], text }] })
+    const first = growing('h')
+    const later = growing('h'.repeat(4000))
+    const tokensOf = (d) => d.slices.map((s) => `${s.id}:${s.tokens}`).join()
+    ok(tokensOf(first) === tokensOf(later), '输出中末尾助手消息增长时构成保持不变', [tokensOf(first), tokensOf(later)])
+    ok(tokensOf(first) === tokensOf(settled), '输出中的助手消息不计入构成，结束后再计入', [tokensOf(first), tokensOf(settled)])
+    ok(tokensOf(contextPaneData({ session, stats, messages })) !== tokensOf(first), '结束输出后构成包含末尾助手消息')
   }
 
   process.stdout.write(`\n================ 结果：${report.pass} 通过 / ${report.fail} 失败 ================\n`)

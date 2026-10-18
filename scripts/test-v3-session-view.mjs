@@ -196,7 +196,7 @@ export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView }
       'src/renderer/src/features/session/QuestionCard.tsx': `export function QuestionCard(){ return null }\nQuestionCard.__stub='question'`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
       'src/renderer/src/i18n/index.tsx': `export function useT(){ return (k)=>String(k) }\nexport function useI18n(){ return { t:(k)=>String(k) } }\nexport function translate(_l,k){ return String(k) }`,
-      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function Tabs(){ return null }\nexport function TabList(){ return null }\nexport function Tab(){ return null }\nexport function Dialog(){ return null }\nexport function Modal(){ return null }\nexport function ModalOverlay(){ return null }`
+      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function Tabs(){ return null }\nexport function TabList(){ return null }\nexport function Tab(){ return null }\nexport function Dialog(){ return null }\nexport function Modal(){ return null }\nexport function ModalOverlay(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
     },
     shims
   )
@@ -218,7 +218,7 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
       'src/renderer/src/features/session/text.ts': `export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
       'src/renderer/src/i18n/index.tsx': `export function useT(){ return (k)=>String(k) }\nexport function useI18n(){ return { t:(k)=>String(k) } }\nexport function translate(_l,k){ return String(k) }`,
-      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }`,
+      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`,
       'src/renderer/src/features/session/run-status.ts': `export function useRunProgress(){ return null }\nexport function runPhaseText(){ return '' }`,
       'src/renderer/src/lib/fork.ts': `export async function forkFromText(){}`
     },
@@ -428,7 +428,7 @@ async function main() {
     const turns = byStub(tree, 'turnview')
     ok(turns.length === 1, 'B 的消息仍然显示出来', turns.length)
     ok(turns.every((el) => el.props.sessionId === 'sess-b'), 'TurnView 拿到的是 B 的视图身份，不是 A', turns.map((el) => el.props.sessionId))
-    ok(byTypeName(tree, 'PendingActivity').length === 0, 'B 底部没有挂 A 的等待行（A 仍在跑）')
+    ok(byTypeName(tree, 'PendingRunNotice').length === 0, 'B 底部没有挂 A 的等待行（A 仍在跑）')
     ok(byStub(tree, 'approval').length === 0, 'B 底部没有挂来源 A 的批准卡（热键随之不注册）')
     ok(byStub(tree, 'question').length === 0, 'B 底部没有挂来源不明的提问卡')
     ok(turns.every((el) => String(el.key).startsWith('B|')), '列表 key 带视图身份 B', turns.map((el) => el.key))
@@ -449,7 +449,7 @@ async function main() {
     })
     const turns = byStub(tree, 'turnview')
     ok(turns.length === 1 && turns[0].props.sessionId === null, 'path-only 视图把 sessionId 传 null，不冒认 sess-a', turns.map((el) => el.props.sessionId))
-    ok(byTypeName(tree, 'PendingActivity').length === 0, 'path-only 视图不显示 A 的等待')
+    ok(byTypeName(tree, 'PendingRunNotice').length === 0, 'path-only 视图不显示 A 的等待')
     ok(byStub(tree, 'approval').length === 0, 'path-only 视图不显示来源 A 的批准')
     ok(byStub(tree, 'question').length === 0, 'path-only 视图不显示 A 的提问')
     ok(tree.props['data-view-active'] === '0', 'path-only 视图不算已激活')
@@ -481,7 +481,7 @@ async function main() {
     })
     ok(back.props['data-view-key'] === aKey, '回到 A 视图键与之前一致（滚动记录可恢复）', back.props['data-view-key'])
     ok(back.props['data-view-active'] === '1', '回到 A 算已激活')
-    ok(byTypeName(back, 'PendingActivity').length === 1, 'A 仍在跑：回到 A 时等待行重新出现')
+    ok(byTypeName(back, 'PendingRunNotice').length === 1, 'A 仍在跑：回到 A 时等待行重新出现')
     ok(byStub(back, 'approval').length === 1, '回到 A：来源 A 的批准卡重新出现')
     ok(byStub(back, 'question').length === 1, '回到 A：A 的提问卡重新出现')
 

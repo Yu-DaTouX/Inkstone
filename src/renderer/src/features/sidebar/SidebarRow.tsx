@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointe
 import { MoreHorizontal } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
+import { IconButton, ShimmerText } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { RunDot } from '../../patterns/RunDot'
 import type { RunPhase } from '../../../../shared/runs'
@@ -160,7 +160,7 @@ export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, 
           data-testid="v3-session-row"
         >
           <RunDot phase={phase} unread={unread} code={code} />
-          <span className="v3-row-title">{title}</span>
+          <ShimmerText className="v3-row-title" active={phase?.kind === 'running'}>{title}</ShimmerText>
           {word ? <span className={`v3-row-word v3-row-word-${tone}`}>{word}</span> : null}
         </button>
       )}

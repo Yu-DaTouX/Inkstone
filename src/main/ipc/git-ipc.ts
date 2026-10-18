@@ -1,5 +1,5 @@
 import type { IpcRegistrar } from './registrar'
-import { readExpected, readRepoState, listRefs, resolveRepo } from '../git-service'
+import { readRepoSnapshot, readRepoState, listRefs, resolveRepo } from '../git-service'
 import { listRemotes, runGitAction } from '../git-actions'
 import { listUntracked, listWorktrees } from '../git-worktree'
 import { readChanges, readFileDiff } from '../git-inspect'
@@ -17,8 +17,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       const dir = String(cwd ?? '')
       const repo = await resolveRepo(dir)
       if (!repo) return { repo: null }
-      const expected = await readExpected(repo.root)
-      return { repo: await readRepoState(repo.root), expected }
+      return await readRepoSnapshot(repo)
     } catch (error) {
       return { repo: null, error: error instanceof Error ? error.message : String(error) }
     }

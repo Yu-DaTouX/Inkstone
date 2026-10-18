@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type JSX, type KeyboardEvent } from 'react'
 import { useT } from '../../i18n'
 import type { UIMessage } from '../../../../shared/ipc'
 import { createOutlineProjector } from '../../../../shared/outline-turns'
@@ -80,7 +80,7 @@ export interface OutlineRailProps {
   className?: string
 }
 
-export function OutlineRail({ messages, streamingId, onJump, className }: OutlineRailProps): JSX.Element | null {
+function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRailProps): JSX.Element | null {
   const t = useT()
   const projectOutline = useMemo(() => createOutlineProjector(), [])
   const turns = useMemo(() => projectOutline(messages, streamingId), [messages, streamingId, projectOutline])
@@ -281,3 +281,5 @@ export function OutlineRail({ messages, streamingId, onJump, className }: Outlin
     </div>
   )
 }
+
+export const OutlineRail = memo(OutlineRailView)

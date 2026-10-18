@@ -7,12 +7,14 @@ import {
   ENTER_MS,
   EXIT_MS,
   FIELD_SEED,
+  FRAME_SLACK_MS,
   STATIC_TIME,
   alphaLevel,
   animationPolicy,
   bottomClearZone,
   computeFieldFrame,
   defaultClearZones,
+  frameInterval,
   levelAlpha,
   shouldDraw,
   textClearZone,
@@ -107,6 +109,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   let reduced = prefersReducedMotion()
   let running = false
   let raf = 0
+  let wake = 0
   let lastDraw = Number.NEGATIVE_INFINITY
   let elapsed = 0
   let closing = false
@@ -228,22 +231,34 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     }
   }
 
+  const requestNextFrame = (fps: number): void => {
+    const wait = frameInterval(fps) - FRAME_SLACK_MS - (performance.now() - lastDraw)
+    if (!Number.isFinite(wait) || wait <= FRAME_SLACK_MS) {
+      raf = requestAnimationFrame(frameStep)
+      return
+    }
+    wake = window.setTimeout(() => {
+      wake = 0
+      if (running) raf = requestAnimationFrame(frameStep)
+    }, wait)
+  }
+
   const frameStep = (now: number): void => {
+    raf = 0
     const policy = animationPolicy({ visible: currentVisible(), focused, reducedMotion: reduced })
     if (!policy.active) {
       running = false
-      raf = 0
       return
     }
-    raf = requestAnimationFrame(frameStep)
-    if (closing) { stop(); return }
-    const fps = elapsed < ENTER_MS || closing ? Math.max(policy.fps, 30) : policy.fps
-    if (!shouldDraw(now, lastDraw, fps)) return
-    const step = lastDraw === Number.NEGATIVE_INFINITY ? 0 : Math.min(100, now - lastDraw)
-    lastDraw = now
-    elapsed += step
-    if (closing) exitElapsed += step
-    draw()
+    if (closing) { running = false; return }
+    const fps = elapsed < ENTER_MS ? Math.max(policy.fps, 30) : policy.fps
+    if (shouldDraw(now, lastDraw, fps)) {
+      const step = lastDraw === Number.NEGATIVE_INFINITY ? 0 : Math.min(100, now - lastDraw)
+      lastDraw = now
+      elapsed += step
+      draw()
+    }
+    requestNextFrame(fps)
   }
 
   const start = (): void => {
@@ -258,6 +273,8 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     running = false
     if (raf) cancelAnimationFrame(raf)
     raf = 0
+    if (wake) window.clearTimeout(wake)
+    wake = 0
   }
 
   const applyPolicy = (): void => {

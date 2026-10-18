@@ -159,12 +159,10 @@ export function clearRepoCache(): void {
   repoCache.clear()
 }
 
+const STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--no-optional-locks']
+
 export async function readStatus(root: string): Promise<GitStatusParse> {
-  const res = await gitRun(
-    root,
-    ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--no-optional-locks'],
-    { allowFailure: true }
-  )
+  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true })
   if (!res.ok && !res.stdout) {
     const fallback = await gitRun(root, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'], {
       allowFailure: true
@@ -242,7 +240,35 @@ export async function readRepoState(cwd: string, opts: { withRefs?: boolean } = 
   if (!repo) return null
   const status = await readStatus(repo.root)
   const refs = opts.withRefs === false ? null : await listRefs(repo.root)
+  return repoStateFrom(repo, status, refs)
+}
 
+const snapshotsInFlight = new Map<string, Promise<{ repo: GitRepoState; expected: GitActionExpected }>>()
+
+export function readRepoSnapshot(repo: RepoIdentity): Promise<{ repo: GitRepoState; expected: GitActionExpected }> {
+  const running = snapshotsInFlight.get(repo.root)
+  if (running) return running
+  const task = (async () => {
+    const [headRes, indexRes, statusRes] = await Promise.all([
+      gitRun(repo.root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFailure: true, timeout: 8000 }),
+      gitRun(repo.root, ['ls-files', '-s', '-z'], { allowFailure: true }),
+      gitRun(repo.root, STATUS_ARGS, { allowFailure: true })
+    ])
+    const status = !statusRes.ok && !statusRes.stdout ? await readStatus(repo.root) : parseStatusV2(statusRes.stdout)
+    return {
+      repo: repoStateFrom(repo, status, null),
+      expected: {
+        head: headRes.ok ? headRes.stdout.trim() || null : null,
+        indexDigest: digestOf([indexRes.stdout]),
+        statusDigest: digestOf([statusRes.stdout])
+      }
+    }
+  })().finally(() => snapshotsInFlight.delete(repo.root))
+  snapshotsInFlight.set(repo.root, task)
+  return task
+}
+
+function repoStateFrom(repo: RepoIdentity, status: GitStatusParse, refs: RefListing | null): GitRepoState {
   let stagedCount = 0
   let unstagedCount = 0
   let untrackedCount = 0
@@ -282,9 +308,7 @@ export async function readExpected(root: string): Promise<GitActionExpected> {
   const [headRes, indexRes, statusRes] = await Promise.all([
     gitRun(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFailure: true, timeout: 8000 }),
     gitRun(root, ['ls-files', '-s', '-z'], { allowFailure: true }),
-    gitRun(root, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--no-optional-locks'], {
-      allowFailure: true
-    })
+    gitRun(root, STATUS_ARGS, { allowFailure: true })
   ])
   const head = headRes.ok ? headRes.stdout.trim() || null : null
   return {

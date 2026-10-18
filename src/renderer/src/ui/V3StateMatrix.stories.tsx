@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   Badge,
   Button,
+  CompletionSweep,
   Dialog,
   DialogTrigger,
   Header,
@@ -22,6 +23,7 @@ import {
   Popover,
   ProgressBar,
   Separator,
+  ShimmerText,
   showToast,
   Skeleton,
   Spinner,
@@ -198,6 +200,32 @@ export const ProgressSkeletonStates: Story = {
           <Skeleton shape="rect" height={56} />
           <Skeleton shape="circle" height={32} width={32} />
         </div>
+      </Row>
+    </div>
+  )
+}
+
+export const ShimmerStates: Story = {
+  name: 'ShimmerText / CompletionSweep · 运行与收尾',
+  parameters: {
+    stateMatrix: {
+      components: ['ShimmerText', 'CompletionSweep'],
+      states: STATES('default', 'loading', 'tone-success'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 420 }}>
+      <Row label="流光">
+        <ShimmerText>正在思考</ShimmerText>
+        <ShimmerText lead={<span>$ </span>}>npm run build</ShimmerText>
+        <ShimmerText active={false}>已完成</ShimmerText>
+      </Row>
+      <Row label="收尾">
+        <span style={{ position: 'relative', display: 'block', flex: 1, padding: 'var(--s-6) var(--s-8)', borderRadius: 'var(--r-sm)' }}>
+          <CompletionSweep done />
+          读取 package.json
+        </span>
       </Row>
     </div>
   )

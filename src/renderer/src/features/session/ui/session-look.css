@@ -87,14 +87,6 @@
   .v3-spin { animation: v3-spin var(--dur-breathe) linear infinite; }
   @keyframes v3-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .v3-spin { animation: none; } }
-  .v3-busy { display: inline-flex; align-items: center; gap: 3px; height: 14px; flex: none; }
-  .v3-busy i { width: 4px; height: 4px; border-radius: var(--r-full); background: currentColor; animation: v3-busy 1.2s ease-in-out infinite; }
-  .v3-busy i:nth-child(2) { animation-delay: 0.15s; }
-  .v3-busy i:nth-child(3) { animation-delay: 0.3s; }
-  @keyframes v3-busy { 0%, 70%, 100% { opacity: 0.3; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
-  .v3-pulse { animation: v3-pulse 1.6s ease-in-out infinite; }
-  @keyframes v3-pulse { 50% { opacity: 0.4; } }
-  @media (prefers-reduced-motion: reduce) { .v3-busy i, .v3-pulse { animation: none; opacity: 0.7; } }
   .v3-caret { display: inline-block; color: var(--fg3); animation: v3-blink 1s steps(2) infinite; }
   @keyframes v3-blink { 50% { opacity: 0; } }
 
@@ -104,7 +96,6 @@
   .v3-think-label, .v3-step-verb, .v3-step-time, .v3-badge, .v3-steps-label, .v3-steps-stats { flex-shrink: 0; white-space: nowrap; }
   .v3-think-head > svg, .v3-step-head > svg { flex-shrink: 0; }
   .v3-step-target { flex: 1 1 auto; }
-  .v3-think[data-live] .v3-think-label { color: var(--run-t); }
   .v3-think-peek { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); text-align: left; }
   .v3-think-body {
     max-height: 25vh;
@@ -133,7 +124,7 @@
   .v3-steps-stats.err { color: var(--fail-t); }
   .v3-process-note { color: var(--fg3); font-size: var(--t-meta); }
   .v3-steps-list, .v3-steps-live { border-left: 2px solid var(--line); margin-left: var(--s-4); padding: var(--s-2) 0 var(--s-2) var(--s-8); }
-  .v3-step-head { display: flex; align-items: center; gap: var(--s-6); width: 100%; padding: var(--s-4) var(--s-6); border: 0; border-radius: var(--r-xs); background: none; color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
+  .v3-step-head { position: relative; display: flex; align-items: center; gap: var(--s-6); width: 100%; padding: var(--s-4) var(--s-6); border: 0; border-radius: var(--r-xs); background: none; color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
   .v3-step-head:hover { background: var(--hover); }
   .v3-step-verb { color: var(--fg); font-family: var(--font-mono); font-size: var(--t-meta); flex: none; }
   .v3-step-target { min-width: 0; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -141,7 +132,6 @@
   .v3-step-time { color: var(--fg3); font-size: var(--t-meta); flex: none; }
   .v3-dot { width: var(--size-dot); height: var(--size-dot); border-radius: var(--r-full); flex: none; background: var(--fg3); }
   .v3-dot.run { background: var(--run); }
-  .v3-step .v3-dot.run { animation: v3-pulse 1.6s ease-in-out infinite; }
   .v3-dot.ok { background: var(--fg3); }
   .v3-dot.err { background: var(--fail); }
   .v3-dot.warn { background: var(--stall); }
@@ -323,7 +313,6 @@
   .v3-sap .v3-sap-headtext { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .v3-sap .v3-sap-pill { display: inline-flex; align-items: center; gap: var(--s-6); align-self: flex-start; padding: 1px var(--s-8) 1px var(--s-6); border-radius: var(--r-full); background: var(--hover); font-size: var(--t-meta); }
   .v3-sap .v3-sap-pill[data-tone='err'] { background: var(--fail-bg); }
-  .v3-sap .v3-sap-pill[data-tone='run'] .v3-dot { animation: v3-pulse 1.6s ease-in-out infinite; }
   .v3-sap .v3-sap-sub { display: flex; align-items: center; gap: var(--s-8); color: var(--fg3); font-size: var(--t-meta); }
   .v3-sap .v3-sap-close { margin-left: 0; }
   .v3-sap .v3-sap-scroll { gap: var(--s-8); padding: var(--s-4) var(--s-12) var(--s-12); }
@@ -331,7 +320,6 @@
   .v3-sap .v3-sap-card[data-live='1'] { border-color: var(--run); }
   .v3-sap .v3-sap-task { background: transparent; }
   .v3-sap .v3-sap-label { display: flex; align-items: center; gap: var(--s-6); }
-  .v3-sap .v3-sap-label .v3-busy { color: var(--run-t); }
   .v3-sap .v3-sap-meta { display: flex; flex-wrap: wrap; gap: var(--s-6); }
   .v3-sap .v3-sap-chip { display: inline-flex; align-items: center; gap: var(--s-6); max-width: 100%; min-width: 0; padding: 2px var(--s-8); border-radius: var(--r-full); background: var(--hover); }
   .v3-sap .v3-sap-chip > dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

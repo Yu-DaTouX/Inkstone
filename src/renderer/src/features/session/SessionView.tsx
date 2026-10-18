@@ -2,16 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { VList, type VListHandle } from 'virtua'
 import { useT } from '../../i18n'
 import { streamingMessageId, useStore } from '../../state/store'
+import { useThrottledValue } from '../../state/streaming-throttle'
 import { useRunsV3 } from '../../state/runs-v3'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
+import { PendingRunNotice } from './RunNotice'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
 import { StalledCard, currentStalledRun } from './StalledCard'
 import { Icon } from './Icon'
-import { Busy } from './Busy'
 import { AsciiField } from '../ambient/AsciiField'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
@@ -302,8 +303,13 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     return () => cancelAnimationFrame(raf)
   }, [virtual, identity])
 
+  const turnsRef = useRef(turns)
+  turnsRef.current = turns
+  const outlineMessages = useThrottledValue(effectiveMessages, !!streamingId)
+
   const jumpToTurn = useCallback((userIndex: number) => {
     setStickNow(false)
+    const turns = turnsRef.current
     const target = userTurnRenderIndex(turns, userIndex)
     if (target === undefined) return
     if (virtual) {
@@ -316,7 +322,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     if (!box || !el) return
     const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
     box.scrollTop = Math.max(0, top)
-  }, [turns, virtual, setStickNow])
+  }, [virtual, setStickNow])
 
   const sidePanel = useSubagentPanel((s) => subagentPanel && s.owner === view.key && !!s.runId)
 
@@ -345,7 +351,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
           >
             {(item) => (
               <div key={`${identity}|${item.id}`} className="v3-stream-row">
-                {isPending(item) ? <PendingActivity /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />}
               </div>
             )}
           </VList>
@@ -354,7 +360,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
             <div className="v3-stream-inner">
               {turns.length === 0 ? <V3EmptyState key={view.sessionId || identity} /> : renderTurns.map((item) =>
                 isPending(item)
-                  ? <PendingActivity key={`${identity}|${item.id}`} />
+                  ? <PendingRunNotice key={`${identity}|${item.id}`} />
                   : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />
               )}
             </div>
@@ -367,7 +373,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
           </button>
         ) : null}
 
-        <OutlineRail messages={effectiveMessages} streamingId={streamingId} onJump={jumpToTurn} />
+        <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />
       </div>
 
       <StalledCard run={currentStalledRun(runs, view, viewActive)} onStop={() => void abort()} />
@@ -380,18 +386,6 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />
 
       {subagentPanel ? <SubagentPanel ownerKey={view.key} viewActive={viewActive} /> : null}
-    </div>
-  )
-}
-
-function PendingActivity(): JSX.Element {
-  const t = useT()
-  return (
-    <div className="v3-msg assistant" data-testid="v3-pending">
-      <div className="v3-act" data-kind="run">
-        <Busy />
-        <span className="v3-act-text" role="status" aria-live="polite">{t('chat.working')}</span>
-      </div>
     </div>
   )
 }

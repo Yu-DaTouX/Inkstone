@@ -70,6 +70,14 @@ export async function runGitRepoTests(ok) {
     await mkdir(join(root, 'not-a-repo'), { recursive: true })
     clearRepoCache()
     ok((await resolveRepo(join(root, 'not-a-repo'))) === null, '空目录也返回 null')
+
+    const { readRepoSnapshot, readRepoState, readExpected } = await import('../out/test/git-service.mjs')
+    const [snapA, snapB] = await Promise.all([readRepoSnapshot(id), readRepoSnapshot(id)])
+    ok(snapA === snapB, '同一仓库并发读取状态只跑一次')
+    const separate = await readRepoState(repo, { withRefs: false })
+    ok(JSON.stringify(snapA.repo) === JSON.stringify(separate), '合并读取的仓库状态与单独读取一致', JSON.stringify({ snap: snapA.repo, separate }))
+    ok(JSON.stringify(snapA.expected) === JSON.stringify(await readExpected(id.root)), '合并读取的写前校验值与单独读取一致', JSON.stringify(snapA.expected))
+    ok((await readRepoSnapshot(id)) !== snapA, '上一次读取结束后重新读取')
   }
 
   console.log('\n--- G9. 写操作（真实 git，全部在临时仓库里）---')

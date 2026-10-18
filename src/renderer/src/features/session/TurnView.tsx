@@ -10,16 +10,15 @@ import { TurnProcess } from './TurnProcess'
 import { splitTurnProcess } from './turn-process'
 import { MessageImage } from './Image'
 import { Icon } from './Icon'
-import { Busy } from './Busy'
-import { Badge, Button, IconButton } from '../../ui'
+import { Badge, IconButton } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, splitImageRefs, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { forkFromText } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
-import { runPhaseText, useRunProgress } from './run-status'
 import { turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
+import { LiveRunNotice } from './RunNotice'
 import { CompactionMarker } from './CompactionMarker'
 import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
@@ -314,35 +313,8 @@ function ImageProgressFallbackNote(): JSX.Element {
   )
 }
 
-function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }): JSX.Element {
-  return streaming ? <LiveActivity /> : <SettledActivity turn={turn} />
-}
-
-function LiveActivity(): JSX.Element {
-  const t = useT()
-  const progress = useRunProgress()
-  const compaction = useStore((s) => s.session?.compaction)
-  const retry = useStore((s) => s.session?.retry)
-  const abortRetry = useStore((s) => s.abortRetry)
-  const retryLeft = retry ? Math.ceil(Math.max(0, retry.at + retry.delayMs - Date.now()) / 1000) : 0
-  const retryText = retry
-    ? retryLeft > 0
-      ? t('chat.retryWaiting', { n: retry.attempt, m: retry.maxAttempts, s: retryLeft })
-      : t('chat.retryRunning', { n: retry.attempt, m: retry.maxAttempts })
-    : ''
-  const text = retryText || (progress?.phase === 'tool' ? t('chat.working') : runPhaseText(t, progress, compaction)) || t('chat.working')
-  return (
-    <div className="v3-act" data-kind={retry ? 'retry' : 'run'} data-testid="v3-turn-activity">
-      <Busy />
-      <span className="v3-act-text" role="status" aria-live="polite" title={retry?.error}>{text}</span>
-      {progress ? <span className="v3-act-time">{formatDuration(progress.elapsedMs)}</span> : null}
-      {retry ? (
-        <Button size="sm" variant="ghost" onPress={() => void abortRetry()} data-testid="v3-stop-retry">
-          {t('chat.stopRetry')}
-        </Button>
-      ) : null}
-    </div>
-  )
+function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }): JSX.Element | null {
+  return streaming ? <LiveRunNotice /> : <SettledActivity turn={turn} />
 }
 
 function SettledActivity({ turn }: { turn: AssistantTurn }): JSX.Element {

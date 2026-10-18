@@ -4,6 +4,7 @@ import { Button } from '../ui'
 import { useT, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import type { ContextCategory } from '../state/context-breakdown'
+import type { UIMessage } from '../../../shared/ipc'
 import { contextPaneData, contextUsageSummary } from '../features/workbench/context-pane-view'
 import { ContextRingGlyph } from './ContextGauge'
 import './context-ring.css'
@@ -13,6 +14,8 @@ function shortTokens(n: number): string {
   if (n >= 1000) return `${+(n / 1000).toFixed(1)}k`
   return String(n)
 }
+
+const NO_MESSAGES: readonly UIMessage[] = []
 
 const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   system: 'ctx.cat.system',
@@ -51,9 +54,9 @@ export function ContextRing({ className }: { className?: string } = {}) {
   const ringPercent = held ? held.percent : percent
   const ringTone = held ? held.tone : tone
   const stats = useStore((s) => s.stats)
-  const messages = useStore((s) => s.messages)
   const compact = useStore((s) => s.compact)
   const [open, setOpen] = useState(false)
+  const messages = useStore((s) => (open ? s.messages : NO_MESSAGES))
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const boundKey = `${session?.sessionId ?? ''}|${session?.model?.provider ?? ''}/${session?.model?.id ?? ''}`
@@ -61,7 +64,10 @@ export function ContextRing({ className }: { className?: string } = {}) {
     setOpen(false)
   }, [boundKey])
 
-  const { slices, compacted } = useMemo(() => contextPaneData({ session, stats, messages }), [session, stats, messages])
+  const { slices, compacted } = useMemo(
+    () => (open ? contextPaneData({ session, stats, messages }) : { slices: [], compacted: false }),
+    [open, session, stats, messages]
+  )
   const share = (n: number): number => (windowSize > 0 ? (n / windowSize) * 100 : 0)
   const rows = known
     ? [...slices.filter((s) => s.tokens > 0), { id: 'free' as const, tokens: Math.max(0, windowSize - tokens) }]

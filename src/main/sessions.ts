@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { decorateSessions } from './session-layout'
+import { countSessionMessages, forgetSessionMessageCounts } from './session-message-count'
 import { parseSubagentNotice } from '../shared/subagent-notice'
 import { plainTitleText } from '../shared/title-text'
 
@@ -175,25 +176,6 @@ async function readHead(path: string): Promise<{
   }
 }
 
-async function countMessages(path: string): Promise<number> {
-  const fh = await open(path, 'r')
-  try {
-    const { size } = await fh.stat()
-    if (size > 8 * 1024 * 1024) return -1
-    const buf = Buffer.alloc(size)
-    await fh.read(buf, 0, size, 0)
-    let n = 0
-    for (const line of buf.toString('utf8').split('\n')) {
-      if (line.includes('"type":"message"')) n++
-    }
-    return n
-  } catch {
-    return -1
-  } finally {
-    await fh.close()
-  }
-}
-
 async function readBranchOrigin(path: string, forkTs: number): Promise<string | undefined> {
   const CAP = 2 * 1024 * 1024
   const fh = await open(path, 'r')
@@ -303,6 +285,10 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
 
   await walk(SESSIONS_DIR, 0)
 
+  const present = new Set(files.map((f) => f.path))
+  for (const path of cache.keys()) if (!present.has(path)) cache.delete(path)
+  forgetSessionMessageCounts(present)
+
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const picked = files.slice(0, limit)
 
@@ -331,7 +317,7 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
         lastReply: activity.reply,
         createdAt: head.createdAt || Math.round(f.mtimeMs),
         updatedAt: Math.round(f.mtimeMs),
-        messageCount: await countMessages(f.path),
+        messageCount: await countSessionMessages(f.path),
         model: undefined
       }
       if (head.parentSession) {

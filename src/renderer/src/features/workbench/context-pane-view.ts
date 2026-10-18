@@ -79,8 +79,16 @@ export function contextOccupancy(
   ]
 }
 
+function settledMessages(
+  session: Pick<SessionState, 'isStreaming' | 'isAgentRunning'> | null,
+  messages: readonly UIMessage[]
+): readonly UIMessage[] {
+  const running = !!session?.isStreaming || !!session?.isAgentRunning
+  return running && messages[messages.length - 1]?.role === 'assistant' ? messages.slice(0, -1) : messages
+}
+
 export function contextPaneData(input: {
-  session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom'> | null
+  session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom' | 'isStreaming' | 'isAgentRunning'> | null
   stats: Pick<SessionStats, 'contextUsage'> | null
   messages: readonly UIMessage[]
 }): ContextPaneData {
@@ -88,7 +96,7 @@ export function contextPaneData(input: {
   const from = contextFromOf(input.session)
   const compacted = !!from
   if (!usage.known) return { usage, slices: [], occupancy: [], compacted }
-  const messages = inContextMessages(input.messages, from)
+  const messages = inContextMessages(settledMessages(input.session, input.messages), from)
   const slices = contextBreakdown(messages, usage.tokens)
   return { usage, slices, occupancy: contextOccupancy(messages, slices), compacted }
 }

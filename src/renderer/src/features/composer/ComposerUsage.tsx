@@ -3,6 +3,7 @@ import { Dialog } from 'react-aria-components'
 import { Coins, DatabaseZap, Gauge, MessagesSquare } from 'lucide-react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useStreamingThrottledStore } from '../../state/streaming-throttle'
 import { Button, Popover } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { formatHitRate } from '../../../../shared/turns'
@@ -57,7 +58,7 @@ function withNote(tip: string, note: string | null): string {
 export function ComposerUsage() {
   const t = useT()
   const enabled = useStore((s) => s.settings?.usageUnderInput !== false)
-  const messages = useStore((s) => s.messages)
+  const messages = useStreamingThrottledStore((s) => s.messages)
   const stats = useStore((s) => s.stats)
   const sessionKey = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? s.session?.conversationId ?? null)
   const peekNote = useStore((s) => s.peekNote)
