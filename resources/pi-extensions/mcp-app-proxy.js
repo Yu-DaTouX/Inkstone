@@ -170,7 +170,10 @@ export default function mcpAppProxy(pi) {
     const base = String(event?.systemPrompt ?? '')
     if (base.includes(note)) return
     const sections = event?.systemPromptOptions?.sections
-    if (sections && typeof sections === 'object') sections[HOSTED_SERVERS_SECTION] = note
+    if (sections && typeof sections === 'object') {
+      sections[HOSTED_SERVERS_SECTION] = note
+      return
+    }
     return { systemPrompt: base ? `${base}\n\n${note}` : note }
   })
 }

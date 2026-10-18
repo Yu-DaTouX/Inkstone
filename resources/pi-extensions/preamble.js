@@ -14,15 +14,39 @@ export function compactDocs(body) {
   return `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, skills or models): ${main}; docs/ and examples/ sit next to it.`
 }
 
+const PROGRESS_SECTION = 'inkstone_progress'
+
+export function withInkstonePreamble(messages) {
+  if (!Array.isArray(messages)) return undefined
+  let changed = false
+  const next = messages.map((message) => {
+    const preamble = message?.role === 'system' ? message.sections?.preamble : undefined
+    if (typeof preamble !== 'string' || !preamble.includes(NATIVE_PREAMBLE)) return message
+    changed = true
+    return { ...message, sections: { ...message.sections, preamble: preamble.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) } }
+  })
+  return changed ? next : undefined
+}
+
 export default function preambleExtension(pi) {
+  pi.on('context_with_system', (event) => {
+    const messages = withInkstonePreamble(event?.messages)
+    return messages ? { messages } : undefined
+  })
   pi.on('before_agent_start', (event) => {
     const base = String(event?.systemPrompt ?? '')
+    const sections = event?.systemPromptOptions?.sections
+    if (sections && typeof sections === 'object') {
+      const docs = DOCS_BLOCK.exec(base)
+      const short = docs ? compactDocs(docs[1]) : undefined
+      if (short) sections.docs = short
+      sections[PROGRESS_SECTION] = PROGRESS_GUIDANCE
+      return
+    }
     const identity = base.includes(YAN_PREAMBLE) ? base : base.includes(NATIVE_PREAMBLE) ? base.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) : `${base}\n\n${YAN_PREAMBLE}`
     const docs = DOCS_BLOCK.exec(identity)
     const short = docs ? compactDocs(docs[1]) : undefined
     const compacted = short ? identity.replace(DOCS_BLOCK, `<docs>\n${short}\n</docs>`) : identity
-    const sections = event?.systemPromptOptions?.sections
-    if (short && sections && typeof sections === 'object') sections.docs = short
     const updated = compacted.includes(PROGRESS_GUIDANCE) ? compacted : `${compacted}\n\n${PROGRESS_GUIDANCE}`
     if (updated === base) return
     return { systemPrompt: updated }

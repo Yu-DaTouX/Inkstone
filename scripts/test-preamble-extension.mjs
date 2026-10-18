@@ -32,5 +32,21 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(typeof sections.docs === 'string' && sections.docs.includes('C:\\pi\\README.md'), '同名分区 docs 写入压缩版')
     ok(run(`${NATIVE_PREAMBLE}\n\n<docs>\nsomething else\n</docs>`).systemPrompt.includes('something else'), '认不出的文档段原样保留')
   }
+  {
+    const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
+    const sections = {}
+    const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections } }, {})
+    ok(result === undefined, '有具名分区时不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
+    ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs?.includes('C:\\pi\\README.md'), '进展约定与压缩文档写进具名分区')
+
+    ok(typeof handlers.context_with_system === 'function', '扩展注册了 context_with_system')
+    const system = { role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLE, tools: '<tools>\n- read\n</tools>' } }
+    const user = { role: 'user', content: 'hi' }
+    const replaced = handlers.context_with_system({ type: 'context_with_system', messages: [system, user] }, {})
+    ok(replaced?.messages?.[0]?.sections?.preamble === YAN_PREAMBLE && replaced.messages[0].sections.tools === system.sections.tools, '发出请求前把系统消息里的 pi 开场白换成砚的，其他分区不动')
+    ok(system.sections.preamble === NATIVE_PREAMBLE && replaced.messages[1] === user, '不改原消息对象，非系统消息原样保留')
+    ok(handlers.context_with_system({ type: 'context_with_system', messages: replaced.messages }, {}) === undefined, '幂等：已是砚开场白时不再改动')
+    ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
+  }
   ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('Work quietly') && PROGRESS_GUIDANCE.includes('Do not narrate routine steps') && PROGRESS_GUIDANCE.includes('Inkstone internals') && !PROGRESS_GUIDANCE.includes('After each batch of tool calls'), '进展约定：安静干活，只在关键节点说话，不讲砚内部机制，尊重静默要求')
 }
