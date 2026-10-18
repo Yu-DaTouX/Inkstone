@@ -1,5 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
-import { promisify } from 'node:util'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { realpath, stat, open } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
@@ -9,7 +8,16 @@ import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
 import { parseStatusV2 } from '../shared/git'
 
-const execFileAsync = promisify(execFile)
+function killProcessTree(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  if (process.platform === 'win32' && child.pid) {
+    execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, (error) => {
+      if (error) child.kill()
+    })
+    return
+  }
+  child.kill('SIGTERM')
+}
 
 const MAX_BUFFER = 48 * 1024 * 1024
 const DEFAULT_TIMEOUT = 20_000
@@ -40,9 +48,16 @@ export async function gitRun(
     GIT_TERMINAL_PROMPT: '0',
     ...(opts.env ?? {})
   }
+  const timeout = opts.timeout ?? DEFAULT_TIMEOUT
   if (opts.stdin !== undefined) {
+    let timedOut = false
     const res = await new Promise<GitRunResult>((resolve) => {
-      const child = spawn('git', full, { cwd, windowsHide: true, env, timeout: opts.timeout ?? DEFAULT_TIMEOUT })
+      const child = spawn('git', full, { cwd, windowsHide: true, env })
+      const timer = setTimeout(() => {
+        timedOut = true
+        killProcessTree(child)
+      }, timeout)
+      child.on('exit', () => clearTimeout(timer))
       let stdout = ''
       let stderr = ''
       child.stdout?.on('data', (d: Buffer) => {
@@ -51,35 +66,41 @@ export async function gitRun(
       child.stderr?.on('data', (d: Buffer) => {
         stderr += d.toString('utf8')
       })
-      child.on('error', (e) =>
+      child.on('error', (e) => {
+        clearTimeout(timer)
         resolve({
           ok: false,
           stdout,
           stderr: (e as NodeJS.ErrnoException).code === 'ENOENT' ? enoentMessage(cwd) : stderr + e.message
         })
-      )
-      child.on('close', (code) => resolve({ ok: code === 0, stdout, stderr }))
+      })
+      child.on('close', (code) => resolve({ ok: code === 0 && !timedOut, stdout, stderr, ...(timedOut ? { timedOut } : {}) }))
+      child.stdin?.on('error', () => undefined)
       child.stdin?.end(opts.stdin, 'utf8')
     })
     if (res.ok) return res
-    if (opts.allowFailure) return { ...res, error: (res.stderr || res.stdout).trim() || undefined }
-    throw new Error((res.stderr || res.stdout).trim() || 'git 命令失败')
+    if (opts.allowFailure) return { ...res, error: (res.stderr || res.stdout).trim() || (timedOut ? 'git 命令超时' : undefined) }
+    throw Object.assign(new Error((res.stderr || res.stdout).trim() || 'git 命令失败'), { timedOut })
   }
+  let timedOutByTimer = false
   try {
-    const res = await execFileAsync('git', full, {
-      cwd,
-      windowsHide: true,
-      timeout: opts.timeout ?? DEFAULT_TIMEOUT,
-      maxBuffer: MAX_BUFFER,
-      encoding: 'utf8',
-      env
+    const res = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const child = execFile('git', full, { cwd, windowsHide: true, maxBuffer: MAX_BUFFER, encoding: 'utf8', env }, (error, stdout, stderr) => {
+        clearTimeout(timer)
+        if (error) reject(Object.assign(error, { stdout, stderr }))
+        else resolve({ stdout, stderr })
+      })
+      const timer = setTimeout(() => {
+        timedOutByTimer = true
+        killProcessTree(child)
+      }, timeout)
     })
     return { ok: true, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
   } catch (error) {
     const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown; code?: unknown; killed?: boolean; signal?: string }
     const stdout = String(e.stdout ?? '')
     const stderr = e.code === 'ENOENT' ? enoentMessage(cwd) : String(e.stderr ?? '')
-    const timedOut = e.killed === true && !!e.signal && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+    const timedOut = timedOutByTimer || (e.killed === true && !!e.signal && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
     const message = (stderr || stdout || String(e.message ?? error)).trim() || 'git 命令失败'
     if (opts.allowFailure) {
       return { ok: false, stdout, stderr, error: message, timedOut }

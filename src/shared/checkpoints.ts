@@ -26,6 +26,16 @@ export interface CheckpointRestoreResult {
   restored: number
 }
 
+export interface WorkspaceFit {
+  files: number
+  tooManyFiles: boolean
+  oversizedFiles: number
+  largest: { path: string; bytes: number } | null
+  totalBytes: number
+  tooLarge: boolean
+  fits: boolean
+}
+
 export function textFingerprint(text: string): string {
   let h = 2166136261
   const s = text.replace(/\s+/g, ' ').trim()

@@ -1,9 +1,9 @@
 import { reserveWorkspaceMutation } from '../workspace-mutation'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
-import { listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
-import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../../shared/checkpoints'
+import { assessCheckpointFit, listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
+import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../../shared/checkpoints'
 
 export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
@@ -40,5 +40,9 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
   })
   handle('yan:checkpoints:undo', async (undoId: unknown): Promise<CheckpointRestoreResult> => {
     return restore(undoId)
+  })
+  handle('yan:checkpoints:assess', async (cwd: unknown): Promise<WorkspaceFit | null> => {
+    if (typeof cwd !== 'string' || !isAbsolute(cwd)) return null
+    return assessCheckpointFit(cwd).catch(() => null)
   })
 }
