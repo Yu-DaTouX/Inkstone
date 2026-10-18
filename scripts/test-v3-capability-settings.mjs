@@ -31,9 +31,10 @@ const {
   verificationTone
 } = mod
 
-assert.deepEqual(SKILL_ORIGIN_ORDER, ['session', 'user', 'bundled', 'other'])
+assert.deepEqual(SKILL_ORIGIN_ORDER, ['session', 'user', 'pi', 'other'])
 assert.equal(skillOriginOf('session'), 'session')
 assert.equal(skillOriginOf('user'), 'user')
+assert.equal(skillOriginOf('pi'), 'pi')
 assert.equal(skillOriginOf('bundled'), 'bundled')
 assert.equal(skillOriginOf('other'), 'other')
 assert.equal(skillOriginOf(undefined), 'other', '老快照缺 origin 归 other')
@@ -45,12 +46,13 @@ const grouped = groupSkills([
   skill('b', 'session'),
   skill('c', 'bundled'),
   skill('d', 'session'),
-  skill('e', 'user')
+  skill('e', 'user'),
+  skill('f', 'pi')
 ])
 assert.deepEqual(
   grouped.map((g) => g.origin),
-  ['session', 'user', 'bundled', 'other'],
-  '分组顺序固定'
+  ['session', 'user', 'pi', 'other'],
+  '分组顺序固定，随包技能不列出'
 )
 assert.deepEqual(grouped[0].skills.map((s) => s.id), ['b', 'd'], '组内保持输入顺序')
 assert.deepEqual(groupSkills([]).length, 0, '全空不返回空组')

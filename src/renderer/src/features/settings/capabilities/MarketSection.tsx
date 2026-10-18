@@ -2,13 +2,11 @@ import { useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { INKSTONE_PLUGINS } from '../../../../../shared/inkstone-plugins'
 import type { MarketPackage, MarketSearchResult } from '../../../../../shared/plugin-market'
-import { Button, TextField } from '../../../ui'
+import { Badge, Button, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { PackagesPanel } from './PackagesPanel'
 import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Panel, Warn } from './parts'
 import { MARKET_PAGE_SIZE, marketRange } from './model'
-import { OpenCodeProxyRow } from './OpenCodeProxyRow'
-import { CodegraphStatusRow } from './CodegraphStatusRow'
 
 export function MarketSection(): ReactElement {
   const t = useT()
@@ -89,12 +87,10 @@ export function MarketSection(): ReactElement {
     <Panel label={t('market.title')}>
       <Note>{text('marketNoAutoNote')}</Note>
 
-      <Group title={t('market.ours')} desc={t('market.oursDesc')}>
+      <Group title={t('market.ours')} desc={t('market.oursDesc')} settingId="caps-market-inkstone">
         <div className="caps-list" data-testid="caps-market-inkstone">
-          {INKSTONE_PLUGINS.map((plugin) =>
-            plugin.action === 'proxy' ? (
-              <OpenCodeProxyRow key={plugin.id} />
-            ) : (
+          {INKSTONE_PLUGINS.flatMap((plugin) =>
+            plugin.action === 'proxy' ? [] : [
               <Item key={plugin.id} testId="caps-market-plugin">
                 <ItemHead>
                   <span className="caps-name">
@@ -113,7 +109,7 @@ export function MarketSection(): ReactElement {
                     </Button>
                     <Button
                       size="sm"
-                      variant="ghost"
+                      variant="secondary"
                       onPress={() => void window.yan.browser.openExternal(plugin.url)}
                       data-testid="caps-market-source"
                     >
@@ -124,9 +120,8 @@ export function MarketSection(): ReactElement {
                 <Meta>{t(plugin.descriptionKey)}</Meta>
                 <Meta>{t(plugin.targetKey)}</Meta>
                 <Meta>{t(plugin.hintKey)}</Meta>
-                {plugin.id === 'codegraph' ? <CodegraphStatusRow refreshKey={note} /> : null}
               </Item>
-            )
+            ]
           )}
         </div>
         {note ? (
@@ -136,7 +131,7 @@ export function MarketSection(): ReactElement {
         ) : null}
       </Group>
 
-      <Group title={t('market.pi')} desc={t('market.piDesc')}>
+      <Group title={t('market.pi')} desc={t('market.piDesc')} settingId="caps-market-pi">
         <div className="caps-field">
           <TextField
             aria-label={t('market.search')}
@@ -151,7 +146,7 @@ export function MarketSection(): ReactElement {
           </Button>
           <Button
             size="sm"
-            variant="ghost"
+            variant="secondary"
             onPress={() => void window.yan.browser.open('https://pi.dev/packages')}
             data-testid="caps-market-catalog"
           >
@@ -172,7 +167,7 @@ export function MarketSection(): ReactElement {
                   <span className="caps-name" title={pkg.name}>
                     {pkg.name}
                   </span>
-                  <span className="caps-tag">{pkg.version}</span>
+                  <Badge>{pkg.version}</Badge>
                   <span className="caps-spacer" />
                   <Actions>
                     <Button size="sm" variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
@@ -183,11 +178,11 @@ export function MarketSection(): ReactElement {
                 {pkg.description ? <Meta title={pkg.description}>{pkg.description}</Meta> : null}
                 {pkg.publisher ? <Meta>{pkg.publisher}</Meta> : null}
                 <Actions>
-                  <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
+                  <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
                     npm
                   </Button>
                   {pkg.homepage ? (
-                    <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
+                    <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
                       {t('market.source')}
                     </Button>
                   ) : null}
@@ -199,7 +194,7 @@ export function MarketSection(): ReactElement {
 
         {total > MARKET_PAGE_SIZE ? (
           <div className="caps-pager">
-            <Button size="sm" variant="ghost" isDisabled={loading || offset === 0} onPress={() => goPage(Math.max(0, offset - MARKET_PAGE_SIZE))}>
+            <Button size="sm" variant="secondary" isDisabled={loading || offset === 0} onPress={() => goPage(Math.max(0, offset - MARKET_PAGE_SIZE))}>
               {t('market.previous')}
             </Button>
             <Meta>
@@ -207,7 +202,7 @@ export function MarketSection(): ReactElement {
             </Meta>
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               isDisabled={loading || offset + MARKET_PAGE_SIZE >= total}
               onPress={() => goPage(offset + MARKET_PAGE_SIZE)}
             >
@@ -217,7 +212,7 @@ export function MarketSection(): ReactElement {
         ) : null}
       </Group>
 
-      <PackagesPanel initialSource={selected} selectionKey={selectionKey} showBuiltin={false} />
+      <PackagesPanel mode="install" initialSource={selected} selectionKey={selectionKey} note={text('extensionsPackagesNote')} />
     </Panel>
   )
 }

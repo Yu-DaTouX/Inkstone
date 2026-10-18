@@ -48,7 +48,7 @@
     --shadow-pop: 0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -10px rgba(0,0,0,.22);
     --shadow-thumb: 0 1px 2px rgba(0,0,0,.14);
     --shadow-card: 0 0 0 1px rgba(29,29,27,.14), 0 10px 28px -14px rgba(0,0,0,.18);
-    --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    --font-ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
     --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "SF Mono", Consolas, "Microsoft YaHei UI", monospace;
     --font-read: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", serif;
     --t-meta: 12.5px;
@@ -89,9 +89,11 @@
     --size-side: 264px;
     --size-head: 48px;
     --size-btn: 32px;
+    --size-btn-sm: 26px;
+    --size-thumb: 14px;
     --size-send: 34px;
     --size-col: 720px;
-    --size-comp: 760px;
+    --size-chat: 800px;
     --size-panel: 420px;
     --size-tiles: 300px;
     --size-icon: 16px;

@@ -101,7 +101,7 @@ export function PiRetryDetailRows({
   if (!settings) return null
   return (
     <>
-      <SettingsRow nested block label={text.retryCount} description={text.retryCountDesc}>
+      <SettingsRow nested block settingId="session-retry-count" label={text.retryCount} description={text.retryCountDesc}>
         <Segmented
           label={text.retryCount}
           value={String(settings.retryMaxRetries)}
@@ -110,7 +110,7 @@ export function PiRetryDetailRows({
           onChange={(value) => void state.patch({ retryMaxRetries: Number(value) })}
         />
       </SettingsRow>
-      <SettingsRow nested block label={text.retryDelay} description={text.retryDelayDesc}>
+      <SettingsRow nested block settingId="session-retry-delay" label={text.retryDelay} description={text.retryDelayDesc}>
         <Segmented
           label={text.retryDelay}
           value={String(settings.retryBaseDelayMs)}
@@ -139,7 +139,12 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
 
   return (
     <SettingsGroup label={text.thinking}>
-      <SettingsRow label={text.thinking} description={entries.length ? text.thinkingDesc : `${text.thinkingDesc} ${text.thinkingEmpty}`} block>
+      <SettingsRow
+        settingId="models-thinking-levels"
+        label={text.thinking}
+        description={entries.length ? text.thinkingDesc : `${text.thinkingDesc} ${text.thinkingEmpty}`}
+        block
+      >
         {null}
       </SettingsRow>
       {entries.map(([key, value]) => (
@@ -159,7 +164,7 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
             </Select>
             <Button
               size="sm"
-              variant="ghost"
+              variant="danger"
               onPress={() => {
                 const next = { ...levels }
                 delete next[key]
@@ -228,7 +233,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
   return (
     <>
       <SettingsGroup label={text.requests}>
-        <SettingsRow label={text.idleTimeout} description={text.idleTimeoutDesc} block>
+        <SettingsRow settingId="session-idle-timeout" label={text.idleTimeout} description={text.idleTimeoutDesc} block>
           <Segmented
             label={text.idleTimeout}
             value={String(settings.httpIdleTimeoutMs)}
@@ -236,7 +241,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
             onChange={(value) => void state.patch({ httpIdleTimeoutMs: Number(value) })}
           />
         </SettingsRow>
-        <SettingsRow label={text.cacheWarming} description={text.cacheWarmingDesc} block>
+        <SettingsRow settingId="session-cache-warming" label={text.cacheWarming} description={text.cacheWarmingDesc} block>
           <Segmented
             label={text.cacheWarming}
             value={settings.cacheWarming}
@@ -247,7 +252,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
       </SettingsGroup>
 
       <SettingsGroup label={text.images}>
-        <SettingsRow label={text.imagesAutoResize} description={text.imagesAutoResizeDesc}>
+        <SettingsRow settingId="session-images-resize" label={text.imagesAutoResize} description={text.imagesAutoResizeDesc}>
           <Switch
             aria-label={text.imagesAutoResize}
             isSelected={settings.imagesAutoResize}
@@ -255,7 +260,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
             data-testid="v3-pi-images-resize"
           />
         </SettingsRow>
-        <SettingsRow label={text.imagesBlock} description={text.imagesBlockDesc}>
+        <SettingsRow settingId="session-images-block" label={text.imagesBlock} description={text.imagesBlockDesc}>
           <Switch
             aria-label={text.imagesBlock}
             isSelected={settings.imagesBlockImages}
@@ -265,11 +270,22 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
         </SettingsRow>
       </SettingsGroup>
 
-      <ModelThinkingLevels state={state} text={text} />
-
       <p className="settings-note" role="note">
-        {text.effectNote}
+        {text.sessionEffectNote}
       </p>
+      <PiNativeError error={state.error} />
+    </>
+  )
+}
+
+export function PiThinkingLevelsGroup(): ReactElement | null {
+  const { lang } = useI18n()
+  const text = piNativeText(lang)
+  const state = usePiNativeSettings(text)
+  if (!state.settings) return <PiNativeError error={state.error} />
+  return (
+    <>
+      <ModelThinkingLevels state={state} text={text} />
       <PiNativeError error={state.error} />
     </>
   )
@@ -287,7 +303,7 @@ export function PiProjectTrustGroup(): ReactElement | null {
   ]
   return (
     <SettingsGroup label={text.trust}>
-      <SettingsRow label={text.trust} description={`${text.trustDesc} ${text.effectNote}`} block>
+      <SettingsRow settingId="security-project-trust" label={text.trust} description={`${text.trustDesc} ${text.effectNote}`} block>
         <Segmented
           label={text.trust}
           value={state.settings.defaultProjectTrust}
@@ -312,7 +328,7 @@ export function PiShareDestinationGroup(): ReactElement | null {
   ]
   return (
     <SettingsGroup label={text.share}>
-      <SettingsRow label={text.share} description={`${text.shareDesc} ${text.effectNote}`} block>
+      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc} ${text.effectNote}`} block>
         <Segmented
           label={text.share}
           value={state.settings.sessionShareDestination}

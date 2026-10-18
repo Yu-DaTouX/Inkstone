@@ -15,6 +15,8 @@ import type { ApprovalRequest } from '../shared/approval'
 import type { RunObserver, RunObserverContext } from './agent'
 import { YAN_DIR } from './paths'
 
+const SILENT_LONG_TOOLS = ['bash', 'powershell', 'shell', 'exec', 'subagent']
+
 export interface RunsSnapshot {
   revision: number
   runs: RunSnapshot[]
@@ -100,7 +102,8 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
         payload: { revision, upsert: payload.upsert, remove: payload.remove }
       })
     },
-    onError: (error: RunError) => log(`${error.code}：${error.message}`)
+    onError: (error: RunError) => log(`${error.code}：${error.message}`),
+    exemptTools: () => SILENT_LONG_TOOLS
   })
 
   const codeState = new Map<string, 'pending' | 'ready' | 'failed'>()

@@ -3,20 +3,21 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent,
   type LazyExoticComponent,
   type ReactElement
 } from 'react'
-import { BarChart3, Bell, Clock, Gauge, HardDrive, Info, KeyRound, Keyboard, Moon, RefreshCw, Shield, Smartphone, Sparkles } from 'lucide-react'
+import { BarChart3, Bell, Clock, HardDrive, Info, KeyRound, Keyboard, Moon, Shield, Smartphone, Sparkles } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { useUiV3 } from '../../../state/ui-v3'
-import { Button } from '../../../ui'
+import { Button, SearchField } from '../../../ui'
 import { AppearanceSettings } from '../appearance/AppearanceSettings'
-import { ContextSettings } from '../context/ContextSettings'
 import { ShortcutsSettings } from '../shortcuts/ShortcutsSettings'
-import { SyncSettings } from '../sync/SyncSettings'
 import { AboutSettings, DataSettings, DevicesSettings, NotificationsSettings, SecuritySettings, SessionSettings } from '../general'
 import { UsageSettings } from '../usage/UsageSettings'
 import { settingsText, type SettingsText } from '../settings-text'
@@ -28,6 +29,15 @@ import {
   type SettingsSectionId
 } from '../types'
 import { getSettingsRequest, subscribeSettingsRequest } from './deep-link'
+import { SETTINGS_SEARCH_ENTRIES } from '../search/entries'
+import {
+  getSettingReveal,
+  matchSettings,
+  requestSettingReveal,
+  settingSelector,
+  subscribeSettingReveal,
+  type SettingsSearchEntry
+} from '../search/search-model'
 import '../settings.css'
 
 type Submodule = LazyExoticComponent<() => ReactElement>
@@ -64,7 +74,6 @@ const SECTION_ICON: Record<SettingsSectionDef['icon'], ReactElement> = {
   moon: <Moon size={15} aria-hidden />,
   clock: <Clock size={15} aria-hidden />,
   bell: <Bell size={15} aria-hidden />,
-  gauge: <Gauge size={15} aria-hidden />,
   key: <KeyRound size={15} aria-hidden />,
   sparkles: <Sparkles size={15} aria-hidden />,
   shield: <Shield size={15} aria-hidden />,
@@ -72,15 +81,13 @@ const SECTION_ICON: Record<SettingsSectionDef['icon'], ReactElement> = {
   'hard-drive': <HardDrive size={15} aria-hidden />,
   chart: <BarChart3 size={15} aria-hidden />,
   keyboard: <Keyboard size={15} aria-hidden />,
-  info: <Info size={15} aria-hidden />,
-  refresh: <RefreshCw size={15} aria-hidden />
+  info: <Info size={15} aria-hidden />
 }
 
 const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
   appearance: 'sectionAppearance',
   session: 'sectionSession',
   notifications: 'sectionNotifications',
-  context: 'sectionContext',
   models: 'sectionModels',
   capabilities: 'sectionCapabilities',
   security: 'sectionSecurity',
@@ -88,8 +95,40 @@ const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
   data: 'sectionData',
   usage: 'sectionUsage',
   shortcuts: 'sectionShortcuts',
-  about: 'sectionAbout',
-  sync: 'sectionSync'
+  about: 'sectionAbout'
+}
+
+const REVEAL_FRAMES = 90
+const REVEAL_SETTLE_MS = 240
+const FLASH_MS = 1800
+
+function useRevealScroll(): void {
+  const target = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
+  useEffect(() => {
+    if (!target) return
+    let frame = 0
+    let tries = 0
+    let settle: ReturnType<typeof setTimeout> | undefined
+    let flash: ReturnType<typeof setTimeout> | undefined
+    const seek = (): void => {
+      const node = document.querySelector<HTMLElement>(settingSelector(target.id))
+      if (!node) {
+        if (++tries < REVEAL_FRAMES) frame = requestAnimationFrame(seek)
+        return
+      }
+      settle = setTimeout(() => {
+        node.scrollIntoView({ block: 'center' })
+        node.setAttribute('data-flash', '1')
+        flash = setTimeout(() => node.removeAttribute('data-flash'), FLASH_MS)
+      }, REVEAL_SETTLE_MS)
+    }
+    frame = requestAnimationFrame(seek)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (settle) clearTimeout(settle)
+      if (flash) clearTimeout(flash)
+    }
+  }, [target])
 }
 
 function SubmoduleHost({
@@ -178,6 +217,14 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
   const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest)
   const [section, setSection] = useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION)
   const [legacy, setLegacy] = useState<{ view: string; kind: 'unmigrated' | 'unknown' } | null>(null)
+  const [query, setQuery] = useState('')
+  const searchBox = useRef<HTMLDivElement>(null)
+  const sectionLabel = useCallback((id: SettingsSectionId): string => text[SECTION_LABEL[id]], [text])
+  const hits = useMemo(
+    () => matchSettings(SETTINGS_SEARCH_ENTRIES, query, lang, sectionLabel),
+    [query, lang, sectionLabel]
+  )
+  useRevealScroll()
 
   useEffect(() => {
     if (!request) return
@@ -198,6 +245,17 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
     setSection(DEFAULT_SETTINGS_SECTION)
     setLegacy(null)
   }, [])
+  const reveal = useCallback((entry: SettingsSearchEntry): void => {
+    setSection(entry.section)
+    setLegacy(null)
+    setQuery('')
+    requestSettingReveal(entry)
+  }, [])
+  const focusSearch = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return
+    event.preventDefault()
+    searchBox.current?.querySelector('input')?.focus()
+  }
   const openRuns = useCallback((): void => {
     if (onRuns) onRuns()
     else useUiV3.getState().navigate({ name: 'runs' })
@@ -214,10 +272,46 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
   }
 
   return (
-    <div className="settings-page" data-testid="settings-root">
+    <div className="settings-page" data-testid="settings-root" onKeyDown={focusSearch}>
       <nav className="settings-nav" aria-label={text.navLabel}>
         <h2 className="settings-h2 settings-nav__title">{text.title}</h2>
-        {SETTINGS_SECTIONS.map((entry) => {
+        <SearchField
+          ref={searchBox}
+          aria-label={text.searchLabel}
+          placeholder={text.searchPlaceholder}
+          value={query}
+          onChange={setQuery}
+          onSubmit={() => {
+            if (hits[0]) reveal(hits[0])
+          }}
+          className="settings-search"
+          data-testid="settings-search"
+        />
+        {query.trim() ? (
+          hits.length > 0 ? (
+            <div className="settings-nav__hits" role="list" data-testid="settings-search-hits">
+              {hits.map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  role="listitem"
+                  className="settings-nav__item settings-nav__hit"
+                  data-testid={`settings-hit-${hit.id}`}
+                  onClick={() => reveal(hit)}
+                >
+                  <span className="settings-nav__hit-label">{lang === 'en-US' ? hit.en : hit.zh}</span>
+                  <span className="settings-nav__hit-path">
+                    {hit.more ? `${sectionLabel(hit.section)} · ${text.moreSettings}` : sectionLabel(hit.section)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="settings-nav__empty" role="status">
+              {text.searchEmpty}
+            </p>
+          )
+        ) : SETTINGS_SECTIONS.map((entry) => {
           const active = !legacy && entry.id === section
           return (
             <button
@@ -247,8 +341,6 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
             <SessionSettings />
           ) : section === 'notifications' ? (
             <NotificationsSettings />
-          ) : section === 'context' ? (
-            <ContextSettings />
           ) : section === 'models' ? (
             <SubmoduleHost
               component={ModelsSettings}
@@ -272,9 +364,7 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
           ) : section === 'data' ? (
             <DataSettings />
           ) : section === 'about' ? (
-            <AboutSettings onOpenModels={() => select('models')} onShowOnboarding={onShowOnboarding} />
-          ) : section === 'sync' ? (
-            <SyncSettings />
+            <AboutSettings onShowOnboarding={onShowOnboarding} />
           ) : (
             <UsageSettings onOpenRuns={openRuns} />
           )}

@@ -1,5 +1,6 @@
 export interface SidebarText {
   projectMenu: string
+  registerFailed: string
   archivedEntryCount: string
   archivedBack: string
   archivedProjects: string
@@ -21,6 +22,7 @@ export interface SidebarText {
 
 const zh: SidebarText = {
   projectMenu: '项目操作',
+  registerFailed: '无法把该目录登记为项目',
   archivedEntryCount: '已归档 · {n}',
   archivedBack: '返回会话',
   archivedProjects: '项目',
@@ -42,6 +44,7 @@ const zh: SidebarText = {
 
 const en: SidebarText = {
   projectMenu: 'Project actions',
+  registerFailed: 'Could not register this folder as a project',
   archivedEntryCount: 'Archived · {n}',
   archivedBack: 'Back to chats',
   archivedProjects: 'Projects',

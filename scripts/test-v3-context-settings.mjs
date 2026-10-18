@@ -31,7 +31,7 @@ assert.equal(pickTokenStep(400_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOK
 
 const usage = await loadTs('../src/renderer/src/features/settings/usage/usage-model.ts')
 const { USAGE_DIMENSIONS, DAILY_MAX_DAYS, usageBars, dailyEntries } = usage
-assert.deepEqual([...USAGE_DIMENSIONS], ['day', 'model', 'project'], '三个分组维度：按日 / 按模型 / 按项目')
+assert.deepEqual([...USAGE_DIMENSIONS], ['day', 'model'], '两个分组维度：按日 / 按模型')
 assert.equal(DAILY_MAX_DAYS, 30, '按日最多 30 天')
 
 const bars = usageBars([
@@ -60,11 +60,11 @@ const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { resolveLegacyView, isSettingsSectionId, SETTINGS_SECTIONS } = types
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['appearance', 'session', 'notifications', 'context', 'models', 'capabilities', 'security', 'devices', 'data', 'usage', 'shortcuts', 'about', 'sync'],
-  '上下文分区插在外观之后（G1 已补齐通用分区）'
+  ['models', 'appearance', 'session', 'notifications', 'security', 'capabilities', 'devices', 'data', 'usage', 'shortcuts', 'about'],
+  '上下文并入会话与上下文分区'
 )
-assert.equal(isSettingsSectionId('context'), true, 'context 是 v3 分区')
-assert.deepEqual(resolveLegacyView('context'), { kind: 'section', view: 'context', section: 'context' }, '旧深链接 context 落到上下文分区')
+assert.equal(isSettingsSectionId('context'), false, 'context 不再是独立分区')
+assert.deepEqual(resolveLegacyView('context'), { kind: 'section', view: 'context', section: 'session' }, '旧深链接 context 落到会话与上下文分区')
 
 const textMod = await loadTs('../src/renderer/src/features/settings/settings-text.ts')
 const zh = textMod.settingsText('zh-CN')
@@ -72,10 +72,9 @@ const en = textMod.settingsText('en-US')
 const zhKeys = Object.keys(zh).sort()
 const enKeys = Object.keys(en).sort()
 assert.deepEqual(zhKeys, enKeys, '中英文案键一一对应')
-for (const key of ['sectionContext', 'contextAutoCompact', 'contextCompactAt', 'contextTrim', 'contextTrimAt', 'contextCompactNow', 'usageByDay', 'usageByModel', 'usageByProject', 'usageProjectUnavailable', 'usageDailyCap']) {
+for (const key of ['sectionSession', 'contextAutoCompact', 'contextCompactAt', 'contextTrim', 'contextTrimAt', 'contextCompactNow', 'usageByDay', 'usageByModel', 'usageDailyCap']) {
   assert.ok(zh[key] && en[key], `文案键 ${key} 中英都有值`)
 }
-assert.ok(zh.contextNote.includes('pi'), '上下文说明写明压缩是 pi 原生')
 assert.ok(!/isSelected|checked/.test(zh.contextAutoCompact), '文案键不含控件属性')
 
 const ctx = readFileSync(here('../src/renderer/src/features/settings/context/ContextSettings.tsx'), 'utf8')
@@ -94,10 +93,11 @@ assert.ok(ctx.includes('isSelected'), '开关用 RAC 的 isSelected 受控属性
 assert.ok(!ctx.includes('checked='), '不混用 v2 的 checked 属性')
 assert.ok(!ctx.includes('window.yan'), '上下文页不新增 IPC 调用')
 
+const session = readFileSync(here('../src/renderer/src/features/settings/general/SessionSettings.tsx'), 'utf8')
+assert.ok(session.includes('<ContextSettings'), '会话与上下文分区挂载上下文组件')
 const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')
-assert.ok(root.includes('ContextSettings'), '根页引用上下文分区组件')
-assert.ok(root.includes("section === 'context'"), '根页渲染上下文分支')
-assert.ok(root.includes("context: 'sectionContext'"), '根页分区文案映射含上下文')
+assert.ok(root.includes("section === 'session'"), '根页渲染会话与上下文分支')
+assert.ok(!root.includes('ContextSettings'), '根页不再单独渲染上下文分区')
 assert.ok(!root.includes('components/settings'), '根页不引入 v2 旧设置组件')
 
 console.log('v3 上下文设置 / 用量图表：阈值、分组、深链接、文案与源码契约检查通过')

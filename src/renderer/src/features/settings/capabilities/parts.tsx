@@ -35,16 +35,18 @@ export function Group({
   desc,
   actions,
   card,
+  settingId,
   children
 }: {
   title: string
   desc?: string
   actions?: ReactNode
   card?: boolean
+  settingId?: string
   children: ReactNode
 }): ReactElement {
   return (
-    <section className="caps-group">
+    <section className="caps-group" data-setting-id={settingId}>
       <div className="caps-group-head">
         <div className="caps-group-titles">
           <h3 className="caps-group-title">{title}</h3>
@@ -57,9 +59,17 @@ export function Group({
   )
 }
 
-export function Item({ children, testId }: { children: ReactNode; testId?: string }): ReactElement {
+export function Item({
+  children,
+  testId,
+  settingId
+}: {
+  children: ReactNode
+  testId?: string
+  settingId?: string
+}): ReactElement {
   return (
-    <article className="caps-item" data-testid={testId}>
+    <article className="caps-item" data-testid={testId} data-setting-id={settingId}>
       {children}
     </article>
   )

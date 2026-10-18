@@ -4,6 +4,10 @@ import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey }
 import { isSearchProviderId } from '../../shared/search'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { basename, isAbsolute } from 'node:path'
+import { shell } from 'electron'
+import { setManagedSkillEnabled, trashManagedSkill } from '../skill-manager'
 import { builtinCapabilities } from '../extensions-inventory'
 import type { AppSettings } from '../../shared/ipc'
 import type { AgentController } from '../agent'
@@ -12,6 +16,8 @@ import { PI_AGENT_DIR } from '../paths'
 import { loadMcpServers, mcpServersForProject } from '../mcp/config'
 import { createNativeMcpVerifier } from '../mcp/native-verify'
 import { listNativeMcpServers } from '../mcp/native-list'
+import { manageNativeMcpServer } from '../mcp/native-manage'
+import type { NativeMcpServerListView } from '../../shared/mcp-native-import'
 import {
   commitNativeMcpImport,
   NativeMcpImportError,
@@ -98,11 +104,15 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return result
   })
 
-  handle('yan:capabilities:nativeMcpServers', async () => {
+  const currentNativeMcpList = async (): Promise<NativeMcpServerListView> => {
     const projectCwd = registry()?.activeRunner()?.cwd
     const projectTrusted = projectCwd ? await isProjectTrusted(projectCwd).catch(() => false) : false
     return listNativeMcpServers({ agentDir: PI_AGENT_DIR, ...(projectCwd ? { projectCwd, projectTrusted } : {}) })
-  })
+  }
+  handle('yan:capabilities:nativeMcpServers', currentNativeMcpList)
+  handle('yan:capabilities:manageNativeMcpServer', async (value: unknown) =>
+    manageNativeMcpServer(await currentNativeMcpList(), value)
+  )
 
   handle('yan:capabilities:settings', async () => {
     const agent = currentAgent()
@@ -115,6 +125,28 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     if (!action || !name) return { ok: false, error: '参数无效' }
     const agent = currentAgent()
     return agent ? agent.sessionSkillAction(action, name) : { ok: false, error: '当前没有可用的运行实例' }
+  })
+  handle('yan:capabilities:manageSkill', async (value: unknown) => {
+    const input = value && typeof value === 'object' ? (value as { action?: unknown; scope?: unknown; dir?: unknown }) : {}
+    const action = input.action === 'enable' || input.action === 'disable' || input.action === 'trash' ? input.action : null
+    const scope = input.scope === 'yan' || input.scope === 'pi' ? input.scope : null
+    const dir = typeof input.dir === 'string' ? input.dir.trim() : ''
+    if (!action || !scope || !dir) return { ok: false, error: '参数无效' }
+    try {
+      return action === 'trash'
+        ? await trashManagedSkill(scope, dir, (path) => shell.trashItem(path))
+        : await setManagedSkillEnabled(scope, dir, action === 'enable')
+    } catch (cause) {
+      return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
+    }
+  })
+  handle('yan:capabilities:revealSkill', async (value: unknown) => {
+    const location = typeof value === 'string' ? value.trim() : ''
+    if (!location || !isAbsolute(location) || basename(location).toLowerCase() !== 'skill.md' || !existsSync(location)) {
+      return { ok: false, error: '没有找到技能文件' }
+    }
+    shell.showItemInFolder(location)
+    return { ok: true }
   })
   handle('yan:capabilities:discover', async (value: unknown) => {
     const queryText = typeof value === 'string' ? value.slice(0, 500) : ''

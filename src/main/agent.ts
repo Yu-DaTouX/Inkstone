@@ -3,8 +3,9 @@ import { getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path'
-import { saveUserSkill, userSkillsDir } from './user-skills'
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
+import { saveUserSkill } from './user-skills'
+import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
@@ -1588,22 +1589,38 @@ export class AgentController extends EventEmitter {
   async capabilitySettingsSnapshot() {
     const commands = await this.rawCommands()
     const samePath = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase()
-    const userRoot = resolve(userSkillsDir())
     const acquiredUser = await acquiredUserSkillNames(YAN_DIR)
-    const loaded = skillsFromCommands(commands).map(({ capability, location }) => {
-      const origin = this.bundledSkills.some((path) => samePath(path, location))
-        ? 'bundled' as const
-        : resolve(location).toLowerCase().startsWith(`${userRoot.toLowerCase()}${sep}`)
-          ? 'user' as const
-          : 'other' as const
+    const managed = await listManagedSkills().catch(() => [] as ManagedSkillEntry[])
+    const managedView = (location: string) => {
+      const owner = managedSkillOf(location)
+      if (!owner) return null
+      const entry = managed.find((item) => samePath(item.location, location))
+      return {
+        origin: owner.scope === 'yan' ? 'user' as const : 'pi' as const,
+        enabled: entry?.enabled ?? true,
+        manage: { scope: owner.scope, dir: owner.dirName },
+        ...(owner.scope === 'yan' && acquiredUser.has(owner.dirName) ? { acquired: true } : {})
+      }
+    }
+    const loadedSkills = skillsFromCommands(commands).map(({ capability, location }) => {
+      const owned = this.bundledSkills.some((path) => samePath(path, location)) ? null : managedView(location)
       return {
         id: capability.id,
         title: capability.title,
         description: capability.description,
-        origin,
-        ...(origin === 'user' && acquiredUser.has(basename(dirname(location))) ? { acquired: true } : {})
+        location,
+        ...(owned ?? { origin: this.bundledSkills.some((path) => samePath(path, location)) ? 'bundled' as const : 'other' as const })
       }
     })
+    const unloadedSkills = managed
+      .filter((entry) => !loadedSkills.some((skill) => samePath(skill.location, entry.location)))
+      .flatMap((entry) => {
+        const owned = managedView(entry.location)
+        return owned
+          ? [{ id: `${owned.manage.scope}:${owned.manage.dir}`, title: entry.name, description: entry.description, location: entry.location, ...owned }]
+          : []
+      })
+    const loaded = [...loadedSkills, ...unloadedSkills]
     const sessionId = this.state?.sessionId
     const sessionSkills = sessionId
       ? (await listSessionSkills(YAN_DIR, sessionId)).map((skill) => ({

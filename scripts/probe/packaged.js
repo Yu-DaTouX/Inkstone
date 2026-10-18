@@ -128,7 +128,7 @@
 
     await openSettings('capabilities')
     ok(!!(await waitElement('[data-testid="caps-settings"]').catch(() => null)), '解包态能力设置页已打开')
-    for (const tab of ['connections', 'search', 'skills']) {
+    for (const tab of ['skills', 'mcp', 'tools']) {
       const button = await waitElement(`[data-testid="caps-tab-${tab}"]`).catch(() => null)
       button?.click()
       await sleep(200)

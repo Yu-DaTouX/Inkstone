@@ -7,7 +7,7 @@ import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel } from './general-model'
-import { SettingsGroup, SettingsRow } from '../root/controls'
+import { SettingsMore, SettingsRow } from '../root/controls'
 
 const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
   idle: 'aboutPhaseIdle',
@@ -21,11 +21,10 @@ const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
 }
 
 export interface AboutSettingsProps {
-  onOpenModels?: () => void
   onShowOnboarding?: () => void
 }
 
-export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsProps = {}): ReactElement {
+export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): ReactElement {
   const { lang } = useI18n()
   const text = generalText(lang)
   const settingsCopy = settingsText(lang)
@@ -101,66 +100,24 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
         </p>
       ) : null}
 
-      <SettingsGroup label={text.aboutVersion}>
+      <div className="settings-rows">
         <SettingsRow
-          label={`${text.aboutVersion} ${BUILD_INFO.version || '—'}`}
+          settingId="about-version"
+          label={text.aboutVersion}
           description={`${text.aboutBuild} ${formatBuildTime(BUILD_INFO.buildTime) || '—'}${
             BUILD_INFO.buildHash ? ` · ${BUILD_INFO.buildHash}` : ''
           }`}
         >
-          {null}
+          <span className="settings-value" data-testid="v3-about-version">
+            {BUILD_INFO.version || '—'}
+          </span>
         </SettingsRow>
 
         <SettingsRow
-          label={text.aboutOpenSource}
-          description={<span className="settings-path">{BUILD_INFO.repositoryUrl || '—'}</span>}
+          settingId="about-update-check"
+          label={text.aboutUpdates}
+          description={<span data-testid="v3-about-update-state">{phase}</span>}
         >
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={!BUILD_INFO.repositoryUrl}
-            data-testid="v3-about-repo"
-            onPress={() => {
-              if (BUILD_INFO.repositoryUrl) void openBrowser(BUILD_INFO.repositoryUrl)
-            }}
-          >
-            {text.aboutOpen}
-          </Button>
-        </SettingsRow>
-
-        <SettingsRow
-          label={text.aboutPi}
-          description={
-            <>
-              {text.aboutPiDesc} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
-              {piInfo?.error ? ` · ${piInfo.error}` : ''}
-            </>
-          }
-        >
-          <Button size="sm" variant="secondary" isDisabled={detecting} data-testid="v3-about-pi-redetect" onPress={() => void redetect()}>
-            {detecting ? text.aboutRedetecting : text.aboutRedetect}
-          </Button>
-        </SettingsRow>
-      </SettingsGroup>
-
-      <SettingsGroup label={text.aboutUpdates}>
-        <SettingsRow label={text.aboutUpdates} description={<span data-testid="v3-about-update-state">{phase}</span>}>
-          <Switch
-            aria-label={text.aboutUpdateAuto}
-            isSelected={status?.automatic ?? true}
-            isDisabled={!status}
-            onChange={(on) => {
-              void window.yan.appUpdate
-                .automatic(on)
-                .then((value) => {
-                  if (alive.current) setStatus(value)
-                })
-                .catch((cause) => {
-                  if (alive.current) setError(cause instanceof Error ? cause.message : String(cause))
-                })
-            }}
-            data-testid="v3-about-update-auto"
-          />
           <Button
             size="sm"
             variant="secondary"
@@ -192,27 +149,75 @@ export function AboutSettings({ onOpenModels, onShowOnboarding }: AboutSettingsP
             </Button>
           ) : null}
         </SettingsRow>
-      </SettingsGroup>
 
-      <SettingsGroup label={text.aboutCredentials}>
-        <SettingsRow label={text.aboutCredentials} description={text.aboutCredentialsDesc}>
-          {onOpenModels ? (
-            <Button size="sm" variant="secondary" data-testid="v3-about-models" onPress={onOpenModels}>
-              {text.aboutCredentialsAction}
-            </Button>
-          ) : (
-            <span className="settings-value">—</span>
-          )}
+        <SettingsRow settingId="about-update-auto" label={text.aboutUpdateAuto} description={text.aboutUpdateAutoDesc}>
+          <Switch
+            aria-label={text.aboutUpdateAuto}
+            isSelected={status?.automatic ?? true}
+            isDisabled={!status}
+            onChange={(on) => {
+              void window.yan.appUpdate
+                .automatic(on)
+                .then((value) => {
+                  if (alive.current) setStatus(value)
+                })
+                .catch((cause) => {
+                  if (alive.current) setError(cause instanceof Error ? cause.message : String(cause))
+                })
+            }}
+            data-testid="v3-about-update-auto"
+          />
         </SettingsRow>
+      </div>
 
-        {onShowOnboarding ? (
-          <SettingsRow label={settingsCopy.onboardingTitle} description={settingsCopy.onboardingDesc}>
-            <Button size="sm" variant="secondary" data-testid="v3-about-onboarding" onPress={onShowOnboarding}>
-              {settingsCopy.onboardingAction}
+      <SettingsMore>
+        <div className="settings-rows">
+          <SettingsRow
+            settingId="about-repository"
+            label={text.aboutOpenSource}
+            description={<span className="settings-path">{BUILD_INFO.repositoryUrl || '—'}</span>}
+          >
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={!BUILD_INFO.repositoryUrl}
+              data-testid="v3-about-repo"
+              onPress={() => {
+                if (BUILD_INFO.repositoryUrl) void openBrowser(BUILD_INFO.repositoryUrl)
+              }}
+            >
+              {text.aboutOpen}
             </Button>
           </SettingsRow>
-        ) : null}
-      </SettingsGroup>
+
+          <SettingsRow
+            settingId="about-pi-redetect"
+            label={text.aboutPi}
+            description={
+              <>
+                {text.aboutPiDesc} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
+                {piInfo?.error ? ` · ${piInfo.error}` : ''}
+              </>
+            }
+          >
+            <Button size="sm" variant="secondary" isDisabled={detecting} data-testid="v3-about-pi-redetect" onPress={() => void redetect()}>
+              {detecting ? text.aboutRedetecting : text.aboutRedetect}
+            </Button>
+          </SettingsRow>
+
+          {onShowOnboarding ? (
+            <SettingsRow
+              settingId="about-onboarding"
+              label={settingsCopy.onboardingTitle}
+              description={settingsCopy.onboardingDesc}
+            >
+              <Button size="sm" variant="secondary" data-testid="v3-about-onboarding" onPress={onShowOnboarding}>
+                {settingsCopy.onboardingAction}
+              </Button>
+            </SettingsRow>
+          ) : null}
+        </div>
+      </SettingsMore>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmInstall} onOpenChange={setConfirmInstall}>
         <Modal className="settings-confirm-modal">

@@ -8,26 +8,56 @@ import { SkillsSection } from './SkillsSection'
 import { ExtensionsSection } from './ExtensionsSection'
 import { MarketSection } from './MarketSection'
 import { PromptsSection } from './PromptsSection'
-import { VoiceSection } from './VoiceSection'
+import { VoiceSetupPanel, VoiceStatusPanel, useVoiceSetup } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
-import { SearchSection } from './SearchSection'
+import { SearchApiSection, SearchBackendSection } from './SearchSection'
 import { GitRuntimeSection } from './GitRuntimeSection'
+import { SettingsMore } from '../root/controls'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
+import { getSettingReveal, requestSettingReveal, subscribeSettingReveal } from '../search/search-model'
 import './capabilities.css'
 
-export type CapabilitiesTabId = 'connections' | 'search' | 'skills' | 'extensions' | 'market' | 'prompts' | 'voice'
+export type CapabilitiesTabId = 'skills' | 'mcp' | 'tools' | 'market'
 
-const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'voice', market: 'market', git: 'connections' }
+const TAB_IDS: readonly CapabilitiesTabId[] = ['skills', 'mcp', 'tools', 'market']
+const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'tools', market: 'market', git: 'tools' }
+const LEGACY_SETTING: Record<string, string> = { voice: 'caps-tools-voice-setup', git: 'caps-tools-git' }
+
+let handledRevealRevision = 0
+let handledRequestRevision: number | null = null
+
+function isCapabilitiesTab(value: string | undefined): value is CapabilitiesTabId {
+  return !!value && (TAB_IDS as readonly string[]).includes(value)
+}
 
 export function CapabilitiesSettings(): ReactElement {
   const t = useT()
   const text = useCapsText()
   const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest, getSettingsRequest)
-  const [tab, setTab] = useState<CapabilitiesTabId>(() => LEGACY_TAB[request?.view ?? ''] ?? 'connections')
+  const reveal = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
+  const [tab, setTab] = useState<CapabilitiesTabId>(() => {
+    if (reveal && reveal.revision > handledRevealRevision && reveal.section === 'capabilities' && isCapabilitiesTab(reveal.tab)) {
+      return reveal.tab
+    }
+    if (request && request.revision !== handledRequestRevision) return LEGACY_TAB[request.view] ?? 'skills'
+    return 'skills'
+  })
+
   useEffect(() => {
-    const target = LEGACY_TAB[request?.view ?? '']
-    if (target) setTab(target)
-  }, [request?.revision, request?.view])
+    if (!reveal || reveal.revision <= handledRevealRevision) return
+    handledRevealRevision = reveal.revision
+    if (reveal.section === 'capabilities' && isCapabilitiesTab(reveal.tab)) setTab(reveal.tab)
+  }, [reveal])
+
+  useEffect(() => {
+    if (!request || request.revision === handledRequestRevision) return
+    handledRequestRevision = request.revision
+    const target = LEGACY_TAB[request.view]
+    if (!target) return
+    setTab(target)
+    const settingId = LEGACY_SETTING[request.view]
+    if (settingId) requestSettingReveal({ section: 'capabilities', tab: target, id: settingId })
+  }, [request])
 
   return (
     <ConfirmProvider>
@@ -35,59 +65,63 @@ export function CapabilitiesSettings(): ReactElement {
         <Tabs
           selectedKey={tab}
           onSelectionChange={(key) => {
-            if (typeof key === 'string') setTab(key as CapabilitiesTabId)
+            if (typeof key === 'string' && isCapabilitiesTab(key)) setTab(key)
           }}
           className="caps-tabs"
         >
           <TabList className="caps-tablist" aria-label={t('set.capabilities')}>
-            <Tab id="connections" data-testid="caps-tab-connections">
-              {t('set.connections')}
-            </Tab>
-            <Tab id="search" data-testid="caps-tab-search">
-              {t('set.searchTools')}
-            </Tab>
             <Tab id="skills" data-testid="caps-tab-skills">
-              {t('cap.skillsTitle')}
+              {text('tabSkills')}
             </Tab>
-            <Tab id="extensions" data-testid="caps-tab-extensions">
-              {text('extensions')}
+            <Tab id="mcp" data-testid="caps-tab-mcp">
+              {text('tabMcp')}
+            </Tab>
+            <Tab id="tools" data-testid="caps-tab-tools">
+              {text('tabTools')}
             </Tab>
             <Tab id="market" data-testid="caps-tab-market">
               {t('market.title')}
             </Tab>
-            <Tab id="prompts" data-testid="caps-tab-prompts">
-              {text('prompts')}
-            </Tab>
-            <Tab id="voice" data-testid="caps-tab-voice">
-              {t('voice.title')}
-            </Tab>
           </TabList>
 
-          <TabPanel id="connections" className="caps-tabpanel">
-            <McpSection />
-            <ComputerUseSection />
-            <GitRuntimeSection />
-          </TabPanel>
-          <TabPanel id="search" className="caps-tabpanel">
-            <SearchSection />
-          </TabPanel>
           <TabPanel id="skills" className="caps-tabpanel">
             <SkillsSection />
-          </TabPanel>
-          <TabPanel id="extensions" className="caps-tabpanel">
             <ExtensionsSection />
+            <SettingsMore>
+              <PromptsSection />
+            </SettingsMore>
+          </TabPanel>
+          <TabPanel id="mcp" className="caps-tabpanel">
+            <McpSection />
+          </TabPanel>
+          <TabPanel id="tools" className="caps-tabpanel">
+            <ToolsTab />
           </TabPanel>
           <TabPanel id="market" className="caps-tabpanel">
             <MarketSection />
           </TabPanel>
-          <TabPanel id="prompts" className="caps-tabpanel">
-            <PromptsSection />
-          </TabPanel>
-          <TabPanel id="voice" className="caps-tabpanel">
-            <VoiceSection />
-          </TabPanel>
         </Tabs>
       </div>
     </ConfirmProvider>
+  )
+}
+
+function ToolsTab(): ReactElement {
+  const voice = useVoiceSetup()
+  return (
+    <>
+      <ComputerUseSection />
+      <SearchBackendSection />
+      <VoiceStatusPanel voice={voice} />
+      <SettingsMore>
+        <SearchApiSection />
+        <div data-setting-id="caps-tools-git">
+          <GitRuntimeSection />
+        </div>
+        <div data-setting-id="caps-tools-voice-setup">
+          <VoiceSetupPanel voice={voice} />
+        </div>
+      </SettingsMore>
+    </>
   )
 }

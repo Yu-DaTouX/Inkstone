@@ -40,7 +40,7 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
 
   return (
     <div className="settings-rows" data-testid="v3-usage-currency">
-      <SettingsRow label={text.usageCurrency} description={text.usageCurrencyDesc}>
+      <SettingsRow label={text.usageCurrency} description={text.usageCurrencyDesc} settingId="usage-currency">
         <Select
           aria-label={text.usageCurrency}
           selectedKey={currency}
@@ -55,6 +55,7 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
       </SettingsRow>
       {rateCode ? (
         <SettingsRow
+          settingId="usage-rate"
           label={text.usageRate.replace('{code}', rateCode)}
           description={text.usageRateDesc.replace('{default}', String(DEFAULT_USD_RATES[rateCode])).replace('{sample}', formatMoney(1, current, lang))}
         >

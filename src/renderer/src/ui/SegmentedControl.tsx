@@ -42,7 +42,9 @@ export function SegmentedControl<T extends string>({
       {options.map((option) => (
         <ToggleButton key={option.value} id={option.value} className="ui-seg__item" data-testid={option.testId}>
           <SelectionIndicator className="ui-seg__thumb" />
-          <span className="ui-seg__label">{option.label}</span>
+          <span className="ui-seg__label" data-text={option.label}>
+            {option.label}
+          </span>
         </ToggleButton>
       ))}
     </ToggleButtonGroup>

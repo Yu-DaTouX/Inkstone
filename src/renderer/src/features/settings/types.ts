@@ -1,19 +1,17 @@
 import { GENERAL_LEGACY_MAP } from './general/general-model'
 
 export type SettingsSectionId =
+  | 'models'
   | 'appearance'
   | 'session'
   | 'notifications'
-  | 'context'
-  | 'models'
-  | 'capabilities'
   | 'security'
+  | 'capabilities'
   | 'devices'
   | 'data'
   | 'usage'
   | 'shortcuts'
   | 'about'
-  | 'sync'
 
 export interface SettingsSectionDef {
   readonly id: SettingsSectionId
@@ -21,7 +19,6 @@ export interface SettingsSectionDef {
     | 'moon'
     | 'clock'
     | 'bell'
-    | 'gauge'
     | 'key'
     | 'sparkles'
     | 'shield'
@@ -30,42 +27,37 @@ export interface SettingsSectionDef {
     | 'chart'
     | 'keyboard'
     | 'info'
-    | 'refresh'
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
+  { id: 'models', icon: 'key' },
   { id: 'appearance', icon: 'moon' },
   { id: 'session', icon: 'clock' },
   { id: 'notifications', icon: 'bell' },
-  { id: 'context', icon: 'gauge' },
-  { id: 'models', icon: 'key' },
-  { id: 'capabilities', icon: 'sparkles' },
   { id: 'security', icon: 'shield' },
+  { id: 'capabilities', icon: 'sparkles' },
   { id: 'devices', icon: 'smartphone' },
   { id: 'data', icon: 'hard-drive' },
   { id: 'usage', icon: 'chart' },
   { id: 'shortcuts', icon: 'keyboard' },
-  { id: 'about', icon: 'info' },
-  { id: 'sync', icon: 'refresh' }
+  { id: 'about', icon: 'info' }
 ]
 
-export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'appearance'
+export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'models'
 
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
   return (
+    value === 'models' ||
     value === 'appearance' ||
     value === 'session' ||
     value === 'notifications' ||
-    value === 'context' ||
-    value === 'models' ||
-    value === 'capabilities' ||
     value === 'security' ||
+    value === 'capabilities' ||
     value === 'devices' ||
     value === 'data' ||
     value === 'usage' ||
     value === 'shortcuts' ||
-    value === 'about' ||
-    value === 'sync'
+    value === 'about'
   )
 }
 
@@ -73,7 +65,8 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   appearance: 'appearance',
   input: 'appearance',
   sound: 'appearance',
-  context: 'context',
+  context: 'session',
+  sync: 'data',
   auth: 'models',
   models: 'models',
   capabilities: 'capabilities',

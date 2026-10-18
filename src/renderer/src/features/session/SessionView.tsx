@@ -376,9 +376,8 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
         <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />
       </div>
 
-      <StalledCard run={currentStalledRun(runs, view, viewActive)} onStop={() => void abort()} />
-
       <div className="v3-asks">
+        <StalledCard run={currentStalledRun(runs, view, viewActive)} onStop={() => void abort()} />
         {viewActive || (approvals[0] && approvalMatchesView(approvals[0], subagents, view)) ? <ApprovalCard /> : null}
         {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
       </div>

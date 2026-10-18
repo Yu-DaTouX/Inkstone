@@ -3,21 +3,12 @@
   .ms-page {
     display: flex;
     flex-direction: column;
+    gap: var(--s-16);
     min-width: 0;
   }
 
-  .ms-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-12);
-    margin-bottom: var(--s-16);
+  .ms-page > .settings-more {
     max-width: var(--size-col);
-    flex-wrap: wrap;
-  }
-
-  .ms-tabs {
-    flex: none;
   }
 
   .ms-msg {
@@ -44,8 +35,7 @@
     color: var(--fg2);
   }
 
-  .ms-services,
-  .ms-catalog {
+  .ms-services {
     display: flex;
     flex-direction: column;
     gap: var(--s-16);
@@ -73,23 +63,15 @@
     color: var(--fg);
   }
 
-  .ms-safety,
-  .ms-count {
+  .ms-safety {
     font-size: var(--t-meta);
+    line-height: var(--t-meta-lh);
     color: var(--fg3);
+    overflow-wrap: anywhere;
   }
 
-  .ms-count {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .ms-catalog .ms-toolbar .ms-search {
-    flex: 1;
-    min-width: 200px;
-  }
-
-  .ms-catalog .ms-toolbar .ms-filter {
-    flex: none;
+  .ms-safety code {
+    font-family: var(--font-mono);
   }
 
   .ms-group {
@@ -112,18 +94,6 @@
     color: var(--fg3);
   }
 
-  .ms-fileinfo {
-    margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    color: var(--fg3);
-    overflow-wrap: anywhere;
-  }
-
-  .ms-fileinfo code {
-    font-family: var(--font-mono);
-  }
-
   .ms-service {
     padding: var(--s-12) var(--s-16);
     display: flex;
@@ -144,6 +114,14 @@
   .ms-rows-foot {
     display: flex;
     padding: var(--s-6) var(--s-12);
+  }
+
+  .ms-rows-foot__chevron {
+    transition: transform var(--dur-expand) var(--ease);
+  }
+
+  .ms-rows-foot [aria-expanded='true'] .ms-rows-foot__chevron {
+    transform: rotate(180deg);
   }
 
   .ms-service-main {
@@ -275,147 +253,8 @@
     margin: 0;
   }
 
-  .ms-thinking {
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-  }
-
-  .ms-thinking-head {
-    display: flex;
-    align-items: baseline;
-    gap: var(--s-8);
-    flex-wrap: wrap;
-  }
-
-  .ms-thinking-title {
-    font-size: var(--t-body);
-    color: var(--fg);
-  }
-
-  .ms-thinking-model {
-    font-size: var(--t-meta);
-    color: var(--fg3);
-  }
-
-  .ms-levels {
-    display: flex;
-    gap: var(--s-6);
-    flex-wrap: wrap;
-  }
-
-  .ms-level {
-    padding: 2px var(--s-8);
-    border: 1px solid var(--line2);
-    border-radius: var(--r-sm);
-    font-size: var(--t-meta);
-    color: var(--fg2);
-  }
-
-  .ms-level[data-active='1'] {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--sel);
-  }
-
-  .ms-thinking-note,
-  .ms-thinking-source {
-    margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    color: var(--fg3);
-  }
-
-  .ms-list {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    overflow: hidden;
-  }
-
-  .ms-model {
-    display: flex;
-    align-items: center;
-    gap: var(--s-12);
-    padding: var(--s-12) var(--s-16);
-    transition: background-color var(--dur-hover) var(--ease);
-  }
-
-  .ms-model + .ms-model {
-    border-top: 1px solid var(--line);
-  }
-
-  .ms-model[data-current='1'] {
-    background: var(--sel);
-    box-shadow: inset 2px 0 0 var(--accent);
-  }
-
-  .ms-model[data-available='0'] {
-    opacity: 0.7;
-  }
-
-  .ms-model-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-2);
-  }
-
-  .ms-model-name {
-    font-size: var(--t-body);
-    color: var(--fg);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ms-model-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    flex-wrap: wrap;
-    font-size: var(--t-meta);
-    color: var(--fg3);
-  }
-
-  .ms-reason--known {
-    color: var(--run-t);
-  }
-
-  .ms-reason--unsupported {
-    color: var(--fg3);
-  }
-
-  .ms-reason--unknown {
-    color: var(--fg3);
-    font-style: italic;
-  }
-
   .ms-warn {
     color: var(--ask-t);
-  }
-
-  .ms-model-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    flex: none;
-  }
-
-  .ms-empty {
-    margin: 0;
-    padding: var(--s-20) 0;
-    text-align: center;
-    font-size: var(--t-meta);
-    color: var(--fg3);
   }
 
   .ms-confirm-body {
@@ -546,23 +385,10 @@
     gap: 0;
   }
 
-  @media (hover: hover) {
-    .ms-rows > .ms-service:hover,
-    .ms-rows .settings-reveal__inner > .ms-service:hover,
-    .ms-rows > .ms-custom-row:hover,
-    .ms-model:hover {
-      background: color-mix(in srgb, var(--hover) 45%, transparent);
-    }
-
-    .ms-model[data-current='1']:hover {
-      background: var(--sel);
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .ms-service,
-    .ms-model,
-    .ms-custom-row {
+    .ms-custom-row,
+    .ms-rows-foot__chevron {
       transition: none;
     }
   }

@@ -85,7 +85,7 @@ export function ComputerUseSection(): ReactElement | null {
   }
 
   return (
-    <div data-testid="cap-computer-use">
+    <div data-testid="cap-computer-use" data-setting-id="caps-tools-computer-use">
       <Group
         title={t('cu.title')}
         desc={t('cu.desc')}
@@ -139,13 +139,13 @@ export function ComputerUseSection(): ReactElement | null {
         ) : null}
         <Meta>{t('cu.scope')}</Meta>
         <Actions>
-          <Button size="sm" variant="ghost" isDisabled={busy !== null} onPress={() => void refresh()}>
+          <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void refresh()}>
             {t('set.extRecheck')}
           </Button>
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(RELEASES)}>
+          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(RELEASES)}>
             {t('set.releasePage')}
           </Button>
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(REPO)}>
+          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(REPO)}>
             {t('cu.repo')}
           </Button>
         </Actions>

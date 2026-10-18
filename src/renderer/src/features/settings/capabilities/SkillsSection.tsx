@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import type { CapabilitySettingsSnapshot, CapabilitySkillSettingView } from '../../../../../shared/ipc'
-import { Button } from '../../../ui'
-import { useCapsText } from './text'
+import type { CapabilitySettingsSnapshot, CapabilitySkillSettingView, ManagedSkillAction } from '../../../../../shared/ipc'
+import { Badge, Button, Switch } from '../../../ui'
+import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { runConfirmedOperation } from './operation-state'
 import { Actions, Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, Panel, StatusBadge, Warn } from './parts'
@@ -42,7 +42,7 @@ export function SkillsSection(): ReactElement {
   }, [refresh])
 
   const act = async (action: 'promote' | 'remove', skill: CapabilitySkillSettingView): Promise<void> => {
-    setBusySkill(skill.title)
+    setBusySkill(skill.id)
     setNotice(null)
     try {
       if (action === 'promote') {
@@ -82,6 +82,41 @@ export function SkillsSection(): ReactElement {
     }
   }
 
+  const manage = async (action: ManagedSkillAction, skill: CapabilitySkillSettingView): Promise<void> => {
+    if (!skill.manage) return
+    if (action === 'trash') {
+      const accepted = await confirm({
+        title: text('skillTrash'),
+        body: text('skillTrashConfirm'),
+        detail: skill.title,
+        confirmLabel: text('skillTrash'),
+        tone: 'danger'
+      })
+      if (!accepted) return
+    }
+    setBusySkill(skill.id)
+    setNotice(null)
+    try {
+      const result = await window.yan.capabilities.manageSkill(action, skill.manage.scope, skill.manage.dir)
+      if (!result.ok && mounted.current) setNotice(result.error ?? t('cap.skillActionFailed'))
+      await refresh()
+    } catch (cause) {
+      if (mounted.current) setNotice(cause instanceof Error ? cause.message : t('cap.skillActionFailed'))
+    } finally {
+      if (mounted.current) setBusySkill(null)
+    }
+  }
+
+  const reveal = async (skill: CapabilitySkillSettingView): Promise<void> => {
+    if (!skill.location) return
+    try {
+      const result = await window.yan.capabilities.revealSkill(skill.location)
+      if (!result.ok && mounted.current) setNotice(result.error ?? t('cap.skillActionFailed'))
+    } catch (cause) {
+      if (mounted.current) setNotice(cause instanceof Error ? cause.message : t('cap.skillActionFailed'))
+    }
+  }
+
   const groups = groupSkills(snapshot?.skills ?? [])
 
   return (
@@ -97,8 +132,9 @@ export function SkillsSection(): ReactElement {
       <Group
         title={t('cap.skillsTitle')}
         desc={t('cap.skillsDesc')}
+        settingId="caps-skills"
         actions={
-          <Button size="sm" variant="ghost" isPending={loading} onPress={() => void refresh()} data-testid="caps-skills-reload">
+          <Button size="sm" variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-skills-reload">
             {text('sectionReload')}
           </Button>
         }
@@ -122,15 +158,16 @@ export function SkillsSection(): ReactElement {
                         <StatusBadge tone="accent">{t('cap.skillOrigin.session')}</StatusBadge>
                       ) : null}
                       {skill.acquired && group.origin === 'user' ? (
-                        <span className="caps-tag">{t('cap.skillAcquired')}</span>
+                        <Badge>{t('cap.skillAcquired')}</Badge>
                       ) : null}
+                      {skill.enabled === false && !skill.manage ? <StatusBadge tone="neutral">{text('skillDisabled')}</StatusBadge> : null}
                       <span className="caps-spacer" />
                       {group.origin === 'session' ? (
                         <Actions>
                           <Button
                             size="sm"
                             variant="secondary"
-                            isDisabled={busySkill === skill.title}
+                            isDisabled={busySkill === skill.id}
                             onPress={() => void act('promote', skill)}
                             data-testid="caps-skill-promote"
                           >
@@ -139,7 +176,7 @@ export function SkillsSection(): ReactElement {
                           <Button
                             size="sm"
                             variant="danger"
-                            isDisabled={busySkill === skill.title}
+                            isDisabled={busySkill === skill.id}
                             onPress={() => void act('remove', skill)}
                             data-testid="caps-skill-remove"
                           >
@@ -147,7 +184,33 @@ export function SkillsSection(): ReactElement {
                           </Button>
                         </Actions>
                       ) : (
-                        <StatusBadge tone="neutral">{t('cap.ready')}</StatusBadge>
+                        <Actions>
+                          {skill.location ? (
+                            <Button size="sm" variant="secondary" onPress={() => void reveal(skill)} data-testid="caps-skill-reveal">
+                              {text('skillReveal')}
+                            </Button>
+                          ) : null}
+                          {skill.manage ? (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              isDisabled={busySkill === skill.id}
+                              onPress={() => void manage('trash', skill)}
+                              data-testid="caps-skill-trash"
+                            >
+                              {text('skillTrash')}
+                            </Button>
+                          ) : null}
+                          {skill.manage ? (
+                            <Switch
+                              aria-label={fillCapsText(text('skillToggleLabel'), { name: skill.title })}
+                              isSelected={skill.enabled !== false}
+                              isDisabled={busySkill === skill.id}
+                              onChange={(next) => void manage(next ? 'enable' : 'disable', skill)}
+                              data-testid="caps-skill-toggle"
+                            />
+                          ) : null}
+                        </Actions>
                       )}
                     </ItemHead>
                     {skill.description ? <Meta>{skill.description}</Meta> : null}

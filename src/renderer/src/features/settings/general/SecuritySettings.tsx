@@ -5,7 +5,7 @@ import { useStore } from '../../../state/store'
 import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm } from './general-model'
-import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
+import { SettingsMore, SettingsRow, Segmented } from '../root/controls'
 import { PiProjectTrustGroup } from './PiNativeSettings'
 
 export interface AllowRootsListProps {
@@ -30,7 +30,7 @@ export function AllowRootsList({ roots, emptyText, removeText, onRemove }: Allow
           <span className="settings-root__path" title={path}>
             {path}
           </span>
-          <Button size="sm" variant="ghost" onPress={() => onRemove(path)}>
+          <Button size="sm" variant="danger" onPress={() => onRemove(path)}>
             {removeText}
           </Button>
         </li>
@@ -56,9 +56,10 @@ export function SecuritySettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-security-settings">
-      <SettingsGroup label={text.securityMode}>
+      <div className="settings-rows">
         <SettingsRow
           block
+          settingId="security-permission-mode"
           label={text.securityMode}
           description={mode === 'all' ? text.securityModeAllDesc : text.securityModeDangerDesc}
         >
@@ -78,15 +79,8 @@ export function SecuritySettings(): ReactElement {
           />
         </SettingsRow>
 
-        <SettingsRow label={text.securityDangerConfirm} description={text.securityDangerConfirmDesc}>
-          <span className="settings-value" data-testid="v3-security-danger-note">
-            {mode === 'danger' ? text.enabled : '—'}
-          </span>
-        </SettingsRow>
-      </SettingsGroup>
-
-      <SettingsGroup label={text.securityOutside}>
         <SettingsRow
+          settingId="security-outside-writes"
           label={text.securityOutside}
           description={mode === 'all' ? text.securityOutsideDisabled : text.securityOutsideDesc}
         >
@@ -98,18 +92,26 @@ export function SecuritySettings(): ReactElement {
             data-testid="v3-security-outside"
           />
         </SettingsRow>
+      </div>
 
-        <SettingsRow block label={text.securityAllowRoots} description={text.securityAllowRootsDesc}>
-          <AllowRootsList
-            roots={roots}
-            emptyText={text.securityAllowRootsEmpty}
-            removeText={text.securityAllowRootsRemove}
-            onRemove={(path) => void removeGuardAllowRoot(path)}
-          />
-        </SettingsRow>
-      </SettingsGroup>
-
-      <PiProjectTrustGroup />
+      <SettingsMore>
+        <div className="settings-rows">
+          <SettingsRow
+            block
+            settingId="security-allow-roots"
+            label={text.securityAllowRoots}
+            description={text.securityAllowRootsDesc}
+          >
+            <AllowRootsList
+              roots={roots}
+              emptyText={text.securityAllowRootsEmpty}
+              removeText={text.securityAllowRootsRemove}
+              onRemove={(path) => void removeGuardAllowRoot(path)}
+            />
+          </SettingsRow>
+        </div>
+        <PiProjectTrustGroup />
+      </SettingsMore>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
         <Modal className="settings-confirm-modal">

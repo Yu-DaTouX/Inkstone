@@ -691,7 +691,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       <Tile
         id="context"
         title={text.tiles.context}
-        summary={contextSummary}
+        summary={contextFolded || !contextData || !usage.known ? contextSummary : undefined}
         folded={contextFolded}
         onToggle={toggle}
         onOpen={() => onOpenView('context')}

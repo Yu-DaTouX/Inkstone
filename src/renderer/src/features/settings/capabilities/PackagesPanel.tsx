@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { useT } from '../../../i18n'
-import type { MessageKey } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type {
-  BuiltinCapabilityView,
   PackageActionResultView,
   PackageEntryView,
   PackageListingView
@@ -12,36 +10,23 @@ import { Badge, Button, Checkbox, Skeleton, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { createOperationTracker, runGuardedOperation, type OperationTracker } from './operation-state'
-import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Panel, Warn } from './parts'
+import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Warn } from './parts'
 
-const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
-  'task-plan': { name: 'pkg.builtin.task-plan', desc: 'pkg.builtin.task-planDesc' },
-  browser: { name: 'pkg.builtin.browser', desc: 'pkg.builtin.browserDesc' },
-  question: { name: 'pkg.builtin.question', desc: 'pkg.builtin.questionDesc' },
-  'response-detail': { name: 'pkg.builtin.response-detail', desc: 'pkg.builtin.response-detailDesc' },
-  language: { name: 'pkg.builtin.language', desc: 'pkg.builtin.languageDesc' },
-  preamble: { name: 'pkg.builtin.preamble', desc: 'pkg.builtin.preambleDesc' },
-  'capability-guide': { name: 'pkg.builtin.capability-guide', desc: 'pkg.builtin.capability-guideDesc' },
-  'codemode-policy': { name: 'pkg.builtin.codemode-policy', desc: 'pkg.builtin.codemode-policyDesc' },
-  commandcode: { name: 'pkg.builtin.commandcode', desc: 'pkg.builtin.commandcodeDesc' },
-  context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
-  'context-trim': { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
-  'image-labels': { name: 'pkg.builtin.image-labels', desc: 'pkg.builtin.image-labelsDesc' },
-  'danger-guard': { name: 'pkg.builtin.danger-guard', desc: 'pkg.builtin.danger-guardDesc' },
-  'shell-fallback': { name: 'pkg.builtin.shell-fallback', desc: 'pkg.builtin.shell-fallbackDesc' }
-}
+type PackageActionKind = 'install' | 'remove' | 'update'
+
+const RESULT_LABEL = { install: 'pkg.installBtn', update: 'pkg.update', remove: 'pkg.remove' } as const
 
 export interface PackagesPanelProps {
   initialSource?: string
   selectionKey?: number
-  showBuiltin?: boolean
+  mode: 'install' | 'installed'
   note?: ReactNode
 }
 
 export function PackagesPanel({
   initialSource = '',
   selectionKey = 0,
-  showBuiltin = true,
+  mode,
   note
 }: PackagesPanelProps): ReactElement {
   const t = useT()
@@ -49,10 +34,9 @@ export function PackagesPanel({
   const confirm = useConfirm()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const [listing, setListing] = useState<PackageListingView | null>(null)
-  const [builtin, setBuiltin] = useState<BuiltinCapabilityView[]>([])
-  const [builtinLoaded, setBuiltinLoaded] = useState(false)
   const [busy, setBusy] = useState('')
   const [result, setResult] = useState<PackageActionResultView | null>(null)
+  const [resultKind, setResultKind] = useState<PackageActionKind>('install')
   const [staleNotice, setStaleNotice] = useState<string | null>(null)
   const [source, setSource] = useState(initialSource)
   const [local, setLocal] = useState(false)
@@ -94,19 +78,6 @@ export function PackagesPanel({
     }
   }, [load, tracker])
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const next = await window.yan.builtinCapabilities.list()
-        if (mounted.current) setBuiltin(next)
-      } catch {
-        if (mounted.current) setBuiltin([])
-      } finally {
-        if (mounted.current) setBuiltinLoaded(true)
-      }
-    })()
-  }, [])
-
   const run = async (kind: 'install' | 'remove' | 'update', src: string, targetLocal: boolean): Promise<void> => {
     if (kind === 'install') {
       const accepted = await confirm({
@@ -143,6 +114,7 @@ export function PackagesPanel({
         }
       },
       onResult: async (action) => {
+        setResultKind(kind)
         setResult(action)
         if (action.listing) setListing(action.listing)
         else await load()
@@ -152,10 +124,30 @@ export function PackagesPanel({
     })
   }
 
-  return (
-    <Panel label={t('pkg.install')}>
-      {note ? <Note tone="caution">{note}</Note> : null}
-      <Group title={t('pkg.install')} desc={t('pkg.installDesc')}>
+  const resultBlock = (
+    <>
+      {staleNotice ? <Warn>{staleNotice}</Warn> : null}
+      {result ? (
+        <div className="caps-result" data-testid="caps-pkg-result">
+          <Badge tone={result.ok ? 'run' : 'fail'}>{result.ok ? t(RESULT_LABEL[resultKind]) : t('pkg.failed')}</Badge>
+          <Meta>{result.ok ? (result.output ?? 'ok') : (result.error ?? t('pkg.failed'))}</Meta>
+          {result.detail ? (
+            <>
+              <Button size="sm" variant="ghost" onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
+                {showRaw ? t('pkg.hideRaw') : t('pkg.showRaw')}
+              </Button>
+              {showRaw ? <pre className="caps-raw">{result.detail}</pre> : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  )
+
+  if (mode === 'install') {
+    return (
+      <Group title={t('pkg.install')} desc={t('pkg.installDesc')} settingId="caps-market-install">
+        {note ? <Note tone="caution">{note}</Note> : null}
         <div className="caps-field">
           <TextField
             aria-label={t('pkg.install')}
@@ -181,70 +173,40 @@ export function PackagesPanel({
         <Meta title={t('pkg.location', { dir: listing?.agentDir ?? '—' })}>
           {t('pkg.location', { dir: listing?.agentDir ?? '—' })}
         </Meta>
-        {staleNotice ? <Warn>{staleNotice}</Warn> : null}
-        {result ? (
-          <div className={result.ok ? 'caps-result' : 'caps-result'} data-testid="caps-pkg-result">
-            <Badge tone={result.ok ? 'run' : 'fail'}>{result.ok ? t('pkg.installBtn') : t('pkg.failed')}</Badge>
-            <Meta>{result.ok ? (result.output ?? 'ok') : (result.error ?? t('pkg.failed'))}</Meta>
-            {result.detail ? (
-              <>
-                <Button size="sm" variant="ghost" onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
-                  {showRaw ? t('pkg.hideRaw') : t('pkg.showRaw')}
-                </Button>
-                {showRaw ? <pre className="caps-raw">{result.detail}</pre> : null}
-              </>
-            ) : null}
-          </div>
-        ) : null}
+        {resultBlock}
       </Group>
+    )
+  }
 
-      <Group title={t('pkg.installed')}>
-        {!listing ? (
-          <div className="caps-list" aria-hidden="true">
-            <div className="caps-item caps-item--skeleton">
-              <Skeleton className="caps-skel caps-skel--title" />
-            </div>
+  return (
+    <Group title={t('pkg.installed')} desc={t('pkg.location', { dir: listing?.agentDir ?? '—' })} settingId="caps-extensions">
+      {note ? <Note tone="caution">{note}</Note> : null}
+      {!listing ? (
+        <div className="caps-list" aria-hidden="true">
+          <div className="caps-item caps-item--skeleton">
+            <Skeleton className="caps-skel caps-skel--title" />
           </div>
-        ) : listing.entries.length === 0 ? (
-          <Empty>{listing.ok === false ? (listing.error ?? t('pkg.listFailed')) : t('pkg.empty')}</Empty>
-        ) : (
-          <div className="caps-list" data-testid="caps-pkg-list">
-            {listing.entries.map((entry) => (
-              <PackageItem
-                key={`${entry.scope}:${entry.source}`}
-                entry={entry}
-                busy={!!busy}
-                open={openDetail === `${entry.scope}:${entry.source}`}
-                onToggle={() =>
-                  setOpenDetail((value) => (value === `${entry.scope}:${entry.source}` ? '' : `${entry.scope}:${entry.source}`))
-                }
-                onRun={(kind) => void run(kind, entry.source, entry.scope === 'project')}
-              />
-            ))}
-          </div>
-        )}
-      </Group>
-
-      {showBuiltin && builtinLoaded && builtin.length > 0 ? (
-        <Group title={t('pkg.builtinCount', { n: builtin.length })} desc={t('pkg.builtinDesc')}>
-          <div className="caps-list" data-testid="caps-builtin-list">
-            {builtin.map((cap) => {
-              const label = BUILTIN_TEXT[cap.id]
-              return (
-                <Item key={cap.id} testId="caps-builtin">
-                  <ItemHead>
-                    <span className="caps-name">{label ? t(label.name) : (cap.file ?? cap.id)}</span>
-                    <Badge tone="neutral">{t('pkg.builtinBadge')}</Badge>
-                    {cap.file ? <span className="caps-tag">{cap.file}</span> : null}
-                  </ItemHead>
-                  <Meta>{label ? t(label.desc) : t('pkg.builtinNoDesc')}</Meta>
-                </Item>
-              )
-            })}
-          </div>
-        </Group>
-      ) : null}
-    </Panel>
+        </div>
+      ) : listing.entries.length === 0 ? (
+        <Empty>{listing.ok === false ? (listing.error ?? t('pkg.listFailed')) : t('pkg.empty')}</Empty>
+      ) : (
+        <div className="caps-list" data-testid="caps-pkg-list">
+          {listing.entries.map((entry) => (
+            <PackageItem
+              key={`${entry.scope}:${entry.source}`}
+              entry={entry}
+              busy={!!busy}
+              open={openDetail === `${entry.scope}:${entry.source}`}
+              onToggle={() =>
+                setOpenDetail((value) => (value === `${entry.scope}:${entry.source}` ? '' : `${entry.scope}:${entry.source}`))
+              }
+              onRun={(kind) => void run(kind, entry.source, entry.scope === 'project')}
+            />
+          ))}
+        </div>
+      )}
+      {resultBlock}
+    </Group>
   )
 }
 
@@ -269,7 +231,7 @@ function PackageItem({
         <span className="caps-name" title={entry.name}>
           {entry.name}
         </span>
-        {entry.version ? <span className="caps-tag">{entry.version}</span> : null}
+        {entry.version ? <Badge>{entry.version}</Badge> : null}
         <Badge tone="neutral">{entry.scope === 'project' ? t('pkg.scopeProject') : t('pkg.scopeUser')}</Badge>
         {!entry.installed ? <Badge tone="fail">{t('pkg.missing')}</Badge> : null}
         <span className="caps-spacer" />

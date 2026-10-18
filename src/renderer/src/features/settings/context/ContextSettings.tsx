@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, SegmentedControl, Switch } from '../../../ui'
+import { Button, Switch } from '../../../ui'
 import { contextUsageSummary } from '../../workbench/context-pane-view'
 import {
   AUTO_COMPACT_STEPS,
@@ -11,8 +11,9 @@ import {
   DEFAULT_CONTEXT_TRIM_TOKENS
 } from '../../../../../shared/context-limits'
 import { settingsText } from '../settings-text'
-import { SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
+import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { useTweenedNumber } from '../root/use-tweened-number'
+import type { PiNativeSettingsState } from '../general/PiNativeSettings'
 
 const kTokens = (n: number): string => `${Math.round(n / 1000)}k`
 
@@ -104,7 +105,7 @@ function ContextUsageMeter({
   )
 }
 
-export function ContextSettings(): ReactElement {
+export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const session = useStore((s) => s.session)
@@ -119,8 +120,14 @@ export function ContextSettings(): ReactElement {
 
   const busy = !!session?.isAgentRunning || !!session?.isStreaming || !!session?.isCompacting
   const available = !!session?.sessionId
-  const autoEnabled = session?.autoCompactionEnabled === true
-  const autoKnown = session?.autoCompactionEnabled !== undefined
+  const sessionAuto = available ? session?.autoCompactionEnabled : undefined
+  const globalAuto = piNative.settings?.compactionEnabled
+  const autoEnabled = (sessionAuto ?? globalAuto) === true
+  const autoKnown = (sessionAuto ?? globalAuto) !== undefined
+  const toggleAutoCompaction = (on: boolean): void => {
+    if (sessionAuto !== undefined) void setAutoCompaction(on)
+    else void piNative.patch({ compactionEnabled: on })
+  }
 
   const compactAtValue = settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
   const effective = autoCompactAt(compactAtValue, contextWindow)
@@ -138,10 +145,8 @@ export function ContextSettings(): ReactElement {
   if (autoEnabled) markers.push({ key: 'compact', at: effective, label: text.contextCompactAt })
 
   return (
-    <section className="settings-section" aria-label={text.sectionContext} data-testid="v3-context-settings">
-      <p className="settings-section__lede">{text.contextNote}</p>
-
-      <div className="settings-usage-card">
+    <div className="settings-context" data-testid="v3-context-settings">
+      <div className="settings-usage-card" data-setting-id="session-compact-now">
         <ContextUsageMeter
           tokens={contextTokens}
           windowSize={contextWindow}
@@ -164,19 +169,20 @@ export function ContextSettings(): ReactElement {
 
       <SettingsGroup label={text.contextAutoCompact}>
         <SettingsRow
+          settingId="session-auto-compact"
           label={text.contextAutoCompact}
-          description={available && autoKnown ? undefined : text.contextUnavailable}
         >
           <Switch
             aria-label={text.contextAutoCompact}
             isSelected={autoEnabled}
-            isDisabled={!available || !autoKnown}
-            onChange={(on) => void setAutoCompaction(on)}
+            isDisabled={!autoKnown}
+            onChange={toggleAutoCompaction}
+            data-testid="v3-ctx-auto-compact"
           />
         </SettingsRow>
         <SettingsReveal open={autoEnabled}>
-          <SettingsRow label={text.contextCompactAt} description={compactAtText}>
-            <SegmentedControl
+          <SettingsRow nested settingId="session-compact-at" label={text.contextCompactAt} description={compactAtText}>
+            <Segmented
               label={text.contextCompactAt}
               value={String(compactAtValue)}
               options={COMPACT_OPTIONS}
@@ -185,26 +191,38 @@ export function ContextSettings(): ReactElement {
           </SettingsRow>
         </SettingsReveal>
       </SettingsGroup>
+    </div>
+  )
+}
 
-      <SettingsGroup label={text.contextTrim}>
-        <SettingsRow label={text.contextTrim} description={text.contextTrimDesc}>
-          <Switch
-            aria-label={text.contextTrim}
-            isSelected={trimOn}
-            onChange={(on) => void patchSettings({ contextTrim: on })}
+export function ContextTrimRows(): ReactElement {
+  const { lang } = useI18n()
+  const text = settingsText(lang)
+  const settings = useStore((s) => s.settings)
+  const patchSettings = useStore((s) => s.patchSettings)
+  const trimOn = settings?.contextTrim !== false
+  const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
+
+  return (
+    <SettingsGroup label={text.contextTrim}>
+      <SettingsRow settingId="session-context-trim" label={text.contextTrim} description={text.contextTrimDesc}>
+        <Switch
+          aria-label={text.contextTrim}
+          isSelected={trimOn}
+          onChange={(on) => void patchSettings({ contextTrim: on })}
+          data-testid="v3-ctx-trim"
+        />
+      </SettingsRow>
+      <SettingsReveal open={trimOn}>
+        <SettingsRow nested settingId="session-context-trim-at" label={text.contextTrimAt}>
+          <Segmented
+            label={text.contextTrimAt}
+            value={String(trimAtValue)}
+            options={TRIM_OPTIONS}
+            onChange={(value) => void patchSettings({ contextTrimTokens: Number(value) })}
           />
         </SettingsRow>
-        <SettingsReveal open={trimOn}>
-          <SettingsRow label={text.contextTrimAt}>
-            <SegmentedControl
-              label={text.contextTrimAt}
-              value={String(trimAtValue)}
-              options={TRIM_OPTIONS}
-              onChange={(value) => void patchSettings({ contextTrimTokens: Number(value) })}
-            />
-          </SettingsRow>
-        </SettingsReveal>
-      </SettingsGroup>
-    </section>
+      </SettingsReveal>
+    </SettingsGroup>
   )
 }

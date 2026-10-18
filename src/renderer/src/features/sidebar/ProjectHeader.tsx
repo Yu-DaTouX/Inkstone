@@ -5,7 +5,8 @@ import { useStore } from '../../state/store'
 import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
-import type { SidebarGroup } from './sidebar-model'
+import { sameCwd, type SidebarGroup } from './sidebar-model'
+import { SidebarTip } from './SidebarTip'
 import { sidebarText } from './sidebar-text'
 
 type MenuKey = 'new' | 'rename' | 'directory' | 'reveal' | 'copy' | 'archive'
@@ -23,12 +24,25 @@ export async function setProjectArchived(projectId: string, archived: boolean): 
   }
 }
 
+export async function ensureProjectForCwd(cwd: string): Promise<ProjectRecord | undefined> {
+  const find = (): ProjectRecord | undefined => useStore.getState().settings?.projects.find((item) => sameCwd(item.cwd, cwd))
+  const existing = find()
+  if (existing) return existing
+  const recent = useStore.getState().settings?.recentCwds ?? []
+  try {
+    await useStore.getState().patchSettings({ recentCwds: [cwd, ...recent.filter((item) => item !== cwd)] })
+  } catch {
+    return undefined
+  }
+  return find()
+}
+
 export interface ProjectHeaderProps {
   group: SidebarGroup
   record?: ProjectRecord
   collapsed: boolean
   onToggle: () => void
-  onNew: () => void
+  onNew: (projectId: string) => void
 }
 
 export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: ProjectHeaderProps): JSX.Element {
@@ -44,43 +58,59 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
   const [archiveOpen, setArchiveOpen] = useState(false)
 
   const label = group.label || text.projectFallback
-  const manageable = !!group.projectId && !!record
+  const manageable = !!group.cwd
 
   const notifyError = (message: string): void => useStore.getState().notify('error', message)
 
   const commitRename = async (): Promise<void> => {
     const name = draft.trim()
     setRenaming(false)
-    if (!name || name === group.label || !record) return
+    if (!name || name === group.label) return
+    const target = record ?? (await ensureProjectForCwd(group.cwd))
+    if (!target) {
+      notifyError(t('rail.renameFailed', { name }))
+      return
+    }
     const settings = useStore.getState().settings
     try {
       await useStore.getState().patchSettings({
-        projectNames: { ...(settings?.projectNames ?? {}), [record.cwd]: name },
-        projects: (settings?.projects ?? []).map((item) => (item.id === record.id ? { ...item, name, updatedAt: Date.now() } : item))
+        projectNames: { ...(settings?.projectNames ?? {}), [target.cwd]: name },
+        projects: (settings?.projects ?? []).map((item) => (item.id === target.id ? { ...item, name, updatedAt: Date.now() } : item))
       })
     } catch {
       notifyError(t('rail.renameFailed', { name }))
     }
   }
 
+  const createHere = async (): Promise<void> => {
+    const target = record ?? (await ensureProjectForCwd(group.cwd))
+    if (target) onNew(target.id)
+    else notifyError(own.registerFailed)
+  }
+
+  const openDirectory = async (): Promise<void> => {
+    const target = record ?? (await ensureProjectForCwd(group.cwd))
+    if (target) setDirectoryOpen(true)
+    else notifyError(own.registerFailed)
+  }
+
   const run = (key: MenuKey): void => {
-    if (!record) return
     switch (key) {
       case 'new':
-        onNew()
+        void createHere()
         return
       case 'rename':
         setDraft(group.label)
         setRenaming(true)
         return
       case 'directory':
-        setDirectoryOpen(true)
+        void openDirectory()
         return
       case 'reveal':
-        void window.yan.revealPath(record.cwd).catch((cause) => notifyError(cause instanceof Error ? cause.message : t('rail.projectError')))
+        void window.yan.revealPath(group.cwd).catch((cause) => notifyError(cause instanceof Error ? cause.message : t('rail.projectError')))
         return
       case 'copy':
-        void navigator.clipboard.writeText(record.cwd).catch((cause) => notifyError(cause instanceof Error ? cause.message : t('rail.projectError')))
+        void navigator.clipboard.writeText(group.cwd).catch((cause) => notifyError(cause instanceof Error ? cause.message : t('rail.projectError')))
         return
       case 'archive':
         setArchiveOpen(true)
@@ -118,22 +148,25 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
           data-testid="v3-project-rename"
         />
       ) : (
-        <button
-          type="button"
-          className="v3-grp-toggle"
-          aria-expanded={!collapsed}
-          title={group.cwd || label}
-          onClick={onToggle}
-          data-testid="v3-group-toggle"
-        >
-          <span className="v3-grp-label">{label}</span>
-          <ChevronRight size={12} aria-hidden className="v3-grp-chev" data-open={collapsed ? undefined : '1'} />
-        </button>
+        <SidebarTip label={label} detail={group.cwd || undefined}>
+          <button
+            type="button"
+            className="v3-grp-toggle"
+            aria-expanded={!collapsed}
+            onClick={onToggle}
+            data-testid="v3-group-toggle"
+          >
+            <span className="v3-grp-label">{label}</span>
+            <ChevronRight size={12} aria-hidden className="v3-grp-chev" data-open={collapsed ? undefined : '1'} />
+          </button>
+        </SidebarTip>
       )}
-      {group.projectId && !renaming ? (
-        <button type="button" className="v3-grp-add" aria-label={text.newInProject} title={text.newInProject} onClick={onNew}>
-          <Plus size={14} />
-        </button>
+      {manageable && !renaming ? (
+        <SidebarTip label={text.newInProject}>
+          <button type="button" className="v3-grp-add" aria-label={text.newInProject} onClick={() => void createHere()}>
+            <Plus size={14} />
+          </button>
+        </SidebarTip>
       ) : null}
       {manageable && !renaming ? (
         <IconButton
@@ -189,8 +222,9 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
                 name={label}
                 onCancel={close}
                 onConfirm={async () => {
-                  if (!record) return false
-                  const ok = await setProjectArchived(record.id, true)
+                  const target = record ?? (await ensureProjectForCwd(group.cwd))
+                  if (!target) return false
+                  const ok = await setProjectArchived(target.id, true)
                   if (ok) close()
                   return ok
                 }}

@@ -3,11 +3,17 @@ import type { RunSnapshot } from '../../../../shared/runs'
 
 export interface SidebarGroup {
   key: string
+  slot: string
   label: string
   projectId?: string
   cwd: string
   current: boolean
   list: SessionSummary[]
+}
+
+export function sameCwd(a: string, b: string): boolean {
+  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+  return normalize(a) === normalize(b)
 }
 
 export function shortProject(path: string): string {
@@ -50,11 +56,14 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   const query = options.query.trim().toLowerCase()
   const recordById = new Map(projects.map((project) => [project.id, project]))
 
-  const labelFor = (session: SessionSummary): { key: string; label: string; projectId?: string; cwd: string } => {
-    const record = session.projectId ? recordById.get(session.projectId) : undefined
+  const labelFor = (session: SessionSummary): { key: string; slot: string; label: string; projectId?: string; cwd: string } => {
+    const record =
+      (session.projectId ? recordById.get(session.projectId) : undefined) ??
+      (session.cwd ? projects.find((project) => sameCwd(project.cwd, session.cwd)) : undefined)
     if (record) {
       return {
         key: `project:${record.id}`,
+        slot: `cwd:${record.cwd.toLowerCase()}`,
         projectId: record.id,
         cwd: record.cwd,
         label: record.name || projectNames[record.cwd] || shortProject(record.cwd)
@@ -62,7 +71,7 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
     }
     const cwd = session.cwd || ''
     const label = (cwd && projectNames[cwd]) || (cwd ? shortProject(cwd) : '')
-    return { key: `cwd:${cwd}`, cwd, label }
+    return { key: `cwd:${cwd}`, slot: `cwd:${cwd.toLowerCase()}`, cwd, label }
   }
 
   const archivedIds = new Set(projects.filter((project) => project.archived).map((project) => project.id))
@@ -95,6 +104,7 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
     else
       byKey.set(item.group.key, {
         key: item.group.key,
+        slot: item.group.slot,
         label: item.group.label,
         projectId: item.group.projectId,
         cwd: item.group.cwd,
@@ -106,9 +116,9 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   const groups = [...byKey.values()]
   for (const group of groups) {
     group.list.sort((a, b) => activityOf(b) - activityOf(a))
-    group.current = group.projectId
-      ? group.projectId === currentProjectId
-      : !currentProjectId && !!currentCwd && group.cwd.toLowerCase() === currentCwd.toLowerCase()
+    group.current =
+      (!!group.projectId && group.projectId === currentProjectId) ||
+      (!currentProjectId && !!currentCwd && group.cwd.toLowerCase() === currentCwd.toLowerCase())
   }
   groups.sort((a, b) => {
     if (a.current !== b.current) return a.current ? -1 : 1
@@ -128,7 +138,7 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   const rest = groups.filter((group) => group.list.length > 0)
   if (!pinned.length) return rest
   pinned.sort((a, b) => activityOf(b) - activityOf(a))
-  return [{ key: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
+  return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
 }
 
 export interface ArchivedProject {

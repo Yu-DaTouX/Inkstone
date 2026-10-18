@@ -2,8 +2,8 @@ import type { UsageRange } from '../../../../../shared/usage-stats'
 
 export const USAGE_RANGES: readonly UsageRange[] = ['all', '30d', '7d']
 
-export type UsageDimension = 'day' | 'model' | 'project'
-export const USAGE_DIMENSIONS: readonly UsageDimension[] = ['day', 'model', 'project']
+export type UsageDimension = 'day' | 'model'
+export const USAGE_DIMENSIONS: readonly UsageDimension[] = ['day', 'model']
 
 export const DAILY_MAX_DAYS = 30
 

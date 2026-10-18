@@ -103,7 +103,7 @@ export function ShortcutsSettings(): ReactElement {
     <section className="settings-section" aria-label={settingsText(lang).sectionShortcuts} data-testid="v3-shortcuts-settings">
       <p className="settings-section__lede">{text.note}</p>
 
-      <div className="settings-rows settings-shortcut-card">
+      <div className="settings-rows settings-shortcut-card" data-setting-id="shortcuts-keys">
         <table className="settings-table">
           <thead>
             <tr>
@@ -147,7 +147,7 @@ export function ShortcutsSettings(): ReactElement {
                         {def.rebindable ? (
                           <Button
                             size="sm"
-                            variant="ghost"
+                            variant="secondary"
                             isDisabled={!modified}
                             data-testid={`v3-shortcut-reset-${def.id}`}
                             onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
@@ -171,7 +171,7 @@ export function ShortcutsSettings(): ReactElement {
           </tbody>
         </table>
 
-        <div className="settings-shortcut-foot">
+        <div className="settings-shortcut-foot" data-setting-id="shortcuts-reset-all">
           <p className="settings-row__desc" role="status" data-testid="v3-shortcut-conflicts">
             {conflicts.length
               ? text.conflictFound.replace('{list}', conflicts.join(', '))
@@ -179,7 +179,7 @@ export function ShortcutsSettings(): ReactElement {
           </p>
           <Button
             size="sm"
-            variant="ghost"
+            variant="secondary"
             isDisabled={!hasOverrides}
             data-testid="v3-shortcut-reset-all"
             onPress={() => {

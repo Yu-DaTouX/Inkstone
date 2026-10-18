@@ -32,6 +32,15 @@
   }
   .v3-chat {
     --tiles-reserve: calc(var(--bar-reserve, 0px) + var(--side-reserve, 0px));
+    --rail-gutter: calc(var(--s-8) + 28px + var(--s-8));
+    --stream-scrollbar: 10px;
+    --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--tiles-on, 0));
+    --col-r: calc(var(--s-20) + var(--tiles-reserve));
+    --col-hidden-scrollbar: calc(var(--stream-scrollbar) * var(--tiles-on, 0));
+    --col-pl: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2, 100% - var(--col-r) - var(--size-chat)));
+    --col-pr: max(var(--col-r), 100% - var(--col-pl) - var(--size-chat));
+    --col-pad-l: max(var(--col-pl-min), min((100% - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2, 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
+    --col-pad-r: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l) - var(--size-chat));
   }
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
@@ -67,25 +76,15 @@
     right: calc(var(--size-tiles) + var(--subagent-width, 360px) + var(--s-16) + var(--s-2));
   }
   .v3-sessionbar > .wb-overview {
-    flex: 0 1 auto;
-    gap: 0;
-    margin: var(--s-16) 0;
-    padding: var(--s-4) 0;
+    gap: var(--s-8);
+    padding: var(--s-16) 0;
     scrollbar-width: none;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
   }
   .v3-sessionbar .wb-tile {
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    padding: var(--s-10) var(--s-12) var(--s-12);
   }
-  .v3-sessionbar .wb-tile + .wb-tile {
-    border-top: 1px solid var(--line);
-  }
-  .v3-sessionbar .wb-tile-title {
-    font-weight: 500;
+  .v3-sessionbar .wb-tile[data-folded='1'] {
+    padding-block: var(--s-6);
   }
   .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-text {
     display: none;
@@ -117,15 +116,13 @@
     z-index: 5;
     pointer-events: none;
     background: linear-gradient(to bottom, var(--bg), transparent);
-    -webkit-backdrop-filter: blur(5px);
-    backdrop-filter: blur(5px);
     -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
     mask-image: linear-gradient(to bottom, #000 25%, transparent);
   }
 
   .v3-pillbar {
     flex: none;
-    padding: var(--s-8) calc(var(--s-24) + var(--tiles-reserve, 0px)) 0 var(--s-24);
+    padding: var(--s-8) var(--col-pad-r) 0 var(--col-pad-l);
   }
 
   .v3-conv {
@@ -145,9 +142,7 @@
   .v3-composer {
     flex: none;
     width: 100%;
-    max-width: calc(var(--size-comp) + var(--s-48) + var(--tiles-reserve, 0px));
-    margin: 0 auto;
-    padding: var(--s-6) calc(var(--s-24) + var(--tiles-reserve, 0px)) var(--s-20) var(--s-24);
+    padding: var(--s-6) var(--col-pad-r) var(--s-20) var(--col-pad-l);
   }
 
   .v3-composer:has(.composer-usage) {

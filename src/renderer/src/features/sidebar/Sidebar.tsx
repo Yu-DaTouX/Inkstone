@@ -20,6 +20,7 @@ import { buildContentMatches } from './content-search'
 import './Sidebar.css'
 
 const GROUP_LIMIT = 5
+const GROUP_STEP = 6
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
   const next = new Set(set)
@@ -48,7 +49,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(() => new Set())
-  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(() => new Set())
+  const [visibleCounts, setVisibleCounts] = useState<ReadonlyMap<string, number>>(() => new Map())
   const revealedRef = useRef('')
 
   const sessions = useStore((s) => s.sessions)
@@ -139,12 +140,13 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
     const group = groups.find((g) => g.list.some((item) => isCurrentItem(item)))
     if (!group) return
     revealedRef.current = currentKey
-    setCollapsedKeys((prev) => (prev.has(group.key) ? toggleKey(prev, group.key) : prev))
+    setCollapsedKeys((prev) => (prev.has(group.slot) ? toggleKey(prev, group.slot) : prev))
   }, [currentKey, groups, session?.sessionId, session?.sessionFile])
 
   const visibleRows = (group: SidebarGroup): SessionSummary[] => {
-    if (expandedKeys.has(group.key) || group.list.length <= GROUP_LIMIT) return group.list
-    const head = group.list.slice(0, GROUP_LIMIT)
+    const limit = visibleCounts.get(group.slot) ?? GROUP_LIMIT
+    if (group.list.length <= limit) return group.list
+    const head = group.list.slice(0, limit)
     const current = group.list.find((item) => isCurrentItem(item))
     return current && !head.includes(current) ? [...head, current] : head
   }
@@ -180,11 +182,19 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
     void newSession({ scope: 'global' })
   }
 
-  const createInProject = (group: SidebarGroup): void => {
-    if (!group.projectId) return
+  const createInProject = (group: SidebarGroup, projectId: string): void => {
     useUiV3.getState().navigate({ name: 'chat' })
-    void newSession({ cwd: group.cwd, projectId: group.projectId, scope: 'project' })
+    void newSession({ cwd: group.cwd, projectId, scope: 'project' })
   }
+
+  const showMore = (group: SidebarGroup): void =>
+    setVisibleCounts((prev) => {
+      const next = new Map(prev)
+      const limit = prev.get(group.slot) ?? GROUP_LIMIT
+      if (limit >= group.list.length) next.delete(group.slot)
+      else next.set(group.slot, limit + GROUP_STEP)
+      return next
+    })
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
 
@@ -257,17 +267,17 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
           <p className="v3-side-empty">{query ? t('rail.noMatch') : t('rail.empty')}</p>
         ) : (
           groups.map((group) => {
-            const collapsed = collapsedKeys.has(group.key)
-            const expanded = expandedKeys.has(group.key)
+            const collapsed = collapsedKeys.has(group.slot)
+            const expanded = (visibleCounts.get(group.slot) ?? GROUP_LIMIT) >= group.list.length
             const rows = collapsed ? [] : visibleRows(group)
             return (
-              <div key={group.key} className="v3-group" data-collapsed={collapsed ? '1' : undefined}>
+              <div key={group.slot} className="v3-group" data-collapsed={collapsed ? '1' : undefined}>
                 <ProjectHeader
                   group={group}
                   record={group.projectId ? projectRecords.find((project) => project.id === group.projectId) : undefined}
                   collapsed={collapsed}
-                  onToggle={() => setCollapsedKeys((prev) => toggleKey(prev, group.key))}
-                  onNew={() => createInProject(group)}
+                  onToggle={() => setCollapsedKeys((prev) => toggleKey(prev, group.slot))}
+                  onNew={(projectId) => createInProject(group, projectId)}
                 />
                 {rows.map((item) => {
                   const isCurrent = isCurrentItem(item)
@@ -296,7 +306,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
                     type="button"
                     className="v3-show-more"
                     aria-expanded={expanded}
-                    onClick={() => setExpandedKeys((prev) => toggleKey(prev, group.key))}
+                    onClick={() => showMore(group)}
                     data-testid="v3-group-more"
                   >
                     {expanded ? own.showLess : own.showMore}

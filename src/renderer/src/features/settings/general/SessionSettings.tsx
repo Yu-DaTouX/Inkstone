@@ -4,7 +4,8 @@ import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Switch } from '../../../ui'
 import { generalText } from './general-text'
-import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
+import { SettingsGroup, SettingsMore, SettingsRow, Segmented } from '../root/controls'
+import { ContextSettings, ContextTrimRows } from '../context/ContextSettings'
 import { PiRetryDetailRows, PiSessionGroups, usePiNativeSettings } from './PiNativeSettings'
 import { piNativeText } from './pi-native-text'
 
@@ -55,8 +56,48 @@ export function SessionSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-session-settings">
-      <SettingsGroup label={text.sessionAutoArchive}>
-        <SettingsRow label={text.sessionAutoArchive} description={text.sessionAutoArchiveDesc} block>
+      <p className="settings-section__lede">{text.sessionContextLede}</p>
+      <ContextSettings piNative={piNative} />
+
+      <div className="settings-rows">
+        <SettingsRow settingId="session-checkpoints" label={text.sessionCheckpoints} description={text.sessionCheckpointsDesc}>
+          <Switch
+            aria-label={text.sessionCheckpoints}
+            isSelected={checkpoints}
+            onChange={(on) => void patchSettings({ checkpointsEnabled: on })}
+            data-testid="v3-session-checkpoints"
+          />
+        </SettingsRow>
+
+        <SettingsRow settingId="session-keep-awake" label={text.sessionKeepAwake} description={text.sessionKeepAwakeDesc}>
+          <Switch
+            aria-label={text.sessionKeepAwake}
+            isSelected={keepAwake}
+            onChange={(on) => void patchSettings({ keepAwakeWhileWorking: on })}
+            data-testid="v3-session-keep-awake"
+          />
+        </SettingsRow>
+        <SettingsRow
+          nested
+          settingId="session-keep-awake-battery"
+          label={text.sessionKeepAwakeBattery}
+          description={keepAwake ? text.sessionKeepAwakeBatteryDesc : text.sessionKeepAwakeBatteryOff}
+        >
+          <Switch
+            aria-label={text.sessionKeepAwakeBattery}
+            isSelected={keepAwakeBattery}
+            isDisabled={!keepAwake}
+            onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })}
+            data-testid="v3-session-keep-awake-battery"
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          settingId="session-auto-archive"
+          label={text.sessionAutoArchive}
+          description={text.sessionAutoArchiveDesc}
+          block
+        >
           <Segmented
             label={text.sessionAutoArchive}
             value={String(archiveDays)}
@@ -68,92 +109,80 @@ export function SessionSettings(): ReactElement {
             onChange={(value) => void patchSettings({ autoArchiveDays: Number(value) })}
           />
         </SettingsRow>
-      </SettingsGroup>
-
-      <SettingsGroup label={text.sessionKeepAwake}>
-        <SettingsRow label={text.sessionKeepAwake}description={text.sessionKeepAwakeDesc}>
-          <Switch
-            aria-label={text.sessionKeepAwake}
-            isSelected={keepAwake}
-            onChange={(on) => void patchSettings({ keepAwakeWhileWorking: on })}
-            data-testid="v3-session-keep-awake"
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          nested
-          label={text.sessionKeepAwakeBattery}
-          description={keepAwake ? text.sessionKeepAwakeBatteryDesc : text.securityOutsideDisabled}
-        >
-          <Switch
-            aria-label={text.sessionKeepAwakeBattery}
-            isSelected={keepAwakeBattery}
-            isDisabled={!keepAwake}
-            onChange={(on) => void patchSettings({ keepAwakeOnBattery: on })}
-            data-testid="v3-session-keep-awake-battery"
-          />
-        </SettingsRow>
-      </SettingsGroup>
-
-      <SettingsGroup label={text.sessionDelivery}>
-        <SettingsRow label={text.sessionSteeringMode} description={text.sessionSteeringModeDesc} block>
-          <Segmented
-            label={text.sessionSteeringMode}
-            value={steeringMode}
-            options={queueOptions('v3-session-steering')}
-            onChange={(value) => void setSteeringMode(value as QueueMode)}
-          />
-        </SettingsRow>
-        <SettingsRow label={text.sessionFollowUpMode} description={text.sessionFollowUpModeDesc} block>
-          <Segmented
-            label={text.sessionFollowUpMode}
-            value={followUpMode}
-            options={queueOptions('v3-session-follow-up')}
-            onChange={(value) => void setFollowUpMode(value as QueueMode)}
-          />
-        </SettingsRow>
-      </SettingsGroup>
-
-      <div className="settings-rows">
-        <SettingsRow label={text.sessionAutoRetry} description={text.sessionAutoRetryDesc}>
-          <Switch
-            aria-label={text.sessionAutoRetry}
-            isSelected={autoRetry}
-            onChange={(on) => void setAutoRetry(on)}
-            data-testid="v3-session-auto-retry"
-          />
-        </SettingsRow>
-        <PiRetryDetailRows state={piNative} text={piText} disabled={!autoRetry} />
-
-        <SettingsRow label={text.sessionCheckpoints} description={text.sessionCheckpointsDesc}>
-          <Switch
-            aria-label={text.sessionCheckpoints}
-            isSelected={checkpoints}
-            onChange={(on) => void patchSettings({ checkpointsEnabled: on })}
-            data-testid="v3-session-checkpoints"
-          />
-        </SettingsRow>
-
-        <SettingsRow label={text.sessionSubagentNotify} description={text.sessionSubagentNotifyDesc}>
-          <Switch
-            aria-label={text.sessionSubagentNotify}
-            isSelected={subagentNotify}
-            onChange={(on) => void patchSettings({ subagentNotify: on })}
-            data-testid="v3-session-subagent-notify"
-          />
-        </SettingsRow>
-
-        <SettingsRow label={text.sessionLoopAutoContinue} description={text.sessionLoopAutoContinueDesc}>
-          <Switch
-            aria-label={text.sessionLoopAutoContinue}
-            isSelected={loopAutoContinue}
-            onChange={(on) => void patchSettings({ streamLoopAutoContinue: on })}
-            data-testid="v3-session-loop-auto-continue"
-          />
-        </SettingsRow>
       </div>
 
-      <PiSessionGroups state={piNative} text={piText} />
+      <SettingsMore>
+        <SettingsGroup label={text.sessionAutoRetry}>
+          <SettingsRow settingId="session-auto-retry" label={text.sessionAutoRetry} description={text.sessionAutoRetryDesc}>
+            <Switch
+              aria-label={text.sessionAutoRetry}
+              isSelected={autoRetry}
+              onChange={(on) => void setAutoRetry(on)}
+              data-testid="v3-session-auto-retry"
+            />
+          </SettingsRow>
+          <PiRetryDetailRows state={piNative} text={piText} disabled={!autoRetry} />
+        </SettingsGroup>
+
+        <SettingsGroup label={text.sessionDelivery}>
+          <SettingsRow
+            settingId="session-steering-mode"
+            label={text.sessionSteeringMode}
+            description={text.sessionSteeringModeDesc}
+            block
+          >
+            <Segmented
+              label={text.sessionSteeringMode}
+              value={steeringMode}
+              options={queueOptions('v3-session-steering')}
+              onChange={(value) => void setSteeringMode(value as QueueMode)}
+            />
+          </SettingsRow>
+          <SettingsRow
+            settingId="session-follow-up-mode"
+            label={text.sessionFollowUpMode}
+            description={text.sessionFollowUpModeDesc}
+            block
+          >
+            <Segmented
+              label={text.sessionFollowUpMode}
+              value={followUpMode}
+              options={queueOptions('v3-session-follow-up')}
+              onChange={(value) => void setFollowUpMode(value as QueueMode)}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+
+        <div className="settings-rows">
+          <SettingsRow
+            settingId="session-subagent-notify"
+            label={text.sessionSubagentNotify}
+            description={text.sessionSubagentNotifyDesc}
+          >
+            <Switch
+              aria-label={text.sessionSubagentNotify}
+              isSelected={subagentNotify}
+              onChange={(on) => void patchSettings({ subagentNotify: on })}
+              data-testid="v3-session-subagent-notify"
+            />
+          </SettingsRow>
+          <SettingsRow
+            settingId="session-loop-auto-continue"
+            label={text.sessionLoopAutoContinue}
+            description={text.sessionLoopAutoContinueDesc}
+          >
+            <Switch
+              aria-label={text.sessionLoopAutoContinue}
+              isSelected={loopAutoContinue}
+              onChange={(on) => void patchSettings({ streamLoopAutoContinue: on })}
+              data-testid="v3-session-loop-auto-continue"
+            />
+          </SettingsRow>
+        </div>
+
+        <ContextTrimRows />
+        <PiSessionGroups state={piNative} text={piText} />
+      </SettingsMore>
     </section>
   )
 }
