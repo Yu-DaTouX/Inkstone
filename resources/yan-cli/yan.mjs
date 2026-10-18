@@ -47,7 +47,7 @@ const USAGE = `yan — 砚宿主能力 CLI
 
 选项：
   --query-file <文件>      UTF-8 JSON，作为请求参数（推荐，避免 shell 转义）
-  --request-file <文件>    同上，用于写操作
+  --request-file <文件>    同上，用于写操作；写成 - 时从标准输入读（可配合 heredoc）
   --output <文件>          把结果另存一份到指定路径
   --help                   显示本帮助
 
@@ -184,7 +184,8 @@ const GROUP_USAGE = {
 `,
   tasks: `yan tasks apply --request-file task-update.json
 
-维护右栏的任务清单。只在任务确实要 3 步以上、或用户明确要计划时才建；一两步的事直接做。
+维护右栏的任务清单（用户靠它看进度）。任务有 3 个以上独立步骤、会派子 Agent、或用户要计划时，动手前先建；一两步的事直接做。
+不想写文件时：yan tasks apply --request-file - <<'EOF' ... EOF
 建的时候一次写全，之后只在完成一项或计划变化时更新，不要每做一步就更新一次。
 
 task-update.json：
@@ -203,7 +204,8 @@ task-update.json：
 动作：
   attach  将当前项目内已经生成的文件复制进受控 artifact 目录并挂到本轮消息，
           用法：yan artifact attach --path <文件> --description "可选说明"
-          HTML / Markdown 只按代码文本预览，不会在砚内执行。
+          HTML 在砚内以单文件沙箱预览：只用文件里内联的样式、脚本和 data: 图片，
+          同目录引用的 .css / .js / 图片和网络资源都不会加载；要预览好看就把样式内联进 HTML。
 `,
   image: `yan image generate [选项]
 yan image local status | start | stop
@@ -511,7 +513,7 @@ function parseArgs(argv) {
 function readJsonFile(path, label) {
   let text
   try {
-    text = readFileSync(path, 'utf8')
+    text = readFileSync(['-', '/dev/stdin', '/proc/self/fd/0'].includes(path) ? 0 : path, 'utf8')
   } catch (err) {
     fail(EXIT.usage, `${label} 读不到：${path}`, { detail: String(err?.message ?? err) })
   }

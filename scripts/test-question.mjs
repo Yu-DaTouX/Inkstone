@@ -29,7 +29,7 @@ export async function runQuestionTests(ok) {
     /at most 3 concrete options/.test(std?.systemPrompt ?? ''),
     '提示词把选项上限写成 3（与宿主硬校验同口径）'
   )
-  ok(/BALANCED/.test(std?.systemPrompt ?? ''), '提问频率按默认适中')
+  ok(/materially different reading/.test(std?.systemPrompt ?? '') && !/frequency/i.test(std?.systemPrompt ?? ''), '提问时机写成「理解分歧会改变结果才问」，不再提已删除的频率设置')
 
   const sections = {}
   const sectioned = handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } })

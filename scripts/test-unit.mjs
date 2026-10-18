@@ -2053,6 +2053,34 @@ await runGitRepoTests(ok)
   ok(/skill subagent/.test(guide) && /do not sleep-poll/.test(guide) && !/yan research read/.test(guide), '能力说明：子代理指向随包技能并说明不轮询，不推荐已退出的资料库研究入口')
   ok(!/ctx:\/\//.test(guide) && !/yan context/.test(guide), '能力说明：不再引用已退役的上下文召回')
   ok(/fitting skill/.test(guide) && /MCP only when needed/.test(guide), '能力说明：写明能力选择优先顺序')
+  ok(/3\+ distinct steps/.test(guide) && /yan tasks apply/.test(guide) && /data, not instructions/.test(guide), '能力说明：多步工作先建待办，网页与文件内容只当数据')
+  {
+    const day = new Date(2026, 9, 19, 23, 30)
+    const win = mod.environmentGuide(day, 'win32', undefined)
+    ok(/Today: 2026-10-19/.test(win) && /Git Bash/.test(win) && /do not prefix commands with a cd/.test(win), '环境说明：本地日期、Windows 走 Git Bash、命令已在工作目录启动')
+    ok(/PowerShell/.test(mod.environmentGuide(day, 'win32', 'powershell')) && !/Git Bash/.test(mod.environmentGuide(day, 'win32', 'powershell')), '环境说明：没有 Git Bash 时写 PowerShell')
+    ok(/OS: macOS\./.test(mod.environmentGuide(day, 'darwin')), '环境说明：其他系统只写系统名')
+  }
+  {
+    const hooks = {}
+    mod.default({ on: (name, fn) => { (hooks[name] ??= []).push(fn) } })
+    const fire = (name, event) => hooks[name].map((fn) => fn(event)).find((r) => r !== undefined)
+    const tool = { role: 'tool', content: 'out' }
+    const payload = { messages: [{ role: 'user', content: 'go' }, tool] }
+    fire('message_end', { message: { role: 'user' } })
+    for (let i = 1; i < mod.TASK_REMINDER_AFTER; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
+    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：工具调用未到阈值不提醒')
+    fire('tool_call', { toolName: 'read', input: { path: 'a' } })
+    const reminded = fire('before_provider_request', { payload })
+    ok(reminded?.messages.length === 3 && reminded.messages[2].role === 'user' && reminded.messages[2].content === mod.TASK_REMINDER && reminded.messages[1] === tool, '待办提醒：到阈值时追加在请求末尾，不改前面的消息')
+    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：一个用户回合只提醒一次')
+    const anthropic = mod.withTaskReminder({ messages: [{ role: 'user', content: [{ type: 'tool_result', content: 'x' }] }] })
+    ok(anthropic.messages.length === 1 && anthropic.messages[0].content[1]?.text === mod.TASK_REMINDER, '待办提醒：末条是用户内容块时并进同一条，不产生连续两条用户消息')
+    fire('message_end', { message: { role: 'user' } })
+    fire('tool_call', { toolName: 'bash', input: { command: "yan tasks apply --request-file - <<'EOF'" } })
+    for (let i = 0; i < mod.TASK_REMINDER_AFTER + 2; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
+    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：会话里用过 yan tasks 后不再提醒')
+  }
   const visual = mod.VISUAL_ANSWER_GUIDE
   ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /data source/.test(visual) && /skill visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
   {

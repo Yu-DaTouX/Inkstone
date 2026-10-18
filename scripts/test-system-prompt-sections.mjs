@@ -88,6 +88,8 @@ try {
     ['You are an expert coding assistant operating inside pi', 0, 'pi identity sentence is not sent'],
     ['<inkstone_capabilities>', 1, 'capability guide renders as its own section'],
     ['Inkstone provides local capabilities through the `yan` CLI', 1, 'capability guide appears once'],
+    ['<inkstone_environment>', 1, 'environment facts render as their own section'],
+    ['Today: ', 1, 'local date appears once'],
     ['Interactive questions use `yan question ask`', 1, 'question guidance appears once'],
     ['Work quietly. Before substantive tool work', 1, 'progress guidance appears once'],
     ['its SDK, extensions, skills or models): ', 1, 'pi docs block is compacted'],
