@@ -70,9 +70,7 @@ function lastSegment(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
-function pathRoot(path: string): string {
-  const drive = /^[A-Za-z]:/.exec(path)
-  if (drive) return drive[0]
+function parentFolder(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
   return parts.length > 1 ? parts[parts.length - 2] : ''
 }
@@ -372,7 +370,7 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
           </IconButton>
         ) : null}
       </div>
-      {folded ? null : <div className="wb-tile-body">{children}</div>}
+      {folded || children == null ? null : <div className="wb-tile-body">{children}</div>}
     </section>
   )
 }
@@ -672,7 +670,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             <li className="wb-ov-item" title={cwd} data-testid="wb-ov-path">
               <Folder size={14} className="wb-ov-item-icon" aria-hidden />
               <span className="wb-ov-item-label">{projectName}</span>
-              {pathRoot(cwd) ? <span className="wb-ov-item-value">{pathRoot(cwd)}</span> : null}
+              {parentFolder(cwd) ? <span className="wb-ov-item-value">{parentFolder(cwd)}</span> : null}
             </li>
           ) : null}
           {branch ? (
@@ -758,18 +756,20 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           onOpen={() => onOpenView('changes')}
           openLabel={`${text.openFull} ${text.tiles.changes}`}
         >
-          <ul className="wb-ov-items">
-            {([
-              [text.changesStaged, repo.stagedCount],
-              [text.changesUnstaged, repo.unstagedCount],
-              [text.changesUntracked, repo.untrackedCount]
-            ] as const).map(([label, count]) => (
-              <li key={label} className="wb-ov-item">
-                <span className="wb-ov-item-label">{label}</span>
-                <span className="wb-ov-item-value">{count}</span>
-              </li>
-            ))}
-          </ul>
+          {repo.changedCount > 0 ? (
+            <ul className="wb-ov-items">
+              {([
+                [text.changesStaged, repo.stagedCount],
+                [text.changesUnstaged, repo.unstagedCount],
+                [text.changesUntracked, repo.untrackedCount]
+              ] as const).filter(([, count]) => count > 0).map(([label, count]) => (
+                <li key={label} className="wb-ov-item">
+                  <span className="wb-ov-item-label">{label}</span>
+                  <span className="wb-ov-item-value">{count}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Tile>
       ) : null}
 
