@@ -516,11 +516,14 @@ function findRuntimeSnapshot(
   return undefined
 }
 
+function sameSessionPath(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+}
+
 function findSnapshotByPath(map: SessionRuntimeMap, path: string): SessionRuntimeSnapshot | undefined {
-  const target = path.replace(/\\/g, '/').toLowerCase()
   for (const snapshot of Object.values(map)) {
     const file = snapshot.session?.sessionFile
-    if (file && file.replace(/\\/g, '/').toLowerCase() === target) return snapshot
+    if (file && sameSessionPath(file, path)) return snapshot
   }
   return undefined
 }
@@ -1728,7 +1731,8 @@ export const useStore = create<Store>((rawSet, get) => {
     const gate = ++sessionSwitchGate
     const finishSwitch = beginSessionSwitch(gate)
     try {
-    const sum = get().sessions.find((x) => x.path === path)
+    const findSummary = () => get().sessions.find((x) => x.path === path) ?? get().sessions.find((x) => sameSessionPath(x.path, path))
+    let sum = findSummary()
     const cachedSnapshot = (sum?.id ? get().sessionRuntimes[sum.id] : undefined) ??
       findSnapshotByPath(get().sessionRuntimes, path)
     const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
@@ -1792,14 +1796,19 @@ export const useStore = create<Store>((rawSet, get) => {
       if (gate !== sessionSwitchGate) return
     }
 
-    const cwd = sum?.cwd || get().session?.cwd || get().settings?.cwd || ''
+    if (!sum && !cachedSnapshot?.session?.cwd) {
+      await get().refreshSessions().catch(() => undefined)
+      if (gate !== sessionSwitchGate) return
+      sum = findSummary()
+    }
+    const cwd = sum?.cwd || cachedSnapshot?.session?.cwd || get().session?.cwd || get().settings?.cwd || ''
     const settings = get().settings
     const projectId = sum?.scope === 'global'
       ? undefined
       : (sum?.projectId ?? settings?.projects.find((project) => project.cwd.toLowerCase() === cwd.toLowerCase())?.id)
     const scope = sum?.scope ?? (projectId ? 'project' : 'global')
     const res = await piCall(() =>
-      window.yan.selectSession({ sessionFile: path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
+      window.yan.selectSession({ sessionFile: sum?.path ?? path, sessionId: sum?.id, projectId, scope, cwd, preview: true })
     )
     performance.mark('yan:switch-selected')
     if (gate !== sessionSwitchGate) return
@@ -1820,7 +1829,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
     if (res.deferred) {
       set({
-        pendingActivation: { sessionFile: path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
+        pendingActivation: { sessionFile: sum?.path ?? path, sessionId: res.sessionId ?? sum?.id, projectId, scope, cwd },
         peekedPath: path,
         peekedSessionId: res.sessionId ?? sum?.id ?? null,
         notices: pushNotice(
