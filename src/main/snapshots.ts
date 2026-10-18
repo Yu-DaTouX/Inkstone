@@ -273,7 +273,7 @@ const TREE_CONTENT_BUDGET = 12 * 1024 * 1024
 const CHANGE_MAX_FILES = 40
 const MAX_ACTIVE_TREES = 8
 
-export function captureTree(root: string): TreeSnapshot {
+export function captureTree(root: string, previous?: TreeSnapshot): TreeSnapshot {
   const snap: TreeSnapshot = { root, files: new Map(), truncated: false, unreadable: false, unreadableDirs: 0, scanned: 0 }
   let budget = TREE_CONTENT_BUDGET
 
@@ -313,7 +313,12 @@ export function captureTree(root: string): TreeSnapshot {
         continue
       }
       const entry: TreeEntry = { size: st.size, mtimeMs: st.mtimeMs }
-      if (st.size <= TREE_CONTENT_MAX_BYTES && st.size <= budget) {
+      const known = previous?.files.get(key)
+      if (known?.hash && known.size === st.size && known.mtimeMs === st.mtimeMs && st.size <= budget) {
+        entry.hash = known.hash
+        if (known.content !== undefined) entry.content = known.content
+        budget -= st.size
+      } else if (st.size <= TREE_CONTENT_MAX_BYTES && st.size <= budget) {
         try {
           const buf = readFileSync(join(abs, e.name))
           entry.hash = createHash('sha256').update(buf).digest('hex').slice(0, 16)
@@ -431,7 +436,7 @@ export function endTreeSnapshot(callId: string): WorkspaceChanges | null {
   if (!active) return null
   activeTrees.delete(callId)
 
-  const after = captureTree(active.root)
+  const after = captureTree(active.root, active.snap)
   const changes = diffTrees(active.snap, after)
 
   let unknown: WorkspaceChanges['unknown']

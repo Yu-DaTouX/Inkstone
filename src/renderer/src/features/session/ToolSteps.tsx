@@ -1,4 +1,4 @@
-import { useState, type JSX, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
 import { useI18n, useT, type TFunc } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, isSettledToolNode, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
@@ -6,7 +6,7 @@ import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolGroupLabel } from './tool-summary'
 import { Icon } from './Icon'
-import { Button, IconButton } from '../../ui'
+import { Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
 const OUTPUT_PREVIEW_LINES = 16
@@ -58,14 +58,51 @@ function summaryText(t: TFunc, zh: boolean, tools: UIToolCall[], failed: number)
   return { label, stats: statNode }
 }
 
+const SETTLE_LINGER_MS = 900
+const NONE_LINGERING: ReadonlySet<string> = new Set()
+
+function useRecentlySettled(forest: ToolCallNode[]): ReadonlySet<string> {
+  const liveKey = forest.filter((node) => !isSettledToolNode(node)).map((node) => node.call.id).join('\n')
+  const previous = useRef<string[]>([])
+  const timers = useRef(new Set<number>())
+  const [lingering, setLingering] = useState<ReadonlySet<string>>(NONE_LINGERING)
+
+  useEffect(() => {
+    const live = liveKey ? liveKey.split('\n') : []
+    const settled = previous.current.filter((id) => !live.includes(id))
+    previous.current = live
+    if (!settled.length) return
+    setLingering((current) => new Set([...current, ...settled]))
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer)
+      setLingering((current) => {
+        const next = new Set(current)
+        for (const id of settled) next.delete(id)
+        return next.size ? next : NONE_LINGERING
+      })
+    }, SETTLE_LINGER_MS)
+    timers.current.add(timer)
+  }, [liveKey])
+
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const timer of pending) window.clearTimeout(timer)
+    }
+  }, [])
+
+  return lingering
+}
+
 export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | null {
   const t = useT()
   const zh = useI18n().lang !== 'en-US'
   const tt = useSessionText()
   const [manual, setManual] = useState<boolean | null>(null)
+  const forest = toolCallForest(tools)
+  const lingering = useRecentlySettled(forest)
   if (!tools.length) return null
 
-  const forest = toolCallForest(tools)
   const running = tools.filter(isRunning)
   const failed = tools.filter((c) => c.status === 'error' && !c.cancelled).length
   const open = manual ?? failed > 0
@@ -84,9 +121,9 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
           {forest.map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
         </div>
       ) : (
-        running.length ? (
+        running.length || lingering.size ? (
           <div className="v3-steps-live" data-testid="v3-steps-live">
-            {forest.filter((node) => !isSettledToolNode(node)).map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
+            {forest.filter((node) => !isSettledToolNode(node) || lingering.has(node.call.id)).map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
           </div>
         ) : null
       )}
@@ -113,10 +150,11 @@ function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.E
   return (
     <div className="v3-step" data-state={call.status} data-tool={call.name} data-depth={depth}>
       <button className="v3-step-head" aria-expanded={open} onClick={() => setManual(!open)} title={target} data-testid="v3-step">
+        <CompletionSweep done={!running && !failed && !call.cancelled} settledAt={call.endedAt} />
         <span className={`v3-dot ${state}`} aria-hidden />
         {running ? null : <Icon name={failed ? 'warn' : call.cancelled ? 'stop' : 'check'} size={13} />}
         <span className="v3-step-verb">{call.name}</span>
-        <span className="v3-step-target">{detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}{target}</span>
+        <ShimmerText className="v3-step-target" active={running} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
         {secs !== null && !running ? <span className="v3-step-time">{secs}s</span> : null}
         {failed ? <span className="v3-badge err">{t('tool.failed')}</span> : call.cancelled ? <span className="v3-badge warn">{t('tool.cancelled')}</span> : call.incomplete ? <span className="v3-badge warn">{t('tool2.incomplete')}</span> : null}
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />

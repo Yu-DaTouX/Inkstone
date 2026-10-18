@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } fro
 import { Button, IconButton, Meter } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
+import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
 import type { ContextCategory } from '../../state/context-breakdown'
 import {
   compactionGrowthText,
@@ -40,6 +41,7 @@ type TileId = 'env' | 'context' | 'todos' | 'tasks' | 'ext' | 'mcp' | 'changes' 
 
 const FOLD_KEY = 'inkstone.v3.overview.folds'
 const QUOTA_TICK_MS = 30_000
+const GIT_REFRESH_WHILE_RUNNING_MS = 4_000
 
 type FoldMap = Partial<Record<TileId, boolean>>
 
@@ -454,7 +456,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
   const settings = useStore((s) => s.settings)
-  const messages = useStore((s) => s.messages)
+  const messages = useStreamingThrottledStore((s) => s.messages)
   const todos = useStore((s) => s.todos)
   const subagents = useStore((s) => s.subagents)
   const widgets = useStore((s) => s.widgets)
@@ -477,7 +479,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const mode: PermissionMode = normalizePermissionMode(settings?.permissionMode)
   const modeLabel = t(`permission.label.${mode}` as 'permission.label.danger')
 
-  const gitRefresh = `${messages.length}:${agentRunning ? 1 : 0}`
+  const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
+  const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}`
   const repo = useGitRepo(cwd || null, gitRefresh)
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
   const changesSummary = !repo ? undefined : repo.changedCount > 0 ? text.changesFiles(repo.changedCount) : text.changesNone

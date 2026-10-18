@@ -101,6 +101,18 @@ export function runWorkspaceChangesTests(ok, mod) {
     ok(quiet && quiet.total === 0 && !quiet.unknown, '什么都没改 → total=0 且不标 unknown（“扫过且没变”是结论）')
     ok(quiet && quiet.scanned > 0, 'scanned 有值 —— 界面能说清“扫了多少”', String(quiet?.scanned))
 
+    const sameSize = endTreeSnapshotFor(mod, root, () => {
+      writeFile(root, 'src/b.ts', 'const b = 3\n')
+      const later = (Date.now() + 2000) / 1000
+      utimesSync(join(root, 'src/b.ts'), later, later)
+    })
+    const sameSizeFile = sameSize?.files.find((f) => f.path === 'src/b.ts')
+    ok(
+      sameSize?.total === 1 && sameSizeFile?.status === 'modified' && sameSizeFile.added === 1 && sameSizeFile.removed === 1,
+      '结束快照复用未变文件后，等长改写仍按内容判定并给出行数',
+      JSON.stringify(sameSize?.files)
+    )
+
     writeFile(root, 'big.bin', 'x'.repeat(300 * 1024) + '\n')
     const beforeBig = captureTree(root)
     writeFile(root, 'big.bin', 'y'.repeat(300 * 1024) + '\n')

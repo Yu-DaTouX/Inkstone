@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
+import { ShimmerText } from '../../ui'
 import { Icon } from './Icon'
 
 function peekText(text: string): string {
@@ -50,8 +51,8 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: st
   return (
     <div ref={rootRef} className="v3-think" data-live={live || undefined} data-open={open || undefined} data-testid="v3-thinking">
       <button className="v3-think-head" aria-expanded={open} onClick={toggle} data-testid="v3-thinking-toggle">
-        <Icon name="brain" size={13} className={live ? 'v3-pulse' : undefined} />
-        <span className="v3-think-label">{label}</span>
+        <Icon name="brain" size={13} />
+        <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
         {peek ? (
           <span className="v3-think-peek" dir="rtl" data-testid="v3-thinking-peek">
             <span dir="ltr">{peek}</span>

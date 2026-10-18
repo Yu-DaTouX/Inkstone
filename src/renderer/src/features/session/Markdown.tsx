@@ -12,6 +12,7 @@ import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
+import { splitMarkdownBlocks } from './markdown-blocks'
 
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
 const MD_REHYPE: NonNullable<Options['rehypePlugins']> = [[rehypeHighlight, { detect: false, ignoreMissing: true }]]
@@ -39,6 +40,7 @@ function mdCacheSet(text: string, element: React.ReactElement): void {
 
 const MessageSourceCwd = createContext<string | undefined>(undefined)
 const MarkdownLive = createContext(false)
+const MarkdownOffset = createContext(0)
 
 type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
 
@@ -189,6 +191,7 @@ function CodeBlock({ lang, children }: { lang?: string; children?: ReactNode }):
 function MarkdownPre({ node, children }: { node?: HastNode; children?: ReactNode }): JSX.Element {
   const t = useT()
   const live = useContext(MarkdownLive)
+  const offset = useContext(MarkdownOffset)
   const lang = codeLang(node)
   if (lang && isVisualBlockLang(lang)) {
     const fallback = <CodeBlock lang={lang}>{children}</CodeBlock>
@@ -203,7 +206,7 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: ReactNode
         text={code ? hastText(code) : ''}
         live={live}
         fallback={fallback}
-        blockId={String(node?.position?.start?.offset ?? '')}
+        blockId={node?.position?.start?.offset === undefined ? '' : String(offset + node.position.start.offset)}
       />
     )
   }
@@ -228,6 +231,25 @@ function hasUnclosedFence(text: string): boolean {
     if (/^\s*(```|~~~)/.test(line)) n++
   }
   return n % 2 === 1
+}
+
+const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset }: { text: string; offset: number }): JSX.Element {
+  return (
+    <MarkdownOffset.Provider value={offset}>
+      <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={MD_REHYPE_PLAIN} components={MD_COMPONENTS}>
+        {text}
+      </ReactMarkdown>
+    </MarkdownOffset.Provider>
+  )
+})
+
+function LiveMarkdown({ text }: { text: string }): JSX.Element {
+  const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
+  return (
+    <div className="v3-prose">
+      {blocks.map((block) => <LiveMarkdownBlock key={block.offset} text={block.text} offset={block.offset} />)}
+    </div>
+  )
 }
 
 export const Markdown = memo(function Markdown({
@@ -258,8 +280,20 @@ export const Markdown = memo(function Markdown({
     )
   }
 
+  if (live) {
+    return (
+      <WidgetIdentityContext.Provider value={identity}>
+        <MessageSourceCwd.Provider value={sourceCwd}>
+          <MarkdownLive.Provider value>
+            <LiveMarkdown text={renderedText} />
+          </MarkdownLive.Provider>
+        </MessageSourceCwd.Provider>
+      </WidgetIdentityContext.Provider>
+    )
+  }
+
   const unclosed = hasUnclosedFence(renderedText)
-  const plugin = live || unclosed ? MD_REHYPE_PLAIN : MD_REHYPE
+  const plugin = unclosed ? MD_REHYPE_PLAIN : MD_REHYPE
   const element = (
     <div className="v3-prose">
       <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={plugin} components={MD_COMPONENTS}>
@@ -267,7 +301,7 @@ export const Markdown = memo(function Markdown({
       </ReactMarkdown>
     </div>
   )
-  const stable = !live && !unclosed && renderedText.length <= 20_000
+  const stable = !unclosed && renderedText.length <= 20_000
   if (stable) mdCacheSet(renderedText, element)
   return (
     <WidgetIdentityContext.Provider value={identity}>

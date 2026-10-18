@@ -131,7 +131,7 @@ export const jsxs = jsx
 const UI_STUB = `export function Button() { return null }
 export function IconButton() { return null }
 export function Spinner() { return null }
-export function Badge() { return null }`
+export function Badge() { return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
 
 const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }
 export function useT() { return (k) => String(k) }
