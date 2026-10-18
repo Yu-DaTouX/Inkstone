@@ -492,9 +492,16 @@ export async function peerSummaryOf(sessionId: string): Promise<SessionSummary |
   return (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
 }
 
+export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
+  return project.name?.trim() || projectNames[project.cwd]?.trim() || basename(project.cwd) || project.cwd
+}
+
 export const peerHostHandlers: PeerHostHandlers = {
   async projects() {
-    return (await getSettings()).projects.filter((project) => !project.archived).map((project) => ({ id: project.id, name: project.name }))
+    const settings = await getSettings()
+    return settings.projects
+      .filter((project) => !project.archived)
+      .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
   },
   async sessions(projectIds) {
     const settings = await getSettings()
@@ -513,7 +520,8 @@ export const peerHostHandlers: PeerHostHandlers = {
     if (!summary?.projectId) return { ok: false, status: 404, error: '找不到目标会话' }
     const history = await host.readHistoryWithArtifacts(summary.path)
     if (!history) return { ok: false, status: 502, error: '无法读取该会话历史' }
-    const project = (await getSettings()).projects.find((item) => item.id === summary.projectId)
+    const settings = await getSettings()
+    const project = settings.projects.find((item) => item.id === summary.projectId)
     const artifacts: PeerExportedArtifact[] = []
     for (const artifact of history.messages.flatMap((message) => message.artifacts ?? [])) {
       let available = !artifact.unavailable
@@ -528,7 +536,7 @@ export const peerHostHandlers: PeerHostHandlers = {
         computer: hostname(),
         sessionId: summary.id,
         projectId: summary.projectId,
-        projectName: project?.name ?? basename(summary.cwd),
+        projectName: peerProjectName(project ?? { cwd: summary.cwd }, settings.projectNames),
         title: summary.title,
         exportedAt: Date.now(),
         updatedAt: summary.updatedAt,
