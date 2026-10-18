@@ -82,7 +82,7 @@
     }
 
     const canonical = (s) => String(s ?? '').replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
-    const parentCwd = String(cwd).replace(/[\\/][^\\/]+[\\/]?$/, '')
+    const parentCwd = String(cwd).replace(/[\\/][^\\/]+[\\/]?$/, '').replace(/^([A-Za-z]:)$/, '$1\\')
     if (parentCwd && canonical(parentCwd) !== canonical(cwd)) {
       const back = await window.yan.selectSession({ cwd })
       ok(back.ok === true, '回到当前项目，准备验证跨项目复用', back.error ?? '')
