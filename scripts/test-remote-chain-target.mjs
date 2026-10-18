@@ -236,6 +236,22 @@ try {
   ok(!peerIds.includes('s-cross-new'), 'peer 列表不返回未授权项目 p2 的代表段')
   ok(await mod.peerHostHandlers.projectOfSession('s-cross-old') === 'p1', 'peer 授权按请求段项目判定，不跨项目归一')
 
+  const settingsBefore = globalThis.__rh.getSettings
+  globalThis.__rh.getSettings = async () => ({
+    cwd: 'C:/fixture/p1',
+    piBin: 'pi',
+    projectNames: { 'C:/fixture/aliased': '别名项目' },
+    projects: [
+      { id: 'named', name: '手动命名', cwd: 'C:/fixture/named' },
+      { id: 'aliased', name: '', cwd: 'C:/fixture/aliased' },
+      { id: 'unnamed', name: '  ', cwd: 'C:\\fixture\\pi-desktop' },
+      { id: 'gone', name: '已归档', cwd: 'C:/fixture/gone', archived: true }
+    ]
+  })
+  const peerProjects = await mod.peerHostHandlers.projects()
+  globalThis.__rh.getSettings = settingsBefore
+  ok(JSON.stringify(peerProjects.map((project) => [project.id, project.name])) === JSON.stringify([['named', '手动命名'], ['aliased', '别名项目'], ['unnamed', 'pi-desktop']]), 'peer 申请弹窗的项目名回退到别名或文件夹名，不留空白')
+
   selectCalls.length = 0
   const selected = await mod.remoteSelectSession('s-old')
   ok(selected.ok, '选择旧段成功')
