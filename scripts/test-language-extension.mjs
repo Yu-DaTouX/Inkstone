@@ -59,7 +59,28 @@ export async function runLanguageExtensionTests(ok, mod) {
     'desktop.json 坏了也不注入（不影响这一轮）'
   )
 
-  ok(handlers.before_provider_request === undefined, '只写进系统提示，不在每次请求里插消息（保持缓存前缀稳定）')
+  {
+    const payload = { messages: [{ role: 'user', content: 'go' }, { role: 'tool', content: 'out' }] }
+    const chinese = { role: 'assistant', content: [{ type: 'thinking', thinking: '先读 `src/parser.js` 和 tokenizer.js，确认 parseSelect 的 ORDER BY 分支怎么处理 COLLATE，再决定 executor 里 compareValues 要不要改。'.repeat(4) }] }
+    const english = { role: 'assistant', content: [{ type: 'thinking', thinking: 'Note: the existing test expects a full scan for range predicates, so once the B+ tree index lands that assertion has to change. '.repeat(3) }] }
+    ok(mod.thinkingDrifted('zh-CN', mod.thinkingText(chinese)) === false, '中文思考夹着代码标识符不算漂移')
+    ok(mod.thinkingDrifted('zh-CN', mod.thinkingText(english)) === true, '设为中文时整段英文思考算漂移')
+    ok(mod.thinkingDrifted('en-US', mod.thinkingText(english)) === false && mod.thinkingDrifted(null, mod.thinkingText(english)) === false, '设为英文或没设语言时英文思考不算漂移')
+    const drift = withSettings('zh-CN', () => {
+      handlers.message_end({ message: chinese })
+      const calm = handlers.before_provider_request({ payload })
+      handlers.message_end({ message: english })
+      const fixed = handlers.before_provider_request({ payload })
+      const again = handlers.before_provider_request({ payload })
+      handlers.message_end({ message: english })
+      const cooling = handlers.before_provider_request({ payload })
+      return { calm, fixed, again, cooling }
+    })
+    ok(drift.calm === undefined, '没有漂移时不改请求（缓存前缀不变）')
+    ok(drift.fixed?.messages.length === 3 && drift.fixed.messages[1] === payload.messages[1] && drift.fixed.messages[2].content === mod.languageReminder('zh-CN'), '漂移后只在请求末尾追加一次纠正，不动前面的消息')
+    ok(drift.again === undefined, '纠正只发一次')
+    ok(drift.cooling === undefined, `纠正后 ${mod.DRIFT_COOLDOWN} 条回复内不重复纠正`)
+  }
 
   const { readFileSync } = await import('node:fs')
   const mainSrc = readFileSync('src/main/index.ts', 'utf8')
