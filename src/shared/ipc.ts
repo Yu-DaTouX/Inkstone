@@ -1027,6 +1027,7 @@ export interface SubagentRun {
   review: SubagentReviewState
   error?: string
   endReason?: SubagentEndReason
+  launchFailed?: boolean
   dismissedAt?: number
   toolCalls?: number
   wrapUp?: { reason: 'timeout' | 'budget'; since: number }

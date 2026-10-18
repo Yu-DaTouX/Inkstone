@@ -301,7 +301,7 @@ const BACKGROUND_DOT: Record<RunTone, string> = {
 }
 
 function isSettledRun(run: SubagentRun): boolean {
-  if (run.status === 'cancelled') return true
+  if (run.status === 'cancelled' || run.launchFailed) return true
   return run.status === 'done' && run.review !== 'pending' && run.review !== 'conflict'
 }
 
@@ -320,7 +320,7 @@ function subagentLabels(runs: SubagentRun[]): Map<string, string> {
   const base = new Map<string, string>()
   const seen = new Map<string, number>()
   for (const run of runs) {
-    const label = compactTaskPaths(firstLine(run.task || run.brief?.goal || ''))
+    const label = run.brief?.title || compactTaskPaths(firstLine(run.task || run.brief?.goal || ''))
     base.set(run.id, label)
     seen.set(label, (seen.get(label) ?? 0) + 1)
   }

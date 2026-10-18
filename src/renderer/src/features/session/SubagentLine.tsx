@@ -338,7 +338,7 @@ function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
   const tt = useSessionText()
   const { model, status, dotClass } = useSubagentView(run, snapshot)
   const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
-  const title = compactTaskPaths(subagentTitle(model.task))
+  const title = run.brief?.title || compactTaskPaths(subagentTitle(model.task))
   const time = formatDuration(model.elapsedMs, { minSeconds: 1 })
   return (
     <button
@@ -405,7 +405,7 @@ function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun;
           <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
         </span>
         <span className="v3-subagent-main">
-          <span className="v3-subagent-task" data-testid="v3-subagent-task">{compactTaskPaths(subagentTitle(model.task))}</span>
+          <span className="v3-subagent-task" data-testid="v3-subagent-task">{run.brief?.title || compactTaskPaths(subagentTitle(model.task))}</span>
           <span className="v3-subagent-meta">
             {modelName ? (
               <span className="v3-subagent-model" data-testid="v3-subagent-model" title={run.model}>{modelName}</span>

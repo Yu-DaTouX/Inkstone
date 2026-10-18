@@ -86,6 +86,7 @@ import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
+import { resolveSubagentModelLabel } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
@@ -332,6 +333,12 @@ const subagentService: SubagentService = new SubagentService({
     if (!selected) throw new Error(`来源会话中指定模型 ${label} 已不可用`)
     return selected.api
   },
+  resolveModelLabel: async (requested, context) => {
+    const parent = (context.parentRunId ? runners?.agentOf(context.parentRunId) : null) ??
+      (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
+    const models = parent ? await parent.listModels().catch(() => []) : []
+    return resolveSubagentModelLabel(requested, models, context.model)
+  },
   confirmDanger: async (params, cwd, origin) => {
     if ((await getSettings()).permissionMode === 'all') return true
     const detail = String(params.detail ?? '')
@@ -370,7 +377,7 @@ const subagentService: SubagentService = new SubagentService({
       run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed',
       run.error
     )
-    notifySubagentFinished(run)
+    if (!run.launchFailed) notifySubagentFinished(run)
   }
 })
 let remoteAccess: RemoteAccess | null = null
