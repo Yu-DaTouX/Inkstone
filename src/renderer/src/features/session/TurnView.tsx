@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, type JSX } from 'react'
-import { useT } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useSessionText } from './text'
 import { Markdown } from './Markdown'
@@ -11,7 +11,8 @@ import { splitTurnProcess } from './turn-process'
 import { MessageImage } from './Image'
 import { Icon } from './Icon'
 import { Busy } from './Busy'
-import { Button, IconButton } from '../../ui'
+import { Badge, Button, IconButton } from '../../ui'
+import { imageRefLabel, imageRefPrefix, referencedImageNumbers, splitImageRefs, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { forkFromText } from '../../lib/fork'
@@ -36,6 +37,7 @@ export const TurnView = memo(function TurnView({ turn, streaming, readOnly = fal
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
   const t = useT()
+  const { lang } = useI18n()
   const msg = turn.msg
   const checkpoints = useStore((s) => s.checkpoints)
   const openRewind = useStore((s) => s.openRewind)
@@ -43,6 +45,9 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const owned = rewindOwner ? checkpoints.filter((record) => record.sessionKey === rewindOwner) : []
   const checkpoint = !readOnly && msg.text ? matchCheckpoint(owned, msg.text, msg.timestamp) : null
   if (isSubagentNotice(msg.text)) return null
+  const displayText = stripImageLegend(msg.text ?? '')
+  const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
+  const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
   return (
     <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id}>
       <div className="v3-user-body">
@@ -55,11 +60,14 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
 
         {msg.images?.length ? (
           <div className="v3-user-images">
-            {msg.images.map((im, i) =>
-              im.data ? <MessageImage key={i} src={`data:${im.mimeType};base64,${im.data}`} className="v3-img-thumb" /> :
-              im.url ? <MessageImage key={i} src={im.url} className="v3-img-thumb" /> :
-              <div key={i} className="v3-img-missing" title={t('chat.imageMissing')}><Icon name="image" size={12} /><span>{t('chat.imageMissing')}</span></div>
-            )}
+            {msg.images.map((im, i) => (
+              <div key={i} className="v3-user-image">
+                {im.data ? <MessageImage src={`data:${im.mimeType};base64,${im.data}`} className="v3-img-thumb" /> :
+                  im.url ? <MessageImage src={im.url} className="v3-img-thumb" /> :
+                  <div className="v3-img-missing" title={t('chat.imageMissing')}><Icon name="image" size={12} /><span>{t('chat.imageMissing')}</span></div>}
+                {showImageRefs ? <Badge tone="accent" className="v3-user-image-ref">{imageRefLabel(refPrefix, i + 1)}</Badge> : null}
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -75,7 +83,11 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
         ) : msg.text ? (
           <div className="v3-bubble">
             <span className="v3-bubble-prompt" aria-hidden>›</span>
-            <span className="v3-bubble-text">{msg.text}</span>
+            <span className="v3-bubble-text">
+              {splitImageRefs(displayText).map((part, i) =>
+                part.ref ? <mark key={i} className="v3-image-ref">{part.text}</mark> : part.text
+              )}
+            </span>
           </div>
         ) : null}
 
@@ -89,7 +101,6 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               onNavigate={branchPager.onNavigate}
             />
           ) : null}
-          {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
           {!readOnly && msg.text ? (
             <button className="v3-msg-act" title={t('chat.forkHere')} onClick={() => void forkFromText(msg.text)}>
               <Icon name="branch" size={12} />
@@ -102,6 +113,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               {t('chat.rewind')}
             </button>
           ) : null}
+          {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
         </div>
       </div>
     </article>

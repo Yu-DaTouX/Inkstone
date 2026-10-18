@@ -26,6 +26,7 @@ const BUILTIN_TEXT: Record<string, { name: MessageKey; desc: MessageKey }> = {
   commandcode: { name: 'pkg.builtin.commandcode', desc: 'pkg.builtin.commandcodeDesc' },
   context: { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
   'context-trim': { name: 'pkg.builtin.context', desc: 'pkg.builtin.contextDesc' },
+  'image-labels': { name: 'pkg.builtin.image-labels', desc: 'pkg.builtin.image-labelsDesc' },
   'danger-guard': { name: 'pkg.builtin.danger-guard', desc: 'pkg.builtin.danger-guardDesc' },
   'shell-fallback': { name: 'pkg.builtin.shell-fallback', desc: 'pkg.builtin.shell-fallbackDesc' }
 }

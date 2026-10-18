@@ -2,14 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
 import { Button } from '../../ui'
 import type { Attachment } from '../../../../shared/ipc'
-import { useT } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
 import { readFiles } from './attachment-files'
 import { ModelThinkingPicker } from '../../patterns/ModelThinkingPicker'
 import { ContextRing } from '../../patterns/ContextRing'
-import { AttachmentStrip } from './AttachmentStrip'
+import { AttachmentStrip, ImageRefWarning } from './AttachmentStrip'
+import { imageRefPrefix, renumberImageRefsAfterRemoval, withImageLegend } from './image-refs'
 import { ComposerBorder } from './ComposerBorder'
 import { CompletionMenu } from './CompletionMenu'
 import { ComposerUsage } from './ComposerUsage'
@@ -35,6 +36,7 @@ const MAX_H = 200
 
 export function Composer({ className }: { className?: string } = {}) {
   const t = useT()
+  const { lang } = useI18n()
   const [value, setValue] = useState('')
   const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -246,9 +248,10 @@ export function Composer({ className }: { className?: string } = {}) {
         .filter((a) => a.kind !== 'file')
         .map((a) => ({ data: a.data, mimeType: a.mimeType }))
       const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
+      const body = withImageLegend(raw, images.length, imageRefPrefix(lang))
       const outgoing = fileRefs.length
-        ? `${raw ? `${raw}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
-        : raw
+        ? `${body ? `${body}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
+        : body
       const ok = roundRunning ? await send(outgoing, images.length ? images : undefined, mode) : await send(outgoing, images.length ? images : undefined)
       if (ok) {
         setValue((draft) => (draft === value ? '' : draft))
@@ -259,7 +262,7 @@ export function Composer({ className }: { className?: string } = {}) {
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [value, roundRunning, runCommandPath, notify, send, t]
+    [value, roundRunning, runCommandPath, notify, send, t, lang]
   )
 
   const onPaste = useCallback(
@@ -371,7 +374,8 @@ export function Composer({ className }: { className?: string } = {}) {
       <QueueEditor />
       <div className="composer">
         <ComposerBorder />
-        <AttachmentStrip />
+        <AttachmentStrip onRemoveImage={(n) => setValue((draft) => renumberImageRefsAfterRemoval(draft, n))} />
+        <ImageRefWarning text={value} />
         <div className="composer-input">
           <CompletionMenu completion={completion} />
           <div className="composer-line">
@@ -389,7 +393,7 @@ export function Composer({ className }: { className?: string } = {}) {
               role="combobox"
               aria-expanded={completion.open}
               aria-autocomplete="list"
-              aria-activedescendant={completion.open ? (completion.slashMatches.length > 0 ? `composer-slash-option-${completion.index}` : completion.atMatches.length > 0 ? `composer-at-option-${completion.index}` : undefined) : undefined}
+              aria-activedescendant={completion.open ? (completion.slashMatches.length > 0 ? `composer-slash-option-${completion.index}` : completion.atImages.length + completion.atMatches.length > 0 ? `composer-at-option-${completion.index}` : undefined) : undefined}
               onChange={(e) => {
                 setValue(e.target.value)
                 cursorRef.current = e.target.selectionStart

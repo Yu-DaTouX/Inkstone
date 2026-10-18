@@ -364,6 +364,7 @@ export class AgentController extends EventEmitter {
   private mcpAppToolsSnapshot?: string
   private nativeConfigReader?: McpNativeConfigReader
   private contextTrimExtension?: string
+  private imageLabelsExtension?: string
   private repeatGuardExtension?: string
   private bundledSkills: string[] = []
   private userSkills?: () => Promise<string[]>
@@ -542,6 +543,7 @@ export class AgentController extends EventEmitter {
     mcpAppToolsSnapshot?: string
     nativeConfigReader?: McpNativeConfigReader
     contextTrimExtension?: string
+    imageLabelsExtension?: string
     nativeSessionExtension?: string
     repeatGuardExtension?: string
     bundledSkills?: string[]
@@ -602,6 +604,7 @@ export class AgentController extends EventEmitter {
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
     this.nativeConfigReader = opts.nativeConfigReader
     this.contextTrimExtension = opts.contextTrimExtension
+    this.imageLabelsExtension = opts.imageLabelsExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
     this.bundledSkills = opts.bundledSkills ?? []
@@ -755,6 +758,7 @@ export class AgentController extends EventEmitter {
           ? ['--extension', this.capabilityGuideExtension]
           : []),
         ...(this.contextTrimExtension ? ['--extension', this.contextTrimExtension] : []),
+        ...(this.imageLabelsExtension ? ['--extension', this.imageLabelsExtension] : []),
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),

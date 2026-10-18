@@ -490,6 +490,10 @@ function contextTrimExtensionPath(): string | undefined {
   return yanThinResourcePath('context-trim.js')
 }
 
+function imageLabelsExtensionPath(): string | undefined {
+  return yanThinResourcePath('image-labels.js')
+}
+
 function nativeSessionExtensionPath(): string | undefined {
   return yanThinResourcePath('native-session-bridge.js')
 }
@@ -517,6 +521,7 @@ function yanThinExtensionPaths(): string[] {
     capabilityGuideExtensionPath(),
     mcpAppProxyExtensionPath(),
     contextTrimExtensionPath(),
+    imageLabelsExtensionPath(),
     nativeSessionExtensionPath(),
     repeatGuardExtensionPath(),
     dangerGuardExtensionPath(),
@@ -1641,6 +1646,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         languageExtension: languageExtensionPath(),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
+        imageLabelsExtension: imageLabelsExtensionPath(),
         nativeSessionExtension: nativeSessionExtensionPath(),
         mcpAppProxyExtension: mcpAppProxyExtensionPath(),
         mcpAppToolsSnapshot: mcpAppProxyToolsEnv().YAN_MCP_APP_TOOLS,

@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
+import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
+import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { findAtQuery, replaceAtQuery } from './at-query'
+import { imageRefLabel, imageRefMatches, imageRefPrefix } from './image-refs'
+
+export interface ImageRefOption {
+  n: number
+  label: string
+  attachment: Attachment
+}
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 
 export interface CompletionState {
   slashQuery: string | null
   slashMatches: SlashCommand[]
   atQuery: string | null
+  atImages: ImageRefOption[]
   atMatches: string[]
   atLoading: boolean
   atError: boolean
@@ -19,6 +28,7 @@ export interface CompletionState {
   setIndex: (index: number) => void
   completeSlash: (command: SlashCommand) => void
   completeAt: (path: string) => void
+  completeImage: (option: ImageRefOption) => void
   handleKey: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean
 }
 
@@ -58,6 +68,8 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
 
   const activeSessionId = useStore((s) => s.session?.sessionId ?? '')
   const activeCwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
+  const attachments = useStore((s) => s.attachments)
+  const { lang } = useI18n()
   const activeRunnerId = useStore((s) => s.activeRunnerId ?? '')
   const activeGeneration = useStore((s) =>
     s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.generation ?? 0
@@ -85,6 +97,17 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
   const slashQuery = slashRange?.query ?? null
   const atRange = useMemo(() => findAtQuery(value, cursor ?? value.length), [cursor, value])
   const atQuery = atRange?.query ?? null
+
+  const atImages = useMemo<ImageRefOption[]>(() => {
+    if (atQuery === null || atRange?.quoted) return []
+    const prefix = imageRefPrefix(lang)
+    const images = attachments.filter((a) => a.kind !== 'file')
+    return imageRefMatches(prefix, images.length, atQuery).map((n) => ({
+      n,
+      label: imageRefLabel(prefix, n),
+      attachment: images[n - 1]
+    }))
+  }, [atQuery, atRange?.quoted, attachments, lang])
 
   const slashMatches = useMemo(() => {
     if (slashQuery === null) return []
@@ -178,16 +201,21 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
   useEffect(() => {
     if (slashQuery !== null && slashMatches.length > 0 && !slashDismissed) {
       setMenu({ open: true, index: 0 })
-    } else if (atQuery !== null && slashMatches.length === 0 && !atDismissed && (paths.length > 0 || atLoading || atError)) {
+    } else if (atQuery !== null && slashMatches.length === 0 && !atDismissed && (atImages.length > 0 || paths.length > 0 || atLoading || atError)) {
       setMenu({ open: true, index: 0 })
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [atDismissed, atError, atLoading, atQuery, paths.length, slashDismissed, slashMatches.length, slashQuery])
+  }, [atDismissed, atError, atImages.length, atLoading, atQuery, paths.length, slashDismissed, slashMatches.length, slashQuery])
 
   useEffect(() => {
     setSlashDismissed(false)
   }, [slashQuery])
+
+  const atStart = atRange?.start ?? null
+  useEffect(() => {
+    setAtDismissed(false)
+  }, [atStart])
 
   const completeSlash = useCallback(
     (command: SlashCommand) => {
@@ -220,10 +248,24 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     [cursor, placeCursor, setValue, value]
   )
 
+  const completeImage = useCallback(
+    (option: ImageRefOption) => {
+      const range = findAtQuery(value, cursor ?? value.length)
+      if (!range) return
+      const after = value.slice(range.end)
+      const insert = after.startsWith(' ') ? option.label : `${option.label} `
+      setValue(`${value.slice(0, range.start)}${insert}${after}`)
+      placeCursor(range.start + option.label.length + 1)
+      setAtDismissed(true)
+      setMenu({ open: false, index: 0 })
+    },
+    [cursor, placeCursor, setValue, value]
+  )
+
   const setIndex = useCallback((index: number) => setMenu((m) => ({ ...m, index })), [])
 
   const handleKey = (event: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    const count = slashMatches.length > 0 ? slashMatches.length : paths.length
+    const count = slashMatches.length > 0 ? slashMatches.length : atImages.length + paths.length
     if (!menu.open || count === 0) return false
     if (event.key === 'ArrowDown') {
       event.preventDefault()
@@ -238,7 +280,11 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault()
       if (slashMatches.length > 0) completeSlash(slashMatches[menu.index] ?? slashMatches[0])
-      else completeAt(paths[menu.index] ?? paths[0])
+      else if (menu.index < atImages.length) completeImage(atImages[menu.index])
+      else {
+        const path = paths[menu.index - atImages.length] ?? paths[0]
+        if (path) completeAt(path)
+      }
       return true
     }
     if (event.key === 'Escape') {
@@ -255,6 +301,7 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     slashQuery,
     slashMatches,
     atQuery,
+    atImages,
     atMatches: paths,
     atLoading,
     atError,
@@ -266,6 +313,7 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     setIndex,
     completeSlash,
     completeAt,
+    completeImage,
     handleKey
   }
 }

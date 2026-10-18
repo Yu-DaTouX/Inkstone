@@ -64,16 +64,43 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
   }
 
   if (atQuery === null) return null
-  const { atMatches, atLoading, atError, atStatus, atTruncated, cwd } = completion
+  const { atImages, atMatches, atLoading, atError, atStatus, atTruncated, cwd } = completion
+  const offset = atImages.length
   return (
     <div className="cmp-menu" role="listbox" aria-label={t('composer.file')} data-testid="at-menu">
+      {atImages.length ? <div className="cmp-group">{t('composer.imageRefGroup')}</div> : null}
+      {atImages.map((option, i) => (
+        <button
+          key={option.attachment.id}
+          type="button"
+          tabIndex={-1}
+          id={`composer-at-option-${i}`}
+          role="option"
+          className="cmp-item"
+          data-selected={i === index || undefined}
+          data-testid="at-image-option"
+          aria-selected={i === index}
+          title={option.attachment.name}
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={() => completion.setIndex(i)}
+          onClick={() => completion.completeImage(option)}
+        >
+          <span className="cmp-name">
+            <img className="cmp-thumb" src={`data:${option.attachment.mimeType};base64,${option.attachment.preview}`} alt="" />
+            {option.label}
+          </span>
+          <span className="cmp-desc">{option.attachment.name}</span>
+          <span className="cmp-src">{t('composer.imageRefKind')}</span>
+        </button>
+      ))}
+      {atImages.length > 0 && (atLoading || atMatches.length > 0) ? <div className="cmp-group">{t('composer.file')}</div> : null}
       {atLoading ? <div className="cmp-empty" data-testid="at-loading">{t('composer.pathLoading')}</div> : null}
       {!atLoading && atError ? (
         <div className="cmp-empty" data-testid="at-error">
           {atStatus === 'permission' ? t('composer.pathPermission') : t('composer.pathError')}
         </div>
       ) : null}
-      {!atLoading && !atError && atMatches.length === 0 ? (
+      {!atLoading && !atError && atMatches.length === 0 && atImages.length === 0 ? (
         <div className="cmp-empty" data-testid="at-empty">{t('composer.pathNoMatch')}</div>
       ) : null}
       {!atLoading && !atError
@@ -82,14 +109,14 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
               key={path}
               type="button"
               tabIndex={-1}
-              id={`composer-at-option-${i}`}
+              id={`composer-at-option-${i + offset}`}
               role="option"
               className="cmp-item"
-              data-selected={i === index || undefined}
-              aria-selected={i === index}
+              data-selected={i + offset === index || undefined}
+              aria-selected={i + offset === index}
               title={toAbsoluteFilePath(cwd, path)}
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => completion.setIndex(i)}
+              onMouseEnter={() => completion.setIndex(i + offset)}
               onClick={() => completion.completeAt(path)}
             >
               <span className="cmp-name">

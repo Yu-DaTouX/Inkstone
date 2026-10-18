@@ -257,6 +257,15 @@
     object-fit: cover;
   }
 
+  .ca-ref {
+    flex: none;
+  }
+
+  .ca-ref-warn {
+    color: var(--fail-t);
+    font-size: var(--t-meta);
+  }
+
   .ca-file-ico {
     display: inline-flex;
     align-items: center;
@@ -758,6 +767,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cmp-thumb {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--r-xs);
+    object-fit: cover;
   }
 
   .cmp-desc {
