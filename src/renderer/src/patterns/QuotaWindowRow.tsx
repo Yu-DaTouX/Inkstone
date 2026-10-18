@@ -83,12 +83,14 @@ export function QuotaWindowRow({
   window,
   stale,
   now,
-  testId
+  testId,
+  compact = false
 }: {
   window: QuotaWindow
   stale: boolean
   now: number
   testId?: string
+  compact?: boolean
 }): ReactElement {
   const t = useT()
   const awaiting = windowAwaitingReset(window, now)
@@ -96,12 +98,16 @@ export function QuotaWindowRow({
   const pct = windowUsedPct(window) ?? 0
   const reset = quotaResetLine(t, window, now)
   const forecast = greyed ? null : quotaForecastLine(t, window, now)
+  const subText = [!awaiting ? reset.text : '', forecast?.text ?? ''].filter(Boolean)
+  const showSub = subText.length > 0 && (!compact || forecast?.kind === 'exhaust')
   return (
     <div
       className="quota-win"
       data-tone={quotaWindowTone(window, stale, now)}
       data-forecast={forecast?.kind || undefined}
+      data-compact={compact ? '1' : undefined}
       data-testid={testId}
+      title={compact && subText.length > 0 ? subText.join(' · ') : undefined}
     >
       <div className="quota-win-top">
         <span className="quota-win-label">{window.label}</span>
@@ -121,7 +127,7 @@ export function QuotaWindowRow({
         maxValue={100}
         projectedPercent={greyed ? null : forecastProjectionPct(window.forecast)}
       />
-      {(!awaiting && reset.text) || forecast?.text ? (
+      {showSub ? (
         <div className="quota-win-sub">
           {!awaiting && reset.text ? <span title={reset.tip}>{reset.text}</span> : null}
           {forecast?.text ? (

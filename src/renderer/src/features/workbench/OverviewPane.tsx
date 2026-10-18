@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } from 'lucide-react'
 import { Button, IconButton, Meter } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -314,7 +314,7 @@ function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, c
         </Button>
         {onOpen ? (
           <IconButton variant="ghost" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpen}>
-            <span aria-hidden>›</span>
+            <ArrowUpRight size={13} aria-hidden />
           </IconButton>
         ) : null}
       </div>
@@ -431,7 +431,7 @@ function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): Re
         </p>
       ) : null}
       {model.windows.map((window) => (
-        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`wb-ov-quota-win-${window.id}`} />
+        <QuotaWindowRow key={window.id} window={window} stale={stale} now={now} testId={`wb-ov-quota-win-${window.id}`} compact />
       ))}
       {model.balance ? (
         <div className="quota-win" data-tone={stale ? 'stale' : 'ok'} data-testid="wb-ov-quota-balance">

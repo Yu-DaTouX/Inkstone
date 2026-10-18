@@ -344,7 +344,7 @@ export function Composer({ className }: { className?: string } = {}) {
 
   const canSend = value.trim().length > 0 || attachmentCount > 0
   const placeholder = roundRunning
-    ? `${t('queue.steerNow')} · Enter ｜ ${t('queue.queueIt')} · Alt+Enter`
+    ? `Enter ${t('queue.steerNow')} · Alt+Enter ${t('queue.queueIt')}`
     : t('composer.ph')
   const mode = composerMode(value)
   const prompt = composerPrompt(value)

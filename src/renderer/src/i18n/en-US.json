@@ -1797,6 +1797,7 @@
   "sm.tps": "Output speed",
   "sm.total": "Total",
   "sm.hitRate": "Overall hit rate",
+  "sm.hitShort": "{pct} cached",
   "sm.hitRateLatest": "Latest hit rate",
   "sm.withSubagents": "Incl. subagents",
   "sm.inputUncached": "Uncached input",

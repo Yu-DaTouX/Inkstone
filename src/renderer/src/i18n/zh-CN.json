@@ -1797,6 +1797,7 @@
   "sm.tps": "输出速度",
   "sm.total": "总数",
   "sm.hitRate": "累计命中率",
+  "sm.hitShort": "命中 {pct}",
   "sm.hitRateLatest": "最近命中率",
   "sm.withSubagents": "含子代理",
   "sm.inputUncached": "未缓存输入",
