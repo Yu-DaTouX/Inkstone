@@ -1,5 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment } from '../../../../shared/turns'
+import { LIVE_SEGMENTS } from './tool-groups'
 import { toolGroupLabel } from './tool-summary'
 
 export interface TurnProcessSplit {
@@ -72,4 +73,17 @@ export function processSummaryLabel(tools: readonly UIToolCall[], zh: boolean, f
   const failed = failedCount(tools)
   const failText = failed > 0 ? (zh ? `（${failed} 个失败）` : ` (${failed} failed)`) : ''
   return toolGroupLabel(tools, zh) + failText
+}
+
+export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {
+  const recentFrom = segments.length - limit
+  const shown: TurnSegment[] = []
+  const dropped: TurnSegment[] = []
+  segments.forEach((segment, index) => {
+    const pinned = segment.tools.some((call) => call.status === 'running' || call.status === 'pending' || (call.status === 'error' && !call.cancelled))
+    if (index >= recentFrom || pinned) shown.push(segment)
+    else dropped.push(segment)
+  })
+  const tools = dropped.reduce((sum, segment) => sum + segment.tools.length, 0)
+  return { shown, hidden: tools || dropped.length }
 }

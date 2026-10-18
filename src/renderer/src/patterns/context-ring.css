@@ -124,31 +124,32 @@
   .ctx-seg {
     display: block;
     height: 100%;
+    min-width: 3px;
   }
 
   .ctx-seg.c-system,
   .ctx-swatch.c-system {
-    background: var(--fg3);
+    background: var(--data-8);
   }
 
   .ctx-seg.c-user,
   .ctx-swatch.c-user {
-    background: var(--accent);
+    background: var(--data-1);
   }
 
   .ctx-seg.c-assistant,
   .ctx-swatch.c-assistant {
-    background: var(--run);
+    background: var(--data-2);
   }
 
   .ctx-seg.c-thinking,
   .ctx-swatch.c-thinking {
-    background: var(--stall);
+    background: var(--data-3);
   }
 
   .ctx-seg.c-tools,
   .ctx-swatch.c-tools {
-    background: var(--fg2);
+    background: var(--data-7);
   }
 
   .ctx-legend {

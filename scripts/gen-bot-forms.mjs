@@ -12,12 +12,11 @@ const FIELD_MARGIN = 10
 
 const BRANDS = {
   claude: { logo: 'claude-color.png', r: 0.375, reach: 0.9, shape: ['star', 12, 0.085, 0.7], spin: 9 },
-  codex: { logo: 'openai.png', r: 0.37, shape: ['outline', 1.1, 5], spin: 7, solid: '#10a37f', tintArt: true, cross: true },
+  codex: { logo: 'openai.png', r: 0.37, shape: ['outline', 1.1, 5], spin: 7, solid: '#10a37f', tintArt: true },
   deepseek: {
     logo: 'deepseek-color.png',
     r: 0.36,
     face: [0, -0.14],
-    cross: true,
     fins: {
       color: '#3f5ae6',
       parts: [
@@ -28,8 +27,8 @@ const BRANDS = {
     },
     belly: { color: '#c9d4ff', rect: [-0.86, 0.34, 1.72, 1.56, 0.78] }
   },
-  qwen: { logo: 'qwen-color.png', r: 0.37, shape: ['outline', 0.55, 7], spin: 7, cross: true },
-  gemini: { logo: 'gemini-color.png', r: 0.37, shape: ['outline', 0.35, 14], spin: 5, cross: true },
+  qwen: { logo: 'qwen-color.png', r: 0.37, shape: ['outline', 0.55, 7], spin: 7 },
+  gemini: { logo: 'gemini-color.png', r: 0.37, shape: ['outline', 0.35, 14], spin: 5 },
   kimi: { logo: 'kimi.png', frame: [0.02, 0.039, 0.973, 0.965], r: 0.32, c: [0.41, 0.59], shape: ['outline', 0.3, 22], mono: true, keeps: [0.78, 0.02, 0.215, 0.215] },
   glm: { logo: 'zai.png', badge: { box: [0.04, 0.04, 0.96, 0.96], radius: 0.2, fill: '#28282b', glyph: [0.22, 0.24, 0.78, 0.76], ink: '#ffffff' }, r: 0.36, rect: [0.74, 0.74, 0.16], solid: '#28282b', eyeColor: '#ffffff', stroke: '#ffffff' },
   grok: { logo: 'grok.png', r: 0.33, reach: 0.55, face: [0, -0.3], ring: [1.5, 0.32, 0.3, -20, 0.14], mono: true },
@@ -276,7 +275,7 @@ for (const [key, spec] of Object.entries(BRANDS)) {
     reach: spec.reach ?? 0.8,
     spin: spec.spin ?? 0,
     face: spec.face ?? [0, 0],
-    cross: !!spec.cross,
+    cross: true,
     mono: !!spec.mono,
     ...color,
     ...(spec.rect ? { rect: spec.rect } : {}),

@@ -465,6 +465,7 @@
   "ctx.statusDeclined": "skipped",
   "ctx.statusFailed": "failed",
   "ctx.statusRunning": "compacting",
+  "ctx.limitNote": "Model window {model} · auto-compact limit {limit}; compaction triggers when the bar fills",
   "ctx.tip": "{used} / {win} used ({pct}%)",
   "ctx.usedOf": "{used} / {win} used",
   "ctx.window": "Context window",

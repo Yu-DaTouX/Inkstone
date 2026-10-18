@@ -5,8 +5,11 @@ import { useStore } from '../../state/store'
 import { IconButton, ShimmerText } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { RunDot } from '../../patterns/RunDot'
-import type { RunPhase } from '../../../../shared/runs'
+import { phaseWord } from '../../state/runs-v3'
+import type { RunModel, RunPhase } from '../../../../shared/runs'
 import type { SessionSummary } from '../../../../shared/ipc'
+import { SessionBot } from './SessionBot'
+import { sessionBotMood } from './session-bot-mood'
 import { passedThreshold, useSessionDrag } from './session-drag'
 import { SessionMenu, openSessionInSplit } from './SessionMenu'
 
@@ -15,6 +18,7 @@ export interface SidebarRowProps {
   title: string
   isCurrent: boolean
   phase: RunPhase | null
+  model?: RunModel | string
   unread: boolean
   code?: string
   word: string | null
@@ -22,8 +26,9 @@ export interface SidebarRowProps {
   onOpen: () => void
 }
 
-export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, tone, onOpen }: SidebarRowProps): JSX.Element {
+export function SidebarRow({ item, title, isCurrent, phase, model, unread, code, word, tone, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
+  const botMood = sessionBotMood(phase)
   const text = v3Text(lang)
   const rowRef = useRef<HTMLDivElement>(null)
   const draggedRef = useRef(false)
@@ -159,7 +164,13 @@ export function SidebarRow({ item, title, isCurrent, phase, unread, code, word, 
           }}
           data-testid="v3-session-row"
         >
-          <RunDot phase={phase} unread={unread} code={code} />
+          <span className="v3-row-lead">
+            {botMood ? (
+              <SessionBot phase={phase} mood={botMood} model={model} seedKey={item.id} label={code ? `${code} · ${phaseWord(lang, phase)}` : phaseWord(lang, phase)} />
+            ) : (
+              <RunDot phase={phase} unread={unread} code={code} />
+            )}
+          </span>
           <ShimmerText className="v3-row-title" active={phase?.kind === 'running'}>{title}</ShimmerText>
           {word ? <span className={`v3-row-word v3-row-word-${tone}`}>{word}</span> : null}
         </button>

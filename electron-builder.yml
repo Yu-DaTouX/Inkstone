@@ -93,6 +93,9 @@ extraResources:
   - from: resources/yan-cli
     to: yan-cli
     filter: ['**/*']
+  - from: resources/bot-icons
+    to: bot-icons
+    filter: ['*.png']
 
 asar: true
 beforePack: scripts/pi-runtime-before-pack.cjs

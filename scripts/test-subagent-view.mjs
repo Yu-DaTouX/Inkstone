@@ -1,5 +1,5 @@
 export async function runSubagentViewTests(ok) {
-  const { dedupeRuns, selectSubagentRuns, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
+  const { dedupeRuns, selectSubagentRuns, subagentRunsForTurnScope, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
 
   console.log('\n--- H-10a 子代理运行归属 ---')
   const run = (id, extra = {}) => ({
@@ -63,4 +63,16 @@ export async function runSubagentViewTests(ok) {
   ).map((r) => r.id)
   ok(visible.includes('fresh') && visible.includes('pend') && visible.includes('live'), '刚完成 / 待审阅 / 运行中的继续露面')
   ok(!visible.includes('merged') && !visible.includes('dropped') && !visible.includes('filed'), '已合并 / 已放弃 / 已归档的不再占位')
+
+  const scoped = [
+    run('main-1', { parentSessionId: 'S', parentMessageId: 'm1' }),
+    run('main-2', { parentSessionId: 'S', parentMessageId: 'm2' }),
+    run('peer-1', { parentSessionId: 'PEER', parentMessageId: 'm1' }),
+    run('nested', { parentRunId: 'main-1', parentMessageId: 'sub-m1' })
+  ]
+  const forAgent = subagentRunsForTurnScope(scoped, { sessionIds: [], parentRunIds: ['main-1'] }).map((r) => r.id)
+  ok(forAgent.length === 1 && forAgent[0] === 'nested', '子代理转录只显示它自己派出的子代理，不挂主会话的卡片组')
+  const forPeer = subagentRunsForTurnScope(scoped, { sessionIds: ['PEER'] }).map((r) => r.id)
+  ok(forPeer.length === 1 && forPeer[0] === 'peer-1', '并排的其他会话只显示自己的子代理')
+  ok(subagentRunsForTurnScope(scoped, { sessionIds: [] }).length === 0, '没有归属范围时不显示任何子代理')
 }

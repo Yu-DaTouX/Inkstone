@@ -9,7 +9,7 @@ import {
   compactionTokensText
 } from '../../state/compaction-view'
 import { Button } from '../../ui'
-import { shortTokens, contextPaneData } from './context-pane-view'
+import { shortTokens, contextPaneData, autoCompactLimitOf } from './context-pane-view'
 import { contextPaneText } from './context-pane-text'
 import type { ContextPaneProps } from './types'
 import './workbench.css'
@@ -31,8 +31,13 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
   const messages = useStore((s) => s.messages)
+  const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
+  const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
 
-  const data = useMemo(() => contextPaneData({ session, stats, messages }), [session, stats, messages])
+  const data = useMemo(
+    () => contextPaneData({ session, stats, messages, autoCompactLimit }),
+    [session, stats, messages, autoCompactLimit]
+  )
   const { usage, slices, occupancy, compacted } = data
 
   const share = (n: number): number => (usage.windowSize > 0 ? (n / usage.windowSize) * 100 : 0)
@@ -43,6 +48,9 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
       ]
     : []
 
+  const limitNote = usage.cappedByLimit
+    ? t('ctx.limitNote', { model: shortTokens(usage.modelWindow), limit: shortTokens(usage.windowSize) })
+    : ''
   const last = session?.lastCompaction
   const tokensText = last ? compactionTokensText(last) : null
   const reclaimText = last ? compactionReclaimText(t, last) : null
@@ -57,6 +65,7 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
           <span className="wb-ctx-subtitle">{text.usage}</span>
           <span
             className={`wb-ctx-total ui-meta-num ${usage.known ? usage.tone : ''}`}
+            title={usage.cappedByLimit ? limitNote : undefined}
             data-testid="v3-wb-ctx-tokens"
           >
             {usage.known
@@ -100,6 +109,11 @@ export function ContextPane(_props: ContextPaneProps): ReactElement {
         )}
 
         {usage.afterCompactUnknown ? <p className="wb-ctx-note">{text.afterCompact}</p> : null}
+        {usage.known && usage.cappedByLimit ? (
+          <p className="wb-ctx-note" data-testid="v3-wb-ctx-limit-note">
+            {limitNote}
+          </p>
+        ) : null}
         {usage.windowAssumed ? (
           <p className="wb-ctx-note" data-testid="v3-wb-ctx-window-assumed">
             {t('ctx.windowAssumed', { win: shortTokens(usage.windowSize) })}

@@ -107,6 +107,18 @@ export const Narrow: Story = {
   )
 }
 
+export const Grip: Story = {
+  name: '短条拖柄',
+  render: function GripStory() {
+    const [value, setValue] = useState(180)
+    return (
+      <Frame basis={value}>
+        <Splitter orientation="vertical" grip value={value} min={60} max={360} step={16} onChange={setValue} title="调整大小" aria-label="调整左右宽度（短条）" />
+      </Frame>
+    )
+  }
+}
+
 export const Disabled: Story = {
   name: '禁用',
   render: () => (

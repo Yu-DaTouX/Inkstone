@@ -282,6 +282,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
                       title={title}
                       isCurrent={isCurrent}
                       phase={run?.phase ?? null}
+                      model={run?.model ?? item.model}
                       unread={run ? isUnreadRun(run) : false}
                       code={run?.code}
                       word={word}

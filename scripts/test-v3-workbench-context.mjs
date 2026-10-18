@@ -26,7 +26,7 @@ const entry = `
 export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/types'))}'
 export { MAX_MOUNTED_PANES, emptyMountState, nextVisited, mountedTabs } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/mount-state'))}'
 export { resolvePanelLayout, fallbackSecondary, cellForTab, extraVisibleTabs, nextSplitTab, splitTabOnPrimaryChange } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/panel-layout'))}'
-export { contextUsageSummary, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
+export { autoCompactLimitOf, contextUsageSummary, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
 export { contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
 export { restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
 `
@@ -59,6 +59,7 @@ async function main() {
     extraVisibleTabs,
     nextSplitTab,
     splitTabOnPrimaryChange,
+    autoCompactLimitOf,
     contextUsageSummary,
     contextFromOf,
     inContextMessages,
@@ -185,6 +186,27 @@ async function main() {
     ok(good.windowAssumed === false, '已知窗口不标假定')
 
     ok(shortTokens(900) === '900' && shortTokens(1600) === '1.6k' && shortTokens(2_000_000) === '2M', 'token 短写法按量级收敛')
+  }
+
+  group('上下文用量：自动压缩上限小于模型窗口时按上限计算')
+  {
+    const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 1_000_000 }
+    const stats = { contextUsage: { tokens: 72_200, contextWindow: 1_000_000, percent: 7.2, modelKey: 'anthropic/claude-x' } }
+    const session = { model, lastCompaction: null }
+    const capped = contextUsageSummary(session, stats, 400_000)
+    ok(capped.windowSize === 400_000 && capped.modelWindow === 1_000_000 && capped.cappedByLimit, '上限 400k、窗口 1M → 分母 400k，并保留模型窗口', capped)
+    ok(Math.round(capped.percent) === 18, '72.2k / 400k 约 18%', capped.percent)
+    const nearly = contextUsageSummary(session, { contextUsage: { ...stats.contextUsage, tokens: 330_000 } }, 400_000)
+    ok(nearly.tone === 'warn', '警告色按上限算：330k / 400k 为 warn', nearly.tone)
+    const off = contextUsageSummary(session, stats)
+    ok(off.windowSize === 1_000_000 && !off.cappedByLimit, '自动压缩关闭（无上限）按模型窗口')
+    const above = contextUsageSummary({ model: { ...model, contextWindow: 200_000 }, lastCompaction: null }, { contextUsage: { tokens: 10_000, contextWindow: 200_000, modelKey: 'anthropic/claude-x' } }, 400_000)
+    ok(above.windowSize === 200_000 && !above.cappedByLimit, '上限不小于窗口时仍按模型窗口')
+    const data = contextPaneData({ session, stats, messages: [], autoCompactLimit: 400_000 })
+    ok(data.usage.windowSize === 400_000, 'contextPaneData 透传上限')
+    ok(autoCompactLimitOf({ autoCompactionEnabled: true }, { autoCompactTokens: 300_000 }) === 300_000, '自动压缩开启取设置值')
+    ok(autoCompactLimitOf({ autoCompactionEnabled: true }, {}) === 400_000, '未设置时取缺省 400k')
+    ok(autoCompactLimitOf({ autoCompactionEnabled: false }, { autoCompactTokens: 300_000 }) === undefined, '自动压缩关闭无上限')
   }
 
   group('上下文页签数据：构成、文件与工具结果明细、压缩过滤')

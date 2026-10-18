@@ -1,4 +1,5 @@
 import type { SessionStats, SessionState, UIMessage } from '../../../../shared/ipc'
+import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../../../../shared/context-limits'
 import { contextBreakdown, contextFromOf, inContextMessages, type ContextSlice } from '../../state/context-breakdown'
 
 const IMAGE_TOKENS = 1200
@@ -12,6 +13,8 @@ export interface ContextUsageSummary {
   matchesModel: boolean
   afterCompactUnknown: boolean
   windowAssumed: boolean
+  modelWindow: number
+  cappedByLimit: boolean
 }
 
 export interface ContextOccupancyRow {
@@ -27,18 +30,28 @@ export interface ContextPaneData {
   compacted: boolean
 }
 
+export function autoCompactLimitOf(
+  session: Pick<SessionState, 'autoCompactionEnabled'> | null,
+  settings: { autoCompactTokens?: number } | null | undefined
+): number | undefined {
+  return session?.autoCompactionEnabled ? settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS : undefined
+}
+
 export function contextUsageSummary(
   session: Pick<SessionState, 'model' | 'lastCompaction'> | null,
-  stats: Pick<SessionStats, 'contextUsage'> | null
+  stats: Pick<SessionStats, 'contextUsage'> | null,
+  autoCompactLimit?: number
 ): ContextUsageSummary {
   const usage = stats?.contextUsage
   const modelKey = session?.model ? `${session.model.provider}/${session.model.id}` : undefined
   const matchesModel = !!usage && (!usage.modelKey || usage.modelKey === modelKey)
   const reported = matchesModel ? usage?.contextWindow : undefined
-  const windowSize =
+  const modelWindow =
     typeof reported === 'number' && Number.isFinite(reported) && reported > 0
       ? reported
       : session?.model?.contextWindow ?? 0
+  const cappedByLimit = !!autoCompactLimit && modelWindow > 0 && autoCompactLimit < modelWindow
+  const windowSize = cappedByLimit ? autoCompactAt(autoCompactLimit, modelWindow) : modelWindow
   const known = matchesModel && typeof usage?.tokens === 'number' && windowSize > 0
   const tokens = known ? (usage!.tokens as number) : 0
   const percent = known ? (tokens / windowSize) * 100 : null
@@ -52,7 +65,9 @@ export function contextUsageSummary(
     tone,
     matchesModel,
     afterCompactUnknown: matchesModel && usage?.tokens === null,
-    windowAssumed: !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow
+    windowAssumed: !cappedByLimit && !!session?.model?.contextWindowAssumed && windowSize === session.model.contextWindow,
+    modelWindow,
+    cappedByLimit
   }
 }
 
@@ -91,8 +106,9 @@ export function contextPaneData(input: {
   session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom' | 'isStreaming' | 'isAgentRunning'> | null
   stats: Pick<SessionStats, 'contextUsage'> | null
   messages: readonly UIMessage[]
+  autoCompactLimit?: number
 }): ContextPaneData {
-  const usage = contextUsageSummary(input.session, input.stats)
+  const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
   const from = contextFromOf(input.session)
   const compacted = !!from
   if (!usage.known) return { usage, slices: [], occupancy: [], compacted }

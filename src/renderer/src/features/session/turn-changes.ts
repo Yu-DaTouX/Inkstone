@@ -37,7 +37,29 @@ function settled(call: UIToolCall): boolean {
   return call.status !== 'running' && call.status !== 'pending'
 }
 
-export function collectTurnChanges(tools: readonly UIToolCall[]): TurnChanges | null {
+function normalizeParts(path: string): { root: string; parts: string[] } {
+  const slashed = path.replace(/\\/g, '/')
+  const drive = /^[a-zA-Z]:/.exec(slashed)
+  const root = drive ? drive[0].toLowerCase() : slashed.startsWith('/') ? '/' : ''
+  const parts: string[] = []
+  for (const part of slashed.slice(drive ? 2 : 0).split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') parts.pop()
+    else parts.push(part.toLowerCase())
+  }
+  return { root, parts }
+}
+
+export function isInsideCwd(path: string, cwd?: string): boolean {
+  if (!cwd?.trim()) return true
+  const base = normalizeParts(cwd)
+  const absolute = /^[a-zA-Z]:[\\/]|^[\\/]/.test(path)
+  const target = normalizeParts(absolute ? path : `${cwd.replace(/[\\/]+$/, '')}/${path}`)
+  if (target.root !== base.root || target.parts.length < base.parts.length) return false
+  return base.parts.every((part, i) => target.parts[i] === part)
+}
+
+export function collectTurnChanges(tools: readonly UIToolCall[], cwd?: string): TurnChanges | null {
   const byPath = new Map<string, TurnFileChange>()
   let countable = true
   for (const call of tools) {
@@ -45,6 +67,7 @@ export function collectTurnChanges(tools: readonly UIToolCall[]): TurnChanges | 
     const diff = readFileDiff(call.details)
     if (!diff || diff.status === 'unchanged') continue
     const path = diff.path || callPath(call) || call.id
+    if (!isInsideCwd(path, cwd)) continue
     const known = diff.added >= 0 && diff.removed >= 0
     if (!known) countable = false
     const prev = byPath.get(path)

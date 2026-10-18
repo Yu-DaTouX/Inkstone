@@ -11,14 +11,15 @@ try {
     entryPoints: {
       brand: 'src/shared/model-brand.ts',
       tool: 'src/renderer/src/features/session/subagent-tool.ts',
-      draw: 'src/renderer/src/patterns/model-bot/draw.ts'
+      draw: 'src/renderer/src/patterns/model-bot/draw.ts',
+      rowMood: 'src/renderer/src/features/sidebar/session-bot-mood.ts'
     },
     bundle: true, platform: 'node', format: 'esm', outdir: temp, outExtension: { '.js': '.mjs' }, logLevel: 'silent'
   })
   const load = (name) => import(pathToFileURL(resolve(temp, `${name}.mjs`)).href)
   const { modelBrand, splitModelRef, MODEL_BRANDS } = await load('brand')
   const { subagentToolLook, subagentActiveTool } = await load('tool')
-  const { BOT_FORMS, IDLE_TOOL, TOOL_LINGER_SECONDS, followTool, poseAt } = await load('draw')
+  const { BOT_FORMS, IDLE_TOOL, TOOL_LINGER_SECONDS, followTool, poseAt, settlesAt, motionGain } = await load('draw')
   let count = 0
   const expect = (ref, brand, text) => {
     assert.equal(modelBrand(ref), brand, `${text}：${JSON.stringify(ref)}`)
@@ -98,7 +99,8 @@ try {
 
   const looks = {
     command: ['bash', 'Bash', 'powershell', 'shell', 'exec', 'codemode', 'run_terminal_cmd', 'execute_command', 'mcp__desktop__shell'],
-    read: ['read', 'Read', 'grep', 'glob', 'ls', 'find', 'web_fetch', 'web_search', 'mcp__fs__read_file', 'list_dir', 'functions.view'],
+    read: ['read', 'Read', 'ls', 'mcp__fs__read_file', 'list_dir', 'functions.view'],
+    search: ['grep', 'Grep', 'glob', 'find', 'rg', 'search', 'web_search', 'web_fetch', 'fetch', 'mcp__exa__web_search', 'mcp__docs__fetch'],
     edit: ['edit', 'write', 'multi_edit', 'apply_patch', 'str_replace_editor', 'create_file', 'mcp__fs__write_file']
   }
   for (const [look, names] of Object.entries(looks)) {
@@ -111,6 +113,11 @@ try {
     assert.equal(subagentToolLook(name), null, `其余工具保持思考：${name}`)
     count += 1
   }
+  assert.equal(subagentToolLook('bash', { command: 'yan search "electron ipc"' }), 'search', '命令行里的 yan search 算搜索')
+  assert.equal(subagentToolLook('bash', { command: 'cd src && yan fetch https://example.com' }), 'search', '命令行里的 yan fetch 算搜索')
+  assert.equal(subagentToolLook('bash', 'yan.cmd search pi'), 'search', '运行快照标签里的 yan search 算搜索')
+  assert.equal(subagentToolLook('bash', { command: 'npm run yan-build' }), 'command', '其他命令仍是跑命令')
+  count += 4
 
   const assistant = (toolCalls, text = '') => ({ id: `m${Math.random()}`, role: 'assistant', text, toolCalls })
   const call = (id, name, extra = {}) => ({ id, name, args: {}, status: 'ok', ...extra })
@@ -119,12 +126,12 @@ try {
   assert.equal(active([assistant([call('a', 'bash', { output: '' })])]), null, '有结果（哪怕为空）即已结束')
   assert.equal(active([assistant([call('a', 'bash', { cancelled: true })])]), null, '已取消的不算')
   assert.equal(active([assistant([call('a', 'read')]), assistant(undefined, '读完了')]), null, '之后已有新助手消息时不再沿用旧调用')
-  assert.deepEqual(active([assistant([call('a', 'grep'), call('b', 'subagent')])]), { look: 'read', id: 'a' }, '并行调用跳过没有外观的工具')
+  assert.deepEqual(active([assistant([call('a', 'grep'), call('b', 'subagent')])]), { look: 'search', id: 'a' }, '并行调用跳过没有外观的工具')
   assert.deepEqual(active([assistant([call('a', 'read')]), { id: 'u', role: 'user', text: '补充' }]), { look: 'read', id: 'a' }, '用户插话不打断正在运行的调用')
   assert.equal(active([assistant([call('a', 'edit', { parentToolCallId: 'p' })])]), null, '嵌套调用不算')
   assert.equal(active([]), null, '空记录')
   const running = (tool) => ({ phase: { kind: 'running', since: 0, activity: 'tool', ...(tool ? { tool } : {}) } })
-  assert.deepEqual(active([assistant([call('a', 'bash')])], running({ name: 'grep', label: 'grep', callId: 's1' })), { look: 'read', id: 's1' }, '运行快照带工具时优先')
+  assert.deepEqual(active([assistant([call('a', 'bash')])], running({ name: 'grep', label: 'grep', callId: 's1' })), { look: 'search', id: 's1' }, '运行快照带工具时优先')
   assert.deepEqual(active([assistant([call('a', 'bash')])], running()), { look: 'command', id: 'a' }, '快照没有工具时退回记录')
   count += 10
 
@@ -141,26 +148,77 @@ try {
   count += 8
 
   const at = (t, tool, form = BOT_FORMS.claude, still = false) => poseAt('work', form, { t, seed: 0, since: 0, entrance: false, restTurn: 30, still }, tool)
-  for (const tool of ['command', 'read', 'edit']) {
-    for (const t of [0.3, 2, 7.7, 25]) assert.deepEqual(at(t, tool, BOT_FORMS.claude, true), at(t, null, BOT_FORMS.claude, true), `减少动态时 ${tool} 静止`)
-    count += 1
+  const body = ({ badge, cue, cueAlpha, ...rest }) => rest
+  for (const tool of ['command', 'read', 'edit', 'search']) {
+    for (const t of [0.3, 2, 7.7, 25]) {
+      assert.deepEqual(body(at(t, tool, BOT_FORMS.claude, true)), body(at(t, null, BOT_FORMS.claude, true)), `减少动态时 ${tool} 身体静止`)
+      assert.deepEqual(at(t, tool, BOT_FORMS.claude, true), at(0.3, tool, BOT_FORMS.claude, true), `减少动态时 ${tool} 道具静止`)
+    }
+    assert.equal(at(2, tool, BOT_FORMS.claude, true).badge, tool, `减少动态时 ${tool} 仍显示静态道具`)
+    count += 2
   }
+  assert.equal(at(2, null, BOT_FORMS.claude, true).badge, 'think', '减少动态时思考仍显示静态泡泡')
+  count += 1
   const samples = (from, to, tool, form) => Array.from({ length: 80 }, (_, i) => at(from + ((to - from) * i) / 80, tool, form))
   const reading = samples(0, 6.8, 'read')
-  assert.ok(reading.every((p) => p.dy === 0 && p.dx === 0 && p.turn === 30 && p.scale === 1), '读文件时身体不动、不自转')
+  assert.ok(reading.every((p) => p.dy === 0 && p.dx === 0 && p.turn === 30 && p.scale === 1 && p.squash === 0 && p.tilt === 0), '读文件时身体不动、不自转')
   assert.ok(Math.min(...reading.map((p) => p.yaw)) < -0.3 && Math.max(...reading.map((p) => p.yaw)) > 0.3, '读文件时眼睛左右扫')
   assert.ok(at(1.0, 'read').pitch < at(1.7 + 1.0, 'read').pitch && at(1.7 + 1.0, 'read').pitch < at(3 * 1.7 + 1.0, 'read').pitch, '逐行略向下')
   assert.ok(at(4 * 1.7 + 1.0, 'read').pitch === at(1.0, 'read').pitch, '一页读完回到顶行')
   const bursting = samples(0, 3, 'command')
   const pausing = samples(3.01, 4.49, 'command')
   assert.ok(Math.min(...bursting.map((p) => p.dy)) < -0.04, '跑命令时按节拍上下点动')
-  assert.ok(pausing.every((p) => p.dy === 0 && p.turn === pausing[0].turn), '每 3 秒点动后停 1.5 秒，停时不转')
+  assert.ok(pausing.every((p) => p.dy === 0 && p.squash === 0 && p.turn === pausing[0].turn), '每 3 秒点动后停 1.5 秒，停时不转')
   assert.ok(bursting.at(-1).turn > bursting[0].turn, '会转的品牌点动时自转')
   assert.ok(samples(0, 3, 'command', BOT_FORMS.deepseek).every((p) => p.turn === 30), '不转的品牌不转')
   assert.ok(Math.min(...samples(24, 28.5, 'command').map((p) => p.dy)) > -0.025, '命令超过 20 秒换成更慢更轻的点动')
   const editing = samples(0, 3.2, 'edit')
   assert.ok(editing.every((p) => p.dy >= 0 && p.turn === 30) && Math.max(...editing.map((p) => p.dy)) > 0.02, '编辑时轻轻点头')
   count += 10
+
+  assert.ok(motionGain(16) > motionGain(22) && motionGain(22) > motionGain(32) && motionGain(32) > motionGain(64) && motionGain(64) === 1 && motionGain(128) === 1, '小尺寸放大动作幅度，64px 起不放大')
+  const sized = (size, mood, tool, t, entrance = false) => poseAt(mood, BOT_FORMS.claude, { t, seed: 0, since: 0, entrance, restTurn: 0, still: false, size }, tool)
+  const span = (size, mood, tool, key, to) => {
+    const values = Array.from({ length: 160 }, (_, i) => sized(size, mood, tool, (to * i) / 160)[key])
+    return Math.max(...values) - Math.min(...values)
+  }
+  assert.ok(span(16, 'work', 'read', 'yaw', 6.8) > span(64, 'work', 'read', 'yaw', 6.8), '读文件在小尺寸下眼睛扫得更开')
+  assert.ok(span(16, 'work', null, 'tilt', 4.8) > span(64, 'work', null, 'tilt', 4.8) && span(64, 'work', null, 'tilt', 4.8) > 0, '思考时随视线歪头，小尺寸更明显')
+  assert.ok(span(16, 'work', 'edit', 'squash', 0.8) > 0.05, '编辑时按下有压扁')
+  assert.ok(Math.max(...Array.from({ length: 60 }, (_, i) => sized(32, 'work', 'command', i * 0.05).squash)) > 0.03 && Math.min(...Array.from({ length: 60 }, (_, i) => sized(32, 'work', 'command', i * 0.05).squash)) < 0, '跑命令时起跳拉伸、落地压扁')
+  assert.ok(span(32, 'ask', null, 'dy', 1.9) > 0.025 && span(32, 'ask', null, 'tilt', 1.9) > 0.1, '等你确认时连跳两下再左右摇摆')
+  assert.ok(span(16, 'work', 'search', 'yaw', 1.6) > 0.8 && span(16, 'work', 'search', 'dx', 1.6) > 0.02 && span(16, 'work', 'search', 'cue', 1.6) > 1.5, '搜索时左右张望，放大镜跟着扫')
+  assert.deepEqual(['think', 'search', 'read', 'command', 'edit'].map((look) => sized(16, 'work', look === 'think' ? null : look, 1).badge), ['think', 'search', 'read', 'command', 'edit'], '每种工作状态都有自己的道具')
+  assert.equal(sized(16, 'ask', null, 1).badge, 'ask', '等你确认显示问号')
+  assert.ok(['done', 'fail', 'rest', 'wake'].every((mood) => sized(16, mood, null, 0.2, true).badge === null && sized(16, mood, null, 5).badge === null), '终态和醒来不显示道具')
+  assert.ok(Object.values(BOT_FORMS).every((form) => poseAt('fail', form, { t: 3, seed: 0, since: 0, entrance: false, restTurn: 0, still: false, size: 16 }).crossed === 1), '失败时所有品牌都画 X 眼')
+  count += 1
+  count += 4
+  assert.ok(Array.from({ length: 160 }, (_, i) => sized(16, 'work', 'command', i * 0.03)).every((p) => p.squash < 0.1 && p.squash > -0.06 && Math.abs(p.tilt) < 0.2), '动作幅度有上限')
+  count += 7
+
+  for (const mood of ['done', 'fail', 'wake']) {
+    const end = settlesAt(mood, true)
+    assert.ok(end > 0 && end <= 1.6, `${mood} 有入场动作且很快结束`)
+    assert.deepEqual(sized(16, mood, null, end + 0.01, true), sized(16, mood, null, end + 3, true), `${mood} 入场后静止`)
+    assert.deepEqual(sized(16, mood, null, 0.3, false), sized(16, mood, null, 5, false), `${mood} 非入场时不动`)
+    count += 3
+  }
+  assert.ok(span(16, 'done', null, 'dy', 0.6) === 0 && Array.from({ length: 30 }, (_, i) => sized(16, 'done', null, i * 0.02, true).dy).some((dy) => dy < -0.03), '完成时开心地跳一下')
+  for (const mood of ['ask', 'done', 'fail', 'wake', 'rest']) {
+    const still = (t) => poseAt(mood, BOT_FORMS.claude, { t, seed: 0, since: 0, entrance: true, restTurn: 0, still: true, size: 16 })
+    assert.deepEqual(still(0.2), still(3.3), `减少动态时 ${mood} 静止`)
+  }
+  count += 6
+
+  const { sessionBotMood } = await load('rowMood')
+  const phase = (kind) => ({ kind })
+  assert.equal(sessionBotMood(phase('running')), 'work', '左栏运行中的会话显示工作姿态')
+  assert.equal(sessionBotMood(phase('needs-you')), 'ask', '左栏等你确认的会话显示询问姿态')
+  assert.equal(sessionBotMood(phase('stalled')), 'ask', '左栏卡住的会话显示询问姿态')
+  for (const kind of ['queued', 'done', 'failed', 'stopped']) assert.equal(sessionBotMood(phase(kind)), null, `左栏 ${kind} 的会话不挂 Bot`)
+  assert.equal(sessionBotMood(null), null, '左栏空闲会话不挂 Bot')
+  count += 6
 
   console.log(`model-bot: ${count} 项通过`)
 } finally {

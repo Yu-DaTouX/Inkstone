@@ -11,6 +11,7 @@ export interface ModelBotProps {
   size?: number
   seedKey?: string
   tool?: BotActivity | null
+  cornerBadge?: boolean
   className?: string
 }
 
@@ -18,19 +19,19 @@ function activityOf(look: BotTool | undefined, id: string | undefined): BotActiv
   return look ? { look, id: id ?? '' } : null
 }
 
-export function ModelBot({ brand, mood, size = 28, seedKey = '', tool, className }: ModelBotProps): ReactElement {
+export function ModelBot({ brand, mood, size = 28, seedKey = '', tool, cornerBadge = false, className }: ModelBotProps): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const handleRef = useRef<BotHandle | null>(null)
   const toolLook = tool?.look
   const toolId = tool?.id
-  const latest = useRef({ brand, mood, size, seedKey, toolLook, toolId })
-  latest.current = { brand, mood, size, seedKey, toolLook, toolId }
+  const latest = useRef({ brand, mood, size, seedKey, toolLook, toolId, cornerBadge })
+  latest.current = { brand, mood, size, seedKey, toolLook, toolId, cornerBadge }
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
-    const { brand: b, mood: m, size: s, seedKey: k, toolLook: look, toolId: id } = latest.current
-    const handle = mountBot(canvas, { brand: b, mood: m, size: s, seed: botSeed(k), tool: activityOf(look, id) })
+    const { brand: b, mood: m, size: s, seedKey: k, toolLook: look, toolId: id, cornerBadge: corner } = latest.current
+    const handle = mountBot(canvas, { brand: b, mood: m, size: s, seed: botSeed(k), tool: activityOf(look, id), corner })
     handleRef.current = handle
     return () => {
       handle.dispose()

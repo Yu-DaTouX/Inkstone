@@ -98,13 +98,14 @@ function legacyWorkspaceMode(): WorkspaceMode | null {
   return isWorkspaceMode(value) ? value : null
 }
 
-function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string): void {
+function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null): void {
+  const model = source === undefined ? useStore.getState().session?.model : source
   const sound = settings?.sound
   if (!sound?.enabled || !sound.events?.[event]) return
   playSound(event, sound.volume)
   if (sound.notifications && typeof document !== 'undefined' && !document.hasFocus()) {
     void window.yan
-      .notifyAttention({ kind: event, title: title || attentionTitle(event), body })
+      .notifyAttention({ kind: event, title: title || attentionTitle(event), body, ...(model ? { model: { provider: model.provider, id: model.id } } : {}) })
       .catch(() => {
       })
   }
@@ -1164,7 +1165,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const route = routePush({ ...s, visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) }, m)
     if (route.patch) set(route.patch)
     if (!route.project) {
-      if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title)
+      if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null)
       return
     }
 

@@ -14,6 +14,8 @@ import type { WorkbenchTabId } from '../features/workbench/types'
 import { newestMessages, shownMessages } from '../state/split-snapshots'
 import { SessionView } from '../features/session/SessionView'
 import { ChatSubagentPanel } from '../features/session/SubagentPanel'
+import { subagentTitle } from '../features/session/SubagentLine'
+import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
 import { Icon } from '../features/session/Icon'
@@ -157,7 +159,12 @@ function PaneFrame({
   const tool = toolTabOf(target)
   const tileText = toolTileText(lang)
   const toolName = tool ? workbenchText(lang).tabs[tool] : ''
-  const title = useSplitTitle(tool ? owner : target)
+  const sessionTitle = useSplitTitle(tool ? owner : target)
+  const agentTask = useStore((s) => {
+    const id = subagentRunIdOf(target)
+    return id ? s.subagents.find((item) => item.id === id)?.task ?? '' : ''
+  })
+  const title = agentTask ? subagentTitle(agentTask) : sessionTitle
   const project = useSplitProject(target)
   const key = splitTileKey(target)
   const ToolIcon = tool ? TOOL_ICONS[tool] : undefined
@@ -263,6 +270,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
   const streamingId = runtime?.session?.isStreaming && messages.length ? messages[messages.length - 1].id : undefined
   const projectTurns = useMemo(() => createTurnProjector(), [])
+  const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: target.sessionId ? [target.sessionId] : [] }), [target.sessionId])
   const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])
 
   useEffect(() => {
@@ -310,7 +318,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
             ) : (
               turns.map((turn) => (
                 <div key={turn.id} className="v3-stream-row">
-                  <TurnView turn={turn} sessionId={target.sessionId ?? null} streaming={turn.kind === 'assistant' && turn.streaming} readOnly />
+                  <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} readOnly />
                 </div>
               ))
             )}
@@ -359,6 +367,7 @@ function AgentPane({ runId }: { runId: string }): JSX.Element {
         .map((item) => ({ ...item, sourceCwd: item.sourceCwd ?? run.cwd }))
     )
   }, [run])
+  const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [runId] }), [runId])
   const streamRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
   useLayoutEffect(() => {
@@ -382,7 +391,7 @@ function AgentPane({ runId }: { runId: string }): JSX.Element {
             <div className="v3-empty"><p className="v3-empty-hint">{t('sa.waitingMessages')}</p></div>
           ) : (
             turns.map((turn) => (
-              <div key={turn.id} className="v3-stream-row"><TurnView turn={turn} readOnly /></div>
+              <div key={turn.id} className="v3-stream-row"><TurnView turn={turn} subagentScope={subagentScope} readOnly /></div>
             ))
           )}
         </div>

@@ -193,7 +193,7 @@ async function buildBundle(outdir) {
   const entry = join(outdir, 'entry.ts')
   await writeFile(entry, [
     `export * from '${posix(abs('src/renderer/src/features/session/turn-lines.ts'))}'`,
-    `export { SubagentLine, subagentTitle, subagentStackOrder, subagentStackWindow, SUBAGENT_FOLD_AT } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
+    `export { SubagentLine, subagentTitle, subagentStackOrder, subagentDefaultFront, subagentDeck, SUBAGENT_STRIP_MAX } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
     `export { CompactionMarker } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
     `export { BranchSummary } from '${posix(abs('src/renderer/src/features/session/BranchSummary.tsx'))}'`,
@@ -476,28 +476,87 @@ async function main() {
     ok(bundle.subagentTitle('修：x') === '修：x', '冒号前太短时保留整句')
     lib.useRunsV3.setState({ runs: [], revision: 4, syncing: false, error: null, buffer: [] })
     lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
-    const many = Array.from({ length: 6 }, (_, i) => subagentRun({ id: 'sub-' + i, startedAt: 1000 + i, status: i < 2 ? 'done' : 'running', endedAt: i < 2 ? 5000 + i : undefined }))
+    const turn = { kind: 'assistant', id: 'a1', sourceIds: ['a1'] }
+    const kind = (name) => (el) => typeof el.type === 'function' && el.type.name === name
+    const mk = (n) => Array.from({ length: n }, (_, i) => subagentRun({ id: 'sub-' + i, startedAt: 1000 + i, status: i < 2 ? 'done' : 'running', endedAt: i < 2 ? 5000 + i : undefined }))
+    const many = mk(6)
     store({ subagents: many, models: [] })
-    const line = rt.render(bundle.SubagentLine, { turn: { kind: 'assistant', id: 'a1', sourceIds: ['a1'] } })
-    const stackEl = collect(line, (el) => typeof el.type === 'function' && el.type.name === 'SubagentStack')[0]
-    ok(!!stackEl && stackEl.props.runs.length === 6, '超过 3 个改为堆叠', stackEl && stackEl.props.runs.length)
-    ok(byTestId(line, 'v3-subagents-more').length === 1 && byTestId(line, 'v3-subagents-progress').length === 1, '有「显示全部」与进度条')
-    const stack = rt.render(stackEl.type, stackEl.props)
-    const rows = collect(stack, (el) => typeof el.type === 'function' && el.type.name === 'SubagentRow')
-    ok(rows.length === bundle.SUBAGENT_FOLD_AT, '堆叠只展开 3 张卡片', rows.length)
-    ok(rows.map((el) => el.props.run.id).join() === 'sub-3,sub-4,sub-5', '没有出错时最新的 3 个，最新的在最下面', rows.map((el) => el.props.run.id))
-    ok(byTestId(stack, 'v3-subagent-tick').length === 6, '左侧每个子代理一格刻度', byTestId(stack, 'v3-subagent-tick').length)
-    ok(byTestId(stack, 'v3-subagent-tick').filter((el) => el.props['data-view'] === '1').length === 3, '可见的 3 格加长')
-    ok(byTestId(stack, 'v3-subagent-pile').length === 1 && byTestId(stack, 'v3-subagent-pile-below').length === 0, '更早的压成一叠放在上方')
+    const line = rt.render(bundle.SubagentLine, { turn })
+    const strips = collect(line, kind('SubagentStrip'))
+    const fronts = collect(line, kind('SubagentRow'))
+    ok(fronts.length === 1 && fronts[0].props.front === true, '多个子代理时只有一张完整卡片，在最前面', fronts.length)
+    ok(strips.length === 5 && byTestId(line, 'v3-subagents-more').length === 0, '6 个时 1 张完整卡片 + 5 条标题条，没有「另外 N 个」', strips.length)
+    ok(fronts[0].props.run.id === 'sub-5', '默认最前：正在运行的里最新启动的', fronts[0].props.run.id)
+    ok(strips.map((el) => el.props.run.id).join() === 'sub-4,sub-3,sub-2,sub-1,sub-0', '露标题的卡片压在完整卡片下面，离得近的是最近启动的', strips.map((el) => el.props.run.id))
+    ok(strips.map((el) => el.props.depth).join() === '1,2,3,3,3', '越往下层级越深，最深封顶 3', strips.map((el) => el.props.depth))
+    ok(strips.map((el) => el.props.layer).join() === '6,5,4,3,2', '越往下叠放层级越低，被上一张压住', strips.map((el) => el.props.layer))
+    ok(byTestId(line, 'v3-subagents-legend').length === 1 && textOf(byTestId(line, 'v3-subagents-sum')[0]) === 'subagentCount', '组头只写总数，进行中与失败放进图例', textOf(byTestId(line, 'v3-subagents-sum')[0]))
+    ok(byTestId(line, 'v3-subagents-progress').length === 1 && byTestId(line, 'v3-subagents-sum').length === 1, '组头与进度条保留')
+    ok(byTestId(line, 'v3-subagent-stack').length === 0 && byTestId(line, 'v3-subagent-pile').length === 0, '没有组内滚动窗口与旧叠层')
+    const deckEl = byTestId(line, 'v3-subagent-deck')[0]
+    ok(deckEl?.props.role === 'group' && typeof deckEl.props.onKeyDown === 'function', '叠层是带键盘导航的分组')
+
+    const stripRender = rt.render(strips[0].type, strips[0].props)
+    ok(stripRender.type === 'button' && stripRender.props.type === 'button' && stripRender.props['data-nav'] === '1', '标题条是可聚焦按钮')
+    ok(byTestId(stripRender, 'v3-subagent-task').length === 1 && byTestId(stripRender, 'v3-subagent-status').length === 1 && byTestId(stripRender, 'v3-subagent-time').length === 1 && byTestId(stripRender, 'v3-subagent-dot').length === 1, '标题条含角标状态点、标题、状态、用时')
+    const stripBots = collect(stripRender, kind('SubagentBot'))
+    ok(stripBots.length === 1 && stripBots[0].props.size === 22 && stripBots[0].props.run.id === strips[0].props.run.id, '标题条左侧是该子代理的 Bot（22px），状态点退为角标', stripBots.map((el) => el.props.size))
+    ok(byTestId(stripRender, 'v3-subagent-tokens').length === 0 && typeof stripRender.props['aria-label'] === 'string' && stripRender.props['data-tone'] === 'run', '标题条不放 token，读屏标签含状态，状态靠圆点色调', stripRender.props['data-tone'])
+    const frontRender = rt.render(fronts[0].type, fronts[0].props)
+    ok(frontRender.props['data-front'] === '1' && byTestId(frontRender, 'v3-subagent-toggle')[0].props['data-nav'] === '1', '完整卡片标记为最前并参与键盘导航')
+
+    rt.cells = []
+    const fresh = rt.render(bundle.SubagentLine, { turn })
+    collect(fresh, kind('SubagentStrip'))[2].props.onPick()
+    const picked = rt.render(bundle.SubagentLine, { turn })
+    const pickedFront = collect(picked, kind('SubagentRow'))[0]
+    ok(pickedFront.props.run.id === 'sub-2' && pickedFront.props.lift === true, '点标题条把它置到最前并带过渡标记', pickedFront.props.run.id)
+    ok(collect(picked, kind('SubagentStrip')).map((el) => el.props.run.id).join() === 'sub-5,sub-4,sub-3,sub-1,sub-0', '原来的最前回到按启动先后排定的位置，其余顺序不变')
+    lib.useSubagentPanel.setState({ runId: 'sub-4', owner: fronts[0].props.owner, returnFocus: null })
+    const bySelected = rt.render(bundle.SubagentLine, { turn })
+    const selectedFront = collect(bySelected, kind('SubagentRow'))[0]
+    ok(selectedFront.props.run.id === 'sub-4' && selectedFront.props.lift !== true, '当前选中的卡片优先成为最前', selectedFront.props.run.id)
+    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+
+    ok(bundle.subagentDefaultFront(mk(3).map((run) => ({ ...run, status: 'done', endedAt: 9000 })), null) === 'sub-2', '没有运行中的：最近启动的在最前')
+    ok(bundle.subagentDefaultFront(many, 'sub-1') === 'sub-1' && bundle.subagentDefaultFront(many, 'nope') === 'sub-5', '选中项在本组才优先，否则忽略')
     const withError = many.map((run) => (run.id === 'sub-1' ? { ...run, status: 'error', endedAt: 9000 } : run))
     ok(bundle.subagentStackOrder(withError)[0].id === 'sub-1', '出错的插到最前面', bundle.subagentStackOrder(withError).map((run) => run.id))
     ok(bundle.subagentStackOrder(many).map((run) => run.id).join() === 'sub-5,sub-4,sub-3,sub-2,sub-1,sub-0', '其余按启动时间新到旧')
-    const win = bundle.subagentStackWindow(6, 99)
-    ok(win.start === 3 && win.end === 6 && win.max === 3, '往上滚到头时停在最早的 3 个', win)
-    ok(bundle.subagentStackWindow(6, -2).start === 0, '往下滚到头回到最前面')
-    store({ subagents: many.slice(0, 3), models: [] })
-    const few = rt.render(bundle.SubagentLine, { turn: { kind: 'assistant', id: 'a1', sourceIds: ['a1'] } })
-    ok(byTestId(few, 'v3-subagents-more').length === 0, '3 个以内不折叠')
+
+    const nine = mk(9)
+    ok(bundle.SUBAGENT_STRIP_MAX === 6, '标题条最多露 6 条')
+    const deck9 = bundle.subagentDeck(nine, 'sub-8')
+    ok(deck9.front.id === 'sub-8' && deck9.strips.length === 6 && deck9.hidden === 2, '9 个：1 张完整 + 6 条标题条 + 另外 2 个', { strips: deck9.strips.length, hidden: deck9.hidden })
+    ok(deck9.strips.map((run) => run.id).join() === 'sub-7,sub-6,sub-5,sub-4,sub-3,sub-2', '超出时优先留下最近的，从近到远排列', deck9.strips.map((run) => run.id))
+    const deck9Err = bundle.subagentDeck(nine.map((run) => (run.id === 'sub-0' ? { ...run, status: 'error', endedAt: 9000 } : run)), 'sub-8')
+    ok(deck9Err.strips[0].id === 'sub-0', '超出时出错的优先留下', deck9Err.strips.map((run) => run.id))
+
+    rt.cells = []
+    store({ subagents: nine, models: [] })
+    const overflow = rt.render(bundle.SubagentLine, { turn })
+    const more = byTestId(overflow, 'v3-subagents-more')[0]
+    const moreLabel = more && collect(more, (el) => el.props?.className === 'v3-sa-strip-task')[0]
+    ok(collect(overflow, kind('SubagentStrip')).length === 6 && !!moreLabel && textOf(moreLabel) === 'subagentMoreRuns', '9 个时露 6 条标题条与一条「另外 N 个」')
+    more.props.onClick()
+    const flat = rt.render(bundle.SubagentLine, { turn })
+    ok(collect(flat, kind('SubagentRow')).length === 9 && collect(flat, kind('SubagentStrip')).length === 0, '点开后整组平铺成完整卡片')
+    ok(collect(flat, kind('SubagentRow')).every((el) => !el.props.front), '平铺时没有层叠标记')
+    const less = byTestId(flat, 'v3-subagents-more')[0]
+    ok(textOf(less) === 'subagentShowLess', '平铺时按钮是「收起」', textOf(less))
+    less.props.onPress()
+    const back = rt.render(bundle.SubagentLine, { turn })
+    ok(collect(back, kind('SubagentRow')).length === 1 && collect(back, kind('SubagentStrip')).length === 6, '收起后回到层叠')
+
+    rt.cells = []
+    store({ subagents: many.slice(0, 1), models: [] })
+    const one = rt.render(bundle.SubagentLine, { turn })
+    ok(collect(one, kind('SubagentRow')).length === 1 && collect(one, kind('SubagentStrip')).length === 0 && byTestId(one, 'v3-subagent-deck').length === 0, '单个子代理就是一张完整卡片，没有层叠')
+    ok(byTestId(one, 'v3-subagents-sum').length === 0 && byTestId(one, 'v3-subagents-progress').length === 0, '单个时没有组头与进度条')
+    store({ subagents: many.slice(0, 2), models: [] })
+    const two = rt.render(bundle.SubagentLine, { turn })
+    ok(collect(two, kind('SubagentStrip')).length === 1 && collect(two, kind('SubagentRow')).length === 1, '两个：一条标题条 + 一张完整卡片')
+    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
   }
 
   group('SubagentLine：未激活视图（peek 别的会话）不显示别的会话的子 Agent')

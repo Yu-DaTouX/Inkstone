@@ -676,6 +676,7 @@ export interface AppSettings {
   streamLoopAutoContinue?: boolean
   usageUnderInput?: boolean
   workspaceTiles?: boolean
+  smoothText?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings
   remoteAccess?: import('./remote-protocol').RemoteAccessSettings
   voiceInput?: import('./voice-input').VoiceInputSettings
@@ -699,6 +700,7 @@ export interface AttentionNotify {
   kind: SoundEvent
   title: string
   body?: string
+  model?: { provider?: string; id?: string }
 }
 
 export const SOUND_VOLUME_MIN = 0

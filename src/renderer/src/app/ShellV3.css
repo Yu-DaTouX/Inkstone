@@ -55,6 +55,17 @@
   .v3-chat[data-side-panel='1'] .v3-sessionbar {
     right: calc(var(--subagent-width, 360px) + var(--s-16));
   }
+  .v3-tiles-resizer.ui-splitter {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 7;
+    width: var(--s-8);
+    right: calc(var(--size-tiles) + var(--s-12) + var(--s-2));
+  }
+  .v3-chat[data-side-panel='1'] .v3-tiles-resizer.ui-splitter {
+    right: calc(var(--size-tiles) + var(--subagent-width, 360px) + var(--s-16) + var(--s-2));
+  }
   .v3-sessionbar > .wb-overview {
     flex: 0 1 auto;
     gap: 0;
