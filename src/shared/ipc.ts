@@ -21,7 +21,7 @@ import type {
   CustomProviderView,
   LocalModelServer
 } from './custom-provider'
-import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from './checkpoints'
+import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from './checkpoints'
 import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
 export type {
   GitActionExpected,
@@ -1555,6 +1555,7 @@ export interface YanBridge {
     preview(recordId: string): Promise<CheckpointPreview>
     restore(recordId: string): Promise<CheckpointRestoreResult>
     undo(undoId: string): Promise<CheckpointRestoreResult>
+    assess(cwd: string): Promise<WorkspaceFit | null>
   }
   searchSessions(query: string, limit?: number): Promise<SessionSearchResult>
   usageStats(range: UsageRange): Promise<UsageStatsResult>

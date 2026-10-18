@@ -4,6 +4,7 @@ import { Button } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProjectRecord } from '../../../../shared/ipc'
+import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
 
 const RECENT_LIMIT = 8
 
@@ -37,6 +38,7 @@ export function ProjectPicker() {
       notify('error', result.error ?? selected)
       return
     }
+    warnIfWorkspaceUnfit(result.cwd ?? selected, t)
     const settings = await window.yan.getSettings()
     useStore.setState({ settings })
     const project = settings.projects.find((p) => p.cwd === settings.cwd)

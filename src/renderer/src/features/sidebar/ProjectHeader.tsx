@@ -5,6 +5,7 @@ import { useStore } from '../../state/store'
 import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
+import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
 import { sameCwd, type SidebarGroup } from './sidebar-model'
 import { SidebarTip } from './SidebarTip'
 import { sidebarText } from './sidebar-text'
@@ -290,6 +291,7 @@ function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; 
       }
       useStore.getState().applyServerSettings(result.settings)
       void useStore.getState().refreshSessions()
+      warnIfWorkspaceUnfit(cwd.trim(), t)
       close()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

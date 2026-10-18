@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile, access } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -84,6 +84,62 @@ try {
 
   ok(cp.isCheckpointableDir(proj) && !cp.isCheckpointableDir(process.env.USERPROFILE || process.env.HOME || '/'), '家目录不做检查点')
   ok((await cp.captureCheckpoint(join(proj, 'does-not-exist'), 's', 'x')) === null, '目录不存在：不做、不抛错')
+
+  {
+    const big = await mkdtemp(join(tmpdir(), 'yan-cp-big-'))
+    try {
+      await writeFile(join(big, 'small.txt'), 'S1\n')
+      await writeFile(join(big, 'grow.bin'), 'tiny\n')
+      const b1 = await cp.captureCheckpoint(big, 'sess-big', '大文件前')
+      ok(!!b1, '大文件：小文件阶段正常存检查点')
+      await mkdir(join(big, 'Paks'))
+      await writeFile(join(big, 'Paks', 'game.pak'), Buffer.alloc(21 * 1024 * 1024, 7))
+      await writeFile(join(big, 'grow.bin'), Buffer.alloc(21 * 1024 * 1024, 9))
+      await writeFile(join(big, 'small.txt'), 'S2\n')
+      const b2 = await cp.captureCheckpoint(big, 'sess-big', '大文件后')
+      ok(!!b2, '大文件：有超大文件时仍为其余文件存检查点')
+      const pv = await cp.previewCheckpoint(big, b1.id)
+      const paths = Object.fromEntries(pv.changes.map((c) => [c.path, c.status]))
+      ok(pv.ok && paths['small.txt'] === 'M', '大文件：普通文件改动照常记录')
+      ok(!('Paks/game.pak' in paths), '大文件：新出现的超大文件不进快照')
+      ok(!('grow.bin' in paths), '大文件：已跟踪文件变大后，预览不列它')
+      const res = await cp.restoreCheckpoint(big, b1.id, 'sess-big')
+      ok(res.ok && (await read(join(big, 'small.txt'))) === 'S1\n', '大文件：回退恢复普通文件', JSON.stringify(res))
+      ok((await readFile(join(big, 'Paks', 'game.pak'))).length === 21 * 1024 * 1024, '大文件：回退不删、不改超大文件')
+      ok((await readFile(join(big, 'grow.bin'))).length === 21 * 1024 * 1024, '大文件：回退不用旧内容覆盖变大的文件')
+      const undoBig = await cp.restoreCheckpoint(big, res.undoId, 'sess-big')
+      ok(undoBig.ok && (await read(join(big, 'small.txt'))) === 'S2\n', '大文件：撤销回退正常')
+      const repoDir = (await readdir(join(data, 'checkpoints'))).map((n) => join(data, 'checkpoints', n, 'repo.git'))
+      let stored = 0
+      for (const r of repoDir) {
+        for (const e of await readdir(join(r, 'objects'), { withFileTypes: true, recursive: true })) {
+          if (e.isFile()) stored += (await stat(join(e.parentPath ?? e.path, e.name))).size
+        }
+      }
+      ok(stored < 5 * 1024 * 1024, '大文件：检查点仓库没有存下超大文件内容', `${stored} bytes`)
+
+      const fit = await cp.assessCheckpointFit(big)
+      ok(fit && !fit.fits && fit.oversizedFiles === 2 && fit.largest?.bytes === 21 * 1024 * 1024, '目录评估：超大文件判为不合适', JSON.stringify(fit))
+      const fine = await cp.assessCheckpointFit(proj)
+      ok(fine?.fits === true && fine.oversizedFiles === 0, '目录评估：普通项目判为合适', JSON.stringify(fine))
+      ok((await cp.assessCheckpointFit(process.env.USERPROFILE || process.env.HOME || '/')) === null, '目录评估：家目录不评估')
+
+      const packDir = join(repoDir[0], 'objects', 'pack')
+      await mkdir(packDir, { recursive: true })
+      const stale = join(packDir, 'tmp_pack_STALE01')
+      const fresh = join(packDir, 'tmp_pack_FRESH01')
+      await writeFile(stale, 'x')
+      await writeFile(fresh, 'y')
+      const old = new Date(Date.now() - 60 * 60 * 1000)
+      await utimes(stale, old, old)
+      await cp.pruneCheckpoints()
+      ok(!(await exists(stale)), '残留：超过 10 分钟的 tmp_pack 被清掉')
+      ok(await exists(fresh), '残留：正在写入的 tmp_pack 不动')
+      await rm(fresh, { force: true })
+    } finally {
+      await rm(big, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
 
   await cp.pruneCheckpoints(Date.now() + 31 * 24 * 3600 * 1000)
   ok((await cp.listCheckpoints(proj, 'sess-1')).length === 0, '超过 30 天的检查点被清理')

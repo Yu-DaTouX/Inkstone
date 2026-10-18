@@ -93,7 +93,7 @@ import type {
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
 import type { RunSnapshot } from '../shared/runs'
-import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult } from '../shared/checkpoints'
+import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
 import type { ConsentEntryView } from '../shared/tool-consent'
@@ -257,7 +257,8 @@ const api: YanBridge = {
     list: () => invoke<CheckpointRecord[]>('yan:checkpoints:list'),
     preview: (recordId) => invoke<CheckpointPreview>('yan:checkpoints:preview', recordId),
     restore: (recordId) => invoke<CheckpointRestoreResult>('yan:checkpoints:restore', recordId),
-    undo: (undoId) => invoke<CheckpointRestoreResult>('yan:checkpoints:undo', undoId)
+    undo: (undoId) => invoke<CheckpointRestoreResult>('yan:checkpoints:undo', undoId),
+    assess: (cwd) => invoke<WorkspaceFit | null>('yan:checkpoints:assess', cwd)
   },
   searchSessions: (query, limit) => invoke<SessionSearchResult>('yan:searchSessions', query, limit),
   usageStats: (range) => invoke<UsageStatsResult>('yan:usageStats', range),
