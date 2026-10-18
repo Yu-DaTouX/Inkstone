@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { appendReminder } from './request-reminder.js'
 
 export const CAPABILITY_GUIDE = [
   'Inkstone provides local capabilities through the `yan` CLI (already on PATH). You run inside the Inkstone desktop app with pi as the engine. Run system commands with the bash tool (the PowerShell tool on Windows without Git Bash); write bash syntax in bash, not PowerShell cmdlets such as Get-Content. A command run by a tool has not run in the user\'s interactive terminal.',
@@ -102,7 +103,7 @@ export function environmentGuide(now = new Date(), platform = process.platform, 
     ? `OS: ${os}.`
     : shell === 'powershell'
       ? 'OS: Windows; system commands run in PowerShell.'
-      : 'OS: Windows; the bash tool runs Git Bash, so paths can be written C:/... or /c/....'
+      : 'OS: Windows; the bash tool runs Git Bash. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`).'
   return [
     `Today: ${day} (local date).`,
     shellLine,
@@ -119,16 +120,7 @@ export function touchesTasks(toolName, input) {
 }
 
 export function withTaskReminder(payload) {
-  const messages = payload?.messages
-  if (!Array.isArray(messages) || messages.length === 0) return undefined
-  const last = messages[messages.length - 1]
-  if (last?.role === 'user' && Array.isArray(last.content)) {
-    return { ...payload, messages: [...messages.slice(0, -1), { ...last, content: [...last.content, { type: 'text', text: TASK_REMINDER }] }] }
-  }
-  if (last?.role === 'user' && typeof last.content === 'string') {
-    return { ...payload, messages: [...messages.slice(0, -1), { ...last, content: `${last.content}\n\n${TASK_REMINDER}` }] }
-  }
-  return { ...payload, messages: [...messages, { role: 'user', content: TASK_REMINDER }] }
+  return appendReminder(payload, TASK_REMINDER)
 }
 
 function registerTaskReminder(pi) {
