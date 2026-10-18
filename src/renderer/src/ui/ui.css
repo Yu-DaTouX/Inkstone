@@ -56,7 +56,7 @@
   }
 
   .ui-btn--sm {
-    height: 26px;
+    height: var(--size-btn-sm);
     padding: 0 var(--s-8);
     font-size: 13px;
   }
@@ -331,13 +331,14 @@
 
   .ui-seg {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 2px;
     max-width: 100%;
     padding: 2px;
-    border-radius: var(--r-md);
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: var(--r-sm);
     background: var(--sunken);
-    box-shadow: inset 0 0 0 1px var(--line);
   }
   .ui-seg[data-disabled] {
     opacity: 0.5;
@@ -345,13 +346,14 @@
   .ui-seg__item {
     position: relative;
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
-    min-width: 52px;
-    height: 26px;
-    padding: 0 var(--s-10);
+    min-width: 48px;
+    height: calc(var(--size-btn) - 4px);
+    padding: 0 var(--s-12);
     border: 0;
-    border-radius: var(--r-sm);
+    border-radius: var(--r-xs);
     background: transparent;
     color: var(--fg2);
     font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
@@ -364,26 +366,36 @@
   }
   .ui-seg__item[data-selected] {
     color: var(--fg);
+    font-weight: 600;
   }
   .ui-seg__item[data-focus-visible] {
     outline: 2px solid var(--accent);
-    outline-offset: 0;
+    outline-offset: -2px;
   }
   .ui-seg__item[data-pressed] .ui-seg__label {
     transform: scale(0.96);
   }
   .ui-seg__label {
     position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
     transition: transform var(--dur-hover) var(--ease);
+  }
+  .ui-seg__label::after {
+    content: attr(data-text);
+    display: block;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 600;
   }
   .ui-seg__thumb {
     position: absolute;
     inset: 0;
-    border-radius: var(--r-sm);
+    border-radius: var(--r-xs);
     background: var(--surface);
-    box-shadow:
-      0 0 0 1px var(--line2),
-      0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 0 0 1px var(--line2), var(--shadow-thumb);
     transition:
       translate var(--dur-expand) var(--ease),
       width var(--dur-expand) var(--ease);
@@ -391,7 +403,6 @@
   @media (hover: hover) {
     .ui-seg__item:hover:not([data-selected]):not([data-disabled]) {
       color: var(--fg);
-      background: var(--hover);
     }
   }
 

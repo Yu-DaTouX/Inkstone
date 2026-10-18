@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import { Badge, Button, Radio, RadioGroup } from '../../../ui'
+import { Badge, Button } from '../../../ui'
 import {
   AUTO_SYNC_INTERVAL_MS,
-  isSyncMode,
+  type SyncBridge,
   type SyncConflictView,
   type SyncMode,
   type SyncResolution,
   type SyncStatusView
 } from '../../../../../shared/sync'
+import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { requestSettingReveal } from '../search/search-model'
 import { syncBridge } from './bridge'
-import { syncText } from './text'
-import './sync.css'
+import { syncText, type SyncText } from './text'
 
-interface Message {
+export interface SyncMessage {
+  scope: 'sync' | 'conflicts'
   tone: 'info' | 'error'
   text: string
 }
 
-function fill(template: string, values: Record<string, string | number>): string {
+export function fillTemplate(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) => (values[key] !== undefined ? String(values[key]) : match))
 }
 
@@ -35,37 +37,48 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function SyncSettings(): ReactElement {
+export interface SyncPanel {
+  bridge: SyncBridge | null
+  text: SyncText
+  lang: string
+  status: SyncStatusView | null
+  conflicts: SyncConflictView[]
+  busy: string | null
+  message: SyncMessage | null
+  configured: boolean
+  chooseFolder: () => void
+  clearFolder: () => void
+  changeMode: (mode: SyncMode) => void
+  syncNow: () => void
+  resolve: (id: string, resolution: SyncResolution) => void
+}
+
+export function useSyncPanel(): SyncPanel {
   const { lang } = useI18n()
   const text = syncText(lang)
   const bridge = useMemo(() => syncBridge(), [])
   const [status, setStatus] = useState<SyncStatusView | null>(null)
   const [conflicts, setConflicts] = useState<SyncConflictView[]>([])
   const [busy, setBusy] = useState<string | null>('load')
-  const [message, setMessage] = useState<Message | null>(null)
+  const [message, setMessage] = useState<SyncMessage | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!bridge) return
     try {
-      const next = await bridge.status()
-      setStatus(next)
+      setStatus(await bridge.status())
       setConflicts(await bridge.conflicts())
     } catch (error) {
-      setMessage({ tone: 'error', text: `${text.loadFailed} ${describe(error)}` })
+      setMessage({ scope: 'sync', tone: 'error', text: `${text.loadFailed} ${describe(error)}` })
     }
   }, [bridge, text])
 
   useEffect(() => {
     let alive = true
-    const run = async (): Promise<void> => {
-      if (!bridge) {
-        if (alive) setBusy(null)
-        return
-      }
-      await refresh()
+    const load = async (): Promise<void> => {
+      if (bridge) await refresh()
       if (alive) setBusy(null)
     }
-    void run()
+    void load()
     return () => {
       alive = false
     }
@@ -73,62 +86,48 @@ export function SyncSettings(): ReactElement {
 
   const configured = Boolean(status?.syncRoot)
 
-  const chooseFolder = async (): Promise<void> => {
+  const perform = (key: string, scope: SyncMessage['scope'], failure: string, action: (sync: SyncBridge) => Promise<void>): void => {
     if (!bridge || busy) return
-    setBusy('folder')
+    setBusy(key)
     setMessage(null)
-    try {
-      const result = await bridge.configure()
-      if (result.ok) await refresh()
-      else if (result.cancelled) setMessage({ tone: 'info', text: text.cancelled })
-      else setMessage({ tone: 'error', text: result.error ?? text.configureFailed })
-    } catch (error) {
-      setMessage({ tone: 'error', text: `${text.configureFailed} ${describe(error)}` })
-    } finally {
-      setBusy(null)
-    }
+    void action(bridge)
+      .catch((error) => setMessage({ scope, tone: 'error', text: `${failure} ${describe(error)}` }))
+      .finally(() => setBusy(null))
   }
 
-  const clearFolder = async (): Promise<void> => {
-    if (!bridge || busy) return
-    setBusy('folder')
-    setMessage(null)
-    try {
-      const result = await bridge.configure(null)
+  const chooseFolder = (): void =>
+    perform('folder', 'sync', text.configureFailed, async (sync) => {
+      const result = await sync.configure()
       if (result.ok) await refresh()
-      else setMessage({ tone: 'error', text: result.error ?? text.configureFailed })
-    } catch (error) {
-      setMessage({ tone: 'error', text: `${text.configureFailed} ${describe(error)}` })
-    } finally {
-      setBusy(null)
-    }
+      else if (result.cancelled) setMessage({ scope: 'sync', tone: 'info', text: text.cancelled })
+      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.configureFailed })
+    })
+
+  const clearFolder = (): void =>
+    perform('folder', 'sync', text.configureFailed, async (sync) => {
+      const result = await sync.configure(null)
+      if (result.ok) await refresh()
+      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.configureFailed })
+    })
+
+  const changeMode = (mode: SyncMode): void => {
+    if (mode === status?.mode) return
+    perform('mode', 'sync', text.modeFailed, async (sync) => {
+      const result = await sync.setMode(mode)
+      if (result.ok) await refresh()
+      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.modeFailed })
+    })
   }
 
-  const changeMode = async (mode: SyncMode): Promise<void> => {
-    if (!bridge || busy || mode === status?.mode) return
-    setBusy('mode')
-    setMessage(null)
-    try {
-      const result = await bridge.setMode(mode)
-      if (result.ok) await refresh()
-      else setMessage({ tone: 'error', text: result.error ?? text.modeFailed })
-    } catch (error) {
-      setMessage({ tone: 'error', text: `${text.modeFailed} ${describe(error)}` })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const syncNow = async (): Promise<void> => {
-    if (!bridge || busy || !configured) return
-    setBusy('sync')
-    setMessage(null)
-    try {
-      const result = await bridge.now()
+  const syncNow = (): void => {
+    if (!configured) return
+    perform('sync', 'sync', text.syncFailed, async (sync) => {
+      const result = await sync.now()
       if (result.ok) {
         setMessage({
+          scope: 'sync',
           tone: 'info',
-          text: fill(text.syncDone, {
+          text: fillTemplate(text.syncDone, {
             pushed: result.pushed,
             pulled: result.pulled,
             conflicts: result.conflicts,
@@ -136,235 +135,199 @@ export function SyncSettings(): ReactElement {
           })
         })
       } else {
-        setMessage({ tone: 'error', text: result.error ?? text.syncFailed })
+        setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.syncFailed })
       }
       await refresh()
-    } catch (error) {
-      setMessage({ tone: 'error', text: `${text.syncFailed} ${describe(error)}` })
-    } finally {
-      setBusy(null)
-    }
+    })
   }
 
-  const resolve = async (id: string, resolution: SyncResolution): Promise<void> => {
-    if (!bridge || busy) return
-    setBusy(id)
-    setMessage(null)
-    try {
-      const result = await bridge.resolve(id, resolution)
-      if (!result.ok) setMessage({ tone: 'error', text: result.error ?? text.resolveFailed })
+  const resolve = (id: string, resolution: SyncResolution): void =>
+    perform(id, 'conflicts', text.resolveFailed, async (sync) => {
+      const result = await sync.resolve(id, resolution)
+      if (!result.ok) setMessage({ scope: 'conflicts', tone: 'error', text: result.error ?? text.resolveFailed })
       await refresh()
-    } catch (error) {
-      setMessage({ tone: 'error', text: `${text.resolveFailed} ${describe(error)}` })
-    } finally {
-      setBusy(null)
-    }
-  }
+    })
 
-  const exportSession = async (): Promise<void> => {
-    if (!bridge || busy) return
-    setBusy('export')
-    setMessage(null)
-    try {
-      const result = await bridge.exportSession()
-      if (result.ok && result.path) setMessage({ tone: 'info', text: fill(text.exportDone, { path: result.path }) })
-      else if (result.cancelled) setMessage({ tone: 'info', text: text.cancelled })
-      else setMessage({ tone: 'error', text: result.error ?? text.syncFailed })
-    } catch (error) {
-      setMessage({ tone: 'error', text: describe(error) })
-    } finally {
-      setBusy(null)
-    }
-  }
+  return { bridge, text, lang, status, conflicts, busy, message, configured, chooseFolder, clearFolder, changeMode, syncNow, resolve }
+}
 
-  const importSession = async (): Promise<void> => {
-    if (!bridge || busy) return
-    setBusy('import')
-    setMessage(null)
-    try {
-      const result = await bridge.importSession()
-      if (result.ok && result.sessionId) setMessage({ tone: 'info', text: fill(text.importDone, { id: result.sessionId }) })
-      else if (result.cancelled) setMessage({ tone: 'info', text: text.cancelled })
-      else setMessage({ tone: 'error', text: result.error ?? text.syncFailed })
-    } catch (error) {
-      setMessage({ tone: 'error', text: describe(error) })
-    } finally {
-      setBusy(null)
-    }
-  }
+function SyncMessageLine({ message, scope }: { message: SyncMessage | null; scope: SyncMessage['scope'] }): ReactElement | null {
+  if (!message || message.scope !== scope) return null
+  return (
+    <p
+      className={message.tone === 'error' ? 'settings-row__desc settings-row__desc--error dd-message' : 'settings-row__desc dd-message'}
+      role={message.tone === 'error' ? 'alert' : 'status'}
+    >
+      {message.text}
+    </p>
+  )
+}
 
+export function SyncGroup({ panel }: { panel: SyncPanel }): ReactElement {
+  const { bridge, text, lang, status, conflicts, busy, message, configured } = panel
   if (!bridge) {
     return (
-      <section className="sync-page" data-testid="v3-sync-settings" data-wired="0">
-        <p className="settings-section__lede" role="note">
-          {text.bridgeMissing}
-        </p>
-      </section>
+      <SettingsGroup label={text.folder}>
+        <SettingsRow settingId="data-sync-folder" label={text.folder} description={text.bridgeMissing}>
+          {null}
+        </SettingsRow>
+      </SettingsGroup>
     )
   }
-
   const last = status?.lastSync
   const errors = last?.errors ?? []
   const mode: SyncMode = status?.mode ?? 'manual'
   const intervalHours = Math.max(1, Math.round((status?.autoIntervalMs ?? AUTO_SYNC_INTERVAL_MS) / 3_600_000))
+  const modeHint = !configured
+    ? text.modeNeedsFolder
+    : mode === 'auto'
+      ? fillTemplate(text.modeAutoHint, { hours: intervalHours })
+      : text.modeManualHint
 
   return (
-    <section className="sync-page" data-testid="v3-sync-settings" data-wired="1">
-      <p className="settings-section__lede" role="note">
-        {text.note}
-      </p>
-
-      <div className="sync-card" data-testid="v3-sync-folder">
-        <h3 className="sync-card__title">{text.folder}</h3>
-        <p className="sync-path" data-testid="v3-sync-folder-path" title={status?.syncRoot ?? ''}>
-          {status?.syncRoot ?? text.folderUnset}
-        </p>
-        <p className="sync-hint">{text.folderRecommend}</p>
-        <div className="sync-actions">
-          <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void chooseFolder()}>
-            {text.folderPick}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            isDisabled={busy !== null || !configured}
-            onPress={() => void clearFolder()}
-          >
-            {text.folderClear}
-          </Button>
-          <Button size="sm" variant="primary" isDisabled={busy !== null || !configured} onPress={() => void syncNow()}>
-            {busy === 'sync' ? text.syncing : text.syncNow}
-          </Button>
-        </div>
-        <RadioGroup
-          label={text.modeTitle}
-          value={mode}
-          isDisabled={busy !== null}
-          description={mode === 'auto' ? fill(text.modeAutoHint, { hours: intervalHours }) : text.modeManualHint}
-          onChange={(value) => {
-            if (isSyncMode(value)) void changeMode(value)
-          }}
-          data-testid="v3-sync-mode"
-        >
-          <div className="sync-mode">
-            <Radio value="manual">{text.modeManual}</Radio>
-            <Radio value="auto">{text.modeAuto}</Radio>
-          </div>
-        </RadioGroup>
-      </div>
-
-      <div className="sync-card" data-testid="v3-sync-last">
-        <h3 className="sync-card__title">{text.lastTitle}</h3>
-        {!last ? (
-          <p className="sync-hint">{text.lastNever}</p>
-        ) : (
-          <div className="sync-last">
-            <p className="sync-last__line">
-              <span>{text.lastAt}</span>
-              <span>{formatTime(last.at, lang)}</span>
-              <span>{text.lastOk}</span>
-              <span data-ok={last.ok ? '1' : '0'}>{last.ok ? 'OK' : text.lastFailed}</span>
-            </p>
-            <p className="sync-last__counts">
-              {fill(text.resultPushed, { n: last.pushed })} · {fill(text.resultPulled, { n: last.pulled })} ·{' '}
-              {fill(text.resultConflicts, { n: last.conflicts })} · {fill(text.resultSkipped, { n: last.skipped })}
-            </p>
-            {errors.length ? (
-              <ul className="sync-errors">
-                {errors.map((line, index) => (
-                  <li key={`${index}-${line}`}>{line}</li>
-                ))}
-              </ul>
+    <SettingsGroup label={text.folder}>
+      <SettingsRow block settingId="data-sync-folder" label={text.folder} description={text.folderRecommend}>
+        <div className="settings-data" data-testid="v3-sync-folder">
+          <span className="settings-path" data-testid="v3-sync-folder-path" title={status?.syncRoot ?? ''}>
+            {status?.syncRoot ?? text.folderUnset}
+          </span>
+          <div className="settings-actions">
+            <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={panel.chooseFolder}>
+              {text.folderPick}
+            </Button>
+            {configured ? (
+              <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={panel.clearFolder}>
+                {text.folderClear}
+              </Button>
             ) : null}
           </div>
-        )}
-      </div>
+        </div>
+      </SettingsRow>
 
-      <div className="sync-card" data-testid="v3-sync-conflicts">
-        <h3 className="sync-card__title">{text.conflictsTitle}</h3>
-        <p className="sync-hint">{text.conflictsHint}</p>
+      <SettingsRow settingId="data-sync-mode" label={text.modeTitle} description={modeHint}>
+        <Segmented<SyncMode>
+          label={text.modeTitle}
+          value={mode}
+          disabled={busy !== null || !configured}
+          onChange={panel.changeMode}
+          options={[
+            { value: 'manual', label: text.modeManual, testId: 'v3-sync-mode-manual' },
+            { value: 'auto', label: text.modeAuto, testId: 'v3-sync-mode-auto' }
+          ]}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        settingId="data-sync-now"
+        label={text.syncNow}
+        description={
+          <span className="dd-lines" data-testid="v3-sync-last">
+            <span>
+              {last
+                ? fillTemplate(text.lastLine, { time: formatTime(last.at, lang), result: last.ok ? text.lastDone : text.lastFailed })
+                : text.lastNever}
+            </span>
+            {last ? (
+              <span>
+                {fillTemplate(text.resultPushed, { n: last.pushed })} · {fillTemplate(text.resultPulled, { n: last.pulled })} ·{' '}
+                {fillTemplate(text.resultConflicts, { n: last.conflicts })} · {fillTemplate(text.resultSkipped, { n: last.skipped })}
+              </span>
+            ) : null}
+            {errors.map((line, index) => (
+              <span key={`${index}-${line}`} className="settings-row__desc--error">
+                {line}
+              </span>
+            ))}
+            {conflicts.length > 0 ? <span>{fillTemplate(text.conflictsPending, { n: conflicts.length })}</span> : null}
+          </span>
+        }
+      >
+        {conflicts.length > 0 ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={() => requestSettingReveal({ section: 'data', id: 'data-sync-conflicts' })}
+          >
+            {text.conflictsReview}
+          </Button>
+        ) : null}
+        <Button size="sm" variant="primary" isDisabled={busy !== null || !configured} onPress={panel.syncNow}>
+          {busy === 'sync' ? text.syncing : text.syncNow}
+        </Button>
+      </SettingsRow>
+
+      <SettingsRow
+        settingId="data-sync-scope"
+        label={text.contentTitle}
+        description={
+          <>
+            {text.contentList}
+            <br />
+            {text.credentialNote}
+          </>
+        }
+      >
+        {null}
+      </SettingsRow>
+
+      <SyncMessageLine message={message} scope="sync" />
+    </SettingsGroup>
+  )
+}
+
+export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElement | null {
+  const { bridge, text, lang, conflicts, busy, message } = panel
+  if (!bridge) return null
+  return (
+    <SettingsGroup label={text.conflictsTitle}>
+      <SettingsRow block settingId="data-sync-conflicts" label={text.conflictsTitle} description={text.conflictsHint}>
         {conflicts.length === 0 ? (
-          <p className="sync-hint" data-testid="v3-sync-conflicts-none">
+          <p className="settings-row__desc" data-testid="v3-sync-conflicts-none">
             {text.conflictsNone}
           </p>
         ) : (
-          <ul className="sync-conflicts">
+          <ul className="dd-conflicts" data-testid="v3-sync-conflicts">
             {conflicts.map((conflict) => (
-              <li className="sync-conflict" key={conflict.id} data-testid={`v3-sync-conflict-${conflict.id}`}>
-                <div className="sync-conflict__head">
+              <li className="settings-device dd-conflict" key={conflict.id} data-testid={`v3-sync-conflict-${conflict.id}`}>
+                <div className="dd-conflict__head">
                   <Badge tone="ask">{text.kinds[conflict.kind]}</Badge>
-                  <span className="sync-conflict__key" title={conflict.key}>
+                  <span className="settings-device__name dd-conflict__key" title={conflict.key}>
                     {conflict.key}
                   </span>
                 </div>
-                <div className="sync-conflict__sides">
-                  <div className="sync-conflict__side">
-                    <span className="sync-conflict__side-title">
+                <div className="dd-conflict__sides">
+                  <div className="dd-conflict__side">
+                    <span className="settings-value">
                       {text.localSide}
                       {conflict.localDeviceName ? ` · ${conflict.localDeviceName}` : ''}
                     </span>
-                    <span className="sync-conflict__meta">{formatTime(conflict.localModifiedAt, lang)}</span>
-                    <p className="sync-conflict__preview">{conflict.localPreview ?? text.noLocal}</p>
+                    <span className="settings-row__desc">{formatTime(conflict.localModifiedAt, lang)}</span>
+                    <p className="settings-path dd-conflict__preview">{conflict.localPreview ?? text.noLocal}</p>
                   </div>
-                  <div className="sync-conflict__side">
-                    <span className="sync-conflict__side-title">
-                      {fill(text.remoteSide, { device: conflict.remoteDeviceName })}
-                    </span>
-                    <span className="sync-conflict__meta">{formatTime(conflict.remoteModifiedAt, lang)}</span>
-                    <p className="sync-conflict__preview">{conflict.remotePreview ?? text.noLocal}</p>
+                  <div className="dd-conflict__side">
+                    <span className="settings-value">{fillTemplate(text.remoteSide, { device: conflict.remoteDeviceName })}</span>
+                    <span className="settings-row__desc">{formatTime(conflict.remoteModifiedAt, lang)}</span>
+                    <p className="settings-path dd-conflict__preview">{conflict.remotePreview ?? text.noLocal}</p>
                   </div>
                 </div>
-                <div className="sync-conflict__actions">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={busy !== null}
-                    onPress={() => void resolve(conflict.id, 'local')}
-                  >
+                <div className="settings-actions">
+                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'local')}>
                     {text.keepLocal}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    isDisabled={busy !== null}
-                    onPress={() => void resolve(conflict.id, 'remote')}
-                  >
+                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'remote')}>
                     {text.keepRemote}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    isDisabled={busy !== null}
-                    onPress={() => void resolve(conflict.id, 'both')}
-                  >
+                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'both')}>
                     {text.keepBoth}
                   </Button>
-                  {busy === conflict.id ? <span className="sync-hint">{text.resolving}</span> : null}
+                  {busy === conflict.id ? <span className="settings-row__desc">{text.resolving}</span> : null}
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      <div className="sync-card" data-testid="v3-sync-session">
-        <h3 className="sync-card__title">{text.sessionTitle}</h3>
-        <p className="sync-hint">{text.sessionNote}</p>
-        <div className="sync-actions">
-          <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void exportSession()}>
-            {busy === 'export' ? text.exporting : text.exportSession}
-          </Button>
-          <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void importSession()}>
-            {busy === 'import' ? text.importing : text.importSession}
-          </Button>
-        </div>
-      </div>
-
-      {message ? (
-        <p className="sync-msg" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>
-          {message.text}
-        </p>
-      ) : null}
-    </section>
+      </SettingsRow>
+      <SyncMessageLine message={message} scope="conflicts" />
+    </SettingsGroup>
   )
 }

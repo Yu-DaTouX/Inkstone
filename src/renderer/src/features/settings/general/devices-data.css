@@ -1,0 +1,80 @@
+@layer features {
+  .dd-message {
+    margin: 0;
+    padding: var(--s-8) var(--s-16);
+  }
+
+  .dd-pairing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8) var(--s-16);
+    min-width: 0;
+  }
+
+  .dd-lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .dd-conflicts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .dd-conflict {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dd-conflict__head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .dd-conflict__key {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dd-conflict__sides {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-12);
+    min-width: 0;
+  }
+
+  .dd-conflict__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .dd-conflict__preview {
+    margin: 0;
+    max-height: 6em;
+    overflow: auto;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 720px) {
+    .dd-conflict__sides {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

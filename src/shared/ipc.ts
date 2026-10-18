@@ -199,6 +199,7 @@ export type PiProjectTrustDefault = 'ask' | 'always' | 'never'
 export type PiShareDestination = 'auto' | 'gist' | 'radius'
 
 export interface PiNativeSettings {
+  compactionEnabled: boolean
   retryMaxRetries: number
   retryBaseDelayMs: number
   httpIdleTimeoutMs: number
@@ -1236,10 +1237,15 @@ export interface CapabilitySkillSettingView {
   id: string
   title: string
   description: string
-  origin?: 'session' | 'user' | 'bundled' | 'other'
+  origin?: 'session' | 'user' | 'pi' | 'bundled' | 'other'
   acquired?: boolean
   sourceUrl?: string
+  location?: string
+  enabled?: boolean
+  manage?: { scope: 'yan' | 'pi'; dir: string }
 }
+
+export type ManagedSkillAction = 'enable' | 'disable' | 'trash'
 
 export interface CapabilityMcpServerSettingView {
   id: string
@@ -1300,12 +1306,22 @@ export interface CapabilitiesBridge {
   snapshot(): Promise<CapabilitySettingsSnapshot>
   discover(queryText: string): Promise<CapabilitySearchResultView>
   sessionSkill(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }>
+  manageSkill(action: ManagedSkillAction, scope: 'yan' | 'pi', dir: string): Promise<{ ok: boolean; error?: string }>
+  revealSkill(location: string): Promise<{ ok: boolean; error?: string }>
   verify(serverId: string): Promise<{ ok: boolean; operationId?: string; error?: string }>
   verification(operationId: string): Promise<CapabilityVerificationStatus | null>
   cancelVerification(operationId: string): Promise<{ ok: boolean; error?: string }>
   prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
   commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
   nativeServers(): Promise<NativeMcpServerListView>
+  manageNativeServer(action: NativeMcpManageAction, name: string): Promise<NativeMcpManageResult>
+}
+
+export type NativeMcpManageAction = 'enable' | 'disable' | 'remove'
+
+export interface NativeMcpManageResult {
+  ok: boolean
+  error?: string
 }
 
 export type SourceKindView = 'image' | 'file' | 'web'

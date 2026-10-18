@@ -29,11 +29,11 @@
   }
 
   .v3-stream-inner {
-    padding: var(--s-20) calc(var(--s-20) + var(--tiles-reserve, 0px)) var(--s-32) calc(var(--s-20) + var(--rail-gutter) * var(--tiles-on, 0));
+    padding: var(--s-20) var(--col-pr, var(--s-20)) var(--s-32) var(--col-pl, var(--s-20));
   }
 
   .v3-stream-row {
-    padding: 0 calc(var(--s-20) + var(--tiles-reserve, 0px)) 0 calc(var(--s-20) + var(--rail-gutter) * var(--tiles-on, 0));
+    padding: 0 var(--col-pr, var(--s-20)) 0 var(--col-pl, var(--s-20));
   }
 
   .v3-stream-row:first-child { padding-top: var(--s-20); }
@@ -45,7 +45,7 @@
     flex-direction: column;
     gap: var(--s-8);
     width: 100%;
-    max-width: var(--size-col);
+    max-width: var(--size-chat);
     margin: 0 auto var(--d-gap);
     box-sizing: border-box;
   }
@@ -182,9 +182,7 @@
     flex: none;
     gap: var(--s-8);
     width: 100%;
-    max-width: calc(var(--size-col) + var(--tiles-reserve, 0px));
-    margin: 0 auto;
-    padding: 0 calc(var(--s-20) + var(--tiles-reserve, 0px)) var(--s-10) var(--s-20);
+    padding: 0 var(--col-pad-r, var(--s-20)) var(--s-10) var(--col-pad-l, var(--s-20));
     box-sizing: border-box;
     max-height: 45vh;
     overflow-y: auto;

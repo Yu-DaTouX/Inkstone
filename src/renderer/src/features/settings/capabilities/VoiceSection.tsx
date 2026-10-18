@@ -11,6 +11,7 @@ import {
   type VoiceModelTier
 } from '../../../../../shared/voice-input'
 import { Segmented, SettingsRow } from '../root/controls'
+import { useCapsText } from './text'
 import { Group, Item, ItemHead, Meta, Note, Panel, Warn, Actions } from './parts'
 
 function fmtBytes(n: number): string {
@@ -18,7 +19,9 @@ function fmtBytes(n: number): string {
   return `${Math.round(n / 1024 ** 2)} MB`
 }
 
-export function VoiceSection(): ReactElement {
+export type VoiceSetup = ReturnType<typeof useVoiceSetup>
+
+export function useVoiceSetup() {
   const t = useT()
   const saved = useStore((s) => s.settings?.voiceInput)
   const [status, setStatus] = useState<VoiceInputStatus | null>(null)
@@ -121,123 +124,25 @@ export function VoiceSection(): ReactElement {
     }
   }
 
-  const hw = status?.hardware
-  const download = status?.download
-  const tierLabel = (tier: VoiceModelTier): string => t(`voice.tier.${tier}` as 'voice.tier.light')
+  return { saved, status, plan, setPlan, error, busy, downloading, refresh, save, askPlan, confirmDownload, pick }
+}
 
+export function VoiceStatusPanel({ voice }: { voice: VoiceSetup }): ReactElement {
+  const t = useT()
+  const text = useCapsText()
+  const { saved, status, error, refresh, save } = voice
+  const download = status?.download
   return (
     <Panel label={t('voice.title')}>
-      <div className="caps-stack" data-testid="settings-voice">
+      <div className="caps-stack" data-testid="settings-voice" data-setting-id="caps-tools-voice">
         <Group title={t('voice.title')} desc={t('voice.desc')} card>
           <p className="caps-meta" data-testid="voice-state">
             {status?.ready ? <Badge tone="run">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
             {status?.model ? <span> {status.model.label}</span> : null}
             {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
           </p>
+          {status && !status.ready ? <Meta>{text('voiceSetupHint')}</Meta> : null}
         </Group>
-
-        <Group title={t('voice.engine')} desc={t('voice.engineDesc')}>
-          <Item testId="voice-binary">
-            <ItemHead>
-              {status?.binary ? (
-                <Badge tone="run">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>
-              ) : (
-                <Badge>{t('voice.engineMissing')}</Badge>
-              )}
-            </ItemHead>
-            {status?.binary ? <Meta title={status.binary.path}>{status.binary.path}</Meta> : null}
-            <Actions>
-              <Button size="sm" variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
-                {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
-              </Button>
-              <Button size="sm" variant="secondary" onPress={() => void pick('binary')}>
-                {t('voice.pickEngine')}
-              </Button>
-              {saved?.binaryPath ? (
-                <Button size="sm" variant="ghost" onPress={() => void save({ ...saved, binaryPath: undefined })}>
-                  {t('voice.clearEngine')}
-                </Button>
-              ) : null}
-            </Actions>
-          </Item>
-        </Group>
-
-        <div data-testid="voice-models">
-        <Group title={t('voice.models')} desc={t('voice.modelsDesc')}>
-          {status?.candidates.length ? (
-            <div className="caps-list">
-              {status.candidates.map((candidate) => {
-                const selected = status.model?.catalogId === candidate.spec.id
-                return (
-                  <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
-                    <ItemHead>
-                      <strong>{tierLabel(candidate.spec.tier)}</strong>
-                      {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
-                      {selected ? <Badge tone="run">{t('voice.inUse')}</Badge> : null}
-                    </ItemHead>
-                    <Meta>
-                      {t('voice.modelLine', {
-                        file: candidate.spec.file,
-                        size: fmtBytes(candidate.spec.approxBytes),
-                        mem: candidate.spec.approxMemoryMB
-                      })}
-                    </Meta>
-                    {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
-                    <Actions>
-                      {candidate.installed ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          isDisabled={selected}
-                          onPress={() => void save({ ...(saved ?? {}), model: { kind: 'catalog', id: candidate.spec.id } })}
-                        >
-                          {selected ? t('voice.inUse') : t('voice.use')}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          isDisabled={busy || downloading}
-                          onPress={() => void askPlan({ kind: 'model', id: candidate.spec.id })}
-                        >
-                          {t('voice.download')}
-                        </Button>
-                      )}
-                    </Actions>
-                  </Item>
-                )
-              })}
-            </div>
-          ) : null}
-          <Actions>
-            <Button size="sm" variant="secondary" onPress={() => void pick('model')}>
-              {t('voice.pickModel')}
-            </Button>
-            {saved?.model?.kind === 'file' ? <Meta title={saved.model.path}>{saved.model.path}</Meta> : null}
-          </Actions>
-        </Group>
-        </div>
-
-        {plan ? (
-          <Item testId="voice-confirm">
-            <ItemHead>
-              <strong>{t('voice.confirmTitle')}</strong>
-            </ItemHead>
-            <Meta>
-              {t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` })}
-            </Meta>
-            <Meta>{t('voice.confirmWhere', { path: plan.destination })}</Meta>
-            <Meta title={plan.url}>{plan.url}</Meta>
-            <Actions>
-              <Button size="sm" variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
-                {t('voice.confirmYes')}
-              </Button>
-              <Button size="sm" variant="secondary" onPress={() => setPlan(null)}>
-                {t('voice.confirmNo')}
-              </Button>
-            </Actions>
-          </Item>
-        ) : null}
 
         {download ? (
           <Item testId="voice-download">
@@ -267,7 +172,7 @@ export function VoiceSection(): ReactElement {
         ) : null}
 
         <div className="settings-rows">
-          <SettingsRow label={t('voice.language')} description={t('voice.languageDesc')} block>
+          <SettingsRow label={t('voice.language')} description={t('voice.languageDesc')} block settingId="caps-tools-voice-language">
             <Segmented<VoiceLanguage>
               label={t('voice.language')}
               value={status?.language ?? 'auto'}
@@ -280,9 +185,126 @@ export function VoiceSection(): ReactElement {
             />
           </SettingsRow>
         </div>
+        {error ? <Warn>{error}</Warn> : null}
+      </div>
+    </Panel>
+  )
+}
+
+export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement {
+  const t = useT()
+  const text = useCapsText()
+  const { saved, status, plan, setPlan, busy, downloading, save, askPlan, confirmDownload, pick } = voice
+  const hw = status?.hardware
+  const tierLabel = (tier: VoiceModelTier): string => t(`voice.tier.${tier}` as 'voice.tier.light')
+  return (
+    <Panel label={text('voiceSetupTitle')}>
+      <div className="caps-stack" data-testid="settings-voice-setup">
+        <Group title={t('voice.engine')} desc={t('voice.engineDesc')}>
+          <Item testId="voice-binary">
+            <ItemHead>
+              {status?.binary ? (
+                <Badge tone="run">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>
+              ) : (
+                <Badge>{t('voice.engineMissing')}</Badge>
+              )}
+            </ItemHead>
+            {status?.binary ? <Meta title={status.binary.path}>{status.binary.path}</Meta> : null}
+            <Actions>
+              <Button size="sm" variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
+                {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
+              </Button>
+              <Button size="sm" variant="secondary" onPress={() => void pick('binary')}>
+                {t('voice.pickEngine')}
+              </Button>
+              {saved?.binaryPath ? (
+                <Button size="sm" variant="secondary" onPress={() => void save({ ...saved, binaryPath: undefined })}>
+                  {t('voice.clearEngine')}
+                </Button>
+              ) : null}
+            </Actions>
+          </Item>
+        </Group>
+
+        <div data-testid="voice-models">
+          <Group title={t('voice.models')} desc={t('voice.modelsDesc')}>
+            {status?.candidates.length ? (
+              <div className="caps-list">
+                {status.candidates.map((candidate) => {
+                  const selected = status.model?.catalogId === candidate.spec.id
+                  return (
+                    <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
+                      <ItemHead>
+                        <strong>{tierLabel(candidate.spec.tier)}</strong>
+                        {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
+                        {selected ? <Badge tone="run">{t('voice.inUse')}</Badge> : null}
+                      </ItemHead>
+                      <Meta>
+                        {t('voice.modelLine', {
+                          file: candidate.spec.file,
+                          size: fmtBytes(candidate.spec.approxBytes),
+                          mem: candidate.spec.approxMemoryMB
+                        })}
+                      </Meta>
+                      {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
+                      <Actions>
+                        {candidate.installed ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            isDisabled={selected}
+                            onPress={() => void save({ ...(saved ?? {}), model: { kind: 'catalog', id: candidate.spec.id } })}
+                          >
+                            {selected ? t('voice.inUse') : t('voice.use')}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            isDisabled={busy || downloading}
+                            onPress={() => void askPlan({ kind: 'model', id: candidate.spec.id })}
+                          >
+                            {t('voice.download')}
+                          </Button>
+                        )}
+                      </Actions>
+                    </Item>
+                  )
+                })}
+              </div>
+            ) : null}
+            <Actions>
+              <Button size="sm" variant="secondary" onPress={() => void pick('model')}>
+                {t('voice.pickModel')}
+              </Button>
+              {saved?.model?.kind === 'file' ? <Meta title={saved.model.path}>{saved.model.path}</Meta> : null}
+            </Actions>
+          </Group>
+        </div>
+
+        {plan ? (
+          <Item testId="voice-confirm">
+            <ItemHead>
+              <strong>{t('voice.confirmTitle')}</strong>
+            </ItemHead>
+            <Meta>
+              {t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` })}
+            </Meta>
+            <Meta>{t('voice.confirmWhere', { path: plan.destination })}</Meta>
+            <Meta title={plan.url}>{plan.url}</Meta>
+            <Actions>
+              <Button size="sm" variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
+                {t('voice.confirmYes')}
+              </Button>
+              <Button size="sm" variant="secondary" onPress={() => setPlan(null)}>
+                {t('voice.confirmNo')}
+              </Button>
+            </Actions>
+          </Item>
+        ) : null}
 
         {hw ? (
-          <Note>
+          <Meta>
             {t('voice.hardware')}：
             {t('voice.hardwareLine', {
               cpu: hw.cpuModel || '—',
@@ -292,10 +314,9 @@ export function VoiceSection(): ReactElement {
               load: hw.cpuLoad === null ? '—' : `${Math.round(hw.cpuLoad * 100)}%`
             })}
             {hw.gpu ? ` ${t('voice.gpuNote', { gpu: hw.gpu })}` : ''}
-          </Note>
+          </Meta>
         ) : null}
         <Note>{t('voice.privacy', { dir: status?.storageDir ?? '' })}</Note>
-        {error ? <Warn>{error}</Warn> : null}
       </div>
     </Panel>
   )

@@ -1,4 +1,4 @@
-import type { AuthProviderInfo, CapabilityStatus, ModelInfo } from '../../../../../shared/ipc'
+import type { AuthProviderInfo, ModelInfo } from '../../../../../shared/ipc'
 import { cleanModelCost, type ModelCost } from '../../../../../shared/custom-provider'
 import { cleanModelFavorites, modelKey, type ModelChoice } from '../../../../../shared/model-selection'
 
@@ -58,30 +58,6 @@ export function serviceSummary(providers: readonly AuthProviderInfo[]): { ready:
   return { ready: providers.filter((p) => p.status === 'ready').length, total: providers.length }
 }
 
-export interface CatalogModel {
-  key: string
-  provider: string
-  id: string
-  name: string
-  reasoning: boolean
-  reasoningStatus: CapabilityStatus
-  contextWindow: number
-  contextWindowStatus: CapabilityStatus
-  input: string[]
-  inputStatus: CapabilityStatus
-  available: boolean
-  starred: boolean
-}
-
-export interface CatalogInput {
-  models: readonly ModelInfo[]
-  favorites: readonly ModelChoice[]
-  query: string
-  provider: string
-  favoriteOnly: boolean
-  providerOrder: readonly string[]
-}
-
 export function newestFirst(a: Pick<ModelChoice, 'provider' | 'id' | 'name'>, b: Pick<ModelChoice, 'provider' | 'id' | 'name'>): number {
   const family = (m: Pick<ModelChoice, 'id'>): string => m.id.match(/^[a-z]+/i)?.[0] ?? m.id
   const group = a.provider.localeCompare(b.provider) || family(a).localeCompare(family(b))
@@ -105,66 +81,6 @@ export function providerRank(provider: string, order: readonly string[]): number
   return i < 0 ? order.length : i
 }
 
-export function catalogProviders(input: Pick<CatalogInput, 'models' | 'favorites' | 'providerOrder'>): string[] {
-  const all = [
-    ...new Set([
-      ...input.models.map((m) => m.provider),
-      ...input.favorites.map((m) => m.provider)
-    ])
-  ]
-  return all.sort(
-    (a, b) =>
-      providerRank(a, input.providerOrder) - providerRank(b, input.providerOrder) || a.localeCompare(b)
-  )
-}
-
-function toRow(
-  choice: Pick<ModelChoice, 'provider' | 'id' | 'name'>,
-  model: ModelInfo | undefined,
-  favorites: ReadonlySet<string>
-): CatalogModel {
-  return {
-    key: modelKey(choice),
-    provider: choice.provider,
-    id: choice.id,
-    name: model?.name || choice.name || choice.id,
-    reasoning: model?.reasoning === true,
-    reasoningStatus: model?.reasoningStatus ?? 'unknown',
-    contextWindow: model?.contextWindow ?? 0,
-    contextWindowStatus: model?.contextWindowStatus ?? (model && model.contextWindow > 0 ? 'known' : 'unknown'),
-    input: model?.input ? [...model.input] : [],
-    inputStatus: model?.inputStatus ?? (model?.input ? 'known' : 'unknown'),
-    available: !!model,
-    starred: favorites.has(modelKey(choice))
-  }
-}
-
-export function buildCatalogRows(input: CatalogInput): CatalogModel[] {
-  const byKey = new Map<string, ModelInfo>()
-  for (const m of input.models) byKey.set(modelKey(m), m)
-  const choices = new Map<string, Pick<ModelChoice, 'provider' | 'id' | 'name'>>()
-  for (const m of input.models) choices.set(modelKey(m), { provider: m.provider, id: m.id, name: m.name })
-  for (const m of input.favorites) if (!choices.has(modelKey(m))) choices.set(modelKey(m), m)
-
-  const favorites = new Set(input.favorites.map(modelKey))
-  const q = input.query.trim().toLowerCase()
-  const provider = input.provider
-
-  return [...choices.values()]
-    .filter((m) => {
-      if (input.favoriteOnly && !favorites.has(modelKey(m))) return false
-      if (!input.favoriteOnly && provider && m.provider !== provider) return false
-      if (!q) return true
-      return `${m.name ?? ''} ${m.id} ${m.provider}`.toLowerCase().includes(q)
-    })
-    .map((m) => toRow(m, byKey.get(modelKey(m)), favorites))
-    .sort(
-      (a, b) =>
-        providerRank(a.provider, input.providerOrder) - providerRank(b.provider, input.providerOrder) ||
-        newestFirst(a, b)
-    )
-}
-
 export function isFavorite(favorites: readonly ModelChoice[], model: Pick<ModelChoice, 'provider' | 'id'>): boolean {
   const key = modelKey(model)
   return favorites.some((m) => modelKey(m) === key)
@@ -179,21 +95,6 @@ export function toggleFavorite(
     return favorites.filter((m) => modelKey(m) !== key)
   }
   return [...favorites, { provider: model.provider, id: model.id, ...(model.name ? { name: model.name } : {}) }]
-}
-
-export type ThinkingView =
-  | { kind: 'levels'; values: string[] }
-  | { kind: 'no-levels' }
-  | { kind: 'unsupported' }
-  | { kind: 'unknown' }
-
-export function thinkingView(
-  levels: readonly string[],
-  status: CapabilityStatus | undefined
-): ThinkingView {
-  if (status === undefined || status === 'unknown') return { kind: 'unknown' }
-  if (status === 'unsupported') return { kind: 'unsupported' }
-  return levels.length > 1 ? { kind: 'levels', values: [...levels] } : { kind: 'no-levels' }
 }
 
 export const RECENT_STORAGE_KEY = 'inkstone.v3.modelPicker.recent'

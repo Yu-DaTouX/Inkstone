@@ -4,7 +4,7 @@ import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { UsageRange } from '../../../../../shared/usage-stats'
 import { Button } from '../../../ui'
 import { settingsText } from '../settings-text'
-import { Segmented } from '../root/controls'
+import { Segmented, SettingsMore } from '../root/controls'
 import {
   compactNumber,
   dailyEntries,
@@ -66,7 +66,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
   ]
   const dimensionOptions = USAGE_DIMENSIONS.map((value) => ({
     value,
-    label: value === 'day' ? text.usageByDay : value === 'model' ? text.usageByModel : text.usageByProject,
+    label: value === 'day' ? text.usageByDay : text.usageByModel,
     testId: `v3-usage-dim-${value}`
   }))
   const viewOptions = [
@@ -81,21 +81,16 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
       ? null
       : dimension === 'day'
         ? usageBars(dailyEntries(stats.heat, range)).reverse()
-        : dimension === 'model'
-          ? usageBars(stats.models.map((model) => ({ key: model.key, value: model.tokens })))
-          : null
+        : usageBars(stats.models.map((model) => ({ key: model.key, value: model.tokens })))
 
-  const dimensionLabel =
-    dimension === 'day' ? text.usageByDay : dimension === 'model' ? text.usageByModel : text.usageByProject
+  const dimensionLabel = dimension === 'day' ? text.usageByDay : text.usageByModel
 
   return (
     <section className="settings-section" aria-label={text.sectionUsage}>
       <p className="settings-section__lede">{text.usageNote}</p>
 
-      <UsageCurrency text={text} />
-
       <div className="settings-rows usage-panel">
-        <div className="settings-usage-bar usage-panel__bar">
+        <div className="settings-usage-bar usage-panel__bar" data-setting-id="usage-range">
           <Segmented
             label={text.sectionUsage}
             value={range}
@@ -104,7 +99,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
           />
           <span className="settings-spacer" />
           {onOpenRuns ? (
-            <Button size="sm" variant="ghost" onPress={onOpenRuns}>
+            <Button size="sm" variant="secondary" onPress={onOpenRuns} data-setting-id="usage-runs">
               {text.usageRuns}
             </Button>
           ) : null}
@@ -128,7 +123,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
 
       {status === 'ready' && stats && !empty ? (
         <div className="settings-rows usage-panel">
-          <div className="settings-usage-bar usage-panel__bar">
+          <div className="settings-usage-bar usage-panel__bar" data-setting-id="usage-breakdown">
             <Segmented
               label={text.usageDimension}
               value={dimension}
@@ -150,11 +145,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
               {dimension === 'day' ? <span className="settings-breakdown__cap"> · {text.usageDailyCap}</span> : null}
             </div>
 
-            {dimension === 'project' ? (
-              <p className="settings-note" role="note" data-testid="v3-usage-project-unavailable">
-                {text.usageProjectUnavailable}
-              </p>
-            ) : bars && bars.length > 0 ? (
+            {bars && bars.length > 0 ? (
               view === 'chart' ? (
                 <ol className="settings-bars" aria-label={dimensionLabel}>
                   {bars.map((bar, index) => (
@@ -210,6 +201,10 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
           </div>
         </div>
       ) : null}
+
+      <SettingsMore>
+        <UsageCurrency text={text} />
+      </SettingsMore>
     </section>
   )
 }

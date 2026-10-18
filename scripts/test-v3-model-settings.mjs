@@ -19,9 +19,7 @@ const mod = await import(
 
 const {
   authInfoFor,
-  buildCatalogRows,
   canRemoveCredential,
-  catalogProviders,
   credentialFromEnv,
   entryState,
   isFavorite,
@@ -31,7 +29,6 @@ const {
   serviceState,
   serviceSummary,
   splitServices,
-  thinkingView,
   toggleFavorite
 } = mod
 
@@ -42,19 +39,6 @@ const provider = (over = {}) => ({
   envVar: over.envVar ?? '',
   authKey: over.authKey ?? '',
   status: over.status ?? 'missing',
-  ...over
-})
-
-const model = (over = {}) => ({
-  id: over.id ?? 'm',
-  name: over.name ?? 'M',
-  provider: over.provider ?? 'acme',
-  reasoning: over.reasoning ?? false,
-  reasoningStatus: over.reasoningStatus ?? 'unsupported',
-  contextWindow: over.contextWindow ?? 0,
-  contextWindowStatus: over.contextWindowStatus ?? 'unknown',
-  input: over.input,
-  inputStatus: over.inputStatus,
   ...over
 })
 
@@ -105,94 +89,8 @@ assert.deepEqual(split.readyKeys.map((p) => p.id), ['key-ready'], '已配置 key
 assert.deepEqual(split.otherKeys.map((p) => p.id), ['key-missing'], '未配置 key 折叠')
 assert.deepEqual(serviceSummary(services), { ready: 1, total: 3 })
 
-const models = [
-  model({ id: 'deepseek-v3', name: 'DeepSeek V3', provider: 'deepseek', reasoningStatus: 'known', reasoning: true }),
-  model({ id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', provider: 'deepseek', contextWindow: 1_000_000, contextWindowStatus: 'known' }),
-  model({ id: 'cc-flash', name: 'CommandCode Flash', provider: 'commandcode' })
-]
-const sortModels = (rows) => rows.map((r) => `${r.provider}/${r.id}`)
-
-const all = buildCatalogRows({
-  models,
-  favorites: [],
-  query: '',
-  provider: '',
-  favoriteOnly: false,
-  providerOrder: []
-})
-assert.equal(all.length, 3, '默认列出全部模型')
-assert.equal(all.every((r) => r.available), true)
-
-const byQuery = buildCatalogRows({
-  models,
-  favorites: [],
-  query: '  flash ',
-  provider: '',
-  favoriteOnly: false,
-  providerOrder: []
-})
-assert.deepEqual(
-  sortModels(byQuery).sort(),
-  ['commandcode/cc-flash', 'deepseek/deepseek-v4.1-flash'],
-  '查询匹配名字 / id / 供应商，去空白且大小写不敏感'
-)
-
-const byProvider = buildCatalogRows({
-  models,
-  favorites: [],
-  query: '',
-  provider: 'deepseek',
-  favoriteOnly: false,
-  providerOrder: []
-})
-assert.equal(byProvider.length, 2)
-
-const ordered = buildCatalogRows({
-  models,
-  favorites: [],
-  query: '',
-  provider: '',
-  favoriteOnly: false,
-  providerOrder: ['deepseek']
-})
-assert.deepEqual(
-  sortModels(ordered),
-  ['deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v3', 'commandcode/cc-flash'],
-  '用户排过的供应商在前，版本号降序'
-)
-
-const staleFav = [{ provider: 'gone', id: 'old-model', name: 'Old' }]
-const withFav = buildCatalogRows({
-  models,
-  favorites: staleFav,
-  query: '',
-  provider: '',
-  favoriteOnly: false,
-  providerOrder: []
-})
-const staleRow = withFav.find((r) => r.provider === 'gone')
-assert.ok(staleRow, '收藏的不可用模型仍列出')
-assert.equal(staleRow.available, false, '不在权威模型列表就不标可用（本地收藏 ≠ 已登录/可用）')
-assert.equal(staleRow.starred, true)
-
-const favoriteOnly = buildCatalogRows({
-  models,
-  favorites: staleFav,
-  query: '',
-  provider: '',
-  favoriteOnly: true,
-  providerOrder: []
-})
-assert.deepEqual(favoriteOnly.map((r) => `${r.provider}/${r.id}`), ['gone/old-model'], '只看收藏时忽略供应商筛选')
-
 assert.equal(providerRank('a', []), 0)
 assert.equal(providerRank('a', ['b', 'a']), 1)
-assert.deepEqual(catalogProviders({ models, favorites: staleFav, providerOrder: ['commandcode'] }), [
-  'commandcode',
-  'deepseek',
-  'gone'
-])
-
 assert.equal(isFavorite([], { provider: 'a', id: '1' }), false)
 assert.equal(isFavorite([{ provider: 'a', id: '1' }], { provider: 'a', id: '1' }), true)
 const added = toggleFavorite([], { provider: 'a', id: '1', name: 'One' })
@@ -205,24 +103,9 @@ assert.deepEqual(
   '不同模型各自收藏，不去重错误'
 )
 
-assert.deepEqual(thinkingView([], undefined), { kind: 'unknown' })
-assert.deepEqual(thinkingView(['off'], 'unknown'), { kind: 'unknown' })
-assert.deepEqual(thinkingView([], 'unsupported'), { kind: 'unsupported' })
-assert.deepEqual(thinkingView(['off'], 'known'), { kind: 'no-levels' }, '只有 off 表示未声明，不说“不支持”')
-assert.deepEqual(
-  thinkingView(['off', 'low', 'high'], 'known'),
-  { kind: 'levels', values: ['off', 'low', 'high'] },
-  '多档位原样透传，不合并也不按模型名硬编码'
-)
-assert.notEqual(
-  JSON.stringify(thinkingView(['off', 'low'], 'known')),
-  JSON.stringify(thinkingView(['off', 'low'], 'unknown')),
-  'known 与 unknown 必须区分'
-)
-
 assert.ok(
   newestFirst({ provider: 'a', id: 'x-10', name: '' }, { provider: 'a', id: 'x-2', name: '' }) < 0,
   '数字版本按数值比较而非字典序（x-10 在 x-2 之前）'
 )
 
-console.log('v3 模型与服务纯逻辑单测通过（服务状态 / 凭证门禁 / 目录过滤排序 / 收藏 / 思考档位）')
+console.log('v3 模型与服务纯逻辑单测通过（服务状态 / 凭证门禁 / 供应商排序 / 收藏）')

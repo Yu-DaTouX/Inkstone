@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT, type TFunc } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type { GitInstallProgress, GitRuntimeStatus, ToolchainStatus, ToolStatus } from '../../../../../shared/ipc'
 import { Button, ProgressBar } from '../../../ui'
-import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import { useConfirm } from './confirm'
 import { Actions, Group, Meta, StatusBadge, Warn } from './parts'
 
@@ -44,12 +43,10 @@ export function GitRuntimeSection(): ReactElement | null {
   const installGit = useStore((s) => s.installGit)
   const cancelGitInstall = useStore((s) => s.cancelGitInstall)
   const [cancelled, setCancelled] = useState(false)
-  const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest, getSettingsRequest)
   const [runtime, setRuntime] = useState<GitRuntimeStatus | null>(null)
   const [tools, setTools] = useState<ToolchainStatus | null>(null)
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState('')
-  const root = useRef<HTMLDivElement>(null)
   const alive = useRef(true)
 
   useEffect(() => {
@@ -77,11 +74,6 @@ export function GitRuntimeSection(): ReactElement | null {
   useEffect(() => {
     if (progress.phase === 'done' || progress.phase === 'error') void refresh()
   }, [progress.phase, refresh])
-
-  useEffect(() => {
-    if (request?.view !== 'git' || !runtime?.supported) return
-    root.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }, [request?.revision, request?.view, runtime?.supported])
 
   if (!runtime?.supported) return null
 
@@ -120,7 +112,7 @@ export function GitRuntimeSection(): ReactElement | null {
   }
 
   return (
-    <div ref={root} data-testid="cap-git-runtime">
+    <div data-testid="cap-git-runtime">
       <Group title={t('git.sectionTitle')} desc={t('git.sectionDesc')} card>
         <Actions>
           {toolBadge(tools?.git, 'Git', t)}
@@ -162,7 +154,7 @@ export function GitRuntimeSection(): ReactElement | null {
             {runtime.managedInstalled ? (
               <Button
                 size="sm"
-                variant="ghost"
+                variant="danger"
                 isDisabled={removing}
                 isPending={removing}
                 onPress={() => void remove()}
@@ -171,7 +163,7 @@ export function GitRuntimeSection(): ReactElement | null {
                 {t('git.remove')}
               </Button>
             ) : null}
-            <Button size="sm" variant="ghost" isDisabled={removing} onPress={() => void refresh()}>
+            <Button size="sm" variant="secondary" isDisabled={removing} onPress={() => void refresh()}>
               {t('set.extRecheck')}
             </Button>
           </Actions>

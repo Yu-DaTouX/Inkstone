@@ -570,4 +570,14 @@
     color: var(--accent);
     font-weight: 600;
   }
+
+  .v3-tip-label,
+  .v3-tip-detail {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  .v3-tip-detail {
+    opacity: 0.7;
+  }
 }

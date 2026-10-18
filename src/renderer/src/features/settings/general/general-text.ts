@@ -4,8 +4,16 @@ export interface GeneralText {
   loading: string
   cancel: string
   confirm: string
-  enabled: string
 
+  appearanceSendKey: string
+  appearanceSendKeyDesc: string
+  appearanceSendKeyEnter: string
+  appearanceSendKeyCtrl: string
+  appearanceUsageUnderInput: string
+  appearanceUsageUnderInputDesc: string
+
+  sessionContextLede: string
+  sessionKeepAwakeBatteryOff: string
   sessionAutoArchive: string
   sessionAutoArchiveDesc: string
   archiveNever: string
@@ -33,6 +41,9 @@ export interface GeneralText {
   notifSystem: string
   notifSystemDesc: string
   notifSystemTest: string
+  notifSystemTestLabel: string
+  notifSystemNeedsSound: string
+  notifVolume: string
   notifSystemHelp: string
   notifSound: string
   notifSoundDesc: string
@@ -56,8 +67,6 @@ export interface GeneralText {
   securityAllowRootsDesc: string
   securityAllowRootsEmpty: string
   securityAllowRootsRemove: string
-  securityDangerConfirm: string
-  securityDangerConfirmDesc: string
 
   devicesEnable: string
   devicesEnableDesc: string
@@ -103,7 +112,6 @@ export interface GeneralText {
   dataLocationDesc: string
   dataSize: string
   dataMove: string
-  dataPick: string
   dataTarget: string
   dataMoveConfirm: string
   dataMoving: string
@@ -117,12 +125,6 @@ export interface GeneralText {
   dataBackupVerify: string
   dataBackupWorking: string
   dataBackupChecked: string
-  dataExport: string
-  dataExportDesc: string
-  dataExportAction: string
-  dataExportDone: string
-  dataDangerNote: string
-  dataUnavailable: string
 
   aboutVersion: string
   aboutBuild: string
@@ -135,15 +137,11 @@ export interface GeneralText {
   aboutUpdates: string
   aboutUpdateAuto: string
   aboutUpdateAutoDesc: string
-  aboutUpdateState: string
   aboutUpdateCheck: string
   aboutUpdateDownload: string
   aboutUpdateInstall: string
   aboutUpdateReleases: string
   aboutUpdateInstallConfirm: string
-  aboutCredentials: string
-  aboutCredentialsDesc: string
-  aboutCredentialsAction: string
   aboutPhaseIdle: string
   aboutPhaseChecking: string
   aboutPhaseCurrent: string
@@ -152,15 +150,22 @@ export interface GeneralText {
   aboutPhaseDownloaded: string
   aboutPhaseError: string
   aboutPhaseManual: string
-  aboutUnavailable: string
 }
 
 const ZH: GeneralText = {
   loading: '正在读取…',
   cancel: '取消',
   confirm: '确定',
-  enabled: '已开启',
 
+  appearanceSendKey: '发送键',
+  appearanceSendKeyDesc: '另一种组合用来换行；Shift+Enter 始终换行。',
+  appearanceSendKeyEnter: 'Enter',
+  appearanceSendKeyCtrl: 'Ctrl+Enter',
+  appearanceUsageUnderInput: '显示会话统计与用量',
+  appearanceUsageUnderInputDesc: '单会话时在状态栏，多会话磁贴时在输入框下方，显示轮数、输出速度与累计 Token。',
+
+  sessionContextLede: '压缩由 pi 原生完成，这里的设置对所有会话生效。',
+  sessionKeepAwakeBatteryOff: '先打开上一项才能设置。',
   sessionAutoArchive: '自动归档闲置会话',
   sessionAutoArchiveDesc: '闲置会话自动归档，可在「已归档」找回。',
   archiveNever: '从不',
@@ -183,24 +188,27 @@ const ZH: GeneralText = {
   queueOneAtATime: '逐条',
   queueAll: '全部',
   sessionAutoRetry: '自动重试',
-  sessionAutoRetryDesc: '模型服务临时出错（限流、过载、5xx）时自动重试。写入 pi 设置，对所有会话生效。',
+  sessionAutoRetryDesc: '模型服务临时出错（限流、过载、5xx）时自动重试；开关立即对正在运行的会话生效。',
 
   notifSystem: '系统通知',
   notifSystemDesc: '窗口在后台时弹出系统通知。',
-  notifSystemTest: '试发一条',
+  notifSystemTest: '发送',
+  notifSystemTestLabel: '试发一条系统通知',
+  notifSystemNeedsSound: '先打开提示音总开关才能设置。',
+  notifVolume: '音量',
   notifSystemHelp: '确认系统允许砚发通知。',
   notifSound: '提示音总开关',
-  notifSoundDesc: '总开关关闭后，下面各事件既不出声也不通知。',
+  notifSoundDesc: '关闭后，下面各事件既不出声也不弹系统通知。',
   notifEventDone: '回合完成',
   notifEventQuestion: '需要你回答',
   notifEventError: '出错',
   notifPreview: '试听',
 
   securityMode: '权限档',
-  securityModeDanger: '自动批准（危险时问）',
-  securityModeDangerDesc: '只有明确危险的操作才弹确认卡；缺省档。',
+  securityModeDanger: '自动批准',
+  securityModeDangerDesc: '常规操作直接执行，危险操作先问你；是提醒，不是沙箱。',
   securityModeAll: '不受限制',
-  securityModeAllDesc: '砚不再审批也不拦截；需要一次确认。',
+  securityModeAllDesc: '砚不审批也不拦截，工具按原生行为执行；切换前需确认一次。',
   securityAllConfirmTitle: '切到「不受限制」？',
   securityAllConfirmBody: '高危命令和项目外写入将不再询问，可随时切回。',
   securityAllConfirmContinue: '仍然切换',
@@ -211,8 +219,6 @@ const ZH: GeneralText = {
   securityAllowRootsDesc: '在确认卡选「允许并记住」后加入；只能移除。',
   securityAllowRootsEmpty: '还没有记住任何目录。',
   securityAllowRootsRemove: '移除',
-  securityDangerConfirm: '危险操作确认',
-  securityDangerConfirmDesc: '强制推送、删除等危险命令始终先问。',
 
   devicesEnable: '手机接入',
   devicesEnableDesc: '允许手机查看会话、回复、发文字；任务仍在本机运行。',
@@ -258,7 +264,6 @@ const ZH: GeneralText = {
   dataLocationDesc: '会话、凭证等数据的存放位置。',
   dataSize: '占用',
   dataMove: '移动到其它盘',
-  dataPick: '选择目标目录',
   dataTarget: '将迁移到：{path}',
   dataMoveConfirm: '迁移并重启',
   dataMoving: '正在安排迁移…',
@@ -272,14 +277,8 @@ const ZH: GeneralText = {
   dataBackupVerify: '校验备份',
   dataBackupWorking: '处理中…',
   dataBackupChecked: '已校验 {files} 个文件 · {size}',
-  dataExport: '导出会话',
-  dataExportDesc: '导出当前会话为文件；登录凭证不会导出。',
-  dataExportAction: '导出当前会话',
-  dataExportDone: '已导出：{path}',
-  dataDangerNote: '迁移数据目录有风险，确认后才执行。',
-  dataUnavailable: '数据功能暂不可用。',
 
-  aboutVersion: '正式版本',
+  aboutVersion: '版本',
   aboutBuild: '构建',
   aboutOpenSource: '开源与仓库',
   aboutOpen: '打开项目主页',
@@ -290,15 +289,11 @@ const ZH: GeneralText = {
   aboutUpdates: '应用更新',
   aboutUpdateAuto: '启动时检查更新',
   aboutUpdateAutoDesc: '有新版本时提醒，不自动下载。',
-  aboutUpdateState: '更新状态',
   aboutUpdateCheck: '检查更新',
   aboutUpdateDownload: '下载',
   aboutUpdateInstall: '安装并重启',
   aboutUpdateReleases: '打开发布页',
   aboutUpdateInstallConfirm: '现在安装并重启？请先保存正在编辑的内容。',
-  aboutCredentials: '模型凭证',
-  aboutCredentialsDesc: '登录与 API Key 请到「模型与服务」配置。',
-  aboutCredentialsAction: '去「模型与服务」',
   aboutPhaseIdle: '未检查',
   aboutPhaseChecking: '检查中…',
   aboutPhaseCurrent: '已是最新',
@@ -306,16 +301,23 @@ const ZH: GeneralText = {
   aboutPhaseDownloading: '下载中…',
   aboutPhaseDownloaded: '已下载，待安装',
   aboutPhaseError: '检查失败',
-  aboutPhaseManual: '请到发布页手动更新',
-  aboutUnavailable: '更新功能暂不可用。'
+  aboutPhaseManual: '请到发布页手动更新'
 }
 
 const EN: GeneralText = {
   loading: 'Loading…',
   cancel: 'Cancel',
   confirm: 'Confirm',
-  enabled: 'On',
 
+  appearanceSendKey: 'Send key',
+  appearanceSendKeyDesc: 'The other combination adds a line; Shift+Enter always adds a line.',
+  appearanceSendKeyEnter: 'Enter',
+  appearanceSendKeyCtrl: 'Ctrl+Enter',
+  appearanceUsageUnderInput: 'Show session stats and usage',
+  appearanceUsageUnderInputDesc: 'Turns, output speed and cumulative tokens; in the status bar for one session, below the input in tiles.',
+
+  sessionContextLede: 'Compaction is done natively by pi; these settings apply to all sessions.',
+  sessionKeepAwakeBatteryOff: 'Turn on the option above first.',
   sessionAutoArchive: 'Auto-archive idle sessions',
   sessionAutoArchiveDesc: 'Idle sessions are archived; restore from Archived.',
   archiveNever: 'Never',
@@ -338,24 +340,27 @@ const EN: GeneralText = {
   queueOneAtATime: 'One at a time',
   queueAll: 'All at once',
   sessionAutoRetry: 'Auto-retry',
-  sessionAutoRetryDesc: 'Retry automatically on transient provider errors (rate limits, overload, 5xx). Saved to pi settings for all sessions.',
+  sessionAutoRetryDesc: 'Retry automatically on transient provider errors (rate limits, overload, 5xx); the switch applies to running sessions immediately.',
 
   notifSystem: 'System notifications',
   notifSystemDesc: 'System notification when the window is in background.',
-  notifSystemTest: 'Send one',
+  notifSystemTest: 'Send',
+  notifSystemTestLabel: 'Send a test notification',
+  notifSystemNeedsSound: 'Turn on Sound first.',
+  notifVolume: 'Volume',
   notifSystemHelp: 'Check that Inkstone may notify.',
   notifSound: 'Sound',
-  notifSoundDesc: 'When off, events neither chime nor notify.',
+  notifSoundDesc: 'When off, the events below neither chime nor show a system notification.',
   notifEventDone: 'Turn done',
   notifEventQuestion: 'Needs you',
   notifEventError: 'Error',
   notifPreview: 'Preview',
 
   securityMode: 'Permission tier',
-  securityModeDanger: 'Auto-approve (ask when dangerous)',
-  securityModeDangerDesc: 'Only explicitly dangerous operations show a confirmation card; the default.',
+  securityModeDanger: 'Auto approve',
+  securityModeDangerDesc: 'Routine operations run directly; dangerous operations require approval. This is a guardrail, not a sandbox.',
   securityModeAll: 'Unrestricted',
-  securityModeAllDesc: 'Inkstone no longer approves or blocks; requires one confirmation.',
+  securityModeAllDesc: 'No additional Inkstone approvals or interception; tools retain native behavior. Switching asks once.',
   securityAllConfirmTitle: 'Switch to “Unrestricted”?',
   securityAllConfirmBody: 'Dangerous commands and writes outside the project will no longer ask. You can switch back.',
   securityAllConfirmContinue: 'Switch anyway',
@@ -366,8 +371,6 @@ const EN: GeneralText = {
   securityAllowRootsDesc: 'Added via “allow and remember”; you can only remove here.',
   securityAllowRootsEmpty: 'No folders remembered yet.',
   securityAllowRootsRemove: 'Remove',
-  securityDangerConfirm: 'Dangerous-operation confirmation',
-  securityDangerConfirmDesc: 'Force-push, delete and similar always ask.',
 
   devicesEnable: 'Phone access',
   devicesEnableDesc: 'Phone can view sessions, reply and send text; tasks run here.',
@@ -413,7 +416,6 @@ const EN: GeneralText = {
   dataLocationDesc: 'Where sessions, credentials and other data live.',
   dataSize: 'Size',
   dataMove: 'Move to another drive',
-  dataPick: 'Choose target folder',
   dataTarget: 'Will move to: {path}',
   dataMoveConfirm: 'Move and restart',
   dataMoving: 'Scheduling move…',
@@ -427,14 +429,8 @@ const EN: GeneralText = {
   dataBackupVerify: 'Verify backup',
   dataBackupWorking: 'Working…',
   dataBackupChecked: 'Verified {files} files · {size}',
-  dataExport: 'Export session',
-  dataExportDesc: 'Export the current session; credentials are not included.',
-  dataExportAction: 'Export current session',
-  dataExportDone: 'Exported: {path}',
-  dataDangerNote: 'Moving the data folder is risky; it runs only after you confirm.',
-  dataUnavailable: 'Data tools are unavailable.',
 
-  aboutVersion: 'Release',
+  aboutVersion: 'Version',
   aboutBuild: 'Build',
   aboutOpenSource: 'Open source & repository',
   aboutOpen: 'Open project home',
@@ -445,15 +441,11 @@ const EN: GeneralText = {
   aboutUpdates: 'App updates',
   aboutUpdateAuto: 'Check for updates on start',
   aboutUpdateAutoDesc: 'Notify on new versions; never auto-download.',
-  aboutUpdateState: 'Update state',
   aboutUpdateCheck: 'Check',
   aboutUpdateDownload: 'Download',
   aboutUpdateInstall: 'Install and restart',
   aboutUpdateReleases: 'Open releases',
   aboutUpdateInstallConfirm: 'Install and restart now? Save anything you are editing first.',
-  aboutCredentials: 'Model credentials',
-  aboutCredentialsDesc: 'Sign-in and API keys are under Models & services.',
-  aboutCredentialsAction: 'Open Models & services',
   aboutPhaseIdle: 'Not checked',
   aboutPhaseChecking: 'Checking…',
   aboutPhaseCurrent: 'Up to date',
@@ -461,8 +453,7 @@ const EN: GeneralText = {
   aboutPhaseDownloading: 'Downloading…',
   aboutPhaseDownloaded: 'Downloaded, ready to install',
   aboutPhaseError: 'Check failed',
-  aboutPhaseManual: 'Update manually from the releases page',
-  aboutUnavailable: 'Updates are unavailable.'
+  aboutPhaseManual: 'Update manually from the releases page'
 }
 
 export function generalText(lang: Lang): GeneralText {

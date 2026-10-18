@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { reviewSkillFiles, formatSkillSecurityReview } from '../shared/skill-security'
 import { legacyPlaybookToSkill, userSkillMarkdown, validateUserSkill, type UserSkillInput } from '../shared/user-skill'
@@ -8,12 +8,13 @@ import { legacyPlaybookToSkill, userSkillMarkdown, validateUserSkill, type UserS
 export const USER_SKILLS_DIRNAME = 'skills'
 const LEGACY_PLAYBOOK_FILE = 'playbooks.json'
 const MIGRATION_MARKER = '.playbooks-migrated.json'
+const DISABLED_SKILLS_FILE = '.disabled.json'
 
 export function userSkillsDir(root: string = YAN_DIR): string {
   return join(root, USER_SKILLS_DIRNAME)
 }
 
-export async function userSkillPaths(root: string = YAN_DIR): Promise<string[]> {
+export async function allUserSkillPaths(root: string = YAN_DIR): Promise<string[]> {
   const dir = userSkillsDir(root)
   try {
     const entries = await readdir(dir, { withFileTypes: true })
@@ -27,6 +28,31 @@ export async function userSkillPaths(root: string = YAN_DIR): Promise<string[]> 
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error
   }
+}
+
+export async function userSkillPaths(root: string = YAN_DIR): Promise<string[]> {
+  const disabled = await disabledUserSkillNames(root)
+  return (await allUserSkillPaths(root)).filter((file) => !disabled.has(basename(dirname(file))))
+}
+
+const disabledUserSkillsFile = (root: string): string => join(userSkillsDir(root), DISABLED_SKILLS_FILE)
+
+export async function disabledUserSkillNames(root: string = YAN_DIR): Promise<Set<string>> {
+  try {
+    const raw = JSON.parse(await readFile(disabledUserSkillsFile(root), 'utf8')) as unknown
+    return new Set(Array.isArray(raw) ? raw.filter((name): name is string => typeof name === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+export async function setUserSkillDisabled(name: string, disabled: boolean, root: string = YAN_DIR): Promise<void> {
+  const names = await disabledUserSkillNames(root)
+  if (disabled === names.has(name)) return
+  if (disabled) names.add(name)
+  else names.delete(name)
+  await mkdir(userSkillsDir(root), { recursive: true })
+  await writeAtomic(disabledUserSkillsFile(root), `${JSON.stringify([...names].sort(), null, 2)}\n`)
 }
 
 async function writeAtomic(file: string, content: string): Promise<void> {

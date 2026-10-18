@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
 import { useStore } from '../../../state/store'
-import { Button } from '../../../ui'
+import { Badge, Button } from '../../../ui'
 import { useCapsText } from './text'
-import { Empty, Group, Item, ItemHead, Meta, Note, Panel } from './parts'
+import { Empty, Group, Item, ItemHead, Meta, Panel } from './parts'
 import { promptCommands } from './model'
 
 export function PromptsSection(): ReactElement {
@@ -14,16 +14,14 @@ export function PromptsSection(): ReactElement {
 
   return (
     <Panel label={text('prompts')}>
-      <Note>{text('promptsNote')}</Note>
-      <Note>{text('promptsReadonly')}</Note>
-      <Note>{text('promptsHiddenHint')}</Note>
-
       <Group
         title={text('prompts')}
+        desc={text('promptsHiddenHint')}
+        settingId="caps-prompts"
         actions={
           <Button
             size="sm"
-            variant="ghost"
+            variant="secondary"
             isDisabled={!hasSession}
             onPress={() => void reloadCommands()}
             data-testid="caps-prompts-reload"
@@ -42,8 +40,8 @@ export function PromptsSection(): ReactElement {
               <Item key={`${command.module ?? ''}:${command.name}`} testId="caps-prompt">
                 <ItemHead>
                   <span className="caps-name">/{command.name}</span>
-                  {command.usage ? <span className="caps-tag">{command.usage}</span> : null}
-                  {command.hiddenInMenu ? <span className="caps-tag">{text('promptHiddenTag')}</span> : null}
+                  {command.usage ? <Badge>{command.usage}</Badge> : null}
+                  {command.hiddenInMenu ? <Badge>{text('promptHiddenTag')}</Badge> : null}
                   <span className="caps-spacer" />
                 </ItemHead>
                 {command.description ? <Meta>{command.description}</Meta> : null}

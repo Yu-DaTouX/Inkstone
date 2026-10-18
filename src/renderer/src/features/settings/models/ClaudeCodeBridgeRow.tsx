@@ -108,20 +108,20 @@ export function ClaudeCodeBridgeRow(): ReactElement {
       </div>
       <div className="ms-service-actions">
         {installed !== true || outdated ? (
-          <Button size="sm" isDisabled={busy} data-testid="cc-install-bridge" onPress={() => void install()}>
+          <Button size="sm" variant="primary" isDisabled={busy} data-testid="cc-install-bridge" onPress={() => void install()}>
             {busy ? t('cc.installing') : outdated ? t('cc.update', { version: BRIDGE_VERSION }) : t('cc.install')}
           </Button>
         ) : null}
         <Button
           size="sm"
-          variant="ghost"
+          variant="secondary"
           onPress={() => void window.yan.browser.openExternal('https://www.npmjs.com/package/pi-claude-bridge?activeTab=versions')}
         >
           {t('set.releasePage')}
         </Button>
         <Button
           size="sm"
-          variant="ghost"
+          variant="secondary"
           onPress={() => void window.yan.browser.openExternal('https://code.claude.com/docs/en/setup')}
         >
           {t('cc.getCli')}

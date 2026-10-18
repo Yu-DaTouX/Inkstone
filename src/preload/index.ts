@@ -28,6 +28,7 @@ import type {
   AttachmentUsage,
   BuiltinCapabilityView,
   CapabilitySettingsSnapshot,
+  ManagedSkillAction,
   CapabilitySearchResultView,
   CapabilityVerificationStatus,
   PackageActionResultView,
@@ -380,6 +381,9 @@ const api: YanBridge = {
     discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
     sessionSkill: (action: 'promote' | 'remove', name: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:sessionSkill', { action, name }),
+    manageSkill: (action: ManagedSkillAction, scope: 'yan' | 'pi', dir: string) =>
+      invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageSkill', { action, scope, dir }),
+    revealSkill: (location: string) => invoke<{ ok: boolean; error?: string }>('yan:capabilities:revealSkill', location),
     verify: (serverId: string) => invoke<{ ok: boolean; operationId?: string; error?: string }>('yan:capabilities:verify', serverId),
     verification: (operationId: string) =>
       invoke<CapabilityVerificationStatus | null>('yan:capabilities:verification', operationId),
@@ -389,7 +393,9 @@ const api: YanBridge = {
       invoke<NativeMcpImportPrepareResponse>('yan:capabilities:prepareNativeImport', serverId),
     commitNativeImport: (token: string) =>
       invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token),
-    nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers')
+    nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers'),
+    manageNativeServer: (action: 'enable' | 'disable' | 'remove', name: string) =>
+      invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageNativeMcpServer', { action, name })
   },
   mcpApp: {
     ownership: () => invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership'),

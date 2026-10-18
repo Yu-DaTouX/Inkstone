@@ -8,15 +8,16 @@ import {
   sanitizeFontName
 } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
-import { Switch } from '../../../ui'
-import { prefersReducedMotion } from '../../../lib/usePresence'
+import { Slider, Switch, TextField } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { settingsText } from '../settings-text'
-import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
+import { generalText } from '../general/general-text'
+import { Segmented, SettingsMore, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 
 type Density = 'compact' | 'standard' | 'comfortable'
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
+type SendKeyChoice = 'enter' | 'ctrlEnter'
 
 function fontPatch(kind: 'ui' | 'code', preset: string, custom?: string): Partial<AppSettings> {
   return (
@@ -39,6 +40,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   const [draft, setDraft] = useState<string | null>(null)
   const shown = draft ?? custom
   const valid = shown === '' || sanitizeFontName(shown) !== undefined
+  const settingId = kind === 'ui' ? 'appearance-font-read' : 'appearance-font-code'
 
   useEffect(() => {
     setDraft(null)
@@ -49,6 +51,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
     const clean = draft === '' ? '' : sanitizeFontName(draft)
     if (clean === undefined) return
     setDraft(null)
+    if (clean === custom) return
     void patchSettings(fontPatch(kind, 'custom', clean))
   }
 
@@ -70,6 +73,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
     <>
       <SettingsRow
         block
+        settingId={settingId}
         label={kind === 'ui' ? text.fontRead : text.fontCode}
         description={kind === 'ui' ? text.fontReadDesc : text.fontCodeDesc}
       >
@@ -85,20 +89,21 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
       </SettingsRow>
       <SettingsReveal open={preset === 'custom'}>
         <SettingsRow
+          nested
+          settingId={`${settingId}-custom`}
           label={text.fontCustom}
           description={
             !valid ? <span className="settings-row__desc--error">{text.fontInvalid}</span> : undefined
           }
         >
-          <input
-            className="settings-input"
+          <TextField
+            className="settings-font-field"
             value={shown}
-            spellCheck={false}
             maxLength={64}
             placeholder={text.fontCustomPlaceholder}
             aria-label={text.fontCustom}
-            aria-invalid={!valid}
-            onChange={(event) => setDraft(event.target.value)}
+            isInvalid={!valid}
+            onChange={setDraft}
             onBlur={commit}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
@@ -121,120 +126,51 @@ function UiSizeRow(): ReactElement {
   const [draft, setDraft] = useState<number | null>(null)
   const shown = draft ?? saved
 
-  return (
-    <SettingsRow label={text.fontSizeUi} description={text.fontSizeNow.replace('{n}', String(shown))}>
-      <input
-        className="settings-range"
-        type="range"
-        min={FONT_UI_MIN}
-        max={FONT_UI_MAX}
-        step={1}
-        value={shown}
-        aria-label={text.fontSizeUi}
-        onChange={(event) => setDraft(Number(event.target.value))}
-        onPointerUp={(event) => {
-          const value = Number((event.target as HTMLInputElement).value)
-          setDraft(null)
-          void patchSettings({ fontSizeUi: value })
-        }}
-        onKeyUp={(event) => {
-          const value = Number((event.target as HTMLInputElement).value)
-          setDraft(null)
-          void patchSettings({ fontSizeUi: value })
-        }}
-      />
-    </SettingsRow>
-  )
-}
-
-function SoundRow(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const patchSettings = useStore((s) => s.patchSettings)
-  const sound = useStore((s) => s.settings?.sound)
-  const enabled = sound?.enabled ?? false
-  const volume = sound?.volume ?? 0.4
-  const [draft, setDraft] = useState<number | null>(null)
-  const shown = draft ?? volume
-
-  const commit = (): void => {
-    if (draft === null || !sound) return
-    const next = draft
+  const commit = (value: number): void => {
     setDraft(null)
-    void patchSettings({ sound: { ...sound, volume: next } })
+    if (value === saved) return
+    void patchSettings({ fontSizeUi: value })
   }
 
   return (
-    <SettingsGroup label={text.soundEnable}>
-      <SettingsRow label={text.soundEnable} description={text.soundEnableDesc}>
-        <Switch
-          aria-label={text.soundEnable}
-          isSelected={enabled}
-          onChange={(next) => {
-            if (!sound) return
-            void patchSettings({ sound: { ...sound, enabled: next } })
-          }}
-          data-testid="v3-sound-toggle"
-        />
-      </SettingsRow>
-      <SettingsReveal open={enabled}>
-        <SettingsRow label={text.soundVolume} description={`${Math.round(shown * 100)}%`}>
-          <input
-            className="settings-range"
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={shown}
-            disabled={!enabled}
-            aria-label={text.soundVolume}
-            onChange={(event) => setDraft(Number(event.target.value))}
-            onPointerUp={commit}
-            onKeyUp={commit}
-          />
-        </SettingsRow>
-      </SettingsReveal>
-    </SettingsGroup>
-  )
-}
-
-function DynamicBackgroundRow(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const patchSettings = useStore((s) => s.patchSettings)
-  const settings = useStore((s) => s.settings)
-  const enabled = asciiBackgroundEnabled(settings)
-
-  return (
-    <SettingsRow label={text.asciiBackground} description={text.asciiBackgroundDesc}>
-      <Switch
-        aria-label={text.asciiBackground}
-        isSelected={enabled}
-        onChange={(next) => {
-          void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)
-        }}
-        data-testid="v3-ascii-background-toggle"
+    <SettingsRow
+      settingId="appearance-font-size"
+      label={text.fontSizeUi}
+      description={text.fontSizeNow.replace('{n}', String(shown))}
+    >
+      <Slider
+        className="settings-slider"
+        aria-label={text.fontSizeUi}
+        minValue={FONT_UI_MIN}
+        maxValue={FONT_UI_MAX}
+        step={1}
+        value={shown}
+        data-testid="v3-font-size-ui"
+        onChange={(next) => setDraft(next as number)}
+        onChangeEnd={(next) => commit(next as number)}
       />
     </SettingsRow>
   )
 }
 
-function WorkspaceTilesRow(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const patchSettings = useStore((s) => s.patchSettings)
-  const enabled = useStore((s) => s.settings?.workspaceTiles !== false)
-
+function SwitchRow({
+  settingId,
+  label,
+  description,
+  isSelected,
+  onChange,
+  testId
+}: {
+  settingId: string
+  label: string
+  description: string
+  isSelected: boolean
+  onChange: (next: boolean) => void
+  testId: string
+}): ReactElement {
   return (
-    <SettingsRow label={text.workspaceTiles} description={text.workspaceTilesDesc}>
-      <Switch
-        aria-label={text.workspaceTiles}
-        isSelected={enabled}
-        onChange={(next) => {
-          void patchSettings({ workspaceTiles: next }).catch(() => undefined)
-        }}
-        data-testid="v3-workspace-tiles-toggle"
-      />
+    <SettingsRow settingId={settingId} label={label} description={description}>
+      <Switch aria-label={label} isSelected={isSelected} onChange={onChange} data-testid={testId} />
     </SettingsRow>
   )
 }
@@ -242,15 +178,20 @@ function WorkspaceTilesRow(): ReactElement {
 export function AppearanceSettings(): ReactElement {
   const { lang, setLang } = useI18n()
   const text = settingsText(lang)
+  const general = generalText(lang)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
   const theme = settings?.theme ?? 'dark'
   const density = (settings?.density ?? 'standard') as Density
+  const sendKey: SendKeyChoice = settings?.sendKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter'
+  const tiles = settings?.workspaceTiles !== false
+  const usageUnderInput = settings?.usageUnderInput !== false
+  const smoothText = settings?.smoothText !== false
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>
       <div className="settings-rows">
-        <SettingsRow label={text.theme}>
+        <SettingsRow settingId="appearance-theme" label={text.theme}>
           <Segmented
             label={text.theme}
             value={theme}
@@ -262,26 +203,7 @@ export function AppearanceSettings(): ReactElement {
           />
         </SettingsRow>
 
-        <SettingsRow label={text.density}>
-          <Segmented
-            label={text.density}
-            value={density}
-            options={[
-              { value: 'compact', label: text.densityCompact },
-              { value: 'standard', label: text.densityStandard },
-              { value: 'comfortable', label: text.densityComfortable }
-            ]}
-            onChange={(value) => void patchSettings({ density: value })}
-          />
-        </SettingsRow>
-
-        <UiSizeRow />
-        <FontRow kind="ui" />
-        <FontRow kind="code" />
-      </div>
-
-      <div className="settings-rows">
-        <SettingsRow label={text.language}>
+        <SettingsRow settingId="appearance-language" label={text.language}>
           <Segmented
             label={text.language}
             value={lang}
@@ -296,15 +218,77 @@ export function AppearanceSettings(): ReactElement {
           />
         </SettingsRow>
 
-        <DynamicBackgroundRow />
-        <WorkspaceTilesRow />
+        <UiSizeRow />
 
-        <SettingsRow label={text.motion} description={text.motionNote}>
-          <span className="settings-value">{prefersReducedMotion() ? text.motionReduced : text.motionFull}</span>
+        <SettingsRow settingId="appearance-density" label={text.density}>
+          <Segmented
+            label={text.density}
+            value={density}
+            options={[
+              { value: 'compact', label: text.densityCompact },
+              { value: 'standard', label: text.densityStandard },
+              { value: 'comfortable', label: text.densityComfortable }
+            ]}
+            onChange={(value) => void patchSettings({ density: value })}
+          />
+        </SettingsRow>
+
+        <SwitchRow
+          settingId="appearance-workspace-tiles"
+          label={text.workspaceTiles}
+          description={text.workspaceTilesDesc}
+          isSelected={tiles}
+          onChange={(next) => void patchSettings({ workspaceTiles: next }).catch(() => undefined)}
+          testId="v3-workspace-tiles-toggle"
+        />
+
+        <SettingsRow
+          settingId="appearance-send-key"
+          label={general.appearanceSendKey}
+          description={general.appearanceSendKeyDesc}
+        >
+          <Segmented
+            label={general.appearanceSendKey}
+            value={sendKey}
+            options={[
+              { value: 'enter', label: general.appearanceSendKeyEnter, testId: 'v3-send-key-enter' },
+              { value: 'ctrlEnter', label: general.appearanceSendKeyCtrl, testId: 'v3-send-key-ctrl' }
+            ]}
+            onChange={(value) => void patchSettings({ sendKey: value })}
+          />
         </SettingsRow>
       </div>
 
-      <SoundRow />
+      <SettingsMore>
+        <div className="settings-rows">
+          <FontRow kind="ui" />
+          <FontRow kind="code" />
+          <SwitchRow
+            settingId="appearance-ascii-background"
+            label={text.asciiBackground}
+            description={text.asciiBackgroundDesc}
+            isSelected={asciiBackgroundEnabled(settings)}
+            onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
+            testId="v3-ascii-background-toggle"
+          />
+          <SwitchRow
+            settingId="appearance-usage-under-input"
+            label={general.appearanceUsageUnderInput}
+            description={general.appearanceUsageUnderInputDesc}
+            isSelected={usageUnderInput}
+            onChange={(next) => void patchSettings({ usageUnderInput: next }).catch(() => undefined)}
+            testId="v3-usage-under-input-toggle"
+          />
+          <SwitchRow
+            settingId="appearance-smooth-text"
+            label={text.smoothText}
+            description={text.smoothTextDesc}
+            isSelected={smoothText}
+            onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
+            testId="v3-smooth-text-toggle"
+          />
+        </div>
+      </SettingsMore>
     </section>
   )
 }

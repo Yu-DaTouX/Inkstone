@@ -76,7 +76,9 @@ export function piNativeSettingsOf(raw: unknown): PiNativeSettings {
   const settings = isObj(raw) ? raw : {}
   const retry = isObj(settings.retry) ? settings.retry : {}
   const images = isObj(settings.images) ? settings.images : {}
+  const compaction = isObj(settings.compaction) ? settings.compaction : {}
   return {
+    compactionEnabled: compaction.enabled !== false,
     retryMaxRetries: intIn(retry.maxRetries, 0, 100, 3),
     retryBaseDelayMs: intIn(retry.baseDelayMs, 0, MAX_TIMEOUT_MS, 2000),
     httpIdleTimeoutMs: idleTimeoutOf(settings.httpIdleTimeoutMs),
@@ -109,6 +111,10 @@ export function validatePiNativePatch(input: unknown): { ok: true; patch: Partia
       case 'cacheWarming':
         if (!CACHE_WARMING.includes(value as PiCacheWarming)) return { ok: false, error: '缓存预热模式无效' }
         patch.cacheWarming = value as PiCacheWarming
+        break
+      case 'compactionEnabled':
+        if (typeof value !== 'boolean') return { ok: false, error: '自动压缩设置无效' }
+        patch.compactionEnabled = value
         break
       case 'imagesAutoResize':
       case 'imagesBlockImages':
@@ -144,6 +150,7 @@ export function applyPiNativePatch(settings: Json, patch: Partial<PiNativeSettin
     next[key] = value
     return value
   }
+  if (patch.compactionEnabled !== undefined) nested('compaction').enabled = patch.compactionEnabled
   if (patch.retryMaxRetries !== undefined) nested('retry').maxRetries = patch.retryMaxRetries
   if (patch.retryBaseDelayMs !== undefined) nested('retry').baseDelayMs = patch.retryBaseDelayMs
   if (patch.httpIdleTimeoutMs !== undefined) next.httpIdleTimeoutMs = patch.httpIdleTimeoutMs

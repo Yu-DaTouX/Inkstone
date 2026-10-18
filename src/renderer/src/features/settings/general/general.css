@@ -81,4 +81,14 @@
     max-width: 480px;
     min-width: 0;
   }
+
+  .settings-slider {
+    width: 220px;
+    max-width: 100%;
+  }
+
+  .settings-font-field {
+    width: 280px;
+    max-width: 100%;
+  }
 }

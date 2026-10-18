@@ -5,10 +5,11 @@ import type {
   SlashCommand
 } from '../../../../../shared/ipc'
 
-export const SKILL_ORIGIN_ORDER = ['session', 'user', 'bundled', 'other'] as const
+export const SKILL_ORIGIN_ORDER = ['session', 'user', 'pi', 'other'] as const
 export type SkillOrigin = (typeof SKILL_ORIGIN_ORDER)[number]
 
-export function skillOriginOf(origin: string | undefined): SkillOrigin {
+export function skillOriginOf(origin: string | undefined): SkillOrigin | 'bundled' {
+  if (origin === 'bundled') return 'bundled'
   return (SKILL_ORIGIN_ORDER as readonly string[]).includes(origin ?? '')
     ? (origin as SkillOrigin)
     : 'other'
@@ -24,7 +25,10 @@ export function groupSkills(
 ): SkillGroup[] {
   const buckets = new Map<SkillOrigin, CapabilitySkillSettingView[]>()
   for (const origin of SKILL_ORIGIN_ORDER) buckets.set(origin, [])
-  for (const skill of skills) buckets.get(skillOriginOf(skill.origin))!.push(skill)
+  for (const skill of skills) {
+    const origin = skillOriginOf(skill.origin)
+    if (origin !== 'bundled') buckets.get(origin)!.push(skill)
+  }
   return SKILL_ORIGIN_ORDER.map((origin) => ({ origin, skills: buckets.get(origin)! })).filter(
     (group) => group.skills.length > 0
   )

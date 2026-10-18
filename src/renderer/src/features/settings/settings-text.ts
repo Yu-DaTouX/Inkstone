@@ -3,6 +3,10 @@ import type { Lang } from '../../i18n'
 export interface SettingsText {
   title: string
   navLabel: string
+  searchLabel: string
+  searchPlaceholder: string
+  searchEmpty: string
+  moreSettings: string
   sectionAppearance: string
   sectionSession: string
   sectionNotifications: string
@@ -14,7 +18,6 @@ export interface SettingsText {
   sectionUsage: string
   sectionShortcuts: string
   sectionAbout: string
-  sectionSync: string
   onboardingTitle: string
   onboardingDesc: string
   onboardingAction: string
@@ -43,22 +46,14 @@ export interface SettingsText {
   fontCustomPlaceholder: string
   fontInvalid: string
   sound: string
-  soundEnable: string
-  soundEnableDesc: string
-  soundVolume: string
-  motion: string
-  motionReduced: string
-  motionFull: string
-  motionNote: string
   asciiBackground: string
   asciiBackgroundDesc: string
   workspaceTiles: string
   workspaceTilesDesc: string
+  smoothText: string
+  smoothTextDesc: string
   language: string
 
-  sectionContext: string
-  contextNote: string
-  contextUnavailable: string
   contextAutoCompact: string
   contextCompactAt: string
   contextCompactAtNow: string
@@ -115,10 +110,7 @@ export interface SettingsText {
   usageDimension: string
   usageByDay: string
   usageByModel: string
-  usageByProject: string
   usageDayColumn: string
-  usageProjectColumn: string
-  usageProjectUnavailable: string
   usageNoDays: string
   usageDailyCap: string
 
@@ -134,18 +126,21 @@ export interface SettingsText {
 const ZH: SettingsText = {
   title: '设置',
   navLabel: '设置分区',
-  sectionAppearance: '外观',
-  sectionSession: '会话',
-  sectionNotifications: '通知与提醒',
-  sectionModels: '模型与服务',
+  searchLabel: '搜索设置',
+  searchPlaceholder: '搜索设置',
+  searchEmpty: '没有匹配的设置',
+  moreSettings: '更多设置',
+  sectionAppearance: '外观与语言',
+  sectionSession: '会话与上下文',
+  sectionNotifications: '通知',
+  sectionModels: '模型',
   sectionCapabilities: '能力',
   sectionSecurity: '权限与安全',
-  sectionDevices: '设备与同步',
-  sectionData: '数据',
+  sectionDevices: '手机与远程',
+  sectionData: '数据与同步',
   sectionUsage: '用量',
   sectionShortcuts: '快捷键',
-  sectionAbout: '关于与更新',
-  sectionSync: '同步',
+  sectionAbout: '关于',
   onboardingTitle: '首次引导',
   onboardingDesc: '重新查看首次引导，不会重置设置。',
   onboardingAction: '重新查看引导',
@@ -174,22 +169,14 @@ const ZH: SettingsText = {
   fontCustomPlaceholder: '输入本机已安装的字体名',
   fontInvalid: '字体名只能包含文字、数字、空格、点、连字符与下划线',
   sound: '声音提示',
-  soundEnable: '提示音与通知',
-  soundEnableDesc: '完成、等你回答、出错时响铃。',
-  soundVolume: '音量',
-  motion: '动效',
-  motionReduced: '跟随系统：已开启「减弱动效」',
-  motionFull: '跟随系统：完整动效',
-  motionNote: '请在系统「减少动态效果」中修改。',
   asciiBackground: '动态背景',
   asciiBackgroundDesc: '新会话空态显示缓慢流动的字符背景。',
   workspaceTiles: '工具磁贴',
   workspaceTilesDesc: '在消息旁显示状态磁贴。',
+  smoothText: '柔和字体渲染',
+  smoothTextDesc: '用灰度抗锯齿显示文字，去掉彩色边缘。重启后生效。',
   language: '语言',
 
-  sectionContext: '上下文',
-  contextNote: '压缩由 pi 原生完成；这里调上限与旧输出裁剪，按会话生效。',
-  contextUnavailable: '请先打开一个会话。',
   contextAutoCompact: '自动压缩',
   contextCompactAt: '自动压缩上限',
   contextCompactAtNow: '到 {n} 触发',
@@ -246,10 +233,7 @@ const ZH: SettingsText = {
   usageDimension: '分组',
   usageByDay: '按日',
   usageByModel: '按模型',
-  usageByProject: '按项目',
   usageDayColumn: '日期',
-  usageProjectColumn: '项目',
-  usageProjectUnavailable: '暂不支持按项目统计。',
   usageNoDays: '这段时间没有按日记录。',
   usageDailyCap: '按日图表与表格仅展示最近 30 天。',
 
@@ -265,18 +249,21 @@ const ZH: SettingsText = {
 const EN: SettingsText = {
   title: 'Settings',
   navLabel: 'Settings sections',
-  sectionAppearance: 'Appearance',
-  sectionSession: 'Session',
+  searchLabel: 'Search settings',
+  searchPlaceholder: 'Search settings',
+  searchEmpty: 'No matching settings',
+  moreSettings: 'More settings',
+  sectionAppearance: 'Appearance & language',
+  sectionSession: 'Sessions & context',
   sectionNotifications: 'Notifications',
-  sectionModels: 'Models & services',
+  sectionModels: 'Models',
   sectionCapabilities: 'Capabilities',
   sectionSecurity: 'Permissions & security',
-  sectionDevices: 'Devices & sync',
-  sectionData: 'Data',
+  sectionDevices: 'Phone & remote',
+  sectionData: 'Data & sync',
   sectionUsage: 'Usage',
   sectionShortcuts: 'Keyboard shortcuts',
-  sectionAbout: 'About & updates',
-  sectionSync: 'Sync',
+  sectionAbout: 'About',
   onboardingTitle: 'First-run setup',
   onboardingDesc: 'Replay first-run setup; settings are kept.',
   onboardingAction: 'Replay setup',
@@ -305,22 +292,14 @@ const EN: SettingsText = {
   fontCustomPlaceholder: 'Type an installed font name',
   fontInvalid: 'Font names may only contain letters, digits, spaces, dots, hyphens and underscores',
   sound: 'Sound',
-  soundEnable: 'Chimes and notifications',
-  soundEnableDesc: 'Chime on done, needs you, or error.',
-  soundVolume: 'Volume',
-  motion: 'Motion',
-  motionReduced: 'Following system: reduced motion is on',
-  motionFull: 'Following system: full motion',
-  motionNote: 'Change it in system “Reduce motion”.',
   asciiBackground: 'Dynamic background',
   asciiBackgroundDesc: 'Drifting ASCII background on empty new sessions.',
   workspaceTiles: 'Tool tiles',
   workspaceTilesDesc: 'Show status tiles beside messages.',
+  smoothText: 'Smooth text rendering',
+  smoothTextDesc: 'Render text with grayscale antialiasing, without colored fringes. Takes effect after restart.',
   language: 'Language',
 
-  sectionContext: 'Context',
-  contextNote: 'pi handles compaction natively; tune its limit and output trimming per session.',
-  contextUnavailable: 'Open a session first.',
   contextAutoCompact: 'Auto-compaction',
   contextCompactAt: 'Auto-compaction limit',
   contextCompactAtNow: 'Triggers at {n}',
@@ -377,10 +356,7 @@ const EN: SettingsText = {
   usageDimension: 'Group by',
   usageByDay: 'By day',
   usageByModel: 'By model',
-  usageByProject: 'By project',
   usageDayColumn: 'Date',
-  usageProjectColumn: 'Project',
-  usageProjectUnavailable: 'Per-project usage is not available yet.',
   usageNoDays: 'No daily records in this range.',
   usageDailyCap: 'The daily chart and table show the most recent 30 days only.',
 

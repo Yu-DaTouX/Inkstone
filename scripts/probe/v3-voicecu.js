@@ -38,8 +38,8 @@
     out.push('--- 1. 语音深链接 ---')
     store.getState().openSettings('voice')
     check(await until(() => !!q('caps-settings'), 4000), '旧 voice 深链接进入能力页')
-    check(await until(() => !!q('settings-voice'), 4000), '直接落在「语音输入」分页（不是连接分页）')
-    check(q('caps-tab-voice')?.getAttribute('aria-selected') === 'true', '语音分页页签处于选中')
+    check(await until(() => !!q('settings-voice'), 4000), '直接落在「本机工具」分页的本地转写')
+    check(q('caps-tab-tools')?.getAttribute('aria-selected') === 'true', '本机工具页签处于选中')
     check(await until(() => !!q('voice-state'), 4000), '显示就绪状态行')
     check(await until(() => !!q('voice-binary') && !!q('voice-models'), 4000), '有识别引擎与模型两块')
     check(await until(() => !!document.querySelector('[data-testid^="voice-model-"]'), 6000), '列出候选模型')
@@ -56,10 +56,10 @@
 
     out.push('')
     out.push('--- 3. 电脑操作块 ---')
-    q('caps-tab-connections')?.click()
+    q('caps-tab-tools')?.click()
     const present = await until(() => !!q('cap-computer-use'), 5000)
     if (present) {
-      check(true, '连接分页里有电脑操作块')
+      check(true, '本机工具分页里有电脑操作块')
       const sw = q('cap-computer-use-switch')
       check(!!sw, '有开关')
       const status = await window.yan.computerUse.status().catch(() => null)

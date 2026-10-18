@@ -22,20 +22,21 @@ const { SETTINGS_SECTIONS, DEFAULT_SETTINGS_SECTION, isSettingsSectionId, resolv
 
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['appearance', 'session', 'notifications', 'context', 'models', 'capabilities', 'security', 'devices', 'data', 'usage', 'shortcuts', 'about', 'sync'],
-  '分区顺序按 02§10.6：外观、会话、通知、上下文、模型、能力、权限、设备、数据、用量、快捷键、关于，同步追加在最后'
+  ['models', 'appearance', 'session', 'notifications', 'security', 'capabilities', 'devices', 'data', 'usage', 'shortcuts', 'about'],
+  '11 个分区按使用频率排：模型、外观与语言、会话与上下文、通知、权限、能力、手机与远程、数据与同步、用量、快捷键、关于'
 )
 assert.ok(
   SETTINGS_SECTIONS.every((section) => typeof section.icon === 'string' && section.icon),
   '每个分区都有图标 id'
 )
-assert.equal(DEFAULT_SETTINGS_SECTION, 'appearance', '外观是默认页')
+assert.equal(DEFAULT_SETTINGS_SECTION, 'models', '模型是默认页')
 
 const mappedCases = [
   ['appearance', 'appearance'],
   ['input', 'appearance'],
   ['sound', 'appearance'],
-  ['context', 'context'],
+  ['context', 'session'],
+  ['sync', 'data'],
   ['auth', 'models'],
   ['models', 'models'],
   ['capabilities', 'capabilities'],

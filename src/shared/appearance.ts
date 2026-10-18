@@ -5,7 +5,7 @@ export const FONT_UI_PRESETS: readonly FontUiPreset[] = ['maple', 'sans', 'serif
 export const FONT_CODE_PRESETS: readonly FontCodePreset[] = ['maple', 'mono', 'custom']
 
 const MAPLE = "'Maple Mono CN', ui-monospace, Consolas, monospace"
-const SANS = "'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', system-ui, sans-serif"
+const SANS = "'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Segoe UI', system-ui, sans-serif"
 const SERIF = "'Source Han Serif SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Songti SC', SimSun, Georgia, 'Times New Roman', serif"
 const MONO = "ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Liberation Mono', monospace"
 

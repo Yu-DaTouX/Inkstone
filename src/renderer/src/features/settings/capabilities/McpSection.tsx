@@ -4,32 +4,25 @@ import { useStore } from '../../../state/store'
 import type {
   CapabilityMcpServerSettingView,
   CapabilitySettingsSnapshot,
-  CapabilityVerificationStatus
+  CapabilityVerificationStatus,
+  NativeMcpManageAction
 } from '../../../../../shared/ipc'
-import type {
-  NativeMcpImportCommitResult,
-  NativeMcpImportPreview
-} from '../../../../../shared/mcp-native-import'
-import { Button } from '../../../ui'
-import { useCapsText } from './text'
+import type { NativeMcpServerListView, NativeMcpServerView } from '../../../../../shared/mcp-native-import'
+import { Badge, Button } from '../../../ui'
+import { SettingsMore } from '../root/controls'
+import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
-import { formatImportPreviewDetail, type ImportPreviewLabels } from './native-preview'
-import { Actions, Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, Panel, StatusBadge, Warn } from './parts'
-import { canImportMcp, mcpStatusTone, verificationTone } from './model'
+import { Actions, Group, Item, ItemHead, ListSkeleton, Meta, Panel, StatusBadge, Warn } from './parts'
+import { WINDOWS_MCP_SERVER_ID, canImportMcp, mcpStatusTone, verificationTone } from './model'
 import { McpAppOwnership } from './McpAppOwnership'
 import { McpAppRefresh } from './McpAppRefresh'
-import { NativeMcpList, type NativeMcpAction } from './NativeMcpList'
+import { McpImportControl } from './McpImportControl'
+import { NativeMcpItem, type NativeMcpAction } from './NativeMcpList'
+import { CodegraphStatusRow } from './CodegraphStatusRow'
+
+const CODEGRAPH_SERVER = 'codegraph'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-const MANUAL_CODES = new Set([
-  'needs_reauth',
-  'needs_auth',
-  'needs-auth',
-  'unsupported',
-  'not_trusted',
-  'unavailable'
-])
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : typeof error === 'string' ? error : String(error)
@@ -38,22 +31,35 @@ function errorText(error: unknown): string {
 export function McpSection(): ReactElement {
   const t = useT()
   const text = useCapsText()
+  const confirm = useConfirm()
+  const sessionId = useStore((s) => s.session?.sessionId)
   const [snapshot, setSnapshot] = useState<CapabilitySettingsSnapshot | null>(null)
+  const [nativeList, setNativeList] = useState<NativeMcpServerListView | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [nativeError, setNativeError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [managing, setManaging] = useState<string | null>(null)
+  const [codegraphKey, setCodegraphKey] = useState(0)
   const mounted = useRef(true)
+  const commands = useNativeMcpCommands(snapshot?.nativeMcpAvailable === true)
 
   const refresh = useCallback(async (): Promise<void> => {
-    try {
-      const next = await window.yan.capabilities.snapshot()
-      if (!mounted.current) return
-      setSnapshot(next)
+    setLoading(true)
+    const [snapshotResult, nativeResult] = await Promise.allSettled([
+      window.yan.capabilities.snapshot(),
+      window.yan.capabilities.nativeServers()
+    ])
+    if (!mounted.current) return
+    if (snapshotResult.status === 'fulfilled') {
+      setSnapshot(snapshotResult.value)
       setError(null)
-    } catch (cause) {
-      if (mounted.current) setError(errorText(cause))
-    } finally {
-      if (mounted.current) setLoading(false)
-    }
+    } else setError(errorText(snapshotResult.reason))
+    if (nativeResult.status === 'fulfilled') {
+      setNativeList(nativeResult.value)
+      setNativeError(null)
+    } else setNativeError(errorText(nativeResult.reason))
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -62,52 +68,164 @@ export function McpSection(): ReactElement {
     return () => {
       mounted.current = false
     }
-  }, [refresh])
+  }, [refresh, sessionId])
+
+  const manage = async (action: NativeMcpManageAction, server: NativeMcpServerView): Promise<void> => {
+    const paths = [server.path, ...(server.overriddenBy ? [server.overriddenBy] : [])]
+    const target = action === 'remove' ? paths.join(' · ') : (server.overriddenBy ?? server.path)
+    if (action === 'remove') {
+      const accepted = await confirm({
+        title: fillCapsText(text('mcpRemoveTitle'), { name: server.name }),
+        body: fillCapsText(text('mcpRemoveBody'), { path: target }),
+        confirmLabel: text('mcpRemove'),
+        tone: 'danger'
+      })
+      if (!accepted) return
+    }
+    setManaging(server.name)
+    setNotice(null)
+    setNativeError(null)
+    try {
+      const result = await window.yan.capabilities.manageNativeServer(action, server.name)
+      if (!mounted.current) return
+      if (result.ok) setNotice(fillCapsText(text('mcpSaved'), { path: target }))
+      else setNativeError(result.error ?? t('cap.nativeMcpActionFailed'))
+      await refresh()
+    } catch (cause) {
+      if (mounted.current) setNativeError(errorText(cause))
+    } finally {
+      if (mounted.current) setManaging(null)
+    }
+  }
+
+  const addCodegraph = async (): Promise<void> => {
+    setManaging(CODEGRAPH_SERVER)
+    setNotice(null)
+    try {
+      const result = await window.yan.packages.addMcp(CODEGRAPH_SERVER)
+      if (!mounted.current || result.cancelled) return
+      if (result.ok) setNotice(t(result.existed ? 'market.mcpExisted' : 'market.mcpAdded', { path: result.path ?? '' }))
+      else setNativeError(result.error ?? t('pkg.failed'))
+      setCodegraphKey((value) => value + 1)
+      await refresh()
+    } catch (cause) {
+      if (mounted.current) setNativeError(errorText(cause))
+    } finally {
+      if (mounted.current) setManaging(null)
+    }
+  }
+
+  const servers = snapshot?.servers ?? []
+  const directServer = servers.find((server) => server.id === WINDOWS_MCP_SERVER_ID)
+  const legacyServers = servers.filter((server) => server.id !== WINDOWS_MCP_SERVER_ID)
+  const nativeServers = nativeList?.servers ?? []
+  const hasCodegraph = nativeServers.some((server) => server.name === CODEGRAPH_SERVER)
 
   return (
-    <Panel label={t('cap.mcpTitle')}>
-      <Note>{text('mcpHostNote')}</Note>
+    <Panel label={text('mcpListTitle')}>
       {error ? <Warn>{`${text('loadFailed')}: ${error}`}</Warn> : null}
       {snapshot?.configWarning ? <Warn>{t('cap.configWarning')}</Warn> : null}
 
       <Group
-        title={t('cap.mcpTitle')}
-        desc={t('cap.mcpDesc')}
+        title={text('mcpListTitle')}
+        desc={text('mcpListDesc')}
+        settingId="caps-mcp-servers"
         actions={
-          <Button size="sm" variant="ghost" isPending={loading} onPress={() => void refresh()} data-testid="caps-mcp-reload">
+          <Button size="sm" variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-mcp-reload">
             {text('sectionReload')}
           </Button>
         }
       >
-        {loading && !snapshot ? (
-          <ListSkeleton />
-        ) : !snapshot || snapshot.servers.length === 0 ? (
-          <Empty>{t('cap.emptyMcp')}</Empty>
+        {nativeError ? <Warn>{nativeError}</Warn> : null}
+        {nativeList?.errors?.map((problem) => <Warn key={problem}>{problem}</Warn>)}
+        {nativeList?.projectUntrusted ? <Warn>{t('cap.nativeListUntrusted')}</Warn> : null}
+        {loading && !nativeList && !snapshot ? (
+          <ListSkeleton rows={2} />
         ) : (
-          <div className="caps-list" data-testid="caps-mcp-servers">
-            {snapshot.servers.map((server) => (
-              <McpServerRow key={server.id} server={server} onChanged={refresh} />
+          <div className="caps-list" data-testid="caps-native-mcp-servers">
+            {nativeServers.map((server) => (
+              <NativeMcpItem
+                key={server.name}
+                server={server}
+                sessionActionable={commands.actionable}
+                sessionBusy={commands.running !== null}
+                manageBusy={managing !== null}
+                onSessionAction={commands.available ? (action, name) => void commands.runAction(action, name) : undefined}
+                onManage={(action, target) => void manage(action, target)}
+              >
+                {server.name === CODEGRAPH_SERVER ? (
+                  <div data-setting-id="caps-mcp-codegraph">
+                    <CodegraphStatusRow refreshKey={String(codegraphKey)} />
+                  </div>
+                ) : null}
+              </NativeMcpItem>
             ))}
+            <McpServerRow server={directServer} direct onChanged={refresh} />
+            {nativeList && !hasCodegraph ? (
+              <Item testId="caps-mcp-codegraph-guide" settingId="caps-mcp-codegraph">
+                <ItemHead>
+                  <span className="caps-name">{text('codegraphTitle')}</span>
+                  <span className="caps-spacer" />
+                  <Actions>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={managing !== null}
+                      onPress={() => void addCodegraph()}
+                      data-testid="caps-mcp-codegraph-add"
+                    >
+                      {t('market.addMcp')}
+                    </Button>
+                  </Actions>
+                </ItemHead>
+                <Meta>{text('codegraphGuide')}</Meta>
+              </Item>
+            ) : null}
           </div>
         )}
+        {nativeList && nativeServers.length === 0 ? (
+          <Meta>{t('cap.nativeListEmpty', { path: nativeList.globalPath })}</Meta>
+        ) : null}
+        {notice ? (
+          <p className="caps-result" role="status" data-testid="caps-mcp-notice">
+            {notice}
+          </p>
+        ) : null}
+        <NativeMcpStatusControl commands={commands} ready={snapshot !== null} />
       </Group>
 
-      <NativeMcpGroup available={snapshot?.nativeMcpAvailable === true} />
-
-      <McpAppOwnership />
-      <McpAppRefresh />
+      <SettingsMore>
+        {legacyServers.length > 0 ? (
+          <Group title={text('mcpLegacyTitle')} desc={text('mcpLegacyDesc')} settingId="caps-mcp-legacy">
+            <div className="caps-list" data-testid="caps-mcp-servers">
+              {legacyServers.map((server) => (
+                <McpServerRow key={server.id} server={server} onChanged={refresh} />
+              ))}
+            </div>
+          </Group>
+        ) : null}
+        <div data-setting-id="caps-mcp-ownership">
+          <McpAppOwnership />
+        </div>
+        <div data-setting-id="caps-mcp-app-snapshot">
+          <McpAppRefresh />
+        </div>
+      </SettingsMore>
     </Panel>
   )
 }
 
 function McpServerRow({
   server,
+  direct = false,
   onChanged
 }: {
-  server: CapabilityMcpServerSettingView
+  server: CapabilityMcpServerSettingView | undefined
+  direct?: boolean
   onChanged: () => Promise<void>
 }): ReactElement {
   const t = useT()
+  const text = useCapsText()
   const mounted = useRef(true)
   const [operation, setOperation] = useState<CapabilityVerificationStatus | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
@@ -120,6 +238,7 @@ function McpServerRow({
   }, [])
 
   const verify = async (): Promise<void> => {
+    if (!server) return
     setVerifyError(null)
     try {
       const started = await window.yan.capabilities.verify(server.id)
@@ -157,43 +276,53 @@ function McpServerRow({
   }
 
   const connecting = operation?.state === 'connecting'
-  const imported = server.migratedToNative
+  const imported = server?.migratedToNative
 
   return (
-    <Item testId="caps-mcp-server">
+    <Item testId={direct ? 'caps-mcp-direct' : 'caps-mcp-server'} settingId={direct ? 'caps-mcp-computer-use' : undefined}>
       <ItemHead>
-        <span className="caps-name" title={server.title}>
-          {server.title}
+        <span className="caps-name" title={server?.title ?? WINDOWS_MCP_SERVER_ID}>
+          {direct ? `${t('cu.title')} · ${WINDOWS_MCP_SERVER_ID}` : server?.title}
         </span>
-        <span className="caps-tag">{server.transport}</span>
-        <StatusBadge tone={mcpStatusTone(server.status)}>{t(`cap.status.${server.status}` as 'cap.status.ready')}</StatusBadge>
-        {server.projectScoped ? <span className="caps-tag">{t('cap.projectScoped')}</span> : null}
-        {!server.enabled ? <span className="caps-tag">{t('cap.disabled')}</span> : null}
+        {direct ? <Badge tone="accent">{text('mcpDirectBadge')}</Badge> : null}
+        {server ? <Badge>{server.transport}</Badge> : null}
+        {server ? (
+          <StatusBadge tone={mcpStatusTone(server.status)}>{t(`cap.status.${server.status}` as 'cap.status.ready')}</StatusBadge>
+        ) : (
+          <Badge>{text('mcpDirectOff')}</Badge>
+        )}
+        {server?.projectScoped ? <Badge>{t('cap.projectScoped')}</Badge> : null}
+        {server && !server.enabled ? <Badge>{t('cap.disabled')}</Badge> : null}
         {imported ? <StatusBadge tone="accent">{t('cap.importMigratedBadge')}</StatusBadge> : null}
         <span className="caps-spacer" />
-        <Actions>
-          {connecting && operation ? (
-            <Button size="sm" variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
-              {t('cap.cancel')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={!server.enabled}
-              onPress={() => void verify()}
-              data-testid="caps-mcp-verify"
-            >
-              {t('cap.verify')}
-            </Button>
-          )}
-        </Actions>
+        {server ? (
+          <Actions>
+            {connecting && operation ? (
+              <Button size="sm" variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
+                {t('cap.cancel')}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                isDisabled={!server.enabled}
+                onPress={() => void verify()}
+                data-testid="caps-mcp-verify"
+              >
+                {t('cap.verify')}
+              </Button>
+            )}
+          </Actions>
+        ) : null}
       </ItemHead>
-      <Meta>
-        {server.endpointOrigin ? `${server.endpointOrigin} · ` : ''}
-        {t(`cap.effect.${server.effect}` as 'cap.effect.unknown')}
-        {server.toolCount !== null ? ` · ${t('cap.toolCount', { count: server.toolCount })}` : ''}
-      </Meta>
+      {direct ? <Meta>{text('mcpDirectNote')}</Meta> : null}
+      {server ? (
+        <Meta>
+          {server.endpointOrigin ? `${server.endpointOrigin} · ` : ''}
+          {t(`cap.effect.${server.effect}` as 'cap.effect.unknown')}
+          {server.toolCount !== null ? ` · ${t('cap.toolCount', { count: server.toolCount })}` : ''}
+        </Meta>
+      ) : null}
 
       {verifyError ? <Warn>{verifyError}</Warn> : null}
       {operation && operation.state !== 'connecting' ? (
@@ -207,212 +336,25 @@ function McpServerRow({
         <div className="caps-import" data-testid="caps-mcp-migrated">
           <Meta>{t('cap.importMigratedNotice')}</Meta>
         </div>
-      ) : canImportMcp(server) ? (
+      ) : server && !direct && canImportMcp(server) ? (
         <McpImportControl server={server} onChanged={onChanged} />
       ) : null}
     </Item>
   )
 }
 
-function McpImportControl({
-  server,
-  onChanged
-}: {
-  server: CapabilityMcpServerSettingView
-  onChanged: () => Promise<void>
-}): ReactElement {
-  const t = useT()
-  const text = useCapsText()
-  const confirm = useConfirm()
-  const running = useStore(
-    (s) =>
-      s.runners.some((runner) => runner.running) ||
-      !!s.session?.isAgentRunning ||
-      !!s.session?.isStreaming ||
-      !!s.session?.isCompacting
-  )
-  const [busy, setBusy] = useState(false)
-  const [outcome, setOutcome] = useState<
-    | { phase: 'cancelled' }
-    | { phase: 'scope-changed' }
-    | { phase: 'failed'; code: string; error?: string; manual: boolean }
-    | { phase: 'done'; result: NativeMcpImportCommitResult }
-    | null
-  >(null)
-  const mounted = useRef(true)
-
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-
-  const captureScope = (): { activeRunnerId: string | null; sessionId: string; projectKey: string } => {
-    const state = useStore.getState()
-    const runner = state.runners.find((item) => (item.runId ?? item.id) === state.activeRunnerId)
-    return {
-      activeRunnerId: state.activeRunnerId,
-      sessionId: state.session?.sessionId ?? '',
-      projectKey: runner?.projectId ?? state.session?.cwd ?? state.settings?.cwd ?? ''
-    }
-  }
-
-  const start = async (): Promise<void> => {
-    if (busy) return
-    setBusy(true)
-    setOutcome(null)
-    const before = captureScope()
-    try {
-      const prepared = await window.yan.capabilities.prepareNativeImport(server.id)
-      if (!prepared.ok || !prepared.preview) {
-        setOutcome({
-          phase: 'failed',
-          code: prepared.code ?? 'prepare_failed',
-          error: prepared.error,
-          manual: MANUAL_CODES.has(prepared.code ?? '')
-        })
-        return
-      }
-      const preview: NativeMcpImportPreview = prepared.preview
-      const labels: ImportPreviewLabels = {
-        sourceTitle: t('cap.importSourceTitle'),
-        nativeName: t('cap.importNativeName'),
-        scope: preview.scope === 'project' ? t('cap.importScope.project') : t('cap.importScope.global'),
-        targetPath: t('cap.importTargetPath'),
-        entry: t('cap.importEntry'),
-        warnings: t('cap.importWarnings'),
-        description: text('importFieldDescription'),
-        transport: text('importFieldTransport'),
-        command: text('importFieldCommand'),
-        args: text('importFieldArgs'),
-        envKeys: text('importFieldEnvKeys'),
-        url: text('importFieldUrl')
-      }
-      const accepted = await confirm({
-        title: t('cap.importConfirmTitle', { name: server.title }),
-        body: `${t('cap.importConfirmBody')}\n${t('cap.importConfirmLocalWarning')}`,
-        detail: formatImportPreviewDetail(preview, server.title, labels),
-        confirmLabel: t('cap.importConfirmLabel')
-      })
-      if (!accepted) {
-        if (mounted.current) setOutcome({ phase: 'cancelled' })
-        return
-      }
-      const after = captureScope()
-      if (
-        after.activeRunnerId !== before.activeRunnerId ||
-        after.sessionId !== before.sessionId ||
-        after.projectKey !== before.projectKey
-      ) {
-        setOutcome({ phase: 'scope-changed' })
-        return
-      }
-      const committed = await window.yan.capabilities.commitNativeImport(preview.token)
-      if (committed.ok && committed.result) {
-        if (mounted.current) setOutcome({ phase: 'done', result: committed.result })
-      } else {
-        setOutcome({
-          phase: 'failed',
-          code: committed.code ?? 'commit_failed',
-          error: committed.error,
-          manual: MANUAL_CODES.has(committed.code ?? '')
-        })
-      }
-      try {
-        await onChanged()
-      } catch {
-      }
-    } catch (cause) {
-      if (mounted.current) setOutcome({ phase: 'failed', code: 'exception', error: errorText(cause), manual: false })
-    } finally {
-      if (mounted.current) setBusy(false)
-    }
-  }
-
-  const blocked = running
-
-  return (
-    <div className="caps-import" data-testid="caps-mcp-import">
-      <ItemHead>
-        <span className="caps-spacer" />
-        <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={busy || blocked}
-          onPress={() => void start()}
-          data-testid="caps-mcp-import-btn"
-        >
-          {busy ? t('cap.importing') : t('cap.importAction')}
-        </Button>
-      </ItemHead>
-      {blocked ? <Meta>{text('mcpRunningBlock')}</Meta> : null}
-      <McpImportOutcome outcome={outcome} />
-    </div>
-  )
+interface NativeMcpCommands {
+  available: boolean
+  actionable: boolean
+  running: string | null
+  busy: boolean
+  error: string | null
+  query: () => Promise<void>
+  runAction: (action: NativeMcpAction, server: string) => Promise<void>
 }
 
-function McpImportOutcome({
-  outcome
-}: {
-  outcome:
-    | { phase: 'cancelled' }
-    | { phase: 'scope-changed' }
-    | { phase: 'failed'; code: string; error?: string; manual: boolean }
-    | { phase: 'done'; result: NativeMcpImportCommitResult }
-    | null
-}): ReactElement | null {
+function useNativeMcpCommands(available: boolean): NativeMcpCommands {
   const t = useT()
-  if (!outcome) return null
-  if (outcome.phase === 'cancelled') {
-    return (
-      <Meta>
-        <span role="status">{t('cap.importCancelled')}</span>
-      </Meta>
-    )
-  }
-  if (outcome.phase === 'scope-changed') {
-    return <Warn>{t('cap.importScopeChanged')}</Warn>
-  }
-  if (outcome.phase === 'failed') {
-    return (
-      <div className="caps-result" role="status" data-testid="caps-mcp-import-failed">
-        <Warn>
-          {t('cap.importFailed')} · {t('cap.importCode', { code: outcome.code })}
-        </Warn>
-        {outcome.error ? <Meta>{outcome.error}</Meta> : null}
-        {outcome.manual ? <Meta>{t('cap.importManualHint')}</Meta> : null}
-        <Meta>{t('cap.importPreservedNotice')}</Meta>
-      </div>
-    )
-  }
-  const { result } = outcome
-  return (
-    <div className="caps-result" role="status" data-testid="caps-mcp-import-result">
-      <Meta>{t('cap.importResultTitle')}</Meta>
-      <Meta>
-        {t('cap.importStep.nativeWrite')}: {t(`cap.importState.${result.steps.nativeWrite}` as 'cap.importState.written')}
-      </Meta>
-      <Meta>
-        {t('cap.importStep.verify')}: {t(`cap.importState.${result.steps.verify}` as 'cap.importState.passed')}
-      </Meta>
-      <Meta>
-        {t('cap.importStep.hostDisable')}: {t(`cap.importState.${result.steps.hostDisable}` as 'cap.importState.disabled')}
-      </Meta>
-      {result.ok ? <Meta>{t('cap.importSuccess')}</Meta> : null}
-      {!result.deactivated ? <Meta>{t('cap.importPreservedNotice')}</Meta> : null}
-      {result.notice ? <Meta>{result.notice}</Meta> : null}
-      {result.warnings.map((warning) => (
-        <Meta key={warning}>{warning}</Meta>
-      ))}
-      <Meta>{t('cap.importRunnerNotice')}</Meta>
-    </div>
-  )
-}
-
-function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
-  const t = useT()
-  const text = useCapsText()
   const session = useStore((s) => s.session)
   const send = useStore((s) => s.send)
   const ensureActivated = useStore((s) => s.ensureActivated)
@@ -421,6 +363,7 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
     (s) => !!s.session?.isAgentRunning || !!s.session?.isStreaming || !!s.session?.isCompacting
   )
   const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const mounted = useRef(true)
   const timer = useRef<number | undefined>(undefined)
@@ -463,6 +406,8 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
   }
 
   const runAction = async (action: NativeMcpAction, server: string): Promise<void> => {
+    if (running) return
+    setRunning(`${action}:${server}`)
     setError(null)
     try {
       if (!(await ensureActivated()) || !mounted.current) return
@@ -484,30 +429,43 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
     } catch (cause) {
       if (useStore.getState().nativeMcpStatus?.pending) useStore.setState({ nativeMcpStatus: null })
       if (mounted.current) setError(errorText(cause))
+    } finally {
+      if (mounted.current) setRunning(null)
     }
   }
 
+  return {
+    available,
+    actionable: available && !busy && !busySession && !!session?.sessionId && !nativeMcpStatus?.pending,
+    running,
+    busy: busy || busySession || !session?.sessionId,
+    error,
+    query,
+    runAction
+  }
+}
+
+function NativeMcpStatusControl({ commands, ready }: { commands: NativeMcpCommands; ready: boolean }): ReactElement {
+  const t = useT()
+  const text = useCapsText()
+  const sessionId = useStore((s) => s.session?.sessionId)
+  const nativeMcpStatus = useStore((s) => s.nativeMcpStatus)
   return (
-    <Group title={t('cap.nativeMcpTitle')} desc={t('cap.nativeMcpDesc')}>
-      <Note>{text('mcpNativeNote')}</Note>
-      <NativeMcpList
-        actionable={available && !busy && !busySession && !!session?.sessionId && !nativeMcpStatus?.pending}
-        onAction={available ? runAction : undefined}
-      />
-      {available ? (
+    <div data-setting-id="caps-mcp-native-status">
+      {!ready ? null : commands.available ? (
         <>
-          <IndividualAction>
+          <div className="caps-actions caps-actions--start">
             <Button
               size="sm"
               variant="secondary"
-              isDisabled={busy || busySession || !session?.sessionId}
-              onPress={() => void query()}
+              isDisabled={commands.busy}
+              onPress={() => void commands.query()}
               data-testid="caps-native-mcp"
             >
               {t('cap.nativeMcpOpen')}
             </Button>
-          </IndividualAction>
-          {nativeMcpStatus && nativeMcpStatus.sessionId === session?.sessionId ? (
+          </div>
+          {nativeMcpStatus && nativeMcpStatus.sessionId === sessionId ? (
             <p className="caps-result" role="status" data-testid="caps-native-mcp-status">
               {nativeMcpStatus.text || (nativeMcpStatus.action ? t('cap.nativeMcpActionRunning') : t('cap.nativeMcpLoading'))}
             </p>
@@ -516,11 +474,7 @@ function NativeMcpGroup({ available }: { available: boolean }): ReactElement {
       ) : (
         <Meta>{text('mcpNativeUnavailable')}</Meta>
       )}
-      {error ? <Warn>{error}</Warn> : null}
-    </Group>
+      {commands.error ? <Warn>{commands.error}</Warn> : null}
+    </div>
   )
-}
-
-function IndividualAction({ children }: { children: ReactElement }): ReactElement {
-  return <div className="caps-actions caps-actions--start">{children}</div>
 }

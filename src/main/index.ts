@@ -563,7 +563,7 @@ const approvals = new ApprovalBroker({
     if (win && !win.isDestroyed() && !win.isFocused()) {
       attention?.flash()
       void getSettings().then((settings) => {
-        if (settings.sound?.notifications === false || !Notification.isSupported()) return
+        if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
         const icon = botNotificationIcon(approvalModel(request), 'question')
         const notice = new Notification({ title: '砚需要你确认', body: request.title, ...(icon ? { icon } : {}) })
         notice.on('click', () => {
@@ -657,7 +657,7 @@ function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void
   if (!win || win.isDestroyed() || win.isFocused()) return
   void getSettings().then((settings) => {
     if (blockedTerminalNotices.get(id)?.ticket !== ticket || !win || win.isDestroyed() || win.isFocused()) return
-    if (settings.sound?.notifications === false || !Notification.isSupported()) return
+    if (settings.sound?.enabled !== true || settings.sound.notifications === false || !Notification.isSupported()) return
     const title = status.kind === 'permission'
       ? '终端在等你批准'
       : status.kind === 'question'

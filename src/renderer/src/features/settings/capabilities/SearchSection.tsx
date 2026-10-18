@@ -7,7 +7,7 @@ import {
   type SearchProvider,
   type SearchProviderState
 } from '../../../../../shared/search'
-import { Button, TextField } from '../../../ui'
+import { Badge, Button, TextField } from '../../../ui'
 import { Actions, Group, Item, ItemHead, Meta, Panel, Warn } from './parts'
 
 const OPENCLI_RELEASES = 'https://www.npmjs.com/package/@jackwener/opencli?activeTab=versions'
@@ -16,11 +16,19 @@ const NODE_DOWNLOAD = 'https://nodejs.org/zh-cn/download'
 
 type InstallState = { busy: boolean; ok?: boolean; needsNode?: boolean; text?: string }
 
-export function SearchSection(): ReactElement {
+export function SearchBackendSection(): ReactElement {
   const t = useT()
   return (
     <Panel label={t('set.searchTools')}>
       <SearchBackendGroup />
+    </Panel>
+  )
+}
+
+export function SearchApiSection(): ReactElement {
+  const t = useT()
+  return (
+    <Panel label={t('search.apiTitle')}>
       <SearchApiGroup />
     </Panel>
   )
@@ -87,23 +95,23 @@ function SearchBackendGroup(): ReactElement {
     backend && !backend.available
       ? backend.code === 'backend_unusable'
         ? t('set.searchBackendUnusableHint')
-        : /node/i.test(backend.detail ?? '')
+        : /\bnode\b/i.test(backend.detail ?? '')
           ? t('set.searchBackendNodeHint')
           : t('set.searchBackendHint')
       : backend?.code === 'extension_not_connected'
         ? t('set.searchBackendExtHint')
         : ''
   const detail = backend && !backend.available && backend.detail ? backend.detail : ''
-  const needsNode = !!install?.needsNode || (!!backend && !backend.available && /node|npm/i.test(backend.detail ?? ''))
+  const needsNode = !!install?.needsNode || (!!backend && !backend.available && /\bnode\b/i.test(backend.detail ?? ''))
 
   return (
-    <div data-testid="cap-search-backend">
+    <div data-testid="cap-search-backend" data-setting-id="caps-tools-opencli">
       <Group
         title={t('set.searchBackend')}
         desc={t('set.extToolsDesc')}
         card
         actions={
-          <Button size="sm" variant="ghost" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
+          <Button size="sm" variant="secondary" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
             {checking ? t('set.searchBackendChecking') : t('set.extRecheck')}
           </Button>
         }
@@ -119,14 +127,14 @@ function SearchBackendGroup(): ReactElement {
             </Button>
           ) : null}
           {needsNode ? (
-            <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(NODE_DOWNLOAD)}>
+            <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(NODE_DOWNLOAD)}>
               {t('set.opencliGetNode')}
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(OPENCLI_EXTENSION)}>
+          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_EXTENSION)}>
             {t('set.opencliExtStore')}
           </Button>
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(OPENCLI_RELEASES)}>
+          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_RELEASES)}>
             {t('set.releasePage')}
           </Button>
         </Actions>
@@ -150,7 +158,7 @@ function SearchApiGroup(): ReactElement {
   }, [load])
 
   return (
-    <div data-testid="cap-search-api">
+    <div data-testid="cap-search-api" data-setting-id="caps-tools-search-keys">
       <Group
         title={t('search.apiTitle')}
         desc={t('search.apiDesc')}
@@ -158,7 +166,7 @@ function SearchApiGroup(): ReactElement {
           config?.hintDismissed && !config.configured ? (
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               data-testid="cap-search-api-rehint"
               onPress={() => void window.yan.search.setApiHintDismissed(false).then(load).catch(() => undefined)}
             >
@@ -231,7 +239,7 @@ function SearchProviderItem({
     <Item testId={`cap-search-api-${provider.id}`}>
       <ItemHead>
         <span className="caps-name">{provider.label}</span>
-        {provider.keyOptional ? <span className="caps-tag">{t('search.apiOptional')}</span> : null}
+        {provider.keyOptional ? <Badge>{t('search.apiOptional')}</Badge> : null}
       </ItemHead>
       <Meta>{t(`search.role.${provider.id}` as MessageKey)}</Meta>
       <Meta>
@@ -260,7 +268,7 @@ function SearchProviderItem({
             {t('search.apiSave')}
           </Button>
           {state?.configured ? (
-            <Button size="sm" variant="ghost" onPress={() => void clear()}>
+            <Button size="sm" variant="danger" onPress={() => void clear()}>
               {t('search.apiClear')}
             </Button>
           ) : null}
@@ -268,7 +276,7 @@ function SearchProviderItem({
       ) : null}
       {error ? <Warn>{error}</Warn> : null}
       <Actions>
-        <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
+        <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
           {t('search.apiGet')}
         </Button>
       </Actions>

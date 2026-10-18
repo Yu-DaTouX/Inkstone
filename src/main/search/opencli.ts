@@ -162,7 +162,7 @@ export function resolveBackendTarget(explicit?: string, runtime: JsRuntime = res
       file: shim,
       prefix: [],
       source: shim,
-      error: `找到 ${shim} 但推不出 OpenCLI 的包入口（${entry}）；请用 YAN_OPENCLI_JS 指定 dist/src/main.js 的路径`
+      error: `找到 ${shim}，但 OpenCLI 包不完整（缺少 ${entry}），多半是上次安装中断；点「安装 OpenCLI」重装，或用 YAN_OPENCLI_JS 指定入口`
     }
   }
   return { file: 'opencli', prefix: [], source: 'opencli（PATH 里没找到）' }
@@ -535,7 +535,7 @@ export function installOpenCli(): Promise<OpenCliInstallResult> {
     let child: ReturnType<typeof spawn>
     try {
       child = isCmd
-        ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${npm}" ${args.join(' ')}`], { windowsHide: true, windowsVerbatimArguments: true })
+        ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `""${npm}" ${args.join(' ')}"`], { windowsHide: true, windowsVerbatimArguments: true })
         : spawn(npm, args, { windowsHide: true })
     } catch (e) {
       resolve({ ok: false, error: e instanceof Error ? e.message : String(e) })

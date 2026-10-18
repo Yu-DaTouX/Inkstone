@@ -181,15 +181,6 @@
     font-weight: 600;
   }
 
-  .caps-tag {
-    flex: none;
-    padding: 0 var(--s-6);
-    border-radius: var(--r-full);
-    background: var(--sunken);
-    color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
-  }
-
   .caps-meta {
     margin: 0;
     min-width: 0;

@@ -6,7 +6,7 @@ import type {
   McpAppOwnershipView,
   McpAppSwitchCommitResult
 } from '../../../../../shared/mcp-app-switch'
-import { Button } from '../../../ui'
+import { Badge, Button } from '../../../ui'
 import { useConfirm } from './confirm'
 import {
   formatMcpAppSwitchPreview,
@@ -58,7 +58,7 @@ export function McpAppOwnership(): ReactElement {
         setError(parsed.error)
         return
       }
-      setViews(parsed.views)
+      setViews(parsed.views.filter((view) => !view.inkstoneOnly))
       setError(null)
     } catch (cause) {
       if (mounted.current) {
@@ -80,7 +80,6 @@ export function McpAppOwnership(): ReactElement {
 
   return (
     <Group title={labels.groupTitle} desc={labels.groupDesc}>
-      <Note>{labels.note}</Note>
       {error ? <Warn>{`${labels.loadFailed}: ${error}`}</Warn> : null}
       {loading && !views && !error ? <ListSkeleton rows={2} /> : null}
       {!error && views && views.length === 0 ? <Empty>{labels.empty}</Empty> : null}
@@ -211,10 +210,8 @@ function OwnershipRow({
         <StatusBadge tone={view.managed ? 'accent' : 'neutral'}>
           {view.managed ? labels.managed : view.inkstoneConnection ? labels.inkstoneConnection : labels.piNative}
         </StatusBadge>
-        <span className="caps-tag">
-          {view.scope === 'project' ? labels.scopeProject : labels.scopeGlobal}
-        </span>
-        {view.inkstoneConnection ? null : <span className="caps-tag">{`${labels.nativeName}: ${view.nativeName}`}</span>}
+        <Badge>{view.scope === 'project' ? labels.scopeProject : labels.scopeGlobal}</Badge>
+        {view.inkstoneConnection ? null : <Badge>{`${labels.nativeName}: ${view.nativeName}`}</Badge>}
         <span className="caps-spacer" />
         {view.inkstoneOnly ? null : (
           <Button

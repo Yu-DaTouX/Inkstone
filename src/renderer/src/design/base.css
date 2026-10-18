@@ -43,6 +43,10 @@
     font-variant-numeric: tabular-nums;
   }
 
+  svg.lucide {
+    stroke-width: 1.5;
+  }
+
   .v3-visually-hidden {
     position: absolute;
     width: 1px;

@@ -220,7 +220,7 @@ export function CustomEndpointSettings(): ReactElement {
   }
 
   return (
-    <section className="ms-custom" aria-label={t('customApi.title')} data-testid="ms-custom">
+    <section className="ms-custom" aria-label={t('customApi.title')} data-testid="ms-custom" data-setting-id="models-custom">
       <div className="ms-group-title-row">
         <h3 className="ms-group-title">{t('customApi.title')}</h3>
         <span className="ms-note">{t('customApi.desc')}</span>
@@ -248,6 +248,7 @@ export function CustomEndpointSettings(): ReactElement {
               <div className="ms-custom-actions">
                 <Button
                   size="sm"
+                  variant="secondary"
                   data-testid={`ms-custom-edit-${item.id}`}
                   isDisabled={busy}
                   onPress={() =>
@@ -263,7 +264,7 @@ export function CustomEndpointSettings(): ReactElement {
                 </Button>
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="secondary"
                   aria-expanded={testId === item.id}
                   data-testid={`ms-custom-test-${item.id}`}
                   onPress={() => {
@@ -278,9 +279,10 @@ export function CustomEndpointSettings(): ReactElement {
                   variant="danger"
                   isDisabled={busy}
                   data-testid={`ms-custom-remove-${item.id}`}
+                  icon={<Trash2 size={13} aria-hidden />}
                   onPress={() => setPendingRemove(item)}
                 >
-                  <Trash2 size={13} aria-hidden /> {t('customApi.remove')}
+                  {t('customApi.remove')}
                 </Button>
               </div>
 
@@ -402,23 +404,27 @@ export function CustomEndpointSettings(): ReactElement {
           <div className="ms-custom-actions">
             <Button
               size="sm"
+              variant="secondary"
               isDisabled={busy}
+              icon={<Plus size={13} aria-hidden />}
               onPress={() =>
                 setDraft({ ...draft, models: [...draft.models, { id: '' }] })
               }
             >
-              <Plus size={13} aria-hidden /> {t('customApi.addModel')}
+              {t('customApi.addModel')}
             </Button>
             <Button
               size="sm"
+              variant="secondary"
               isDisabled={fetching || busy}
+              icon={<RefreshCw size={13} aria-hidden />}
               data-testid="ms-custom-fetch-models"
               onPress={() => void fetchModels()}
             >
-              <RefreshCw size={13} aria-hidden /> {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
+              {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
             </Button>
             <span className="ms-custom-spacer" />
-            <Button size="sm" variant="ghost" isDisabled={busy} onPress={cancelDraft}>
+            <Button size="sm" variant="secondary" isDisabled={busy} onPress={cancelDraft}>
               {t('customApi.cancel')}
             </Button>
             <Button
@@ -434,13 +440,21 @@ export function CustomEndpointSettings(): ReactElement {
         </div>
       ) : (
         <div className="ms-custom-actions">
-          <Button data-testid="ms-custom-add" onPress={() => beginDraft(blank())}>
-            <Plus size={14} aria-hidden /> {t('customApi.add')}
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Plus size={13} aria-hidden />}
+            data-testid="ms-custom-add"
+            onPress={() => beginDraft(blank())}
+          >
+            {t('customApi.add')}
           </Button>
           <Button
+            size="sm"
             variant="secondary"
             isDisabled={detecting}
             data-testid="ms-custom-detect"
+            data-setting-id="models-custom-detect"
             onPress={() => void detectLocal()}
           >
             {detecting ? t('customApi.detecting') : t('customApi.detectLocal')}

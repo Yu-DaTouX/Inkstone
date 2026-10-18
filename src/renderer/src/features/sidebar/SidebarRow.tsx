@@ -12,6 +12,7 @@ import { SessionBot } from './SessionBot'
 import { sessionBotMood } from './session-bot-mood'
 import { passedThreshold, useSessionDrag } from './session-drag'
 import { SessionMenu, openSessionInSplit } from './SessionMenu'
+import { SidebarTip } from './SidebarTip'
 
 export interface SidebarRowProps {
   item: SessionSummary
@@ -145,35 +146,36 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
           data-testid="v3-session-rename"
         />
       ) : (
-        <button
-          type="button"
-          className="v3-row"
-          aria-current={isCurrent ? 'true' : undefined}
-          title={`${title}\n${text.dragToSplit}`}
-          onPointerDown={onPointerDown}
-          onClick={(event) => {
-            if (draggedRef.current) {
-              draggedRef.current = false
-              return
-            }
-            if ((event.ctrlKey || event.metaKey) && !isCurrent) {
-              openSessionInSplit(item)
-              return
-            }
-            onOpen()
-          }}
-          data-testid="v3-session-row"
-        >
-          <span className="v3-row-lead">
-            {botMood ? (
-              <SessionBot phase={phase} mood={botMood} model={model} seedKey={item.id} label={code ? `${code} · ${phaseWord(lang, phase)}` : phaseWord(lang, phase)} />
-            ) : (
-              <RunDot phase={phase} unread={unread} code={code} />
-            )}
-          </span>
-          <ShimmerText className="v3-row-title" active={phase?.kind === 'running'}>{title}</ShimmerText>
-          {word ? <span className={`v3-row-word v3-row-word-${tone}`}>{word}</span> : null}
-        </button>
+        <SidebarTip label={title}>
+          <button
+            type="button"
+            className="v3-row"
+            aria-current={isCurrent ? 'true' : undefined}
+            onPointerDown={onPointerDown}
+            onClick={(event) => {
+              if (draggedRef.current) {
+                draggedRef.current = false
+                return
+              }
+              if ((event.ctrlKey || event.metaKey) && !isCurrent) {
+                openSessionInSplit(item)
+                return
+              }
+              onOpen()
+            }}
+            data-testid="v3-session-row"
+          >
+            <span className="v3-row-lead">
+              {botMood ? (
+                <SessionBot phase={phase} mood={botMood} model={model} seedKey={item.id} label={code ? `${code} · ${phaseWord(lang, phase)}` : phaseWord(lang, phase)} />
+              ) : (
+                <RunDot phase={phase} unread={unread} code={code} />
+              )}
+            </span>
+            <ShimmerText className="v3-row-title" active={phase?.kind === 'running'}>{title}</ShimmerText>
+            {word ? <span className={`v3-row-word v3-row-word-${tone}`}>{word}</span> : null}
+          </button>
+        </SidebarTip>
       )}
       {renaming ? null : (
         <IconButton

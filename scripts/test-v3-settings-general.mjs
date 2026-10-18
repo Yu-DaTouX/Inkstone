@@ -175,16 +175,13 @@ async function main() {
     ok(dataHtml.includes('data-testid="v3-data-export"'), '会话导出按钮存在且接既有 sync.exportSession')
 
     const aboutHtml = render(
-      createElement(i18n.I18nProvider, null, createElement(General.AboutSettings, { onOpenModels: () => {} }))
+      createElement(i18n.I18nProvider, null, createElement(General.AboutSettings))
     )
     ok(aboutHtml.includes('data-testid="v3-about-settings"'), '关于分区有稳定根 testid')
     ok(aboutHtml.includes('data-testid="v3-about-repo"'), '开源入口按钮存在（无 URL 时禁用）')
     ok(aboutHtml.includes('data-testid="v3-about-pi-redetect"'), 'pi 重新检测走既有 redetectPi')
     ok(aboutHtml.includes('data-testid="v3-about-update-check"'), '更新检查走既有 appUpdate')
-    ok(aboutHtml.includes('data-testid="v3-about-models"'), '凭证配置只导航到既有模型页（注入回调时才是真按钮）')
-
-    const aboutNoNav = render(createElement(i18n.I18nProvider, null, createElement(General.AboutSettings)))
-    ok(!aboutNoNav.includes('data-testid="v3-about-models"'), '没有导航回调时不摆点不动的假按钮')
+    ok(!aboutHtml.includes('data-testid="v3-about-models"'), '关于页不再重复放模型页入口')
 
     const rootsHtml = render(
       createElement(General.AllowRootsList, {
