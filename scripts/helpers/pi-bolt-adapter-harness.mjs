@@ -102,6 +102,7 @@ export const THIN_EXTENSION_FILES = [
   'language.js',
   'capability-guide.js',
   'context-trim.js',
+  'image-labels.js',
   'repeat-guard.js',
   'danger-guard.js',
   'commandcode.js',
