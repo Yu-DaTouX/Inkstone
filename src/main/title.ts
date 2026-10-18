@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { stripTitleMarkdown } from '../shared/title-text'
 
 const TITLES_FILE = join(YAN_DIR, 'titles.json')
 
@@ -100,18 +101,8 @@ function buildPrompt(samples: string[]): string {
 
 const TITLE_MAX = 18
 
-function stripMarkdown(line: string): string {
-  return line
-    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
-    .replace(/`+/g, '')
-    .replace(/(^|\s)[*_](\S(?:.*?\S)?)[*_](?=\s|$)/g, '$1$2')
-    .trim()
-}
-
 export function cleanTitle(raw: string): string {
-  let s = raw.split('\n').map((line) => stripMarkdown(line)).find((line) => line.length > 0) ?? ''
+  let s = raw.split('\n').map((line) => stripTitleMarkdown(line)).find((line) => line.length > 0) ?? ''
   s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
   s = s.replace(/^["'“”『「【\[(（]+/, '').replace(/["'“”』」】\])）]+$/, '')
   s = s.replace(/[。！？!?.,，、；;：:]+$/, '')

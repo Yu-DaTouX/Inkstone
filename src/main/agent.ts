@@ -687,7 +687,6 @@ export class AgentController extends EventEmitter {
   private connDetail = ''
 
   private titleTried = new Set<string>()
-  private titledSamples = new Map<string, string>()
 
   private lastTitle: string | undefined
 
@@ -2408,7 +2407,7 @@ export class AgentController extends EventEmitter {
         void this.refreshState()
         void this.refreshStats()
         void this.refreshTodos()
-        void this.maybeGenerateTitle({ force: true, onlyIfSamplesChanged: true })
+        void this.maybeGenerateTitle()
         const task = continuation ? this.continueAfterLoopGuard(continuation)
           : errorContinuation ? this.continueAfterModelError(errorContinuation) : undefined
         if (task) {
@@ -4219,7 +4218,7 @@ export class AgentController extends EventEmitter {
   }
 
   private async maybeGenerateTitle(
-    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; onlyIfSamplesChanged?: boolean; sessionId?: string } = {}
+    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; sessionId?: string } = {}
   ): Promise<string | null> {
     const st = this.state
     const rpc = this.rpc
@@ -4234,8 +4233,6 @@ export class AgentController extends EventEmitter {
 
     const samples = titleSamples(users)
     const titleImages = titleSampleImages(users)
-    const samplesKey = samples.join('\n')
-    if (opts.onlyIfSamplesChanged && this.titledSamples.get(st.sessionId) === samplesKey) return null
 
     if (!opts.lockHeld) this.titleTried.add(st.sessionId)
     const sessionId = st.sessionId
@@ -4254,8 +4251,6 @@ export class AgentController extends EventEmitter {
       if (!res?.title || this.stopping || this.rpc !== rpc || this.titleLifecycle !== titleLifecycle) return null
 
       if (opts.candidate) return res.title
-      this.titledSamples.set(sessionId, samplesKey)
-      if (this.titledSamples.size > 200) this.titledSamples.clear()
 
       const stillSameSession = this.state?.sessionId === sessionId
       if (stillSameSession && this.lastTitle !== res.title) {

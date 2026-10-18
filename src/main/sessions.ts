@@ -7,6 +7,7 @@ import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { decorateSessions } from './session-layout'
 import { parseSubagentNotice } from '../shared/subagent-notice'
+import { plainTitleText } from '../shared/title-text'
 
 export const SESSIONS_DIR =
   process.env.YAN_SESSIONS_DIR?.trim() || join(PI_AGENT_DIR, 'sessions')
@@ -40,7 +41,7 @@ function decodeDirName(name: string): string | null {
   return inner.replace(/-/g, '\\')
 }
 
-function userMessageText(msg: unknown): string | null {
+function userMessageText(msg: unknown, plain = false): string | null {
   if (!msg || typeof msg !== 'object') return null
   const m = msg as { role?: string; content?: unknown }
   if (m.role !== 'user') return null
@@ -62,7 +63,7 @@ function userMessageText(msg: unknown): string | null {
   const notice = parseSubagentNotice(text.trim())
   if (notice) return notice.headline.trim() || null
 
-  text = text.replace(/\s+/g, ' ').trim()
+  text = plain ? plainTitleText(text) : text.replace(/\s+/g, ' ').trim()
   if (!text) return null
   text = text.replace(/<[^>]{1,40}>/g, '').trim()
   if (!text) return null
@@ -71,7 +72,7 @@ function userMessageText(msg: unknown): string | null {
 }
 
 function titleFromMessage(msg: unknown): string | null {
-  let text = userMessageText(msg)
+  let text = userMessageText(msg, true)
   if (!text) return null
 
   text = shortenPaths(text)
