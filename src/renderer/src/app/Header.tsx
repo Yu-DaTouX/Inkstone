@@ -10,6 +10,7 @@ import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { IconTip } from './IconTip'
 import { v3Text } from './v3-text'
+import { plainTitleText } from '../../../shared/title-text'
 
 interface Props {
   narrow: boolean
@@ -32,7 +33,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   const sessionBarLabel = sessionBarOpen ? text.hideSessionBar : text.showSessionBar
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const firstUserTitle = useStore((s) => s.messages.find((message) => message.role === 'user')?.text.replace(/\s+/g, ' ').trim().slice(0, 80) ?? '')
+  const firstUserTitle = useStore((s) => plainTitleText(s.messages.find((message) => message.role === 'user')?.text ?? '').slice(0, 80))
   const manualTitles = useStore((s) => s.manualTitles)
   const titles = useStore((s) => s.titles)
   const sessions = useStore((s) => s.sessions)
