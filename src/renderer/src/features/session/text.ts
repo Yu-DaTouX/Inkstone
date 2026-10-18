@@ -33,8 +33,10 @@ export type SessionTextKey =
   | 'subagentLiveCount'
   | 'subagentDoneCount'
   | 'subagentFailedCount'
-  | 'subagentMoreRuns'
-  | 'subagentBringFront'
+  | 'subagentDeckHint'
+  | 'subagentDeckLabel'
+  | 'subagentDeckJump'
+  | 'subagentDeckGo'
   | 'subagentShowLess'
   | 'subagentRetried'
   | 'subagentResumed'
@@ -86,8 +88,10 @@ const ZH: Record<SessionTextKey, string> = {
   subagentLiveCount: '{n} 进行中',
   subagentDoneCount: '{n} 完成',
   subagentFailedCount: '{n} 失败',
-  subagentMoreRuns: '另外 {n} 个子代理',
-  subagentBringFront: '置于最前',
+  subagentDeckHint: '滚轮 · ↑↓ 翻张',
+  subagentDeckLabel: '子代理卡片，聚焦后用上下方向键翻张',
+  subagentDeckJump: '翻到这一张',
+  subagentDeckGo: '第 {n} 个',
   subagentShowLess: '收起',
   subagentRetried: '已自动重试 {n} 次',
   subagentResumed: '已自动续跑 1 次',
@@ -140,8 +144,10 @@ const EN: Record<SessionTextKey, string> = {
   subagentLiveCount: '{n} in progress',
   subagentDoneCount: '{n} done',
   subagentFailedCount: '{n} failed',
-  subagentMoreRuns: '{n} more subagents',
-  subagentBringFront: 'Bring to front',
+  subagentDeckHint: 'Wheel · ↑↓ to flip',
+  subagentDeckLabel: 'Subagent cards, use the up and down arrow keys to flip when focused',
+  subagentDeckJump: 'Flip to this one',
+  subagentDeckGo: 'No. {n}',
   subagentShowLess: 'Show less',
   subagentRetried: 'Retried {n} times',
   subagentResumed: 'Auto-continued once',

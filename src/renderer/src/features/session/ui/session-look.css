@@ -238,8 +238,11 @@
   .v3-subagent:has(.v3-subagent-toggle:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
   .v3-subagent[data-selected='1'] { border-color: var(--accent); background: var(--sel); }
   .v3-sa-deck .v3-subagent[data-selected='1'] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
-  .v3-subagent[data-lift='1'] { animation: v3-sa-lift var(--dur-expand) var(--ease-in); }
-  @keyframes v3-sa-lift { from { transform: translateY(var(--s-8)) scale(.98); opacity: .4; } }
+  .v3-sa-slot { transition: transform var(--dur-expand) var(--ease), opacity var(--dur-expand) var(--ease); }
+  .v3-sa-slot > .v3-sa-strip > * { transition: opacity var(--dur-expand) var(--ease); }
+  .v3-sa-slot > .v3-subagent { transition: opacity var(--dur-expand) var(--ease), left var(--dur-expand) var(--ease), right var(--dur-expand) var(--ease), border-color var(--dur-hover) var(--ease), background-color var(--dur-hover) var(--ease), box-shadow var(--dur-hover) var(--ease), transform var(--dur-hover) var(--ease); }
+  .v3-sa-slot > .v3-sa-strip { transition: opacity var(--dur-expand) var(--ease), left var(--dur-expand) var(--ease), right var(--dur-expand) var(--ease), padding var(--dur-expand) var(--ease), background-color var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease); }
+  .v3-sa-deck:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-md); }
   .v3-sa-strip {
     --sa-tone: color-mix(in srgb, var(--surface) 70%, var(--sunken));
     border: 1px solid var(--line);
@@ -251,13 +254,11 @@
     font-size: var(--t-meta);
     text-align: left;
     cursor: pointer;
-    transition: background-color var(--dur-hover) var(--ease), color var(--dur-hover) var(--ease);
   }
   .v3-sa-strip[data-depth='2'] { --sa-tone: color-mix(in srgb, var(--surface) 45%, var(--sunken)); }
   .v3-sa-strip[data-depth='3'] { --sa-tone: color-mix(in srgb, var(--surface) 22%, var(--sunken)); }
+  .v3-sa-strip[data-depth='4'] { --sa-tone: color-mix(in srgb, var(--surface) 8%, var(--sunken)); }
   .v3-sa-strip:hover { --sa-tone: var(--surface); }
-  .v3-sa-strip:focus-visible { outline: none; }
-  .v3-sa-strip:focus-visible::after { content: ''; position: absolute; inset: calc(var(--r-md) - 1px) -1px -1px; border-radius: 0 0 var(--r-md) var(--r-md); outline: 2px solid var(--accent); outline-offset: -2px; pointer-events: none; }
   .v3-sa-strip[data-selected='1'] { --sa-tone: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
   .v3-sa-strip-task { color: var(--fg2); font-size: var(--t-ui); font-weight: 400; transition: color var(--dur-hover) var(--ease); }
   .v3-sa-strip[data-tone='run'] .v3-sa-strip-task, .v3-sa-strip:hover .v3-sa-strip-task, .v3-sa-strip[data-selected='1'] .v3-sa-strip-task { color: var(--fg); }
@@ -266,14 +267,16 @@
   .v3-sa-strip .v3-sa-strip-mark .v3-dot { box-shadow: 0 0 0 2px var(--sa-tone); }
   .v3-subagents-legend .v3-dot.run { animation: v3-sa-breathe var(--dur-breathe) var(--ease) infinite; }
   @keyframes v3-sa-breathe { 50% { opacity: .35; } }
-  .v3-sa-more .v3-sa-strip-task { color: var(--fg3); font-size: var(--t-meta); }
-  .v3-sa-more:hover .v3-sa-strip-task { color: var(--fg); }
+  .v3-sa-nav { color: var(--fg3); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
+  .v3-sa-dot { border: 0; border-radius: var(--r-full); background: var(--line2); cursor: pointer; transition: width var(--dur-hover) var(--ease), background-color var(--dur-hover) var(--ease); }
+  .v3-sa-dot[data-on='1'] { background: var(--accent); }
+  .v3-sa-dot:hover:not([data-on='1']) { background: var(--fg3); }
   .v3-subagents-legend { color: var(--fg3); font-size: var(--t-meta); font-variant-numeric: tabular-nums; }
   @media (prefers-reduced-motion: reduce) {
     .v3-subagent { transition: none; }
     .v3-subagent:hover, .v3-subagent:has(.v3-subagent-toggle:focus-visible) { transform: none; }
-    .v3-subagent[data-lift='1'] { animation: none; }
-    .v3-sa-strip, .v3-sa-strip-task { transition: none; }
+    .v3-sa-slot, .v3-sa-slot > .v3-subagent, .v3-sa-slot > .v3-sa-strip, .v3-sa-slot > .v3-sa-strip > *, .v3-sa-strip-task, .v3-sa-dot { transition: none; }
+    .v3-sa-slot { will-change: auto; }
     .v3-subagents-legend .v3-dot.run { animation: none; }
   }
   .v3-subagent[data-attention='1'] .v3-subagent-status { color: var(--fail-t); }
