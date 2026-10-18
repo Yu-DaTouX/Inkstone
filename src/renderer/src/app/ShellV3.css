@@ -56,8 +56,28 @@
     right: calc(var(--subagent-width, 360px) + var(--s-16));
   }
   .v3-sessionbar > .wb-overview {
-    padding: var(--s-16) 0;
+    flex: 0 1 auto;
+    gap: 0;
+    margin: var(--s-16) 0;
+    padding: var(--s-4) 0;
     scrollbar-width: none;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+  .v3-sessionbar .wb-tile {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .v3-sessionbar .wb-tile + .wb-tile {
+    border-top: 1px solid var(--line);
+  }
+  .v3-sessionbar .wb-tile-title {
+    font-weight: 500;
+  }
+  .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-text {
+    display: none;
   }
   .v3-chat > .v3-sap {
     z-index: 6;

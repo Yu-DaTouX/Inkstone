@@ -138,6 +138,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
                 </Menu>
               </Popover>
             </MenuTrigger>
+            <Separator orientation="vertical" className="v3-head-sep" />
           </>
         ) : null}
         <IconTip label={text.settingsEntryHint}>

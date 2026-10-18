@@ -8,6 +8,19 @@ import { ToolSteps } from './ToolSteps'
 import { generatingArgs, summarize } from './tool-summary'
 import { narrationLine, processNotes, processSummaryLabel, processTools, runningTool } from './turn-process'
 
+function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
+  const merged: TurnSegment[] = []
+  for (const segment of process) {
+    const previous = merged[merged.length - 1]
+    if (previous && !segment.commentary.length && previous.tools.length && segment.tools.length) {
+      merged[merged.length - 1] = { ...previous, tools: [...previous.tools, ...segment.tools] }
+    } else {
+      merged.push(segment)
+    }
+  }
+  return merged
+}
+
 export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   process: TurnSegment[]
   elapsedMs?: number
@@ -27,10 +40,11 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
   const latest = notes.length ? narrationLine(notes[notes.length - 1]) : ''
   const label = current
     ? `${current.name} ${generatingArgs(current) ? t('tool2.generatingArgs') : summarize(current)}`.trim()
-    : live && latest
+    : live && latest && !open
       ? latest
       : summary
   const time = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
+  const groups = mergeQuietSegments(process)
 
   return (
     <section className="v3-steps v3-process" data-testid="v3-process" aria-label={t('proc.title')}>
@@ -48,7 +62,7 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
       {open ? (
         <div className="v3-process-body" data-testid="v3-process-body">
           {thinking}
-          {process.map((segment) => (
+          {groups.map((segment) => (
             <div key={segment.id} className="v3-process-seg">
               {segment.commentary.length ? (
                 <div className="v3-process-notes">

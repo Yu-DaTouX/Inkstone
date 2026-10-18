@@ -121,7 +121,9 @@ export function ComposerUsage() {
     [t('sm.output'), tokenText(metrics.output, metrics.partial, t('tok.unit'))]
   ]
   const rows = open === 'tokens' ? tokenRows : sessionRows
-  const hitRate = formatHitRate(metrics.hitRate)
+  const hitRate = metrics.hitRate !== null && Number.isFinite(metrics.hitRate)
+    ? t('sm.hitShort', { pct: `${Math.floor(metrics.hitRate)}%` })
+    : null
 
   return (
     <div className="composer-usage ui-meta-num" data-testid="composer-usage">
