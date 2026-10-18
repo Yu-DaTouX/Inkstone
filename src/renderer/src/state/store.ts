@@ -39,6 +39,7 @@ import type {
 } from '../../../shared/ipc'
 import type { CheckpointRecord } from '../../../shared/checkpoints'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
+import { attentionForOutcome } from '../../../shared/turn-outcome'
 import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
@@ -1275,11 +1276,18 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ messages: patchMessage(s.messages, msgId, { toolCalls: calls }) })
         break
       }
+      case 'turn-settled': {
+        const event = attentionForOutcome(m.payload.outcome)
+        if (!event || !s.session || s.session.sessionId !== m.payload.sessionId || s.session.isAgentRunning) break
+        const sid = s.session.sessionId
+        const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session.sessionName || ''
+        const reply = [...s.messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
+        const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
+        const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
+        alertAttention(s.settings, event, body || undefined, label ? `${attentionTitle(event)} · ${label}` : undefined)
+        break
+      }
       case 'state': {
-        const finished =
-          s.session?.sessionId === m.payload.sessionId &&
-          s.session?.isAgentRunning === true &&
-          m.payload.isAgentRunning !== true
         const endedRun =
           s.session?.sessionId === m.payload.sessionId && s.session?.compaction && !m.payload.compaction
             ? m.payload.lastCompaction
@@ -1297,14 +1305,6 @@ export const useStore = create<Store>((rawSet, get) => {
           set({ notices: pushNotice(get().notices, 'info', '上下文已压缩') })
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
-        }
-        if (finished) {
-          const sid = s.session?.sessionId
-          const label = (sid && (s.manualTitles[sid] || s.titles[sid])) || s.session?.sessionName || ''
-          const reply = [...s.messages].reverse().find((msg) => msg.role === 'assistant' && msg.text.trim())?.text ?? ''
-          const excerpt = reply.replace(/[#>*_`|]+/g, ' ').replace(/\s+/g, ' ').trim()
-          const body = excerpt.length > 120 ? `${excerpt.slice(0, 119)}…` : excerpt
-          alertAttention(s.settings, 'done', body || undefined, label ? `${attentionTitle('done')} · ${label}` : undefined)
         }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
           set({ thinkingLevels: m.payload.availableThinkingLevels })

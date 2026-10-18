@@ -124,6 +124,7 @@ try {
 
   autoContinueEnabled = true
   const errorNotices = offset => pushes.slice(offset).filter(e => e.ch === 'notify' && /暂时性错误/.test(e.payload?.message ?? ''))
+  const outcomes = offset => pushes.slice(offset).filter(e => e.ch === 'turn-settled').map(e => e.payload.outcome).join(',')
   let errorOffset = pushes.length, errorRequests = requests.length
   plans.push('error502', 'normal')
   check((await agent.send('TRANSIENT-ERROR')).ok, 'transient error turn accepted')
@@ -131,6 +132,7 @@ try {
   await settled('model-error continuation settles')
   equal(errorNotices(errorOffset).length, 1, 'model-error continuation announced once')
   check(JSON.stringify(requests.at(-1)).includes('模型错误恢复'), 'continuation prompt reaches the model in the same session')
+  equal(outcomes(errorOffset), 'completed', 'resumed error turn reports only the final completion')
 
   errorOffset = pushes.length
   errorRequests = requests.length
@@ -140,14 +142,17 @@ try {
   await settled('repeated failure settles')
   await new Promise(done => setTimeout(done, 300))
   equal(requests.length, errorRequests + 2, 'model-error continuation runs at most once per user turn')
+  equal(outcomes(errorOffset), 'failed', 'exhausted continuation reports one failure')
 
   autoContinueEnabled = false
+  errorOffset = pushes.length
   errorRequests = requests.length
   plans.push('error502')
   check((await agent.send('TRANSIENT-ERROR-DISABLED')).ok, 'disabled continuation turn accepted')
   await settled('disabled continuation settles')
   await new Promise(done => setTimeout(done, 300))
   equal(requests.length, errorRequests + 1, 'continuation respects the auto-continue setting')
+  equal(outcomes(errorOffset), 'failed', 'disabled continuation reports the failure')
 
   c = await hold('THINKING-LOOP')
   const thinkingOffset = pushes.length
