@@ -137,7 +137,7 @@ export const jsxDEV = jsx
 `
 
 const I18N_STUB = `export function useT(){ return (k) => String(k) }
-export function useI18n(){ return { t:(k)=>String(k) } }
+export function useI18n(){ return { lang: 'zh-CN', t:(k)=>String(k) } }
 export function translate(_l,k){ return String(k) }`
 
 const UI_STUB_FOR_DIALOG = `export function ModalOverlay(props){ return props.children }
@@ -235,8 +235,8 @@ export { textFingerprint } from '${posix(abs('src/shared/checkpoints.ts'))}'
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }`,
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }\nexport function Notice(props){ return props.children ?? null }\nexport function ProgressBar(){ return null }\nexport function SegmentedControl(){ return null }`,
-      'src/renderer/src/features/session/run-status.ts': `export function useRunProgress(){ return null }\nexport function runPhaseText(){ return '' }`,
-      'src/renderer/src/lib/fork.ts': `export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }`
+      'src/renderer/src/features/session/run-status.ts': `export function useRunProgress(){ return null }\nexport function useWorkingLine(){ return null }\nexport function runPhaseText(){ return '' }`,
+      'src/renderer/src/lib/fork.ts': `export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }\nexport async function forkAt(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }`
     },
     shims
   )
@@ -386,8 +386,9 @@ async function main() {
     rt.seq = 0
     return rt.render(el.type, el.props)
   }
-  const rewindButton = (tree) => domButtons(tree).find((el) => el.props['data-testid'] === 'v3-msg-rewind')
-  const forkButton = (tree) => domButtons(tree).find((el) => el.props.title === 'chat.forkHere')
+  const actionButtons = (tree) => collect(tree, (el) => !!el.props && typeof el.props['data-testid'] === 'string')
+  const rewindButton = (tree) => actionButtons(tree).find((el) => el.props['data-testid'] === 'v3-msg-rewind')
+  const forkButton = (tree) => actionButtons(tree).find((el) => el.props['data-testid'] === 'v3-msg-fork')
 
   group('TurnView 回退入口：真实命中且归属当前活动会话才出现')
   {
@@ -397,7 +398,7 @@ async function main() {
     ok(!!rewindButton(tree), '命中检查点 + 归属一致：可写用户回合出现「回退代码」')
     ok(!!forkButton(tree), '分叉入口仍在（代码回退与会话分支语义分离）')
 
-    rewindButton(tree).props.onClick()
+    rewindButton(tree).props.onPress()
     ok(turnStore.getState().rewind?.recordId === 'cp-1', '点击回退把记录与预览交给 store.openRewind', turnStore.getState().rewind)
     ok(turnStore.getState().rewind?.preview === USER_TEXT, '预览取这条用户消息原文')
   }

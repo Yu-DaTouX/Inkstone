@@ -31,6 +31,7 @@ import type {
   UIMessage,
   UIToolCall,
   UserProfile,
+  ApprovalAnswerIdentity,
   ApprovalChoice,
   ApprovalRequest,
   GitInstallProgress,
@@ -47,6 +48,7 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
+import { markStopRequested } from '../features/session/stop-intent'
 import { mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
@@ -80,6 +82,7 @@ import { newestMessages, shownMessages } from './split-snapshots'
 import { useSplitView } from './split-view'
 import { claimResource, releaseResource, resourceOwner } from './resource-owners'
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
+import { useSubagentStopping } from './subagent-stopping'
 
 function currentLang(): Lang {
   const fromSettings = useStore.getState().settings?.lang
@@ -323,7 +326,7 @@ export interface Store {
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
   removeGuardAllowRoot: (path: string) => Promise<void>
-  answerApproval: (id: string, choice: ApprovalChoice) => Promise<void>
+  answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity) => Promise<void>
   gitInstall: GitInstallProgress
   installGit: () => Promise<void>
   cancelGitInstall: () => Promise<void>
@@ -1674,7 +1677,9 @@ export const useStore = create<Store>((rawSet, get) => {
 
   abort: async () => {
     const sessionId = get().session?.sessionId
-    const cleared = await window.yan.abort()
+    markStopRequested(sessionId)
+    const cleared = await window.yan.abort(expectedRuntimeFor(get(), composerSubmitIdentity(get())))
+    if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
     const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
     const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
     const current = get()
@@ -2267,7 +2272,9 @@ export const useStore = create<Store>((rawSet, get) => {
 
   loadSubagents: async () => {
     try {
-      set({ subagents: await window.yan.subagents.list() })
+      const runs = await window.yan.subagents.list()
+      set({ subagents: runs })
+      useSubagentStopping.getState().prune(runs.filter((r) => r.status === 'starting' || r.status === 'running').map((r) => r.id))
     } catch {
     }
   },
@@ -2291,8 +2298,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   stopSubagent: async (id) => {
-    const res = await window.yan.subagents.stop(id)
+    useSubagentStopping.getState().mark(id)
+    const res = await window.yan.subagents.stop(id).catch((): { ok: false; error?: string } => ({ ok: false }))
     if (!res.ok) {
+      useSubagentStopping.getState().clear(id)
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStopFailed')) })
     }
   },
@@ -2353,10 +2362,10 @@ export const useStore = create<Store>((rawSet, get) => {
     await window.yan.gitRuntimeCancel().catch(() => undefined)
   },
 
-  answerApproval: async (id, choice) => {
+  answerApproval: async (id, choice, identity) => {
     set({ approvals: get().approvals.filter((item) => item.id !== id) })
     try {
-      await window.yan.answerApproval(id, choice)
+      await window.yan.answerApproval(id, choice, identity)
     } catch {
     }
   },

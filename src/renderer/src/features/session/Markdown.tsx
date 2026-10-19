@@ -1,12 +1,13 @@
-import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { classifyLink } from '../../../../shared/links'
+import { classifyLink, type LinkTarget } from '../../../../shared/links'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
 import { isVisualBlockLang } from '../../../../shared/visual-blocks'
+import { highlightOptions, rehypeHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
+import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { MessageImage } from './Image'
 import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
@@ -14,10 +15,46 @@ import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { splitMarkdownBlocks } from './markdown-blocks'
 import { useSmoothReveal } from './smooth-reveal'
+import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type MathPlugins } from './markdown-math'
+import { fadeSpans, rehypeRevealFade, spansForBlock, trackReveal, type FadeSpan, type FadeTrack } from './reveal-fade'
+import { openMessageMenu, type MessageMenuItem } from './message-menu'
+import { useSessionText } from './text'
+import '../../patterns/highlighted-code.css'
+
+type PluginList = NonNullable<Options['rehypePlugins']>
 
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
-const MD_REHYPE: NonNullable<Options['rehypePlugins']> = [[rehypeHighlight, { detect: false, ignoreMissing: true }]]
-const MD_REHYPE_PLAIN: NonNullable<Options['rehypePlugins']> = []
+const MD_REHYPE: PluginList = [rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
+const MD_REHYPE_PLAIN: PluginList = []
+const NO_FADE: readonly FadeSpan[] = []
+
+const pluginCache = new Map<string, { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList }>()
+
+function pluginsFor(highlight: boolean, math: MathPlugins | null): { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList } {
+  const key = `${highlight ? 1 : 0}${math ? 1 : 0}`
+  let hit = pluginCache.get(key)
+  if (!hit) {
+    const base = highlight ? MD_REHYPE : MD_REHYPE_PLAIN
+    hit = math
+      ? { remark: [...MD_REMARK, ...math.remark], rehype: [...math.rehype, ...base] }
+      : { remark: MD_REMARK, rehype: base }
+    pluginCache.set(key, hit)
+  }
+  return hit
+}
+
+function useMathFor(text: string): { needed: boolean; plugins: MathPlugins | null } {
+  const needed = useMemo(() => needsMath(text), [text])
+  const state = useSyncExternalStore(subscribeMath, mathLoadState, mathLoadState)
+  useEffect(() => {
+    if (needed) requestMath()
+  }, [needed])
+  return { needed, plugins: needed && state === 'ready' ? mathPlugins() : null }
+}
+
+function copyText(text: string): void {
+  void navigator.clipboard.writeText(text).catch(() => undefined)
+}
 
 const MD_CACHE_LIMIT = 60
 const MD_CACHE_TOTAL_CHARS = 100_000
@@ -39,6 +76,8 @@ function mdCacheSet(text: string, element: React.ReactElement): void {
   }
 }
 
+const NOT_A_LINK: LinkTarget = { kind: 'invalid', reason: 'empty' }
+
 const MessageSourceCwd = createContext<string | undefined>(undefined)
 const MarkdownLive = createContext(false)
 const MarkdownOffset = createContext(0)
@@ -50,12 +89,34 @@ function resolveAgainstCwd(path: string, cwd?: string): string {
   return `${cwd.replace(/[\\/]+$/, '')}/${path.replace(/^\.[\\/]/, '')}`
 }
 
+function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.MouseEvent) => void) | undefined {
+  const tt = useSessionText()
+  const openBrowser = useStore((s) => s.openBrowser)
+  const previewFile = useStore((s) => s.previewFile)
+  if (target.kind === 'invalid') return undefined
+  return (event) => {
+    const items: MessageMenuItem[] = target.kind === 'url'
+      ? [
+          { id: 'open', label: tt('menuOpenLink'), run: () => void openBrowser(target.url) },
+          { id: 'external', label: tt('menuOpenExternal'), run: () => void window.yan.browser.openExternal(target.url) },
+          { id: 'copy', label: tt('menuCopyLink'), run: () => copyText(target.url) }
+        ]
+      : [
+          { id: 'preview', label: tt('menuPreviewFile'), run: () => void previewFile(target.path, target.line, sourceCwd, target.lineEnd) },
+          { id: 'reveal', label: tt('menuRevealFile'), run: () => void window.yan.revealPath(resolveAgainstCwd(target.path, sourceCwd)) },
+          { id: 'copy', label: tt('menuCopyPath'), run: () => copyText(resolveAgainstCwd(target.path, sourceCwd)) }
+        ]
+    openMessageMenu(event, tt('menuLink'), items)
+  }
+}
+
 function LinkAnchor({ href, children }: { href?: string; children?: ReactNode }): JSX.Element {
   const t = useT()
   const openBrowser = useStore((s) => s.openBrowser)
   const previewFile = useStore((s) => s.previewFile)
   const sourceCwd = useContext(MessageSourceCwd)
   const target = classifyLink(href)
+  const onContextMenu = useLinkMenu(target, sourceCwd)
 
   const onClick = (e: React.MouseEvent): void => {
     e.preventDefault()
@@ -88,6 +149,7 @@ function LinkAnchor({ href, children }: { href?: string; children?: ReactNode })
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onAuxClick={(e) => e.preventDefault()}
+      onContextMenu={onContextMenu}
     >
       {children}
     </a>
@@ -118,6 +180,7 @@ function InlineCodeLink({ className, children }: { className?: string; children?
     (/^(?:[a-zA-Z]:[\\/]|https?:\/\/|file:\/\/)/.test(text.trim()) || /^[\w.@-][^:*?"<>|]*[\\/][^\\/]*\.[a-zA-Z0-9]{1,8}(?::\d+)?$/.test(text.trim()))
     ? classifyLink(text.trim())
     : null
+  const onContextMenu = useLinkMenu(candidate ?? NOT_A_LINK, sourceCwd)
   if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
@@ -131,7 +194,7 @@ function InlineCodeLink({ className, children }: { className?: string; children?
     else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
   }
   return (
-    <code className="v3-md-code-link" title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally}>
+    <code className="v3-md-code-link" title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu}>
       {children}
     </code>
   )
@@ -148,6 +211,8 @@ const hastText = (node: HastNode): string =>
 
 function CodeBlock({ lang, children }: { lang?: string; children?: ReactNode }): JSX.Element {
   const t = useT()
+  const tt = useSessionText()
+  const insertIntoComposer = useStore((s) => s.insertIntoComposer)
   const preRef = useRef<HTMLPreElement>(null)
   const [wrap, setWrap] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -159,11 +224,17 @@ function CodeBlock({ lang, children }: { lang?: string; children?: ReactNode }):
       () => { setFailed(true); window.setTimeout(() => setFailed(false), 2000) }
     )
   }
+  const onContextMenu = (event: React.MouseEvent): void => {
+    const text = (preRef.current?.innerText ?? '').replace(/\n$/, '')
+    openMessageMenu(event, tt('menuCode'), [
+      { id: 'copy', label: tt('menuCopyCode'), run: () => copyText(text) },
+      { id: 'insert', label: tt('menuInsertCode'), run: () => insertIntoComposer(`\`\`\`${lang ?? ''}\n${text}\n\`\`\``) }
+    ])
+  }
   return (
-    <div className="v3-code" data-lang={lang || 'text'}>
+    <div className="v3-code" data-lang={lang || 'text'} onContextMenu={onContextMenu}>
       <div className="v3-code-head">
         <span className="v3-code-lang">{lang || 'text'}</span>
-        <span className="v3-code-sp" />
         <button
           type="button"
           className="v3-code-act"
@@ -237,25 +308,49 @@ function hasUnclosedFence(text: string): boolean {
 const FENCE_LINE = /^\s*(```|~~~)/m
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
-const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight }: { text: string; offset: number; highlight: boolean }): JSX.Element {
+const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
+  const plugins = pluginsFor(highlight, math)
+  const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
   return (
     <MarkdownOffset.Provider value={offset}>
-      <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={highlight ? MD_REHYPE : MD_REHYPE_PLAIN} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={rehype} components={MD_COMPONENTS}>
         {text}
       </ReactMarkdown>
     </MarkdownOffset.Provider>
   )
 })
 
-function LiveMarkdown({ text, highlight = false }: { text: string; highlight?: boolean }): JSX.Element {
+function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[] }): JSX.Element {
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
   return (
     <div className="v3-prose">
-      {blocks.map((block) => (
-        <LiveMarkdownBlock key={block.offset} text={block.text} offset={block.offset} highlight={highlight && FENCE_LINE.test(block.text)} />
-      ))}
+      {blocks.map((block) => {
+        const spans = fade.length ? spansForBlock(fade, block.offset, block.text.length) : NO_FADE
+        return (
+          <LiveMarkdownBlock
+            key={block.offset}
+            text={block.text}
+            offset={block.offset}
+            highlight={highlight && FENCE_LINE.test(block.text)}
+            math={math}
+            fade={spans.length ? spans : NO_FADE}
+          />
+        )
+      })}
     </div>
   )
+}
+
+function useRevealFade(text: string, live: boolean): readonly FadeSpan[] {
+  const track = useRef<FadeTrack | null>(null)
+  if (!live || prefersReducedMotion()) {
+    track.current = null
+    return NO_FADE
+  }
+  const now = performance.now()
+  track.current = trackReveal(track.current, text, now)
+  const spans = fadeSpans(track.current, now)
+  return spans.length ? spans : NO_FADE
 }
 
 function whenIdle(callback: () => void): () => void {
@@ -283,6 +378,8 @@ export const Markdown = memo(function Markdown({
   const revealedText = useSmoothReveal(text, live)
   const deferredText = useDeferredValue(revealedText)
   const renderedText = live ? deferredText : text
+  const fade = useRevealFade(renderedText, live)
+  const math = useMathFor(renderedText)
   const identity = useMarkdownIdentity(sessionId, messageId)
   const wasLive = useRef(false)
   if (live) wasLive.current = true
@@ -296,7 +393,9 @@ export const Markdown = memo(function Markdown({
     return whenIdle(() => startTransition(() => setHighlightReady(true)))
   }, [settling])
 
-  const cached = live ? undefined : mdCache.get(renderedText)
+  const mathPending = math.needed && !math.plugins
+  const cacheKey = math.plugins ? `math:${renderedText}` : renderedText
+  const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     return (
       <WidgetIdentityContext.Provider value={identity}>
@@ -312,7 +411,7 @@ export const Markdown = memo(function Markdown({
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value>
-            <LiveMarkdown text={renderedText} />
+            <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} />
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
       </WidgetIdentityContext.Provider>
@@ -325,22 +424,22 @@ export const Markdown = memo(function Markdown({
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value={false}>
-            <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} />
+            <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} math={math.plugins} />
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
       </WidgetIdentityContext.Provider>
     )
   }
-  const plugin = unclosed ? MD_REHYPE_PLAIN : MD_REHYPE
+  const plugins = pluginsFor(!unclosed, math.plugins)
   const element = (
     <div className="v3-prose">
-      <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={plugin} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={plugins.rehype} components={MD_COMPONENTS}>
         {renderedText}
       </ReactMarkdown>
     </div>
   )
-  const stable = !unclosed && renderedText.length <= 20_000
-  if (stable) mdCacheSet(renderedText, element)
+  const stable = !unclosed && !mathPending && renderedText.length <= 20_000
+  if (stable) mdCacheSet(cacheKey, element)
   return (
     <WidgetIdentityContext.Provider value={identity}>
       <MessageSourceCwd.Provider value={sourceCwd}>

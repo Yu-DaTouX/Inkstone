@@ -22,27 +22,27 @@
   .native-surface__lead {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
   }
 
   .native-surface__meta {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
   }
 
   .native-surface__note {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .native-surface__risk {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .native-surface__spacer {
@@ -57,7 +57,7 @@
     gap: var(--s-8);
     min-height: 96px;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-align: center;
   }
 
@@ -110,7 +110,7 @@
     flex: none;
     color: var(--fg3);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .native-trust__fields {
@@ -131,7 +131,7 @@
 
   .native-trust__name {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .native-trust__value {
@@ -144,7 +144,7 @@
     overflow: hidden;
     color: var(--fg2);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -170,7 +170,7 @@
 
   .native-entries__kind {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .native-entries__text {
@@ -185,7 +185,7 @@
     overflow: hidden;
     color: var(--fg3);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

@@ -13,7 +13,6 @@ import { AttachmentStrip, ImageRefWarning } from './AttachmentStrip'
 import { imageRefPrefix, renumberImageRefsAfterRemoval, withImageLegend } from './image-refs'
 import { ComposerBorder } from './ComposerBorder'
 import { CompletionMenu } from './CompletionMenu'
-import { ComposerUsage } from './ComposerUsage'
 import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
 import { ProjectPicker } from './ProjectPicker'
@@ -31,8 +30,7 @@ import './composer.css'
 
 let consumedComposerFocus = 0
 
-const MIN_H = 56
-const MAX_H = 200
+const MIN_H = 20
 
 export function Composer({ className }: { className?: string } = {}) {
   const t = useT()
@@ -138,7 +136,7 @@ export function Composer({ className }: { className?: string } = {}) {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, MIN_H), MAX_H)}px`
+    el.style.height = `${Math.max(el.scrollHeight, MIN_H)}px`
   }, [value])
 
   const insertAtCursor = useCallback((text: string): void => {
@@ -436,7 +434,6 @@ export function Composer({ className }: { className?: string } = {}) {
             {submitAction === 'stop' ? (
               <Button
                 variant="secondary"
-                size="sm"
                 aria-label={t('composer.stop')}
                 title={t('composer.stop')}
                 className="composer-send composer-stop"
@@ -448,7 +445,6 @@ export function Composer({ className }: { className?: string } = {}) {
             ) : (
               <Button
                 variant="primary"
-                size="sm"
                 aria-label={t('composer.go')}
                 className="composer-send"
                 data-testid="composer-send"
@@ -461,7 +457,6 @@ export function Composer({ className }: { className?: string } = {}) {
           </div>
         </div>
       </div>
-      <ComposerUsage />
     </div>
   )
 }

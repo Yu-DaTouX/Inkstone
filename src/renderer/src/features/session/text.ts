@@ -54,6 +54,82 @@ export type SessionTextKey =
   | 'errorRetry'
   | 'errorModel'
   | 'errorCompact'
+  | 'runRead1'
+  | 'runRead'
+  | 'runEdit1'
+  | 'runEdit'
+  | 'runCreate1'
+  | 'runCreate'
+  | 'runDelete1'
+  | 'runDelete'
+  | 'runSearch1'
+  | 'runSearch'
+  | 'runList1'
+  | 'runList'
+  | 'runFetch1'
+  | 'runFetch'
+  | 'runWeb1'
+  | 'runWeb'
+  | 'runCommand1'
+  | 'runCommand'
+  | 'runAgent1'
+  | 'runAgent'
+  | 'runTodo'
+  | 'runOther1'
+  | 'runOther'
+  | 'runFileRead'
+  | 'runFileEdit'
+  | 'runFileCreate'
+  | 'runFileDelete'
+  | 'runFile'
+  | 'runFileReads'
+  | 'runAnd'
+  | 'runSep'
+  | 'runJoin'
+  | 'runFailed'
+  | 'runNeedsApproval'
+  | 'runRepeat'
+  | 'runChangedFiles'
+  | 'workStopping'
+  | 'workWaiting'
+  | 'workRetry'
+  | 'workRetryWait'
+  | 'workSending'
+  | 'workWorking'
+  | 'workTool'
+  | 'workResponding'
+  | 'workThink0'
+  | 'workThink15'
+  | 'workThink30'
+  | 'workThink45'
+  | 'workThink60'
+  | 'workThought'
+  | 'workTokens'
+  | 'msgCopy'
+  | 'msgCopied'
+  | 'msgCopyFailed'
+  | 'msgEdit'
+  | 'msgEditTip'
+  | 'msgRewind'
+  | 'msgFork'
+  | 'turnForkTip'
+  | 'msgActions'
+  | 'menuCode'
+  | 'menuLink'
+  | 'menuCopyCode'
+  | 'menuInsertCode'
+  | 'menuOpenLink'
+  | 'menuOpenExternal'
+  | 'menuCopyLink'
+  | 'menuPreviewFile'
+  | 'menuRevealFile'
+  | 'menuCopyPath'
+  | 'approvalCwd'
+  | 'questionLabel'
+  | 'questionPending'
+  | 'questionSkipped'
+  | 'questionFailed'
+  | 'questionAnswer'
 
 const ZH: Record<SessionTextKey, string> = {
   visual: '结构化图块（{lang}）暂不支持在这里渲染。',
@@ -108,7 +184,83 @@ const ZH: Record<SessionTextKey, string> = {
   errorTitleRequest: '模型或参数不受支持',
   errorRetry: '重试',
   errorModel: '换模型',
-  errorCompact: '压缩上下文'
+  errorCompact: '压缩上下文',
+  runRead1: '读取 1 个文件',
+  runRead: '读取 {n} 个文件',
+  runEdit1: '编辑 1 个文件',
+  runEdit: '编辑 {n} 个文件',
+  runCreate1: '新建 1 个文件',
+  runCreate: '新建 {n} 个文件',
+  runDelete1: '删除 1 个文件',
+  runDelete: '删除 {n} 个文件',
+  runSearch1: '搜索 1 次',
+  runSearch: '搜索 {n} 次',
+  runList1: '查看 1 个目录',
+  runList: '查看 {n} 个目录',
+  runFetch1: '打开 1 个网页',
+  runFetch: '打开 {n} 个网页',
+  runWeb1: '联网搜索 1 次',
+  runWeb: '联网搜索 {n} 次',
+  runCommand1: '运行 1 条命令',
+  runCommand: '运行 {n} 条命令',
+  runAgent1: '派出 1 个子 Agent',
+  runAgent: '派出 {n} 个子 Agent',
+  runTodo: '更新待办',
+  runOther1: '调用 {name}',
+  runOther: '调用 {name} {n} 次',
+  runFileRead: '读取',
+  runFileEdit: '编辑',
+  runFileCreate: '新建',
+  runFileDelete: '删除',
+  runFile: '{verbs} {file}',
+  runFileReads: '{verbs} {file}（{n} 次）',
+  runAnd: '{a}并{b}',
+  runSep: '、',
+  runJoin: '，',
+  runFailed: '（{n} 个失败）',
+  runNeedsApproval: '需要审批',
+  runRepeat: '×{n}',
+  runChangedFiles: '改动 {n} 个文件',
+  workStopping: '正在停止…',
+  workWaiting: '等你处理',
+  workRetry: '重试中（{n}/{m}）',
+  workRetryWait: '{s} 秒后重试（{n}/{m}）',
+  workSending: '正在发送…',
+  workWorking: '处理中…',
+  workTool: '正在执行工具…',
+  workResponding: '正在作答…',
+  workThink0: '思考中…',
+  workThink15: '仍在思考…',
+  workThink30: '正在细想…',
+  workThink45: '正在权衡细节…',
+  workThink60: '思路快理清了…',
+  workThought: '已思考 {n} 秒',
+  workTokens: '{n} token',
+  msgCopy: '复制',
+  msgCopied: '已复制',
+  msgCopyFailed: '复制失败',
+  msgEdit: '编辑',
+  msgEditTip: '把这条消息放回输入框修改后再发',
+  msgRewind: '回退',
+  msgFork: '分叉',
+  turnForkTip: '从这里分叉：新会话保留到这一轮为止的历史',
+  msgActions: '消息操作',
+  menuCode: '代码块',
+  menuLink: '链接',
+  menuCopyCode: '复制代码',
+  menuInsertCode: '插入到输入框',
+  menuOpenLink: '打开链接',
+  menuOpenExternal: '在系统浏览器打开',
+  menuCopyLink: '复制链接',
+  menuPreviewFile: '预览文件',
+  menuRevealFile: '在文件夹中显示',
+  menuCopyPath: '复制路径',
+  approvalCwd: '工作目录：{cwd}',
+  questionLabel: '提问',
+  questionPending: '等待回答',
+  questionSkipped: '未回答',
+  questionFailed: '提问未完成',
+  questionAnswer: '回答'
 }
 
 const EN: Record<SessionTextKey, string> = {
@@ -164,7 +316,83 @@ const EN: Record<SessionTextKey, string> = {
   errorTitleRequest: 'Model or request unsupported',
   errorRetry: 'Retry',
   errorModel: 'Switch model',
-  errorCompact: 'Compact context'
+  errorCompact: 'Compact context',
+  runRead1: 'read a file',
+  runRead: 'read {n} files',
+  runEdit1: 'edited a file',
+  runEdit: 'edited {n} files',
+  runCreate1: 'created a file',
+  runCreate: 'created {n} files',
+  runDelete1: 'deleted a file',
+  runDelete: 'deleted {n} files',
+  runSearch1: 'ran a search',
+  runSearch: 'ran {n} searches',
+  runList1: 'looked in a folder',
+  runList: 'looked in {n} folders',
+  runFetch1: 'opened a web page',
+  runFetch: 'opened {n} web pages',
+  runWeb1: 'searched online',
+  runWeb: 'searched online {n} times',
+  runCommand1: 'ran a command',
+  runCommand: 'ran {n} commands',
+  runAgent1: 'sent out a subagent',
+  runAgent: 'sent out {n} subagents',
+  runTodo: 'updated to-dos',
+  runOther1: 'called {name}',
+  runOther: 'called {name} {n} times',
+  runFileRead: 'read',
+  runFileEdit: 'edited',
+  runFileCreate: 'created',
+  runFileDelete: 'deleted',
+  runFile: '{verbs} {file}',
+  runFileReads: '{verbs} {file} ({n} times)',
+  runAnd: '{a} and {b}',
+  runSep: ', ',
+  runJoin: ', ',
+  runFailed: ' ({n} failed)',
+  runNeedsApproval: 'Needs approval',
+  runRepeat: '×{n}',
+  runChangedFiles: '{n} files changed',
+  workStopping: 'Stopping…',
+  workWaiting: 'Waiting on you',
+  workRetry: 'Retrying ({n}/{m})',
+  workRetryWait: 'Retrying in {s}s ({n}/{m})',
+  workSending: 'Sending…',
+  workWorking: 'Working…',
+  workTool: 'Running tools…',
+  workResponding: 'Writing the reply…',
+  workThink0: 'Thinking…',
+  workThink15: 'Still on it…',
+  workThink30: 'Thinking it through…',
+  workThink45: 'Weighing the details…',
+  workThink60: 'Nearly worked out…',
+  workThought: 'Thought for {n}s',
+  workTokens: '{n} tokens',
+  msgCopy: 'Copy',
+  msgCopied: 'Copied',
+  msgCopyFailed: 'Copy failed',
+  msgEdit: 'Edit',
+  msgEditTip: 'Put this message back in the composer to edit and resend',
+  msgRewind: 'Rewind',
+  msgFork: 'Fork',
+  turnForkTip: 'Fork from here: a new session keeps the history up to this turn',
+  msgActions: 'Message actions',
+  menuCode: 'Code block',
+  menuLink: 'Link',
+  menuCopyCode: 'Copy code',
+  menuInsertCode: 'Insert into composer',
+  menuOpenLink: 'Open link',
+  menuOpenExternal: 'Open in system browser',
+  menuCopyLink: 'Copy link',
+  menuPreviewFile: 'Preview file',
+  menuRevealFile: 'Show in folder',
+  menuCopyPath: 'Copy path',
+  approvalCwd: 'Working directory: {cwd}',
+  questionLabel: 'Question',
+  questionPending: 'Waiting for an answer',
+  questionSkipped: 'No answer',
+  questionFailed: 'Question not completed',
+  questionAnswer: 'Answer'
 }
 
 export function sessionText(lang: string, key: SessionTextKey, vars?: Record<string, string | number>): string {

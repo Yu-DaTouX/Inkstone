@@ -51,9 +51,10 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal',
+  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard'
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-working-line-model',
+  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-preview-site-access', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -1073,6 +1074,9 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     platform: 'neutral',
     logLevel: 'silent'
   })
+)
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({ entryPoints: ['src/main/session-items/projector.ts'], outfile: 'out/test/projector.mjs', bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
 )
 
 let pass = 0
@@ -2413,18 +2417,19 @@ await runGitRepoTests(ok)
 }
 
 {
-  const { normalizeHistory, normalizeMessage } = await import('../out/test/normalize.mjs')
+  const { normalizeMessage } = await import('../out/test/normalize.mjs')
+  const { projectHistory } = await import('../out/test/projector.mjs')
   const userMsg = { role: 'user', content: '你好' }
   const asstMsg = { role: 'assistant', content: [{ type: 'text', text: '在' }] }
 
-  const legacy = normalizeHistory([userMsg, asstMsg])
+  const legacy = projectHistory([userMsg, asstMsg])
   ok(
     legacy[0]?.id === 'm0' && legacy[1]?.id === 'm1',
     '历史编号：旧版 JSONL（无 system）从 m0 起',
     legacy.map((m) => m.id).join(',')
   )
 
-  const withSystem = normalizeHistory([{ role: 'system', content: 'prompt' }, userMsg, asstMsg])
+  const withSystem = projectHistory([{ role: 'system', content: 'prompt' }, userMsg, asstMsg])
   ok(
     withSystem.length === 2 && withSystem[0]?.id === 'm0' && withSystem[0]?.role === 'user',
     '历史编号：跳过 Pi 0.87 写进 JSONL 的 system，用户消息仍是 m0',
@@ -2437,7 +2442,7 @@ await runGitRepoTests(ok)
     '历史与实时的用户消息 id 一致（回合计时锚点才对得上）'
   )
 
-  const withEntry = normalizeHistory([userMsg, asstMsg], undefined, ['90ac64b9', '23cb6928'])
+  const withEntry = projectHistory([userMsg, asstMsg], undefined, ['90ac64b9', '23cb6928'])
   ok(
     withEntry[0]?.entryId === '90ac64b9' && withEntry[1]?.entryId === '23cb6928',
     '历史读回：entry.id 挂到消息上（fork 锚点）',

@@ -1,7 +1,7 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment } from '../../../../shared/turns'
-import { LIVE_SEGMENTS } from './tool-groups'
-import { toolGroupLabel } from './tool-summary'
+
+export const LIVE_SEGMENTS = 3
 
 export interface TurnProcessSplit {
   process: TurnSegment[]
@@ -68,11 +68,17 @@ export function narrationLine(text: string): string {
   return line.replace(/^(#{1,6}\s+|[-*+]\s+|>\s+)/, '').replace(/[`*_]/g, '')
 }
 
-export function processSummaryLabel(tools: readonly UIToolCall[], zh: boolean, fallback: string): string {
-  if (!tools.length) return fallback
-  const failed = failedCount(tools)
-  const failText = failed > 0 ? (zh ? `（${failed} 个失败）` : ` (${failed} failed)`) : ''
-  return toolGroupLabel(tools, zh) + failText
+export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
+  const merged: TurnSegment[] = []
+  for (const segment of process) {
+    const previous = merged[merged.length - 1]
+    if (previous && !segment.commentary.length && previous.tools.length && segment.tools.length) {
+      merged[merged.length - 1] = { ...previous, tools: [...previous.tools, ...segment.tools] }
+    } else {
+      merged.push(segment)
+    }
+  }
+  return merged
 }
 
 export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {

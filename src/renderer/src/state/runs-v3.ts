@@ -4,7 +4,6 @@ import {
   compareRuns,
   isAttentionPhase,
   type RunActivity,
-  type RunKind,
   type RunPhase,
   type RunSnapshot
 } from '../../../shared/runs'
@@ -342,13 +341,6 @@ const ACTIVITY_WORD: Record<RunActivity, { zh: string; en: string }> = {
   subagent: { zh: '子 Agent', en: 'Subagent' }
 }
 
-const KIND_WORD: Record<RunKind, { zh: string; en: string }> = {
-  session: { zh: '会话', en: 'Session' },
-  subagent: { zh: '子 Agent', en: 'Subagent' },
-  scheduled: { zh: '定时', en: 'Scheduled' },
-  review: { zh: '审查', en: 'Review' }
-}
-
 function pick(lang: RunLang, entry: { zh: string; en: string }): string {
   return lang === 'en-US' ? entry.en : entry.zh
 }
@@ -378,10 +370,6 @@ export function phaseDetail(lang: RunLang, phase: RunPhase | null): string | nul
 
 export function activityWord(lang: RunLang, activity: RunActivity): string {
   return pick(lang, ACTIVITY_WORD[activity])
-}
-
-export function kindWord(lang: RunLang, kind: RunKind): string {
-  return pick(lang, KIND_WORD[kind])
 }
 
 export function isUnreadRun(run: RunSnapshot): boolean {
@@ -451,67 +439,11 @@ export function contextPercent(run: RunSnapshot): number | null {
 }
 
 export interface RunUiText {
-  attention: string
-  dismiss: string
-  showAll: string
   untitled: string
-  runsTitle: string
-  runsEmpty: string
-  runsLoading: string
-  syncError: string
   openSession: string
-  fieldCode: string
-  fieldTitle: string
-  fieldModel: string
-  fieldStatus: string
-  fieldTools: string
-  fieldTime: string
-  fieldKind: string
-  fieldContext: string
-  none: string
 }
 
 export function runUiText(lang: RunLang): RunUiText {
-  if (lang === 'en-US') {
-    return {
-      attention: 'Needs attention',
-      dismiss: 'Dismiss',
-      showAll: 'All runs',
-      untitled: 'Untitled',
-      runsTitle: 'Runs',
-      runsEmpty: 'No runs yet. Start a task and it will show up here.',
-      runsLoading: 'Syncing run status…',
-      syncError: 'Run status sync failed',
-      openSession: 'Open session',
-      fieldCode: 'Code',
-      fieldTitle: 'Title',
-      fieldModel: 'Model',
-      fieldStatus: 'Status',
-      fieldTools: 'Tools',
-      fieldTime: 'Time',
-      fieldKind: 'Kind',
-      fieldContext: 'Context',
-      none: '—'
-    }
-  }
-  return {
-    attention: '需要处理',
-    dismiss: '关闭提醒',
-    showAll: '全部运行',
-    untitled: '未命名',
-    runsTitle: '运行总览',
-    runsEmpty: '暂无运行。开始一件任务，它会出现在这里。',
-    runsLoading: '正在同步运行状态…',
-    syncError: '运行状态同步失败',
-    openSession: '回到会话',
-    fieldCode: '编号',
-    fieldTitle: '标题',
-    fieldModel: '模型',
-    fieldStatus: '状态',
-    fieldTools: '工具',
-    fieldTime: '时间',
-    fieldKind: '类型',
-    fieldContext: '上下文',
-    none: '—'
-  }
+  if (lang === 'en-US') return { untitled: 'Untitled', openSession: 'Open session' }
+  return { untitled: '未命名', openSession: '回到会话' }
 }

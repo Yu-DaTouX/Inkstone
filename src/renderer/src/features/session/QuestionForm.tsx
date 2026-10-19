@@ -142,9 +142,9 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
         )
       })}
       <div className="v3-qfoot">
-        <Button size="sm" isDisabled={busy} onPress={onSkip} data-testid="v3-question-form-skip">{t('q.skip')}</Button>
+        <Button isDisabled={busy} onPress={onSkip} data-testid="v3-question-form-skip">{t('q.skip')}</Button>
         <span className="v3-code-sp" />
-        <Button size="sm" variant="primary" isDisabled={busy} onPress={submit} data-testid="v3-question-form-submit">{submitLabel}</Button>
+        <Button variant="primary" isDisabled={busy} onPress={submit} data-testid="v3-question-form-submit">{submitLabel}</Button>
       </div>
     </div>
   )

@@ -10,7 +10,9 @@ const {
   classifyApprovalShortcut,
   allowsPointerPress,
   ownsApproval,
-  createApprovalGate
+  createApprovalGate,
+  isApprovalCommitKey,
+  isEditableElement
 } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
 const key = (overrides = {}) => ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...overrides })
@@ -72,4 +74,22 @@ gate.release('B')
 assert.equal(gate.hasPending(), false)
 assert.equal(gate.begin(''), false)
 
-console.log('v3 确认卡键盘策略：Enter 激活拦截、Alt 快捷键、模态抑制、press 分类与在途去重检查通过')
+const commit = (overrides = {}, context = {}) => isApprovalCommitKey(key({ key: 'Enter', ctrlKey: true, ...overrides }), { modalOpen: false, insideCard: false, editableFocus: false, ...context })
+assert.equal(commit(), true, 'Ctrl+Enter 在非输入焦点时允许一次')
+assert.equal(commit({ ctrlKey: false, metaKey: true }), true, 'Cmd+Enter 同样有效')
+assert.equal(commit({ ctrlKey: false }), false, '单独 Enter 不提交')
+assert.equal(commit({}, { editableFocus: true }), false, '输入框里的 Ctrl+Enter 留给输入框')
+assert.equal(commit({}, { editableFocus: true, insideCard: true }), true, '卡内焦点优先')
+assert.equal(commit({}, { modalOpen: true }), false, '模态打开时不提交')
+assert.equal(commit({ repeat: true }), false)
+assert.equal(commit({ altKey: true }), false)
+assert.equal(commit({ shiftKey: true }), false)
+assert.equal(commit({ isComposing: true }), false)
+assert.equal(isEditableElement({ tagName: 'TEXTAREA' }), true)
+assert.equal(isEditableElement({ tagName: 'INPUT', type: 'text' }), true)
+assert.equal(isEditableElement({ tagName: 'INPUT', type: 'checkbox' }), false)
+assert.equal(isEditableElement({ tagName: 'DIV', isContentEditable: true }), true)
+assert.equal(isEditableElement({ tagName: 'BUTTON' }), false)
+assert.equal(isEditableElement(null), false)
+
+console.log('v3 确认卡键盘策略：Enter 激活拦截、Ctrl+Enter 允许一次、Alt 快捷键、模态抑制、press 分类与在途去重检查通过')

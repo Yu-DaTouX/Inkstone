@@ -36,6 +36,28 @@ export function classifyApprovalShortcut(
   return null
 }
 
+export function isApprovalCommitKey(
+  event: ShortcutKeyEvent & { shiftKey?: boolean },
+  context: { modalOpen: boolean; insideCard: boolean; editableFocus: boolean }
+): boolean {
+  if (context.modalOpen) return false
+  if (event.repeat || isComposingEvent(event)) return false
+  if (event.key !== 'Enter' || event.altKey || event.shiftKey) return false
+  if (!event.ctrlKey && !event.metaKey) return false
+  return context.insideCard || !context.editableFocus
+}
+
+export function isEditableElement(element: Element | null | undefined): boolean {
+  if (!element) return false
+  const tag = element.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag === 'INPUT') {
+    const type = (element as HTMLInputElement).type
+    return !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file'].includes(type)
+  }
+  return (element as HTMLElement).isContentEditable === true
+}
+
 export function allowsPointerPress(pointerType: string | null | undefined): boolean {
   return pointerType !== 'keyboard'
 }

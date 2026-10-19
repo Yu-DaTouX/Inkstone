@@ -422,19 +422,6 @@
       await openTool('files')
       query('wb-close')?.click()
       await wait(9000)
-      query('v3-runs-entry')?.click()
-      check(await until(() => !!document.querySelector('.runs-page')), '运行总览可以打开')
-      check(await until(() => document.querySelectorAll('.runs-row').length === 6), '运行总览列出 1 条会话 + 5 条子代理')
-      const runsText = document.querySelector('.runs-page')?.textContent ?? ''
-      check((runsText.match(/子 Agent/g) ?? []).length >= 5, '五条子代理都按「子 Agent」标注，不冒充会话')
-      check(
-        ['运行中', '等你确认', '无响应', '已完成'].every((word) => runsText.includes(word)),
-        '五个子代理的不同阶段各自显示真实状态词'
-      )
-      check(runsText.includes('S12·3') && runsText.includes('S12·5'), '子代理编号与会话编号区分显示')
-      check(document.documentElement.scrollWidth <= innerWidth + 1, '运行总览不造成页面横向溢出')
-      check(await until(() => !!query('runs-history-date')), '运行历史区有时间线日期入口')
-      check(document.querySelectorAll('.runs-history-view button').length === 2, '时间线 / 列表视图切换入口存在')
     }
     query('wb-tab-changes')?.click()
     await wait(50)

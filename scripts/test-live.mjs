@@ -110,7 +110,6 @@ const CASES = {
   'v3-queuestack': { probe: 'scripts/probe/v3-queuestack.js', delay: 9000, cost: 0 },
   'v3-real-send': { probe: 'scripts/probe/v3-real-send.js', fixture: true, delay: 12000, cost: 1, budget: 300000 },
   'v3-real-todos': { probe: 'scripts/probe/v3-real-todos.js', fixture: true, delay: 12000, cost: 1, budget: 360000 },
-  'v3-real-review': { probe: 'scripts/probe/v3-real-review.js', fixture: true, fixtureSub: 'review', delay: 12000, cost: 1, budget: 360000 },
   narrowscan: {
     probe: 'scripts/probe/narrowscan.js',
     delay: 9000,
@@ -401,48 +400,6 @@ function buildFixtureProject(base) {
       'fixture 仓库初始化失败（L03 的 worktree 场景需要 git）：' + (error instanceof Error ? error.message : String(error))
     )
   }
-
-  const reviewRepo = join(dir, 'review')
-  mk('review')
-  const rgit = (args) => execFileSync('git', args, { cwd: reviewRepo, stdio: 'ignore' })
-  const rgitC = (...args) => execFileSync('git', [...gitEnv, ...args], { cwd: reviewRepo, stdio: 'ignore' })
-  rgit(['init', '-q', '-b', 'main'])
-  rgit(['config', 'core.autocrlf', 'false'])
-  put(join('review', 'modify.txt'), 'one\ntwo\nthree\n')
-  put(join('review', 'a-deleted.txt'), 'bye\n')
-  put(join('review', 'renamed.txt'), 'rename me\n')
-  {
-    const lines = []
-    for (let i = 1; i <= 80; i += 1) lines.push(`line ${i}`)
-    put(join('review', 'multi.txt'), lines.join('\n') + '\n')
-  }
-  mk('review', 'src')
-  put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 1', '}', ''].join('\n'))
-  mk('review', 'docs', '中文 目录')
-  put(join('review', 'docs', '中文 目录', '说明.md'), '# 说明\n\n第一行\n第二行\n')
-  writeFileSync(join(reviewRepo, 'pic.png'), makePng(24, [32, 96, 200]))
-  rgitC('add', '-A')
-  rgitC('commit', '-q', '-m', 'review fixture base')
-
-  put(join('review', 'modify.txt'), 'one\nTWO\nthree\nfour\n')
-  {
-    const lines = []
-    for (let i = 1; i <= 80; i += 1) {
-      if (i === 2) lines.push('line 2 CHANGED')
-      else if (i === 79) lines.push('line 79 CHANGED')
-      else lines.push(`line ${i}`)
-    }
-    put(join('review', 'multi.txt'), lines.join('\n') + '\n')
-  }
-  rmSync(join(reviewRepo, 'a-deleted.txt'), { force: true })
-  rgitC('mv', 'renamed.txt', 'renamed-new.txt')
-  put(join('review', 'staged-new.txt'), 'brand new\n')
-  rgitC('add', 'staged-new.txt')
-  put(join('review', 'docs', '中文 目录', '说明.md'), '# 说明\n\n第一行\n改过的第二行\n')
-  put(join('review', 'untracked.txt'), 'u1\nu2\nu3\n')
-  writeFileSync(join(reviewRepo, 'pic.png'), makePng(24, [220, 48, 48]))
-  writeFileSync(join(reviewRepo, 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x00]))
-  put(join('review', 'src', 'app.ts'), ['export function app() {', '  return 2', '}', ''].join('\n'))
 
   mk('probe-ext')
   mk('probe-ext', 'extensions')

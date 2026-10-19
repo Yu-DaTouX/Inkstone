@@ -4,6 +4,7 @@ import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
 import { Button } from '../../ui'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
+import { forgetToolExpansion } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
 
 export function ErrorCard({ sourceIds, error }: { sourceIds: readonly string[]; error: string }): JSX.Element | null {
@@ -27,7 +28,9 @@ export function ErrorCard({ sourceIds, error }: { sourceIds: readonly string[]; 
 
   const run = (action: ErrorCardAction): void => {
     if (action === 'retry') {
-      if (prompt) void send(prompt.text, prompt.images.length ? prompt.images : undefined)
+      if (!prompt) return
+      forgetToolExpansion(view.key)
+      void send(prompt.text, prompt.images.length ? prompt.images : undefined)
       return
     }
     if (action === 'model') {

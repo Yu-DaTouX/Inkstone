@@ -45,8 +45,8 @@
   .v3-todo-title {
     flex: 1;
     min-width: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -55,8 +55,8 @@
 
   .v3-todo-count {
     flex: none;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
     font-variant-numeric: tabular-nums;
   }
@@ -82,8 +82,8 @@
     gap: 7px;
     padding: 2px 6px;
     border-radius: var(--r-xs);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg2);
   }
 

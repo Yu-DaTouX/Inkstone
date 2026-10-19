@@ -44,8 +44,8 @@
 
   .v3-chg-stats {
     flex: none;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     font-variant-numeric: tabular-nums;
   }
 
@@ -62,7 +62,7 @@
     justify-content: space-between;
     gap: var(--s-12);
     padding: var(--s-4) var(--s-12);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .v3-chg-path {
@@ -87,7 +87,7 @@
     padding: var(--s-8) var(--s-12);
     border-top: 1px solid var(--line);
     color: var(--fg2);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     text-align: left;
   }
 

@@ -61,7 +61,7 @@ function seg(id, { commentary = [], tools = [], response = null } = {}) {
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processTools, processNotes, processSummaryLabel, runningTool, narrationLine, failedCount, pickLiveSegments } = mod
+const { splitTurnProcess, processTools, processNotes, mergeQuietSegments, runningTool, narrationLine, failedCount, pickLiveSegments } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -133,14 +133,18 @@ group('回复之后仍有的段：原样留在 tail，不进过程行')
   ok(out.tail.length === 1 && out.tail[0].id === 's2', '回复之后的工具留在 tail', out.tail.map((s) => s.id))
 }
 
-group('标签：工具汇总、失败数与空过程')
+group('失败数、正文断组与空过程（汇总文案移到 tool-run-model，见 test-tool-run-model）')
 {
   const tools = [tool('a', 'bash'), tool('b', 'bash', 'error'), tool('c', 'read', 'error', { cancelled: true }), tool('d', 'read')]
   ok(failedCount(tools) === 1, '失败数不计已取消的', failedCount(tools))
-  const zh = processSummaryLabel(tools, true, '过程')
-  ok(zh.startsWith('已运行 2 个命令') && zh.includes('已读取 2 个文件') && zh.endsWith('（1 个失败）'), '中文汇总含类别与失败数', zh)
-  ok(processSummaryLabel([], true, '过程') === '过程', '没有工具时回退到「过程」', processSummaryLabel([], true, '过程'))
-  ok(processSummaryLabel([tool('a', 'bash')], false, 'Process') === 'Ran 1 command', '英文汇总单数', processSummaryLabel([tool('a', 'bash')], false, 'Process'))
+  const merged = mergeQuietSegments([
+    seg('q0', { commentary: [text('k0', '先看')], tools: [tool('a', 'read')] }),
+    seg('q1', { tools: [tool('b', 'bash')] }),
+    seg('q2', { commentary: [text('k2', '再改')], tools: [tool('c', 'edit')] }),
+    seg('q3', { tools: [tool('d', 'bash')] })
+  ])
+  ok(merged.map((s) => s.id).join() === 'q0,q2', '没有正文隔开的相邻工具段合并', merged.map((s) => s.id))
+  ok(merged[0].tools.map((c) => c.id).join() === 'a,b' && merged[1].tools.map((c) => c.id).join() === 'c,d', '正文把工具分成两段', merged.map((s) => s.tools.map((c) => c.id)))
   const empty = splitTurnProcess([])
   ok(empty.process.length === 0 && empty.reply === null && empty.tail.length === 0, '空回合不出过程也没有回复', empty)
 }

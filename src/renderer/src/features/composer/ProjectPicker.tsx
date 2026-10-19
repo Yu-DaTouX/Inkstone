@@ -47,7 +47,7 @@ export function ProjectPicker() {
 
   return (
     <MenuTrigger>
-      <Button variant="ghost" size="sm" className="composer-permission composer-project" aria-haspopup="menu" data-testid="composer-project">
+      <Button variant="ghost" className="composer-permission composer-project" aria-haspopup="menu" data-testid="composer-project">
         <Folder size={13} aria-hidden />
         <span className="cp-label">{current ? projectLabel(current) : t('chat.pickProject')}</span>
       </Button>

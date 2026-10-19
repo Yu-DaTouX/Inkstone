@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { prefersReducedMotion } from '../../lib/reduced-motion'
 
-export const REVEAL_SNAP_CHARS = 30
-export const REVEAL_DRAIN_MS = 350
+export const REVEAL_SNAP_CHARS = 22
+export const REVEAL_DRAIN_MS = 550
 const REVEAL_FLOOR_CHARS = 150
 
 function isHighSurrogate(code: number): boolean {
@@ -19,9 +20,6 @@ export function nextRevealLength(text: string, shown: number, elapsedMs: number)
   return next
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
 
 export function useSmoothReveal(text: string, live: boolean): string {
   const [shown, setShown] = useState(() => (live && !prefersReducedMotion() ? nextRevealLength(text, 0, 0) : text.length))

@@ -1,67 +1,64 @@
-import { useState, type JSX, type ReactNode } from 'react'
-import { useI18n, useT } from '../../i18n'
+import type { JSX, ReactNode } from 'react'
+import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { Markdown } from './Markdown'
 import { Icon } from './Icon'
 import { ToolSteps } from './ToolSteps'
-import { Button } from '../../ui'
+import { ToolRunStats } from './ToolRunStats'
+import { runningCallLabel } from './tool-summary'
+import { Badge, Button } from '../../ui'
 import { useSessionText } from './text'
-import { generatingArgs, summarize } from './tool-summary'
-import { narrationLine, pickLiveSegments, processNotes, processSummaryLabel, processTools, runningTool } from './turn-process'
+import { formatToolRun, summarizeToolRun } from './tool-run-model'
+import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
+import { mergeQuietSegments, narrationLine, pickLiveSegments, processNotes, processTools } from './turn-process'
 
-function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
-  const merged: TurnSegment[] = []
-  for (const segment of process) {
-    const previous = merged[merged.length - 1]
-    if (previous && !segment.commentary.length && previous.tools.length && segment.tools.length) {
-      merged[merged.length - 1] = { ...previous, tools: [...previous.tools, ...segment.tools] }
-    } else {
-      merged.push(segment)
-    }
-  }
-  return merged
-}
+const NO_APPROVALS: ReadonlySet<string> = new Set()
 
-export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
+export function TurnProcess({ process, elapsedMs, live, thinking, sessionId, turnId, approvalIds = NO_APPROVALS }: {
   process: TurnSegment[]
   elapsedMs?: number
   live: boolean
   thinking?: ReactNode
   sessionId: string | null
+  turnId?: string
+  approvalIds?: ReadonlySet<string>
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
-  const zh = useI18n().lang !== 'en-US'
-  const [manual, setManual] = useState<boolean | null>(null)
+  const [manual, setManual] = useToolExpansion(`process:${turnId ?? process[0]?.id ?? ''}`)
   const open = manual ?? live
 
   const tools = processTools(process)
   const notes = processNotes(process)
-  const current = live ? runningTool(tools) : null
-  const summary = processSummaryLabel(tools, zh, t('proc.title'))
+  const summary = summarizeToolRun(tools, approvalIds)
+  const current = live ? summary.running : null
+  const summaryLabel = tools.length ? formatToolRun(summary, tt) : t('proc.title')
   const latest = notes.length ? narrationLine(notes[notes.length - 1]) : ''
+  const held = useHeldRunLabel(current ? current.id : null, current ? runningCallLabel(current, t('tool2.generatingArgs')) : '')
   const label = open
     ? t('proc.title')
-    : current
-      ? `${current.name} ${generatingArgs(current) ? t('tool2.generatingArgs') : summarize(current)}`.trim()
+    : held.key !== null && live
+      ? held.label
       : live && latest
         ? latest
-        : summary
+        : summaryLabel
   const time = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
   const merged = mergeQuietSegments(process)
-  const { shown: groups, hidden } = open && live && manual === null ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
+  const { shown: groups, hidden } = open && live && manual === undefined ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
 
   return (
-    <section className="v3-steps v3-process" data-testid="v3-process" aria-label={t('proc.title')}>
+    <section className="v3-steps v3-process" data-testid="v3-process" data-state={summary.state} aria-label={t('proc.title')}>
       <button
         className="v3-steps-sum v3-process-sum"
         aria-expanded={open}
         onClick={() => setManual(!open)}
         data-testid="v3-process-toggle"
       >
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="v3-chev" />
         <span className="v3-steps-label v3-process-label" title={label}>{label}</span>
+        {!open ? <ToolRunStats summary={summary} /> : null}
+        {!open && summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-process-approval">{tt('runNeedsApproval')}</Badge> : null}
+        <Icon name="chevron-right" size={14} className="v3-chev" />
         {time ? <span className="v3-act-time v3-process-time">{time}</span> : null}
       </button>
 
@@ -84,7 +81,7 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId }: {
                   ))}
                 </div>
               ) : null}
-              <ToolSteps tools={segment.tools} />
+              <ToolSteps tools={segment.tools} approvalIds={approvalIds} />
             </div>
           ))}
         </div>
