@@ -53,7 +53,7 @@ for (const script of [
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-sidebar-content-search',
   'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params'
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
