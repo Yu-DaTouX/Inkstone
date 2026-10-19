@@ -24,6 +24,8 @@ export interface WorkspaceOwner {
 export interface FilesPaneProps {
   owner: WorkspaceOwner
   onPreview?: (path: string) => void
+  path?: string
+  Preview?: ComponentType<PreviewPaneProps>
 }
 
 export interface TerminalPaneProps {

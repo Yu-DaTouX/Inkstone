@@ -9,7 +9,7 @@ import {
   type MouseEvent,
   type ReactElement
 } from 'react'
-import { ChevronRight, ChevronsDownUp, Eye, EyeOff, Folder, FolderOpen, Plus, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronRight, ChevronsDownUp, Eye, EyeOff, Folder, FolderOpen, List, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, IconButton } from '../../ui'
@@ -28,10 +28,12 @@ import { filesIconSpec } from './files-icon'
 import { FilesRowMenu } from './FilesRowMenu'
 import { useFilesSearch, type FilesSearchState } from './use-files-search'
 import { useFilesTree } from './use-files-tree'
+import { filesSplitLayout, useFilesSplit } from './use-files-split'
 import type { FilesPaneProps } from '../workbench/types'
+import { PaneTools, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
 import './files.css'
 
-export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
+export function FilesPane({ owner, onPreview, path: previewPath, Preview }: FilesPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = filesText(lang)
   const { state, rows, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh, toggleHidden } =
@@ -39,7 +41,29 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
-  const search = useFilesSearch(owner, searchOpen, query)
+  const chromeMode = usePaneChrome() !== null
+  const filterShown = chromeMode || searchOpen
+  const filterRef = useRef<HTMLInputElement>(null)
+  const search = useFilesSearch(owner, filterShown, query)
+  const split = useFilesSplit()
+  const [narrowTree, setNarrowTree] = useState(false)
+  const layout = filesSplitLayout({
+    hasFile: !!Preview && !!previewPath,
+    paneWidth: split.paneWidth,
+    treeShown: split.treeShown,
+    narrowTree
+  })
+  const openFile = useCallback(
+    (abs: string): void => {
+      setNarrowTree(false)
+      onPreview?.(abs)
+    },
+    [onPreview]
+  )
+  const toggleTree = (): void => {
+    if (layout.narrow) setNarrowTree((open) => !open)
+    else split.toggleTree()
+  }
   const selectedFiles = useMemo(
     () => rows.filter((row) => row.kind === 'file' && selected.has(row.path)).map((row) => row.path),
     [rows, selected]
@@ -84,10 +108,10 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
       event.preventDefault()
       if (effect.type === 'focus') focus(effect.path)
       else if (effect.type === 'toggle') toggle(effect.path)
-      else if (effect.type === 'preview') onPreview?.(toAbsolutePath(owner.cwd, effect.path))
+      else if (effect.type === 'preview') openFile(toAbsolutePath(owner.cwd, effect.path))
       else if (effect.type === 'add') onAdd(effect.path)
     },
-    [rows, canAdd, focus, toggle, onPreview, owner.cwd, onAdd, selected]
+    [rows, canAdd, focus, toggle, openFile, owner.cwd, onAdd, selected]
   )
 
   const onRowClick = useCallback(
@@ -109,9 +133,9 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
         return
       }
       setSelected(new Set())
-      onPreview?.(toAbsolutePath(owner.cwd, row.path))
+      openFile(toAbsolutePath(owner.cwd, row.path))
     },
-    [rows, state.focusPath, focus, toggle, onPreview, owner.cwd]
+    [rows, state.focusPath, focus, toggle, openFile, owner.cwd]
   )
 
   const onRowDragStart = useCallback(
@@ -131,9 +155,77 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
 
   const rootName = rowForPath(rows, '')?.name ?? rootLabel(owner.cwd)
   const visible = rows.slice(viewWindow.start, viewWindow.end)
+  const chrome = usePaneChrome()
+  const toggleSearch = (): void => {
+    setSearchOpen((open) => {
+      if (open) setQuery('')
+      return !open
+    })
+  }
+  usePaneMenu('files', [
+    { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },
+    { id: 'files:hidden', label: text.showHidden, checked: state.showHidden, onAction: toggleHidden },
+    { id: 'files:refresh', label: text.refresh, icon: <RefreshCw size={14} aria-hidden />, onAction: refresh }
+  ])
 
   return (
-    <section className="v3-files" data-testid="v3-files" aria-label={text.treeLabel}>
+    <section
+      className="v3-files"
+      ref={split.hostRef}
+      data-testid="v3-files"
+      data-split={layout.split ? '1' : '0'}
+      data-dragging={split.dragging ? '1' : undefined}
+      style={{ '--files-tree-w': `${split.treeWidth}px` } as CSSProperties}
+    >
+      <PaneTools>
+        <IconButton
+          size="sm"
+          aria-label={text.searchLabel}
+          title={text.searchLabel}
+          data-testid="v3-files-search-toggle"
+          onPress={() => {
+            if (!layout.showTree) toggleTree()
+            requestAnimationFrame(() => {
+              filterRef.current?.focus()
+              filterRef.current?.select()
+            })
+          }}
+        >
+          <Search size={14} />
+        </IconButton>
+        {layout.split ? (
+          <IconButton
+            size="sm"
+            aria-label={text.toggleTree}
+            title={text.toggleTree}
+            aria-pressed={layout.showTree}
+            data-testid="v3-files-tree-toggle"
+            onPress={toggleTree}
+          >
+            <List size={14} />
+          </IconButton>
+        ) : null}
+      </PaneTools>
+      {Preview && previewPath ? (
+        <div className="v3-files-preview" hidden={!layout.showPreview} data-testid="v3-files-preview">
+          <Preview owner={owner} path={previewPath} />
+        </div>
+      ) : null}
+      {layout.split && layout.showPreview && layout.showTree ? (
+        <div
+          className="v3-files-divider"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={text.resizeTree}
+          aria-valuenow={split.treeWidth}
+          tabIndex={0}
+          data-testid="v3-files-divider"
+          onPointerDown={split.onDividerPointerDown}
+          onKeyDown={split.onDividerKeyDown}
+        />
+      ) : null}
+      <div className="v3-files-col" hidden={!layout.showTree} aria-label={text.treeLabel} role="group">
+      {chrome ? null : (
       <div className="v3-files-bar">
         <span className="v3-files-title" title={owner.cwd || rootName}>
           {rootName}
@@ -151,12 +243,7 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
             aria-label={text.searchLabel}
             title={text.searchLabel}
             data-testid="v3-files-search-toggle"
-            onPress={() => {
-              setSearchOpen((open) => {
-                if (open) setQuery('')
-                return !open
-              })
-            }}
+            onPress={toggleSearch}
           >
             <Search size={14} />
           </IconButton>
@@ -178,8 +265,9 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
           </IconButton>
         </div>
       </div>
+      )}
 
-      {searchOpen ? (
+      {filterShown ? (
         <div className="v3-files-searchbar">
           <Search size={13} aria-hidden className="v3-files-search-ico" />
           <input
@@ -187,19 +275,23 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
             aria-label={text.searchLabel}
             placeholder={text.searchPlaceholder}
             value={query}
-            autoFocus
+            ref={filterRef}
+            autoFocus={!chromeMode}
             data-testid="v3-files-search-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key !== 'Escape') return
+              if (event.key !== 'Escape' || (chromeMode && !query)) return
               event.preventDefault()
+              event.stopPropagation()
               setQuery('')
-              setSearchOpen(false)
+              if (!chromeMode) setSearchOpen(false)
             }}
           />
-          <IconButton aria-label={text.searchClear} title={text.searchClear} onPress={() => setQuery('')}>
-            <X size={13} />
-          </IconButton>
+          {query ? (
+            <IconButton aria-label={text.searchClear} title={text.searchClear} onPress={() => setQuery('')}>
+              <X size={13} />
+            </IconButton>
+          ) : null}
         </div>
       ) : null}
 
@@ -221,12 +313,12 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
         <p className="v3-files-state v3-files-state-block" data-testid="v3-files-invalid">
           {text.invalid}
         </p>
-      ) : searchOpen && query.trim() ? (
+      ) : filterShown && query.trim() ? (
         <FilesSearchResults
           text={text}
           search={search}
           cwd={owner.cwd}
-          onOpen={(path) => onPreview?.(toAbsolutePath(owner.cwd, path))}
+          onOpen={(path) => openFile(toAbsolutePath(owner.cwd, path))}
         />
       ) : (
         <div
@@ -257,6 +349,7 @@ export function FilesPane({ owner, onPreview }: FilesPaneProps): ReactElement {
           <div className="v3-files-pad" style={{ height: viewWindow.padBottom }} aria-hidden />
         </div>
       )}
+      </div>
     </section>
   )
 }

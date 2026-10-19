@@ -114,6 +114,7 @@ export { Splitter, type SplitterProps, type SplitterOrientation } from './Splitt
 
 export {
   FieldError,
+  Focusable,
   Header,
   Heading,
   Input,

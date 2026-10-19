@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Plus, RefreshCw, Terminal as TerminalIcon, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, type BadgeTone } from '../../ui'
+import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { resourceOwner, claimResource, releaseResource } from '../../state/resource-owners'
 import { installImeFallback, installTerminalRenderer, terminalFontReady } from './terminal-appearance'
@@ -209,39 +210,59 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const cwd = state?.cwd || owner.cwd
   const badge = state ? statusOf(state) : null
   const showHost = !inactive && !unavailable && !failed && !!state && state.phase !== 'idle'
+  const chrome = usePaneChrome()
+  const barTitle = <span className="term-pane-title" title={cwd || title}>{title || cwd || t('tile.terminal')}</span>
+  const barActions = (
+    <>
+      <Button size="sm" variant="ghost" icon={<Plus size={14} strokeWidth={1.75} />} isDisabled={inactive} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new">
+        {t('term.new')}
+      </Button>
+      {canEnd ? (
+        <IconButton size="sm" variant="ghost" aria-label={t('tile.endTerminal')} onPress={() => void sessionRef.current?.kill()} data-testid="terminal-close">
+          <X size={14} strokeWidth={1.75} />
+        </IconButton>
+      ) : null}
+    </>
+  )
+  const barStatus = (
+    <>
+      {badge ? (
+        <Badge tone={badge.tone} className="term-pane-badge">
+          {t(badge.key)}
+          {badge.progress === undefined ? '' : ` ${badge.progress}%`}
+        </Badge>
+      ) : null}
+      {exited ? (
+        <span className="term-pane-exited" data-testid="terminal-exited">
+          {t('term.exited', { code: state?.exitCode === null || state?.exitCode === undefined ? '—' : String(state.exitCode) })}
+        </span>
+      ) : null}
+    </>
+  )
 
   return (
     <div className="term-pane" data-phase={state?.phase ?? 'idle'} data-visible={visible ? '1' : '0'} data-testid="terminal-pane">
-      <PaneHeader
-        size="sm"
-        className="term-pane-bar"
-        icon={<TerminalIcon size={14} strokeWidth={1.75} />}
-        title={<span className="term-pane-title" title={cwd || title}>{title || cwd || t('tile.terminal')}</span>}
-        actions={
-          <>
-            <Button size="sm" variant="ghost" icon={<Plus size={14} strokeWidth={1.75} />} isDisabled={inactive} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new">
-              {t('term.new')}
-            </Button>
-            {canEnd ? (
-              <IconButton size="sm" variant="ghost" aria-label={t('tile.endTerminal')} onPress={() => void sessionRef.current?.kill()} data-testid="terminal-close">
-                <X size={14} strokeWidth={1.75} />
-              </IconButton>
-            ) : null}
-          </>
-        }
-      >
-        {badge ? (
-          <Badge tone={badge.tone} className="term-pane-badge">
-            {t(badge.key)}
-            {badge.progress === undefined ? '' : ` ${badge.progress}%`}
-          </Badge>
-        ) : null}
-        {exited ? (
-          <span className="term-pane-exited" data-testid="terminal-exited">
-            {t('term.exited', { code: state?.exitCode === null || state?.exitCode === undefined ? '—' : String(state.exitCode) })}
-          </span>
-        ) : null}
-      </PaneHeader>
+      {chrome ? (
+        <>
+          <PaneTitle>
+            <span className="term-pane-chrome-title">
+              {barTitle}
+              {barStatus}
+            </span>
+          </PaneTitle>
+          <PaneTools>{barActions}</PaneTools>
+        </>
+      ) : (
+        <PaneHeader
+          size="sm"
+          className="term-pane-bar"
+          icon={<TerminalIcon size={14} strokeWidth={1.75} />}
+          title={barTitle}
+          actions={barActions}
+        >
+          {barStatus}
+        </PaneHeader>
+      )}
 
       {inactive ? (
         <EmptyState size="sm" className="term-pane-center" title={text.activateFirst} data-testid="terminal-inactive" />

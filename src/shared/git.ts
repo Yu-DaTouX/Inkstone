@@ -178,6 +178,8 @@ export function parseStatusV2(stdout: string): GitStatusParse {
 export interface GitChangeEntry extends GitStatusEntry {
   staged: boolean
   unstaged: boolean
+  added?: number
+  removed?: number
 }
 
 export interface GitChangesResult {
@@ -190,6 +192,8 @@ export interface GitChangesResult {
   head: string | null
   files: GitChangeEntry[]
   truncated: boolean
+  added?: number
+  removed?: number
   error?: string
 }
 

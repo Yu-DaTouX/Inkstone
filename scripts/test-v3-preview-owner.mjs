@@ -110,7 +110,14 @@ function installWindow(yan) {
     yan,
     addEventListener: () => {},
     removeEventListener: () => {},
+    setInterval: () => 0,
+    clearInterval: () => {},
     location: { href: 'http://localhost/' }
+  }
+  globalThis.document = globalThis.document ?? {
+    visibilityState: 'visible',
+    addEventListener: () => {},
+    removeEventListener: () => {}
   }
 }
 
@@ -151,10 +158,24 @@ export const Image = icon
 export const ExternalLink = icon
 export const RefreshCw = icon
 export const TriangleAlert = icon
+export const Pencil = icon
+export const X = icon
+export const BookOpen = icon
+export const Code2 = icon
+export const Database = icon
+export const File = icon
+export const FileArchive = icon
+export const FileAudio = icon
+export const FileCode = icon
+export const FileImage = icon
+export const FileJson = icon
+export const FileSpreadsheet = icon
+export const FileVideo = icon
 `
 
 const UI_STUB = `export function IconButton(props){ return { type: 'button', props: { ...props, 'data-testid': 'icon:' + String(props['aria-label']) } } }
 export function Skeleton(){ return null }
+export function Button(){ return null }
 export function Notice(props){ return { type: 'div', props: { ...props, role: props.tone === 'fail' ? 'alert' : 'status' } } }
 export function EmptyState(props){ return { type: 'div', props: { ...props, children: [props.title, props.description, props.action] } } }
 export function PaneHeader(props){ return { type: 'div', props: { ...props, children: [props.title, props.actions] } } }
@@ -175,7 +196,9 @@ function makeStubMap() {
     Object.entries({
       'src/renderer/src/ui/index.ts': UI_STUB,
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
-      'src/renderer/src/state/store.ts': STORE_STUB
+      'src/renderer/src/state/store.ts': STORE_STUB,
+      'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
+      'src/renderer/src/features/editor/CodeEditor.tsx': 'export function CodeEditor(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }
@@ -208,6 +231,7 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
         if (args.path === 'react/jsx-runtime') return { path: jsxShim }
         if (args.path === 'react/jsx-dev-runtime') return { path: jsxShim }
         if (args.path === 'lucide-react') return { path: 'v3stub:lucide', namespace: 'v3stub' }
+        if (args.path === 'react-dom') return { path: 'v3stub:react-dom', namespace: 'v3stub' }
         if (!args.importer || !args.resolveDir) return undefined
         const base = resolve(args.resolveDir, args.path)
         for (const e of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
@@ -218,6 +242,7 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         if (args.path === 'v3stub:lucide') return { contents: LUCIDE_STUB, loader: 'js' }
+        if (args.path === 'v3stub:react-dom') return { contents: 'export function createPortal(){ return null }', loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
         return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
       })

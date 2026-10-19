@@ -6,6 +6,7 @@ import { IconButton, Switch } from '../../ui'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
 import { BranchTree, branchText, type BranchTransport } from '../session/BranchTree'
 import type { BranchPaneProps } from './types'
+import { PaneTools, usePaneChrome } from './pane-chrome'
 
 interface NativeSessionIpc {
   nativeSession?: (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
@@ -66,20 +67,29 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
     []
   )
 
+  const chrome = usePaneChrome()
+  const refreshButton = (
+    <IconButton
+      size="sm"
+      aria-label={text.refresh}
+      title={text.refresh}
+      data-testid="branch-refresh"
+      onPress={() => setReloadToken((value) => value + 1)}
+    >
+      <RefreshCw size={14} aria-hidden="true" />
+    </IconButton>
+  )
+
   return (
     <section className="wb-branch" aria-label={text.title} data-testid="v3-wb-branch">
-      <header className="wb-branch__head">
-        <h2 className="wb-branch__title">{text.title}</h2>
-        <IconButton
-          size="sm"
-          aria-label={text.refresh}
-          title={text.refresh}
-          data-testid="branch-refresh"
-          onPress={() => setReloadToken((value) => value + 1)}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-        </IconButton>
-      </header>
+      {chrome ? (
+        <PaneTools>{refreshButton}</PaneTools>
+      ) : (
+        <header className="wb-branch__head">
+          <h2 className="wb-branch__title">{text.title}</h2>
+          {refreshButton}
+        </header>
+      )}
       <Switch
         className="wb-branch__summarize"
         isSelected={summarize}

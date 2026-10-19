@@ -156,8 +156,8 @@ export function usePreviewPath(ownerKey: string | null): string | undefined {
 
 export function showPreview(ownerKey: string | null, path: string): void {
   usePreviewBindings.getState().bind(ownerKey, path)
-  if (revealToolTile('preview')) return
+  if (revealToolTile('files')) return
   const ui = useUiV3.getState()
-  ui.setWorkspaceTab('preview')
+  ui.setWorkspaceTab('files')
   ui.setWorkspaceOpen(true)
 }

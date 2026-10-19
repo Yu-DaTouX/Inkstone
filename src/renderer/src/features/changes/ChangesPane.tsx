@@ -7,6 +7,7 @@ import { useI18n } from '../../i18n'
 import { fileStatusLabel, porcelainFileStatus } from '../../lib/file-status'
 import { DiffView } from '../diff'
 import { changesText } from './text'
+import { PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import type { ChangeItem, ChangesGitSource, ChangesOwner, ChangesPatch, GitStateView, PatchLoader } from './types'
 import './changes-pane.css'
 
@@ -84,6 +85,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const text = useMemo(() => changesText(lang ?? uiLang), [lang, uiLang])
   const source = useMemo(() => gitSource ?? defaultGitSource(), [gitSource])
   const loader = useMemo(() => loadPatch ?? defaultLoadPatch(), [loadPatch])
+  const chrome = usePaneChrome()
   const [tick, setTick] = useState(0)
   const [loading, setLoading] = useState(false)
   const [repo, setRepo] = useState<GitStateView['repo']>(null)
@@ -176,20 +178,26 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const hasTracked = (repo?.stagedCount ?? 0) + (repo?.unstagedCount ?? 0) > 0
   const showingDetail = Boolean(selected) && canDiff
 
-  const head = (
+  const refreshButton = (
+    <IconButton
+      size="sm"
+      aria-label={text.refresh}
+      title={text.refresh}
+      isDisabled={loading}
+      onPress={() => setTick((n) => n + 1)}
+    >
+      <RefreshCw size={14} aria-hidden="true" />
+    </IconButton>
+  )
+
+  const head = chrome ? (
+    <PaneTools>{refreshButton}</PaneTools>
+  ) : (
     <header className="changes-pane__head">
       <h2 className="changes-pane__title">{text.title}</h2>
       <div className="changes-pane__actions">
         <Badge tone="neutral">{text.readOnly}</Badge>
-        <IconButton
-          size="sm"
-          aria-label={text.refresh}
-          title={text.refresh}
-          isDisabled={loading}
-          onPress={() => setTick((n) => n + 1)}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-        </IconButton>
+        {refreshButton}
       </div>
     </header>
   )

@@ -892,6 +892,34 @@ const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ 
 const { runFileListingTests } = await import('./test-files.mjs')
 const { runFilesWatchTests } = await import('./test-files-watch.mjs')
 const { runOpenGuardTests } = await import('./test-open-guard.mjs')
+const { runRailSectionsTests } = await import('./test-rail-sections.mjs')
+const { runTileTreeTests } = await import('./test-tile-tree.mjs')
+
+const [tileTree, tileDropZones] = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  Promise.all(
+    ['tile-tree', 'tile-drop-zones'].map((name) =>
+      build({
+        entryPoints: [`src/renderer/src/features/workbench/${name}.ts`],
+        outfile: `out/test/${name}.mjs`,
+        bundle: true,
+        format: 'esm',
+        platform: 'node',
+        logLevel: 'silent'
+      }).then(() => import(`../out/test/${name}.mjs`))
+    )
+  )
+)
+
+const railSections = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/features/workbench/rail-sections.ts'],
+    outfile: 'out/test/rail-sections.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/rail-sections.mjs'))
+)
 
 const openGuard = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1612,6 +1640,8 @@ runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
 await runFilesWatchTests(ok, filesWatch)
 await runOpenGuardTests(ok, openGuard)
+await runRailSectionsTests(ok, railSections)
+await runTileTreeTests(ok, tileTree, tileDropZones)
 await runFileContentSearchTests(ok, fileContentSearch)
 await runFileEditorTests(ok, fileEditor)
 

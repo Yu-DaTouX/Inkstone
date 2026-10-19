@@ -65,6 +65,10 @@ export function Menu(){ return null }
 export function MenuItem(){ return null }
 export function MenuTrigger(){ return null }
 export function Popover(){ return null }
+export function Separator(){ return null }
+export function Tooltip(){ return null }
+export function TooltipTrigger(p){ return p.children }
+export function Focusable(p){ return p.children }
 export function EmptyState(){ return null }
 export function cx(...a){ return a.filter(Boolean).join(' ') }`,
   overview: `export function OverviewPane(){ return null }`,
@@ -79,7 +83,11 @@ export function ArrowLeft(){ return null }
 export function FolderOpen(){ return null }
 export function Globe(){ return null }
 export function MoreHorizontal(){ return null }
-export function Terminal(){ return null }`
+export function Terminal(){ return null }
+export function ArrowRight(){ return null }
+export function EllipsisVertical(){ return null }
+export function Check(){ return null }`,
+  reactDom: `export function createPortal(){ return null }`
 }
 
 function makeStubMap() {
@@ -104,7 +112,7 @@ async function buildBundle(outdir) {
     `export { WorkbenchPanel } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/WorkbenchPanel'))}'
 export { useUiV3, restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
 export { emptyMountState, nextVisited, mountedTabs, MAX_MOUNTED_PANES } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/mount-state'))}'
-export { bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/preview-state'))}'
+export { openPreviewTab as bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/preview-state'))}'
 `
   )
 
@@ -117,6 +125,7 @@ export { bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(r
         if (args.path === 'react/jsx-runtime') return { path: jsxShim }
         if (args.path === 'react/jsx-dev-runtime') return { path: jsxShim }
         if (args.path === 'lucide-react') return { path: 'v3stub:lucide', namespace: 'v3stub' }
+        if (args.path === 'react-dom') return { path: 'v3stub:react-dom', namespace: 'v3stub' }
         if (!args.importer || !args.resolveDir) return undefined
         const base = resolve(args.resolveDir, args.path)
         for (const e of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
@@ -127,6 +136,7 @@ export { bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(r
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         if (args.path === 'v3stub:lucide') return { contents: STUBS.lucide, loader: 'js' }
+        if (args.path === 'v3stub:react-dom') return { contents: STUBS.reactDom, loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
         return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
       })
@@ -262,12 +272,45 @@ function paneSlots(tree) {
   return slotsIn(tree, 0)
 }
 
+const STUB_HANDLE = {
+  tileId: '',
+  label: '',
+  tooltip: '',
+  dragging: false,
+  previewing: false,
+  describedBy: 'hint',
+  onPointerDown() {},
+  onKeyDown() {},
+  onBlur() {}
+}
+
+function tileViews(tree) {
+  const hits = []
+  walk(tree, (el) => {
+    if (el?.props && typeof el.props.renderTile === 'function' && Array.isArray(el.props.mounted)) hits.push(el)
+  })
+  return hits
+}
+
+function tileOrder(view) {
+  const out = []
+  const visit = (node) => {
+    if (node.kind === 'tile') out.push(node.tileId)
+    else node.children.forEach(visit)
+  }
+  visit(view.props.layout.root)
+  return out
+}
+
 function slotsIn(tree, index) {
-  const wrap = allClass(tree, 'wb-panes')[index]
-  if (!wrap) return []
-  return childrenArray(wrap.props.children).filter(
-    (el) => el && typeof el === 'object' && typeof el.type === 'function' && el.props && 'containerVisible' in el.props && 'tab' in el.props
-  )
+  const view = tileViews(tree)[index]
+  if (!view) return []
+  return view.props.mounted
+    .map((id) => {
+      const el = view.props.renderTile(id, { ...STUB_HANDLE, tileId: id })
+      return el && typeof el === 'object' ? { ...el, key: id } : el
+    })
+    .filter((el) => el && typeof el === 'object' && typeof el.type === 'function' && el.props && 'shown' in el.props && 'tab' in el.props)
 }
 
 function slotFor(tree, tab) {
@@ -276,7 +319,10 @@ function slotFor(tree, tab) {
 
 function renderSlot(slot, stubs) {
   const host = slot.type(slot.props)
-  const leaf = childrenArray(host.props.children).find((el) => el && typeof el === 'object' && stubs.has(el.type))
+  let leaf = null
+  walk(host, (el) => {
+    if (!leaf && stubs.has(el.type)) leaf = el
+  })
   return { host, leaf }
 }
 
@@ -386,7 +432,7 @@ async function main() {
 
   group('WorkbenchPanel：默认关闭零挂载 / open 才挂 / close 保活')
   {
-    useUiV3.setState({ workspaceTab: 'changes', workspaceOpen: false })
+    useUiV3.setState({ workspaceTab: 'changes', workspacePanes: ['changes'], workspaceOpen: false })
     const rt = hookRuntime()
     let tree = rt.render(WorkbenchPanel, panelProps({ open: false }))
     ok(paneSlots(tree).length === 0, '默认关闭：一个 PaneSlot 都不挂', paneSlots(tree).map((s) => s.props.tab))
@@ -400,7 +446,7 @@ async function main() {
     let tabs = paneSlots(tree).map((s) => s.props.tab)
     ok(tabs.includes('changes') && tabs.includes('terminal'), '打开终端后 changes 与 terminal 并存', tabs)
 
-    const beforeSwitch = paneSlots(tree).map((s) => ({ tab: s.props.tab, key: s.key, idx: paneSlots(tree).indexOf(s) }))
+    const beforeSwitch = paneSlots(tree).map((s, idx) => ({ tab: s.props.tab, key: s.key, idx }))
     const terminalBefore = beforeSwitch.find((p) => p.tab === 'terminal')
 
     useUiV3.getState().setWorkspaceTab('files')
@@ -420,7 +466,7 @@ async function main() {
     tabs = paneSlots(tree).map((s) => s.props.tab)
     ok(tabs.includes('terminal') && tabs.includes('files'), '关闭面板清不掉 visited：终端/文件实例保留', tabs)
     const closedTerminal = slotFor(tree, 'terminal')
-    ok(closedTerminal.props.containerVisible === false, '关闭后容器 visible=false（隐藏而非卸载）')
+    ok(closedTerminal.props.shown === false, '关闭后容器 visible=false（隐藏而非卸载）')
 
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
     tabs = paneSlots(tree).map((s) => s.props.tab)
@@ -430,14 +476,14 @@ async function main() {
 
   group('WorkbenchPanel：owner 切换先隐藏旧 owner；active/visible 双门')
   {
-    useUiV3.setState({ workspaceTab: 'terminal' })
+    useUiV3.setState({ workspaceTab: 'terminal', workspacePanes: ['terminal'] })
     const rt = hookRuntime()
     let tree = rt.render(WorkbenchPanel, panelProps({ owner: idleA, open: true }))
     let slot = slotFor(tree, 'terminal')
-    ok(slot.props.containerVisible === true, '容器可见门：面板开 + 是当前页签 + ownerReady')
+    ok(slot.props.shown === true, '容器可见门：面板开 + 是当前页签 + ownerReady')
     ok(slot.props.blocked === true, '未激活门：terminal 需要激活，blocked=true')
     let { host, leaf } = renderSlot(slot, stubSet)
-    ok(slot.type(slot.props).props['data-testid'] === 'wb-pane-terminal', 'PaneSlot 渲染出 wb-pane-terminal 宿主')
+    ok(!!findByTestId(slot.type(slot.props), 'wb-pane-terminal'), 'PaneCard 渲染出 wb-pane-terminal 宿主')
     ok(leaf?.props?.visible === false, '双门结果：containerVisible 为真但 blocked，叶子 visible=false')
     ok(!!findByTestId(slot.type(slot.props), 'wb-pane-activate'), '未激活时盖上「先激活」提示')
 
@@ -451,7 +497,7 @@ async function main() {
 
   group('WorkbenchPanel：A 预览 → 切 B 不给 A path → 回 A 规则明确')
   {
-    useUiV3.setState({ workspaceTab: 'files' })
+    useUiV3.setState({ workspaceTab: 'files', workspacePanes: ['files'] })
     const rt = hookRuntime()
     const A_PATH = 'C:/proj/a/readme.md'
     let tree = rt.render(WorkbenchPanel, panelProps({ owner: ownerA, open: true }))
@@ -482,42 +528,47 @@ async function main() {
     ok(filesSlot.props.owner.key === 'sess-a' && filesSlot.props.previewPath === A_PATH, '回 A 后恢复 A 的路径（每条 owner 各自绑定）')
   }
 
-  group('WorkbenchPanel：拆分两格 / 专注单格 / 弹出为禁用占位')
+  group('WorkbenchPanel：面板竖向堆叠 / 展开单个 / 各自关闭')
   {
-    useUiV3.setState({ workspaceTab: 'changes', workspaceSplit: false, workspaceFocus: false, workspaceSplitTab: 'context' })
+    useUiV3.setState({ workspaceTab: 'context', workspacePanes: ['changes', 'context'], workspaceFocus: false, workspaceOpen: true })
     const rt = hookRuntime()
-    let tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
-    ok(allClass(tree, 'wb-panes').length === 1, '不拆分时只有一块容器')
-    ok(findByTestId(tree, 'wb-split')?.props?.isDisabled !== true, '拆分按钮可用（未专注）')
-    ok(findByTestId(tree, 'wb-popout')?.props?.isDisabled === true, '弹出按钮是禁用占位')
-    ok(String(findByTestId(tree, 'wb-popout')?.props?.title ?? '').includes('未迁移'), '弹出按钮标注「未迁移」')
-
-    useUiV3.getState().setWorkspaceSplit(true)
+    let closed = 0
+    let tree = rt.render(WorkbenchPanel, panelProps({ open: true, onClose: () => { closed += 1 } }))
+    let cards = slotsIn(tree, 0)
+    ok(tileViews(tree).length === 1 && tileViews(tree)[0].props.layout.root.direction === 'column', '所有面板放在同一个竖向平铺布局里')
+    ok(cards.filter((s) => s.props.shown).map((s) => s.props.tab).join() === 'changes,context', '两个打开的面板同时可见', cards.map((s) => s.props.tab))
+    ok(tileOrder(tileViews(tree)[0]).join() === 'changes,context', '按打开顺序从上到下排列', tileOrder(tileViews(tree)[0]))
+    const swapped = tileViews(tree)[0].props.layout
+    tileViews(tree)[0].props.onLayoutChange({ root: { ...swapped.root, children: [...swapped.root.children].reverse() } })
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
-    ok(allClass(tree, 'wb-panes').length === 2, '拆分后上下两格各一块容器', allClass(tree, 'wb-panes').length)
-    ok(!!findByTestId(tree, 'wb-split-secondary'), '渲染出下半格')
-    const primary = slotsIn(tree, 0)
-    const secondary = slotsIn(tree, 1)
-    ok(primary.some((s) => s.props.tab === 'changes' && s.props.containerVisible), '主格显示当前页签')
-    ok(secondary.some((s) => s.props.tab === 'context' && s.props.containerVisible), '下半格显示上下文页签')
-    ok(!primary.some((s) => s.props.tab === 'context'), '上下文页签只在下半格挂一份')
-    const ctxSlot = secondary.find((s) => s.props.tab === 'context')
-    ok(!!ctxSlot, '下半格里的上下文挂载位可定位')
-    const { leaf } = renderSlot(ctxSlot, stubSet)
-    ok(leaf?.type?.name === 'ContextStub', '下半格的上下文页签拿到真实叶子组件', leaf?.type?.name)
-
-    useUiV3.getState().setWorkspaceFocus(true)
+    ok(useUiV3.getState().workspacePanes.join() === 'context,changes' && tileOrder(tileViews(tree)[0]).join() === 'context,changes', '拖动后的布局写回 store 并决定顺序', useUiV3.getState().workspacePanes)
+    tileViews(tree)[0].props.onLayoutChange(swapped)
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
-    ok(tree.props['data-focus'] === '1', '专注时面板带 data-focus=1')
-    ok(allClass(tree, 'wb-panes').length === 1, '专注时只留一块容器')
-    const focused = slotsIn(tree, 0)
-    ok(focused.some((s) => s.props.tab === 'changes' && s.props.containerVisible), '专注时当前页签可见')
-    ok(
-      focused.find((s) => s.props.tab === 'context')?.props.containerVisible === false,
-      '专注时下半格页签隐藏但保活'
-    )
-    useUiV3.getState().setWorkspaceFocus(false)
-    useUiV3.getState().setWorkspaceSplit(false)
+    ok(tree.props['data-focus'] === '0', '未展开时面板不带 data-focus')
+    const ctxCard = cards.find((s) => s.props.tab === 'context')
+    const ctxHost = ctxCard.type(ctxCard.props)
+    ok(!!findByTestId(ctxHost, 'wb-card-close-context') && !!findByTestId(ctxHost, 'wb-card-expand-context'), '每个面板有自己的展开与关闭按钮')
+    ok(findByTestId(ctxHost, 'wb-card-menu-context') === null || ctxCard.props.canPopout === false, '没有弹出回调时不提供弹出窗口项')
+    ok(renderSlot(ctxCard, stubSet).leaf?.type?.name === 'ContextStub', '上下文面板拿到真实叶子组件')
+
+    ctxCard.props.onToggleExpand()
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
+    cards = slotsIn(tree, 0)
+    ok(tree.props['data-focus'] === '1', '展开后面板带 data-focus=1')
+    ok(cards.find((s) => s.props.tab === 'context').props.shown === true, '展开的面板可见')
+    ok(cards.find((s) => s.props.tab === 'changes').props.shown === false, '其他面板隐藏但保活')
+
+    cards.find((s) => s.props.tab === 'context').props.onToggleExpand()
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
+    ok(tree.props['data-focus'] === '0', '再次点击收起展开')
+
+    slotsIn(tree, 0).find((s) => s.props.tab === 'changes').props.onClose()
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true, onClose: () => { closed += 1 } }))
+    ok(useUiV3.getState().workspacePanes.join() === 'context', '关闭一个面板只移除它自己', useUiV3.getState().workspacePanes)
+    ok(closed === 0, '还有面板时不收起工作区')
+    slotsIn(tree, 0).find((s) => s.props.tab === 'context').props.onClose()
+    ok(useUiV3.getState().workspacePanes.length === 0 && closed === 1, '关闭最后一个面板时收起工作区')
+    ok(useUiV3.getState().workspaceTab === 'overview', '没有面板时视图回到概览')
   }
 
   await rm(outdir, { recursive: true, force: true })

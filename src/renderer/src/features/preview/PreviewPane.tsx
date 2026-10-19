@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
@@ -8,6 +8,9 @@ import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/CodeEditor'
+import { filesIconSpec } from '../files/files-icon'
+import { Markdown } from '../session/Markdown'
+import { PaneTitle, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editor-language'
 import { previewTabLabel } from '../workbench/preview-state'
 import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
@@ -26,6 +29,17 @@ import {
 import './preview.css'
 
 const MAX_RENDER_LINES = 2000
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
+
+function isMarkdownName(name: string): boolean {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && MARKDOWN_EXTENSIONS.has(name.slice(dot + 1).toLowerCase())
+}
+
+function parentDir(abs: string): string {
+  const at = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'))
+  return at > 0 ? abs.slice(0, at) : abs
+}
 
 interface PreviewDraft {
   abs: string
@@ -55,6 +69,8 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
   const previewTabs = usePreviewTabs(owner.key)
   const [draft, setDraft] = useState<PreviewDraft | null>(null)
+  const [sourceMode, setSourceMode] = useState(false)
+  const chrome = usePaneChrome()
 
   const scopeKey = previewScopeKey(owner)
   const externalPath = path ?? null
@@ -150,6 +166,8 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const editing = !!draft && !!activeAbs && draft.abs === activeAbs
   const editable = view.kind === 'text' && editorIsEditableKind(name)
   const dirty = !!draft && draft.text !== draft.original
+  const markdown = view.kind === 'text' && isMarkdownName(name)
+  const reading = markdown && !sourceMode && !editing
 
   const freshnessTarget =
     viewKey && diskStat && diskStat.key === viewKey
@@ -235,81 +253,175 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
     usePreviewBindings.getState().closeAll(owner.key)
   }, [owner.key])
 
+  const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
+  const activeTab = previewTabs?.active ?? activePath ?? ''
+  const tabStrip = tabList.length ? (
+    <div className={chrome ? 'v3-preview-tabstrip v3-preview-tabstrip--chrome' : 'v3-preview-tabstrip'} role="tablist" aria-label={text.tabsLabel} data-testid="v3-preview-tabs">
+      {tabList.map((tab) => {
+        const spec = filesIconSpec(previewTabLabel(tab))
+        return (
+        <span
+          key={tab}
+          className={`v3-preview-tab${tab === activeTab ? ' is-active' : ''}`}
+          data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
+        >
+          <span className={`v3-preview-tab-ico v3-files-ico is-${spec.tone}`} aria-hidden>
+            <spec.Icon size={13} />
+          </span>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === activeTab}
+            className="v3-preview-tab-name"
+            title={tab}
+            onClick={() => selectTab(tab)}
+          >
+            {previewTabLabel(tab)}
+          </button>
+          <button
+            type="button"
+            className="v3-preview-tab-close"
+            aria-label={`${text.closeTab}: ${previewTabLabel(tab)}`}
+            title={text.closeTab}
+            onClick={() => closeTab(tab)}
+          >
+            <X size={11} />
+          </button>
+        </span>
+        )
+      })}
+    </div>
+  ) : null
+
+  const toolButtons = (
+    <>
+      {markdown && !editing ? (
+        <IconButton
+          size="sm"
+          aria-label={sourceMode ? text.readingMode : text.sourceMode}
+          title={sourceMode ? text.readingMode : text.sourceMode}
+          data-testid="v3-preview-reading-toggle"
+          onPress={() => setSourceMode((value) => !value)}
+        >
+          {sourceMode ? <BookOpen size={14} /> : <Code2 size={14} />}
+        </IconButton>
+      ) : null}
+      {editable ? (
+        <IconButton
+          size="sm"
+          aria-label={editing ? text.viewMode : text.edit}
+          title={editing ? text.viewMode : text.edit}
+          aria-pressed={editing}
+          data-testid="v3-preview-edit-toggle"
+          onPress={() => {
+            if (editing) setDraft(null)
+            else void beginEdit()
+          }}
+        >
+          {editing ? <FileText size={14} /> : <Pencil size={14} />}
+        </IconButton>
+      ) : null}
+    </>
+  )
+
+  usePaneMenu(
+    'preview',
+    activeAbs
+      ? [
+          { id: 'preview:open', label: text.open, icon: <ExternalLink size={14} aria-hidden />, onAction: open },
+          { id: 'preview:reveal', label: text.reveal, icon: <FolderOpen size={14} aria-hidden />, onAction: reveal },
+          { id: 'preview:copy', label: text.copyPath, icon: <Copy size={14} aria-hidden />, onAction: copy },
+          { id: 'preview:reload', label: text.retry, icon: <RefreshCw size={14} aria-hidden />, onAction: () => setReload((value) => value + 1) },
+          ...(tabList.length > 1 ? [{ id: 'preview:closeAll', label: text.closeAllTabs, icon: <X size={14} aria-hidden />, onAction: closeAllTabs }] : [])
+        ]
+      : []
+  )
+
+  const crumbNav = crumbs.length > 1 ? (
+    <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
+      {crumbs.map((segment, index) => {
+        const isLast = index === crumbs.length - 1
+        const dir = crumbs.slice(0, index + 1).join('/')
+        return (
+          <span key={dir} className="v3-preview-crumb-item">
+            {index ? (
+              <span className="v3-preview-crumb-sep" aria-hidden>
+                /
+              </span>
+            ) : null}
+            {isLast ? (
+              <span className="v3-preview-crumb" title={segment}>
+                {segment}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="v3-preview-crumb"
+                title={dir}
+                onClick={() => void window.yan.revealPath(`${owner.cwd.replace(/[\\/]+$/, '')}/${dir}`)}
+              >
+                {segment}
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </nav>
+  ) : null
+  const pathRow = chrome && activeAbs ? (
+    <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
+      {crumbNav ?? (
+        <span className="v3-preview-pathname" title={activeAbs}>
+          {name}
+        </span>
+      )}
+      <span className="v3-preview-pathtools">{toolButtons}</span>
+    </div>
+  ) : crumbNav
+
   return (
     <section className="v3-preview" data-testid="v3-preview" aria-label={text.title}>
-      {previewTabs && previewTabs.tabs.length > 1 ? (
-        <div className="v3-preview-tabs" role="tablist" aria-label={text.tabsLabel} data-testid="v3-preview-tabs">
-          <div className="v3-preview-tabstrip">
-            {previewTabs.tabs.map((tab) => (
-              <span
-                key={tab}
-                className={`v3-preview-tab${tab === previewTabs.active ? ' is-active' : ''}`}
-                data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === previewTabs.active}
-                  className="v3-preview-tab-name"
-                  title={tab}
-                  onClick={() => selectTab(tab)}
-                >
-                  {previewTabLabel(tab)}
-                </button>
-                <button
-                  type="button"
-                  className="v3-preview-tab-close"
-                  aria-label={`${text.closeTab}: ${previewTabLabel(tab)}`}
-                  title={text.closeTab}
-                  onClick={() => closeTab(tab)}
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-          <IconButton aria-label={text.closeAllTabs} title={text.closeAllTabs} onPress={closeAllTabs}>
-            <X size={13} />
-          </IconButton>
-        </div>
-      ) : null}
-      <PaneHeader
-        size="sm"
-        title={<span title={activeAbs}>{name || text.title}</span>}
-        actions={
-          <>
-            {activeAbs ? (
+      {chrome ? (
+        <>
+          <PaneTitle>{tabStrip}</PaneTitle>
+        </>
+      ) : (
+        <>
+          {previewTabs && previewTabs.tabs.length > 1 ? (
+            <div className="v3-preview-tabs">
+              {tabStrip}
+              <IconButton aria-label={text.closeAllTabs} title={text.closeAllTabs} onPress={closeAllTabs}>
+                <X size={13} />
+              </IconButton>
+            </div>
+          ) : null}
+          <PaneHeader
+            size="sm"
+            title={<span title={activeAbs}>{name || text.title}</span>}
+            actions={
               <>
-                <IconButton aria-label={text.open} title={text.open} onPress={open}>
-                  <ExternalLink size={14} />
-                </IconButton>
-                <IconButton aria-label={text.reveal} title={text.reveal} onPress={reveal}>
-                  <FolderOpen size={14} />
-                </IconButton>
-                <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
-                  <Copy size={14} />
-                </IconButton>
-                {editable ? (
-                  <IconButton
-                    aria-label={editing ? text.viewMode : text.edit}
-                    title={editing ? text.viewMode : text.edit}
-                    data-testid="v3-preview-edit-toggle"
-                    onPress={() => {
-                      if (editing) setDraft(null)
-                      else void beginEdit()
-                    }}
-                  >
-                    {editing ? <FileText size={14} /> : <Pencil size={14} />}
-                  </IconButton>
+                {activeAbs ? (
+                  <>
+                    <IconButton aria-label={text.open} title={text.open} onPress={open}>
+                      <ExternalLink size={14} />
+                    </IconButton>
+                    <IconButton aria-label={text.reveal} title={text.reveal} onPress={reveal}>
+                      <FolderOpen size={14} />
+                    </IconButton>
+                    <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
+                      <Copy size={14} />
+                    </IconButton>
+                    {toolButtons}
+                  </>
                 ) : null}
+                <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
+                  <RefreshCw size={14} />
+                </IconButton>
               </>
-            ) : null}
-            <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
-              <RefreshCw size={14} />
-            </IconButton>
-          </>
-        }
-      />
+            }
+          />
+        </>
+      )}
       {editing && draft ? (
         <div className="v3-preview-editbar" data-testid="v3-preview-editbar">
           <span className="v3-preview-editstate">
@@ -337,37 +449,7 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         </div>
       ) : null}
 
-      {crumbs.length > 1 ? (
-        <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
-          {crumbs.map((segment, index) => {
-            const isLast = index === crumbs.length - 1
-            const dir = crumbs.slice(0, index + 1).join('/')
-            return (
-              <span key={dir} className="v3-preview-crumb-item">
-                {index ? (
-                  <span className="v3-preview-crumb-sep" aria-hidden>
-                    /
-                  </span>
-                ) : null}
-                {isLast ? (
-                  <span className="v3-preview-crumb" title={segment}>
-                    {segment}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="v3-preview-crumb"
-                    title={dir}
-                    onClick={() => void window.yan.revealPath(`${owner.cwd.replace(/[\\/]+$/, '')}/${dir}`)}
-                  >
-                    {segment}
-                  </button>
-                )}
-              </span>
-            )
-          })}
-        </nav>
-      ) : null}
+      {pathRow}
       {editing && draft ? (
         <CodeEditor
           value={draft.text}
@@ -378,7 +460,7 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           onSave={() => void saveDraft()}
         />
       ) : (
-        <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} onOpenArtifact={openArtifact} />
+        <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} reading={reading} onOpenArtifact={openArtifact} />
       )}
     </section>
   )
@@ -389,12 +471,14 @@ function PreviewBody({
   text,
   artifacts,
   ownsCurrent,
+  reading,
   onOpenArtifact
 }: {
   view: PreviewView
   text: PreviewText
   artifacts: AssistantArtifact[]
   ownsCurrent: boolean
+  reading: boolean
   onOpenArtifact: (path: string) => void
 }): ReactElement {
   switch (view.kind) {
@@ -443,7 +527,7 @@ function PreviewBody({
         </Notice>
       )
     case 'text':
-      return <TextView view={view} text={text} />
+      return reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} />
     case 'image':
       return (
         <figure className="v3-preview-media" data-testid="v3-preview-image">
@@ -493,6 +577,23 @@ function TextView({
       {lines.length > MAX_RENDER_LINES ? (
         <div className="v3-preview-note">{text.tooManyLines.replace('{n}', String(MAX_RENDER_LINES))}</div>
       ) : null}
+      {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
+    </div>
+  )
+}
+
+function MarkdownView({
+  view,
+  text
+}: {
+  view: Extract<PreviewView, { kind: 'text' }>
+  text: PreviewText
+}): ReactElement {
+  return (
+    <div className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
+      <div className="v3-preview-md">
+        <Markdown text={view.text} sourceCwd={parentDir(view.abs)} />
+      </div>
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )

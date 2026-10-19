@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView } from '../features/workbench/types'
+import { appendTile, columnLayout, hasTile, orderedTileIds, removeTile, sanitizeLayout, type TileLayout } from '../features/workbench/tile-tree'
 
 export type V3RouteName = 'chat' | 'runs' | 'settings' | 'schedule' | 'review' | 'collab' | 'usage'
 
@@ -48,6 +49,69 @@ function writeUiPrefs(prefs: V3UiPrefs): void {
 }
 
 const WORKSPACE_OPEN_KEY = 'inkstone.v3.workspaceOpen'
+const WORKSPACE_PANES_KEY = 'inkstone.v3.workspacePanes'
+const WORKSPACE_LAYOUT_KEY = 'inkstone.v3.workspaceLayout'
+
+export function workspaceLayoutFor(layout: TileLayout | null, panes: readonly WorkbenchTabId[]): TileLayout {
+  let next = layout ?? columnLayout([])
+  for (const id of orderedTileIds(next)) if (!(panes as readonly string[]).includes(id)) next = removeTile(next, id)
+  for (const id of panes) if (!hasTile(next, id)) next = appendTile(next, id)
+  return next
+}
+
+function readWorkspaceLayout(panes: readonly WorkbenchTabId[]): TileLayout {
+  if (typeof localStorage === 'undefined') return workspaceLayoutFor(null, panes)
+  try {
+    const stored = sanitizeLayout(JSON.parse(localStorage.getItem(WORKSPACE_LAYOUT_KEY) ?? 'null'), new Set<string>(panes))
+    return workspaceLayoutFor(stored, panes)
+  } catch {
+    return workspaceLayoutFor(null, panes)
+  }
+}
+
+function writeWorkspaceLayout(layout: TileLayout): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(WORKSPACE_LAYOUT_KEY, JSON.stringify(layout))
+  } catch {
+  }
+}
+
+export function restorableWorkspacePanes(value: unknown, fallback: WorkbenchView): WorkbenchTabId[] {
+  const out: WorkbenchTabId[] = []
+  const list = Array.isArray(value) ? value : fallback === 'overview' ? [] : [fallback]
+  for (const raw of list) {
+    const item = raw === 'preview' ? 'files' : raw
+    if (!isWorkbenchTab(item) || WORKBENCH_ACTIVE_TABS.has(item) || out.includes(item)) continue
+    out.push(item)
+  }
+  return out
+}
+
+function readWorkspacePanes(fallback: WorkbenchView): WorkbenchTabId[] {
+  if (typeof localStorage === 'undefined') return restorableWorkspacePanes(null, fallback)
+  try {
+    return restorableWorkspacePanes(JSON.parse(localStorage.getItem(WORKSPACE_PANES_KEY) ?? 'null'), fallback)
+  } catch {
+    return restorableWorkspacePanes(null, fallback)
+  }
+}
+
+function writeWorkspacePanes(panes: readonly WorkbenchTabId[]): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(WORKSPACE_PANES_KEY, JSON.stringify(panes))
+  } catch {
+  }
+}
+
+export function withWorkspacePane(panes: readonly WorkbenchTabId[], tab: WorkbenchTabId): WorkbenchTabId[] {
+  return panes.includes(tab) ? [...panes] : [...panes, tab]
+}
+
+export function withoutWorkspacePane(panes: readonly WorkbenchTabId[], tab: WorkbenchTabId): WorkbenchTabId[] {
+  return panes.filter((item) => item !== tab)
+}
 
 function readWorkspaceOpen(): boolean {
   if (typeof localStorage === 'undefined') return true
@@ -72,6 +136,8 @@ interface UiV3State {
   sidebarOpen: boolean
   workspaceOpen: boolean
   workspaceTab: WorkbenchView
+  workspacePanes: WorkbenchTabId[]
+  workspaceLayout: TileLayout
   workspaceSplit: boolean
   workspaceSplitTab: WorkbenchTabId
   workspaceFocus: boolean
@@ -82,6 +148,9 @@ interface UiV3State {
   setWorkspaceOpen: (open: boolean) => void
   toggleWorkspace: () => void
   setWorkspaceTab: (view: WorkbenchView) => void
+  closeWorkspacePane: (tab: WorkbenchTabId) => void
+  reorderWorkspacePanes: (panes: WorkbenchTabId[]) => void
+  setWorkspaceLayout: (layout: TileLayout) => void
   setWorkspaceSplit: (open: boolean) => void
   toggleWorkspaceSplit: () => void
   setWorkspaceSplitTab: (tab: WorkbenchTabId) => void
@@ -89,12 +158,19 @@ interface UiV3State {
   toggleWorkspaceFocus: () => void
 }
 
+function initialWorkspace(): { workspaceTab: WorkbenchView; workspacePanes: WorkbenchTabId[]; workspaceLayout: TileLayout } {
+  const stored = readUiPrefs().workbenchTab
+  const panes = readWorkspacePanes(stored)
+  const tab = stored !== 'overview' && panes.includes(stored) ? stored : panes[panes.length - 1] ?? 'overview'
+  return { workspaceTab: tab, workspacePanes: panes, workspaceLayout: readWorkspaceLayout(panes) }
+}
+
 export const useUiV3 = create<UiV3State>((set, get) => ({
   route: { name: 'chat' },
   back: [],
   sidebarOpen: true,
   workspaceOpen: readWorkspaceOpen(),
-  workspaceTab: readUiPrefs().workbenchTab,
+  ...initialWorkspace(),
   workspaceSplit: false,
   workspaceSplitTab: 'context',
   workspaceFocus: false,
@@ -115,10 +191,44 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
     writeWorkspaceOpen(open)
   },
   toggleWorkspace: () => get().setWorkspaceOpen(!get().workspaceOpen),
-  setWorkspaceTab: (view) => {
-    if (!isWorkbenchView(view)) return
-    set({ workspaceTab: view })
+  setWorkspaceTab: (requested) => {
+    if (!isWorkbenchView(requested)) return
+    const view = requested === 'preview' ? 'files' : requested
+    const panes = view === 'overview' ? [] : withWorkspacePane(get().workspacePanes, view)
+    const layout = workspaceLayoutFor(get().workspaceLayout, panes)
+    set({ workspaceTab: view, workspacePanes: panes, workspaceLayout: layout })
     writeUiPrefs({ version: 1, workbenchTab: view })
+    writeWorkspacePanes(panes)
+    writeWorkspaceLayout(layout)
+  },
+  reorderWorkspacePanes: (panes) => {
+    const current = get().workspacePanes
+    if (panes.length !== current.length || !panes.every((tab) => current.includes(tab))) return
+    if (panes.every((tab, index) => current[index] === tab)) return
+    const layout = columnLayout(panes)
+    set({ workspacePanes: [...panes], workspaceLayout: layout })
+    writeWorkspacePanes(panes)
+    writeWorkspaceLayout(layout)
+  },
+  setWorkspaceLayout: (layout) => {
+    const current = get().workspacePanes
+    const ids = orderedTileIds(layout)
+    if (ids.length !== current.length || !ids.every((id) => (current as readonly string[]).includes(id))) return
+    const panes = ids as WorkbenchTabId[]
+    set({ workspaceLayout: layout, workspacePanes: panes })
+    writeWorkspacePanes(panes)
+    writeWorkspaceLayout(layout)
+  },
+  closeWorkspacePane: (tab) => {
+    const state = get()
+    const panes = withoutWorkspacePane(state.workspacePanes, tab)
+    const view: WorkbenchView = state.workspaceTab === tab || panes.length === 0 ? panes[panes.length - 1] ?? 'overview' : state.workspaceTab
+    const layout = workspaceLayoutFor(state.workspaceLayout, panes)
+    set({ workspacePanes: panes, workspaceLayout: layout, workspaceTab: view, workspaceFocus: state.workspaceFocus && panes.length > 0 && view === state.workspaceTab })
+    writeUiPrefs({ version: 1, workbenchTab: view })
+    writeWorkspacePanes(panes)
+    writeWorkspaceLayout(layout)
+    if (panes.length === 0) get().setWorkspaceOpen(false)
   },
   setWorkspaceSplit: (open) => set({ workspaceSplit: open }),
   toggleWorkspaceSplit: () => set({ workspaceSplit: !get().workspaceSplit }),

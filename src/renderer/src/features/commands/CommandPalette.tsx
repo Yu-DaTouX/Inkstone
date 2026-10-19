@@ -35,7 +35,7 @@ const WORKSPACE_ACTION_TABS: Record<string, WorkbenchTabId> = {
   [COMMAND_ACTION_IDS.workspaceTerminal]: 'terminal',
   [COMMAND_ACTION_IDS.workspaceFiles]: 'files',
   [COMMAND_ACTION_IDS.workspaceBrowser]: 'browser',
-  [COMMAND_ACTION_IDS.workspacePreview]: 'preview'
+  [COMMAND_ACTION_IDS.workspacePreview]: 'files'
 }
 
 export interface CommandPaletteProps {
