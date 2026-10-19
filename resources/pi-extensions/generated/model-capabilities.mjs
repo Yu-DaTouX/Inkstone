@@ -1,7 +1,5 @@
-/* 由 src/shared/custom-provider.ts 生成，勿手改；重新生成：node scripts/build-model-capabilities.mjs
- * source-sha256: 342c1f23233cf3e8156ca8343fa8a5fc5c313157eba2ed52ce0c95bf5cb52d32
- */
-// src/shared/custom-provider.ts
+/* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
+/* source-sha256: 342c1f23233cf3e8156ca8343fa8a5fc5c313157eba2ed52ce0c95bf5cb52d32 */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",

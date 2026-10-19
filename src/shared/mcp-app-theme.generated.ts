@@ -1,10 +1,4 @@
-/* 由 scripts/design/build-tokens.mjs 从 design/tokens.json 生成，不要手改。 */
-/**
- * MCP Apps 标准主题变量 → 砚令牌（02 §5.11）。
- *
- * 主进程 MCP App 宿主在 `ui/initialize` 的 hostContext.styles.variables 中按当前明确主题
- * 下发这些值；每条 light-dark() 由宿主解析成具体值后再发送。
- */
+/* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-background-primary": "light-dark(#FFFFFF, #1A1A19)",
   "--color-background-secondary": "light-dark(#FCFCFB, #151515)",
@@ -55,9 +49,6 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--shadow-sm": "0 0 0 1px light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1))"
 }
 
-/**
- * 阴影不是颜色，无法用 light-dark()；按主题分别给出，由宿主按当前主题取值下发。
- */
 export const APP_THEME_SHADOW_VARIABLES: Readonly<
   Record<'light' | 'dark', Readonly<Record<string, string>>>
 > = {

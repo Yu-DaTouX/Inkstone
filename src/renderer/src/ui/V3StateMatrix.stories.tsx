@@ -1,6 +1,8 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
+  Avatar,
+  avatarInitial,
   Badge,
   Button,
   Card,
@@ -11,6 +13,7 @@ import {
   CompletionSweep,
   Dialog,
   DialogTrigger,
+  Focusable,
   Header,
   Heading,
   IconButton,
@@ -28,10 +31,19 @@ import {
   Popover,
   ProgressBar,
   Separator,
+  SettingRow,
+  SettingRows,
+  SettingsDialog,
+  SettingsNav,
+  SettingsNavEmpty,
+  SettingsNavGroup,
+  SettingsNavItem,
   ShimmerText,
   showToast,
   Skeleton,
   Spinner,
+  StatusDot,
+  StatusSlot,
   SubmenuTrigger,
   Tab,
   TabList,
@@ -462,7 +474,7 @@ export const PopoverTooltipStates: Story = {
   name: 'Popover / Tooltip · 展开与延迟',
   parameters: {
     stateMatrix: {
-      components: ['Popover', 'Tooltip', 'TooltipTrigger'],
+      components: ['Popover', 'Tooltip', 'TooltipTrigger', 'Focusable'],
       states: STATES('default', 'open'),
       declared: STATES('open')
     }
@@ -474,6 +486,14 @@ export const PopoverTooltipStates: Story = {
           悬停或聚焦
         </Button>
         <Tooltip>收起侧栏 Ctrl+B</Tooltip>
+      </TooltipTrigger>
+      <TooltipTrigger delay={0}>
+        <Focusable>
+          <span tabIndex={0} style={noteStyle}>
+            非按钮元素：用 Focusable 包裹后也能承载提示
+          </span>
+        </Focusable>
+        <Tooltip>说明文字</Tooltip>
       </TooltipTrigger>
       <DialogTrigger>
         <Button variant="ghost" onPress={() => undefined}>
@@ -524,6 +544,132 @@ export const ToastStates: Story = {
       <p style={noteStyle}>按钮只在点击时推送固定样例；故事加载本身不产生提示，也不访问宿主。</p>
     </div>
   )
+}
+
+export const StatusAvatarStates: Story = {
+  name: 'StatusDot / StatusSlot / Avatar · 状态点与头像',
+  parameters: {
+    stateMatrix: {
+      components: ['StatusDot', 'StatusSlot', 'Avatar', 'avatarInitial'],
+      states: STATES('default', 'tone-neutral', 'tone-fail'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-16)' }}>
+      <Row label="状态点">
+        {(['running', 'awaiting', 'ready', 'idle', 'ok', 'pending', 'fail'] as const).map((kind) => (
+          <span key={kind} style={{ display: 'inline-flex', gap: 'var(--s-4)', alignItems: 'center' }}>
+            <StatusDot kind={kind} />
+            <span style={noteStyle}>{kind}</span>
+          </span>
+        ))}
+      </Row>
+      <Row label="槽位">
+        <StatusSlot label="运行中" live>
+          <StatusDot kind="running" />
+        </StatusSlot>
+        <StatusSlot tone="muted" label="空闲">
+          <StatusDot kind="idle" />
+        </StatusSlot>
+        <StatusSlot tone="danger" label="失败">
+          <StatusDot kind="fail" />
+        </StatusSlot>
+      </Row>
+      <Row label="头像">
+        <Avatar name="砚" />
+        <Avatar name="inkstone" />
+        <Avatar name="  yan" />
+        <span style={noteStyle}>首字取大写：{avatarInitial('inkstone')}；空名字不显示字符。</span>
+        <Avatar name="" />
+      </Row>
+    </div>
+  )
+}
+
+export const SettingsStates: Story = {
+  name: 'SettingsDialog / SettingRow · 设置对话框与行',
+  parameters: {
+    stateMatrix: {
+      components: [
+        'SettingRow',
+        'SettingRows',
+        'SettingsDialog',
+        'SettingsNav',
+        'SettingsNavEmpty',
+        'SettingsNavGroup',
+        'SettingsNavItem'
+      ],
+      states: STATES('default', 'open', 'selected', 'empty'),
+      declared: STATES('open')
+    }
+  },
+  render: function SettingsStatesStory() {
+    const [open, setOpen] = useState(false)
+    const [current, setCurrent] = useState('general')
+    const [query, setQuery] = useState('')
+    const items = [
+      { id: 'general', label: '通用', hint: '语言与外观' },
+      { id: 'models', label: '模型', hint: undefined },
+      { id: 'about', label: '关于', hint: undefined }
+    ].filter((item) => item.label.includes(query))
+    const nav = (
+      <SettingsNav
+        label="设置分区"
+        search={
+          <input
+            aria-label="搜索设置"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索设置"
+          />
+        }
+      >
+        <SettingsNavGroup title="应用">
+          {items.map((item) => (
+            <SettingsNavItem
+              key={item.id}
+              label={item.label}
+              hint={item.hint}
+              current={current === item.id}
+              onPress={() => setCurrent(item.id)}
+            />
+          ))}
+        </SettingsNavGroup>
+        {items.length === 0 ? <SettingsNavEmpty>没有匹配的设置</SettingsNavEmpty> : null}
+      </SettingsNav>
+    )
+    return (
+      <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 520 }}>
+        <SettingRows label="示例设置">
+          <SettingRow label="语言" description="界面显示语言">
+            <Button size="sm" variant="secondary" onPress={() => undefined}>
+              简体中文
+            </Button>
+          </SettingRow>
+          <SettingRow label="缩进项" indent description="从属于上一项">
+            <Button size="sm" variant="ghost" onPress={() => undefined}>
+              调整
+            </Button>
+          </SettingRow>
+          <SettingRow block label="整块内容" description="控件独占一行">
+            <div style={bodyStyle}>块级控件区域</div>
+          </SettingRow>
+          <SettingRow label="只有文字" />
+        </SettingRows>
+        <div style={{ width: 220 }}>{nav}</div>
+        <Button variant="secondary" onPress={() => setOpen(true)}>
+          打开设置对话框
+        </Button>
+        <SettingsDialog isOpen={open} onOpenChange={setOpen} title="设置" closeLabel="关闭" nav={nav}>
+          <SettingRows label="当前分区">
+            <SettingRow label={current} description="对话框内容区" />
+          </SettingRows>
+        </SettingsDialog>
+        <p style={noteStyle}>设置对话框的「展开」状态需点击按钮后实际弹出，静态矩阵只声明。</p>
+      </div>
+    )
+  }
 }
 
 const DENSITIES = ['compact', 'comfortable'] as const

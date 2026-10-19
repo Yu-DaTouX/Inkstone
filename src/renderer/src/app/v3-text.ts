@@ -1,10 +1,6 @@
 import type { Lang } from '../i18n'
 
 export interface V3Text {
-  runsEmpty: string
-  runsProvisional: string
-  runsBack: string
-  runsStatus: string
   schedule: string
   settings: string
   settingsTitle: string
@@ -51,11 +47,6 @@ export interface V3Text {
 }
 
 const ZH: V3Text = {
-  runsEmpty: '暂无运行。开始一件任务，它会出现在这里。',
-  runsProvisional:
-    '这是按现有运行实例（agent_start → agent_settled 的投影）列出的清单，尚未接入运行注册表（WP-11）；状态词不代表权威七态，也不含停滞计时。',
-  runsBack: '返回会话',
-  runsStatus: '状态',
   schedule: '定时任务',
   settings: '设置',
   settingsTitle: '设置',
@@ -102,11 +93,6 @@ const ZH: V3Text = {
 }
 
 const EN: V3Text = {
-  runsEmpty: 'No runs yet. Start a task and it will show up here.',
-  runsProvisional:
-    'This lists the current runner instances (a projection of agent_start → agent_settled). It is not yet wired to the run registry (WP-11): the labels are not the authoritative seven states and there is no stall timing.',
-  runsBack: 'Back to chat',
-  runsStatus: 'Status',
   schedule: 'Scheduled tasks',
   settings: 'Settings',
   settingsTitle: 'Settings',

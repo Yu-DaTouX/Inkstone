@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const source = join(root, 'src/renderer/src/design/tokens.json')
 const tokens = JSON.parse(readFileSync(source, 'utf8'))
-const HEADER = '由 scripts/design/build-tokens.mjs 从 design/tokens.json 生成，不要手改。'
+const HEADER = '由 scripts/design/build-tokens.mjs 生成，不要手改。'
 
 const pair = ([light, dark]) => (light === dark ? light : `light-dark(${light}, ${dark})`)
 
@@ -130,16 +130,8 @@ function buildAppThemeShared() {
   }
   return (
     `/* ${HEADER} */\n` +
-    '/**\n' +
-    ' * MCP Apps 标准主题变量 → 砚令牌（02 §5.11）。\n' +
-    ' *\n' +
-    ' * 主进程 MCP App 宿主在 `ui/initialize` 的 hostContext.styles.variables 中按当前明确主题\n' +
-    ' * 下发这些值；每条 light-dark() 由宿主解析成具体值后再发送。\n' +
-    ' */\n' +
     `export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = ${JSON.stringify(vars, null, 2)}\n` +
-    '\n/**\n' +
-    ' * 阴影不是颜色，无法用 light-dark()；按主题分别给出，由宿主按当前主题取值下发。\n' +
-    ' */\n' +
+    '\n' +
     `export const APP_THEME_SHADOW_VARIABLES: Readonly<\n  Record<'light' | 'dark', Readonly<Record<string, string>>>\n> = ${JSON.stringify(shadowVars, null, 2)}\n`
   )
 }
@@ -147,10 +139,6 @@ function buildAppThemeShared() {
 function buildAppThemeRenderer() {
   return (
     `/* ${HEADER} */\n` +
-    '/**\n' +
-    ' * MCP Apps 标准主题变量（02 §5.11）的渲染端投影。\n' +
-    ' * 真源生成物在 src/shared/mcp-app-theme.generated.ts，主进程宿主与渲染端共用。\n' +
-    ' */\n' +
     "export { APP_THEME_SHADOW_VARIABLES, APP_THEME_VARIABLES } from '../../../shared/mcp-app-theme.generated'\n"
   )
 }
@@ -163,7 +151,7 @@ function buildMobile() {
     light[key] = l
     dark[key] = d
   }
-  return `/* ${HEADER} */\n/** v3 色板（与桌面同源）；WP-60 接入前不被引用。 */\nexport const v3Light = ${JSON.stringify(light, null, 2)} as const\n\nexport const v3Dark = ${JSON.stringify(dark, null, 2)} as const\n\nexport const v3Radius = ${JSON.stringify(tokens.radius)} as const\n`
+  return `/* ${HEADER} */\nexport const v3Light = ${JSON.stringify(light, null, 2)} as const\n\nexport const v3Dark = ${JSON.stringify(dark, null, 2)} as const\n\nexport const v3Radius = ${JSON.stringify(tokens.radius)} as const\n`
 }
 
 const outputs = [

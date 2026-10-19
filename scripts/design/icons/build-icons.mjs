@@ -58,17 +58,9 @@ const symbols = Object.entries(icons)
 const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">${symbols.join('')}</svg>\n`
 
 const names = Object.keys(icons).sort()
-const ts = `/**
- * ⚠️ 自动生成，不要手改。来源：scripts/design/icons/catalog.json + ${source}
- * 重新生成： npm run icons
- *
- * 图标是「引用」（<use href="#i-x">），symbol 定义由 <IconSprite /> 在应用根部挂一次。
- * 全部图标：${grid}×${grid} 网格、纯描边、stroke-width ${strokeWidth}（non-scaling-stroke）、
- * ${linecap} 端点、${linejoin} 转角、颜色随 CSS color。
- */
+const ts = `/* 由 scripts/design/icons/build-icons.mjs 生成，不要手改。 */
 export const ICON_SPRITE = ${JSON.stringify(sprite.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, ''))}
 
-/** sprite 里可用的图标名（去掉 i- 前缀，直接 <Icon name="search" />） */
 export const ICON_NAMES = ${JSON.stringify(names, null, 2)} as const
 
 export type IconName = (typeof ICON_NAMES)[number]

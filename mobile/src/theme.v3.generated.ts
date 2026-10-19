@@ -1,5 +1,4 @@
-/* 由 scripts/design/build-tokens.mjs 从 design/tokens.json 生成，不要手改。 */
-/** v3 色板（与桌面同源）；WP-60 接入前不被引用。 */
+/* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 export const v3Light = {
   "bg": "#FCFCFB",
   "side": "#FAFAF9",

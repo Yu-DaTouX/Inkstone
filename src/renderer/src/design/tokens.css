@@ -1,4 +1,4 @@
-/* 由 scripts/design/build-tokens.mjs 从 design/tokens.json 生成，不要手改。 */
+/* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 @layer tokens {
   :root {
     color-scheme: light dark;
