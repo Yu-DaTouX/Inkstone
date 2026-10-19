@@ -40,7 +40,7 @@
   log('=== 模型 → MCP 能力发现 → describe → call（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
-  const ta = q('[data-testid="composer"]') ?? q('textarea')
+  const ta = q('[data-testid="composer-input"]') ?? q('textarea')
   if (!ta) return fail('找不到输入框')
 
   const PROMPT =
@@ -57,7 +57,7 @@
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(250)
 
-  const send = q('[data-testid="send"]')
+  const send = q('[data-testid="composer-send"]')
   if (!send || send.disabled) return fail('发送键不可用')
   send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
@@ -68,7 +68,7 @@
   while (Date.now() < deadline) {
     await sleep(500)
     if (roundRunning()) started = true
-    if (started && !roundRunning() && !qa('.trow[data-state="running"]').length) {
+    if (started && !roundRunning() && !qa('.v3-step[data-state="running"]').length) {
       await sleep(1000)
       broke = true
       break
@@ -126,6 +126,6 @@
   ok(!/宿主能力服务不可用/.test(answerText), '没有「宿主不可用」')
 
   log('--- 说明 ---')
-  log('工具行数（DOM）: ' + qa('.trow, .trow-head').length)
+  log('工具行数（DOM）: ' + qa('.v3-step').length)
   return out.join('\n')
 })()

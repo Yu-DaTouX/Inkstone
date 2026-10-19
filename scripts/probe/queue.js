@@ -17,6 +17,10 @@
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
   const store = window.__yanStore
+  const noticeLog = []
+  store.subscribe((s) => {
+    for (const n of s.notices ?? []) if (!noticeLog.some((x) => x.id === n.id)) noticeLog.push(n)
+  })
 
   log('=== 排队 + 中止回收（会真调模型）===')
 
@@ -28,17 +32,17 @@
     return `  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），本场景要真的生成一段回答`
   }
 
-  const ta = q('[data-testid="composer"]')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return fail('找不到输入框')
 
   setVal(ta, '请写一段 400 字左右的说明，主题是「为什么终端界面适合编码工具」。不要用工具，直接写。')
   await sleep(200)
-  q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="composer-send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
   let started = false
   for (let i = 0; i < 40; i++) {
     await sleep(300)
-    if (q('.cursor') || store.getState().session?.isStreaming) {
+    if (q('.v3-caret') || store.getState().session?.isStreaming) {
       started = true
       break
     }
@@ -92,8 +96,8 @@
   }
 
   const draftValue = () => {
-    const el = q('[data-testid="composer"]')
-    return { text: el ? el.value : null, count: qa('[data-testid="composer"]').length, same: el === ta, connected: ta.isConnected }
+    const el = q('[data-testid="composer-input"]')
+    return { text: el ? el.value : null, count: qa('[data-testid="composer-input"]').length, same: el === ta, connected: ta.isConnected }
   }
   const runtimeKey = () => {
     const s = store.getState()
@@ -109,7 +113,7 @@
   const retractButton = q('[data-testid="queue-retract"]')
   if (retractTarget && retractButton) {
     retractButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    const noticesText = () => (store.getState().notices || []).map((n) => n.text).join(' | ')
+    const noticesText = () => noticeLog.map((n) => n.text).join(' | ')
     const queueTexts = () =>
       [...store.getState().queue.steering, ...store.getState().queue.followUp].map((item) => item.text)
     let outcome = null
@@ -197,12 +201,12 @@
         (btn ? String(btn.getAttribute('data-testid')) : '无')
     )
     if (btn) {
-      const noticesBefore = (store.getState().notices ?? []).length
+      const noticesBefore = noticeLog.length
       const direct = await window.yan.removeQueued(dups[0].id)
       log('  直连 removeQueued(' + dups[0].id + ') = ' + JSON.stringify(direct))
       await sleep(1200)
       const left = snapItems().filter((i) => i.text === DUP).length
-      const fresh = (store.getState().notices ?? []).slice(noticesBefore).map((n) => `${n.type}:${n.text}`)
+      const fresh = noticeLog.slice(noticesBefore).map((n) => `${n.type}:${n.text}`)
       log('  撤回一条同文本后剩 = ' + left + ' · 新通知 = ' + JSON.stringify(fresh))
       ok(
         direct.ok === true || /已被.*接收|无法撤回/.test(direct.error ?? ''),
@@ -211,7 +215,7 @@
       )
       if (direct.ok) ok(left === dups.length - 1, '同文本只捣掉一条（FIFO）', `${left} / 原 ${dups.length}`)
       else ok(left === dups.length, '被拒时队列快照保持原样（没有连带清掉同文本）', `${left} / 原 ${dups.length}`)
-      const countRetracted = () => (store.getState().notices ?? []).filter((n) => /已撤回/.test(String(n.text))).length
+      const countRetracted = () => noticeLog.filter((n) => /已撤回/.test(String(n.text))).length
       const n1 = countRetracted()
       await store.getState().removeQueued(dups[0].id)
       await sleep(700)
@@ -228,8 +232,13 @@
 
   const pendingBeforeEsc = store.getState().queue.steering.length + store.getState().queue.followUp.length
   log('  Esc 前 pi 侧排队数: ' + pendingBeforeEsc + ' · key=' + JSON.stringify(runtimeKey()))
-  log('--- 按 Esc ---')
-  ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  log('--- 清空草稿后连按两次 Esc ---')
+  const escTarget = q('[data-testid="composer-input"]') ?? ta
+  setVal(escTarget, '')
+  await sleep(200)
+  escTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  await sleep(120)
+  escTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
 
   const escTimeline = []
   let lastDraft = draftValue().text ?? ''
@@ -241,7 +250,7 @@
     const d = draftValue().text ?? ''
     const qq = store.getState().queue
     const key = `${qq.steering.length}+${qq.followUp.length}`
-    const n = (store.getState().notices ?? []).map((x) => String(x.text)).join(' | ')
+    const n = noticeLog.map((x) => String(x.text)).join(' | ')
     if (d !== lastDraft || key !== lastQueueKey || n !== lastNotice) {
       escTimeline.push(
         `t=${(i + 1) * 100}ms draft=${JSON.stringify(d.slice(0, 24))} queue=${key} notice=${JSON.stringify(n.slice(0, 60))}`
@@ -257,7 +266,7 @@
   let stopped = false
   for (let i = 0; i < 40; i++) {
     await sleep(400)
-    if (!store.getState().session?.isStreaming && !q('.cursor')) {
+    if (!store.getState().session?.isStreaming && !q('.v3-caret')) {
       stopped = true
       break
     }
@@ -273,7 +282,7 @@
 
   const restoredInfo = draftValue()
   const restored = restoredInfo.text ?? ''
-  const escNotice = (store.getState().notices ?? []).some((n) => /放回输入框/.test(String(n.text)))
+  const escNotice = noticeLog.some((n) => /放回输入框/.test(String(n.text)))
   log('  输入框内容: ' + JSON.stringify(restored.slice(0, 120)) + ' · ' + JSON.stringify(restoredInfo))
   log('  Esc 后 key: ' + JSON.stringify(runtimeKey()) + ' · 回填通知=' + escNotice + ' · 过程出现过草稿文本=' + sawDraftAfterEsc)
   if (escNotice || sawDraftAfterEsc) {
@@ -282,10 +291,10 @@
     log('  （clear_queue 没有可回收文本：内容已被 pi 接收或在快照里只是残留，不回填）')
   }
 
-  ok(!q('.cursor'), '流式光标已消失')
+  ok(!q('.v3-caret'), '流式光标已消失')
   const roles = store.getState().messages.map((m) => m.role).join(',')
-  log('  store 消息角色: ' + roles + ' · DOM 助手消息数: ' + qa('.msg.assistant').length)
-  const lastAssistant = qa('.msg.assistant').pop()
+  log('  store 消息角色: ' + roles + ' · DOM 助手消息数: ' + qa('.v3-msg.assistant').length)
+  const lastAssistant = qa('.v3-msg.assistant').pop()
   ok(!!lastAssistant, '助手消息保留在记录里')
 
   setVal(ta, '')

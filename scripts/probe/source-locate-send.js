@@ -63,7 +63,7 @@
   out.push(`  sourcelink.sourceId=${link.sourceId}`)
   out.push(`  sourcelink.messageId=${link.messageId}`)
 
-  const el = await waitFor(() => $(`.msg.user[data-msg-id="${link.messageId}"]`), 8000, 100)
+  const el = await waitFor(() => $(`.v3-msg.user[data-msg-id="${link.messageId}"]`), 8000, 100)
   ok(!!el, '关联指向的那条消息就在界面上', link.messageId)
   ok(
     !!el && (el.textContent ?? '').includes('YAN-SOURCELINK-LIVE'),

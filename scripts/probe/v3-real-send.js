@@ -74,7 +74,7 @@
     }
 
     out.push('')
-    out.push('--- 1. 流式期间 RunSlot / 计时 ---')
+    out.push('--- 1. 流式期间工作行 / 计时 ---')
     const statsBefore = store.getState().stats?.tokens?.total ?? 0
     timeline.length = 0
     recording = true
@@ -84,16 +84,15 @@
     )
     check(await until(() => runningNow(store.getState()), 45000), '第一条进入运行中')
 
-    const sawSlot = await until(() => {
-      const el = q('composer-run')
-      return !!el && !!el.querySelector('.composer-run-time')
-    }, 30000)
-    const slotText = (q('composer-run')?.textContent ?? '').trim()
-    const timeText = (q('composer-run')?.querySelector('.composer-run-time')?.textContent ?? '').trim()
-    const phaseText = slotText.replace(timeText, '').trim()
-    check(sawSlot, `运行位出现（${JSON.stringify(slotText)}）`)
-    check(/^\d+s$|^\d+m \d+s$/.test(timeText), `运行位显示计时（${JSON.stringify(timeText)}）`)
-    check(phaseText.length > 0, `运行位显示阶段文字（${JSON.stringify(phaseText)}）`)
+    const workLine = () => document.querySelector('[data-testid="v3-turn-activity"][data-working]')
+    const workTime = () => workLine()?.querySelector('.v3-act-time:not([data-testid="v3-working-tokens"])')
+    const sawSlot = await until(() => !!workLine() && !!workTime() && workLine().getAttribute('data-quiet') !== 'true', 30000)
+    const slotText = (workLine()?.textContent ?? '').trim()
+    const timeText = (workTime()?.textContent ?? '').trim()
+    const phaseText = (workLine()?.querySelector('.v3-act-text')?.textContent ?? '').trim()
+    check(sawSlot, `对话里的工作行出现（${JSON.stringify(slotText)}）`)
+    check(/^\d+s$|^\d+m \d+s$/.test(timeText), `工作行显示计时（${JSON.stringify(timeText)}）`)
+    check(phaseText.length > 0, `工作行显示阶段文字（${JSON.stringify(phaseText)} · ${workLine()?.getAttribute('data-working')}）`)
 
     const finished = await until(() => !runningNow(store.getState()), 240000)
     recording = false

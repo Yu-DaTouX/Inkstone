@@ -96,12 +96,12 @@
 
     pollTimer = setInterval(() => {
       if (!recording) return
-      domLog.push({ t: Date.now(), tile: !!q('v3-todo'), running: runningNow(store.getState()) })
+      domLog.push({ t: Date.now(), tile: !!q('wb-rail-progress'), running: runningNow(store.getState()) })
     }, 100)
 
     check(await until(() => runningNow(store.getState()), 45000), '回合进入运行中')
-    const tileWhileRunning = await until(() => !!q('v3-todo') && runningNow(store.getState()), 240000)
-    check(tileWhileRunning, '运行中侧栏待办磁贴实时出现')
+    const tileWhileRunning = await until(() => !!q('wb-rail-progress') && runningNow(store.getState()), 240000)
+    check(tileWhileRunning, '运行中会话栏「进度」卡实时出现（wb-rail-progress）')
 
     const finished = await until(() => !runningNow(store.getState()), 300000)
     recording = false
@@ -125,7 +125,8 @@
     const monotonic = seq.every((s, i) => i === 0 || s.done >= seq[i - 1].done)
     check(monotonic, '完成数单调不减（没有回退）')
 
-    check(await until(() => (q('v3-todo-count')?.textContent ?? '').trim() === '3/3', 10000), '磁贴计数显示 3/3')
+    const railCount = () => (q('wb-rail-progress')?.querySelector('.wb-tile-summary')?.textContent ?? '').replace(/\s+/g, '')
+    check(await until(() => railCount() === '3/3', 10000), `进度卡计数显示 3 / 3（实际 ${JSON.stringify(railCount())}）`)
     const rows = qa('v3-todo-row')
     check(rows.length === 3, `磁贴渲染 3 行（实际 ${rows.length}）`)
     check(rows.length > 0 && rows.every((r) => r.getAttribute('data-kind') === 'done'), '三行状态都是 done（全勾）')

@@ -17,7 +17,7 @@
   log('=== 模型 → yan browser（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
-  const ta = q('[data-testid="composer"]') ?? q('textarea')
+  const ta = q('[data-testid="composer-input"]') ?? q('textarea')
   if (!ta) return fail('找不到输入框')
 
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
@@ -30,7 +30,7 @@
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(250)
 
-  const send = q('[data-testid="send"]')
+  const send = q('[data-testid="composer-send"]')
   if (!send || send.disabled) return fail('发送键不可用')
   send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
@@ -41,7 +41,7 @@
   while (Date.now() < deadline) {
     await sleep(500)
     if (roundRunning()) started = true
-    if (started && !roundRunning() && !qa('.trow[data-state="running"]').length) {
+    if (started && !roundRunning() && !qa('.v3-step[data-state="running"]').length) {
       await sleep(1000)
       broke = true
       break
@@ -58,10 +58,14 @@
       calls.push({
         name: c.name,
         command: String(c.args?.command ?? m.text ?? ''),
-        output: String(c.output ?? '')
+        output: String(c.output ?? ''),
+        status: c.status,
+        ms: c.endedAt && c.startedAt ? c.endedAt - c.startedAt : null
       })
     }
   }
+  log('  工具状态：' + JSON.stringify(calls.map((c) => `${c.command.replace(/\s+/g, ' ').slice(0, 40)} → ${c.status}${c.ms !== null ? ` ${c.ms}ms` : ''} ${c.output.replace(/\s+/g, ' ').slice(0, 80)}`)))
+  log(`  runner.running=${!!store.getState().runners?.find((r) => (r.runId ?? r.id) === store.getState().activeRunnerId)?.running} 运行中工具行=${qa('.v3-step[data-state="running"]').length}`)
   const bashCalls = calls.filter((c) => c.name === 'bash')
   const yanCalls = bashCalls.filter((c) => /(^|[\s"'])yan[\s"']/.test(c.command))
   const navigateCalls = bashCalls.filter((c) => /yan browser navigate|yan browser open/.test(c.command))
@@ -100,6 +104,6 @@
   ok(!/unknown_command/.test(text), '没有 unknown_command（命令三处登记一致）')
 
   log('--- 说明 ---')
-  log('工具行数（DOM）: ' + qa('.trow, .trow-head').length)
+  log('工具行数（DOM）: ' + qa('.v3-step').length)
   return out.join('\n')
 })()

@@ -39,12 +39,12 @@
       '第 3 条按预期应该被拒（身份只认宿主绑定的项目）——把它的错误原文贴出来。'
     ].join(' ')
 
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     if (!ta) return '✗ 找不到输入框'
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, prompt)
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(200)
-    const send = q('[data-testid="send"]')
+    const send = q('[data-testid="composer-send"]')
     if (!send || send.disabled) return '✗ 发送键不可用'
     send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 

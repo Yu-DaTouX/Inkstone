@@ -22,10 +22,10 @@
   }
   const sid = () => store.getState().session?.sessionId ?? ''
   const send = async (text) => {
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     setVal(ta, text)
     await sleep(250)
-    q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    q('[data-testid="composer-send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   }
   const waitTurn = async () => {
     const before = store.getState().messages.filter((m) => m.role === 'assistant' && m.text).length
@@ -33,7 +33,7 @@
       () =>
         store.getState().messages.filter((m) => m.role === 'assistant' && m.text).length > before &&
         !store.getState().session?.isStreaming &&
-        !q('.cursor'),
+        !q('.v3-caret'),
       120000
     )
   }
@@ -106,19 +106,21 @@
 
   const regen = await window.yan.regenerateTitle(sid())
   log(`  重生成：${JSON.stringify(regen)}`)
-  ok(regen?.ok === true && !!regen.title, '手动名存在时仍能生成候选')
-  ok(store.getState().manualTitles[sid()] === manual, '候选**没有**直接顶掉手动名（要用户采用）')
+  ok(regen?.ok === true && !!regen.title, '手动名存在时主进程仍能生成新标题')
+  ok(store.getState().manualTitles[sid()] === manual, '主进程生成标题本身不改手动名（由界面决定是否换上）')
+  const seenNotices = []
+  const unsubscribe = store.subscribe((s) => {
+    for (const n of s.notices ?? []) if (!seenNotices.includes(n.text)) seenNotices.push(n.text)
+  })
   await store.getState().regenerateTitle(sid())
-  await sleep(500)
-  const candidate = store.getState().titleCandidates[sid()]
-  log(`  候选：${JSON.stringify(candidate)}`)
-  ok(!!candidate, '重生成把结果放成「候选」（界面给采用/忽略）')
-  if (candidate) {
-    await store.getState().acceptTitleCandidate(sid())
-    await sleep(500)
-    ok(store.getState().manualTitles[sid()] === candidate, '采用后手动名变成候选内容', String(store.getState().manualTitles[sid()]))
-    ok(!store.getState().titleCandidates[sid()], '采用后候选被清掉（不会一直挂着）')
-  }
+  await sleep(800)
+  unsubscribe()
+  const replaced = store.getState().manualTitles[sid()]
+  log(`  重新生成后手动名：${JSON.stringify(replaced)} · 通知：${JSON.stringify(seenNotices)}`)
+  ok(!!replaced && replaced !== manual, '界面「重新生成标题」对手动改过名的会话直接换上新标题', String(replaced))
+  const onDiskAfter = await window.yan.manualTitles()
+  ok(onDiskAfter?.[sid()] === replaced, '换上的新标题落盘', JSON.stringify(onDiskAfter?.[sid()]))
+  ok(seenNotices.some((text) => replaced && text.includes(replaced)), '提示里写出新标题', JSON.stringify(seenNotices))
 
   await store.getState().setManualTitle(sid(), '')
   await sleep(400)

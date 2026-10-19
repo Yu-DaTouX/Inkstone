@@ -34,15 +34,15 @@
   const assistants = () => store.getState().messages.filter((m) => m.role === 'assistant' && (m.text || m.thinking))
   const last = () => assistants().slice(-1)[0]
   const send = async (text) => {
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     setVal(ta, text)
     await sleep(250)
-    q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    q('[data-testid="composer-send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   }
   const waitReply = async (before, ms = 120000) => {
     const done = await until(() => {
       const s = store.getState().session
-      return assistants().length > before && !s?.isStreaming && !q('.cursor')
+      return assistants().length > before && !s?.isStreaming && !q('.v3-caret')
     }, ms)
     await sleep(600)
     return done
