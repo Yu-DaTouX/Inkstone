@@ -1,5 +1,5 @@
 @layer features {
-  .v3-empty-page {
+  .v3-empty.v3-empty-page {
     container-type: inline-size;
     padding: 0;
   }

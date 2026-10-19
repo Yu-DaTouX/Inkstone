@@ -142,7 +142,7 @@
   .v3-composer {
     flex: none;
     width: 100%;
-    padding: var(--s-6) var(--col-pad-r) var(--s-20) var(--col-pad-l);
+    padding: 0 var(--col-pad-r) var(--s-20) var(--col-pad-l);
   }
 
   .v3-composer:has(.composer-usage) {

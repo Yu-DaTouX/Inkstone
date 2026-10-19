@@ -12,7 +12,8 @@
   .usage-page-activity { margin-top: var(--s-32); margin-bottom: var(--s-32); }
   .usage-page-controls { display: flex; justify-content: space-between; align-items: center; gap: var(--s-12); }
   .usage-page-controls h2 { font-size: var(--t-body); font-weight: 500; }
-  .usage-page-heat-scroll { overflow-x: auto; padding: var(--s-8) 0; }
+  .usage-page-heat-scroll { overflow-x: auto; padding: var(--s-8) 0; scrollbar-width: none; }
+  .usage-page-heat-scroll::-webkit-scrollbar { display: none; }
   .usage-page-heat.start-heat { --cell: 12px; gap: 3px; width: max-content; overflow: visible; }
   .usage-page-months { display: grid; grid-auto-flow: column; grid-auto-columns: 15px; width: max-content; font-size: var(--t-meta); color: var(--fg3); }
   .usage-page-models h2 { font-size: var(--t-body); font-weight: 500; }
