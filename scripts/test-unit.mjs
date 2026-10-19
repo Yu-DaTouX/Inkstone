@@ -20,6 +20,7 @@ import { runExecutionAdmissionTests } from './test-execution-admission.mjs'
 import { runEpochSnapshotTests } from './test-epoch-snapshot.mjs'
 import { runAccountQuotaPaneTests } from './test-account-quota-pane.mjs'
 import { runFileContentSearchTests } from './test-file-content-search.mjs'
+import { runFileEditorTests } from './test-file-editor.mjs'
 
 await import('./test-live-synthetic-isolation.mjs')
 await import('./test-ui-survey-regressions.mjs')
@@ -925,6 +926,17 @@ const fileContentSearch = await import('../node_modules/esbuild/lib/main.js').th
   }).then(() => import('../out/test/file-content-search.mjs'))
 )
 
+const fileEditor = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/file-editor.ts'],
+    outfile: 'out/test/file-editor.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/file-editor.mjs'))
+)
+
 const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/renderer/src/features/composer/slash-query.ts'],
@@ -1601,6 +1613,7 @@ await runFileListingTests(ok, fileListing)
 await runFilesWatchTests(ok, filesWatch)
 await runOpenGuardTests(ok, openGuard)
 await runFileContentSearchTests(ok, fileContentSearch)
+await runFileEditorTests(ok, fileEditor)
 
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)

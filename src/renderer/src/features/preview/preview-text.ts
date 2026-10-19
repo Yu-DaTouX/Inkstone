@@ -25,6 +25,17 @@ export interface PreviewText {
   closeTab: string
   closeAllTabs: string
   crumbsLabel: string
+  edit: string
+  viewMode: string
+  save: string
+  saving: string
+  saved: string
+  dirty: string
+  conflict: string
+  saveFailed: string
+  reload: string
+  discard: string
+  closeEditor: string
 }
 
 const ZH: PreviewText = {
@@ -51,7 +62,18 @@ const ZH: PreviewText = {
   tabsLabel: '打开的文件',
   closeTab: '关闭',
   closeAllTabs: '关闭全部',
-  crumbsLabel: '文件路径'
+  crumbsLabel: '文件路径',
+  edit: '编辑',
+  viewMode: '回到预览',
+  save: '保存',
+  saving: '正在保存…',
+  saved: '已保存',
+  dirty: '已修改，未保存',
+  conflict: '文件已被外部改动，未覆盖',
+  saveFailed: '保存失败',
+  reload: '重新加载',
+  discard: '放弃改动',
+  closeEditor: '关闭编辑'
 }
 
 const EN: PreviewText = {
@@ -78,7 +100,18 @@ const EN: PreviewText = {
   tabsLabel: 'Open files',
   closeTab: 'Close',
   closeAllTabs: 'Close all',
-  crumbsLabel: 'File path'
+  crumbsLabel: 'File path',
+  edit: 'Edit',
+  viewMode: 'Back to preview',
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved',
+  dirty: 'Unsaved changes',
+  conflict: 'File changed on disk; not overwritten',
+  saveFailed: 'Could not save',
+  reload: 'Reload',
+  discard: 'Discard changes',
+  closeEditor: 'Close editor'
 }
 
 export function previewText(lang: Lang): PreviewText {
