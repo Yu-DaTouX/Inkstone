@@ -102,7 +102,7 @@
     ok(await waitCompaction(false), '关闭状态经 RPC 回传到当前会话')
     ok((await window.yan.setAutoCompaction(true)).ok === true, '原生 pi 自动压缩可重新开启')
     ok(await waitCompaction(true), '开启状态经 RPC 回传到当前会话')
-    await openSettings('context')
+    await openSettings('session')
     ok(!!(await waitElement('[data-testid="v3-context-settings"]').catch(() => null)), '上下文设置页在打包态渲染')
     await closeSettings()
     ok(!settingsOpen(), '关闭设置后回到会话')
