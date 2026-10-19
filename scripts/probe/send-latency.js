@@ -11,23 +11,23 @@
 
   const rows = []
   for (let n = 0; n < 1; n++) {
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     setter.call(ta, '只回复两个字：好的')
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(300)
-    const users0 = qa('.msg.user').length
-    const send = q('[data-testid="send"]')
+    const users0 = qa('.v3-msg.user').length
+    const send = q('[data-testid="composer-send"]')
     const t = { click: performance.now() }
     send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     const deadline = t.click + 90_000
     while (performance.now() < deadline) {
       const now = performance.now()
-      if (!t.user && qa('.msg.user').length > users0) t.user = now
+      if (!t.user && qa('.v3-msg.user').length > users0) t.user = now
       if (!t.run && store.getState().session?.isStreaming) t.run = now
-      if (!t.act && q('.tact')) t.act = now
-      const reasonTxt = qa('.reason-peek, .reason-body').map((e) => e.textContent).join('')
+      if (!t.act && q('[data-testid="v3-turn-activity"][data-working]')) t.act = now
+      const reasonTxt = qa('.v3-think-peek, .v3-think-body').map((e) => e.textContent).join('')
       if (!t.think && reasonTxt.trim()) t.think = now
-      const md = qa('.msg.assistant .md').map((e) => e.textContent).join('')
+      const md = qa('.v3-msg.assistant .v3-prose').map((e) => e.textContent).join('')
       if (!t.text && md.trim()) t.text = now
       if (t.text && !store.getState().session?.isStreaming) {
         t.done = now

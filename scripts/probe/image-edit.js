@@ -19,10 +19,10 @@
 
   try {
     for (let i = 0; i < 60; i++) {
-      if (store?.getState().settings && q('[data-testid="composer"]')) break
+      if (store?.getState().settings && q('[data-testid="composer-input"]')) break
       await sleep(250)
     }
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     if (!ta) return '✗ 找不到输入框'
 
     out.push('=== DeepSeek 驱动图生图 ===')
@@ -30,7 +30,7 @@
     setter.call(ta, prompt)
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(200)
-    const send = q('[data-testid="send"]')
+    const send = q('[data-testid="composer-send"]')
     if (!send || send.disabled) return '✗ 发送键不可用'
     send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
@@ -38,7 +38,7 @@
     const deadline = Date.now() + 330_000
     let idleSince = 0
     while (Date.now() < deadline) {
-      const busy = store.getState().session?.isStreaming || !!q('.cursor')
+      const busy = store.getState().session?.isAgentRunning || store.getState().session?.isStreaming || !!q('.v3-caret')
       if (busy) idleSince = 0
       else if (!idleSince) idleSince = Date.now()
       else if (Date.now() - idleSince > 12_000) break
@@ -47,7 +47,7 @@
     await sleep(1500)
 
     const text = document.body.innerText || ''
-    const answers = qa('.msg.assistant .md').map((e) => e.textContent.trim()).filter(Boolean)
+    const answers = qa('.v3-msg.assistant .v3-prose').map((e) => e.textContent.trim()).filter(Boolean)
     const last = answers[answers.length - 1] ?? ''
     out.push('  模型最终回答: ' + JSON.stringify(last.slice(0, 400)))
     ok(!/不是内部或外部命令|command not found|is not recognized|宿主能力服务不可用|YAN_CLI_URL/i.test(text), '没有 yan 不可用错误')

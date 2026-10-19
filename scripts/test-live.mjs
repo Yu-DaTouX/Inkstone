@@ -215,7 +215,7 @@ const CASES = {
     probe: 'scripts/probe/mcp-search-model.js',
     delay: 10000,
     cost: 1,
-    budget: 260000,
+    budget: 360000,
     model: 'commandcode/deepseek/deepseek-v4.1-flash'
   },
 
@@ -3291,7 +3291,8 @@ async function main() {
               title: 'MCP 单测夹具服务',
               transport: 'stdio',
               command: process.execPath,
-              args: [join(process.cwd(), 'scripts', 'lib', 'mcp-stdio-fixture.mjs')]
+              args: [join(process.cwd(), 'scripts', 'lib', 'mcp-stdio-fixture.mjs')],
+              env: { YAN_MCP_FIXTURE_MARKER: join(sandboxRoot, 'mcp-probe-marker.txt') }
             }
           ]
         },

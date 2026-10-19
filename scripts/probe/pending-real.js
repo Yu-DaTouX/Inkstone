@@ -10,8 +10,8 @@
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const pressEnter = (el) =>
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  const pressAltEnter = (el) =>
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, bubbles: true, cancelable: true }))
   const store = window.__yanStore
   if (!store) return '  ⤺ 跳过：没有 window.__yanStore（探针没被注入）'
 
@@ -25,7 +25,7 @@
     return `  ⤺ 跳过：pi 未就绪（conn=${store.getState().conn}），本场景要真的跑一个回合`
   }
 
-  const ta = q('[data-testid="composer"]')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return '  ✗ 找不到输入框'
   ta.id = 'probe-composer'
 
@@ -46,7 +46,7 @@
   out.push('=== 1. 先让真模型开始一个回合 ===')
   setVal(ta, '请写一段 400 字左右的说明，主题是「为什么纯文本界面适合编码工具」。不要调用工具，直接写。')
   await sleep(200)
-  q('[data-testid="send"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  q('[data-testid="composer-send"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
   let started = false
   for (let i = 0; i < 60; i++) {
@@ -60,15 +60,15 @@
   if (!started) return out.join('\n')
 
   out.push('')
-  out.push('=== 2. 回合跑着时按 Enter：直接以排队方式投给 pi ===')
+  out.push('=== 2. 回合跑着时按 Alt+Enter：直接以排队方式投给 pi（Enter 是插话）===')
   const MSG = 'YAN-PENDING-REAL（回合结束后应作为排队消息处理）'
   setVal(ta, MSG)
   await sleep(150)
-  pressEnter(ta)
+  pressAltEnter(ta)
   await sleep(400)
   out.push(`  pendingSends = ${pending().length} · runners[active].running = ${roundRunning()} · 投递方式 = ${JSON.stringify(modes)}`)
   ok(pending().length === 0, '没有悬在待定区（运行中默认直接排队）')
-  ok(modes.includes('followUp'), '运行中按 Enter 以 followUp 投递')
+  ok(modes.includes('followUp'), '运行中按 Alt+Enter 以 followUp 投递')
   ok(roundRunning() === true, '此时回合级 running = true')
 
   out.push('')

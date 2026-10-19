@@ -24,9 +24,9 @@
   ok(typeof status?.state === 'string', 'agentStatus 返回状态')
   ok(status.state === 'ready', `agentStatus.state = ${status.state}`)
 
-  ok(!q('.connbar'), '没有显示连接失败条')
+  ok(!q('[data-testid="v3-conn-banner"]'), '没有显示连接失败条')
 
-  const ta = q('[data-testid="composer"]')
+  const ta = q('[data-testid="composer-input"]')
   ok(ta && !ta.disabled, '输入框可用（证明 ready 真的生效了，不只是变量对）')
 
   ok(!q('.tb-sync'), '标题栏没有「已连接 · 工作目录」那一段')
@@ -38,15 +38,15 @@
   setter.call(ta, '回复两个字：收到')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(200)
-  const send = q('[data-testid="send"]')
+  const send = q('[data-testid="composer-send"]')
   ok(!send.disabled, '发送键可用')
   send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
   let replied = false
   for (let i = 0; i < 120; i++) {
     await sleep(500)
-    const txt = [...document.querySelectorAll('.msg.assistant .md')].map((e) => e.textContent).join('')
-    if (txt.trim().length > 0 && !store.getState().session?.isStreaming && !q('.cursor')) {
+    const txt = [...document.querySelectorAll('.v3-msg.assistant .v3-prose')].map((e) => e.textContent).join('')
+    if (txt.trim().length > 0 && !store.getState().session?.isStreaming && !q('.v3-caret')) {
       replied = true
       break
     }

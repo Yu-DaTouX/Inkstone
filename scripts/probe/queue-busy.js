@@ -19,8 +19,13 @@
   const queued = (text) => [...st().queue.steering, ...st().queue.followUp].some((i) => i.text === text)
   const steering = (text) => st().queue.steering.some((i) => i.text === text)
   const inChat = (text) => st().messages.some((m) => m.role === 'user' && String(m.text ?? '') === text)
-  const notices = () => (st().notices || []).map((n) => n.text).join(' | ')
-  const draft = () => q('[data-testid="composer"]')?.value ?? null
+  const noticeLog = []
+  store.subscribe((s) => {
+    for (const n of s.notices ?? []) if (!noticeLog.some((x) => x.id === n.id)) noticeLog.push(n)
+  })
+  let noticeMark = 0
+  const notices = () => noticeLog.slice(noticeMark).map((n) => n.text).join(' | ')
+  const draft = () => q('[data-testid="composer-input"]')?.value ?? null
   const rowButton = (text, testId) => {
     const row = [...document.querySelectorAll('[data-testid="queue-row"]')].find((r) =>
       (r.textContent ?? '').includes(text)
@@ -34,13 +39,13 @@
   }
   if (st().conn !== 'ready') return `  ⤺ 跳过：pi 未就绪（conn=${st().conn}）`
 
-  const ta = q('[data-testid="composer"]')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return '  ✗ 找不到输入框'
 
   try {
     setVal(ta, '只做一件事：执行 bash 命令 `sleep 90`，等它结束后回答「完成」。不要执行别的命令。')
     await sleep(200)
-    click(q('[data-testid="send"]'))
+    click(q('[data-testid="composer-send"]'))
 
     let toolRunning = false
     for (let i = 0; i < 120; i++) {
@@ -61,6 +66,7 @@
     const steerBtn = rowButton(A, 'queue-steer')
     ok(!!steerBtn, 'A 那一行有「插队」按钮')
     if (steerBtn) {
+      noticeMark = noticeLog.length
       click(steerBtn)
       await sleep(2000)
       log('  点插队 → notices = ' + JSON.stringify(notices().slice(-160)))
@@ -77,6 +83,7 @@
     const retractBtn = rowButton(B, 'queue-retract')
     ok(!!retractBtn, 'B 那一行有「撤回」按钮')
     if (retractBtn) {
+      noticeMark = noticeLog.length
       click(retractBtn)
       await sleep(2000)
       log('  点撤回 → notices = ' + JSON.stringify(notices().slice(-160)))

@@ -29,7 +29,7 @@
     localStorage.setItem('yan.onboarded', '1')
     await sleep(400)
 
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     ok(!!ta, '输入框可用')
     if (!ta) return out.join('\n')
 
@@ -38,9 +38,9 @@
     setVal(ta, '@README')
     const menuUp = await until(() => !!q('[data-testid="at-menu"]'), 8000)
     ok(menuUp, '`@README` 打开了文件补全菜单')
-    const hasItem = await until(() => !!q('[data-testid="at-menu"] .slash-item'), 8000)
+    const hasItem = await until(() => !!q('[data-testid="at-menu"] .cmp-item'), 8000)
     ok(hasItem, '菜单里出现了候选文件')
-    const first = q('[data-testid="at-menu"] .slash-item')
+    const first = q('[data-testid="at-menu"] .cmp-item')
     out.push('  第一项 = ' + JSON.stringify((first?.textContent ?? '').slice(0, 40)))
     first?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
@@ -52,7 +52,7 @@
     out.push('=== 2. 真实发送 ===')
     setVal(ta, `${afterPick.trim()} 请用 read 工具打开它，把第一行原样回复给我`)
     await sleep(300)
-    const send = q('[data-testid="send"]')
+    const send = q('[data-testid="composer-send"]')
     ok(!!send && !send.disabled, '发送键可用')
     send.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
