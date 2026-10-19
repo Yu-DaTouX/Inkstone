@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { useSplitView, type SplitSessionRef } from '../../state/split-view'
 import { useUiV3 } from '../../state/ui-v3'
-import { bindPreviewPath, previewPathFor } from './preview-state'
+import {
+  closeAllPreviewTabs,
+  closeOtherPreviewTabs,
+  closePreviewTab,
+  openPreviewTab,
+  previewPathFor,
+  previewTabsFor,
+  selectPreviewTab,
+  type PreviewBindings,
+  type PreviewTabs
+} from './preview-state'
 import { canTileTool, roomForAnotherTile, tileCapacity, toolTileIndex, toolTileRef, visibleToolTiles } from './tool-tile-refs'
 import type { WorkbenchTabId } from './types'
 
@@ -119,14 +129,26 @@ export function revealToolTile(tab: WorkbenchTabId): boolean {
 }
 
 interface PreviewBindingsState {
-  bindings: ReadonlyMap<string, string>
+  bindings: PreviewBindings
   bind(ownerKey: string | null, path: string): void
+  select(ownerKey: string | null, path: string): void
+  close(ownerKey: string | null, path: string): void
+  closeOthers(ownerKey: string | null, keep: string): void
+  closeAll(ownerKey: string | null): void
 }
 
 export const usePreviewBindings = create<PreviewBindingsState>((set, get) => ({
   bindings: new Map(),
-  bind: (ownerKey, path) => set({ bindings: bindPreviewPath(get().bindings, ownerKey, path) })
+  bind: (ownerKey, path) => set({ bindings: openPreviewTab(get().bindings, ownerKey, path) }),
+  select: (ownerKey, path) => set({ bindings: selectPreviewTab(get().bindings, ownerKey, path) }),
+  close: (ownerKey, path) => set({ bindings: closePreviewTab(get().bindings, ownerKey, path) }),
+  closeOthers: (ownerKey, keep) => set({ bindings: closeOtherPreviewTabs(get().bindings, ownerKey, keep) }),
+  closeAll: (ownerKey) => set({ bindings: closeAllPreviewTabs(get().bindings, ownerKey) })
 }))
+
+export function usePreviewTabs(ownerKey: string | null): PreviewTabs | undefined {
+  return usePreviewBindings((s) => previewTabsFor(s.bindings, ownerKey))
+}
 
 export function usePreviewPath(ownerKey: string | null): string | undefined {
   return usePreviewBindings((s) => previewPathFor(s.bindings, ownerKey))
