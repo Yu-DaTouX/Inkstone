@@ -144,10 +144,12 @@ try {
   guide.default({ on: (name, fn) => { if (name === 'before_agent_start') hook = fn } })
   const sectionsText = {}
   const resultText = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections: sectionsText } }, { model: { input: ['text'] } })
-  ok(sectionsText.inkstone_computer_use === textGuide && resultText.systemPrompt.includes(textGuide), '纯文字模型：分区与系统提示都用纯文字引导')
+  ok(sectionsText.inkstone_computer_use === textGuide && resultText === undefined, '纯文字模型：只写具名分区，不再改系统提示')
   const sectionsVision = {}
   const resultVision = hook({ systemPrompt: 'BASE', systemPromptOptions: { sections: sectionsVision } }, { model: { input: ['text', 'image'] } })
-  ok(sectionsVision.inkstone_computer_use === visionGuide && resultVision.systemPrompt.includes(visionGuide), '支持图片的模型：用截图文件引导')
+  ok(sectionsVision.inkstone_computer_use === visionGuide && resultVision === undefined, '支持图片的模型：分区用截图文件引导')
+  const flat = hook({ systemPrompt: 'BASE' }, { model: { input: ['text'] } })
+  ok(flat?.systemPrompt.startsWith('BASE') && flat.systemPrompt.includes(textGuide), '没有分区时退回拼接系统提示')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

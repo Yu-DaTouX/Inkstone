@@ -71,6 +71,8 @@
     }
   })
 
+  const settledPush = (sessionId, outcome) => ({ ch: 'turn-settled', payload: { sessionId, outcome } })
+
   log('=== 1. 默认关，一声不出 ===')
   await setSound({ enabled: false })
   await sleep(50)
@@ -96,6 +98,7 @@
   store.getState().applyPush(statePush('probe-b', true))
   const d0 = starts
   store.getState().applyPush(statePush('probe-b', false))
+  store.getState().applyPush(settledPush('probe-b', 'completed'))
   await waitFor(() => starts > d0)
   const doneN = starts - d0
   ok(doneN > 0, `回合完成出声（${doneN} 个音符）`)
@@ -144,6 +147,7 @@
   await sleep(300)
   store.getState().applyPush(statePush('probe-d', true))
   store.getState().applyPush(statePush('probe-d', false))
+  store.getState().applyPush(settledPush('probe-d', 'completed'))
   await waitFor(() => starts > d1)
   ok(starts > d1, `done 仍开着，照常响（+${starts - d1}）`)
 
