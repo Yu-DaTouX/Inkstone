@@ -52,7 +52,7 @@ import { projectPackageDirs } from './packages'
 import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { mergeCommandDescriptors } from './command-registry'
-import { generateTitle, manualTitleOf } from './title'
+import { cachedTitles, generateTitle, manualTitleOf, setManualTitle } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
 import { SessionEntriesLite } from './session-entries-lite'
 import { localizeImage } from './image-store'
@@ -4273,6 +4273,11 @@ export class AgentController extends EventEmitter {
     const titleLifecycle = this.titleLifecycle
     if (!st || !rpc || this.stopping || (opts.sessionId && st.sessionId !== opts.sessionId)) return null
     if (!opts.lockHeld && this.titleTried.has(st.sessionId)) return null
+    const automatic = !opts.force && !opts.candidate
+    if (automatic && st.sessionName) {
+      await this.adoptExternalTitle(st.sessionId, st.sessionName)
+      return null
+    }
 
     const users = this.messages.filter(
       (m) => m.role === 'user' && (m.text.trim() || m.images?.length)
@@ -4301,6 +4306,14 @@ export class AgentController extends EventEmitter {
       if (opts.candidate) return res.title
 
       const stillSameSession = this.state?.sessionId === sessionId
+      if (stillSameSession && automatic) {
+        const fresh = await rpc.command('get_state').catch(() => null)
+        const current = fresh?.success ? String((fresh.data as { sessionName?: unknown } | undefined)?.sessionName ?? '').trim() : ''
+        if (current && current !== res.title) {
+          await this.adoptExternalTitle(sessionId, current)
+          return null
+        }
+      }
       if (stillSameSession && this.lastTitle !== res.title) {
         this.lastTitle = res.title
         const ok = await this.rpc?.command('set_session_name', { name: res.title })
@@ -4314,6 +4327,18 @@ export class AgentController extends EventEmitter {
       return null
     } finally {
       if (!opts.lockHeld) this.titleTried.delete(sessionId)
+    }
+  }
+
+  private async adoptExternalTitle(sessionId: string, name: string): Promise<void> {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    try {
+      if ((await manualTitleOf(sessionId)) === trimmed) return
+      if ((await cachedTitles())[sessionId] === trimmed) return
+      await setManualTitle(sessionId, trimmed)
+    } catch (e) {
+      console.error('[agent] 记录外部标题失败：', e)
     }
   }
 

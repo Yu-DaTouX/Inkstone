@@ -44,6 +44,8 @@ import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom
 import { BrowserController } from './browser'
 import { openableExternalUrl } from './external-url'
 import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, resizeTerminal, setTerminalSink, writeTerminal } from './terminal'
+import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
+import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -1079,55 +1081,40 @@ async function shutdown(): Promise<void> {
   panePopout?.dispose()
   paneTerminal?.dispose()
   paneBrowserTransfer?.dispose()
-  try {
-    await remoteAccess?.stop()
-  } catch {
-  }
-  remoteAccess = null
-  try {
-    await runners?.stopAll()
-  } catch {
-  }
-  try {
-    mcpAppViewService?.close()
-  } catch (error) {
-    reportMainError('mcp-app-view-shutdown', error)
-  }
-  mcpAppViewService = null
-  appViewForeground = null
-  try {
-    await closeMcpAppHost()
-  } catch {
-  }
-  try {
-    await subagentService.current()?.stopAll()
-  } catch {
-  }
-  try {
-    await runsHost?.dispose()
-  } catch (error) {
-    reportMainError('runs-host-shutdown', error)
-  }
-  runsHost = null
-  reviewRuns = null
-  try {
-    await browser?.dispose()
-  } catch {
-  }
-  try {
-    disposeTerminals()
-  } catch {
-  }
-  await releaseDesktopDataRoot?.().catch((error) => reportMainError('data-root-unlock', error))
+  await runShutdownSteps(
+    [
+      { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
+      { name: 'runners', run: () => runners?.stopAll() },
+      {
+        name: 'mcp-app-view',
+        run: () => {
+          try { mcpAppViewService?.close() } finally { mcpAppViewService = null; appViewForeground = null }
+        }
+      },
+      { name: 'mcp-app-host', run: () => closeMcpAppHost() },
+      { name: 'subagents', run: () => subagentService.current()?.stopAll() },
+      { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null; reviewRuns = null } } },
+      { name: 'browser', run: () => browser?.dispose() },
+      { name: 'terminals', run: () => disposeTerminals() },
+      { name: 'data-root-unlock', run: () => releaseDesktopDataRoot?.() }
+    ],
+    (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
+  )
 }
 
-type ExitChoice = 'cancel' | 'save' | 'interrupt'
 type ExitResult = { action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting' }
 
 function probeExitChoice(): ExitChoice | undefined {
   if (!process.env.YAN_PROBE) return undefined
-  const value = process.env.YAN_EXIT_CHOICE
-  return value === 'cancel' || value === 'save' || value === 'interrupt' ? value : undefined
+  return parseProbeChoice(process.env.YAN_EXIT_CHOICE)
+}
+
+function quitActivity(): QuitActivity {
+  return {
+    sessionsBusy: runners?.hasBusy() === true,
+    runningSubagents: subagentService.current()?.runningCount ?? 0,
+    terminalWorking: hasWorkingTerminal()
+  }
 }
 
 function showMainWindow(): void {
@@ -1290,20 +1277,22 @@ function requestExit(options: { relaunch?: boolean } = {}): Promise<ExitResult> 
   if (exitRequestInFlight) return exitRequestInFlight
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
-    const busy = runners?.hasBusy() === true
+    const activity = quitActivity()
+    const reasons = quitReasons(activity)
     let choice = probeExitChoice()
-    if (!choice && busy && win && !win.isDestroyed()) {
+    if (!choice && reasons.length > 0 && win && !win.isDestroyed()) {
+      const prompt = quitPrompt(activity, reasons)
       const response = await dialog.showMessageBox(win, {
         type: 'warning',
         title: '退出砚',
-        message: '仍有会话正在运行。请选择退出方式。',
-        detail: '保存并退出会记录运行实例快照；中断退出会立即停止当前任务。取消会继续把窗口留在托盘。',
-        buttons: ['取消', '保存并退出', '中断退出'],
+        message: prompt.message,
+        detail: prompt.detail,
+        buttons: prompt.buttons,
         defaultId: 1,
         cancelId: 0,
         noLink: true
       })
-      choice = response.response === 2 ? 'interrupt' : response.response === 1 ? 'save' : 'cancel'
+      choice = choiceFromResponse(response.response)
     }
     if (!choice) choice = 'save'
     if (choice === 'cancel') return { action: 'cancelled' }
@@ -3349,6 +3338,11 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (e) => {
+  if (!shuttingDown && needsQuitConfirm({ quitting: isQuitting, reasons: quitReasons(quitActivity()), hasWindow: !!win && !win.isDestroyed() })) {
+    e.preventDefault()
+    void requestExit()
+    return
+  }
   isQuitting = true
   if (shuttingDown) return
   e.preventDefault()

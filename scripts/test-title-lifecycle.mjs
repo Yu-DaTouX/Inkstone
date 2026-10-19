@@ -19,7 +19,7 @@ try {
       api.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'fixture' }))
       api.onLoad({ filter: /^electron$/, namespace: 'fixture' }, () => ({ contents: 'export const app={getPath:()=>""}; export class BrowserWindow{}; export const session={};', loader: 'js' }))
       api.onResolve({ filter: /^\.\/title$/ }, () => ({ path: 'title', namespace: 'fixture' }))
-      api.onLoad({ filter: /^title$/, namespace: 'fixture' }, () => ({ contents: 'export const generateTitle=()=>globalThis.__titleFixture.promise; export const manualTitleOf=async()=>undefined;', loader: 'js' }))
+      api.onLoad({ filter: /^title$/, namespace: 'fixture' }, () => ({ contents: 'export const generateTitle=()=>globalThis.__titleFixture.promise; export const manualTitleOf=async()=>undefined; export const cachedTitles=async()=>({}); export const setManualTitle=async()=>({ok:true});', loader: 'js' }))
       api.onResolve({ filter: /^\.\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' }))
       api.onLoad({ filter: /^paths$/, namespace: 'fixture' }, () => ({ contents: `export const YAN_DIR=${JSON.stringify(root)}; export const PI_AGENT_DIR=${JSON.stringify(root)}; export const PROJECT_KNOWLEDGE_ROOT=${JSON.stringify(join(root, 'knowledge'))}; export const projectKnowledgeDir=id=>PROJECT_KNOWLEDGE_ROOT+'/'+id;`, loader: 'js' }))
       api.onResolve({ filter: /^[^./]|^@/ }, args => {
@@ -70,7 +70,29 @@ try {
     assert.deepEqual(calls, ['set_session_name'])
     assert.equal(pushes.find(event => event.ch === 'session-title').payload.title, '正常标题')
   }
-  console.log('title-lifecycle: 10 assertions passed (stop等待期间、实例替换、正常返回)')
+  {
+    const { agent, calls } = makeAgent()
+    agent.state.sessionName = '外部改过的名字'
+    globalThis.__titleFixture = { promise: Promise.resolve({ title: '不该写入' }) }
+    assert.equal(await agent.maybeGenerateTitle(), null)
+    assert.deepEqual(calls, [], '已有名字的会话不再自动生成标题')
+  }
+  {
+    const { agent, pushes } = makeAgent()
+    const calls = []
+    agent.rpc = {
+      command: async command => {
+        calls.push(command)
+        return command === 'get_state' ? { success: true, data: { sessionName: '生成期间被改名' } } : { success: true }
+      },
+      close: async () => {}
+    }
+    globalThis.__titleFixture = { promise: Promise.resolve({ title: '迟到的自动标题' }) }
+    assert.equal(await agent.maybeGenerateTitle(), null)
+    assert.deepEqual(calls, ['get_state'], '写入前重读到外部名字时放弃写入')
+    assert.equal(pushes.some(event => event.ch === 'session-title'), false)
+  }
+  console.log('title-lifecycle: 14 assertions passed (stop等待期间、实例替换、正常返回、外部名字不覆盖)')
 } finally {
   delete globalThis.__titleFixture
   await rm(root, { recursive: true, force: true })
