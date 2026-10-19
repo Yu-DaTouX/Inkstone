@@ -91,7 +91,7 @@
     outline: none;
     background: transparent;
     color: var(--fg);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
   }
   .cmd-input::placeholder {
     color: var(--fg3);
@@ -103,7 +103,7 @@
 
   .cmd-prefix-hint {
     padding: var(--s-6) var(--s-16) 0;
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .cmd-list {
@@ -119,7 +119,7 @@
 
   .cmd-group__label {
     padding: var(--s-6) var(--s-8) var(--s-2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .cmd-option {
@@ -135,12 +135,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
   }
 
   .cmd-option__meta,
   .cmd-option__reason {
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

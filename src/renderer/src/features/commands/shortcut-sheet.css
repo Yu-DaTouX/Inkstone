@@ -32,7 +32,7 @@
     margin: 0;
     padding: 0 var(--s-16) var(--s-8);
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .sheet-group {
@@ -46,8 +46,8 @@
   .sheet-group__title {
     margin: 0;
     padding: var(--s-8) 0 var(--s-4);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
-    font-weight: var(--t-title-w);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    font-weight: var(--t-heading-w);
     text-transform: none;
   }
 
@@ -61,14 +61,14 @@
 
   .sheet-row__label {
     min-width: 0;
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     color: var(--fg);
   }
 
   .sheet-row__note {
     max-width: 60%;
     text-align: right;
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .sheet-keys {

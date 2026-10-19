@@ -128,7 +128,7 @@ assert.equal(shouldExecuteOnEnter({ key: 'Escape' }), false)
 
 const actionItems = [
   item({ id: 'newSession', label: '新建会话', keywords: 'new chat 新建 新对话' }),
-  item({ id: 'openRuns', label: '运行总览', keywords: 'runs overview 运行 总览' })
+  item({ id: 'openSettings', label: '运行总览', keywords: 'runs overview 运行 总览' })
 ]
 const sessionItems = [
   item({ id: 'session:/a', group: 'session', label: '修复登录', keywords: 'C:/work/app' }),
@@ -136,12 +136,12 @@ const sessionItems = [
 ]
 
 const emptyPool = limitCommands(rankCommands(actionItems, ''), 8)
-assert.deepEqual(emptyPool.map((e) => e.id), ['newSession', 'openRuns'], '空查询不铺会话')
+assert.deepEqual(emptyPool.map((e) => e.id), ['newSession', 'openSettings'], '空查询不铺会话')
 
 const runQueryPool = limitCommands(rankCommands([...actionItems, ...sessionItems], '运行'), 8)
 assert.deepEqual(
   runQueryPool.map((e) => e.id),
-  ['openRuns', 'session:/b'],
+  ['openSettings', 'session:/b'],
   '「运行」同时命中命令（前缀）与会话（标题）'
 )
 

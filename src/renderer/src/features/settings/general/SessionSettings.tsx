@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactElement } from 'react'
 import type { PiRuntimePrefs, QueueMode } from '../../../../../shared/ipc'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Switch } from '../../../ui'
+import { ListBoxItem, Select, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { SettingsGroup, SettingsMore, SettingsRow, Segmented } from '../root/controls'
 import { ContextSettings, ContextTrimRows } from '../context/ContextSettings'
@@ -11,6 +11,7 @@ import { piNativeText } from './pi-native-text'
 
 const ARCHIVE_OPTIONS = [0, 7, 14, 30] as const
 const QUEUE_MODES: QueueMode[] = ['one-at-a-time', 'all']
+const FOLLOW_SESSION = 'follow'
 
 export function SessionSettings(): ReactElement {
   const { lang } = useI18n()
@@ -24,6 +25,9 @@ export function SessionSettings(): ReactElement {
   const checkpoints = settings?.checkpointsEnabled !== false
   const subagentNotify = settings?.subagentNotify !== false
   const loopAutoContinue = settings?.streamLoopAutoContinue !== false
+  const models = useStore((s) => s.models)
+  const subagentDefault = settings?.subagentDefaultModel
+  const subagentModelKey = subagentDefault && subagentDefault !== 'follow' ? `${subagentDefault.provider}/${subagentDefault.id}` : FOLLOW_SESSION
   const session = useStore((s) => s.session)
   const autoRetry = useStore((s) => s.autoRetryEnabled)
   const setAutoRetry = useStore((s) => s.setAutoRetry)
@@ -164,6 +168,43 @@ export function SessionSettings(): ReactElement {
               isSelected={subagentNotify}
               onChange={(on) => void patchSettings({ subagentNotify: on })}
               data-testid="v3-session-subagent-notify"
+            />
+          </SettingsRow>
+          <SettingsRow settingId="session-subagent-model" label={text.sessionSubagentModel} description={text.sessionSubagentModelDesc}>
+            <Select
+              aria-label={text.sessionSubagentModel}
+              selectedKey={subagentModelKey}
+              onSelectionChange={(next) => {
+                const key = String(next ?? FOLLOW_SESSION)
+                const picked = models.find((item) => `${item.provider}/${item.id}` === key)
+                void patchSettings(
+                  picked
+                    ? { subagentDefaultModel: { provider: picked.provider, id: picked.id, name: picked.name } }
+                    : { subagentDefaultModel: 'follow', subagentModelForce: false }
+                )
+              }}
+              data-testid="v3-session-subagent-model"
+            >
+              <ListBoxItem id={FOLLOW_SESSION}>{text.sessionSubagentModelFollow}</ListBoxItem>
+              {models.map((item) => (
+                <ListBoxItem key={`${item.provider}/${item.id}`} id={`${item.provider}/${item.id}`}>
+                  {item.name || item.id}
+                </ListBoxItem>
+              ))}
+            </Select>
+          </SettingsRow>
+          <SettingsRow
+            nested
+            settingId="session-subagent-model-force"
+            label={text.sessionSubagentModelForce}
+            description={text.sessionSubagentModelForceDesc}
+          >
+            <Switch
+              aria-label={text.sessionSubagentModelForce}
+              isSelected={settings?.subagentModelForce === true}
+              isDisabled={subagentModelKey === FOLLOW_SESSION}
+              onChange={(on) => void patchSettings({ subagentModelForce: on })}
+              data-testid="v3-session-subagent-model-force"
             />
           </SettingsRow>
           <SettingsRow

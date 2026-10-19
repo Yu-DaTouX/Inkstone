@@ -2,14 +2,11 @@ import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointe
 import { MoreHorizontal } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton, ShimmerText } from '../../ui'
+import { IconButton } from '../../ui'
 import { v3Text } from '../../app/v3-text'
-import { RunDot } from '../../patterns/RunDot'
-import { phaseWord } from '../../state/runs-v3'
-import type { RunModel, RunPhase } from '../../../../shared/runs'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { SessionBot } from './SessionBot'
-import { sessionBotMood } from './session-bot-mood'
+import { SessionStatusIcon } from './SessionStatusIcon'
+import { sessionStatusLabel, type SessionStatusKind } from './session-status'
 import { passedThreshold, useSessionDrag } from './session-drag'
 import { SessionMenu, openSessionInSplit } from './SessionMenu'
 import { SidebarTip } from './SidebarTip'
@@ -18,19 +15,16 @@ export interface SidebarRowProps {
   item: SessionSummary
   title: string
   isCurrent: boolean
-  phase: RunPhase | null
-  model?: RunModel | string
-  unread: boolean
+  status: SessionStatusKind
   code?: string
-  word: string | null
-  tone: string
   onOpen: () => void
 }
 
-export function SidebarRow({ item, title, isCurrent, phase, model, unread, code, word, tone, onOpen }: SidebarRowProps): JSX.Element {
+export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
-  const botMood = sessionBotMood(phase)
   const text = v3Text(lang)
+  const statusWord = sessionStatusLabel(status, lang)
+  const statusLabel = code && status !== 'idle' ? `${code} · ${statusWord}` : statusWord
   const rowRef = useRef<HTMLDivElement>(null)
   const draggedRef = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -123,6 +117,7 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
     <div
       ref={rowRef}
       className="v3-srow"
+      data-current={isCurrent ? '1' : undefined}
       data-menu={menuOpen ? '1' : undefined}
       data-dragging={dragging ? '1' : undefined}
       onContextMenu={(event) => {
@@ -156,7 +151,10 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
         <SidebarTip label={title}>
           <button
             type="button"
-            className="v3-row"
+            className="ui-row v3-row"
+            data-menu={menuOpen ? '1' : undefined}
+            data-muted={status === 'archived' ? '' : undefined}
+            data-status={status}
             aria-current={isCurrent ? 'true' : undefined}
             onPointerDown={onPointerDown}
             onClick={(event) => {
@@ -172,15 +170,10 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
             }}
             data-testid="v3-session-row"
           >
-            <span className="v3-row-lead">
-              {botMood ? (
-                <SessionBot phase={phase} mood={botMood} model={model} seedKey={item.id} label={code ? `${code} · ${phaseWord(lang, phase)}` : phaseWord(lang, phase)} />
-              ) : (
-                <RunDot phase={phase} unread={unread} code={code} />
-              )}
+            <span className="ui-row__lead">
+              <SessionStatusIcon kind={status} label={statusLabel} />
             </span>
-            <ShimmerText className="v3-row-title" active={phase?.kind === 'running'}>{title}</ShimmerText>
-            {word ? <span className={`v3-row-word v3-row-word-${tone}`}>{word}</span> : null}
+            <span className="v3-row-title">{title}</span>
           </button>
         </SidebarTip>
       )}
@@ -189,7 +182,7 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
           size="sm"
           variant="ghost"
           className="v3-srow-more"
-          aria-label={text.sessionMenu}
+          aria-label={`${text.sessionMenu} · ${title}`}
           onPress={() => setMenuOpen(true)}
           data-testid="v3-session-more"
         >

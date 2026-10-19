@@ -26,6 +26,11 @@ export interface GeneralText {
   sessionCheckpointsDesc: string
   sessionSubagentNotify: string
   sessionSubagentNotifyDesc: string
+  sessionSubagentModel: string
+  sessionSubagentModelDesc: string
+  sessionSubagentModelFollow: string
+  sessionSubagentModelForce: string
+  sessionSubagentModelForceDesc: string
   sessionLoopAutoContinue: string
   sessionLoopAutoContinueDesc: string
   sessionDelivery: string
@@ -178,6 +183,11 @@ const ZH: GeneralText = {
   sessionCheckpointsDesc: '每轮发送前存可回退快照；关闭后无法回退。',
   sessionSubagentNotify: '子 Agent 结束时通知发起会话',
   sessionSubagentNotifyDesc: '子 Agent 跑完后唤醒父会话继续汇总。',
+  sessionSubagentModel: '子 Agent 默认模型',
+  sessionSubagentModelDesc: '没有指定模型时使用；选「跟随会话」则用当前会话的模型。',
+  sessionSubagentModelFollow: '跟随会话',
+  sessionSubagentModelForce: '强制使用默认模型',
+  sessionSubagentModelForceDesc: '开启后，即使任务里指定了其他模型，也一律使用上面的默认模型。',
   sessionLoopAutoContinue: '循环停止后自动继续',
   sessionLoopAutoContinueDesc: '循环被安全停止后自动续一次；关闭则等你发送。',
   sessionDelivery: '消息投递',
@@ -330,6 +340,11 @@ const EN: GeneralText = {
   sessionCheckpointsDesc: 'Snapshot before each turn; rewind is off when disabled.',
   sessionSubagentNotify: 'Notify the parent session when a subagent finishes',
   sessionSubagentNotifyDesc: 'Wakes the parent session to summarise after a subagent completes.',
+  sessionSubagentModel: 'Default subagent model',
+  sessionSubagentModelDesc: 'Used when a task names no model; "Follow session" uses the current session model.',
+  sessionSubagentModelFollow: 'Follow session',
+  sessionSubagentModelForce: 'Always use the default model',
+  sessionSubagentModelForceDesc: 'When on, the default model is used even if a task names another one.',
   sessionLoopAutoContinue: 'Auto-continue after a loop stop',
   sessionLoopAutoContinueDesc: 'Continue once after a safe loop stop; off waits for you.',
   sessionDelivery: 'Message delivery',

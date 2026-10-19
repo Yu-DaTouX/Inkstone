@@ -11,8 +11,7 @@ try {
     entryPoints: {
       brand: 'src/shared/model-brand.ts',
       tool: 'src/renderer/src/features/session/subagent-tool.ts',
-      draw: 'src/renderer/src/patterns/model-bot/draw.ts',
-      rowMood: 'src/renderer/src/features/sidebar/session-bot-mood.ts'
+      draw: 'src/renderer/src/patterns/model-bot/draw.ts'
     },
     bundle: true, platform: 'node', format: 'esm', outdir: temp, outExtension: { '.js': '.mjs' }, logLevel: 'silent'
   })
@@ -209,15 +208,6 @@ try {
     const still = (t) => poseAt(mood, BOT_FORMS.claude, { t, seed: 0, since: 0, entrance: true, restTurn: 0, still: true, size: 16 })
     assert.deepEqual(still(0.2), still(3.3), `减少动态时 ${mood} 静止`)
   }
-  count += 6
-
-  const { sessionBotMood } = await load('rowMood')
-  const phase = (kind) => ({ kind })
-  assert.equal(sessionBotMood(phase('running')), 'work', '左栏运行中的会话显示工作姿态')
-  assert.equal(sessionBotMood(phase('needs-you')), 'ask', '左栏等你确认的会话显示询问姿态')
-  assert.equal(sessionBotMood(phase('stalled')), 'ask', '左栏卡住的会话显示询问姿态')
-  for (const kind of ['queued', 'done', 'failed', 'stopped']) assert.equal(sessionBotMood(phase(kind)), null, `左栏 ${kind} 的会话不挂 Bot`)
-  assert.equal(sessionBotMood(null), null, '左栏空闲会话不挂 Bot')
   count += 6
 
   console.log(`model-bot: ${count} 项通过`)

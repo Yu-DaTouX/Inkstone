@@ -24,7 +24,7 @@
   }
 
   .settings-shortcut-card .settings-table tbody tr {
-    transition: background-color var(--dur-hover) var(--ease);
+    transition: background-color var(--dur-fast) var(--ease);
   }
 
   @media (hover: hover) {
@@ -49,7 +49,7 @@
 
   .settings-shortcut-notice td {
     color: var(--fail-t);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .settings-shortcut-actions {

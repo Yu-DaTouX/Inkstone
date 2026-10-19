@@ -81,7 +81,7 @@ async function buildBundle(outdir) {
     entry,
     `export { useStore } from '${posix(resolve(ROOT, 'src/renderer/src/state/store'))}'
 export { useUiV3 } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
-export { installSettingsDeepLink, resetSettingsDeepLinkForTest, subscribeSettingsRequest, getSettingsRequest } from '${posix(resolve(ROOT, 'src/renderer/src/features/settings/root/deep-link'))}'
+export { installSettingsDeepLink, resetSettingsDeepLinkForTest, subscribeSettingsRequest, getSettingsRequest, openSettingsDialog, rememberSettingsSection, consumeSettingsHash } from '${posix(resolve(ROOT, 'src/renderer/src/features/settings/root/deep-link'))}'
 export { resolveLegacyView } from '${posix(resolve(ROOT, 'src/renderer/src/features/settings/types'))}'
 `
   )
@@ -119,7 +119,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { useStore, useUiV3, installSettingsDeepLink, resetSettingsDeepLinkForTest, subscribeSettingsRequest, getSettingsRequest, resolveLegacyView } = bundle
+  const { useStore, useUiV3, installSettingsDeepLink, resetSettingsDeepLinkForTest, subscribeSettingsRequest, getSettingsRequest, resolveLegacyView, openSettingsDialog, rememberSettingsSection, consumeSettingsHash } = bundle
 
   const baseline = () => ({
     settings: { cwd: 'C:/proj', projects: [] },
@@ -155,7 +155,7 @@ async function main() {
     const { seen } = collect()
     openSettings('auth')
     ok(seen.length === 1 && seen[0].view === 'auth', '第一次 auth 请求被记录', seen)
-    ok(route() === 'settings', '第一次请求把路由切到设置')
+    ok(route() === 'chat' && useStore.getState().settingsOpen === true, '第一次请求打开设置弹层，路由不变', route())
     ok(seen[0].revision === 1, '第一次请求 revision = 1', seen[0])
 
     useUiV3.getState().navigate({ name: 'chat' })
@@ -166,7 +166,7 @@ async function main() {
     ok(seen.length === 2, '同一页 auth 再次请求仍然通知（不是被吞）', seen.length)
     ok(seen[1] !== seen[0], '第二次是一个新请求对象')
     ok(seen[1].view === 'auth' && seen[1].revision === 2, '第二次 auth revision = 2', seen[1])
-    ok(route() === 'settings', '第二次请求把路由重新切回设置')
+    ok(route() === 'chat' && useStore.getState().settingsOpen === true, '第二次请求仍只打开弹层', route())
   }
 
   group('设置内手动选外观后，同一 auth 请求重选模型页')
@@ -224,7 +224,7 @@ async function main() {
     useStore.setState({ browserNativeVisible: true })
     ok(seen.length === 1, '无关 store / 设置推送都不产生新请求', seen.length)
     ok(getSettingsRequest() === recorded, '当前请求对象未被无关推送重置')
-    ok(route() === 'settings', '当前页仍是设置，没有被弹回聊天')
+    ok(useStore.getState().settingsOpen === true && route() === 'chat', '弹层保持打开，路由没被改动')
 
     useStore.setState({ settingsRequestRevision: useStore.getState().settingsRequestRevision })
     ok(seen.length === 1, '重复写同一 revision 不重复记录（订阅重入去重）', seen.length)
@@ -235,7 +235,7 @@ async function main() {
     reset()
     const { seen } = collect()
     openSettings('appearance')
-    ok(route() === 'settings', '打开后位于设置路由')
+    ok(route() === 'chat' && useStore.getState().settingsOpen === true, '打开后弹层打开、路由不变')
     useUiV3.getState().navigate({ name: 'chat' })
     closeSettings()
     ok(route() === 'chat', '关闭设置不把路由拉回设置', route())
@@ -243,7 +243,7 @@ async function main() {
 
     useStore.setState({ settingsOpen: true, settingsTab: 'capabilities' })
     ok(seen.length === 2 && seen[1].view === 'capabilities', '直接写字段打开时按当前页名补记', seen)
-    ok(route() === 'settings', '兼容路径同样导航到设置')
+    ok(route() === 'chat', '兼容路径同样不切路由')
     useStore.setState({ settingsOpen: true, settingsTab: 'capabilities' })
     ok(seen.length === 2, '字段没变的直接 set 不重复记录', seen.length)
     useUiV3.getState().navigate({ name: 'chat' })
@@ -267,6 +267,37 @@ async function main() {
     openSettings()
     ok(useStore.getState().settingsRequestRevision === 3, '无页名调用 revision = 3')
     ok(useStore.getState().settingsTab === 'appearance', '无页名落到外观')
+  }
+
+  group('入口打开弹层：沿用上次分区，显式分区优先')
+  {
+    reset()
+    const { seen } = collect()
+    openSettingsDialog()
+    ok(seen.at(-1).view === 'models', '首次无分区打开落到默认模型页', seen.at(-1))
+    rememberSettingsSection('usage')
+    closeSettings()
+    openSettingsDialog()
+    ok(seen.at(-1).view === 'usage' && useStore.getState().settingsOpen === true, '再次打开回到上次分区', seen.at(-1))
+    openSettingsDialog('devices')
+    ok(seen.at(-1).view === 'devices', '显式分区优先', seen.at(-1))
+    ok(route() === 'chat', '入口都不切路由')
+  }
+
+  group('#/settings 哈希深链改为打开弹层')
+  {
+    reset()
+    const { seen } = collect()
+    const replaced = []
+    window.history.replaceState = (_s, _t, url) => replaced.push(url)
+    window.location.hash = '#/settings/context'
+    ok(consumeSettingsHash() === true, '识别 #/settings/<分区>')
+    ok(seen.at(-1).view === 'context' && useStore.getState().settingsOpen === true, '打开弹层并定位分区', seen.at(-1))
+    ok(replaced.at(-1) === '#/', '哈希改回会话，避免刷新后重复打开', replaced)
+    window.location.hash = '#/schedule'
+    ok(consumeSettingsHash() === false && seen.length === 1, '其他哈希不处理', seen.length)
+    window.history.replaceState = () => {}
+    window.location.hash = ''
   }
 
   await rm(outdir, { recursive: true, force: true })

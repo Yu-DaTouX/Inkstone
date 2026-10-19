@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
+import { openSettingsDialog } from '../settings/root/deep-link'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../session/view-state'
 import { displayedSessionOf, useSplitView } from '../../state/split-view'
 import { sideBySideCandidate } from '../../app/SideBySideLayout'
@@ -41,7 +42,7 @@ const WORKSPACE_ACTION_TABS: Record<string, WorkbenchTabId> = {
 export interface CommandPaletteProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
-  onNavigate?: (route: 'chat' | 'runs' | 'settings') => void
+  onNavigate?: (route: 'chat') => void
 }
 
 interface RunResult {
@@ -138,13 +139,6 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         group: 'action',
         label: theme === 'dark' ? text.themeToLight : text.themeToDark,
         keywords: 'theme dark light appearance 主题 深色 浅色 外观'
-      },
-      {
-        id: COMMAND_ACTION_IDS.openRuns,
-        group: 'action',
-        label: text.openRuns,
-        keywords: 'runs overview status 运行 总览 状态',
-        shortcut: shortcutKeys('openRuns')
       },
       {
         id: COMMAND_ACTION_IDS.openSettings,
@@ -383,11 +377,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         await store.patchSettings({ theme: next })
         return { ok: true }
       }
-      case COMMAND_ACTION_IDS.openRuns:
-        onNavigate?.('runs')
-        return { ok: true }
       case COMMAND_ACTION_IDS.openSettings:
-        onNavigate?.('settings')
+        openSettingsDialog()
         return { ok: true }
       case COMMAND_ACTION_IDS.openSideBySide: {
         onNavigate?.('chat')

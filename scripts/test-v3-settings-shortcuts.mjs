@@ -54,19 +54,19 @@ for (const def of SHORTCUTS.filter((def) => def.terminalsYield)) {
 
 assert.deepEqual(applyShortcutOverrides(EMPTY_SHORTCUT_OVERRIDES).map((def) => def.id), SHORTCUTS.map((def) => def.id))
 assert.deepEqual(
-  effectiveKeys(SHORTCUTS.find((def) => def.id === 'openRuns'), EMPTY_SHORTCUT_OVERRIDES),
-  ['Ctrl', 'J'],
+  effectiveKeys(SHORTCUTS.find((def) => def.id === 'openSettings'), EMPTY_SHORTCUT_OVERRIDES),
+  ['Ctrl', ','],
   '无覆盖时用注册表默认'
 )
-const overridden = applyShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] })
+const overridden = applyShortcutOverrides({ openSettings: ['Ctrl', 'Alt', ','] })
 assert.deepEqual(
-  effectiveKeys(overridden.find((def) => def.id === 'openRuns'), { openRuns: ['Ctrl', 'Alt', 'J'] }),
-  ['Ctrl', 'Alt', 'J'],
+  effectiveKeys(overridden.find((def) => def.id === 'openSettings'), { openSettings: ['Ctrl', 'Alt', ','] }),
+  ['Ctrl', 'Alt', ','],
   '有覆盖时用覆盖'
 )
 assert.deepEqual(
-  SHORTCUTS.find((def) => def.id === 'openRuns').keys,
-  ['Ctrl', 'J'],
+  SHORTCUTS.find((def) => def.id === 'openSettings').keys,
+  ['Ctrl', ','],
   'applyShortcutOverrides 不改动原注册表'
 )
 
@@ -87,9 +87,9 @@ assert.equal(clash.reason, 'conflict')
 assert.equal(clash.conflictId, 'commandPalette', '与已有 Ctrl+K 冲突并指出冲突项')
 const clashByOrder = rebindShortcut('newSession', ['Alt', 'Ctrl', 'B'], {})
 assert.equal(clashByOrder.conflictId, 'toggleWorkspace', '修饰键顺序不同也算同一键位')
-const conflictWithOverride = rebindShortcut('newSession', ['Ctrl', 'Alt', 'N'], { openRuns: ['Alt', 'Ctrl', 'N'] })
+const conflictWithOverride = rebindShortcut('newSession', ['Ctrl', 'Alt', 'N'], { openSettings: ['Alt', 'Ctrl', 'N'] })
 assert.equal(conflictWithOverride.ok, false)
-assert.equal(conflictWithOverride.conflictId, 'openRuns', '改绑要对照其它项的覆盖值')
+assert.equal(conflictWithOverride.conflictId, 'openSettings', '改绑要对照其它项的覆盖值')
 
 const free = rebindShortcut('newSession', ['Ctrl', 'Alt', 'N'], {})
 assert.equal(free.ok, true)
@@ -115,9 +115,9 @@ assert.deepEqual(
 )
 assert.deepEqual(shortcutOverridesFromSettings(null), {}, '拿不到设置时是空覆盖')
 
-assert.deepEqual(clearShortcutOverrides({}, 'openRuns'), {}, '没有覆盖时保持原样')
-assert.deepEqual(clearShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] }, 'openRuns'), {}, '只清一项')
-assert.deepEqual(clearShortcutOverrides({ openRuns: ['Ctrl', 'Alt', 'J'] }), {}, '不传 id 清全部')
+assert.deepEqual(clearShortcutOverrides({}, 'openSettings'), {}, '没有覆盖时保持原样')
+assert.deepEqual(clearShortcutOverrides({ openSettings: ['Ctrl', 'Alt', ','] }, 'openSettings'), {}, '只清一项')
+assert.deepEqual(clearShortcutOverrides({ openSettings: ['Ctrl', 'Alt', ','] }), {}, '不传 id 清全部')
 
 assert.deepEqual(findShortcutConflicts(SHORTCUTS), [], '默认注册表没有重复键位')
 assert.equal(findShortcutConflicts(applyShortcutOverrides({ newSession: ['Ctrl', 'K'] })).length, 1, '覆盖造成的重复能被抓出')

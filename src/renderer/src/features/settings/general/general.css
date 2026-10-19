@@ -26,7 +26,7 @@
     flex: 1 1 auto;
     min-width: 0;
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     overflow-wrap: anywhere;
   }
 
@@ -55,7 +55,7 @@
 
   .settings-device__name {
     color: var(--fg);
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
   }
 
   .settings-data {
@@ -68,7 +68,7 @@
   .settings-path {
     min-width: 0;
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     overflow-wrap: anywhere;
   }
 

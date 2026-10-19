@@ -163,23 +163,26 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
         </SidebarTip>
       )}
       {manageable && !renaming ? (
-        <SidebarTip label={text.newInProject}>
-          <button type="button" className="v3-grp-add" aria-label={text.newInProject} onClick={() => void createHere()}>
+        <span className="v3-grp-actions">
+          <IconButton
+            variant="ghost"
+            className="v3-grp-more"
+            aria-label={own.projectMenu}
+            onPress={() => setMenuOpen(true)}
+            data-testid="v3-project-more"
+          >
+            <MoreHorizontal size={14} />
+          </IconButton>
+          <IconButton
+            variant="ghost"
+            className="v3-grp-add"
+            aria-label={`${text.newInProject} · ${label}`}
+            onPress={() => void createHere()}
+            data-testid="v3-project-new"
+          >
             <Plus size={14} />
-          </button>
-        </SidebarTip>
-      ) : null}
-      {manageable && !renaming ? (
-        <IconButton
-          size="sm"
-          variant="ghost"
-          className="v3-grp-more"
-          aria-label={own.projectMenu}
-          onPress={() => setMenuOpen(true)}
-          data-testid="v3-project-more"
-        >
-          <MoreHorizontal size={14} />
-        </IconButton>
+          </IconButton>
+        </span>
       ) : null}
 
       {manageable ? (

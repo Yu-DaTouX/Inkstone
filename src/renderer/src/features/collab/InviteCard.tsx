@@ -3,7 +3,6 @@ import { QRCodeSVG } from 'qrcode.react'
 import { pairInviteAddress, pairInviteLink } from '../../../../shared/pair-invite'
 import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
 import { useStore } from '../../state/store'
-import { useUiV3 } from '../../state/ui-v3'
 import { Button, Card, Notice } from '../../ui'
 import { fill, type CollabText } from './collab-text'
 
@@ -80,7 +79,6 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
   }
 
   const openDevices = (): void => {
-    useUiV3.getState().navigate({ name: 'settings' })
     useStore.getState().openSettings('devices')
   }
 

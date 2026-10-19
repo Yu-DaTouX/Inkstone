@@ -149,7 +149,7 @@
     inset: 0;
     z-index: calc(var(--z-drawer) - 10);
     background: var(--scrim);
-    animation: v3-fade var(--dur-pop) var(--ease-out);
+    animation: v3-fade var(--dur-snap) var(--ease);
   }
 
   @keyframes v3-fade {
@@ -187,9 +187,9 @@
 
   .v3-head-title {
     margin: 0;
-    font-size: var(--t-title);
-    line-height: var(--t-title-lh);
-    font-weight: var(--t-title-w);
+    font-size: var(--t-heading);
+    line-height: var(--t-heading-lh);
+    font-weight: var(--t-heading-w);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -210,12 +210,13 @@
 
   .v3-head-pane-dot {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 6px;
-    height: 6px;
+    top: 3px;
+    right: 3px;
+    width: var(--s-4);
+    height: var(--s-4);
     border-radius: var(--r-full);
     background: var(--accent);
+    pointer-events: none;
   }
 
   .v3-head-check {
@@ -230,7 +231,7 @@
     padding: 0 4px;
     border-radius: var(--r-full);
     background: var(--run);
-    color: var(--on-ink);
+    color: var(--on-accent);
     font-size: 10px;
     line-height: 14px;
     text-align: center;
@@ -304,7 +305,7 @@
     width: 96px;
     flex: none;
     color: var(--fg3);
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
   }
 
   .v3-field-actions {
@@ -313,18 +314,18 @@
   }
 
   .v3-field-value {
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     color: var(--fg);
   }
 
   .v3-field-hint {
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
   }
 
   .v3-field-error {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fail-t);
   }
 
@@ -342,9 +343,9 @@
   }
 
   .v3-fatal h1 {
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    font-weight: var(--t-h2-w);
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--t-title-w);
   }
 
   .v3-fatal p {
@@ -361,7 +362,7 @@
     background: var(--sunken);
     color: var(--fg2);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-align: left;
     white-space: pre-wrap;
   }

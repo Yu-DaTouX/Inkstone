@@ -33,24 +33,24 @@
   .collab-lede {
     margin-bottom: 0;
     color: var(--fg2);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     overflow-wrap: anywhere;
   }
 
   .collab-hint {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     overflow-wrap: anywhere;
   }
 
   .collab-label {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -89,9 +89,9 @@
 
   .collab-section__title {
     margin: 0;
-    font-size: var(--t-title);
-    line-height: var(--t-title-lh);
-    font-weight: var(--t-title-w);
+    font-size: var(--t-heading);
+    line-height: var(--t-heading-lh);
+    font-weight: var(--t-heading-w);
   }
 
   .collab-card {
@@ -154,8 +154,8 @@
 
   .collab-peer__name {
     min-width: 0;
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -165,8 +165,8 @@
     min-width: 0;
     overflow: hidden;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -246,8 +246,8 @@
     overflow-wrap: anywhere;
     color: var(--fg2);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     user-select: all;
   }
 
@@ -268,8 +268,8 @@
 
   .collab-remote__title {
     margin: var(--s-4) 0 0;
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
   }
 
   .collab-project__head {
@@ -283,8 +283,8 @@
   .collab-project__name {
     min-width: 0;
     margin: 0;
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -338,8 +338,8 @@
   .collab-branch__name {
     min-width: 0;
     font-family: var(--font-mono);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     color: var(--fg);
     overflow-wrap: anywhere;
   }
@@ -350,8 +350,8 @@
     gap: var(--s-2) var(--s-8);
     margin: 0;
     min-width: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .collab-branch__subject {
@@ -367,8 +367,8 @@
   .collab-branch__sessions {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
@@ -404,8 +404,8 @@
     align-items: baseline;
     gap: var(--s-2) var(--s-8);
     min-width: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .collab-commit__oid {
@@ -433,8 +433,8 @@
 
   .collab-file {
     min-width: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .collab-file__status {
@@ -497,8 +497,8 @@
     background: var(--surface);
     color: var(--fg2);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     white-space: pre;
     tab-size: 4;
   }
@@ -509,7 +509,7 @@
   }
 
   .collab-diff__line[data-kind='hunk'] {
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .collab-diff__line[data-kind='meta'] {
@@ -583,8 +583,8 @@
   .collab-request__title {
     flex: 1 1 200px;
     min-width: 0;
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     overflow-wrap: anywhere;
   }
 
@@ -596,16 +596,16 @@
     margin: 0;
     min-width: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     overflow-wrap: anywhere;
   }
 
   .collab-request__note {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -628,8 +628,8 @@
     gap: var(--s-6);
     margin: 0;
     color: var(--stall-t);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
@@ -647,16 +647,16 @@
     overflow: auto;
     color: var(--fg);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     overflow-wrap: anywhere;
   }
 
   .collab-confirm__body {
     margin: 0 0 var(--s-8);
     color: var(--fg);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     overflow-wrap: anywhere;
   }
 

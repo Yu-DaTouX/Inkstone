@@ -7,20 +7,14 @@
     min-width: 0;
   }
 
-  .ms-page > .settings-more {
-    max-width: var(--size-col);
-  }
-
   .ms-msg {
     margin-bottom: var(--s-12);
-    max-width: var(--size-col);
   }
 
   .ms-services {
     display: flex;
     flex-direction: column;
     gap: var(--s-16);
-    max-width: var(--size-col);
     min-width: 0;
   }
 
@@ -40,13 +34,13 @@
   }
 
   .ms-summary {
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     color: var(--fg);
   }
 
   .ms-safety {
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
     overflow-wrap: anywhere;
   }
@@ -81,29 +75,31 @@
 
   .ms-group-title {
     margin: 0;
-    font-size: var(--t-body);
-    color: var(--fg2);
-    font-weight: 600;
+    color: var(--fg);
+    font-size: var(--t-heading);
+    line-height: var(--t-heading-lh);
+    font-weight: var(--t-heading-w);
   }
 
   .ms-note {
     margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
   }
 
   .ms-service {
-    padding: var(--s-12) var(--s-16);
+    padding: var(--s-8) 0;
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
-    transition: background-color var(--dur-hover) var(--ease);
+    transition: background-color var(--dur-fast) var(--ease);
   }
 
+  .ms-rows > * + *:not(.settings-reveal),
   .ms-rows .settings-reveal__inner > .ms-service + .ms-service,
   .ms-rows > .ms-service ~ .settings-reveal .settings-reveal__inner > .ms-service:first-child {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--alpha-1);
   }
 
   .ms-rows > .settings-reveal[data-open='0']:first-child + .ms-rows-foot {
@@ -112,11 +108,11 @@
 
   .ms-rows-foot {
     display: flex;
-    padding: var(--s-6) var(--s-12);
+    padding: var(--s-6) 0;
   }
 
   .ms-rows-foot__chevron {
-    transition: transform var(--dur-expand) var(--ease);
+    transition: transform var(--dur-base) var(--ease);
   }
 
   .ms-rows-foot [aria-expanded='true'] .ms-rows-foot__chevron {
@@ -138,7 +134,7 @@
   }
 
   .ms-service-name {
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     color: var(--fg);
     min-width: 0;
     overflow: hidden;
@@ -149,8 +145,8 @@
   .ms-service-hint,
   .ms-service-env {
     margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
   }
 
@@ -163,8 +159,8 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--ask-t);
   }
 
@@ -192,7 +188,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--s-6);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg3);
   }
 
@@ -216,7 +212,7 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -236,7 +232,7 @@
 
   .ms-oauth-code {
     font-family: var(--font-mono);
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     letter-spacing: 0.08em;
   }
 
@@ -244,7 +240,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-6);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -258,14 +254,14 @@
 
   .ms-confirm-body {
     margin: 0 0 var(--s-8);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg2);
   }
 
   .ms-confirm-target {
     margin: 0 0 var(--s-16);
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     color: var(--fg);
   }
 
@@ -293,8 +289,8 @@
     align-items: center;
     gap: var(--s-12);
     flex-wrap: wrap;
-    padding: var(--s-12) var(--s-16);
-    transition: background-color var(--dur-hover) var(--ease);
+    padding: var(--s-8) 0;
+    transition: background-color var(--dur-fast) var(--ease);
   }
 
   .ms-custom-row > .settings-reveal {
@@ -320,7 +316,7 @@
     align-items: center;
     gap: var(--s-8);
     min-width: 0;
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     color: var(--fg);
     overflow-wrap: anywhere;
   }
@@ -330,7 +326,7 @@
     align-items: center;
     gap: var(--s-8);
     flex-wrap: wrap;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg3);
     overflow-wrap: anywhere;
   }

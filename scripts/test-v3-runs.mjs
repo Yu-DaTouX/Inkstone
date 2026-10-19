@@ -460,7 +460,6 @@ async function runSessionCodeTests(main, dir) {
   const { SessionCodeStore, formatRunCode, sessionCodesPath } = main
   assert.equal(formatRunCode('session', 12), 'S12')
   assert.equal(formatRunCode('scheduled', 3), 'T03')
-  assert.equal(formatRunCode('review', 4), 'R04')
 
   const root = join(dir, 'codes-ok')
   const store = new SessionCodeStore({ root })
@@ -468,7 +467,6 @@ async function runSessionCodeTests(main, dir) {
   assert.equal(await store.assign('a', 'session'), 'S1')
   assert.equal(await store.assign('b', 'session'), 'S2')
   assert.equal(await store.assign('t1', 'scheduled'), 'T01')
-  assert.equal(await store.assign('r1', 'review'), 'R01')
   assert.equal(await store.assign('a', 'session'), 'S1', '已有编号不重复分配')
   const reloaded = new SessionCodeStore({ root })
   await reloaded.load()

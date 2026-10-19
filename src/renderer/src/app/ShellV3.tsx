@@ -14,6 +14,7 @@ import { startRunSync } from '../state/runs-v3'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SplitDropLayer } from '../features/sidebar/SplitDropLayer'
+import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
 import { SideBySide } from './SideBySide'
 import { collapsedPanes, sessionTiles } from './SideBySideLayout'
 import { CommandPalette } from '../features/commands/CommandPalette'
@@ -21,7 +22,8 @@ import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
-import { loadSubagentReviewFindings } from '../features/review/subagent-findings'
+import { SettingsPanelV3 } from './SettingsPanelV3'
+import { openSettingsDialog } from '../features/settings/root/deep-link'
 import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
 import { Header } from './Header'
 import { applyAppearanceV3 } from '../lib/appearance-v3'
@@ -33,6 +35,7 @@ import { WorkbenchPanel } from '../features/workbench/WorkbenchPanel'
 import { OverviewPane } from '../features/workbench/OverviewPane'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, SUBAGENT_LANE_EDGE, subagentPanelShownWidth, useSubagentPanel } from '../features/session/subagent-panel-state'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
+import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { closeToolTile, isToolTiled, revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
@@ -41,6 +44,7 @@ import { activateWorkspaceOwner, captureActivationTarget } from '../features/wor
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
 import { panePopoutBridge, paneTerminalBridge } from '../../auxwin/pane-bridge'
 import { pickOwnedTerminal, selectOwnedTerminals } from '../features/terminal/terminal-session'
+import { useTerminalRunning } from '../features/terminal/use-terminal-running'
 import { resourceOwner } from '../state/resource-owners'
 import { autoCompactLimitOf, contextPaneData } from '../features/workbench/context-pane-view'
 import type { ContextSlice } from '../state/context-breakdown'
@@ -60,11 +64,8 @@ const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
 }
 
 const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
-const RunsPage = lazy(() => import('../features/runs/RunsPage').then((m) => ({ default: m.RunsPage })))
-const ReviewPage = lazy(() => import('../features/review').then((m) => ({ default: m.ReviewPage })))
 const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
 const ScheduleTasksPage = lazy(() => import('../features/schedule').then((m) => ({ default: m.ScheduleTasksPage })))
-const SettingsPanelV3 = lazy(() => import('./SettingsPanelV3').then((m) => ({ default: m.SettingsPanelV3 })))
 
 function contextSegments(
   slices: readonly ContextSlice[],
@@ -90,14 +91,32 @@ async function ownedTerminalId(ownerKey: string): Promise<string | null> {
 }
 
 export default function ShellV3(): ReactElement {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    try { const value = Number(localStorage.getItem('inkstone.v3.sidebarWidth')); return value >= 220 && value <= 420 ? value : 264 } catch { return 264 }
-  })
+  const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(localStorage))
   const [sidebarPreview, setSidebarPreview] = useState(false)
   useEffect(() => {
-    const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.sidebarWidth', String(sidebarWidth)) } catch { } }, 150)
+    const timer = setTimeout(() => { try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
   }, [sidebarWidth])
+  const sidebarWidthRef = useRef(sidebarWidth)
+  sidebarWidthRef.current = sidebarWidth
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
+  const [sidebarCompact, setSidebarCompact] = useState(() => shouldAutoCollapseSidebar(window.innerWidth, sidebarWidth))
+  useEffect(() => {
+    let last: boolean | null = null
+    const apply = (): void => {
+      const width = window.innerWidth
+      const next = shouldAutoCollapseSidebar(width, sidebarWidthRef.current)
+      setWindowWidth(width)
+      setSidebarCompact(next)
+      if (next === last) return
+      last = next
+      useUiV3.getState().setSidebarOpen(!next)
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    return () => window.removeEventListener('resize', apply)
+  }, [])
+  const sidebarMax = sidebarMaxForWindow(windowWidth)
   const [workspaceWidth, setWorkspaceWidth] = useState(() => {
     try { const value = Number(localStorage.getItem('inkstone.v3.workspaceWidth')); return value >= 280 ? value : 420 } catch { return 420 }
   })
@@ -162,7 +181,7 @@ export default function ShellV3(): ReactElement {
     previewWasOn.current = sidebarPreview
     if (sidebarPreview || !was || useUiV3.getState().sidebarOpen) { setPreviewPhase('off'); return }
     setPreviewPhase('leaving')
-    const leaveMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-panel')) || 0
+    const leaveMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-base')) || 0
     let frame = 0
     const timer = window.setTimeout(() => {
       setPreviewPhase('reset')
@@ -278,7 +297,7 @@ export default function ShellV3(): ReactElement {
   }, [settings])
 
   const appearanceKey = settings
-    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom])
+    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion])
     : null
   useEffect(() => {
     const current = useStore.getState().settings
@@ -302,11 +321,7 @@ export default function ShellV3(): ReactElement {
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 899px)')
-    const apply = (): void => {
-      const next = mq.matches
-      setNarrow(next)
-      useUiV3.getState().setSidebarOpen(!next)
-    }
+    const apply = (): void => setNarrow(mq.matches)
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
@@ -394,6 +409,7 @@ export default function ShellV3(): ReactElement {
     [workspaceShown, workspacePanes, tiledTools]
   )
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
+  const terminalRunning = useTerminalRunning(owner.key || null, route.name === 'chat')
 
   const togglePane = (tab: WorkbenchTabId): void => {
     if (isToolTiled(tab)) {
@@ -434,8 +450,9 @@ export default function ShellV3(): ReactElement {
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {
       const store = useStore.getState()
-      if (action === 'cycleModel') void store.cycleModel()
-      else if (action === 'cycleModelBack') void store.cycleModelBack()
+      if (action === 'cycleModel') {
+        if (!filesClaimsQuickOpen()) void store.cycleModel()
+      } else if (action === 'cycleModelBack') void store.cycleModelBack()
       else void store.cycleThinking()
     })
     return off
@@ -474,17 +491,13 @@ export default function ShellV3(): ReactElement {
             event.preventDefault()
             ui.toggleSidebar()
             return
-          case 'openRuns':
-            event.preventDefault()
-            ui.navigate({ name: 'runs' })
-            return
           case 'toggleWorkspace':
             event.preventDefault()
             toggleWorkspace()
             return
           case 'openSettings':
             event.preventDefault()
-            ui.navigate({ name: 'settings' })
+            openSettingsDialog()
             return
           case 'shortcutSheet':
             event.preventDefault()
@@ -531,26 +544,20 @@ export default function ShellV3(): ReactElement {
         const ui = useUiV3.getState()
         if (ui.workspaceOpen && panelMode === 'full') ui.setWorkspaceOpen(false)
         else if (ui.route.name !== 'chat') ui.goBack()
-        else if (narrow && ui.sidebarOpen) ui.setSidebarOpen(false)
+        else if (sidebarCompact && ui.sidebarOpen) ui.setSidebarOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [narrow, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab])
-
-  const openSessionFromRuns = (path: string): void => {
-    useUiV3.getState().navigate({ name: 'chat' })
-    void useStore.getState().switchSession(path)
-  }
+  }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab])
 
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
     onPin: () => useUiV3.getState().setSidebarOpen(true),
-    onRuns: () => useUiV3.getState().navigate({ name: 'runs' }),
     onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
-    onReview: () => useUiV3.getState().navigate({ name: 'review' }),
     onCollab: () => useUiV3.getState().navigate({ name: 'collab' }),
-    onSettings: () => useUiV3.getState().navigate({ name: 'settings' })
+    onSettings: () => openSettingsDialog(),
+    onSearch: () => setPaletteOpen(true)
   }), [])
 
   const openRunFromPill = (run: RunSnapshot): void => {
@@ -562,27 +569,29 @@ export default function ShellV3(): ReactElement {
 
   return (
     <V3ErrorBoundary>
-      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={narrow ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
+      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
         {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={reveal.start} onPointerLeave={reveal.cancel} /> : null}
         <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
-        {sidebarOpen && !narrow ? <Splitter className="v3-sidebar-resizer" value={sidebarWidth} min={220} max={420} step={16} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(264)} /> : null}
-        {narrow && sidebarOpen ? (
+        {sidebarOpen && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(SIDEBAR_WIDTH_DEFAULT)} /> : null}
+        {sidebarCompact && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
         <main className="v3-main">
           <Header
             narrow={narrow}
+            sidebarOverlay={sidebarCompact}
             sidebarOpen={sidebarOpen}
             route={route.name}
             onToggleSidebar={() => useUiV3.getState().toggleSidebar()}
             onPreviewSidebar={showSidebarPreview}
-            onSettings={() => useUiV3.getState().navigate({ name: 'settings' })}
+            onSettings={() => openSettingsDialog()}
             onBack={() => useUiV3.getState().goBack()}
             sessionBarOpen={sessionBarOn}
             sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
             openPanes={openPanes}
             changesDirty={changesDirty}
+            terminalRunning={terminalRunning}
             onTogglePane={togglePane}
           />
           <RunAttentionToasts onOpen={openRunFromPill} />
@@ -594,14 +603,8 @@ export default function ShellV3(): ReactElement {
             data-workspace-mode={panelMode}
           >
             <Suspense fallback={null}>
-            {route.name === 'settings' ? (
-              <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
-            ) : route.name === 'runs' ? (
-              <RunsPage onOpenSession={openSessionFromRuns} />
-            ) : route.name === 'schedule' ? (
+            {route.name === 'schedule' ? (
               <ScheduleTasksPage />
-            ) : route.name === 'review' ? (
-              <ReviewPage loadFindings={loadSubagentReviewFindings} />
             ) : route.name === 'collab' ? (
               <CollabPage />
             ) : route.name === 'usage' ? (
@@ -658,6 +661,7 @@ export default function ShellV3(): ReactElement {
         onNavigate={(name) => useUiV3.getState().navigate({ name })}
       />
       <ShortcutSheet isOpen={shortcutSheetOpen} onOpenChange={setShortcutSheetOpen} />
+      <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
       {onboardingOpen ? (
         <OnboardingWizard
           onClose={() => {

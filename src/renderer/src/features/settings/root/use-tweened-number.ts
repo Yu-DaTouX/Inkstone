@@ -1,9 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { prefersReducedMotion } from '../../../lib/reduced-motion'
 
 const TWEEN_MS = 420
-
-const prefersReducedMotion = (): boolean =>
-  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 
 export function useTweenedNumber(target: number): number {
   const [shown, setShown] = useState(target)
