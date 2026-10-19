@@ -41,7 +41,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan subagent get --id <子代理ID>
   yan subagent stop --id <子代理ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
-  yan search query --query-text "关键词"  联网搜索（需要 OpenCLI）
+  yan search query --query-text "关键词"  联网搜索（--recent / --site 限时间和站点，可重复 --query-text 一次查多个）
   yan search fetch --url <网址>           读网页正文；yan search docs --library <库名> --query-text "问题" 查开发文档
   yan search doctor                       搜索后端诊断（未安装也能读）
 
@@ -313,13 +313,24 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   search: `yan search <动作> [选项]
 
 动作：
-  query   联网搜索。按查询语言自动挑网页来源：中文用 Bing + 360，其余用 DuckDuckGo + Bing；
-          用户在设置里配了 Tavily / Brave key 时自动加上并排在最前；模型设置里有 DeepSeek key 时加上 DeepSeek 搜索
-          （中文查询排第一，其余排在 Tavily / Brave 之后；按次计费）；另有维基百科 / arXiv / Hacker News（需 OpenCLI）
+  query   联网搜索。不写 --sources 时自动挑来源：有付费 key 时只用一个付费来源（中文 DeepSeek → Tavily → Brave，
+          其余 Tavily → Brave → DeepSeek，按次计费）加 DuckDuckGo 兜底；付费来源出错才换下一个，都出错再加 360；
+          没有 key 时用 DuckDuckGo + 360。先到的来源已够用时，慢的来源会被提前停止（状态 skipped）。
+          Bing、维基百科 / arXiv / Hacker News 不默认查，需要时用 --sources 点名（后三个需 OpenCLI；
+          Bing 在后台抓取时常返回无关结果，点名时留意核对）。
+          结果按各来源排名交错合并，多个来源都搜到的网址排前；10 分钟内同样的查询直接复用（cached）
             yan search query --query-text "flash attention"
+            yan search query --query-text "Node.js 最新版本" --recent month
+            yan search query --query-text "electron WebContentsView" --site github.com,electronjs.org
+            yan search query --query-text "bun 基准" --query-text "deno 基准"     一次最多 5 个查询并行，结果在 data.queries
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
+          --recent day|week|month|year  只要这段时间内的结果（各来源原生过滤；维基百科 / arXiv / HN 不支持）
+          --site a.com,b.org             只搜这些站点（最多 5 个）
+          --question "用户原问题"         把用户原话交给 DeepSeek，帮它理解查询
+          --with-content                 DeepSeek 结果直接带正文（content，每条最多 3000 字），可省掉一次 fetch
   fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读本机/内网地址）。本地读不出正文时，
-          若用户配了 Firecrawl key 会自动改用它（结果里 via 写明是谁读的）；--via local|firecrawl|deepseek 可强制
+          依次改用用户配了 key 的 Firecrawl、DeepSeek（结果里 via 写明是谁读的）；--via local|firecrawl|deepseek 可强制；
+          10 分钟内读过的同一网址直接复用（cached）
             yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
   docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
           用 --library-id 指定
@@ -328,9 +339,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
 
 说明：
-  · 后端是 OpenCLI（用户自行安装）。没装时 query 回 code=backend_unavailable，
-    doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
-  · 逐来源状态是分开的：ok / empty / timeout / unavailable / error；
+  · 网页引擎与付费来源都内置；只有维基百科 / arXiv / Hacker News 依赖用户自行安装的 OpenCLI，
+    没装时这几个来源报 unavailable，doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
+  · 逐来源状态是分开的：ok / empty / timeout / unavailable / error / skipped（已够用、提前停止）；
   · 网页来源（bing / ddg / so360 / brave / tavily / deepseek）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
   · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
   · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
@@ -489,21 +500,29 @@ const GROUP_SPECS = {
   }
 }
 
+const REPEATABLE_FLAGS = new Set(['query-text'])
+
 function parseArgs(argv) {
   const flags = {}
   const positional = []
+  const setFlag = (name, value) => {
+    const prev = flags[name]
+    if (REPEATABLE_FLAGS.has(name) && typeof value === 'string' && prev !== undefined && prev !== true) {
+      flags[name] = [...(Array.isArray(prev) ? prev : [prev]), value]
+    } else flags[name] = value
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--help' || a === '-h') flags.help = true
     else if (a.startsWith('--')) {
       const eq = a.indexOf('=')
-      if (eq > 0) flags[a.slice(2, eq)] = a.slice(eq + 1)
+      if (eq > 0) setFlag(a.slice(2, eq), a.slice(eq + 1))
       else {
         const next = argv[i + 1]
         if (next !== undefined && !next.startsWith('--')) {
-          flags[a.slice(2)] = next
+          setFlag(a.slice(2), next)
           i++
-        } else flags[a.slice(2)] = true
+        } else setFlag(a.slice(2), true)
       }
     } else positional.push(a)
   }

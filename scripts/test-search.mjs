@@ -133,15 +133,50 @@ export async function runSearchTests(ok, mod) {
     )
     ok(totalCap.items.length === 5, '总数上限生效')
     ok(totalCap.truncated === true, '被总数上限裁过 → truncated')
-    ok(totalCap.sources[0].droppedByLimit === 5, '吃满份额后被上限截断：标出剩余未处理条数')
-    ok(
-      totalCap.sources[1].droppedByLimit === 10 && totalCap.sources[1].count === 0,
-      '后面被挡在门外的来源：count 0 但带回 droppedByLimit'
+    ok(totalCap.items.map((i) => i.title).join(',') === 'a0,b0,a1,b1,a2', '各来源按排名交错合并，不再让前一个来源占满名额')
+    ok(totalCap.sources[0].count === 3 && totalCap.sources[0].droppedByLimit === 7, '被总数上限截掉的条数按来源标出')
+    ok(totalCap.sources[1].count === 2 && totalCap.sources[1].droppedByLimit === 8, '后面的来源也能进结果')
+    ok(totalCap.sources[1].status === 'ok', '被截过的来源仍是 ok —— 不是 empty')
+
+    const crowdA = Array.from({ length: 6 }, (_, i) => ({ title: `x${i}`, url: `https://x/${i}` }))
+    const crowdB = [{ title: 'only b', url: 'https://b/only' }, { title: 'x3 from b', url: 'https://x/3', snippet: 'b 的摘要' }]
+    const fused = aggregate(
+      [
+        { source: 'tavily', rows: crowdA, elapsedMs: 1 },
+        { source: 'bing', rows: crowdB, elapsedMs: 1 }
+      ],
+      { limitPerSource: 6, limitTotal: 12 }
     )
-    ok(
-      totalCap.sources[1].status === 'ok',
-      '它仍是 ok（有结果，只是没收进来）—— 不是 empty'
+    ok(fused.items[0].url === 'https://x/3', '两个来源都搜到的网址排到最前')
+    ok(fused.items[0].title === 'x3' && fused.items[0].snippet === 'b 的摘要', '保留靠前来源的标题，缺摘要时用另一个来源补上')
+    ok(fused.items.length === 7 && fused.sources[1].count === 1, '重复网址只算一次，计在靠前的来源名下')
+    const sameSourceDup = aggregate(
+      [{ source: 'bing', rows: [{ title: 'a', url: 'https://a/1' }, { title: 'a dup', url: 'https://a/1#x' }], elapsedMs: 1 }],
+      { limitPerSource: 6, limitTotal: 12 }
     )
+    ok(sameSourceDup.items.length === 1 && sameSourceDup.sources[0].count === 1, '同一来源内的重复网址去掉')
+    const withContent = aggregate(
+      [{ source: 'deepseek', rows: [{ title: 'c', url: 'https://c/1', content: '正文\r\n\r\n\r\n第二段' + '字'.repeat(4000) }], elapsedMs: 1 }],
+      { limitPerSource: 6, limitTotal: 12 }
+    )
+    ok(withContent.items[0].content.startsWith('正文\n\n第二段') && withContent.items[0].content.length === 3000, '正文保留段落、压掉多余空行，截到 3000 字')
+    const siteRows = [
+      { title: 'junk1', url: 'https://outlook.com/a' },
+      { title: 'gh1', url: 'https://github.com/a' },
+      { title: 'junk2', url: 'https://myGov.au/b' },
+      { title: 'gh2', url: 'https://gist.github.com/b' }
+    ]
+    const siteOut = aggregate([{ source: 'bing', rows: siteRows, elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    ok(siteOut.items.map((i) => i.title).join(',') === 'gh1,gh2', '限定站点时去掉站外结果（含子域名的保留）')
+    ok(/2 条不在指定站点/.test(siteOut.sources[0].message ?? ''), '去掉了几条写进来源状态')
+    const allOff = aggregate([{ source: 'bing', rows: siteRows.filter((r) => r.title.startsWith('junk')), elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    ok(allOff.sources[0].status === 'empty' && allOff.items.length === 0, '全是站外结果 → empty，不把垃圾交给模型')
+    const longSite = aggregate([{ source: 'bing', rows: [...siteRows, ...Array.from({ length: 8 }, (_, i) => ({ title: `g${i}`, url: `https://github.com/x${i}` }))], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    ok(longSite.items.length === 6 && longSite.truncated, '先去站外结果再按每来源上限取，不因站外结果占名额而变少')
+    const timeNote = aggregate([{ source: 'so360', rows: [{ title: 't', url: 'https://t/1' }], elapsedMs: 1 }, { source: 'ddg', rows: [{ title: 'd', url: 'https://d/1' }], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, recent: 'day' })
+    ok(/不支持按时间过滤/.test(timeNote.sources[0].message ?? '') && !timeNote.sources[1].message, '不支持时间范围的来源如实标注，支持的不标')
+    const skipped = aggregate([{ source: 'bing', rows: null, skipped: true, elapsedMs: 5 }], { limitPerSource: 6, limitTotal: 12 })
+    ok(skipped.sources[0].status === 'skipped' && /提前停止/.test(summarizeSources(skipped.sources)), '提前停止的来源标 skipped，摘要写清')
     ok(/被总数上限截断/.test(summarizeSources(totalCap.sources)), '摘要里说清是被上限截断，而不是干脏的「0 条」')
     ok(perSource.sources[0].droppedByLimit === undefined, '没被总数上限碰到的来源不标 droppedByLimit')
 
@@ -199,6 +234,67 @@ export async function runSearchTests(ok, mod) {
       errIgnored.error?.code === 'no_source' && errIgnored.ignoredSources?.join(',') === 'nope',
       '查询根本没发出去时也带上被忽略的来源'
     )
+  }
+
+  {
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const rows = (id, n) => Array.from({ length: n }, (_, i) => ({ title: `${id}${i}`, url: `https://${id}/${i}` }))
+    const policy = { primary: ['tavily'], reserve: ['brave', 'so360'], enoughRows: 3, graceMs: 30 }
+    const deps = (impl) => {
+      const calls = []
+      return {
+        calls,
+        now: () => Date.now(),
+        runner: async (source, query, opts) => {
+          calls.push({ id: source.id, opts })
+          return impl(source.id, opts)
+        }
+      }
+    }
+
+    let aborted = false
+    const fast = deps(async (id, opts) => {
+      if (id === 'tavily') return { source: id, rows: rows(id, 6), elapsedMs: 5 }
+      opts.signal.addEventListener('abort', () => { aborted = true })
+      await wait(2000)
+      return { source: id, rows: rows(id, 6), elapsedMs: 2000 }
+    })
+    const started = Date.now()
+    const early = await runSearch({ text: 'q', sources: ['tavily', 'bing'], recent: 'week', sites: ['tavily'] }, fast, policy)
+    ok(Date.now() - started < 1000, '付费来源够用后，网页引擎在宽限期后被提前停止')
+    ok(aborted, '停止时通知了网页引擎（关掉隐藏窗口）')
+    ok(early.sources.find((s) => s.source === 'bing')?.status === 'skipped', '被停掉的来源标 skipped')
+    ok(early.items.length === 6 && fast.calls.length === 2, '没有动用后备来源')
+    ok(fast.calls[0].opts.recent === 'week' && fast.calls[0].opts.sites?.[0] === 'tavily', '时间范围与站点限定传给每个来源')
+
+    const quick = deps(async (id) => {
+      if (id === 'tavily') return { source: id, rows: rows(id, 6), elapsedMs: 5 }
+      await wait(10)
+      return { source: id, rows: rows(id, 2), elapsedMs: 10 }
+    })
+    const both = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, quick, policy)
+    ok(both.sources.every((s) => s.status === 'ok') && both.items.length === 8, '宽限期内返回的网页引擎结果照样合并')
+
+    const failing = deps(async (id) => {
+      if (id === 'tavily') return { source: id, rows: null, error: { code: 'rate_limited', message: '额度用尽' }, elapsedMs: 5 }
+      if (id === 'brave') return { source: id, rows: rows(id, 4), elapsedMs: 5 }
+      return { source: id, rows: rows(id, 3), elapsedMs: 5 }
+    })
+    const fallback = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, failing, policy)
+    ok(failing.calls.map((c) => c.id).join(',') === 'tavily,bing,brave', '付费来源出错 → 换下一个付费来源，不碰最后的网页后备')
+    ok(fallback.sources.map((s) => `${s.source}:${s.status}`).join(',') === 'tavily:error,bing:ok,brave:ok', '出错的来源照实汇报，后备来源排在后面')
+
+    const allPaidFail = deps(async (id) =>
+      id === 'bing' ? { source: id, rows: rows(id, 3), elapsedMs: 5 } : { source: id, rows: null, error: { code: 'http_error' }, elapsedMs: 5 })
+    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, allPaidFail, policy)
+    ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,bing,brave,so360', '付费来源都失败 → 用上第二个网页引擎')
+
+    const noPolicy = deps(async (id) => {
+      await wait(id === 'bing' ? 60 : 5)
+      return { source: id, rows: rows(id, 6), elapsedMs: 5 }
+    })
+    const explicit = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, noPolicy)
+    ok(explicit.sources.every((s) => s.status === 'ok'), '点名来源（没有策略）时等所有来源返回')
   }
 
   {

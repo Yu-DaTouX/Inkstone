@@ -1,18 +1,19 @@
 import type { CapabilityRunOptions } from './agent'
 import { CapabilityCommandError } from './capability-server'
 import { memoryStoreOf } from './personal-memory'
-import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searchSummary } from './search/opencli'
+import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searchSummary, type SearchPolicy } from './search/opencli'
 import { runBraveSearch } from './search/brave'
 import { runTavilySearch } from './search/tavily'
 import { firecrawlReadPage } from './search/firecrawl'
 import { deepseekReadPage, resolveDeepseekSearchKey, runDeepseekSearch } from './search/deepseek'
 import { DocsError, queryDocs } from './search/context7'
-import { detectLocale, runBingSearch } from './search/bing'
+import { runBingSearch } from './search/bing'
 import { runDdgSearch } from './search/ddg'
-import { readPage, ReadPageError } from './search/read-page'
+import { readPage, ReadPageError, type ReadPageResult } from './search/read-page'
 import { runSo360Search } from './search/so360'
 import { resolveSearchKey, searchApiConfig } from './search/config'
-import { DEFAULT_SEARCH_SOURCES, type SearchSourceId } from '../shared/search'
+import { defaultSearchPlan, mapLimit, searchModifiers, searchQueries, tooManyQueries, TtlCache, type SearchKeys } from './search/plan'
+import { SEARCH_QUERIES_MAX, type SearchOutcome, type SearchQuery, type SearchSourceId } from '../shared/search'
 import { isSafeSessionId } from './session-id'
 import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-store'
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
@@ -20,6 +21,11 @@ import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { paramNumber, paramString } from './command-params'
 
 const THIN_PAGE_CHARS = 200
+const SEARCH_CACHE_TTL_MS = 10 * 60_000
+const SEARCH_CACHE_MAX = 64
+
+type ReadVia = 'local' | 'firecrawl' | 'deepseek'
+type FetchedPage = { page: ReadPageResult; via: ReadVia; note?: string }
 
 export interface LookupCommandsHost {
   capabilityOpts(): CapabilityRunOptions | undefined
@@ -29,6 +35,8 @@ export interface LookupCommandsHost {
 
 export class LookupCommands {
   private searchApiHintSent = false
+  private readonly searchCache = new TtlCache<SearchOutcome>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
+  private readonly fetchCache = new TtlCache<FetchedPage>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
 
   constructor(private readonly host: LookupCommandsHost) {}
 
@@ -81,9 +89,13 @@ export class LookupCommands {
           maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
           timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
         }
-        const { page, via: usedVia, note } = await this.readWithFallback(url, read, via)
+        const cacheKey = JSON.stringify({ url: url.trim(), maxChars: read.maxChars ?? null, via: via ?? null })
+        const hit = this.fetchCache.get(cacheKey)
+        const fetched = hit ?? (await this.readWithFallback(url, read, via))
+        if (!hit) this.fetchCache.set(cacheKey, fetched)
+        const { page, via: usedVia, note } = fetched
         return {
-          data: { ...page, via: usedVia, ...(note ? { note } : {}) },
+          data: { ...page, via: usedVia, ...(note ? { note } : {}), ...(hit ? { cached: true } : {}) },
           summary: {
             kind: 'search',
             action: 'fetch',
@@ -93,7 +105,8 @@ export class LookupCommands {
             totalChars: page.totalChars,
             truncated: page.truncated,
             via: usedVia,
-            ...(note ? { note } : {})
+            ...(note ? { note } : {}),
+            ...(hit ? { cached: true } : {})
           }
         }
       } catch (e) {
@@ -144,94 +157,76 @@ export class LookupCommands {
     if (action !== 'query') {
       throw new CapabilityCommandError('search_unknown_action', `不认识的 search 动作：${action}`)
     }
-    const text = this.searchString(params, ['query-text', 'queryText', 'query', 'text'])
-    if (!text) {
+    const queries = searchQueries(params)
+    if (queries.length === 0) {
       throw new CapabilityCommandError('search_query_required', 'search query 需要查询词（--query-text）')
     }
+    if (tooManyQueries(queries)) {
+      throw new CapabilityCommandError('search_too_many_queries', `一次最多 ${SEARCH_QUERIES_MAX} 个查询，现在有 ${queries.length} 个`)
+    }
+    const parsedModifiers = searchModifiers(params)
+    if (!parsedModifiers.ok) throw new CapabilityCommandError(parsedModifiers.code, parsedModifiers.message)
     const rawSources = params.sources
-    const sources: SearchSourceId[] = [
+    const explicitSources: SearchSourceId[] = [
       ...(Array.isArray(rawSources) ? rawSources : typeof rawSources === 'string' ? rawSources.split(',') : [])
     ]
       .map((s) => String(s).trim())
       .filter((s): s is SearchSourceId => s.length > 0)
 
-    if (sources.length === 0) {
-      const [hasTavily, hasBrave, hasDeepseek] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave'), resolveDeepseekSearchKey()])
-      const hasKey = !!(hasTavily || hasBrave || hasDeepseek)
-      const zh = detectLocale(text) === 'zh'
-      const web: SearchSourceId[] = zh ? ['bing', 'so360'] : ['ddg', 'bing']
-      sources.push(
-        ...(hasDeepseek && zh ? (['deepseek'] as SearchSourceId[]) : []),
-        ...(hasTavily ? (['tavily'] as SearchSourceId[]) : []),
-        ...(hasBrave ? (['brave'] as SearchSourceId[]) : []),
-        ...(hasDeepseek && !zh ? (['deepseek'] as SearchSourceId[]) : []),
-        ...web,
-        ...DEFAULT_SEARCH_SOURCES
-      )
-      if (!hasKey && !this.searchApiHintSent) {
+    let keys: SearchKeys | undefined
+    if (explicitSources.length === 0) {
+      const [tavily, brave, deepseek] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave'), resolveDeepseekSearchKey()])
+      keys = { tavily: !!tavily, brave: !!brave, deepseek: !!deepseek }
+      if (!keys.tavily && !keys.brave && !keys.deepseek && !this.searchApiHintSent) {
         this.searchApiHintSent = true
         if (!(await searchApiConfig()).hintDismissed) this.host.notifySearchApiMissing?.()
       }
     }
-
-    const outcome = await runSearch(
-      {
-        text,
-        ...(sources.length ? { sources } : {}),
-        limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
-        limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']) ?? (sources.length > 3 ? 24 : undefined),
-        timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
-      },
-      { runner: searchRunner(), now: () => Date.now() }
-    )
-
-    const sourcesData = {
-      query: outcome.query,
-      sources: outcome.sources,
-      ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {})
-    }
-    if (outcome.error) {
-      throw new CapabilityCommandError(outcome.error.code, outcome.error.message, sourcesData)
-    }
-    const reached = outcome.sources.filter((s) => s.status === 'ok' || s.status === 'empty')
-    if (reached.length === 0) {
-      const unavailable = outcome.sources.find((s) => s.status === 'unavailable')
-      const timedOut = outcome.sources.find((s) => s.status === 'timeout')
-      if (unavailable) {
-        throw new CapabilityCommandError(
-          'search_backend_unavailable',
-          unavailable.message ?? '搜索后端不可用（需要安装 OpenCLI，可用 yan search doctor 看详情）',
-          sourcesData
-        )
-      }
-      if (timedOut) {
-        throw new CapabilityCommandError(
-          'search_timeout',
-          timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）',
-          sourcesData
-        )
-      }
-      throw new CapabilityCommandError('search_failed', '所有搜索来源都出错了（逐来源状态见 data.sources）', sourcesData)
+    const shared = {
+      ...parsedModifiers.modifiers,
+      limitPerSource: this.searchNumber(params, ['limit-per-source', 'limitPerSource', 'limit']),
+      limitTotal: this.searchNumber(params, ['limit-total', 'limitTotal']) ?? (explicitSources.length > 3 ? 24 : undefined),
+      timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
     }
 
+    const results = await mapLimit(queries, 2, async (text) => {
+      const plan: { sources: SearchSourceId[]; policy?: SearchPolicy } = keys ? defaultSearchPlan(text, keys) : { sources: explicitSources }
+      const input: SearchQuery = { text, sources: plan.sources, ...shared }
+      const cacheKey = JSON.stringify({ input, policy: plan.policy ?? null })
+      const hit = this.searchCache.get(cacheKey)
+      if (hit) return { outcome: hit, cached: true }
+      const outcome = await runSearch(input, { runner: searchRunner(), now: () => Date.now() }, plan.policy)
+      if (!outcome.error && outcome.items.length > 0) this.searchCache.set(cacheKey, outcome)
+      return { outcome, cached: false }
+    })
+
+    if (results.length === 1) {
+      const [{ outcome, cached }] = results
+      const failure = searchFailure(outcome)
+      if (failure) throw new CapabilityCommandError(failure.code, failure.message, searchSourcesData(outcome))
+      return { data: outcome, summary: { kind: 'search', action: 'query', ...searchQuerySummary(outcome, cached) } }
+    }
+
+    const failures = results.map(({ outcome }) => searchFailure(outcome))
+    if (failures.every(Boolean)) {
+      throw new CapabilityCommandError(failures[0]!.code, `${results.length} 个查询都没取到结果：${failures[0]!.message}`, {
+        queries: results.map(({ outcome }) => searchSourcesData(outcome))
+      })
+    }
     return {
-      data: outcome,
+      data: {
+        queries: results.map(({ outcome }, i) =>
+          failures[i] ? { ...searchSourcesData(outcome), items: [], error: failures[i] } : outcome
+        )
+      },
       summary: {
         kind: 'search',
         action: 'query',
-        query: outcome.query,
-        count: outcome.items.length,
-        truncated: outcome.truncated,
-        durationMs: outcome.durationMs,
-        sources: outcome.sources.map((s) => ({
-          id: s.source,
-          status: s.status,
-          count: s.count,
-          ...(s.droppedByLimit ? { droppedByLimit: s.droppedByLimit } : {}),
-          ...(s.code ? { code: s.code } : {})
-        })),
-        ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {}),
-        summary: searchSummary(outcome)
+        count: results.reduce((sum, { outcome }) => sum + outcome.items.length, 0),
+        queries: results.map(({ outcome, cached }, i) =>
+          failures[i] ? { query: outcome.query, count: 0, error: failures[i]!.code } : searchQuerySummary(outcome, cached)
+        ),
+        summary: results.map(({ outcome }, i) => `「${outcome.query}」${failures[i] ? failures[i]!.message : searchSummary(outcome)}`).join('\n')
       }
     }
   }
@@ -240,10 +235,10 @@ export class LookupCommands {
     url: string,
     read: { maxChars?: number; timeoutMs?: number },
     via: string | undefined
-  ): Promise<{ page: Awaited<ReturnType<typeof readPage>>; via: 'local' | 'firecrawl' | 'deepseek'; note?: string }> {
+  ): Promise<FetchedPage> {
     if (via === 'firecrawl') return { page: await firecrawlReadPage(url, read), via: 'firecrawl' }
     if (via === 'deepseek') return { page: await deepseekReadPage(url, read), via: 'deepseek' }
-    let local: Awaited<ReturnType<typeof readPage>> | null = null
+    let local: ReadPageResult | null = null
     let localError: ReadPageError | null = null
     try {
       local = await readPage(url, read)
@@ -252,18 +247,24 @@ export class LookupCommands {
       if (!(e instanceof ReadPageError) || e.code === 'bad_url' || e.code === 'private_host' || via === 'local') throw e
       localError = e
     }
-    if (!(await resolveSearchKey('firecrawl'))) {
-      if (local) return { page: local, via: 'local' }
-      throw localError as ReadPageError
+    const [firecrawlKey, deepseekKey] = await Promise.all([resolveSearchKey('firecrawl'), resolveDeepseekSearchKey()])
+    const remotes = [
+      ...(firecrawlKey ? [{ via: 'firecrawl' as const, label: 'Firecrawl', read: firecrawlReadPage }] : []),
+      ...(deepseekKey ? [{ via: 'deepseek' as const, label: 'DeepSeek', read: deepseekReadPage }] : [])
+    ]
+    const failures: string[] = []
+    for (const remote of remotes) {
+      try {
+        const page = await remote.read(url, read)
+        const why = local ? '本地读到的正文太短' : `本地读取失败（${localError?.message}）`
+        return { page, via: remote.via, note: [why, ...failures, `已改用 ${remote.label}`].join('，') }
+      } catch (e) {
+        failures.push(`${remote.label} 兜底也失败：${e instanceof Error ? e.message : String(e)}`)
+      }
     }
-    try {
-      const page = await firecrawlReadPage(url, read)
-      return { page, via: 'firecrawl', note: local ? '本地读到的正文太短，已改用 Firecrawl' : `本地读取失败（${localError?.message}），已改用 Firecrawl` }
-    } catch (e) {
-      if (local) return { page: local, via: 'local', note: `正文很短，Firecrawl 兜底也失败：${e instanceof Error ? e.message : String(e)}` }
-      const reason = e instanceof Error ? e.message : String(e)
-      throw new ReadPageError(localError?.code ?? 'network_error', `${localError?.message}；Firecrawl 兜底也失败：${reason}`)
-    }
+    if (local) return { page: local, via: 'local', ...(failures.length ? { note: `正文很短，${failures.join('；')}` } : {}) }
+    if (failures.length === 0) throw localError as ReadPageError
+    throw new ReadPageError(localError?.code ?? 'network_error', `${localError?.message}；${failures.join('；')}`)
   }
 
   async runKnowledgeCommand(action: string, params: Record<string, unknown>) {
@@ -405,6 +406,45 @@ export class LookupCommands {
     }
 
     throw new CapabilityCommandError('unknown_command', `未知的 knowledge 动作：${action}`)
+  }
+}
+
+function searchSourcesData(outcome: SearchOutcome) {
+  return {
+    query: outcome.query,
+    sources: outcome.sources,
+    ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {})
+  }
+}
+
+function searchFailure(outcome: SearchOutcome): { code: string; message: string } | null {
+  if (outcome.error) return outcome.error
+  if (outcome.sources.some((s) => s.status === 'ok' || s.status === 'empty')) return null
+  const unavailable = outcome.sources.find((s) => s.status === 'unavailable')
+  if (unavailable) {
+    return { code: 'search_backend_unavailable', message: unavailable.message ?? '搜索来源不可用（可用 yan search doctor 看详情）' }
+  }
+  const timedOut = outcome.sources.find((s) => s.status === 'timeout')
+  if (timedOut) return { code: 'search_timeout', message: timedOut.message ?? '搜索超时（可以调大 --timeout-ms 或换来源）' }
+  return { code: 'search_failed', message: '所有搜索来源都出错了（逐来源状态见 data.sources）' }
+}
+
+function searchQuerySummary(outcome: SearchOutcome, cached: boolean) {
+  return {
+    query: outcome.query,
+    count: outcome.items.length,
+    truncated: outcome.truncated,
+    durationMs: outcome.durationMs,
+    ...(cached ? { cached: true } : {}),
+    sources: outcome.sources.map((s) => ({
+      id: s.source,
+      status: s.status,
+      count: s.count,
+      ...(s.droppedByLimit ? { droppedByLimit: s.droppedByLimit } : {}),
+      ...(s.code ? { code: s.code } : {})
+    })),
+    ...(outcome.ignoredSources?.length ? { ignoredSources: outcome.ignoredSources } : {}),
+    summary: (cached ? '（10 分钟内查过，直接复用）' : '') + searchSummary(outcome)
   }
 }
 

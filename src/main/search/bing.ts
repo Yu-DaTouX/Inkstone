@@ -1,11 +1,9 @@
 import type { SourceRun } from './aggregate'
+import type { SearchRecency } from '../../shared/search'
+import { daysSinceEpoch, detectLocale, recencySince, siteOperator, withOperators, type SearchLocale, type SourceRequest } from './modifiers'
 import { runWebEngine, type WebEngine } from './web-engine'
 
-export type SearchLocale = 'zh' | 'en'
-
-export function detectLocale(query: string): SearchLocale {
-  return /[぀-ヿ㐀-鿿가-힯]/.test(query) ? 'zh' : 'en'
-}
+export { detectLocale, type SearchLocale }
 
 interface Raw {
   title: string
@@ -38,21 +36,25 @@ const SCRIPT = `(() => {
   return { items, captcha, none }
 })()`
 
-export function bingUrl(query: string, limit: number, locale: SearchLocale): string {
-  const count = Math.min(50, Math.max(limit, 10))
-  const market = locale === 'zh' ? '&setmkt=zh-CN&setlang=zh-Hans&cc=CN' : ''
-  return `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${count}${market}`
+const BING_AGE: Record<Exclude<SearchRecency, 'year'>, string> = { day: 'ez1', week: 'ez2', month: 'ez3' }
+
+export function bingRecencyFilter(recent: SearchRecency, now = Date.now()): string {
+  const age = recent === 'year' ? `ez5_${daysSinceEpoch(recencySince('year', now))}_${daysSinceEpoch(new Date(now))}` : BING_AGE[recent]
+  return `ex1:"${age}"`
 }
 
-export function runBingSearch(
-  query: string,
-  opts: { limit: number; timeoutMs: number },
-  locale: SearchLocale = detectLocale(query)
-): Promise<SourceRun> {
+export function bingUrl(query: string, limit: number, locale: SearchLocale, recent?: SearchRecency, now = Date.now()): string {
+  const count = Math.min(50, Math.max(limit, 10))
+  const market = locale === 'zh' ? '&setmkt=zh-CN&setlang=zh-Hans&cc=CN' : ''
+  const filters = recent ? `&filters=${encodeURIComponent(bingRecencyFilter(recent, now))}` : ''
+  return `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${count}${market}${filters}`
+}
+
+export function runBingSearch(query: string, opts: SourceRequest, locale: SearchLocale = detectLocale(query)): Promise<SourceRun> {
   const engine: WebEngine<Raw> = {
     source: 'bing',
     label: 'Bing',
-    url: bingUrl(query, opts.limit, locale),
+    url: bingUrl(withOperators(query, [siteOperator(opts.sites)]), opts.limit, locale, opts.recent),
     script: SCRIPT,
     toRow: (r) => ({ title: r.title, url: decodeBingRedirect(r.href), snippet: r.snippet })
   }
