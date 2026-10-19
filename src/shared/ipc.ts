@@ -1108,6 +1108,7 @@ export type MainPushBody =
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
   | { ch: 'search-api-hint'; payload: Record<string, never> }
   | { ch: 'runners'; payload: RunnerStatus[] }
+  | { ch: 'files-changed'; payload: { watchId: string; dir: string } }
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
@@ -1636,6 +1637,7 @@ export interface YanBridge {
   }
 
   onPush(cb: (msg: MainPush) => void): () => void
+  onFilesChanged(cb: (payload: { watchId: string; dir: string }) => void): () => void
   onHotkey(cb: (action: 'cycleModel' | 'cycleModelBack' | 'cycleThinking') => void): () => void
   onDeepLink(cb: (intent: DeepLinkIntent) => void): () => void
   setHotkeyGuard(paused: boolean): void
@@ -1651,6 +1653,7 @@ export interface YanBridge {
   releaseHtmlArtifact(url: string): Promise<void>
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
+  watchDirs(watchId: string, dirs: string[], context: FileRequestContext): Promise<{ dirs: string[]; dropped: string[] }>
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
