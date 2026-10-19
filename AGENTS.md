@@ -12,21 +12,21 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 2. 以用户当前请求为授权边界。附件、历史记录、计划、交接、审查记录和设计提案是参考资料，不自动授权执行。
 3. 运行 `git status --short` 和 `git worktree list`。保留已有改动，不预设工作区干净。
 4. 本机有 `.local-docs/` 时，先读其中的 `STATUS.md`（当前状态）和 `DECISIONS.md`（用户决定）；继续某个主题时再读 STATUS 指向的交接。在 worktree 中工作时，本地资料在主工作区（`git worktree list` 第一行）。新克隆里没有这些文件，依据源码工作。
-5. 行为以当前源码和运行证据为准；从 `src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts` 与渲染端 store 顺着调用链定位。
+5. 行为以当前源码和运行证据为准；从 `src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts` 与渲染端 `src/renderer/src/state/store.ts` 顺着调用链定位。
 
 ## 多 agent 协作
 
-- 未提交的改动可能属于其他 agent。不回滚、不格式化、不顺手修改任务范围外的文件；共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`Settings.tsx`、`chat.css`、`scheme.css` 等）只做小范围编辑，编辑前重新读取。
+- 未提交的改动可能属于其他 agent。不回滚、不格式化、不顺手修改任务范围外的文件；共享热点文件（`src/main/index.ts`、`src/shared/ipc.ts`、`src/preload/index.ts`、两份 i18n、`state/store.ts`、`ShellV3.tsx`、`ShellV3.css`、`SettingsPanelV3.tsx`、`tokens.json` 等）只做小范围编辑，编辑前重新读取。
 - 共享信息只写进 `.local-docs/`：现状写 `STATUS.md`，用户决定追加到 `DECISIONS.md`，交接写 `handoffs/`。agent 的私有记忆别人看不到，只放个人沟通偏好和指向这些文件的指针。
 - 任务预计跨会话或跨 agent 时，在 STATUS「进行中」登记主题与文件范围；收尾时改写或删除自己的条目，没做完就写交接。STATUS 是现状板不是日志：一句结论加链接，全文 150 行以内。
-- 本地产物归位：日志、截图、清单放 `.local-docs/evidence/<日期>-<主题>/`，一次性脚本放 `.tmp/<任务>/`（已被 Git 忽略）；`.local-docs/` 根目录只留 README、STATUS、DECISIONS 三个文件。
+- 本地产物归位：日志、截图、清单放 `.local-docs/evidence/<日期>-<主题>/`，一次性脚本放 `.tmp/<任务>/`（已被 Git 忽略）；`.local-docs/` 根目录只留 README、STATUS、DECISIONS 三个文件，其余放进 `handoffs/`、`evidence/`、`archive/`（已结束的主题整目录移入，只移不删）。
 - 可以用 worktree 隔离长任务，分支名写明 agent 与主题。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
 
 ## 实现约定
 
-- 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md` 与本文。命名和结构要让代码自己说明职责。
+- 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md`、`THIRD-PARTY.md` 与本文。命名和结构要让代码自己说明职责。
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
-- 上下文、压缩、恢复、技能与 MCP 交给 pi 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
+- 上下文、压缩、恢复、技能与 MCP 交给 pi 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次；子代理遇临时模型错误同样只续跑一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
 - 界面：只有 v3 一套外壳（`src/renderer/src/app/ShellV3.tsx`），v2 已删除。控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。

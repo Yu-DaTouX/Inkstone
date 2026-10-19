@@ -25,7 +25,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'tasks.apply',
     '任务计划',
-    '登记 / 更新本会话的任务清单，把多步工作变成用户可见的进度（六种操作：set/add/complete/uncomplete/remove/clear）。',
+    '登记 / 更新本会话的待办清单，把多步工作变成用户可见的进度（六种操作：set/add/complete/uncomplete/remove/clear）；会话里有 todos 工具时优先用工具，这个命令是兼容入口。',
     'write',
     'yan tasks apply --request-file <file>'
   ),
@@ -60,7 +60,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'browser',
     '内置浏览器自动化',
-    '在内置浏览器里导航 / 观察页面 / 点击 / 输入 / 截图等（19 个动作，含标签页与下载）；\n' +
+    '在内置浏览器里导航 / 观察页面 / 点击 / 输入 / 截图等（含标签页、下载与接入本机 Chrome）；\n' +
       '        用 `yan browser --help` 或 `yan browser <动作> --help` 查参数。注意文件与网络边界由宿主执行，不是任意脚本。',
     'external-action',
     'yan browser --help'

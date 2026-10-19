@@ -1,25 +1,30 @@
 # 第三方许可
 
-砚本身以 [MIT](../LICENSE) 发布。本文件登记**随分发保留**的第三方组件及其许可，只做索引，不替代各组件原始许可文本。
+砚本身以 [MIT](LICENSE) 发布。本文件登记**随分发保留**的第三方组件及其许可，只做索引，不替代各组件原始许可文本。
 
 ## 图标
 
-- 界面图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](../scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](../scripts/design/icons/catalog.json)，由 `npm run icons` 在构建期生成 `src/renderer/src/icons/sprite.ts`。
-- 2026-09-28 之前的版本使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-static`），更早使用 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
+- 桌面端界面图标使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-react`）。
+- Android 应用的图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](scripts/design/icons/catalog.json)，由 `npm run icons` 生成 `src/renderer/src/icons/sprite.ts`，由 `mobile/src/icons.tsx` 引用。
+- 更早的版本使用过 `lucide-static`（ISC）与 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
 
 ## 子代理模型 Bot
 
 | 组件 | 许可 | 说明 |
 | --- | --- | --- |
-| [Lobe Icons](https://github.com/lobehub/lobe-icons)（npm 包 `@lobehub/icons-static-png@1.97.0`） | MIT | 模型 logo 源图在 [`assets/lobe-icons/`](assets/lobe-icons/)（附原许可 `LICENSE`），由 `scripts/gen-bot-forms.mjs` 预先算出外沿、色场与小图，写入 `src/renderer/src/patterns/model-bot/bot-forms.json`；各 logo 的商标归其厂商所有 |
+| [Lobe Icons](https://github.com/lobehub/lobe-icons)（npm 包 `@lobehub/icons-static-png@1.97.0`） | MIT | 模型 logo 源图在 [`assets/lobe-icons/`](assets/lobe-icons/)（附原许可 `LICENSE`），由 `scripts/gen-bot-forms.mjs` 预先算出外沿、色场与小图，写入 `src/renderer/src/patterns/model-bot/bot-forms.json`；通知用的 `resources/bot-icons/` 由 `scripts/gen-bot-icons.mjs` 按同一套形体渲染；各 logo 的商标归其厂商所有 |
 | [agent-hud-open](https://github.com/jazzenchen/agent-hud-open) | Apache-2.0 | Bot 形体与动作算法及各品牌参数移植自其 `Sources/AgentHUDDesktop/Bots/`（`BotForm`、`BotRenderer`、`BotFins`、`BotState` 等），许可原文见 [`src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open`](src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open)；未使用其 Clawd 像素精灵 |
 
 ## 其它运行时组件
 
 | 组件 | 许可 |
 | --- | --- |
-| React / React DOM / Zustand 等 npm 依赖 | 各自包内声明（多为 MIT） |
-| highlight.js | BSD-3-Clause |
+| React / React DOM / Zustand / CodeMirror 6 / mermaid / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
+| React Aria Components（`react-aria-components`） | Apache-2.0 |
+| highlight.js（经 `lowlight`、`rehype-highlight` 使用） | BSD-3-Clause |
+| KaTeX（含其字体，经 `remark-math`、`rehype-katex` 按需加载） | MIT |
+| qrcode.react | ISC |
+| tar | BlueOak-1.0.0 |
 | Maple Mono CN（`@mogeko/maple-mono-cn`） | 见包内声明 |
 | node-pty | 见包内声明 |
 | 内置 pi 运行时（`resources/pi-runtime/`） | 见上游项目声明 |

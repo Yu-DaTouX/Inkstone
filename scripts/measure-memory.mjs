@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { createServer, get as httpGet } from 'node:http'
 import { sampleProcessTree } from './lib/process-sample.mjs'
 import { syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
+import { evidenceDir } from './lib/evidence-dir.mjs'
 
 const requireEsm = createRequire(import.meta.url)
 const root = process.cwd()
@@ -18,7 +19,7 @@ const scales = flag('scales', '0,200,1000,3000')
   .split(',')
   .map((s) => Number(s.trim()))
   .filter((n) => Number.isFinite(n) && n >= 0)
-const outDir = resolve(flag('out', '.local-docs/memory-audit-20261012'))
+const outDir = flag('out') ? resolve(flag('out')) : evidenceDir(root, 'memory-audit')
 const injectMode = flag('inject', 'setstate')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
