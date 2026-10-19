@@ -5,6 +5,7 @@ import { getSettings } from '../settings'
 import { completePath } from '../credentials'
 import { listDir } from '../files'
 import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
+import { filesWatcher } from '../files-watch'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
@@ -17,6 +18,20 @@ export type FileContextResult =
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+const watchIdsBySender = new Map<number, Set<string>>()
+
+function watchIdsFor(sender: Electron.WebContents): Set<string> {
+  const existing = watchIdsBySender.get(sender.id)
+  if (existing) return existing
+  const ids = new Set<string>()
+  watchIdsBySender.set(sender.id, ids)
+  sender.once('destroyed', () => {
+    watchIdsBySender.delete(sender.id)
+    for (const id of ids) filesWatcher.release(id)
+  })
+  return ids
 }
 
 export interface FilesIpcDeps {
@@ -79,6 +94,26 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       }
     }
     return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
+  })
+
+  rawHandle('yan:files:watch', async (event, rawId: unknown, rawDirs: unknown, rawContext: unknown) => {
+    const watchId = typeof rawId === 'string' ? rawId : ''
+    if (!watchId) return { dirs: [], dropped: [] }
+    const s = await getSettings()
+    const context = isObject(rawContext) ? rawContext : undefined
+    const requestedCwd = context && typeof context.cwd === 'string' ? context.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, context)
+    if (!resolved.ok) {
+      filesWatcher.release(watchId)
+      return { dirs: [], dropped: [] }
+    }
+    const dirs = Array.isArray(rawDirs) ? rawDirs.filter((dir): dir is string => typeof dir === 'string') : []
+    const sender = event.sender
+    watchIdsFor(sender).add(watchId)
+    return filesWatcher.set(watchId, resolved.context.cwd, dirs, (dir) => {
+      if (sender.isDestroyed()) return
+      sender.send('yan:push', { ch: 'files-changed', payload: { watchId, dir } })
+    })
   })
 
   handle('yan:attachments:usage', () => attachmentsUsage(join(YAN_DIR, 'attachments')))

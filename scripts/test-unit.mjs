@@ -888,6 +888,18 @@ const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ 
   }).then(() => import('../out/test/files.mjs'))
 )
 const { runFileListingTests } = await import('./test-files.mjs')
+const { runFilesWatchTests } = await import('./test-files-watch.mjs')
+
+const filesWatch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/files-watch.ts'],
+    outfile: 'out/test/files-watch.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/files-watch.mjs'))
+)
 
 const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1562,6 +1574,7 @@ runAtQueryTests(ok, atQuery)
 runSlashQueryTests(ok, slashQuery)
 runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
+await runFilesWatchTests(ok, filesWatch)
 
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)

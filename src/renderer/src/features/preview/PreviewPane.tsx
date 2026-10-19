@@ -9,6 +9,7 @@ import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
+import { usePreviewFreshness } from './use-preview-freshness'
 import {
   dropPreviewSelection,
   previewBaseName,
@@ -35,6 +36,7 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
+  const [diskStat, setDiskStat] = useState<{ key: string; abs: string; mtimeMs?: number; size?: number } | null>(null)
   const [reload, setReload] = useState(0)
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
 
@@ -83,6 +85,9 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         setViewSlot({ key: expectedViewKey, view: { kind: 'error', name: result.name || name, message: result.error || text.failed } })
         return
       }
+      if (!cancelled) {
+        setDiskStat({ key: expectedViewKey, abs: result.abs, mtimeMs: result.mtimeMs, size: result.size })
+      }
       const capability = previewKindOf(result.name)
       if (capability === 'office') {
         const officeView = await window.yan.office.preview(result.abs, cwd)
@@ -126,6 +131,12 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         : { kind: 'empty' }
   const activeAbs = 'abs' in view ? view.abs : ''
   const name = 'name' in view ? view.name : ''
+
+  const freshnessTarget =
+    viewKey && diskStat && diskStat.key === viewKey
+      ? { abs: diskStat.abs, cwd: owner.cwd, mtimeMs: diskStat.mtimeMs, size: diskStat.size }
+      : null
+  usePreviewFreshness(ownsCurrent, freshnessTarget, () => setReload((value) => value + 1))
 
   const openArtifact = useCallback(
     (artifactPath: string): void => {

@@ -23,12 +23,12 @@ const MAX_ENTRIES = 400
 const MAX_SEARCH_RESULTS = 200
 const MAX_SEARCH_DIRS = 2000
 
-function pathKey(value: string): string {
+export function pathKey(value: string): string {
   const normalized = value.replace(/[\\/]+/g, '/')
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-function isWithin(root: string, candidate: string): boolean {
+export function isWithin(root: string, candidate: string): boolean {
   const r = pathKey(root).replace(/\/$/, '')
   const c = pathKey(candidate).replace(/\/$/, '')
   return c === r || c.startsWith(r + '/')
@@ -45,7 +45,7 @@ function nameSort(a: { name: string }, b: { name: string }): number {
   return a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
 }
 
-function safeJoin(cwd: string, rel: string): string | null {
+export function safeJoin(cwd: string, rel: string): string | null {
   const root = resolve(cwd)
   const cleaned = (rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
   if (cleaned.split('/').includes('..')) return null

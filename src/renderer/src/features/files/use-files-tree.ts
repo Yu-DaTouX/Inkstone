@@ -26,6 +26,8 @@ export interface FilesTreeController {
   toggleHidden: () => void
 }
 
+let watchSeq = 0
+
 export function useFilesTree(owner: FilesOwner): FilesTreeController {
   const [state, dispatch] = useReducer(filesTreeReducer, undefined, () =>
     freshTreeState(owner.key, owner.cwd, 0, false)
@@ -39,6 +41,17 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
   const showHidden = state.showHidden
   const cwd = owner.cwd
   const ownerGeneration = owner.generation
+  const watchIdRef = useRef('')
+  if (!watchIdRef.current) {
+    watchSeq += 1
+    watchIdRef.current = `files-${watchSeq}`
+  }
+  const watchId = watchIdRef.current
+  const openDirs = useMemo(() => Object.keys(state.open), [state.open])
+  const watchContext = useCallback(
+    (): FileRequestContext => ({ cwd, generation: ownerGeneration ?? generationRef.current }),
+    [cwd, ownerGeneration]
+  )
 
   useEffect(() => {
     generationRef.current += 1
@@ -72,6 +85,27 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
       if (state.listings[path] === undefined && !state.loading[path]) void load(path)
     }
   }, [cwd, state.generation, state.open, state.listings, state.loading, load])
+
+  useEffect(() => {
+    if (!cwd) return
+    void window.yan.watchDirs(watchId, openDirs, watchContext())
+  }, [cwd, watchId, openDirs, watchContext])
+
+  useEffect(() => {
+    const context = watchContext()
+    return () => {
+      void window.yan.watchDirs(watchId, [], context)
+    }
+  }, [watchId, watchContext])
+
+  useEffect(() => {
+    if (!cwd) return undefined
+    return window.yan.onFilesChanged((payload) => {
+      if (payload.watchId !== watchId) return
+      if (!openDirs.includes(payload.dir)) return
+      void load(payload.dir)
+    })
+  }, [cwd, watchId, openDirs, load])
 
   const rows = useMemo(() => flattenRows(state), [state])
   const focusables = useMemo(() => focusablePaths(rows), [rows])

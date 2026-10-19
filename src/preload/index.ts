@@ -467,6 +467,7 @@ const api: YanBridge = {
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
 
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
+  watchDirs: (watchId, dirs, context) => invoke<{ dirs: string[]; dropped: string[] }>('yan:files:watch', watchId, dirs, context),
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
@@ -591,6 +592,16 @@ const api: YanBridge = {
 
     ipcRenderer.send('yan:renderer-ready')
 
+    return () => {
+      ipcRenderer.removeListener('yan:push', listener)
+    }
+  },
+
+  onFilesChanged: (cb: (payload: { watchId: string; dir: string }) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, msg: MainPush): void => {
+      if (msg?.ch === 'files-changed') cb(msg.payload)
+    }
+    ipcRenderer.on('yan:push', listener)
     return () => {
       ipcRenderer.removeListener('yan:push', listener)
     }
