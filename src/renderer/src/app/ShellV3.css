@@ -120,11 +120,6 @@
     mask-image: linear-gradient(to bottom, #000 25%, transparent);
   }
 
-  .v3-pillbar {
-    flex: none;
-    padding: var(--s-8) var(--col-pad-r) 0 var(--col-pad-l);
-  }
-
   .v3-conv {
     flex: 1;
     min-height: 0;

@@ -22,7 +22,7 @@ import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { loadSubagentReviewFindings } from '../features/review/subagent-findings'
-import { RunPill } from '../patterns/RunPill'
+import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
 import { Header } from './Header'
 import { applyAppearanceV3 } from '../lib/appearance-v3'
 import { ConnBanner } from './ConnBanner'
@@ -561,6 +561,7 @@ export default function ShellV3(): ReactElement {
             onToggleSessionBar={toggleSessionBar}
             onOpenTool={(tab) => void openWorkspaceTab(tab)}
           />
+          <RunAttentionToasts onOpen={openRunFromPill} />
           <div
             className="v3-body"
             ref={bodyRef}
@@ -584,11 +585,6 @@ export default function ShellV3(): ReactElement {
             ) : (
               <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
                 <ConnBanner />
-                <RunPill
-                  className="v3-pillbar"
-                  onOpen={openRunFromPill}
-                  onShowAll={() => useUiV3.getState().navigate({ name: 'runs' })}
-                />
                 <SideBySide split={split} narrow={narrow} panelInChat={panelInChat} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
