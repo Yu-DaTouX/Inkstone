@@ -143,9 +143,21 @@
     font-size: var(--t-footnote);
   }
 
-  .sa-pane-paths > summary {
+  .sa-pane-paths-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
     color: var(--fg3);
+    font: inherit;
     cursor: pointer;
+  }
+
+  .sa-pane-paths-toggle:hover {
+    color: var(--fg);
   }
 
   .sa-pane-paths ul {

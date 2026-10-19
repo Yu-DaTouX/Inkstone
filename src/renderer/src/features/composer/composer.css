@@ -300,6 +300,7 @@
     line-height: var(--t-prose-lh);
     resize: none;
     outline: none;
+    box-shadow: none;
     overflow-y: auto;
   }
 

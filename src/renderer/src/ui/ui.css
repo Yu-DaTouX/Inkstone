@@ -307,7 +307,7 @@
   }
   .ui-checkbox[data-disabled],
   .ui-radio[data-disabled],
-  .ui-switch[data-disabled] {
+  .ui-switch[data-disabled] .ui-switch__label {
     opacity: 0.4;
   }
   @media (hover: hover) {
@@ -348,6 +348,12 @@
   }
   .ui-switch[data-selected] .ui-switch__thumb {
     transform: translateX(16px);
+  }
+  .ui-switch[data-disabled] .ui-switch__track {
+    background: var(--alpha-3);
+  }
+  .ui-switch[data-disabled][data-selected] .ui-switch__track {
+    background: color-mix(in srgb, var(--accent) 50%, transparent);
   }
 
   .ui-seg {

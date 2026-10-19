@@ -142,7 +142,7 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
     info?.projectIgnored ? text.contextProjectIgnored : '',
     info?.cappedByInkstone ? text.contextCappedByInkstone.replace('{n}', kTokens(info.threshold)) : ''
   ].filter(Boolean)
-  const compactAtDescription = compactionNotes.length ? [compactAtText, ...compactionNotes].join(' ') : compactAtText
+  const compactAtDescription = compactionNotes.length ? [compactAtText, ...compactionNotes].join(text.contextNoteJoin) : compactAtText
 
   const trimOn = settings?.contextTrim !== false
   const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
