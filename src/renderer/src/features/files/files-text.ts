@@ -1,102 +1,150 @@
 import type { Lang } from '../../i18n'
 
 export interface FilesText {
+  title: string
   treeLabel: string
   loading: string
+  listing: string
+  refreshing: string
   empty: string
   error: string
+  retry: string
   permission: string
   missing: string
   invalid: string
+  noCwd: string
   partial: string
-  showHidden: string
-  hideHidden: string
   refresh: string
-  addContext: string
-  copyPath: string
-  copyRelativePath: string
-  copyName: string
-  reveal: string
-  openWithSystem: string
   collapseAll: string
+  showTree: string
+  hideTree: string
+  resizeTree: string
+  goToFile: string
   searchLabel: string
   searchPlaceholder: string
   searchClear: string
-  toggleTree: string
-  resizeTree: string
   searching: string
   searchEmpty: string
   searchFailed: string
+  contentFailed: string
+  contentHint: string
   searchTruncated: string
+  attach: string
+  copy: string
+  copyAbsolute: string
+  copyRelative: string
+  copyName: string
+  copyAbsolutePlural: string
+  copyRelativePlural: string
+  copyNamePlural: string
+  openIn: string
+  openDefault: string
+  openPreview: string
+  reveal: string
+  openTerminal: string
   selectedCount: string
-  addSelected: string
-  clearSelection: string
+  linkTo: string
+  linkDangling: string
+  linkCycle: string
+  linkExternal: string
 }
 
 const ZH: FilesText = {
+  title: '文件',
   treeLabel: '项目文件',
-  loading: '正在读取目录…',
-  empty: '这个目录是空的',
-  error: '读取目录失败',
-  permission: '没有权限读取这个目录',
-  missing: '目录不存在',
-  invalid: '工作目录不可用',
-  partial: '目录内容较多，只列出了前面一部分',
-  showHidden: '显示隐藏项',
-  hideHidden: '隐藏隐藏项',
-  refresh: '刷新已展开的目录',
-  addContext: '加入当前会话上下文',
-  copyPath: '复制路径',
-  copyRelativePath: '复制相对路径',
-  copyName: '复制名称',
-  reveal: '在文件夹中显示',
-  openWithSystem: '用系统程序打开',
+  loading: '正在加载',
+  listing: '正在列出此文件夹',
+  refreshing: '正在刷新文件',
+  empty: '文件夹为空',
+  error: '无法读取此文件夹。',
+  retry: '重试',
+  permission: '没有权限读取此文件夹。',
+  missing: '此文件夹已不存在。',
+  invalid: '无法读取此文件夹。',
+  noCwd: '此会话没有工作目录',
+  partial: '内容较多，只列出了前面一部分',
+  refresh: '刷新',
   collapseAll: '折叠全部',
+  showTree: '显示文件树',
+  hideTree: '隐藏文件树',
+  resizeTree: '调整文件树大小',
+  goToFile: '转到文件或搜索',
   searchLabel: '筛选文件',
-  searchPlaceholder: '筛选，或输入 ? 在文件中搜索',
+  searchPlaceholder: '筛选文件，或输入 ? 搜索文件内容',
   searchClear: '清除筛选',
-  toggleTree: '显示文件树',
-  resizeTree: '调整文件树宽度',
-  searching: '正在搜索…',
-  searchEmpty: '没有匹配',
-  searchFailed: '搜索失败',
+  searching: '正在搜索文件',
+  searchEmpty: '没有匹配的文件',
+  searchFailed: '无法搜索文件名。',
+  contentFailed: '无法搜索文件内容。',
+  contentHint: '在 ? 后输入文字以搜索文件内容',
   searchTruncated: '结果较多，只显示前面一部分',
-  selectedCount: '已选 {n} 项',
-  addSelected: '加入上下文',
-  clearSelection: '清除选择'
+  attach: '作为上下文附加',
+  copy: '复制',
+  copyAbsolute: '绝对路径',
+  copyRelative: '相对路径',
+  copyName: '文件名',
+  copyAbsolutePlural: '绝对路径',
+  copyRelativePlural: '相对路径',
+  copyNamePlural: '文件名',
+  openIn: '打开方式',
+  openDefault: '默认程序',
+  openPreview: '在预览中打开',
+  reveal: '在资源管理器中显示',
+  openTerminal: '在终端中打开',
+  selectedCount: '已选择 {n} 项',
+  linkTo: '链接到 {target}',
+  linkDangling: '链接目标不存在',
+  linkCycle: '循环链接，无法展开',
+  linkExternal: '链接到工作目录之外：{target}'
 }
 
 const EN: FilesText = {
+  title: 'Files',
   treeLabel: 'Project files',
-  loading: 'Reading folder…',
-  empty: 'This folder is empty',
-  error: 'Could not read this folder',
-  permission: 'No permission to read this folder',
-  missing: 'Folder does not exist',
-  invalid: 'The working directory is unavailable',
+  loading: 'Loading',
+  listing: 'Listing this folder',
+  refreshing: 'Refreshing files',
+  empty: 'Folder is empty',
+  error: 'Couldn’t read this folder.',
+  retry: 'Try again',
+  permission: 'No permission to read this folder.',
+  missing: 'This folder no longer exists.',
+  invalid: 'Couldn’t read this folder.',
+  noCwd: 'No working directory for this session',
   partial: 'Too many entries; only the first part is shown',
-  showHidden: 'Show hidden items',
-  hideHidden: 'Hide hidden items',
-  refresh: 'Refresh expanded folders',
-  addContext: 'Add to the current chat',
-  copyPath: 'Copy path',
-  copyRelativePath: 'Copy relative path',
-  copyName: 'Copy name',
-  reveal: 'Reveal in folder',
-  openWithSystem: 'Open with system app',
+  refresh: 'Refresh',
   collapseAll: 'Collapse all',
-  searchLabel: 'Filter files',
-  searchPlaceholder: 'Filter, or type ? to search inside files',
-  searchClear: 'Clear filter',
-  toggleTree: 'Show file tree',
+  showTree: 'Show file tree',
+  hideTree: 'Hide file tree',
   resizeTree: 'Resize file tree',
-  searching: 'Searching…',
-  searchEmpty: 'No matches',
-  searchFailed: 'Search failed',
+  goToFile: 'Go to file or search',
+  searchLabel: 'Filter files',
+  searchPlaceholder: 'Filter, or ? to search in files',
+  searchClear: 'Clear filter',
+  searching: 'Searching files',
+  searchEmpty: 'No matching files',
+  searchFailed: 'Couldn’t search filenames.',
+  contentFailed: 'Couldn’t search file contents.',
+  contentHint: 'Type after ? to search in files',
   searchTruncated: 'Too many matches; only the first part is shown',
-  selectedCount: '{n} selected',
-  addSelected: 'Add to chat',
-  clearSelection: 'Clear selection'
+  attach: 'Attach as context',
+  copy: 'Copy',
+  copyAbsolute: 'Absolute path',
+  copyRelative: 'Relative path',
+  copyName: 'Filename',
+  copyAbsolutePlural: 'Absolute paths',
+  copyRelativePlural: 'Relative paths',
+  copyNamePlural: 'Filenames',
+  openIn: 'Open in',
+  openDefault: 'Default app',
+  openPreview: 'Open in preview',
+  reveal: 'Show in Explorer',
+  openTerminal: 'Open in terminal',
+  selectedCount: '{n} items selected',
+  linkTo: 'Link to {target}',
+  linkDangling: 'Link target is missing',
+  linkCycle: 'Circular link; cannot expand',
+  linkExternal: 'Links outside the working directory: {target}'
 }
 
 export function filesText(lang: Lang): FilesText {

@@ -73,7 +73,7 @@ export function selectOwnedTerminals(
   ownerKey: string,
   ownerOf: (resourceId: string) => string | undefined
 ): TerminalSnapshot[] {
-  return list.filter((item) => ownerOf('terminal:' + item.id) === ownerKey)
+  return list.filter((item) => (item.owner ?? ownerOf('terminal:' + item.id)) === ownerKey)
 }
 
 export function pickOwnedTerminal(owned: readonly TerminalSnapshot[]): TerminalSnapshot | null {
@@ -316,7 +316,8 @@ export class TerminalSession {
         cwd: owner.cwd,
         fallbackCwd: owner.cwd,
         cols: this.cols,
-        rows: this.rows
+        rows: this.rows,
+        owner: owner.key
       })
     } catch {
       snapshot = null

@@ -25,6 +25,14 @@ export async function runRailSectionsTests(ok, rail) {
   ok(after[0] === 'settings' && after[1] === 'environment', '移到目标之后')
   ok(moveRailSection(RAIL_SECTION_IDS, 'context', 'context', 'before').join() === RAIL_SECTION_IDS.join(), '移到自己不变')
 
+  ok(RAIL_SECTION_IDS.indexOf('stats') === RAIL_SECTION_IDS.indexOf('settings') + 1, '会话统计排在设置之后')
+  ok(isRailSectionOpen(base, 's1', 'stats') === true, '会话统计默认展开')
+  ok(canHideRailSection('stats') === true, '会话统计可隐藏')
+  const legacy = resolveRailOrder(RAIL_SECTION_IDS.filter((id) => id !== 'stats'))
+  ok(legacy.join() === RAIL_SECTION_IDS.join(), '旧存储缺会话统计时插回设置之后')
+  const legacyMoved = resolveRailOrder(['changes', 'environment', 'settings', 'context'])
+  ok(legacyMoved.indexOf('stats') === legacyMoved.indexOf('context') - 1, '旧存储自定义顺序下会话统计插在下一个已知分区之前')
+
   ok(isRailSectionOpen(base, 's1', 'environment') === true, '环境默认展开')
   ok(isRailSectionOpen(base, 's1', 'context') === false, '上下文默认折叠')
   ok(isRailSectionOpen(base, 's1', 'connectors') === false, '连接器默认折叠')

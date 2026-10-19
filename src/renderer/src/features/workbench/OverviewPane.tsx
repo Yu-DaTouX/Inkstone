@@ -45,6 +45,7 @@ import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, 
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
 import { RailCard } from './RailCard'
+import { RailStatsBody, useRailStats } from './RailStats'
 import { RailSectionsMenu } from './RailSectionsMenu'
 import {
   isRailSectionHidden,
@@ -289,7 +290,7 @@ function isLiveRun(run: SubagentRun): boolean {
   return run.status === 'running' || run.status === 'starting'
 }
 
-const BACKGROUND_RUN_KINDS: ReadonlySet<RunSnapshot['kind']> = new Set(['scheduled', 'review'])
+const BACKGROUND_RUN_KINDS: ReadonlySet<RunSnapshot['kind']> = new Set(['scheduled'])
 const MAX_FINISHED_BACKGROUND = 5
 
 const BACKGROUND_DOT: Record<RunTone, string> = {
@@ -681,6 +682,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         ? <LineDelta added={lineTotals.added} removed={lineTotals.removed} text={rail} />
         : text.changesFiles(repo.changedCount)
 
+  const statsModel = useRailStats(messages, !isRailSectionHidden({ hidden }, 'stats'))
   const contextOpen = isOpen('context')
   const autoCompactLimit = autoCompactLimitOf(session, settings)
   const contextData = useMemo(
@@ -820,6 +822,14 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         </ul>
       )
     },
+    ...(statsModel
+      ? {
+          stats: {
+            summary: rail.statsSummary(statsModel.summary.turns, statsModel.summary.total),
+            body: <RailStatsBody model={statsModel} />
+          }
+        }
+      : {}),
     context: {
       summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
       tone: contextTone,

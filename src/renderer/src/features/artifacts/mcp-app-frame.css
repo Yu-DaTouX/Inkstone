@@ -15,7 +15,7 @@
     border-top: 1px solid var(--line);
     color: var(--ask-t);
     background: var(--ask-bg);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-mcp-app-invalid {
@@ -38,7 +38,7 @@
 
   .v3-mcp-app-audit-title {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-mcp-app-audit-row {
@@ -46,7 +46,7 @@
     grid-template-columns: auto minmax(0, 120px) auto minmax(0, 1fr) auto;
     align-items: baseline;
     gap: var(--s-6);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-mcp-app-audit-phase {

@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export const RAIL_SECTION_IDS = [
   'environment',
   'settings',
+  'stats',
   'context',
   'usage',
   'connectors',

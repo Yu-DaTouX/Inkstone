@@ -45,6 +45,8 @@ export interface ChangesPaneProps {
 export interface PreviewPaneProps {
   owner: WorkspaceOwner
   path?: string
+  treeShown?: boolean
+  onRevealInTree?: (abs: string) => void
 }
 
 export interface ContextPaneProps {

@@ -38,6 +38,22 @@ export interface PreviewText {
   reload: string
   discard: string
   closeEditor: string
+  emptyTitle: string
+  emptyTree: string
+  emptyNoTree: string
+  noSelection: string
+  noSelectionHint: string
+  missing: string
+  missingHint: string
+  missingCreatable: string
+  directory: string
+  unreadable: string
+  invalidPath: string
+  notFile: string
+  outsideRoot: string
+  encodingNote: string
+  mediaHint: string
+  revealInTree: string
 }
 
 const ZH: PreviewText = {
@@ -77,7 +93,23 @@ const ZH: PreviewText = {
   saveFailed: '保存失败',
   reload: '重新加载',
   discard: '放弃改动',
-  closeEditor: '关闭编辑'
+  closeEditor: '关闭编辑',
+  emptyTitle: '打开的文件会显示在这里',
+  emptyTree: '从文件树中选择一个文件，或点击对话中的文件路径。',
+  emptyNoTree: '点击对话中的文件路径即可打开。',
+  noSelection: '未选择文件',
+  noSelectionHint: '从上方选择一个已打开的文件，或点击对话中的文件路径。',
+  missing: '文件不存在',
+  missingHint: '它可能已被移动或删除。',
+  missingCreatable: '所在文件夹存在，这个文件还没有创建。',
+  directory: '这是一个文件夹',
+  unreadable: '无法读取此文件（可能没有权限）',
+  invalidPath: '路径无效',
+  notFile: '不是普通文件',
+  outsideRoot: '此文件在工作目录之外。',
+  encodingNote: '无法识别文本编码，内容可能显示为乱码。',
+  mediaHint: '音视频与 PDF 请用系统程序打开。',
+  revealInTree: '在文件树中显示'
 }
 
 const EN: PreviewText = {
@@ -117,7 +149,23 @@ const EN: PreviewText = {
   saveFailed: 'Could not save',
   reload: 'Reload',
   discard: 'Discard changes',
-  closeEditor: 'Close editor'
+  closeEditor: 'Close editor',
+  emptyTitle: 'Open files appear here',
+  emptyTree: 'Pick a file in the tree, or click a file path in the conversation.',
+  emptyNoTree: 'Click a file path in the conversation to open it.',
+  noSelection: 'No file selected',
+  noSelectionHint: 'Pick an open file above, or click a file path in the conversation.',
+  missing: 'File not found',
+  missingHint: 'It may have been moved or deleted.',
+  missingCreatable: 'The folder exists; this file has not been created yet.',
+  directory: 'This is a folder',
+  unreadable: 'Couldn’t read this file (permission may be missing)',
+  invalidPath: 'Invalid path',
+  notFile: 'Not a regular file',
+  outsideRoot: 'This file is outside the working directory.',
+  encodingNote: 'The text encoding was not recognized; content may look garbled.',
+  mediaHint: 'Open audio, video and PDF files with a system app.',
+  revealInTree: 'Reveal in file tree'
 }
 
 export function previewText(lang: Lang): PreviewText {

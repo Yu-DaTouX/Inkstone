@@ -36,7 +36,7 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
 
 const BASE_STYLE = `:root{color-scheme:light dark}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font:13px/1.7 var(--font);font-synthesis:none}
-body{padding:2px}svg{max-width:100%;height:auto}a{color:var(--accent)}
+body{padding:2px}svg{max-width:100%;height:auto}a{color: var(--accent-t)}
 button{font:inherit;color:inherit;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:6px;padding:2px 12px;cursor:pointer}
 button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;transition-duration:1ms!important}}`

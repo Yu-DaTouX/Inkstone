@@ -28,7 +28,7 @@
     align-items: center;
     gap: var(--s-8);
     min-width: 0;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .term-pane-chrome-title .term-pane-title {
