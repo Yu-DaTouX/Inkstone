@@ -15,6 +15,8 @@ let callback
 runInNewContext(code, {
   handle: (channel, fn) => { assert.equal(channel, 'yan:openPath'); callback = fn },
   existsSync: path => { fsCalls.push(path); return path !== 'missing' },
+  statSync: () => ({ isDirectory: () => false }),
+  openBlockedByExtension: () => false,
   dirname,
   shell: { openPath: async path => { shellCalls.push(path); return '' } }
 })
