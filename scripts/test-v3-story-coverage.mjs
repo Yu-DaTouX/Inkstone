@@ -53,7 +53,6 @@ const ALLOWED_STATES = new Set([
   'theme-light',
   'theme-dark',
   'density-compact',
-  'density-standard',
   'density-comfortable'
 ])
 
@@ -138,7 +137,7 @@ const REQUIRED = {
   Splitter: ['default', 'disabled', 'orientation-horizontal', 'orientation-vertical'],
   FieldError: ['default', 'visible'],
   Header: ['default'],
-  Heading: ['default', 'theme-light', 'theme-dark', 'density-compact', 'density-standard', 'density-comfortable'],
+  Heading: ['default', 'theme-light', 'theme-dark', 'density-compact', 'density-comfortable'],
   Input: ['default', 'focus', 'disabled', 'invalid'],
   Label: ['default'],
   Text: ['default']

@@ -66,11 +66,24 @@ export {
 export { Tooltip, TooltipTrigger, type TooltipProps, type TooltipTriggerComponentProps } from './Tooltip'
 export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastContent, type ToastTone } from './Toast'
 export { Badge, Kbd, type BadgeProps, type BadgeTone } from './Badge'
+export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type StatusSlotProps, type StatusSlotTone } from './StatusDot'
+export { Avatar, avatarInitial, type AvatarProps } from './Avatar'
 export { Meter, ProgressBar, Spinner, type MeterProps, type ProgressBarProps, type SpinnerProps } from './Progress'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
 export { Slider, type SliderProps } from './Slider'
+export { SettingRow, SettingRows, type SettingRowProps, type SettingRowsProps } from './SettingRow'
+export {
+  SettingsDialog,
+  SettingsNav,
+  SettingsNavEmpty,
+  SettingsNavGroup,
+  SettingsNavItem,
+  type SettingsDialogProps,
+  type SettingsNavItemProps,
+  type SettingsNavProps
+} from './SettingsDialog'
 export {
   Tree,
   TreeChevron,

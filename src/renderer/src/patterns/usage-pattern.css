@@ -18,7 +18,7 @@
   .start-label {
     margin: 0;
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     font-weight: 400;
   }
   .start-spacer {
@@ -43,7 +43,7 @@
   }
   .start-hero-num {
     color: var(--fg);
-    font: var(--t-h1) / 1.1 var(--font-ui);
+    font: var(--t-title) / 1.1 var(--font-ui);
     font-variant-numeric: tabular-nums;
   }
 
@@ -58,19 +58,19 @@
   }
   .start-stat dt {
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
   .start-stat dd {
     margin: 0;
     overflow: hidden;
     color: var(--fg);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .start-stat dd[data-long] {
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .start-heat {
@@ -110,7 +110,7 @@
     grid-template-areas: 'name num share' 'bar bar bar';
     align-items: center;
     gap: var(--s-6);
-    font: var(--t-body) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-body-lh) var(--font-ui);
   }
   .start-model-name {
     grid-area: name;
@@ -121,7 +121,7 @@
   }
   .start-model-provider {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
   .start-model-bar {
     grid-area: bar;
@@ -136,14 +136,14 @@
   }
   .start-model-num {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
   .start-hint {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .start-usage[data-pending] .start-hero-num,
@@ -160,7 +160,7 @@
   }
   .start-strip-num {
     color: var(--fg);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }

@@ -21,7 +21,7 @@ function mapPalette(c: typeof v3Light | typeof v3Dark): PaletteV3 {
     fg: c.fg,
     fgDim: c.fg2,
     fgMute: c.fg3,
-    accent: c.accent,
+    accent: c.accentT,
     accentSoft: c.sel,
     accentLine: c.accent,
     onAccent: c.onInk,

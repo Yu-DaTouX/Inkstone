@@ -8,7 +8,7 @@
     display: flex;
     align-items: center;
     gap: var(--s-10);
-    min-height: 24px;
+    min-height: var(--size-btn);
   }
 
   .ui-slider__track {
@@ -38,12 +38,12 @@
     background: var(--ink);
     box-shadow: var(--shadow-thumb);
     transition:
-      background-color var(--dur-hover) var(--ease),
-      box-shadow var(--dur-hover) var(--ease);
+      background-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-fast) var(--ease);
   }
   .ui-slider__thumb[data-focus-visible] {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: none;
+    box-shadow: var(--ring-focus);
   }
   @media (hover: hover) {
     .ui-slider__thumb[data-hovered] {
@@ -58,7 +58,7 @@
     flex: none;
     min-width: 2.5em;
     text-align: end;
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg2);
     font-variant-numeric: tabular-nums;
   }

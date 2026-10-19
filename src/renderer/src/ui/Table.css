@@ -6,7 +6,7 @@
     border-collapse: separate;
     border-spacing: 0;
     color: var(--fg);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
   }
 
   div.ui-table {
@@ -18,7 +18,7 @@
 
   .ui-table__header {
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .ui-table__column {
@@ -27,7 +27,7 @@
     text-align: start;
     white-space: nowrap;
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
   .ui-table__column[data-allows-sorting] {
     cursor: default;
@@ -35,7 +35,7 @@
   }
   .ui-table__column[data-sort-direction]::after {
     margin-inline-start: var(--s-4);
-    color: var(--accent);
+    color: var(--accent-t);
   }
   .ui-table__column[data-sort-direction='ascending']::after {
     content: '\2191';
@@ -46,7 +46,7 @@
 
   .ui-table__row {
     color: var(--fg);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
   }
 
   .ui-table__cell {
@@ -78,8 +78,8 @@
   .ui-table__column[data-focus-visible],
   .ui-table__cell[data-focus-visible],
   .ui-table__row[data-focus-visible] {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: none;
+    box-shadow: var(--ring-focus-inset);
   }
 
   .ui-table__empty,
@@ -91,7 +91,7 @@
     min-height: 96px;
     padding: var(--s-24);
     color: var(--fg3);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     text-align: center;
   }
 }

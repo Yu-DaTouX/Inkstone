@@ -14,7 +14,7 @@
     background: var(--sunken);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     overflow: hidden;
   }
 
@@ -35,13 +35,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-term__readonly {
     flex: none;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-term__btn {
@@ -79,14 +79,14 @@
     width: auto;
     height: auto;
     padding: var(--s-4) var(--s-8);
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .pane-term__note {
     margin: 0;
     padding: var(--s-16);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-term__invalid {
@@ -99,13 +99,13 @@
 
   .pane-term__invalid-title {
     margin: 0;
-    font-weight: var(--t-title-w);
+    font-weight: var(--t-heading-w);
   }
 
   .pane-term__invalid-hint {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-term__host {

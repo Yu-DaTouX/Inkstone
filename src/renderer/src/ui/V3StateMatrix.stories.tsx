@@ -481,7 +481,7 @@ export const PopoverTooltipStates: Story = {
         </Button>
         <Popover>
           <div style={{ padding: 'var(--s-12)', maxWidth: 240 }}>
-            <Heading level={3} style={{ margin: 0, fontSize: 'var(--t-ui)' }}>
+            <Heading level={3} style={{ margin: 0, fontSize: 'var(--t-body)' }}>
               浮层标题
             </Heading>
             <p style={{ ...bodyStyle, marginTop: 'var(--s-8)' }}>浮层内容由调用方排版。</p>
@@ -526,7 +526,7 @@ export const ToastStates: Story = {
   )
 }
 
-const DENSITIES = ['compact', 'standard', 'comfortable'] as const
+const DENSITIES = ['compact', 'comfortable'] as const
 
 export const ThemeDensityMatrix: Story = {
   name: '主题 × 密度 · 代表控件',
@@ -538,7 +538,6 @@ export const ThemeDensityMatrix: Story = {
         'theme-light',
         'theme-dark',
         'density-compact',
-        'density-standard',
         'density-comfortable'
       ),
       declared: []
@@ -561,7 +560,7 @@ export const ThemeDensityMatrix: Story = {
               gap: 'var(--s-8)'
             }}
           >
-            <Heading level={3} style={{ margin: 0, fontSize: 'var(--t-title)' }}>
+            <Heading level={3} style={{ margin: 0, fontSize: 'var(--t-heading)' }}>
               {mode === 'light' ? '浅色' : '深色'}
             </Heading>
             <Row label="标签">
@@ -578,7 +577,7 @@ export const ThemeDensityMatrix: Story = {
           </section>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'var(--s-16)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--s-16)' }}>
         {DENSITIES.map((name) => (
           <section
             key={name}
@@ -589,10 +588,10 @@ export const ThemeDensityMatrix: Story = {
               padding: 'var(--s-12)'
             }}
           >
-            <Heading level={4} style={{ margin: '0 0 var(--s-8)', fontSize: 'var(--t-meta)', color: 'var(--fg3)' }}>
+            <Heading level={4} style={{ margin: '0 0 var(--s-8)', fontSize: 'var(--t-footnote)', color: 'var(--fg3)' }}>
               {name}
             </Heading>
-            <p style={{ margin: 0, color: 'var(--fg)', fontSize: 'var(--t-body)', lineHeight: 'var(--t-body-lh)' }}>
+            <p style={{ margin: 0, color: 'var(--fg)', fontSize: 'var(--t-prose)', lineHeight: 'var(--t-prose-lh)' }}>
               正文在两行内核对外壳密度。
             </p>
           </section>
@@ -605,21 +604,21 @@ export const ThemeDensityMatrix: Story = {
 const noteStyle = {
   margin: 0,
   color: 'var(--fg3)',
-  fontSize: 'var(--t-meta)',
-  lineHeight: 'var(--t-meta-lh)'
+  fontSize: 'var(--t-footnote)',
+  lineHeight: 'var(--t-footnote-lh)'
 } as const
 
 const bodyStyle = {
   margin: 0,
   color: 'var(--fg2)',
-  fontSize: 'var(--t-body)',
-  lineHeight: 'var(--t-body-lh)'
+  fontSize: 'var(--t-prose)',
+  lineHeight: 'var(--t-prose-lh)'
 } as const
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 'var(--s-8)', alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ width: 48, color: 'var(--fg3)', fontSize: 'var(--t-meta)', flex: '0 0 auto' }}>{label}</span>
+      <span style={{ width: 48, color: 'var(--fg3)', fontSize: 'var(--t-footnote)', flex: '0 0 auto' }}>{label}</span>
       {children}
     </div>
   )

@@ -13,7 +13,7 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     overflow: hidden;
   }
 
@@ -34,7 +34,7 @@
 
   .pane-head__sub {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -66,7 +66,7 @@
     align-items: center;
     gap: var(--s-8);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-num {
@@ -78,7 +78,7 @@
     margin: 0;
     padding: var(--s-12) var(--s-16);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-list {
@@ -164,7 +164,7 @@
   .pane-invalid__hint {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-head--browser {
@@ -187,7 +187,7 @@
     background: var(--sunken);
     color: var(--fg);
     font: inherit;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .pane-address__input:focus-visible {

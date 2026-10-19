@@ -1,5 +1,6 @@
 import { useEffect, useRef, type JSX } from 'react'
 import { prefersReducedMotion, usePresence } from '../../lib/usePresence'
+import { subscribeReducedMotion } from '../../lib/reduced-motion'
 import {
   ALPHA_LEVELS,
   CELL_SIZE,
@@ -24,7 +25,6 @@ import {
 } from './ascii-field-model'
 import './ambient.css'
 
-const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 const glyphAtlases = new Map<string, HTMLCanvasElement>()
 
@@ -333,7 +333,6 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     applyPolicy()
   })
   const themeObserver = new MutationObserver(onTheme)
-  const reducedMedia = window.matchMedia(REDUCED_QUERY)
   const darkMedia = window.matchMedia(DARK_QUERY)
 
   resize()
@@ -345,7 +344,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('focus', onFocus)
   window.addEventListener('blur', onBlur)
-  reducedMedia.addEventListener('change', onReducedChange)
+  const unsubscribeReduced = subscribeReducedMotion(onReducedChange)
   darkMedia.addEventListener('change', onTheme)
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   ro.observe(host)
@@ -375,7 +374,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
       document.documentElement.removeEventListener('pointerleave', onPointerLeave)
-      reducedMedia.removeEventListener('change', onReducedChange)
+      unsubscribeReduced()
       darkMedia.removeEventListener('change', onTheme)
     }
   }

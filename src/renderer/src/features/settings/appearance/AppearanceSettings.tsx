@@ -1,21 +1,15 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { AppSettings } from '../../../../../shared/ipc'
-import {
-  FONT_UI_DEFAULT,
-  FONT_UI_MAX,
-  FONT_UI_MIN,
-  sanitizeFontName
-} from '../../../../../shared/appearance'
+import { FONT_UI_DEFAULT, resolveUiDensity, sanitizeFontName } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
-import { Slider, Switch, TextField } from '../../../ui'
+import { Switch, TextField } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { settingsText } from '../settings-text'
 import { generalText } from '../general/general-text'
 import { Segmented, SettingsMore, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 
-type Density = 'compact' | 'standard' | 'comfortable'
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
 type SendKeyChoice = 'enter' | 'ctrlEnter'
 
@@ -118,41 +112,6 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   )
 }
 
-function UiSizeRow(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const patchSettings = useStore((s) => s.patchSettings)
-  const saved = useStore((s) => s.settings?.fontSizeUi) ?? FONT_UI_DEFAULT
-  const [draft, setDraft] = useState<number | null>(null)
-  const shown = draft ?? saved
-
-  const commit = (value: number): void => {
-    setDraft(null)
-    if (value === saved) return
-    void patchSettings({ fontSizeUi: value })
-  }
-
-  return (
-    <SettingsRow
-      settingId="appearance-font-size"
-      label={text.fontSizeUi}
-      description={text.fontSizeNow.replace('{n}', String(shown))}
-    >
-      <Slider
-        className="settings-slider"
-        aria-label={text.fontSizeUi}
-        minValue={FONT_UI_MIN}
-        maxValue={FONT_UI_MAX}
-        step={1}
-        value={shown}
-        data-testid="v3-font-size-ui"
-        onChange={(next) => setDraft(next as number)}
-        onChangeEnd={(next) => commit(next as number)}
-      />
-    </SettingsRow>
-  )
-}
-
 function SwitchRow({
   settingId,
   label,
@@ -182,7 +141,8 @@ export function AppearanceSettings(): ReactElement {
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
   const theme = settings?.theme ?? 'dark'
-  const density = (settings?.density ?? 'standard') as Density
+  const density = resolveUiDensity(settings?.density, settings?.fontSizeUi)
+  const reduceMotion = settings?.reduceMotion === true
   const sendKey: SendKeyChoice = settings?.sendKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter'
   const tiles = settings?.workspaceTiles !== false
   const usageUnderInput = settings?.usageUnderInput !== false
@@ -218,18 +178,15 @@ export function AppearanceSettings(): ReactElement {
           />
         </SettingsRow>
 
-        <UiSizeRow />
-
-        <SettingsRow settingId="appearance-density" label={text.density}>
+        <SettingsRow settingId="appearance-density" label={text.density} description={text.densityDesc}>
           <Segmented
             label={text.density}
             value={density}
             options={[
-              { value: 'compact', label: text.densityCompact },
-              { value: 'standard', label: text.densityStandard },
-              { value: 'comfortable', label: text.densityComfortable }
+              { value: 'compact', label: text.densityCompact, testId: 'v3-density-compact' },
+              { value: 'comfortable', label: text.densityComfortable, testId: 'v3-density-comfortable' }
             ]}
-            onChange={(value) => void patchSettings({ density: value })}
+            onChange={(value) => void patchSettings({ density: value, fontSizeUi: FONT_UI_DEFAULT })}
           />
         </SettingsRow>
 
@@ -263,6 +220,14 @@ export function AppearanceSettings(): ReactElement {
         <div className="settings-rows">
           <FontRow kind="ui" />
           <FontRow kind="code" />
+          <SwitchRow
+            settingId="appearance-reduce-motion"
+            label={text.reduceMotion}
+            description={text.reduceMotionDesc}
+            isSelected={reduceMotion}
+            onChange={(next) => void patchSettings({ reduceMotion: next }).catch(() => undefined)}
+            testId="v3-reduce-motion-toggle"
+          />
           <SwitchRow
             settingId="appearance-ascii-background"
             label={text.asciiBackground}

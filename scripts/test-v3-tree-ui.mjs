@@ -169,7 +169,7 @@ async function main() {
   ok(!/#[0-9a-fA-F]{3,8}\b/.test(treeCode), 'Tree.css 不写死颜色（只用令牌变量）')
   ok(treeCode.includes('var(--d-row)') && treeCode.includes('var(--tree-item-level'), 'Tree.css 用密度令牌 --d-row 与层级变量缩进')
   ok(treeCode.includes('text-overflow: ellipsis') && treeCode.includes('@media (prefers-reduced-motion: reduce)'), 'Tree.css 处理长名称截断与减少动态效果')
-  ok(/\.ui-tree__item\[data-focus-visible\][\s\S]*outline:\s*2px solid var\(--accent\)/.test(treeCode), 'Tree.css 自带与 ui.css 同值的焦点环')
+  ok(/\.ui-tree__item\[data-focus-visible\][\s\S]*box-shadow:\s*var\(--ring-focus-inset\)/.test(treeCode), 'Tree.css 自带与 ui.css 列表项同值的焦点环')
   ok(!/styles\/|ui-list-row|ui-btn/.test(treeCode), 'Tree.css 不复用 v2 类名')
 
   const story = await readFile(join(process.cwd(), 'src/renderer/src/ui/Tree.stories.tsx'), 'utf8')

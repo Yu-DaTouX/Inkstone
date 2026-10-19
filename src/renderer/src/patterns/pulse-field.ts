@@ -1,3 +1,5 @@
+import { prefersReducedMotion, subscribeReducedMotion } from '../lib/reduced-motion'
+
 export interface PulseFieldColors {
   levels: [number, number, number][]
   off: [number, number, number]
@@ -32,14 +34,14 @@ export class PulseField {
   private reduced = false
   private colors: PulseFieldColors = { levels: [[128, 128, 128]], off: [128, 128, 128], dark: false }
   private readonly resizeObserver: ResizeObserver
-  private readonly motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+  private unsubscribeMotion: () => void = () => {}
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly host: HTMLElement) {
     this.ctx = canvas.getContext('2d')
-    this.reduced = this.motion.matches
+    this.reduced = prefersReducedMotion()
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(canvas)
-    this.motion.addEventListener('change', this.onMotion)
+    this.unsubscribeMotion = subscribeReducedMotion(this.onMotion)
     document.addEventListener('visibilitychange', this.onVisibility)
     window.addEventListener('blur', this.onBlur)
     window.addEventListener('focus', this.onFocus)
@@ -69,7 +71,7 @@ export class PulseField {
     cancelAnimationFrame(this.frame)
     this.frame = 0
     this.resizeObserver.disconnect()
-    this.motion.removeEventListener('change', this.onMotion)
+    this.unsubscribeMotion()
     document.removeEventListener('visibilitychange', this.onVisibility)
     window.removeEventListener('blur', this.onBlur)
     window.removeEventListener('focus', this.onFocus)
@@ -79,8 +81,8 @@ export class PulseField {
     return this.level / (this.count - 1)
   }
 
-  private onMotion = (e: MediaQueryListEvent): void => {
-    this.reduced = e.matches
+  private onMotion = (): void => {
+    this.reduced = prefersReducedMotion()
     if (this.reduced) this.pulses = []
     this.kick()
   }

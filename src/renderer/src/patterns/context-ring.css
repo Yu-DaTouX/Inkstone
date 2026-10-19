@@ -50,7 +50,7 @@
   }
 
   .ctx-ring-text {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: inherit;
     font-variant-numeric: tabular-nums;
   }
@@ -63,7 +63,7 @@
   }
 
   .ctx-gauge-text {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
   }
 
@@ -87,12 +87,12 @@
   }
 
   .ctx-pop-title {
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     font-weight: 600;
   }
 
   .ctx-window-total {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -158,7 +158,7 @@
     grid-template-columns: 10px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: var(--s-8);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -186,12 +186,12 @@
 
   .ctx-note {
     margin: 0;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg3);
   }
 
   .ctx-estimate-note {
-    line-height: var(--t-meta-lh, 1.4);
+    line-height: var(--t-footnote-lh, 1.4);
   }
 
   .ctx-actions {

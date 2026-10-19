@@ -56,7 +56,7 @@ function ControlledSlider() {
         step={1}
         showValue
       />
-      <span style={{ color: 'var(--fg2)', fontSize: 'var(--t-meta)' }}>当前：{value}</span>
+      <span style={{ color: 'var(--fg2)', fontSize: 'var(--t-footnote)' }}>当前：{value}</span>
     </div>
   )
 }

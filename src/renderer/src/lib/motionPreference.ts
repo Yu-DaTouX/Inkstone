@@ -1,13 +1,16 @@
+import { prefersReducedMotion, subscribeReducedMotion } from './reduced-motion'
+
 export function installMotionPreferenceReporter(): () => void {
-  if (typeof window.matchMedia !== 'function') return () => {}
-  const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+  let last: boolean | null = null
   const report = (): void => {
+    const reduced = prefersReducedMotion()
+    if (reduced === last) return
+    last = reduced
     try {
-      window.yan.setMotionPreference(media.matches)
+      window.yan.setMotionPreference(reduced)
     } catch {
     }
   }
   report()
-  media.addEventListener('change', report)
-  return () => media.removeEventListener('change', report)
+  return subscribeReducedMotion(report)
 }

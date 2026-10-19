@@ -8,8 +8,8 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     font-variant-numeric: normal;
     text-autospace: normal;
     -webkit-font-smoothing: antialiased;
@@ -20,8 +20,9 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+    box-shadow: 0 0 6px 2px var(--focus-glow);
   }
 
   :focus:not(:focus-visible) {
@@ -37,8 +38,8 @@
 
   kbd {
     font-family: var(--font-ui);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     color: var(--fg3);
     font-variant-numeric: tabular-nums;
   }
@@ -85,6 +86,14 @@
     }
   }
 
+  :root[data-reduce-motion='true'] *,
+  :root[data-reduce-motion='true'] *::before,
+  :root[data-reduce-motion='true'] *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
   .boot {
     position: fixed;
     inset: 0;
@@ -92,7 +101,7 @@
     display: grid;
     place-items: center;
     background: var(--bg);
-    --boot-ms: calc(var(--dur-expand) * 2);
+    --boot-ms: calc(var(--dur-base) * 2);
   }
 
   .boot-mark {
@@ -115,13 +124,13 @@
   }
 
   .boot-prompt {
-    animation: v3-boot-show var(--dur-pop) var(--ease) calc(var(--boot-ms) * 0.75) forwards;
+    animation: v3-boot-show var(--dur-snap) var(--ease) calc(var(--boot-ms) * 0.75) forwards;
   }
 
   .boot-cursor {
     animation:
-      v3-boot-show var(--dur-pop) var(--ease) var(--boot-ms) forwards,
-      v3-boot-breathe calc(var(--dur-breathe) / 2) var(--ease) calc(var(--boot-ms) + var(--dur-pop)) infinite;
+      v3-boot-show var(--dur-snap) var(--ease) var(--boot-ms) forwards,
+      v3-boot-breathe calc(var(--dur-breathe) / 2) var(--ease) calc(var(--boot-ms) + var(--dur-snap)) infinite;
   }
 
   .boot.out {
