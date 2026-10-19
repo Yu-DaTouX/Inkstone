@@ -21,7 +21,7 @@ let checks = 0
 const check = (condition, message) => { assert.ok(condition, message); checks += 1 }
 const progress = [], overlays = [], notices = []
 let focused = false, mainBusy = false, children = 0, waiting = false
-let settings = { sound: { notifications: true } }
+let settings = { sound: { enabled: true, notifications: true } }
 let deferred
 const fakeWindow = (id) => ({
   id, isDestroyed: () => false, isFocused: () => focused,
@@ -122,10 +122,13 @@ focused = true
 await notify('terminal-b', { state: 'blocked' })
 check(notices.length === 3, '前台不通知')
 focused = false
-settings = { sound: { notifications: false } }
+settings = { sound: { enabled: true, notifications: false } }
 await notify('terminal-c', { state: 'blocked' })
 check(notices.length === 3, '遵守现有系统通知开关')
-settings = { sound: { notifications: true } }
+settings = { sound: { enabled: false, notifications: true } }
+await notify('terminal-f', { state: 'blocked' })
+check(notices.length === 3, '提示音总开关关闭时不发系统通知')
+settings = { sound: { enabled: true, notifications: true } }
 let resolveSettings
 deferred = new Promise((resolve) => { resolveSettings = resolve })
 context.notifyBlockedTerminal('terminal-d', { state: 'blocked' })
