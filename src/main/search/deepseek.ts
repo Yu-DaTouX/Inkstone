@@ -1,5 +1,6 @@
 import type { SourceRun } from './aggregate'
 import { callApi, parseJson, type ApiResult } from './api-call'
+import { isoDay, recencySince, siteOperator, withOperators, type SourceRequest } from './modifiers'
 import { normalizeReadUrl, READ_PAGE_MAX_CHARS_DEFAULT, READ_PAGE_MAX_CHARS_MAX, ReadPageError, type ReadPageResult } from './read-page'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
 
@@ -35,9 +36,22 @@ function failure(res: Extract<ApiResult, { ok: false }>, action: 'search' | 'fet
   return { code: res.code, message: res.message + suffix }
 }
 
+const rerankOf = (row: Record<string, unknown>): number => (typeof row.rerank_score === 'number' && Number.isFinite(row.rerank_score) ? row.rerank_score : -1)
+
+export function deepseekSearchBody(query: string, opts: SourceRequest, now = Date.now()): Record<string, unknown> {
+  const operators = [siteOperator(opts.sites), opts.recent ? `after:${isoDay(recencySince(opts.recent, now))}` : '']
+  const question = opts.question ? Array.from(opts.question.trim()).slice(0, QUERY_MAX_CHARS).join('') : ''
+  return {
+    query: withOperators(query, operators, QUERY_MAX_CHARS),
+    count: Math.min(COUNT_MAX, Math.max(1, opts.limit)),
+    ...(question ? { ori_question: question } : {}),
+    ...(opts.withContent ? { need_content: true } : {})
+  }
+}
+
 export async function runDeepseekSearch(
   query: string,
-  opts: { limit: number; timeoutMs: number },
+  opts: SourceRequest,
   fetchImpl: typeof fetch = fetch,
   resolveKey: KeyResolver = resolveDeepseekSearchKey
 ): Promise<SourceRun> {
@@ -45,14 +59,13 @@ export async function runDeepseekSearch(
   const elapsed = (): number => Date.now() - started
   const key = await resolveKey()
   if (!key) return { source: 'deepseek', rows: null, unavailable: true, error: { code: 'api_key_missing', message: KEY_MISSING }, elapsedMs: 0 }
-  const text = Array.from(query.trim()).slice(0, QUERY_MAX_CHARS).join('')
   const res = await callApi(
     'DeepSeek',
     SEARCH_ENDPOINT,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ query: text, count: Math.min(COUNT_MAX, Math.max(1, opts.limit)) })
+      body: JSON.stringify(deepseekSearchBody(query, opts))
     },
     opts.timeoutMs,
     fetchImpl
@@ -62,12 +75,15 @@ export async function runDeepseekSearch(
   if (!body || !Array.isArray(body.results)) {
     return { source: 'deepseek', rows: null, error: { code: 'bad_response', message: 'DeepSeek 返回的内容不是预期的 JSON' }, elapsedMs: elapsed() }
   }
-  const rows = body.results.map((r) => ({
-    title: r.title,
-    url: r.url,
-    snippet: typeof r.summary === 'string' && r.summary.trim() ? r.summary : r.snippet,
-    published: typeof r.date === 'string' ? r.date.slice(0, 10) : undefined
-  }))
+  const rows = [...body.results]
+    .sort((a, b) => rerankOf(b) - rerankOf(a))
+    .map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: typeof r.summary === 'string' && r.summary.trim() ? r.summary : r.snippet,
+      published: typeof r.date === 'string' ? r.date.slice(0, 10) : undefined,
+      ...(opts.withContent && typeof r.content === 'string' && r.content.trim() ? { content: r.content } : {})
+    }))
   return { source: 'deepseek', rows, elapsedMs: elapsed() }
 }
 

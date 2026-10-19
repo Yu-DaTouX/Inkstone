@@ -1,10 +1,13 @@
 import {
+  SEARCH_CONTENT_MAX,
   SEARCH_SNIPPET_MAX,
   type PerSourceStatus,
   type SearchItem,
   type SearchSourceId,
+  type SearchRecency,
   type SourceStatusKind
 } from '../../shared/search'
+import { RECENCY_SOURCES, siteMatches } from './modifiers'
 
 export interface SourceRun {
   source: SearchSourceId
@@ -12,12 +15,15 @@ export interface SourceRun {
   error?: { code?: string; message?: string }
   timedOut?: boolean
   unavailable?: boolean
+  skipped?: boolean
   elapsedMs: number
 }
 
 export interface AggregateOptions {
   limitPerSource: number
   limitTotal: number
+  sites?: readonly string[]
+  recent?: SearchRecency
 }
 
 export interface AggregateResult {
@@ -99,6 +105,8 @@ export function normalizeRow(source: SearchSourceId, row: unknown): SearchItem |
   if (snippet) item.snippet = snippet
   const published = cleanText(r.published, 40)
   if (published) item.published = published
+  const content = cleanContent(r.content)
+  if (content) item.content = content
   const meta: Record<string, string | number> = {}
   if (typeof r.authors === 'string' && r.authors) meta.authors = cleanText(r.authors, 160) ?? r.authors
   if (typeof r.primary_category === 'string' && r.primary_category) meta.category = r.primary_category
@@ -106,7 +114,15 @@ export function normalizeRow(source: SearchSourceId, row: unknown): SearchItem |
   return item
 }
 
+function cleanContent(input: unknown): string | undefined {
+  if (typeof input !== 'string') return undefined
+  const t = input.replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  if (!t) return undefined
+  return t.length > SEARCH_CONTENT_MAX ? t.slice(0, SEARCH_CONTENT_MAX - 1) + '…' : t
+}
+
 function statusOf(run: SourceRun): { status: SourceStatusKind; code?: string; message?: string } {
+  if (run.skipped) return { status: 'skipped', code: 'skipped', message: run.error?.message ?? '已有足够结果，提前停止' }
   if (run.unavailable) return { status: 'unavailable', code: run.error?.code ?? 'backend_unavailable', message: run.error?.message }
   if (run.timedOut) return { status: 'timeout', code: run.error?.code ?? 'timeout', message: run.error?.message }
   if (run.error) return { status: 'error', code: run.error.code ?? 'error', message: run.error.message }
@@ -114,55 +130,91 @@ function statusOf(run: SourceRun): { status: SourceStatusKind; code?: string; me
   return { status: 'ok' }
 }
 
+const FUSION_K = 6
+
+interface Ranked {
+  item: SearchItem
+  owner: number
+  score: number
+  bestRank: number
+}
+
 export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateResult {
-  const items: SearchItem[] = []
   const sources: PerSourceStatus[] = []
-  const seen = new Set<string>()
+  const merged = new Map<string, Ranked>()
   let truncated = false
 
-  for (const run of runs) {
-    const { status, code, message } = statusOf(run)
-    let kept = 0
+  const sites = opts.sites?.length ? opts.sites : undefined
+  runs.forEach((run, owner) => {
+    const statusInfo = statusOf(run)
+    const { code, message } = statusInfo
+    let { status } = statusInfo
     let badRows = 0
-    let droppedByLimit = 0
+    let offSite = 0
 
     if (status === 'ok') {
       const rows = run.rows ?? []
-      if (rows.length > opts.limitPerSource) truncated = true
-      const candidates = rows.slice(0, opts.limitPerSource)
-      for (let i = 0; i < candidates.length; i++) {
-        const item = normalizeRow(run.source, candidates[i])
+      const ownSeen = new Set<string>()
+      let rank = 0
+      for (const row of sites ? rows : rows.slice(0, opts.limitPerSource)) {
+        const item = normalizeRow(run.source, row)
         if (!item) {
           badRows++
           continue
         }
-        const key = normalizeUrlForDedupe(item.url)
-        if (seen.has(key)) continue
-        if (items.length >= opts.limitTotal) {
-          droppedByLimit = candidates.length - i
+        if (sites && !siteMatches(item.url, sites)) {
+          offSite++
+          continue
+        }
+        if (rank >= opts.limitPerSource) {
           truncated = true
           break
         }
-        seen.add(key)
-        items.push(item)
-        kept++
+        const key = normalizeUrlForDedupe(item.url)
+        if (ownSeen.has(key)) continue
+        ownSeen.add(key)
+        const gain = 1 / (FUSION_K + rank)
+        const hit = merged.get(key)
+        if (hit) {
+          hit.score += gain
+          hit.bestRank = Math.min(hit.bestRank, rank)
+          if (!hit.item.snippet && item.snippet) hit.item.snippet = item.snippet
+          if (!hit.item.published && item.published) hit.item.published = item.published
+          if (!hit.item.content && item.content) hit.item.content = item.content
+        } else {
+          merged.set(key, { item, owner, score: gain, bestRank: rank })
+        }
+        rank++
       }
+      if (!sites && rows.length > opts.limitPerSource) truncated = true
+      if (rank === 0 && offSite > 0) status = 'empty'
     }
 
+    const notes: string[] = []
+    if (message) notes.push(message)
+    if (badRows > 0) notes.push(`${badRows} 条结果结构不认识，已跳过`)
+    if (offSite > 0) notes.push(`${offSite} 条不在指定站点，已去掉`)
+    if (opts.recent && !RECENCY_SOURCES.has(run.source) && (status === 'ok' || status === 'empty')) notes.push('这个来源不支持按时间过滤，结果没有限定时间')
     const entry: PerSourceStatus = {
       source: run.source,
       status,
-      count: kept,
+      count: 0,
       elapsedMs: Number.isFinite(run.elapsedMs) ? Math.max(0, Math.round(run.elapsedMs)) : 0
     }
     if (code) entry.code = code
-    if (message) entry.message = message
-    if (droppedByLimit > 0) entry.droppedByLimit = droppedByLimit
-    if (badRows > 0) entry.message = (entry.message ? entry.message + '；' : '') + `${badRows} 条结果结构不认识，已跳过`
+    if (notes.length) entry.message = notes.join('；')
     sources.push(entry)
-  }
+  })
 
-  return { items, sources, truncated }
+  const ranked = [...merged.values()].sort((a, b) => b.score - a.score || a.bestRank - b.bestRank || a.owner - b.owner)
+  if (ranked.length > opts.limitTotal) truncated = true
+  ranked.forEach((r, index) => {
+    const entry = sources[r.owner]
+    if (index < opts.limitTotal) entry.count++
+    else entry.droppedByLimit = (entry.droppedByLimit ?? 0) + 1
+  })
+
+  return { items: ranked.slice(0, opts.limitTotal).map((r) => r.item), sources, truncated }
 }
 
 export function summarizeSources(sources: PerSourceStatus[]): string {
@@ -174,6 +226,7 @@ export function summarizeSources(sources: PerSourceStatus[]): string {
     }
     if (s.status === 'empty') return `${s.source} 无结果`
     if (s.status === 'timeout') return `${s.source} 超时`
+    if (s.status === 'skipped') return `${s.source} 已提前停止`
     if (s.status === 'unavailable') return `${s.source} 不可用`
     return `${s.source} 出错${s.code ? `（${s.code}）` : ''}`
   }

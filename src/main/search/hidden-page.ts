@@ -23,12 +23,29 @@ export class HiddenPageTimeout extends Error {
   }
 }
 
+export class HiddenPageCancelled extends Error {
+  constructor() {
+    super('已取消')
+  }
+}
+
 export async function withHiddenPage<T>(
   timeoutMs: number,
-  fn: (win: BrowserWindow, signal: AbortSignal) => Promise<T>
+  fn: (win: BrowserWindow, signal: AbortSignal) => Promise<T>,
+  external?: AbortSignal
 ): Promise<T> {
   const partition = `yan-hidden-${randomUUID()}`
   const controller = new AbortController()
+  let rejectCancelled: (reason: Error) => void = () => {}
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    rejectCancelled = reject
+  })
+  const cancel = (): void => {
+    controller.abort()
+    rejectCancelled(new HiddenPageCancelled())
+  }
+  if (external?.aborted) cancel()
+  else external?.addEventListener('abort', cancel, { once: true })
   const win = new BrowserWindow({
     show: false,
     width: 1100,
@@ -57,9 +74,10 @@ export async function withHiddenPage<T>(
         reject(new HiddenPageTimeout(timeoutMs))
       }, timeoutMs)
     })
-    return await Promise.race([fn(win, controller.signal), timeout])
+    return await Promise.race([fn(win, controller.signal), timeout, cancelled])
   } finally {
     if (timer) clearTimeout(timer)
+    external?.removeEventListener('abort', cancel)
     controller.abort()
     if (!win.isDestroyed()) win.destroy()
   }
