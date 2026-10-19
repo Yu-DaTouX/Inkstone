@@ -22,7 +22,6 @@ class ConfigurationError(ValueError):
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Never forward a device token to a different endpoint, including 307/308.
         return None
 
 
@@ -90,7 +89,6 @@ class Client:
         self.url = normalize_url(url)
         self.token = token
         self.timeout = timeout
-        # A desktop/private-network connection must not inherit public proxy settings.
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
 
     def request(self, method, path, body=None, request_id=None):
@@ -186,6 +184,5 @@ class Client:
 
 
 def tool_result(value, token=""):
-    # Tool outputs never expose the configured device credential, even if echoed by a host.
     raw = json.dumps(value, ensure_ascii=False)
     return raw.replace(token, "[redacted]") if token else raw

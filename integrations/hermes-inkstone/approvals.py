@@ -56,7 +56,6 @@ class HumanApprovals:
                 expires = min(now + 120, question["deadline"] / 1000) if question.get("deadline", 0) else now + 120
                 self.pending[code] = {"question": question, "expires": expires, "request_id": "human-" + str(uuid.uuid4()),
                                       "url": client.url, "token": client.token, "decision": None}
-                # Display the full operation; no truncation that could hide the dangerous part.
                 lines.append(f"会话 {question.get('sessionId')} · 运行 {question.get('runId')}\n"
                              f"{question.get('title', '')}\n{question.get('message', '')}\n"
                              f"允许：/inkstone approve {code}\n拒绝：/inkstone deny {code}\n确认码两分钟内有效，原请求可能更早过期。")
@@ -78,7 +77,6 @@ class HumanApprovals:
             item["decision"] = confirmed
             question = item["question"]
             request_id = item["request_id"]
-        # Never hold the shared state lock across a network request.
         from urllib.parse import quote
         result = client.request("POST", "/questions/" + quote(question["id"], safe="") + "/approval", {
             "sessionId": question["sessionId"], "runId": question["runId"],

@@ -27,7 +27,6 @@ app.whenReady().then(async () => {
           ctx.clip()
           ctx.fillStyle = '#151515'
           ctx.fillRect(0, 0, size, size)
-          /* 圆形遮罩下石框的角离边太近，缩到 86% */
           const d = name.endsWith('_round') ? size * 0.86 : size
           ctx.drawImage(source, (size - d) / 2, (size - d) / 2, d, d)
           ctx.strokeStyle = '#2c2c29'

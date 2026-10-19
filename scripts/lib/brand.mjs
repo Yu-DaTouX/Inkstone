@@ -277,7 +277,7 @@ export function renderSvg(design, { frame = 'currentColor', accent = 'currentCol
 export function renderGeometryModule(design, hash) {
   const { viewBox, frame, prompt } = design.geometry
   const lines = [
-    '/* 由 scripts/build-icon.mjs 从 resources/brand/inkstone-design.json 生成，请勿手改。 */',
+    '/* 由 scripts/build-icon.mjs 生成，不要手改。 */',
     `/* source-hash: ${hash} */`,
     '',
     `export const BRAND_VIEW_BOX = '${viewBox.join(' ')}'`,

@@ -37,7 +37,6 @@ def handle(params, write=False, **kwargs):
         result = client.control(params) if write else client.read(params)
         return tool_result(result, token)
     except (ValueError, OSError) as error:
-        # Validation/configuration errors contain only plugin-authored text, never HTTP bodies.
         return tool_result({"ok": False, "code": "configuration_or_arguments", "error": str(error)}, token)
 
 

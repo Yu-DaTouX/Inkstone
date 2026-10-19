@@ -45,12 +45,6 @@ try {
             contents: `
               export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
               export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
-              /*
-               * agent.ts → settings.ts 只用到 app.getLocale() 与
-               * app.getPath('documents')。路径固定落在隔离目录
-               * （YAN_TEST_APP_DIR → YAN_DATA_DIR → 系统临时目录），
-               * 绝不返回用户真实 AppData / Documents；不导入真实 Electron。
-               */
               export const app = {
                 getLocale: () => 'zh-CN',
                 getPath: (name) => {

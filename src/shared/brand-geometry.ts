@@ -1,4 +1,4 @@
-/* 由 scripts/build-icon.mjs 从 resources/brand/inkstone-design.json 生成，请勿手改。 */
+/* 由 scripts/build-icon.mjs 生成，不要手改。 */
 /* source-hash: a3a7fec96d3aa2f7ff8a78cef5b0a0ade880a407e7d510b9e47aa3b299d4627c */
 
 export const BRAND_VIEW_BOX = '0 0 100 100'

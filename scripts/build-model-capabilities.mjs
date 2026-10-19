@@ -21,7 +21,8 @@ const result = await build({
   legalComments: 'none',
   logLevel: 'silent'
 })
-const expected = `/* 由 src/shared/custom-provider.ts 生成，勿手改；重新生成：node scripts/build-model-capabilities.mjs\n * source-sha256: ${sourceHash}\n */\n${result.outputFiles[0].text}`
+const body = result.outputFiles[0].text.replace(/^\/\/ [^\n]*\n/gm, '')
+const expected = `/* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */\n/* source-sha256: ${sourceHash} */\n${body}`
 
 if (checkOnly) {
   const current = await readFile(outputPath, 'utf8').catch(() => '')

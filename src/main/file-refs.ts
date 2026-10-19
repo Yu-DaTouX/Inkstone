@@ -88,7 +88,6 @@ function classify(name: string): { mime: string; kind: FileRefKind } {
   if (IMAGE_MIME[ext]) return { mime: IMAGE_MIME[ext], kind: 'image' }
   if (ext === '.pdf') return { mime: 'application/pdf', kind: 'pdf' }
   if (TEXT_MIME[ext]) return { mime: TEXT_MIME[ext], kind: 'text' }
-  /* 没有扩展名的小文件（Makefile / Dockerfile / LICENSE…）也当文本 */
   if (!ext) return { mime: 'text/plain', kind: 'text' }
   return { mime: 'application/octet-stream', kind: 'binary' }
 }
