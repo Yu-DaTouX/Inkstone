@@ -235,4 +235,24 @@
   .v3-preview-crumb-sep {
     color: var(--fg3);
   }
+
+  .v3-preview-editbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-4) var(--s-12);
+    border-bottom: 1px solid var(--line);
+    background: var(--sunken);
+  }
+
+  .v3-preview-editstate {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg3);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }

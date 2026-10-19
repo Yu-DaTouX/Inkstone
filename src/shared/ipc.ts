@@ -1656,6 +1656,8 @@ export interface YanBridge {
   watchDirs(watchId: string, dirs: string[], context: FileRequestContext): Promise<{ dirs: string[]; dropped: string[] }>
   searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
   searchFileContents(request: FileContentSearchRequest): Promise<FileContentSearchResult>
+  readEditableFile(path: string, cwd?: string): Promise<EditableFileView>
+  writeEditableFile(path: string, text: string, expectedHash: string | null, cwd?: string): Promise<EditableFileWriteResult>
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
@@ -1821,6 +1823,26 @@ export interface FileSearchResult {
   truncated: boolean
   scannedDirs: number
   skippedDirs: number
+}
+
+export type EditableFileError = 'missing' | 'binary' | 'encoding' | 'too-large' | 'denied' | 'permission' | 'error'
+
+export interface EditableFileView {
+  ok: boolean
+  abs: string
+  name: string
+  text: string
+  hash: string
+  size: number
+  mtimeMs: number
+  error?: EditableFileError
+}
+
+export interface EditableFileWriteResult {
+  status: 'saved' | 'conflict' | 'denied' | 'failed'
+  hash?: string
+  currentHash?: string
+  error?: string
 }
 
 export interface FileContentSearchRequest extends FileRequestContext {

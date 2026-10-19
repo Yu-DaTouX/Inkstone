@@ -53,6 +53,8 @@ import type {
   CodexLoginResult,
   TrustStatusView,
   DirListing,
+  EditableFileView,
+  EditableFileWriteResult,
   FileContentSearchResult,
   FileRequestContext,
   FileSearchResult,
@@ -472,6 +474,9 @@ const api: YanBridge = {
   watchDirs: (watchId, dirs, context) => invoke<{ dirs: string[]; dropped: string[] }>('yan:files:watch', watchId, dirs, context),
   searchFiles: (request) => invoke<FileSearchResult>('yan:searchFiles', request),
   searchFileContents: (request) => invoke<FileContentSearchResult>('yan:searchFileContents', request),
+  readEditableFile: (path, cwd) => invoke<EditableFileView>('yan:readEditableFile', path, cwd),
+  writeEditableFile: (path, text, expectedHash, cwd) =>
+    invoke<EditableFileWriteResult>('yan:writeEditableFile', path, text, expectedHash, cwd),
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),

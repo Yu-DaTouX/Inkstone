@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw, X } from 'lucide-react'
+import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
+import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
 import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
+import { CodeEditor } from '../editor/CodeEditor'
+import { editorIsEditableKind } from '../editor/editor-language'
 import { previewTabLabel } from '../workbench/preview-state'
 import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
@@ -25,6 +27,16 @@ import './preview.css'
 
 const MAX_RENDER_LINES = 2000
 
+interface PreviewDraft {
+  abs: string
+  text: string
+  original: string
+  hash: string
+  saving: boolean
+  conflict: boolean
+  failed: boolean
+}
+
 type PreviewView =
   | { kind: 'empty' }
   | { kind: 'loading'; name: string }
@@ -42,6 +54,7 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const [reload, setReload] = useState(0)
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
   const previewTabs = usePreviewTabs(owner.key)
+  const [draft, setDraft] = useState<PreviewDraft | null>(null)
 
   const scopeKey = previewScopeKey(owner)
   const externalPath = path ?? null
@@ -134,6 +147,9 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         : { kind: 'empty' }
   const activeAbs = 'abs' in view ? view.abs : ''
   const name = 'name' in view ? view.name : ''
+  const editing = !!draft && !!activeAbs && draft.abs === activeAbs
+  const editable = view.kind === 'text' && editorIsEditableKind(name)
+  const dirty = !!draft && draft.text !== draft.original
 
   const freshnessTarget =
     viewKey && diskStat && diskStat.key === viewKey
@@ -165,6 +181,41 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
     if (!cwd || !abs.startsWith(`${cwd}/`)) return []
     return abs.slice(cwd.length + 1).split('/').filter(Boolean)
   }, [activeAbs, owner.cwd])
+
+  const beginEdit = useCallback(async (): Promise<void> => {
+    if (!activeAbs) return
+    const result = await window.yan.readEditableFile(activeAbs, owner.cwd)
+    if (!result.ok) {
+      setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
+      return
+    }
+    setDraft({ abs: activeAbs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+  }, [activeAbs, owner.cwd])
+
+  const saveDraft = useCallback(async (): Promise<void> => {
+    if (!draft) return
+    const current = draft
+    setDraft((prev) => (prev ? { ...prev, saving: true } : prev))
+    const result = await window.yan.writeEditableFile(current.abs, current.text, current.hash, owner.cwd)
+    setDraft((prev) => {
+      if (!prev || prev.abs !== current.abs) return prev
+      if (result.status === 'saved') {
+        return { ...prev, original: current.text, hash: result.hash ?? prev.hash, saving: false, conflict: false, failed: false }
+      }
+      return { ...prev, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
+    })
+    if (result.status === 'saved') setReload((value) => value + 1)
+  }, [draft, owner.cwd])
+
+  const reloadDraft = useCallback(async (): Promise<void> => {
+    if (!draft) return
+    const result = await window.yan.readEditableFile(draft.abs, owner.cwd)
+    if (!result.ok) {
+      setDraft((prev) => (prev ? { ...prev, conflict: false, failed: true } : prev))
+      return
+    }
+    setDraft({ abs: draft.abs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+  }, [draft, owner.cwd])
 
   const selectTab = useCallback(
     (tab: string): void => {
@@ -238,6 +289,19 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
                 <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
                   <Copy size={14} />
                 </IconButton>
+                {editable ? (
+                  <IconButton
+                    aria-label={editing ? text.viewMode : text.edit}
+                    title={editing ? text.viewMode : text.edit}
+                    data-testid="v3-preview-edit-toggle"
+                    onPress={() => {
+                      if (editing) setDraft(null)
+                      else void beginEdit()
+                    }}
+                  >
+                    {editing ? <FileText size={14} /> : <Pencil size={14} />}
+                  </IconButton>
+                ) : null}
               </>
             ) : null}
             <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
@@ -246,6 +310,33 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           </>
         }
       />
+      {editing && draft ? (
+        <div className="v3-preview-editbar" data-testid="v3-preview-editbar">
+          <span className="v3-preview-editstate">
+            {draft.saving
+              ? text.saving
+              : draft.conflict
+                ? text.conflict
+                : draft.failed
+                  ? text.saveFailed
+                  : dirty
+                    ? text.dirty
+                    : text.saved}
+          </span>
+          {draft.conflict ? (
+            <Button size="sm" variant="ghost" onPress={() => void reloadDraft()}>
+              {text.reload}
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" isDisabled={draft.saving || !dirty} onPress={() => void saveDraft()}>
+            {text.save}
+          </Button>
+          <Button size="sm" variant="ghost" onPress={() => setDraft(null)}>
+            {dirty ? text.discard : text.closeEditor}
+          </Button>
+        </div>
+      ) : null}
+
       {crumbs.length > 1 ? (
         <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
           {crumbs.map((segment, index) => {
@@ -277,7 +368,18 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           })}
         </nav>
       ) : null}
-      <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} onOpenArtifact={openArtifact} />
+      {editing && draft ? (
+        <CodeEditor
+          value={draft.text}
+          name={name}
+          onChange={(value) =>
+            setDraft((prev) => (prev && prev.abs === draft.abs ? { ...prev, text: value, failed: false } : prev))
+          }
+          onSave={() => void saveDraft()}
+        />
+      ) : (
+        <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} onOpenArtifact={openArtifact} />
+      )}
     </section>
   )
 }

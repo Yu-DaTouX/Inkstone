@@ -5,6 +5,7 @@ import { getSettings } from '../settings'
 import { completePath } from '../credentials'
 import { listDir, searchFiles } from '../files'
 import { searchFileContents } from '../file-content-search'
+import { readEditableFile, writeEditableFile } from '../file-editor'
 import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
 import { filesWatcher } from '../files-watch'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
@@ -134,6 +135,29 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       return { request: finalRequest, hits: [], status: 'invalid' as const, truncated: false, scannedFiles: 0, skippedFiles: 0 }
     }
     return searchFileContents(finalRequest)
+  })
+
+  handle('yan:readEditableFile', async (p: unknown, requestedCwd?: unknown) => {
+    if (typeof p !== 'string' || !p.trim()) {
+      return { ok: false as const, abs: '', name: '', text: '', hash: '', size: 0, mtimeMs: 0, error: 'denied' as const }
+    }
+    const s = await getSettings()
+    const fallbackCwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
+    const resolved = await resolveFileContext(s, s.cwd, { cwd: fallbackCwd })
+    if (!resolved.ok) {
+      return { ok: false as const, abs: '', name: '', text: '', hash: '', size: 0, mtimeMs: 0, error: 'denied' as const }
+    }
+    return readEditableFile(resolved.context.cwd, p)
+  })
+
+  handle('yan:writeEditableFile', async (p: unknown, text: unknown, expectedHash: unknown, requestedCwd?: unknown) => {
+    const hashOk = expectedHash === null || (typeof expectedHash === 'string' && /^[0-9a-f]{64}$/.test(expectedHash))
+    if (typeof p !== 'string' || !p.trim() || typeof text !== 'string' || !hashOk) return { status: 'denied' as const }
+    const s = await getSettings()
+    const fallbackCwd = typeof requestedCwd === 'string' && requestedCwd.trim() ? requestedCwd : s.cwd
+    const resolved = await resolveFileContext(s, s.cwd, { cwd: fallbackCwd })
+    if (!resolved.ok) return { status: 'denied' as const }
+    return writeEditableFile(resolved.context.cwd, p, text, expectedHash as string | null)
   })
 
   rawHandle('yan:files:watch', async (event, rawId: unknown, rawDirs: unknown, rawContext: unknown) => {

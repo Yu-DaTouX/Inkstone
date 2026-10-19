@@ -1,0 +1,16 @@
+@layer features {
+  .v3-editor {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .v3-editor .cm-editor {
+    height: 100%;
+  }
+
+  .v3-editor .cm-editor.cm-focused {
+    outline: none;
+  }
+}
