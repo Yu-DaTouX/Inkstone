@@ -225,6 +225,18 @@ async function main() {
       snapshot('x2', { kind: 'stalled', since: 8, cause: 'no-output' }, { sessionId: 'dup' })
     ]
     assert.deepEqual(attentionPills(duplicated, {}, 2).map((r) => r.runId), ['x1'])
+
+    const recovered = [
+      snapshot('old', { kind: 'failed', at: 20, cause: 'model-error', message: '403', seen: false }, { sessionId: 'rec', startedAt: 10 }),
+      snapshot('new', { kind: 'done', at: 90, seen: false }, { sessionId: 'rec', startedAt: 50 })
+    ]
+    assert.deepEqual(attentionPills(recovered, {}, 2), [], '同会话后来又跑了一轮，旧失败不再提醒')
+
+    const childFailed = [
+      snapshot('child', { kind: 'failed', at: 20, cause: 'host', message: 'x', seen: false }, { sessionId: 'par', startedAt: 10, kind: 'subagent' }),
+      snapshot('parent', { kind: 'done', at: 90, seen: false }, { sessionId: 'par', startedAt: 50 })
+    ]
+    assert.deepEqual(attentionPills(childFailed, {}, 2).map((r) => r.runId), ['child'], '子 Agent 的失败不被父会话新一轮盖掉')
   }
 
   {

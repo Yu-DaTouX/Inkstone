@@ -272,14 +272,32 @@ export function isVisibleRun(run: RunSnapshot, visible: VisibleSession): boolean
   return false
 }
 
+function latestSessionStarts(runs: readonly RunSnapshot[]): Map<string, number> {
+  const latest = new Map<string, number>()
+  for (const run of runs) {
+    if (run.kind !== 'session') continue
+    const seen = latest.get(run.sessionId)
+    if (seen === undefined || run.startedAt > seen) latest.set(run.sessionId, run.startedAt)
+  }
+  return latest
+}
+
+export function isSupersededRun(run: RunSnapshot, latest: ReadonlyMap<string, number>): boolean {
+  if (run.kind !== 'session') return false
+  const newest = latest.get(run.sessionId)
+  return newest !== undefined && newest > run.startedAt
+}
+
 export function attentionPills(
   runs: readonly RunSnapshot[],
   visible: VisibleSession,
   max = 2
 ): RunSnapshot[] {
   const bySession = new Map<string, RunSnapshot>()
+  const latest = latestSessionStarts(runs)
   for (const run of attentionRuns(runs)) {
     if (isVisibleRun(run, visible)) continue
+    if (isSupersededRun(run, latest)) continue
     const key = run.sessionId || run.runId
     if (!bySession.has(key)) bySession.set(key, run)
   }
