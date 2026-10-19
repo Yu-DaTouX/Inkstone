@@ -8,6 +8,7 @@ import { useRunsV3 } from '../../state/runs-v3'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
+import { ToolExpansionScope } from './use-tool-run'
 import { PendingRunNotice } from './RunNotice'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -32,6 +33,8 @@ import {
 import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
+import { MessageMenuHost } from './MessageMenu'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, pickReadingAnchor, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import './session.css'
 
 const PAGER_TREE_DEBOUNCE_MS = 400
@@ -52,6 +55,28 @@ type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
 
 const isPending = (item: RenderItem): item is PendingTurn => item.kind === 'pending'
+
+type ScrollSnapshot = { top: number; bottom: boolean; anchor: ReadingAnchor | null }
+
+function domMetrics(el: HTMLElement): ScrollMetrics {
+  return { offset: el.scrollTop, size: el.scrollHeight, viewport: el.clientHeight }
+}
+
+function domAnchor(box: HTMLElement): ReadingAnchor | null {
+  const base = box.getBoundingClientRect().top
+  const rows = [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].map((node) => {
+    const rect = node.getBoundingClientRect()
+    return { id: node.dataset.turnId ?? '', top: rect.top - base, bottom: rect.bottom - base }
+  })
+  return pickReadingAnchor(rows.filter((row) => row.id), 0)
+}
+
+function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): ReadingAnchor | null {
+  const index = handle.findItemIndex(handle.scrollOffset)
+  const item = items[index]
+  if (!item) return null
+  return { turnId: item.id, offset: Math.max(0, handle.scrollOffset - handle.getItemOffset(index)) }
+}
 
 export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean } = {}): JSX.Element {
   const t = useT()
@@ -202,12 +227,15 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
 
   const identity = view.key
   const [stick, setStick] = useState(true)
+  const [showJump, setShowJump] = useState(false)
   const stickRef = useRef(true)
+  const intentRef = useRef<number | null>(null)
+  const metricsRef = useRef<ScrollMetrics | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const vlistRef = useRef<VListHandle>(null)
-  const scrollsRef = useRef(new Map<string, { top: number; bottom: boolean }>())
+  const scrollsRef = useRef(new Map<string, ScrollSnapshot>())
   const settlingRef = useRef(false)
   const renderTurnsRef = useRef(renderTurns)
   renderTurnsRef.current = renderTurns
@@ -219,26 +247,55 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     setStick(value)
   }, [])
 
-  const record = useCallback((top: number, bottom: boolean) => {
+  const record = useCallback((top: number, bottom: boolean, anchor: ReadingAnchor | null) => {
     if (!identity) return
-    scrollsRef.current.set(identity, { top, bottom })
+    scrollsRef.current.set(identity, { top, bottom, anchor: bottom ? null : anchor })
   }, [identity])
+
+  const applyFollow = useCallback((decision: FollowDecision) => {
+    if (stickRef.current !== decision.stick) setStickNow(decision.stick)
+    setShowJump(decision.showJump)
+  }, [setStickNow])
 
   const onScroll = useCallback(() => {
     const el = streamRef.current
     if (!el || settlingRef.current) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-    setStickNow(atBottom)
-    record(el.scrollTop, atBottom)
-  }, [record, setStickNow])
+    const metrics = domMetrics(el)
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
+    applyFollow(decision)
+    if (decision.repin) el.scrollTop = el.scrollHeight
+    metricsRef.current = decision.repin ? domMetrics(el) : metrics
+    record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+  }, [record, applyFollow])
 
   const onVirtualScroll = useCallback(() => {
     const h = vlistRef.current
     if (!h || settlingRef.current) return
-    const atBottom = h.scrollSize - h.scrollOffset - h.viewportSize < 40
-    setStickNow(atBottom)
-    record(h.scrollOffset, atBottom)
-  }, [record, setStickNow])
+    const metrics = { offset: h.scrollOffset, size: h.scrollSize, viewport: h.viewportSize }
+    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
+    metricsRef.current = metrics
+    applyFollow(decision)
+    if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+    record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
+  }, [record, applyFollow])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return undefined
+    const mark = (): void => { intentRef.current = performance.now() }
+    const onKey = (event: KeyboardEvent): void => { if (isScrollIntentKey(event.key)) mark() }
+    const options: AddEventListenerOptions = { passive: true, capture: true }
+    host.addEventListener('wheel', mark, options)
+    host.addEventListener('touchmove', mark, options)
+    host.addEventListener('pointerdown', mark, options)
+    host.addEventListener('keydown', onKey, options)
+    return () => {
+      host.removeEventListener('wheel', mark, options)
+      host.removeEventListener('touchmove', mark, options)
+      host.removeEventListener('pointerdown', mark, options)
+      host.removeEventListener('keydown', onKey, options)
+    }
+  }, [])
 
   const setStreamNode = useCallback((node: HTMLDivElement | null) => {
     streamRef.current = node
@@ -261,14 +318,26 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     const bottom = !snap || snap.bottom
     stickRef.current = bottom
     setStick(bottom)
+    setShowJump(false)
+    intentRef.current = null
+    metricsRef.current = null
     settlingRef.current = true
     const raf = requestAnimationFrame(() => {
+      const anchor = snap?.anchor ?? null
       if (virtual) {
-        if (bottom) vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-        else if (snap) vlistRef.current?.scrollTo(snap.top)
+        const handle = vlistRef.current
+        const index = anchor ? renderTurnsRef.current.findIndex((item) => item.id === anchor.turnId) : -1
+        if (bottom) handle?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
+        else if (anchor && index >= 0) handle?.scrollToIndex(index, { align: 'start', offset: anchor.offset })
+        else if (snap) handle?.scrollTo(snap.top)
+        if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > JUMP_THRESHOLD_PX)
       } else if (streamRef.current) {
-        if (bottom) streamRef.current.scrollTop = streamRef.current.scrollHeight
-        else if (snap) streamRef.current.scrollTop = snap.top
+        const box = streamRef.current
+        const node = anchor ? [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].find((el) => el.dataset.turnId === anchor.turnId) : undefined
+        if (bottom) box.scrollTop = box.scrollHeight
+        else if (anchor && node) box.scrollTop = Math.max(0, node.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop + anchor.offset)
+        else if (snap) box.scrollTop = snap.top
+        if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > JUMP_THRESHOLD_PX)
       }
       settlingRef.current = false
     })
@@ -330,6 +399,8 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
 
   const jumpToBottom = useCallback(() => {
     setStickNow(true)
+    setShowJump(false)
+    intentRef.current = null
     if (virtual) {
       vlistRef.current?.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
       return
@@ -341,6 +412,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-side-panel={sidePanel ? '1' : undefined}>
       <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
+      <ToolExpansionScope.Provider value={identity}>
       <div className="v3-stream-host" ref={hostRef}>
         {virtual ? (
           <VList
@@ -369,14 +441,15 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
           </div>
         )}
 
-        {!stick ? (
-          <button className="v3-jump" onClick={jumpToBottom} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')}>
+        {showJump && !stick ? (
+          <button className="v3-jump" data-testid="v3-jump" onClick={jumpToBottom} aria-label={t('chat.jumpToBottom')} title={t('chat.jumpToBottom')}>
             <Icon name="arrow-down" size={16} />
           </button>
         ) : null}
 
         <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />
       </div>
+      </ToolExpansionScope.Provider>
 
       <div className="v3-asks">
         <StalledCard run={currentStalledRun(runs, view, viewActive)} onStop={() => void abort()} />
@@ -385,6 +458,8 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
       </div>
 
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />
+
+      <MessageMenuHost />
 
       {subagentPanel ? <SubagentPanel ownerKey={view.key} viewActive={viewActive} /> : null}
     </div>

@@ -115,11 +115,13 @@ export function useMemo(fn) { return fn() }
 export function useCallback(fn) { return fn }
 export function useId() { return rt().useId() }
 export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value : null }
+export function useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot() }
+export function useDebugValue() {}
 export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null) } }
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
 export function forwardRef(fn) { return fn }
 export function memo(fn) { return fn }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useId, useContext, createContext, createElement, forwardRef, memo }
+export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useId, useContext, useSyncExternalStore, useDebugValue, createContext, createElement, forwardRef, memo }
 `
 
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
@@ -129,9 +131,9 @@ export const jsxs = jsx
 `
 
 const UI_STUB = `export function Button() { return null }
-export function IconButton() { return null }
+export function IconButton(props) { return props && props['data-testid'] ? '[' + props['data-testid'] + ']' : null }
 export function Spinner() { return null }
-export function Badge() { return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
+export function Badge() { return null }\nexport function Notice(props){ return props.children ?? null }\nexport function Kbd(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
 
 const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }
 export function useT() { return (k) => String(k) }
@@ -279,6 +281,8 @@ async function main() {
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
         'src/renderer/src/features/session/V3EmptyState.tsx': 'export function V3EmptyState(){ return null }',
         'src/renderer/src/features/session/RewindDialogV3.tsx': 'export function RewindDialogV3(){ return null }',
+        'src/renderer/src/features/session/SubagentPanel.tsx': 'export function SubagentPanel(){ return null }',
+        'src/renderer/src/features/session/MessageMenu.tsx': 'export function MessageMenuHost(){ return null }',
         'src/renderer/src/features/ambient/AsciiField.tsx': 'export function AsciiField(){ return null }',
         'src/renderer/src/features/ambient/ascii-field-model.ts': 'export function asciiBackgroundEnabled(){ return false }',
         'src/renderer/src/i18n/index.tsx': I18N_STUB,
@@ -461,8 +465,8 @@ async function main() {
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
         'src/renderer/src/i18n/index.tsx': I18N_STUB,
         'src/renderer/src/ui/index.ts': UI_STUB,
-        'src/renderer/src/features/session/run-status.ts': 'export function useRunProgress(){ return null }\nexport function runPhaseText(){ return "" }',
-        'src/renderer/src/lib/fork.ts': 'export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }',
+        'src/renderer/src/features/session/run-status.ts': 'export function useRunProgress(){ return null }\nexport function useWorkingLine(){ return null }\nexport function runPhaseText(){ return "" }',
+        'src/renderer/src/lib/fork.ts': 'export async function forkFromText(){ globalThis.__V3_FORK_CALLED = (globalThis.__V3_FORK_CALLED ?? 0) + 1 }\nexport async function forkAt(){}',
         'src/renderer/src/state/store.ts': `export function useStore(selector){ return selector(globalThis.__TURN_STORE ?? {}) }\nuseStore.getState = () => globalThis.__TURN_STORE ?? {}`
       }
       const outfile = join(outdirTurn, 'turn-ssr.cjs')
@@ -530,7 +534,7 @@ async function main() {
       html = turnSsr.renderToStaticMarkup(turnSsr.React.createElement(turnSsr.TurnView, { turn: withId }))
       ok(!html.includes('v3-branch-pager'), '没有绑定模型表：不画 pager')
 
-      ok(html.includes('chat.fork'), '用户消息仍保留原有分叉入口（未被分支切换挤掉）')
+      ok(html.includes('[v3-msg-fork]'), '用户消息仍保留原有分叉入口（未被分支切换挤掉）')
     } catch (err) {
       process.stderr.write(`\n[TurnView SSR 失败] ${err && err.stack ? err.stack : err}\n`)
       report.fail += 1

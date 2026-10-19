@@ -19,17 +19,17 @@
   .wb-branch__title {
     margin: 0;
     min-width: 0;
-    font-size: var(--t-title);
-    font-weight: var(--t-title-w);
-    line-height: var(--t-title-lh);
+    font-size: var(--t-heading);
+    font-weight: var(--t-heading-w);
+    line-height: var(--t-heading-lh);
   }
 
   .wb-branch__hint {
     flex: none;
     margin: var(--s-4) 0 var(--s-8);
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .wb-branch__tree {
@@ -63,7 +63,7 @@
   }
 
   .branch-node--leaf .branch-kind {
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .branch-label {
@@ -129,14 +129,14 @@
     padding: var(--s-16);
     text-align: center;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .branch-status__title {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .branch-status__detail {
@@ -153,7 +153,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .branch-note--err {
@@ -181,7 +181,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .branch-foot__spacer {

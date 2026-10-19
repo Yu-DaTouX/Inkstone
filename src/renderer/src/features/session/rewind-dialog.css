@@ -52,12 +52,12 @@
     white-space: nowrap;
     color: var(--fg2);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .rewind-dim {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .rewind-foot {

@@ -201,7 +201,6 @@ export function VoiceButton({ onText, disabled }: { onText: (text: string) => vo
     <span className="composer-voice" data-state={phase.kind}>
       <IconTip label={t('voice.start')}>
         <IconButton
-          size="sm"
           className="composer-voice-action"
           aria-label={t('voice.start')}
           title={t('voice.start')}

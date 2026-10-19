@@ -7,7 +7,8 @@
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const q = (selector) => document.querySelector(selector)
   const store = window.__yanStore
-  const working = () => q('[data-testid="v3-turn-activity"][data-kind="run"]')
+  const working = () => q('[data-testid="v3-turn-activity"][data-kind="run"]:not([data-quiet])')
+  const quiet = () => q('[data-testid="v3-turn-activity"][data-quiet]')
   const retrying = () => q('[data-testid="v3-turn-activity"][data-kind="retry"]')
   const border = () => q('[data-testid="composer-border"]')
   const runningTool = (tool) =>
@@ -35,29 +36,29 @@
     await sleep(250)
   }
   const original = { session: store.getState().session, messages: store.getState().messages }
-  out.push('=== 回合提示：普通运行不显示活动行，重试时才出现 ===')
+  out.push('=== 工作行：作答与思考时显示阶段与秒数，工具运行时静默占位，重试时显示次数 ===')
 
   try {
     setState({ isStreaming: true, isAgentRunning: true }, { text: '流式输出' })
     ok(await until(() => border()?.dataset.state === 'working'), '正文流时输入框顶边处于忙碌态', border()?.dataset.phase ?? '')
-    ok(!working(), '正文流时不显示活动行')
+    ok(await until(() => working()?.dataset.working === 'responding'), '正文流时工作行显示作答阶段', working()?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true }, {
       toolCalls: [{ id: 'working-probe', name: 'bash', args: { command: 'echo probe' }, status: 'running' }]
     })
     ok(await until(() => border()?.dataset.state === 'working'), '工具等待时输入框顶边仍处于忙碌态', border()?.dataset.phase ?? '')
-    ok(!working(), '工具执行期间不显示活动行')
+    ok(await until(() => !!quiet() && !working()), '工具执行期间工作行静默占位（运行中的过程行已显示工具）')
     ok(await until(() => !!runningTool('bash')), '运行中的过程行带真实工具名', runningTool('bash')?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true }, { thinking: '再想想', thinkingLive: true })
-    ok(!working(), '再次思考时不显示活动行')
+    ok(await until(() => (working()?.textContent ?? '').includes('思考中')), '再次思考时工作行显示思考阶段', working()?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true, retry: { attempt: 1, maxAttempts: 3, at: Date.now(), delayMs: 30000, error: 'probe' } }, { text: '' })
     ok(await until(() => !!retrying()), '重试等待时显示活动行')
     ok(!!q('[data-testid="v3-stop-retry"]'), '重试时有停止重试按钮')
 
     setState({ isStreaming: false, isAgentRunning: false, retry: undefined }, { text: '完成' })
-    ok(await until(() => !working() && !retrying()), '回合结束后提示消失')
+    ok(await until(() => !working() && !retrying() && !quiet()), '回合结束后提示消失')
     ok(border()?.dataset.state === 'idle', 'idle 状态不保留忙碌标记')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))

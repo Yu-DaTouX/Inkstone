@@ -25,10 +25,10 @@
     gap: var(--s-6);
     width: 100%;
     container-type: inline-size;
-    padding: var(--s-8) var(--s-10) var(--s-6);
-    border: 1px solid var(--line);
+    padding: var(--s-8);
+    border: 1px solid transparent;
     border-radius: var(--r-xl);
-    background: var(--surface);
+    background: var(--surface-3);
     box-shadow: var(--shadow-comp);
     color: var(--fg);
   }
@@ -52,8 +52,8 @@
     opacity: 0;
     pointer-events: none;
     transition:
-      opacity var(--dur-expand) var(--ease),
-      border-top-color var(--dur-expand) var(--ease);
+      opacity var(--dur-base) var(--ease),
+      border-top-color var(--dur-base) var(--ease);
   }
 
   .cborder[data-state='working'] {
@@ -119,18 +119,18 @@
   }
 
   .quota-wait-title {
-    font-size: var(--t-body);
+    font-size: var(--t-prose);
     font-weight: 600;
   }
 
   .quota-wait-eta {
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     color: var(--fg2);
     font-variant-numeric: tabular-nums;
   }
 
   .quota-wait-hint {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg3);
   }
 
@@ -148,11 +148,11 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    min-height: 26px;
+    min-height: var(--size-btn);
     padding: 0 var(--s-8);
     border-radius: var(--r-sm);
     background: var(--sunken);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -202,7 +202,7 @@
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
     background: var(--sunken);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg2);
   }
 
@@ -219,7 +219,7 @@
 
   .ca-ref-warn {
     color: var(--fail-t);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .ca-file-ico {
@@ -279,25 +279,25 @@
 
   .composer-prompt {
     flex: none;
-    padding-top: var(--s-4);
+    padding-top: 0;
     color: var(--fg3);
     font-family: var(--font-mono);
-    font-size: var(--t-body);
-    line-height: var(--d-prose-lh, 1.5);
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
     user-select: none;
   }
 
   .composer-text {
     width: 100%;
-    min-height: 56px;
-    max-height: 200px;
-    padding: var(--s-4) var(--s-6);
+    min-height: var(--t-prose-lh);
+    max-height: min(24rem, 40svh);
+    padding: 0;
     border: none;
     background: transparent;
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-body);
-    line-height: var(--d-prose-lh, 1.5);
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
     resize: none;
     outline: none;
     overflow-y: auto;
@@ -358,8 +358,8 @@
     padding: 0 var(--s-6);
     border-radius: var(--r-xs);
     background: var(--sel);
-    color: var(--accent);
-    font-size: var(--t-meta);
+    color: var(--accent-t);
+    font-size: var(--t-footnote);
     white-space: nowrap;
   }
 
@@ -368,7 +368,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -392,7 +392,7 @@
   .composer-voice-time,
   .composer-voice-state {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -401,7 +401,7 @@
     max-width: 16ch;
     overflow: hidden;
     color: var(--fail-t);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -421,14 +421,14 @@
     min-width: 0;
     container: composer-usage / inline-size;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cu-trigger {
     height: 20px;
     padding: 0 var(--s-4);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cu-items {
@@ -476,7 +476,7 @@
   .cu-title {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cu-kv {
@@ -494,20 +494,20 @@
 
   .cu-kv-row dt {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cu-kv-row dd {
     margin: 0 0 0 auto;
     color: var(--fg);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
   }
 
   .cu-note {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     line-height: 1.4;
   }
 
@@ -569,7 +569,7 @@
     padding: var(--s-6) var(--s-8);
     border-radius: var(--r-sm);
     color: var(--fg);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     line-height: 1.4;
     cursor: pointer;
     outline: none;
@@ -590,13 +590,13 @@
   }
 
   .cpm-item[data-current='true'] {
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .cpm-check {
     flex: none;
     margin-left: auto;
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .cpm-label {
@@ -607,7 +607,7 @@
   .cpm-hint {
     flex-basis: 100%;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cpm-sep {
@@ -630,7 +630,7 @@
   .composer-perm-body {
     margin: 0;
     color: var(--fg2);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     line-height: 1.5;
   }
 
@@ -651,22 +651,23 @@
     overflow: hidden auto;
     border-bottom: 1px solid var(--line);
     font-family: var(--font-ui);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .cmp-group {
-    padding: var(--s-4) var(--s-4) var(--s-2);
+    padding: var(--s-4) var(--s-6) var(--s-2);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cmp-item {
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
-    align-items: baseline;
+    align-items: center;
     gap: var(--s-6);
     min-width: 0;
-    padding: var(--s-2) var(--s-4);
+    min-height: var(--size-btn);
+    padding: 0 var(--s-6);
     border: 0;
     border-radius: var(--r-sm);
     background: transparent;
@@ -713,14 +714,14 @@
 
   .cmp-src {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cmp-empty,
   .cmp-hint {
-    padding: var(--s-2) var(--s-4);
+    padding: var(--s-2) var(--s-6);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .cmp-hint {
@@ -751,7 +752,7 @@
   .v3-delegate-hint,
   .v3-delegate-error {
     margin: 0;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     overflow-wrap: anywhere;
   }
 

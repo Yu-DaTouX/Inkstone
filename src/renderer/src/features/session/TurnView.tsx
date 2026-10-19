@@ -8,13 +8,15 @@ import { ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
 import { splitTurnProcess } from './turn-process'
+import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
 import { Icon } from './Icon'
 import { Badge, IconButton, Notice } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, splitImageRefs, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
-import { forkFromText } from '../../lib/fork'
+import { forkAt, forkFromText } from '../../lib/fork'
+import { forkTargetAfter } from './message-actions'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
@@ -45,6 +47,9 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
     return matchCheckpoint(owned, msg.text, msg.timestamp)?.id ?? null
   })
   const openRewind = useStore((s) => s.openRewind)
+  const insertIntoComposer = useStore((s) => s.insertIntoComposer)
+  const tt = useSessionText()
+  const [copyState, setCopyState] = useCopyState()
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
   if (isSubagentNotice(msg.text)) return null
@@ -93,7 +98,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           </div>
         ) : null}
 
-        <div className="v3-msg-meta">
+        <div className="v3-msg-meta v3-user-actions" role="toolbar" aria-label={tt('msgActions')} data-testid="v3-user-actions">
           {pagerModel && branchPager ? (
             <BranchPager
               model={pagerModel}
@@ -103,17 +108,30 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               onNavigate={branchPager.onNavigate}
             />
           ) : null}
-          {!readOnly && msg.text ? (
-            <button className="v3-msg-act" title={t('chat.forkHere')} onClick={() => void forkFromText(msg.text)}>
-              <Icon name="branch" size={12} />
-              {t('chat.fork')}
-            </button>
+          {displayText ? (
+            <IconButton
+              className="v3-msg-btn"
+              aria-label={copyState === 'copied' ? tt('msgCopied') : copyState === 'failed' ? tt('msgCopyFailed') : tt('msgCopy')}
+              data-testid="v3-msg-copy"
+              onPress={() => void navigator.clipboard.writeText(displayText).then(() => setCopyState('copied'), () => setCopyState('failed'))}
+            >
+              <Icon name={copyState === 'copied' ? 'check' : 'copy'} size={14} />
+            </IconButton>
+          ) : null}
+          {!readOnly && displayText ? (
+            <IconButton className="v3-msg-btn" aria-label={tt('msgEdit')} data-testid="v3-msg-edit" onPress={() => insertIntoComposer(displayText)}>
+              <Icon name="edit" size={14} />
+            </IconButton>
           ) : null}
           {checkpoint ? (
-            <button className="v3-msg-act" title={t('chat.rewindHere')} onClick={() => openRewind(checkpoint.id, msg.text)} data-testid="v3-msg-rewind">
-              <Icon name="back" size={12} />
-              {t('chat.rewind')}
-            </button>
+            <IconButton className="v3-msg-btn" aria-label={t('chat.rewind')} onPress={() => openRewind(checkpoint.id, msg.text)} data-testid="v3-msg-rewind">
+              <Icon name="back" size={14} />
+            </IconButton>
+          ) : null}
+          {!readOnly && msg.text ? (
+            <IconButton className="v3-msg-btn" aria-label={t('chat.fork')} data-testid="v3-msg-fork" onPress={() => void forkFromText(msg.text)}>
+              <Icon name="branch" size={14} />
+            </IconButton>
           ) : null}
           {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
         </div>
@@ -191,6 +209,8 @@ export function replyText(turn: AssistantTurn): string {
 function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, subagentScope }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope }): JSX.Element | null {
   const edgeFirst = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).first)
   const edgeLast = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).last)
+  const approvals = useStore((s) => s.approvals)
+  const approvalIds = streaming ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
@@ -207,7 +227,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
     <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length}>
       <div className="v3-assistant-body">
         {edgeFirst ? <BranchSummary /> : null}
-        <TurnActivity turn={turn} streaming={streaming} />
+        {streaming ? null : <SettledActivity turn={turn} />}
         {thinkingInProcess || thinkingAfterProcess ? null : thinkingLine}
 
         {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
@@ -221,6 +241,8 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
                 live={!!streaming && !split.reply}
                 thinking={thinkingInProcess ? thinkingLine : null}
                 sessionId={sessionId}
+                turnId={turn.id}
+                approvalIds={approvalIds}
               />
             ) : null}
             {thinkingAfterProcess ? thinkingLine : null}
@@ -244,7 +266,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
                       ))}
                     </div>
                   ) : null}
-                  <ToolSteps tools={seg.tools} />
+                  <ToolSteps tools={seg.tools} approvalIds={approvalIds} />
                   {seg.response ? (
                     <div className="v3-para">
                       <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
@@ -274,7 +296,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
               : turn.response && !turn.response.hasTools
                 ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
                 : null}
-            <ToolSteps tools={turn.tools} />
+            <ToolSteps tools={turn.tools} approvalIds={approvalIds} />
           </>
         )}
 
@@ -285,6 +307,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
 
         {edgeLast ? <CompactionMarker /> : null}
 
+        {streaming ? <LiveRunNotice /> : null}
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
         {!streaming ? <TurnChanges turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
         {!streaming ? <TurnMeta turn={turn} readOnly={readOnly} /> : null}
@@ -314,10 +337,6 @@ function ImageProgressFallbackNote(): JSX.Element {
   )
 }
 
-function TurnActivity({ turn, streaming }: { turn: AssistantTurn; streaming?: boolean }): JSX.Element | null {
-  return streaming ? <LiveRunNotice /> : <SettledActivity turn={turn} />
-}
-
 function SettledActivity({ turn }: { turn: AssistantTurn }): JSX.Element {
   const t = useT()
   const failed = failedCount(turn)
@@ -339,15 +358,35 @@ function SettledActivity({ turn }: { turn: AssistantTurn }): JSX.Element {
   )
 }
 
-function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
-  const t = useT()
-  const models = useStore((s) => s.models)
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+type CopyState = 'idle' | 'copied' | 'failed'
+
+function useCopyState(): [CopyState, (next: CopyState) => void] {
+  const [copyState, setCopyState] = useState<CopyState>('idle')
   useEffect(() => {
     if (copyState === 'idle') return undefined
     const timer = window.setTimeout(() => setCopyState('idle'), 1600)
     return () => window.clearTimeout(timer)
   }, [copyState])
+  return [copyState, setCopyState]
+}
+
+async function forkAfterTurn(sourceIds: readonly string[]): Promise<void> {
+  const state = useStore.getState()
+  const target = forkTargetAfter(state.messages, sourceIds, isSubagentNotice)
+  if (!target) {
+    await state.clone()
+    return
+  }
+  if (target.entryId) await forkAt(target.entryId)
+  else await forkFromText(target.text)
+}
+
+function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
+  const t = useT()
+  const tt = useSessionText()
+  const models = useStore((s) => s.models)
+  const busy = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming || s.session?.isCompacting))
+  const [copyState, setCopyState] = useCopyState()
   const reply = replyText(turn)
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
@@ -361,13 +400,22 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
       {elapsed ? <span className="v3-act-time" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
-          size="sm"
           aria-label={t(copyState === 'copied' ? 'turn.copied' : copyState === 'failed' ? 'turn.copyFailed' : 'turn.copy')}
           data-testid="v3-turn-copy"
           isDisabled={turn.streaming}
           onPress={() => void navigator.clipboard.writeText(reply).then(() => setCopyState('copied'), () => setCopyState('failed'))}
         >
           <Icon name={copyState === 'copied' ? 'check' : 'copy'} size={14} />
+        </IconButton>
+      ) : null}
+      {!readOnly && turn.sourceIds.length ? (
+        <IconButton
+          aria-label={tt('turnForkTip')}
+          data-testid="v3-turn-fork"
+          isDisabled={turn.streaming || busy}
+          onPress={() => void forkAfterTurn(turn.sourceIds)}
+        >
+          <Icon name="branch" size={14} />
         </IconButton>
       ) : null}
     </div>

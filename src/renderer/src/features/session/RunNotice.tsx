@@ -1,30 +1,56 @@
 import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button } from '../../ui'
+import { Button, ShimmerText } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { compactionRunningText } from '../../state/compaction-view'
-import { useRunProgress } from './run-status'
+import { useSessionText } from './text'
+import { useWorkingLine } from './run-status'
+import { formatTokenCount, type WorkingKind } from './working-line-model'
+import { useApprovalSlotClaimed } from './approval-slot'
+
+const ACT_KIND: Record<WorkingKind, string> = {
+  stopping: 'stop',
+  waiting: 'retry',
+  retrying: 'retry',
+  compacting: 'run',
+  tool: 'run',
+  thinking: 'run',
+  thought: 'run',
+  responding: 'run',
+  working: 'run',
+  sending: 'run'
+}
+
+const SHIMMER: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['compacting', 'tool', 'thinking', 'responding', 'working', 'sending', 'stopping'])
 
 export function LiveRunNotice(): JSX.Element | null {
   const t = useT()
-  const progress = useRunProgress()
+  const tt = useSessionText()
+  const line = useWorkingLine()
   const compaction = useStore((s) => s.session?.compaction)
-  const compacting = useStore((s) => !!s.session?.isCompacting) || progress?.phase === 'compacting'
-  const retry = useStore((s) => s.session?.retry)
   const abortRetry = useStore((s) => s.abortRetry)
-  if (!retry && !compacting) return null
-  const retryLeft = retry ? Math.ceil(Math.max(0, retry.at + retry.delayMs - Date.now()) / 1000) : 0
-  const text = retry
-    ? retryLeft > 0
-      ? t('chat.retryWaiting', { n: retry.attempt, m: retry.maxAttempts, s: retryLeft })
-      : t('chat.retryRunning', { n: retry.attempt, m: retry.maxAttempts })
-    : compactionRunningText(t, compaction)
+  const approvalId = useStore((s) => s.approvals[0]?.id)
+  const inlineApproval = useApprovalSlotClaimed(approvalId)
+  if (!line) return null
+  if (line.kind === 'waiting' && inlineApproval) return null
+  const text = line.textKey ? tt(line.textKey, line.vars) : compactionRunningText(t, compaction)
   return (
-    <div className="v3-act" data-kind={retry ? 'retry' : 'run'} data-testid="v3-turn-activity">
-      <span className="v3-act-text" role="status" aria-live="polite" title={retry?.error}>{text}</span>
-      {progress ? <span className="v3-act-time">{formatDuration(progress.elapsedMs)}</span> : null}
-      {retry ? (
+    <div
+      className="v3-act"
+      data-kind={ACT_KIND[line.kind]}
+      data-working={line.kind}
+      data-quiet={line.quiet || undefined}
+      aria-hidden={line.quiet || undefined}
+      style={line.quiet ? { visibility: 'hidden' } : undefined}
+      data-testid="v3-turn-activity"
+    >
+      <span className="v3-act-text" role="status" aria-live="polite" title={line.error}>
+        <ShimmerText active={SHIMMER.has(line.kind)}>{text}</ShimmerText>
+      </span>
+      {line.elapsedMs !== null ? <span className="v3-act-time">{formatDuration(line.elapsedMs)}</span> : null}
+      {line.tokens !== null ? <span className="v3-act-time" data-testid="v3-working-tokens">{tt('workTokens', { n: formatTokenCount(line.tokens) })}</span> : null}
+      {line.kind === 'retrying' ? (
         <Button size="sm" variant="ghost" onPress={() => void abortRetry()} data-testid="v3-stop-retry">
           {t('chat.stopRetry')}
         </Button>
@@ -34,8 +60,6 @@ export function LiveRunNotice(): JSX.Element | null {
 }
 
 export function PendingRunNotice(): JSX.Element | null {
-  const special = useStore((s) => !!s.session?.retry || !!s.session?.isCompacting)
-  if (!special) return null
   return (
     <div className="v3-msg assistant" data-testid="v3-pending">
       <LiveRunNotice />

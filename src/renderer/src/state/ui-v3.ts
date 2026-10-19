@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView } from '../features/workbench/types'
 import { appendTile, columnLayout, hasTile, orderedTileIds, removeTile, sanitizeLayout, type TileLayout } from '../features/workbench/tile-tree'
 
-export type V3RouteName = 'chat' | 'runs' | 'settings' | 'schedule' | 'review' | 'collab' | 'usage'
+export type V3RouteName = 'chat' | 'schedule' | 'collab' | 'usage'
 
 export interface V3Route {
   name: V3RouteName
@@ -246,10 +246,7 @@ export function readUiPrefsForTest(): V3UiPrefs {
 
 export function routeFromHash(hash: string): V3Route {
   const name = hash.replace(/^#\/?/, '')
-  if (name === 'settings') return { name: 'settings' }
-  if (name === 'runs') return { name: 'runs' }
   if (name === 'schedule') return { name: 'schedule' }
-  if (name === 'review') return { name: 'review' }
   if (name === 'collab') return { name: 'collab' }
   if (name === 'usage') return { name: 'usage' }
   return { name: 'chat' }

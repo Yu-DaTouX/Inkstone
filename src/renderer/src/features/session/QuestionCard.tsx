@@ -238,20 +238,20 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
 
           {req.form?.length ? null : (
             <div className="v3-qfoot">
-              <Button size="sm" isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>
+              <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>
               <span className="v3-code-sp" />
               {req.method === 'confirm' ? (
                 <>
-                  <Button size="sm" isDisabled={busy} onPress={() => answer({ confirmed: false })}>{t('ui.no')}</Button>
-                  <Button size="sm" variant="primary" isDisabled={busy} onPress={() => answer({ confirmed: true })} data-testid="v3-question-submit">{t('ui.yes')}</Button>
+                  <Button isDisabled={busy} onPress={() => answer({ confirmed: false })}>{t('ui.no')}</Button>
+                  <Button variant="primary" isDisabled={busy} onPress={() => answer({ confirmed: true })} data-testid="v3-question-submit">{t('ui.yes')}</Button>
                 </>
               ) : null}
               {req.method === 'input' || req.method === 'editor' || req.method === 'select' ? (
-                <Button size="sm" variant="primary" isDisabled={busy || !canSubmit} onPress={() => answer({ value: trimmed })} data-testid="v3-question-submit">
+                <Button variant="primary" isDisabled={busy || !canSubmit} onPress={() => answer({ value: trimmed })} data-testid="v3-question-submit">
                   {page.total > 1 ? t('q.next') : t('q.submit')}
                 </Button>
               ) : null}
-              {!known ? <Button size="sm" isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-dismiss">{t('q.skip')}</Button> : null}
+              {!known ? <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-dismiss">{t('q.skip')}</Button> : null}
             </div>
           )}
         </div>

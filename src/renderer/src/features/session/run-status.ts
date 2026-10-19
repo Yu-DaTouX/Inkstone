@@ -1,8 +1,69 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
 import { compactionRunningText } from '../../state/compaction-view'
+import { isStopRequested, stopIntent, subscribeStopIntent } from './stop-intent'
+import { trackThinking, turnOutputTokens, workingLine, type ThinkingClock, type WorkingLine } from './working-line-model'
+
+const ASKING_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
+
+export function useWorkingLine(): WorkingLine | null {
+  const progress = useRunProgress()
+  const session = useStore((s) => s.session)
+  const messages = useStore((s) => s.messages)
+  const approvals = useStore((s) => s.approvals)
+  const uiRequests = useStore((s) => s.uiRequests)
+  const intent = useSyncExternalStore(subscribeStopIntent, stopIntent)
+  const thinkingRef = useRef<ThinkingClock | null>(null)
+  const now = Date.now()
+
+  let lastUser = -1
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === 'user') {
+      lastUser = i
+      break
+    }
+  }
+  const userId = lastUser >= 0 ? messages[lastUser].id : null
+  let assistant: (typeof messages)[number] | null = null
+  for (let i = messages.length - 1; i > lastUser; i -= 1) {
+    if (messages[i].role === 'assistant') {
+      assistant = messages[i]
+      break
+    }
+  }
+  const sessionId = session?.sessionId ?? null
+  const thinking = trackThinking(thinkingRef.current, {
+    identity: `${sessionId ?? ''}|${userId ?? ''}`,
+    live: !!assistant?.thinkingLive,
+    ms: assistant?.thinkingMs,
+    now
+  })
+  thinkingRef.current = thinking
+
+  const running = !!progress
+  const elapsedMs = progress ? progress.elapsedMs : null
+  const runStartedAt = progress ? now - progress.elapsedMs : null
+  const waiting = approvals.some((request) => !request.subagentId && (!request.sessionId || request.sessionId === sessionId))
+    || uiRequests.some((request) => ASKING_METHODS.has(request.method))
+
+  return workingLine({
+    running,
+    stopping: isStopRequested(intent, sessionId, runStartedAt),
+    waiting: running && waiting,
+    retry: session?.retry ?? null,
+    compacting: !!session?.isCompacting || progress?.phase === 'compacting',
+    toolRunning: progress?.phase === 'tool',
+    streaming: progress?.phase === 'responding',
+    requested: !!assistant,
+    thinking,
+    elapsedMs,
+    now,
+    tokens: turnOutputTokens(messages, userId),
+    quiet: progress?.phase === 'tool'
+  })
+}
 
 export function useRunProgress(): RunProgress | null {
   const session = useStore((s) => s.session)

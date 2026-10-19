@@ -5,8 +5,8 @@
     gap: var(--s-2);
     min-width: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .branch-pager__count {

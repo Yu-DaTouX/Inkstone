@@ -1,16 +1,23 @@
-import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
-import { useI18n, useT, type TFunc } from '../../i18n'
+import { useState, type JSX } from 'react'
+import { useT } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
-import { flattenToolNodes, isSettledToolNode, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
+import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
-import { generatingArgs, summarize, toolGroupLabel, toolRunLabel } from './tool-summary'
-import { GROUP_EXTRAS, LIVE_STEPS, capRecent, groupConsecutive, groupExtras, isFailedCall, isLiveCall, type StepGroup } from './tool-groups'
+import { generatingArgs, runningCallLabel, summarize } from './tool-summary'
+import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, type ToolRow, type ToolRunState } from './tool-run-model'
+import { useStore } from '../../state/store'
+import { ApprovalCard } from './ApprovalCard'
+import { QuestionReceipt } from './QuestionReceipt'
+import { isQuestionCall } from './question-receipt'
+import { ToolRunStats } from './ToolRunStats'
+import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
 import { Icon } from './Icon'
-import { Badge, Button, CompletionSweep, IconButton, Notice, ShimmerText } from '../../ui'
+import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
 const OUTPUT_PREVIEW_LINES = 16
+const NO_APPROVALS: ReadonlySet<string> = new Set()
 
 export function detailKind(name: string): 'command' | 'change' | 'result' {
   if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
@@ -28,185 +35,99 @@ function isRunning(call: UIToolCall): boolean {
   return call.status === 'running' || call.status === 'pending'
 }
 
-function changeStats(tools: UIToolCall[]): { files: number; additions: number; deletions: number } | null {
-  const paths = new Set<string>()
-  let additions = 0
-  let deletions = 0
-  let counted = 0
-  for (const call of tools) {
-    if (isRunning(call)) continue
-    const diff = readFileDiff(call.details)
-    if (!diff || diff.status === 'unchanged') continue
-    paths.add(diff.path || callPath(call) || call.id)
-    if (diff.added >= 0 && diff.removed >= 0) {
-      additions += diff.added
-      deletions += diff.removed
-      counted += 1
-    }
+const DOT: Record<ToolRunState, string> = { blocked: 'warn', running: 'run', error: 'err', cancelled: 'warn', ok: 'ok' }
+
+function useCurrentApprovalCall(tools: readonly UIToolCall[], approvalIds: ReadonlySet<string>): string | null {
+  const current = useStore((s) => s.approvals[0])
+  if (!current || current.subagentId || !approvalIds.size) return null
+  for (const id of approvalCallIds([current], tools)) {
+    if (approvalIds.has(id) && tools.some((call) => call.id === id)) return id
   }
-  if (!paths.size) return null
-  return { files: paths.size, additions, deletions: counted > 0 ? deletions : -1 }
+  return null
 }
 
-function summaryText(t: TFunc, zh: boolean, tools: UIToolCall[], failed: number): { label: string; stats: ReactNode } {
-  const stats = changeStats(tools)
-  const label = toolGroupLabel(tools, zh) + (failed > 0 ? (zh ? `（${failed} 个失败）` : ` (${failed} failed)`) : '')
-  const statNode: ReactNode = stats
-    ? stats.additions >= 0 && stats.deletions >= 0
-      ? <><span className="v3-add">+{stats.additions}</span><span className="v3-del">−{stats.deletions}</span></>
-      : t('tool.wsChanges', { n: stats.files })
-    : null
-  return { label, stats: statNode }
+function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
+  return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
-const SETTLE_LINGER_MS = 900
-const NONE_LINGERING: ReadonlySet<string> = new Set()
-
-function useRecentlySettled(forest: ToolCallNode[]): ReadonlySet<string> {
-  const liveKey = forest.filter((node) => !isSettledToolNode(node)).map((node) => node.call.id).join('\n')
-  const previous = useRef<string[]>([])
-  const timers = useRef(new Set<number>())
-  const [lingering, setLingering] = useState<ReadonlySet<string>>(NONE_LINGERING)
-
-  useEffect(() => {
-    const live = liveKey ? liveKey.split('\n') : []
-    const settled = previous.current.filter((id) => !live.includes(id))
-    previous.current = live
-    if (!settled.length) return
-    setLingering((current) => new Set([...current, ...settled]))
-    const timer = window.setTimeout(() => {
-      timers.current.delete(timer)
-      setLingering((current) => {
-        const next = new Set(current)
-        for (const id of settled) next.delete(id)
-        return next.size ? next : NONE_LINGERING
-      })
-    }, SETTLE_LINGER_MS)
-    timers.current.add(timer)
-  }, [liveKey])
-
-  useEffect(() => {
-    const pending = timers.current
-    return () => {
-      for (const timer of pending) window.clearTimeout(timer)
-    }
-  }, [])
-
-  return lingering
-}
-
-export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | null {
+export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string> }): JSX.Element | null {
   const t = useT()
-  const zh = useI18n().lang !== 'en-US'
-  const tt = useSessionText()
-  const [manual, setManual] = useState<boolean | null>(null)
-  const forest = toolCallForest(tools)
-  const lingering = useRecentlySettled(forest)
+  const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   if (!tools.length) return null
-
-  const running = tools.filter(isRunning)
-  const failed = tools.filter((c) => c.status === 'error' && !c.cancelled).length
-  const open = manual ?? failed > 0
-  const { label, stats } = summaryText(t, zh, tools, failed)
-  const liveNodes = forest.filter((node) => !isSettledToolNode(node) || lingering.has(node.call.id))
-  const liveCap = capRecent(liveNodes, LIVE_STEPS)
-
+  const rows = buildToolRows(tools, approvalIds)
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
-      <button className="v3-steps-sum" aria-expanded={open} onClick={() => setManual(!open)} data-testid="v3-steps-toggle">
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} className="v3-chev" />
-        <span className="v3-steps-label">{label}</span>
-        {stats ? <span className="v3-steps-stats">{stats}</span> : null}
-      </button>
-
-      {open ? (
-        <div className="v3-steps-list" data-testid="v3-steps-list">
-          {groupConsecutive(forest).map((item) => item.type === 'group'
-            ? <StepGroupRow key={item.group.id} group={item.group} />
-            : <StepNode key={item.node.call.id} node={item.node} depth={0} />)}
-        </div>
-      ) : (
-        running.length || lingering.size ? (
-          <div className="v3-steps-live" data-testid="v3-steps-live">
-            {liveCap.hidden > 0 ? <MoreRow count={liveCap.hidden} onOpen={() => setManual(true)} testId="v3-steps-more" /> : null}
-            {liveCap.shown.map((node) => <StepNode key={node.call.id} node={node} depth={0} />)}
-          </div>
-        ) : null
-      )}
-
-      {open && tools.some((c) => detailKind(c.name) === 'command' || detailKind(c.name) === 'change') ? (
-        <Notice compact role="note" icon={<Icon name="external" size={13} />}>{tt('toolDetail')}</Notice>
-      ) : null}
+      <div className="v3-steps-list" data-testid="v3-steps-list">
+        {rows.map((row) => {
+          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
+          if (row.standalone && isQuestionCall(row.node.call)) return <QuestionReceipt key={row.id} call={row.node.call} />
+          return <StepNode key={row.id} node={row.node} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
+        })}
+      </div>
     </section>
   )
 }
 
-function MoreRow({ count, onOpen, testId }: { count: number; onOpen: () => void; testId: string }): JSX.Element {
-  const tt = useSessionText()
-  return (
-    <Button size="sm" variant="ghost" className="v3-steps-more" onPress={onOpen} data-testid={testId}>
-      {tt('moreItems', { n: count })}
-    </Button>
-  )
-}
-
-function StepGroupRow({ group }: { group: StepGroup }): JSX.Element {
+function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean }): JSX.Element {
   const t = useT()
-  const zh = useI18n().lang !== 'en-US'
-  const [manual, setManual] = useState<boolean | null>(null)
-  const open = manual ?? false
-  const failed = group.nodes.filter(isFailedCall).length
-  const running = group.nodes.some(isLiveCall)
-  const state = running ? 'run' : failed ? 'err' : 'ok'
-  const label = toolRunLabel(group.name, group.nodes.length, zh)
-  const extras = open ? { shown: [], hidden: 0 } : capRecent(groupExtras(group), GROUP_EXTRAS)
+  const tt = useSessionText()
+  const [stored, setOpen] = useToolExpansion(row.id)
+  const open = stored ?? false
+  const { summary } = row
+  const label = formatToolRun(summary, tt)
+  const running = summary.running
+  const held = useHeldRunLabel(running ? running.id : null, running ? runningCallLabel(running, t('tool2.generatingArgs')) : label)
+  const shown = held.key !== null ? held.label : label
+  const members = open ? coalesceNodes(row.nodes) : []
 
   return (
-    <div className="v3-step v3-step-group" data-state={state} data-tool={group.name} data-depth={0}>
-      <button className="v3-step-head" aria-expanded={open} onClick={() => setManual(!open)} title={label} data-testid="v3-step-group">
-        <span className={`v3-dot ${state}`} aria-hidden />
-        <span className="v3-step-target">{label}</span>
-        {failed ? <Badge tone="fail" className="v3-steps-badge">{failed} {t('tool.failed')}</Badge> : null}
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
+    <div className="v3-step v3-step-group" data-state={summary.state} data-depth={0}>
+      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={label} data-testid="v3-step-group">
+        <span className={`v3-dot ${DOT[summary.state]}`} aria-hidden />
+        <ShimmerText className="v3-step-target" active={!!running}>{shown}</ShimmerText>
+        <ToolRunStats summary={summary} />
+        {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
+        {summary.failed ? <Badge tone="fail" className="v3-steps-badge">{summary.failed} {t('tool.failed')}</Badge> : null}
+        <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
+      {asking ? <ApprovalCard inline /> : null}
       {open ? (
         <div className="v3-step-nest" role="group" aria-label={label} data-testid="v3-step-group-list">
-          {group.nodes.map((node) => <StepNode key={node.call.id} node={node} depth={1} />)}
-        </div>
-      ) : extras.shown.length ? (
-        <div className="v3-step-nest" role="group" aria-label={label}>
-          {extras.hidden > 0 ? <MoreRow count={extras.hidden} onOpen={() => setManual(true)} testId="v3-step-group-more" /> : null}
-          {extras.shown.map((node) => <StepNode key={node.call.id} node={node} depth={1} />)}
+          {members.map((member) => <StepNode key={member.node.call.id} node={member.node} depth={1} repeat={member.repeat} />)}
         </div>
       ) : null}
     </div>
   )
 }
 
-function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.Element {
+function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: { node: ToolCallNode; depth: number; blocked?: boolean; repeat?: number; asking?: boolean }): JSX.Element {
   const t = useT()
-  const [manual, setManual] = useState<boolean | null>(null)
+  const tt = useSessionText()
+  const [stored, setOpen] = useToolExpansion(`step:${node.call.id}`)
   const call = node.call
   const running = isRunning(call)
   const failed = call.status === 'error' && !call.cancelled
-  const open = manual ?? false
+  const open = stored ?? false
   const secs = durationSecs(call)
   const target = generatingArgs(call) ? t('tool2.generatingArgs') : summarize(call) || t('tool2.noTarget')
-  const state = running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
+  const state = blocked ? 'warn' : running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
 
   return (
     <div className="v3-step" data-state={call.status} data-tool={call.name} data-depth={depth}>
-      <button className="v3-step-head" aria-expanded={open} onClick={() => setManual(!open)} title={target} data-testid="v3-step">
+      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={target} data-testid="v3-step">
         <CompletionSweep done={!running && !failed && !call.cancelled} settledAt={call.endedAt} />
         <span className={`v3-dot ${state}`} aria-hidden />
         {running ? null : <Icon name={failed ? 'warn' : call.cancelled ? 'stop' : 'check'} size={13} />}
         <span className="v3-step-verb">{call.name}</span>
-        <ShimmerText className="v3-step-target" active={running} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
+        <ShimmerText className="v3-step-target" active={running && !blocked} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
+        {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
         {secs !== null && !running ? <span className="v3-step-time">{secs}s</span> : null}
+        {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         {failed ? <Badge tone="fail" className="v3-steps-badge">{t('tool.failed')}</Badge> : call.cancelled ? <Badge tone="stall" className="v3-steps-badge">{t('tool.cancelled')}</Badge> : call.incomplete ? <Badge tone="stall" className="v3-steps-badge">{t('tool2.incomplete')}</Badge> : null}
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
+        <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
+      {asking ? <ApprovalCard inline /> : null}
       {open ? <StepDetail call={call} /> : null}
       {children.length ? <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>{children.map((child) => <StepNode key={child.call.id} node={child} depth={depth + 1} />)}</div> : null}
     </div>

@@ -22,7 +22,6 @@ export function PermissionToggle() {
       <MenuTrigger>
         <Button
           variant="ghost"
-          size="sm"
           className="composer-permission"
           data-mode={permission}
           aria-haspopup="menu"

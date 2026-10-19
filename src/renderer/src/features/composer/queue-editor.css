@@ -35,8 +35,8 @@
     background: var(--surface);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     resize: vertical;
     outline: none;
   }

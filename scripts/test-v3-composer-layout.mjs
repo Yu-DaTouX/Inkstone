@@ -98,7 +98,7 @@ const STUBS = {
   'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function cx(){ return "" }',
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
-  'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }',
+  'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
   'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
   'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
   'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
@@ -154,7 +154,7 @@ async function buildComposer(outdir) {
           })
           b.onLoad({ filter: /.*/, namespace: 'a2' }, (args) => {
             if (args.path === 'a2:lucide') {
-              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}', loader: 'js' }
+              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}', loader: 'js' }
             }
             return { contents: stubMap.get(args.path.slice('a2:'.length)) ?? 'export {}', loader: 'js' }
           })
@@ -307,10 +307,10 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap)
-    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方')
-    ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片是根的第二个子元素')
-    ok(nameOf(children(wrap)[children(wrap).length - 1]) === 'ComposerUsage', '会话统计行在卡片下方（根末尾）')
+    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'QuotaResumeBar')
+    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（额度等待条除外）')
+    ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟队列')
+    ok(byClass(wrap, 'composer') === children(wrap)[children(wrap).length - 1], '输入框卡片在根末尾，下方不再有会话统计行（统计改到会话栏卡片）')
 
     const card = byClass(wrap, 'composer')
     ok(nameOf(children(card)[0]) === 'ComposerBorder', '卡片首行是输入框顶边')
@@ -322,7 +322,7 @@ async function main() {
     ok(nameOf(lineChildren[1]) === 'textarea' && lineChildren[1].props['data-testid'] === 'composer-input', '提示符之后是文本框，testid 保留')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'PermissionToggle>PlusMenu', '左侧控件：权限在最左、＋次之；无模式/提示时不显示')
+    ok(controlNames(tools).join('>') === 'PermissionToggle>ProjectPicker>PlusMenu', '左侧控件：权限在最左、新会话项目选择次之、＋随后；无模式/提示时不显示')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
     ok(

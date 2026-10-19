@@ -114,7 +114,7 @@ async function buildSteps(outdir) {
   await writeFile(reactShim, REACT_SHIM)
   await writeFile(jsxShim, JSX_SHIM)
   const entry = join(outdir, 'steps-entry.ts')
-  await writeFile(entry, `export { ToolSteps, detailKind } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\n`)
+  await writeFile(entry, `export { ToolSteps, detailKind } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
   const out = join(outdir, 'steps-bundle.mjs')
   await build({
     entryPoints: [entry],
@@ -131,6 +131,7 @@ async function buildSteps(outdir) {
     plugins: [
       makeStubPlugin({
         'src/renderer/src/features/session/Icon.tsx': `export function Icon(props){ return { type: Icon, props, key: null } }`,
+        'src/renderer/src/features/session/ApprovalCard.tsx': `export function ApprovalCard(){ return null }`,
         'src/renderer/src/features/artifacts/McpAppFrame.tsx': `export function McpAppResult(){ return null }\nexport function McpAppStepAudit(){ return null }`,
         'src/renderer/src/ui/index.ts': `export function Button(props){ return null }\nButton.__stub='ui-button'\nexport function IconButton(props){ return null }\nIconButton.__stub='ui-iconbutton'\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }
 export function Badge(props){ return null }
@@ -278,17 +279,14 @@ async function main() {
     await rm(outdir, { recursive: true, force: true })
     process.exit(1)
   }
-  const { ToolSteps, detailKind } = bundle
+  const { ToolSteps, detailKind, toolExpansion } = bundle
 
-  const renderSteps = (tools) => {
+  const renderSteps = (tools, approvalIds) => {
     const rt = makeHookRuntime()
-    return { rt, tree: renderComponent(rt, ToolSteps, { tools }) }
+    return { rt, tree: renderComponent(rt, ToolSteps, approvalIds ? { tools, approvalIds } : { tools }) }
   }
   const renderStepsOpen = (tools) => {
     const rt = makeHookRuntime()
-    const first = renderComponent(rt, ToolSteps, { tools })
-    const summary = byTestId(first, 'v3-steps-toggle')
-    if (summary.props['aria-expanded'] === false) summary.props.onClick()
     return { rt, tree: renderComponent(rt, ToolSteps, { tools }) }
   }
   const renderStepNode = (stepsTree, id) => {
@@ -312,119 +310,116 @@ async function main() {
     ok(detailKind('read') === 'result' && detailKind('mcp_thing') === 'result', '其余归 result')
   }
 
-  group('摘要行：默认折叠、真实增删数、缺快照不编造')
+  group('成组：连续 2 条以上即成组、不要求同类，组头写多类别摘要与增删')
   {
+    toolExpansion.clear()
     const { tree } = renderSteps([tool({ id: 'read-1', name: 'read' }), diffCall()])
-    const summary = byTestId(tree, 'v3-steps-toggle')
-    ok(!!summary && summary.type === 'button', '摘要是一个原生 button（可聚焦）')
-    ok(summary.props['aria-expanded'] === false, '没有失败时摘要默认折叠', summary.props['aria-expanded'])
-    ok(byTestId(tree, 'v3-steps-list') === null, '折叠时不铺步骤列表')
-    ok(textOf(summary).includes('已读取 1 个文件') && textOf(summary).includes('已编辑 1 个文件'), '摘要按类别写（已读取 / 已编辑）', textOf(summary))
-    const stats = collect(summary, (el) => el.props && String(el.props.className || '').includes('v3-steps-stats'))
-    ok(stats.length === 1 && textOf(stats[0]) === '+2−1', '只按有快照的改动统计增删（+2−1）', stats.map(textOf))
+    ok(byTestId(tree, 'v3-steps-toggle') === null, '不再有外层摘要按钮，组本身就是一行')
+    const groups = byTypeName(tree, 'ToolGroupRow')
+    ok(groups.length === 1 && byTypeName(tree, 'StepNode').length === 0, '读取 + 编辑合成一组', groups.length)
+    const g = renderSub(tree, 'ToolGroupRow')
+    const head = byTestId(g.tree, 'v3-step-group')
+    ok(!!head && head.type === 'button', '组头是原生 button（可聚焦）')
+    ok(head.props['aria-expanded'] === false, '组默认折叠', head.props['aria-expanded'])
+    ok(textOf(head).includes('读取 1 个文件，编辑 1 个文件'), '摘要拼接多个类别', textOf(head))
+    const stats = byTypeName(g.tree, 'ToolRunStats')[0]
+    ok(stats && stats.props.summary.added === 2 && stats.props.summary.removed === 1, '组头带 +2 −1（只按有快照的改动）', stats && stats.props.summary)
+    const statsTree = renderComponent(makeHookRuntime(), stats.type, stats.props)
+    ok(textOf(statsTree) === '+2−1', '增删文本', textOf(statsTree))
 
     const noSnap = renderSteps([tool({ id: 'read-2', name: 'read' }), tool({ id: 'write-1', name: 'write', args: { path: 'x' }, output: 'w' })])
-    const noStats = collect(byTestId(noSnap.tree, 'v3-steps-toggle'), (el) => el.props && String(el.props.className || '').includes('v3-steps-stats'))
-    ok(noStats.length === 0, '没有执行前后快照时不写增删，也不编造文件数', noStats.length)
+    const noSnapGroup = renderSub(noSnap.tree, 'ToolGroupRow')
+    const noStats = byTypeName(noSnapGroup.tree, 'ToolRunStats')[0]
+    ok(renderComponent(makeHookRuntime(), noStats.type, noStats.props) === null, '没有执行前后快照时不写增删，也不编造文件数')
+
+    const one = renderSteps([tool({ id: 'solo', name: 'read' })])
+    ok(byTypeName(one.tree, 'ToolGroupRow').length === 0 && byTypeName(one.tree, 'StepNode').length === 1, '只有 1 条时保持单行')
   }
 
-  group('失败时：摘要自动展开，失败的那一步详情也自动展开')
+  group('失败：组头写失败数并带徽标，不再自动展开')
   {
     const { tree } = renderSteps([
       tool({ id: 'read-3', name: 'read' }),
       tool({ id: 'bash-err', name: 'bash', args: { command: 'false' }, status: 'error', output: 'Permission denied' })
     ])
-    const summary = byTestId(tree, 'v3-steps-toggle')
-    ok(summary.props['aria-expanded'] === true, '有失败时摘要自动展开', summary.props['aria-expanded'])
-    ok(byTestId(tree, 'v3-steps-list') !== null, '展开后步骤列表出现')
-    ok(textOf(summary).includes('（1 个失败）'), '摘要写失败数', textOf(summary))
-
-    const failedNode = renderStepNode(tree, 'bash-err')
-    const failedHead = byTestId(failedNode.tree, 'v3-step')
-    ok(failedHead.props['aria-expanded'] === false, '失败那一步默认折叠，不让输出占满版面', failedHead.props['aria-expanded'])
-    ok(byTypeName(failedNode.tree, 'StepDetail').length === 0, '失败那一步折叠时不渲染详情')
+    const g = renderSub(tree, 'ToolGroupRow')
+    const head = byTestId(g.tree, 'v3-step-group')
+    ok(head.props['aria-expanded'] === false, '有失败也保持折叠', head.props['aria-expanded'])
+    ok(textOf(head).includes('（1 个失败）'), '摘要写失败数', textOf(head))
+    ok(collect(g.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '组头带失败徽标')
+    head.props.onClick()
+    const opened = renderComponent(g.rt, g.el.type, g.el.props)
+    const failedNode = renderStepNode(opened, 'bash-err')
+    ok(byTestId(failedNode.tree, 'v3-step').props['aria-expanded'] === false, '失败那一步默认折叠')
     ok(collect(failedNode.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '失败那一步仍带失败徽标')
-
-    const okNode = renderStepNode(tree, 'read-3')
-    const okHead = byTestId(okNode.tree, 'v3-step')
-    ok(okHead.props['aria-expanded'] === false, '成功那一步保持折叠', okHead.props['aria-expanded'])
-    ok(byTypeName(okNode.tree, 'StepDetail').length === 0, '成功那一步不渲染详情')
   }
 
-  group('用户手动开合优先于失败自动展开')
+  group('展开状态存在会话级存储：重挂载不丢，重试时清除')
   {
-    const { rt, tree } = renderSteps([tool({ id: 'bash-e', name: 'bash', args: { command: 'false' }, status: 'error' })])
-    const summary = byTestId(tree, 'v3-steps-toggle')
-    summary.props.onClick()
-    const after = renderComponent(rt, ToolSteps, { tools: [tool({ id: 'bash-e', name: 'bash', args: { command: 'false' }, status: 'error' })] })
-    ok(byTestId(after, 'v3-steps-toggle').props['aria-expanded'] === false, '手动收起后即使有失败也保持收起')
+    const tools = [tool({ id: 'keep-1', name: 'read' }), tool({ id: 'keep-2', name: 'grep' })]
+    const g = renderSub(renderSteps(tools).tree, 'ToolGroupRow')
+    byTestId(g.tree, 'v3-step-group').props.onClick()
+    const remount = renderSub(renderSteps(tools).tree, 'ToolGroupRow')
+    ok(byTestId(remount.tree, 'v3-step-group').props['aria-expanded'] === true, '换一套 hook 状态（模拟虚拟化卸载）后仍展开')
+    ok(byTypeName(remount.tree, 'StepNode').length === 2, '展开后逐条展示')
+    toolExpansion.forget('')
+    const cleared = renderSub(renderSteps(tools).tree, 'ToolGroupRow')
+    ok(byTestId(cleared.tree, 'v3-step-group').props['aria-expanded'] === false, '清除该会话后回到默认折叠')
   }
 
-  group('运行中：折叠态单独铺出进行中的那一步')
+  group('运行中：组头显示正在运行的那一步，单行照常')
   {
     const { tree } = renderSteps([
       tool({ id: 'read-4', name: 'read' }),
       tool({ id: 'bash-run', name: 'bash', args: { command: 'sleep 1' }, status: 'running', startedAt: 1 })
     ])
-    ok(byTestId(tree, 'v3-steps-list') === null, '没有失败时列表仍折叠')
-    const live = byTestId(tree, 'v3-steps-live')
-    ok(!!live, '折叠态有专门的进行中区域')
-    const liveNodes = byTypeName(live, 'StepNode')
-    ok(liveNodes.length === 1 && liveNodes[0].props.node.call.id === 'bash-run', '进行中区域只放未收敛的那一步', liveNodes.map((el) => el.props.node.call.id))
+    const g = renderSub(tree, 'ToolGroupRow')
+    const shimmer = byTypeName(g.tree, 'ShimmerText')
+    ok(shimmer.some((el) => el.props.active === true && textOf(el.props.children).includes('bash sleep 1')), '折叠的组头显示运行中的工具，文字带闪烁', shimmer.map((el) => [el.props.active, el.props.children]))
+    ok(collect(g.tree, (el) => el.props && el.props.className === 'v3-dot run').length === 1, '状态点为运行中')
 
-    const runningNode = renderStepNode(tree, 'bash-run')
+    const single = renderSteps([tool({ id: 'p-1', name: 'read', status: 'pending' })])
+    const runningNode = renderStepNode(single.tree, 'p-1')
     const icons = collect(runningNode.tree, (el) => typeof el.type === 'function' && el.type.name === 'Icon')
-    ok(!icons.some((el) => el.props.name === 'spinner' || el.props.name === 'check'), '进行中的步骤不画圆环也不画完成勾，只留呼吸的状态点', icons.map((el) => el.props.name))
+    ok(!icons.some((el) => el.props.name === 'spinner' || el.props.name === 'check'), '进行中的步骤不画圆环也不画完成勾', icons.map((el) => el.props.name))
     ok(byTestId(runningNode.tree, 'v3-step').props['aria-expanded'] === false, '进行中的步骤详情默认不占版面')
-
-    const pending = renderSteps([tool({ id: 'p-1', name: 'read', status: 'pending' })])
-    ok(byTestId(pending.tree, 'v3-steps-live') !== null, 'pending 也算进行中')
   }
 
-  group('并行大量调用：连续同类合并成一行，点开才逐条看')
+  group('需要审批：组头与单行都带小标')
+  {
+    const tools = [tool({ id: 'r-a', name: 'read' }), tool({ id: 'b-a', name: 'bash', args: { command: 'rm -rf x' }, status: 'running' })]
+    const g = renderSub(renderSteps(tools, new Set(['b-a'])).tree, 'ToolGroupRow')
+    ok(byTestId(g.tree, 'v3-step-group-approval') !== null, '组头带「需要审批」')
+    ok(collect(g.tree, (el) => el.props && el.props.className === 'v3-dot warn').length === 1, '组状态为等待审批')
+    const lone = renderSteps([tools[1]], new Set(['b-a']))
+    const node = renderStepNode(lone.tree, 'b-a')
+    ok(byTestId(node.tree, 'v3-step-approval') !== null, '单行带「需要审批」')
+  }
+
+  group('并行大量调用：不同类别连续也合成一组；独立工具断开分组；同路径相邻折成一行')
   {
     const cmds = Array.from({ length: 7 }, (_, i) => tool({ id: `run-${i}`, name: 'bash', args: { command: `echo ${i}` } }))
     const reads = Array.from({ length: 5 }, (_, i) => tool({ id: `rd-${i}`, name: 'read', args: { path: `f${i}.ts` } }))
-    const { tree } = renderStepsOpen([...cmds, ...reads])
-    const groupEls = byTypeName(tree, 'StepGroupRow')
-    ok(groupEls.length === 2, '7 个命令与 5 个读取各合并成一行', groupEls.length)
-    ok(byTypeName(tree, 'StepNode').length === 0, '合并行折叠时不铺逐条步骤')
-    const renderGroup = (el) => {
-      const rt = makeHookRuntime()
-      return { rt, el, tree: renderComponent(rt, el.type, el.props) }
-    }
-    const first = renderGroup(groupEls[0])
-    const second = renderGroup(groupEls[1])
-    ok(textOf(byTestId(first.tree, 'v3-step-group')) === '运行 7 个命令' && textOf(byTestId(second.tree, 'v3-step-group')) === '读取 5 个文件', '合并行写类别与数量', [textOf(byTestId(first.tree, 'v3-step-group')), textOf(byTestId(second.tree, 'v3-step-group'))])
-    ok(byTestId(first.tree, 'v3-step-group').props['aria-expanded'] === false, '合并行默认折叠')
-    byTestId(first.tree, 'v3-step-group').props.onClick()
-    const opened = renderComponent(first.rt, first.el.type, first.el.props)
-    ok(byTypeName(opened, 'StepNode').length === 7, '点开后逐条展示 7 个命令', byTypeName(opened, 'StepNode').length)
+    const { tree } = renderSteps([...cmds, ...reads])
+    const groupEls = byTypeName(tree, 'ToolGroupRow')
+    ok(groupEls.length === 1, '7 个命令与 5 个读取合成一组', groupEls.length)
+    const g = renderSub(tree, 'ToolGroupRow')
+    ok(textOf(byTestId(g.tree, 'v3-step-group')) === '运行 7 条命令，读取 5 个文件', '组头写各类别与数量', textOf(byTestId(g.tree, 'v3-step-group')))
+    ok(byTypeName(g.tree, 'StepNode').length === 0, '折叠时不铺逐条步骤')
+    byTestId(g.tree, 'v3-step-group').props.onClick()
+    const opened = renderComponent(g.rt, g.el.type, g.el.props)
+    ok(byTypeName(opened, 'StepNode').length === 12, '点开后逐条展示 12 步', byTypeName(opened, 'StepNode').length)
 
-    const few = renderStepsOpen([tool({ id: 'a', name: 'bash' }), tool({ id: 'b', name: 'bash' }), tool({ id: 'c', name: 'read' })])
-    ok(byTypeName(few.tree, 'StepGroupRow').length === 0 && byTypeName(few.tree, 'StepNode').length === 3, '不足 3 个同类时保持逐条', byTypeName(few.tree, 'StepNode').length)
+    const broken = renderSteps([...cmds.slice(0, 3), tool({ id: 'ask', name: 'question' }), ...cmds.slice(3, 6)])
+    ok(byTypeName(broken.tree, 'ToolGroupRow').length === 2 && byTypeName(broken.tree, 'QuestionReceipt').length === 1 && byTypeName(broken.tree, 'StepNode').length === 0, '提问工具独立成行（问答回执）并断开分组', byTypeName(broken.tree, 'QuestionReceipt').length)
 
-    const broken = renderStepsOpen([...cmds.slice(0, 3), tool({ id: 'g', name: 'grep' }), ...cmds.slice(3, 6)])
-    ok(byTypeName(broken.tree, 'StepGroupRow').length === 2 && byTypeName(broken.tree, 'StepNode').length === 1, '被别的类别打断后分别合并', byTypeName(broken.tree, 'StepNode').length)
-
-    const mixed = cmds.slice(0, 4).map((c, i) => i === 1 ? { ...c, status: 'error', output: 'boom' } : i === 3 ? { ...c, status: 'running', startedAt: 1 } : c)
-    const gt = renderSteps(mixed).tree
-    const failing = renderGroup(byTypeName(gt, 'StepGroupRow')[0])
-    const extraIds = byTypeName(failing.tree, 'StepNode').map((el) => el.props.node.call.id)
-    ok(extraIds.join() === 'run-1,run-3', '折叠的合并行下仍露出失败与进行中的那几条', extraIds)
-    ok(collect(failing.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '合并行头部带失败徽标')
-  }
-
-
-  group('运行中折叠态：进行中的步骤最多露出最近几条')
-  {
-    const running = Array.from({ length: 7 }, (_, i) => tool({ id: `live-${i}`, name: 'bash', args: { command: `sleep ${i}` }, status: 'running', startedAt: 1 }))
-    const { tree } = renderSteps(running)
-    const live = byTestId(tree, 'v3-steps-live')
-    const ids = byTypeName(live, 'StepNode').map((el) => el.props.node.call.id)
-    ok(ids.join() === 'live-4,live-5,live-6', '只露最近 3 条进行中的', ids)
-    const more = byTypeName(live, 'MoreRow')[0]
-    ok(!!more && more.props.count === 4, '其余收进「另外 4 项」', more && more.props)
+    const rereads = Array.from({ length: 3 }, (_, i) => tool({ id: `same-${i}`, name: 'read', args: { path: 'docs/a.md' } }))
+    const same = renderSub(renderSteps(rereads).tree, 'ToolGroupRow')
+    ok(textOf(byTestId(same.tree, 'v3-step-group')) === '读取 a.md（3 次）', '同一路径多次读取合成文件段', textOf(byTestId(same.tree, 'v3-step-group')))
+    byTestId(same.tree, 'v3-step-group').props.onClick()
+    const sameOpen = renderComponent(same.rt, same.el.type, same.el.props)
+    const rows = byTypeName(sameOpen, 'StepNode')
+    ok(rows.length === 1 && rows[0].props.repeat === 3 && rows[0].props.node.call.id === 'same-2', '相邻同路径读取折成一行，显示最新一次', rows.map((el) => [el.props.node.call.id, el.props.repeat]))
   }
 
   group('长输出：先截断预览，展开后铺全（键盘可达的共享按钮）')

@@ -195,7 +195,8 @@ export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, 
 export function translate(_lang, k){ return String(k) }`,
   attachmentFiles: `export async function readFiles(){ return [] }`,
   lucide: `export function ArrowUp(){ return null }
-export function Square(){ return null }`
+export function Square(){ return null }
+export function Hourglass(){ return null }`
 }
 
 function makeStubMap() {
@@ -206,7 +207,7 @@ function makeStubMap() {
       'src/renderer/src/features/composer/attachment-files.ts': STUBS.attachmentFiles,
       'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
       'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
-      'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }',
+      'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
       'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
       'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
       'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',

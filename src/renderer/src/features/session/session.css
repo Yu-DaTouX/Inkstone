@@ -63,8 +63,8 @@
   }
 
   .v3-msg.user { align-items: flex-end; }
-  .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 80%; }
-  .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-8); min-width: 0; }
+  .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 85%; }
+  .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-10); min-width: 0; }
   .v3-msg.bash { gap: var(--s-6); }
   .v3-note { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
   .v3-note-head { display: flex; align-items: center; gap: var(--s-6); min-width: 0; }
@@ -75,13 +75,13 @@
   .v3-user-images { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; }
   .v3-user-image { position: relative; }
   .v3-user-image-ref { position: absolute; top: var(--s-4); left: var(--s-4); pointer-events: none; }
-  .v3-image-ref { background: transparent; color: var(--accent); font-weight: 500; }
+  .v3-image-ref { background: transparent; color: var(--accent-t); font-weight: 500; }
 
   .v3-commentary { display: flex; flex-direction: column; gap: var(--s-8); }
 
   .v3-process { min-width: 0; }
   .v3-process-sum { min-width: 0; }
-  .v3-process-label { flex: 1 1 auto; min-width: 0; }
+  .v3-process-label { flex: 0 1 auto; min-width: 0; }
   .v3-process-time { flex: none; }
   .v3-process-body { display: flex; flex-direction: column; gap: var(--s-8); margin-top: var(--s-4); min-width: 0; }
   .v3-process-seg { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
@@ -150,7 +150,7 @@
     flex-direction: column;
     width: min(360px, calc(100% - var(--s-16)));
     min-height: 0;
-    animation: v3-sap-in var(--dur-panel) var(--ease-out);
+    animation: v3-sap-in var(--dur-base) var(--ease);
   }
   .v3-sap-head { display: flex; align-items: center; gap: var(--s-6); flex: none; padding: var(--s-6) var(--s-6) var(--s-6) var(--s-12); }
   .v3-sap-close { margin-left: auto; }
@@ -203,6 +203,8 @@
   .v3-asks:empty { display: none; }
 
   .v3-asks > * { flex-shrink: 0; }
+  .v3-asks > :is(.v3-approval, .v3-qcard) { margin-inline-start: max(0px, calc((100% - var(--size-chat)) / 2)); }
+  .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 
   .v3-jump { position: absolute; right: calc(var(--s-20) + var(--tiles-reserve, 0px)); bottom: var(--s-8); z-index: 2; }
 
