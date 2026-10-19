@@ -53,7 +53,9 @@ import type {
   CodexLoginResult,
   TrustStatusView,
   DirListing,
+  FileContentSearchResult,
   FileRequestContext,
+  FileSearchResult,
   FilePreview,
   FileRefInfo,
   FileTextResult,
@@ -468,6 +470,8 @@ const api: YanBridge = {
 
   listDir: (rel, showHidden, context?: FileRequestContext) => invoke<DirListing>('yan:listDir', rel, showHidden === true, context),
   watchDirs: (watchId, dirs, context) => invoke<{ dirs: string[]; dropped: string[] }>('yan:files:watch', watchId, dirs, context),
+  searchFiles: (request) => invoke<FileSearchResult>('yan:searchFiles', request),
+  searchFileContents: (request) => invoke<FileContentSearchResult>('yan:searchFileContents', request),
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),

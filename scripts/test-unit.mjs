@@ -19,6 +19,7 @@ import { runSnapshotIdentityTests } from './test-snapshot-identity.mjs'
 import { runExecutionAdmissionTests } from './test-execution-admission.mjs'
 import { runEpochSnapshotTests } from './test-epoch-snapshot.mjs'
 import { runAccountQuotaPaneTests } from './test-account-quota-pane.mjs'
+import { runFileContentSearchTests } from './test-file-content-search.mjs'
 
 await import('./test-live-synthetic-isolation.mjs')
 await import('./test-ui-survey-regressions.mjs')
@@ -889,6 +890,18 @@ const fileListing = await import('../node_modules/esbuild/lib/main.js').then(({ 
 )
 const { runFileListingTests } = await import('./test-files.mjs')
 const { runFilesWatchTests } = await import('./test-files-watch.mjs')
+const { runOpenGuardTests } = await import('./test-open-guard.mjs')
+
+const openGuard = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/open-guard.ts'],
+    outfile: 'out/test/open-guard.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/open-guard.mjs'))
+)
 
 const filesWatch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -899,6 +912,17 @@ const filesWatch = await import('../node_modules/esbuild/lib/main.js').then(({ b
     platform: 'node',
     logLevel: 'silent'
   }).then(() => import('../out/test/files-watch.mjs'))
+)
+
+const fileContentSearch = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/main/file-content-search.ts'],
+    outfile: 'out/test/file-content-search.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    logLevel: 'silent'
+  }).then(() => import('../out/test/file-content-search.mjs'))
 )
 
 const slashQuery = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1575,6 +1599,8 @@ runSlashQueryTests(ok, slashQuery)
 runCapabilityRequestTests(ok, capabilityRequest)
 await runFileListingTests(ok, fileListing)
 await runFilesWatchTests(ok, filesWatch)
+await runOpenGuardTests(ok, openGuard)
+await runFileContentSearchTests(ok, fileContentSearch)
 
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)

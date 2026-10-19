@@ -277,11 +277,22 @@ export function Composer({ className }: { className?: string } = {}) {
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
+      const internalPaths = e.dataTransfer.getData('application/x-yan-file-paths').trim()
       const internalPath = e.dataTransfer.getData('application/x-yan-file-path').trim()
-      if (internalPath) {
+      if (internalPaths || internalPath) {
         e.preventDefault()
         setDragging(false)
-        void addFileRefPaths([internalPath])
+        let paths = [internalPath]
+        if (internalPaths) {
+          try {
+            const parsed: unknown = JSON.parse(internalPaths)
+            paths = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [internalPath]
+          } catch {
+            paths = [internalPath]
+          }
+        }
+        paths = paths.filter((value) => value.trim().length > 0)
+        if (paths.length) void addFileRefPaths(paths)
         return
       }
       if (!e.dataTransfer.types.includes('Files')) return

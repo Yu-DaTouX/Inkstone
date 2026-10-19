@@ -1,8 +1,9 @@
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
+import { openBlockedByExtension } from './open-guard'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
-import { constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { loadModelPricing } from './model-pricing'
@@ -2409,7 +2410,14 @@ function registerIpc(): void {
     if (typeof p !== 'string' || !p.trim()) return { ok: false, error: 'empty path' }
     if (/^[\\/]{2}/.test(p.trim())) return { ok: false, error: 'network path' }
     if (!existsSync(p)) return { ok: false, error: 'missing' }
-    const err = await shell.openPath(existsSync(dirname(p)) ? dirname(p) : p)
+    let directory = false
+    try {
+      directory = statSync(p).isDirectory()
+    } catch {
+      return { ok: false, error: 'missing' }
+    }
+    if (!directory && openBlockedByExtension(p)) return { ok: false, error: 'blocked' }
+    const err = await shell.openPath(p)
     return err ? { ok: false, error: err } : { ok: true }
   })
 
