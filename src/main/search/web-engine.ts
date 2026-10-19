@@ -16,16 +16,19 @@ export interface WebEngine<Raw> {
   toRow(raw: Raw): { title: string; url: string; snippet: string }
 }
 
-export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutMs: number }): Promise<SourceRun> {
+export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutMs: number; signal?: AbortSignal }): Promise<SourceRun> {
   const started = Date.now()
   const elapsed = (): number => Date.now() - started
-  const fail = (code: string, message: string, timedOut = false): SourceRun => ({
-    source: engine.source,
-    rows: null,
-    ...(timedOut ? { timedOut: true } : {}),
-    error: { code, message },
-    elapsedMs: elapsed()
-  })
+  const fail = (code: string, message: string, timedOut = false): SourceRun =>
+    opts.signal?.aborted
+      ? { source: engine.source, rows: null, skipped: true, elapsedMs: elapsed() }
+      : {
+          source: engine.source,
+          rows: null,
+          ...(timedOut ? { timedOut: true } : {}),
+          error: { code, message },
+          elapsedMs: elapsed()
+        }
   try {
     return await withHiddenPage(opts.timeoutMs, async (win, signal) => {
       let loadError = ''
@@ -49,7 +52,7 @@ export async function runWebEngine<Raw>(engine: WebEngine<Raw>, opts: { timeoutM
         if (noneStreak >= 10) return { source: engine.source, rows: [], elapsedMs: elapsed() } satisfies SourceRun
         await sleepUnlessAborted(300, signal)
       }
-    })
+    }, opts.signal)
   } catch (e) {
     if (e instanceof HiddenPageTimeout) return fail('timeout', e.message, true)
     return fail('network_error', e instanceof Error ? e.message : String(e))

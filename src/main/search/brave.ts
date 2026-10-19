@@ -1,17 +1,16 @@
 import type { SourceRun } from './aggregate'
+import type { SearchRecency } from '../../shared/search'
 import { resolveBraveKey } from './config'
+import { siteOperator, withOperators, type SourceRequest } from './modifiers'
 
 const ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
+const BRAVE_FRESHNESS: Record<SearchRecency, string> = { day: 'pd', week: 'pw', month: 'pm', year: 'py' }
 
 function stripTags(input: unknown): string {
   return typeof input === 'string' ? input.replace(/<[^>]*>/g, '') : ''
 }
 
-export async function runBraveSearch(
-  query: string,
-  opts: { limit: number; timeoutMs: number },
-  fetchImpl: typeof fetch = fetch
-): Promise<SourceRun> {
+export async function runBraveSearch(query: string, opts: SourceRequest, fetchImpl: typeof fetch = fetch): Promise<SourceRun> {
   const started = Date.now()
   const elapsed = (): number => Date.now() - started
   const key = await resolveBraveKey()
@@ -25,8 +24,9 @@ export async function runBraveSearch(
     }
   }
   const url = new URL(ENDPOINT)
-  url.searchParams.set('q', query)
+  url.searchParams.set('q', withOperators(query, [siteOperator(opts.sites)]))
   url.searchParams.set('count', String(Math.min(20, Math.max(1, opts.limit))))
+  if (opts.recent) url.searchParams.set('freshness', BRAVE_FRESHNESS[opts.recent])
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs)
   try {

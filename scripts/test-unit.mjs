@@ -2471,6 +2471,12 @@ await runSearchTests(ok, searchMod)
       "export * as deepseek from './src/main/search/deepseek.ts'",
       "export * as firecrawl from './src/main/search/firecrawl.ts'",
       "export * as context7 from './src/main/search/context7.ts'",
+      "export * as plan from './src/main/search/plan.ts'",
+      "export * as modifiers from './src/main/search/modifiers.ts'",
+      "export * as bing from './src/main/search/bing.ts'",
+      "export * as ddg from './src/main/search/ddg.ts'",
+      "export * as so360 from './src/main/search/so360.ts'",
+      "export * as brave from './src/main/search/brave.ts'",
       "export * as shared from './src/shared/search.ts'"
     ].join('\n')
     await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>

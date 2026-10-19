@@ -34,8 +34,21 @@ export const SEARCH_TIMEOUT_MS_MAX = 60_000
 export const SEARCH_OUTPUT_MAX_BYTES = 512 * 1024
 export const SEARCH_SNIPPET_MAX = 280
 export const SEARCH_QUERY_MAX = 200
+export const SEARCH_QUERIES_MAX = 5
+export const SEARCH_SITES_MAX = 5
+export const SEARCH_CONTENT_MAX = 3000
 
-export interface SearchQuery {
+export type SearchRecency = 'day' | 'week' | 'month' | 'year'
+export const SEARCH_RECENCIES: readonly SearchRecency[] = ['day', 'week', 'month', 'year']
+
+export interface SearchModifiers {
+  recent?: SearchRecency
+  sites?: string[]
+  question?: string
+  withContent?: boolean
+}
+
+export interface SearchQuery extends SearchModifiers {
   text: string
   sources?: SearchSourceId[]
   limitPerSource?: number
@@ -49,10 +62,11 @@ export interface SearchItem {
   snippet?: string
   source: SearchSourceId
   published?: string
+  content?: string
   meta?: Record<string, string | number>
 }
 
-export type SourceStatusKind = 'ok' | 'empty' | 'error' | 'timeout' | 'unavailable'
+export type SourceStatusKind = 'ok' | 'empty' | 'error' | 'timeout' | 'unavailable' | 'skipped'
 
 export interface PerSourceStatus {
   source: SearchSourceId
