@@ -182,7 +182,13 @@ try {
   const renderer = {}; vm.runInNewContext(pushCode, renderer)
   const refresh = defer(); const switched = []; const state = { notices: [], session: { sessionId: 'sid' }, refreshSessions: () => refresh.promise, switchSession: path => switched.push(path) }
   let current = state
-  const ctx = { get: () => current, set: patch => Object.assign(current, patch), pushNotice: (list, type, text) => [...list, { type, text }] }
+  const zhCatalog = JSON.parse(await readFile('src/renderer/src/i18n/zh-CN.json', 'utf8'))
+  const translateZh = (key, vars) => {
+    let text = zhCatalog[key] ?? key
+    if (vars) for (const [name, value] of Object.entries(vars)) text = text.split('{' + name + '}').join(String(value))
+    return text
+  }
+  const ctx = { get: () => current, set: patch => Object.assign(current, patch), pushNotice: (list, type, text) => [...list, { type, text }], t: translateZh }
   renderer.consumeShellPush({ ch: 'session-moved', payload: { sessionId: 'sid', sessionFile: file, cwd: target, ok: true, continued: true } }, state, ctx)
   current = { ...state, session: { sessionId: 'elsewhere' } }; refresh.resolve(); await tick()
   ok(switched.length === 0, 'renderer refresh cannot steal view after user navigates away')

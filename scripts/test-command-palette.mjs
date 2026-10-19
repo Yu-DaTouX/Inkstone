@@ -227,7 +227,7 @@ async function main() {
 
     r = recordingPort({ text: '/model', attachments: [], commands, models: [] })
     await S.submitComposerInput(r.port)
-    eq(r.calls.at(-1), ['openSettings', 'status'], '/model 无参数打开状态页')
+    eq(r.calls.at(-1), ['openSettings', 'models'], '/model 无参数打开模型设置')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '/model 无参不清草稿')
 
     r = recordingPort({ text: '/model openai/gpt-5', attachments: [], commands, models: [{ provider: 'openai', id: 'gpt-5', name: 'GPT-5' }] })

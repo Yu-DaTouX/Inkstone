@@ -3,7 +3,7 @@ import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, S
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { IconButton, SearchField } from '../../ui'
+import { Button, IconButton, SearchField } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text } from '../../app/v3-text'
@@ -61,6 +61,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
   const activeRunnerId = useStore((s) => s.activeRunnerId)
   const runs = useRunsV3((s) => s.runs)
   const conn = useStore((s) => s.conn)
+  const connDetail = useStore((s) => s.connDetail)
+  const [retrying, setRetrying] = useState(false)
   const newSession = useStore((s) => s.newSession)
   const switchSession = useStore((s) => s.switchSession)
   const refreshSessions = useStore((s) => s.refreshSessions)
@@ -352,10 +354,24 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
             </IconButton>
           </IconTip>
         ) : null}
-        <span className="v3-side-conn" title={connLabel}>
+        <span className="v3-side-conn" title={connDetail ? `${connLabel}\n${connDetail}` : connLabel}>
           <span className={`v3-conn-dot v3-conn-dot-${conn}`} aria-hidden />
           {connLabel}
         </span>
+        {conn === 'exited' || conn === 'error' ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            isDisabled={retrying}
+            data-testid="v3-conn-retry"
+            onPress={() => {
+              setRetrying(true)
+              void window.yan.start().then(() => refreshSessions()).catch(() => undefined).finally(() => setRetrying(false))
+            }}
+          >
+            {t('conn.retry')}
+          </Button>
+        ) : null}
       </div>
     </aside>
   )

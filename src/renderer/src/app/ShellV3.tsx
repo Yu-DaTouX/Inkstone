@@ -24,6 +24,7 @@ import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
 import { RunsPage } from '../features/runs/RunsPage'
 import { ReviewPage } from '../features/review'
+import { loadSubagentReviewFindings } from '../features/review/subagent-findings'
 import { CollabPage } from '../features/collab'
 import { ScheduleTasksPage } from '../features/schedule'
 import { RunPill } from '../patterns/RunPill'
@@ -567,7 +568,7 @@ export default function ShellV3(): ReactElement {
             ) : route.name === 'schedule' ? (
               <ScheduleTasksPage />
             ) : route.name === 'review' ? (
-              <ReviewPage />
+              <ReviewPage loadFindings={loadSubagentReviewFindings} />
             ) : route.name === 'collab' ? (
               <CollabPage />
             ) : route.name === 'usage' ? (

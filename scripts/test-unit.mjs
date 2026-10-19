@@ -49,7 +49,9 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks'
+  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks',
+  'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -1759,14 +1761,6 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       logLevel: 'warning'
     }),
     build({
-      entryPoints: ['src/main/hosting.ts'],
-      outfile: 'out/test/hosting.mjs',
-      bundle: true,
-      platform: 'node',
-      format: 'esm',
-      logLevel: 'warning'
-    }),
-    build({
       entryPoints: ['src/main/sources.ts'],
       outfile: 'out/test/sources.mjs',
       bundle: true,
@@ -1824,7 +1818,6 @@ const { runSessionIsolationTests } = await import('./test-session-isolation.mjs'
 const { runQuestionLogTests } = await import('./test-question-log.mjs')
 console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
 await runQuestionLogTests(ok)
-const { runHostingTests } = await import('./test-hosting.mjs')
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
 await runPackagesTests(ok)
 const { runPluginMarketTests } = await import('./test-plugin-market.mjs')
@@ -1843,8 +1836,6 @@ console.log('\n--- S2. 会话↔工作树来源关系（实施-07）---')
 await runWorktreeLinkTests(ok)
 console.log('\n--- S2b. 同一工作目录冲突 → 自动隔离与自动合回 ---')
 await runSessionIsolationTests(ok)
-console.log('\n--- G3. PR 状态（纯解析 + 一次真实 API）---')
-await runHostingTests(ok)
 await runGitRepoTests(ok)
 
 {

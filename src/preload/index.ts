@@ -92,6 +92,7 @@ import type {
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
+import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
 import type { RunSnapshot } from '../shared/runs'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
@@ -207,6 +208,7 @@ const api: YanBridge = {
     importSession: () => invoke<Awaited<ReturnType<YanBridge['sync']['importSession']>>>('yan:sync:importSession')
   },
   compact: (customInstructions) => invoke<Ok>('yan:compact', customInstructions),
+  compactionInfo: (cwd, contextWindow) => invoke<Awaited<ReturnType<YanBridge['compactionInfo']>>>('yan:compactionInfo', cwd, contextWindow),
   renameSession: (name) => invoke<Ok>('yan:renameSession', name),
   fork: (entryId) => invoke<{ ok: boolean; error?: string; text?: string }>('yan:fork', entryId),
   clone: () => invoke<Ok>('yan:clone'),
@@ -297,6 +299,15 @@ const api: YanBridge = {
     uninstall: () => invoke<OpenCodeProxyResult>('yan:opencodeProxy:uninstall'),
     autoStart: (enabled) => invoke<OpenCodeProxyResult>('yan:opencodeProxy:autoStart', enabled)
   },
+  desktopPet: {
+    status: () => invoke<DesktopPetStatus>('yan:desktopPet:status'),
+    install: () => invoke<DesktopPetResult>('yan:desktopPet:install'),
+    start: () => invoke<DesktopPetResult>('yan:desktopPet:start'),
+    stop: () => invoke<DesktopPetResult>('yan:desktopPet:stop'),
+    uninstall: () => invoke<DesktopPetResult>('yan:desktopPet:uninstall'),
+    autoStart: (enabled) => invoke<DesktopPetResult>('yan:desktopPet:autoStart', enabled),
+    setModel: (model) => invoke<DesktopPetResult>('yan:desktopPet:setModel', model)
+  },
   saveCustomProvider: (input) => invoke<CustomProviderResult>('yan:saveCustomProvider', input),
   discoverCustomModels: (input) => invoke<CustomProviderDiscoverResult>('yan:discoverCustomModels', input),
   detectLocalModels: () => invoke<LocalModelServer[]>('yan:detectLocalModels'),
@@ -352,6 +363,7 @@ const api: YanBridge = {
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),
+    catalog: (refresh) => invoke('yan:packages:catalog', refresh === true),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
     addMcp: (id) => invoke('yan:packages:addMcp', id),
     codegraphStatus: (cwd) => invoke('yan:packages:codegraphStatus', cwd),

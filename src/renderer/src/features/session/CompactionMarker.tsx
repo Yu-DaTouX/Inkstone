@@ -25,6 +25,9 @@ export function CompactionMarker(): JSX.Element | null {
       {model.running ? null : <span className="v3-compaction-title">{tt('compactionTitle')}</span>}
       <span className="v3-compaction-text">{model.running ? compactionRunningText(t, model.run) : compactionSummary(t, model.run)}</span>
       {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
+      {!model.running && model.run.status === 'failed' && model.run.error ? (
+        <span className="v3-compaction-error" title={model.run.error} data-testid="v3-compaction-error">{model.run.error}</span>
+      ) : null}
     </div>
   )
 }

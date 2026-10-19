@@ -52,8 +52,7 @@
   .ctx-ring-text {
     font-size: var(--t-meta);
     color: inherit;
-    min-width: 2.6em;
-    text-align: left;
+    font-variant-numeric: tabular-nums;
   }
 
   .ctx-gauge {

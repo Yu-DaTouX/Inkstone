@@ -48,6 +48,12 @@
     transition: color var(--dur-expand) var(--ease);
   }
 
+  .mtp-trigger .mtp-level {
+    box-sizing: content-box;
+    min-width: 2em;
+    text-align: center;
+  }
+
   .mtp-chev {
     flex: none;
     color: var(--fg3);

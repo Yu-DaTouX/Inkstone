@@ -56,7 +56,7 @@ import { reviewText, type ReviewUiText } from './review-text'
 import { fileStatusLabel } from '../../lib/file-status'
 import './review-page.css'
 
-export type ReviewFindingsLoader = (changeSet: ReviewChangeSet) => Promise<{ ok: boolean; text?: string; error?: string }>
+export type ReviewFindingsLoader = (changeSet: ReviewChangeSet, run: ReviewRun) => Promise<{ ok: boolean; text?: string; error?: string }>
 
 export interface ReviewPageProps {
   bridge?: import('../../../../shared/review').ReviewBridge | null
@@ -560,7 +560,7 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
         return
       }
       setFindingsStatus('loading')
-      const loaded = await loadFindings(changeSet)
+      const loaded = await loadFindings(changeSet, result)
       if (!loaded.ok) {
         setFindingsStatus('error')
         setFindingsError(loaded.error ?? '')

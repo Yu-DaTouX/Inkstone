@@ -5,6 +5,8 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../title'
 import { getSettings } from '../settings'
+import { compactionInfo } from '../compaction'
+import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
 import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, moveSessionLayout, setSessionFlags } from '../session-layout'
@@ -184,6 +186,12 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:compact', async (customInstructions?: string) => {
     if (customInstructions !== undefined && typeof customInstructions !== 'string') return { ok: false, error: '压缩要求必须是文本' }
     return host.ac()?.compact(customInstructions) ?? { ok: false, error: 'pi 未运行' }
+  })
+
+  handle('yan:compactionInfo', async (cwd: unknown, contextWindow: unknown) => {
+    if (typeof cwd !== 'string' || !cwd.trim() || typeof contextWindow !== 'number') return null
+    const cap = (await getSettings()).autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS
+    return compactionInfo(resolve(cwd), contextWindow, cap)
   })
 
   handle('yan:cachedTitles', async () => cachedTitles())

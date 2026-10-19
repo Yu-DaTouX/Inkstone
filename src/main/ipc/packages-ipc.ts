@@ -5,6 +5,7 @@ import { trustStatus } from '../project-trust'
 import { resolvePi } from '../protocol'
 import { PI_AGENT_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
+import { loadPluginCatalog } from '../plugin-catalog'
 import { app, dialog } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
@@ -24,6 +25,7 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     }
     return searchPiPackages(query.slice(0, 500), typeof offset === 'number' ? Math.max(0, Math.floor(offset)) : 0)
   })
+  handle('yan:packages:catalog', async (refresh: unknown) => loadPluginCatalog(refresh === true))
   handle('yan:packages:exportPlugin', async (id: unknown) => {
     if (id !== 'hermes-inkstone') return { ok: false, error: '未知插件' }
     try {

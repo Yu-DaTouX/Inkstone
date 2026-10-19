@@ -91,7 +91,9 @@ for (const action of ['patchSettings', 'setAutoCompaction', 'compact']) {
 assert.ok(ctx.includes('AUTO_COMPACT_STEPS') && ctx.includes('CONTEXT_TRIM_STEPS'), '上下文页复用 shared 档位')
 assert.ok(ctx.includes('isSelected'), '开关用 RAC 的 isSelected 受控属性')
 assert.ok(!ctx.includes('checked='), '不混用 v2 的 checked 属性')
-assert.ok(!ctx.includes('window.yan'), '上下文页不新增 IPC 调用')
+assert.ok(!ctx.includes('window.yan'), '上下文页不直接调用 IPC')
+const infoHook = readFileSync(here('../src/renderer/src/features/settings/context/use-compaction-info.ts'), 'utf8')
+assert.deepEqual([...infoHook.matchAll(/window\.yan\.(\w+)/g)].map((m) => m[1]), ['compactionInfo'], '压缩说明只读一个只读接口')
 
 const session = readFileSync(here('../src/renderer/src/features/settings/general/SessionSettings.tsx'), 'utf8')
 assert.ok(session.includes('<ContextSettings'), '会话与上下文分区挂载上下文组件')

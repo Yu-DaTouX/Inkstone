@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-10-19",
+  "plugins": [
+    {
+      "id": "hermes-inkstone",
+      "kind": "export",
+      "name": "Hermes × Inkstone",
+      "version": "0.2.0",
+      "url": "https://github.com/Yu-DaTouX/Inkstone/tree/main/integrations/hermes-inkstone",
+      "text": {
+        "zh-CN": {
+          "desc": "在 Hermes 里查看会话、派任务、读结果，并批准或拒绝砚的危险操作。",
+          "target": "装在 Hermes 端；砚需开启远程接入并配对。",
+          "hint": "放到 ~/.hermes/plugins/inkstone/，运行 hermes plugins enable inkstone，重启 Hermes。"
+        },
+        "en-US": {
+          "desc": "Read sessions, send tasks, get results, and approve or reject Inkstone's dangerous actions from Hermes.",
+          "target": "Installs in Hermes; enable remote access in Inkstone and pair.",
+          "hint": "Put it in ~/.hermes/plugins/inkstone/, run hermes plugins enable inkstone, then restart Hermes."
+        }
+      }
+    },
+    {
+      "id": "codegraph",
+      "kind": "mcp",
+      "name": "CodeGraph",
+      "version": "MCP",
+      "url": "https://github.com/colbymchenry/codegraph",
+      "text": {
+        "zh-CN": {
+          "desc": "本地代码知识图谱：预先索引符号、调用与依赖，让模型少读文件就能定位代码。",
+          "target": "需先安装 CLI：npm i -g @colbymchenry/codegraph；加入后由 pi 原生 MCP 启动 codegraph serve --mcp。",
+          "hint": "在每个项目目录运行一次 codegraph init 建索引，之后自动增量同步。"
+        },
+        "en-US": {
+          "desc": "Local code knowledge graph: pre-indexed symbols, calls and dependencies so the model finds code without reading many files.",
+          "target": "Install the CLI first: npm i -g @colbymchenry/codegraph. Once added, pi's native MCP runs codegraph serve --mcp.",
+          "hint": "Run codegraph init once in each project to build the index; it syncs incrementally after that."
+        }
+      }
+    },
+    {
+      "id": "desktop-pet",
+      "kind": "pet",
+      "name": "dsh 桌宠",
+      "version": "0.3.7",
+      "url": "https://github.com/PC2005-cloud/dsh-pet",
+      "text": {
+        "zh-CN": {
+          "desc": "把社区插件 dsh-pet 的桌宠接进砚：会话思考、调用工具、等你确认、完成或出错时，桌宠切换对应动作和气泡。",
+          "target": "用 npm 装到砚的数据目录，在独立进程里运行；桌宠窗口用它自带的 Electron，首次启动会下载约 100 MB。插件来自社区，许可 MIT。"
+        },
+        "en-US": {
+          "desc": "Brings the community dsh-pet desktop pet into Inkstone: it switches animations and bubbles while a session thinks, runs tools, waits for you, finishes or fails.",
+          "target": "Installed with npm into Inkstone's data directory and run in a separate process; the pet window uses its own Electron, about 100 MB downloaded on first start. Community plugin, MIT licensed."
+        }
+      }
+    }
+  ]
+}

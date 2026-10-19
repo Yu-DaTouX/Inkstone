@@ -58,6 +58,8 @@ export interface SettingsText {
   contextCompactAt: string
   contextCompactAtNow: string
   contextCompactAtClamped: string
+  contextProjectIgnored: string
+  contextCappedByInkstone: string
   contextTrim: string
   contextTrimDesc: string
   contextTrimAt: string
@@ -181,6 +183,8 @@ const ZH: SettingsText = {
   contextCompactAt: '自动压缩上限',
   contextCompactAtNow: '到 {n} 触发',
   contextCompactAtClamped: '模型窗口较小，实际在 {e} 触发（设置为 {n}）',
+  contextProjectIgnored: '本项目 .pi/settings.json 里的压缩设置未生效：该项目尚未受信任，pi 使用全局设置。',
+  contextCappedByInkstone: '自动压缩上限低于 pi 自身阈值，将在 {n} 提前压缩。',
   contextTrim: '裁剪较早的大段工具输出',
   contextTrimDesc: '发给模型前省略较早的大段工具输出。',
   contextTrimAt: '裁剪起点',
@@ -304,6 +308,8 @@ const EN: SettingsText = {
   contextCompactAt: 'Auto-compaction limit',
   contextCompactAtNow: 'Triggers at {n}',
   contextCompactAtClamped: 'The model window is small; it triggers at {e} (set to {n})',
+  contextProjectIgnored: 'Compaction settings in this project\'s .pi/settings.json are ignored because the project is not trusted; pi uses the global settings.',
+  contextCappedByInkstone: 'The auto-compaction limit is below pi\'s own threshold, so compaction happens early at {n}.',
   contextTrim: 'Trim older large tool output',
   contextTrimDesc: 'Omit older large tool output before sending to the model.',
   contextTrimAt: 'Trim threshold',

@@ -63,6 +63,8 @@ import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { registerPackagesIpc } from './ipc/packages-ipc'
 import { registerOpenCodeProxyIpc } from './ipc/opencode-ipc'
 import { autoStartOpenCodeProxy, stopOpenCodeProxySync } from './opencode-proxy'
+import { registerDesktopPetIpc } from './ipc/desktop-pet-ipc'
+import { autoStartDesktopPet, configureDesktopPet, feedDesktopPetRuns, stopDesktopPetSync } from './desktop-pet'
 import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagents-ipc'
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
@@ -368,10 +370,14 @@ const subagentService: SubagentService = new SubagentService({
     push({ ch: 'subagent-remove', payload: id })
     refreshTaskbar()
   },
-  onEvent: (runId, evt) => {
-    reviewRuns?.observe(runId, evt)
+  onEvent: (runId, evt, run) => {
+    if (reviewRuns?.isActive(runId)) reviewRuns.observe(runId, evt)
+    else runsHost?.observeSubagentEvent(run, evt)
   },
   onFinished: (run) => {
+    if (!reviewRuns?.isActive(run.id)) {
+      runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
+    }
     reviewRuns?.settle(
       run.id,
       run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed',
@@ -543,6 +549,7 @@ function yanThinExtensionPaths(): string[] {
 
 function push(msg: MainPush): void {
   remoteAccess?.publish(msg)
+  if (msg.ch === 'runs') feedDesktopPetRuns(msg.payload)
   if (msg.ch === 'runs') attention?.refreshTaskbar()
   if (msg.ch === 'runs') auxWindows?.notifyRuns()
   if (!win || win.isDestroyed()) return
@@ -1065,6 +1072,7 @@ async function shutdown(): Promise<void> {
   scheduleService.stop()
   disposeKeepAwake()
   stopOpenCodeProxySync()
+  stopDesktopPetSync()
   attention?.dispose()
   auxWindows?.dispose()
   panePopout?.dispose()
@@ -1978,7 +1986,9 @@ function registerIpc(): void {
 
   handle('yan:start', async () => {
     const settings = await getSettings()
-    const res = await startAgent()
+    const active = runners?.active()
+    const crashedFile = active && !active.running ? active.getState()?.sessionFile : undefined
+    const res = await startAgent(crashedFile ? { sessionFile: crashedFile } : undefined)
     return { ...res, state: ac()?.getState() ?? undefined, settings }
   })
 
@@ -2618,6 +2628,7 @@ function registerIpc(): void {
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
+  registerDesktopPetIpc(ipc)
   registerSourcesIpc(ipc)
 
   registerCapabilitiesIpc(ipc, {
@@ -3070,6 +3081,16 @@ app.whenReady().then(async () => {
   })
   registerIpc()
   void autoStartOpenCodeProxy().catch((error) => reportMainError('opencode-proxy-autostart', error))
+  configureDesktopPet({
+    runnerPath: () =>
+      [
+        process.resourcesPath ? join(process.resourcesPath, 'desktop-pet', 'runner.mjs') : '',
+        join(__dirname_, '..', '..', 'resources', 'desktop-pet', 'runner.mjs'),
+        join(process.cwd(), 'resources', 'desktop-pet', 'runner.mjs')
+      ].find((candidate) => !!candidate && existsSync(candidate)),
+    showMainWindow
+  })
+  void autoStartDesktopPet().catch((error) => reportMainError('desktop-pet-autostart', error))
   trayLanguage = (await getSettings()).lang
   ensureTrayAssets()
   attention?.ensureTray()

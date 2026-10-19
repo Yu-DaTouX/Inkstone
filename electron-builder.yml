@@ -96,6 +96,9 @@ extraResources:
   - from: resources/bot-icons
     to: bot-icons
     filter: ['*.png']
+  - from: resources/desktop-pet
+    to: desktop-pet
+    filter: ['**/*.mjs']
 
 asar: true
 beforePack: scripts/pi-runtime-before-pack.cjs

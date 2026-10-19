@@ -40,7 +40,7 @@ export function useRemote(): RemoteState {
 }
 
 const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title'])
-const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline'])
+const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline', 'approval', 'approval-close'])
 const STATUS_CHANNELS = new Set(['state', 'runners', 'proc'])
 
 function sessionOfEvent(event: RemoteEventEnvelope): string | null {

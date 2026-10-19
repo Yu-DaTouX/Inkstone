@@ -1,4 +1,5 @@
 import type { AppSettings, MainPush, SoundEvent, SubagentRun } from '../../../shared/ipc'
+import type { MessageKey, TVars } from '../i18n'
 import type { Notice, Store } from './store'
 import { releaseResource } from './resource-owners'
 import { isNativeMcpActionResult, isNativeMcpSignInPrompt, isNativeMcpStatus } from '../lib/native-mcp-status'
@@ -9,6 +10,7 @@ export interface PushContext {
   alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string): void
   pushNotice(list: Notice[], type: Notice['type'], text: string, id?: string): Notice[]
   applyBrowserVisibility(): void
+  t(key: MessageKey, vars?: TVars): string
 }
 
 export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boolean {
@@ -17,14 +19,18 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
     case 'session-moved': {
       const p = m.payload
       if (!p.ok) {
-        set({ notices: ctx.pushNotice(s.notices, 'error', `会话没有移动：${p.error ?? '未知原因'}`) })
+        set({ notices: ctx.pushNotice(s.notices, 'error', ctx.t('state.move.failed', { error: p.error ?? ctx.t('state.error.unknownReason') })) })
         break
       }
       const view = ctx.get()
       const showing = (state: Store) => state.peekedPath === p.sessionFile || state.session?.sessionFile === p.sessionFile || state.session?.sessionId === p.sessionId
       const wasShowing = showing(view)
-      const note = p.continued ? '，正在继续原任务' : p.continuationError ? `；${p.continuationError}` : ''
-      set({ notices: ctx.pushNotice(view.notices, 'info', `会话已移到 ${p.cwd}${note}`) })
+      const note = p.continued
+        ? ctx.t('state.move.continuedSuffix')
+        : p.continuationError
+          ? ctx.t('state.move.continuationErrorSuffix', { error: p.continuationError })
+          : ''
+      set({ notices: ctx.pushNotice(view.notices, 'info', ctx.t('state.move.moved', { cwd: p.cwd, note })) })
       void view.refreshSessions().then(() => {
         if (wasShowing && showing(ctx.get())) void ctx.get().switchSession(p.sessionFile)
       })
@@ -92,11 +98,11 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
       else if (m.payload.state === 'exited') {
         set({
           conn: 'exited',
-          connDetail: `Agent 内核已退出（code=${m.payload.code ?? 'null'}）`,
+          connDetail: m.payload.detail || ctx.t('state.conn.kernelExited', { code: m.payload.code ?? 'null' }),
           ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
         })
       } else if (m.payload.state === 'error') {
-        const detail = m.payload.detail ?? '未知错误'
+        const detail = m.payload.detail ?? ctx.t('state.error.unknownError')
         set({
           conn: 'error',
           connDetail: detail,
@@ -240,6 +246,9 @@ export function consumeTaskStatePush(m: MainPush, _s: Store, ctx: PushContext): 
       break
     case 'approval-close':
       set({ approvals: _s.approvals.filter((item) => item.id !== m.payload.id) })
+      break
+    case 'title':
+      document.title = m.payload.trim() || ctx.t('state.appName')
       break
     default:
       return false
