@@ -85,7 +85,6 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           </div>
         ) : msg.text ? (
           <div className="v3-bubble">
-            <span className="v3-bubble-prompt" aria-hidden>›</span>
             <span className="v3-bubble-text">
               {splitImageRefs(displayText).map((part, i) =>
                 part.ref ? <mark key={i} className="v3-image-ref">{part.text}</mark> : part.text

@@ -51,7 +51,6 @@
   .v3-visual-fallback { border-radius: var(--r-md); }
 
   .v3-bubble { display: inline-flex; gap: var(--s-6); max-width: 100%; padding: var(--s-8) var(--s-12); border-radius: var(--r-bubble); background: var(--bubble); color: var(--fg); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .v3-bubble-prompt { color: var(--fg3); }
   .v3-msg-meta { display: flex; align-items: center; gap: var(--s-8); color: var(--fg3); font-size: var(--t-meta); }
   .v3-time { color: var(--fg3); font-variant-numeric: tabular-nums; }
   .v3-msg-act { display: inline-flex; align-items: center; gap: var(--s-4); border: 0; background: none; color: var(--fg3); font-size: var(--t-meta); cursor: pointer; opacity: 0; }
