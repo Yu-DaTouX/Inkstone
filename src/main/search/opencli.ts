@@ -20,16 +20,20 @@ import {
   type SearchBackendStatus
 } from '../../shared/search'
 import { aggregate, summarizeSources, type SourceRun } from './aggregate'
+import type { SourceRequest } from './modifiers'
 
-export type AdapterRunner = (
-  source: SearchSource,
-  query: string,
-  opts: { limit: number; timeoutMs: number }
-) => Promise<SourceRun>
+export type AdapterRunner = (source: SearchSource, query: string, opts: SourceRequest) => Promise<SourceRun>
 
 export interface SearchDeps {
   runner: AdapterRunner
   now: () => number
+}
+
+export interface SearchPolicy {
+  primary: readonly SearchSourceId[]
+  reserve: readonly SearchSourceId[]
+  enoughRows: number
+  graceMs: number
 }
 
 const byId = new Map<string, SearchSource>(SEARCH_SOURCES.map((s) => [s.id, s]))
@@ -357,7 +361,15 @@ export function normalizeQuery(input: SearchQuery):
   }
 }
 
-export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<SearchOutcome> {
+function whenAborted(signal: AbortSignal, source: SearchSourceId, started: number, now: () => number): Promise<SourceRun> {
+  return new Promise((resolve) => {
+    const skip = (): void => resolve({ source, rows: null, skipped: true, elapsedMs: now() - started })
+    if (signal.aborted) skip()
+    else signal.addEventListener('abort', skip, { once: true })
+  })
+}
+
+export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: SearchPolicy): Promise<SearchOutcome> {
   const started = deps.now()
   const parsed = normalizeQuery(input)
   if (!parsed.ok) {
@@ -372,26 +384,76 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps): Promise<S
     }
   }
 
+  const CONCURRENCY = 3
   const runs: SourceRun[] = []
   const queue = [...parsed.sources]
-  const CONCURRENCY = 3
-  const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-    for (;;) {
-      const source = queue.shift()
-      if (!source) return
-      const run = await deps.runner(source, parsed.text, {
-        limit: parsed.limitPerSource,
-        timeoutMs: parsed.timeoutMs
-      })
-      runs.push(run)
-    }
-  })
-  await Promise.all(workers)
+  const reserveAll = (policy?.reserve ?? [])
+    .map((id) => byId.get(id))
+    .filter((s, i, list): s is SearchSource => !!s && !parsed.sources.includes(s) && list.indexOf(s) === i)
+  const reserve = [...reserveAll]
+  const primary = new Set<SearchSourceId>(policy?.primary ?? [])
+  const stop = new AbortController()
+  let pendingPrimary = parsed.sources.filter((s) => primary.has(s.id)).length
+  let primaryRows = 0
+  let grace: NodeJS.Timeout | undefined
+  const modifiers = {
+    ...(input.recent ? { recent: input.recent } : {}),
+    ...(input.sites?.length ? { sites: input.sites } : {}),
+    ...(input.question ? { question: input.question } : {}),
+    ...(input.withContent ? { withContent: true } : {})
+  }
 
-  const order = new Map(parsed.sources.map((s, i) => [s.id, i]))
+  const settle = (run: SourceRun): void => {
+    if (!policy || !primary.has(run.source)) return
+    pendingPrimary--
+    if (run.rows?.length) primaryRows += run.rows.length
+    else if (!run.skipped && reserve.length) {
+      const next = reserve.shift()!
+      primary.add(next.id)
+      pendingPrimary++
+      queue.unshift(next)
+    }
+    if (pendingPrimary === 0 && primaryRows >= policy.enoughRows && !grace) {
+      grace = setTimeout(() => stop.abort(), policy.graceMs)
+    }
+  }
+
+  const runOne = async (source: SearchSource): Promise<void> => {
+    const begun = deps.now()
+    const run = stop.signal.aborted
+      ? await whenAborted(stop.signal, source.id, begun, deps.now)
+      : await Promise.race([
+          deps.runner(source, parsed.text, { limit: parsed.limitPerSource, timeoutMs: parsed.timeoutMs, signal: stop.signal, ...modifiers }),
+          whenAborted(stop.signal, source.id, begun, deps.now)
+        ])
+    runs.push(run)
+    settle(run)
+  }
+
+  const inflight = new Set<Promise<void>>()
+  const pump = (): void => {
+    while (inflight.size < CONCURRENCY && queue.length) {
+      const task: Promise<void> = runOne(queue.shift()!).finally(() => inflight.delete(task))
+      inflight.add(task)
+    }
+  }
+  pump()
+  while (inflight.size) {
+    await Promise.race(inflight)
+    pump()
+  }
+  if (grace) clearTimeout(grace)
+  stop.abort()
+
+  const order = new Map([...parsed.sources, ...reserveAll].map((s, i) => [s.id, i]))
   runs.sort((a, b) => (order.get(a.source) ?? 0) - (order.get(b.source) ?? 0))
 
-  const merged = aggregate(runs, { limitPerSource: parsed.limitPerSource, limitTotal: parsed.limitTotal })
+  const merged = aggregate(runs, {
+    limitPerSource: parsed.limitPerSource,
+    limitTotal: parsed.limitTotal,
+    ...(input.sites?.length ? { sites: input.sites } : {}),
+    ...(input.recent ? { recent: input.recent } : {})
+  })
   return {
     query: parsed.text,
     items: merged.items,

@@ -1,6 +1,7 @@
 import type { SourceRun } from './aggregate'
 import { callApi, parseJson } from './api-call'
 import { resolveSearchKey } from './config'
+import type { SourceRequest } from './modifiers'
 
 const ENDPOINT = 'https://api.tavily.com/search'
 
@@ -8,11 +9,7 @@ interface TavilyBody {
   results?: Array<Record<string, unknown>>
 }
 
-export async function runTavilySearch(
-  query: string,
-  opts: { limit: number; timeoutMs: number },
-  fetchImpl: typeof fetch = fetch
-): Promise<SourceRun> {
+export async function runTavilySearch(query: string, opts: SourceRequest, fetchImpl: typeof fetch = fetch): Promise<SourceRun> {
   const started = Date.now()
   const elapsed = (): number => Date.now() - started
   const key = await resolveSearchKey('tavily')
@@ -31,7 +28,14 @@ export async function runTavilySearch(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ query, max_results: Math.min(20, Math.max(1, opts.limit)), search_depth: 'basic', topic: 'general' })
+      body: JSON.stringify({
+        query,
+        max_results: Math.min(20, Math.max(1, opts.limit)),
+        search_depth: 'basic',
+        topic: 'general',
+        ...(opts.recent ? { time_range: opts.recent } : {}),
+        ...(opts.sites?.length ? { include_domains: opts.sites } : {})
+      })
     },
     opts.timeoutMs,
     fetchImpl

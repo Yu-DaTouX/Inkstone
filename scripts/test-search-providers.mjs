@@ -200,6 +200,100 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(long.text.length === 500 && long.truncated && long.totalChars === 3000, '正文按 maxChars 截断')
     await config.clearSearchKey('context7')
   }
+
+  {
+    const { plan, modifiers, bing, ddg, so360, brave, deepseek } = mod
+    const none = { tavily: false, brave: false, deepseek: false }
+    const zhFree = plan.defaultSearchPlan('北京天气', none)
+    ok(zhFree.sources.join(',') === 'ddg,so360', '没有 key：查 DuckDuckGo + 360，不再带 Bing、维基百科 / arXiv / HN')
+    ok(zhFree.policy.primary.join(',') === 'ddg' && zhFree.policy.reserve.length === 0, '没有 key 时 DuckDuckGo 够用就提前停掉慢的 360')
+    ok(plan.defaultSearchPlan('weather', none).sources.join(',') === 'ddg,so360', '英文同样是 DuckDuckGo + 360')
+    const all = { tavily: true, brave: true, deepseek: true }
+    const zhPaid = plan.defaultSearchPlan('北京天气', all)
+    ok(zhPaid.sources.join(',') === 'deepseek,ddg', '有 key：中文只用 DeepSeek 一个付费来源加 DuckDuckGo，不再三家同时扣费')
+    ok(zhPaid.policy.primary.join(',') === 'deepseek' && zhPaid.policy.reserve.join(',') === 'tavily,brave,so360', '其余付费来源与 360 留作后备')
+    const enPaid = plan.defaultSearchPlan('weather', { tavily: false, brave: true, deepseek: true })
+    ok(enPaid.sources.join(',') === 'brave,ddg' && enPaid.policy.reserve.join(',') === 'deepseek,so360', '英文按 Tavily → Brave → DeepSeek 挑第一个有 key 的')
+    for (const keys of [none, all, { tavily: true, brave: false, deepseek: false }]) {
+      for (const text of ['北京天气', 'weather']) {
+        const p = plan.defaultSearchPlan(text, keys)
+        ok(![...p.sources, ...p.policy.reserve].includes('bing'), `默认来源里没有 Bing（${text}）`)
+      }
+    }
+
+    ok(plan.searchQueries({ 'query-text': ['a', ' b ', 'a', ''] }).join('|') === 'a|b', '重复的 --query-text 收成多个查询并去重')
+    ok(plan.searchQueries({ queries: ['x', 'y'] }).join('|') === 'x|y', '请求文件里的 queries 数组也认')
+    ok(plan.searchQueries({ 'query-text': 'one' }).join('|') === 'one', '单个查询照旧')
+    ok(plan.tooManyQueries(['1', '2', '3', '4', '5', '6']) && !plan.tooManyQueries(['1', '2', '3', '4', '5']), '一次最多 5 个查询')
+
+    const good = plan.searchModifiers({ recent: 'WEEK', site: 'https://www.GitHub.com/x, docs.python.org', question: ' 原问题 ', 'with-content': true })
+    ok(good.ok && good.modifiers.recent === 'week', '--recent 不分大小写')
+    ok(good.ok && good.modifiers.sites.join(',') === 'github.com,docs.python.org', '--site 去掉协议、路径和 www，逗号分隔多个')
+    ok(good.ok && good.modifiers.question === '原问题' && good.modifiers.withContent === true, '--question 去空白，--with-content 识别为开关')
+    ok(plan.searchModifiers({ recent: 'decade' }).code === 'search_bad_recent', '--recent 只认 day/week/month/year')
+    ok(plan.searchModifiers({ site: 'not a domain' }).code === 'search_bad_site', '不像域名的站点直接拒绝')
+    ok(plan.searchModifiers({}).ok && Object.keys(plan.searchModifiers({}).modifiers).length === 0, '什么都不写就没有限定')
+    ok(modifiers.normalizeSites('a.com,b.com,c.com,d.com,e.com,f.com').sites.length === 5, '站点最多 5 个')
+    ok(modifiers.siteOperator(['a.com']) === 'site:a.com' && modifiers.siteOperator(['a.com', 'b.org']) === '(site:a.com OR site:b.org)', '站点写成 site: 语法')
+    ok(Array.from(modifiers.withOperators('查'.repeat(200), ['after:2026-01-01'], 128)).length === 128, '加上限定后整体仍不超过长度上限')
+    ok(modifiers.withOperators('查'.repeat(200), ['after:2026-01-01'], 128).endsWith(' after:2026-01-01'), '截短的是查询词，不是限定条件')
+
+    const now = Date.UTC(2026, 9, 19)
+    ok(bing.bingUrl('q', 6, 'en', 'week', now).includes('&filters=' + encodeURIComponent('ex1:"ez2"')), 'Bing 最近一周用 ez2')
+    ok(bing.bingUrl('q', 6, 'en', 'year', now).includes(encodeURIComponent(`ex1:"ez5_${Math.floor(now / 86400000) - 366}_${Math.floor(now / 86400000)}"`)), 'Bing 最近一年用日期区间')
+    ok(!bing.bingUrl('q', 6, 'en').includes('filters='), '不限时间时不带 filters')
+    ok(ddg.ddgUrl('q', 'month').endsWith('&df=m'), 'DuckDuckGo 用 df 时间参数')
+    ok(so360.so360Url('q') === 'https://www.so.com/s?q=q', '360 网页没有时间筛选，不再拼无效参数')
+    ok(modifiers.siteMatches('https://www.zhuanlan.zhihu.com/p/1', ['zhihu.com']) && !modifiers.siteMatches('https://notzhihu.com/', ['zhihu.com']), '站点匹配包含子域名，不误认相似域名')
+
+    const dsBody = deepseek.deepseekSearchBody('新闻', { limit: 6, timeoutMs: 1000, recent: 'week', sites: ['xinhuanet.com'], question: '这周有什么新闻', withContent: true }, now)
+    ok(dsBody.query === '新闻 site:xinhuanet.com after:2026-10-12', 'DeepSeek 用 site: 与 after: 语法')
+    ok(dsBody.ori_question === '这周有什么新闻' && dsBody.need_content === true, 'DeepSeek 带上原问题并要正文')
+    ok(!('ori_question' in deepseek.deepseekSearchBody('q', { limit: 6, timeoutMs: 1000 })), '没给原问题就不发 ori_question')
+
+    const key = async () => 'sk-ds-test'
+    const ranked = fakeFetch([json(200, { results: [
+      { title: 'low', url: 'https://d/low', snippet: 's', rerank_score: 0.4, content: '低分正文' },
+      { title: 'high', url: 'https://d/high', snippet: 's', rerank_score: 2.6, content: '高分正文' }
+    ] })])
+    const dsRun = await deepseek.runDeepseekSearch('q', { limit: 6, timeoutMs: 1000, withContent: true }, ranked.impl, key)
+    ok(dsRun.rows[0].title === 'high' && dsRun.rows[0].content === '高分正文', 'DeepSeek 结果按 rerank_score 排序，带正文')
+    const noContent = await deepseek.runDeepseekSearch('q', { limit: 6, timeoutMs: 1000 }, fakeFetch([json(200, { results: [{ title: 't', url: 'https://d/1', content: 'x' }] })]).impl, key)
+    ok(!('content' in noContent.rows[0]), '没要正文时不把正文塞进结果')
+
+    await config.setSearchKey('tavily', 'tvly-test')
+    const tv = fakeFetch([json(200, { results: [] })])
+    await tavily.runTavilySearch('q', { limit: 5, timeoutMs: 1000, recent: 'month', sites: ['a.com'] }, tv.impl)
+    ok(tv.calls[0].body.time_range === 'month' && tv.calls[0].body.include_domains[0] === 'a.com', 'Tavily 用 time_range 与 include_domains')
+    await config.clearSearchKey('tavily')
+
+    await config.setSearchKey('brave', 'brave-test')
+    let braveUrl = ''
+    await brave.runBraveSearch('q', { limit: 5, timeoutMs: 1000, recent: 'day', sites: ['a.com'] }, async (url) => {
+      braveUrl = String(url)
+      return { ok: true, status: 200, json: async () => ({ web: { results: [] } }) }
+    })
+    const params = new URL(braveUrl).searchParams
+    ok(params.get('freshness') === 'pd' && params.get('q') === 'q site:a.com', 'Brave 用 freshness，站点写进查询')
+    await config.clearSearchKey('brave')
+
+    let t = 0
+    const cache = new plan.TtlCache(100, 2, () => t)
+    cache.set('a', 1)
+    cache.set('b', 2)
+    cache.get('a')
+    cache.set('c', 3)
+    ok(cache.get('a') === 1 && cache.get('b') === undefined, '缓存满了先淘汰最久没用的')
+    t = 200
+    ok(cache.get('a') === undefined, '过期的缓存不再返回')
+    const order = []
+    const mapped = await plan.mapLimit([30, 5, 10], 2, async (ms) => {
+      await new Promise((r) => setTimeout(r, ms))
+      order.push(ms)
+      return ms * 2
+    })
+    ok(mapped.join(',') === '60,10,20' && order[0] === 5, '多个查询并行跑，结果按原顺序返回')
+  }
 }
 
 export function ensureDir(path) {

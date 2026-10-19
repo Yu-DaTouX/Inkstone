@@ -1,4 +1,5 @@
 import type { SourceRun } from './aggregate'
+import { siteOperator, withOperators, type SourceRequest } from './modifiers'
 import { runWebEngine, type WebEngine } from './web-engine'
 
 interface Raw {
@@ -21,11 +22,15 @@ const SCRIPT = `(() => {
   return { items, captcha, none }
 })()`
 
-export function runSo360Search(query: string, opts: { limit: number; timeoutMs: number }): Promise<SourceRun> {
+export function so360Url(query: string): string {
+  return `https://www.so.com/s?q=${encodeURIComponent(query)}`
+}
+
+export function runSo360Search(query: string, opts: SourceRequest): Promise<SourceRun> {
   const engine: WebEngine<Raw> = {
     source: 'so360',
     label: '360 搜索',
-    url: `https://www.so.com/s?q=${encodeURIComponent(query)}`,
+    url: so360Url(withOperators(query, [siteOperator(opts.sites)])),
     script: SCRIPT,
     toRow: (r) => ({ title: r.title, url: /^https?:\/\//i.test(r.mdurl) ? r.mdurl : r.href, snippet: r.snippet })
   }

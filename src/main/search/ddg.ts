@@ -1,4 +1,6 @@
 import type { SourceRun } from './aggregate'
+import type { SearchRecency } from '../../shared/search'
+import { siteOperator, withOperators, type SourceRequest } from './modifiers'
 import { runWebEngine, type WebEngine } from './web-engine'
 
 interface Raw {
@@ -30,11 +32,17 @@ const SCRIPT = `(() => {
   return { items, captcha, none }
 })()`
 
-export function runDdgSearch(query: string, opts: { limit: number; timeoutMs: number }): Promise<SourceRun> {
+const DDG_AGE: Record<SearchRecency, string> = { day: 'd', week: 'w', month: 'm', year: 'y' }
+
+export function ddgUrl(query: string, recent?: SearchRecency): string {
+  return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}${recent ? `&df=${DDG_AGE[recent]}` : ''}`
+}
+
+export function runDdgSearch(query: string, opts: SourceRequest): Promise<SourceRun> {
   const engine: WebEngine<Raw> = {
     source: 'ddg',
     label: 'DuckDuckGo',
-    url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    url: ddgUrl(withOperators(query, [siteOperator(opts.sites)]), opts.recent),
     script: SCRIPT,
     toRow: (r) => ({ title: r.title, url: decodeDdgRedirect(r.href), snippet: r.snippet })
   }
