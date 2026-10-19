@@ -1,131 +1,133 @@
-import type { ReactElement, RefObject } from 'react'
-import { Copy, ExternalLink, FolderOpen, Link2, Plus, Tag } from 'lucide-react'
-import { Menu, MenuItem, Popover } from '../../ui'
-import { toAbsolutePath, type FileTreeRow } from './files-model'
+import type { Key, ReactElement, RefObject } from 'react'
+import { Menu, MenuItem, MenuSection, Popover, Separator, SubmenuTrigger } from '../../ui'
+import { toAbsolutePath } from './files-model'
+import { attachablePaths, copyTextFor, filesMenuModel, type FilesCopyKind, type FilesMenuTarget } from './files-menu'
 import type { FilesText } from './files-text'
 
-export type FilesMenuKey =
-  | 'copyPath'
-  | 'copyRelativePath'
-  | 'copyName'
-  | 'addContext'
-  | 'reveal'
-  | 'open'
-
-const BLOCKED_OPEN_EXTENSIONS = new Set([
-  'exe',
-  'msi',
-  'msp',
-  'bat',
-  'cmd',
-  'ps1',
-  'lnk',
-  'url',
-  'vbs',
-  'vbe',
-  'js',
-  'jse',
-  'wsf',
-  'wsh',
-  'hta',
-  'scr',
-  'com',
-  'pif',
-  'cpl',
-  'jar',
-  'reg',
-  'msc',
-  'inf',
-  'gadget'
-])
-
-export function canOpenWithSystem(name: string): boolean {
-  const dot = name.lastIndexOf('.')
-  if (dot <= 0 || dot === name.length - 1) return true
-  return !BLOCKED_OPEN_EXTENSIONS.has(name.slice(dot + 1).toLowerCase())
-}
-
 export interface FilesRowMenuProps {
-  row: FileTreeRow
+  targets: readonly FilesMenuTarget[]
   text: FilesText
   cwd: string
   canAdd: boolean
+  canTerminal: boolean
   anchor: RefObject<HTMLElement | null>
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAdd: (path: string) => void
+  onAttach: (paths: string[]) => void
+  onPreview: (path: string) => void
+  onTerminal: (path: string) => void
 }
 
+type MenuKey = 'attach' | 'copy:absolute' | 'copy:relative' | 'copy:name' | 'open:default' | 'open:preview' | 'reveal' | 'terminal'
+
 export function FilesRowMenu({
-  row,
+  targets,
   text,
   cwd,
   canAdd,
+  canTerminal,
   anchor,
   open,
   onOpenChange,
-  onAdd
-}: FilesRowMenuProps): ReactElement {
-  const run = (key: FilesMenuKey): void => {
-    const abs = toAbsolutePath(cwd, row.path)
+  onAttach,
+  onPreview,
+  onTerminal
+}: FilesRowMenuProps): ReactElement | null {
+  const first = targets[0]
+  if (!first) return null
+  const model = filesMenuModel(targets, { canAdd, canTerminal })
+  const run = (key: MenuKey): void => {
     switch (key) {
-      case 'copyPath':
-        void navigator.clipboard.writeText(abs)
+      case 'attach':
+        onAttach(attachablePaths(targets))
         return
-      case 'copyRelativePath':
-        void navigator.clipboard.writeText(row.path)
+      case 'copy:absolute':
+      case 'copy:relative':
+      case 'copy:name':
+        void navigator.clipboard.writeText(copyTextFor(targets, cwd, key.slice(5) as FilesCopyKind))
         return
-      case 'copyName':
-        void navigator.clipboard.writeText(row.name)
+      case 'open:default':
+        void window.yan.openPath(toAbsolutePath(cwd, first.path))
         return
-      case 'addContext':
-        onAdd(row.path)
+      case 'open:preview':
+        onPreview(first.path)
         return
       case 'reveal':
-        void window.yan.revealPath(abs)
+        void window.yan.revealPath(toAbsolutePath(cwd, first.path))
         return
-      case 'open':
-        void window.yan.openPath(abs)
+      case 'terminal':
+        onTerminal(first.path)
     }
   }
+  const onAction = (key: Key): void => {
+    run(String(key) as MenuKey)
+    onOpenChange(false)
+  }
+  const label = model.plural ? text.selectedCount.replace('{n}', String(model.count)) : first.name
+  const hasOpen = model.openDefault || model.openPreview
 
   return (
     <Popover triggerRef={anchor} isOpen={open} onOpenChange={onOpenChange} placement="bottom start" offset={4}>
-      <Menu
-        aria-label={row.name || text.treeLabel}
-        autoFocus="first"
-        onAction={(key) => run(key as FilesMenuKey)}
-        onClose={() => onOpenChange(false)}
-        data-testid="v3-files-menu"
-      >
-        <MenuItem id="copyPath" textValue={text.copyPath}>
-          <Copy size={14} aria-hidden />
-          {text.copyPath}
-        </MenuItem>
-        {row.path === '' ? null : (
-          <MenuItem id="copyRelativePath" textValue={text.copyRelativePath}>
-            <Link2 size={14} aria-hidden />
-            {text.copyRelativePath}
-          </MenuItem>
-        )}
-        <MenuItem id="copyName" textValue={text.copyName}>
-          <Tag size={14} aria-hidden />
-          {text.copyName}
-        </MenuItem>
-        {canAdd && !row.dir ? (
-          <MenuItem id="addContext" textValue={text.addContext}>
-            <Plus size={14} aria-hidden />
-            {text.addContext}
+      <Menu aria-label={label} autoFocus="first" onAction={onAction} onClose={() => onOpenChange(false)} data-testid="v3-files-menu">
+        <MenuSection aria-label={label}>
+          {model.attach ? (
+            <MenuItem id="attach" textValue={text.attach}>
+              {text.attach}
+            </MenuItem>
+          ) : null}
+          <SubmenuTrigger>
+            <MenuItem id="copy" textValue={text.copy}>
+              {text.copy}
+            </MenuItem>
+            <Popover placement="end top" offset={2}>
+              <Menu aria-label={text.copy} onAction={onAction} data-testid="v3-files-menu-copy">
+                <MenuItem id="copy:absolute" textValue={model.plural ? text.copyAbsolutePlural : text.copyAbsolute}>
+                  {model.plural ? text.copyAbsolutePlural : text.copyAbsolute}
+                </MenuItem>
+                <MenuItem id="copy:relative" textValue={model.plural ? text.copyRelativePlural : text.copyRelative}>
+                  {model.plural ? text.copyRelativePlural : text.copyRelative}
+                </MenuItem>
+                <MenuItem id="copy:name" textValue={model.plural ? text.copyNamePlural : text.copyName}>
+                  {model.plural ? text.copyNamePlural : text.copyName}
+                </MenuItem>
+              </Menu>
+            </Popover>
+          </SubmenuTrigger>
+        </MenuSection>
+        {hasOpen ? <Separator /> : null}
+        {hasOpen ? (
+          <MenuSection aria-label={text.openIn}>
+            <SubmenuTrigger>
+              <MenuItem id="open" textValue={text.openIn}>
+                {text.openIn}
+              </MenuItem>
+              <Popover placement="end top" offset={2}>
+                <Menu aria-label={text.openIn} onAction={onAction} data-testid="v3-files-menu-open">
+                  {model.openPreview ? (
+                    <MenuItem id="open:preview" textValue={text.openPreview}>
+                      {text.openPreview}
+                    </MenuItem>
+                  ) : null}
+                  {model.openDefault ? (
+                    <MenuItem id="open:default" textValue={text.openDefault}>
+                      {text.openDefault}
+                    </MenuItem>
+                  ) : null}
+                </Menu>
+              </Popover>
+            </SubmenuTrigger>
+          </MenuSection>
+        ) : null}
+        {model.reveal && !hasOpen ? <Separator /> : null}
+        {model.reveal ? (
+          <MenuItem id="reveal" textValue={text.reveal}>
+            {text.reveal}
           </MenuItem>
         ) : null}
-        <MenuItem id="reveal" textValue={text.reveal}>
-          <FolderOpen size={14} aria-hidden />
-          {text.reveal}
-        </MenuItem>
-        {row.dir || canOpenWithSystem(row.name) ? (
-          <MenuItem id="open" textValue={text.openWithSystem}>
-            <ExternalLink size={14} aria-hidden />
-            {text.openWithSystem}
+        {model.terminal ? <Separator /> : null}
+        {model.terminal ? (
+          <MenuItem id="terminal" textValue={text.openTerminal}>
+            {text.openTerminal}
           </MenuItem>
         ) : null}
       </Menu>

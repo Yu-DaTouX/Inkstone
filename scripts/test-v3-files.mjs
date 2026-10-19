@@ -27,7 +27,12 @@ const {
   moveFocus,
   parentPath,
   rootLabel,
-  toAbsolutePath
+  rootStatus,
+  tabbablePath,
+  toAbsolutePath,
+  toRelativePath,
+  treeIndent,
+  ancestorPaths
 } = mod
 
 const OWNER = { key: 'k', sessionId: 's1', cwd: '/proj', active: true }
@@ -87,32 +92,91 @@ const expanded = { '': true, src: true }
 let view = freshTreeState('A', '/a', 1, false)
 view = { ...view, open: { ...expanded } }
 let rows = flattenRows(view)
-assert.equal(rows[0].path, '', '第一行是根')
-assert.equal(rows[1].kind, 'state', '未加载的展开目录给加载行')
-assert.equal(rows[1].state, 'loading')
+assert.equal(rows.length, 0, '没有根行；根目录未加载时不出行')
+assert.equal(rootStatus(view), 'loading', '根目录读取中由整块状态表达')
+assert.equal(rootStatus({ ...view, cwd: '' }), 'none', '没有工作目录')
 
 view = { ...view, listings: { '': listing('', [dir('src'), file('README.md')]), src: listing('src', []) } }
 rows = flattenRows(view)
+assert.equal(rootStatus(view), 'ready')
 assert.deepEqual(
   rows.map((row) => row.path),
-  ['', 'src', 'src', 'README.md'],
-  '根 / src 目录 / src 空提示 / 文件 的顺序正确'
+  ['src', 'src', 'README.md'],
+  'src 目录 / src 空提示 / 文件 的顺序正确'
 )
-assert.equal(rows[2].state, 'empty', '空目录有明确空态行')
-assert.equal(rows[2].focusable, false, '状态行不可聚焦')
-assert.deepEqual(focusablePaths(rows), ['', 'src', 'README.md'], '可聚焦行只有目录与文件')
+assert.equal(rows[0].depth, 0, '顶层行层级为 0')
+assert.equal(rows[1].state, 'empty', '空子目录有明确空态行')
+assert.equal(rows[1].focusable, false, '状态行不可聚焦')
+assert.deepEqual(focusablePaths(rows), ['src', 'README.md'], '可聚焦行只有目录与文件')
+
+view = { ...view, listings: { ...view.listings, src: null } }
+rows = flattenRows(view)
+assert.equal(rows[1].state, 'error', '子目录读取失败给失败行')
 
 view = { ...view, listings: { ...view.listings, '': null } }
-rows = flattenRows(view)
-assert.equal(rows[1].state, 'error', '请求失败显示失败行')
+assert.equal(rootStatus(view), 'error', '根目录失败是整块错误态')
+assert.equal(flattenRows(view).length, 0)
 
 view = { ...view, listings: { ...view.listings, '': listing('', [file('a')], { status: 'permission' }) } }
-rows = flattenRows(view)
-assert.equal(rows[1].state, 'permission', '权限态按宿主 status 展示')
+assert.equal(rootStatus(view), 'error', '根目录权限问题归为读取失败')
+
+view = { ...view, listings: { ...view.listings, '': listing('', []) } }
+assert.equal(rootStatus(view), 'empty', '根目录为空')
 
 view = { ...view, listings: { ...view.listings, '': listing('', [file('a'), file('b')], { truncated: true }) } }
 rows = flattenRows(view)
 assert.equal(rows[rows.length - 1].state, 'partial', '截断给「只列出一部分」提示')
+
+let chainState = freshTreeState('A', '/a', 1, false)
+chainState = filesTreeReducer(chainState, { type: 'loadOk', path: '', generation: 1, listing: listing('', [dir('a'), file('x')]) })
+chainState = filesTreeReducer(chainState, { type: 'toggle', path: 'a' })
+assert.equal(chainState.chain.a, 16, '展开未加载目录时记下连续展开余量')
+chainState = filesTreeReducer(chainState, { type: 'loadOk', path: 'a', generation: 1, listing: listing('a', [dir('b')]) })
+assert.equal(chainState.open['a/b'], true, '只有一个子文件夹时连续展开')
+assert.equal(chainState.chain['a/b'], 15, '连续展开继续等待下一层')
+chainState = filesTreeReducer(chainState, { type: 'loadOk', path: 'a/b', generation: 1, listing: listing('a/b', [dir('c'), file('d')]) })
+assert.equal(chainState.open['a/b/c'], undefined, '多于一个子项时停止')
+assert.equal(chainState.chain['a/b'], undefined, '停止后清余量')
+chainState = filesTreeReducer(chainState, { type: 'toggle', path: 'a' })
+chainState = filesTreeReducer(chainState, { type: 'toggle', path: 'a' })
+assert.equal(chainState.open['a/b'], true, '已缓存的单子目录链立即展开')
+
+const linkRows = flattenRows({
+  ...freshTreeState('A', '/a', 1, false),
+  listings: {
+    '': listing('', [
+      { name: 'bad', dir: true, link: { state: 'dangling' } },
+      { name: 'ok', dir: true, link: { state: 'ok', target: '/x', targetKind: 'dir' } },
+      { name: 'loop', dir: true, link: { state: 'cycle' } }
+    ])
+  },
+  open: { '': true }
+})
+assert.equal(linkRows[0].blocked, true, '坏链不可展开')
+assert.equal(linkRows[0].open, undefined, '坏链不带展开状态')
+assert.equal(linkRows[1].blocked, undefined, '正常链接可展开')
+assert.equal(linkRows[1].open, false)
+assert.equal(linkRows[2].blocked, true, '循环链接不可展开')
+assert.deepEqual(
+  handleTreeKey({ rows: linkRows, currentPath: 'bad', key: 'Enter', canAdd: false }),
+  { type: 'none' },
+  '坏链 Enter 无动作'
+)
+assert.deepEqual(
+  handleTreeKey({ rows: linkRows, currentPath: 'loop', key: 'ArrowRight', canAdd: false }),
+  { type: 'none' },
+  '循环链接 ArrowRight 无动作'
+)
+
+let revealState = filesTreeReducer(freshTreeState('A', '/a', 1, false), { type: 'reveal', path: 'src/lib/a.ts' })
+assert.equal(revealState.open.src, true, '在树中显示：展开祖先')
+assert.equal(revealState.open['src/lib'], true)
+assert.equal(revealState.open['src/lib/a.ts'], undefined, '不展开目标本身')
+assert.equal(revealState.focusPath, 'src/lib/a.ts', '焦点落到目标')
+assert.deepEqual(ancestorPaths('src/lib/a.ts'), ['', 'src', 'src/lib'])
+
+assert.equal(treeIndent(0), 8, '缩进 = 8 + 层级 × 10')
+assert.equal(treeIndent(3), 38)
 
 const treeRows = flattenRows({
   ...freshTreeState('A', '/a', 1, false),
@@ -124,15 +188,22 @@ const treeRows = flattenRows({
 })
 assert.deepEqual(
   focusablePaths(treeRows),
-  ['', 'src', 'src/a.ts', 'src/b.ts', 'README.md'],
+  ['src', 'src/a.ts', 'src/b.ts', 'README.md'],
   '展平顺序与键盘顺序是同一份'
 )
+assert.equal(tabbablePath(treeRows, ''), 'src', '焦点在根时 Tab 落到第一行')
+assert.equal(tabbablePath(treeRows, 'src/b.ts'), 'src/b.ts')
 
 assert.equal(moveFocus(treeRows, '', 'ArrowDown'), 'src')
 assert.equal(moveFocus(treeRows, 'README.md', 'ArrowDown'), 'README.md', '末行 ArrowDown 不越界')
-assert.equal(moveFocus(treeRows, '', 'ArrowUp'), '', '首行 ArrowUp 不越界')
+assert.equal(moveFocus(treeRows, 'src', 'ArrowUp'), 'src', '首行 ArrowUp 不越界')
 assert.equal(moveFocus(treeRows, 'src/a.ts', 'End'), 'README.md')
-assert.equal(moveFocus(treeRows, 'src/b.ts', 'Home'), '')
+assert.equal(moveFocus(treeRows, 'src/b.ts', 'Home'), 'src')
+assert.deepEqual(
+  handleTreeKey({ rows: treeRows, currentPath: 'README.md', key: 'ArrowLeft', canAdd: false }),
+  { type: 'none' },
+  '顶层行 ArrowLeft 不跳到不存在的根行'
+)
 assert.equal(parentPath('src/a.ts'), 'src')
 assert.equal(parentPath('README.md'), '')
 assert.equal(parentPath(''), undefined)
@@ -218,6 +289,8 @@ assert.equal(toAbsolutePath('C:\\work\\app', 'src/a.ts'), 'C:\\work\\app\\src\\a
 assert.equal(toAbsolutePath('C:\\work\\app\\', 'a.ts'), 'C:\\work\\app\\a.ts')
 assert.equal(toAbsolutePath('/home/u/app', 'src/a.ts'), '/home/u/app/src/a.ts')
 assert.equal(toAbsolutePath('/home/u/app/', ''), '/home/u/app')
+assert.equal(toRelativePath('C:\\work\\app', 'C:\\Work\\App\\src\\a.ts'), 'src/a.ts', 'Windows 路径大小写不敏感')
+assert.equal(toRelativePath('/home/u/app', '/home/u/other/a.ts'), null, '根外返回 null')
 assert.equal(rootLabel('C:\\work\\app'), 'app')
 assert.equal(rootLabel('/home/u/app', 'my-project'), 'my-project')
 

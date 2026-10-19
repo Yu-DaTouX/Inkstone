@@ -1,4 +1,4 @@
-import type { DirListing, FileListingStatus } from '../../../../shared/ipc'
+import type { DirEntry, DirEntryLink, DirListing, FileListingStatus } from '../../../../shared/ipc'
 
 export interface FilesOwner {
   readonly key: string
@@ -10,8 +10,12 @@ export interface FilesOwner {
   readonly active: boolean
 }
 
-export const DEFAULT_ROW_HEIGHT = 32
+export const DEFAULT_ROW_HEIGHT = 24
 export const OVERSCAN = 6
+export const TREE_INDENT_BASE = 8
+export const TREE_INDENT_STEP = 10
+export const CHAIN_EXPAND_LIMIT = 16
+export const REVEAL_FLASH_MS = 1200
 
 export type FilesRowKind = 'dir' | 'file' | 'state'
 export type FilesRowState =
@@ -33,6 +37,8 @@ export interface FileTreeRow {
   open?: boolean
   size?: number
   state?: FilesRowState
+  link?: DirEntryLink
+  blocked?: boolean
 }
 
 export interface FilesTreeState {
@@ -43,6 +49,7 @@ export interface FilesTreeState {
   listings: Record<string, DirListing | null>
   loading: Record<string, true>
   open: Record<string, true>
+  chain: Record<string, number>
   focusPath: string
 }
 
@@ -54,6 +61,7 @@ export type FilesTreeAction =
   | { type: 'loadError'; path: string; generation: number }
   | { type: 'toggle'; path: string }
   | { type: 'focus'; path: string }
+  | { type: 'reveal'; path: string }
   | { type: 'collapseAll' }
 
 export function freshTreeState(
@@ -70,6 +78,7 @@ export function freshTreeState(
     listings: {},
     loading: {},
     open: { '': true },
+    chain: {},
     focusPath: ''
   }
 }
@@ -77,6 +86,52 @@ export function freshTreeState(
 export function isDescendantPath(child: string, parent: string): boolean {
   if (child === parent) return false
   return parent === '' ? child !== '' : child.startsWith(`${parent}/`)
+}
+
+export function joinTreePath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name
+}
+
+export function linkBlocked(link: DirEntryLink | undefined): boolean {
+  return !!link && link.state !== 'ok'
+}
+
+function entryExpandable(entry: DirEntry): boolean {
+  return entry.dir && !linkBlocked(entry.link)
+}
+
+export function expandChain(
+  open: Record<string, true>,
+  chain: Record<string, number>,
+  listings: Record<string, DirListing | null>,
+  start: string,
+  budget: number
+): { open: Record<string, true>; chain: Record<string, number> } {
+  const nextOpen = { ...open }
+  const nextChain = { ...chain }
+  delete nextChain[start]
+  let current = start
+  let left = budget
+  while (left > 0) {
+    const listing = listings[current]
+    if (listing === undefined) {
+      nextChain[current] = left
+      break
+    }
+    if (!listing || listing.entries.length !== 1 || !entryExpandable(listing.entries[0])) break
+    const child = joinTreePath(current, listing.entries[0].name)
+    nextOpen[child] = true
+    current = child
+    left -= 1
+  }
+  return { open: nextOpen, chain: nextChain }
+}
+
+export function ancestorPaths(path: string): string[] {
+  const parts = path.split('/').filter(Boolean)
+  const out: string[] = ['']
+  for (let index = 1; index < parts.length; index += 1) out.push(parts.slice(0, index).join('/'))
+  return out
 }
 
 export function filesTreeReducer(state: FilesTreeState, action: FilesTreeAction): FilesTreeState {
@@ -92,25 +147,42 @@ export function filesTreeReducer(state: FilesTreeState, action: FilesTreeAction)
       if (action.generation !== state.generation) return state
       const loading = { ...state.loading }
       delete loading[action.path]
-      return { ...state, loading, listings: { ...state.listings, [action.path]: action.listing } }
+      const listings = { ...state.listings, [action.path]: action.listing }
+      const budget = state.chain[action.path]
+      if (budget && state.open[action.path]) {
+        const chained = expandChain(state.open, state.chain, listings, action.path, budget)
+        return { ...state, loading, listings, open: chained.open, chain: chained.chain }
+      }
+      return { ...state, loading, listings }
     }
     case 'loadError': {
       if (action.generation !== state.generation) return state
       const loading = { ...state.loading }
       delete loading[action.path]
-      return { ...state, loading, listings: { ...state.listings, [action.path]: null } }
+      const chain = { ...state.chain }
+      delete chain[action.path]
+      return { ...state, loading, chain, listings: { ...state.listings, [action.path]: null } }
     }
     case 'toggle': {
+      if (state.open[action.path]) {
+        const open = { ...state.open }
+        delete open[action.path]
+        const chain = { ...state.chain }
+        delete chain[action.path]
+        const focusPath = isDescendantPath(state.focusPath, action.path) ? action.path : state.focusPath
+        return { ...state, open, chain, focusPath }
+      }
+      const opened = expandChain({ ...state.open, [action.path]: true }, state.chain, state.listings, action.path, CHAIN_EXPAND_LIMIT)
+      return { ...state, open: opened.open, chain: opened.chain }
+    }
+    case 'reveal': {
       const open = { ...state.open }
-      if (open[action.path]) delete open[action.path]
-      else open[action.path] = true
-      let focusPath = state.focusPath
-      if (!open[action.path] && isDescendantPath(focusPath, action.path)) focusPath = action.path
-      return { ...state, open, focusPath }
+      for (const dir of ancestorPaths(action.path)) open[dir] = true
+      return { ...state, open, focusPath: action.path }
     }
     case 'collapseAll':
       if (Object.keys(state.open).length <= 1 && state.open['']) return state
-      return { ...state, open: { '': true }, focusPath: '' }
+      return { ...state, open: { '': true }, chain: {}, focusPath: '' }
     case 'focus':
       return state.focusPath === action.path ? state : { ...state, focusPath: action.path }
     default:
@@ -126,13 +198,13 @@ export function toggleSelected(selected: ReadonlySet<string>, path: string): Rea
 }
 
 export function rangeSelected(rows: FileTreeRow[], anchor: string, path: string): ReadonlySet<string> {
-  const from = rows.findIndex((row) => row.path === anchor)
-  const to = rows.findIndex((row) => row.path === path)
+  const from = rows.findIndex((row) => row.focusable && row.path === anchor)
+  const to = rows.findIndex((row) => row.focusable && row.path === path)
   if (from < 0 || to < 0) return new Set([path])
   const next = new Set<string>()
   for (let index = Math.min(from, to); index <= Math.max(from, to); index += 1) {
     const row = rows[index]
-    if (row.kind === 'file') next.add(row.path)
+    if (row.focusable) next.add(row.path)
   }
   return next
 }
@@ -143,52 +215,45 @@ export function rootLabel(cwd: string, rootName?: string): string {
   return parts[parts.length - 1] || cwd || '/'
 }
 
-function statusRowState(status: FileListingStatus | 'partial'): FilesRowState | null {
-  if (status === 'ok' || status === 'empty') return null
-  return status
+function listingState(listing: DirListing | null | undefined): FilesRowState | null {
+  if (listing === undefined) return 'loading'
+  if (listing === null) return 'error'
+  const status: FileListingStatus = listing.status ?? (listing.entries.length ? 'ok' : 'empty')
+  if (status !== 'ok' && status !== 'empty') return status
+  return listing.entries.length === 0 ? 'empty' : null
+}
+
+export type FilesRootStatus = 'none' | 'loading' | 'error' | 'empty' | 'ready'
+
+export function rootStatus(state: FilesTreeState): FilesRootStatus {
+  if (!state.cwd) return 'none'
+  const value = listingState(state.listings[''])
+  if (value === null) return 'ready'
+  if (value === 'loading') return 'loading'
+  if (value === 'empty') return 'empty'
+  return 'error'
 }
 
 export function flattenRows(state: FilesTreeState): FileTreeRow[] {
-  const rootListing = state.listings[''] ?? undefined
-  const rootName = rootLabel(state.cwd, rootListing?.rootName)
-  const rows: FileTreeRow[] = [
-    {
-      path: '',
-      name: rootName,
-      dir: true,
-      depth: 0,
-      kind: 'dir',
-      focusable: true,
-      open: !!state.open['']
-    }
-  ]
-  if (state.open['']) appendChildren(rows, state, '', 1)
+  const rows: FileTreeRow[] = []
+  if (rootStatus(state) !== 'ready') return rows
+  appendChildren(rows, state, '', 0)
   return rows
 }
 
 function appendChildren(rows: FileTreeRow[], state: FilesTreeState, parent: string, depth: number): void {
   const listing = state.listings[parent]
-  if (listing === undefined) {
-    rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: 'loading' })
+  const blocker = listingState(listing)
+  if (blocker) {
+    rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: blocker })
     return
   }
-  if (listing === null) {
-    rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: 'error' })
-    return
-  }
-  const status = listing.status ?? (listing.entries.length ? 'ok' : 'empty')
-  const states = statusRowState(status)
-  if (states) {
-    rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: states })
-    return
-  }
-  if (listing.entries.length === 0) {
-    rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: 'empty' })
-    return
-  }
+  if (!listing) return
   for (const entry of listing.entries) {
-    const child = parent ? `${parent}/${entry.name}` : entry.name
+    const child = joinTreePath(parent, entry.name)
+    const blocked = linkBlocked(entry.link)
     const isDir = entry.dir
+    const expandable = isDir && !blocked
     rows.push({
       path: child,
       name: entry.name,
@@ -196,18 +261,29 @@ function appendChildren(rows: FileTreeRow[], state: FilesTreeState, parent: stri
       depth,
       kind: isDir ? 'dir' : 'file',
       focusable: true,
-      ...(isDir ? { open: !!state.open[child] } : {}),
-      ...(entry.size !== undefined ? { size: entry.size } : {})
+      ...(expandable ? { open: !!state.open[child] } : {}),
+      ...(entry.size !== undefined ? { size: entry.size } : {}),
+      ...(entry.link ? { link: entry.link } : {}),
+      ...(blocked ? { blocked: true } : {})
     })
-    if (isDir && state.open[child]) appendChildren(rows, state, child, depth + 1)
+    if (expandable && state.open[child]) appendChildren(rows, state, child, depth + 1)
   }
   if (listing.truncated) {
     rows.push({ path: parent, name: '', dir: false, depth, kind: 'state', focusable: false, state: 'partial' })
   }
 }
 
+export function treeIndent(depth: number): number {
+  return TREE_INDENT_BASE + depth * TREE_INDENT_STEP
+}
+
 export function focusablePaths(rows: FileTreeRow[]): string[] {
   return rows.filter((row) => row.focusable).map((row) => row.path)
+}
+
+export function tabbablePath(rows: FileTreeRow[], focusPath: string): string | undefined {
+  const list = focusablePaths(rows)
+  return list.includes(focusPath) ? focusPath : list[0]
 }
 
 export function rowForPath(rows: FileTreeRow[], path: string): FileTreeRow | undefined {
@@ -266,32 +342,33 @@ export function handleTreeKey(input: FilesKeyInput): FilesKeyEffect {
   }
 
   const row = rowForPath(rows, currentPath)
+  const expandable = !!row?.dir && !row.blocked
 
   if (key === 'ArrowRight') {
-    if (!row?.dir) return { type: 'none' }
-    if (row.open) {
+    if (!expandable) return { type: 'none' }
+    if (row?.open) {
       const list = focusablePaths(rows)
       const index = list.indexOf(currentPath)
       const next = list[index + 1]
-      return next === undefined ? { type: 'none' } : { type: 'focus', path: next }
+      return next === undefined || !isDescendantPath(next, currentPath) ? { type: 'none' } : { type: 'focus', path: next }
     }
     return { type: 'toggle', path: currentPath }
   }
 
   if (key === 'ArrowLeft') {
-    if (row?.dir && row.open) return { type: 'toggle', path: currentPath }
+    if (expandable && row?.open) return { type: 'toggle', path: currentPath }
     const parent = parentPath(currentPath)
-    return parent === undefined ? { type: 'none' } : { type: 'focus', path: parent }
+    return parent === undefined || parent === '' ? { type: 'none' } : { type: 'focus', path: parent }
   }
 
   if (key === 'Enter' || key === ' ') {
-    if (altKey && !ctrlKey && !metaKey && !row?.dir && canAdd) return { type: 'add', path: currentPath }
-    if (!row) return { type: 'none' }
+    if (!row || row.blocked) return { type: 'none' }
+    if (altKey && !ctrlKey && !metaKey && !row.dir && canAdd) return { type: 'add', path: currentPath }
     return row.dir ? { type: 'toggle', path: currentPath } : { type: 'preview', path: currentPath }
   }
 
   if (key.toLowerCase() === 'a' && !altKey && !ctrlKey && !metaKey) {
-    if (!row?.dir && canAdd) return { type: 'add', path: currentPath }
+    if (row && !row.dir && !row.blocked && canAdd) return { type: 'add', path: currentPath }
     return { type: 'none' }
   }
 
@@ -339,6 +416,16 @@ export function toAbsolutePath(cwd: string, rel: string): string {
   if (!rel) return root
   const sep = /^[A-Za-z]:\\/.test(root) || (root.includes('\\') && !root.includes('/')) ? '\\' : '/'
   return `${root}${sep}${rel.replace(/[\\/]+/g, sep)}`
+}
+
+export function toRelativePath(cwd: string, abs: string): string | null {
+  const root = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+  const target = abs.replace(/\\/g, '/')
+  if (!root) return null
+  const windows = /^[A-Za-z]:/.test(root)
+  const same = windows ? target.toLowerCase().startsWith(`${root.toLowerCase()}/`) : target.startsWith(`${root}/`)
+  if (!same) return null
+  return target.slice(root.length + 1).replace(/\/+$/, '')
 }
 
 export function canAttachToContext(owner: FilesOwner, activeSessionId: string | null | undefined): boolean {

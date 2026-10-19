@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, Pencil, RefreshCw, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
+import { BookOpen, Code2, Copy, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
@@ -17,6 +17,9 @@ import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
+import { HighlightedCode } from './HighlightedCode'
+import { previewBodyKind, previewNotes, previewProblem, type PreviewNote, type PreviewProblem } from './preview-issue'
+import { reportUnsavedEditor } from '../editor/unsaved-registry'
 import {
   dropPreviewSelection,
   previewBaseName,
@@ -54,13 +57,14 @@ interface PreviewDraft {
 type PreviewView =
   | { kind: 'empty' }
   | { kind: 'loading'; name: string }
-  | { kind: 'text'; name: string; abs: string; text: string; truncated: boolean; windowStart?: number; windowEnd?: number }
-  | { kind: 'image'; name: string; abs: string }
+  | { kind: 'text'; name: string; abs: string; text: string; truncated: boolean; windowStart?: number; windowEnd?: number; notes: PreviewNote[] }
+  | { kind: 'image'; name: string; abs: string; notes: PreviewNote[] }
   | { kind: 'office'; name: string; abs: string; view: OfficeDocumentView }
-  | { kind: 'binary'; name: string; abs: string; bytes: number }
+  | { kind: 'binary'; name: string; abs: string; bytes: number; media: boolean; notes: PreviewNote[] }
+  | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
 
-export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
+export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
@@ -113,10 +117,13 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         return
       }
       const result = scoped.value
-      if (!result.ok) {
-        setViewSlot({ key: expectedViewKey, view: { kind: 'error', name: result.name || name, message: result.error || text.failed } })
+      const problem = previewProblem(result)
+      if (problem) {
+        setViewSlot({ key: expectedViewKey, view: { kind: 'problem', name: result.name || name, problem } })
         return
       }
+      const notes = previewNotes(result)
+      const body = previewBodyKind(result)
       if (!cancelled) {
         setDiskStat({ key: expectedViewKey, abs: result.abs, mtimeMs: result.mtimeMs, size: result.size })
       }
@@ -128,11 +135,11 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
         }
         return
       }
-      if (result.kind === 'image' && result.abs) {
-        setViewSlot({ key: expectedViewKey, view: { kind: 'image', name: result.name, abs: result.abs } })
+      if (body === 'image' && result.abs) {
+        setViewSlot({ key: expectedViewKey, view: { kind: 'image', name: result.name, abs: result.abs, notes } })
         return
       }
-      if (result.kind === 'text' && typeof result.text === 'string') {
+      if (body === 'text' && typeof result.text === 'string') {
         setViewSlot({
           key: expectedViewKey,
           view: {
@@ -142,12 +149,13 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
             text: result.text,
             truncated: result.truncated === true,
             windowStart: result.windowStart,
-            windowEnd: result.windowEnd
+            windowEnd: result.windowEnd,
+            notes
           }
         })
         return
       }
-      setViewSlot({ key: expectedViewKey, view: { kind: 'binary', name: result.name, abs: result.abs, bytes: result.size } })
+      setViewSlot({ key: expectedViewKey, view: { kind: 'binary', name: result.name, abs: result.abs, bytes: result.size, media: body === 'media', notes } })
     }
     void run()
     return () => {
@@ -166,6 +174,12 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const editing = !!draft && !!activeAbs && draft.abs === activeAbs
   const editable = view.kind === 'text' && editorIsEditableKind(name)
   const dirty = !!draft && draft.text !== draft.original
+  const editorId = useId()
+  const unsavedPath = dirty && draft ? draft.abs : null
+  useEffect(() => {
+    reportUnsavedEditor(editorId, unsavedPath)
+  }, [editorId, unsavedPath])
+  useEffect(() => () => reportUnsavedEditor(editorId, null), [editorId])
   const markdown = view.kind === 'text' && isMarkdownName(name)
   const reading = markdown && !sourceMode && !editing
 
@@ -265,8 +279,8 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           className={`v3-preview-tab${tab === activeTab ? ' is-active' : ''}`}
           data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
         >
-          <span className={`v3-preview-tab-ico v3-files-ico is-${spec.tone}`} aria-hidden>
-            <spec.Icon size={13} />
+          <span className="v3-preview-tab-ico" aria-hidden>
+            <spec.Icon size={12} />
           </span>
           <button
             type="button"
@@ -331,6 +345,9 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           { id: 'preview:open', label: text.open, icon: <ExternalLink size={14} aria-hidden />, onAction: open },
           { id: 'preview:reveal', label: text.reveal, icon: <FolderOpen size={14} aria-hidden />, onAction: reveal },
           { id: 'preview:copy', label: text.copyPath, icon: <Copy size={14} aria-hidden />, onAction: copy },
+          ...(onRevealInTree && crumbs.length
+            ? [{ id: 'preview:revealInTree', label: text.revealInTree, icon: <ListTree size={14} aria-hidden />, onAction: () => onRevealInTree(activeAbs) }]
+            : []),
           { id: 'preview:reload', label: text.retry, icon: <RefreshCw size={14} aria-hidden />, onAction: () => setReload((value) => value + 1) },
           ...(tabList.length > 1 ? [{ id: 'preview:closeAll', label: text.closeAllTabs, icon: <X size={14} aria-hidden />, onAction: closeAllTabs }] : [])
         ]
@@ -460,7 +477,16 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           onSave={() => void saveDraft()}
         />
       ) : (
-        <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} reading={reading} onOpenArtifact={openArtifact} />
+        <PreviewBody
+          view={view}
+          text={text}
+          artifacts={artifacts}
+          ownsCurrent={ownsCurrent}
+          reading={reading}
+          hasTabs={tabList.length > 0}
+          treeShown={treeShown}
+          onOpenArtifact={openArtifact}
+        />
       )}
     </section>
   )
@@ -472,6 +498,8 @@ function PreviewBody({
   artifacts,
   ownsCurrent,
   reading,
+  hasTabs,
+  treeShown,
   onOpenArtifact
 }: {
   view: PreviewView
@@ -479,15 +507,20 @@ function PreviewBody({
   artifacts: AssistantArtifact[]
   ownsCurrent: boolean
   reading: boolean
+  hasTabs: boolean
+  treeShown: boolean
   onOpenArtifact: (path: string) => void
 }): ReactElement {
+  const emptyTitle = hasTabs ? text.noSelection : text.emptyTitle
+  const emptyHint = hasTabs ? text.noSelectionHint : treeShown ? text.emptyTree : text.emptyNoTree
   switch (view.kind) {
     case 'empty':
       return ownsCurrent && artifacts.length ? (
         <EmptyState
           data-testid="v3-preview-empty"
-          title={text.artifacts}
-          description={text.emptyHint}
+          icon={<Folder size={20} />}
+          title={emptyTitle}
+          description={emptyHint}
           action={
             <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
               {artifacts.map((artifact) => (
@@ -506,9 +539,9 @@ function PreviewBody({
       ) : (
         <EmptyState
           data-testid="v3-preview-empty"
-          icon={<FileText size={20} />}
-          title={text.empty}
-          description={ownsCurrent ? text.emptyHint : text.notOwner}
+          icon={<Folder size={20} />}
+          title={emptyTitle}
+          description={ownsCurrent ? emptyHint : text.notOwner}
         />
       )
     case 'loading':
@@ -526,14 +559,23 @@ function PreviewBody({
           {view.message}
         </Notice>
       )
+    case 'problem':
+      return <ProblemView problem={view.problem} text={text} />
     case 'text':
-      return reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} />
+      return (
+        <>
+          <PreviewNotes notes={view.notes.filter((note) => note !== 'too_large')} text={text} />
+          {reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} />}
+        </>
+      )
     case 'image':
       return (
-        <figure className="v3-preview-media" data-testid="v3-preview-image">
-          <img src={filePreviewUrl(view.abs)} alt={view.name} draggable={false} />
-          <figcaption className="v3-preview-hint">{text.imageNote}</figcaption>
-        </figure>
+        <>
+          <PreviewNotes notes={view.notes} text={text} />
+          <figure className="v3-preview-media" data-testid="v3-preview-image">
+            <img src={filePreviewUrl(view.abs)} alt={view.name} draggable={false} />
+          </figure>
+        </>
       )
     case 'office':
       return <OfficeView view={view} text={text} />
@@ -545,7 +587,7 @@ function PreviewBody({
           title={text.binary}
           description={
             <>
-              {text.binaryHint}
+              {view.media ? text.mediaHint : text.binaryHint}
               <br />
               {formatBytes(view.bytes)}
             </>
@@ -572,13 +614,51 @@ function TextView({
     <div className="v3-preview-text" data-testid="v3-preview-text">
       {rangeLabel ? <div className="v3-preview-note">{rangeLabel}</div> : null}
       <pre className="v3-preview-code">
-        <code>{shown.join('\n')}</code>
+        <HighlightedCode code={shown.join('\n')} name={view.name} />
       </pre>
       {lines.length > MAX_RENDER_LINES ? (
         <div className="v3-preview-note">{text.tooManyLines.replace('{n}', String(MAX_RENDER_LINES))}</div>
       ) : null}
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
+  )
+}
+
+function PreviewNotes({ notes, text }: { notes: PreviewNote[]; text: PreviewText }): ReactElement | null {
+  if (!notes.length) return null
+  return (
+    <div className="v3-preview-notes" data-testid="v3-preview-notes">
+      {notes.map((note) => (
+        <Notice key={note} tone={note === 'encoding' ? 'stall' : 'info'} className="v3-preview-banner">
+          {note === 'outside' ? text.outsideRoot : note === 'encoding' ? text.encodingNote : text.truncated}
+        </Notice>
+      ))}
+    </div>
+  )
+}
+
+function ProblemView({ problem, text }: { problem: PreviewProblem; text: PreviewText }): ReactElement {
+  const title =
+    problem.kind === 'missing'
+      ? text.missing
+      : problem.kind === 'directory'
+        ? text.directory
+        : problem.kind === 'unreadable'
+          ? text.unreadable
+          : problem.kind === 'invalid'
+            ? text.invalidPath
+            : problem.kind === 'not_file'
+              ? text.notFile
+              : text.failed
+  const description =
+    problem.kind === 'missing' ? (problem.creatable ? text.missingCreatable : text.missingHint) : problem.kind === 'failed' ? problem.message : undefined
+  return (
+    <EmptyState
+      data-testid={'v3-preview-problem-' + problem.kind}
+      icon={<FileText size={20} />}
+      title={title}
+      description={description}
+    />
   )
 }
 

@@ -8,8 +8,8 @@
     height: 100%;
     background: var(--bg);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .diff-view__bar {

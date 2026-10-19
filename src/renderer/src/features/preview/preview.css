@@ -10,7 +10,7 @@
 
   .v3-preview-hint {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-preview-loading {
@@ -39,8 +39,8 @@
   .v3-preview-md {
     max-width: 76ch;
     min-width: 0;
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
   }
 
   .v3-preview-tabstrip--chrome {
@@ -52,7 +52,7 @@
     margin: 0;
     padding: 0 var(--s-12);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     line-height: 1.6;
     white-space: pre;
     color: var(--fg);
@@ -61,7 +61,7 @@
   .v3-preview-note {
     padding: var(--s-4) var(--s-12);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-preview-office-section + .v3-preview-office-section {
@@ -71,7 +71,7 @@
   .v3-preview-office-title {
     margin: 0;
     padding: var(--s-4) var(--s-12);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-weight: 600;
     color: var(--fg2);
     background: var(--sunken);
@@ -116,7 +116,7 @@
     background: transparent;
     color: var(--fg2);
     font: inherit;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-align: left;
     cursor: pointer;
   }
@@ -166,7 +166,7 @@
   }
 
   .v3-preview-tab.is-active {
-    background: var(--hover);
+    background: var(--alpha-2);
   }
 
   .v3-preview-tab-name {
@@ -177,7 +177,7 @@
     background: transparent;
     color: var(--fg2);
     font: inherit;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -215,7 +215,7 @@
     min-height: 32px;
     padding: 0 var(--s-6) 0 var(--s-12);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .v3-preview-pathbar > .v3-preview-crumbs {
@@ -242,6 +242,15 @@
     flex: none;
     display: inline-flex;
     padding-left: var(--s-4);
+    color: var(--fg3);
+  }
+
+  .v3-preview-notes {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: var(--s-4) var(--s-8) 0;
   }
 
   .v3-preview-crumbs {
@@ -251,7 +260,7 @@
     gap: 2px;
     padding: var(--s-2) var(--s-12);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     overflow: hidden;
   }
 
@@ -270,7 +279,7 @@
     background: transparent;
     color: var(--fg3);
     font: inherit;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -304,7 +313,7 @@
     flex: 1;
     min-width: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

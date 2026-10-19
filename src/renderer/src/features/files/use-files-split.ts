@@ -19,16 +19,28 @@ export function readTreeWidth(raw: string | null): number {
   return Number.isFinite(value) && value >= TREE_WIDTH_MIN && value <= TREE_WIDTH_MAX ? value : TREE_WIDTH_DEFAULT
 }
 
-export function filesSplitLayout(input: { hasFile: boolean; paneWidth: number; treeShown: boolean; narrowTree: boolean }): {
+export interface FilesSplitLayout {
   split: boolean
   narrow: boolean
   showTree: boolean
   showPreview: boolean
-} {
-  if (!input.hasFile) return { split: false, narrow: false, showTree: true, showPreview: false }
+  treePressed: boolean
+}
+
+export function filesSplitLayout(input: {
+  hasPreview: boolean
+  hasFile: boolean
+  paneWidth: number
+  treeShown: boolean
+  narrowTree: boolean
+}): FilesSplitLayout {
+  if (!input.hasPreview) return { split: false, narrow: false, showTree: true, showPreview: false, treePressed: true }
   const narrow = input.paneWidth > 0 && input.paneWidth < SPLIT_FIT_WIDTH
-  if (!narrow) return { split: true, narrow, showTree: input.treeShown, showPreview: true }
-  return { split: true, narrow, showTree: input.narrowTree, showPreview: !input.narrowTree }
+  if (!narrow) {
+    return { split: input.treeShown, narrow, showTree: input.treeShown, showPreview: true, treePressed: input.treeShown }
+  }
+  const tree = input.hasFile ? input.narrowTree : input.treeShown
+  return { split: false, narrow, showTree: tree, showPreview: !tree, treePressed: tree }
 }
 
 function readStored(key: string): string | null {
@@ -57,6 +69,7 @@ export interface FilesSplit {
   showTree: () => void
   onDividerPointerDown: (event: PointerEvent<HTMLElement>) => void
   onDividerKeyDown: (event: KeyboardEvent<HTMLElement>) => void
+  resetWidth: () => void
 }
 
 export function useFilesSplit(): FilesSplit {
@@ -103,7 +116,7 @@ export function useFilesSplit(): FilesSplit {
       target.setPointerCapture(event.pointerId)
       setDragWidth(startWidth)
       const move = (ev: globalThis.PointerEvent): void => {
-        latest = clampTreeWidth(startWidth - (ev.clientX - startX), paneWidthRef.current)
+        latest = clampTreeWidth(startWidth + (ev.clientX - startX), paneWidthRef.current)
         setDragWidth(latest)
       }
       const finish = (commit: boolean): void => {
@@ -132,15 +145,15 @@ export function useFilesSplit(): FilesSplit {
 
   const onDividerKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>): void => {
-      const delta = event.key === 'ArrowLeft' ? KEY_STEP : event.key === 'ArrowRight' ? -KEY_STEP : 0
+      const delta = event.key === 'ArrowRight' ? KEY_STEP : event.key === 'ArrowLeft' ? -KEY_STEP : 0
       if (event.key === 'Home') {
         event.preventDefault()
-        commitWidth(TREE_WIDTH_MAX)
+        commitWidth(TREE_WIDTH_MIN)
         return
       }
       if (event.key === 'End') {
         event.preventDefault()
-        commitWidth(TREE_WIDTH_MIN)
+        commitWidth(TREE_WIDTH_MAX)
         return
       }
       if (!delta) return
@@ -149,6 +162,8 @@ export function useFilesSplit(): FilesSplit {
     },
     [storedWidth, commitWidth]
   )
+
+  const resetWidth = useCallback((): void => commitWidth(TREE_WIDTH_DEFAULT), [commitWidth])
 
   return {
     hostRef: setHost,
@@ -159,6 +174,7 @@ export function useFilesSplit(): FilesSplit {
     toggleTree,
     showTree,
     onDividerPointerDown,
-    onDividerKeyDown
+    onDividerKeyDown,
+    resetWidth
   }
 }

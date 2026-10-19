@@ -23,6 +23,25 @@ export interface ChangesText {
   patchError: (message: string) => string
   patchTruncated: string
   readOnly: string
+  scopeLabel: string
+  scopeWorking: string
+  scopeBranch: string
+  scopeCommit: string
+  compareWith: (label: string) => string
+  totalLines: (added: number, removed: number) => string
+  shaLabel: string
+  shaPlaceholder: string
+  shaApply: string
+  shaInvalid: string
+  shaNeeded: string
+  scopeEmpty: string
+  patchBinary: string
+  patchTooLarge: string
+  imageBefore: string
+  imageAfter: string
+  imageMissing: string
+  imageTooLarge: string
+  imageEmpty: string
 }
 
 export function changesText(lang: string): ChangesText {
@@ -51,11 +70,30 @@ export function changesText(lang: string): ChangesText {
       patchLoading: 'Loading diff…',
       patchError: (message) => `Failed to load diff: ${message}`,
       patchTruncated: 'This diff is truncated (not the complete content).',
-      readOnly: 'Read-only'
+      readOnly: 'Read-only',
+      scopeLabel: 'Compare scope',
+      scopeWorking: 'Working tree',
+      scopeBranch: 'Branch (vs merge-base)',
+      scopeCommit: 'Single commit',
+      compareWith: (label) => `Compared with ${label}`,
+      totalLines: (added, removed) => `+${added} −${removed}`,
+      shaLabel: 'Commit',
+      shaPlaceholder: 'Commit sha (4–64 hex digits)',
+      shaApply: 'View',
+      shaInvalid: 'Enter 4–64 hexadecimal characters.',
+      shaNeeded: 'Enter a commit sha to view its changes.',
+      scopeEmpty: 'No changes in this scope.',
+      patchBinary: 'Binary file — no text diff.',
+      patchTooLarge: 'This file is too large to show a diff.',
+      imageBefore: 'Before',
+      imageAfter: 'After',
+      imageMissing: 'Does not exist',
+      imageTooLarge: 'Too large to preview',
+      imageEmpty: 'No image content to compare.'
     }
   }
   return {
-    title: '改动',
+    title: '更改',
     refresh: '刷新',
     loading: '正在读取 Git 状态…',
     notRepo: '这个目录不在 Git 仓库里。',
@@ -78,6 +116,25 @@ export function changesText(lang: string): ChangesText {
     patchLoading: '正在加载 diff…',
     patchError: (message) => `diff 加载失败：${message}`,
     patchTruncated: '这个 diff 已被截断，不是完整内容。',
-    readOnly: '只读'
+    readOnly: '只读',
+    scopeLabel: '对比范围',
+    scopeWorking: '工作区',
+    scopeBranch: '分支（对 merge-base）',
+    scopeCommit: '单个提交',
+    compareWith: (label) => `对比 ${label}`,
+    totalLines: (added, removed) => `+${added} −${removed}`,
+    shaLabel: '提交',
+    shaPlaceholder: '提交 sha（4–64 位十六进制）',
+    shaApply: '查看',
+    shaInvalid: '请输入 4–64 位十六进制字符。',
+    shaNeeded: '输入提交 sha 查看该提交的更改。',
+    scopeEmpty: '这个范围内没有更改。',
+    patchBinary: '二进制文件，没有文本 diff。',
+    patchTooLarge: '文件过大，不显示 diff。',
+    imageBefore: '之前',
+    imageAfter: '之后',
+    imageMissing: '不存在',
+    imageTooLarge: '过大',
+    imageEmpty: '没有可对比的图片内容。'
   }
 }

@@ -3,12 +3,14 @@ import type { RefObject, UIEvent } from 'react'
 import type { DirListing, FileRequestContext } from '../../../../shared/ipc'
 import {
   DEFAULT_ROW_HEIGHT,
+  REVEAL_FLASH_MS,
   computeWindow,
   filesTreeReducer,
   flattenRows,
-  focusablePaths,
   freshTreeState,
+  rootStatus,
   type FileTreeRow,
+  type FilesRootStatus,
   type FilesOwner,
   type FilesTreeState,
   type FilesWindow
@@ -17,6 +19,9 @@ import {
 export interface FilesTreeController {
   state: FilesTreeState
   rows: FileTreeRow[]
+  status: FilesRootStatus
+  highlight: string | null
+  reveal: (path: string) => void
   viewWindow: FilesWindow
   scrollRef: RefObject<HTMLDivElement | null>
   onScroll: (event: UIEvent<HTMLDivElement>) => void
@@ -31,7 +36,7 @@ let watchSeq = 0
 
 export function useFilesTree(owner: FilesOwner): FilesTreeController {
   const [state, dispatch] = useReducer(filesTreeReducer, undefined, () =>
-    freshTreeState(owner.key, owner.cwd, 0, false)
+    freshTreeState(owner.key, owner.cwd, 0, true)
   )
   const generationRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -109,8 +114,19 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
   }, [cwd, watchId, openDirs, load])
 
   const rows = useMemo(() => flattenRows(state), [state])
-  const focusables = useMemo(() => focusablePaths(rows), [rows])
-  const focusIndex = focusables.indexOf(state.focusPath)
+  const status = rootStatus(state)
+  const [highlight, setHighlight] = useState<string | null>(null)
+  useEffect(() => {
+    if (!highlight) return undefined
+    const timer = window.setTimeout(() => setHighlight(null), REVEAL_FLASH_MS)
+    return () => window.clearTimeout(timer)
+  }, [highlight])
+  const revealTarget = useRef<string | null>(null)
+  const rowIndexOf = useCallback(
+    (path: string): number => rows.findIndex((row) => row.focusable && row.path === path),
+    [rows]
+  )
+  const focusIndex = rowIndexOf(state.focusPath)
 
   const ensureScrollVisible = useCallback(
     (index: number): void => {
@@ -127,12 +143,12 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
 
   const focus = useCallback(
     (path: string): void => {
-      const index = focusables.indexOf(path)
+      const index = rowIndexOf(path)
       if (index >= 0) ensureScrollVisible(index)
       pendingFocusRef.current = true
       dispatch({ type: 'focus', path })
     },
-    [focusables, ensureScrollVisible]
+    [rowIndexOf, ensureScrollVisible]
   )
 
   const viewWindow = useMemo(
@@ -163,7 +179,7 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     if (!el) return
     const measure = (): void => {
       setViewportHeight(el.clientHeight)
-      const raw = getComputedStyle(el).getPropertyValue('--d-row').trim()
+      const raw = getComputedStyle(el).getPropertyValue('--files-row').trim()
       const px = Number.parseFloat(raw)
       if (Number.isFinite(px) && px > 0) setRowHeight(px)
     }
@@ -189,10 +205,35 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     dispatch({ type: 'collapseAll' })
   }, [])
 
+  const reveal = useCallback((path: string): void => {
+    revealTarget.current = path
+    pendingFocusRef.current = true
+    dispatch({ type: 'reveal', path })
+    setHighlight(path)
+  }, [])
+
+  useEffect(() => {
+    const target = revealTarget.current
+    if (!target) return
+    const index = rowIndexOf(target)
+    if (index < 0) return
+    revealTarget.current = null
+    const el = scrollRef.current
+    if (!el) return
+    const top = index * rowHeight
+    if (top < el.scrollTop || top + rowHeight > el.scrollTop + el.clientHeight) {
+      el.scrollTop = Math.max(0, top - el.clientHeight / 2 + rowHeight / 2)
+    }
+    requestAnimationFrame(() => {
+      const node = [...el.querySelectorAll<HTMLElement>('[data-tree-path]')].find((item) => item.dataset.treePath === target)
+      node?.focus({ preventScroll: true })
+    })
+  }, [rowIndexOf, rowHeight])
+
   const toggleHidden = useCallback((): void => {
     generationRef.current += 1
     dispatch({ type: 'toggleHidden', generation: generationRef.current })
   }, [])
 
-  return { state, rows, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh, toggleHidden }
+  return { state, rows, status, highlight, reveal, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh, toggleHidden }
 }

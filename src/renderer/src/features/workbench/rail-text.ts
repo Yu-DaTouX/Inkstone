@@ -25,6 +25,7 @@ export interface RailText {
   thinking: string
   permission: string
   progress: (done: number, total: number) => string
+  statsSummary: (turns: number, tokens: string | null) => string
   outputsEmpty: string
   outputCreated: string
   outputModified: string
@@ -38,6 +39,7 @@ const ZH: RailText = {
   sections: {
     environment: '环境',
     settings: '设置',
+    stats: '会话统计',
     context: '上下文',
     usage: '用量',
     connectors: '连接器',
@@ -68,6 +70,7 @@ const ZH: RailText = {
   thinking: '思考',
   permission: '权限',
   progress: (done, total) => `${done} / ${total}`,
+  statsSummary: (turns, tokens) => (tokens ? `${turns} 轮 · ${tokens}` : `${turns} 轮`),
   outputsEmpty: '本会话还没有写入文件',
   outputCreated: '新建',
   outputModified: '修改',
@@ -81,6 +84,7 @@ const EN: RailText = {
   sections: {
     environment: 'Environment',
     settings: 'Settings',
+    stats: 'Session stats',
     context: 'Context',
     usage: 'Usage',
     connectors: 'Connectors',
@@ -111,6 +115,7 @@ const EN: RailText = {
   thinking: 'Thinking',
   permission: 'Permission',
   progress: (done, total) => `${done} of ${total}`,
+  statsSummary: (turns, tokens) => (tokens ? `${turns} turns · ${tokens}` : `${turns} turns`),
   outputsEmpty: 'No files written in this session yet',
   outputCreated: 'Created',
   outputModified: 'Modified',

@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FilesOwner } from './files-model'
-import { contentSearchRows, nameSearchRows, parseFilesQuery, searchStatusFailed, type FilesSearchRow } from './files-search'
+import {
+  contentSearchRows,
+  nameSearchFailed,
+  nameSearchRows,
+  parseFilesQuery,
+  searchStatusFailed,
+  type FilesSearchRow
+} from './files-search'
 
-const NAME_DELAY = 120
+const NAME_DELAY = 80
 const CONTENT_DELAY = 250
+const NAME_LIMIT = 200
 
 export interface FilesSearchState {
   mode: 'name' | 'content'
@@ -15,7 +23,7 @@ export interface FilesSearchState {
 
 const IDLE: FilesSearchState = { mode: 'name', phase: 'idle', rows: [], truncated: false, failed: false }
 
-export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string): FilesSearchState {
+export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string, retry = 0): FilesSearchState {
   const [state, setState] = useState<FilesSearchState>(IDLE)
   const sequenceRef = useRef(0)
   const parsed = parseFilesQuery(raw)
@@ -24,7 +32,7 @@ export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string):
   useEffect(() => {
     if (!active || !parsed.query || !cwd) {
       sequenceRef.current += 1
-      setState((prev) => (prev.phase === 'idle' && prev.rows.length === 0 && !prev.failed ? prev : IDLE))
+      setState((prev) => (prev.phase === 'idle' && prev.rows.length === 0 && !prev.failed ? prev : { ...IDLE, mode: parsed.mode }))
       return undefined
     }
 
@@ -33,7 +41,7 @@ export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string):
     const mode = parsed.mode
     const query = parsed.query
     const timer = window.setTimeout(() => {
-      setState({ mode, phase: 'searching', rows: [], truncated: false, failed: false })
+      setState((prev) => ({ mode, phase: 'searching', rows: prev.mode === mode ? prev.rows : [], truncated: false, failed: false }))
       const context = { cwd, generation: generation ?? 0 }
       const requestId = `${key}:${sequence}`
       const run = async (): Promise<void> => {
@@ -50,14 +58,15 @@ export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string):
             })
             return
           }
-          const result = await window.yan.searchFiles({ ...context, requestId, query })
+          const result = await window.yan.searchFileNames({ ...context, requestId, query, limit: NAME_LIMIT })
           if (sequenceRef.current !== sequence) return
+          if (result.error?.code === 'superseded') return
           setState({
             mode,
             phase: 'done',
             rows: nameSearchRows(result),
             truncated: result.truncated,
-            failed: searchStatusFailed(result.status)
+            failed: nameSearchFailed(result)
           })
         } catch {
           if (sequenceRef.current !== sequence) return
@@ -68,7 +77,7 @@ export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string):
     }, mode === 'content' ? CONTENT_DELAY : NAME_DELAY)
 
     return () => window.clearTimeout(timer)
-  }, [active, parsed.mode, parsed.query, cwd, key, generation])
+  }, [active, parsed.mode, parsed.query, cwd, key, generation, retry])
 
   return state
 }

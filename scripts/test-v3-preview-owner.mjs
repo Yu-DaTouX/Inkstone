@@ -151,6 +151,15 @@ export const jsxDEV = jsx
 `
 
 const LUCIDE_STUB = `function icon(){ return null }
+export const Archive = icon
+export const Code = icon
+export const Globe = icon
+export const Presentation = icon
+export const Scroll = icon
+export const Sheet = icon
+export const StickyNote = icon
+export const Folder = icon
+export const ListTree = icon
 export const Copy = icon
 export const FileText = icon
 export const FolderOpen = icon
@@ -198,7 +207,8 @@ function makeStubMap() {
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
-      'src/renderer/src/features/editor/CodeEditor.tsx': 'export function CodeEditor(){ return null }'
+      'src/renderer/src/features/editor/CodeEditor.tsx': 'export function CodeEditor(){ return null }',
+      'src/renderer/src/features/preview/HighlightedCode.tsx': 'export function HighlightedCode(p){ return { type: "code", props: { children: p.code } } }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }
@@ -491,7 +501,7 @@ async function main() {
     await flush()
     tree = render({ owner: OWNER_B, path: undefined })
     ok(!treeText(tree).includes('content:C:/proj/a/a.md'), '迟到 A 回包后 B 仍不显示 A 内容')
-    ok(treeText(tree).includes('没有打开的预览'), 'B 保持空视图')
+    ok(treeText(tree).includes('打开的文件会显示在这里'), 'B 保持空视图')
   }
 
   group('B 点自己的成果：走 B 的路径与 cwd')
@@ -548,14 +558,14 @@ async function main() {
     calls.readPreview.length = 0
     failures.set('C:/proj/a/bad.md', { ok: false, path: 'C:/proj/a/bad.md', abs: '', name: 'bad.md', size: 0, kind: 'text', error: '越界' })
     let tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/bad.md' })
-    ok(treeText(tree).includes('v3-preview-error'), '失败时显示错误')
+    ok(treeText(tree).includes('v3-preview-problem-failed'), '失败时显示错误')
     const retry = retryButton(tree)
     ok(!!retry && typeof retry.props.onPress === 'function', '重试按钮存在')
     retry.props.onPress()
     tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/bad.md' })
     ok(calls.readPreview.length === 2, '重试重新读取', calls.readPreview)
     ok(treeText(tree).includes('content:C:/proj/a/bad.md'), '重试后显示内容')
-    ok(!treeText(tree).includes('v3-preview-error'), '重试后错误消失')
+    ok(!treeText(tree).includes('v3-preview-problem'), '重试后错误消失')
   }
 
   group('切回 A：A 自己的点选恢复，B 内容不残留')
