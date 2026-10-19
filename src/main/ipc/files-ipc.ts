@@ -3,13 +3,18 @@ import { join } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
 import { getSettings } from '../settings'
 import { completePath } from '../credentials'
-import { listDir } from '../files'
+import { listDir, searchFiles } from '../files'
+import { searchFileContents } from '../file-content-search'
 import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
 import { filesWatcher } from '../files-watch'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
-import type { FileRequestContext } from '../../shared/ipc'
+import type {
+  FileContentSearchRequest,
+  FileRequestContext,
+  FileSearchRequest
+} from '../../shared/ipc'
 
 export type FileContextResult =
   | { ok: true; context: FileRequestContext }
@@ -18,6 +23,17 @@ export type FileContextResult =
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isSearchRequest(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && typeof value.requestId === 'string' && typeof value.query === 'string'
+}
+
+function searchRequestFields(value: Record<string, unknown> | undefined): { requestId: string; query: string; limit?: number } {
+  const requestId = value && typeof value.requestId === 'string' ? value.requestId : ''
+  const query = value && typeof value.query === 'string' ? value.query : ''
+  const limit = value && typeof value.limit === 'number' && Number.isFinite(value.limit) ? value.limit : undefined
+  return { requestId, query, ...(limit !== undefined ? { limit } : {}) }
 }
 
 const watchIdsBySender = new Map<number, Set<string>>()
@@ -94,6 +110,30 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       }
     }
     return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
+  })
+
+  rawHandle('yan:searchFiles', async (_e, rawRequest: unknown) => {
+    const s = await getSettings()
+    const request = isObject(rawRequest) ? rawRequest : undefined
+    const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, request)
+    const finalRequest: FileSearchRequest = { ...resolved.context, ...searchRequestFields(request) }
+    if (!resolved.ok || !isSearchRequest(request)) {
+      return { request: finalRequest, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
+    }
+    return searchFiles(finalRequest)
+  })
+
+  rawHandle('yan:searchFileContents', async (_e, rawRequest: unknown) => {
+    const s = await getSettings()
+    const request = isObject(rawRequest) ? rawRequest : undefined
+    const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, request)
+    const finalRequest: FileContentSearchRequest = { ...resolved.context, ...searchRequestFields(request) }
+    if (!resolved.ok || !isSearchRequest(request)) {
+      return { request: finalRequest, hits: [], status: 'invalid' as const, truncated: false, scannedFiles: 0, skippedFiles: 0 }
+    }
+    return searchFileContents(finalRequest)
   })
 
   rawHandle('yan:files:watch', async (event, rawId: unknown, rawDirs: unknown, rawContext: unknown) => {

@@ -1654,6 +1654,8 @@ export interface YanBridge {
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
   watchDirs(watchId: string, dirs: string[], context: FileRequestContext): Promise<{ dirs: string[]; dropped: string[] }>
+  searchFiles(request: FileSearchRequest): Promise<FileSearchResult>
+  searchFileContents(request: FileContentSearchRequest): Promise<FileContentSearchResult>
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
@@ -1819,6 +1821,28 @@ export interface FileSearchResult {
   truncated: boolean
   scannedDirs: number
   skippedDirs: number
+}
+
+export interface FileContentSearchRequest extends FileRequestContext {
+  requestId: string
+  query: string
+  limit?: number
+}
+
+export interface FileContentHit {
+  path: string
+  name: string
+  line: number
+  text: string
+}
+
+export interface FileContentSearchResult {
+  request: FileContentSearchRequest
+  hits: FileContentHit[]
+  status: FileListingStatus | 'partial' | 'cancelled'
+  truncated: boolean
+  scannedFiles: number
+  skippedFiles: number
 }
 
 export interface DirListing {

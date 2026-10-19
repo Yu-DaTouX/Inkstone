@@ -170,4 +170,137 @@
     padding: var(--s-12);
     white-space: normal;
   }
+
+  .v3-files-searchbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: 0 var(--s-8) var(--s-4) var(--s-12);
+  }
+
+  .v3-files-search-ico {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .v3-files-search-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .v3-files-result {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    width: 100%;
+    padding: var(--s-4) var(--s-6);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--t-meta);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .v3-files-result:hover {
+    background: var(--hover);
+  }
+
+  .v3-files-result:active {
+    background: var(--press);
+  }
+
+  .v3-files-result:focus-visible {
+    background: var(--sel);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .v3-files-result-main {
+    flex: none;
+    max-width: 40%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .v3-files-result-name,
+  .v3-files-result-path,
+  .v3-files-result-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-files-result-path {
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .v3-files-result-text {
+    flex: 1;
+    color: var(--fg2);
+    font-family: var(--font-mono);
+  }
+
+  .v3-files-note {
+    padding: var(--s-4) var(--s-6);
+    color: var(--fg3);
+    font-size: var(--t-meta);
+  }
+
+  .v3-files-ico.is-code,
+  .v3-files-ico.is-image {
+    color: var(--accent);
+  }
+
+  .v3-files-ico.is-data,
+  .v3-files-ico.is-media {
+    color: var(--stall);
+  }
+
+  .v3-files-ico.is-doc {
+    color: var(--fg2);
+  }
+
+  .v3-files-ico.is-sheet {
+    color: var(--ok);
+  }
+
+  .v3-files-ico.is-archive {
+    color: var(--ask);
+  }
+
+  .v3-files-row.is-selected {
+    background: var(--sel);
+  }
+
+  .v3-files-row.is-file[draggable='true'] {
+    cursor: grab;
+  }
+
+  .v3-files-bulk {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-4) var(--s-8) var(--s-4) var(--s-12);
+    border-bottom: 1px solid var(--line);
+    background: var(--sunken);
+  }
+
+  .v3-files-bulk-count {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg2);
+    font-size: var(--t-meta);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }

@@ -54,6 +54,7 @@ export type FilesTreeAction =
   | { type: 'loadError'; path: string; generation: number }
   | { type: 'toggle'; path: string }
   | { type: 'focus'; path: string }
+  | { type: 'collapseAll' }
 
 export function freshTreeState(
   ownerKey: string,
@@ -107,11 +108,33 @@ export function filesTreeReducer(state: FilesTreeState, action: FilesTreeAction)
       if (!open[action.path] && isDescendantPath(focusPath, action.path)) focusPath = action.path
       return { ...state, open, focusPath }
     }
+    case 'collapseAll':
+      if (Object.keys(state.open).length <= 1 && state.open['']) return state
+      return { ...state, open: { '': true }, focusPath: '' }
     case 'focus':
       return state.focusPath === action.path ? state : { ...state, focusPath: action.path }
     default:
       return state
   }
+}
+
+export function toggleSelected(selected: ReadonlySet<string>, path: string): ReadonlySet<string> {
+  const next = new Set(selected)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  return next
+}
+
+export function rangeSelected(rows: FileTreeRow[], anchor: string, path: string): ReadonlySet<string> {
+  const from = rows.findIndex((row) => row.path === anchor)
+  const to = rows.findIndex((row) => row.path === path)
+  if (from < 0 || to < 0) return new Set([path])
+  const next = new Set<string>()
+  for (let index = Math.min(from, to); index <= Math.max(from, to); index += 1) {
+    const row = rows[index]
+    if (row.kind === 'file') next.add(row.path)
+  }
+  return next
 }
 
 export function rootLabel(cwd: string, rootName?: string): string {

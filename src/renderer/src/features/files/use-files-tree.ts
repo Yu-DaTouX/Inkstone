@@ -22,6 +22,7 @@ export interface FilesTreeController {
   onScroll: (event: UIEvent<HTMLDivElement>) => void
   focus: (path: string) => void
   toggle: (path: string) => void
+  collapseAll: () => void
   refresh: () => void
   toggleHidden: () => void
 }
@@ -184,10 +185,14 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     for (const path of Object.keys(state.open)) void load(path)
   }, [state.open, load])
 
+  const collapseAll = useCallback((): void => {
+    dispatch({ type: 'collapseAll' })
+  }, [])
+
   const toggleHidden = useCallback((): void => {
     generationRef.current += 1
     dispatch({ type: 'toggleHidden', generation: generationRef.current })
   }, [])
 
-  return { state, rows, viewWindow, scrollRef, onScroll, focus, toggle, refresh, toggleHidden }
+  return { state, rows, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh, toggleHidden }
 }
