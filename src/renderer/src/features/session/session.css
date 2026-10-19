@@ -20,6 +20,18 @@
     --stream-px: var(--s-20);
   }
 
+  .v3-stream-host::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 28px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(to top, var(--bg), transparent);
+    -webkit-mask-image: linear-gradient(to top, #000 25%, transparent);
+    mask-image: linear-gradient(to top, #000 25%, transparent);
+  }
+
   .v3-stream {
     flex: 1 1 auto;
     min-height: 0;
@@ -187,6 +199,8 @@
     max-height: 45vh;
     overflow-y: auto;
   }
+
+  .v3-asks:empty { display: none; }
 
   .v3-asks > * { flex-shrink: 0; }
 

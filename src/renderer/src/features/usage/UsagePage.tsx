@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { compactNumber, useMoney, useUsageStats } from './UsageOverview'
 import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
@@ -16,6 +16,16 @@ export function UsagePage() {
   const money = useMoney()
   const levels = useMemo(() => heatLevels(stats?.heat.map((day) => day.tokens) ?? []), [stats])
   const split = stats ? tokenBreakdownOf(stats) : null
+  const heatScroll = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = heatScroll.current
+    if (!el) return
+    const toLatest = (): void => { el.scrollLeft = el.scrollWidth }
+    toLatest()
+    const observer = new ResizeObserver(toLatest)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [stats])
   return (
     <div className="usage-page" data-testid="usage-details" aria-busy={!stats}>
       <div className="usage-page-head">
@@ -30,7 +40,7 @@ export function UsagePage() {
           <h2>{lang === 'en-US' ? 'Token activity' : 'Token 活动'}</h2>
           {renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: 'all', label: t('usage.all') }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: '7d', label: t('usage.days', { n: 7 }) }], onChange: (value) => setRange(value as UsageRange) })}
         </div>
-        <div className="usage-page-heat-scroll"><div className="start-heat usage-page-heat" aria-label={lang === 'en-US' ? 'Daily Token activity' : '每日 Token 活动'}>
+        <div ref={heatScroll} className="usage-page-heat-scroll"><div className="start-heat usage-page-heat" aria-label={lang === 'en-US' ? 'Daily Token activity' : '每日 Token 活动'}>
           {stats?.heat.map((day, i) => <span key={day.date} className="start-cell" data-level={levels[i]} title={`${day.date} · ${day.tokens.toLocaleString()} Token`} />)}
         </div>
         <div className="usage-page-months" aria-hidden>{stats?.heat.filter((_, i) => i % 7 === 0).map((day, i) => {
