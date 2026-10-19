@@ -1,3 +1,5 @@
+export type GitFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'unmerged'
+
 export function remoteWebUrl(remote: string): string | null {
   const raw = String(remote ?? '').trim()
   if (!raw) return null
@@ -195,6 +197,51 @@ export interface GitChangesResult {
   added?: number
   removed?: number
   error?: string
+  errorCode?: string
+  scopeKind?: GitChangesScope['kind']
+  baseRef?: string | null
+  baseSha?: string | null
+  targetSha?: string | null
+  patches?: Record<string, GitChangePatch>
+  patchBudget?: { inlined: number; bytes: number; deferred: number }
+}
+
+export type GitChangesScope =
+  | { kind: 'working' }
+  | { kind: 'branch'; base?: string }
+  | { kind: 'commit'; sha: string }
+
+export interface GitChangesOptions {
+  scope?: GitChangesScope
+  patches?: boolean
+}
+
+export interface GitChangePatch {
+  state: 'inline' | 'deferred' | 'binary' | 'too-large'
+  patch?: string
+  bytes?: number
+}
+
+export interface GitImageSide {
+  dataUrl?: string
+  mime?: string
+  size: number
+  missing?: boolean
+  tooLarge?: boolean
+}
+
+export interface GitRemoteIdentity {
+  host: string
+  owner: string
+  name: string
+  remote: string
+}
+
+export interface GitDiffRequest {
+  cwd: string
+  path: string
+  scope?: GitChangesScope
+  images?: boolean
 }
 
 export interface GitDiffResult {
@@ -208,4 +255,5 @@ export interface GitDiffResult {
   untracked: boolean
   bytes: number
   error?: string
+  image?: { before: GitImageSide; after: GitImageSide }
 }

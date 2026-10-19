@@ -1,7 +1,9 @@
 import { open, realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { FilePreview, FileRefInfo, FileRefKind, FileTextResult } from '../shared/ipc'
+import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
+import type { FilePreview, FilePreviewIssue, FileRefInfo, FileRefKind, FileTextResult } from '../shared/ipc'
+import { isWithin, realRoot, scopedPath } from './file-path-gate'
+import { decodeText, mediaOf } from './file-preview-classify'
 
 const MAX_TEXT = 2 * 1024 * 1024
 const WINDOW_TRIGGER_LINES = 2000
@@ -176,45 +178,47 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
   return { ok: true, text: buf.toString('utf8'), truncated, size: meta.size }
 }
 
-export async function resolvePreviewTarget(
-  rawPath: string,
-  cwd: string
-): Promise<
-  | { ok: true; real: string; st: Stats }
-  | { ok: false; error: string; dir?: string }
-> {
-  if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: '路径为空' }
-  if (rawPath.includes('\0')) return { ok: false, error: '路径非法' }
+export type PreviewTargetResult =
+  | { ok: true; real: string; st: Stats; outsideRoot: boolean }
+  | { ok: false; error: string; issue: FilePreviewIssue; dir?: string; creatable?: boolean }
+
+export async function resolvePreviewTarget(rawPath: string, cwd: string): Promise<PreviewTargetResult> {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return { ok: false, error: '路径为空', issue: 'invalid' }
+  if (rawPath.includes('\0')) return { ok: false, error: '路径非法', issue: 'invalid' }
 
   const absolute = isAbsolute(rawPath)
-  const target = absolute ? rawPath : join(cwd || process.cwd(), rawPath.split('/').join(sep))
-
-  if (!absolute && rawPath.replace(/\\/g, '/').split('/').includes('..')) {
-    return { ok: false, error: '路径越界' }
-  }
-
+  const root = cwd || process.cwd()
   let real: string
-  try {
-    real = await realpath(target)
-  } catch {
-    return { ok: false, error: '文件不存在', dir: dirname(target) }
-  }
-
-  if (!absolute) {
-    const root = await realpath(cwd || process.cwd()).catch(() => resolve(cwd || process.cwd()))
-    const rel = relative(root, real)
-    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { ok: false, error: '路径越界' }
+  let outsideRoot = false
+  if (absolute) {
+    try {
+      real = await realpath(rawPath)
+    } catch {
+      return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(rawPath) }
+    }
+    const rootReal = await realRoot(root)
+    outsideRoot = !rootReal || !isWithin(rootReal, real)
+  } else {
+    const scoped = await scopedPath(root, rawPath.split('/').join(sep))
+    if (!scoped.ok) {
+      if (scoped.reason === 'missing') {
+        return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(scoped.lexical), ...(scoped.creatable ? { creatable: true } : {}) }
+      }
+      if (scoped.reason === 'root_missing') return { ok: false, error: '文件不存在', issue: 'missing', dir: dirname(join(root, rawPath)) }
+      return { ok: false, error: '路径越界', issue: scoped.reason === 'invalid' ? 'invalid' : 'outside_root' }
+    }
+    real = scoped.real
   }
 
   let st
   try {
     st = await stat(real)
   } catch {
-    return { ok: false, error: '无法读取文件信息', dir: dirname(real) }
+    return { ok: false, error: '无法读取文件信息', issue: 'unreadable', dir: dirname(real) }
   }
-  if (st.isDirectory()) return { ok: false, error: '这是文件夹', dir: dirname(real) }
-  if (!st.isFile()) return { ok: false, error: '不是普通文件', dir: dirname(real) }
-  return { ok: true, real, st }
+  if (st.isDirectory()) return { ok: false, error: '这是文件夹', issue: 'directory', dir: dirname(real) }
+  if (!st.isFile()) return { ok: false, error: '不是普通文件', issue: 'not_file', dir: dirname(real) }
+  return { ok: true, real, st, outsideRoot }
 }
 
 export async function statPreview(
@@ -232,23 +236,26 @@ export async function readPreview(
   line?: number,
   lineEnd?: number
 ): Promise<FilePreview> {
-  const bad = (error: string, dir?: string): FilePreview => ({
-    ok: false,
-    path: rawPath,
-    abs: '',
-    name: basename(rawPath) || rawPath,
-    size: 0,
-    kind: 'other',
-    error,
-    ...(dir ? { dir } : {})
-  })
-
   const resolved = await resolvePreviewTarget(rawPath, cwd)
-  if (!resolved.ok) return bad(resolved.error, resolved.dir)
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      path: rawPath,
+      abs: '',
+      name: basename(rawPath) || rawPath,
+      size: 0,
+      kind: 'other',
+      error: resolved.error,
+      issue: resolved.issue,
+      ...(resolved.dir ? { dir: resolved.dir } : {}),
+      ...(resolved.creatable ? { creatable: true } : {})
+    }
+  }
   const { real, st } = resolved
 
   const name = basename(real)
   const { kind } = classify(name)
+  const media = mediaOf(name)
   const base: FilePreview = {
     ok: true,
     path: rawPath,
@@ -257,42 +264,48 @@ export async function readPreview(
     size: st.size,
     mtimeMs: st.mtimeMs,
     kind,
+    ...(resolved.outsideRoot ? { outsideRoot: true } : {}),
+    ...(media ? { media, issue: 'media' as const } : {}),
     ...(line && Number.isFinite(line) ? { line } : {}),
     ...(line && lineEnd && Number.isFinite(lineEnd) && lineEnd > line ? { lineEnd } : {})
   }
 
   if (kind !== 'text') return base
 
+  let bytes: Buffer
   try {
     const size = Math.min(st.size, MAX_TEXT)
     const fh = await open(real, 'r')
     try {
       const buf = Buffer.alloc(size)
       const { bytesRead } = await fh.read(buf, 0, size, 0)
-      const text = buf.subarray(0, bytesRead).toString('utf8')
-      const truncated = st.size > MAX_TEXT
-      const allLines = text.split('\n')
-      const anchor = line && Number.isFinite(line) ? line : undefined
-      if (anchor && anchor > WINDOW_TRIGGER_LINES) {
-        const start = Math.max(1, anchor - WINDOW_BEFORE)
-        const end = Math.min(
-          allLines.length,
-          Math.max(anchor, lineEnd ?? anchor) + WINDOW_AFTER
-        )
-        return {
-          ...base,
-          text: allLines.slice(start - 1, end).join('\n'),
-          truncated,
-          totalLines: allLines.length,
-          ...(start > 1 ? { windowStart: start } : {}),
-          windowEnd: end
-        }
-      }
-      return { ...base, text, truncated, totalLines: allLines.length }
+      bytes = buf.subarray(0, bytesRead)
     } finally {
       await fh.close()
     }
   } catch {
-    return { ...base, error: '读取失败（可能没有权限）' }
+    return { ...base, error: '读取失败（可能没有权限）', issue: 'unreadable' }
   }
+
+  const truncated = st.size > MAX_TEXT
+  const decoded = decodeText(bytes, !truncated)
+  if (decoded.issue === 'binary') return { ...base, kind: 'binary', issue: 'binary' }
+  const issue = decoded.issue ?? (truncated ? ('too_large' as const) : undefined)
+  const text = decoded.text
+  const extra = { truncated, encoding: decoded.encoding, ...(issue ? { issue } : {}) }
+  const allLines = text.split('\n')
+  const anchor = line && Number.isFinite(line) ? line : undefined
+  if (anchor && anchor > WINDOW_TRIGGER_LINES) {
+    const start = Math.max(1, anchor - WINDOW_BEFORE)
+    const end = Math.min(allLines.length, Math.max(anchor, lineEnd ?? anchor) + WINDOW_AFTER)
+    return {
+      ...base,
+      ...extra,
+      text: allLines.slice(start - 1, end).join('\n'),
+      totalLines: allLines.length,
+      ...(start > 1 ? { windowStart: start } : {}),
+      windowEnd: end
+    }
+  }
+  return { ...base, ...extra, text, totalLines: allLines.length }
 }

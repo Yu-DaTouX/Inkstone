@@ -12,7 +12,7 @@ try {
     await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
     return import(pathToFileURL(outfile).href)
   }
-  const { resolveSubagentModelLabel: resolve } = await load('src/main/subagents/model-label.ts', 'model-label')
+  const { resolveSubagentModelLabel: resolve, resolveSubagentModelPick: pick } = await load('src/main/subagents/model-label.ts', 'model-label')
   const { parseSubagentBrief } = await load('src/shared/subagent-brief.ts', 'brief')
 
   const models = [
@@ -44,7 +44,17 @@ try {
   const none = parseSubagentBrief({}, 'task')
   assert.equal(none.ok && 'title' in none.brief, false, '没给标题时不带 title 字段')
 
-  console.log('test-subagent-model-label: 14 项通过')
+  const pref = { model: { provider: 'openai-codex', id: 'gpt-6-luna' } }
+  assert.deepEqual(pick(undefined, models, parent), { ok: true, label: '' }, '无参数无设置时交还会话模型')
+  assert.deepEqual(pick('  ', models, parent, pref), { ok: true, label: 'openai-codex/gpt-6-luna' }, '无显式参数时用设置')
+  assert.deepEqual(pick('deepseek-v4.1-flash', models, parent, pref), { ok: true, label: parent }, '显式参数优先于设置')
+  assert.deepEqual(pick('deepseek-v4.1-flash', models, parent, { ...pref, force: true }), { ok: true, label: 'openai-codex/gpt-6-luna' }, '强制时设置压过显式参数')
+  assert.deepEqual(pick(undefined, models, parent, { model: { provider: 'gone', id: 'x' }, force: true }), { ok: true, label: '' }, '设置的模型已不可用时回到会话模型')
+  assert.deepEqual(pick('gpt-6-luna', models, parent, { model: { provider: 'gone', id: 'x' }, force: true }), { ok: true, label: 'openai-codex/gpt-6-luna' }, '强制但模型不可用时仍用显式参数')
+  assert.deepEqual(pick(undefined, [], parent, pref), { ok: true, label: 'openai-codex/gpt-6-luna' }, '没有模型清单时直接信任设置')
+  assert.equal(pick('deepseek-v4.1-flash', models, 'openai-codex/gpt-6-luna').ok, false, '无设置时保持原有歧义报错')
+
+  console.log('test-subagent-model-label: 22 项通过')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

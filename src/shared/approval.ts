@@ -15,11 +15,32 @@ export type ApprovalKind = 'permission' | 'delete' | 'danger' | 'outside' | 'con
 
 export type ApprovalChoice = 'deny' | 'once' | 'remember'
 
+export type ApprovalPhase = 'pending' | 'sending' | 'resolved'
+
+export interface ApprovalOwner {
+  instanceId: string
+  generation: number
+}
+
+export interface ApprovalAnswerIdentity {
+  owner?: ApprovalOwner
+  revision?: number
+}
+
+export interface ApprovalSnapshot {
+  revision: number
+  items: ApprovalRequest[]
+}
+
 export interface ApprovalRequest {
   id: string
+  owner?: ApprovalOwner
+  revision?: number
+  phase?: ApprovalPhase
   sessionId?: string
   runId?: string
   subagentId?: string
+  toolCallId?: string
   kind: ApprovalKind
   tool: string
   title: string

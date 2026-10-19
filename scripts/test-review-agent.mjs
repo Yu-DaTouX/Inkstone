@@ -23,7 +23,7 @@ const checks = [
   [/const sessionFile = this\.state\?\.sessionFile\n\s*if \(!sessionFile\) throw new CapabilityCommandError\('session_not_saved'/, '未保存会话不写产物 manifest'],
   [/if \(sessionFile && this\.state\?\.sessionFile !== sessionFile\) return/, '旧会话产物不能挂入未保存的新会话'],
   [/this\.bash\?\.reqId === reqId[\s\S]{0,180}if \(!b\) \{\n\s*endTreeSnapshot\(msgId\)/, 'bash 旧请求只按自身 reqId 收尾'],
-  [/for \(const c of s\.tools\) \{\n\s*this\.registerCall\(c, s\.id\)\n\s*this\.pushedOut\.set\(c\.id, c\.output\?\.length \?\? 0\)\n\s*this\.dirtyTools\.delete\(c\.id\)/, 'abort 全量工具快照推进增量游标'],
+  [/for \(const c of msg\.toolCalls \?\? \[\]\) \{\n\s*this\.pushedOut\.set\(c\.id, c\.output\?\.length \?\? 0\)\n\s*this\.dirtyTools\.delete\(c\.id\)/, 'abort 全量工具快照推进增量游标'],
   [/private resetSessionScope\(\): void \{[\s\S]*?this\.bash = null[\s\S]*?this\.streaming = null[\s\S]*?this\.resetQueue\(\)[\s\S]*?this\.compactionState = EMPTY_COMPACTION_STATE/, '共用会话作用域清理 streaming/bash/队列/压缩'],
   [/async fork\([\s\S]*?this\.suppressPush = true[\s\S]*?this\.resetSessionScope\(\)[\s\S]*?finally \{\n\s*this\.suppressPush = false/, 'fork 共用清理并抑制切换推送'],
   [/async clone\([\s\S]*?this\.suppressPush = true[\s\S]*?this\.resetSessionScope\(\)[\s\S]*?finally \{\n\s*this\.suppressPush = false/, 'clone 共用清理并抑制切换推送'],

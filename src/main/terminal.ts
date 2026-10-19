@@ -4,31 +4,12 @@ import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
+import { MAX_TERMINALS_PER_OWNER, OutputBatcher, appendReplay, normalizeOwner, planOwnerSlot } from './terminal-registry'
 import type { TerminalProgramStatus } from '../shared/ipc'
 
+export { safeTerminalCut } from './terminal-registry'
+
 const requireNative = createRequire(import.meta.url)
-
-export const BUFFER_LIMIT = 200_000
-const BUFFER_KEEP = 120_000
-
-export function safeTerminalCut(buffer: string, desired: number): number {
-  let cut = Math.max(0, desired)
-  const newline = buffer.indexOf('\n', cut)
-  if (newline >= 0 && newline - cut < 4096) cut = newline + 1
-  const esc = buffer.lastIndexOf('\x1b', cut)
-  if (esc >= 0) {
-    const sequence = buffer.slice(esc + 1, cut)
-    const complete = sequence.startsWith('[')
-      ? /[\x40-\x7e]$/.test(sequence.slice(1))
-      : sequence.startsWith(']')
-        ? /\x07$|\x1b\\$/.test(sequence.slice(1))
-        : sequence.length >= 1
-    if (!complete) cut = esc
-  }
-  const code = buffer.charCodeAt(cut)
-  if (code >= 0xdc00 && code <= 0xdfff) cut += 1
-  return cut
-}
 
 export interface TerminalSessionInfo {
   id: string
@@ -40,6 +21,7 @@ export interface TerminalSessionInfo {
   alive: boolean
   exitCode?: number | null
   status?: TerminalProgramStatus
+  owner?: string
 }
 
 export interface TerminalSnapshot extends TerminalSessionInfo {
@@ -55,6 +37,7 @@ export interface TerminalStartOptions {
   executable?: string
   args?: string[]
   env?: NodeJS.ProcessEnv
+  owner?: string
 }
 
 interface TerminalEntry {
@@ -96,6 +79,13 @@ export function terminalLoadError(): string | null {
 
 const sessions = new Map<string, TerminalEntry>()
 let sink: TerminalSink | null = null
+
+const batcher = new OutputBatcher((id, data) => {
+  const entry = sessions.get(id)
+  if (!entry) return
+  entry.seq += 1
+  sink?.({ kind: 'data', id, data, seq: entry.seq })
+})
 
 export function setTerminalSink(next: TerminalSink | null): void {
   sink = next
@@ -142,6 +132,7 @@ function titleOf(shell: string, cwd: string): string {
 }
 
 function snapshotOf(entry: TerminalEntry): TerminalSnapshot {
+  batcher.flush(entry.info.id)
   return { ...entry.info, buffer: entry.buffer, seq: entry.seq }
 }
 
@@ -170,6 +161,7 @@ function applyStatusChunk(entry: TerminalEntry, data: string, id: string): void 
 }
 
 function emitBuffered(id: string): void {
+  batcher.flush(id)
   const entry = sessions.get(id)
   if (!entry || !sink) return
   if (entry.buffer) sink({ kind: 'data', id, data: entry.buffer, seq: entry.seq })
@@ -195,6 +187,15 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   const resolved = options.executable ? { shell: options.executable, args: options.args ?? [] } : defaultShell()
   const shell = resolved.shell
   const id = randomUUID()
+  const owner = normalizeOwner(options.owner)
+  if (owner) {
+    const slot = planOwnerSlot([...sessions.values()].map((entry) => entry.info), owner)
+    if (!slot.allowed) {
+      spawnError = `每个会话最多 ${MAX_TERMINALS_PER_OWNER} 个终端，请先关闭不用的终端`
+      return null
+    }
+    for (const evicted of slot.evict) killTerminal(evicted)
+  }
 
   let child: IPty
   try {
@@ -219,7 +220,8 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     cols,
     rows,
     alive: true,
-    exitCode: null
+    exitCode: null,
+    ...(owner ? { owner } : {})
   }
   const entry: TerminalEntry = { info, pty: child, buffer: '', seq: 0, tracker: new TerminalProgramStatusTracker() }
   sessions.set(id, entry)
@@ -228,17 +230,13 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     const current = sessions.get(id)
     if (!current) return
     applyStatusChunk(current, data, id)
-    current.buffer += data
-    current.seq += 1
-    if (current.buffer.length > BUFFER_LIMIT) {
-      const cut = safeTerminalCut(current.buffer, current.buffer.length - BUFFER_KEEP)
-      current.buffer = current.buffer.slice(cut)
-    }
-    sink?.({ kind: 'data', id, data, seq: current.seq })
+    current.buffer = appendReplay(current.buffer, data)
+    batcher.push(id, data)
   })
   child.onExit(({ exitCode }) => {
     const current = sessions.get(id)
     if (!current) return
+    batcher.flush(id)
     const statusCleared = current.tracker.exit()
     current.info = { ...current.info, alive: false, exitCode: exitCode ?? null }
     if (statusCleared) {
@@ -279,6 +277,7 @@ export function resizeTerminal(id: string, cols: number, rows: number): boolean 
 export function killTerminal(id: string): boolean {
   const entry = sessions.get(id)
   if (!entry) return false
+  batcher.drop(id)
   try {
     entry.pty.kill()
   } catch {

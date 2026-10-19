@@ -70,10 +70,6 @@ assert.deepEqual(r.link, { action: 'settings', section: 'context' })
 r = parseDeepLink('inkstone://settings?section=models')
 assert.deepEqual(r.link, { action: 'settings', section: 'models' }, '查询形式同样可用')
 
-r = parseDeepLink('inkstone://runs')
-assert.deepEqual(r.link, { action: 'runs' })
-assert.deepEqual(keys(r.link), ['action'])
-
 r = parseDeepLink('inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=123456')
 assert.deepEqual(r.link, { action: 'pair', address: 'http://100.64.0.7:37892', code: '123456' })
 assert.deepEqual(keys(r.link), ['action', 'address', 'code'], '邀请链接只带 action/address/code')
@@ -117,7 +113,6 @@ const rejections = [
   ['inkstone://settings/workspace', 'section'],
   ['inkstone://settings?section=about', 'section'],
   ['inkstone://settings/context/extra', 'section'],
-  ['inkstone://runs/extra', 'path'],
   ['inkstone://new/extra', 'path'],
   ['inkstone://pair/extra?address=1.2.3.4:1&code=123456', 'path'],
   ['inkstone://pair?code=123456', 'address'],
@@ -129,7 +124,7 @@ const rejections = [
   ['inkstone://pair?address=1.2.3.4:1&code=12345', 'code'],
   ['inkstone://pair?address=1.2.3.4:1&code=1234567', 'code'],
   ['inkstone://pair?address=1.2.3.4:1&code=12a456', 'code'],
-  ['inkstone://session/abc\ninkstone://runs', 'control'],
+  ['inkstone://session/abc\ninkstone://new', 'control'],
   ['inkstone://' + 'a'.repeat(MAX_DEEPLINK_URL_LENGTH), 'too-long']
 ]
 
@@ -142,14 +137,14 @@ for (const [input, reason] of rejections) {
 const rejected = parseDeepLink('file:///etc/passwd')
 assert.deepEqual(keys(rejected), ['ok', 'reason'], '拒绝结果只有 ok/reason')
 
-assert.equal(firstDeepLinkArg(['--flag', 'E:\\app.exe', 'inkstone://runs']), 'inkstone://runs')
-assert.equal(firstDeepLinkArg(['  inkstone://runs  ', 'inkstone://settings']), 'inkstone://runs', '去空白，取第一条')
+assert.equal(firstDeepLinkArg(['--flag', 'E:\\app.exe', 'inkstone://new']), 'inkstone://new')
+assert.equal(firstDeepLinkArg(['  inkstone://new  ', 'inkstone://settings']), 'inkstone://new', '去空白，取第一条')
 assert.equal(firstDeepLinkArg(['--yan-control=abc', 'file:///x']), null, '没有候选参数返回 null')
 
 assert.equal(parseDeepLinkFromArgv([]), null, '没有深链接参数返回 null，与解析失败区分')
 assert.equal(parseDeepLinkFromArgv(['inkstone://pair?x=1']).ok, false, '候选非法时如实报告解析失败')
 assert.equal(parseDeepLinkFromArgv(['--x', 'inkstone://session/s1']).link.sessionId, 's1')
-assert.equal(parseDeepLinkFromOpenUrl('inkstone://runs').link.action, 'runs', 'open-url 单串走同一解析')
+assert.equal(parseDeepLinkFromOpenUrl('inkstone://new').link.action, 'new-session', 'open-url 单串走同一解析')
 
 const { registerDeepLinkProtocol } = R
 const calls = []
@@ -193,8 +188,8 @@ const router = createDeepLinkRouter({
   }
 })
 
-assert.equal(router.handleArgv(['--x', 'inkstone://runs']), true)
-assert.deepEqual(sent.at(-1), { action: 'runs' })
+assert.equal(router.handleArgv(['--x', 'inkstone://new']), true)
+assert.deepEqual(sent.at(-1), { action: 'new-session' })
 assert.equal(focused, 1, '投递成功后聚焦主窗口')
 assert.equal(router.pending(), null)
 
@@ -216,13 +211,13 @@ assert.equal(router.flush(), false, '没有缓存时 flush 返回 false')
 const noWindow = windowDeepLinkRouter(() => undefined, () => {
   throw new Error('不应聚焦')
 })
-assert.equal(noWindow.handleArgv(['inkstone://runs']), false)
-assert.deepEqual(noWindow.pending(), { action: 'runs' })
+assert.equal(noWindow.handleArgv(['inkstone://new']), false)
+assert.deepEqual(noWindow.pending(), { action: 'new-session' })
 const destroyed = windowDeepLinkRouter(
   () => ({ isDestroyed: () => true, webContents: { send: () => assert.fail('已销毁窗口不应投递') } }),
   () => {}
 )
-assert.equal(destroyed.handleArgv(['inkstone://runs']), false)
+assert.equal(destroyed.handleArgv(['inkstone://new']), false)
 
 const delivered = []
 const live = windowDeepLinkRouter(
@@ -236,7 +231,6 @@ for (const url of [
   'inkstone://session/s1',
   'inkstone://new?text=please%20run%20rm%20-rf',
   'inkstone://settings/models',
-  'inkstone://runs',
   'inkstone://pair?address=1.2.3.4:37892&code=123456'
 ]) {
   const parsed = parseDeepLink(url)

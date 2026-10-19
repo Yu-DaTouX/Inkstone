@@ -8,6 +8,9 @@ import { searchFileContents } from '../file-content-search'
 import { readEditableFile, writeEditableFile } from '../file-editor'
 import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
 import { filesWatcher } from '../files-watch'
+import { unsavedFiles } from '../unsaved-files'
+import { searchFileNames } from '../file-name-search'
+import type { FileNameSearchRequest } from '../../shared/file-name-search'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
@@ -38,6 +41,7 @@ function searchRequestFields(value: Record<string, unknown> | undefined): { requ
 }
 
 const watchIdsBySender = new Map<number, Set<string>>()
+const unsavedSenders = new Set<number>()
 
 function watchIdsFor(sender: Electron.WebContents): Set<string> {
   const existing = watchIdsBySender.get(sender.id)
@@ -125,7 +129,20 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     return searchFiles(finalRequest)
   })
 
-  rawHandle('yan:searchFileContents', async (_e, rawRequest: unknown) => {
+  rawHandle('yan:files:searchNames', async (event, rawRequest: unknown) => {
+    const s = await getSettings()
+    const request = isObject(rawRequest) ? rawRequest : undefined
+    const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
+    const resolved = await resolveFileContext(s, requestedCwd, request)
+    const scope = request && typeof request.scope === 'string' ? request.scope.slice(0, 64) : 'default'
+    const finalRequest: FileNameSearchRequest = { ...resolved.context, ...searchRequestFields(request), scope }
+    if (!resolved.ok || !isSearchRequest(request)) {
+      return { request: finalRequest, matches: [], truncated: false, source: 'none' as const, scanned: 0, error: { code: 'invalid' as const } }
+    }
+    return searchFileNames(`${event.sender.id}:${scope}`, finalRequest)
+  })
+
+  rawHandle('yan:searchFileContents',async (_e, rawRequest: unknown) => {
     const s = await getSettings()
     const request = isObject(rawRequest) ? rawRequest : undefined
     const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
@@ -180,7 +197,19 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     })
   })
 
-  handle('yan:attachments:usage', () => attachmentsUsage(join(YAN_DIR, 'attachments')))
+  rawHandle('yan:files:unsaved', (event, rawPaths: unknown) => {
+    const sender = event.sender
+    if (!unsavedSenders.has(sender.id)) {
+      unsavedSenders.add(sender.id)
+      sender.once('destroyed', () => {
+        unsavedSenders.delete(sender.id)
+        unsavedFiles.forget(sender.id)
+      })
+    }
+    return unsavedFiles.report(sender.id, rawPaths)
+  })
+
+  handle('yan:attachments:usage',() => attachmentsUsage(join(YAN_DIR, 'attachments')))
   handle('yan:attachments:prune', async () => {
     if (deps.isSessionBusy()) throw new Error('会话正在运行，请结束后再清理附件')
     const before = Date.now()

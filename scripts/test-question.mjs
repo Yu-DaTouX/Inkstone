@@ -14,7 +14,7 @@ export async function runQuestionTests(ok) {
     }
   })
 
-  ok(registerCalls === 0, 'question.js 不再注册模型 question 工具（唯一入口是宿主 CLI）')
+  ok(registerCalls === 0, '没有宿主能力端点时不注册 question 工具，提示回退到 yan question ask')
   ok(typeof handlers.before_agent_start === 'function', '仍保留提问提示钩子')
 
   const std = handlers.before_agent_start({ systemPrompt: 'BASE' })

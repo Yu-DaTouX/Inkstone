@@ -38,8 +38,8 @@ export async function runExtensionInventoryTests(ok) {
       '薄层诊断不再提已退役的归档回读'
     )
     ok(
-      withUser[1].includes('yan question ask') && withUser[1].includes('不注册模型工具'),
-      '薄层诊断说明提问走宿主 CLI，薄层不注册模型工具'
+      withUser[1].includes('question') && withUser[1].includes('todos') && withUser[1].includes('yan question ask') && withUser[1].includes('兼容入口'),
+      '薄层诊断说明提问与待办是回到宿主执行的工具，CLI 保留为兼容入口'
     )
     ok(
       withUser[2].includes('left-panel-tasks') && withUser[2].includes('只读'),
@@ -112,7 +112,10 @@ export async function runExtensionInventoryTests(ok) {
           /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
         const mcpAppProxy =
           file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
-        if (toolCalls && !bashOverride && !mcpAppProxy) offenders.push(`${file}:registerTool`)
+        const hostTool =
+          (file === 'question.js' && toolCalls === 1 && /\.registerTool\(createQuestionTool\(\)\)/.test(source)) ||
+          (file === 'capability-guide.js' && toolCalls === 1 && /\.registerTool\(createTodosTool\(\)\)/.test(source))
+        if (toolCalls && !bashOverride && !mcpAppProxy && !hostTool) offenders.push(`${file}:registerTool`)
 
         const commandCalls = source.match(/\.registerCommand\s*\(/g)?.length ?? 0
         if (commandCalls === 0) continue
@@ -149,7 +152,7 @@ export async function runExtensionInventoryTests(ok) {
     const offenders = scanThinLayerSources(sources)
     ok(
       offenders.length === 0,
-      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy），pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
+      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy / question / todos），pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
 

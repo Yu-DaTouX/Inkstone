@@ -9,7 +9,7 @@ import {
   type ScheduledOrigin
 } from './runs/scheduled-origin'
 import type { CodeKind } from './runs/session-codes'
-import { isTerminalPhase, type RunPhase, type RunSignal, type RunModel, type RunSnapshot } from '../shared/runs'
+import { isTerminalPhase, type RunSignal, type RunModel, type RunSnapshot } from '../shared/runs'
 import type { MainPush } from '../shared/ipc'
 import type { ApprovalRequest } from '../shared/approval'
 import type { RunObserver, RunObserverContext } from './agent'
@@ -20,11 +20,6 @@ const SILENT_LONG_TOOLS = ['bash', 'powershell', 'shell', 'exec', 'subagent']
 export interface RunsSnapshot {
   revision: number
   runs: RunSnapshot[]
-}
-
-export interface ReviewRunRegistryPort {
-  open(ctx: RunContext, phase?: RunPhase): RunSnapshot | null
-  observe(ctx: RunContext, signal: RunSignal): RunSnapshot | null
 }
 
 export interface ScheduledRunInput {
@@ -55,7 +50,6 @@ export interface RunsHost {
   backfillSessionCodes(items: { scopeId: string; kind?: CodeKind; createdAt: number }[]): Promise<{ assigned: number }>
   assignCode(scopeId: string, kind?: CodeKind): Promise<string>
   snapshot(): RunsSnapshot
-  reviewRunPort(): ReviewRunRegistryPort
   markSeen(runId: string): { ok: boolean }
   observeApproval(request: ApprovalRequest): void
   resolveApproval(id: string): void
@@ -384,12 +378,6 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     snapshot() {
       pipeline.publisher?.flush()
       return { revision, runs: pipeline.registry.list() }
-    },
-    reviewRunPort() {
-      return {
-        open: (ctx, phase) => (disposed ? null : pipeline.registry.open(ctx, phase)),
-        observe: (ctx, signal) => (disposed ? null : pipeline.registry.observe(ctx, signal))
-      }
     },
     markSeen(runId) {
       const ok = pipeline.registry.get(runId) !== undefined

@@ -3,7 +3,9 @@ import { readRepoSnapshot, readRepoState, listRefs, resolveRepo } from '../git-s
 import { listRemotes, runGitAction } from '../git-actions'
 import { listUntracked, listWorktrees } from '../git-worktree'
 import { readChanges, readFileDiff } from '../git-inspect'
+import { readRemoteIdentity } from '../git-remote-identity'
 import type { AuthorizeReadCwd } from '../git-inspect'
+import type { GitChangesScope } from '../../shared/git'
 
 export interface GitIpcDeps {
   authorizeReadCwd: AuthorizeReadCwd
@@ -38,9 +40,13 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     }
   })
 
-  handle('yan:git:changes', async (cwd: string) => {
+  handle('yan:git:changes', async (cwd: string, rawOptions?: unknown) => {
     try {
-      return await readChanges(String(cwd ?? ''), authorizeReadCwd)
+      const options = (rawOptions ?? {}) as Record<string, unknown>
+      return await readChanges(String(cwd ?? ''), authorizeReadCwd, {
+        ...(options.scope !== undefined ? { scope: options.scope as GitChangesScope } : {}),
+        patches: options.patches === true
+      })
     } catch (error) {
       return {
         ok: false,
@@ -61,7 +67,7 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
     const cwd = String(raw.cwd ?? '')
     const path = String(raw.path ?? '')
     try {
-      return await readFileDiff(cwd, path, authorizeReadCwd)
+      return await readFileDiff(cwd, path, authorizeReadCwd, { scope: raw.scope, images: raw.images === true })
     } catch (error) {
       return {
         ok: false,
@@ -159,6 +165,13 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
         worktrees: [],
         error: error instanceof Error ? error.message : String(error)
       }
+    }
+  })
+  handle('yan:git:identity', async (cwd: string, refresh?: unknown) => {
+    try {
+      return await readRemoteIdentity(String(cwd ?? ''), { refresh: refresh === true })
+    } catch {
+      return null
     }
   })
   handle('yan:git:remotes', async (cwd: string) => {

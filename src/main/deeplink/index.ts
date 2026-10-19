@@ -16,7 +16,6 @@ export type {
   DeepLinkNewSession,
   DeepLinkParseResult,
   DeepLinkRejectReason,
-  DeepLinkRuns,
   DeepLinkSession,
   DeepLinkSettings,
   DeepLinkSettingsSection

@@ -1,3 +1,4 @@
+import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type {
   NativeMcpImportCommitResponse,
@@ -22,7 +23,7 @@ import type {
   LocalModelServer
 } from './custom-provider'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from './checkpoints'
-import type { GitChangesResult, GitDiffResult, GitRefOption, GitRepoState } from './git'
+import type { GitChangesOptions, GitChangesResult, GitDiffRequest, GitDiffResult, GitRefOption, GitRemoteIdentity, GitRepoState } from './git'
 export type {
   GitActionExpected,
   GitActionKind,
@@ -32,10 +33,10 @@ export type {
   GitFailureCode
 } from './git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult } from './git-actions'
-import type { ApprovalChoice, ApprovalRequest, PermissionMode } from './approval'
+import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
-export type { ApprovalChoice, ApprovalKind, ApprovalRequest, PermissionMode } from './approval'
+export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { UsageRange, UsageStatsView } from './usage-stats'
@@ -640,6 +641,8 @@ export type ProjectDirectoryResult = { ok: true; settings: AppSettings } | { ok:
 export interface AppSettings {
   lastMainModel?: import('./model-selection').ModelChoice
   lastSubagentModel?: import('./model-selection').ModelChoice | 'follow'
+  subagentDefaultModel?: import('./model-selection').ModelChoice | 'follow'
+  subagentModelForce?: boolean
   modelFavorites?: import('./model-selection').ModelChoice[]
   modelProviderOrder?: string[]
   cwd: string
@@ -659,6 +662,7 @@ export interface AppSettings {
   fontCode?: 'maple' | 'custom'
   fontCodeCustom?: string
   fontSizeUi?: number
+  reduceMotion?: boolean
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
   guardOutsideWrites?: boolean
@@ -818,6 +822,7 @@ export interface TerminalSessionInfo {
   alive: boolean
   exitCode?: number | null
   status?: TerminalProgramStatus
+  owner?: string
 }
 
 export interface TerminalSnapshot extends TerminalSessionInfo {
@@ -830,6 +835,7 @@ export interface TerminalStartRequest {
   fallbackCwd?: string
   cols?: number
   rows?: number
+  owner?: string
 }
 
 export interface TerminalAvailability {
@@ -1085,6 +1091,7 @@ export type MainPushBody =
   | { ch: 'todos'; payload: SessionTodo[] }
   | { ch: 'approval'; payload: ApprovalRequest }
   | { ch: 'approval-close'; payload: { id: string } }
+  | { ch: 'approval-snapshot'; payload: ApprovalSnapshot }
   | { ch: 'git-install'; payload: GitInstallProgress }
   | { ch: 'todo-history'; payload: SessionTodoSnapshot[] }
   | { ch: 'ui-request'; payload: ExtensionUiRequest }
@@ -1137,8 +1144,9 @@ export interface GitBridge {
   action(req: GitActionRequest): Promise<GitActionResult>
   remotes(cwd: string): Promise<string[]>
   untracked(cwd: string): Promise<string[]>
-  changes(cwd: string): Promise<GitChangesResult>
-  diff(req: { cwd: string; path: string }): Promise<GitDiffResult>
+  changes(cwd: string, options?: GitChangesOptions): Promise<GitChangesResult>
+  diff(req: GitDiffRequest): Promise<GitDiffResult>
+  identity(cwd: string, refresh?: boolean): Promise<GitRemoteIdentity | null>
   worktrees(cwd: string): Promise<WorktreeListing>
 }
 
@@ -1435,7 +1443,6 @@ export type DeepLinkIntent =
   | { action: 'session'; sessionId: string; entryId?: string }
   | { action: 'new-session'; text?: string }
   | { action: 'settings'; section: string }
-  | { action: 'runs' }
   | { action: 'pair'; address: string; code: string }
 
 export interface YanBridge {
@@ -1473,16 +1480,15 @@ export interface YanBridge {
     history(query: RunsHistoryQuery): Promise<RunsHistoryResult>
     stop(runId: string): Promise<RunsStopResult>
   }
-  review: import('./review').ReviewBridge
   sync: import('./sync').SyncBridge
   start(cwd?: string): Promise<{ ok: boolean; error?: string; state?: SessionState }>
   send(text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
-  steer(text: string): Promise<{ ok: boolean; error?: string }>
+  steer(text: string, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
   removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
   queueEdit(next: QueueState): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
-  abort(): Promise<QueueSnapshot>
+  abort(expectedRuntime?: ExpectedRuntimeOwner): Promise<QueueSnapshot & { error?: string }>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
     ok: boolean
     error?: string
@@ -1526,7 +1532,7 @@ export interface YanBridge {
   piNativeSettings(): Promise<PiNativeSettingsResult>
   setPiNativeSettings(patch: Partial<PiNativeSettings>): Promise<PiNativeSettingsResult>
 
-  answerApproval(id: string, choice: ApprovalChoice): Promise<{ ok: boolean }>
+  answerApproval(id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
@@ -1658,6 +1664,8 @@ export interface YanBridge {
   searchFileContents(request: FileContentSearchRequest): Promise<FileContentSearchResult>
   readEditableFile(path: string, cwd?: string): Promise<EditableFileView>
   writeEditableFile(path: string, text: string, expectedHash: string | null, cwd?: string): Promise<EditableFileWriteResult>
+  reportUnsavedFiles(paths: string[]): Promise<number>
+  searchFileNames(request: FileNameSearchRequest): Promise<FileNameSearchResult>
   trust: {
     status(cwd?: string): Promise<TrustStatusView>
     allow(cwd?: string): Promise<{ ok: boolean; entry: string; error?: string }>
@@ -1784,9 +1792,16 @@ export interface ZoomState {
   autoScale: number
 }
 
+export interface DirEntryLink {
+  state: 'ok' | 'external' | 'dangling' | 'cycle'
+  target?: string
+  targetKind?: 'dir' | 'file'
+}
+
 export interface DirEntry {  name: string
   dir: boolean
   size?: number
+  link?: DirEntryLink
 }
 
 export interface FileRequestContext {
@@ -1953,4 +1968,25 @@ export interface FilePreview {
   lineEnd?: number
   dir?: string
   error?: string
+  issue?: FilePreviewIssue
+  creatable?: boolean
+  media?: FilePreviewMedia
+  encoding?: FilePreviewEncoding
+  outsideRoot?: boolean
 }
+
+export type FilePreviewIssue =
+  | 'outside_root'
+  | 'missing'
+  | 'directory'
+  | 'not_file'
+  | 'invalid'
+  | 'unreadable'
+  | 'too_large'
+  | 'binary'
+  | 'media'
+  | 'encoding'
+
+export type FilePreviewMedia = 'image' | 'video' | 'audio' | 'pdf'
+
+export type FilePreviewEncoding = 'utf8' | 'utf8-bom' | 'utf16le' | 'utf16be' | 'gb18030' | 'unknown'

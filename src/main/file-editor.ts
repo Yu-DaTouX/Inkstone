@@ -1,30 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { chmod, lstat, open, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { chmod, lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { EditableFileError, EditableFileView, EditableFileWriteResult } from '../shared/ipc'
+import { isStrictlyWithin, isWithin, pathKey, realRoot } from './file-path-gate'
 
 const MAX_BYTES = 1024 * 1024
 const HASH_PATTERN = /^[0-9a-f]{64}$/
 const writeChains = new Map<string, Promise<void>>()
-
-function pathKey(value: string): string {
-  const normalized = value.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
-}
-
-function isStrictlyInside(root: string, candidate: string): boolean {
-  const r = pathKey(root)
-  const c = pathKey(candidate)
-  return c !== r && c.startsWith(r + '/')
-}
-
-function isInsideOrEqual(root: string, candidate: string): boolean {
-  const r = pathKey(root)
-  const c = pathKey(candidate)
-  return c === r || c.startsWith(r + '/')
-}
 
 function statusForError(error: unknown): EditableFileError {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
@@ -44,15 +28,6 @@ function messageOf(error: unknown): string {
 
 function missingView(error: EditableFileError, abs: string, name: string): EditableFileView {
   return { ok: false, abs, name, text: '', hash: '', size: 0, mtimeMs: 0, error }
-}
-
-async function canonicalRoot(root: string): Promise<string | null> {
-  try {
-    const real = await realpath(root)
-    return (await stat(real)).isDirectory() ? real : null
-  } catch {
-    return null
-  }
 }
 
 async function withWriteLock<T>(key: string, task: () => Promise<T>): Promise<T> {
@@ -86,7 +61,7 @@ export async function readEditableFile(root: string, target: string): Promise<Ed
   if (typeof root !== 'string' || typeof target !== 'string' || !target.trim()) {
     return missingView('denied', '', '')
   }
-  const rootReal = await canonicalRoot(root)
+  const rootReal = await realRoot(root)
   if (!rootReal) return missingView('denied', '', '')
 
   const candidate = isAbsolute(target) ? resolve(target) : resolve(rootReal, target)
@@ -99,7 +74,7 @@ export async function readEditableFile(root: string, target: string): Promise<Ed
     if (statusForError(error) !== 'missing') return missingView(statusForError(error), candidate, name)
     try {
       const parentReal = await realpath(dirname(candidate))
-      if (!isStrictlyInside(rootReal, join(parentReal, name))) return missingView('denied', candidate, name)
+      if (!isStrictlyWithin(rootReal, join(parentReal, name))) return missingView('denied', candidate, name)
     } catch {
       return missingView('denied', candidate, name)
     }
@@ -114,7 +89,7 @@ export async function readEditableFile(root: string, target: string): Promise<Ed
   } catch (error) {
     return missingView(statusForError(error), candidate, name)
   }
-  if (!isStrictlyInside(rootReal, canonical)) return missingView('denied', candidate, name)
+  if (!isStrictlyWithin(rootReal, canonical)) return missingView('denied', candidate, name)
   if (info.size > MAX_BYTES) return missingView('too-large', candidate, name)
 
   let bytes: Buffer
@@ -155,7 +130,7 @@ export async function writeEditableFile(
     return { status: 'denied' }
   }
 
-  const rootReal = await canonicalRoot(root)
+  const rootReal = await realRoot(root)
   if (!rootReal) return { status: 'denied' }
 
   const candidate = isAbsolute(target) ? resolve(target) : resolve(rootReal, target)
@@ -168,8 +143,8 @@ export async function writeEditableFile(
   } catch {
     return { status: 'denied' }
   }
-  if (!isInsideOrEqual(rootReal, parentReal)) return { status: 'denied' }
-  if (!isStrictlyInside(rootReal, join(parentReal, name))) return { status: 'denied' }
+  if (!isWithin(rootReal, parentReal)) return { status: 'denied' }
+  if (!isStrictlyWithin(rootReal, join(parentReal, name))) return { status: 'denied' }
 
   return withWriteLock(pathKey(join(parentReal, name)), async () => {
     let info: Stats | null
@@ -202,7 +177,7 @@ export async function writeEditableFile(
       } catch {
         return { status: 'denied' as const }
       }
-      if (!isStrictlyInside(rootReal, join(parentNow, name))) return { status: 'denied' as const }
+      if (!isStrictlyWithin(rootReal, join(parentNow, name))) return { status: 'denied' as const }
       if (pathKey(parentNow) !== pathKey(parentReal)) return { status: 'denied' as const }
       mode = 0o666
     }
@@ -227,7 +202,7 @@ export async function writeEditableFile(
       if (pathKey(parentAfter) !== pathKey(parentReal)) {
         return { status: 'failed' as const, error: '目标目录在校验后发生变化' }
       }
-      if (!isStrictlyInside(rootReal, join(parentAfter, name))) return { status: 'denied' as const }
+      if (!isStrictlyWithin(rootReal, join(parentAfter, name))) return { status: 'denied' as const }
 
       let disk: { exists: boolean; bytes: Buffer | null }
       try {

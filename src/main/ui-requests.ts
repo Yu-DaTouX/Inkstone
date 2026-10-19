@@ -38,8 +38,10 @@ export class UiRequests {
     purpose?: 'approval'
     sensitive?: boolean
     timeout: number
+    signal?: AbortSignal
   }): Promise<HostUiResponse> {
     const id = `yan-question-${randomUUID()}`
+    if (request.signal?.aborted) return Promise.resolve({ cancelled: true })
     return new Promise<HostUiResponse>((resolve, reject) => {
       const pending: PendingHostUi = {
         resolve,
@@ -68,6 +70,7 @@ export class UiRequests {
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })
+      request.signal?.addEventListener('abort', () => this.respondUi({ id, cancelled: true }), { once: true })
     })
   }
 

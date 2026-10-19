@@ -7,16 +7,29 @@ import type { GitActionExpected } from '../shared/git-actions'
 import { digestOf } from '../shared/git-actions'
 import type { GitRefOption, GitRepoState, GitStatusParse } from '../shared/git'
 import { parseStatusV2 } from '../shared/git'
+import { classifyGitRunError, sanitizedGitEnv, timeoutWithin } from './git-run-policy'
+import type { GitDeadline, GitErrorCode } from './git-run-policy'
 
-function killProcessTree(child: ChildProcess): void {
+export function killProcessTree(child: ChildProcess): void {
   if (child.exitCode !== null || child.signalCode !== null) return
-  if (process.platform === 'win32' && child.pid) {
-    execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, (error) => {
-      if (error) child.kill()
+  killPidTree(child.pid, () => child.kill())
+}
+
+export function killPidTree(pid: number | undefined, fallback: () => void): void {
+  if (process.platform === 'win32' && pid) {
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, (error) => {
+      if (error) fallback()
     })
     return
   }
-  child.kill('SIGTERM')
+  if (pid) {
+    try {
+      process.kill(pid, 'SIGTERM')
+      return
+    } catch {
+    }
+  }
+  fallback()
 }
 
 const MAX_BUFFER = 48 * 1024 * 1024
@@ -33,24 +46,39 @@ export interface GitRunResult {
   stderr: string
   error?: string
   timedOut?: boolean
+  code?: GitErrorCode
 }
 
-export async function gitRun(
-  cwd: string,
-  args: string[],
-  opts: { timeout?: number; allowFailure?: boolean; env?: Record<string, string>; stdin?: string } = {}
-): Promise<GitRunResult> {
+export interface GitRunOptions {
+  timeout?: number
+  allowFailure?: boolean
+  env?: Record<string, string>
+  stdin?: string
+  deadline?: GitDeadline
+}
+
+function gitFailure(message: string, timedOut: boolean, code: GitErrorCode): Error {
+  return Object.assign(new Error(message), { timedOut, code })
+}
+
+export async function gitRun(cwd: string, args: string[], opts: GitRunOptions = {}): Promise<GitRunResult> {
   const full = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', ...args]
-  const env = {
-    ...process.env,
-    GIT_EXTERNAL_DIFF: '',
-    GIT_PAGER: 'cat',
-    GIT_TERMINAL_PROMPT: '0',
-    ...(opts.env ?? {})
+  const env = sanitizedGitEnv(process.env, opts.env ?? {})
+  const timeout = timeoutWithin(opts.timeout ?? DEFAULT_TIMEOUT, opts.deadline)
+  if (timeout <= 0) {
+    const message = 'git 查询总期限已到'
+    if (opts.allowFailure) return { ok: false, stdout: '', stderr: '', error: message, timedOut: true, code: 'DEADLINE_EXCEEDED' }
+    throw gitFailure(message, true, 'DEADLINE_EXCEEDED')
   }
-  const timeout = opts.timeout ?? DEFAULT_TIMEOUT
+  const codeFor = (input: { enoent?: boolean; timedOut?: boolean; outputLimit?: boolean; stderr?: string }): GitErrorCode =>
+    classifyGitRunError({
+      ...input,
+      cwdExists: input.enoent ? existsSync(cwd) : undefined,
+      deadlineExpired: opts.deadline?.expired() ?? false
+    })
   if (opts.stdin !== undefined) {
     let timedOut = false
+    let enoent = false
     const res = await new Promise<GitRunResult>((resolve) => {
       const child = spawn('git', full, { cwd, windowsHide: true, env })
       const timer = setTimeout(() => {
@@ -68,10 +96,11 @@ export async function gitRun(
       })
       child.on('error', (e) => {
         clearTimeout(timer)
+        enoent = (e as NodeJS.ErrnoException).code === 'ENOENT'
         resolve({
           ok: false,
           stdout,
-          stderr: (e as NodeJS.ErrnoException).code === 'ENOENT' ? enoentMessage(cwd) : stderr + e.message
+          stderr: enoent ? enoentMessage(cwd) : stderr + e.message
         })
       })
       child.on('close', (code) => resolve({ ok: code === 0 && !timedOut, stdout, stderr, ...(timedOut ? { timedOut } : {}) }))
@@ -79,8 +108,9 @@ export async function gitRun(
       child.stdin?.end(opts.stdin, 'utf8')
     })
     if (res.ok) return res
-    if (opts.allowFailure) return { ...res, error: (res.stderr || res.stdout).trim() || (timedOut ? 'git 命令超时' : undefined) }
-    throw Object.assign(new Error((res.stderr || res.stdout).trim() || 'git 命令失败'), { timedOut })
+    const code = codeFor({ enoent, timedOut, stderr: res.stderr })
+    if (opts.allowFailure) return { ...res, code, error: (res.stderr || res.stdout).trim() || (timedOut ? 'git 命令超时' : undefined) }
+    throw gitFailure((res.stderr || res.stdout).trim() || 'git 命令失败', timedOut, code)
   }
   let timedOutByTimer = false
   try {
@@ -98,14 +128,17 @@ export async function gitRun(
     return { ok: true, stdout: String(res.stdout ?? ''), stderr: String(res.stderr ?? '') }
   } catch (error) {
     const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown; code?: unknown; killed?: boolean; signal?: string }
+    const enoent = e.code === 'ENOENT'
+    const outputLimit = e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
     const stdout = String(e.stdout ?? '')
-    const stderr = e.code === 'ENOENT' ? enoentMessage(cwd) : String(e.stderr ?? '')
-    const timedOut = timedOutByTimer || (e.killed === true && !!e.signal && e.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
+    const stderr = enoent ? enoentMessage(cwd) : String(e.stderr ?? '')
+    const timedOut = timedOutByTimer || (e.killed === true && !!e.signal && !outputLimit)
     const message = (stderr || stdout || String(e.message ?? error)).trim() || 'git 命令失败'
+    const code = codeFor({ enoent, timedOut, outputLimit, stderr })
     if (opts.allowFailure) {
-      return { ok: false, stdout, stderr, error: message, timedOut }
+      return { ok: false, stdout, stderr, error: message, timedOut, code }
     }
-    throw Object.assign(new Error(message), { timedOut })
+    throw gitFailure(message, timedOut, code)
   }
 }
 
