@@ -679,7 +679,6 @@ export interface AppSettings {
   profile: UserProfile
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
-  usageUnderInput?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings
@@ -955,6 +954,7 @@ export interface ExtensionUiRequest {
   method: ExtensionUiMethod
   sensitive?: boolean
   purpose?: 'approval'
+  toolCallId?: string
   title?: string
   message?: string
   options?: string[]
@@ -1713,6 +1713,7 @@ export interface YanBridge {
     closeTab(id?: string): Promise<BrowserState>
     close(): Promise<BrowserState>
     navigate(url: string): Promise<{ ok: boolean; error?: string }>
+    siteAccess(sessionId: string, url: string): Promise<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>
     back(): Promise<{ ok: boolean; error?: string }>
     forward(): Promise<{ ok: boolean; error?: string }>
     reload(): Promise<{ ok: boolean; error?: string }>

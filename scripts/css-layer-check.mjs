@@ -21,7 +21,6 @@ const LEGACY_ORDER = [
   'tools.css',
   'browser.css',
   'terminal.css',
-  'review.css',
   'workbench.css',
   'icon-state.css'
 ]

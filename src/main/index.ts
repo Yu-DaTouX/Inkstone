@@ -50,6 +50,7 @@ import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, qui
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
+import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
@@ -367,7 +368,10 @@ const subagentService: SubagentService = new SubagentService({
     return answer === 'once'
   },
   onChange: (run) => {
-    if (run.status !== 'starting' && run.status !== 'running') approvals.cancel((pending) => pending.subagentId === run.id)
+    if (run.status !== 'starting' && run.status !== 'running') {
+      approvals.cancel((pending) => pending.subagentId === run.id)
+      approvals.forgetSubagent(run.id)
+    }
     push({ ch: 'subagent', payload: run })
     refreshTaskbar()
   },
@@ -1846,6 +1850,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         activateApprovals: (owner) => {
           approvals.activate(id, owner)
         },
+        retireApprovals: () => {
+          approvals.retire(id)
+        },
         requestSessionMove,
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
           const { parts, verdict } = request
@@ -2608,7 +2615,23 @@ function registerIpc(): void {
 
 
 
-  registerBrowserIpc(ipc, () => browser)
+  const previewSites = createPreviewSiteGate({
+    confirm: async (origin) => {
+      if (!win || win.isDestroyed()) return false
+      const response = await dialog.showMessageBox(win, {
+        type: 'question',
+        title: '允许打开网站',
+        message: `允许在内置浏览器打开 ${origin}？`,
+        detail: '同一会话里每个站点只询问一次；选择不允许后，本会话不会再打开该站点。',
+        buttons: ['不允许', '允许'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      })
+      return response.response === 1
+    }
+  })
+  registerBrowserIpc(ipc, () => browser, previewSites)
 
   registerPeerIpc(ipc, peerClient)
 

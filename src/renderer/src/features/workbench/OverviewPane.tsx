@@ -10,10 +10,9 @@ import {
   GitBranch,
   GitCommitHorizontal,
   Monitor,
-  ShieldCheck,
-  Square
+  ShieldCheck
 } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover } from '../../ui'
+import { Button, Menu, MenuItem, Meter, Notice, Popover } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
@@ -26,14 +25,12 @@ import {
 } from '../../state/compaction-view'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { visibleSubagentRuns } from '../../state/subagent-view'
-import { phaseWord, runTone, useRunsV3, type RunTone } from '../../state/runs-v3'
+import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
-import { useSubagentPanel } from '../session/subagent-panel-state'
-import { compactTaskPaths, firstLine } from '../session/SubagentLine'
+import { useSubagentStopping } from '../../state/subagent-stopping'
 import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
-import { formatDuration } from '../../../../shared/duration'
 import { normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import type { RunSnapshot } from '../../../../shared/runs'
@@ -58,6 +55,8 @@ import { outputFolder, outputName, sessionOutputs, useGitLineTotals } from './ra
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './tool-tiles'
+import { BackgroundTasks, backgroundTaskCount } from './BackgroundTasks'
+import { isSettledPhase, runEndedAt } from './background-tasks'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -269,14 +268,6 @@ const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], string> = {
   error: 'is-err'
 }
 
-const RUN_DOT: Record<SubagentRun['status'], string> = {
-  starting: 'is-run',
-  running: 'is-run',
-  done: 'is-ok',
-  error: 'is-err',
-  cancelled: 'is-warn'
-}
-
 const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   system: 'ctx.cat.system',
   user: 'ctx.cat.user',
@@ -286,65 +277,15 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   free: 'ctx.cat.free'
 }
 
-function isLiveRun(run: SubagentRun): boolean {
-  return run.status === 'running' || run.status === 'starting'
-}
+const MAX_FINISHED_SCHEDULED = 5
 
-const BACKGROUND_RUN_KINDS: ReadonlySet<RunSnapshot['kind']> = new Set(['scheduled'])
-const MAX_FINISHED_BACKGROUND = 5
-
-const BACKGROUND_DOT: Record<RunTone, string> = {
-  run: 'is-run',
-  ask: 'is-warn',
-  stall: 'is-warn',
-  fail: 'is-err',
-  done: 'is-ok',
-  idle: ''
-}
-
-function isSettledRun(run: SubagentRun): boolean {
-  if (run.status === 'cancelled' || run.launchFailed) return true
-  return run.status === 'done' && run.review !== 'pending' && run.review !== 'conflict'
-}
-
-function isSettledBackground(run: RunSnapshot): boolean {
-  const phase = run.phase
-  return phase.kind === 'done' || phase.kind === 'stopped' || (phase.kind === 'failed' && phase.seen)
-}
-
-function modelShortName(model: string | undefined): string {
-  if (!model) return ''
-  const parts = model.split('/').filter(Boolean)
-  return parts[parts.length - 1] ?? model
-}
-
-function subagentLabels(runs: SubagentRun[]): Map<string, string> {
-  const base = new Map<string, string>()
-  const seen = new Map<string, number>()
-  for (const run of runs) {
-    const label = run.brief?.title || compactTaskPaths(firstLine(run.task || run.brief?.goal || ''))
-    base.set(run.id, label)
-    seen.set(label, (seen.get(label) ?? 0) + 1)
-  }
-  const counter = new Map<string, number>()
-  const labels = new Map<string, string>()
-  for (const run of [...runs].sort((a, b) => a.startedAt - b.startedAt)) {
-    const label = base.get(run.id) ?? ''
-    if ((seen.get(label) ?? 0) < 2) {
-      labels.set(run.id, label)
-      continue
-    }
-    const n = (counter.get(label) ?? 0) + 1
-    counter.set(label, n)
-    const model = modelShortName(run.model)
-    labels.set(run.id, model ? `${label} · ${model} #${n}` : `${label} #${n}`)
-  }
-  return labels
-}
-
-function compareRuns(a: SubagentRun, b: SubagentRun): number {
-  const live = Number(isLiveRun(b)) - Number(isLiveRun(a))
-  return live !== 0 ? live : b.startedAt - a.startedAt
+function scheduledRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
+  const scheduled = runs.filter((run) => run.kind === 'scheduled')
+  const finished = scheduled
+    .filter((run) => isSettledPhase(run.phase))
+    .sort((a, b) => (runEndedAt(b.phase) ?? b.startedAt) - (runEndedAt(a.phase) ?? a.startedAt))
+    .slice(0, MAX_FINISHED_SCHEDULED)
+  return [...scheduled.filter((run) => !isSettledPhase(run.phase)), ...finished]
 }
 
 type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'switchBranch'
@@ -440,132 +381,6 @@ function ContextDetail({ data, last, text }: { data: ContextPaneData; last: Comp
         <p className="wb-ov-note wb-ov-line" title={record} data-testid="wb-ov-ctx-compaction">
           {`${text.lastCompaction} · ${record}`}
         </p>
-      ) : null}
-    </div>
-  )
-}
-
-function SubagentTaskRows({ runs, owner, text }: { runs: SubagentRun[]; owner: string; text: OverviewText }): ReactElement {
-  const selectedId = useSubagentPanel((s) => (s.owner === owner ? s.runId : null))
-  const anyLive = runs.some(isLiveRun)
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!anyLive) return undefined
-    setNow(Date.now())
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [anyLive])
-  const labels = subagentLabels(runs)
-
-  return (
-    <ul className="wb-ov-items" data-testid="wb-ov-tasks">
-      {runs.map((run) => {
-        const live = isLiveRun(run)
-        const selected = selectedId === run.id
-        const label = labels.get(run.id) ?? ''
-        const model = modelShortName(run.model)
-        const elapsed = formatDuration((run.endedAt ?? now) - run.startedAt, { minSeconds: 1 })
-        return (
-          <li key={run.id} className="wb-ov-task" data-status={run.status} data-selected={selected ? '1' : undefined}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="wb-ov-task-main"
-              title={model ? `${run.task}\n${model}` : run.task}
-              aria-label={`${text.taskDetail}: ${label}`}
-              aria-haspopup="dialog"
-              aria-expanded={selected}
-              onPress={(event) => useSubagentPanel.getState().toggle(run.id, owner, event.target as HTMLElement)}
-            >
-              <span className="wb-ov-item-icon">
-                <span className={`wb-ov-dot ${RUN_DOT[run.status]}`} aria-hidden />
-              </span>
-              <span className="wb-ov-task-name">{label}</span>
-              <span className="wb-ov-task-time">{elapsed}</span>
-            </Button>
-            {live ? (
-              <IconButton
-                variant="ghost"
-                size="sm"
-                className="wb-ov-task-stop"
-                aria-label={text.stopTask}
-                onPress={() => void window.yan.subagents.stop(run.id)}
-              >
-                <Square size={12} aria-hidden />
-              </IconButton>
-            ) : null}
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
-function BackgroundTaskRows({ runs, lang }: { runs: RunSnapshot[]; lang: 'zh-CN' | 'en-US' }): ReactElement {
-  return (
-    <ul className="wb-ov-items" data-testid="wb-ov-background">
-      {runs.map((run) => {
-        const label = run.title || run.code
-        const status = phaseWord(lang, run.phase)
-        return (
-          <li key={run.runId} className="wb-ov-item wb-ov-bg" data-kind={run.kind} title={`${run.code} ${label}`}>
-            <span className="wb-ov-item-icon">
-              <span className={`wb-ov-dot ${BACKGROUND_DOT[runTone(run.phase)]}`} aria-hidden />
-            </span>
-            <span className="wb-ov-task-name">{label}</span>
-            <span className="wb-ov-task-time">{status}</span>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
-function TaskGroups({
-  subagents,
-  background,
-  owner,
-  lang,
-  text
-}: {
-  subagents: SubagentRun[]
-  background: RunSnapshot[]
-  owner: string
-  lang: 'zh-CN' | 'en-US'
-  text: OverviewText
-}): ReactElement {
-  const [showFinished, setShowFinished] = useState(false)
-  const finishedBackground = background.filter(isSettledBackground).slice(0, MAX_FINISHED_BACKGROUND)
-  const finishedCount = subagents.filter(isSettledRun).length + finishedBackground.length
-  const shownSubagents = showFinished ? subagents : subagents.filter((run) => !isSettledRun(run))
-  const shownBackground = background.filter((run) => !isSettledBackground(run) || (showFinished && finishedBackground.includes(run)))
-  const grouped = shownBackground.length > 0 && shownSubagents.length > 0
-
-  return (
-    <div className="wb-ov-tasks" data-testid="wb-ov-task-groups">
-      {shownSubagents.length > 0 ? (
-        <div className="wb-ov-group">
-          {grouped ? <p className="wb-ov-group-title">{text.subagentGroup}</p> : null}
-          <SubagentTaskRows runs={shownSubagents} owner={owner} text={text} />
-        </div>
-      ) : null}
-      {shownBackground.length > 0 ? (
-        <div className="wb-ov-group">
-          <p className="wb-ov-group-title">{text.backgroundGroup}</p>
-          <BackgroundTaskRows runs={shownBackground} lang={lang} />
-        </div>
-      ) : null}
-      {finishedCount > 0 ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="wb-ov-finished-toggle"
-          aria-pressed={showFinished}
-          data-testid="wb-ov-finished-toggle"
-          onPress={() => setShowFinished((prev) => !prev)}
-        >
-          {showFinished ? text.hideFinished : text.showFinished(finishedCount)}
-        </Button>
       ) : null}
     </div>
   )
@@ -699,12 +514,13 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const outputs = useMemo(() => sessionOutputs(messages), [messages])
 
   const sessionIds = view.sessionId ? [view.sessionId] : []
-  const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
+  const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds })
   const allRuns = useRunsV3((s) => s.runs)
-  const backgroundRuns = useMemo(() => allRuns.filter((run) => BACKGROUND_RUN_KINDS.has(run.kind)), [allRuns])
-  const runningCount = runs.filter(isLiveRun).length + backgroundRuns.filter((run) => !isSettledBackground(run)).length
-  const taskTotal = runs.length + backgroundRuns.length
-  const taskSummary = runningCount > 0 ? text.runningCount(runningCount) : text.doneCount(taskTotal)
+  const backgroundRuns = useMemo(() => scheduledRuns(allRuns), [allRuns])
+  const stoppingIds = useSubagentStopping((s) => s.ids)
+  const taskCount = backgroundTaskCount(runs, backgroundRuns, stoppingIds, Date.now())
+  const taskTotal = taskCount.total
+  const taskSummary = taskCount.running > 0 ? text.runningCount(taskCount.running) : text.doneCount(taskTotal)
 
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
@@ -932,7 +748,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           backgroundTasks: {
             summary: taskSummary,
-            body: <TaskGroups subagents={runs} background={backgroundRuns} owner={view.key} lang={lang} text={text} />
+            body: <BackgroundTasks subagents={runs} scheduled={backgroundRuns} lang={lang} text={text} />
           }
         }
       : {}),

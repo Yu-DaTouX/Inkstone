@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView } from '../features/workbench/types'
+import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView, type WorkspacePaneId, type WorkspaceView } from '../features/workbench/types'
 import { appendTile, columnLayout, hasTile, orderedTileIds, removeTile, sanitizeLayout, type TileLayout } from '../features/workbench/tile-tree'
+import { isSubagentPaneId, isWorkspacePaneId } from '../features/workbench/subagent-panes'
 
 export type V3RouteName = 'chat' | 'schedule' | 'collab' | 'usage'
 
@@ -22,6 +23,10 @@ function isWorkbenchTab(value: unknown): value is WorkbenchTabId {
 
 function isWorkbenchView(value: unknown): value is WorkbenchView {
   return value === 'overview' || isWorkbenchTab(value)
+}
+
+function isWorkspaceView(value: unknown): value is WorkspaceView {
+  return isWorkbenchView(value) || isSubagentPaneId(value)
 }
 
 export function restorableWorkbenchTab(view: WorkbenchView): WorkbenchView {
@@ -52,14 +57,14 @@ const WORKSPACE_OPEN_KEY = 'inkstone.v3.workspaceOpen'
 const WORKSPACE_PANES_KEY = 'inkstone.v3.workspacePanes'
 const WORKSPACE_LAYOUT_KEY = 'inkstone.v3.workspaceLayout'
 
-export function workspaceLayoutFor(layout: TileLayout | null, panes: readonly WorkbenchTabId[]): TileLayout {
+export function workspaceLayoutFor(layout: TileLayout | null, panes: readonly WorkspacePaneId[]): TileLayout {
   let next = layout ?? columnLayout([])
   for (const id of orderedTileIds(next)) if (!(panes as readonly string[]).includes(id)) next = removeTile(next, id)
   for (const id of panes) if (!hasTile(next, id)) next = appendTile(next, id)
   return next
 }
 
-function readWorkspaceLayout(panes: readonly WorkbenchTabId[]): TileLayout {
+function readWorkspaceLayout(panes: readonly WorkspacePaneId[]): TileLayout {
   if (typeof localStorage === 'undefined') return workspaceLayoutFor(null, panes)
   try {
     const stored = sanitizeLayout(JSON.parse(localStorage.getItem(WORKSPACE_LAYOUT_KEY) ?? 'null'), new Set<string>(panes))
@@ -77,18 +82,18 @@ function writeWorkspaceLayout(layout: TileLayout): void {
   }
 }
 
-export function restorableWorkspacePanes(value: unknown, fallback: WorkbenchView): WorkbenchTabId[] {
-  const out: WorkbenchTabId[] = []
+export function restorableWorkspacePanes(value: unknown, fallback: WorkbenchView): WorkspacePaneId[] {
+  const out: WorkspacePaneId[] = []
   const list = Array.isArray(value) ? value : fallback === 'overview' ? [] : [fallback]
   for (const raw of list) {
     const item = raw === 'preview' ? 'files' : raw
-    if (!isWorkbenchTab(item) || WORKBENCH_ACTIVE_TABS.has(item) || out.includes(item)) continue
+    if (!isWorkspacePaneId(item) || WORKBENCH_ACTIVE_TABS.has(item) || out.includes(item)) continue
     out.push(item)
   }
   return out
 }
 
-function readWorkspacePanes(fallback: WorkbenchView): WorkbenchTabId[] {
+function readWorkspacePanes(fallback: WorkbenchView): WorkspacePaneId[] {
   if (typeof localStorage === 'undefined') return restorableWorkspacePanes(null, fallback)
   try {
     return restorableWorkspacePanes(JSON.parse(localStorage.getItem(WORKSPACE_PANES_KEY) ?? 'null'), fallback)
@@ -97,7 +102,7 @@ function readWorkspacePanes(fallback: WorkbenchView): WorkbenchTabId[] {
   }
 }
 
-function writeWorkspacePanes(panes: readonly WorkbenchTabId[]): void {
+function writeWorkspacePanes(panes: readonly WorkspacePaneId[]): void {
   if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(WORKSPACE_PANES_KEY, JSON.stringify(panes))
@@ -105,12 +110,16 @@ function writeWorkspacePanes(panes: readonly WorkbenchTabId[]): void {
   }
 }
 
-export function withWorkspacePane(panes: readonly WorkbenchTabId[], tab: WorkbenchTabId): WorkbenchTabId[] {
+export function withWorkspacePane(panes: readonly WorkspacePaneId[], tab: WorkspacePaneId): WorkspacePaneId[] {
   return panes.includes(tab) ? [...panes] : [...panes, tab]
 }
 
-export function withoutWorkspacePane(panes: readonly WorkbenchTabId[], tab: WorkbenchTabId): WorkbenchTabId[] {
+export function withoutWorkspacePane(panes: readonly WorkspacePaneId[], tab: WorkspacePaneId): WorkspacePaneId[] {
   return panes.filter((item) => item !== tab)
+}
+
+function writeFocusPrefs(view: WorkspaceView): void {
+  if (isWorkbenchView(view)) writeUiPrefs({ version: 1, workbenchTab: view })
 }
 
 function readWorkspaceOpen(): boolean {
@@ -135,8 +144,8 @@ interface UiV3State {
   back: V3Route[]
   sidebarOpen: boolean
   workspaceOpen: boolean
-  workspaceTab: WorkbenchView
-  workspacePanes: WorkbenchTabId[]
+  workspaceTab: WorkspaceView
+  workspacePanes: WorkspacePaneId[]
   workspaceLayout: TileLayout
   workspaceSplit: boolean
   workspaceSplitTab: WorkbenchTabId
@@ -147,9 +156,10 @@ interface UiV3State {
   toggleSidebar: () => void
   setWorkspaceOpen: (open: boolean) => void
   toggleWorkspace: () => void
-  setWorkspaceTab: (view: WorkbenchView) => void
-  closeWorkspacePane: (tab: WorkbenchTabId) => void
-  reorderWorkspacePanes: (panes: WorkbenchTabId[]) => void
+  setWorkspaceTab: (view: WorkspaceView) => void
+  closeWorkspacePane: (tab: WorkspacePaneId) => void
+  dropWorkspacePanes: (tabs: readonly WorkspacePaneId[]) => void
+  reorderWorkspacePanes: (panes: WorkspacePaneId[]) => void
   setWorkspaceLayout: (layout: TileLayout) => void
   setWorkspaceSplit: (open: boolean) => void
   toggleWorkspaceSplit: () => void
@@ -158,7 +168,7 @@ interface UiV3State {
   toggleWorkspaceFocus: () => void
 }
 
-function initialWorkspace(): { workspaceTab: WorkbenchView; workspacePanes: WorkbenchTabId[]; workspaceLayout: TileLayout } {
+function initialWorkspace(): { workspaceTab: WorkspaceView; workspacePanes: WorkspacePaneId[]; workspaceLayout: TileLayout } {
   const stored = readUiPrefs().workbenchTab
   const panes = readWorkspacePanes(stored)
   const tab = stored !== 'overview' && panes.includes(stored) ? stored : panes[panes.length - 1] ?? 'overview'
@@ -192,12 +202,12 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
   },
   toggleWorkspace: () => get().setWorkspaceOpen(!get().workspaceOpen),
   setWorkspaceTab: (requested) => {
-    if (!isWorkbenchView(requested)) return
+    if (!isWorkspaceView(requested)) return
     const view = requested === 'preview' ? 'files' : requested
     const panes = view === 'overview' ? [] : withWorkspacePane(get().workspacePanes, view)
     const layout = workspaceLayoutFor(get().workspaceLayout, panes)
     set({ workspaceTab: view, workspacePanes: panes, workspaceLayout: layout })
-    writeUiPrefs({ version: 1, workbenchTab: view })
+    writeFocusPrefs(view)
     writeWorkspacePanes(panes)
     writeWorkspaceLayout(layout)
   },
@@ -214,18 +224,21 @@ export const useUiV3 = create<UiV3State>((set, get) => ({
     const current = get().workspacePanes
     const ids = orderedTileIds(layout)
     if (ids.length !== current.length || !ids.every((id) => (current as readonly string[]).includes(id))) return
-    const panes = ids as WorkbenchTabId[]
+    const panes = ids as WorkspacePaneId[]
     set({ workspaceLayout: layout, workspacePanes: panes })
     writeWorkspacePanes(panes)
     writeWorkspaceLayout(layout)
   },
-  closeWorkspacePane: (tab) => {
+  closeWorkspacePane: (tab) => get().dropWorkspacePanes([tab]),
+  dropWorkspacePanes: (tabs) => {
     const state = get()
-    const panes = withoutWorkspacePane(state.workspacePanes, tab)
-    const view: WorkbenchView = state.workspaceTab === tab || panes.length === 0 ? panes[panes.length - 1] ?? 'overview' : state.workspaceTab
+    const gone = new Set<string>(tabs)
+    if (!state.workspacePanes.some((item) => gone.has(item))) return
+    const panes = state.workspacePanes.filter((item) => !gone.has(item))
+    const view: WorkspaceView = gone.has(state.workspaceTab) || panes.length === 0 ? panes[panes.length - 1] ?? 'overview' : state.workspaceTab
     const layout = workspaceLayoutFor(state.workspaceLayout, panes)
     set({ workspacePanes: panes, workspaceLayout: layout, workspaceTab: view, workspaceFocus: state.workspaceFocus && panes.length > 0 && view === state.workspaceTab })
-    writeUiPrefs({ version: 1, workbenchTab: view })
+    writeFocusPrefs(view)
     writeWorkspacePanes(panes)
     writeWorkspaceLayout(layout)
     if (panes.length === 0) get().setWorkspaceOpen(false)

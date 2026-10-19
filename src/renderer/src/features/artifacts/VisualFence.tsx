@@ -36,12 +36,12 @@ function useOpenLink(): {
   open: (url: string) => (event: React.MouseEvent) => void
   external: (url: string) => (event: React.MouseEvent) => void
 } {
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   return {
     open: (url) => (event) => {
       event.preventDefault()
       event.stopPropagation()
-      void openBrowser(url)
+      void openLink(url)
     },
     external: (url) => (event) => {
       event.preventDefault()

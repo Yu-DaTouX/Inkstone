@@ -1,4 +1,4 @@
-import { useState, type JSX } from 'react'
+import { Fragment, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
@@ -8,6 +8,7 @@ import { generatingArgs, runningCallLabel, summarize } from './tool-summary'
 import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, type ToolRow, type ToolRunState } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
+import { QuestionCard } from './QuestionCard'
 import { QuestionReceipt } from './QuestionReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
@@ -53,6 +54,7 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
 export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string> }): JSX.Element | null {
   const t = useT()
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
+  const askedCalls = useStore((s) => s.uiRequests)
   if (!tools.length) return null
   const rows = buildToolRows(tools, approvalIds)
   return (
@@ -60,7 +62,16 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UITool
       <div className="v3-steps-list" data-testid="v3-steps-list">
         {rows.map((row) => {
           if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
-          if (row.standalone && isQuestionCall(row.node.call)) return <QuestionReceipt key={row.id} call={row.node.call} />
+          if (row.standalone && isQuestionCall(row.node.call)) {
+            const callId = row.node.call.id
+            const asked = askedCalls.find((request) => request.toolCallId === callId)
+            return (
+              <Fragment key={row.id}>
+                <QuestionReceipt call={row.node.call} />
+                {asked ? <QuestionCard requestId={asked.id} /> : null}
+              </Fragment>
+            )
+          }
           return <StepNode key={row.id} node={row.node} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
         })}
       </div>

@@ -26,10 +26,13 @@ export interface OverviewText {
   taskDetail: string
   runningCount: (n: number) => string
   doneCount: (n: number) => string
-  subagentGroup: string
-  backgroundGroup: string
-  showFinished: (n: number) => string
-  hideFinished: string
+  runningSection: (n: number) => string
+  finishedSection: (n: number) => string
+  showOutput: string
+  hideOutput: string
+  earlierOutput: string
+  taskGone: string
+  scheduledKind: string
   moreTools: string
   quotaFailed: string
   quotaExpired: string
@@ -150,10 +153,13 @@ const ZH: WorkbenchText = {
     taskDetail: '查看详情',
     runningCount: (n) => `运行中 ${n}`,
     doneCount: (n) => `${n} 项已结束`,
-    subagentGroup: '子 Agent',
-    backgroundGroup: '后台任务',
-    showFinished: (n) => `显示已完成 ${n} 个`,
-    hideFinished: '隐藏已完成',
+    runningSection: (n) => `运行中 ${n}`,
+    finishedSection: (n) => `已结束 ${n}`,
+    showOutput: '展开输出',
+    hideOutput: '收起输出',
+    earlierOutput: '（更早的输出未显示）',
+    taskGone: '任务已经结束，无需停止',
+    scheduledKind: '定时',
     moreTools: '更多工具',
     quotaFailed: '额度查询失败',
     quotaExpired: '登录已过期',
@@ -241,10 +247,13 @@ const EN: WorkbenchText = {
     taskDetail: 'View details',
     runningCount: (n) => `${n} running`,
     doneCount: (n) => `${n} finished`,
-    subagentGroup: 'Subagents',
-    backgroundGroup: 'Background',
-    showFinished: (n) => `Show ${n} finished`,
-    hideFinished: 'Hide finished',
+    runningSection: (n) => `Running ${n}`,
+    finishedSection: (n) => `Finished ${n}`,
+    showOutput: 'Show output',
+    hideOutput: 'Hide output',
+    earlierOutput: '(Earlier output not shown)',
+    taskGone: 'The task already ended; nothing to stop',
+    scheduledKind: 'Scheduled',
     moreTools: 'More tools',
     quotaFailed: 'Quota check failed',
     quotaExpired: 'Sign-in expired',

@@ -59,6 +59,44 @@ async function run() {
     access.forgetSession('s1')
     assert.equal(access.decide('s1', 'https://evil.test').decision, 'ask')
 
+    const { createPreviewSiteGate } = await compile('src/main/preview-site-gate.ts', join(dir, 'gate.mjs'))
+    const asked = []
+    let answer = true
+    let release = null
+    const gate = createPreviewSiteGate({
+      confirm: async (origin) => {
+        asked.push(origin)
+        if (release) await new Promise((resolve) => { release = resolve })
+        return answer
+      }
+    })
+    assert.equal(await gate.check('s1', 'https://www.example.com/a'), 'allow')
+    assert.equal(await gate.check('s1', 'https://example.com/b'), 'allow')
+    assert.deepEqual(asked, ['https://example.com'])
+    assert.equal(await gate.check('s2', 'https://example.com/b'), 'allow')
+    assert.equal(asked.length, 2)
+    answer = false
+    assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
+    answer = true
+    assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
+    assert.equal(asked.length, 3)
+    assert.equal(await gate.check('s1', 'http://169.254.169.254/'), 'forbidden')
+    assert.equal(await gate.check('s1', 'file:///x'), 'invalid')
+    assert.equal(asked.length, 3)
+    release = () => {}
+    const first = gate.check('s3', 'https://slow.test/')
+    const second = gate.check('s3', 'https://slow.test/x')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(asked.filter((origin) => origin === 'https://slow.test').length, 1)
+    release()
+    assert.deepEqual(await Promise.all([first, second]), ['allow', 'allow'])
+    release = null
+    gate.forgetSession('s1')
+    assert.equal(await gate.check('s1', 'https://bad.test/'), 'allow')
+    const failing = createPreviewSiteGate({ confirm: async () => { throw new Error('x') } })
+    assert.equal(await failing.check('s1', 'https://err.test/'), 'deny')
+    answer = true
+
     console.log('test-preview-site-access: 全部通过')
   } finally {
     await rm(dir, { recursive: true, force: true })

@@ -2,7 +2,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, 
 import { Eye, FileDiff, FolderOpen, GitBranch, Globe, GripVertical, PanelRight, ScrollText, Terminal, type LucideIcon } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { createTurnProjector, groupIntoTurns, type Turn } from '../../../shared/turns'
+import { createTurnProjector } from '../../../shared/turns'
 import type { UIMessage } from '../../../shared/ipc'
 import { nearestSessionOf, sameSplitSession, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 import { closeToolTile, dockToolTile, fitPaneTiles, toolTabOf, useTileCapacity, watchChatWidth } from '../features/workbench/tool-tiles'
@@ -13,14 +13,12 @@ import { ToolTileBody } from '../features/workbench/ToolTileBody'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { newestMessages, shownMessages } from '../state/split-snapshots'
 import { SessionView } from '../features/session/SessionView'
-import { ChatSubagentPanel } from '../features/session/SubagentPanel'
-import { subagentTitle } from '../features/session/SubagentLine'
 import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
 import { Icon } from '../features/session/Icon'
-import { Button, EmptyState, IconButton, Splitter } from '../ui'
-import { collapsedPanes, isSessionTile, subagentRunIdOf } from './SideBySideLayout'
+import { Button, IconButton, Splitter } from '../ui'
+import { collapsedPanes, isSessionTile } from './SideBySideLayout'
 import {
   KEY_STEP,
   bindPairObserver,
@@ -35,10 +33,9 @@ import './SideBySide.css'
 export interface SideBySideProps {
   split: SplitLayout | null
   narrow: boolean
-  panelInChat?: boolean
 }
 
-export const SideBySide = memo(function SideBySide({ split, narrow, panelInChat = false }: SideBySideProps): JSX.Element {
+export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySideProps): JSX.Element {
   const capacity = useTileCapacity()
   const layout = fitPaneTiles(collapsedPanes(split, narrow), capacity)
   const weights = useSplitView((s) => s.weights)
@@ -46,9 +43,8 @@ export const SideBySide = memo(function SideBySide({ split, narrow, panelInChat 
   if (!layout || !split) {
     return (
       <>
-        <div className="v3-conv"><SessionView subagentPanel={!panelInChat} /></div>
+        <div className="v3-conv"><SessionView /></div>
         <div className="v3-composer"><Composer /></div>
-        {panelInChat ? <ChatSubagentPanel /> : null}
       </>
     )
   }
@@ -76,7 +72,6 @@ export const SideBySide = memo(function SideBySide({ split, narrow, panelInChat 
   return (
     <div className="v3-split" data-testid="v3-split" ref={watchChatWidth}>
       {shown.map((target, position) => {
-        const runId = subagentRunIdOf(target)
         const tool = toolTabOf(target)
         const live = position === layout.live
         const index = split.tiles.indexOf(target)
@@ -96,8 +91,6 @@ export const SideBySide = memo(function SideBySide({ split, narrow, panelInChat 
             >
               {tool ? (
                 <ToolTileBody tab={tool} />
-              ) : runId ? (
-                <AgentPane runId={runId} />
               ) : live ? (
                 <>
                   <div className="v3-conv"><SessionView /></div>
@@ -160,12 +153,7 @@ function PaneFrame({
   const tileText = toolTileText(lang)
   const toolName = tool ? workbenchText(lang).tabs[tool] : ''
   const sessionTitle = useSplitTitle(tool ? owner : target)
-  const agentTask = useStore((s) => {
-    const id = subagentRunIdOf(target)
-    const run = id ? s.subagents.find((item) => item.id === id) : undefined
-    return run ? run.brief?.title || subagentTitle(run.task) : ''
-  })
-  const title = agentTask || sessionTitle
+  const title = sessionTitle
   const project = useSplitProject(target)
   const key = splitTileKey(target)
   const ToolIcon = tool ? TOOL_ICONS[tool] : undefined
@@ -187,7 +175,7 @@ function PaneFrame({
     <section
       className="v3-split-col"
       data-live={live ? '1' : '0'}
-      data-kind={tool ? 'tool' : subagentRunIdOf(target) ? 'agent' : 'session'}
+      data-kind={tool ? 'tool' : 'session'}
       data-testid="v3-split-col"
       data-pane={target.sessionId ?? target.path ?? ''}
       data-tile-key={key}
@@ -351,50 +339,6 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
               </Button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function AgentPane({ runId }: { runId: string }): JSX.Element {
-  const t = useT()
-  const run = useStore((s) => s.subagents.find((item) => item.id === runId))
-  const turns = useMemo<Turn[]>(() => {
-    if (!run) return []
-    return groupIntoTurns(
-      run.transcript
-        .filter((item) => item.role !== 'user' || item.text !== run.task)
-        .map((item) => ({ ...item, sourceCwd: item.sourceCwd ?? run.cwd }))
-    )
-  }, [run])
-  const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [runId] }), [runId])
-  const streamRef = useRef<HTMLDivElement>(null)
-  const stickRef = useRef(true)
-  useLayoutEffect(() => {
-    const el = streamRef.current
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [turns])
-
-  if (!run) return <EmptyState className="v3-split-empty" data-testid="v3-split-agent-missing" title={t('delegate.missing')} />
-  return (
-    <div className="v3-conv">
-      <div
-        className="v3-stream"
-        ref={streamRef}
-        onScroll={(event) => {
-          const el = event.currentTarget
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }}
-      >
-        <div className="v3-stream-inner">
-          {turns.length === 0 ? (
-            <div className="v3-empty"><p className="v3-empty-hint">{t('sa.waitingMessages')}</p></div>
-          ) : (
-            turns.map((turn) => (
-              <div key={turn.id} className="v3-stream-row"><TurnView turn={turn} subagentScope={subagentScope} readOnly /></div>
-            ))
-          )}
         </div>
       </div>
     </div>

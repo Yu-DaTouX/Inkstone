@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { isApprovalChoice, type ApprovalChoice, type ApprovalOwner, type ApprovalRequest, type ApprovalSnapshot } from '../shared/approval'
 import { ApprovalLedger, type ApprovalAnswerIdentity } from './approval-ledger'
+import { ApprovalSessionGrants } from './approval-session-grants'
 
 export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
 
@@ -26,12 +27,15 @@ function scopeOf(request: Pick<ApprovalRequest, 'runId' | 'subagentId'>): string
 export class ApprovalBroker {
   private readonly ledger = new ApprovalLedger()
   private readonly waiters = new Map<string, Waiter>()
+  private readonly grants = new ApprovalSessionGrants()
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
   ask(input: ApprovalAskInput): Promise<ApprovalChoice | null> {
     if (!this.deps.canAsk()) return Promise.resolve(null)
-    const request = this.ledger.add({ ...input, id: randomUUID(), createdAt: Date.now() }, scopeOf(input))
+    const scope = scopeOf(input)
+    if (this.ledger.isCurrent(scope, input.owner) && this.grants.allows(scope, input)) return Promise.resolve('once')
+    const request = this.ledger.add({ ...input, id: randomUUID(), createdAt: Date.now() }, scope)
     if (!request) return Promise.resolve(null)
     return new Promise((resolve) => {
       const timer = setTimeout(() => this.settle(request.id, null), APPROVAL_TIMEOUT_MS)
@@ -49,6 +53,10 @@ export class ApprovalBroker {
       return false
     }
     this.publish()
+    if (choice === 'session') {
+      this.grants.grant(scopeOf(begun.request), begun.request)
+      return this.settle(id, 'once')
+    }
     return this.settle(id, choice)
   }
 
@@ -57,11 +65,17 @@ export class ApprovalBroker {
   }
 
   activate(runId: string, owner: ApprovalOwner): number {
+    this.grants.clearOtherOwners(`run:${runId}`, owner)
     return this.settleAll(this.ledger.activate(`run:${runId}`, owner))
   }
 
   retire(runId: string, owner?: ApprovalOwner): number {
+    this.grants.clear(`run:${runId}`, owner)
     return this.settleAll(this.ledger.retire(`run:${runId}`, owner))
+  }
+
+  forgetSubagent(subagentId: string): void {
+    this.grants.clear(`subagent:${subagentId}`)
   }
 
   list(): ApprovalRequest[] {

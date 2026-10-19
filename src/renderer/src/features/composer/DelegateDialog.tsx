@@ -3,7 +3,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, Dialog, ListBoxItem, Modal, ModalOverlay, Select, TextArea } from '../../ui'
 import { subagentModelError } from '../../../../shared/subagent-pi-launch'
-import { openSubagentPane } from '../session/SubagentLine'
+import { openSubagentPane } from '../session/subagent-actions'
 import type { SubagentRun } from '../../../../shared/ipc'
 
 const FOLLOW = 'follow'

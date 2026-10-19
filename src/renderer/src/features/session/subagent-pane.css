@@ -1,0 +1,169 @@
+@layer features {
+  .sa-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .sa-pane-head {
+    container: sa-pane-head / inline-size;
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    padding-inline: var(--s-4) var(--s-6);
+    color: var(--fg2);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .sa-pane-bot {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: var(--size-avatar);
+    height: var(--size-avatar);
+  }
+
+  .sa-pane-name {
+    flex: 0 1 auto;
+    min-width: 3em;
+    overflow: hidden;
+    color: var(--fg);
+    font-weight: var(--w-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sa-pane-role {
+    flex: none;
+    color: var(--fg3);
+    white-space: nowrap;
+  }
+
+  .sa-pane-model {
+    flex: 0 12 auto;
+    min-width: 0;
+    max-width: 12em;
+    overflow: hidden;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sa-pane-state {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    margin-inline-start: auto;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    white-space: nowrap;
+  }
+
+  @container sa-pane-head (max-width: 420px) {
+    .sa-pane-model {
+      display: none;
+    }
+  }
+
+  @container sa-pane-head (max-width: 320px) {
+    .sa-pane-role {
+      display: none;
+    }
+  }
+
+  .sa-pane-head[data-state='failed'] .sa-pane-state {
+    color: var(--fail-t);
+  }
+
+  .sa-pane-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sa-pane-stream {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+    min-width: 0;
+    padding: var(--s-12) var(--s-16) var(--s-16);
+  }
+
+  .sa-pane-stream > .v3-stream-row {
+    min-width: 0;
+    padding: 0;
+  }
+
+  .sa-pane-brief .v3-user-body {
+    max-width: 92%;
+  }
+
+  .sa-pane-brief .v3-bubble-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .sa-pane-wait {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-body);
+  }
+
+  .sa-pane-foot {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-16) var(--s-12);
+    box-shadow: inset 0 1px 0 var(--line);
+  }
+
+  .sa-pane-foot:empty {
+    display: none;
+  }
+
+  .sa-pane-summary {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sa-pane-paths {
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+  }
+
+  .sa-pane-paths > summary {
+    color: var(--fg3);
+    cursor: pointer;
+  }
+
+  .sa-pane-paths ul {
+    margin: var(--s-4) 0 0;
+    padding: 0;
+    font-family: var(--font-mono);
+    list-style: none;
+  }
+
+  .sa-pane-paths li {
+    overflow-wrap: anywhere;
+  }
+
+  .sa-pane-paths .dim {
+    color: var(--fg3);
+  }
+
+  .sa-pane-missing {
+    height: 100%;
+  }
+}

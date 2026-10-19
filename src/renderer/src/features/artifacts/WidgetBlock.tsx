@@ -83,7 +83,7 @@ export interface WidgetBlockProps {
 
 export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.Element {
   const t = useT()
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   const insertIntoComposer = useStore((s) => s.insertIntoComposer)
   const [form, setForm] = useState<ArtifactForm>('inline')
   const [ask, setAsk] = useState<string | null>(null)
@@ -169,7 +169,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
           bridge
           bridgeGeneration={build.generation}
           onDisplayModeRequest={setForm}
-          onOpenLink={(link) => void openBrowser(link)}
+          onOpenLink={(link) => void openLink(link)}
           onMessage={(text) => setAsk(text)}
           onStateSave={(text) => {
             savedWidgetState.set(key, text)

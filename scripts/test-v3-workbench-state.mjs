@@ -72,6 +72,11 @@ export function Focusable(p){ return p.children }
 export function EmptyState(){ return null }
 export function cx(...a){ return a.filter(Boolean).join(' ') }`,
   overview: `export function OverviewPane(){ return null }`,
+  subagentPane: `export function SubagentTranscriptPane(){ return null }
+export function subagentPaneName(run){ return run.task }`,
+  store: `const state = { subagents: [] }
+export function useStore(selector){ return selector(state) }
+useStore.getState = () => state`,
   i18n: `export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }`,
   lucide: `export function X(){ return null }
 export function Rows2(){ return null }
@@ -95,7 +100,9 @@ function makeStubMap() {
     Object.entries({
       'src/renderer/src/ui/index.ts': STUBS.ui,
       'src/renderer/src/i18n/index.tsx': STUBS.i18n,
-      'src/renderer/src/features/workbench/OverviewPane.tsx': STUBS.overview
+      'src/renderer/src/features/workbench/OverviewPane.tsx': STUBS.overview,
+      'src/renderer/src/features/session/SubagentTranscriptPane.tsx': STUBS.subagentPane,
+      'src/renderer/src/state/store.ts': STUBS.store
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }

@@ -22,11 +22,11 @@ export const SYNC_SETTINGS_WHITELIST = [
   'guardOutsideWrites',
   'permissionMode',
   'subagentNotify',
-  'usageUnderInput',
   'workspaceTiles',
   'sendKey',
   'responseDetail',
   'density',
+  'reduceMotion',
   'sound',
   'providerBudgets'
 ] as const

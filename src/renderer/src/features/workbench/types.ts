@@ -7,6 +7,12 @@ export const WORKBENCH_TABS: readonly WorkbenchTabId[] = ['changes', 'terminal',
 
 export type WorkbenchView = WorkbenchTabId | 'overview'
 
+export type SubagentPaneId = `subagent:${string}`
+
+export type WorkspacePaneId = WorkbenchTabId | SubagentPaneId
+
+export type WorkspaceView = WorkbenchView | SubagentPaneId
+
 export const WORKBENCH_ACTIVE_TABS: ReadonlySet<string> = new Set<string>(['terminal', 'browser'])
 
 export type WorkbenchPopoutTabId = PanePopoutTabId

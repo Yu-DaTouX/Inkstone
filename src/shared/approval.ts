@@ -13,7 +13,7 @@ export function isLegacyPermissionMode(value: unknown): boolean {
 
 export type ApprovalKind = 'permission' | 'delete' | 'danger' | 'outside' | 'consent' | 'move'
 
-export type ApprovalChoice = 'deny' | 'once' | 'remember'
+export type ApprovalChoice = 'deny' | 'once' | 'session' | 'remember'
 
 export type ApprovalPhase = 'pending' | 'sending' | 'resolved'
 
@@ -53,5 +53,5 @@ export interface ApprovalRequest {
 }
 
 export function isApprovalChoice(value: unknown): value is ApprovalChoice {
-  return value === 'deny' || value === 'once' || value === 'remember'
+  return value === 'deny' || value === 'once' || value === 'session' || value === 'remember'
 }

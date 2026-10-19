@@ -16,13 +16,13 @@ export function MessageImage({
 }): JSX.Element {
   const t = useT()
   const previewFile = useStore((s) => s.previewFile)
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   const target = src.startsWith('data:') ? null : classifyLink(src)
   const open =
     target?.kind === 'file'
       ? (): void => void previewFile(target.path, undefined, sourceCwd)
       : target?.kind === 'url'
-        ? (): void => void openBrowser(target.url)
+        ? (): void => void openLink(target.url)
         : undefined
   return (
     <img

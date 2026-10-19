@@ -33,7 +33,6 @@ import { NativeSessionSurfaces } from '../features/session/native'
 import { V3ErrorBoundary } from './ErrorBoundary'
 import { WorkbenchPanel } from '../features/workbench/WorkbenchPanel'
 import { OverviewPane } from '../features/workbench/OverviewPane'
-import { LANE_GAP, MESSAGE_MIN_WIDTH, SUBAGENT_LANE_EDGE, subagentPanelShownWidth, useSubagentPanel } from '../features/session/subagent-panel-state'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
@@ -42,6 +41,8 @@ import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-bran
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
+import { isSubagentPaneId, toolPanes } from '../features/workbench/subagent-panes'
+import { usePruneSubagentPanes } from '../features/workbench/use-subagent-panes'
 import { panePopoutBridge, paneTerminalBridge } from '../../auxwin/pane-bridge'
 import { pickOwnedTerminal, selectOwnedTerminals } from '../features/terminal/terminal-session'
 import { useTerminalRunning } from '../features/terminal/use-terminal-running'
@@ -50,7 +51,7 @@ import { autoCompactLimitOf, contextPaneData } from '../features/workbench/conte
 import type { ContextSlice } from '../state/context-breakdown'
 import type { PaneContextSegment } from '../../../shared/pane-popout'
 import { sessionText } from '../features/session/text'
-import { TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
+import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import './ShellV3.css'
 
 let bootstrapStarted = false
@@ -168,8 +169,6 @@ export default function ShellV3(): ReactElement {
   const hasMessages = useStore((s) => s.messages.length > 0)
   const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
   const workspaceShown = route.name === 'chat' && workspaceOpen && workspaceTab !== 'overview'
-  const sideOpen = useSubagentPanel((s) => !!s.runId)
-  const sideWidth = useSubagentPanel((s) => s.width)
   const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
   const showSidebarPreview = useCallback(() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(true) }, [])
   const reveal = useHoverDelay(120, showSidebarPreview)
@@ -356,18 +355,16 @@ export default function ShellV3(): ReactElement {
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
   }, [split, narrow, displayed])
   useRunnerVisibility(visibleSessions)
+  usePruneSubagentPanes()
   const singlePane = !collapsedPanes(split, narrow)
   const chatWidth = bodyWidth - (workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0)
   const toastInset = workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
-  const sideReserve = subagentPanelShownWidth(sideWidth, chatWidth, SUBAGENT_LANE_EDGE) + LANE_GAP
-  const panelInChat = singlePane && chatWidth - sideReserve >= MESSAGE_MIN_WIDTH
-  const sideInLane = sideOpen && panelInChat
-  const sessionBarFits = (!sideOpen || sideInLane) && chatWidth - (sideInLane ? sideReserve : 0) - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
+  const sessionBarFits = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
   const sessionBarShown = route.name === 'chat' && singlePane && hasMessages && sessionBarOn && sessionBarFits && !(workspaceShown && panelMode === 'full')
-  const tilesRoom = tilesWidthRoom(chatWidth - (sideInLane ? sideReserve : 0), LANE_GAP, MESSAGE_MIN_WIDTH)
+  const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, MESSAGE_MIN_WIDTH)
   const shownTilesWidth = clampTilesWidth(tilesWidth, tilesRoom)
   const tilesMaxShown = clampTilesWidth(TILES_WIDTH_MAX, tilesRoom)
   const tilesAxis = TILES_WIDTH_MAX + TILES_WIDTH_MIN
@@ -394,6 +391,10 @@ export default function ShellV3(): ReactElement {
       ui.setWorkspaceOpen(false)
       return
     }
+    if (isSubagentPaneId(ui.workspaceTab)) {
+      ui.setWorkspaceOpen(true)
+      return
+    }
     void openWorkspaceTab(ui.workspaceTab === 'overview' ? 'changes' : ui.workspaceTab)
   }
 
@@ -405,7 +406,7 @@ export default function ShellV3(): ReactElement {
 
   const tiledTools = useTiledTools()
   const openPanes = useMemo(
-    () => new Set<WorkbenchTabId>([...(workspaceShown ? workspacePanes : []), ...tiledTools]),
+    () => new Set<WorkbenchTabId>([...(workspaceShown ? toolPanes(workspacePanes) : []), ...tiledTools]),
     [workspaceShown, workspacePanes, tiledTools]
   )
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
@@ -610,9 +611,9 @@ export default function ShellV3(): ReactElement {
             ) : route.name === 'usage' ? (
               <UsagePage />
             ) : (
-              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
+              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
                 <ConnBanner />
-                <SideBySide split={split} narrow={narrow} panelInChat={panelInChat} />
+                <SideBySide split={split} narrow={narrow} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />

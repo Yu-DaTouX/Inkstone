@@ -281,7 +281,6 @@ async function main() {
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
         'src/renderer/src/features/session/V3EmptyState.tsx': 'export function V3EmptyState(){ return null }',
         'src/renderer/src/features/session/RewindDialogV3.tsx': 'export function RewindDialogV3(){ return null }',
-        'src/renderer/src/features/session/SubagentPanel.tsx': 'export function SubagentPanel(){ return null }',
         'src/renderer/src/features/session/MessageMenu.tsx': 'export function MessageMenuHost(){ return null }',
         'src/renderer/src/features/ambient/AsciiField.tsx': 'export function AsciiField(){ return null }',
         'src/renderer/src/features/ambient/ascii-field-model.ts': 'export function asciiBackgroundEnabled(){ return false }',

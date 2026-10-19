@@ -1,23 +1,22 @@
 import { useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { formatTokens } from '../../state/compaction-view'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3, phaseWord, runTone } from '../../state/runs-v3'
-import { displayedSessionOf, useSplitView } from '../../state/split-view'
-import { subagentTileRef } from '../../app/SideBySideLayout'
 import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from './turn-lines'
-import { selectSubagentRuns, subagentRunsForTurnScope, subagentTokens, type TurnSubagentScope } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentRunsForTurnScope, type TurnSubagentScope } from '../../state/subagent-view'
 import { sessionViewIdentity } from './view-state'
 import { formatDuration } from '../../../../shared/duration'
+import { isLiveSubagentRun } from '../../../../shared/subagent-task-rows'
 import type { SubagentOutcomeKey } from '../../../../shared/subagent-outcome'
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { Icon } from './Icon'
 import { SubagentBot } from './SubagentBot'
+import { SubagentStateIcon } from './SubagentState'
 import { useSessionText } from './text'
-import { useSubagentPanel } from './subagent-panel-state'
+import { openSubagentPane, useFocusedSubagentRun, useSubagentPaneOpen, useSubagentRow } from './subagent-actions'
 import {
   DECK_DOTS_MAX,
   DECK_EDGES_MAX,
@@ -32,10 +31,7 @@ import {
   deckWheelStep
 } from './subagent-deck'
 import { turnModelLabel } from './turn-model-label'
-import { contextUsageSummary } from '../workbench/context-pane-view'
-import { ThinkingBadge } from '../../patterns/ThinkingBadge'
-import { ContextGauge } from '../../patterns/ContextGauge'
-import { Button, ProgressBar } from '../../ui'
+import { Button, ProgressBar, StatusDot } from '../../ui'
 
 const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
   starting: 'sa.state.starting',
@@ -51,10 +47,12 @@ const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
   conflict: 'sa.state.conflict'
 }
 
+export const SUBAGENT_STRIP_BOT = 16
+export const SUBAGENT_CARD_BOT = 20
+
 export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
   model: SubagentLineModel
   status: string
-  dotClass: string
   tone: string
 } {
   const t = useT()
@@ -70,28 +68,13 @@ export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
 
   const status = model.phase ? phaseWord(lang, model.phase) : t(OUTCOME_KEY[model.outcomeKey])
   const dotTone = model.phase ? runTone(model.phase) : model.outcomeTone
-  const dotClass = dotTone === 'run' || dotTone === 'live' ? 'run'
+  const tone = dotTone === 'run' || dotTone === 'live' ? 'run'
     : dotTone === 'ok' || dotTone === 'done' ? 'ok'
-      : dotTone === 'err' ? 'err'
-        : dotTone === 'ask' || dotTone === 'stall' || dotTone === 'warn' ? 'warn'
+      : dotTone === 'err' || dotTone === 'fail' ? 'fail'
+        : dotTone === 'ask' || dotTone === 'stall' || dotTone === 'warn' ? 'ask'
           : ''
-  const tone = dotClass === 'err' ? 'fail' : dotClass === 'warn' ? 'ask' : dotClass
-  return { model, status, dotClass, tone }
+  return { model, status, tone }
 }
-
-export function openSubagentPane(runId: string): void {
-  const state = useStore.getState()
-  const current = displayedSessionOf({
-    peekedSessionId: state.peekedSessionId,
-    peekedPath: state.peekedPath,
-    session: state.session ? { sessionId: state.session.sessionId, sessionFile: state.session.sessionFile } : null
-  })
-  useSplitView.getState().open(subagentTileRef(runId), current)
-}
-
-const SUBAGENT_STRIP_BOT = 22
-
-const isLiveRun = (run: SubagentRun): boolean => run.status === 'running' || run.status === 'starting'
 
 export function subagentDeckOrder(runs: SubagentRun[]): SubagentRun[] {
   return [...runs].sort((a, b) => b.startedAt - a.startedAt)
@@ -101,7 +84,7 @@ export function subagentDefaultFront(runs: SubagentRun[], selectedId: string | n
   if (!runs.length) return null
   if (selectedId && runs.some((run) => run.id === selectedId)) return selectedId
   const newest = (list: SubagentRun[]): SubagentRun => list.reduce((best, run) => (run.startedAt >= best.startedAt ? run : best))
-  const live = runs.filter(isLiveRun)
+  const live = runs.filter(isLiveSubagentRun)
   return newest(live.length ? live : runs).id
 }
 
@@ -115,7 +98,6 @@ function viewIdentityOf(s: ReturnType<typeof useStore.getState>): ReturnType<typ
 
 export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
   const tt = useSessionText()
-  const view = useStore(useShallow(viewIdentityOf))
   const mine = useStore(useShallow((s): SubagentRun[] => {
     if (!s.subagents.length) return NO_RUNS
     const ids = new Set([turn.id, ...turn.sourceIds])
@@ -136,7 +118,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   const refocus = useRef<DeckRefocus>(null)
   const latest = useRef<{ index: number; ids: string[] }>({ index: 0, ids: [] })
 
-  const selectedRunId = useSubagentPanel((s) => (s.owner === view.key ? s.runId : null))
+  const selectedRunId = useFocusedSubagentRun()
   const ordered = subagentDeckOrder(mine)
   const pickedValid = picked !== null && ordered.some((run) => run.id === picked)
   const frontId = pickedValid ? picked : subagentDefaultFront(ordered, selectedRunId)
@@ -203,25 +185,28 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   }, [frontId])
 
   if (!ordered.length) return null
-  const live = ordered.filter(isLiveRun).length
+  const live = ordered.filter(isLiveSubagentRun).length
   const renderRow = (run: SubagentRun, extra?: { front?: boolean; inert?: boolean }): JSX.Element => (
-    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={snapshots[run.id]} front={extra?.front} inert={extra?.inert} />
+    <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} front={extra?.front} inert={extra?.inert} />
   )
+  const liveLine = live > 0 ? (
+    <p className="v3-subagents-live" data-testid="v3-subagents-live">
+      <StatusDot kind="running" />
+      <span>{tt('subagentRunningTasks', { n: live })}</span>
+    </p>
+  ) : null
 
   if (ordered.length === 1) {
     return (
       <div className="v3-subagents" data-testid="v3-subagents" data-layout="single">
         {renderRow(ordered[0])}
+        {liveLine}
       </div>
     )
   }
 
   const failed = ordered.filter((run) => run.status === 'error').length
   const finished = ordered.length - live
-  const legend = [
-    live ? { tone: 'run', label: tt('subagentLiveCount', { n: live }) } : null,
-    failed ? { tone: 'err', label: tt('subagentFailedCount', { n: failed }) } : null
-  ].filter((item): item is { tone: string; label: string } => item !== null)
   const counts = [
     tt('subagentCount', { n: ordered.length }),
     live ? tt('subagentLiveCount', { n: live }) : null,
@@ -267,20 +252,10 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
           maxValue={ordered.length}
           data-testid="v3-subagents-progress"
         />
-        {legend.length ? (
-          <span className="v3-subagents-legend" aria-hidden="true" data-testid="v3-subagents-legend">
-            {legend.map((item) => (
-              <span key={item.tone} className="v3-subagents-legend-item">
-                <span className={`v3-dot ${item.tone}`} />
-                {item.label}
-              </span>
-            ))}
-          </span>
-        ) : null}
       </div>
       {flat ? (
         <>
-          {ordered.map((run) => renderRow(run))}
+          <div className="v3-subagents-list">{ordered.map((run) => renderRow(run))}</div>
           <Button variant="ghost" size="sm" className="v3-subagents-less" onPress={toggle} data-testid="v3-subagents-less">
             {tt('subagentShowLess')}
           </Button>
@@ -299,7 +274,6 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
             {ordered.map((run, index) => {
               const slot = deckSlot(index, current)
               if (!deckVisible(slot)) return null
-              const snapshot = snapshots[run.id]
               return (
                 <div
                   key={run.id}
@@ -309,7 +283,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
                   aria-hidden={slot < -1 || slot > 2 ? true : undefined}
                 >
                   {Math.abs(slot) <= 1 ? renderRow(run, { front: slot === 0, inert: slot !== 0 }) : null}
-                  <SubagentStrip run={run} owner={view.key} snapshot={snapshot} slot={slot} onPick={() => flip(index, 'deck')} />
+                  <SubagentStrip run={run} snapshot={snapshots[run.id]} slot={slot} onPick={() => flip(index, 'deck')} />
                 </div>
               )
             })}
@@ -337,22 +311,23 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
           </div>
         </div>
       )}
+      {liveLine}
     </div>
   )
 }
 
-function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
+function SubagentStrip({ run, snapshot, slot, onPick }: {
   run: SubagentRun
-  owner: string
   snapshot?: RunSnapshot
   slot: number
   onPick: () => void
 }): JSX.Element {
   const tt = useSessionText()
-  const { model, status, dotClass, tone } = useSubagentView(run, snapshot)
-  const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
-  const title = run.brief?.title || compactTaskPaths(subagentTitle(model.task))
-  const time = formatDuration(model.elapsedMs, { minSeconds: 1 })
+  const { model, tone } = useSubagentView(run, snapshot)
+  const row = useSubagentRow(run)
+  const selected = useSubagentPaneOpen(run.id)
+  const label = compactTaskPaths(row.label)
+  const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
   return (
     <button
       type="button"
@@ -361,43 +336,43 @@ function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
       data-run-id={run.id}
       data-depth={deckStripDepth(slot)}
       data-edge={slot < 0 ? 'top' : 'bottom'}
-      data-state={model.outcomeKey}
+      data-state={row.state}
       data-tone={tone || undefined}
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
       inert={slot === 0}
       tabIndex={-1}
-      aria-label={`${title} · ${status} · ${time} · ${tt('subagentDeckJump')}`}
+      aria-label={`${label} · ${time} · ${tt('subagentDeckJump')}`}
       title={`${model.task}\n${tt('subagentDeckJump')}`}
       onClick={onPick}
     >
       <span className="v3-sa-strip-mark" aria-hidden="true">
         <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_STRIP_BOT} />
-        <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
       </span>
-      <span className="v3-sa-strip-task" data-testid="v3-subagent-task">{title}</span>
-      <span className="v3-sa-strip-status" data-testid="v3-subagent-status">{status}</span>
+      <SubagentStateIcon state={row.state} />
+      <span className="v3-sa-strip-task" data-testid="v3-subagent-task">{label}</span>
       <span className="v3-sa-strip-time" data-testid="v3-subagent-time">{time}</span>
     </button>
   )
 }
 
-function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot; front?: boolean; inert?: boolean }): JSX.Element {
+function SubagentRow({ run, snapshot, front, inert }: { run: SubagentRun; snapshot?: RunSnapshot; front?: boolean; inert?: boolean }): JSX.Element {
   const tt = useSessionText()
-  const t = useT()
-  const { model, status, dotClass, tone } = useSubagentView(run, snapshot)
-  const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
-  const tokens = subagentTokens([run])
+  const { model, tone } = useSubagentView(run, snapshot)
+  const row = useSubagentRow(run)
+  const selected = useSubagentPaneOpen(run.id)
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
-  const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
-  const context = contextUsageSummary(null, { contextUsage: run.contextUsage })
+  const label = compactTaskPaths(row.label)
+  const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
+  const meta = row.summaryLine ?? time
 
   return (
     <div
       className="v3-subagent"
       data-testid="v3-subagent-line"
-      data-state={model.outcomeKey}
+      data-state={row.state}
+      data-tone={tone || undefined}
       data-terminal={model.terminal ? '1' : '0'}
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
@@ -407,34 +382,18 @@ function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun;
       <button
         className="v3-subagent-toggle"
         type="button"
-        aria-haspopup="dialog"
-        aria-expanded={selected}
-        title={`${model.task}\n${tt('subagentDetailHint')}`}
-        onClick={(event) => useSubagentPanel.getState().toggle(run.id, owner, event.currentTarget)}
+        aria-pressed={selected}
+        title={`${model.task}\n${tt('subagentOpenPane')}`}
+        onClick={() => openSubagentPane(run.id)}
         data-testid="v3-subagent-toggle"
       >
-        <span className="v3-subagent-glyph" data-tone={tone}>
-          <SubagentBot run={run} snapshot={snapshot} model={model} />
-          <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
+        <span className="v3-subagent-glyph" aria-hidden="true">
+          <SubagentBot run={run} snapshot={snapshot} model={model} size={SUBAGENT_CARD_BOT} />
         </span>
-        <span className="v3-subagent-main">
-          <span className="v3-subagent-task" data-testid="v3-subagent-task">{run.brief?.title || compactTaskPaths(subagentTitle(model.task))}</span>
-          <span className="v3-subagent-meta">
-            {modelName ? (
-              <span className="v3-subagent-model" data-testid="v3-subagent-model" title={run.model}>{modelName}</span>
-            ) : (
-              <span className="v3-subagent-kind">{tt('subagentKind')}</span>
-            )}
-            {thinking ? <ThinkingBadge level={thinking} className="v3-subagent-think" data-testid="v3-subagent-thinking" /> : null}
-            {model.code ? <span className="v3-subagent-code" data-testid="v3-subagent-code">{model.code}</span> : null}
-            <span className="v3-subagent-status" data-testid="v3-subagent-status">{status}</span>
-            <span className="v3-subagent-time" data-testid="v3-subagent-time">{formatDuration(model.elapsedMs, { minSeconds: 1 })}</span>
-            {tokens > 0 ? (
-              <span className="v3-subagent-tokens" data-testid="v3-subagent-tokens">{`${formatTokens(tokens)} ${t('tok.unit')}`}</span>
-            ) : null}
-            {context.known ? <ContextGauge usage={context} className="v3-subagent-ctx" data-testid="v3-subagent-context" /> : null}
-          </span>
-        </span>
+        <SubagentStateIcon state={row.state} />
+        <span className="v3-subagent-task" data-testid="v3-subagent-task">{label}</span>
+        {modelName ? <span className="v3-subagent-model" data-testid="v3-subagent-model" title={run.model}>{modelName}</span> : null}
+        {meta ? <span className="v3-subagent-time" data-testid="v3-subagent-time">{meta}</span> : null}
         <Icon name="chevron-right" size={13} className="v3-chev" />
       </button>
     </div>

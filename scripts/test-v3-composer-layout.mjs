@@ -102,7 +102,6 @@ const STUBS = {
   'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
   'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
   'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
-  'src/renderer/src/features/composer/ComposerUsage.tsx': 'export function ComposerUsage(){ return null }',
   'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
   'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
   'src/renderer/src/features/composer/ProjectPicker.tsx': 'export function ProjectPicker(){ return null }',
@@ -375,7 +374,6 @@ async function main() {
       'src/renderer/src/features/composer/Composer.tsx',
       'src/renderer/src/features/composer/composer.css',
       'src/renderer/src/features/composer/VoiceButton.tsx',
-      'src/renderer/src/features/composer/ComposerUsage.tsx',
       'src/renderer/src/features/composer/ComposerBorder.tsx',
       'src/renderer/src/patterns/ModelThinkingPicker.tsx',
       'src/renderer/src/patterns/model-thinking-picker.css'

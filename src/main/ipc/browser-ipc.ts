@@ -1,10 +1,11 @@
 import type { BrowserController } from '../browser'
 import type { IpcRegistrar } from './registrar'
+import type { PreviewSiteGate } from '../preview-site-gate'
 
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const NOT_READY = { ok: false, error: '浏览器未初始化' }
 
-export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserController | null): void {
+export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserController | null, siteGate?: PreviewSiteGate): void {
   const { rawHandle } = ipc
   rawHandle('yan:browser:getState', () => browserOf()?.getState() ?? CLOSED_STATE)
   rawHandle('yan:browser:open', async (_e, url?: string) => browserOf()?.open(url) ?? CLOSED_STATE)
@@ -17,6 +18,9 @@ export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserCo
   rawHandle('yan:browser:closeTab', async (_e, id?: string) => browserOf()?.closeTab(id))
   rawHandle('yan:browser:close', async () => browserOf()?.close())
   rawHandle('yan:browser:navigate', async (_e, url: string) => browserOf()?.navigate(url) ?? NOT_READY)
+  rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => ({
+    decision: siteGate ? await siteGate.check(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
+  }))
   rawHandle('yan:browser:back', () => browserOf()?.back() ?? NOT_READY)
   rawHandle('yan:browser:forward', () => browserOf()?.forward() ?? NOT_READY)
   rawHandle('yan:browser:reload', () => browserOf()?.reload() ?? NOT_READY)

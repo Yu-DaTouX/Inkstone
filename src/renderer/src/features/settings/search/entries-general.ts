@@ -12,7 +12,6 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'appearance-font-code-custom', section: 'appearance', zh: '代码字体 · 自定义', en: 'Code font · Custom', keywords: ['自定义等宽字体', 'custom mono'], more: true },
   { id: 'appearance-reduce-motion', section: 'appearance', zh: '减少动效', en: 'Reduce motion', keywords: ['动画', '过渡', '动效', 'animation', 'motion'], more: true },
   { id: 'appearance-ascii-background', section: 'appearance', zh: '动态背景', en: 'Dynamic background', keywords: ['字符背景', 'ASCII', '动画', 'background'], more: true },
-  { id: 'appearance-usage-under-input', section: 'appearance', zh: '显示会话统计与用量', en: 'Show session stats and usage', keywords: ['用量', 'Token', '输入框下', '状态栏', 'usage', 'stats'], more: true },
   { id: 'appearance-smooth-text', section: 'appearance', zh: '柔和字体渲染', en: 'Smooth text rendering', keywords: ['抗锯齿', '灰度', '彩边', 'ClearType', 'antialiasing', 'LCD', 'blurry'], more: true },
 
   { id: 'session-compact-now', section: 'session', zh: '立即压缩', en: 'Compact now', keywords: ['上下文', '压缩', '已用', 'context', 'compact', 'token'] },
