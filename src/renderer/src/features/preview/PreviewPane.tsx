@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw } from 'lucide-react'
+import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
@@ -7,6 +7,8 @@ import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/of
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
+import { previewTabLabel } from '../workbench/preview-state'
+import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
@@ -39,6 +41,7 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
   const [diskStat, setDiskStat] = useState<{ key: string; abs: string; mtimeMs?: number; size?: number } | null>(null)
   const [reload, setReload] = useState(0)
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
+  const previewTabs = usePreviewTabs(owner.key)
 
   const scopeKey = previewScopeKey(owner)
   const externalPath = path ?? null
@@ -155,8 +158,70 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
     if (activeAbs) void navigator.clipboard.writeText(activeAbs)
   }, [activeAbs])
 
+  const crumbs = useMemo(() => {
+    if (!activeAbs) return []
+    const cwd = owner.cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+    const abs = activeAbs.replace(/\\/g, '/')
+    if (!cwd || !abs.startsWith(`${cwd}/`)) return []
+    return abs.slice(cwd.length + 1).split('/').filter(Boolean)
+  }, [activeAbs, owner.cwd])
+
+  const selectTab = useCallback(
+    (tab: string): void => {
+      usePreviewBindings.getState().select(owner.key, tab)
+    },
+    [owner.key]
+  )
+
+  const closeTab = useCallback(
+    (tab: string): void => {
+      usePreviewBindings.getState().close(owner.key, tab)
+    },
+    [owner.key]
+  )
+
+  const closeAllTabs = useCallback((): void => {
+    usePreviewBindings.getState().closeAll(owner.key)
+  }, [owner.key])
+
   return (
     <section className="v3-preview" data-testid="v3-preview" aria-label={text.title}>
+      {previewTabs && previewTabs.tabs.length > 1 ? (
+        <div className="v3-preview-tabs" role="tablist" aria-label={text.tabsLabel} data-testid="v3-preview-tabs">
+          <div className="v3-preview-tabstrip">
+            {previewTabs.tabs.map((tab) => (
+              <span
+                key={tab}
+                className={`v3-preview-tab${tab === previewTabs.active ? ' is-active' : ''}`}
+                data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === previewTabs.active}
+                  className="v3-preview-tab-name"
+                  title={tab}
+                  onClick={() => selectTab(tab)}
+                >
+                  {previewTabLabel(tab)}
+                </button>
+                <button
+                  type="button"
+                  className="v3-preview-tab-close"
+                  aria-label={`${text.closeTab}: ${previewTabLabel(tab)}`}
+                  title={text.closeTab}
+                  onClick={() => closeTab(tab)}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <IconButton aria-label={text.closeAllTabs} title={text.closeAllTabs} onPress={closeAllTabs}>
+            <X size={13} />
+          </IconButton>
+        </div>
+      ) : null}
       <PaneHeader
         size="sm"
         title={<span title={activeAbs}>{name || text.title}</span>}
@@ -181,6 +246,37 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
           </>
         }
       />
+      {crumbs.length > 1 ? (
+        <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
+          {crumbs.map((segment, index) => {
+            const isLast = index === crumbs.length - 1
+            const dir = crumbs.slice(0, index + 1).join('/')
+            return (
+              <span key={dir} className="v3-preview-crumb-item">
+                {index ? (
+                  <span className="v3-preview-crumb-sep" aria-hidden>
+                    /
+                  </span>
+                ) : null}
+                {isLast ? (
+                  <span className="v3-preview-crumb" title={segment}>
+                    {segment}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="v3-preview-crumb"
+                    title={dir}
+                    onClick={() => void window.yan.revealPath(`${owner.cwd.replace(/[\\/]+$/, '')}/${dir}`)}
+                  >
+                    {segment}
+                  </button>
+                )}
+              </span>
+            )
+          })}
+        </nav>
+      ) : null}
       <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} onOpenArtifact={openArtifact} />
     </section>
   )

@@ -21,6 +21,10 @@ export interface PreviewText {
   lineRange: string
   artifacts: string
   notOwner: string
+  tabsLabel: string
+  closeTab: string
+  closeAllTabs: string
+  crumbsLabel: string
 }
 
 const ZH: PreviewText = {
@@ -43,7 +47,11 @@ const ZH: PreviewText = {
   retry: '重试',
   lineRange: '第 {start}–{end} 行',
   artifacts: '这条会话的成果',
-  notOwner: '该会话不是当前活动会话；激活后即可查看它的成果。'
+  notOwner: '该会话不是当前活动会话；激活后即可查看它的成果。',
+  tabsLabel: '打开的文件',
+  closeTab: '关闭',
+  closeAllTabs: '关闭全部',
+  crumbsLabel: '文件路径'
 }
 
 const EN: PreviewText = {
@@ -66,7 +74,11 @@ const EN: PreviewText = {
   retry: 'Retry',
   lineRange: 'Lines {start}–{end}',
   artifacts: 'Artifacts from this chat',
-  notOwner: 'This chat is not the active one; activate it to see its artifacts.'
+  notOwner: 'This chat is not the active one; activate it to see its artifacts.',
+  tabsLabel: 'Open files',
+  closeTab: 'Close',
+  closeAllTabs: 'Close all',
+  crumbsLabel: 'File path'
 }
 
 export function previewText(lang: Lang): PreviewText {
