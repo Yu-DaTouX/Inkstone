@@ -4,7 +4,7 @@ import { parsePersistedDocument } from '../persisted-document'
 import { writeFileDurable } from '../write-file-durable'
 import { YAN_DIR } from '../paths'
 
-export type CodeKind = 'session' | 'scheduled' | 'review'
+export type CodeKind = 'session' | 'scheduled'
 
 export interface SessionCodeEntry {
   scopeId: string
@@ -24,7 +24,7 @@ export function sessionCodesPath(root: string = YAN_DIR): string {
   return join(root, SESSION_CODES_FILE)
 }
 
-const CODE_KINDS: ReadonlySet<string> = new Set(['session', 'scheduled', 'review'])
+const CODE_KINDS: ReadonlySet<string> = new Set(['session', 'scheduled'])
 
 function sanitizeEntry(raw: unknown): SessionCodeEntry | null {
   if (!raw || typeof raw !== 'object') return null
@@ -55,7 +55,6 @@ export function sanitizeSessionCodes(raw: unknown): SessionCodeDocument {
 
 export function formatRunCode(kind: CodeKind, n: number): string {
   if (kind === 'scheduled') return `T${String(n).padStart(2, '0')}`
-  if (kind === 'review') return `R${String(n).padStart(2, '0')}`
   return `S${n}`
 }
 

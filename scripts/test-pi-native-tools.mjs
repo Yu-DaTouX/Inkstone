@@ -162,8 +162,8 @@ try {
     if (!nativeSearch) {
       const recorded = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === 'native-code')?.message.nestedCalls
       assert(recorded?.calls.some(call => call.name === toolName && call.status === (guardProbe ? 'error' : 'ok')))
-      const { normalizeHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-normalize.mjs')))
-      const history = normalizeHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
+      const { projectHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-projector.mjs')))
+      const history = projectHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
       assert(history.some(message => message.toolCalls?.some(call => call.name === toolName && call.parentToolCallId === 'native-code')))
       if (localTools) assert(entries.some(entry => entry.customType === 'codemode-store'))
     }
@@ -172,8 +172,8 @@ try {
       assert(end?.result?.content?.some(block => block.type === 'image' && block.mimeType === 'image/png' && block.data === PNG_1PX), 'live codemode result carries the image block')
       const stored = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolCallId === 'native-code')?.message
       assert(stored?.content?.some(block => block.type === 'image' && block.data === PNG_1PX), 'history keeps the codemode image block')
-      const { normalizeHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-normalize.mjs')))
-      const history = normalizeHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
+      const { projectHistory } = await import(pathToFileURL(resolve('out/test/pi-compat-projector.mjs')))
+      const history = projectHistory(entries.filter(entry => entry.type === 'message').map(entry => entry.message))
       assert(history.some(message => message.toolCalls?.some(call => call.id === 'native-code' && call.images?.length === 1)), 'normalized history attaches the image to the codemode call')
       if (controller) {
         const live = pushes.filter(event => event.ch === 'tool' && event.payload.call.id === 'native-code').at(-1)

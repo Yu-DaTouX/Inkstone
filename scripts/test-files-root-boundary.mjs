@@ -4,9 +4,9 @@ import { win32, posix } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { transform } from 'esbuild'
 import { sliceDeclaration } from './lib/source-slice.mjs'
-const source = await readFile('src/main/files.ts', 'utf8')
-const snippet = sliceDeclaration(source, 'function safeJoin(')
-const { code } = await transform(snippet + '\nglobalThis.safeJoin=safeJoin', { loader: 'ts' })
+const source = await readFile('src/main/file-path-gate.ts', 'utf8')
+const snippet = sliceDeclaration(source, 'export function lexicalJoin(').replace(/^export /, '')
+const { code } = await transform(snippet + '\nglobalThis.safeJoin=lexicalJoin', { loader: 'ts' })
 for (const [path, root, normal] of [[win32, 'C:\\', 'C:\\project'], [posix, '/', '/project']]) {
  const context = { resolve: path.resolve, join: path.join, sep: path.sep }
  runInNewContext(code, context)

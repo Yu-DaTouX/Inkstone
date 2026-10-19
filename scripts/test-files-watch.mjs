@@ -49,6 +49,25 @@ export async function runFilesWatchTests(ok, { FilesWatcher }) {
     await new Promise((resolve) => setTimeout(resolve, 500))
     ok(shared.length === 0, '释放后不再收到通知')
 
+    const raced = []
+    const older = watcher.set('w7', root, ['src'], () => raced.push('old'))
+    const newer = watcher.set('w7', root, [''], () => raced.push('new'))
+    const [olderResult, newerResult] = await Promise.all([older, newer])
+    ok(olderResult.superseded === true && newerResult.dirs.join() === '', '目录监听：旧的订阅被新订阅取代，不覆盖结果')
+    raced.length = 0
+    await writeFile(join(root, 'src', 'raced.txt'), 'x')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    ok(!raced.includes('old'), '目录监听：被取代的订阅不再收到通知')
+    watcher.release('w7')
+
+    const released = []
+    const pending = watcher.set('w8', root, ['src'], () => released.push('w8'))
+    watcher.release('w8')
+    const pendingResult = await pending
+    await writeFile(join(root, 'src', 'released.txt'), 'x')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    ok(pendingResult.superseded === true && released.length === 0, '目录监听：释放在途订阅后不再挂上监听')
+
     const many = []
     for (let i = 0; i < 260; i += 1) {
       const dir = join(root, `d${String(i).padStart(3, '0')}`)

@@ -185,6 +185,7 @@ const GROUP_USAGE = {
   tasks: `yan tasks apply --request-file task-update.json
 
 维护右栏的任务清单（用户靠它看进度）。任务有 3 个以上独立步骤、会派子 Agent、或用户要计划时，动手前先建；一两步的事直接做。
+会话里有 todos 工具时优先用工具，这个命令是兼容入口。
 不想写文件时：yan tasks apply --request-file - <<'EOF' ... EOF
 建的时候一次写全，之后只在完成一项或计划变化时更新，不要每做一步就更新一次。
 
@@ -245,7 +246,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   question: `yan question <动作> [选项]
 
 动作：
-  ask     在砚的当前会话里向用户提出一个问题；这是宿主 UI 请求，不是模型工具。
+  ask     在砚的当前会话里向用户提出一个问题；会话里有 question 工具时优先用工具，这个命令是兼容入口。
           yan question ask --request-file question.json
           question.json: {"question":"…","options":["选项 A","选项 B"],"timeout":180000}
           options 为空或省略时显示文本输入；否则最多 3 个，面板另有一行「或自行撰写回复」直接回填。

@@ -44,6 +44,7 @@ import { YAN_DIR } from './paths'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { resolvesToPrivateAddress } from './browser/network-policy'
+import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
 import { decideRequestBoundary } from './browser/network-boundary'
 
 type Push = (msg: MainPush) => void
@@ -56,7 +57,9 @@ function safeUrl(raw: unknown): string | null {
   if (value === 'about:blank') return value
   try {
     const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    const origin = normalizeSiteOrigin(url.toString())
+    return origin && !isForbiddenOrigin(origin) ? url.toString() : null
   } catch {
     return null
   }

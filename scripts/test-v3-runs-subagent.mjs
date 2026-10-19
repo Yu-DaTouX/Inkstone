@@ -154,12 +154,10 @@ async function run() {
       await kinds.load()
       await kinds.backfill([
         { scopeId: 'sess', kind: 'session', createdAt: 1000 },
-        { scopeId: 'task', kind: 'scheduled', createdAt: 1000 },
-        { scopeId: 'review', kind: 'review', createdAt: 1000 }
+        { scopeId: 'task', kind: 'scheduled', createdAt: 1000 }
       ])
       assert.equal(kinds.codeFor('sess'), 'S1')
       assert.equal(kinds.codeFor('task'), 'T01')
-      assert.equal(kinds.codeFor('review'), 'R01')
     }
 
     {

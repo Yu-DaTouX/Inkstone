@@ -35,3 +35,15 @@ export function sanitizeFontSize(value: unknown, min: number, max: number, fallb
   const v = Math.round(Math.min(max, Math.max(min, n)))
   return v === fallback ? undefined : v
 }
+
+export type UiDensity = 'compact' | 'comfortable'
+
+export const UI_DENSITIES: readonly UiDensity[] = ['compact', 'comfortable']
+
+const LEGACY_COMFORTABLE_FONT_SIZE = 14
+
+export function resolveUiDensity(density: unknown, legacyFontSize?: unknown): UiDensity {
+  if (density === 'comfortable') return 'comfortable'
+  const size = typeof legacyFontSize === 'number' ? legacyFontSize : Number(legacyFontSize)
+  return Number.isFinite(size) && size >= LEGACY_COMFORTABLE_FONT_SIZE ? 'comfortable' : 'compact'
+}

@@ -1,4 +1,4 @@
-export type RunKind = 'session' | 'subagent' | 'scheduled' | 'review'
+export type RunKind = 'session' | 'subagent' | 'scheduled'
 export type StallCause = 'no-output' | 'tool-silent' | 'retry' | 'rate-limit' | 'loop'
 export type FailCause = 'model-error' | 'pi-exit' | 'tool-fatal' | 'host'
 export type RunActivity = 'waiting-model' | 'thinking' | 'streaming' | 'tool' | 'compacting' | 'subagent'

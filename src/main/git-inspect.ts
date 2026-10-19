@@ -1,8 +1,33 @@
-import { lstat, open, realpath, stat } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { lstat, open, readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
-import { gitRun, resolveRepo } from './git-service'
+import { gitRun, killProcessTree, resolveRepo } from './git-service'
+import { isWithin } from './file-path-gate'
+import { GIT_READ_CONFIG, createGitDeadline, sanitizedGitEnv } from './git-run-policy'
+import type { GitDeadline } from './git-run-policy'
+import {
+  EMPTY_TREE,
+  IMAGE_SIDE_BYTES,
+  PATCH_PREFILL_FILES,
+  PATCH_SINGLE_FILE_BYTES,
+  allocatePatches,
+  baseCandidates,
+  imageMimeOf,
+  isBinaryPatch,
+  normalizeChangesScope,
+  parseNameStatus,
+  splitPatch
+} from './git-changes-model'
 import { parseStatusV2 } from '../shared/git'
-import type { GitChangeEntry, GitChangesResult, GitDiffResult } from '../shared/git'
+import type {
+  GitChangeEntry,
+  GitChangesOptions,
+  GitChangesResult,
+  GitChangesScope,
+  GitDiffResult,
+  GitImageSide,
+  GitStatusEntry
+} from '../shared/git'
 
 export type AuthorizeReadCwd = (
   cwd: string
@@ -13,6 +38,7 @@ const MAX_DIFF_BYTES = 1_500_000
 const MAX_UNTRACKED_BYTES = 1_000_000
 const BINARY_SNIFF_BYTES = 8000
 const DIFF_TIMEOUT_MS = 15_000
+const QUERY_DEADLINE_MS = 20_000
 const MAX_UNTRACKED_LINE_COUNTS = 200
 
 const READ_ENV: Record<string, string> = {
@@ -24,14 +50,14 @@ const READ_GLOBALS = ['--no-optional-locks', '--no-pager', '--literal-pathspecs'
 
 const DIFF_FLAGS = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'] as const
 
-async function execSafetyFlags(root: string): Promise<string[]> {
-  const flags = ['-c', 'core.fsmonitor=false']
+function readOpts(deadline?: GitDeadline, timeout = DIFF_TIMEOUT_MS): { allowFailure: true; timeout: number; env: Record<string, string>; deadline?: GitDeadline } {
+  return { allowFailure: true, timeout, env: READ_ENV, ...(deadline ? { deadline } : {}) }
+}
+
+async function execSafetyFlags(root: string, deadline?: GitDeadline): Promise<string[]> {
+  const flags = [...GIT_READ_CONFIG]
   try {
-    const res = await gitRun(root, [...READ_GLOBALS, 'config', '--name-only', '--list'], {
-      allowFailure: true,
-      timeout: DIFF_TIMEOUT_MS,
-      env: READ_ENV
-    })
+    const res = await gitRun(root, [...READ_GLOBALS, 'config', '--name-only', '--list'], readOpts(deadline))
     const names = new Set<string>()
     for (const rawLine of res.stdout.split('\n')) {
       const m = /^filter\.(.+)\.(?:clean|process|smudge|required)$/.exec(rawLine.trim())
@@ -56,17 +82,6 @@ async function execSafetyFlags(root: string): Promise<string[]> {
 
 function normSlashes(value: string): string {
   return value.replace(/\\/g, '/')
-}
-
-function pathKey(value: string): string {
-  const normalized = normSlashes(value).replace(/\/+$/, '')
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const r = pathKey(root)
-  const c = pathKey(candidate)
-  return c === r || c.startsWith(r + '/')
 }
 
 async function isRealWithinScope(scopeAbs: string, abs: string): Promise<boolean> {
@@ -156,13 +171,13 @@ function failDiff(rawPath: unknown, error: string): GitDiffResult {
   }
 }
 
-async function readStatusReadOnly(root: string, safety: string[]): Promise<ReturnType<typeof parseStatusV2>> {
+async function readStatusReadOnly(root: string, safety: string[], deadline?: GitDeadline): Promise<ReturnType<typeof parseStatusV2>> {
   const res = await gitRun(
     root,
     [...READ_GLOBALS, ...safety, 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
-    { allowFailure: true, timeout: DIFF_TIMEOUT_MS, env: READ_ENV }
+    readOpts(deadline)
   )
-  if (!res.ok && !res.stdout) throw new Error(res.error ?? 'git status 失败')
+  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? 'git status 失败'), { code: res.code })
   return parseStatusV2(res.stdout)
 }
 
@@ -194,31 +209,159 @@ function entryToScope(entry: ReturnType<typeof parseStatusV2>['entries'][number]
   }
 }
 
-export async function readChanges(cwd: string, authorize: AuthorizeReadCwd): Promise<GitChangesResult> {
+interface ResolvedRange {
+  kind: 'branch' | 'commit'
+  base: string
+  target: string | null
+  baseRef: string | null
+}
+
+async function revParseCommit(root: string, ref: string, deadline: GitDeadline): Promise<string | null> {
+  const res = await gitRun(root, [...READ_GLOBALS, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], readOpts(deadline, 8000))
+  const sha = res.ok ? res.stdout.trim() : ''
+  return /^[0-9a-f]{40,64}$/.test(sha) ? sha : null
+}
+
+async function resolveRange(
+  root: string,
+  scope: Exclude<GitChangesScope, { kind: 'working' }>,
+  deadline: GitDeadline
+): Promise<ResolvedRange | { error: string }> {
+  if (scope.kind === 'commit') {
+    const target = await revParseCommit(root, scope.sha, deadline)
+    if (!target) return { error: `找不到提交：${scope.sha}` }
+    const parent = await revParseCommit(root, `${target}^1`, deadline)
+    return { kind: 'commit', base: parent ?? EMPTY_TREE, target, baseRef: null }
+  }
+  const head = await revParseCommit(root, 'HEAD', deadline)
+  if (!head) return { error: '当前分支还没有提交' }
+  const originHead = await gitRun(root, [...READ_GLOBALS, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], readOpts(deadline, 8000))
+  for (const candidate of baseCandidates(scope.base, originHead.ok ? originHead.stdout.trim() || null : null)) {
+    const sha = await revParseCommit(root, candidate, deadline)
+    if (!sha) continue
+    const mergeBase = await gitRun(root, [...READ_GLOBALS, 'merge-base', head, sha], readOpts(deadline))
+    const base = mergeBase.ok ? mergeBase.stdout.trim() : ''
+    if (/^[0-9a-f]{40,64}$/.test(base)) return { kind: 'branch', base, target: null, baseRef: candidate }
+  }
+  return { error: scope.base ? `找不到基线分支：${scope.base}` : '找不到可对比的基线分支' }
+}
+
+function rangeArgs(range: ResolvedRange): string[] {
+  return range.target ? [range.base, range.target] : [range.base]
+}
+
+function scopePathspec(scope: InspectScope): string[] {
+  return scope.scopeRel === '.' ? [] : ['--', scope.scopeRel]
+}
+
+async function readRangeEntries(
+  scope: InspectScope,
+  safety: string[],
+  range: ResolvedRange,
+  deadline: GitDeadline
+): Promise<GitStatusEntry[]> {
+  const res = await gitRun(
+    scope.root,
+    [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--name-status', '-z', ...rangeArgs(range), ...scopePathspec(scope)],
+    readOpts(deadline)
+  )
+  if (!res.ok && !res.stdout) throw Object.assign(new Error(res.error ?? 'git diff 失败'), { code: res.code })
+  const entries: GitStatusEntry[] = parseNameStatus(res.stdout).map((item) => ({
+    x: item.status,
+    y: '.',
+    path: item.path,
+    untracked: false,
+    ignored: false,
+    unmerged: false
+  }))
+  if (range.kind === 'branch') {
+    const status = await readStatusReadOnly(scope.root, safety, deadline)
+    const known = new Set(entries.map((entry) => entry.path))
+    for (const entry of status.entries) {
+      if (entry.untracked && !known.has(entry.path)) entries.push(entry)
+    }
+  }
+  return entries
+}
+
+function mapEntries(entries: readonly GitStatusEntry[], scope: InspectScope): { files: GitChangeEntry[]; truncated: boolean } {
+  const files: GitChangeEntry[] = []
+  let truncated = false
+  for (const entry of entries) {
+    const mapped = entryToScope(entry, scope)
+    if (!mapped) continue
+    if (files.length >= MAX_CHANGES_FILES) {
+      truncated = true
+      break
+    }
+    files.push(mapped)
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true, sensitivity: 'base' }))
+  return { files, truncated }
+}
+
+function patchHeader(rootRel: string): string {
+  return `diff --git ${gitQuotePath(`a/${rootRel}`)} ${gitQuotePath(`b/${rootRel}`)}`
+}
+
+async function prefillPatches(
+  scope: InspectScope,
+  safety: string[],
+  files: GitChangeEntry[],
+  baseArgs: string[],
+  deadline: GitDeadline
+): Promise<Pick<GitChangesResult, 'patches' | 'patchBudget'>> {
+  const byHeader = new Map<string, string>()
+  for (const file of files) {
+    if (file.untracked) continue
+    byHeader.set(patchHeader(normSlashes(relative(scope.root, resolve(scope.scopeAbs, file.path)))), file.path)
+  }
+  const available = new Map<string, string>()
+  if (byHeader.size > 0) {
+    const res = await gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, ...baseArgs, ...scopePathspec(scope)], readOpts(deadline))
+    if (res.ok) {
+      for (const chunk of splitPatch(res.stdout)) {
+        const path = byHeader.get(chunk.slice(0, chunk.indexOf('\n')))
+        if (path !== undefined) available.set(path, (available.get(path) ?? '') + chunk)
+      }
+    }
+  }
+  let untrackedRead = 0
+  for (const file of files) {
+    if (!file.untracked || untrackedRead >= PATCH_PREFILL_FILES || deadline.expired()) continue
+    untrackedRead += 1
+    const abs = resolve(scope.scopeAbs, file.path)
+    if (!(await isRealWithinScope(scope.scopeAbs, abs))) continue
+    const content = await readUntrackedContent(abs)
+    if (!content.ok || content.truncated) continue
+    available.set(file.path, buildUntrackedPatch(normSlashes(relative(scope.root, abs)), content).patch)
+  }
+  const allocated = allocatePatches(files.map((file) => file.path), available)
+  return {
+    patches: allocated.patches,
+    patchBudget: { inlined: allocated.inlined, bytes: allocated.bytes, deferred: allocated.deferred }
+  }
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' ? code : undefined
+}
+
+export async function readChanges(cwd: string, authorize: AuthorizeReadCwd, options: GitChangesOptions = {}): Promise<GitChangesResult> {
+  const requestedScope = normalizeChangesScope(options.scope)
+  if (!requestedScope) return failChanges('对比范围不合法')
   const scoped = await resolveInspectScope(cwd, authorize)
   if (scoped.status === 'denied') return failChanges(scoped.error)
   if (scoped.status === 'notrepo') {
     return { ok: true, root: null, scope: '.', branch: null, detached: false, unborn: false, head: null, files: [], truncated: false }
   }
   const scope = scoped.scope
+  const deadline = createGitDeadline(QUERY_DEADLINE_MS)
   try {
-    const safety = await execSafetyFlags(scope.root)
-    const status = await readStatusReadOnly(scope.root, safety)
-    const files: GitChangeEntry[] = []
-    let truncated = false
-    for (const entry of status.entries) {
-      const mapped = entryToScope(entry, scope)
-      if (!mapped) continue
-      if (files.length >= MAX_CHANGES_FILES) {
-        truncated = true
-        break
-      }
-      files.push(mapped)
-    }
-    files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true, sensitivity: 'base' }))
-    const totals = await readLineTotals(scope, safety, files, status.unborn).catch(() => null)
-    return {
-      ...(totals ?? {}),
+    const safety = await execSafetyFlags(scope.root, deadline)
+    const status = await readStatusReadOnly(scope.root, safety, deadline)
+    const header = {
       ok: true,
       root: scope.root,
       scope: scope.scopeRel,
@@ -226,11 +369,41 @@ export async function readChanges(cwd: string, authorize: AuthorizeReadCwd): Pro
       detached: status.detached,
       unborn: status.unborn,
       head: status.head,
+      scopeKind: requestedScope.kind
+    }
+    if (requestedScope.kind === 'working') {
+      const { files, truncated } = mapEntries(status.entries, scope)
+      const baseArgs = status.unborn ? ['--cached'] : ['HEAD']
+      const totals = await readLineTotals(scope, safety, files, baseArgs, deadline).catch(() => null)
+      const patches = options.patches ? await prefillPatches(scope, safety, files, baseArgs, deadline).catch(() => ({})) : {}
+      return { ...(totals ?? {}), ...header, files, truncated, ...patches }
+    }
+    const range = await resolveRange(scope.root, requestedScope, deadline)
+    if ('error' in range) return { ...failChanges(range.error), root: scope.root, scope: scope.scopeRel, scopeKind: requestedScope.kind }
+    const entries = await readRangeEntries(scope, safety, range, deadline)
+    const { files, truncated } = mapEntries(entries, scope)
+    const baseArgs = rangeArgs(range)
+    const totals = await readLineTotals(scope, safety, files, baseArgs, deadline).catch(() => null)
+    const patches = options.patches ? await prefillPatches(scope, safety, files, baseArgs, deadline).catch(() => ({})) : {}
+    return {
+      ...(totals ?? {}),
+      ...header,
       files,
-      truncated
+      truncated,
+      baseRef: range.baseRef,
+      baseSha: range.base === EMPTY_TREE ? null : range.base,
+      targetSha: range.target,
+      ...patches
     }
   } catch (error) {
-    return { ...failChanges(error instanceof Error ? error.message : String(error)), root: scope.root, scope: scope.scopeRel }
+    const errorCode = errorCodeOf(error)
+    return {
+      ...failChanges(error instanceof Error ? error.message : String(error)),
+      root: scope.root,
+      scope: scope.scopeRel,
+      scopeKind: requestedScope.kind,
+      ...(errorCode ? { errorCode } : {})
+    }
   }
 }
 
@@ -255,14 +428,13 @@ async function readLineTotals(
   scope: InspectScope,
   safety: string[],
   files: GitChangeEntry[],
-  unborn: boolean
+  baseArgs: string[],
+  deadline: GitDeadline
 ): Promise<{ added: number; removed: number }> {
-  const base = unborn ? ['--cached'] : ['HEAD']
-  const pathspec = scope.scopeRel === '.' ? [] : ['--', scope.scopeRel]
   const res = await gitRun(
     scope.root,
-    [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--numstat', '-z', ...base, ...pathspec],
-    { allowFailure: true, timeout: DIFF_TIMEOUT_MS, env: READ_ENV }
+    [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--numstat', '-z', ...baseArgs, ...scopePathspec(scope)],
+    readOpts(deadline)
   )
   const stats = parseNumstat(res.stdout)
   let added = 0
@@ -385,62 +557,45 @@ function capBytes(text: string, maxBytes: number): { text: string; truncated: bo
   return { text: buf.subarray(0, cut).toString('utf8'), truncated: true }
 }
 
-export async function readFileDiff(cwd: string, rawPath: unknown, authorize: AuthorizeReadCwd): Promise<GitDiffResult> {
-  const scoped = await resolveInspectScope(cwd, authorize)
-  if (scoped.status === 'denied') return failDiff(rawPath, scoped.error)
-  if (scoped.status === 'notrepo') return failDiff(rawPath, '这个目录不在 Git 仓库里')
-  const scope = scoped.scope
-
-  const rel = normalizeRelPath(rawPath)
-  if (!rel) return failDiff(rawPath, '路径不合法')
-  const abs = resolve(scope.scopeAbs, rel)
-  if (!isWithin(scope.scopeAbs, abs)) return failDiff(rawPath, '路径超出授权范围')
-  const rootRel = normSlashes(relative(scope.root, abs))
-  if (!rootRel || rootRel.startsWith('..') || isAbsolute(rootRel)) return failDiff(rawPath, '路径超出仓库范围')
-
-  const safety = await execSafetyFlags(scope.root)
-
-  if (!(await isRealWithinScope(scope.scopeAbs, abs))) return failDiff(rawPath, '路径超出授权范围')
-  try {
-    const info = await lstat(abs)
-    if (info.isSymbolicLink()) return failDiff(rawPath, '符号链接不读取')
-    if (info.isDirectory()) return failDiff(rawPath, '目录不是文件')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return failDiff(rawPath, '无法读取文件')
+function untrackedDiff(rel: string, rootRel: string, content: { text: string; binary: boolean; truncated: boolean; size: number }): GitDiffResult {
+  const built = buildUntrackedPatch(rootRel, content)
+  const capped = capBytes(built.patch, MAX_DIFF_BYTES)
+  return {
+    ok: true,
+    path: rel,
+    patch: capped.text,
+    truncated: content.truncated || capped.truncated,
+    binary: built.binary,
+    staged: false,
+    unstaged: true,
+    untracked: true,
+    bytes: Math.max(Buffer.byteLength(built.patch, 'utf8'), content.size)
   }
+}
 
+interface DiffTarget {
+  scope: InspectScope
+  rel: string
+  rootRel: string
+  abs: string
+  safety: string[]
+  deadline: GitDeadline
+}
+
+async function readWorkingDiff(target: DiffTarget): Promise<GitDiffResult> {
+  const { scope, rel, rootRel, abs, safety, deadline } = target
   const tracked = await isTracked(scope.root, rootRel, safety)
   if (!tracked) {
     const untracked = await isUntracked(scope.root, rootRel, safety)
     if (!untracked) return failDiff(rel, '这个文件被忽略或不在仓库里')
     const content = await readUntrackedContent(abs)
     if (!content.ok) return failDiff(rel, content.error)
-    const built = buildUntrackedPatch(rootRel, content)
-    const capped = capBytes(built.patch, MAX_DIFF_BYTES)
-    return {
-      ok: true,
-      path: rel,
-      patch: capped.text,
-      truncated: content.truncated || capped.truncated,
-      binary: built.binary,
-      staged: false,
-      unstaged: true,
-      untracked: true,
-      bytes: Math.max(Buffer.byteLength(built.patch, 'utf8'), content.size)
-    }
+    return untrackedDiff(rel, rootRel, content)
   }
 
   const [staged, unstaged] = await Promise.all([
-    gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--cached', '--', rootRel], {
-      allowFailure: true,
-      timeout: DIFF_TIMEOUT_MS,
-      env: READ_ENV
-    }),
-    gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--', rootRel], {
-      allowFailure: true,
-      timeout: DIFF_TIMEOUT_MS,
-      env: READ_ENV
-    })
+    gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--cached', '--', rootRel], readOpts(deadline)),
+    gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--', rootRel], readOpts(deadline))
   ])
   if (staged.timedOut || unstaged.timedOut) return failDiff(rel, 'diff 读取超时，文件可能过大')
   if (!staged.ok && !staged.stdout && staged.error) return failDiff(rel, staged.error)
@@ -454,10 +609,168 @@ export async function readFileDiff(cwd: string, rawPath: unknown, authorize: Aut
     path: rel,
     patch,
     truncated: capped.truncated,
-    binary: /(^|\n)(Binary files .+? differ|GIT binary patch)\s*(\n|$)/.test(patch),
+    binary: isBinaryPatch(patch),
     staged: staged.stdout.length > 0,
     unstaged: unstaged.stdout.length > 0,
     untracked: false,
     bytes: Buffer.byteLength(raw, 'utf8')
   }
+}
+
+async function readRangeDiff(target: DiffTarget, range: ResolvedRange): Promise<GitDiffResult> {
+  const { scope, rel, rootRel, abs, safety, deadline } = target
+  if (range.kind === 'branch' && !(await isTracked(scope.root, rootRel, safety)) && (await isUntracked(scope.root, rootRel, safety))) {
+    const content = await readUntrackedContent(abs)
+    if (!content.ok) return failDiff(rel, content.error)
+    return untrackedDiff(rel, rootRel, content)
+  }
+  const res = await gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, ...rangeArgs(range), '--', rootRel], readOpts(deadline))
+  if (res.timedOut) return failDiff(rel, 'diff 读取超时，文件可能过大')
+  if (!res.ok && !res.stdout && res.error) return failDiff(rel, res.error)
+  const capped = capBytes(res.stdout, PATCH_SINGLE_FILE_BYTES)
+  return {
+    ok: true,
+    path: rel,
+    patch: capped.text,
+    truncated: capped.truncated,
+    binary: isBinaryPatch(capped.text),
+    staged: false,
+    unstaged: false,
+    untracked: false,
+    bytes: Buffer.byteLength(res.stdout, 'utf8')
+  }
+}
+
+function gitBinary(root: string, args: string[], maxBytes: number, deadline: GitDeadline): Promise<Buffer | null> {
+  const timeout = Math.min(DIFF_TIMEOUT_MS, deadline.remaining())
+  if (timeout <= 0) return Promise.resolve(null)
+  return new Promise((resolveBuffer) => {
+    const child = spawn('git', ['-c', 'core.quotepath=false', ...READ_GLOBALS, ...args], {
+      cwd: root,
+      windowsHide: true,
+      env: sanitizedGitEnv(process.env, READ_ENV)
+    })
+    const chunks: Buffer[] = []
+    let bytes = 0
+    let failed = false
+    const timer = setTimeout(() => {
+      failed = true
+      killProcessTree(child)
+    }, timeout)
+    child.stdout.on('data', (chunk: Buffer) => {
+      bytes += chunk.length
+      if (bytes > maxBytes) {
+        failed = true
+        killProcessTree(child)
+        return
+      }
+      chunks.push(chunk)
+    })
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolveBuffer(null)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolveBuffer(code === 0 && !failed ? Buffer.concat(chunks) : null)
+    })
+  })
+}
+
+function dataUrlSide(bytes: Buffer, mime: string): GitImageSide {
+  return { size: bytes.length, mime, dataUrl: `data:${mime};base64,${bytes.toString('base64')}` }
+}
+
+async function readBlobSide(root: string, rev: string | null, rootRel: string, mime: string, deadline: GitDeadline): Promise<GitImageSide> {
+  if (!rev || rev === EMPTY_TREE) return { size: 0, missing: true }
+  const spec = `${rev}:${rootRel}`
+  const sized = await gitRun(root, [...READ_GLOBALS, 'cat-file', '-s', spec], readOpts(deadline, 8000))
+  const size = sized.ok ? Number(sized.stdout.trim()) : NaN
+  if (!Number.isFinite(size)) return { size: 0, missing: true }
+  if (size > IMAGE_SIDE_BYTES) return { size, mime, tooLarge: true }
+  const bytes = await gitBinary(root, ['cat-file', 'blob', spec], IMAGE_SIDE_BYTES, deadline)
+  return bytes ? dataUrlSide(bytes, mime) : { size, missing: true }
+}
+
+async function readWorkingSide(abs: string, mime: string): Promise<GitImageSide> {
+  try {
+    const info = await lstat(abs)
+    if (info.isSymbolicLink() || !info.isFile()) return { size: 0, missing: true }
+    if (info.size > IMAGE_SIDE_BYTES) return { size: info.size, mime, tooLarge: true }
+    return dataUrlSide(await readFile(abs), mime)
+  } catch {
+    return { size: 0, missing: true }
+  }
+}
+
+async function readImageSides(
+  target: DiffTarget,
+  mime: string,
+  range: ResolvedRange | null,
+  unborn: boolean
+): Promise<{ before: GitImageSide; after: GitImageSide }> {
+  const { scope, rootRel, abs, deadline } = target
+  if (!range) {
+    const [before, after] = await Promise.all([
+      readBlobSide(scope.root, unborn ? null : 'HEAD', rootRel, mime, deadline),
+      readWorkingSide(abs, mime)
+    ])
+    return { before, after }
+  }
+  const [before, after] = await Promise.all([
+    readBlobSide(scope.root, range.base, rootRel, mime, deadline),
+    range.target ? readBlobSide(scope.root, range.target, rootRel, mime, deadline) : readWorkingSide(abs, mime)
+  ])
+  return { before, after }
+}
+
+export interface FileDiffOptions {
+  scope?: unknown
+  images?: boolean
+}
+
+export async function readFileDiff(
+  cwd: string,
+  rawPath: unknown,
+  authorize: AuthorizeReadCwd,
+  options: FileDiffOptions = {}
+): Promise<GitDiffResult> {
+  const requestedScope = normalizeChangesScope(options.scope)
+  if (!requestedScope) return failDiff(rawPath, '对比范围不合法')
+  const scoped = await resolveInspectScope(cwd, authorize)
+  if (scoped.status === 'denied') return failDiff(rawPath, scoped.error)
+  if (scoped.status === 'notrepo') return failDiff(rawPath, '这个目录不在 Git 仓库里')
+  const scope = scoped.scope
+
+  const rel = normalizeRelPath(rawPath)
+  if (!rel) return failDiff(rawPath, '路径不合法')
+  const abs = resolve(scope.scopeAbs, rel)
+  if (!isWithin(scope.scopeAbs, abs)) return failDiff(rawPath, '路径超出授权范围')
+  const rootRel = normSlashes(relative(scope.root, abs))
+  if (!rootRel || rootRel.startsWith('..') || isAbsolute(rootRel)) return failDiff(rawPath, '路径超出仓库范围')
+
+  const deadline = createGitDeadline(QUERY_DEADLINE_MS)
+  const safety = await execSafetyFlags(scope.root, deadline)
+
+  if (!(await isRealWithinScope(scope.scopeAbs, abs))) return failDiff(rawPath, '路径超出授权范围')
+  try {
+    const info = await lstat(abs)
+    if (info.isSymbolicLink()) return failDiff(rawPath, '符号链接不读取')
+    if (info.isDirectory()) return failDiff(rawPath, '目录不是文件')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return failDiff(rawPath, '无法读取文件')
+  }
+
+  const target: DiffTarget = { scope, rel, rootRel, abs, safety, deadline }
+  let range: ResolvedRange | null = null
+  if (requestedScope.kind !== 'working') {
+    const resolved = await resolveRange(scope.root, requestedScope, deadline)
+    if ('error' in resolved) return failDiff(rel, resolved.error)
+    range = resolved
+  }
+  const result = range ? await readRangeDiff(target, range) : await readWorkingDiff(target)
+  const mime = imageMimeOf(rel)
+  if (!result.ok || !options.images || !mime) return result
+  const unborn = range ? false : !(await gitRun(scope.root, [...READ_GLOBALS, 'rev-parse', '--verify', '--quiet', 'HEAD'], readOpts(deadline, 8000))).ok
+  return { ...result, image: await readImageSides(target, mime, range, unborn) }
 }

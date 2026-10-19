@@ -308,7 +308,7 @@ export function claudeDelegationDanger(toolName, input, cwd) {
   return ['Claude Code 原生工具委派：砚无法逐条检查内部操作；允许将授权本次完整任务。需要逐条危险审批时，请使用指定 claude-bridge 模型的砚子 Agent']
 }
 
-async function askHost(toolName, input, reasons, outsideDirs = []) {
+async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = '') {
   const url = process.env.YAN_CLI_URL
   const token = process.env.YAN_CLI_TOKEN
   const sessionId = process.env.YAN_SESSION_ID
@@ -329,7 +329,7 @@ async function askHost(toolName, input, reasons, outsideDirs = []) {
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail: fullDetail ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}) },
+        params: { tool: toolName, detail: fullDetail ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}), ...(toolCallId ? { toolCallId } : {}) },
         sessionId,
         projectId
       }),
@@ -361,7 +361,7 @@ export default function dangerGuardExtension(pi) {
       ...outside.map((target) => `写入项目之外的路径：${target}`)
     ]
     if (reasons.length === 0) return undefined
-    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside)
+    const answer = await askHost(name, event?.input ?? {}, [...new Set(reasons)], outside, typeof event?.toolCallId === 'string' ? event.toolCallId : '')
     if (answer.allowed) return undefined
     return { block: true, reason: `高危操作未获用户确认：${reasons.join('；')}。${answer.why}。请换一种更安全的做法，或向用户说明为什么必须这样做。` }
   })

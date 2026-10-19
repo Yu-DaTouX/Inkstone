@@ -42,3 +42,22 @@ export function resolveSubagentModelLabel(
   const more = hits.length > MAX_LISTED ? ` 等 ${hits.length} 个` : ''
   return { ok: false, error: `模型「${raw}」对应多个已登录的模型：${listed.join('、')}${more}。请用其中一个完整名称（供应商/模型）重新启动，不要改用其他模型。` }
 }
+
+export interface SubagentModelPreference {
+  model?: { provider: string; id: string }
+  force?: boolean
+}
+
+export function resolveSubagentModelPick(
+  requested: string | undefined,
+  models: readonly ModelLabelCandidate[],
+  parentLabel: string | undefined,
+  preference: SubagentModelPreference = {}
+): ModelLabelResolution {
+  const explicit = requested?.trim() ?? ''
+  const preferredLabel = preference.model ? labelOf(preference.model) : ''
+  const preferredUsable = !!preferredLabel && (models.length === 0 || models.some((model) => labelOf(model) === preferredLabel))
+  const picked = preferredUsable && preference.force ? preferredLabel : explicit || (preferredUsable ? preferredLabel : '')
+  if (!picked) return { ok: true, label: '' }
+  return resolveSubagentModelLabel(picked, models, parentLabel)
+}

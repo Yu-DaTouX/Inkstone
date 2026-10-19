@@ -1,9 +1,11 @@
-import { readdir, realpath, stat } from 'node:fs/promises'
+import { readdir, readlink, realpath, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
-import { join, resolve, sep, basename } from 'node:path'
+import { join, resolve, basename } from 'node:path'
 import { homedir } from 'node:os'
+import { isWithin, lexicalJoin, pathKey } from './file-path-gate'
 import type {
   DirEntry,
+  DirEntryLink,
   DirListing,
   FileListingStatus,
   FileRequestContext,
@@ -23,16 +25,7 @@ const MAX_ENTRIES = 400
 const MAX_SEARCH_RESULTS = 200
 const MAX_SEARCH_DIRS = 2000
 
-export function pathKey(value: string): string {
-  const normalized = value.replace(/[\\/]+/g, '/')
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
-}
-
-export function isWithin(root: string, candidate: string): boolean {
-  const r = pathKey(root).replace(/\/$/, '')
-  const c = pathKey(candidate).replace(/\/$/, '')
-  return c === r || c.startsWith(r + '/')
-}
+export { isWithin, pathKey }
 
 function statusForError(error: unknown): FileListingStatus {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
@@ -46,14 +39,24 @@ function nameSort(a: { name: string }, b: { name: string }): number {
 }
 
 export function safeJoin(cwd: string, rel: string): string | null {
-  const root = resolve(cwd)
-  const cleaned = (rel ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
-  if (cleaned.split('/').includes('..')) return null
-  if (/^[A-Za-z]:/.test(cleaned)) return null
-  const abs = resolve(join(root, cleaned))
-  const boundary = root.endsWith(sep) ? root : root + sep
-  if (abs !== root && !abs.startsWith(boundary)) return null
-  return abs
+  return lexicalJoin(cwd, rel)
+}
+
+export function classifyLink(rootReal: string, containingReal: string, targetReal: string | null): DirEntryLink['state'] {
+  if (!targetReal) return 'dangling'
+  if (!isWithin(rootReal, targetReal)) return 'external'
+  if (isWithin(targetReal, containingReal)) return 'cycle'
+  return 'ok'
+}
+
+async function describeLink(rootReal: string, dirReal: string, name: string): Promise<{ link: DirEntryLink; dir: boolean }> {
+  const abs = join(dirReal, name)
+  const rawTarget = await readlink(abs).catch(() => '')
+  const targetReal = await realpath(abs).catch(() => null)
+  const state = classifyLink(rootReal, dirReal, targetReal)
+  const targetIsDir = targetReal ? await stat(targetReal).then((s) => s.isDirectory(), () => false) : false
+  const link: DirEntryLink = { state, ...(rawTarget ? { target: rawTarget } : {}), ...(targetReal ? { targetKind: targetIsDir ? 'dir' : 'file' } : {}) }
+  return { link, dir: state === 'ok' && targetIsDir }
 }
 
 const HOME = homedir()
@@ -94,7 +97,7 @@ export async function listDir(
       error: status === 'permission' ? 'permission' : status === 'missing' ? 'missing' : 'error'
     }
   }
-  if (!isWithin(root, realDir) || pathKey(realDir) !== pathKey(abs)) {
+  if (!isWithin(root, realDir)) {
     return { ...empty, status: 'invalid', error: 'invalid' }
   }
 
@@ -112,11 +115,22 @@ export async function listDir(
   }
 
   const skipped: string[] = []
-  const dirs: { name: string; dir: true }[] = []
-  const files: { name: string; dir: false }[] = []
+  const dirs: { name: string; dir: true; link?: DirEntryLink }[] = []
+  const files: { name: string; dir: false; link?: DirEntryLink }[] = []
+  const linkNames = dirents.filter((d) => d.isSymbolicLink() && (showHidden || !isDotName(d.name))).map((d) => d.name)
+  const links = new Map<string, { link: DirEntryLink; dir: boolean }>()
+  for (let i = 0; i < linkNames.length; i += 32) {
+    await Promise.all(linkNames.slice(i, i + 32).map(async (name) => links.set(name, await describeLink(root, realDir, name))))
+  }
   for (const d of dirents) {
     if (d.isSymbolicLink()) {
-      skipped.push(d.name)
+      const described = links.get(d.name)
+      if (!described || (!showHidden && described.dir && OPAQUE.has(d.name))) {
+        skipped.push(d.name)
+        continue
+      }
+      if (described.dir) dirs.push({ name: d.name, dir: true, link: described.link })
+      else files.push({ name: d.name, dir: false, link: described.link })
       continue
     }
     const isDir = d.isDirectory()
@@ -140,7 +154,7 @@ export async function listDir(
   const sizes = new Map<string, number>()
   const CHUNK = 64
   for (let i = 0; i < kept.length; i += CHUNK) {
-    const slice = kept.slice(i, i + CHUNK).filter((e) => !e.dir)
+    const slice = kept.slice(i, i + CHUNK).filter((e) => !e.dir && (!e.link || e.link.state === 'ok'))
     await Promise.all(
       slice.map(async (e) => {
         try {
@@ -154,7 +168,7 @@ export async function listDir(
 
   const entries: DirEntry[] = kept.map((e) => {
     const size = e.dir ? undefined : sizes.get(e.name)
-    return { name: e.name, dir: e.dir, ...(size !== undefined ? { size } : {}) }
+    return { name: e.name, dir: e.dir, ...(size !== undefined ? { size } : {}), ...(e.link ? { link: e.link } : {}) }
   })
 
   return {

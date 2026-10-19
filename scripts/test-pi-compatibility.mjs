@@ -19,7 +19,7 @@ if (process.argv.includes('--upgrade-catalog-only')) {
 await runUpgradeCatalogTests()
 const root = await mkdtemp(join(tmpdir(), 'inkstone-pi-compat-'))
 const modules = {}
-for (const [name, file] of Object.entries({ normalize: 'src/main/normalize.ts', tree: 'src/shared/tool-call-tree.ts' })) {
+for (const [name, file] of Object.entries({ normalize: 'src/main/normalize.ts', projector: 'src/main/session-items/projector.ts', tree: 'src/shared/tool-call-tree.ts' })) {
   const outfile = resolve(`out/test/pi-compat-${name}.mjs`)
   await build({ entryPoints: [resolve(file)], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
   modules[name] = await import(pathToFileURL(outfile))
@@ -49,12 +49,13 @@ if (before) {
   }
 }
 
-const { normalizeHistory, collapseSkillInvocation } = modules.normalize
+const { collapseSkillInvocation } = modules.normalize
+const { projectHistory } = modules.projector
 const skillBody = ['<skill name="capabilities" location="C:/repo/SKILL.md">', 'References are relative.', '', '# body', '</skill>'].join(String.fromCharCode(10))
 check(collapseSkillInvocation(skillBody) === '/skill:capabilities', 'skill block collapses to the typed command')
 check(collapseSkillInvocation(skillBody + String.fromCharCode(10, 10) + '找个画图能力') === '/skill:capabilities 找个画图能力', 'skill block keeps the user arguments')
 check(collapseSkillInvocation('<skill name="x"> not a pi block') === '<skill name="x"> not a pi block', 'non-matching text is left alone')
-check(normalizeHistory([{ role: 'user', content: [{ type: 'text', text: skillBody }], timestamp: 1 }])[0].text === '/skill:capabilities', 'history shows the collapsed skill command')
+check(projectHistory([{ role: 'user', content: [{ type: 'text', text: skillBody }], timestamp: 1 }])[0].text === '/skill:capabilities', 'history shows the collapsed skill command')
 const parent = { role: 'assistant', content: [{ type: 'toolCall', id: 'code', name: 'codemode', arguments: { code: 'fixture' } }], timestamp: 1 }
 const result = { role: 'toolResult', toolCallId: 'code', toolName: 'codemode', content: [{ type: 'text', text: 'selected output' }], details: { truncated: true }, nestedCalls: { complete: false, calls: [
   { id: 'code/1', name: 'read', arguments: { path: 'a.txt' }, status: 'ok', durationMs: 3 },
@@ -64,7 +65,7 @@ const result = { role: 'toolResult', toolCallId: 'code', toolName: 'codemode', c
   { id: 'code/1', name: 'duplicate', status: 'ok' },
   null
 ] }, timestamp: 2 }
-const history = normalizeHistory([{ role: 'system', content: 'prompt' }, parent, result], undefined, ['system', 'assistant-entry', 'result-entry'])
+const history = projectHistory([{ role: 'system', content: 'prompt' }, parent, result], undefined, ['system', 'assistant-entry', 'result-entry'])
 check(history.length === 1 && history[0].entryId === 'assistant-entry', 'nested summaries preserve message and fork anchor')
 const calls = history[0].toolCalls
 check(calls.length === 4 && calls[1].parentToolCallId === 'code', 'bounded summaries restore valid unique children')
@@ -72,10 +73,10 @@ check(calls[3].parentToolCallId === 'code/2' && calls[3].incomplete === true && 
 check(calls[0].nestedCallsIncomplete === true && calls[1].historySummary === true, 'incomplete and summary-only records are explicit')
 check(calls[1].output === undefined && calls[2].output === 'blocked', 'history does not invent successful child output')
 check(calls[0].details.truncated === true && calls[0].output === 'selected output', 'parent result details restored')
-check(normalizeHistory([result])[0].toolCalls.length === 4, 'orphan parent result retains nested summary')
-check(normalizeHistory([parent, { ...result, nestedCalls: { calls: 'bad' } }])[0].toolCalls.length === 1, 'malformed nested record safely ignored')
+check(projectHistory([result])[0].toolCalls.length === 4, 'orphan parent result retains nested summary')
+check(projectHistory([parent, { ...result, nestedCalls: { calls: 'bad' } }])[0].toolCalls.length === 1, 'malformed nested record safely ignored')
 const many = Array.from({ length: 300 }, (_, i) => ({ id: `code/${i + 1}`, name: 'read', status: 'ok' }))
-check(normalizeHistory([parent, { ...result, nestedCalls: { calls: many } }])[0].toolCalls.length === 257, 'at most 256 child summaries restored')
+check(projectHistory([parent, { ...result, nestedCalls: { calls: many } }])[0].toolCalls.length === 257, 'at most 256 child summaries restored')
 const forest = modules.tree.toolCallForest(calls)
 check(forest.length === 1 && forest[0].children.map(node => node.call.id).join(',') === 'code/1,code/2', 'nested calls sit under their parent in execution order')
 check(forest[0].children[1].children[0]?.call.id === 'code/2/1', 'grandchild stays under its own caller')

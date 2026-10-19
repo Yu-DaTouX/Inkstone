@@ -1,7 +1,8 @@
 import { open, realpath, stat } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { StringDecoder } from 'node:string_decoder'
-import { createHistoryBuilder, entryMessage } from './normalize'
+import { entryMessage } from './normalize'
+import { SessionItemProjector } from './session-items/projector'
 import { contextFromEntry } from './compaction'
 import type { ContextFrom, UIMessage } from '../shared/ipc'
 
@@ -109,7 +110,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
       const before = await fh.stat({ bigint: true })
       const size = Number(before.size)
       if (!before.isFile() || !Number.isSafeInteger(size)) return null
-      const builder = createHistoryBuilder(opts?.localizeImage)
+      const projector = new SessionItemProjector(opts?.localizeImage)
       let total = 0, truncated = 0
       let sessionId: string | undefined, sourceCwd: string | undefined, contextFrom: ContextFrom | undefined
       let parts: string[] = [], chars = 0, discarded = false, hasMessage = false, scanTail = ''
@@ -148,7 +149,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
                 parsed = true
               }
             } catch { }
-            if (parsed) builder.append(value, entryId)
+            if (parsed) projector.appendPersisted(value, entryId)
           }
         }
         parts = []; chars = 0; discarded = false; hasMessage = false; scanTail = ''
@@ -177,7 +178,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
-      return { messages: builder.finish(), total, truncated, bytes: size,
+      return { messages: projector.uiMessages(), total, truncated, bytes: size,
         ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) }
     } catch { if (attempt === 0) continue; return null }
     finally { await fh?.close().catch(() => undefined) }

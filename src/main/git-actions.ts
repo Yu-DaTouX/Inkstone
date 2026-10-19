@@ -23,7 +23,8 @@ import {
   validateCommitMessage
 } from '../shared/git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult, GitFailure } from '../shared/git-actions'
-import { gitRun, readExpected, readRepoState, refExists, resolveRepo, safeRepoPath } from './git-service'
+import { gitRun, readExpected, readRepoState, readStatus, refExists, resolveRepo, safeRepoPath } from './git-service'
+import { checkSwitch } from './git-branch-switch'
 import type { RepoIdentity } from './git-service'
 
 const WRITE_TIMEOUT = 120_000
@@ -297,6 +298,41 @@ function runningFailure(kind: 'switch' | 'create'): GitFailure {
   }
 }
 
+async function switchDirtyFailure(root: string, branch: string): Promise<GitFailure | null> {
+  const status = await readStatus(root).catch(() => null)
+  const entries = status?.entries.filter((entry) => !entry.ignored) ?? []
+  const dirty = entries.flatMap((entry) => (entry.origPath ? [entry.path, entry.origPath] : [entry.path]))
+  let targetChanged: string[] | null = null
+  if (status && dirty.length > 0) {
+    const target = await gitRun(root, ['rev-parse', '--verify', '--quiet', `${branch}^{commit}`], { allowFailure: true, timeout: 8000 })
+    const sha = target.ok ? target.stdout.trim() : ''
+    const diff = /^[0-9a-f]{40,64}$/.test(sha)
+      ? await gitRun(root, ['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', 'HEAD', sha], { allowFailure: true })
+      : null
+    targetChanged = diff?.ok ? diff.stdout.split('\0').filter(Boolean) : null
+  }
+  const check = checkSwitch({
+    unmerged: !status || entries.some((entry) => entry.unmerged),
+    dirty,
+    targetChanged,
+    caseInsensitive: process.platform === 'win32' || process.platform === 'darwin'
+  })
+  if (!check.blocked) return null
+  const shown = check.paths.slice(0, 10)
+  return {
+    code: 'dirty-blocks-switch',
+    message:
+      check.reason === 'unmerged'
+        ? '还有未解决的合并冲突，暂时不能切换分支'
+        : check.reason === 'overlap'
+          ? `${check.paths.length} 个未提交的文件与目标分支的改动重叠`
+          : '读不出目标分支的改动，工作区有未提交的文件时暂不切换',
+    ...(shown.length ? { detail: [...shown, ...(check.paths.length > shown.length ? [`…还有 ${check.paths.length - shown.length} 个`] : [])].join('\n') } : {}),
+    hint: '先提交或暂存这些文件再切换',
+    retrySafe: true
+  }
+}
+
 async function switchBranch(request: Extract<GitActionRequest, { kind: 'switch-branch' }>): Promise<GitActionResult> {
   const branch = String(request.branch ?? '').trim()
   const invalid = validateBranchName(branch)
@@ -318,6 +354,9 @@ async function switchBranch(request: Extract<GitActionRequest, { kind: 'switch-b
         failure: { code: 'branch-missing', message: `分支不存在：${branch}`, retrySafe: true }
       }
     }
+
+    const dirty = await switchDirtyFailure(repo.root, branch)
+    if (dirty) return { ok: false, failure: dirty }
 
     const before = await readExpected(repo.root)
     const res = await runWrite(repo.root, buildSwitchArgs(branch))

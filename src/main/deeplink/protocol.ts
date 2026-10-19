@@ -37,10 +37,6 @@ export interface DeepLinkSettings {
   section: DeepLinkSettingsSection
 }
 
-export interface DeepLinkRuns {
-  action: 'runs'
-}
-
 export interface DeepLinkPair {
   action: 'pair'
   address: string
@@ -49,7 +45,7 @@ export interface DeepLinkPair {
 
 export type DeepLinkAction = DeepLink['action']
 
-export type DeepLink = DeepLinkSession | DeepLinkNewSession | DeepLinkSettings | DeepLinkRuns | DeepLinkPair
+export type DeepLink = DeepLinkSession | DeepLinkNewSession | DeepLinkSettings | DeepLinkPair
 
 export type DeepLinkRejectReason =
   | 'empty'
@@ -159,11 +155,6 @@ export function parseDeepLink(raw: unknown): DeepLinkParseResult {
       if (!section) return { ok: true, link: { action: 'settings', section: 'appearance' } }
       if (!isSettingsSection(section)) return fail('section')
       return { ok: true, link: { action: 'settings', section } }
-    }
-
-    case 'runs': {
-      if (url.pathname !== '' && url.pathname !== '/') return fail('path')
-      return { ok: true, link: { action: 'runs' } }
     }
 
     case 'pair': {

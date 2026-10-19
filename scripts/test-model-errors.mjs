@@ -80,9 +80,10 @@ export async function runModelErrorTests(ok) {
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')
   ok(!/abc123|private-key|sk-secret123/.test(shared.modelErrorNotice('fetch failed Authorization=abc123 api_key=private-key sk-secret123')), '常见密钥字段脱敏')
 
-  const { normalizeMessage, normalizeHistory } = await import('../out/test/normalize.mjs')
+  const { normalizeMessage } = await import('../out/test/normalize.mjs')
+  const { projectHistory } = await import('../out/test/projector.mjs')
   const notice = '<subagent-notification id="sub-test" status="done">\n后台结果\n</subagent-notification>'
-  const history = normalizeHistory([
+  const history = projectHistory([
     { role: 'user', content: '原任务' },
     { role: 'user', content: notice },
     { role: 'assistant', content: [{ type: 'text', text: '继续处理' }] }

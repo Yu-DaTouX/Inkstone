@@ -9,6 +9,7 @@ const MAX_WATCH_DIRS = 256
 export interface FilesWatchResult {
   dirs: string[]
   dropped: string[]
+  superseded?: boolean
 }
 
 interface WatchedDir {
@@ -29,6 +30,18 @@ export class FilesWatcher {
   private readonly watched = new Map<string, WatchedDir>()
   private readonly targets = new Map<string, WatchTarget>()
   private readonly timers = new Map<string, NodeJS.Timeout>()
+  private readonly generations = new Map<string, number>()
+  private generationSeq = 0
+
+  private bump(watchId: string): number {
+    const next = ++this.generationSeq
+    this.generations.set(watchId, next)
+    return next
+  }
+
+  private current(watchId: string, generation: number): boolean {
+    return this.generations.get(watchId) === generation
+  }
 
   async set(
     watchId: string,
@@ -36,6 +49,7 @@ export class FilesWatcher {
     dirs: string[],
     onChange: (dir: string) => void
   ): Promise<FilesWatchResult> {
+    const generation = this.bump(watchId)
     const root = await realpath(cwd).catch(() => resolve(cwd))
     const wanted = new Map<string, string>()
     const dropped: string[] = []
@@ -51,6 +65,7 @@ export class FilesWatcher {
         continue
       }
       const real = await realpath(abs).catch(() => null)
+      if (!this.current(watchId, generation)) return { dirs: [], dropped: [], superseded: true }
       if (!real || !isWithin(root, real)) {
         dropped.push(dir)
         continue
@@ -59,6 +74,7 @@ export class FilesWatcher {
       if (!wanted.has(key)) wanted.set(key, dir)
     }
 
+    if (!this.current(watchId, generation)) return { dirs: [], dropped: [], superseded: true }
     const previous = this.targets.get(watchId)?.dirs ?? new Map<string, string>()
     for (const key of previous.keys()) {
       if (!wanted.has(key)) this.detach(key, watchId)
@@ -71,6 +87,7 @@ export class FilesWatcher {
   }
 
   release(watchId: string): void {
+    this.generations.delete(watchId)
     const target = this.targets.get(watchId)
     if (!target) return
     for (const key of target.dirs.keys()) this.detach(key, watchId)
@@ -90,6 +107,7 @@ export class FilesWatcher {
     for (const entry of this.watched.values()) entry.watcher.close()
     this.watched.clear()
     this.targets.clear()
+    this.generations.clear()
   }
 
   private attach(key: string, watchId: string): void {

@@ -52,7 +52,8 @@ process.env.YAN_TEST_APP_DIR = dataDir
 process.env.YAN_SESSIONS_DIR = join(dataDir, 'sessions')
 
 try {
-  const { normalizeMessage, normalizeHistory } = await bundle('src/main/normalize.ts', 'pi-native-normalize.mjs', 'node')
+  const { normalizeMessage } = await bundle('src/main/normalize.ts', 'pi-native-normalize.mjs', 'node')
+  const { projectHistory } = await bundle('src/main/session-items/projector.ts', 'pi-native-projector.mjs', 'node')
   const { groupIntoTurns, createTurnProjector } = await bundle('src/shared/turns.ts', 'pi-native-turns.mjs', 'neutral')
   const { NativeSessionRuntime, parseReceipt } = await bundle('src/main/native-session-runtime.ts', 'pi-native-runtime.mjs', 'node')
   const { AgentController } = await bundle('src/main/agent.ts', 'pi-native-agent.mjs', 'node', [electronStub])
@@ -69,7 +70,7 @@ try {
     const summary = normalizeMessage({ role: 'branchSummary', summary: '之前试过 A 方案', fromId: 'x', timestamp: 9 }, 1)
     ok(summary?.role === 'note' && summary.note?.kind === 'branchSummary' && summary.text === '之前试过 A 方案', 'branchSummary 归为 note')
     ok(normalizeMessage({ role: 'branchSummary', summary: '' }, 0) === null, '空分支摘要不显示')
-    const history = normalizeHistory([
+    const history = projectHistory([
       { role: 'user', content: '问' },
       { role: 'branchSummary', summary: '摘要' },
       { role: 'assistant', content: [{ type: 'text', text: '答' }] }

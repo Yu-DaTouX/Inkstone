@@ -89,10 +89,10 @@ export class SubagentService {
       }
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
       let model = requested
-      if (requested && this.deps.resolveModelLabel) {
-        const resolved = await this.deps.resolveModelLabel(requested, context)
+      if (this.deps.resolveModelLabel) {
+        const resolved = await this.deps.resolveModelLabel(requested ?? '', context)
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
-        model = resolved.label
+        model = resolved.label || undefined
       }
       const readOnly = params.readOnly === true || params['read-only'] === true
       const title = typeof params.title === 'string' ? params.title : undefined

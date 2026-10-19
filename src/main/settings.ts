@@ -191,6 +191,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.permissionMode = normalizePermissionMode(settings.permissionMode)
   settings.lastMainModel = cleanModelChoice(settings.lastMainModel)
   settings.lastSubagentModel = settings.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(settings.lastSubagentModel)
+  settings.subagentDefaultModel = cleanModelChoice(settings.subagentDefaultModel)
+  settings.subagentModelForce = settings.subagentDefaultModel && settings.subagentModelForce === true ? true : undefined
   settings.modelFavorites = cleanModelFavorites(settings.modelFavorites)
   settings.modelProviderOrder = cleanProviderOrder(settings.modelProviderOrder)
   settings.checkpointsEnabled = settings.checkpointsEnabled !== false
@@ -225,6 +227,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.fontCode = sanitizeFontCodePreset(settings.fontCode)
   settings.fontCodeCustom = sanitizeFontName(settings.fontCodeCustom)
   settings.fontSizeUi = sanitizeFontSize(settings.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
+  settings.reduceMotion = settings.reduceMotion === true ? true : undefined
   settings.autoArchiveDays = normalizeAutoArchiveDays(settings.autoArchiveDays) || undefined
   settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
   settings.theme = settings.theme === 'light' ? 'light' : 'dark'
@@ -317,7 +320,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','usageUnderInput','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','usageUnderInput','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -346,6 +349,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.permissionMode = normalizePermissionMode(next.permissionMode)
   next.lastMainModel = cleanModelChoice(next.lastMainModel)
   next.lastSubagentModel = next.lastSubagentModel === 'follow' ? 'follow' : cleanModelChoice(next.lastSubagentModel)
+  next.subagentDefaultModel = cleanModelChoice(next.subagentDefaultModel)
+  next.subagentModelForce = next.subagentDefaultModel && next.subagentModelForce === true ? true : undefined
   next.modelFavorites = cleanModelFavorites(next.modelFavorites)
   next.modelProviderOrder = cleanProviderOrder(next.modelProviderOrder)
   next.checkpointsEnabled = next.checkpointsEnabled !== false

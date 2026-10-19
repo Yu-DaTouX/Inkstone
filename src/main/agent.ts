@@ -14,6 +14,9 @@ import { nativeActiveBranch } from './native-session-history'
 import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
+import { SessionItemProjector, projectHistory } from './session-items/projector'
+import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
+import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError } from '../shared/quota-resume'
@@ -34,12 +37,9 @@ import {
 import { ensureYanLauncher } from './yan-cli'
 import {
   assistantError,
-  normalizeHistory,
-  normalizeMessage,
   imagesOf,
   toUsage,
   entryMessage,
-  type PiContentBlock,
   type PiMessage
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
@@ -100,6 +100,7 @@ import {
 import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
 import type { McpServerStatus } from '../shared/mcp'
 import type { CapabilityMcpServerSettingView } from '../shared/ipc'
+import type { ApprovalOwner } from '../shared/approval'
 import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
@@ -245,6 +246,8 @@ export interface DangerConfirmPrompt {
   cwd: string
   kind?: 'permission' | 'delete'
   outsideDirs?: string[]
+  owner?: ApprovalOwner
+  toolCallId?: string
 }
 
 export interface ToolConsentPrompt {
@@ -252,6 +255,7 @@ export interface ToolConsentPrompt {
   purpose: string
   verdict: ConsentVerdict
   cwd: string
+  owner?: ApprovalOwner
 }
 export type CapabilityAuthorizationPrompt = {
   kind: 'remote-mcp' | 'local-package'
@@ -382,6 +386,9 @@ export class AgentController extends EventEmitter {
   private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
   private cancelApprovals?: () => void
+  private activateApprovals?: (owner: ApprovalOwner) => void
+  private rpcInstanceId = ''
+  private readonly operations = new SessionOperationGate()
   private getPermissionMode?: () => Promise<'danger' | 'all'>
   private requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
   private dangerGuardExtension?: string
@@ -442,19 +449,22 @@ export class AgentController extends EventEmitter {
     }
   })
 
-  private messages: UIMessage[] = []
+  private readonly items = new SessionItemProjector()
+  private get messages(): UIMessage[] {
+    return this.items.uiMessages()
+  }
+  private set messages(messages: UIMessage[]) {
+    this.items.load(messages)
+  }
   private suppressPush = false
   private extUi = new Map<string, ExtUiPush>()
   private extUiPending: Map<string, ExtUiPush> | null = null
   private streaming: {
     id: string
-    text: string
-    thinking: string
     thinkingMs?: number
     thinkingStartedAt?: number
     thinkingLive?: boolean
     responseDetail: ResponseDetail
-    tools: UIToolCall[]
     startedAt?: number
     firstTokenAt?: number
     generationStartedMono?: number
@@ -487,8 +497,6 @@ export class AgentController extends EventEmitter {
   private dirty = false
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private dirtyTools = new Set<string>()
-  private callIndex = new Map<string, UIToolCall>()
-  private callOwner = new Map<string, string>()
   private pushedOut = new Map<string, number>()
 
   private state: SessionState | null = null
@@ -561,6 +569,7 @@ export class AgentController extends EventEmitter {
     confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
     cancelApprovals?: () => void
+    activateApprovals?: (owner: ApprovalOwner) => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
@@ -620,6 +629,7 @@ export class AgentController extends EventEmitter {
     this.confirmToolConsent = opts.confirmToolConsent
     this.confirmDanger = opts.confirmDanger
     this.cancelApprovals = opts.cancelApprovals
+    this.activateApprovals = opts.activateApprovals
     this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
@@ -804,6 +814,8 @@ export class AgentController extends EventEmitter {
       }
     })
     this.rpc = rpc
+    this.rpcInstanceId = randomUUID()
+    this.activateApprovals?.(this.approvalOwner())
     this.nativeRuntime = new NativeSessionRuntime(
       { command: (type, payload, options) => rpc.command(type, payload, options) },
       undefined,
@@ -827,8 +839,10 @@ export class AgentController extends EventEmitter {
 
     rpc.on('exit', (code) => {
       if (this.rpc !== rpc) return
+      this.operations.reset()
       this.flushNow()
       this.streaming = null
+      this.items.discardStreaming()
       this.bash = null
       this.agentRunning = false
       this.releaseExecutionAdmission()
@@ -944,7 +958,7 @@ export class AgentController extends EventEmitter {
       const compactionEntry = path.findLast(entry => entry.type === 'compaction')
       this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
-      this.messages = [...previousSegments, ...normalizeHistory(messageEntries.map(entry => entry.message),
+      this.messages = [...previousSegments, ...projectHistory(messageEntries.map(entry => entry.message),
         (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data),
         messageEntries.map(entry => typeof entry.id === 'string' ? entry.id : undefined))]
     } else if (fromFile?.messages.length) {
@@ -954,7 +968,7 @@ export class AgentController extends EventEmitter {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
       this.messages = Array.isArray(raw)
-        ? normalizeHistory(raw, (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data))
+        ? projectHistory(raw, (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data))
         : []
     }
     if (sessionFile) {
@@ -968,13 +982,7 @@ export class AgentController extends EventEmitter {
       if (records.length) this.messages = applyTurnTimings(this.messages, records)
     }
 
-    this.callIndex.clear()
-    this.callOwner.clear()
     this.pushedOut.clear()
-    for (const msg of this.messages) this.indexCalls(msg)
-    for (const call of this.streaming?.tools ?? []) {
-      this.registerCall(call, this.streaming?.id)
-    }
 
     this.push({ ch: 'sync', payload: this.messages })
     this.pushQuestionLog()
@@ -1096,7 +1104,7 @@ export class AgentController extends EventEmitter {
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
-    if (command === 'question.ask') return this.runQuestionCommand(params)
+    if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'file.trash') return this.runFileTrashCommand(params)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
@@ -1112,8 +1120,9 @@ export class AgentController extends EventEmitter {
 
   private latestAssistantMessageId(): string {
     if (this.streaming?.id) return this.streaming.id
-    for (let i = this.messages.length - 1; i >= 0; i -= 1) {
-      if (this.messages[i].role === 'assistant') return this.messages[i].id
+    const messages = this.messages
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'assistant') return messages[i].id
     }
     return `artifact-${Date.now().toString(36)}`
   }
@@ -1126,7 +1135,8 @@ export class AgentController extends EventEmitter {
 
   private async runQuestionForm(
     question: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    signal?: AbortSignal
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     let fields: QuestionField[]
     try {
@@ -1135,7 +1145,7 @@ export class AgentController extends EventEmitter {
       if (error instanceof QuestionFormError) throw new CapabilityCommandError('question_form_invalid', error.message)
       throw error
     }
-    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout) })
+    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal })
     const answers = typeof response.value === 'string' ? parseQuestionAnswers(fields, response.value) : null
     const answer = answers ? summarizeAnswers(fields, answers) : null
     const cancelled = response.cancelled === true || answers === null
@@ -1148,13 +1158,14 @@ export class AgentController extends EventEmitter {
   }
 
   private async runQuestionCommand(
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    signal?: AbortSignal
   ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const question = typeof params.question === 'string' ? params.question.trim() : ''
     if (!question) throw new CapabilityCommandError('question_missing', 'question ask 需要 question')
     if (question.length > 4000) throw new CapabilityCommandError('question_too_long', '问题不能超过 4000 个字符')
 
-    if (params.fields !== undefined) return this.runQuestionForm(question, params)
+    if (params.fields !== undefined) return this.runQuestionForm(question, params, signal)
 
     const rawOptions = params.options
     const options = Array.isArray(rawOptions)
@@ -1178,7 +1189,8 @@ export class AgentController extends EventEmitter {
         method: 'input',
         title: '需要你的回答',
         message: question,
-        timeout
+        timeout,
+        signal
       })
     } else {
       response = await this.ui.requestHostUi({
@@ -1186,7 +1198,8 @@ export class AgentController extends EventEmitter {
         title: '需要你的选择',
         message: question,
         options,
-        timeout
+        timeout,
+        signal
       })
     }
 
@@ -1232,7 +1245,7 @@ export class AgentController extends EventEmitter {
       await markConsentAuto(parts).catch(() => undefined)
       return { data: { verdict }, summary: summary('auto') }
     }
-    const answer = this.confirmToolConsent ? await this.confirmToolConsent({ parts, purpose, verdict, cwd: this.cwd }) : null
+    const answer = this.confirmToolConsent ? await this.confirmToolConsent({ parts, purpose, verdict, cwd: this.cwd, owner: this.approvalOwner() }) : null
     if (!answer) return { data: { verdict }, summary: summary('no-answer') }
     await recordConsentAnswer(parts, answer)
     return { data: { verdict }, summary: summary(answer) }
@@ -1250,7 +1263,8 @@ export class AgentController extends EventEmitter {
       ? params.outsideDirs.filter((d): d is string => typeof d === 'string').map((d) => d.slice(0, 500)).slice(0, 6)
       : []
     const kind = params.kind === 'permission' || params.kind === 'delete' ? params.kind : undefined
-    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
+    const toolCallId = typeof params.toolCallId === 'string' && params.toolCallId ? params.toolCallId.slice(0, 200) : undefined
+    const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, owner: this.approvalOwner(), ...(toolCallId ? { toolCallId } : {}), ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
     const decision = answer ?? 'no-answer'
     return {
       data: { decision },
@@ -2121,32 +2135,26 @@ export class AgentController extends EventEmitter {
       case 'message_start': {
         const m = evt.message as PiMessage | undefined
         if (m?.role === 'user') {
-          const norm = normalizeMessage(m, this.messages.length)
+          const norm = this.items.previewLive(m)
           if (norm) {
             if (isSubagentNotice(norm.text) && this.turn.messageIds.length > 0) {
               this.finishTimingSegmentForNotice()
             }
-            this.messages.push(norm)
-            this.indexCalls(norm)
-            this.push({ ch: 'msg-add', payload: norm })
-            this.consumeQueued(norm.text, imagesOf(m.content) ?? [])
+            const added = this.items.commitLive(norm, m)
+            this.push({ ch: 'msg-add', payload: added })
+            this.consumeQueued(added.text, imagesOf(m.content) ?? [])
           }
         } else if (m?.role === 'custom') {
-          const norm = normalizeMessage(m, this.messages.length)
-          if (norm) {
-            this.messages.push(norm)
-            this.push({ ch: 'msg-add', payload: norm })
-          }
+          const added = this.items.liveMessageStart(m, Date.now())
+          if (added) this.push({ ch: 'msg-add', payload: added })
         } else if (m?.role === 'assistant') {
-          const id = `m${this.messages.length}`
+          const started = this.items.liveMessageStart(m, Date.now())!
+          const id = started.id
           const requestStartMono = this.pendingRequestMono
           this.pendingRequestMono = undefined
           this.streaming = {
             id,
-            text: '',
-            thinking: '',
             responseDetail: this.turn.responseDetail,
-            tools: [],
             startedAt: Date.now(),
             generationStartedMono: requestStartMono ?? performance.now(),
             ...(requestStartMono !== undefined ? { requestStartEvent: 'turn_start' as const } : {}),
@@ -2156,7 +2164,7 @@ export class AgentController extends EventEmitter {
           this.streamLoopDetector = createStreamLoopDetector()
           this.push({
             ch: 'msg-add',
-            payload: { id, role: 'assistant', text: '', responseDetail: this.turn.responseDetail, timestamp: Date.now() }
+            payload: { ...started, responseDetail: this.turn.responseDetail }
           })
           this.markStreaming(true)
         }
@@ -2185,13 +2193,12 @@ export class AgentController extends EventEmitter {
           if (realContent) this.streaming.firstContentMono = performance.now()
         }
 
+        const call = this.items.liveAssistantDelta(ev, Date.now())
         if (kind === 'thinking_start') {
           this.streaming.thinkingStartedAt = Date.now()
           this.streaming.thinkingLive = true
         } else if (kind === 'thinking_delta') {
-          const delta = String(ev.delta ?? '')
-          this.streaming.thinking += delta
-          this.checkStreamLoop('thinking', delta)
+          this.checkStreamLoop('thinking', String(ev.delta ?? ''))
           this.markDirty()
         } else if (kind === 'thinking_end') {
           const started = this.streaming.thinkingStartedAt
@@ -2199,44 +2206,16 @@ export class AgentController extends EventEmitter {
           this.streaming.thinkingLive = false
           this.markDirty()
         } else if (kind === 'text_delta') {
-          const delta = String(ev.delta ?? '')
-          this.streaming.text += delta
-          this.checkStreamLoop('text', delta)
+          this.checkStreamLoop('text', String(ev.delta ?? ''))
           this.markDirty()
         } else if (kind === 'toolcall_start') {
           this.streaming.toolOpen = true
-          const call: UIToolCall = {
-            id: String(ev.id ?? `call-${this.streaming.tools.length}`),
-            name: String(ev.toolName ?? 'tool'),
-            args: undefined,
-            argsRaw: '',
-            status: 'running',
-            startedAt: Date.now()
-          }
-          this.streaming.tools.push(call)
-          this.registerCall(call, this.streaming.id)
           this.flushNow()
-          this.pushTool(call)
-        } else if (kind === 'toolcall_delta') {
-          const last = this.streaming.tools[this.streaming.tools.length - 1]
-          if (last) {
-            last.argsRaw = (last.argsRaw ?? '') + String(ev.delta ?? '')
-            try {
-              if (/[}\]]\s*$/.test(last.argsRaw)) last.args = JSON.parse(last.argsRaw)
-            } catch {
-            }
-          }
+          if (call) this.pushTool(call)
         } else if (kind === 'toolcall_end') {
           this.streaming.toolOpen = false
-          const tc = ev.toolCall as PiContentBlock | undefined
-          const last = this.streaming.tools[this.streaming.tools.length - 1]
-          if (last && tc) {
-            if (tc.id) last.id = tc.id
-            if (tc.name) last.name = tc.name
-            if (tc.arguments !== undefined) last.args = tc.arguments
-          }
           this.flushNow()
-          if (last) this.pushTool(last)
+          if (call) this.pushTool(call)
         }
         break
       }
@@ -2250,7 +2229,6 @@ export class AgentController extends EventEmitter {
         const endedMono = performance.now()
         this.streaming = null
         this.streamLoopDetector = null
-        for (const c of s.tools) this.registerCall(c, id)
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
@@ -2258,14 +2236,9 @@ export class AgentController extends EventEmitter {
         }
         const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
         const genTiming = this.generationTimingOf(s, endedMono)
-        const msg: UIMessage = {
-          id,
-          role: 'assistant',
-          text: s.text,
-          thinking: s.thinking || undefined,
+        const msg = this.settleStreaming(id, {
           thinkingMs: s.thinkingMs,
           thinkingLive: false,
-          toolCalls: s.tools.length ? s.tools : undefined,
           usage: finalUsage,
           speed: sp.speed,
           elapsedMs: sp.elapsedMs,
@@ -2274,8 +2247,7 @@ export class AgentController extends EventEmitter {
           model: assistantModelIdentity(m),
           timestamp: m.timestamp ?? Date.now(),
           error: assistantError(m)
-        }
-        this.messages.push(msg)
+        })
         this.turn.messageIds.push(id)
         this.backfillCompactionAfter()
         if (this.turn.startedMono !== undefined) {
@@ -2320,14 +2292,14 @@ export class AgentController extends EventEmitter {
       }
 
       case 'tool_execution_start': {
-        const call = this.findOrCreateCall(
-          String(evt.toolCallId ?? ''),
-          String(evt.toolName ?? 'tool'),
-          evt.args,
-          typeof evt.parentToolCallId === 'string' ? evt.parentToolCallId : undefined
-        )
-        call.status = 'running'
-        call.startedAt = Date.now()
+        const started = this.items.liveToolStart({
+          toolCallId: String(evt.toolCallId ?? ''),
+          toolName: String(evt.toolName ?? 'tool'),
+          args: evt.args,
+          parentToolCallId: typeof evt.parentToolCallId === 'string' ? evt.parentToolCallId : undefined
+        }, Date.now())
+        if (started.created) this.push({ ch: 'msg-add', payload: started.created })
+        const call = started.call
         if (isWriteTool(call.name) || isShellTool(call.name)) this.wroteThisRun = true
         if (isWriteTool(call.name)) {
           const path = writePathOf(call.args)
@@ -2340,50 +2312,25 @@ export class AgentController extends EventEmitter {
       }
 
       case 'tool_execution_update': {
-        const call = this.findCall(String(evt.toolCallId ?? ''))
+        const call = this.items.liveToolUpdate(String(evt.toolCallId ?? ''), evt.partialResult as ToolResultPayload | undefined)
         if (!call) break
-        const partial = evt.partialResult as { content?: PiContentBlock[]; details?: unknown } | undefined
-        call.output = (partial?.content ?? [])
-          .filter((c) => c.type === 'text')
-          .map((c) => c.text ?? '')
-          .join('')
-        call.details = partial?.details
         this.markToolOutput(call.id)
         break
       }
 
       case 'tool_execution_end': {
-        const call = this.findCall(String(evt.toolCallId ?? ''))
+        const call = this.items.liveToolEnd(String(evt.toolCallId ?? ''), {
+          result: evt.result as ToolResultPayload | undefined,
+          isError: evt.isError,
+          cancelled: (evt as { cancelled?: boolean }).cancelled
+        }, Date.now())
         if (!call) break
-        const result = evt.result as { content?: PiContentBlock[]; details?: unknown } | undefined
-        const cancelled = (evt as { cancelled?: boolean }).cancelled === true
-        call.cancelled = cancelled || undefined
-        call.status = evt.isError && !cancelled ? 'error' : 'ok'
-        call.output = (result?.content ?? [])
-          .filter((c) => c.type === 'text')
-          .map((c) => c.text ?? '')
-          .join('')
-        call.images = imagesOf(result?.content)
-        call.details = result?.details
-        call.endedAt = Date.now()
         if (isWriteTool(call.name)) {
           const diff = snapshotAfter(call.id)
-          if (diff) {
-            const base =
-              call.details && typeof call.details === 'object' && !Array.isArray(call.details)
-                ? (call.details as Record<string, unknown>)
-                : {}
-            call.details = { ...base, fileDiff: diff }
-          }
+          if (diff) mergeToolDetails(call, { fileDiff: diff })
         } else if (isShellTool(call.name)) {
           const changes = endTreeSnapshot(call.id)
-          if (changes && (changes.files.length > 0 || changes.unknown)) {
-            const base =
-              call.details && typeof call.details === 'object' && !Array.isArray(call.details)
-                ? (call.details as Record<string, unknown>)
-                : {}
-            call.details = { ...base, workspaceChanges: changes }
-          }
+          if (changes && (changes.files.length > 0 || changes.unknown)) mergeToolDetails(call, { workspaceChanges: changes })
         }
         this.pushTool(call)
 
@@ -2410,6 +2357,7 @@ export class AgentController extends EventEmitter {
 
       case 'agent_settled': {
         this.setRetryRun(null)
+        this.cancelApprovals?.()
         const continuation = this.loopGuardAbortSent && this.loopGuardAbortedMessage && this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
             runId: this.turn.runId, version: this.loopGuardResumeVersion }
@@ -2488,7 +2436,7 @@ export class AgentController extends EventEmitter {
         if (evtId && evtId !== this.bash.reqId) break
 
         this.bash.output += String(evt.delta ?? '')
-        const call = this.findCall(this.bash.msgId)
+        const call = this.items.call(this.bash.msgId)
         if (call) call.output = this.bash.output
         this.markToolOutput(this.bash.msgId)
         break
@@ -2501,6 +2449,7 @@ export class AgentController extends EventEmitter {
         break
 
       case 'compaction_end':
+        this.operations.settle('compact')
         if (evt.willRetry === true && this.turn.startedMono !== undefined) this.timingContinues = true
         this.setCompaction(this.compactionState, evt)
         this.markStreaming(false)
@@ -2633,52 +2582,12 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private registerCall(call: UIToolCall, msgId?: string): void {
-    this.callIndex.set(call.id, call)
-    const owner = msgId ?? this.callOwner.get(call.id)
-    if (owner) this.callOwner.set(call.id, owner)
-  }
-
-  private indexCalls(msg: UIMessage): void {
-    for (const c of msg.toolCalls ?? []) this.registerCall(c, msg.id)
-  }
-
-  private findCall(id: string): UIToolCall | undefined {
-    if (!id) return undefined
-    return this.callIndex.get(id)
-  }
-
   private ownerOf(call: UIToolCall): string | undefined {
-    return this.callOwner.get(call.id) ?? this.streaming?.id
+    return this.items.ownerOf(call.id) ?? this.streaming?.id
   }
 
-  private findOrCreateCall(id: string, name: string, args: unknown, parentToolCallId?: string): UIToolCall {
-    const existing = this.findCall(id)
-    if (existing) return existing
-
-    const call: UIToolCall = { id, name, args, parentToolCallId, status: 'running', startedAt: Date.now() }
-    const parent = parentToolCallId ? this.findCall(parentToolCallId) : undefined
-    const parentOwner = parent ? this.ownerOf(parent) : undefined
-    const parentMessage = parentOwner ? this.messages.find(message => message.id === parentOwner) : undefined
-    if (parentMessage) {
-      (parentMessage.toolCalls ??= []).push(call)
-      this.registerCall(call, parentMessage.id)
-    } else if (this.streaming) {
-      this.streaming.tools.push(call)
-      this.registerCall(call, this.streaming.id)
-    } else {
-      const msg: UIMessage = {
-        id: `t${Date.now().toString(36)}`,
-        role: 'assistant',
-        text: '',
-        toolCalls: [call],
-        timestamp: Date.now()
-      }
-      this.messages.push(msg)
-      this.push({ ch: 'msg-add', payload: msg })
-      this.registerCall(call, msg.id)
-    }
-    return call
+  private settleStreaming(id: string, meta: Partial<UIMessage>): UIMessage {
+    return this.items.liveMessageEnd(meta) ?? this.items.appendMessage({ id, role: 'assistant', text: '', ...meta })
   }
 
   private pushTool(call: UIToolCall): void {
@@ -2701,7 +2610,7 @@ export class AgentController extends EventEmitter {
     this.dirtyTools.clear()
 
     for (const id of ids) {
-      const call = this.callIndex.get(id)
+      const call = this.items.call(id)
       if (!call) {
         this.pushedOut.delete(id)
         continue
@@ -2747,12 +2656,15 @@ export class AgentController extends EventEmitter {
     if (!this.dirty || !this.streaming) return
     this.dirty = false
     const s = this.streaming
+    const content = this.items.streamingContent()
+    const text = content?.text ?? ''
+    const thinking = content?.thinking ?? ''
 
-    const textDelta = s.text.length > s.pushedText ? s.text.slice(s.pushedText) : ''
+    const textDelta = text.length > s.pushedText ? text.slice(s.pushedText) : ''
     const thinkingDelta =
-      s.thinking.length > s.pushedThinking ? s.thinking.slice(s.pushedThinking) : ''
-    s.pushedText = s.text.length
-    s.pushedThinking = s.thinking.length
+      thinking.length > s.pushedThinking ? thinking.slice(s.pushedThinking) : ''
+    s.pushedText = text.length
+    s.pushedThinking = thinking.length
 
     const sp = this.speedOf(s, Date.now(), this.turn.startedAt)
     const genTiming = this.generationTimingOf(s)
@@ -3304,7 +3216,25 @@ export class AgentController extends EventEmitter {
     }
   }
 
+  private async withOperation<T extends { ok: boolean; error?: string }>(
+    op: SessionOperation,
+    expectGeneration: number | undefined,
+    task: () => Promise<T>
+  ): Promise<T | { ok: false; error: string }> {
+    if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { ok: false, error: GENERATION_MISMATCH_ERROR }
+    return this.operations.run<T | { ok: false; error: string }>(op, this.capabilityOpts?.runnerGeneration, task, (error) => ({ ok: false, error }))
+  }
+
   async send(
+    text: string,
+    images?: { data: string; mimeType: string }[],
+    mode?: 'steer' | 'followUp',
+    autoContinue?: AutoContinueScope
+  ): Promise<{ ok: boolean; error?: string }> {
+    return this.withOperation('send', undefined, () => this.sendClaimed(text, images, mode, autoContinue))
+  }
+
+  private async sendClaimed(
     text: string,
     images?: { data: string; mimeType: string }[],
     mode?: 'steer' | 'followUp',
@@ -3372,7 +3302,11 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async steer(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+  async steer(text: string, images?: QueueItem['images'], expectGeneration?: number): Promise<{ ok: boolean; error?: string }> {
+    return this.withOperation('send', expectGeneration, () => this.steerClaimed(text, images))
+  }
+
+  private async steerClaimed(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     const admission = this.claimExecutionAdmission()
     if (!admission.ok) return { ok: false, error: admission.error }
     let started = false
@@ -3403,6 +3337,10 @@ export class AgentController extends EventEmitter {
   }
 
   async followUp(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
+    return this.withOperation('send', undefined, () => this.followUpClaimed(text, images))
+  }
+
+  private async followUpClaimed(text: string, images?: QueueItem['images']): Promise<{ ok: boolean; error?: string }> {
     const admission = this.claimExecutionAdmission()
     if (!admission.ok) return { ok: false, error: admission.error }
     let started = false
@@ -3528,7 +3466,8 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async abort(): Promise<QueueSnapshot> {
+  async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
+    if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { steering: [], followUp: [], error: GENERATION_MISMATCH_ERROR }
     this.loopGuardContinuationVersion += 1
     if (this.loopGuardStopping || this.loopGuardAbortSent) {
       await this.loopGuardStopTask
@@ -3576,20 +3515,13 @@ export class AgentController extends EventEmitter {
     if (this.streaming) {
       const s = this.streaming
       this.streaming = null
-      const msg: UIMessage = {
-        id: s.id,
-        role: 'assistant',
-        text: s.text,
-        thinking: s.thinking || undefined,
+      const msg = this.settleStreaming(s.id, {
         thinkingLive: false,
-        toolCalls: s.tools.length ? s.tools : undefined,
         model: this.state?.model ? `${this.state.model.provider}/${this.state.model.id}` : undefined,
         timestamp: stoppedAt,
         ...stoppedMeta(s.id)
-      }
-      this.messages.push(msg)
-      for (const c of s.tools) {
-        this.registerCall(c, s.id)
+      })
+      for (const c of msg.toolCalls ?? []) {
         this.pushedOut.set(c.id, c.output?.length ?? 0)
         this.dirtyTools.delete(c.id)
       }
@@ -3665,8 +3597,7 @@ export class AgentController extends EventEmitter {
       ],
       timestamp: Date.now()
     }
-    this.messages.push(msg)
-    this.indexCalls(msg)
+    this.items.appendMessage(msg)
     this.push({ ch: 'msg-add', payload: msg })
 
     try {
@@ -3772,6 +3703,7 @@ export class AgentController extends EventEmitter {
     if (this.bash) endTreeSnapshot(this.bash.msgId)
     this.bash = null
     this.streaming = null
+    this.items.discardStreaming()
     this.markStreaming(false)
     this.setAgentRunning(false)
     this.resetQueue()
@@ -3880,7 +3812,7 @@ export class AgentController extends EventEmitter {
 
   async fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    return this.changeSessionScope(async (changed) => {
+    return this.withOperation('fork', undefined, () => this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ text?: string; cancelled?: boolean }>('fork', { entryId })
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '分叉被扩展取消' }
@@ -3889,12 +3821,12 @@ export class AgentController extends EventEmitter {
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true, text: res.data?.text }
-    })
+    }))
   }
 
   async clone(): Promise<{ ok: boolean; error?: string }> {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
-    return this.changeSessionScope(async (changed) => {
+    return this.withOperation('fork', undefined, () => this.changeSessionScope(async (changed) => {
       const res = await this.requireRpc().command<{ cancelled?: boolean }>('clone')
       if (!res.success) return { ok: false, error: res.error }
       if (res.data?.cancelled) return { ok: false, error: '复制被扩展取消' }
@@ -3903,7 +3835,7 @@ export class AgentController extends EventEmitter {
       this.ui.cancelPending()
       await this.hydrate()
       return { ok: true }
-    })
+    }))
   }
 
   async forkPoints(): Promise<ForkPoint[]> {
@@ -3968,11 +3900,16 @@ export class AgentController extends EventEmitter {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : ''
     const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
+    const admission = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
+    if (!admission.ok) return { ok: false, error: admission.error }
     let res: Awaited<ReturnType<PiRpc['command']>>
     try {
       res = await this.requireRpc().command('compact', payload, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
     } catch (err) {
+      if (this.rpc?.running) this.operations.markUnknown(admission.lease)
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    } finally {
+      this.operations.release(admission.lease)
     }
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
@@ -3988,14 +3925,20 @@ export class AgentController extends EventEmitter {
   async nativeNavigate(entryId: string, options?: { summarize?: boolean }): Promise<NavigateTreeResult> {
     if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
     if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
-    const result = await this.nativeRuntime.navigateTree(entryId, options)
-    if (!result.cancelled) {
-      this.nativeBranchView = true
-      this.resetQueue()
-      this.ui.cancelPending()
-      await this.hydrate()
+    const admission = this.operations.acquire('rewind', this.capabilityOpts?.runnerGeneration)
+    if (!admission.ok) throw new Error(admission.error)
+    try {
+      const result = await this.nativeRuntime.navigateTree(entryId, options)
+      if (!result.cancelled) {
+        this.nativeBranchView = true
+        this.resetQueue()
+        this.ui.cancelPending()
+        await this.hydrate()
+      }
+      return result
+    } finally {
+      this.operations.release(admission.lease)
     }
-    return result
   }
 
   async nativeSetLabel(entryId: string, label: string): Promise<{ ok: boolean; error?: string }> {
@@ -4371,9 +4314,15 @@ export class AgentController extends EventEmitter {
 
   setRunnerGeneration(generation: number): void {
     if (this.capabilityOpts && Number.isSafeInteger(generation) && generation > 0) {
-      if (this.capabilityOpts.runnerGeneration !== generation) this.releaseExecutionAdmission()
+      const changed = this.capabilityOpts.runnerGeneration !== generation
+      if (changed) this.releaseExecutionAdmission()
       this.capabilityOpts.runnerGeneration = generation
+      if (changed && this.rpc) this.activateApprovals?.(this.approvalOwner())
     }
+  }
+
+  approvalOwner(): ApprovalOwner {
+    return { instanceId: this.rpcInstanceId, generation: this.capabilityOpts?.runnerGeneration ?? 1 }
   }
 
   private async withOverheadUsage(stats: SessionStats): Promise<SessionStats> {
@@ -4458,14 +4407,12 @@ export class AgentController extends EventEmitter {
     this.bash = null
     this.dirty = false
     this.dirtyTools.clear()
-    this.callIndex.clear()
-    this.callOwner.clear()
     this.pushedOut.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.pending.clear()
     await this.rpc?.close()
     this.rpc = null
-    this.messages = []
+    this.items.reset()
     this.resetQueue()
   }
 }

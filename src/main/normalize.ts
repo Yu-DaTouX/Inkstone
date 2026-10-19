@@ -248,55 +248,7 @@ export function entryMessage(entry: unknown): unknown {
   return null
 }
 
-export function createHistoryBuilder(localizeImage?: (mimeType: string, data: string) => string) {
-  const out: UIMessage[] = []
-  const callIndex = new Map<string, { msg: UIMessage; call: UIToolCall }>()
-
-  let seq = 0
-  const append = (raw: unknown, entryId?: string): void => {
-    const m = raw as PiMessage
-    if (m?.role === 'system') return
-    const norm = normalizeMessage(m, seq, localizeImage, entryId)
-    if (!norm) return
-
-    if (m.role === 'toolResult') {
-      const hit = norm.toolCalls?.[0] ? callIndex.get(norm.toolCalls[0].id) : undefined
-      if (hit) {
-        hit.call.status = norm.toolCalls![0].status
-        hit.call.output = norm.toolCalls![0].output
-        hit.call.cancelled = norm.toolCalls![0].cancelled
-        hit.call.details = norm.toolCalls![0].details
-        const images = norm.toolCalls![0].images
-        if (images?.length) hit.call.images = images
-        restoreNestedCalls(m, hit.msg, hit.call, callIndex)
-        return
-      }
-    }
-
-    seq += 1
-    for (const c of norm.toolCalls ?? []) {
-      callIndex.set(c.id, { msg: norm, call: c })
-    }
-    out.push(norm)
-    if (m.role === 'toolResult' && norm.toolCalls?.[0]) {
-      restoreNestedCalls(m, norm, norm.toolCalls[0], callIndex)
-    }
-  }
-
-  return { append, finish: (): UIMessage[] => out }
-}
-
-export function normalizeHistory(
-  raw: unknown[],
-  localizeImage?: (mimeType: string, data: string) => string,
-  entryIds?: (string | undefined)[]
-): UIMessage[] {
-  const builder = createHistoryBuilder(localizeImage)
-  for (let i = 0; i < raw.length; i++) builder.append(raw[i], entryIds?.[i])
-  return builder.finish()
-}
-
-function restoreNestedCalls(
+export function restoreNestedCalls(
   result: PiMessage,
   message: UIMessage,
   parent: UIToolCall,

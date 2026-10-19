@@ -2,6 +2,8 @@ import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent
 import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { openBlockedByExtension } from './open-guard'
+import { unsavedFiles } from './unsaved-files'
+import { disposeFileNameSearch } from './file-name-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
@@ -76,8 +78,6 @@ import { SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
-import { registerReviewIpc } from './ipc/review-ipc'
-import { ReviewAgentCoordinator, ReviewAnnotationStore, ReviewGitAdapter, ReviewService, createReviewRunProducer, reviewRunModel, type ReviewRunProducer } from './review'
 import { registerSyncIpc } from './ipc/sync-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
@@ -91,7 +91,7 @@ import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
-import { resolveSubagentModelLabel } from './subagents/model-label'
+import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
@@ -117,6 +117,7 @@ import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
+import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
@@ -245,7 +246,6 @@ function pinnedTargetMatches(pin: PinnedSendTarget): boolean {
 }
 
 let runsHost: RunsHost | null = null
-let reviewRuns: ReviewRunProducer | null = null
 let mcpAppViewService: McpAppViewService | null = null
 let appViewForeground: { runnerId: string; sessionId: string; sessionFile: string; generation: number } | null = null
 let syncController: ReturnType<typeof registerSyncIpc> | null = null
@@ -342,7 +342,12 @@ const subagentService: SubagentService = new SubagentService({
     const parent = (context.parentRunId ? runners?.agentOf(context.parentRunId) : null) ??
       (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
     const models = parent ? await parent.listModels().catch(() => []) : []
-    return resolveSubagentModelLabel(requested, models, context.model)
+    const settings = await getSettings()
+    const preferred = settings.subagentDefaultModel
+    return resolveSubagentModelPick(requested, models, context.model, {
+      ...(preferred && preferred !== 'follow' ? { model: preferred } : {}),
+      force: settings.subagentModelForce === true
+    })
   },
   confirmDanger: async (params, cwd, origin) => {
     if ((await getSettings()).permissionMode === 'all') return true
@@ -352,6 +357,7 @@ const subagentService: SubagentService = new SubagentService({
       ...(origin?.sessionId ? { sessionId: origin.sessionId } : {}),
       ...(origin?.runId ? { runId: origin.runId } : {}),
       ...(origin?.subagentId ? { subagentId: origin.subagentId } : {}),
+      ...(typeof params.toolCallId === 'string' && params.toolCallId ? { toolCallId: params.toolCallId.slice(0, 200) } : {}),
       kind: 'danger', tool: String(params.tool ?? 'tool').slice(0, 40),
       title: '子 Agent 想执行一个难以撤销的操作',
       detail,
@@ -373,19 +379,11 @@ const subagentService: SubagentService = new SubagentService({
     push({ ch: 'subagent-remove', payload: id })
     refreshTaskbar()
   },
-  onEvent: (runId, evt, run) => {
-    if (reviewRuns?.isActive(runId)) reviewRuns.observe(runId, evt)
-    else runsHost?.observeSubagentEvent(run, evt)
+  onEvent: (_runId, evt, run) => {
+    runsHost?.observeSubagentEvent(run, evt)
   },
   onFinished: (run) => {
-    if (!reviewRuns?.isActive(run.id)) {
-      runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
-    }
-    reviewRuns?.settle(
-      run.id,
-      run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed',
-      run.error
-    )
+    runsHost?.settleSubagent(run, run.status === 'done' ? 'done' : run.status === 'cancelled' ? 'stopped' : 'failed', run.error)
     if (!run.launchFailed) notifySubagentFinished(run)
   }
 })
@@ -598,7 +596,8 @@ const approvals = new ApprovalBroker({
     runsHost?.resolveApproval(id)
     push({ ch: 'approval-close', payload: { id } })
     refreshTaskbar()
-  }
+  },
+  publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot })
 })
 
 attention = createAttentionService({
@@ -957,6 +956,11 @@ function targetMatchesExpected(id: string, expected: ExpectedRuntimeInput | null
   return true
 }
 
+function runnerForExpected(expected: ExpectedRuntimeInput): AgentController | null {
+  const id = resolveExpectedTarget(expected)
+  return id ? runners?.agentOf(id) ?? null : null
+}
+
 function resolveExpectedTarget(expected: ExpectedRuntimeInput | null): string | null {
   if (!expected) return null
   const id = runners?.resolveExpectedRunner(expected) ?? null
@@ -1093,9 +1097,10 @@ async function shutdown(): Promise<void> {
       },
       { name: 'mcp-app-host', run: () => closeMcpAppHost() },
       { name: 'subagents', run: () => subagentService.current()?.stopAll() },
-      { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null; reviewRuns = null } } },
+      { name: 'runs-host', run: async () => { try { await runsHost?.dispose() } finally { runsHost = null } } },
       { name: 'browser', run: () => browser?.dispose() },
       { name: 'terminals', run: () => disposeTerminals() },
+      { name: 'file-name-search', run: () => disposeFileNameSearch() },
       { name: 'data-root-unlock', run: () => releaseDesktopDataRoot?.() }
     ],
     (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
@@ -1113,7 +1118,8 @@ function quitActivity(): QuitActivity {
   return {
     sessionsBusy: runners?.hasBusy() === true,
     runningSubagents: subagentService.current()?.runningCount ?? 0,
-    terminalWorking: hasWorkingTerminal()
+    terminalWorking: hasWorkingTerminal(),
+    unsavedFiles: unsavedFiles.count()
   }
 }
 
@@ -1811,6 +1817,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           const isShell = request.tool === 'bash' || request.tool === 'powershell'
           const choice = await approvals.ask({
             runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
+            ...(request.owner ? { owner: request.owner } : {}),
+            ...(request.toolCallId ? { toolCallId: request.toolCallId } : {}),
             kind: isDelete ? 'delete' : isPermission ? 'permission' : rememberDirs.length ? 'outside' : 'danger',
             tool: request.tool,
             title: isDelete
@@ -1835,11 +1843,15 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         cancelApprovals: () => {
           approvals.cancel((pending) => pending.runId === id && !pending.subagentId)
         },
+        activateApprovals: (owner) => {
+          approvals.activate(id, owner)
+        },
         requestSessionMove,
         confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
           const { parts, verdict } = request
           const choice = await approvals.ask({
             runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
+            ...(request.owner ? { owner: request.owner } : {}),
             kind: 'consent',
             tool: parts.capability,
             title: `Agent 想使用「${parts.capability}」执行「${parts.action}」`,
@@ -2023,12 +2035,25 @@ function registerIpc(): void {
     return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
   })
 
-  handle('yan:steer', async (text: string) => ac()?.steer(text) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:steer', async (text: string, expectedInput?: unknown) => {
+    const expected = normalizeExpectedRuntime(expectedInput)
+    if (expected === 'invalid') return { ok: false, error: '插话目标身份无效' }
+    const agent = expected ? runnerForExpected(expected) : ac()
+    if (expected && !agent) return { ok: false, error: '目标会话已不在或运行实例已更换，插话未发送' }
+    return agent?.steer(text, undefined, expected?.generation) ?? { ok: false, error: 'pi 未运行' }
+  })
   handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:queueEdit', async (next: QueueState) => ac()?.rewriteQueue(next) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:abort', async () => stopRunner(ac()))
+  handle('yan:abort', async (expectedInput?: unknown) => {
+    const expected = normalizeExpectedRuntime(expectedInput)
+    if (expected === 'invalid') return { steering: [], followUp: [], error: '停止目标身份无效' }
+    if (!expected) return stopRunner(ac())
+    const agent = runnerForExpected(expected)
+    if (!agent) return { steering: [], followUp: [], error: '目标会话已不在或运行实例已更换，未停止' }
+    return (await agent.abort(expected.generation))
+  })
 
   handle('yan:runBash', async (command: string, options?: { excludeFromContext?: boolean }, expectedInput?: unknown) => {
     if (typeof command !== 'string' || !command.trim() || (options !== undefined && (!options || typeof options !== 'object' || (options.excludeFromContext !== undefined && typeof options.excludeFromContext !== 'boolean')))) return { ok: false, error: '命令参数无效' }
@@ -2168,7 +2193,7 @@ function registerIpc(): void {
   )
   handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 
-  handle('yan:approvalAnswer', async (id: string, choice: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice) }))
+  handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity)) }))
   handle('yan:approvalPending', async () => approvals.list())
   handle('yan:piInfo', async () => {
     const s = await getSettings()
@@ -2550,78 +2575,6 @@ function registerIpc(): void {
         : { ok: false as const, error: resolved.error }
     }
   })
-
-  const reviewService = new ReviewService({
-    authorize: async (cwd: string) => {
-      const st = await getSettings()
-      const resolved = await resolveFileContext(st, st.cwd, { cwd })
-      return resolved.ok
-        ? { ok: true as const, cwd: resolved.context.cwd }
-        : { ok: false as const, error: resolved.error }
-    },
-    annotations: new ReviewAnnotationStore(),
-    verifySession: async ({ sessionId, cwd }) => {
-      const agent = runners?.agentForSession(sessionId)
-      const state = agent?.getState()
-      const sessionKey = state?.conversationId ?? state?.sessionId
-      if (!agent || !state || !sessionKey || !state.sessionFile) {
-        return { ok: false as const, error: '会话不属于当前运行实例' }
-      }
-      const norm = (value: string) => (process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value))
-      if (!cwd || norm(agent.workingDirectory) !== norm(cwd)) {
-        return { ok: false as const, error: '会话与请求的目录不一致' }
-      }
-      return {
-        ok: true as const,
-        ownership: { sessionId, sessionKey, cwd: agent.workingDirectory, sessionPath: state.sessionFile }
-      }
-    },
-    git: new ReviewGitAdapter({
-      confirm: {
-        confirm: async (request) => {
-          const answer = await approvals.ask({
-            kind: 'danger',
-            tool: request.action === 'push' ? 'git push' : 'gh pr create',
-            title: request.action === 'push' ? '推送代码到远端' : '创建 Pull Request',
-            detail: request.summary,
-            reasons: [request.summary],
-            cwd: request.cwd,
-            canRemember: false
-          })
-          return answer === 'once' || answer === 'remember'
-        }
-      }
-    }),
-    agent: new ReviewAgentCoordinator({
-      assignCode: async (scopeId) => {
-        if (!runsHost) throw new Error('运行注册表尚未就绪，R 编号暂不可用')
-        return runsHost.assignCode(scopeId, 'review')
-      },
-      port: {
-        async startReview(input) {
-          const controller = await subagentService.get()
-          controller.setContext({
-            cwd: input.cwd,
-            ...(input.sessionId ? { parentSessionId: input.sessionId } : {}),
-            ...(input.projectId ? { projectId: input.projectId } : {})
-          })
-          const result = await controller.start(input.prompt, input.model, 'controlled-cwd')
-          if (!result.ok || !result.run) return { ok: false, error: result.error ?? '评审运行启动失败' }
-          const model = reviewRunModel(result.run.model, result.run.thinkingLevel)
-          reviewRuns?.begin({
-            runId: result.run.id,
-            code: input.code,
-            ...(input.sessionPath ? { sessionPath: input.sessionPath } : {}),
-            ...(input.projectId ? { projectId: input.projectId } : {}),
-            title: `代码评审 ${input.code}`,
-            ...(model ? { model } : {})
-          })
-          return { ok: true, runId: result.run.id }
-        }
-      }
-    })
-  })
-  registerReviewIpc(ipc, { service: reviewService })
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
@@ -3251,15 +3204,13 @@ app.whenReady().then(async () => {
 
   try {
     runsHost = await createRunsHost({ push })
-    reviewRuns = createReviewRunProducer({ registry: runsHost.reviewRunPort() })
   } catch (error) {
     runsHost = null
-    reviewRuns = null
     reportMainError('runs-host', error)
     push({
       ch: 'log',
       payload: {
-        text: `[runs] 运行注册表初始化失败，运行总览不可用：${error instanceof Error ? error.message : String(error)}`,
+        text: `[runs] 运行注册表初始化失败，运行状态不可用：${error instanceof Error ? error.message : String(error)}`,
         level: 'error'
       }
     })

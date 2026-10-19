@@ -1,3 +1,5 @@
+import type { FileNameSearchResult } from '../shared/file-name-search'
+import type { GitRemoteIdentity } from '../shared/git'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
@@ -147,12 +149,12 @@ const api: YanBridge = {
   start: () =>
     invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
   send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
-  steer: (text) => invoke<Ok>('yan:steer', text),
+  steer: (text, expectedRuntime) => invoke<Ok>('yan:steer', text, expectedRuntime),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
   steerQueued: (queueId) => invoke<Ok>('yan:steerQueued', queueId),
   removeQueued: (queueId) => invoke<Awaited<ReturnType<YanBridge['removeQueued']>>>('yan:removeQueued', queueId),
   queueEdit: (next) => invoke<Awaited<ReturnType<YanBridge['queueEdit']>>>('yan:queueEdit', next),
-  abort: () => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort'),
+  abort: (expectedRuntime) => invoke<Awaited<ReturnType<YanBridge['abort']>>>('yan:abort', expectedRuntime),
   newSession: (target) =>
     invoke<Ok & { id?: string; runId?: string; sessionId?: string; generation?: number }>('yan:newSession', target),
   switchSession: (path) => invoke<Ok>('yan:switchSession', path),
@@ -182,22 +184,6 @@ const api: YanBridge = {
     markSeen: (runId) => invoke<{ ok: boolean }>('yan:runs:markSeen', runId),
     history: (query) => invoke<Awaited<ReturnType<YanBridge['runs']['history']>>>('yan:runs:history', query),
     stop: (runId) => invoke<Awaited<ReturnType<YanBridge['runs']['stop']>>>('yan:runs:stop', runId)
-  },
-  review: {
-    changeSet: (query) => invoke<Awaited<ReturnType<YanBridge['review']['changeSet']>>>('yan:review:changes', query),
-    diff: (query) => invoke<Awaited<ReturnType<YanBridge['review']['diff']>>>('yan:review:diff', query),
-    annotations: (changeSetId, scopeKey) =>
-      invoke<Awaited<ReturnType<YanBridge['review']['annotations']>>>('yan:review:annotations', changeSetId, scopeKey),
-    annotationAdd: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationAdd']>>>('yan:review:annotationAdd', input),
-    annotationUpdate: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationUpdate']>>>('yan:review:annotationUpdate', input),
-    annotationRemove: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationRemove']>>>('yan:review:annotationRemove', input),
-    annotationClear: (input) => invoke<Awaited<ReturnType<YanBridge['review']['annotationClear']>>>('yan:review:annotationClear', input),
-    annotationTask: (query) => invoke<Awaited<ReturnType<YanBridge['review']['annotationTask']>>>('yan:review:annotationTask', { query }),
-    start: (req) => invoke<Awaited<ReturnType<YanBridge['review']['start']>>>('yan:review:start', req),
-    ghStatus: (cwd) => invoke<Awaited<ReturnType<YanBridge['review']['ghStatus']>>>('yan:review:ghStatus', cwd),
-    commit: (req) => invoke<Awaited<ReturnType<YanBridge['review']['commit']>>>('yan:review:commit', req),
-    push: (req) => invoke<Awaited<ReturnType<YanBridge['review']['push']>>>('yan:review:push', req),
-    pullRequest: (req) => invoke<Awaited<ReturnType<YanBridge['review']['pullRequest']>>>('yan:review:pr', req)
   },
   sync: {
     status: () => invoke<Awaited<ReturnType<YanBridge['sync']['status']>>>('yan:sync:status'),
@@ -236,7 +222,7 @@ const api: YanBridge = {
   piNativeSettings: () => invoke<PiNativeSettingsResult>('yan:piNativeSettings'),
   setPiNativeSettings: (patch) => invoke<PiNativeSettingsResult>('yan:setPiNativeSettings', patch),
 
-  answerApproval: (id, choice) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice),
+  answerApproval: (id, choice, identity) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
@@ -438,7 +424,8 @@ const api: YanBridge = {
     action: (req) => invoke<GitActionResult>('yan:git:action', req),
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
     untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
-    changes: (cwd) => invoke<GitChangesResult>('yan:git:changes', cwd),
+    changes: (cwd, options) => invoke<GitChangesResult>('yan:git:changes', cwd, options),
+    identity: (cwd, refresh) => invoke<GitRemoteIdentity | null>('yan:git:identity', cwd, refresh === true),
     diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd)
   },
@@ -477,6 +464,8 @@ const api: YanBridge = {
   readEditableFile: (path, cwd) => invoke<EditableFileView>('yan:readEditableFile', path, cwd),
   writeEditableFile: (path, text, expectedHash, cwd) =>
     invoke<EditableFileWriteResult>('yan:writeEditableFile', path, text, expectedHash, cwd),
+  reportUnsavedFiles: (paths) => invoke<number>('yan:files:unsaved', paths),
+  searchFileNames: (request) => invoke<FileNameSearchResult>('yan:files:searchNames', request),
   trust: {
     status: (cwd?: string) => invoke<TrustStatusView>('yan:trust:status', cwd),
     allow: (cwd?: string) => invoke<{ ok: boolean; entry: string; error?: string }>('yan:trust:allow', cwd),
