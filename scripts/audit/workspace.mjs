@@ -3,10 +3,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { outputDir } from '../lib/evidence-dir.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const args = process.argv.slice(2)
-if (args.some(a => !['--report'].includes(a))) throw new Error('Usage: node scripts/audit/workspace.mjs [--report]')
+if (args.some((a, i) => a !== '--report' && a !== '--out' && args[i - 1] !== '--out')) throw new Error('Usage: node scripts/audit/workspace.mjs [--report] [--out <dir>]')
 const git = (...args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 << 20 }).toString('utf8')
 const split = s => s.split('\0').filter(Boolean)
 const tracked = new Set(split(git('ls-files', '-z')))
@@ -42,7 +43,9 @@ const summary = { publicDocuments: publicDocs.length, localLinks: checkedLinks.l
   limits: 'Checks local file targets and public visibility, not heading anchors, external URLs, prose accuracy or runtime behavior. Untracked non-ignored files are publication candidates, not committed files.' }
 
 if (args.includes('--report')) {
-  const boundaries = new Set(['.git', 'node_modules', '.pnpm-store', 'out', 'dist', 'release', 'resources/pi-runtime', '.pi', '.yan-tmp', '.backup', '.local-docs/workspace-audits'])
+  const base = outputDir(args, root, 'workspace-audit')
+  const ownReports = path.relative(root, base).split(path.sep).join('/')
+  const boundaries = new Set(['.git', 'node_modules', '.pnpm-store', 'out', 'dist', 'release', 'resources/pi-runtime', '.pi', '.yan-tmp', '.backup', ownReports])
   const entries = [], excluded = [], scanErrors = []
   const category = p => {
     if (p.startsWith('.local-docs/')) return 'local-archive-metadata'
@@ -86,7 +89,6 @@ if (args.includes('--report')) {
     if (row.sha256) { const g = hashes.get(row.sha256) ?? []; g.push(row.path); hashes.set(row.sha256, g) }
   }
   const duplicates = [...hashes.values()].filter(g => g.length > 1)
-  const base = path.join(root, '.local-docs', 'workspace-audits')
   fs.mkdirSync(base, { recursive: true })
   const dest = fs.mkdtempSync(path.join(base, new Date().toISOString().replace(/[:.]/g, '-') + '-'))
   const report = { created: new Date().toISOString(), ...summary, groups, excluded, scanErrors, duplicates, entries }

@@ -25,10 +25,10 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan mcp list
   yan mcp describe --server <ID> --tool <名称>
   yan mcp call --request-file request.json
-  yan tasks apply --request-file task-update.json
+  yan tasks apply --request-file task-update.json     兼容入口：会话里有 todos 工具时优先用工具
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan image generate --request-file image.json
-  yan question ask --request-file question.json
+  yan question ask --request-file question.json      兼容入口：会话里有 question 工具时优先用工具
   yan office read --path <文件.docx|xlsx|pptx|pdf>
   yan file trash --path <文件或目录>     删除改为移到回收站（可恢复）
   yan session move --dir <文件夹> [--reason <原因>]   任务属于别的文件夹时，请用户批准把会话移过去
@@ -66,7 +66,7 @@ const GROUP_USAGE = {
             yan capabilities search --query-text "压缩上下文"
             yan capabilities search --query-file query.json
           query.json: {"queryText":"…","limit":12}
-          只覆盖已装范围；缺能力要联网补齐走 discover（实施-04 S5 起）。
+          只覆盖已装范围；缺能力要联网补齐走 discover。
   discover  联网检索**缺失**能力。技能主要来自 GitHub 技能仓库（默认 anthropics/skills，
             Claude Code 同款 SKILL.md 格式，描述是英文，检索词用英文短词），另查 npm 与官方 MCP Registry：
               yan capabilities discover --query-text "pdf form"
@@ -150,7 +150,7 @@ const GROUP_USAGE = {
            结果的 allowed 为 true 才继续；decision 是 auto（按以往同意自动放行）、allow、deny 或 no-answer。
            宿主只记录用户在确认框里的真实答复；同类操作多次同意后才会自动放行。
            删除 / 覆盖、对外发送、付费、权限与凭证、安装一类永远询问；你判断有风险时加 --dangerous true。
-           这不替代工作模式与远程授权的其他检查，也不能把危险操作标成安全。
+           这不替代权限档位与远程授权的其他检查，也不能把危险操作标成安全。
 
 `,
   office: `yan office <动作> [选项]
@@ -165,7 +165,7 @@ const GROUP_USAGE = {
   session: `yan session <动作> [选项]
 
 动作：
-  move    请求把这条会话移到另一个文件夹（用户在输入框上方的批准卡片里确认）。
+  move    请求把这条会话移到另一个文件夹（用户在对话里的批准卡片中确认）。
           yan session move --dir C:\\Users\\me\\Desktop\\my-app --reason "要改的代码在 my-app 仓库"
           批准后**本轮结束时**才切换：对话保留，之后的命令在新文件夹里运行，并读取那里的
           AGENTS.md 与项目设置。所以批准后先简短说明下一步，然后结束本轮，不要在本轮继续改文件。
@@ -178,13 +178,13 @@ const GROUP_USAGE = {
   trash   把文件或目录移到系统回收站（用户可以从回收站恢复）。
           yan file trash --path 旧报告.docx
           yan file trash --request-file trash.json    trash.json: {"paths":["a.txt","旧目录"]}
-          权限档位不要求确认删除时，砚会拦下 rm / del / Remove-Item 等删除命令，改用这个动作。
+          要让用户能找回时用它；rm / del / Remove-Item 等删除命令不会被自动改成移到回收站。
           路径按当前会话目录解析；系统临时目录里的文件可以直接删除，不必移到回收站。
 
 `,
   tasks: `yan tasks apply --request-file task-update.json
 
-维护右栏的任务清单（用户靠它看进度）。任务有 3 个以上独立步骤、会派子 Agent、或用户要计划时，动手前先建；一两步的事直接做。
+维护会话栏里的待办清单（用户靠它看进度）。任务有 3 个以上独立步骤、会派子 Agent、或用户要计划时，动手前先建；一两步的事直接做。
 会话里有 todos 工具时优先用工具，这个命令是兼容入口。
 不想写文件时：yan tasks apply --request-file - <<'EOF' ... EOF
 建的时候一次写全，之后只在完成一项或计划变化时更新，不要每做一步就更新一次。
@@ -308,7 +308,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 子代理结束后，宿主会汇总「摘要 / 来源 / 成果」给主 agent ——
     摘要取的是它**最后一段话**（会在数据里标名），不是子代理自报的结论；
     「未决问题」不自动猜：那要主 agent 判断，宿主不替它下结论；
-  · 启动后 UI 会在输入区上方显示任务，并在右侧面板持续显示转录、工具活动、耗时与变更；
+  · 启动后对话里以卡组显示子代理进度，用户点开后在右侧工作区查看转录、工具活动、耗时与变更；
   · 子代理的 worktree 变更不会自动合并，合并 / 放弃由用户在 UI 里审阅确认。
 `,
   search: `yan search <动作> [选项]

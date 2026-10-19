@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">让想法成形。</h1>
-<p align="center">砚（Inkstone）是基于 pi 的轻量图形 Agent 客户端：选择模型、交代任务，直接查看工具过程与结果。</p>
+<p align="center">砚（Inkstone）是基于 pi 的轻量图形 Agent 客户端：选好模型，交代任务，在同一个窗口里查看工具过程、文件改动和结果。</p>
 
 <p align="center">
   <a href="https://github.com/Yu-DaTouX/Inkstone/releases/latest"><b>下载</b></a> ·
@@ -21,54 +21,58 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/inkstone/workspace-v3-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/inkstone/workspace-v3-light.png">
-  <img src="assets/inkstone/workspace-v3-light.png" alt="砚的界面：左边是按项目分组的会话列表，中间是对话和折叠起来的工具过程，右边是环境、上下文和更改磁贴。" width="1280">
+  <img src="assets/inkstone/workspace-v3-light.png" alt="砚的界面：左边是会话列表，中间是对话与工具过程，右边是工作区。" width="1280">
 </picture>
 
 <p align="center"><sub>界面示意 · 图中内容均为演示数据</sub></p>
 
 ## 它能帮你做什么
 
-- **聊着把活干了**：像聊天一样交代任务，可以贴图片、用 `@` 指定文件、用 `/` 调命令。AI 读了什么、改了什么、跑了什么，都收在一行里，点开就能看。
-- **会话按项目整理**：左栏按项目文件夹分组；新会话可以直接在输入框底栏选项目或打开一个新文件夹。
-- **状态一眼看清**：消息旁的磁贴显示环境、上下文占用、MCP、改动和模型额度；工具也能拆成分屏磁贴，拖动换位。
-- **交给子 Agent**：为子任务指定模型，子 Agent 在旁边并行干活，图标会跟着它正在读、写或跑命令。
-- **两档权限**：「自动批准」下常规操作直接执行、危险操作先问你；「不受限制」则完全按 pi 原生行为执行。
-- **改坏了能退回**：发送前尝试为符合条件的项目保存本地快照；可先预览变更，再确认回退。
-- **模型随你选**：在软件里登录，或填入 API Key 就能用，随时切换；输入框旁有上下文圆环和额度圆环。
-- **和别人一起做**：「多人协作」用类似 Git 的方式在两台电脑之间拉取、比较、合并分支；邀请链接或二维码就能连上。
-- **插件按需添加**：在插件市场下载砚适配的插件，或搜索、安装和管理 pi 生态包。
-- **以前聊过的都找得到**：按 `Ctrl+K`，搜标题或聊天内容。
+- **像聊天一样把活交出去**：可以贴图片、用 `@` 引用文件、用 `/` 调命令；排队的消息可以编辑和调整顺序。AI 读了什么、改了什么、跑了什么，都按工具步骤收起来，点开就能看详情。
+- **会话为主**：左栏按项目文件夹列出会话，显示每个会话的运行状态；支持归档、置顶和全文搜索。`Ctrl+K` 打开搜索与命令面板。
+- **右侧工作区**：在会话旁打开改动、终端、文件、浏览器、预览与编辑、上下文、分支、日志、额度等面板，可以拖动排布，也可以弹出成独立窗口。文件面板会自动刷新；改动面板可以按范围查看补丁，也能对比图片。
+- **子 Agent**：为子任务指定模型，子 Agent 在后台并行工作；对话里以卡组显示进度，点开后在右侧工作区查看完整转录。
+- **两档权限**：「自动批准」下常规操作直接执行，危险操作和写到项目之外的操作会先问你，审批时可以选「允许这一次」「在此会话中允许」或「拒绝」；「不受限制」完全按 pi 原生行为执行。
+- **改坏了能退回**：发送前会为符合条件的项目保存本地快照，可以先预览变更，再确认回退。
+- **模型随你选**：在设置里登录或填入 API Key 即可使用，随时切换；输入框旁的圆环显示上下文占用，额度在工作区的额度面板里查看。
+- **更多**：定时任务；多人协作（两台电脑之间用类似 Git 的方式拉取、对比、合并分支）；同步文件夹；插件市场（砚适配插件与 pi 生态包）；语音输入。
 
-## 产品方向
+## 平台
 
-目标是简单易读的 UI、两档权限、指定模型的子 Agent，以及轻量和性能；上下文、压缩、技能与 MCP 交给 pi 原生管理。桌面目标覆盖 Windows、macOS、Linux；Android/iOS 作为连接电脑的工具。写作、学习、空间和资料库不再作为独立产品模块。
-
-当前主要交付和验证 Windows，其他平台不能视为已支持；开发版改动未必包含在已下载的发行包中。
+当前只交付和验证 Windows（x64）。macOS 和 Linux 是规划中的目标，现在还不能视为已支持。安卓手机可以在 **设置 → 手机与远程** 里扫码配对电脑，查看进度、回复消息（仍在测试）。开发版的改动不一定包含在已发布的安装包里。
 
 ## 开始使用
 
-1. 到 [发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest) 下载安装包，双击安装（之后会在软件里自动更新）。也有免安装的便携版。
-2. 打开砚，在 **设置 → 模型与服务** 里登录，或填入 API Key。
-3. 新建对话，在输入框底栏选好项目文件夹，说出你要做的事。
+1. 到[发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)下载安装包并安装，之后软件会自动更新；也有免安装的便携版。
+2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
+3. 新建会话，在输入框底栏选好项目文件夹，说出要做的事。
 
-安装包还没有数字签名，Windows 可能会弹出“未知发布者”提示，请只从本页下载。
+安装包还没有数字签名，Windows 可能会弹出「未知发布者」提示，请只从本页下载。
 
 ## 需要知道的
 
-- 目前只有 Windows 版。
-- 聊天记录和设置都存在你自己的电脑上。你发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
+- 聊天记录和设置都存在你自己的电脑上。发给 AI 的内容会发到你选的模型服务，费用由该服务收取。
 - 换电脑或换版本前，先备份砚的数据目录。
-- 安卓手机可以在 **设置 → 设备与同步** 里扫码配对电脑（局域网、Tailscale 或 Radmin VPN），看进度、回消息，目前还在测试。
-- Hermes 可通过 `integrations/hermes-inkstone/` 下的独立插件查看会话、选择模型和提交任务。
+- Hermes 可以通过 `integrations/hermes-inkstone/` 下的独立插件查看会话、选择模型、提交任务，并批准待审批的操作。
 
-遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，写上版本号和操作步骤，截图时记得遮住密钥。
+遇到问题欢迎提 [Issue](https://github.com/Yu-DaTouX/Inkstone/issues)，请写上版本号和操作步骤；截图时记得遮住密钥。
+
+## 与 pi 的关系
+
+模型循环和工具执行由 [pi](https://github.com/badlogic/pi-mono)（`@earendil-works/pi-coding-agent`）提供，砚以独立 RPC 子进程的方式运行它，随包带一份固定版本的运行时。上下文、压缩、技能和 MCP 都交给 pi 原生管理。砚在此之上只做三类事：
+
+- **界面**：把 pi 的工作过程呈现出来；
+- **宿主能力**：审批、文件、Git、终端、浏览器等；
+- **少量随包 pi 扩展与可关闭的附加行为**：裁剪发给模型的较早大段工具输出、到达自动压缩上限时调用 pi 原生压缩、提问与待办工具、危险操作审批；宿主侧另有流式循环防护。
+
+`yan` 命令行（`resources/yan-cli/`）给 Agent 提供砚的能力，例如子 Agent、搜索、技能接入。
 
 <details>
 <summary>开发者：从源码运行</summary>
 
-Inkstone 使用 Electron、React 和 TypeScript，并由 [pi](https://github.com/badlogic/pi-mono) 提供模型循环与工具执行。
+技术栈：Electron、React、TypeScript；手机端在 `mobile/`（React Native）。
 
-准备 Git、Node.js（建议 24）和 npm，在 PowerShell 中执行：
+准备 Git、Node.js（建议 24）和 npm，然后在 PowerShell 中执行：
 
 ```powershell
 git clone https://github.com/Yu-DaTouX/Inkstone.git
@@ -77,10 +81,40 @@ npm install -g @earendil-works/pi-coding-agent
 npm run launch
 ```
 
-启动器会检查依赖、准备缺失的内置运行时并按需构建。已有工作区可双击 `启动-砚.cmd`；开发模式使用 `开发-砚.cmd` 或 `npm run launch:dev`。AI 协作约定见 [AGENTS.md](AGENTS.md)。
+启动器会检查依赖，准备缺失的内置 pi 运行时（从已安装的 pi 提取），并按需构建。已有工作区可以直接双击 `启动-砚.cmd`。
+
+常用命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run launch:dev` / `开发-砚.cmd` | 开发模式启动 |
+| `npm run dev` | electron-vite 开发服务器 |
+| `npm run build` | 构建到 `out/` |
+| `npm run typecheck` | 主进程与渲染端类型检查、CSS 与分层检查 |
+| `npm run test:unit` | 单元测试（依赖已构建的 `out/`） |
+| `npm run test:live -- <场景>` | 用真实 Electron 窗口跑场景测试 |
+| `npm run check` | 完整检查（类型、图标、构建、单测、设计度量、核心 live 场景） |
+| `npm run vendor:pi` / `npm run upgrade:pi` | 提取或升级随包 pi 运行时 |
+| `npm run storybook` | 界面控件的 Storybook |
+| `npm run dist` | 打包 Windows 安装包 |
+
+目录概览：
+
+| 位置 | 内容 |
+| --- | --- |
+| `src/main/` | Electron 主进程：pi 进程管理、审批、文件、Git、终端、同步、远程连接 |
+| `src/preload/` | 渲染端可调用的宿主接口 |
+| `src/renderer/src/` | 界面：`app/` 外壳，`features/` 各功能，`ui/` 基础控件，`design/tokens.json` 设计令牌 |
+| `src/shared/` | 主进程与渲染端共用的类型和纯逻辑 |
+| `resources/` | 随包的 pi 扩展、技能、`yan` CLI、品牌素材；`pi-runtime/` 由脚本生成，不进 Git |
+| `scripts/` | 构建、测试、打包与设计检查脚本 |
+| `mobile/` | Android 客户端（React Native） |
+| `integrations/hermes-inkstone/` | Hermes 外部控制插件 |
+
+AI 协作约定见 [AGENTS.md](AGENTS.md)。
 
 </details>
 
 ## 许可证
 
-[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见 [第三方许可](THIRD-PARTY.md)。
+[MIT](LICENSE) · © 2026 Yu-DaTouX。第三方组件的许可见[第三方许可](THIRD-PARTY.md)。
