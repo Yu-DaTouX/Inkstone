@@ -21,16 +21,17 @@ interface Props {
   onSettings: () => void
   onBack: () => void
   sessionBarOpen: boolean
+  sessionBarHidden?: boolean
   onToggleSessionBar: () => void
   onOpenTool: (tab: WorkbenchTabId) => void
 }
 
-export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, onToggleSessionBar, onOpenTool }: Props): ReactElement {
+export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, onOpenTool }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
   const toolText = workbenchText(lang)
-  const sessionBarLabel = sessionBarOpen ? text.hideSessionBar : text.showSessionBar
+  const sessionBarLabel = sessionBarOpen ? (sessionBarHidden ? text.sessionBarNoRoom : text.hideSessionBar) : text.showSessionBar
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const firstUserTitle = useStore((s) => plainTitleText(s.messages.find((message) => message.role === 'user')?.text ?? '').slice(0, 80))
@@ -91,7 +92,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
             </IconButton>
           </IconTip>
         ) : null}
-        <h1 className="v3-head-title" title={title}>
+        <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={title}>
           {title}
         </h1>
       </div>
@@ -105,12 +106,14 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
                 aria-pressed={sessionBarOpen}
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
-                data-active={sessionBarOpen ? '1' : '0'}
+                data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
                 <PanelRight size={16} />
               </IconButton>
             </IconTip>
             <Separator orientation="vertical" className="v3-head-sep" />
+            {narrow ? null : (
+            <>
             <IconTip label={toolText.tabs.terminal}>
               <IconButton aria-label={toolText.tabs.terminal} data-testid="wb-open-terminal" onPress={() => onOpenTool('terminal')}>
                 <Terminal size={16} />
@@ -126,13 +129,15 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
                 <Globe size={16} />
               </IconButton>
             </IconTip>
+            </>
+            )}
             <MenuTrigger>
               <IconButton aria-label={toolText.overview.moreTools} title={toolText.overview.moreTools} data-testid="wb-more-tools">
                 <MoreHorizontal size={16} />
               </IconButton>
               <Popover placement="bottom end" offset={6}>
                 <Menu aria-label={toolText.overview.moreTools} className="wb-more-menu" data-testid="wb-more-menu">
-                  {(['changes', 'preview', 'logs', 'branch', 'quota'] as const).map((tab) => (
+                  {(narrow ? (['terminal', 'files', 'browser', 'changes', 'preview', 'logs', 'branch', 'quota'] as const) : (['changes', 'preview', 'logs', 'branch', 'quota'] as const)).map((tab) => (
                     <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} onAction={() => onOpenTool(tab)}>
                       {toolText.tabs[tab]}
                     </MenuItem>
@@ -154,8 +159,8 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
           </IconButton>
         </IconTip>
 
-        <IconTip label={lang === 'en-US' ? 'Keep window on top' : '窗口置顶'}>
-          <IconButton aria-label={lang === 'en-US' ? 'Keep window on top' : '窗口置顶'} aria-pressed={alwaysOnTop} data-active={alwaysOnTop ? '1' : '0'} onPress={() => void toggleAlwaysOnTop()} data-testid="v3-always-on-top"><Pin size={16} /></IconButton>
+        <IconTip label={text.keepOnTop}>
+          <IconButton aria-label={text.keepOnTop} aria-pressed={alwaysOnTop} data-active={alwaysOnTop ? '1' : '0'} onPress={() => void toggleAlwaysOnTop()} data-testid="v3-always-on-top"><Pin size={16} /></IconButton>
         </IconTip>
         <div className="v3-win">
           <button type="button" className="v3-winbtn v3-winbtn-min" aria-label={t('tb.minimize')} title={t('tb.minimize')} onClick={() => win.minimize()} data-testid="v3-min">

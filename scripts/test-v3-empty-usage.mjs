@@ -124,16 +124,14 @@ async function main() {
   ok(html.includes('data-testid="usage-tokens"') && html.includes('100K'), '空态右栏渲染 Token 合计 100K')
   ok(!html.includes('usage-token-breakdown') && !html.includes('主会话 20K'), '空态右栏只显示总数，不拆主会话 / 子代理')
 
-  ok((html.match(/role="tablist"/g) ?? []).length === 2, 'v3 控件渲染出两个 role="tablist"（Tabs 原语）')
-  ok(html.includes('aria-label="本机用量"') && html.includes('aria-label="统计范围"'), '两个 tablist 都有可读名称（键盘与读屏可用结构）')
-  ok((html.match(/role="tab"/g) ?? []).length >= 5, '概览 / 模型 / 全部 / 30 天 / 7 天都渲染为 role="tab"', (html.match(/role="tab"/g) ?? []).length)
+  ok((html.match(/role="tablist"/g) ?? []).length === 1, 'v3 页签渲染出一个 role="tablist"（Tabs 原语）')
+  ok(html.includes('aria-label="本机用量"') && html.includes('aria-label="统计范围"'), '页签与范围控件都有可读名称（键盘与读屏可用结构）')
+  ok((html.match(/role="tab"/g) ?? []).length >= 2, '概览 / 模型渲染为 role="tab"', (html.match(/role="tab"/g) ?? []).length)
+  ok(html.includes('ui-seg') && (html.match(/ui-seg__item/g) ?? []).length >= 3, '全部 / 30 天 / 7 天渲染为 SegmentedControl')
   ok(html.includes('aria-selected="true"') && html.includes('aria-selected="false"'), 'tab 有 aria-selected 选中态（键盘与读屏可用结构）')
   ok(html.includes('data-usage-control="tab"') && html.includes('data-usage-control="range"'), '两组控件分别标记 tab / range')
   ok(html.includes('>概览<') && html.includes('>模型<') && html.includes('>全部<') && html.includes('>30 天<') && html.includes('>7 天<'), '范围与页签文案都来自同一 API 的选项')
   ok(!html.includes('class="start-toggle"'), 'v3 路径不渲染旧的 .start-toggle 文字按钮')
-
-  const legacyHtml = renderEmpty(usageView(mainSub))
-  ok(legacyHtml.includes('class="start-toggle"') && legacyHtml.includes('aria-pressed="true"'), '缺省槽位仍走 v2 文字按钮（共享展示件默认不变）')
 
   const childHtml = renderEmpty(usageView(childOnly, 'zh-CN', Pattern.renderUsageToggle))
   ok(childHtml.includes('data-testid="usage-overview"') && childHtml.includes('80K'), '只有子代理时空态仍渲染用量面板')
@@ -193,14 +191,14 @@ async function main() {
   ok(emptyState.includes("import './v3-empty-state.css'"), 'V3EmptyState 自己 import 专用版面 CSS')
 
   const pattern = patternSrc
-  ok(pattern.includes("import { Tab, TabList, Tabs } from '../ui'"), 'UsagePattern 控件只来自 v3 ui/ primitives')
+  ok(pattern.includes("import { SegmentedControl, Tab, TabList, Tabs } from '../ui'"), 'UsagePattern 控件只来自 v3 ui/ primitives')
   ok(pattern.includes("import { UsageOverview } from '../features/usage/UsageOverview'"), 'UsagePattern 复用正式 UsageOverview 取数容器')
   ok(pattern.includes('renderToggle={renderUsageToggle}'), 'UsagePattern 把生产控件槽传进共享展示链')
   ok(pattern.includes("import './usage-pattern.css'"), 'UsagePattern 载入 patterns 领域 CSS')
 
   const viewSrc = await readFile(join(process.cwd(), 'src/renderer/src/features/usage/UsageOverviewView.tsx'), 'utf8')
-  ok(viewSrc.includes('renderToggle?: UsageToggleRenderer'), '共享展示件接受可选的 renderToggle 槽')
-  ok(viewSrc.includes('className="start-toggle"'), '共享展示件缺省仍保留 v2 的 .start-toggle（默认不被 v3 覆盖）')
+  ok(viewSrc.includes('renderToggle: UsageToggleRenderer'), '共享展示件的 renderToggle 槽必填')
+  ok(!viewSrc.includes('start-toggle'), '共享展示件不再保留无样式的 .start-toggle 回退')
 
   const designEntry = await readFile(join(process.cwd(), 'src/renderer/src/design/index.css'), 'utf8')
   ok(designEntry.includes('@layer reset, tokens, base, primitives, patterns, features, utilities;'), 'v3 入口声明 patterns 层，pattern CSS 落到既定层序')

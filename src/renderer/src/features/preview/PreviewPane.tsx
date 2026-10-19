@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw, TriangleAlert } from 'lucide-react'
+import { Copy, FileText, FolderOpen, Image as ImageIcon, ExternalLink, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton, Skeleton } from '../../ui'
+import { EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
 import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
@@ -146,29 +146,30 @@ export function PreviewPane({ owner, path }: PreviewPaneProps): ReactElement {
 
   return (
     <section className="v3-preview" data-testid="v3-preview" aria-label={text.title}>
-      <div className="v3-preview-bar">
-        <span className="v3-preview-name" title={activeAbs}>
-          {name || text.title}
-        </span>
-        <div className="v3-preview-actions">
-          {activeAbs ? (
-            <>
-              <IconButton aria-label={text.open} title={text.open} onPress={open}>
-                <ExternalLink size={14} />
-              </IconButton>
-              <IconButton aria-label={text.reveal} title={text.reveal} onPress={reveal}>
-                <FolderOpen size={14} />
-              </IconButton>
-              <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
-                <Copy size={14} />
-              </IconButton>
-            </>
-          ) : null}
-          <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
-            <RefreshCw size={14} />
-          </IconButton>
-        </div>
-      </div>
+      <PaneHeader
+        size="sm"
+        title={<span title={activeAbs}>{name || text.title}</span>}
+        actions={
+          <>
+            {activeAbs ? (
+              <>
+                <IconButton aria-label={text.open} title={text.open} onPress={open}>
+                  <ExternalLink size={14} />
+                </IconButton>
+                <IconButton aria-label={text.reveal} title={text.reveal} onPress={reveal}>
+                  <FolderOpen size={14} />
+                </IconButton>
+                <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
+                  <Copy size={14} />
+                </IconButton>
+              </>
+            ) : null}
+            <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
+              <RefreshCw size={14} />
+            </IconButton>
+          </>
+        }
+      />
       <PreviewBody view={view} text={text} artifacts={artifacts} ownsCurrent={ownsCurrent} onOpenArtifact={openArtifact} />
     </section>
   )
@@ -189,33 +190,33 @@ function PreviewBody({
 }): ReactElement {
   switch (view.kind) {
     case 'empty':
-      return (
-        <div className="v3-preview-empty" data-testid="v3-preview-empty">
-          {ownsCurrent && artifacts.length ? (
-            <>
-              <p>{text.artifacts}</p>
-              <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
-                {artifacts.map((artifact) => (
-                  <li key={artifact.id}>
-                    <button type="button" className="v3-preview-manifest-item" onClick={() => onOpenArtifact(artifact.path)}>
-                      <FileText size={13} aria-hidden />
-                      <span className="v3-preview-manifest-name" title={artifact.path}>
-                        {artifact.filename}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <p className="v3-preview-hint">{text.emptyHint}</p>
-            </>
-          ) : (
-            <>
-              <FileText size={20} aria-hidden />
-              <p>{text.empty}</p>
-              <p className="v3-preview-hint">{ownsCurrent ? text.emptyHint : text.notOwner}</p>
-            </>
-          )}
-        </div>
+      return ownsCurrent && artifacts.length ? (
+        <EmptyState
+          data-testid="v3-preview-empty"
+          title={text.artifacts}
+          description={text.emptyHint}
+          action={
+            <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
+              {artifacts.map((artifact) => (
+                <li key={artifact.id}>
+                  <button type="button" className="v3-preview-manifest-item" onClick={() => onOpenArtifact(artifact.path)}>
+                    <FileText size={13} aria-hidden />
+                    <span className="v3-preview-manifest-name" title={artifact.path}>
+                      {artifact.filename}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          }
+        />
+      ) : (
+        <EmptyState
+          data-testid="v3-preview-empty"
+          icon={<FileText size={20} />}
+          title={text.empty}
+          description={ownsCurrent ? text.emptyHint : text.notOwner}
+        />
       )
     case 'loading':
       return (
@@ -228,10 +229,9 @@ function PreviewBody({
       )
     case 'error':
       return (
-        <div className="v3-preview-error" data-testid="v3-preview-error" role="alert">
-          <TriangleAlert size={16} aria-hidden />
-          <span>{view.message}</span>
-        </div>
+        <Notice tone="fail" className="v3-preview-error" data-testid="v3-preview-error">
+          {view.message}
+        </Notice>
       )
     case 'text':
       return <TextView view={view} text={text} />
@@ -246,12 +246,18 @@ function PreviewBody({
       return <OfficeView view={view} text={text} />
     case 'binary':
       return (
-        <div className="v3-preview-binary" data-testid="v3-preview-binary">
-          <ImageIcon size={18} aria-hidden />
-          <p>{text.binary}</p>
-          <p className="v3-preview-hint">{text.binaryHint}</p>
-          <p className="v3-preview-hint">{formatBytes(view.bytes)}</p>
-        </div>
+        <EmptyState
+          data-testid="v3-preview-binary"
+          icon={<ImageIcon size={18} />}
+          title={text.binary}
+          description={
+            <>
+              {text.binaryHint}
+              <br />
+              {formatBytes(view.bytes)}
+            </>
+          }
+        />
       )
   }
 }
@@ -292,10 +298,9 @@ function OfficeView({
 }): ReactElement {
   if (!view.view.ok) {
     return (
-      <div className="v3-preview-error" data-testid="v3-preview-office-error" role="alert">
-        <TriangleAlert size={16} aria-hidden />
-        <span>{view.view.error}</span>
-      </div>
+      <Notice tone="fail" className="v3-preview-error" data-testid="v3-preview-office-error">
+        {view.view.error}
+      </Notice>
     )
   }
   const total = view.view.sections.reduce((sum, section) => sum + section.lines.length, 0)

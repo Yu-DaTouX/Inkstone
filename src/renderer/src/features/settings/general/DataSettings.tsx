@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import type { StorageInfoView } from '../../../../../shared/ipc'
 import type { BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
-import { Button } from '../../../ui'
+import { Button, Notice } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { bytesText } from './general-model'
@@ -54,19 +54,16 @@ type DataScope = 'storage' | 'backup' | 'verify' | 'session'
 
 interface DataMessage {
   scope: DataScope
-  tone: 'info' | 'error'
+  tone: 'info' | 'fail'
   text: string
 }
 
 function DataMessageLine({ message, scope }: { message: DataMessage | null; scope: DataScope }): ReactElement | null {
   if (!message || message.scope !== scope) return null
   return (
-    <p
-      className={message.tone === 'error' ? 'settings-row__desc settings-row__desc--error dd-message' : 'settings-row__desc dd-message'}
-      role={message.tone === 'error' ? 'alert' : 'status'}
-    >
+    <Notice tone={message.tone} compact className="dd-message">
       {message.text}
-    </p>
+    </Notice>
   )
 }
 
@@ -96,7 +93,7 @@ export function DataSettings(): ReactElement {
         if (alive) setInfo(value)
       })
       .catch((cause) => {
-        if (alive) setMessage({ scope: 'storage', tone: 'error', text: describe(cause) })
+        if (alive) setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
       })
     return () => {
       alive = false
@@ -109,7 +106,7 @@ export function DataSettings(): ReactElement {
       const dir = await window.yan.storage.pick()
       if (dir) setTarget(dir)
     } catch (cause) {
-      setMessage({ scope: 'storage', tone: 'error', text: describe(cause) })
+      setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
     }
   }
 
@@ -119,9 +116,9 @@ export function DataSettings(): ReactElement {
     setMessage(null)
     try {
       const result = await window.yan.storage.schedule(target, true)
-      if (!result.ok) setMessage({ scope: 'storage', tone: 'error', text: result.error ?? text.dataMoveConfirm })
+      if (!result.ok) setMessage({ scope: 'storage', tone: 'fail', text: result.error ?? text.dataMoveConfirm })
     } catch (cause) {
-      setMessage({ scope: 'storage', tone: 'error', text: describe(cause) })
+      setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
     } finally {
       setBusy(null)
     }
@@ -135,9 +132,9 @@ export function DataSettings(): ReactElement {
     try {
       const result = await window.yan.backup(action)
       if (result.ok) setSummary({ action, value: result.summary })
-      else if (!result.cancelled) setMessage({ scope, tone: 'error', text: result.error ?? text.dataBackup })
+      else if (!result.cancelled) setMessage({ scope, tone: 'fail', text: result.error ?? text.dataBackup })
     } catch (cause) {
-      setMessage({ scope, tone: 'error', text: describe(cause) })
+      setMessage({ scope, tone: 'fail', text: describe(cause) })
     } finally {
       setBusy(null)
     }
@@ -150,9 +147,9 @@ export function DataSettings(): ReactElement {
       const path = session?.conversationFile ?? session?.sessionFile
       const result = await window.yan.sync.exportSession(path)
       if (result.ok && result.path) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.exportDone, { path: result.path }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'error', text: result.error ?? sync.syncFailed })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error ?? sync.syncFailed })
     } catch (cause) {
-      setMessage({ scope: 'session', tone: 'error', text: describe(cause) })
+      setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
       setBusy(null)
     }
@@ -165,9 +162,9 @@ export function DataSettings(): ReactElement {
     try {
       const result = await bridge.importSession()
       if (result.ok && result.sessionId) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.importDone, { id: result.sessionId }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'error', text: result.error ?? sync.syncFailed })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error ?? sync.syncFailed })
     } catch (cause) {
-      setMessage({ scope: 'session', tone: 'error', text: describe(cause) })
+      setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
       setBusy(null)
     }

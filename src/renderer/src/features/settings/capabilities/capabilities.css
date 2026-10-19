@@ -41,29 +41,6 @@
     font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
   }
 
-  .caps-note--caution {
-    padding: var(--s-10) var(--s-12);
-    border-radius: var(--r-md);
-    background: var(--ask-bg);
-    color: var(--fg2);
-  }
-
-  .caps-warn {
-    margin: 0;
-    padding: var(--s-8) var(--s-12);
-    border-radius: var(--r-sm);
-    background: var(--fail-bg);
-    color: var(--fail-t);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
-  }
-
-  .caps-empty {
-    margin: 0;
-    padding: var(--s-12) 0;
-    color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
-  }
-
   .caps-group {
     display: flex;
     flex-direction: column;
@@ -146,11 +123,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
-    min-width: 0;
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
   }
 
   @media (hover: hover) {
@@ -275,7 +247,7 @@
   }
 
   .caps-overlay {
-    z-index: 1200;
+    z-index: calc(var(--z-modal) + 100);
   }
 
   .caps-modal {

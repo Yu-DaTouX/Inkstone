@@ -39,8 +39,22 @@ export function zoomState(win: BrowserWindow | null, uiScale: unknown): ZoomStat
 export function applyZoom(win: BrowserWindow | null, uiScale: unknown): ZoomState {
   const st = zoomState(win, uiScale)
   currentUiScale = st.uiScale
-  if (win && !win.isDestroyed()) win.webContents.setZoomFactor(st.effective)
+  if (win && !win.isDestroyed()) {
+    win.webContents.setZoomFactor(st.effective)
+    applyMinimumSize(win, st.effective)
+  }
   return st
+}
+
+const MIN_CSS_SIZE = 600
+
+function applyMinimumSize(win: BrowserWindow, zoom: number): void {
+  try {
+    const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
+    const scaled = Math.round(MIN_CSS_SIZE * Math.max(zoom, 0.5))
+    win.setMinimumSize(Math.min(scaled, Math.floor(area.width * 0.9)), Math.min(scaled, Math.floor(area.height * 0.9)))
+  } catch {
+  }
 }
 
 export function stepScale(win: BrowserWindow | null, uiScale: unknown, dir: 1 | -1): number {

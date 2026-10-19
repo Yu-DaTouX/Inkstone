@@ -92,7 +92,7 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
     } catch (error) {
       port.restoreAttachments(saved)
       port.restoreText(raw)
-      port.actions.notify('error', error instanceof Error ? error.message : `!${cmd} 执行失败`)
+      port.actions.notify('error', error instanceof Error ? error.message : port.t('composer.bashFailed', { cmd }))
       return 'handled'
     }
     if (result && result.ok === false) {
@@ -203,7 +203,7 @@ async function runLocalCommand(port: ComposerSubmitPort, name: string, args: str
   }
 
   if (port.roundRunning && SESSION_MUTATING_COMMANDS.has(name)) {
-    a.notify('info', `/${name} 本轮运行中不可用，先停止当前回合再执行`)
+    a.notify('info', port.t('composer.cmdBusy', { name }))
     port.focusComposer()
     return 'handled'
   }
@@ -234,7 +234,7 @@ async function runResultCommand(
 ): Promise<ComposerSubmitOutcome> {
   const result = await run()
   if (isCommandFailure(result)) {
-    port.actions.notify('error', result.error || `/${name} 执行失败`)
+    port.actions.notify('error', result.error || port.t('composer.cmdFailed', { name }))
     port.focusComposer()
     return 'handled'
   }
@@ -250,7 +250,7 @@ async function runNativeSessionCommand(
 ): Promise<ComposerSubmitOutcome> {
   const native = port.actions.nativeSession
   if (!native) {
-    port.actions.notify('info', `/${name} 在当前版本尚未接入`)
+    port.actions.notify('info', port.t('composer.cmdNotWired', { name }))
     port.focusComposer()
     return 'handled'
   }

@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import type { RunKind, RunSnapshot } from '../../../../shared/runs'
 import type { RunsHistoryRecord, RunsHistoryResult } from '../../../../shared/ipc'
@@ -19,7 +20,19 @@ import {
   useRunsV3
 } from '../../state/runs-v3'
 import { RunDot } from '../../patterns/RunDot'
-import { Button, Checkbox, Dialog, ListBoxItem, Modal, ModalOverlay, SearchField, Select } from '../../ui'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  EmptyState,
+  ListBoxItem,
+  Modal,
+  ModalOverlay,
+  Notice,
+  PageHeader,
+  SearchField,
+  Select
+} from '../../ui'
 import type { RunLang } from '../../state/runs-v3'
 import { RunsTimeline } from './RunsTimeline'
 import { RunsUsage } from './RunsUsage'
@@ -268,7 +281,7 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
     const bridge = window.yan?.runs
     if (!bridge || typeof bridge.history !== 'function') {
       setHistory(null)
-      setHistoryError('运行历史通道不可用')
+      setHistoryError(uiText('state.error.runHistoryUnavailable'))
       setHistoryLoading(false)
       return
     }
@@ -408,10 +421,11 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
 
   return (
     <section className="runs-page" aria-label={text.runsTitle}>
-      <div className="runs-page-head">
-        <h2 className="runs-page-title">{text.runsTitle}</h2>
-        <span className="runs-page-count">{page.runCount(list.length)}</span>
-      </div>
+      <PageHeader
+        className="runs-page-head"
+        title={text.runsTitle}
+        actions={<span className="runs-page-count">{page.runCount(list.length)}</span>}
+      />
 
       <div className="runs-toolbar">
         <div className="runs-filters">
@@ -516,28 +530,30 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
       </div>
 
       {stopSummary ? (
-        <p className="runs-stop-summary" role="status" data-testid="runs-stop-summary">
+        <Notice tone="info" compact className="runs-stop-summary" data-testid="runs-stop-summary">
           {stopSummary}
-        </p>
+        </Notice>
       ) : null}
 
       {error ? (
-        <div className="runs-page-error" role="alert" data-testid="runs-sync-error">
-          <strong>{text.syncError}</strong>
-          <span>{error}</span>
-        </div>
+        <Notice tone="fail" title={text.syncError} className="runs-page-error" data-testid="runs-sync-error">
+          {error}
+        </Notice>
       ) : null}
 
       {list.length === 0 ? (
-        <p className="runs-page-empty">
-          {error
-            ? text.none
-            : syncing
-              ? text.runsLoading
-              : filtersActive && runs.length > 0
-                ? page.noMatch
-                : text.runsEmpty}
-        </p>
+        <EmptyState
+          className="runs-page-empty"
+          title={
+            error
+              ? text.none
+              : syncing
+                ? text.runsLoading
+                : filtersActive && runs.length > 0
+                  ? page.noMatch
+                  : text.runsEmpty
+          }
+        />
       ) : (
         <ul className="runs-list">
           {list.map((run) => {
@@ -617,16 +633,16 @@ export function RunsPage({ onOpenSession }: RunsPageProps = {}): ReactElement {
       </div>
 
       {historyError ? (
-        <div className="runs-page-error" role="alert" data-testid="runs-history-error">
-          <strong>{page.historyLoadError}</strong>
-          <span>{historyError}</span>
-        </div>
+        <Notice tone="fail" title={page.historyLoadError} className="runs-page-error" data-testid="runs-history-error">
+          {historyError}
+        </Notice>
       ) : historyLoading ? (
-        <p className="runs-page-empty">{page.historyLoading}</p>
+        <EmptyState className="runs-page-empty" title={page.historyLoading} />
       ) : historyRows.length === 0 ? (
-        <p className="runs-page-empty">
-          {filtersActive && (history?.records.length ?? 0) > 0 ? page.noMatch : page.historyEmpty}
-        </p>
+        <EmptyState
+          className="runs-page-empty"
+          title={filtersActive && (history?.records.length ?? 0) > 0 ? page.noMatch : page.historyEmpty}
+        />
       ) : historyView === 'timeline' ? (
         <RunsTimeline records={historyRows} day={historyDay} lang={lang} onOpenRun={openLane} />
       ) : (

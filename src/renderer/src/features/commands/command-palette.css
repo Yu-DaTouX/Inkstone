@@ -36,14 +36,6 @@
     color: var(--fg3);
   }
 
-  .cmd-empty,
-  .cmd-error {
-    color: var(--fg3);
-  }
-  .cmd-error {
-    color: var(--fail-t);
-  }
-
   .cmd-prefix-hint {
     color: var(--fg3);
   }
@@ -161,15 +153,7 @@
     gap: var(--s-2);
   }
 
-  .cmd-empty {
-    padding: var(--s-20) var(--s-16);
-    text-align: center;
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
-  }
-
   .cmd-error {
-    padding: var(--s-8) var(--s-16) var(--s-12);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
-    border-top: 1px solid var(--line);
+    margin: var(--s-8) var(--s-12) var(--s-12);
   }
 }

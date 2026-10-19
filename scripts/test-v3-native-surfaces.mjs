@@ -50,13 +50,16 @@ const UI_STUB = `export function Button() { return null }
 export function Checkbox() { return null }
 export function CheckboxGroup() { return null }
 export function Badge() { return null }
+export function EmptyState() { return null }
+export function Notice() { return null }
 export function Dialog() { return null }
 export function Modal() { return null }
 export function ModalOverlay() { return null }
 export function Spinner() { return null }`
 
 const I18N_STUB = `export function useI18n() { return { lang: 'zh-CN', setLang() {}, toggleLang() {}, t: (k) => String(k) } }
-export function useT() { return (k) => String(k) }`
+export function useT() { return (k) => String(k) }
+export function useOptionalT() { return (k) => String(k) }`
 
 const STORE_STUB = `export function useStore(selector) { return selector(globalThis.__STORE_STATE) }
 useStore.getState = () => globalThis.__STORE_STATE`
@@ -261,6 +264,7 @@ function walk(node, visit) {
   if (!node || typeof node !== 'object') return
   visit(node)
   for (const k of childrenArray(node.props?.children)) walk(k, visit)
+  for (const k of childrenArray(node.props?.action)) walk(k, visit)
 }
 function findByTestId(node, id) {
   let hit = null

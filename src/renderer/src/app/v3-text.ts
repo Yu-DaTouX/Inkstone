@@ -10,7 +10,6 @@ export interface V3Text {
   review: string
   settings: string
   settingsTitle: string
-  settingsNote: string
   appearance: string
   theme: string
   themeLight: string
@@ -32,6 +31,8 @@ export interface V3Text {
   groupUngrouped: string
   newInProject: string
   settingsEntryHint: string
+  keepOnTop: string
+  sessionBarNoRoom: string
   showSessionBar: string
   hideSessionBar: string
   sessionMenu: string
@@ -55,14 +56,12 @@ const ZH: V3Text = {
   runsEmpty: '暂无运行。开始一件任务，它会出现在这里。',
   runsProvisional:
     '这是按现有运行实例（agent_start → agent_settled 的投影）列出的清单，尚未接入运行注册表（WP-11）；状态词不代表权威七态，也不含停滞计时。',
-  runsBack: '返回对话',
+  runsBack: '返回会话',
   runsStatus: '状态',
   schedule: '定时任务',
-  review: '代码评审',
+  review: '代码审查',
   settings: '设置',
   settingsTitle: '设置',
-  settingsNote:
-    'v3 的临时精简设置面板：目前只有外观与外壳切换。模型、权限、能力、设备等仍在旧界面，切回 v2 即可使用。',
   appearance: '外观',
   theme: '主题',
   themeLight: '浅色',
@@ -73,7 +72,7 @@ const ZH: V3Text = {
   sidebarLabel: '侧栏',
   loading: '正在启动…',
   searchShortcut: '搜索会话（Ctrl+K）',
-  newChatShortcut: '新对话（Ctrl+N）',
+  newChatShortcut: '新会话（Ctrl+N）',
   newSessionTitle: '新建会话',
   toggleSidebar: '展开或收起侧栏（Ctrl+B）',
   focusSearch: '查看会话',
@@ -82,12 +81,14 @@ const ZH: V3Text = {
   statusFailed: '失败',
   projectFallback: '本地 / 未归类',
   groupUngrouped: '未归类',
-  newInProject: '在此项目新建对话',
+  newInProject: '在此项目新建会话',
   settingsEntryHint: '打开设置',
+  keepOnTop: '窗口置顶',
+  sessionBarNoRoom: '会话栏已开启，窗口太窄暂不显示；点击关闭',
   showSessionBar: '显示会话栏',
   hideSessionBar: '隐藏会话栏',
   sessionMenu: '会话操作',
-  dragToSplit: '拖到对话区左右两侧可分屏打开',
+  dragToSplit: '拖到会话区左右两侧可分屏打开',
   dropLeft: '放到左侧',
   dropRight: '放到右侧',
   deleteConfirmTitle: '删除这个会话？',
@@ -113,8 +114,6 @@ const EN: V3Text = {
   review: 'Code review',
   settings: 'Settings',
   settingsTitle: 'Settings',
-  settingsNote:
-    'Temporary slim settings for v3: only appearance and shell switching. Models, permissions, capabilities and devices still live in the old UI — switch back to v2 for those.',
   appearance: 'Appearance',
   theme: 'Theme',
   themeLight: 'Light',
@@ -136,6 +135,8 @@ const EN: V3Text = {
   groupUngrouped: 'Ungrouped',
   newInProject: 'New chat in this project',
   settingsEntryHint: 'Open settings',
+  keepOnTop: 'Keep window on top',
+  sessionBarNoRoom: 'Session bar is on but the window is too narrow to show it. Click to turn it off',
   showSessionBar: 'Show session bar',
   hideSessionBar: 'Hide session bar',
   sessionMenu: 'Chat actions',

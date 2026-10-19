@@ -11,7 +11,7 @@ const BUSY_PHASES: ReadonlySet<GitInstallProgress['phase']> = new Set(['download
 function toolBadge(tool: ToolStatus | undefined, name: string, t: TFunc): ReactElement {
   if (!tool) return <StatusBadge tone="neutral">{name}</StatusBadge>
   if (!tool.ok) return <StatusBadge tone="fail">{t('git.toolMissing', { name })}</StatusBadge>
-  return <StatusBadge tone="run">{tool.managed ? t('git.toolManaged', { name }) : t('git.toolSystem', { name })}</StatusBadge>
+  return <StatusBadge tone="ok">{tool.managed ? t('git.toolManaged', { name }) : t('git.toolSystem', { name })}</StatusBadge>
 }
 
 function InstallProgress({ progress, onCancel }: { progress: GitInstallProgress; onCancel: () => void }): ReactElement {

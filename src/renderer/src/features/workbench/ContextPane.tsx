@@ -1,6 +1,7 @@
 import { useMemo, type ReactElement } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
+import type { UIMessage } from '../../../../shared/ipc'
 import type { ContextCategory } from '../../state/context-breakdown'
 import {
   compactionGrowthText,
@@ -23,14 +24,16 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   free: 'ctx.cat.free'
 }
 
-export function ContextPane(_props: ContextPaneProps): ReactElement {
+const NO_MESSAGES: UIMessage[] = []
+
+export function ContextPane({ visible = true }: ContextPaneProps): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = useMemo(() => contextPaneText(lang), [lang])
 
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
-  const messages = useStore((s) => s.messages)
+  const messages = useStore((s) => (visible ? s.messages : NO_MESSAGES))
   const autoCompactTokens = useStore((s) => s.settings?.autoCompactTokens)
   const autoCompactLimit = autoCompactLimitOf(session, { autoCompactTokens })
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { SessionSearchHit } from '../../../../shared/ipc'
+import { EmptyState } from '../../ui'
 import { CONTENT_SEARCH_LIMIT, focusSnippet, shouldSearchContent, splitSnippet, type ContentMatch } from './content-search'
 import type { SidebarText } from './sidebar-text'
 
@@ -61,14 +62,10 @@ export function ContentMatches({ query, state, matches, currentPath, text, onOpe
         <span className="v3-grp-label">{text.contentMatches}</span>
       </div>
       {state.status === 'failed' ? (
-        <p className="v3-side-empty" role="status">
-          {text.contentFailed}
-        </p>
+        <EmptyState size="sm" role="status" title={text.contentFailed} />
       ) : null}
       {state.status === 'searching' && matches.length === 0 ? (
-        <p className="v3-side-empty" role="status">
-          {text.contentSearching}
-        </p>
+        <EmptyState size="sm" role="status" title={text.contentSearching} />
       ) : null}
       {matches.map((match) => (
         <button

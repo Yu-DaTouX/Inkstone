@@ -143,12 +143,12 @@ export const TabsBasic: Story = {
   render: () => (
     <Tabs aria-label="视图">
       <TabList>
-        <Tab id="chat">对话</Tab>
+        <Tab id="chat">会话</Tab>
         <Tab id="files">文件</Tab>
         <Tab id="diff">改动</Tab>
       </TabList>
       <TabPanels>
-        <TabPanel id="chat">对话内容</TabPanel>
+        <TabPanel id="chat">会话内容</TabPanel>
         <TabPanel id="files">文件列表</TabPanel>
         <TabPanel id="diff">增删差异</TabPanel>
       </TabPanels>

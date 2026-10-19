@@ -108,6 +108,10 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
     window.addEventListener('blur', cancel)
   }
 
+  const restoreRowFocus = (): void => {
+    requestAnimationFrame(() => rowRef.current?.querySelector<HTMLElement>('.v3-row')?.focus())
+  }
+
   const commitRename = (): void => {
     const name = draft.trim()
     setRenaming(false)
@@ -137,10 +141,13 @@ export function SidebarRow({ item, title, isCurrent, phase, model, unread, code,
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitRename}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') commitRename()
-            else if (event.key === 'Escape') {
+            if (event.key === 'Enter') {
+              commitRename()
+              restoreRowFocus()
+            } else if (event.key === 'Escape') {
               event.preventDefault()
               setRenaming(false)
+              restoreRowFocus()
             }
           }}
           data-testid="v3-session-rename"

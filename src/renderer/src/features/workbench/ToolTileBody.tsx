@@ -1,5 +1,6 @@
 import { useState, type ComponentType, type JSX } from 'react'
 import { useI18n } from '../../i18n'
+import { EmptyState } from '../../ui'
 import { WORKBENCH_PANES } from './panes'
 import { useWorkspaceOwner } from './use-owner'
 import { activateWorkspaceOwner, captureActivationTarget } from './activation'
@@ -35,10 +36,7 @@ export function ToolTileBody({ tab }: { tab: WorkbenchTabId }): JSX.Element {
         {Body ? (
           <Body owner={owner} visible={!blocked} onPreview={(path) => showPreview(owner.key, path)} path={previewPath} />
         ) : (
-          <div className="wb-nowire">
-            <p className="wb-nowire-title">{text.notWired}</p>
-            <p className="wb-nowire-hint">{text.notWiredHint}</p>
-          </div>
+          <EmptyState className="wb-nowire" title={text.notWired} description={text.notWiredHint} />
         )}
         {blocked ? (
           <div className="wb-pane-block">

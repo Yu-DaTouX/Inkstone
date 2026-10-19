@@ -155,6 +155,9 @@ export const TriangleAlert = icon
 
 const UI_STUB = `export function IconButton(props){ return { type: 'button', props: { ...props, 'data-testid': 'icon:' + String(props['aria-label']) } } }
 export function Skeleton(){ return null }
+export function Notice(props){ return { type: 'div', props: { ...props, role: props.tone === 'fail' ? 'alert' : 'status' } } }
+export function EmptyState(props){ return { type: 'div', props: { ...props, children: [props.title, props.description, props.action] } } }
+export function PaneHeader(props){ return { type: 'div', props: { ...props, children: [props.title, props.actions] } } }
 export function cx(...a){ return a.filter(Boolean).join(' ') }
 `
 

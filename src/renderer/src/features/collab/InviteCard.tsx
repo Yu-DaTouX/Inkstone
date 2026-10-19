@@ -4,7 +4,7 @@ import { pairInviteAddress, pairInviteLink } from '../../../../shared/pair-invit
 import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Button } from '../../ui'
+import { Button, Card, Notice } from '../../ui'
 import { fill, type CollabText } from './collab-text'
 
 interface InviteCardProps {
@@ -90,19 +90,19 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
   const link = active && target.ok ? pairInviteLink({ address: target.address, code: active.code }) : ''
 
   return (
-    <div className="collab-invite" data-testid="v3-collab-invite">
+    <Card className="collab-invite" data-testid="v3-collab-invite">
       <p className="collab-label">{text.inviteTitle}</p>
       <p className="collab-hint">{text.inviteHint}</p>
       {error ? (
-        <p className="collab-note" role="alert">
+        <Notice tone="fail" compact>
           {error}
-        </p>
+        </Notice>
       ) : null}
       {loaded && !target.ok ? (
         <div className="collab-invite__row">
-          <p className="collab-note" role="note" data-testid="v3-collab-invite-unavailable">
+          <Notice tone="ask" compact role="note" data-testid="v3-collab-invite-unavailable">
             {target.reason === 'stopped' ? text.inviteStopped : text.inviteLoopback}
-          </p>
+          </Notice>
           <Button size="sm" variant="secondary" onPress={openDevices}>
             {text.inviteOpenDevices}
           </Button>
@@ -148,6 +148,6 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
           </Button>
         </div>
       ) : null}
-    </div>
+    </Card>
   )
 }

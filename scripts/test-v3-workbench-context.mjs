@@ -167,12 +167,12 @@ async function main() {
       { model: { ...model, contextWindow: 100_000 }, lastCompaction: null },
       { contextUsage: { tokens: 85_000, contextWindow: 100_000, percent: 85, modelKey: 'anthropic/claude-x' } }
     )
-    ok(warn.tone === 'warn', '≥80% 记 warn')
+    ok(warn.tone === 'ask', '≥80% 记 ask')
     const err = contextUsageSummary(
       { model: { ...model, contextWindow: 100_000 }, lastCompaction: null },
       { contextUsage: { tokens: 96_000, contextWindow: 100_000, percent: 96, modelKey: 'anthropic/claude-x' } }
     )
-    ok(err.tone === 'err', '≥95% 记 err')
+    ok(err.tone === 'fail', '≥95% 记 fail')
 
     ok(contextFromOf({ lastCompaction: { status: 'completed', startedAt: 123, firstKeptEntryId: 'k' } })?.compactedAt === 123, '已完成压缩给出上下文起点')
     ok(contextFromOf({ lastCompaction: { status: 'running', startedAt: 123 } }) === undefined, '进行中的压缩不作为起点')
@@ -197,7 +197,7 @@ async function main() {
     ok(capped.windowSize === 400_000 && capped.modelWindow === 1_000_000 && capped.cappedByLimit, '上限 400k、窗口 1M → 分母 400k，并保留模型窗口', capped)
     ok(Math.round(capped.percent) === 18, '72.2k / 400k 约 18%', capped.percent)
     const nearly = contextUsageSummary(session, { contextUsage: { ...stats.contextUsage, tokens: 330_000 } }, 400_000)
-    ok(nearly.tone === 'warn', '警告色按上限算：330k / 400k 为 warn', nearly.tone)
+    ok(nearly.tone === 'ask', '警告色按上限算：330k / 400k 为 ask', nearly.tone)
     const off = contextUsageSummary(session, stats)
     ok(off.windowSize === 1_000_000 && !off.cappedByLimit, '自动压缩关闭（无上限）按模型窗口')
     const above = contextUsageSummary({ model: { ...model, contextWindow: 200_000 }, lastCompaction: null }, { contextUsage: { tokens: 10_000, contextWindow: 200_000, modelKey: 'anthropic/claude-x' } }, 400_000)

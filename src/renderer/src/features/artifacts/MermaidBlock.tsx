@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
+import { Notice } from '../../ui'
 import { VISUAL_MERMAID_MAX_CHARS } from '../../../../shared/visual-blocks'
 import { MERMAID_THEME_TOKEN_NAMES, mermaidThemeVariables, type MermaidTokenSet } from './mermaid-theme'
 import './artifacts.css'
@@ -118,7 +119,7 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <div className="v3-visual-invalid-note">{t('vb.invalid', { error: state.error })}</div>
+        <Notice tone="fail" compact className="v3-visual-invalid-note">{t('vb.invalid', { error: state.error })}</Notice>
       </div>
     )
   }

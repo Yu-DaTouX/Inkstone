@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { useT } from '../../../i18n'
 import type { MessageKey } from '../../../i18n'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../../../../../shared/opencode-proxy'
-import { Badge, Button, Checkbox } from '../../../ui'
+import { Badge, Button, Checkbox, Notice } from '../../../ui'
 import { useConfirm } from './confirm'
 import { Actions, Item, ItemHead, Meta, Warn } from './parts'
 
@@ -199,9 +199,9 @@ export function OpenCodeProxyRow(): ReactElement {
         note.kind === 'err' ? (
           <Warn>{note.text}</Warn>
         ) : (
-          <p className="caps-result" role="status" data-testid="caps-opencode-note">
+          <Notice tone="ok" compact data-testid="caps-opencode-note">
             {note.text}
-          </p>
+          </Notice>
         )
       ) : null}
     </Item>

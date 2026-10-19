@@ -14,7 +14,7 @@ const ZH: Record<ArtifactTextKey, string> = {
   exitFullscreen: '退出全屏（Esc）',
   exitPip: '关闭画中画',
   dragHint: '拖动移动',
-  resizeHint: '拖动缩放'
+  resizeHint: '拖动缩放（方向键缩放，Alt+方向键移动，Shift 加大步长）'
 }
 
 const EN: Record<ArtifactTextKey, string> = {
@@ -23,7 +23,7 @@ const EN: Record<ArtifactTextKey, string> = {
   exitFullscreen: 'Exit fullscreen (Esc)',
   exitPip: 'Close picture-in-picture',
   dragHint: 'Drag to move',
-  resizeHint: 'Drag to resize'
+  resizeHint: 'Drag to resize (arrow keys resize, Alt+arrows move, Shift for larger steps)'
 }
 
 export function artifactText(lang: string, key: ArtifactTextKey): string {

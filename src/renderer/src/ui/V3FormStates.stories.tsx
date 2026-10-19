@@ -10,6 +10,7 @@ import {
   Radio,
   RadioGroup,
   SearchField,
+  SegmentedControl,
   Select,
   Switch,
   Text,
@@ -133,6 +134,23 @@ export const SwitchStates: Story = {
       <Switch isDisabled defaultSelected>
         禁用（开启）
       </Switch>
+    </div>
+  )
+}
+
+export const SegmentedControlStates: Story = {
+  name: 'SegmentedControl · 分段切换',
+  parameters: {
+    stateMatrix: {
+      components: ['SegmentedControl'],
+      states: STATES('default', 'selected', 'disabled'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-12)', justifyItems: 'start' }}>
+      <SegmentedControl label="范围" value="7d" options={[{ value: '24h', label: '24 小时' }, { value: '7d', label: '7 天' }, { value: '30d', label: '30 天' }]} onChange={() => undefined} />
+      <SegmentedControl label="范围（禁用）" value="24h" isDisabled options={[{ value: '24h', label: '24 小时' }, { value: '7d', label: '7 天' }]} onChange={() => undefined} />
     </div>
   )
 }

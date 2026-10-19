@@ -1,7 +1,8 @@
-import { useId, useMemo, useState, type JSX } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
+import { APPEARANCE_EVENT } from '../../lib/appearance'
 import { useStore } from '../../state/store'
-import { Button } from '../../ui'
+import { Button, Notice } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX } from '../../../../shared/html-artifact-preview'
 import { VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-blocks'
 import { ArtifactFrame } from './ArtifactFrame'
@@ -18,7 +19,7 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--text-mute', '--fg3'],
   ['--accent', '--accent'],
   ['--on-accent', '--on-ink'],
-  ['--ok', '--run'],
+  ['--ok', '--ok'],
   ['--warn', '--ask'],
   ['--err', '--fail'],
   ['--border', '--line'],
@@ -58,7 +59,9 @@ function themeVars(): { vars: Record<string, string>; dark: boolean } {
   const css = getComputedStyle(document.documentElement)
   const vars: Record<string, string> = {}
   for (const [name, source] of THEME_VARS) vars[name] = css.getPropertyValue(source).trim() || 'initial'
-  return { vars, dark: document.documentElement.getAttribute('data-theme') === 'dark' }
+  const theme = document.documentElement.getAttribute('data-theme')
+  const dark = theme ? theme === 'dark' : typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  return { vars, dark }
 }
 
 function buildDocument(html: string, generation: number): string {
@@ -88,6 +91,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   const widgetId = useId()
   const markdownIdentity = useWidgetIdentity()
   const tooLarge = html.length > VISUAL_WIDGET_MAX_CHARS
+  const frameRef = useRef<HTMLIFrameElement | null>(null)
 
   const build = useMemo(() => {
     if (tooLarge) return null
@@ -112,14 +116,35 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
     release: (url) => window.yan.releaseHtmlArtifact(url)
   })
   const error = snapshot.status === 'error' ? (snapshot.error ?? 'read') : null
+  const generation = build?.generation
+
+  useEffect(() => {
+    if (generation === undefined) return
+    const push = (): void => {
+      const frame = frameRef.current
+      if (!frame) return
+      const { vars, dark } = themeVars()
+      frame.contentWindow?.postMessage({ yanHostContext: 1, generation, vars, dark }, '*')
+    }
+    const themes = new MutationObserver(push)
+    themes.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] })
+    const scheme = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    scheme?.addEventListener('change', push)
+    window.addEventListener(APPEARANCE_EVENT, push)
+    return () => {
+      themes.disconnect()
+      scheme?.removeEventListener('change', push)
+      window.removeEventListener(APPEARANCE_EVENT, push)
+    }
+  }, [generation])
 
   if (tooLarge || error) {
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <div className="v3-visual-invalid-note">
+        <Notice tone="fail" compact className="v3-visual-invalid-note">
           {t('vb.invalid', { error: tooLarge ? t('vb.widgetTooLarge') : t('vb.widgetFailed', { error: error ?? '' }) })}
-        </div>
+        </Notice>
       </div>
     )
   }
@@ -151,6 +176,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
             setSavedAt(Date.now())
           }}
           onFrameReady={(frame) => {
+            frameRef.current = frame
             const { vars, dark } = themeVars()
             frame.contentWindow?.postMessage({ yanHostContext: 1, generation: build.generation, vars, dark }, '*')
             const saved = savedWidgetState.get(key)

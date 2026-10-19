@@ -236,10 +236,7 @@ export function Composer({ className }: { className?: string } = {}) {
           ensureActivated: () => useStore.getState().ensureActivated(),
           run: runCommandPath,
           notifyBlocked: () =>
-            notify(
-              'error',
-              '这条命令需要先安全切换会话，当前没有执行，草稿已保留。请稍后重试，或回退 v2 界面执行。'
-            )
+            notify('error', t('composer.localCommandBlocked'))
         })
         return
       }
@@ -389,6 +386,7 @@ export function Composer({ className }: { className?: string } = {}) {
               placeholder={placeholder}
               rows={1}
               data-testid="composer-input"
+              aria-label={t('composer.inputLabel')}
               spellCheck={false}
               role="combobox"
               aria-expanded={completion.open}

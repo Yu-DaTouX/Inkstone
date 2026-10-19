@@ -3,7 +3,7 @@ import { useStore } from '../../state/store'
 import { BrowserBoundsSync } from './bounds'
 import { BrowserSurfaceClaim } from './ownership'
 import { rectOf, findClipElement } from './layout'
-import { hasBlockingOverlay } from './overlay'
+import { BLOCKING_OVERLAY_SELECTOR, hasBlockingOverlay } from './overlay'
 import { createOverlayBlockerLifecycle } from './overlay-lifecycle'
 
 const OVERLAY_TOKEN = 'browser-overlay'
@@ -72,7 +72,29 @@ export function useBrowserOverlayBlocker(enabled: boolean): void {
       acquire: () => useStore.getState().acquireOverlayBlocker(OVERLAY_TOKEN)
     })
 
-    const observer = new MutationObserver(() => lifecycle.schedule())
+    const isRelevantNode = (node: Node): boolean =>
+      node instanceof Element &&
+      (node.matches(BLOCKING_OVERLAY_SELECTOR) || node.querySelector(BLOCKING_OVERLAY_SELECTOR) !== null)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes') {
+          lifecycle.schedule()
+          return
+        }
+        for (const node of mutation.addedNodes) {
+          if (isRelevantNode(node)) {
+            lifecycle.schedule()
+            return
+          }
+        }
+        for (const node of mutation.removedNodes) {
+          if (isRelevantNode(node)) {
+            lifecycle.schedule()
+            return
+          }
+        }
+      }
+    })
     observer.observe(document.body, {
       childList: true,
       subtree: true,

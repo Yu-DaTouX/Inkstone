@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { VList, type VListHandle } from 'virtua'
 import { useT } from '../../i18n'
@@ -67,6 +68,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
   const abort = useStore((s) => s.abort)
   const settings = useStore((s) => s.settings)
   const runs = useRunsV3((s) => s.runs)
+  const switchLoading = useStore((s) => s.switchLoading)
 
   const view = useMemo(
     () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
@@ -123,7 +125,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
         }
         return
       }
-      void loadPagerTree(request, pagerSessionId, '会话树读取失败').then((result) => {
+      void loadPagerTree(request, pagerSessionId, uiText('state.error.sessionTreeFailed')).then((result) => {
         if (!branchAliveRef.current || run !== branchRunRef.current) return
         if (!result.ok) {
           setBranchTree(null)
@@ -143,22 +145,22 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     if (useStore.getState().session?.sessionId !== pagerSessionId) return
     const tree = branchTreeRef.current
     if (!tree || !treeHasEntryId(tree, targetId)) {
-      setBranchError('目标分支已失效，请重试')
+      setBranchError(uiText('state.error.branchStale'))
       return
     }
     const request = nativeSessionBridge()
     if (!request) {
-      setBranchError('宿主尚未提供原生会话桥')
+      setBranchError(uiText('state.error.nativeBridgeMissing'))
       return
     }
     setBranchPending(targetId)
     setBranchError('')
     const run = branchRunRef.current
-    const result = await navigatePagerBranch(request, pagerSessionId, targetId, '分支切换失败')
+    const result = await navigatePagerBranch(request, pagerSessionId, targetId, uiText('state.error.branchSwitchFailed'))
     if (!branchAliveRef.current || run !== branchRunRef.current) return
     setBranchPending(null)
     if (!result.ok) {
-      setBranchError(result.error || '分支切换失败')
+      setBranchError(result.error || uiText('state.error.branchSwitchFailed'))
       return
     }
     await useStore.getState().refreshSessions()
@@ -338,7 +340,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
 
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-side-panel={sidePanel ? '1' : undefined}>
-      <AsciiField active={turns.length === 0} enabled={asciiBackgroundEnabled(settings)} />
+      <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
       <div className="v3-stream-host" ref={hostRef}>
         {virtual ? (
           <VList
@@ -358,7 +360,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
         ) : (
           <div className="v3-stream" ref={setStreamNode} onScroll={onScroll}>
             <div className="v3-stream-inner">
-              {turns.length === 0 ? <V3EmptyState key={view.sessionId || identity} /> : renderTurns.map((item) =>
+              {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
                   : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />

@@ -6,6 +6,7 @@ import {
   composeRenderProps
 } from 'react-aria-components'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
+import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { Button } from './Button'
 import { IconButton } from './IconButton'
@@ -45,6 +46,7 @@ function toneIcon(tone: ToastTone | undefined) {
 }
 
 export function ToastRegion({ className }: { className?: string } = {}) {
+  const t = useOptionalT()
   return (
     <RACToastRegion
       queue={toastQueue}
@@ -77,7 +79,7 @@ export function ToastRegion({ className }: { className?: string } = {}) {
             </Button>
           ) : null}
           <IconButton
-            aria-label="关闭提示"
+            aria-label={t('ui.closeToast')}
             variant="ghost"
             className="ui-toast__close"
             onPress={() => toastQueue.close(toast.key)}

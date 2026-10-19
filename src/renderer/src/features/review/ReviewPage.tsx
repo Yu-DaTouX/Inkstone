@@ -13,7 +13,26 @@ import {
 } from '../../../../shared/review'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, Checkbox, Dialog, IconButton, ListBox, ListBoxItem, Modal, ModalOverlay, Radio, RadioGroup, Select, TextArea, TextField, cx } from '../../ui'
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Dialog,
+  EmptyState,
+  IconButton,
+  ListBox,
+  ListBoxItem,
+  Modal,
+  ModalOverlay,
+  Notice,
+  PageHeader,
+  Radio,
+  RadioGroup,
+  Select,
+  TextArea,
+  TextField,
+  cx
+} from '../../ui'
 import { DiffView } from '../diff'
 import {
   ReviewRequestGate,
@@ -111,12 +130,11 @@ export function ReviewFindingsPanel({ text, status, findings, error, run, runErr
         </p>
       ) : null}
       {run && !run.ok && run.requiredWiring && run.requiredWiring.length > 0 ? (
-        <p className="review-run-wiring" role="status">
-          <strong>{text.runWiring}</strong>
+        <Notice tone="stall" compact title={text.runWiring} className="review-run-wiring">
           {run.requiredWiring.join('；')}
-        </p>
+        </Notice>
       ) : null}
-      {runError ? <p className="review-col-error" role="alert">{text.runFailed(runError)}</p> : null}
+      {runError ? <Notice tone="fail" compact>{text.runFailed(runError)}</Notice> : null}
 
       {status === 'loading' ? (
         <p className="review-col-hint">{text.findingsLoading}</p>
@@ -125,11 +143,11 @@ export function ReviewFindingsPanel({ text, status, findings, error, run, runErr
           {text.findingsUnavailable}
         </p>
       ) : status === 'error' ? (
-        <p className="review-col-error" role="alert">
+        <Notice tone="fail" compact>
           {text.findingsError(error)}
-        </p>
+        </Notice>
       ) : findings.length === 0 ? (
-        <p className="review-col-hint">{text.findingsEmpty}</p>
+        <EmptyState size="sm" title={text.findingsEmpty} />
       ) : (
         <ul className="review-finding-list">
           {findings.map((finding, index) => (
@@ -172,7 +190,7 @@ export function ReviewAnnotationList({ text, annotations, changeSetRevision, bus
         <span className="review-col-count">{text.annotations(annotations.length)}</span>
       </header>
       {annotations.length === 0 ? (
-        <p className="review-col-hint">{text.annotationEmpty}</p>
+        <EmptyState size="sm" title={text.annotationEmpty} />
       ) : (
         <ul className="review-annotation-list">
           {annotations.map((annotation) => {
@@ -694,19 +712,26 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
 
   return (
     <section className="review-page" aria-label={text.title} data-testid="v3-review-page">
-      <header className="review-head">
-        <h2 className="review-title">
-          <FileDiff size={18} aria-hidden /> {text.title}
-        </h2>
-        <span className="review-owner" title={owner.cwd}>
-          {owner.cwd || '—'}
-        </span>
-        <IconButton size="sm" aria-label={text.refresh} title={text.refresh} isDisabled={csStatus === 'loading'} onPress={refresh}>
-          <RefreshCw size={14} aria-hidden />
-        </IconButton>
-      </header>
+      <PageHeader
+        className="review-head"
+        title={
+          <span className="review-title">
+            <FileDiff size={18} aria-hidden /> {text.title}
+          </span>
+        }
+        actions={
+          <>
+            <span className="review-owner" title={owner.cwd}>
+              {owner.cwd || '—'}
+            </span>
+            <IconButton size="sm" aria-label={text.refresh} title={text.refresh} isDisabled={csStatus === 'loading'} onPress={refresh}>
+              <RefreshCw size={14} aria-hidden />
+            </IconButton>
+          </>
+        }
+      />
 
-      {owner.active === false ? <p className="review-hint">{text.activeHint}</p> : null}
+      {owner.active === false ? <Notice tone="ask" compact>{text.activeHint}</Notice> : null}
 
       <div className="review-grid">
         <div className="review-col review-col--sources">
@@ -736,9 +761,9 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
           </RadioGroup>
 
           {activeSource?.note === 'sessionShare' ? (
-            <p className="review-source-note" role="note" data-testid="review-session-note">
+            <Notice tone="info" compact role="note" data-testid="review-session-note">
               {text.sessionShareNote}
-            </p>
+            </Notice>
           ) : null}
           {source === 'branch' ? (
             <div className="review-source-extra">
@@ -760,13 +785,13 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
             {csStatus === 'loading' ? (
               <p className="review-col-hint">{text.loading}</p>
             ) : csStatus === 'error' ? (
-              <p className="review-col-error" role="alert">
+              <Notice tone="fail" compact>
                 {text.loadFailed(csError)}
-              </p>
+              </Notice>
             ) : !usable ? (
-              <p className="review-col-hint">{changeSet && changeSet.error === '这个目录不在 Git 仓库里' ? text.notGit : text.noChanges}</p>
+              <EmptyState size="sm" title={changeSet && changeSet.error === '这个目录不在 Git 仓库里' ? text.notGit : text.noChanges} />
             ) : changeSet && changeSet.files.length === 0 ? (
-              <p className="review-col-hint">{text.noChanges}</p>
+              <EmptyState size="sm" title={text.noChanges} />
             ) : changeSet ? (
               <>
                 {changeSet.truncated ? <p className="review-col-hint">{text.truncatedList}</p> : null}
@@ -815,9 +840,9 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
           ) : patchStatus === 'loading' ? (
             <p className="review-col-hint">{text.loading}</p>
           ) : patchStatus === 'error' ? (
-            <p className="review-col-error" role="alert">
+            <Notice tone="fail" compact>
               {text.diffUnavailable}：{patchError}
-            </p>
+            </Notice>
           ) : patchMeta.binary ? (
             <p className="review-col-hint">{text.binary}</p>
           ) : (
@@ -847,9 +872,9 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
 
           {annNotice ? <p className="review-col-hint" role="status">{annNotice}</p> : null}
           {annStatus === 'error' ? (
-            <p className="review-col-error" role="alert">
+            <Notice tone="fail" compact>
               {text.annotationError(annError)}
-            </p>
+            </Notice>
           ) : null}
           <ReviewAnnotationList
             text={text}
@@ -911,7 +936,7 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
             >
               {text.makeAnnotationTask}
             </Button>
-            {taskError ? <p className="review-col-error" role="alert">{text.taskFailed(taskError)}</p> : null}
+            {taskError ? <Notice tone="fail" compact>{text.taskFailed(taskError)}</Notice> : null}
           </section>
 
           <ReviewFindingsPanel
@@ -963,10 +988,16 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
           </Button>
         </div>
         {gitNotice ? (
-          <p className={cx('review-git-notice', gitNotice.ok ? 'review-git-notice--ok' : 'review-git-notice--err')} role="status" data-testid="review-git-notice">
+          <Notice
+            tone={gitNotice.ok ? 'ok' : 'fail'}
+            compact
+            role="status"
+            className="review-git-notice"
+            data-testid="review-git-notice"
+          >
             {gitNotice.ok ? text.actionOk : gitNotice.message}
             {!gitNotice.ok && gitNotice.recoverable ? ` · ${text.actionRecoverable}` : ''}
-          </p>
+          </Notice>
         ) : null}
         {gitBusy ? <p className="review-col-hint">{text.actionRunning}</p> : null}
       </footer>
@@ -1033,13 +1064,13 @@ export function ReviewPage({ bridge: bridgeProp, owner: ownerProp, loadFindings,
             {ghLoading ? (
               <p className="review-col-hint">{text.ghChecking}</p>
             ) : ghDegrade === 'missing' ? (
-              <p className="review-col-error" role="alert" data-testid="review-gh-missing">
+              <Notice tone="fail" compact data-testid="review-gh-missing">
                 {text.ghMissing}
-              </p>
+              </Notice>
             ) : ghDegrade === 'unauthenticated' ? (
-              <p className="review-col-error" role="alert" data-testid="review-gh-unauthenticated">
+              <Notice tone="fail" compact data-testid="review-gh-unauthenticated">
                 {text.ghUnauthenticated}
-              </p>
+              </Notice>
             ) : ghDegrade === 'unknown' && gh ? (
               <p className="review-col-hint">{text.ghUnknown}</p>
             ) : null}
@@ -1159,9 +1190,9 @@ function AnnotationEditor({ text, editor, error, busy, anchors, onChange, onSubm
         data-testid="review-annotation-body"
       />
       {error ? (
-        <p className="review-col-error" role="alert">
+        <Notice tone="fail" compact>
           {error}
-        </p>
+        </Notice>
       ) : null}
       <div className="review-editor-actions">
         {editor.id ? (

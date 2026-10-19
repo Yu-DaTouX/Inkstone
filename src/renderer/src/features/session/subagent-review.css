@@ -27,13 +27,6 @@
     font-size: var(--t-meta);
   }
 
-  .v3-subagent-review-error {
-    margin: 0;
-    color: var(--fail-t);
-    font-size: var(--t-meta);
-    overflow-wrap: anywhere;
-  }
-
   .v3-subagent-review-diff {
     display: flex;
     flex-direction: column;

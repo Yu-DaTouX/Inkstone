@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react'
 import { Columns2, ExternalLink, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
-import { IconButton, Tab, TabList, Tabs } from '../../ui'
+import { EmptyState, IconButton, Tab, TabList, Tabs } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useUiV3 } from '../../state/ui-v3'
 import { workbenchText, type WorkbenchText } from './workbench-text'
@@ -64,12 +64,20 @@ function TabStrip({ label, selectedKey, open, onSelect, onPointerDownCapture, cl
   useEffect(() => {
     const el = stripEl()
     if (!el) return
+    const onWheel = (event: WheelEvent): void => {
+      if (event.ctrlKey || event.deltaY === 0 || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+      if (el.scrollWidth <= el.clientWidth) return
+      el.scrollLeft += event.deltaY
+      event.preventDefault()
+    }
     el.addEventListener('scroll', sync, { passive: true })
+    el.addEventListener('wheel', onWheel, { passive: false })
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(sync)
     observer?.observe(el)
     sync()
     return () => {
       el.removeEventListener('scroll', sync)
+      el.removeEventListener('wheel', onWheel)
       observer?.disconnect()
     }
   }, [stripEl, sync])
@@ -348,9 +356,7 @@ export function WorkbenchPanel({
             ) : null}
           </div>
         ) : (
-          <div className="wb-empty" data-testid="wb-empty">
-            {text.inactiveTitle}
-          </div>
+          <EmptyState className="wb-empty" data-testid="wb-empty" title={text.inactiveTitle} />
         )}
         </div>
       </div>
@@ -384,10 +390,7 @@ function PaneSlot({ tab, containerVisible, blocked, owner, panes, text, previewP
   return (
     <div className="wb-pane" data-tab={tab} data-visible={containerVisible ? '1' : '0'} hidden={!containerVisible} data-testid={`wb-pane-${tab}`}>
       {Body ? <Body owner={owner} visible={leafVisible} onPreview={onPreview} path={previewPath} /> : (
-        <div className="wb-nowire">
-          <p className="wb-nowire-title">{text.notWired}</p>
-          <p className="wb-nowire-hint">{text.notWiredHint}</p>
-        </div>
+        <EmptyState className="wb-nowire" title={text.notWired} description={text.notWiredHint} />
       )}
       {blocked ? (
         <div className="wb-pane-block">

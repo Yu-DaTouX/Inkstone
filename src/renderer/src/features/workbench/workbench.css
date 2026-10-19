@@ -8,8 +8,7 @@
     background: transparent;
   }
 
-  .wb-pane-block,
-  .wb-nowire {
+  .wb-pane-block {
     background: var(--sunken);
     border-radius: var(--r-md);
     color: var(--fg2);
@@ -59,12 +58,12 @@
     box-shadow: inset 0 0 0 1px var(--line2);
   }
 
-  .wb-ctx-total.warn {
-    color: var(--stall);
+  .wb-ctx-total.ask {
+    color: var(--ask-t);
   }
 
-  .wb-ctx-total.err {
-    color: var(--fail);
+  .wb-ctx-total.fail {
+    color: var(--fail-t);
   }
 }
 
@@ -209,7 +208,11 @@
     display: none;
   }
 
-  .wb-nowire,
+  .wb-nowire {
+    margin: auto;
+    max-width: 32ch;
+  }
+
   .wb-pane-block {
     margin: auto;
     max-width: 32ch;
@@ -226,11 +229,7 @@
   }
 
   .wb-empty {
-    display: grid;
-    place-items: center;
     height: 100%;
-    color: var(--fg3);
-    font-size: var(--t-meta);
   }
 
   .wb-ctx {
@@ -352,10 +351,6 @@
 }
 
 @layer patterns {
-  .wb-quota-msg {
-    color: var(--fail-t);
-  }
-
   .wb-logs-body {
     background: var(--sunken);
     border-radius: var(--r-md);
@@ -423,28 +418,8 @@
   }
 
   .wb-note-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
     margin: auto;
     max-width: 36ch;
-    padding: var(--s-16);
-    text-align: center;
-  }
-
-  .wb-note-title,
-  .wb-note-body {
-    margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-  }
-
-  .wb-note-title {
-    color: var(--fg);
-  }
-
-  .wb-note-body {
-    color: var(--fg3);
   }
 
   .wb-quota-head,
@@ -467,7 +442,6 @@
     flex-direction: column;
     gap: var(--s-8);
     min-width: 0;
-    padding: var(--s-12);
   }
 
   .wb-quota-name {
@@ -487,7 +461,6 @@
     white-space: nowrap;
   }
 
-  .wb-quota-msg,
   .wb-quota-stale {
     margin: 0;
     font-size: var(--t-meta);
@@ -847,8 +820,7 @@
 }
 
 @layer patterns {
-  .wb-tile,
-  .wb-quota-card {
+  .wb-tile {
     border: 1px solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
@@ -865,11 +837,11 @@
     color: var(--fg2);
   }
 
-  .wb-tile[data-tone='warn'] .wb-tile-summary {
-    color: var(--stall-t);
+  .wb-tile[data-tone='ask'] .wb-tile-summary {
+    color: var(--ask-t);
   }
 
-  .wb-tile[data-tone='err'] .wb-tile-summary {
+  .wb-tile[data-tone='fail'] .wb-tile-summary {
     color: var(--fail-t);
   }
 

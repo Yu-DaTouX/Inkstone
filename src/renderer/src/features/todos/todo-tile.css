@@ -16,7 +16,7 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    min-height: 30px;
+    min-height: var(--size-btn);
     padding: 0 8px;
     color: var(--fg2);
     text-align: left;
@@ -112,7 +112,7 @@
   }
 
   .v3-todo-row[data-kind='done'] .v3-todo-mark {
-    color: var(--run);
+    color: var(--ok);
   }
 
   .v3-todo-row[data-kind='running'] {

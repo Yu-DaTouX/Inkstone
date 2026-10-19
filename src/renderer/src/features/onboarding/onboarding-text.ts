@@ -107,7 +107,7 @@ const ZH: OnboardingText = {
   authModelHint: '填好凭证后回到这里点「下一步」继续。',
 
   contextTitle: '上下文',
-  contextDesc: '一轮对话超过这个上限时，砚会调用 pi 原生的自动压缩。',
+  contextDesc: '会话上下文超过这个上限时，砚会调用 pi 原生的自动压缩。',
   contextLimit: '自动压缩上限',
   contextNow: '当前：{n}',
   contextClamped: '当前：{n}（窗口较小，实际按 {e} 触发）',

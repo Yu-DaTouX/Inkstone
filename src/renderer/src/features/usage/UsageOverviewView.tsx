@@ -22,24 +22,6 @@ export interface UsageToggleProps {
 }
 export type UsageToggleRenderer = (props: UsageToggleProps) => ReactNode
 
-function Toggle<T extends string>({ value, options, onChange, label, testId }: {
-  value: T
-  options: Array<{ value: T; label: string }>
-  onChange: (v: T) => void
-  label: string
-  testId?: string
-}) {
-  return (
-    <div className="start-toggle" role="group" aria-label={label} data-testid={testId}>
-      {options.map((o) => (
-        <button type="button" key={o.value} aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 export type UsageOverviewTab = 'overview' | 'models'
 
 export function emptyUsageStats(range: UsageRange, now = Date.now()): UsageStatsResult {
@@ -77,7 +59,7 @@ export interface UsageOverviewViewProps {
   money?: (usd: number) => string
   onTabChange: (tab: UsageOverviewTab) => void
   onRangeChange: (range: UsageRange) => void
-  renderToggle?: UsageToggleRenderer
+  renderToggle: UsageToggleRenderer
   keepWhenEmpty?: boolean
   emptyNote?: string
 }
@@ -144,7 +126,7 @@ export function UsageOverviewView({
       <div className="start-usage-head">
         <h2 className="start-label">{onOpenDetails ? <button className="start-details-link" type="button" onClick={onOpenDetails}>{t('usage.title')} ↗</button> : t('usage.title')}</h2>
         <span className="start-spacer" />
-        {!compact && (renderToggle ? renderToggle({
+        {!compact && renderToggle({
           kind: 'tab',
           label: t('usage.title'),
           value: tab,
@@ -153,20 +135,10 @@ export function UsageOverviewView({
             { value: 'models', label: t('usage.models') }
           ],
           onChange: (v) => onTabChange(v as UsageOverviewTab)
-        }) : (
-          <Toggle
-            label={t('usage.title')}
-            value={tab}
-            onChange={onTabChange}
-            options={[
-              { value: 'overview', label: t('usage.overview') },
-              { value: 'models', label: t('usage.models') }
-            ]}
-          />
-        ))}
+        })}
       </div>
       {!compact && <div className="start-usage-head">
-        {renderToggle ? renderToggle({
+        {renderToggle({
           kind: 'range',
           label: t('usage.range'),
           value: range,
@@ -177,19 +149,7 @@ export function UsageOverviewView({
           ],
           onChange: (v) => onRangeChange(v as UsageRange),
           testId: 'usage-range'
-        }) : (
-          <Toggle
-            label={t('usage.range')}
-            value={range}
-            onChange={onRangeChange}
-            testId="usage-range"
-            options={[
-              { value: 'all', label: t('usage.all') },
-              { value: '30d', label: t('usage.days', { n: 30 }) },
-              { value: '7d', label: t('usage.days', { n: 7 }) }
-            ]}
-          />
-        )}
+        })}
       </div>}
 
       {tab === 'overview' ? (

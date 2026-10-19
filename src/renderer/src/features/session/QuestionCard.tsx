@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useId, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { formatCountdown, UI_TIMEOUT_EXTEND } from '../../../../shared/ui-timeout'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 import type { QuestionField } from '../../../../shared/question-form'
-import { Button, IconButton } from '../../ui'
+import { Badge, Button, IconButton, TextArea, TextField } from '../../ui'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
 
@@ -69,6 +69,8 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   const extendUi = useStore((s) => s.extendUi)
   const startUiTimer = useStore((s) => s.startUiTimer)
 
+  const titleId = useId()
+  const cardRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const answered = useRef(false)
   const composing = useRef(false)
@@ -97,6 +99,13 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     const id = window.setInterval(tick, 500)
     return () => window.clearInterval(id)
   }, [deadline, reqId, dismissRequest])
+
+  useEffect(() => {
+    const card = cardRef.current
+    if (!card) return
+    const target = card.querySelector<HTMLElement>('.v3-qoption-row, .v3-qoption, input, textarea, select') ?? card
+    target.focus({ preventScroll: true })
+  }, [])
 
   if (expired) return null
 
@@ -129,14 +138,14 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   }
 
   return (
-    <div className={`v3-qcard ${collapsed ? 'collapsed' : ''}`} data-testid="v3-question" data-sensitive={req.sensitive === true || undefined} role="group" aria-label={title}>
+    <div className={`v3-qcard ${collapsed ? 'collapsed' : ''}`} data-testid="v3-question" data-sensitive={req.sensitive === true || undefined} role="alertdialog" aria-labelledby={titleId} tabIndex={-1} ref={cardRef}>
       <div className="v3-qhead">
-        <span className="v3-qbadge" data-purpose={req.purpose} data-testid="v3-question-badge">
+        <Badge tone="accent" data-purpose={req.purpose} data-testid="v3-question-badge">
           <Icon name={req.purpose === 'approval' ? 'shield' : req.method === 'confirm' ? 'alert' : 'message'} size={12} />
           {req.purpose === 'approval' ? t('chat.approvalTag') : t('chat.questionTag')}
-        </span>
-        <span className="v3-qtitle">{title}</span>
-        {req.sensitive === true ? <span className="v3-badge warn">!</span> : null}
+        </Badge>
+        <span className="v3-qtitle" id={titleId}>{title}</span>
+        {req.sensitive === true ? <Badge tone="ask">!</Badge> : null}
         <span className="v3-code-sp" />
         {deadline ? (
           <span className="v3-qtimer-wrap">
@@ -201,12 +210,12 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           ) : null}
 
           {!req.form?.length && (req.method === 'select' || req.method === 'input') ? (
-            <input
-              className="v3-input"
+            <TextField
               data-testid={req.method === 'select' ? 'v3-question-custom' : 'v3-question-input'}
+              aria-label={req.placeholder || (req.method === 'select' ? t('q.customReply') : title)}
               placeholder={req.placeholder ?? (req.method === 'select' ? t('q.customReply') : '')}
               value={text}
-              onChange={(e) => setUiDraft(reqId, e.target.value)}
+              onChange={(value) => setUiDraft(reqId, value)}
               onCompositionStart={() => { composing.current = true }}
               onCompositionEnd={() => { composing.current = false }}
               onKeyDown={onSubmitKey}
@@ -214,11 +223,12 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           ) : null}
 
           {req.method === 'editor' ? (
-            <textarea
-              className="v3-input v3-textarea v3-qeditor"
+            <TextArea
               data-testid="v3-question-editor"
+              aria-label={title}
+              rows={6}
               value={text}
-              onChange={(e) => setUiDraft(reqId, e.target.value)}
+              onChange={(value) => setUiDraft(reqId, value)}
               onCompositionStart={() => { composing.current = true }}
               onCompositionEnd={() => { composing.current = false }}
             />

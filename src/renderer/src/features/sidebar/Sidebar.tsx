@@ -3,7 +3,7 @@ import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, S
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Button, IconButton, SearchField } from '../../ui'
+import { Button, EmptyState, IconButton, SearchField } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text } from '../../app/v3-text'
@@ -266,7 +266,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
             onOpen={openSession}
           />
         ) : groups.length === 0 && !contentVisible ? (
-          <p className="v3-side-empty">{query ? t('rail.noMatch') : t('rail.empty')}</p>
+          <EmptyState size="sm" title={query ? t('rail.noMatch') : t('rail.empty')} />
         ) : (
           groups.map((group) => {
             const collapsed = collapsedKeys.has(group.slot)

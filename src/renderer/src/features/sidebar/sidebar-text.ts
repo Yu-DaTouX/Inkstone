@@ -31,7 +31,7 @@ const zh: SidebarText = {
   restoreProject: '恢复项目',
   restoreSession: '取消归档',
   projectSessionCount: '{n} 个会话',
-  newChat: '新建对话',
+  newChat: '新建会话',
   runRecords: '运行总览',
   showMore: '显示更多',
   showLess: '收起',

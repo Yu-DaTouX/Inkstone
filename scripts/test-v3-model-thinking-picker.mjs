@@ -63,7 +63,7 @@ async function buildSsr(outdir) {
   const stubMap = new Map(
     Object.entries({
       'src/renderer/src/state/store.ts': 'export function useStore(sel){ return sel ? sel({ session: null, models: [], settings: {}, thinkingLevels: [], authProviders: [] }) : {} }\nuseStore.getState = () => ({ notify(){}, patchSettings: async()=>{}, openSettings(){} })\nuseStore.setState = () => {}\n',
-      'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => String(k) }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }'
+      'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => String(k) }\nexport function useOptionalT(){ return (k) => String(k) }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
   const entry = join(outdir, 'ssr-entry.tsx')
@@ -176,7 +176,7 @@ async function main() {
     '光标启动时按终端节拍闪四次'
   )
   ok(
-    /\.mtp-scale-item\[data-active='true'\]\s*\{[^}]*color:\s*var\(--mtp-think\)/.test(pickerCss),
+    /\.mtp-scale-item\[data-active='true'\]\s*\{[^}]*color:\s*color-mix\(in srgb, var\(--mtp-think\) \d+%, var\(--fg\)\)/.test(pickerCss),
     '当前档名染档位色（可点击切档的一排）'
   )
   ok(pickerCss.includes('color-mix') && /\.mtp-thumb\s*\{[^}]*box-shadow/.test(pickerCss), '块状光标带发光')

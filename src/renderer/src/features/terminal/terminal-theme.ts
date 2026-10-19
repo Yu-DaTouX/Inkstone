@@ -6,6 +6,14 @@ const SENTINEL = 'rgb(1, 2, 3)'
 let probe: HTMLElement | null = null
 
 function resolveColor(name: string, fallback: string): string {
+  return resolveExpression(`var(${name}, ${SENTINEL})`, fallback)
+}
+
+function readableData(index: number, fallback: string): string {
+  return resolveExpression(`color-mix(in srgb, var(--data-${index}) 72%, var(--fg))`, fallback)
+}
+
+function resolveExpression(expression: string, fallback: string): string {
   if (typeof document === 'undefined' || !document.body) return fallback
   if (!probe) {
     probe = document.createElement('span')
@@ -14,9 +22,16 @@ function resolveColor(name: string, fallback: string): string {
     document.body.appendChild(probe)
   }
   probe.style.color = SENTINEL
-  probe.style.color = `var(${name}, ${SENTINEL})`
+  probe.style.color = expression
   const value = getComputedStyle(probe).color
-  return value && value !== SENTINEL ? value : fallback
+  return value && value !== SENTINEL ? toRgb(value) : fallback
+}
+
+function toRgb(value: string): string {
+  const match = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/.exec(value)
+  if (!match) return value
+  const [r, g, b] = [match[1], match[2], match[3]].map((channel) => Math.round(Math.min(1, Math.max(0, Number(channel))) * 255))
+  return match[4] === undefined ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${match[4]})`
 }
 
 export function terminalFontFamily(): string {
@@ -32,20 +47,20 @@ export function readTerminalTheme(): ITheme {
     cursorAccent: resolveColor('--sunken', '#171716'),
     selectionBackground: resolveColor('--sel', 'rgba(142,161,245,.14)'),
     black: resolveColor('--sunken', '#171716'),
-    red: resolveColor('--fail', '#F07070'),
-    green: resolveColor('--run', '#4CC38A'),
-    yellow: resolveColor('--ask', '#E6B450'),
+    red: resolveColor('--fail-t', '#F28383'),
+    green: resolveColor('--ok', '#4CC38A'),
+    yellow: resolveColor('--ask-t', '#E6B450'),
     blue: resolveColor('--accent', '#8EA1F5'),
-    magenta: resolveColor('--data-3', '#AE90FF'),
-    cyan: resolveColor('--data-2', '#3FC9C4'),
+    magenta: readableData(3, '#BFAAF9'),
+    cyan: readableData(2, '#6FD3CE'),
     white: resolveColor('--fg2', '#B5B4AF'),
     brightBlack: resolveColor('--fg3', '#9B9A94'),
     brightRed: resolveColor('--del', '#F28383'),
     brightGreen: resolveColor('--add', '#4CC38A'),
     brightYellow: resolveColor('--ask-t', '#E6B450'),
-    brightBlue: resolveColor('--data-6', '#5FB4F0'),
-    brightMagenta: resolveColor('--data-4', '#F07AB0'),
-    brightCyan: resolveColor('--data-1', '#7A9BFF'),
+    brightBlue: readableData(6, '#86C4EE'),
+    brightMagenta: readableData(4, '#EF9AC0'),
+    brightCyan: readableData(1, '#9AB2F9'),
     brightWhite: resolveColor('--fg', '#ECECE9')
   }
 }

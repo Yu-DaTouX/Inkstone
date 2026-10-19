@@ -19,7 +19,7 @@
   }
 
   .ctx-ring:hover {
-    background: var(--sel);
+    background: var(--hover);
     color: var(--fg);
   }
 
@@ -41,11 +41,11 @@
     stroke: var(--accent);
   }
 
-  .ctx-ring-arc[data-tone='warn'] {
-    stroke: var(--stall);
+  .ctx-ring-arc[data-tone='ask'] {
+    stroke: var(--ask);
   }
 
-  .ctx-ring-arc[data-tone='err'] {
+  .ctx-ring-arc[data-tone='fail'] {
     stroke: var(--fail);
   }
 
@@ -68,14 +68,7 @@
   }
 
   .ctx-pop {
-    z-index: 40;
     max-width: min(360px, calc(100vw - 16px));
-    padding: var(--s-12);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
-    color: var(--fg);
   }
 
   .ctx-dialog {
@@ -103,12 +96,12 @@
     color: var(--fg2);
   }
 
-  .ctx-window-total.warn {
-    color: var(--stall);
+  .ctx-window-total.ask {
+    color: var(--ask-t);
   }
 
-  .ctx-window-total.err {
-    color: var(--fail);
+  .ctx-window-total.fail {
+    color: var(--fail-t);
   }
 
   .ctx-usage-bar {

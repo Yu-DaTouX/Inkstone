@@ -16,13 +16,6 @@
     text-align: center;
   }
 
-  .v3-browser__gate-text {
-    max-width: 42ch;
-    margin: 0;
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
-    color: var(--fg2);
-  }
-
   .v3-browser__tabsrow {
     display: flex;
     align-items: center;
@@ -86,15 +79,6 @@
     color: var(--fg2);
   }
 
-  .v3-browser__loaderror {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s-6);
-    color: var(--fail-t);
-  }
-
-  .v3-browser__error,
   .v3-browser__loading {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -102,6 +86,7 @@
   }
 
   .v3-browser__error-url {
+    display: block;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

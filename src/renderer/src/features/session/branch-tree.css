@@ -157,11 +157,11 @@
   }
 
   .branch-note--err {
-    color: var(--fail);
+    color: var(--fail-t);
   }
 
   .branch-note--ok {
-    color: var(--run);
+    color: var(--ok-t);
   }
 
   .branch-foot {

@@ -90,7 +90,7 @@
   .v3-subagents-legend { display: flex; align-items: center; gap: var(--s-12); min-width: 0; overflow: hidden; white-space: nowrap; }
   .v3-subagents-legend-item { display: inline-flex; align-items: center; gap: var(--s-6); }
   .v3-subagents > .v3-subagent { position: relative; z-index: 1; }
-  .v3-sa-deck { --sa-card: 52px; --sa-band: 34px; --sa-edge: 5px; display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; isolation: isolate; }
+  .v3-sa-deck { --sa-card: 52px; --sa-band: 34px; --sa-edge: 5px; display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; isolation: isolate; touch-action: pan-x pinch-zoom; }
   .v3-sa-window { position: relative; min-width: 0; height: calc(var(--sa-band) * var(--sa-rows) + var(--sa-card) + var(--sa-edge) * var(--sa-edges)); }
   .v3-sa-slot { --sa-inset: 0px; position: absolute; top: 0; left: 0; right: 0; height: var(--sa-card); pointer-events: none; will-change: transform, opacity; }
   .v3-sa-slot[data-slot='-2'] { --sa-inset: 12px; transform: translateY(calc(var(--sa-band) * -1)); opacity: 0; z-index: 18; }
@@ -138,7 +138,7 @@
     flex-direction: column;
     width: min(360px, calc(100% - var(--s-16)));
     min-height: 0;
-    animation: v3-sap-in var(--dur-panel) var(--ease-in);
+    animation: v3-sap-in var(--dur-panel) var(--ease-out);
   }
   .v3-sap-head { display: flex; align-items: center; gap: var(--s-6); flex: none; padding: var(--s-6) var(--s-6) var(--s-6) var(--s-12); }
   .v3-sap-close { margin-left: auto; }

@@ -84,3 +84,9 @@ export function useI18n(): I18nValue {
 export function useT(): TFunc {
   return useI18n().t
 }
+
+const fallbackT: TFunc = (key, vars) => translate('zh-CN', key, vars)
+
+export function useOptionalT(): TFunc {
+  return useContext(I18nContext)?.t ?? fallbackT
+}

@@ -132,7 +132,11 @@ async function buildSteps(outdir) {
       makeStubPlugin({
         'src/renderer/src/features/session/Icon.tsx': `export function Icon(props){ return { type: Icon, props, key: null } }`,
         'src/renderer/src/features/artifacts/McpAppFrame.tsx': `export function McpAppResult(){ return null }\nexport function McpAppStepAudit(){ return null }`,
-        'src/renderer/src/ui/index.ts': `export function Button(props){ return null }\nButton.__stub='ui-button'\nexport function IconButton(props){ return null }\nIconButton.__stub='ui-iconbutton'\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`,
+        'src/renderer/src/ui/index.ts': `export function Button(props){ return null }\nButton.__stub='ui-button'\nexport function IconButton(props){ return null }\nIconButton.__stub='ui-iconbutton'\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }
+export function Badge(props){ return null }
+Badge.__stub='ui-badge'
+export function Notice(props){ return null }
+Notice.__stub='ui-notice'`,
         'src/renderer/src/i18n/index.tsx': `export function useI18n(){ return { lang: globalThis.__V3_LANG || 'zh-CN' } }
 export function useT(){ return (k, vars) => { let s = (globalThis.__V3_LANG === 'en-US' ? 'EN:' : 'ZH:') + String(k); if (vars) for (const [n, v] of Object.entries(vars)) s += '|' + n + '=' + v; return s } }
 export function translate(_l, k){ return String(k) }`
@@ -339,7 +343,7 @@ async function main() {
     const failedHead = byTestId(failedNode.tree, 'v3-step')
     ok(failedHead.props['aria-expanded'] === false, '失败那一步默认折叠，不让输出占满版面', failedHead.props['aria-expanded'])
     ok(byTypeName(failedNode.tree, 'StepDetail').length === 0, '失败那一步折叠时不渲染详情')
-    ok(collect(failedNode.tree, (el) => el.props && el.props.className === 'v3-badge err').length === 1, '失败那一步仍带失败徽标')
+    ok(collect(failedNode.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '失败那一步仍带失败徽标')
 
     const okNode = renderStepNode(tree, 'read-3')
     const okHead = byTestId(okNode.tree, 'v3-step')
@@ -408,7 +412,7 @@ async function main() {
     const failing = renderGroup(byTypeName(gt, 'StepGroupRow')[0])
     const extraIds = byTypeName(failing.tree, 'StepNode').map((el) => el.props.node.call.id)
     ok(extraIds.join() === 'run-1,run-3', '折叠的合并行下仍露出失败与进行中的那几条', extraIds)
-    ok(collect(failing.tree, (el) => el.props && el.props.className === 'v3-badge err').length === 1, '合并行头部带失败徽标')
+    ok(collect(failing.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '合并行头部带失败徽标')
   }
 
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
-import { Badge, Button } from '../../../ui'
+import { Badge, Button, Notice } from '../../../ui'
 import {
   AUTO_SYNC_INTERVAL_MS,
   type SyncBridge,
@@ -16,7 +16,7 @@ import { syncText, type SyncText } from './text'
 
 export interface SyncMessage {
   scope: 'sync' | 'conflicts'
-  tone: 'info' | 'error'
+  tone: 'info' | 'fail'
   text: string
 }
 
@@ -68,7 +68,7 @@ export function useSyncPanel(): SyncPanel {
       setStatus(await bridge.status())
       setConflicts(await bridge.conflicts())
     } catch (error) {
-      setMessage({ scope: 'sync', tone: 'error', text: `${text.loadFailed} ${describe(error)}` })
+      setMessage({ scope: 'sync', tone: 'fail', text: `${text.loadFailed} ${describe(error)}` })
     }
   }, [bridge, text])
 
@@ -91,7 +91,7 @@ export function useSyncPanel(): SyncPanel {
     setBusy(key)
     setMessage(null)
     void action(bridge)
-      .catch((error) => setMessage({ scope, tone: 'error', text: `${failure} ${describe(error)}` }))
+      .catch((error) => setMessage({ scope, tone: 'fail', text: `${failure} ${describe(error)}` }))
       .finally(() => setBusy(null))
   }
 
@@ -100,14 +100,14 @@ export function useSyncPanel(): SyncPanel {
       const result = await sync.configure()
       if (result.ok) await refresh()
       else if (result.cancelled) setMessage({ scope: 'sync', tone: 'info', text: text.cancelled })
-      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.configureFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.configureFailed })
     })
 
   const clearFolder = (): void =>
     perform('folder', 'sync', text.configureFailed, async (sync) => {
       const result = await sync.configure(null)
       if (result.ok) await refresh()
-      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.configureFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.configureFailed })
     })
 
   const changeMode = (mode: SyncMode): void => {
@@ -115,7 +115,7 @@ export function useSyncPanel(): SyncPanel {
     perform('mode', 'sync', text.modeFailed, async (sync) => {
       const result = await sync.setMode(mode)
       if (result.ok) await refresh()
-      else setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.modeFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.modeFailed })
     })
   }
 
@@ -135,7 +135,7 @@ export function useSyncPanel(): SyncPanel {
           })
         })
       } else {
-        setMessage({ scope: 'sync', tone: 'error', text: result.error ?? text.syncFailed })
+        setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.syncFailed })
       }
       await refresh()
     })
@@ -144,7 +144,7 @@ export function useSyncPanel(): SyncPanel {
   const resolve = (id: string, resolution: SyncResolution): void =>
     perform(id, 'conflicts', text.resolveFailed, async (sync) => {
       const result = await sync.resolve(id, resolution)
-      if (!result.ok) setMessage({ scope: 'conflicts', tone: 'error', text: result.error ?? text.resolveFailed })
+      if (!result.ok) setMessage({ scope: 'conflicts', tone: 'fail', text: result.error ?? text.resolveFailed })
       await refresh()
     })
 
@@ -154,12 +154,9 @@ export function useSyncPanel(): SyncPanel {
 function SyncMessageLine({ message, scope }: { message: SyncMessage | null; scope: SyncMessage['scope'] }): ReactElement | null {
   if (!message || message.scope !== scope) return null
   return (
-    <p
-      className={message.tone === 'error' ? 'settings-row__desc settings-row__desc--error dd-message' : 'settings-row__desc dd-message'}
-      role={message.tone === 'error' ? 'alert' : 'status'}
-    >
+    <Notice tone={message.tone} compact className="dd-message">
       {message.text}
-    </p>
+    </Notice>
   )
 }
 

@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import {
   isPanePopoutTab,
   isPopoutSupported,
@@ -43,6 +44,8 @@ export interface PanePopoutClient {
   dispose(): void
 }
 
+const THROTTLED_TABS: Partial<Record<PanePopoutTabId, number>> = { context: 250 }
+
 export function ownerToPanePopout(owner: WorkspaceOwner): PanePopoutOwner {
   return {
     key: owner.key,
@@ -87,6 +90,38 @@ export function createPanePopoutClient(options: {
     bridge.update({ tab, ownerKey: entry.ownerKey, epoch: entry.epoch, projection })
   }
 
+  const pending = new Map<PanePopoutTabId, ReturnType<typeof setTimeout>>()
+  const lastPush = new Map<PanePopoutTabId, number>()
+
+  const cancelPending = (tab: PanePopoutTabId): void => {
+    const timer = pending.get(tab)
+    if (timer !== undefined) clearTimeout(timer)
+    pending.delete(tab)
+  }
+
+  const pushNow = (tab: PanePopoutTabId): void => {
+    lastPush.set(tab, Date.now())
+    push(tab)
+  }
+
+  const pushThrottled = (tab: PanePopoutTabId): void => {
+    const interval = THROTTLED_TABS[tab] ?? 0
+    if (!interval) {
+      pushNow(tab)
+      return
+    }
+    if (pending.has(tab)) return
+    const wait = interval - (Date.now() - (lastPush.get(tab) ?? 0))
+    if (wait <= 0) {
+      pushNow(tab)
+      return
+    }
+    pending.set(tab, setTimeout(() => {
+      pending.delete(tab)
+      pushNow(tab)
+    }, wait))
+  }
+
   const offAction = source.onAction
     ? bridge.onAction((event) => {
         const entry = opened.get(event.tab)
@@ -124,19 +159,23 @@ export function createPanePopoutClient(options: {
       return result
     },
     async openTerminal(owner, terminalId) {
-      if (!terminal) return { ok: false, code: 'rejected', reason: '宿主未接入终端弹出桥' }
+      if (!terminal) return { ok: false, code: 'rejected', reason: uiText('state.error.terminalPopoutUnavailable') }
       return terminal.open({ owner: ownerToPanePopout(owner), terminalId })
     },
     refresh(tab) {
-      if (tab) push(tab)
-      else for (const key of opened.keys()) push(key)
+      if (tab) pushThrottled(tab)
+      else for (const key of opened.keys()) pushThrottled(key)
     },
     close(tab) {
       bridge.close(tab)
-      if (isPanePopoutTab(tab)) opened.delete(tab)
+      if (isPanePopoutTab(tab)) {
+        opened.delete(tab)
+        cancelPending(tab)
+      }
     },
     dispose() {
       offAction()
+      for (const tab of [...pending.keys()]) cancelPending(tab)
       for (const tab of [...opened.keys()]) bridge.close(tab)
       opened.clear()
     }

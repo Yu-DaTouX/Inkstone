@@ -1,10 +1,11 @@
-import { useState, type JSX } from 'react'
+import { useMemo, useState, type JSX } from 'react'
 import { ChevronDown, ChevronUp, FilePen, Undo2 } from 'lucide-react'
 import { Button } from '../../ui'
 import { useI18n, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
+import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { collectTurnChanges, splitChangePath, type TurnFileStatus } from './turn-changes'
 import './turn-changes.css'
@@ -27,7 +28,7 @@ const ZH: ChangesText = {
   ].filter(Boolean).join(' · '),
   more: (n) => `再显示 ${n} 个文件`,
   less: '收起',
-  view: '查看变更',
+  view: '查看改动',
   undo: '撤销'
 }
 const EN: ChangesText = {
@@ -46,8 +47,7 @@ function changesText(lang: Lang): ChangesText {
   return lang === 'en-US' ? EN : ZH
 }
 
-function promptBefore(sourceIds: readonly string[]): { text: string; timestamp?: number } | null {
-  const messages = useStore.getState().messages
+function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string[]): { text: string; timestamp?: number } | null {
   const first = messages.findIndex((m) => m.id === sourceIds[0])
   for (let i = (first < 0 ? messages.length : first) - 1; i >= 0; i--) {
     const m = messages[i]
@@ -58,17 +58,24 @@ function promptBefore(sourceIds: readonly string[]): { text: string; timestamp?:
 
 export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
   const { lang } = useI18n()
-  const checkpoints = useStore((s) => s.checkpoints)
   const openRewind = useStore((s) => s.openRewind)
   const sessionCwd = useStore((s) => s.session?.cwd)
   const [expanded, setExpanded] = useState(false)
   const cwd = turn.response?.sourceCwd || sessionCwd || undefined
-  const changes = collectTurnChanges(turn.tools, cwd)
+  const changes = useMemo(() => collectTurnChanges(turn.tools, cwd), [turn.tools, cwd])
+  const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
+  const checkpointId = useStore((s) => {
+    if (!wantsCheckpoint) return null
+    const owned = s.checkpoints.filter((r) => r.sessionKey === rewindOwner)
+    if (!owned.length) return null
+    const found = promptBefore(s.messages, turn.sourceIds)
+    return found ? matchCheckpoint(owned, found.text, found.timestamp)?.id ?? null : null
+  })
   if (!changes) return null
 
   const text = changesText(lang)
-  const prompt = !readOnly && rewindOwner ? promptBefore(turn.sourceIds) : null
-  const checkpoint = prompt ? matchCheckpoint(checkpoints.filter((r) => r.sessionKey === rewindOwner), prompt.text, prompt.timestamp) : null
+  const prompt = checkpointId ? promptBefore(useStore.getState().messages, turn.sourceIds) : null
+  const checkpoint = checkpointId ? { id: checkpointId } : null
   const shown = expanded ? changes.files : changes.files.slice(0, VISIBLE_FILES)
   const hidden = changes.files.length - VISIBLE_FILES
 

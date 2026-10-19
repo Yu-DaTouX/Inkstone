@@ -37,19 +37,19 @@
     font-size: var(--t-meta);
   }
 
-  .quota-win[data-tone='warn'] {
+  .quota-win[data-tone='ask'] {
     --ui-meter-projection: var(--ask);
   }
 
-  .quota-win[data-tone='warn'] .ui-progress__fill {
+  .quota-win[data-tone='ask'] .ui-progress__fill {
     background: var(--ask);
   }
 
-  .quota-win[data-tone='err'] {
+  .quota-win[data-tone='fail'] {
     --ui-meter-projection: var(--fail);
   }
 
-  .quota-win[data-tone='err'] .ui-progress__fill {
+  .quota-win[data-tone='fail'] .ui-progress__fill {
     background: var(--fail);
   }
 

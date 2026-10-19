@@ -21,21 +21,13 @@
   }
 
   .collab-head {
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8) var(--s-12);
   }
 
   .collab-title {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--s-8);
-    margin: 0;
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    font-weight: var(--t-h2-w, 600);
   }
 
   .collab-lede {
@@ -67,42 +59,6 @@
     font-family: var(--font-mono);
   }
 
-  .collab-note {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border-left: 2px solid var(--stall);
-    border-radius: var(--r-sm);
-    background: var(--stall-bg);
-    color: var(--stall-t);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    overflow-wrap: anywhere;
-  }
-
-  .collab-error {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border-radius: var(--r-sm);
-    background: var(--fail-bg);
-    color: var(--fail-t);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    overflow-wrap: anywhere;
-  }
-
-  .collab-error-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-8);
-    min-width: 0;
-  }
-
-  .collab-error-row > .collab-error {
-    flex: 1 1 240px;
-    min-width: 0;
-  }
-
   .collab-msg-slot {
     position: sticky;
     top: 0;
@@ -114,37 +70,12 @@
   }
 
   .collab-msg {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--s-8);
-    min-width: 0;
-    padding: var(--s-6) var(--s-6) var(--s-6) var(--s-12);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    background-color: var(--surface);
+    background-image: linear-gradient(var(--notice-bg), var(--notice-bg));
     box-shadow: var(--shadow-card);
   }
 
-  .collab-msg[data-tone='info'] {
-    background-color: var(--surface);
-    background-image: linear-gradient(var(--sel), var(--sel));
-  }
-
-  .collab-msg[data-tone='error'] {
-    border-color: var(--fail);
-    background-color: var(--surface);
-    background-image: linear-gradient(var(--fail-bg), var(--fail-bg));
-    color: var(--fail-t);
-  }
-
   .collab-msg__text {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    padding-block: var(--s-4);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
-    overflow-wrap: anywhere;
     white-space: pre-line;
   }
 
@@ -167,11 +98,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
-    min-width: 0;
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    background: var(--surface);
   }
 
   .collab-actions {
@@ -285,10 +211,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-6);
-    min-width: 0;
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line2);
-    border-radius: var(--r-lg);
   }
 
   .collab-invite__body {

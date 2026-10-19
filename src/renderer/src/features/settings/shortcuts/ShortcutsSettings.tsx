@@ -10,7 +10,7 @@ import {
 } from '../../../app/shortcuts'
 import type { AppSettings } from '../../../../../shared/ipc'
 import { shortcutText } from '../../commands/shortcut-text'
-import { Button, Kbd } from '../../../ui'
+import { Button, Card, Kbd } from '../../../ui'
 import { bindingFromKeyStroke, clearShortcutOverrides, rebindShortcut } from './bindings'
 import { shortcutsText } from './shortcuts-text'
 import { settingsText } from '../settings-text'
@@ -103,7 +103,7 @@ export function ShortcutsSettings(): ReactElement {
     <section className="settings-section" aria-label={settingsText(lang).sectionShortcuts} data-testid="v3-shortcuts-settings">
       <p className="settings-section__lede">{text.note}</p>
 
-      <div className="settings-rows settings-shortcut-card" data-setting-id="shortcuts-keys">
+      <Card padding="none" className="settings-shortcut-card" data-setting-id="shortcuts-keys">
         <table className="settings-table">
           <thead>
             <tr>
@@ -191,7 +191,7 @@ export function ShortcutsSettings(): ReactElement {
             {text.restoreAll}
           </Button>
         </div>
-      </div>
+      </Card>
     </section>
   )
 }

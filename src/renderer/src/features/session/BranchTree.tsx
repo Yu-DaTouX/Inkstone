@@ -86,7 +86,7 @@ const ZH: BranchText = {
   retry: '重试',
   refresh: '重新读取会话树',
   empty: '这条会话还没有可显示的分支。',
-  emptyHint: '开始对话后，分叉点会在这里以树的形式列出。',
+  emptyHint: '开始会话后，分叉点会在这里以树的形式列出。',
   navigate: '切换到此条目',
   navigated: '已切换；当前叶子已更新。',
   actionFailed: '分支切换失败。',
@@ -617,11 +617,11 @@ export function BranchTree({
         <span className="branch-foot__hint">{pending && summarize ? text.summarizing : blocked ? text.busyHint : summarize ? text.hintSummarize : text.hint}</span>
         <span className="branch-foot__spacer" />
         {actionError ? (
-          <span className="branch-note branch-note--err" data-testid="branch-error">
+          <span className="branch-note branch-note--err" data-testid="branch-error" role="alert">
             {actionError}
           </span>
         ) : notice ? (
-          <span className="branch-note branch-note--ok" data-testid="branch-notice">
+          <span className="branch-note branch-note--ok" data-testid="branch-notice" role="status">
             {notice}
           </span>
         ) : null}

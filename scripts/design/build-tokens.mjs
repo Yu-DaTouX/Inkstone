@@ -33,6 +33,7 @@ function buildCss() {
   for (const [name, v] of Object.entries(tokens.radius)) lines.push(`    --r-${name}: ${v}px;`)
   for (const [name, v] of Object.entries(tokens.size)) lines.push(`    --size-${name}: ${v}px;`)
   for (const [name, v] of Object.entries(tokens.motion)) lines.push(`    --${name.startsWith('ease') ? name : `dur-${name}`}: ${v};`)
+  for (const [name, v] of Object.entries(tokens.z ?? {})) lines.push(`    --z-${name}: ${v};`)
   const std = tokens.density.standard
   for (const [k, v] of Object.entries(std)) lines.push(`    --d-${k}: ${v}px;`)
   lines.push('  }')

@@ -11,6 +11,7 @@ import {
   type ModalOverlayProps
 } from 'react-aria-components'
 import { X } from 'lucide-react'
+import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { IconButton } from './IconButton'
 
@@ -43,9 +44,10 @@ export interface DialogProps extends RACDialogProps {
 }
 
 export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
-  { title, closeLabel = '关闭', showClose = true, className, children, ...props },
+  { title, closeLabel, showClose = true, className, children, ...props },
   ref
 ) {
+  const t = useOptionalT()
   const token = useRef(Symbol('v3-dialog'))
   useEffect(() => {
     const current = token.current
@@ -67,7 +69,7 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
               )}
               {showClose ? (
                 <IconButton
-                  aria-label={closeLabel}
+                  aria-label={closeLabel ?? t('ui.close')}
                   variant="ghost"
                   className="ui-dialog__close"
                   onPress={renderProps.close}

@@ -1,5 +1,5 @@
-@layer primitives {
-  .v3-rail-dock { animation: v3-rail-in var(--dur-panel) var(--ease-in) both; }
+@layer features {
+  .v3-rail-dock { animation: v3-rail-in var(--dur-panel) var(--ease-out) both; }
   .v3-rail-track { transition: opacity var(--dur-pop) var(--ease); }
   .v3-rail[data-open] .v3-rail-track { opacity: 0; }
   @keyframes v3-rail-in { from { opacity: 0; transform: translateX(-6px); } }
@@ -9,18 +9,20 @@
   .v3-rail-tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
   .v3-rail-bar {
     display: block;
-    width: 8px;
+    width: 16px;
+    flex: none;
     height: 2px;
     border-radius: var(--r-full);
     background: var(--fg3);
     opacity: 0.5;
     transform-origin: left center;
-    transition: width var(--dur-expand) var(--ease), background-color var(--dur-expand) var(--ease), opacity var(--dur-expand) var(--ease);
-    animation: v3-rail-tick-in var(--dur-expand) var(--ease-in) both;
+    transform: scaleX(0.5);
+    transition: transform var(--dur-expand) var(--ease), background-color var(--dur-expand) var(--ease), opacity var(--dur-expand) var(--ease);
+    animation: v3-rail-tick-in var(--dur-expand) var(--ease-out) both;
     animation-delay: calc(var(--i, 0) * 22ms);
   }
-  .v3-rail-tick:hover .v3-rail-bar { width: 12px; opacity: 0.9; }
-  .v3-rail-tick[aria-current] .v3-rail-bar { width: 16px; background: var(--fg); opacity: 1; }
+  .v3-rail-tick:hover .v3-rail-bar { transform: scaleX(0.75); opacity: 0.9; }
+  .v3-rail-tick[aria-current] .v3-rail-bar { transform: scaleX(1); background: var(--fg); opacity: 1; }
 
   .v3-rail-card {
     background: var(--surface);
@@ -38,7 +40,7 @@
     opacity: 1;
     visibility: visible;
     transform: translate(0, -50%);
-    transition: opacity var(--dur-pop) var(--ease-in), transform var(--dur-pop) var(--ease-in), visibility 0s;
+    transition: opacity var(--dur-pop) var(--ease-out), transform var(--dur-pop) var(--ease-out), visibility 0s;
   }
   .v3-rail-card-head {
     color: var(--fg3);

@@ -4,7 +4,7 @@ import type { MessageKey } from '../../../i18n'
 import { DESKTOP_PET_VERSION, type DesktopPetResult, type DesktopPetStatus } from '../../../../../shared/desktop-pet'
 import type { PluginCatalogEntry, PluginCatalogText } from '../../../../../shared/plugin-catalog'
 import type { ModelInfo } from '../../../../../shared/ipc'
-import { Badge, Button, Checkbox, ListBoxItem, Select } from '../../../ui'
+import { Badge, Button, Checkbox, ListBoxItem, Notice, Select } from '../../../ui'
 import { useConfirm } from './confirm'
 import { Actions, Item, ItemHead, Meta, Warn } from './parts'
 
@@ -207,9 +207,9 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
         note.kind === 'err' ? (
           <Warn>{note.text}</Warn>
         ) : (
-          <p className="caps-result" role="status" data-testid="caps-pet-note">
+          <Notice tone="ok" compact data-testid="caps-pet-note">
             {note.text}
-          </p>
+          </Notice>
         )
       ) : null}
     </Item>

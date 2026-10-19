@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
-import { Button, IconButton } from '../../ui'
+import { Button, IconButton, Notice } from '../../ui'
 import type { McpAppViewApi, McpAppViewAuditEntry, McpAppViewDescriptor } from '../../../../shared/mcp-app-view'
 import {
   clampFramePosition,
   clampInlineHeight,
   defaultPipRect,
   inlineOverflows,
+  PIP_SIZE,
   moveFrame,
+  nudgeFrame,
   resizeFrame,
   type ArtifactForm,
   type FrameRect
@@ -60,7 +62,7 @@ const ZH: AppLabels = {
   pip: '画中画',
   exitFullscreen: '退出全屏（Esc）',
   exitPip: '关闭画中画',
-  resizeHint: '拖动缩放',
+  resizeHint: '拖动缩放（方向键缩放，Alt+方向键移动，Shift 加大步长）',
   auditTitle: 'App 调用记录',
   auditPermissionAll: '不受限制',
   auditPermissionDanger: '需要确认'
@@ -79,7 +81,7 @@ const EN: AppLabels = {
   pip: 'Picture-in-picture',
   exitFullscreen: 'Exit fullscreen (Esc)',
   exitPip: 'Close picture-in-picture',
-  resizeHint: 'Drag to resize',
+  resizeHint: 'Drag to resize (arrow keys resize, Alt+arrows move, Shift for larger steps)',
   auditTitle: 'App call log',
   auditPermissionAll: 'Unrestricted',
   auditPermissionDanger: 'Needs confirmation'
@@ -295,6 +297,15 @@ export function McpAppFrame({
     )
   }
 
+  const onHandleKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
+    if (form !== 'pip' || !pipRect) return
+    const next = nudgeFrame(pipRect, event.key, { alt: event.altKey, shift: event.shiftKey }, windowViewport())
+    if (!next) return
+    event.preventDefault()
+    event.stopPropagation()
+    setPipRect(next)
+  }
+
   const endInteraction = (event: React.PointerEvent<HTMLElement>): void => {
     if (interactionRef.current?.pointerId === event.pointerId) {
       event.currentTarget.releasePointerCapture?.(event.pointerId)
@@ -421,8 +432,13 @@ export function McpAppFrame({
             className="v3-artifact-frame-resize"
             data-testid="v3-mcp-app-resize"
             role="separator"
+            tabIndex={0}
             aria-label={labels.resizeHint}
+            aria-valuenow={pipRect ? pipRect.width : undefined}
+            aria-valuemin={PIP_SIZE.min.width}
+            aria-valuemax={PIP_SIZE.max.width}
             title={labels.resizeHint}
+            onKeyDown={onHandleKeyDown}
             onPointerDown={beginInteraction('resize')}
             onPointerMove={onInteractionMove}
             onPointerUp={endInteraction}
@@ -471,16 +487,16 @@ export function McpAppResult({ callId, title, near = true }: McpAppResultProps):
   }, [api, callId])
 
   if (!api) return null
-  if (failed) return <div className="v3-mcp-app-fallback failed" role="alert" data-testid="v3-mcp-app-fallback">{labels.loadFailed}</div>
-  if (!descriptor) return <div className="v3-mcp-app-fallback" role="status" data-testid="v3-mcp-app-loading">{labels.waitingInitialize}</div>
+  if (failed) return <Notice tone="fail" compact className="v3-mcp-app-fallback" data-testid="v3-mcp-app-fallback">{labels.loadFailed}</Notice>
+  if (!descriptor) return <Notice compact className="v3-mcp-app-fallback" data-testid="v3-mcp-app-loading">{labels.waitingInitialize}</Notice>
 
   const render = describeMcpAppView(descriptor)
   if (render.mode === 'text') return null
   if (render.mode === 'error') {
-    return <div className="v3-mcp-app-fallback failed" role="alert" data-testid="v3-mcp-app-fallback">{render.error || labels.loadFailed}</div>
+    return <Notice tone="fail" compact className="v3-mcp-app-fallback" data-testid="v3-mcp-app-fallback">{render.error || labels.loadFailed}</Notice>
   }
   if (render.mode === 'invalid') {
-    return <div className="v3-mcp-app-invalid" role="alert" data-testid="v3-mcp-app-invalid">{labels.invalidUrl}</div>
+    return <Notice tone="fail" className="v3-mcp-app-invalid" data-testid="v3-mcp-app-invalid">{labels.invalidUrl}</Notice>
   }
   return (
     <McpAppFrame

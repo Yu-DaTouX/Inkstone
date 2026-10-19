@@ -137,7 +137,7 @@ export function VoiceStatusPanel({ voice }: { voice: VoiceSetup }): ReactElement
       <div className="caps-stack" data-testid="settings-voice" data-setting-id="caps-tools-voice">
         <Group title={t('voice.title')} desc={t('voice.desc')} card>
           <p className="caps-meta" data-testid="voice-state">
-            {status?.ready ? <Badge tone="run">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
+            {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
             {status?.model ? <span> {status.model.label}</span> : null}
             {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
           </p>
@@ -204,7 +204,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
           <Item testId="voice-binary">
             <ItemHead>
               {status?.binary ? (
-                <Badge tone="run">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>
+                <Badge tone="ok">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>
               ) : (
                 <Badge>{t('voice.engineMissing')}</Badge>
               )}
@@ -237,7 +237,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                       <ItemHead>
                         <strong>{tierLabel(candidate.spec.tier)}</strong>
                         {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
-                        {selected ? <Badge tone="run">{t('voice.inUse')}</Badge> : null}
+                        {selected ? <Badge tone="ok">{t('voice.inUse')}</Badge> : null}
                       </ItemHead>
                       <Meta>
                         {t('voice.modelLine', {

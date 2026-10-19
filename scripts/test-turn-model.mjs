@@ -58,7 +58,8 @@ try {
     module,
     exports: module.exports,
     useStore: selector => selector(state),
-    contextUsageSummary: view.exports.contextUsageSummary
+    contextUsageSummary: view.exports.contextUsageSummary,
+    autoCompactLimitOf: view.exports.autoCompactLimitOf
   })
   vm.runInContext(code, context)
   check(context.useContextUsage().windowSize === 32000 && context.useContextUsage().percent === 50, '路由响应后使用原生物理窗口作分母')

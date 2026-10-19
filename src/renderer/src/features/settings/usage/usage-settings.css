@@ -30,13 +30,15 @@
   }
 
   .usage-panel .settings-bar__fill {
-    transition: width var(--dur-expand) var(--ease);
+    width: 100%;
+    transform-origin: left center;
+    transition: transform var(--dur-expand) var(--ease);
     animation: usage-bar-in 600ms var(--ease) both;
   }
 
   @keyframes usage-bar-in {
     from {
-      width: 0;
+      transform: scaleX(0);
     }
   }
 

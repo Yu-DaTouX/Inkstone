@@ -78,6 +78,7 @@ add('run-t', STATUS_BASES, 4.5, true, '运行中文字')
 add('ask-t', [...STATUS_BASES, { tint: 'ask-bg', over: 'surface' }, { tint: 'ask-bg', over: 'bg' }], 4.5, true, '待确认文字')
 add('stall-t', [...STATUS_BASES, { tint: 'stall-bg', over: 'surface' }, { tint: 'stall-bg', over: 'bg' }], 4.5, true, '停滞文字')
 add('fail-t', [...STATUS_BASES, { tint: 'fail-bg', over: 'surface' }, { tint: 'fail-bg', over: 'bg' }], 4.5, true, '失败文字')
+add('ok-t', [...STATUS_BASES, { tint: 'ok-bg', over: 'surface' }, { tint: 'ok-bg', over: 'bg' }], 4.5, true, '成功文字')
 add('add', [...STATUS_BASES, { tint: 'add-bg', over: 'surface' }, { tint: 'add-bg', over: 'bg' }], 4.5, true, '新增行文字')
 add('del', [...STATUS_BASES, { tint: 'del-bg', over: 'surface' }, { tint: 'del-bg', over: 'bg' }], 4.5, true, '删除行文字')
 
@@ -91,12 +92,12 @@ add('fg2', SEL_BASES, 4.5, true, '次要文字·选中')
 add('accent', SEL_BASES, 4.5, true, '链接·选中')
 
 add('accent', ['bg', 'side', 'surface', 'bubble'], 3, true, '焦点环', 'nontext')
-for (const dot of ['run', 'ask', 'stall', 'fail']) {
+for (const dot of ['ok', 'run', 'ask', 'stall', 'fail']) {
   checks.push({ fg: dot, bg: 'bg', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'side', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'surface', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
 }
-add('line2', ['surface', 'bg'], 3, false, '控件描边（报告）', 'nontext')
+add('line-ctl', ['surface', 'bg', 'side', 'sunken'], 3, true, '控件描边', 'nontext')
 
 const results = []
 for (const mode of MODES) {

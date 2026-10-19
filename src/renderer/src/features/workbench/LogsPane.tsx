@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import { Copy } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
+import { EmptyState, IconButton } from '../../ui'
 import { workbenchPaneText } from './pane-text'
 import type { LogsPaneProps } from './types'
 
@@ -26,10 +26,7 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
 
   if (logs.length === 0 && statusEntries.length === 0) {
     return (
-      <div className="wb-note-block" data-testid="v3-wb-logs-empty">
-        <p className="wb-note-title">{t('tile.logsEmpty')}</p>
-        <p className="wb-note-body">{t('tile.logsEmptyBody')}</p>
-      </div>
+      <EmptyState className="wb-note-block" data-testid="v3-wb-logs-empty" title={t('tile.logsEmpty')} description={t('tile.logsEmptyBody')} />
     )
   }
 

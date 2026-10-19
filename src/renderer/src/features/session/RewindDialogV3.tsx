@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CheckpointPreview } from '../../../../shared/checkpoints'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, Modal, ModalOverlay } from '../../ui'
+import { Badge, Button, Dialog, Modal, ModalOverlay, Notice, type BadgeTone } from '../../ui'
 import './rewind-dialog.css'
+
+const CHANGE_TONE: Record<'A' | 'D' | 'M', BadgeTone> = { A: 'fail', D: 'ok', M: 'stall' }
 
 type Phase = 'loading' | 'ready' | 'working' | 'done' | 'undone' | 'failed'
 
@@ -127,7 +129,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
                 <ul className="rewind-files" data-testid="rewind-files">
                   {preview.changes.map((change) => (
                     <li key={change.path}>
-                      <span className={`rewind-tag s-${change.status}`}>{label[change.status]}</span>
+                      <Badge tone={CHANGE_TONE[change.status]} className="rewind-tag">{label[change.status]}</Badge>
                       <span className="rewind-path" title={change.path}>{change.path}</span>
                     </li>
                   ))}
@@ -136,7 +138,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
                 <div className="rewind-dim">{t('rewind.note')}</div>
               </>
             ) : null}
-            {message ? <div className={phase === 'failed' ? 'rewind-error' : 'rewind-dim'} role="status">{message}</div> : null}
+            {message ? (phase === 'failed' ? <Notice tone="fail" compact>{message}</Notice> : <div className="rewind-dim" role="status">{message}</div>) : null}
           </div>
           <div className="rewind-foot">
             <span className="rewind-spacer" />

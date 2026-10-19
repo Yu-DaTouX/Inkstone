@@ -19,8 +19,8 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: var(--size-btn);
+    height: var(--size-btn);
     border-radius: var(--r-md);
     background: var(--hover);
     color: var(--fg2);

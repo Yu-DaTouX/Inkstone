@@ -60,6 +60,7 @@ import {
 } from './composer-recovery'
 import { decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
 import { reuseIfSame } from './same-messages'
+import { keepRef } from './stable-ref'
 import {
   migratePathDraft,
   pruneSessionRuntimes,
@@ -83,7 +84,7 @@ import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 function currentLang(): Lang {
   const fromSettings = useStore.getState().settings?.lang
   if (fromSettings) return fromSettings
-  return typeof document !== 'undefined' && document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
+  return typeof document !== 'undefined' && document.documentElement?.lang === 'en-US' ? 'en-US' : 'zh-CN'
 }
 
 function uiText(key: MessageKey, vars?: TVars): string {
@@ -222,6 +223,7 @@ export interface Store {
   peekedPath: string | null
   peekedSessionId: string | null
   peekNote: { truncated: number; total: number } | null
+  switchLoading: boolean
   pendingActivation: {
     sessionFile?: string
     sessionId?: string
@@ -927,7 +929,7 @@ export const useStore = create<Store>((rawSet, get) => {
         if (added.length) {
           return {
             ...partial,
-            logs: [...(partial.logs ?? state.logs), ...added.map((n) => `[错误] ${n.text}`)].slice(-200)
+            logs: [...(partial.logs ?? state.logs), ...added.map((n) => uiText('state.log.error', { text: n.text }))].slice(-200)
           }
         }
       }
@@ -1051,6 +1053,7 @@ export const useStore = create<Store>((rawSet, get) => {
   peekedPath: null,
   peekedSessionId: null,
   peekNote: null,
+  switchLoading: false,
   pendingActivation: null,
 
   bootstrap: async () => {
@@ -1138,7 +1141,7 @@ export const useStore = create<Store>((rawSet, get) => {
     try {
       const list = await window.yan.runnerStatuses()
       const active = list.find((r) => r.isActive)
-      set({ runners: list, ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+      set({ runners: keepRef(get().runners, list), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
       if (active) {
         const runtime = runtimeFromRunner(active)
         const snapshot = snapshotForView(get(), findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId))
@@ -1207,7 +1210,7 @@ export const useStore = create<Store>((rawSet, get) => {
           const keep = new Set([viewingSessionId(s) ?? '',
             ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
-          set({ runners: m.payload, sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
+          set({ runners: keepRef(s.runners, m.payload), sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           if (active) {
             const runtime = runtimeFromRunner(active)
             const found = findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId)
@@ -1236,6 +1239,7 @@ export const useStore = create<Store>((rawSet, get) => {
           break
         }
         const gate = ++sessionSwitchGate
+        if (get().switchLoading) set({ switchLoading: false })
         void (async () => {
           const res = await piCall(() => window.yan.selectSession(target))
           if (gate !== sessionSwitchGate) return
@@ -1318,14 +1322,15 @@ export const useStore = create<Store>((rawSet, get) => {
             : s.runTail?.sessionId === m.payload.sessionId ? s.runTail : null
         const cacheNow = get().sessionRuntimes
         const migratedDrafts = migratePathDraft(cacheNow, m.payload.sessionFile, m.payload.sessionId)
-        set({ session: m.payload, runTail, ...(migratedDrafts !== cacheNow ? { sessionRuntimes: migratedDrafts } : {}) })
+        set({ session: s.session ? keepRef(s.session, m.payload) : m.payload, runTail, ...(migratedDrafts !== cacheNow ? { sessionRuntimes: migratedDrafts } : {}) })
         if (endedRun?.status === 'completed') {
           set({ notices: pushNotice(get().notices, 'info', uiText('state.compact.done')) })
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: endedRun.error ?? uiText('state.error.unknownReason') })) })
         }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
-          set({ thinkingLevels: m.payload.availableThinkingLevels })
+          const levels = keepRef(get().thinkingLevels, m.payload.availableThinkingLevels)
+          if (levels !== get().thinkingLevels) set({ thinkingLevels: levels })
         }
         break
       }
@@ -1407,14 +1412,24 @@ export const useStore = create<Store>((rawSet, get) => {
         return
       }
       const currentRuntime = runtimeForState(current) ?? runtime
+      const nextModels = keepRef(current.models, models)
+      const nextLevels = keepRef(current.thinkingLevels, thinkingLevels)
+      const runtimeEntry = currentRuntime ? current.sessionRuntimes[sessionRuntimeKey(currentRuntime)] : undefined
+      const stableModels = runtimeEntry ? keepRef(runtimeEntry.models, nextModels) : nextModels
+      const stableLevels = runtimeEntry ? keepRef(runtimeEntry.thinkingLevels, nextLevels) : nextLevels
+      const runtimeUnchanged =
+        !!runtimeEntry &&
+        runtimeEntry.models === stableModels &&
+        runtimeEntry.thinkingLevels === stableLevels &&
+        runtimeEntry.runtime.generation === currentRuntime?.generation
       set({
-        models,
-        thinkingLevels,
-        ...(currentRuntime
+        models: nextModels,
+        thinkingLevels: nextLevels,
+        ...(currentRuntime && !runtimeUnchanged
           ? {
               sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
-                models,
-                thinkingLevels
+                models: stableModels,
+                thinkingLevels: stableLevels
               })
             }
           : {})
@@ -1442,13 +1457,16 @@ export const useStore = create<Store>((rawSet, get) => {
         return
       }
       const currentRuntime = runtimeForState(current) ?? runtime
+      const nextCommands = keepRef(current.commands, commands)
+      const runtimeEntry = currentRuntime ? current.sessionRuntimes[sessionRuntimeKey(currentRuntime)] : undefined
+      const stableCommands = runtimeEntry ? keepRef(runtimeEntry.commands, nextCommands) : nextCommands
       set({
-        commands,
+        commands: nextCommands,
         commandsAt: Date.now(),
-        ...(currentRuntime
+        ...(currentRuntime && !(runtimeEntry && runtimeEntry.commands === stableCommands && runtimeEntry.runtime.generation === currentRuntime.generation)
           ? {
               sessionRuntimes: updateSessionRuntime(current.sessionRuntimes, currentRuntime, {
-                commands
+                commands: stableCommands
               })
             }
           : {})
@@ -1548,7 +1566,8 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!id) return false
     const el = document.querySelector(`[data-msg-id="${id.replace(/["\\]/g, '\\$&')}"]`)
     if (!el) return false
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
+    el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
     el.classList.add('msg-located')
     window.setTimeout(() => el.classList.remove('msg-located'), 1800)
     return true
@@ -1690,6 +1709,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   newSession: async (target) => {
     const gate = ++sessionSwitchGate
+    if (get().switchLoading) set({ switchLoading: false })
     const res = await piCall(() => window.yan.newSession(target))
     if (gate !== sessionSwitchGate) {
       return res.ok
@@ -1772,6 +1792,7 @@ export const useStore = create<Store>((rawSet, get) => {
       peekedPath: path,
       peekedSessionId: sum?.id ?? cachedSnapshot?.runtime.sessionId ?? null,
       peekNote: null,
+      switchLoading: !cachedMessages?.length,
       messages: cachedMessages ?? [],
       session: cachedSnapshot?.session ?? null,
       stats: cachedSnapshot?.stats ?? null,
@@ -1799,6 +1820,7 @@ export const useStore = create<Store>((rawSet, get) => {
             peekedPath: path,
             peekedSessionId: stableId ?? null,
             peekNote: peek.truncated > 0 ? { truncated: peek.truncated, total: peek.total } : null,
+            switchLoading: false,
             ...(migrated !== before.sessionRuntimes ? { sessionRuntimes: migrated } : {})
           })
         } else if (migrated !== before.sessionRuntimes) {
@@ -1809,6 +1831,7 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
       if (gate !== sessionSwitchGate) return
     }
+    if (get().switchLoading) set({ switchLoading: false })
 
     if (!sum && !cachedSnapshot?.session?.cwd) {
       await get().refreshSessions().catch(() => undefined)
@@ -1872,6 +1895,7 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().reloadModels()
     void get().reloadCommands()
     } finally {
+      if (gate === sessionSwitchGate && get().switchLoading) set({ switchLoading: false })
       finishSwitch()
     }
   },
@@ -2018,6 +2042,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   fork: async (entryId) => {
     ++sessionSwitchGate
+    if (get().switchLoading) set({ switchLoading: false })
     if (!(await get().ensureActivated())) return false
     const sourceRunner = get().activeRunnerId
     const res = await piCall(() => window.yan.fork(entryId))
@@ -2057,6 +2082,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
   clone: async () => {
     ++sessionSwitchGate
+    if (get().switchLoading) set({ switchLoading: false })
     const res = await piCall(() => window.yan.clone())
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
@@ -2087,7 +2113,6 @@ export const useStore = create<Store>((rawSet, get) => {
       if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.setModelFailed')) })
       return res
     }
-    void get().reloadModels()
     const selected = get().models.find(m => m.provider === provider && m.id === id)
     try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
     catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }

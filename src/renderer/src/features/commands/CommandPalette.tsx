@@ -8,7 +8,7 @@ import { displayedSessionOf, useSplitView } from '../../state/split-view'
 import { sideBySideCandidate } from '../../app/SideBySideLayout'
 import { activateWorkspaceOwner, captureActivationTarget } from '../workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, type WorkbenchTabId } from '../workbench/types'
-import { Dialog, Kbd, Modal, ModalOverlay, Spinner, cx } from '../../ui'
+import { Dialog, EmptyState, Kbd, Modal, ModalOverlay, Notice, Spinner, cx } from '../../ui'
 import { SHORTCUTS, type ShortcutId } from '../../app/shortcuts'
 import {
   COMMAND_ACTION_IDS,
@@ -59,7 +59,11 @@ function shortcutKeys(id: ShortcutId): readonly string[] | undefined {
   return SHORTCUTS.find((def) => def.id === id)?.keys
 }
 
-export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
+export function CommandPalette(props: CommandPaletteProps): ReactElement | null {
+  return props.isOpen ? <CommandPaletteBody {...props} /> : null
+}
+
+function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
   const { lang } = useI18n()
   const text = commandText(lang)
 
@@ -106,7 +110,7 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
         id: COMMAND_ACTION_IDS.newSession,
         group: 'action',
         label: text.newSession,
-        keywords: 'new chat session 新建 新对话',
+        keywords: 'new chat session 新建 新对话 新会话',
         shortcut: shortcutKeys('newSession')
       },
       {
@@ -528,9 +532,7 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
 
           <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
             {options.length === 0 ? (
-              <p className="cmd-empty">
-                {parsed.mode === 'message' && !trimmedTerm ? text.messageHint : text.empty}
-              </p>
+              <EmptyState size="sm" title={parsed.mode === 'message' && !trimmedTerm ? text.messageHint : text.empty} />
             ) : (
               groups.map((section) => (
                 <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
@@ -576,9 +578,9 @@ export function CommandPalette({ isOpen, onOpenChange, onNavigate }: CommandPale
           </div>
 
           {error ? (
-            <p className="cmd-error" role="alert">
+            <Notice tone="fail" compact className="cmd-error">
               {error}
-            </p>
+            </Notice>
           ) : null}
         </Dialog>
       </Modal>

@@ -1,9 +1,10 @@
 @layer features {
   .usage-page { overflow: auto; min-height: 0; padding: var(--s-32) var(--s-24); }
-  .usage-page > * { max-width: 920px; margin-left: auto; margin-right: auto; }
-  .usage-page-head { text-align: center; padding: var(--s-24) 0; }
-  .usage-page-head h1 { margin: var(--s-12) 0 var(--s-4); font-size: var(--t-h1); }
-  .usage-page-head p, .usage-page-activity p { color: var(--fg3); font-size: var(--t-meta); }
+  .usage-page > * { max-width: var(--size-col); margin-left: auto; margin-right: auto; }
+  .usage-page-head { display: flex; flex-direction: column; align-items: center; gap: var(--s-12); padding: var(--s-24) 0; text-align: center; }
+  .usage-page-head .ui-page-head__main { align-items: center; }
+  .usage-page-head .ui-page-head__title { font-size: var(--t-h1); }
+  .usage-page-head .ui-page-head__desc, .usage-page-activity p { color: var(--fg3); font-size: var(--t-meta); }
   .usage-page-mark { display: inline-grid; place-items: center; width: 72px; height: 72px; border: 1px solid var(--line); border-radius: var(--r-lg); font-family: var(--font-mono); font-size: var(--t-h1); color: var(--accent); }
   .usage-page-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s-16); padding: var(--s-16); border: 1px solid var(--line); border-radius: var(--r-md); text-align: center; }
   .usage-page-stats dd { margin: 0; font-size: var(--t-h1); font-variant-numeric: tabular-nums; }

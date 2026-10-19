@@ -12,27 +12,8 @@
   }
 
   .ms-msg {
-    padding: var(--s-8) var(--s-12);
     margin-bottom: var(--s-12);
-    border-radius: var(--r-md);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
     max-width: var(--size-col);
-  }
-
-  .ms-msg--ok {
-    background: var(--add-bg);
-    color: var(--add);
-  }
-
-  .ms-msg--err {
-    background: var(--fail-bg);
-    color: var(--fail-t);
-  }
-
-  .ms-msg--info {
-    background: var(--sunken);
-    color: var(--fg2);
   }
 
   .ms-services {
@@ -72,6 +53,24 @@
 
   .ms-safety code {
     font-family: var(--font-mono);
+  }
+
+  .ms-file {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .ms-file-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-file-count {
+    flex: none;
+    white-space: pre;
   }
 
   .ms-group {
@@ -394,7 +393,7 @@
   }
 
   .ms-ok {
-    color: var(--run-t);
+    color: var(--ok-t);
   }
 
   @media (max-width: 720px) {

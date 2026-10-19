@@ -10,7 +10,7 @@ import { TurnProcess } from './TurnProcess'
 import { splitTurnProcess } from './turn-process'
 import { MessageImage } from './Image'
 import { Icon } from './Icon'
-import { Badge, IconButton } from '../../ui'
+import { Badge, IconButton, Notice } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, splitImageRefs, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
@@ -39,11 +39,14 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const t = useT()
   const { lang } = useI18n()
   const msg = turn.msg
-  const checkpoints = useStore((s) => s.checkpoints)
+  const checkpointId = useStore((s) => {
+    if (readOnly || !msg.text || !rewindOwner) return null
+    const owned = s.checkpoints.filter((record) => record.sessionKey === rewindOwner)
+    return matchCheckpoint(owned, msg.text, msg.timestamp)?.id ?? null
+  })
   const openRewind = useStore((s) => s.openRewind)
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
-  const owned = rewindOwner ? checkpoints.filter((record) => record.sessionKey === rewindOwner) : []
-  const checkpoint = !readOnly && msg.text ? matchCheckpoint(owned, msg.text, msg.timestamp) : null
+  const checkpoint = checkpointId ? { id: checkpointId } : null
   if (isSubagentNotice(msg.text)) return null
   const displayText = stripImageLegend(msg.text ?? '')
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
@@ -52,10 +55,10 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
     <article className="v3-msg user" data-msg-id={msg.id} data-turn-id={turn.id}>
       <div className="v3-user-body">
         {msg.question ? (
-          <span className="v3-tag" data-testid="v3-question-tag">
+          <Badge data-testid="v3-question-tag">
             <Icon name="message" size={12} />
             {t('chat.questionTag')}
-          </span>
+          </Badge>
         ) : null}
 
         {msg.images?.length ? (
@@ -125,9 +128,9 @@ function BashTurnView({ turn }: { turn: BashTurn }): JSX.Element {
   const msg = turn.msg
   return (
     <article className="v3-msg bash" data-msg-id={msg.id} data-turn-id={turn.id}>
-      <div className="v3-tag">{t('chat.bash')}</div>
+      <Badge>{t('chat.bash')}</Badge>
       <ToolSteps tools={msg.toolCalls ?? []} />
-      {msg.error ? <div className="v3-error" role="alert"><Icon name="warn" size={13} /><span>{msg.error}</span></div> : null}
+      {msg.error ? <Notice tone="fail" compact>{msg.error}</Notice> : null}
     </article>
   )
 }
@@ -187,13 +190,12 @@ export function replyText(turn: AssistantTurn): string {
 }
 
 function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, subagentScope }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope }): JSX.Element | null {
-  useStore((s) => s.messages.length)
-  const messages = useStore.getState().messages
+  const edgeFirst = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).first)
+  const edgeLast = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).last)
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
   const commentary = promoted.length ? [...turn.commentary, ...promoted] : turn.commentary
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
-  const edge = viewEdge(turn.sourceIds, messages, !!streaming)
   if (!hasBody && !streaming) return null
   const flow = flowSegments(turn, commentary)
   const split = flow ? splitTurnProcess(flow) : null
@@ -205,7 +207,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
   return (
     <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length}>
       <div className="v3-assistant-body">
-        {edge.first ? <BranchSummary /> : null}
+        {edgeFirst ? <BranchSummary /> : null}
         <TurnActivity turn={turn} streaming={streaming} />
         {thinkingInProcess || thinkingAfterProcess ? null : thinkingLine}
 
@@ -282,7 +284,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
 
         <SubagentLine turn={turn} scope={subagentScope} />
 
-        {edge.last ? <CompactionMarker /> : null}
+        {edgeLast ? <CompactionMarker /> : null}
 
         {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
         {!streaming ? <TurnChanges turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
@@ -309,10 +311,7 @@ function flowSegments(turn: AssistantTurn, commentary: readonly { id: string }[]
 function ImageProgressFallbackNote(): JSX.Element {
   const tt = useSessionText()
   return (
-    <div className="v3-fallback-note" data-testid="v3-image-progress-fallback">
-      <Icon name="layers" size={13} />
-      <span>{tt('imageProgress')}</span>
-    </div>
+    <Notice compact className="v3-fallback-note" role="note" icon={<Icon name="layers" size={13} />} data-testid="v3-image-progress-fallback">{tt('imageProgress')}</Notice>
   )
 }
 
@@ -394,5 +393,5 @@ export function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | n
   const formats = turnClockFormats()
   const clock = formats.clock.format(date)
   const full = formats.full.format(date)
-  return <time className="v3-time" dateTime={date.toISOString()} title={full} aria-label={full} tabIndex={0}>{clock}</time>
+  return <time className="v3-time" dateTime={date.toISOString()} title={full} aria-label={full}>{clock}</time>
 }
