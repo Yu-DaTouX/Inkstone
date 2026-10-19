@@ -26,7 +26,7 @@ export interface SubagentServiceDeps {
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
   onRemove(id: string): void
   onFinished?(run: SubagentRun): void
-  onEvent?(runId: string, evt: Record<string, unknown>): void
+  onEvent?(runId: string, evt: Record<string, unknown>, run: SubagentRun): void
 }
 
 export class SubagentService {
@@ -59,7 +59,7 @@ export class SubagentService {
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
       onRemove: (id) => this.deps.onRemove(id),
       onFinished: (run) => this.deps.onFinished?.(run),
-      ...(this.deps.onEvent ? { onEvent: (runId, evt) => this.deps.onEvent?.(runId, evt) } : {})
+      ...(this.deps.onEvent ? { onEvent: (runId, evt, run) => this.deps.onEvent?.(runId, evt, run) } : {})
     })
     await this.controller.loadHistory()
     return this.controller

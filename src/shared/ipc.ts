@@ -1197,6 +1197,7 @@ export interface PackageActionResultView {
 
 export interface PackagesBridge {
   search(query: string, offset?: number): Promise<import('./plugin-market').MarketSearchResult>
+  catalog(refresh?: boolean): Promise<import('./plugin-catalog').PluginCatalogView>
   exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
   addMcp(id: string): Promise<import('./plugin-market').PluginExportResult>
   codegraphStatus(cwd: string): Promise<import('./plugin-market').CodegraphStatus>
@@ -1500,6 +1501,7 @@ export interface YanBridge {
   setSessionPinned(sessionId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
   compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
+  compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
   renameSession(name: string): Promise<{ ok: boolean; error?: string }>
 
   fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }>
@@ -1581,6 +1583,7 @@ export interface YanBridge {
   gitRuntimeRemove(): Promise<void>
   customProviders(): Promise<CustomProviderView[]>
   opencodeProxy: import('./opencode-proxy').OpenCodeProxyBridge
+  desktopPet: import('./desktop-pet').DesktopPetBridge
   saveCustomProvider(input: CustomProviderInput): Promise<CustomProviderResult>
   removeCustomProvider(id: string): Promise<CustomProviderResult>
   discoverCustomModels(input: Partial<CustomProviderInput>): Promise<CustomProviderDiscoverResult>

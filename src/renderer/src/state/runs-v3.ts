@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { translate, type Lang } from '../i18n'
 import {
   compareRuns,
   isAttentionPhase,
@@ -9,6 +10,10 @@ import {
 } from '../../../shared/runs'
 
 export type RunLang = 'zh-CN' | 'en-US'
+
+function currentRunLang(): Lang {
+  return typeof document !== 'undefined' && document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
+}
 
 export interface RunPush {
   revision: number
@@ -173,7 +178,7 @@ function beginRunSync(): () => void {
   const fetchSnapshot = async (attempt: number): Promise<void> => {
     if (cancelled) return
     if (!bridge) {
-      useRunsV3.getState().dispatch({ type: 'snapshot-error', message: '运行状态通道不可用' })
+      useRunsV3.getState().dispatch({ type: 'snapshot-error', message: translate(currentRunLang(), 'runs.syncUnavailable') })
       return
     }
     if (attempt > 0) useRunsV3.getState().dispatch({ type: 'snapshot-start' })
@@ -181,7 +186,7 @@ function beginRunSync(): () => void {
       const snapshot = await bridge.snapshot()
       if (cancelled) return
       if (!snapshot || typeof snapshot.revision !== 'number' || !Array.isArray(snapshot.runs)) {
-        throw new Error('运行快照格式不完整')
+        throw new Error(translate(currentRunLang(), 'runs.snapshotMalformed'))
       }
       useRunsV3.getState().dispatch({ type: 'snapshot', revision: snapshot.revision, runs: snapshot.runs })
     } catch (error) {

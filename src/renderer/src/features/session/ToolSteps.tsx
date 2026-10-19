@@ -189,7 +189,7 @@ function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.E
   const call = node.call
   const running = isRunning(call)
   const failed = call.status === 'error' && !call.cancelled
-  const open = manual ?? failed
+  const open = manual ?? false
   const secs = durationSecs(call)
   const target = generatingArgs(call) ? t('tool2.generatingArgs') : summarize(call) || t('tool2.noTarget')
   const state = running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'

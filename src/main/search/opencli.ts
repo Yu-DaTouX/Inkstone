@@ -42,7 +42,7 @@ function fileExists(p: string): boolean {
   }
 }
 
-function findExecutableOnPath(name: string): string | null {
+export function findExecutableOnPath(name: string): string | null {
   const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
   const names =
     process.platform === 'win32'

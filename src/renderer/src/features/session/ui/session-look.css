@@ -375,6 +375,7 @@
   .v3-compaction-title { color: var(--fg2); }
   .v3-compaction-text { min-width: 0; }
   .v3-compaction-tokens { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .v3-compaction-error { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
   .v3-branchline { color: var(--fg3); font-size: var(--t-meta); }
   .v3-branchline-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

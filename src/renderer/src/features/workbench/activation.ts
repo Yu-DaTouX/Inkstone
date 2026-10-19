@@ -1,5 +1,6 @@
 import { isSessionSwitchInFlight } from '../../state/session-activation'
 import { useStore } from '../../state/store'
+import { translate, type MessageKey, type TVars } from '../../i18n'
 
 export interface ActivationTarget {
   sessionId: string | null
@@ -7,6 +8,10 @@ export interface ActivationTarget {
 }
 
 const normPath = (p?: string | null): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
+
+function uiText(key: MessageKey, vars?: TVars): string {
+  return translate(useStore.getState().settings?.lang ?? 'zh-CN', key, vars)
+}
 
 function sameTarget(a: ActivationTarget, b: ActivationTarget): boolean {
   if (a.sessionId && b.sessionId) return a.sessionId === b.sessionId
@@ -25,7 +30,7 @@ export function captureActivationTarget(): ActivationTarget {
 export async function activateWorkspaceOwner(target: ActivationTarget): Promise<boolean> {
   const store = useStore.getState()
   if (isSessionSwitchInFlight()) {
-    store.notify('warning', '正在切换会话，请稍候再打开工作区')
+    store.notify('warning', uiText('state.workspace.switching'))
     return false
   }
   const ok = await store.ensureActivated()
@@ -39,7 +44,7 @@ export async function activateWorkspaceOwner(target: ActivationTarget): Promise<
   }
   const pinned = target.sessionId || target.sessionFile
   if (pinned && !sameTarget(target, current)) {
-    after.notify('warning', '会话已切换，工作区没有打开；请在目标会话重试')
+    after.notify('warning', uiText('state.workspace.sessionChanged'))
     return false
   }
   return true

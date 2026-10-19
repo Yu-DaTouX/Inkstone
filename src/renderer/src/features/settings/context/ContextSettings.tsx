@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactElement } from 'react'
+import { useCompactionInfo } from './use-compaction-info'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Switch } from '../../../ui'
@@ -136,6 +137,13 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
       ? text.contextCompactAtClamped.replace('{n}', kTokens(compactAtValue)).replace('{e}', kTokens(effective))
       : text.contextCompactAtNow.replace('{n}', kTokens(compactAtValue))
 
+  const info = useCompactionInfo(session?.cwd ?? '', contextWindow, compactAtValue)
+  const compactionNotes = [
+    info?.projectIgnored ? text.contextProjectIgnored : '',
+    info?.cappedByInkstone ? text.contextCappedByInkstone.replace('{n}', kTokens(info.threshold)) : ''
+  ].filter(Boolean)
+  const compactAtDescription = compactionNotes.length ? [compactAtText, ...compactionNotes].join(' ') : compactAtText
+
   const trimOn = settings?.contextTrim !== false
   const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
   const windowText = contextWindow > 0 ? `${usage.windowAssumed ? '~' : ''}${kTokens(contextWindow)}` : text.contextUnknown
@@ -181,7 +189,7 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
           />
         </SettingsRow>
         <SettingsReveal open={autoEnabled}>
-          <SettingsRow nested settingId="session-compact-at" label={text.contextCompactAt} description={compactAtText}>
+          <SettingsRow nested settingId="session-compact-at" label={text.contextCompactAt} description={compactAtDescription}>
             <Segmented
               label={text.contextCompactAt}
               value={String(compactAtValue)}

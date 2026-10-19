@@ -194,7 +194,7 @@ async function runLocalCommand(port: ComposerSubmitPort, name: string, args: str
         })
       : undefined
     if (!selected) {
-      a.openSettings('status')
+      a.openSettings('models')
       return 'handled'
     }
     port.clearAll()

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { translate, type TFunc } from '../i18n'
+import { translate, type Lang, type MessageKey, type TVars } from '../i18n'
 import { toolMissingText } from '../lib/toolchain-text'
 import type {
   AppSettings,
@@ -80,15 +80,24 @@ import { useSplitView } from './split-view'
 import { claimResource, releaseResource, resourceOwner } from './resource-owners'
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 
+function currentLang(): Lang {
+  const fromSettings = useStore.getState().settings?.lang
+  if (fromSettings) return fromSettings
+  return typeof document !== 'undefined' && document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+function uiText(key: MessageKey, vars?: TVars): string {
+  return translate(currentLang(), key, vars)
+}
+
 function attentionTitle(event: SoundEvent): string {
-  const en = typeof document !== 'undefined' && document.documentElement.lang === 'en-US'
   switch (event) {
     case 'done':
-      return en ? 'Turn finished' : '回合完成'
+      return uiText('state.attention.done')
     case 'question':
-      return en ? 'Waiting for your answer' : '需要你的回答'
+      return uiText('state.attention.question')
     case 'error':
-      return en ? 'Error' : '出错'
+      return uiText('state.attention.error')
   }
 }
 
@@ -668,8 +677,8 @@ function applyQueueRecovery(
   let notices = current.notices
   if (droppedCount > 0) {
     notices = input.attachments
-      ? pushNotice(notices, 'error', `有 ${droppedCount} 个附件没能放回输入框（超过附件上限）`)
-      : pushNotice(notices, 'error', `有 ${droppedCount} 张排队时的图片没能放回输入框（已切换到其他会话或超过附件上限）`)
+      ? pushNotice(notices, 'error', uiText('state.recover.attachmentsDropped', { count: droppedCount }))
+      : pushNotice(notices, 'error', uiText('state.recover.imagesDropped', { count: droppedCount }))
   } else if (sameSession && input.notice && (recovery.queueRestore || restoredCount > 0)) {
     notices = pushNotice(notices, 'info', input.notice)
   }
@@ -740,18 +749,19 @@ let connWatchActive = false
 let capabilityRequestSeq = 0
 let commandRequestSeq = 0
 
-const THINK_LABEL: Record<string, string> = {
-  off: '关',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '极高',
-  max: 'Max'
+const THINK_LABEL: Record<string, MessageKey> = {
+  off: 'state.think.off',
+  minimal: 'state.think.minimal',
+  low: 'state.think.low',
+  medium: 'state.think.medium',
+  high: 'state.think.high',
+  xhigh: 'state.think.xhigh',
+  max: 'state.think.max'
 }
 
 function thinkLabelOf(level: string): string {
-  return THINK_LABEL[level] ?? level
+  const key = THINK_LABEL[level]
+  return key ? uiText(key) : level
 }
 
 function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMessage[] {
@@ -939,8 +949,8 @@ export const useStore = create<Store>((rawSet, get) => {
     blocked: (reason) => {
       const text =
         reason === 'foreign-owner'
-          ? '内置浏览器当前归另一条会话；切回去或在那条会话里继续。'
-          : '内置浏览器正在被另一条会话打开，等它完成或切回去。'
+          ? uiText('state.browser.foreignOwner')
+          : uiText('state.browser.busy')
       set({ notices: pushNotice(get().notices, 'warning', text) })
     },
     failed: (message) => {
@@ -983,9 +993,9 @@ export const useStore = create<Store>((rawSet, get) => {
   nativeSessionPanel: null,
   closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
   nativeSession: async (action, args) => {
-    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    if (!(await get().ensureActivated())) return { ok: false, error: uiText('state.error.sessionNotActivated') }
     const sessionId = get().session?.sessionId
-    if (!sessionId) return { ok: false, error: '当前没有可操作的会话' }
+    if (!sessionId) return { ok: false, error: uiText('state.error.noActiveSession') }
     if (action === 'tree' || action === 'scoped-models' || action === 'trust') {
       set({ nativeSessionPanel: { mode: action, sessionId } })
       return { ok: true }
@@ -994,7 +1004,11 @@ export const useStore = create<Store>((rawSet, get) => {
     if (result.ok) {
       await get().refreshSessions()
       if (action === 'reload') await Promise.all([get().reloadModels(), get().reloadCommands()])
-      const message = result.url ? `分享链接：${result.url}` : result.path ? `已完成：${result.path}` : '原生操作已完成'
+      const message = result.url
+        ? uiText('state.native.shareLink', { url: result.url })
+        : result.path
+          ? uiText('state.native.donePath', { path: result.path })
+          : uiText('state.native.done')
       get().notify('info', message)
     }
     return result
@@ -1149,7 +1163,7 @@ export const useStore = create<Store>((rawSet, get) => {
           text: texts.join('\n'),
           images: items.flatMap((item) => item.images ?? []),
           idPrefix: 'queue-image',
-          notice: `检测到模型输出重复，已把 ${reclaimedCount} 条排队内容放回输入框`
+          notice: uiText('state.queue.reclaimed', { count: reclaimedCount })
         })
         const sessionId = m.payload.sessionId
         if (sessionId) {
@@ -1172,7 +1186,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get) }
+    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), t: uiText }
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {
@@ -1226,7 +1240,7 @@ export const useStore = create<Store>((rawSet, get) => {
           const res = await piCall(() => window.yan.selectSession(target))
           if (gate !== sessionSwitchGate) return
           if (!res.ok) {
-            set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换运行中的会话失败') })
+            set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.selectRunningFailed')) })
             return
           }
           const runId = res.runId ?? res.id
@@ -1306,9 +1320,9 @@ export const useStore = create<Store>((rawSet, get) => {
         const migratedDrafts = migratePathDraft(cacheNow, m.payload.sessionFile, m.payload.sessionId)
         set({ session: m.payload, runTail, ...(migratedDrafts !== cacheNow ? { sessionRuntimes: migratedDrafts } : {}) })
         if (endedRun?.status === 'completed') {
-          set({ notices: pushNotice(get().notices, 'info', '上下文已压缩') })
+          set({ notices: pushNotice(get().notices, 'info', uiText('state.compact.done')) })
         } else if (endedRun?.status === 'failed') {
-          set({ notices: pushNotice(get().notices, 'error', `压缩失败：${endedRun.error ?? '未知原因'}`) })
+          set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: endedRun.error ?? uiText('state.error.unknownReason') })) })
         }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
           set({ thinkingLevels: m.payload.availableThinkingLevels })
@@ -1493,7 +1507,7 @@ export const useStore = create<Store>((rawSet, get) => {
       if (sourceIds.length) {
         set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
       }
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '发送失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.sendFailed')) })
       return false
     }
     return true
@@ -1506,7 +1520,7 @@ export const useStore = create<Store>((rawSet, get) => {
     if (get().quotaResume) return true
     const snapshot = await window.yan.providerQuota(provider, get().settings?.providerBudgets?.[provider])
     if (!snapshot.windows?.length || snapshot.staleError) {
-      set({ notices: pushNotice(get().notices, 'error', snapshot.staleError ?? snapshot.error ?? '该服务商没有可查询的额度窗口，无法自动续跑') })
+      set({ notices: pushNotice(get().notices, 'error', snapshot.staleError ?? snapshot.error ?? uiText('state.quota.noWindows')) })
       return false
     }
     const gen = ++quotaResumeGen
@@ -1582,7 +1596,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await piCall(() => window.yan.steerQueued(queueId))
     if (!res.ok) {
       set({
-        notices: pushNotice(get().notices, 'error', res.error ?? '插队失败')
+        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.steerFailed'))
       })
     }
   },
@@ -1591,7 +1605,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const sessionId = get().session?.sessionId
     const res = await piCall(() => window.yan.removeQueued(queueId))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '撤回失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.removeQueuedFailed')) })
       return
     }
     const current = get()
@@ -1600,7 +1614,7 @@ export const useStore = create<Store>((rawSet, get) => {
       text: res.text ?? '',
       images: res.images,
       idPrefix: 'queue-image',
-      notice: '已撤回排队内容，并放回输入草稿'
+      notice: uiText('state.queue.withdrawn')
     }))
   },
 
@@ -1633,10 +1647,10 @@ export const useStore = create<Store>((rawSet, get) => {
         text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
         images: dropped.flatMap((item) => item.images ?? []),
         idPrefix: 'queue-image',
-        notice: '队列编辑失败，内容已放回输入框'
+        notice: uiText('state.queue.editFailedRestored')
       }))
     }
-    set({ notices: pushNotice(get().notices, 'error', res.error ?? '队列编辑失败') })
+    set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.queueEditFailed')) })
   },
 
   abort: async () => {
@@ -1652,7 +1666,7 @@ export const useStore = create<Store>((rawSet, get) => {
         text: texts.join('\n'),
         images: items.flatMap((item) => item.images ?? []),
         idPrefix: 'queue-image',
-        notice: `已把 ${texts.length} 条排队内容放回输入框`
+        notice: uiText('state.queue.restored', { count: texts.length })
       }))
     }
   },
@@ -1660,12 +1674,12 @@ export const useStore = create<Store>((rawSet, get) => {
   runBash: async (command, options) => {
     const target = composerSubmitIdentity(get())
     const guardView = hasComposerIdentity(target)
-    if (!(await get().ensureActivated(target))) return { ok: false, error: '会话未能激活' }
-    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: '会话已切换，命令未执行' }
+    if (!(await get().ensureActivated(target))) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    if (guardView && !sameComposerView(get(), target)) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
     const expected = expectedRuntimeFor(get(), target)
     const res = await piCall(() => window.yan.runBash(command, options, expected))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '命令执行失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.commandFailed')) })
     }
     return res
   },
@@ -1683,7 +1697,7 @@ export const useStore = create<Store>((rawSet, get) => {
         : { ok: false, error: res.error }
     }
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '新建失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.newSessionFailed')) })
       return { ok: false, error: res.error }
     }
     const before = get()
@@ -1820,7 +1834,7 @@ export const useStore = create<Store>((rawSet, get) => {
         ...(leftCache?.messages?.length ? { messages: leftCache.messages } : {}),
         ...(leftCache?.session ? { session: leftCache.session } : {}),
         ...(leftCache?.queue ? { queue: leftCache.queue } : {}),
-        notices: pushNotice(get().notices, 'error', res.error ?? '切换失败')
+        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.switchFailed'))
       })
       return
     }
@@ -1835,7 +1849,7 @@ export const useStore = create<Store>((rawSet, get) => {
         notices: pushNotice(
           get().notices,
           'info',
-          '这条会话已只读打开。为避免同一工作目录里的任务互相覆盖，发送消息前会先安全切换运行目录。'
+          uiText('state.session.readOnlyNotice')
         )
       })
       void get().syncRunners()
@@ -1876,7 +1890,7 @@ export const useStore = create<Store>((rawSet, get) => {
     if (expected && hasComposerIdentity(expected) && !sameComposerView(get(), expected)) return false
     if (!res.ok || res.deferred) {
       set({
-        notices: pushNotice(get().notices, 'error', res.error ?? '切换会话失败，消息没有发出')
+        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.switchFailedMessageNotSent'))
       })
       return false
     }
@@ -1900,7 +1914,7 @@ export const useStore = create<Store>((rawSet, get) => {
   moveSession: async (sessionId, projectId) => {
     const res = await window.yan.moveSession(sessionId, projectId)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '移动会话失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.moveFailed')) })
       return false
     }
     await get().refreshSessions()
@@ -1910,7 +1924,7 @@ export const useStore = create<Store>((rawSet, get) => {
   setSessionArchived: async (sessionId, archived) => {
     const res = await window.yan.setSessionArchived(sessionId, archived)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '归档失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.archiveFailed')) })
       return false
     }
     await get().refreshSessions()
@@ -1920,7 +1934,7 @@ export const useStore = create<Store>((rawSet, get) => {
   setSessionPinned: async (sessionId, pinned) => {
     const res = await window.yan.setSessionPinned(sessionId, pinned)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '置顶失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.pinFailed')) })
       return false
     }
     await get().refreshSessions()
@@ -1930,7 +1944,7 @@ export const useStore = create<Store>((rawSet, get) => {
   renameSession: async (name) => {
     const res = await piCall(() => window.yan.renameSession(name))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '重命名失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.renameFailed')) })
       return
     }
     await get().refreshSessions()
@@ -1954,7 +1968,7 @@ export const useStore = create<Store>((rawSet, get) => {
       else rolled[sid] = previous
       set({
         manualTitles: rolled,
-        notices: pushNotice(get().notices, 'error', `重命名没能保存：${res.error ?? '写盘失败'}`)
+        notices: pushNotice(get().notices, 'error', uiText('state.error.renameSaveFailed', { error: res.error ?? uiText('state.error.writeFailed') }))
       })
     }
     await get().refreshSessions()
@@ -1963,7 +1977,7 @@ export const useStore = create<Store>((rawSet, get) => {
   regenerateTitle: async (sessionId) => {
     const sid = sessionId || get().session?.sessionId || ''
     if (!sid) {
-      set({ notices: pushNotice(get().notices, 'error', '没有可重生成标题的会话') })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.noSessionForTitle')) })
       return
     }
     let res: { ok: boolean; title?: string; error?: string }
@@ -1973,17 +1987,17 @@ export const useStore = create<Store>((rawSet, get) => {
       res = { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
     if (!res.ok || !res.title) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '标题生成失败，已保留原标题') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.titleFailedKept')) })
       return
     }
     if (get().manualTitles[sid]) await get().setManualTitle(sid, res.title)
-    set({ notices: pushNotice(get().notices, 'info', `已换成新标题：「${res.title}」`) })
+    set({ notices: pushNotice(get().notices, 'info', uiText('state.title.changed', { title: res.title })) })
   },
 
   deleteSession: async (path) => {
     const res = await piCall(() => window.yan.deleteSession(path))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '删除失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.deleteFailed')) })
       return
     }
     const cache = { ...get().sessionRuntimes }
@@ -2008,19 +2022,19 @@ export const useStore = create<Store>((rawSet, get) => {
     const sourceRunner = get().activeRunnerId
     const res = await piCall(() => window.yan.fork(entryId))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '分叉失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.forkFailed')) })
       return false
     }
     let branchState: SessionState | null
     let branchMessages: UIMessage[]
     try { [branchState, branchMessages] = await Promise.all([window.yan.getState(), window.yan.getMessages()]) }
     catch (error) {
-      set({ notices: pushNotice(get().notices, 'warning', `分叉已创建，但无法立即激活；原会话已保留。可从会话列表打开新分叉。${String(error)}`) })
+      set({ notices: pushNotice(get().notices, 'warning', uiText('state.fork.createdNotActivated', { error: String(error) })) })
       await get().refreshSessions()
       return true
     }
     if (get().activeRunnerId !== sourceRunner) {
-      set({ notices: pushNotice(get().notices, 'warning', '分叉已创建，但当前会话已变化；原会话已保留，可从列表打开新分叉。') })
+      set({ notices: pushNotice(get().notices, 'warning', uiText('state.fork.createdSessionChanged')) })
       await get().refreshSessions()
       return true
     }
@@ -2032,8 +2046,8 @@ export const useStore = create<Store>((rawSet, get) => {
         get().notices,
         'info',
         res.text
-          ? `已从「${res.text.slice(0, 30)}」之前分叉，这条消息已放回输入框`
-          : '已分叉'
+          ? uiText('state.fork.beforeMessage', { text: res.text.slice(0, 30) })
+          : uiText('state.fork.done')
       )
     })
     if (res.text) get().injectComposerText(res.text)
@@ -2045,21 +2059,21 @@ export const useStore = create<Store>((rawSet, get) => {
     ++sessionSwitchGate
     const res = await piCall(() => window.yan.clone())
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '复制失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.cloneFailed')) })
       return
     }
-    set({ queue: EMPTY_QUEUE, pendingSends: [], notices: pushNotice(get().notices, 'info', '已复制到新会话') })
+    set({ queue: EMPTY_QUEUE, pendingSends: [], notices: pushNotice(get().notices, 'info', uiText('state.clone.done')) })
     await get().refreshSessions()
   },
 
   exportHtml: async (outputPath) => {
     const res = await piCall(() => window.yan.exportHtml(outputPath))
-    if (res.ok) get().notify('info', `已导出：${res.path ?? ''}（已用系统默认程序打开）`)
+    if (res.ok) get().notify('info', uiText('state.export.done', { path: res.path ?? '' }))
     return res
   },
 
   compact: async (customInstructions) => {
-    if (!(await get().ensureActivated())) return { ok: false, error: '会话未能激活' }
+    if (!(await get().ensureActivated())) return { ok: false, error: uiText('state.error.sessionNotActivated') }
     return piCall(() => window.yan.compact(customInstructions))
   },
 
@@ -2070,13 +2084,13 @@ export const useStore = create<Store>((rawSet, get) => {
   setModel: async (provider, id, quiet = false) => {
     const res = await piCall(() => window.yan.setModel(provider, id))
     if (!res.ok) {
-      if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? '切换模型失败') })
+      if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.setModelFailed')) })
       return res
     }
     void get().reloadModels()
     const selected = get().models.find(m => m.provider === provider && m.id === id)
     try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
-    catch (error) { return { ok: false, error: `模型已切换，但偏好保存失败：${String(error)}` } }
+    catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }
     return res
   },
 
@@ -2087,14 +2101,14 @@ export const useStore = create<Store>((rawSet, get) => {
   setAutoCompaction: async (on) => {
     const res = await piCall(() => window.yan.setAutoCompaction(on))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     }
   },
 
   setAutoRetry: async (on) => {
     const res = await piCall(() => window.yan.setAutoRetry(on))
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     } else {
       set({ autoRetryEnabled: on })
     }
@@ -2102,12 +2116,12 @@ export const useStore = create<Store>((rawSet, get) => {
 
   setSteeringMode: async (mode) => {
     const res = await piCall(() => window.yan.setSteeringMode(mode))
-    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
   },
 
   setFollowUpMode: async (mode) => {
     const res = await piCall(() => window.yan.setFollowUpMode(mode))
-    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? '设置失败') })
+    if (!res.ok) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
   },
 
   abortRetry: async () => {
@@ -2117,33 +2131,33 @@ export const useStore = create<Store>((rawSet, get) => {
   cycleModel: async () => {
     const res = await piCall(() => window.yan.cycleModel())
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
       return
     }
     if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', '模型 → ' + res.to) })
+      set({ notices: pushNotice(get().notices, 'info', uiText('state.model.switched', { model: res.to })) })
     }
   },
 
   cycleModelBack: async () => {
     const res = await piCall(() => window.yan.cycleModelBack())
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换模型') })
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
       return
     }
     if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', '模型 → ' + res.to) })
+      set({ notices: pushNotice(get().notices, 'info', uiText('state.model.switched', { model: res.to })) })
     }
   },
 
   cycleThinking: async () => {
     const res = await piCall(() => window.yan.cycleThinking())
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'info', res.error ?? '无法切换强度') })
+      set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchThinking')) })
       return
     }
     if (res.to) {
-      set({ notices: pushNotice(get().notices, 'info', '思考强度 → ' + thinkLabelOf(res.to)) })
+      set({ notices: pushNotice(get().notices, 'info', uiText('state.thinking.switched', { level: thinkLabelOf(res.to) })) })
     }
   },
 
@@ -2154,14 +2168,14 @@ export const useStore = create<Store>((rawSet, get) => {
     } catch {
     }
     if (!text) {
-      set({ notices: pushNotice(get().notices, 'info', '还没有可复制的回复') })
+      set({ notices: pushNotice(get().notices, 'info', uiText('state.error.noReplyToCopy')) })
       return
     }
     try {
       await navigator.clipboard.writeText(text)
-      set({ notices: pushNotice(get().notices, 'info', `已复制 ${text.length} 个字符` ) })
+      set({ notices: pushNotice(get().notices, 'info', uiText('state.copy.chars', { count: text.length })) })
     } catch {
-      set({ notices: pushNotice(get().notices, 'error', '复制失败（剪贴板不可用）') })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.copyFailedClipboard')) })
     }
   },
 
@@ -2195,7 +2209,7 @@ export const useStore = create<Store>((rawSet, get) => {
         const failed = { ...cur, loading: false, data: null }
         const filePreviews = { ...get().filePreviews }
         if (cur.key) filePreviews[cur.key] = failed
-        set({ filePreview: failed, filePreviews, notices: pushNotice(get().notices, 'error', `预览失败：${String(error)}`) })
+        set({ filePreview: failed, filePreviews, notices: pushNotice(get().notices, 'error', uiText('state.error.previewFailed', { error: String(error) })) })
       }
       return
     }
@@ -2237,7 +2251,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const res = await window.yan.subagents.start(task, model, isolation)
     if (!res.ok) {
       set({
-        notices: pushNotice(get().notices, 'error', res.error ?? '子代理启动失败')
+        notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStartFailed'))
       })
       return
     }
@@ -2254,7 +2268,7 @@ export const useStore = create<Store>((rawSet, get) => {
   stopSubagent: async (id) => {
     const res = await window.yan.subagents.stop(id)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '停止子代理失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStopFailed')) })
     }
   },
 
@@ -2263,7 +2277,7 @@ export const useStore = create<Store>((rawSet, get) => {
   openExternalChrome: async (url) => {
     const res = await window.yan.browser.openExternalChrome(url)
     if (!res.ok) {
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? '接入本机 Chrome 失败') })
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.chromeConnectFailed')) })
       return
     }
     set({ browserState: await window.yan.browser.getState() })
@@ -2305,7 +2319,7 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ gitInstall: { phase: 'downloading', received: 0, message: '' } })
     try {
       const res = await window.yan.gitRuntimeInstall()
-      if (!res.ok) set({ gitInstall: { phase: 'error', message: res.error ?? '安装失败' } })
+      if (!res.ok) set({ gitInstall: { phase: 'error', message: res.error ?? uiText('state.error.installFailed') } })
     } catch (error) {
       set({ gitInstall: { phase: 'error', message: error instanceof Error ? error.message : String(error) } })
     }
@@ -2351,7 +2365,7 @@ export const useStore = create<Store>((rawSet, get) => {
         kept.push(x)
       }
       next = kept
-      set({ notices: pushNotice(get().notices, 'error', '图片合计超过 20MB，已跳过放不下的那些') })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.imagesTooLarge')) })
     }
 
     const draftKey = composerDraftKey(get())
@@ -2366,7 +2380,7 @@ export const useStore = create<Store>((rawSet, get) => {
         void window.yan.sources
           .addImage({ sessionId, name: x.name, mimeType: x.mimeType, base64: x.data })
           .catch(() =>
-            set({ notices: pushNotice(get().notices, 'error', '这张图没能存到来源里（下次打开可能不在了）') })
+            set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.imageSaveFailed')) })
           )
       }
     }
@@ -2383,7 +2397,7 @@ export const useStore = create<Store>((rawSet, get) => {
       }
     }
     if (!paths.length) {
-      set({ notices: pushNotice(get().notices, 'error', '拿不到文件路径，无法加入上下文') })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.attach.noFilePath')) })
       return
     }
 
@@ -2407,7 +2421,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const errors: string[] = []
     for (const info of infos) {
       if (!info.ok) {
-        errors.push(`${info.name}：${info.error ?? '无法引用'}`)
+        errors.push(uiText('state.attach.refEntry', { name: info.name, error: info.error ?? uiText('state.error.cannotReference') }))
         continue
       }
       refs.push({
@@ -2422,7 +2436,7 @@ export const useStore = create<Store>((rawSet, get) => {
       })
     }
     if (refs.length) get().addAttachments(refs)
-    if (errors.length) set({ notices: pushNotice(get().notices, 'error', errors.join('；')) })
+    if (errors.length) set({ notices: pushNotice(get().notices, 'error', errors.join(uiText('state.attach.refErrorsJoin'))) })
   },
 
   removeAttachment: (id) => {
@@ -2520,16 +2534,15 @@ export const useStore = create<Store>((rawSet, get) => {
       .then((tools) => {
         const missing = [tools.bash, tools.git].filter((tool) => !tool.ok && tool.reason)
         if (!missing.length) return
-        const t: TFunc = (key, vars) => translate(get().settings?.lang ?? 'zh-CN', key, vars)
         if (tools.platform === 'win32') {
           set({
             notices: [
               ...get().notices.filter((n) => n.id !== 'git-install'),
-              { id: 'git-install', type: 'warning', text: t('notice.toolsMissing'), at: Date.now(), action: 'git-install' }
+              { id: 'git-install', type: 'warning', text: uiText('notice.toolsMissing'), at: Date.now(), action: 'git-install' }
             ]
           })
         } else {
-          for (const tool of missing) get().notify('warning', toolMissingText(tool.reason, t))
+          for (const tool of missing) get().notify('warning', toolMissingText(tool.reason, uiText))
         }
       })
       .catch(() => undefined)
@@ -2602,14 +2615,14 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ alwaysOnTop: real })
     } catch (error) {
       if (get().alwaysOnTop === next) set({ alwaysOnTop: previous })
-      set({ notices: pushNotice(get().notices, 'error', `置顶设置失败：${String(error)}`) })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.alwaysOnTopFailed', { error: String(error) })) })
       return
     }
     set({
       notices: pushNotice(
         get().notices,
         'info',
-        get().alwaysOnTop ? '窗口已置顶（总是显示在最上层）' : '已取消置顶'
+        get().alwaysOnTop ? uiText('state.alwaysOnTop.on') : uiText('state.alwaysOnTop.off')
       )
     })
   },
@@ -2624,7 +2637,7 @@ export const useStore = create<Store>((rawSet, get) => {
       if (request === rightPanelPatchSeq) set({ settings: next })
     } catch (error) {
       if (request === rightPanelPatchSeq) set({ settings: get().settings ? { ...get().settings!, rightPanelOpen: previous } : get().settings })
-      set({ notices: pushNotice(get().notices, 'error', `保存工作区显示失败：${String(error)}`) })
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.savePanelVisibilityFailed', { error: String(error) })) })
     }
     applyBrowserVisibility(get)
   },

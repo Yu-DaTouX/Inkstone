@@ -19,5 +19,5 @@
     "baseUrl": ".",
     "paths": { "@/*": ["src/renderer/src/*"] }
   },
-  "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "src/renderer/auxwin/pane-bridge.ts", "src/shared/**/*.ts"]
+  "include": ["src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "src/renderer/auxwin/**/*.ts", "src/renderer/auxwin/**/*.tsx", "src/shared/**/*.ts"]
 }

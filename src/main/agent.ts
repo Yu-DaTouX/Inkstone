@@ -704,6 +704,7 @@ export class AgentController extends EventEmitter {
   private queueOperations: Promise<void> = Promise.resolve()
   private titleLifecycle = 0
   private stopping = false
+  private spawnFailure: string | undefined
   private nativeWitnessPending: McpNativeBootWitness | null = null
   private nativeWitness: McpNativeBootWitness | null = null
 
@@ -813,8 +814,15 @@ export class AgentController extends EventEmitter {
       }
     )
 
+    this.spawnFailure = undefined
     rpc.on('stderr', (line) => {
       this.push({ ch: 'proc', payload: { state: 'stderr', detail: line } })
+    })
+
+    rpc.on('spawn-error', (err: Error) => {
+      if (this.rpc !== rpc) return
+      const raw = err instanceof Error ? err.message : String(err)
+      this.spawnFailure = raw.slice(0, 300) || '\u672a\u77e5\u542f\u52a8\u9519\u8bef'
     })
 
     rpc.on('exit', (code) => {
@@ -872,9 +880,13 @@ export class AgentController extends EventEmitter {
 
     rpc.spawn()
 
-    const ok = await this.waitReady(20_000)
+    const ok = await this.waitReady(20_000, rpc)
     if (!ok) {
-      const msg = 'pi 启动超时（20s）。点「详情」看 stderr，或跑 npm run probe-pi。'
+      const msg = this.spawnFailure
+        ? `\u65e0\u6cd5\u542f\u52a8 pi\uff1a${this.spawnFailure}\u3002\u53ef\u8dd1 npm run probe-pi \u6392\u67e5\u3002`
+        : rpc.running
+          ? 'pi 启动超时（20s）。点「详情」看 stderr，或跑 npm run probe-pi。'
+          : 'pi \u542f\u52a8\u540e\u7acb\u5373\u9000\u51fa\u3002\u70b9\u300c\u8be6\u60c5\u300d\u770b stderr\uff0c\u6216\u8dd1 npm run probe-pi\u3002'
       this.setConn('error', msg)
       return { ok: false, error: msg }
     }
@@ -901,9 +913,10 @@ export class AgentController extends EventEmitter {
     return { ok: true }
   }
 
-  private async waitReady(timeoutMs: number): Promise<boolean> {
+  private async waitReady(timeoutMs: number, rpc: PiRpc): Promise<boolean> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
+      if (this.spawnFailure || this.rpc !== rpc || !rpc.running) return false
       try {
         const res = await this.requireRpc().command('get_state')
         if (res.success) return true

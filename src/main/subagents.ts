@@ -167,7 +167,7 @@ export interface SubagentOptions {
   onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
   onRemove?: (id: string) => void
   onFinished?: (run: SubagentRun) => void
-  onEvent?: (runId: string, evt: Record<string, unknown>) => void
+  onEvent?: (runId: string, evt: Record<string, unknown>, run: SubagentRun) => void
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
 }
@@ -948,7 +948,7 @@ export class SubagentController {
   private handleEvent(run: Run, evt: Record<string, unknown>): void {
     if (this.opts.onEvent) {
       try {
-        this.opts.onEvent(run.id, evt)
+        this.opts.onEvent(run.id, evt, run)
       } catch {
       }
     }

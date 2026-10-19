@@ -424,6 +424,17 @@ export async function remoteHumanApproval(questionId: string, answer: RemoteHuma
 }
 
 export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult> {
+  if (questionId.startsWith('approval:')) {
+    const approvalId = questionId.slice('approval:'.length)
+    const request = host.approvals?.list().find(item => item.id === approvalId)
+    if (!request) return { ok: false, status: 404, code: 'question_not_pending', error: '该审批已处理或已过期' }
+    const declines = ('cancelled' in answer && answer.cancelled === true) || ('confirmed' in answer && answer.confirmed === false)
+    if (!declines) {
+      return { ok: false, status: 403, code: 'sensitive_confirmation_requires_desktop', error: '这是敏感确认，请在电脑上确认，或通过已配对客户端的人工批准通道处理' }
+    }
+    if (!host.approvals?.answer(approvalId, 'deny')) return { ok: false, status: 409, code: 'question_not_pending', error: '该审批已处理或已过期' }
+    return { ok: true, data: { questionId, runId: request.runId ?? questionId } }
+  }
   for (const status of host.runners()?.statuses() ?? []) {
     const agent = host.runners()?.agentOf(status.runId)
     if (!agent?.pendingUiRequests().some((request) => request.id === questionId)) continue

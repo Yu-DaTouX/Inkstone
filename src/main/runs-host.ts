@@ -51,6 +51,7 @@ export interface RunsHost {
   failScheduled(handle: ScheduledRunHandle, message: string): void
   cancelScheduled(handle: ScheduledRunHandle): void
   observeSubagentEvent(run: SubagentRunIdentity, evt: Record<string, unknown>): void
+  settleSubagent(run: SubagentRunIdentity, outcome: 'done' | 'failed' | 'stopped', message?: string): void
   backfillSessionCodes(items: { scopeId: string; kind?: CodeKind; createdAt: number }[]): Promise<{ assigned: number }>
   assignCode(scopeId: string, kind?: CodeKind): Promise<string>
   snapshot(): RunsSnapshot
@@ -352,6 +353,18 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
       }
       const signals = signalsFromPiEvent(evt, options.now?.() ?? Date.now())
       for (const signal of signals) feed(ctx, signal)
+    },
+    settleSubagent(run, outcome, message) {
+      if (disposed || !openedSubagents.has(run.id)) return
+      const ctx = subagentRunContext(run)
+      if (!ctx) return
+      const signal: RunSignal =
+        outcome === 'done'
+          ? { type: 'agent-settled', aborted: false }
+          : outcome === 'stopped'
+            ? { type: 'stopped', by: 'user' }
+            : { type: 'host-fail', message: message ?? '\u5b50 Agent \u8fd0\u884c\u5931\u8d25' }
+      feed(ctx, signal)
     },
     async backfillSessionCodes(items) {
       if (disposed) return { assigned: 0 }

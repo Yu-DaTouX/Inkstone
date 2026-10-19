@@ -337,8 +337,9 @@ async function main() {
 
     const failedNode = renderStepNode(tree, 'bash-err')
     const failedHead = byTestId(failedNode.tree, 'v3-step')
-    ok(failedHead.props['aria-expanded'] === true, '失败那一步的详情自动展开', failedHead.props['aria-expanded'])
-    ok(byTypeName(failedNode.tree, 'StepDetail').length === 1, '失败那一步渲染详情')
+    ok(failedHead.props['aria-expanded'] === false, '失败那一步默认折叠，不让输出占满版面', failedHead.props['aria-expanded'])
+    ok(byTypeName(failedNode.tree, 'StepDetail').length === 0, '失败那一步折叠时不渲染详情')
+    ok(collect(failedNode.tree, (el) => el.props && el.props.className === 'v3-badge err').length === 1, '失败那一步仍带失败徽标')
 
     const okNode = renderStepNode(tree, 'read-3')
     const okHead = byTestId(okNode.tree, 'v3-step')
