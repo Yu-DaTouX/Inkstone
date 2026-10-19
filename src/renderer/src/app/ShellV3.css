@@ -246,6 +246,17 @@
     color: #ffffff;
   }
 
+  .v3-winbtn:active {
+    background: var(--press);
+    color: var(--fg);
+  }
+
+  .v3-winbtn-close:active {
+    background: var(--win-close);
+    color: #ffffff;
+    filter: brightness(0.85);
+  }
+
   .v3-page {
     flex: 1;
     min-height: 0;

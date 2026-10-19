@@ -34,6 +34,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const firstUserTitle = useStore((s) => plainTitleText(s.messages.find((message) => message.role === 'user')?.text ?? '').slice(0, 80))
+  const hasMessages = useStore((s) => s.messages.length > 0)
   const manualTitles = useStore((s) => s.manualTitles)
   const titles = useStore((s) => s.titles)
   const sessions = useStore((s) => s.sessions)
@@ -57,8 +58,9 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
     const summary = sessions.find((item) => item.id === id)
     if (summary?.title) return summary.title
     if (!peekedSessionId && session?.sessionName) return session.sessionName
-    return firstUserTitle || t('rail.untitled')
-  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, manualTitles, titles, t, lang, text.settingsTitle, text.runs, text.review])
+    if (firstUserTitle) return firstUserTitle
+    return !peekedSessionId && !hasMessages ? text.newSessionTitle : t('rail.untitled')
+  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, hasMessages, manualTitles, titles, t, lang, text.settingsTitle, text.runs, text.review, text.newSessionTitle])
 
   return (
     <header className="v3-head">
@@ -153,7 +155,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
         </IconTip>
 
         <IconTip label={lang === 'en-US' ? 'Keep window on top' : '窗口置顶'}>
-          <IconButton aria-label={lang === 'en-US' ? 'Keep window on top' : '窗口置顶'} aria-pressed={alwaysOnTop} onPress={() => void toggleAlwaysOnTop()} data-testid="v3-always-on-top"><Pin size={16} /></IconButton>
+          <IconButton aria-label={lang === 'en-US' ? 'Keep window on top' : '窗口置顶'} aria-pressed={alwaysOnTop} data-active={alwaysOnTop ? '1' : '0'} onPress={() => void toggleAlwaysOnTop()} data-testid="v3-always-on-top"><Pin size={16} /></IconButton>
         </IconTip>
         <div className="v3-win">
           <button type="button" className="v3-winbtn v3-winbtn-min" aria-label={t('tb.minimize')} title={t('tb.minimize')} onClick={() => win.minimize()} data-testid="v3-min">

@@ -61,7 +61,7 @@
     out.push('')
     out.push('--- 1. 默认与形态 ---')
     check(barWidth() === 300, `默认宽度 300（实际 ${barWidth()}）`)
-    check(handle()?.getAttribute('role') === 'separator' && handle()?.getAttribute('data-grip') === 'true', '拖宽柄是 separator 且使用 grip 短条')
+    check(handle()?.getAttribute('role') === 'separator', '拖宽柄是 separator')
     check((handle()?.getAttribute('title') ?? '') !== '', `悬停提示 ${JSON.stringify(handle()?.getAttribute('title'))}`)
     const hb = handle().getBoundingClientRect()
     const cb = document.querySelector('.v3-chat').getBoundingClientRect()

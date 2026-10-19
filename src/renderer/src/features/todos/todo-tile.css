@@ -27,6 +27,11 @@
     color: var(--fg);
   }
 
+  .v3-todo-head:active {
+    background: var(--press);
+    color: var(--fg);
+  }
+
   .v3-todo-head:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;

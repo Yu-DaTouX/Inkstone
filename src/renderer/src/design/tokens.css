@@ -7,6 +7,7 @@
     --surface: light-dark(#FFFFFF, #272725);
     --hover: light-dark(#E8E8E4, #2C2C2A);
     --hover-main: light-dark(#F0F0EC, #262624);
+    --press: light-dark(#DCDCD7, #383835);
     --bubble: light-dark(#EFEFEB, #30302E);
     --sunken: light-dark(#F4F4F1, #171716);
     --fg: light-dark(#1D1D1B, #ECECE9);
@@ -87,7 +88,7 @@
     --r-xl: 20px;
     --r-full: 999px;
     --size-side: 264px;
-    --size-head: 48px;
+    --size-head: 40px;
     --size-btn: 32px;
     --size-btn-sm: 26px;
     --size-thumb: 14px;
