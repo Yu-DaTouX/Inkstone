@@ -22,6 +22,7 @@ export interface V3Text {
   loading: string
   searchShortcut: string
   newChatShortcut: string
+  newSessionTitle: string
   toggleSidebar: string
   focusSearch: string
   statusRunning: string
@@ -73,6 +74,7 @@ const ZH: V3Text = {
   loading: '正在启动…',
   searchShortcut: '搜索会话（Ctrl+K）',
   newChatShortcut: '新对话（Ctrl+N）',
+  newSessionTitle: '新建会话',
   toggleSidebar: '展开或收起侧栏（Ctrl+B）',
   focusSearch: '查看会话',
   statusRunning: '运行中',
@@ -124,6 +126,7 @@ const EN: V3Text = {
   loading: 'Starting…',
   searchShortcut: 'Search chats (Ctrl+K)',
   newChatShortcut: 'New chat (Ctrl+N)',
+  newSessionTitle: 'New session',
   toggleSidebar: 'Show or hide the sidebar (Ctrl+B)',
   focusSearch: 'View chats',
   statusRunning: 'Running',

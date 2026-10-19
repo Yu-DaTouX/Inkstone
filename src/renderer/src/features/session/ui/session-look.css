@@ -37,6 +37,7 @@
   .v3-code-sp { flex: 1 1 auto; }
   .v3-code-act { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--fg3); cursor: pointer; }
   .v3-code-act:hover { color: var(--fg); background: var(--hover); }
+  .v3-code-act:active { color: var(--fg); background: var(--press); }
   .v3-code-act[aria-pressed='true'] { color: var(--accent); }
   .v3-code pre { margin: 0; padding: var(--s-10) var(--s-12); overflow-x: auto; font-family: var(--font-mono); font-size: var(--t-ui); line-height: 1.55; }
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -126,6 +127,7 @@
   .v3-steps-list, .v3-steps-live { border-left: 2px solid var(--line); margin-left: var(--s-4); padding: var(--s-2) 0 var(--s-2) var(--s-8); }
   .v3-step-head { position: relative; display: flex; align-items: center; gap: var(--s-6); width: 100%; padding: var(--s-4) var(--s-6); border: 0; border-radius: var(--r-xs); background: none; color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
   .v3-step-head:hover { background: var(--hover); }
+  .v3-step-head:active { background: var(--press); }
   .v3-step-verb { color: var(--fg); font-family: var(--font-mono); font-size: var(--t-meta); flex: none; }
   .v3-step-target { min-width: 0; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-dollar { color: var(--fg3); }
@@ -193,6 +195,7 @@
   .v3-qoptions-list { display: flex; flex-direction: column; gap: var(--s-4); margin-bottom: var(--s-6); }
   .v3-qoption-row { display: flex; align-items: center; gap: var(--s-8); width: 100%; padding: var(--s-6) var(--s-8); border: 1px solid var(--line2); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
   .v3-qoption-row:hover { background: var(--hover); }
+  .v3-qoption-row:active { background: var(--press); }
   .v3-qoption-n { color: var(--fg3); font-variant-numeric: tabular-nums; }
   .v3-qoption-t { min-width: 0; flex: 1; }
   .v3-qfoot { display: flex; align-items: center; gap: var(--s-6); margin-top: var(--s-8); }
@@ -203,6 +206,7 @@
   .v3-qoptions { display: flex; flex-direction: column; gap: var(--s-4); }
   .v3-qoption { display: flex; align-items: center; gap: var(--s-8); width: 100%; padding: var(--s-6) var(--s-8); border: 1px solid var(--line2); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); font-size: var(--t-ui); cursor: pointer; text-align: left; }
   .v3-qoption:hover { background: var(--hover); }
+  .v3-qoption:active { background: var(--press); }
   .v3-qoption.on { border-color: var(--accent); background: var(--sel); }
   .v3-qoption-label { flex: none; }
   .v3-qoption-desc { min-width: 0; color: var(--fg3); font-size: var(--t-meta); }
@@ -224,6 +228,7 @@
 
   .v3-jump { display: inline-flex; align-items: center; justify-content: center; width: var(--size-send); height: var(--size-send); border: 1px solid var(--line2); border-radius: var(--r-full); background: var(--surface); color: var(--fg2); box-shadow: var(--shadow-comp); cursor: pointer; }
   .v3-jump:hover { color: var(--fg); background: var(--hover); }
+  .v3-jump:active { color: var(--fg); background: var(--press); }
 
   .v3-subagents-sum { color: var(--fg3); font-size: var(--t-meta); }
   .v3-subagent {
@@ -283,6 +288,7 @@
   .v3-subagent-toggle:focus-visible { outline: none; }
   .v3-subagent-toggle { border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--t-ui); text-align: left; cursor: pointer; }
   .v3-subagent-toggle:hover { background: var(--hover); }
+  .v3-subagent-toggle:active { background: var(--press); }
   .v3-subagent[data-selected='1'] .v3-subagent-toggle:hover { background: transparent; }
   .v3-subagent-glyph { position: relative; flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-md); background: var(--hover); color: var(--fg2); }
   .v3-subagent-glyph[data-tone='run'] { color: var(--run-t); }

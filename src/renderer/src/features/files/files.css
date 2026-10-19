@@ -19,6 +19,10 @@
     background: var(--hover);
   }
 
+  .v3-files-row:active {
+    background: var(--press);
+  }
+
   .v3-files-row:focus-visible {
     outline: none;
     background: var(--sel);
@@ -37,6 +41,11 @@
   .v3-files-add:hover,
   .v3-files-add:focus-visible {
     background: var(--hover);
+    color: var(--fg);
+  }
+
+  .v3-files-add:active {
+    background: var(--press);
     color: var(--fg);
   }
 

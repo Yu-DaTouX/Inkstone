@@ -159,6 +159,11 @@
   color: var(--fg);
 }
 
+.v3-preview-manifest-item:active {
+  background: var(--press);
+  color: var(--fg);
+}
+
 .v3-preview-manifest-name {
   min-width: 0;
   overflow: hidden;

@@ -150,6 +150,14 @@
       background: var(--fail-bg);
     }
   }
+  .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary):is([aria-pressed='true'], [data-active='1']):not([data-disabled]) {
+    background: var(--sel);
+    color: var(--fg);
+  }
+  .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
+    background: var(--press);
+    color: var(--fg);
+  }
 
   .ui-field {
     display: flex;

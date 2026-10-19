@@ -586,7 +586,7 @@ export default function ShellV3(): ReactElement {
                   </aside>
                 ) : null}
                 {sessionBarShown ? (
-                  <Splitter className="v3-tiles-resizer" grip title={sessionText(lang, 'subagentResize')} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize tiles' : '调整磁贴宽度'} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
+                  <Splitter className="v3-tiles-resizer" title={sessionText(lang, 'subagentResize')} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize tiles' : '调整磁贴宽度'} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                 ) : null}
               </div>
             )}
@@ -616,7 +616,7 @@ export default function ShellV3(): ReactElement {
               />
             ) : null}
             {workspaceShown && panelMode === 'docked' ? (
-              <Splitter className="v3-workspace-resizer" quiet orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
+              <Splitter className="v3-workspace-resizer" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
             ) : null}
           </div>
         </div>

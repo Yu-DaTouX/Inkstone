@@ -113,7 +113,7 @@ export const Grip: Story = {
     const [value, setValue] = useState(180)
     return (
       <Frame basis={value}>
-        <Splitter orientation="vertical" grip value={value} min={60} max={360} step={16} onChange={setValue} title="调整大小" aria-label="调整左右宽度（短条）" />
+        <Splitter orientation="vertical" value={value} min={60} max={360} step={16} onChange={setValue} title="调整大小" aria-label="调整左右宽度（短条）" />
       </Frame>
     )
   }

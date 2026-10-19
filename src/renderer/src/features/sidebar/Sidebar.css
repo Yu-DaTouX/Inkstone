@@ -45,6 +45,7 @@
   }
   .v3-root[data-sidebar-preview='1'] .v3-head { -webkit-app-region: no-drag; }
   .v3-sidebar-reveal { position: absolute; inset: 48px auto 0 0; width: 10px; z-index: 39; padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
+  .v3-root:has(.v3-sidebar-resizer[data-dragging]) .v3-side { transition: none; }
   .v3-sidebar-resizer.ui-splitter { position: absolute; left: calc(var(--sidebar-width) - 1px); top: 0; bottom: 0; z-index: 41; -webkit-app-region: no-drag; }
 
   .v3-root[data-narrow='1'] .v3-side {
@@ -116,6 +117,10 @@
 
   .v3-entry:hover {
     background: var(--hover);
+  }
+
+  .v3-entry:active {
+    background: var(--press);
   }
 
   .v3-entry-label {
@@ -216,6 +221,11 @@
     color: var(--fg);
   }
 
+  .v3-grp-add:active {
+    background: var(--press);
+    color: var(--fg);
+  }
+
   .v3-row {
     width: 100%;
     min-height: var(--d-row);
@@ -230,6 +240,10 @@
 
   .v3-row:hover {
     background: var(--hover);
+  }
+
+  .v3-row:active {
+    background: var(--press);
   }
 
   .v3-row[aria-current='true'],
@@ -253,6 +267,11 @@
   .v3-show-more:hover {
     color: var(--fg2);
     background: var(--hover);
+  }
+
+  .v3-show-more:active {
+    color: var(--fg2);
+    background: var(--press);
   }
 
   .v3-srow {
@@ -486,6 +505,11 @@
     color: var(--fg);
   }
 
+  .v3-archive-toggle:active {
+    background: var(--press);
+    color: var(--fg);
+  }
+
   .v3-arow {
     display: flex;
     align-items: center;
@@ -498,6 +522,10 @@
 
   .v3-arow:hover {
     background: var(--hover);
+  }
+
+  .v3-arow:active {
+    background: var(--press);
   }
 
   .v3-arow-main {

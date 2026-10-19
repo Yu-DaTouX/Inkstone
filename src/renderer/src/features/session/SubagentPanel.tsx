@@ -120,7 +120,7 @@ function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: bo
         close()
       }}
     >
-      <Splitter className="v3-sap-resizer" grip title={tt('subagentResize')} orientation="vertical" value={available - shownWidth} min={edge} max={Math.max(edge, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(SUBAGENT_PANEL_WIDTH)} />
+      <Splitter className="v3-sap-resizer" title={tt('subagentResize')} orientation="vertical" value={available - shownWidth} min={edge} max={Math.max(edge, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(SUBAGENT_PANEL_WIDTH)} />
       <header className="v3-sap-head">
         <span className="v3-sap-glyph" data-tone={dotClass} aria-hidden>
           <SubagentBot run={run} snapshot={snapshot} model={model} />
