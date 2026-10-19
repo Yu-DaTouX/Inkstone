@@ -8,7 +8,7 @@
   const store = window.__yanStore
   const runCli = async (command, waitMs = 30_000) => {
     const before = store.getState().messages.filter((message) => message.role === 'bash').length
-    await window.yan.runBash(command)
+    void Promise.resolve(window.yan.runBash(command)).catch(() => undefined)
     const deadline = Date.now() + waitMs
     while (Date.now() < deadline) {
       const messages = store.getState().messages.filter((message) => message.role === 'bash')
@@ -34,7 +34,10 @@
     const run = await runCli(command)
     return { run, data: await readResult(run.receipt) }
   }
-  const observe = async () => window.yan.browser.observe()
+  const observe = async () => {
+    const result = await action('yan browser observe')
+    return result.data?.elements ? result.data : { url: '', elements: [], text: '', receipt: result.run.receipt }
+  }
   const navigate = async (url) => {
     const result = await runCli(`yan browser navigate --url "${url}"`)
     const receipt = result.receipt
@@ -49,7 +52,7 @@
     }
     return null
   }
-  const safeRef = (element) => typeof element?.ref === 'string' && /^\d+:e\d+$/.test(element.ref)
+  const safeRef = (element) => typeof element?.ref === 'string' && /^[0-9a-f-]+:\d+:e\d+$/i.test(element.ref)
 
   localStorage.setItem('yan.onboarded', '1')
   for (let i = 0; i < 30 && store.getState().conn !== 'ready'; i++) await sleep(300)
@@ -57,9 +60,16 @@
   if (!store.getState().settings?.rightPanelOpen) await store.getState().setRightPanelOpen(true)
 
   try {
-    out.push('=== 1. 真实下拉框 select ===')
+    out.push('=== 0. 右侧工作区打开浏览器窗格 ===')
+    const opener = document.querySelector('[data-testid="wb-open-browser"]')
+    ok(!!opener, '顶栏有浏览器窗格入口')
+    if (opener && opener.getAttribute('aria-pressed') !== 'true') opener.click()
+    ok(!!await waitFor(async () => document.querySelector('.v3-browser'), 6_000), '浏览器窗格已挂载')
+
+    out.push('\n=== 1. 真实下拉框 select ===')
     const dropdown = await navigate('https://the-internet.herokuapp.com/dropdown')
     ok(dropdown.run.exitCode === 0 && dropdown.run.receipt?.ok === true, '下拉表单页面打开', JSON.stringify(dropdown.run.receipt).slice(0, 180))
+    ok(!!await waitFor(async () => store.getState().browserNativeVisible === true, 8_000), '浏览器原生视图随窗格显示')
     let page = await waitFor(async () => {
       const current = await observe()
       return current.url.includes('/dropdown') && current.elements.length ? current : null
@@ -106,13 +116,13 @@
       const current = await observe()
       return current.url.includes('/inputs') && current.elements.length ? current : null
     })
-    const input = page?.elements.find((element) => element.role === 'textbox')
+    const input = page?.elements.find((element) => (element.role === 'textbox' || element.role === 'spinbutton'))
     const typed = input && safeRef(input) ? await action(`yan browser type --ref ${input.ref} --text 42`) : { run: {}, data: null }
     ok(typed.run.receipt?.ok === true, 'type 写入 demo 输入框', JSON.stringify(typed.run.receipt ?? null).slice(0, 180))
     const enter = await action('yan browser press --key Tab')
     ok(enter.run.receipt?.ok === true, 'press 将焦点移出字段并返回新观察', JSON.stringify(enter.run.receipt ?? null).slice(0, 180))
     const final = enter.data?.elements ? enter.data : await observe()
-    ok(final?.elements.some((element) => element.role === 'textbox' && element.value === '42'), '观察确认文本表单值', final?.elements.find((element) => element.role === 'textbox')?.value ?? '')
+    ok(final?.elements.some((element) => (element.role === 'textbox' || element.role === 'spinbutton') && element.value === '42'), '观察确认文本表单值', final?.elements.find((element) => (element.role === 'textbox' || element.role === 'spinbutton'))?.value ?? '')
   } catch (error) {
     ok(false, '真实站点场景抛出异常', error instanceof Error ? error.stack ?? error.message : String(error))
   } finally {

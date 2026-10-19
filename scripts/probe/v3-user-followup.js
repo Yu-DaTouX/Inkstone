@@ -12,22 +12,27 @@
     store.setState({messages:[],peekedMessages:null})
     await wait(500)
     check(!!q('v3-sidebar-resizer'),'左侧会话列表右边缘有正式拖拽条')
+    const dragFrom=q('v3-sidebar').getBoundingClientRect().width
     await stage('sidebar-drag')
     check(window.__followupSidebarDrag===true,'可信指针拖动实际改变会话列表宽度')
-    check(Number(localStorage.getItem('inkstone.v3.sidebarWidth'))>280,'拖宽结果已持久化')
-    const sidebar=q('v3-sidebar'), width=sidebar.getBoundingClientRect().width
-    q('v3-side-close').click();await wait(100)
-    check(getComputedStyle(sidebar).display==='none','收起后列表退出常驻布局')
+    check(Number(localStorage.getItem('inkstone.v3.sidebarWidth'))>dragFrom+20,'拖宽结果已持久化')
+    const sb=()=>q('v3-sidebar'), width=sb().getBoundingClientRect().width
+    const until=async(fn,ms=2000)=>{const end=Date.now()+ms;while(Date.now()<end){if(fn())return true;await wait(50)}return fn()}
+    const hidden=()=>{const s=getComputedStyle(sb());return s.display==='none'||s.visibility==='hidden'}
+    const docked=()=>!hidden()&&sb().getBoundingClientRect().width>1&&getComputedStyle(sb()).position!=='absolute'
+    q('v3-side-close').click()
+    const collapsed=await until(()=>hidden()&&sb().getBoundingClientRect().width<1)
+    check(collapsed,'收起后列表退出常驻布局')
+    if(!collapsed)out.push(`    诊断：data-side=${document.querySelector('.v3-root')?.getAttribute('data-side')} width=${sb().getBoundingClientRect().width} visibility=${getComputedStyle(sb()).visibility} display=${getComputedStyle(sb()).display} connected=${!!sb()}`)
     const before=document.querySelector('.v3-main').getBoundingClientRect().left
     await stage('sidebar-hover')
-    check(getComputedStyle(sidebar).display!=='none','鼠标悬停左缘展开会话列表')
+    check(!hidden()&&document.querySelector('.v3-root')?.getAttribute('data-sidebar-preview')==='1','鼠标悬停左缘展开会话列表')
     check(Math.abs(document.querySelector('.v3-main').getBoundingClientRect().left-before)<1,'悬停预览不挤动正文')
     await stage('sidebar-leave')
-    check(getComputedStyle(sidebar).display==='none','鼠标离开临时预览后收回')
-    q('v3-head-side-open')?.click()
-    if(getComputedStyle(sidebar).display==='none')q('v3-sidebar-reveal')?.click()
-    await wait(200)
-    check(Math.abs(sidebar.getBoundingClientRect().width-width)<1,'再次展开沿用拖宽结果')
+    check(await until(hidden),'鼠标离开临时预览后收回')
+    if(!docked())q('v3-rail-toggle')?.click()
+    await until(()=>docked()&&Math.abs(sb().getBoundingClientRect().width-width)<1)
+    check(Math.abs(sb().getBoundingClientRect().width-width)<1,'再次展开沿用拖宽结果')
     const cursor=document.querySelector('.v3-hello-cursor')
     check(cursor&&getComputedStyle(cursor).animationIterationCount==='infinite','HELLO WORLD 末尾光标持续闪烁')
     check(document.querySelectorAll('.start-usage [role="tablist"]').length===0,'首页用量精简为摘要，分析控件进入详情')
@@ -39,18 +44,23 @@
     store.setState({models,thinkingLevels:['off','minimal','low','medium','high','xhigh','max'],session:{...store.getState().session,model:models[0],thinkingLevel:'medium',thinkingLevelsStatus:'known'}})
     const main=document.querySelector('.v3-main'),bounds=main.getBoundingClientRect()
     q('model-picker').click()
-    let stable=true
-    for(let i=0;i<30;i++){await new Promise(requestAnimationFrame);const next=main.getBoundingClientRect();if(Math.abs(next.left-bounds.left)>.5||Math.abs(next.width-bounds.width)>.5)stable=false}
+    let stable=true,drift=''
+    for(let i=0;i<30;i++){await new Promise(requestAnimationFrame);const next=main.getBoundingClientRect();if(Math.abs(next.left-bounds.left)>.5||Math.abs(next.width-bounds.width)>.5){stable=false;drift=drift||`帧${i} left ${bounds.left.toFixed(1)}→${next.left.toFixed(1)} width ${bounds.width.toFixed(1)}→${next.width.toFixed(1)}`}}
     check(stable,'打开模型菜单不改变正文位置或宽度')
+    if(!stable)out.push(`    诊断：${drift}`)
     const pop=document.querySelector('.mtp-pop'),dialog=document.querySelector('.mtp-dialog'),list=document.querySelector('.mtp-scroll')
     check(pop&&dialog&&dialog.scrollWidth<=dialog.clientWidth+1&&pop.scrollWidth<=pop.clientWidth+1,'模型浮层和内部对话框均无横向溢出')
     check(list.scrollHeight>list.clientHeight&&getComputedStyle(list).overflowY==='auto','大量模型只在列表内纵向滚动')
     check(getComputedStyle(dialog).overflowX==='hidden','菜单底部不会显示横向滚动条')
     await stage('picker')
     q('model-picker').click();await wait(100)
-    q('v3-schedule-entry').click();await wait(300)
+    if(document.querySelector('.mtp-pop'))out.push('    诊断：再点模型按钮后浮层仍在')
+    q('v3-schedule-entry').click()
+    await until(()=>!!document.querySelector('.sched-page-head')&&!!document.querySelector('.sched-page-notice'),4000)
     const head=document.querySelector('.sched-page-head'),notice=document.querySelector('.sched-page-notice')
-    check(head&&notice&&Math.abs(head.getBoundingClientRect().left-notice.getBoundingClientRect().left)<1,'定时任务标题与说明对齐')
+    const aligned=!!head&&!!notice&&Math.abs(head.getBoundingClientRect().left-notice.getBoundingClientRect().left)<1
+    check(aligned,'定时任务标题与说明对齐')
+    if(!aligned)out.push(`    诊断：head=${head?.getBoundingClientRect().left} notice=${notice?.getBoundingClientRect().left} hash=${location.hash} page=${!!q('v3-schedule-page')}`)
     await stage('schedule')
     const pin=q('v3-always-on-top'),wasTop=store.getState().alwaysOnTop
     pin.click();await wait(150)

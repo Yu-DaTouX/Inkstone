@@ -103,7 +103,7 @@
     out.push('')
     out.push('--- 4. 更改目录（只验证对话框与失败路径，不真的改目录）---')
     await openMenu()
-    menuItem('更改项目文件夹')?.click()
+    menuItem('改项目文件夹')?.click()
     check(await until(() => !!q('v3-project-directory'), 3000), '打开更改目录对话框')
     const dirInputs = [...document.querySelectorAll('[data-testid="v3-project-directory"] input')]
     check(dirInputs[0]?.readOnly === true && dirInputs[0]?.value === PROJECT_CWD, '原目录只读且显示当前目录')

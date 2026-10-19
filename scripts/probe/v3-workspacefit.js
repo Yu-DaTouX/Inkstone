@@ -35,7 +35,7 @@
   const changeDirectory = async (target) => {
     q('v3-project-more')?.click()
     if (!(await until(() => !!q('v3-project-menu'), 3000))) return false
-    menuItem('更改项目文件夹')?.click()
+    menuItem('改项目文件夹')?.click()
     if (!(await until(() => !!q('v3-project-directory'), 3000))) return false
     setNativeValue(q('v3-project-directory-input'), target)
     await wait(100)

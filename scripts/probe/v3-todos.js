@@ -18,7 +18,7 @@
     return false
   }
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
-  const todoTile = () => q('wb-tile-todos')
+  const todoTile = () => q('wb-rail-progress')
   const todoCount = () => todoTile()?.querySelector('.wb-tile-summary')
   const todoToggle = () => todoTile()?.querySelector('.wb-tile-toggle')
 
@@ -106,9 +106,9 @@
     out.push('')
     out.push('--- 1. 磁贴出现 / 计数 / 行状态 ---')
     setTodos(FIXTURE_TODOS, true)
-    check(await until(() => !!todoTile()), '有待办时会话栏出现待办磁贴（wb-tile-todos）')
+    check(await until(() => !!todoTile()), '有待办时会话栏出现「进度」分区卡（wb-rail-progress）')
     check(todoTile()?.getAttribute('data-folded') === '0', '默认展开（data-folded=0）')
-    check((todoCount()?.textContent ?? '').trim() === '2/4', `标题计数 2/4（实际 ${JSON.stringify(todoCount()?.textContent)}）`)
+    check((todoCount()?.textContent ?? '').replace(/\s+/g, '') === '2/4', `标题计数 2 / 4（实际 ${JSON.stringify(todoCount()?.textContent)}）`)
     const rows = qa('v3-todo-row')
     check(rows.length === 4, `渲染 4 行（实际 ${rows.length}）`)
     check(rows.filter((r) => r.getAttribute('data-kind') === 'done').length === 2, '2 行标为 done')
@@ -153,8 +153,8 @@
     check(!!todoCount() && !!todoToggle(), '折叠后标题行与计数仍在')
     store.setState({ peekedSessionId: `${PROBE_SID}-B` })
     check(
-      await until(() => todoTile()?.getAttribute('data-folded') === '1'),
-      '会话栏折叠对所有会话一致（切到另一条会话仍折叠）'
+      await until(() => todoTile()?.getAttribute('data-folded') === '0'),
+      '折叠按会话记忆（切到另一条会话为默认展开）'
     )
     store.setState({ peekedSessionId: PROBE_SID })
     check(
@@ -179,10 +179,12 @@
     const nav = document.querySelector('.v3-side-list')
     check(!!nav && nav.clientHeight > 0, `会话列表仍有可见高度（${nav ? Math.round(nav.clientHeight) : 'n/a'}px，未被挤没）`)
     const bar = q('v3-sessionbar')
-    const tileBox = todoTile()?.getBoundingClientRect()
+    const railScroll = bar?.querySelector('.wb-overview')
+    const barBox = bar?.getBoundingClientRect()
     check(
-      !!bar && !!tileBox && tileBox.bottom <= bar.getBoundingClientRect().bottom + 1,
-      '磁贴底边不超出会话栏'
+      !!bar && !!railScroll && !!todoTile() && railScroll.contains(todoTile()) && barBox.bottom <= innerHeight + 1 &&
+        getComputedStyle(railScroll).overflowY === 'auto' && railScroll.getBoundingClientRect().bottom <= barBox.bottom + 1,
+      '会话栏不超出窗口，超长进度卡留在会话栏的滚动区内'
     )
     check(document.documentElement.scrollWidth <= innerWidth + 1, '无页面横向溢出')
 
@@ -202,7 +204,7 @@
     }
     store.setState({ todos: [] })
     check(await until(() => !todoTile()), '无待办会话磁贴 DOM 不存在')
-    check(!document.querySelector('.wb-tile[data-tile="todos"]'), '磁贴 class 也不残留（无空态占位）')
+    check(!document.querySelector('.wb-tile[data-tile="progress"]'), '磁贴 class 也不残留（无空态占位）')
 
     out.push('')
     out.push('--- 6. Ctrl+B 收起无浮层 ---')
@@ -216,8 +218,9 @@
     check(collapsed, '收到真实 Ctrl+B 并收起侧栏（data-side=closed）')
     check(!document.querySelector('.v3-scrim'), '收起后没有浮层遮罩（宽窗不另开浮层）')
     const side = q('v3-sidebar')
-    const gone = () => !side || getComputedStyle(side).display === 'none' || side.getBoundingClientRect().width === 0
-    check(await until(gone, 3000), '收起动画结束后侧栏不占布局（display:none / 宽度 0）')
+    const gone = () => !side || getComputedStyle(side).display === 'none' || (getComputedStyle(side).visibility === 'hidden' && side.getBoundingClientRect().width < 1)
+    check(await until(gone, 3000), '收起动画结束后侧栏不占布局（隐藏且宽度 < 1px）')
+    if (!gone() && side) out.push(`    诊断：width=${side.getBoundingClientRect().width} visibility=${getComputedStyle(side).visibility}`)
     if (!collapsed) {
       out.push(`    诊断：data-side=${root()?.getAttribute('data-side')} narrow=${root()?.getAttribute('data-narrow')}`)
     }

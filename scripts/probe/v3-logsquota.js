@@ -28,7 +28,7 @@
     }
     q('wb-more-tools')?.click()
     const order = ['changes', 'preview', 'logs', 'branch', 'quota']
-    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    const pick = () => q(`wb-view-${tab}`) ?? document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
     for (let i = 0; i < 40 && !pick(); i++) await wait(50)
     pick()?.click()
     await wait(200)
@@ -54,16 +54,14 @@
       await until(() => !document.querySelector('.v3-ob-overlay'), 3000)
     }
 
-    await openTool('quota')
     await openTool('logs')
-    check(await until(() => !!q('wb-tab-logs') && !!q('wb-tab-quota'), 4000), '工作区有「日志」「额度」页签')
+    check(await until(() => !!q('wb-pane-logs') && !!q('v3-wb-logs'), 4000), '顶栏「更多」菜单打开日志面板')
 
     out.push('')
     out.push('--- 1. 日志页 ---')
     const realLogs = store.getState().logs
     const realStatuses = store.getState().statuses
     store.setState({ logs: [], statuses: {} })
-    q('wb-tab-logs')?.click()
     check(await until(() => !!q('v3-wb-logs-empty'), 3000), '没有日志和状态时给空状态')
     const lines = Array.from({ length: 260 }, (_, i) => (i % 10 === 0 ? `[warn] 第 ${i} 行 需要注意` : `[info] 第 ${i} 行 正常`))
     store.setState({ logs: lines, statuses: { 'probe-ext': '就绪' } })
@@ -113,8 +111,34 @@
         ]
       })
     }
-    q('wb-tab-quota')?.click()
-    check(await until(() => !!q('v3-wb-quota'), 3000), '打开额度页签')
+    for (const close of document.querySelectorAll('[data-testid^="wb-card-close-"]')) close.click()
+    const withMessages = store.getState().sessions.find((s) => s.path && (s.messageCount ?? 0) > 0)
+    if (withMessages) {
+      await store.getState().switchSession(withMessages.path)
+      await until(() => store.getState().session?.sessionFile === withMessages.path && store.getState().messages.length > 0, 10000)
+    }
+    const sessionBar = q('v3-header-sessionbar')
+    if (sessionBar && sessionBar.getAttribute('aria-pressed') !== 'true') sessionBar.click()
+    const liveQuota = window.__yanLiveQuota
+    const realSession = store.getState().session
+    const liveProvider = 'commandcode'
+    const realEntries = liveQuota?.getState().entries
+    if (realSession?.model?.provider !== liveProvider) {
+      store.setState({ session: { ...(realSession ?? {}), model: { ...(realSession?.model ?? {}), id: 'probe-quota-model', provider: liveProvider } } })
+    }
+    liveQuota?.setState({
+      entries: {
+        ...(realEntries ?? {}),
+        [liveProvider]: {
+          snapshot: { provider: liveProvider, supported: true, checkedAt: now, windows: [{ id: 'five_hour', label: '5 小时', used: 20, total: 100, resetAt: now + 3 * 3600_000 }] },
+          fetchedAt: now,
+          loading: false
+        }
+      }
+    })
+    check(await until(() => !!q('wb-rail-usage')?.querySelector('.wb-tile-open'), 4000), '会话栏「用量」卡有打开额度视图的入口')
+    q('wb-rail-usage')?.querySelector('.wb-tile-open')?.click()
+    check(await until(() => !!q('v3-wb-quota'), 3000), '从用量卡打开额度面板')
     check(!!q('v3-wb-quota-refresh'), '有刷新按钮')
     if (overridable) {
       check(await until(() => document.querySelectorAll('[data-testid^="v3-wb-quota-card-"]').length === 3, 4000), '渲染三张账号卡')
@@ -142,6 +166,8 @@
         '真实查询后给出卡片、空状态或错误之一'
       )
     }
+    store.setState({ session: realSession })
+    liveQuota?.setState({ entries: realEntries ?? {} })
     out.push('证据范围：v3 日志 / 额度页签的 DOM 行为；日志与额度数据为注入或只读查询，未切换真实账号、未调模型。')
   } catch (error) {
     out.push(`  ✗ 场景异常：${error?.stack ?? error}`)

@@ -22,20 +22,27 @@
     return false
   }
   const query = (testId) => document.querySelector(`[data-testid="${testId}"]`)
+  const closeSettings = async () => {
+    ;(query('settings-close') ?? query('v3-back'))?.click()
+    return until(() => !query('settings-root') && !!query('composer-input'))
+  }
 
   const openTool = async (tab) => {
     const direct = query(`wb-open-${tab}`)
     if (direct) {
-      direct.click()
+      if (direct.getAttribute('aria-pressed') !== 'true') direct.click()
       await wait(200)
       return
     }
+    if (query(`wb-card-${tab}`)) return
     query('wb-more-tools')?.click()
-    const order = ['changes', 'preview', 'logs', 'branch', 'quota']
-    const pick = () => document.querySelector(`.wb-more-menu [data-key="${tab}"]`) ?? document.querySelectorAll('.wb-more-menu [role="menuitem"]')[order.indexOf(tab)]
+    const pick = () => query(`wb-view-${tab}`) ?? document.querySelector(`.wb-more-menu [data-key="${tab}"]`)
     for (let i = 0; i < 40 && !pick(); i++) await wait(50)
     pick()?.click()
     await wait(200)
+  }
+  const closeAllCards = () => {
+    for (const close of document.querySelectorAll('[data-testid^="wb-card-close-"]')) close.click()
   }
   const store = window.__yanStore
   const oldAnswer = store?.getState().answerApproval
@@ -53,7 +60,7 @@
     const runsSnapshot = await window.yan.runs.snapshot()
     check(Number.isInteger(runsSnapshot.revision) && Array.isArray(runsSnapshot.runs), '正式运行快照 IPC 可用，未以渲染端伪造状态替代')
     const sidebarWidth = query('v3-sidebar').getBoundingClientRect().width
-    check(sidebarWidth >= 250 && sidebarWidth <= 280, `默认侧栏宽度 ${sidebarWidth.toFixed(1)}px`)
+    check(Math.abs(sidebarWidth - 288) <= 2, `默认侧栏宽度 ${sidebarWidth.toFixed(1)}px（参考默认 288）`)
     check(document.documentElement.scrollWidth <= innerWidth + 1, '默认宽度无页面横向溢出')
     check(!getComputedStyle(document.body).fontFamily.toLowerCase().includes('maple'), 'v3 不以随包 Maple 字体排版')
     const aligned = (container, label) => {
@@ -70,7 +77,9 @@
     const headerSettings = query('v3-header-settings')
     check(!!headerSettings, '设置入口存在')
     headerSettings?.click()
-    check(await until(() => query('v3-theme-light')), '精简设置页打开')
+    check(await until(() => query('settings-root')), '设置弹层打开')
+    query('v3-settings-nav-appearance')?.click()
+    check(await until(() => query('v3-theme-light')), '设置导航进入外观分区')
     query('v3-theme-light')?.click()
     check(await until(() => document.documentElement.dataset.theme === 'light'), '可切换浅色主题')
     const lightBg = getComputedStyle(document.body).backgroundColor
@@ -85,17 +94,18 @@
     asciiSwitch()?.click()
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false), '关掉开关后主进程持久化 false')
     check(asciiSwitch()?.checked === false, '关闭后内部输入不再选中')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '可返回会话')
+    check(await closeSettings(), '可返回会话')
     check(await until(() => !query('v3-ascii-field')), '关掉开关后空态不再挂载 ASCII 背景')
     query('v3-header-settings')?.click()
-    check(await until(() => query('v3-ascii-background-toggle')), '可再次打开外观分区')
+    check(await until(() => query('v3-ascii-background-toggle')), '再次打开设置回到上次的外观分区')
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false, 2000), '恢复前确认开关实际已关闭（主进程回显 false）')
     asciiSwitch()?.click()
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === undefined), '开回来只回落缺省，不写 true')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '返回会话')
+    check(await closeSettings(), '返回会话')
     check(await until(() => !!query('v3-ascii-field')), '恢复缺省后空态重新挂载 ASCII 背景')
+    const focusTrail = []
+    const onFocusIn = (event) => focusTrail.push(`${event.target?.tagName}:${event.target?.getAttribute?.('data-testid') ?? ''}`)
+    document.addEventListener('focusin', onFocusIn, true)
     query('composer-input')?.focus()
     check(await until(() => query('v3-command-input'), 20000), '真实 Ctrl+K 打开命令面板')
     check(document.activeElement === query('v3-command-input'), '命令面板接管搜索焦点')
@@ -103,7 +113,8 @@
     check(await until(() => !query('v3-command-input'), 5000), '真实 Esc 关闭命令面板')
     const focusRestored = await until(() => document.activeElement === query('composer-input'), 500)
     check(focusRestored, '关闭命令面板后归还输入框焦点')
-    if (!focusRestored) out.push(`    焦点诊断：${document.activeElement?.tagName} ${document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.className ?? ''}`)
+    document.removeEventListener('focusin', onFocusIn, true)
+    if (!focusRestored) out.push(`    焦点诊断：${document.activeElement?.tagName} ${document.activeElement?.getAttribute('data-testid') ?? document.activeElement?.className ?? ''}；轨迹 ${focusTrail.slice(-8).join(' → ')}`)
 
     const state = store.getState()
     const pending = {
@@ -150,23 +161,20 @@
       return panel && !panel.hidden && panel.getBoundingClientRect().width > 0
     }), '工作区点击后实际可见')
     const panel = document.querySelector('.wb-panel')
-    for (const tab of ['changes', 'browser', 'preview']) await openTool(tab)
-    check(['changes', 'files', 'browser', 'preview'].every((tab) => query(`wb-tab-${tab}`)), '打开过的工具页签都挂载')
-    check(!!query('wb-split') && !!query('wb-focus'), '拆分与专注控件有明确入口')
-    check(!!query('wb-popout') && query('wb-popout').disabled === true, '弹出为禁用占位（未迁移）')
     const noOwner = () => !!query('wb-empty')
-    query('wb-tab-files')?.click()
-    check(await until(() => query('v3-files') || noOwner()), '文件页显示真实组件或明确的无会话门闩')
     const browserWasOpen = store.getState().browserState.open
-    query('wb-tab-browser')?.click()
-    check(await until(() => query('wb-pane-browser') || noOwner()), '浏览器页可选中且保留归属门闩')
+    for (const tab of ['changes', 'browser']) await openTool(tab)
+    check(await until(() => noOwner() || ['changes', 'files', 'browser'].every((tab) => query(`wb-card-${tab}`))), '打开过的工具各自以面板卡片挂载')
+    check(noOwner() || (!!query('wb-card-expand-files') && !!query('wb-card-grip-files') && !!query('wb-card-close-files')), '面板卡片有展开、拖拽平铺与关闭入口')
+    check(await until(() => query('wb-pane-files')?.querySelector('[data-testid="v3-files"]') || noOwner()), '文件卡显示真实组件或明确的无会话门闩')
+    check(await until(() => query('wb-pane-browser') || noOwner()), '浏览器卡挂载且保留归属门闩')
     await wait(150)
-    check(store.getState().browserState.open === browserWasOpen, '只选择浏览器页不会自行打开或导航原生网页')
+    check(store.getState().browserState.open === browserWasOpen, '只挂载浏览器卡不会自行打开或导航原生网页')
     check(!query('terminal-pane'), '探针未挂载终端，不执行用户默认 shell/profile')
     const frame = panel?.getBoundingClientRect()
     check(frame && frame.left >= -1 && frame.right <= innerWidth + 1, '工作区保持在窗口可读范围内')
-    query('wb-close')?.click()
-    check(await until(() => panel?.getBoundingClientRect().width === 0), '关闭后工作区实际隐藏，而不是只改状态')
+    closeAllCards()
+    check(await until(() => panel?.hidden || panel?.getBoundingClientRect().width === 0), '关掉所有卡片后工作区实际隐藏，而不是只改状态')
     await openTool('changes')
     check(await until(() => panel && !panel.hidden && panel.getBoundingClientRect().width > 0), '重新打开保留面板，不创建终端资源')
     check(document.querySelectorAll('.wb-pane').length <= 6, '叶子实例数量不随操作增加')
@@ -177,26 +185,21 @@
     check(await until(() => query('v3-theme-dark')), '设置内可切回外观分区')
     store.getState().openSettings('sync')
     check(await until(() => query('v3-data-settings')), '旧「同步」深链接进入数据与同步分区')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '数据与同步分区可返回对话')
+    check(await closeSettings(), '数据与同步分区可返回对话')
     store.getState().openSettings('shortcuts')
     check(await until(() => query('v3-shortcuts-settings')), '设置「快捷键」分区有正式入口')
     check(await until(() => document.querySelectorAll('[data-testid^="v3-shortcut-record-"]').length > 0), '快捷键表有可改绑入口')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '快捷键分区可返回对话')
+    check(await closeSettings(), '快捷键分区可返回对话')
     store.getState().openSettings('auth')
     check(await until(() => query('ms-services')), '设置内重复同一深链接仍选中目标页')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '深链接后可返回对话')
+    check(await closeSettings(), '深链接后可返回对话')
     store.getState().openSettings('auth')
     check(await until(() => query('ms-services')), '返回对话后再次打开同页不被吞掉')
-    query('v3-back')?.click()
-    await until(() => query('composer-input'))
+    await closeSettings()
     store.getState().openSettings('packages')
     check(await until(() => query('caps-settings')), '能力与插件正式懒加载入口可挂载')
     check(['skills', 'mcp', 'tools', 'market'].every((tab) => query(`caps-tab-${tab}`)), '能力页四个分区入口都有明确位置')
-    query('v3-back')?.click()
-    check(await until(() => query('composer-input')), '能力页返回对话，不执行配置写入')
+    check(await closeSettings(), '能力页返回对话，不执行配置写入')
 
     out.push('')
     out.push('--- 首页用量（正式取数 / v3 pattern / pane 布局）---')
@@ -327,17 +330,19 @@
     {
       const shotSettings = query('v3-header-settings')
       shotSettings?.click()
+      await until(() => !!query('settings-root'), 5000)
+      query('v3-settings-nav-appearance')?.click()
       await until(() => !!query('v3-theme-light'), 5000)
       query('v3-theme-light')?.click()
       await until(() => document.documentElement.dataset.theme === 'light', 4000)
-      query('v3-back')?.click()
+      await closeSettings()
       await until(() => !!document.querySelector('.v3-empty-page'), 4000)
       await wait(2600)
       shotSettings?.click()
       await until(() => !!query('v3-theme-dark'), 5000)
       query('v3-theme-dark')?.click()
       await until(() => document.documentElement.dataset.theme === 'dark', 4000)
-      query('v3-back')?.click()
+      await closeSettings()
       await until(() => !!query('composer-input'), 4000)
       await wait(1200)
     }
@@ -420,13 +425,12 @@
         error: null
       })
       await openTool('files')
-      query('wb-close')?.click()
+      closeAllCards()
       await wait(9000)
     }
-    query('wb-tab-changes')?.click()
     await wait(50)
     const endPanel = document.querySelector('.wb-panel')
-    if (endPanel && !endPanel.hidden) query('wb-close')?.click()
+    if (endPanel && !endPanel.hidden) closeAllCards()
     await wait(100)
     check(
       !document.querySelector('[data-testid="terminal-pane"]') &&
