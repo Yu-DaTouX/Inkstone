@@ -138,7 +138,7 @@ export function UsageSettings(): ReactElement {
 
             {bars && bars.length > 0 ? (
               view === 'chart' ? (
-                <ol className="settings-bars" aria-label={dimensionLabel}>
+                <ol className="settings-bars" data-dimension={dimension} aria-label={dimensionLabel}>
                   {bars.map((bar, index) => (
                     <li
                       key={bar.key}
@@ -148,13 +148,15 @@ export function UsageSettings(): ReactElement {
                     >
                       <span className="settings-bar__label">{bar.label}</span>
                       <span className="settings-bar__track" aria-hidden>
-                        <span
-                          className="settings-bar__fill"
-                          style={{
-                            transform: `scaleX(${Math.max(0.02, bar.ratio)})`,
-                            background: dimension === 'day' ? 'var(--data-1)' : `var(--data-${(index % 8) + 1})`
-                          }}
-                        />
+                        {bar.value > 0 ? (
+                          <span
+                            className="settings-bar__fill"
+                            style={{
+                              transform: `scaleX(${Math.max(0.02, bar.ratio)})`,
+                              background: dimension === 'day' ? 'var(--data-1)' : `var(--data-${(index % 8) + 1})`
+                            }}
+                          />
+                        ) : null}
                       </span>
                       <span className="settings-bar__value">{compactNumber(bar.value)}</span>
                     </li>

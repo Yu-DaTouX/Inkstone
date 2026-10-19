@@ -8,11 +8,18 @@ export interface TurnSegment {
   thinking: string
   thinkingMs?: number
   thinkingLive: boolean
+  thinkingParts?: TurnThinking[]
   tools: NonNullable<UIMessage['toolCalls']>
   texts: TurnText[]
   response: TurnText | null
   responseParts?: TurnText[]
   commentary: TurnText[]
+}
+
+export interface TurnThinking {
+  text: string
+  ms?: number
+  at: number
 }
 
 export interface TurnText {
@@ -117,6 +124,7 @@ interface SegmentAccumulator {
   thinking: string[]
   thinkingMs: number
   thinkingLive: boolean
+  thinkingParts: TurnThinking[]
   tools: NonNullable<UIMessage['toolCalls']>
   texts: TurnText[]
   closed: boolean
@@ -224,6 +232,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
           thinking: raw.thinking.join('\n\n'),
           ...(raw.thinkingMs ? { thinkingMs: raw.thinkingMs } : {}),
           thinkingLive: raw.thinkingLive,
+          ...(raw.thinkingParts.length ? { thinkingParts: raw.thinkingParts } : {}),
           tools: raw.tools,
           texts: raw.texts,
           response,
@@ -326,6 +335,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         thinking: [] as string[],
         thinkingMs: 0,
         thinkingLive: false,
+        thinkingParts: [] as TurnThinking[],
         tools: [] as NonNullable<UIMessage['toolCalls']>,
         texts: [] as TurnText[],
         closed: false
@@ -340,6 +350,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       const target = seg()
       target.thinking.push(m.thinking!.trim())
       target.thinkingMs += m.thinkingMs ?? 0
+      target.thinkingParts.push({ text: m.thinking!.trim(), at: target.tools.length, ...(m.thinkingMs ? { ms: m.thinkingMs } : {}) })
     }
     if (m.thinkingLive !== undefined) {
       cur.thinkingLive = m.thinkingLive

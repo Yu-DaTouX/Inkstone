@@ -83,7 +83,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           <div className="v3-qa" data-testid="v3-question-qa">
             {msg.qa.map((item, i) => (
               <div key={i} className="v3-qa-item">
-                <details className="v3-qa-q"><summary>{item.question}</summary></details>
+                <div className="v3-qa-q">{item.question}</div>
                 {item.answer ? <div className="v3-qa-a">{item.answer}</div> : null}
               </div>
             ))}
@@ -219,16 +219,14 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
   const flow = flowSegments(turn, commentary)
   const split = flow ? splitTurnProcess(flow) : null
   const processSegs = split?.process ?? []
-  const thinkingInProcess = !streaming && processSegs.length > 0
-  const thinkingAfterProcess = !!streaming && processSegs.length > 0
-  const thinkingLine = <ThinkingLine text={turn.thinking ?? ''} ms={turn.thinkingMs} live={turn.thinkingLive} />
+  const thinkingBySegment = processSegs.length > 0
 
   return (
     <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length}>
       <div className="v3-assistant-body">
         {edgeFirst ? <BranchSummary /> : null}
         {streaming ? null : <SettledActivity turn={turn} />}
-        {thinkingInProcess || thinkingAfterProcess ? null : thinkingLine}
+        {thinkingBySegment ? null : <ThinkingLine text={turn.thinking ?? ''} ms={turn.thinkingMs} live={turn.thinkingLive} />}
 
         {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
 
@@ -239,13 +237,11 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
                 process={processSegs}
                 elapsedMs={turn.elapsedMs}
                 live={!!streaming && !split.reply}
-                thinking={thinkingInProcess ? thinkingLine : null}
                 sessionId={sessionId}
                 turnId={turn.id}
                 approvalIds={approvalIds}
               />
             ) : null}
-            {thinkingAfterProcess ? thinkingLine : null}
             {split.reply ? (
               <div className="v3-seg" data-testid="v3-seg">
                 <div className="v3-para">
@@ -257,6 +253,7 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
               const last = si === split.tail.length - 1
               return (
                 <div key={seg.id} className="v3-seg" data-testid="v3-seg">
+                  {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} /> : null}
                   {seg.commentary.length ? (
                     <div className="v3-commentary">
                       {seg.commentary.map((part, i) => (

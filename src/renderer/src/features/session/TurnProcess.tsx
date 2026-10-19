@@ -1,25 +1,25 @@
-import type { JSX, ReactNode } from 'react'
+import type { JSX } from 'react'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { formatDuration } from '../../../../shared/duration'
 import { Markdown } from './Markdown'
 import { Icon } from './Icon'
 import { ToolSteps } from './ToolSteps'
+import { ThinkingLine } from './Thinking'
 import { ToolRunStats } from './ToolRunStats'
 import { runningCallLabel } from './tool-summary'
 import { Badge, Button } from '../../ui'
 import { useSessionText } from './text'
 import { formatToolRun, summarizeToolRun } from './tool-run-model'
 import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
-import { mergeQuietSegments, narrationLine, pickLiveSegments, processNotes, processTools } from './turn-process'
+import { mergeQuietSegments, narrationLine, pickLiveSegments, processNotes, processTools, segmentSteps } from './turn-process'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 
-export function TurnProcess({ process, elapsedMs, live, thinking, sessionId, turnId, approvalIds = NO_APPROVALS }: {
+export function TurnProcess({ process, elapsedMs, live, sessionId, turnId, approvalIds = NO_APPROVALS }: {
   process: TurnSegment[]
   elapsedMs?: number
   live: boolean
-  thinking?: ReactNode
   sessionId: string | null
   turnId?: string
   approvalIds?: ReadonlySet<string>
@@ -64,26 +64,31 @@ export function TurnProcess({ process, elapsedMs, live, thinking, sessionId, tur
 
       {open ? (
         <div className="v3-process-body" data-testid="v3-process-body">
-          {thinking}
           {hidden > 0 ? (
             <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setManual(true)} data-testid="v3-process-more">
               {tt('moreItems', { n: hidden })}
             </Button>
           ) : null}
-          {groups.map((segment) => (
-            <div key={segment.id} className="v3-process-seg">
-              {segment.commentary.length ? (
-                <div className="v3-process-notes">
-                  {segment.commentary.map((part) => (
-                    <div key={part.id} className="v3-process-note">
-                      <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <ToolSteps tools={segment.tools} approvalIds={approvalIds} />
-            </div>
-          ))}
+          {groups.map((segment) => {
+            const { lead, steps } = segmentSteps(segment)
+            return (
+              <div key={segment.id} className="v3-process-seg">
+                {lead.map((part, index) => <ThinkingLine key={`lead:${index}`} text={part.text} ms={part.ms} live={part.live} />)}
+                {segment.commentary.length ? (
+                  <div className="v3-process-notes">
+                    {segment.commentary.map((part) => (
+                      <div key={part.id} className="v3-process-note">
+                        <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {steps.map((step) => step.kind === 'tools'
+                  ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} />
+                  : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} />)}
+              </div>
+            )
+          })}
         </div>
       ) : null}
     </section>

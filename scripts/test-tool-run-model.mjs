@@ -107,8 +107,15 @@ async function run() {
     ])
     assert.equal(failures.failed, 1, '中断不算失败，同一路径重试成功覆盖旧失败')
     assert.equal(failures.state, 'ok', '组状态取最后一个成员')
-    assert.equal(m.formatToolRun(failures, zh), '运行 2 条命令，编辑 1 个文件（1 个失败）')
-    assert.equal(m.formatToolRun(failures, en), 'Ran 2 commands, edited a file (1 failed)')
+    assert.equal(m.formatToolRun(failures, zh), '运行 2 条命令（1 个失败），编辑 1 个文件', '失败数挂在失败的那类工具后面')
+    assert.equal(m.formatToolRun(failures, en), 'Ran 2 commands (1 failed), edited a file')
+
+    const agentRun = m.summarizeToolRun([
+      call('r1', 'read', { path: 'a.md' }),
+      call('b1', 'bash', { command: 'yan subagent start --task x' }),
+      call('b2', 'bash', { command: 'sleep 8; yan subagent get --id x' }, { status: 'error' })
+    ])
+    assert.equal(m.formatToolRun(agentRun, zh), '读取 1 个文件，派出 1 个子 Agent，运行 1 条命令（1 个失败）', '命令失败不算到子 Agent 上')
 
     const notCounted = m.summarizeToolRun([
       call('e1', 'edit', { path: 'x.ts' }, { status: 'error', details: diff('x.ts', 9, 9) }),

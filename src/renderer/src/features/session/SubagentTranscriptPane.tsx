@@ -13,6 +13,7 @@ import { PaneTitle, PaneTools } from '../workbench/pane-chrome'
 import { isNearBottom } from '../workbench/background-tasks'
 import { findSubagentSnapshot } from './turn-lines'
 import { SubagentBot } from './SubagentBot'
+import { Icon } from './Icon'
 import { SubagentStateIcon } from './SubagentState'
 import { SubagentReview } from './SubagentReview'
 import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
@@ -171,16 +172,22 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
 }
 
 function PathList({ label, items }: { label: string; items: readonly string[] }): JSX.Element | null {
+  const [open, setOpen] = useState(false)
   if (!items.length) return null
   return (
-    <details className="sa-pane-paths">
-      <summary>{`${label} ${items.length}`}</summary>
-      <ul>
-        {items.slice(0, PATHS_SHOWN).map((item) => (
-          <li key={item} title={item}>{item}</li>
-        ))}
-        {items.length > PATHS_SHOWN ? <li className="dim">+{items.length - PATHS_SHOWN}</li> : null}
-      </ul>
-    </details>
+    <div className="sa-pane-paths">
+      <button type="button" className="sa-pane-paths-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>{`${label} ${items.length}`}</span>
+        <Icon name="chevron-right" size={13} className="v3-chev" />
+      </button>
+      {open ? (
+        <ul>
+          {items.slice(0, PATHS_SHOWN).map((item) => (
+            <li key={item} title={item}>{item}</li>
+          ))}
+          {items.length > PATHS_SHOWN ? <li className="dim">+{items.length - PATHS_SHOWN}</li> : null}
+        </ul>
+      ) : null}
+    </div>
   )
 }

@@ -33,6 +33,17 @@
     border-bottom: 0;
   }
 
+  .usage-panel .settings-bars[data-dimension='day'] {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+  }
+
+  .usage-panel .settings-bars[data-dimension='day'] .settings-bar {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    gap: var(--s-12);
+  }
+
   .usage-panel .settings-bar__fill {
     width: 100%;
     transform-origin: left center;

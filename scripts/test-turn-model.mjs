@@ -36,6 +36,12 @@ try {
   const turns = groupIntoTurns([first, user, next])
   check(turns.at(-1).model === undefined, '下一轮不继承上一轮物理模型')
   check(groupIntoTurns([first, second], second.id)[0].model === 'physical-last', '流式投影也使用最新有模型的消息')
+  const stepped = groupIntoTurns([
+    { id: 's1', role: 'assistant', text: '', thinking: '先看', thinkingMs: 400, toolCalls: [{ id: 'a', name: 'bash', status: 'ok' }] },
+    { id: 's2', role: 'assistant', text: '', thinking: '再读', toolCalls: [{ id: 'b', name: 'read', status: 'ok' }] },
+    { id: 's3', role: 'assistant', text: '结论', thinking: '收尾' }
+  ])[0].segments[0]
+  check(JSON.stringify(stepped.thinkingParts) === JSON.stringify([{ text: '先看', at: 0, ms: 400 }, { text: '再读', at: 1 }, { text: '收尾', at: 2 }]), '同一段内每次推理记下它之前已有的工具数')
   const source = await readFile('src/renderer/src/patterns/ContextRing.tsx', 'utf8')
   const ast = ts.createSourceFile('ContextRing.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const hook = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'useContextUsage')

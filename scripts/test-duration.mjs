@@ -1,5 +1,5 @@
 export async function runDurationTests(ok) {
-  const { formatDuration } = await import('../out/test/duration.mjs')
+  const { formatDuration, formatShortDuration } = await import('../out/test/duration.mjs')
 
   console.log('\n--- 11.8 人读时长：唯一写法与边界 ---')
 
@@ -30,4 +30,11 @@ export async function runDurationTests(ok) {
     'minSeconds 不影响正常的分钟写法',
     `实际 ${formatDuration(65_000, { minSeconds: 1 })}`
   )
+
+  ok(formatShortDuration(42) === '42ms', '工具用时不足 1 秒显示毫秒', `实际 ${formatShortDuration(42)}`)
+  ok(formatShortDuration(418.4) === '418ms', '毫秒四舍五入，不进位成 1s', `实际 ${formatShortDuration(418.4)}`)
+  ok(formatShortDuration(999.6) === '1s', '接近 1 秒时转秒档，不出现 1000ms', `实际 ${formatShortDuration(999.6)}`)
+  ok(formatShortDuration(1_400) === '1s', '1 秒以上沿用秒档', `实际 ${formatShortDuration(1_400)}`)
+  ok(formatShortDuration(-3) === '0ms', '负数钳到 0ms', `实际 ${formatShortDuration(-3)}`)
+  ok(formatShortDuration(Number.NaN) === '0ms', 'NaN 当作 0ms', `实际 ${formatShortDuration(Number.NaN)}`)
 }

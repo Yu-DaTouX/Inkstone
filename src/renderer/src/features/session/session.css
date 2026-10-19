@@ -133,8 +133,10 @@
   .v3-subagent { display: flex; min-width: 0; height: var(--d-row); }
   .v3-subagent-toggle { display: flex; align-items: center; gap: var(--s-6); flex: 1 1 auto; min-width: 0; height: 100%; padding: 0 var(--s-6) 0 var(--s-4); box-sizing: border-box; }
   .v3-subagent-glyph { flex: none; display: grid; place-items: center; width: var(--size-avatar); height: var(--size-avatar); }
-  .v3-subagent-model, .v3-subagent-time { flex: none; white-space: nowrap; }
-  .v3-subagent-task { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-subagent-model, .v3-subagent-time { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-subagent-model { flex: 0 1000 auto; }
+  .v3-subagent-time { flex: 0 100 auto; }
+  .v3-subagent-task { flex: 1 0.01 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .v3-session { position: relative; container-type: inline-size; --rail-gutter: calc(var(--s-8) + 28px + var(--s-8)); }
   .v3-errorcard { display: flex; flex-direction: column; gap: var(--s-6); }

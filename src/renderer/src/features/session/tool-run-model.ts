@@ -394,8 +394,14 @@ function capitalize(text: string): string {
 }
 
 export function formatToolRun(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): string {
-  const head = capitalize(summary.segments.map((segment) => toolRunSegmentText(segment, tt)).join(tt('runJoin')))
-  return summary.failed > 0 ? head + tt('runFailed', { n: summary.failed }) : head
+  const attributed = summary.segments.reduce((sum, segment) => sum + segment.failed, 0)
+  const parts = summary.segments.map((segment) => {
+    const text = toolRunSegmentText(segment, tt)
+    return segment.failed > 0 ? text + tt('runFailed', { n: segment.failed }) : text
+  })
+  const head = capitalize(parts.join(tt('runJoin')))
+  const rest = summary.failed - attributed
+  return rest > 0 ? head + tt('runFailed', { n: rest }) : head
 }
 
 export interface HeldRunLabel {

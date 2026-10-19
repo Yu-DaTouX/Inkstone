@@ -92,7 +92,7 @@
   .v3-qa { width: 100%; max-width: 480px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-ring); overflow: hidden; }
   .v3-qa-item { padding: var(--s-8) var(--s-12); }
   .v3-qa-item + .v3-qa-item { border-top: 1px solid var(--line); }
-  .v3-qa-q summary { color: var(--fg); font-weight: 500; cursor: pointer; }
+  .v3-qa-q { color: var(--fg); font-weight: 500; }
   .v3-qa-a { margin-top: var(--s-2); color: var(--fg2); }
   .v3-qreceipt { display: flex; flex-direction: column; width: 100%; max-width: 480px; margin: var(--s-2) 0; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-ring); overflow: hidden; }
   .v3-qreceipt-pair { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-8) var(--s-12); }

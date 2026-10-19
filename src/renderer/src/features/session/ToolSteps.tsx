@@ -1,7 +1,8 @@
-import { Fragment, useState, type JSX } from 'react'
+import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
+import { formatShortDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, runningCallLabel, summarize } from './tool-summary'
@@ -26,10 +27,10 @@ export function detailKind(name: string): 'command' | 'change' | 'result' {
   return 'result'
 }
 
-function durationSecs(call: UIToolCall): number | null {
+function durationLabel(call: UIToolCall): string | null {
   const { startedAt, endedAt } = call
   if (typeof startedAt !== 'number' || typeof endedAt !== 'number' || endedAt <= startedAt) return null
-  return Math.max(1, Math.round((endedAt - startedAt) / 1000))
+  return formatShortDuration(endedAt - startedAt)
 }
 
 function isRunning(call: UIToolCall): boolean {
@@ -65,12 +66,9 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UITool
           if (row.standalone && isQuestionCall(row.node.call)) {
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
-            return (
-              <Fragment key={row.id}>
-                <QuestionReceipt call={row.node.call} />
-                {asked ? <QuestionCard requestId={asked.id} /> : null}
-              </Fragment>
-            )
+            return asked
+              ? <QuestionCard key={row.id} requestId={asked.id} />
+              : <QuestionReceipt key={row.id} call={row.node.call} />
           }
           return <StepNode key={row.id} node={row.node} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
         })}
@@ -119,7 +117,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const running = isRunning(call)
   const failed = call.status === 'error' && !call.cancelled
   const open = stored ?? false
-  const secs = durationSecs(call)
+  const duration = durationLabel(call)
   const target = generatingArgs(call) ? t('tool2.generatingArgs') : summarize(call) || t('tool2.noTarget')
   const state = blocked ? 'warn' : running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
@@ -133,7 +131,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
         <span className="v3-step-verb">{call.name}</span>
         <ShimmerText className="v3-step-target" active={running && !blocked} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
         {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
-        {secs !== null && !running ? <span className="v3-step-time">{secs}s</span> : null}
+        {duration !== null && !running ? <span className="v3-step-time">{duration}</span> : null}
         {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         {failed ? <Badge tone="fail" className="v3-steps-badge">{t('tool.failed')}</Badge> : call.cancelled ? <Badge tone="stall" className="v3-steps-badge">{t('tool.cancelled')}</Badge> : call.incomplete ? <Badge tone="stall" className="v3-steps-badge">{t('tool2.incomplete')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
