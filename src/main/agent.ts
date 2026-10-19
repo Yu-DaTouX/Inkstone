@@ -71,7 +71,7 @@ import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 import { BrowserCommands } from './browser-commands'
 import { LookupCommands } from './lookup-commands'
 import { TurnTimingTracker } from './turn-timing-tracker'
-import { UiRequests, type HostUiResponse } from './ui-requests'
+import { UiRequests, questionToolCallId, type HostUiResponse } from './ui-requests'
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
 import { paramString } from './command-params'
@@ -387,6 +387,7 @@ export class AgentController extends EventEmitter {
   private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
   private cancelApprovals?: () => void
   private activateApprovals?: (owner: ApprovalOwner) => void
+  private retireApprovals?: () => void
   private rpcInstanceId = ''
   private readonly operations = new SessionOperationGate()
   private getPermissionMode?: () => Promise<'danger' | 'all'>
@@ -570,6 +571,7 @@ export class AgentController extends EventEmitter {
     confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
     cancelApprovals?: () => void
     activateApprovals?: (owner: ApprovalOwner) => void
+    retireApprovals?: () => void
     getPermissionMode?: () => Promise<'danger' | 'all'>
     requestSessionMove?: (request: SessionMovePrompt) => Promise<SessionMoveAnswer>
     dangerGuardExtension?: string
@@ -630,6 +632,7 @@ export class AgentController extends EventEmitter {
     this.confirmDanger = opts.confirmDanger
     this.cancelApprovals = opts.cancelApprovals
     this.activateApprovals = opts.activateApprovals
+    this.retireApprovals = opts.retireApprovals
     this.getPermissionMode = opts.getPermissionMode
     this.requestSessionMove = opts.requestSessionMove
     this.dangerGuardExtension = opts.dangerGuardExtension
@@ -851,6 +854,7 @@ export class AgentController extends EventEmitter {
       this.ui.rejectPendingHostUi('pi 已退出，问题请求已取消')
       this.ui.pending.clear()
       this.cancelApprovals?.()
+      this.retireApprovals?.()
       if (this.state) {
         this.state = { ...this.state, isAgentRunning: false, isStreaming: false, isCompacting: false }
         this.push({ ch: 'state', payload: this.state })
@@ -1145,7 +1149,8 @@ export class AgentController extends EventEmitter {
       if (error instanceof QuestionFormError) throw new CapabilityCommandError('question_form_invalid', error.message)
       throw error
     }
-    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal })
+    const toolCallId = questionToolCallId(params)
+    const response = await this.ui.requestHostUi({ method: 'input', title: '需要你填写', message: question, form: fields, timeout: requestedTimeout(params.timeout), signal, ...(toolCallId ? { toolCallId } : {}) })
     const answers = typeof response.value === 'string' ? parseQuestionAnswers(fields, response.value) : null
     const answer = answers ? summarizeAnswers(fields, answers) : null
     const cancelled = response.cancelled === true || answers === null
@@ -1183,6 +1188,7 @@ export class AgentController extends EventEmitter {
     }
 
     const timeout = requestedTimeout(params.timeout)
+    const toolCallId = questionToolCallId(params)
     let response: HostUiResponse
     if (options.length === 0) {
       response = await this.ui.requestHostUi({
@@ -1190,7 +1196,8 @@ export class AgentController extends EventEmitter {
         title: '需要你的回答',
         message: question,
         timeout,
-        signal
+        signal,
+        ...(toolCallId ? { toolCallId } : {})
       })
     } else {
       response = await this.ui.requestHostUi({
@@ -1199,7 +1206,8 @@ export class AgentController extends EventEmitter {
         message: question,
         options,
         timeout,
-        signal
+        signal,
+        ...(toolCallId ? { toolCallId } : {})
       })
     }
 
@@ -4392,6 +4400,7 @@ export class AgentController extends EventEmitter {
     this.titleLifecycle += 1
     this.cancelImages()
     this.cancelApprovals?.()
+    this.retireApprovals?.()
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined

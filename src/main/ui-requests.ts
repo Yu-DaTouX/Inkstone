@@ -15,6 +15,12 @@ type PendingHostUi = {
   started: boolean
 }
 
+export function questionToolCallId(params: Record<string, unknown>): string | undefined {
+  const nested = params.toolCall && typeof params.toolCall === 'object' ? (params.toolCall as { id?: unknown }).id : undefined
+  const id = typeof nested === 'string' && nested ? nested : params.toolCallId
+  return typeof id === 'string' && id ? id.slice(0, 200) : undefined
+}
+
 export interface UiRequestsHost {
   push(msg: MainPush): void
   respondToPi(res: Record<string, unknown>): void
@@ -37,6 +43,7 @@ export class UiRequests {
     placeholder?: string
     purpose?: 'approval'
     sensitive?: boolean
+    toolCallId?: string
     timeout: number
     signal?: AbortSignal
   }): Promise<HostUiResponse> {
@@ -66,7 +73,8 @@ export class UiRequests {
         ...(request.form ? { form: request.form } : {}),
         ...(request.placeholder ? { placeholder: request.placeholder } : {}),
         ...(request.purpose ? { purpose: request.purpose } : {}),
-        ...(request.sensitive ? { sensitive: true } : {})
+        ...(request.sensitive ? { sensitive: true } : {}),
+        ...(request.toolCallId ? { toolCallId: request.toolCallId } : {})
       } as unknown as ExtensionUiRequest
       this.payloads.set(id, payload)
       this.host.push({ ch: 'ui-request', payload })

@@ -145,7 +145,6 @@ export function AppearanceSettings(): ReactElement {
   const reduceMotion = settings?.reduceMotion === true
   const sendKey: SendKeyChoice = settings?.sendKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter'
   const tiles = settings?.workspaceTiles !== false
-  const usageUnderInput = settings?.usageUnderInput !== false
   const smoothText = settings?.smoothText !== false
 
   return (
@@ -235,14 +234,6 @@ export function AppearanceSettings(): ReactElement {
             isSelected={asciiBackgroundEnabled(settings)}
             onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
             testId="v3-ascii-background-toggle"
-          />
-          <SwitchRow
-            settingId="appearance-usage-under-input"
-            label={general.appearanceUsageUnderInput}
-            description={general.appearanceUsageUnderInputDesc}
-            isSelected={usageUnderInput}
-            onChange={(next) => void patchSettings({ usageUnderInput: next }).catch(() => undefined)}
-            testId="v3-usage-under-input-toggle"
           />
           <SwitchRow
             settingId="appearance-smooth-text"

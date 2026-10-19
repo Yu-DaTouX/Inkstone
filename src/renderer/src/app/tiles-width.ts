@@ -3,6 +3,8 @@ export const TILES_WIDTH_MIN = 260
 export const TILES_WIDTH_MAX = 480
 export const TILES_WIDTH_STEP = 16
 export const TILES_WIDTH_KEY = 'inkstone.v3.tilesWidth'
+export const MESSAGE_MIN_WIDTH = 520
+export const LANE_GAP = 16
 
 export function clampTilesWidth(width: number, room: number = TILES_WIDTH_MAX): number {
   const ceiling = Math.max(TILES_WIDTH_MIN, Math.min(TILES_WIDTH_MAX, room))

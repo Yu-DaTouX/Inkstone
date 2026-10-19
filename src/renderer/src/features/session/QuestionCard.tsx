@@ -7,17 +7,20 @@ import type { QuestionField } from '../../../../shared/question-form'
 import { Badge, Button, IconButton, TextArea, TextField } from '../../ui'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
+import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
 
 const INTERACTIVE = new Set(['select', 'confirm', 'input', 'editor'])
 
-export function QuestionCard(): JSX.Element | null {
+export function QuestionCard({ requestId }: { requestId?: string } = {}): JSX.Element | null {
   const requests = useStore((s) => s.uiRequests)
+  useApprovalSlotVersion()
+  useClaimApprovalSlot(requestId && requests.some((r) => r.id === requestId) ? requestId : null)
   const collapsed = useStore((s) => s.uiCollapsed)
   const setCollapsed = useStore((s) => s.setUiCollapsed)
   const [index, setIndex] = useState(0)
   const firstSeen = useRef(new Map<string, number>())
 
-  const list = requests
+  const list = requestId ? requests.filter((r) => r.id === requestId) : requests.filter((r) => !approvalSlotClaimed(r.id))
   const ids = list.map((r) => r.id).join('|')
 
   useEffect(() => {

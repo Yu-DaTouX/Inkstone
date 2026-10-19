@@ -9,8 +9,6 @@ export interface GeneralText {
   appearanceSendKeyDesc: string
   appearanceSendKeyEnter: string
   appearanceSendKeyCtrl: string
-  appearanceUsageUnderInput: string
-  appearanceUsageUnderInputDesc: string
 
   sessionContextLede: string
   sessionKeepAwakeBatteryOff: string
@@ -166,8 +164,6 @@ const ZH: GeneralText = {
   appearanceSendKeyDesc: '另一种组合用来换行；Shift+Enter 始终换行。',
   appearanceSendKeyEnter: 'Enter',
   appearanceSendKeyCtrl: 'Ctrl+Enter',
-  appearanceUsageUnderInput: '显示会话统计与用量',
-  appearanceUsageUnderInputDesc: '单会话时在状态栏，多会话磁贴时在输入框下方，显示轮数、输出速度与累计 Token。',
 
   sessionContextLede: '压缩由 pi 原生完成，这里的设置对所有会话生效。',
   sessionKeepAwakeBatteryOff: '先打开上一项才能设置。',
@@ -323,8 +319,6 @@ const EN: GeneralText = {
   appearanceSendKeyDesc: 'The other combination adds a line; Shift+Enter always adds a line.',
   appearanceSendKeyEnter: 'Enter',
   appearanceSendKeyCtrl: 'Ctrl+Enter',
-  appearanceUsageUnderInput: 'Show session stats and usage',
-  appearanceUsageUnderInputDesc: 'Turns, output speed and cumulative tokens; in the status bar for one session, below the input in tiles.',
 
   sessionContextLede: 'Compaction is done natively by pi; these settings apply to all sessions.',
   sessionKeepAwakeBatteryOff: 'Turn on the option above first.',

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 export async function runRemoteApprovalTests(ok) {
   await build({ stdin: { contents: `export * from './src/main/remote-approval'; export * from './src/main/approval-broker'; export * from './src/main/ui-requests'`, resolveDir: process.cwd() },
     outfile: 'out/test/remote-approval.mjs', bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })
-  const { approvalDigest, applyHumanApproval, remoteApprovalQuestion, ApprovalBroker, UiRequests } = await import(pathToFileURL('out/test/remote-approval.mjs').href)
+  const { approvalDigest, applyHumanApproval, remoteApprovalQuestion, ApprovalBroker, UiRequests, questionToolCallId } = await import(pathToFileURL('out/test/remote-approval.mjs').href)
   const question = { id: 'q1', sessionId: 's1', runId: 'r1', method: 'confirm', sensitive: true, title: 'Execute command', message: 'git reset --hard', deadline: 200 }
   const answer = { sessionId: 's1', runId: 'r1', confirmed: true, digest: approvalDigest(question) }
   const resolved = []
@@ -34,6 +34,18 @@ export async function runRemoteApprovalTests(ok) {
   ui.handleUi({ id: 'sensitive', method: 'confirm', sensitive: true })
   ok(!ui.answerUiRemotely('sensitive', { confirmed: true }).ok && piResponses.length === 0, '普通远程 answer 仍不能批准敏感操作')
   ok(ui.answerUiRemotely('sensitive', { cancelled: true }).ok, '原有取消路径保留')
+  const pushed = []
+  const asked = new UiRequests({ push: msg => pushed.push(msg), respondToPi: () => {} })
+  const answering = asked.requestHostUi({ method: 'select', title: 'Q', message: 'pick', options: ['a'], timeout: 1000, toolCallId: 'call_q1' })
+  ok(pushed[0]?.payload.toolCallId === 'call_q1', '提问请求携带 toolCallId 推送到渲染端')
+  asked.respondUi({ id: pushed[0].payload.id, value: 'a' })
+  ok((await answering).value === 'a', '带 toolCallId 的提问仍可正常回答')
+  const plain = asked.requestHostUi({ method: 'input', title: 'Q', message: 'm', timeout: 1000 })
+  const plainPayload = pushed.filter(msg => msg.ch === 'ui-request')[1].payload
+  ok(!('toolCallId' in plainPayload), '没有 toolCallId 的提问不带该字段')
+  asked.respondUi({ id: plainPayload.id, value: 'x' })
+  await plain
+  ok(questionToolCallId({ toolCall: { id: 'call_n' } }) === 'call_n' && questionToolCallId({ toolCallId: 'call_f' }) === 'call_f' && questionToolCallId({}) === undefined, 'toolCallId 从 toolCall.id 或 toolCallId 取得')
 }
 
 if (process.argv[1]?.endsWith('test-remote-approval.mjs')) {

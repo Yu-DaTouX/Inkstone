@@ -31,6 +31,10 @@ export function approvalSlotClaimed(id: string | null | undefined): boolean {
   return !!id && (claims.get(id) ?? 0) > 0
 }
 
+export function useApprovalSlotVersion(): number {
+  return useSyncExternalStore(subscribe, () => version, () => version)
+}
+
 export function useApprovalSlotClaimed(id: string | null | undefined): boolean {
   useSyncExternalStore(subscribe, () => version, () => version)
   return approvalSlotClaimed(id)

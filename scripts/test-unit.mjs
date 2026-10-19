@@ -51,7 +51,7 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-session-visual-logic',
+  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
   'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-working-line-model',
   'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-preview-site-access', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel'

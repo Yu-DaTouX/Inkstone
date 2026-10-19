@@ -91,13 +91,13 @@ function resolveAgainstCwd(path: string, cwd?: string): string {
 
 function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.MouseEvent) => void) | undefined {
   const tt = useSessionText()
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   if (target.kind === 'invalid') return undefined
   return (event) => {
     const items: MessageMenuItem[] = target.kind === 'url'
       ? [
-          { id: 'open', label: tt('menuOpenLink'), run: () => void openBrowser(target.url) },
+          { id: 'open', label: tt('menuOpenLink'), run: () => void openLink(target.url) },
           { id: 'external', label: tt('menuOpenExternal'), run: () => void window.yan.browser.openExternal(target.url) },
           { id: 'copy', label: tt('menuCopyLink'), run: () => copyText(target.url) }
         ]
@@ -112,7 +112,7 @@ function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.Mou
 
 function LinkAnchor({ href, children }: { href?: string; children?: ReactNode }): JSX.Element {
   const t = useT()
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   const sourceCwd = useContext(MessageSourceCwd)
   const target = classifyLink(href)
@@ -121,7 +121,7 @@ function LinkAnchor({ href, children }: { href?: string; children?: ReactNode })
   const onClick = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
-    if (target.kind === 'url') void openBrowser(target.url)
+    if (target.kind === 'url') void openLink(target.url)
     else if (target.kind === 'file') void previewFile(target.path, target.line, sourceCwd, target.lineEnd)
   }
   const onDoubleClick = (e: React.MouseEvent): void => {
@@ -172,7 +172,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }): JSX.Elemen
 
 function InlineCodeLink({ className, children }: { className?: string; children?: ReactNode }): JSX.Element {
   const t = useT()
-  const openBrowser = useStore((s) => s.openBrowser)
+  const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   const sourceCwd = useContext(MessageSourceCwd)
   const text = typeof children === 'string' ? children : Array.isArray(children) && children.length === 1 && typeof children[0] === 'string' ? children[0] : null
@@ -184,7 +184,7 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
-    if (candidate.kind === 'url') void openBrowser(candidate.url)
+    if (candidate.kind === 'url') void openLink(candidate.url)
     else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
   }
   const openExternally = (e: React.MouseEvent): void => {

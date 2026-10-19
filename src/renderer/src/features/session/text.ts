@@ -11,24 +11,13 @@ export type SessionTextKey =
   | 'placeholder'
   | 'subagentOpen'
   | 'subagentDetails'
-  | 'subagentNoSummary'
   | 'subagentScopeWorktree'
   | 'subagentScopeReadOnly'
   | 'subagentScopeShared'
   | 'subagentReviewPending'
-  | 'subagentPartial'
-  | 'subagentPanel'
-  | 'subagentKind'
-  | 'subagentClose'
   | 'subagentResize'
-  | 'subagentConclusion'
   | 'subagentSources'
   | 'subagentArtifacts'
-  | 'subagentModel'
-  | 'subagentScope'
-  | 'subagentLatest'
-  | 'subagentTranscript'
-  | 'subagentDetailHint'
   | 'subagentCount'
   | 'subagentLiveCount'
   | 'subagentDoneCount'
@@ -41,6 +30,10 @@ export type SessionTextKey =
   | 'subagentRetried'
   | 'subagentResumed'
   | 'subagentNotRetried'
+  | 'subagentRunningTasks'
+  | 'subagentOpenPane'
+  | 'subagentBrief'
+  | 'subagentGone'
   | 'compactionTitle'
   | 'branchFrom'
   | 'errorTitleRetryable'
@@ -142,24 +135,13 @@ const ZH: Record<SessionTextKey, string> = {
   placeholder: '此内容暂未在 v3 渲染。',
   subagentOpen: '并排打开（未迁移）',
   subagentDetails: '摘要',
-  subagentNoSummary: '暂无摘要。',
   subagentScopeWorktree: '工作树',
   subagentScopeReadOnly: '只读',
   subagentScopeShared: '共享目录',
   subagentReviewPending: '待审查',
-  subagentPartial: '结论可能不完整',
-  subagentPanel: '子 Agent 详情',
-  subagentKind: '子 Agent',
-  subagentClose: '关闭详情',
   subagentResize: '调整大小',
-  subagentConclusion: '结论',
   subagentSources: '来源',
   subagentArtifacts: '成果',
-  subagentModel: '模型',
-  subagentScope: '范围',
-  subagentLatest: '最近动作',
-  subagentTranscript: '分屏查看完整转录',
-  subagentDetailHint: '查看详情',
   subagentCount: '{n} 个子 Agent',
   subagentLiveCount: '{n} 进行中',
   subagentDoneCount: '{n} 完成',
@@ -172,6 +154,10 @@ const ZH: Record<SessionTextKey, string> = {
   subagentRetried: '已自动重试 {n} 次',
   subagentResumed: '已自动续跑 1 次',
   subagentNotRetried: '未自动重试',
+  subagentRunningTasks: '{n} 个任务正在运行',
+  subagentOpenPane: '在工作区打开转录',
+  subagentBrief: '简报',
+  subagentGone: '任务已经结束，无需停止',
   compactionTitle: '上下文已压缩',
   branchFrom: '从「{text}」分出去',
   errorTitleRetryable: '模型侧错误',
@@ -274,24 +260,13 @@ const EN: Record<SessionTextKey, string> = {
   placeholder: 'This content is not rendered in v3 yet.',
   subagentOpen: 'Open side-by-side (not migrated)',
   subagentDetails: 'Summary',
-  subagentNoSummary: 'No summary yet.',
   subagentScopeWorktree: 'Worktree',
   subagentScopeReadOnly: 'Read-only',
   subagentScopeShared: 'Shared folder',
   subagentReviewPending: 'Awaiting review',
-  subagentPartial: 'Conclusion may be incomplete',
-  subagentPanel: 'Subagent details',
-  subagentKind: 'Subagent',
-  subagentClose: 'Close details',
   subagentResize: 'Resize',
-  subagentConclusion: 'Conclusion',
   subagentSources: 'Sources',
   subagentArtifacts: 'Outputs',
-  subagentModel: 'Model',
-  subagentScope: 'Scope',
-  subagentLatest: 'Latest step',
-  subagentTranscript: 'Open full transcript side by side',
-  subagentDetailHint: 'View details',
   subagentCount: '{n} subagents',
   subagentLiveCount: '{n} in progress',
   subagentDoneCount: '{n} done',
@@ -304,6 +279,10 @@ const EN: Record<SessionTextKey, string> = {
   subagentRetried: 'Retried {n} times',
   subagentResumed: 'Auto-continued once',
   subagentNotRetried: 'Not retried',
+  subagentRunningTasks: '{n} running',
+  subagentOpenPane: 'Open transcript in the workspace',
+  subagentBrief: 'Brief',
+  subagentGone: 'The task already ended; nothing to stop',
   compactionTitle: 'Context compacted',
   branchFrom: 'Branched from “{text}”',
   errorTitleRetryable: 'Model error',

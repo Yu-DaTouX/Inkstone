@@ -488,6 +488,7 @@ const api: YanBridge = {
     closeTab: (id) => invoke<BrowserState>('yan:browser:closeTab', id),
     close: () => invoke<BrowserState>('yan:browser:close'),
     navigate: (url) => invoke<Ok>('yan:browser:navigate', url),
+    siteAccess: (sessionId, url) => invoke<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>('yan:browser:siteAccess', sessionId, url),
     back: () => invoke<Ok>('yan:browser:back'),
     forward: () => invoke<Ok>('yan:browser:forward'),
     reload: () => invoke<Ok>('yan:browser:reload'),

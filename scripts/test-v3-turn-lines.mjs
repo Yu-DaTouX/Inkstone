@@ -146,6 +146,8 @@ export function Dialog(props){ return null } Dialog.__stub='ui-dialog'
 export function Modal(props){ return null } Modal.__stub='ui-modal'
 export function ModalOverlay(props){ return null } ModalOverlay.__stub='ui-modal-overlay'
 export function ProgressBar(props){ return null } ProgressBar.__stub='ui-progress'
+export function StatusDot(props){ return null } StatusDot.__stub='ui-status-dot'
+export function StatusSlot(props){ return null } StatusSlot.__stub='ui-status-slot'
 `
 
 const ICON_STUB = `export function Icon(){ return null } Icon.__stub='icon'
@@ -201,7 +203,7 @@ async function buildBundle(outdir) {
     `export { modelErrorNotice } from '${posix(abs('src/shared/model-errors.ts'))}'`,
     `export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'`,
     `export { useRunsV3 } from '${posix(abs('src/renderer/src/state/runs-v3.ts'))}'`,
-    `export { useSubagentPanel } from '${posix(abs('src/renderer/src/features/session/subagent-panel-state.ts'))}'`
+    `export { useUiV3 } from '${posix(abs('src/renderer/src/state/ui-v3.ts'))}'`
   ].join('\n'))
   const out = join(outdir, 'bundle.mjs')
   await build({
@@ -401,72 +403,72 @@ async function main() {
     return globalThis.__V3_STORE
   }
 
-  group('SubagentLine：消息里一行摘要，点开右侧详情')
+  const resetPanes = () => lib.useUiV3.setState({ workspaceOpen: false, workspaceTab: 'files', workspacePanes: [] })
+
+  group('SubagentLine：消息里一张 26px 卡片，点开右侧转录窗格')
   {
     lib.useRunsV3.setState({ runs: [runSnapshot()], revision: 1, syncing: false, error: null, buffer: [] })
-    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
-    store({ subagents: [subagentRun({ status: 'done', endedAt: 5_000, result: { summary: '补齐了 PKCE 测试', summaryTruncated: false, summaryFrom: 'last-message', sources: ['src/a.ts'], artifacts: ['test/a.test.ts'], openQuestions: [], at: 5_000 } })] })
+    resetPanes()
+    store({ subagents: [subagentRun({ status: 'done', endedAt: 5_000, toolCalls: 4, result: { summary: '补齐了 PKCE 测试', summaryTruncated: false, summaryFrom: 'last-message', sources: ['src/a.ts'], artifacts: ['test/a.test.ts'], openQuestions: [], at: 5_000 } })] })
     const turn = { kind: 'assistant', id: 'a1', sourceIds: ['a1'] }
     const line = rt.render(bundle.SubagentLine, { turn })
     ok(line && byTestId(line, 'v3-subagents').length === 1, '挂在这一轮上的子 Agent 渲染出来')
     ok(byTestId(line, 'v3-subagents-sum').length === 0, '只有一条时不加汇总行')
+    ok(byTestId(line, 'v3-subagents-live').length === 0, '没有运行中的任务时不写「N 个任务正在运行」')
     const rowEl = collect(line, (el) => typeof el.type === 'function' && el.type.name === 'SubagentRow')[0]
     ok(!!rowEl, '行组件存在')
     const row = rt.render(rowEl.type, rowEl.props)
     ok(row.props['data-terminal'] === '0', '运行投影仍 running：行标记为非终态', row.props['data-terminal'])
-    ok(textOf(byTestId(row, 'v3-subagent-status')[0]) === '运行中', '状态词来自运行投影阶段', textOf(byTestId(row, 'v3-subagent-status')[0]))
-    ok(textOf(byTestId(row, 'v3-subagent-code')[0]) === 'S12·1', '显示编号', textOf(byTestId(row, 'v3-subagent-code')[0]))
-    ok(byTestId(row, 'v3-subagent-open').length === 0, '分屏入口不挤在消息行里')
-    ok(byTestId(row, 'v3-subagent-model').length === 0 && collect(row, (el) => el.props?.className === 'v3-subagent-kind').length === 1, '没有模型时元信息行仍写「子代理」')
+    ok(row.props['data-state'] === 'done', '行状态取自任务行（subagent-task-rows）', row.props['data-state'])
+    const stateIcon = collect(row, (el) => typeof el.type === 'function' && el.type.name === 'SubagentStateIcon')[0]
+    ok(stateIcon?.props.state === 'done', '状态用小图标表示', stateIcon?.props.state)
+    const task = textOf(byTestId(row, 'v3-subagent-task')[0])
+    ok(task.includes('PKCE') && task !== subagentRun().task, '标题是任务行带时态的状态文字', task)
+    ok(textOf(byTestId(row, 'v3-subagent-time')[0]).startsWith('4 个工具'), '结束后元信息是任务行摘要（工具数、用时）', textOf(byTestId(row, 'v3-subagent-time')[0]))
+    const bots = collect(row, (el) => typeof el.type === 'function' && el.type.name === 'SubagentBot')
+    ok(bots.length === 1 && bots[0].props.size === 20, '卡片 Bot 为 20px', bots.map((el) => el.props.size))
+    ok(byTestId(row, 'v3-subagent-model').length === 0, '没有模型时不写模型名')
     ok(byTestId(row, 'v3-subagent-summary').length === 0, '摘要不在消息流里展开')
 
     const toggle = byTestId(row, 'v3-subagent-toggle')[0]
-    ok(toggle && toggle.props['aria-haspopup'] === 'dialog', '整行是打开详情的按钮')
-    toggle.props.onClick({ currentTarget: null })
-    const panel = lib.useSubagentPanel.getState()
-    ok(panel.runId === 'sub-1' && panel.owner === rowEl.props.owner, '点击后详情面板指向这条运行与当前视图', { runId: panel.runId, owner: panel.owner })
-    toggle.props.onClick({ currentTarget: null })
-    ok(lib.useSubagentPanel.getState().runId === null, '再点一次收起')
+    ok(toggle && toggle.props['aria-pressed'] === false, '整行是打开转录窗格的按钮，未打开时不按下', toggle?.props['aria-pressed'])
+    toggle.props.onClick()
+    const ui = lib.useUiV3.getState()
+    ok(ui.workspaceOpen === true && ui.workspaceTab === 'subagent:sub-1' && ui.workspacePanes.includes('subagent:sub-1'), '点击后右侧工作区打开 subagent:<runId> 窗格并聚焦', { open: ui.workspaceOpen, tab: ui.workspaceTab, panes: ui.workspacePanes })
+    const pressed = byTestId(rt.render(rowEl.type, rowEl.props), 'v3-subagent-toggle')[0]
+    ok(pressed.props['aria-pressed'] === true, '窗格打开时卡片显示为选中')
+    toggle.props.onClick()
+    ok(lib.useUiV3.getState().workspacePanes.filter((id) => id === 'subagent:sub-1').length === 1, '再点不会重复开窗格')
+    resetPanes()
   }
 
-  group('SubagentLine：模型显示名、思考档位与上下文圆环')
+  group('SubagentLine：运行中写「N 个任务正在运行」，模型名来自目录')
   {
     lib.useRunsV3.setState({ runs: [], revision: 3, syncing: false, error: null, buffer: [] })
-    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+    resetPanes()
     const turn = { kind: 'assistant', id: 'a1', sourceIds: ['a1'] }
     const renderRow = () => {
       const line = rt.render(bundle.SubagentLine, { turn })
       const rowEl = collect(line, (el) => typeof el.type === 'function' && el.type.name === 'SubagentRow')[0]
-      return rt.render(rowEl.type, rowEl.props)
+      return { line, row: rt.render(rowEl.type, rowEl.props) }
     }
     const flash = 'commandcode/deepseek/deepseek-v4.1-flash'
     store({
-      subagents: [subagentRun({
-        model: flash,
-        thinkingLevel: 'medium',
-        contextUsage: { tokens: 40_000, contextWindow: 200_000, percent: 20, availability: 'known', estimated: false }
-      })],
+      subagents: [subagentRun({ model: flash, thinkingLevel: 'medium' })],
       models: [{ provider: 'commandcode', id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' }]
     })
-    const row = renderRow()
+    const { line, row } = renderRow()
+    ok(textOf(collect(byTestId(line, 'v3-subagents-live')[0], (el) => el.type === 'span')[0]) === 'subagentRunningTasks', '有运行中的任务时写「N 个任务正在运行」')
     const name = byTestId(row, 'v3-subagent-model')[0]
-    ok(textOf(name) === 'DeepSeek V4.1 Flash', '元信息行开头用模型菜单名', name && textOf(name))
+    ok(textOf(name) === 'DeepSeek V4.1 Flash', '模型用菜单名', name && textOf(name))
     ok(name?.props.title === flash, '悬停保留完整模型身份', name?.props.title)
-    ok(collect(row, (el) => el.props?.className === 'v3-subagent-kind').length === 0, '有模型时不再写「子代理」')
-    const think = byTestId(row, 'v3-subagent-thinking')[0]
-    ok(think?.props.level === 'medium', '模型后跟思考档位短标签', think?.props.level)
-    const ctx = byTestId(row, 'v3-subagent-context')[0]
-    ok(!!ctx && Math.round(ctx.props.usage.percent) === 20 && ctx.props.usage.tokens === 40_000 && ctx.props.usage.windowSize === 200_000, '行尾圆环取子代理自己的上下文用量', ctx?.props.usage)
-    ok(byTestId(row, 'v3-subagent-status').length === 1 && byTestId(row, 'v3-subagent-time').length === 1, '状态与用时仍保留')
+    const stateIcon = collect(row, (el) => typeof el.type === 'function' && el.type.name === 'SubagentStateIcon')[0]
+    ok(stateIcon?.props.state === 'running', '运行中的状态图标', stateIcon?.props.state)
+    ok(byTestId(row, 'v3-subagent-time').length === 1, '运行中显示用时')
 
-    store({
-      subagents: [subagentRun({ model: flash, thinkingLevel: 'off', contextUsage: { tokens: 40_000, contextWindow: 0, percent: null } })],
-      models: []
-    })
-    const bare = renderRow()
+    store({ subagents: [subagentRun({ model: flash })], models: [] })
+    const bare = renderRow().row
     ok(textOf(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', textOf(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
-    ok(byTestId(bare, 'v3-subagent-thinking').length === 0, '思考档位为 off 时不显示')
-    ok(byTestId(bare, 'v3-subagent-context').length === 0, '上下文窗口未知时不画圆环')
   }
 
   group('SubagentLine：多开时翻叠，标题取第一句')
@@ -476,7 +478,7 @@ async function main() {
     ok(bundle.subagentTitle(pathTask) === pathTask, '路径里的冒号不截断', bundle.subagentTitle(pathTask))
     ok(bundle.subagentTitle('修：x') === '修：x', '冒号前太短时保留整句')
     lib.useRunsV3.setState({ runs: [], revision: 4, syncing: false, error: null, buffer: [] })
-    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+    resetPanes()
     const turn = { kind: 'assistant', id: 'a1', sourceIds: ['a1'] }
     const kind = (name) => (el) => typeof el.type === 'function' && el.type.name === name
     const mk = (n) => Array.from({ length: n }, (_, i) => subagentRun({ id: 'sub-' + i, startedAt: 1000 + i, status: i < 2 ? 'done' : 'running', endedAt: i < 2 ? 5000 + i : undefined }))
@@ -516,7 +518,8 @@ async function main() {
     ok(stripsOf(line).length === 5 && byTestId(line, 'v3-subagents-more').length === 0, '标题带层随每个槽位渲染，没有「另外 N 个」')
     ok(textOf(byTestId(line, 'v3-subagent-pos')[0]) === '1 / 6' && byTestId(line, 'v3-subagent-dots')[0].props.children.length === 6, '底部位置指示：n / N 与每张一个圆点')
     ok(textOf(collect(byTestId(line, 'v3-subagent-nav')[0], (el) => el.props?.className === 'v3-sa-hint')[0]) === 'subagentDeckHint', '底部有滚轮与方向键提示')
-    ok(byTestId(line, 'v3-subagents-legend').length === 1 && textOf(byTestId(line, 'v3-subagents-sum')[0]) === 'subagentCount', '组头只写总数，进行中与失败放进图例', textOf(byTestId(line, 'v3-subagents-sum')[0]))
+    ok(byTestId(line, 'v3-subagents-legend').length === 0 && textOf(byTestId(line, 'v3-subagents-sum')[0]) === 'subagentCount', '组头只写总数，不再有图例', textOf(byTestId(line, 'v3-subagents-sum')[0]))
+    ok(byTestId(line, 'v3-subagents-live').length === 1, '有运行中的任务时组下写「N 个任务正在运行」')
     ok(byTestId(line, 'v3-subagents-progress').length === 1 && byTestId(line, 'v3-subagents-sum').length === 1, '组头与进度条保留')
     ok(byTestId(line, 'v3-subagent-stack').length === 0 && byTestId(line, 'v3-subagent-pile').length === 0, '没有组内滚动窗口与旧叠层')
 
@@ -524,9 +527,9 @@ async function main() {
     const stripRender = isolated(strips[1])
     ok(stripRender.type === 'button' && stripRender.props.type === 'button' && stripRender.props['data-edge'] === 'bottom' && stripRender.props['data-depth'] === 1, '下方标题带是按钮，贴在槽位下沿，越远越深', [stripRender.props['data-edge'], stripRender.props['data-depth']])
     ok(strips.map((el) => el.props.slot).join() === '0,1,2,3,4' && strips.map((el) => isolated(el).props['data-depth']).join() === '1,1,2,3,4' && isolated(strips[3]).props['data-depth'] === 3, '越远越深')
-    ok(byTestId(stripRender, 'v3-subagent-task').length === 1 && byTestId(stripRender, 'v3-subagent-status').length === 1 && byTestId(stripRender, 'v3-subagent-time').length === 1 && byTestId(stripRender, 'v3-subagent-dot').length === 1, '标题带含角标状态点、标题、状态、用时')
+    ok(byTestId(stripRender, 'v3-subagent-task').length === 1 && byTestId(stripRender, 'v3-subagent-time').length === 1 && collect(stripRender, kind('SubagentStateIcon')).length === 1, '标题带含状态图标、带时态的标题、用时')
     const stripBots = collect(stripRender, kind('SubagentBot'))
-    ok(stripBots.length === 1 && stripBots[0].props.size === 22 && stripBots[0].props.run.id === strips[1].props.run.id, '标题带左侧是该子代理的 Bot（22px），状态点退为角标', stripBots.map((el) => el.props.size))
+    ok(stripBots.length === 1 && stripBots[0].props.size === 16 && stripBots[0].props.run.id === strips[1].props.run.id, '标题带左侧是该子代理的 Bot（16px）', stripBots.map((el) => el.props.size))
     ok(byTestId(stripRender, 'v3-subagent-tokens').length === 0 && typeof stripRender.props['aria-label'] === 'string' && stripRender.props['data-tone'] === 'run' && stripRender.props.tabIndex === -1, '标题带不放 token，读屏标签含状态，状态靠圆点色调，不进 Tab 序', stripRender.props['data-tone'])
     ok(isolated(strips[0]).props.inert === true, '当前这张的标题带层失效（只作过渡）')
     const frontRender = isolated(front(line))
@@ -541,7 +544,7 @@ async function main() {
     const prevStrip = stripsOf(second)[0]
     const prevRender = isolated(prevStrip)
     ok(prevStrip.props.run.id === 'sub-5' && prevRender.props['data-edge'] === 'top' && prevRender.props['data-depth'] === 2 && prevRender.props.inert !== true, '上一张的标题带贴在槽位上沿，比下方第一条略暗，可点', [prevRender.props['data-edge'], prevRender.props['data-depth']])
-    ok(byTestId(prevRender, 'v3-subagent-task').length === 1 && byTestId(prevRender, 'v3-subagent-status').length === 1 && byTestId(prevRender, 'v3-subagent-time').length === 1 && collect(prevRender, kind('SubagentBot')).length === 1, '上一张标题带与下方一致：Bot、标题、状态、用时')
+    ok(byTestId(prevRender, 'v3-subagent-task').length === 1 && collect(prevRender, kind('SubagentStateIcon')).length === 1 && byTestId(prevRender, 'v3-subagent-time').length === 1 && collect(prevRender, kind('SubagentBot')).length === 1, '上一张标题带与下方一致：Bot、状态图标、标题、用时')
     ok(rowsOf(second).map((el) => el.props.run.id).join() === 'sub-5,sub-4,sub-3' && rowsOf(second).filter((el) => !el.props.inert).length === 1, '上一张与下一张的完整卡片层也在，等着过渡')
     ok(textOf(byTestId(second, 'v3-subagent-pos')[0]) === '2 / 6', '位置指示跟随', textOf(byTestId(second, 'v3-subagent-pos')[0]))
     ok(press(second, 'ArrowUp').prevented === true, '↑ 翻回上一张')
@@ -573,10 +576,10 @@ async function main() {
 
     rt.cells = []
     rt.render(bundle.SubagentLine, { turn })
-    lib.useSubagentPanel.setState({ runId: 'sub-4', owner: front(rt.render(bundle.SubagentLine, { turn })).props.owner, returnFocus: null })
+    lib.useUiV3.setState({ workspaceOpen: true, workspaceTab: 'subagent:sub-4', workspacePanes: ['subagent:sub-4'] })
     ok(front(rt.render(bundle.SubagentLine, { turn })).props.run.id === 'sub-4', '当前选中的卡片优先成为最前')
-    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
-    ok(front(rt.render(bundle.SubagentLine, { turn })).props.run.id === 'sub-4', '关掉详情后不自动弹回默认那一张')
+    resetPanes()
+    ok(front(rt.render(bundle.SubagentLine, { turn })).props.run.id === 'sub-4', '关掉转录窗格后不自动弹回默认那一张')
 
     ok(bundle.subagentDefaultFront(mk(3).map((run) => ({ ...run, status: 'done', endedAt: 9000 })), null) === 'sub-2', '没有运行中的：最近启动的在最前')
     ok(bundle.subagentDefaultFront(many, 'sub-1') === 'sub-1' && bundle.subagentDefaultFront(many, 'nope') === 'sub-5', '选中项在本组才优先，否则忽略')
@@ -609,7 +612,7 @@ async function main() {
     store({ subagents: many.slice(0, 2), models: [] })
     const two = rt.render(bundle.SubagentLine, { turn })
     ok(slotsOf(two).length === 2 && textOf(byTestId(two, 'v3-subagent-pos')[0]) === '1 / 2', '两个：一张完整卡片 + 一条标题带，带位置指示')
-    lib.useSubagentPanel.setState({ runId: null, owner: null, returnFocus: null })
+    resetPanes()
   }
 
   group('子代理翻叠：滚轮、键盘与触摸的节奏')

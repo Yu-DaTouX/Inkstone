@@ -20,8 +20,6 @@ import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
 import { approvalMatchesView, sessionViewIdentity, viewMatchesProjectedSession } from './view-state'
 import { V3EmptyState } from './V3EmptyState'
 import { RewindDialogV3 } from './RewindDialogV3'
-import { SubagentPanel } from './SubagentPanel'
-import { useSubagentPanel } from './subagent-panel-state'
 import {
   buildBranchPagerMap,
   loadPagerTree,
@@ -78,7 +76,7 @@ function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): R
   return { turnId: item.id, offset: Math.max(0, handle.scrollOffset - handle.getItemOffset(index)) }
 }
 
-export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean } = {}): JSX.Element {
+export function SessionView(): JSX.Element {
   const t = useT()
   const messages = useStore((s) => s.messages)
   const session = useStore((s) => s.session)
@@ -395,7 +393,6 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
     box.scrollTop = Math.max(0, top)
   }, [virtual, setStickNow])
 
-  const sidePanel = useSubagentPanel((s) => subagentPanel && s.owner === view.key && !!s.runId)
 
   const jumpToBottom = useCallback(() => {
     setStickNow(true)
@@ -410,7 +407,7 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
   }, [setStickNow, virtual])
 
   return (
-    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'} data-side-panel={sidePanel ? '1' : undefined}>
+    <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'}>
       <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
       <ToolExpansionScope.Provider value={identity}>
       <div className="v3-stream-host" ref={hostRef}>
@@ -461,7 +458,6 @@ export function SessionView({ subagentPanel = true }: { subagentPanel?: boolean 
 
       <MessageMenuHost />
 
-      {subagentPanel ? <SubagentPanel ownerKey={view.key} viewActive={viewActive} /> : null}
     </div>
   )
 }

@@ -211,7 +211,6 @@ function makeStubMap() {
       'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
       'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
       'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
-      'src/renderer/src/features/composer/ComposerUsage.tsx': 'export function ComposerUsage(){ return null }',
       'src/renderer/src/features/composer/RunSlot.tsx': 'export function RunSlot(){ return null }',
       'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }',
       'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',

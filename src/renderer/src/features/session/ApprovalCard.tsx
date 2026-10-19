@@ -183,6 +183,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         {current.canRemember && rememberLabel ? (
           <Button data-testid="v3-approval-remember" onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
         ) : null}
+        {current.kind !== 'move' ? (
+          <Button data-testid="v3-approval-session" onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>
+        ) : null}
         <Button variant="primary" data-testid="v3-approval-once" aria-keyshortcuts="Control+Enter Alt+Y" onPress={clickOnly(() => answer('once'))}>
           {t('approval.once')}
           <Kbd className="v3-approval-kbd">Ctrl ↵</Kbd>

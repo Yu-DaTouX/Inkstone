@@ -11,15 +11,25 @@ import { previewPathFor } from './preview-state'
 import { canTileTool, hasTileRoom, openToolTile, showPreview, usePreviewBindings, useTiledTools } from './tool-tiles'
 import { toolTileText } from './tool-tile-text'
 import { useWorkspaceBranch } from './use-workspace-branch'
+import { isSubagentPaneId, isToolPane, subagentRunOfPane } from './subagent-panes'
+import { useStore } from '../../state/store'
+import { SubagentTranscriptPane, subagentPaneName } from '../session/SubagentTranscriptPane'
 import {
   WORKBENCH_ACTIVE_TABS,
   WORKBENCH_TABS,
   type PreviewPaneProps,
   type WorkspaceOwner,
   type WorkbenchPaneComponents,
-  type WorkbenchTabId
+  type WorkbenchTabId,
+  type WorkspacePaneId
 } from './types'
 import './workbench.css'
+
+function subagentPaneTitle(id: string): string {
+  const runId = subagentRunOfPane(id)
+  const run = runId ? useStore.getState().subagents.find((item) => item.id === runId) : undefined
+  return run ? subagentPaneName(run) : ''
+}
 
 const POPOUT_TABS: ReadonlySet<WorkbenchTabId> = new Set<WorkbenchTabId>(['context', 'browser', 'terminal'])
 
@@ -58,24 +68,30 @@ export function WorkbenchPanel({
   const tiled = useTiledTools()
   const [dragging, setDragging] = useState(false)
 
-  const shownPanes = useMemo(() => openPanes.filter((tab) => !tiled.has(tab)), [openPanes, tiled])
-  const [visited, setVisited] = useState<ReadonlySet<WorkbenchTabId>>(() => new Set())
+  const shownPanes = useMemo(() => openPanes.filter((tab) => !(isToolPane(tab) && tiled.has(tab))), [openPanes, tiled])
+  const [visited, setVisited] = useState<ReadonlySet<WorkspacePaneId>>(() => new Set())
   useEffect(() => {
     if (!open) return
     setVisited((prev) => (shownPanes.every((tab) => prev.has(tab)) ? prev : new Set([...prev, ...shownPanes])))
   }, [open, shownPanes])
 
   useEffect(() => {
-    for (const tab of openPanes) if (tiled.has(tab)) closeWorkspacePane(tab)
+    for (const tab of openPanes) if (isToolPane(tab) && tiled.has(tab)) closeWorkspacePane(tab)
   }, [openPanes, tiled, closeWorkspacePane])
 
   useEffect(() => {
     if (!open && focus) setWorkspaceFocus(false)
   }, [open, focus, setWorkspaceFocus])
 
-  const expanded = focus && focusTab !== 'overview' && shownPanes.includes(focusTab) ? focusTab : null
-  const visiblePanes = expanded ? [expanded] : shownPanes
-  const mounted = useMemo(() => WORKBENCH_TABS.filter((tab) => visited.has(tab) && !tiled.has(tab)), [visited, tiled])
+  const expanded = focus && focusTab !== 'overview' && (shownPanes as readonly string[]).includes(focusTab) ? (focusTab as WorkspacePaneId) : null
+  const visiblePanes: readonly WorkspacePaneId[] = expanded ? [expanded] : shownPanes
+  const mounted = useMemo<string[]>(
+    () => [
+      ...WORKBENCH_TABS.filter((tab) => visited.has(tab) && !tiled.has(tab)),
+      ...openPanes.filter((tab) => isSubagentPaneId(tab) && visited.has(tab))
+    ],
+    [visited, tiled, openPanes]
+  )
   const layout = useMemo<TileLayout>(
     () => (expanded ? columnLayout([expanded]) : workspaceLayoutFor(storedLayout ?? null, shownPanes)),
     [expanded, storedLayout, shownPanes]
@@ -109,7 +125,7 @@ export function WorkbenchPanel({
     onPreview?.(path)
   }
 
-  const emptiesPanel = (tab: WorkbenchTabId): boolean => shownPanes.every((other) => other === tab)
+  const emptiesPanel = (tab: WorkspacePaneId): boolean => shownPanes.every((other) => other === tab)
 
   const moveBesideChat = (tab: WorkbenchTabId, at?: number): void => {
     const current = owner?.sessionId || owner?.sessionFile ? { sessionId: owner.sessionId ?? undefined, path: owner.sessionFile } : null
@@ -137,7 +153,7 @@ export function WorkbenchPanel({
     void onRequestActivation(tab).finally(() => setActivating(false))
   }
 
-  const toggleExpand = (tab: WorkbenchTabId): void => {
+  const toggleExpand = (tab: WorkspacePaneId): void => {
     if (expanded === tab) {
       setWorkspaceFocus(false)
       return
@@ -146,7 +162,7 @@ export function WorkbenchPanel({
     setWorkspaceFocus(true)
   }
 
-  const closePane = (tab: WorkbenchTabId): void => {
+  const closePane = (tab: WorkspacePaneId): void => {
     if (shownPanes.length <= 1) {
       closeWorkspacePane(tab)
       onClose()
@@ -173,15 +189,18 @@ export function WorkbenchPanel({
             mounted={mounted}
             dragDisabled={!!expanded}
             text={tileText}
-            tileName={(id) => text.tabs[id as WorkbenchTabId]}
+            tileName={(id) => (isToolPane(id) ? text.tabs[id] : subagentPaneTitle(id))}
             onLayoutChange={(next) => {
               if (!expanded) setWorkspaceLayout(next)
             }}
-            canMoveOut={(id) => mode !== 'full' && canTileTool(id as WorkbenchTabId) && hasTileRoom(emptiesPanel(id as WorkbenchTabId))}
-            onMoveOut={(id) => moveBesideChat(id as WorkbenchTabId)}
+            canMoveOut={(id) => mode !== 'full' && canTileTool(id) && hasTileRoom(emptiesPanel(id))}
+            onMoveOut={(id) => {
+              if (canTileTool(id)) moveBesideChat(id)
+            }}
             onDraggingChange={setDragging}
             renderTile={(id, handle) => {
-              const tab = id as WorkbenchTabId
+              const tab = id as WorkspacePaneId
+              const tool = isToolPane(tab) ? tab : null
               const shown = open && ownerReady && visiblePanes.includes(tab)
               return (
                 <PaneCard
@@ -192,19 +211,19 @@ export function WorkbenchPanel({
                   owner={displayOwner}
                   panes={panes}
                   text={text}
-                  title={tab === 'changes' && branch ? `${branch}` : text.tabs[tab]}
+                  title={tab === 'changes' && branch ? `${branch}` : tool ? text.tabs[tool] : ''}
                   scope={tab === 'changes' && branch ? text.changesScope : undefined}
                   previewPath={previewPathFor(previewBindings, displayOwner.key)}
                   activating={activating}
-                  canPopout={POPOUT_TABS.has(tab) && !!onPopout}
+                  canPopout={!!tool && POPOUT_TABS.has(tool) && !!onPopout}
                   canMoveBeside={mode !== 'full' && canTileTool(tab)}
                   moveBesideLabel={tileText2.tileOut}
-                  onActivate={() => attemptActivation(tab)}
+                  onActivate={() => tool && attemptActivation(tool)}
                   onPreview={handlePreview}
                   onToggleExpand={() => toggleExpand(tab)}
                   onClose={() => closePane(tab)}
-                  onPopout={() => onPopout?.(tab)}
-                  onMoveBeside={() => moveBesideChat(tab)}
+                  onPopout={() => tool && onPopout?.(tool)}
+                  onMoveBeside={() => tool && moveBesideChat(tool)}
                   handle={handle}
                 />
               )
@@ -234,7 +253,7 @@ function menuSourceRank(source: string): number {
 }
 
 interface PaneCardProps {
-  tab: WorkbenchTabId
+  tab: WorkspacePaneId
   shown: boolean
   expanded: boolean
   blocked: boolean
@@ -282,8 +301,14 @@ function PaneCard({
 }: PaneCardProps): ReactElement {
   const [gripTip, setGripTip] = useState(false)
   const dragging = handle.dragging
-  const Body = panes[tab] as ComponentType<LeafProps> | undefined
-  const name = text.tabs[tab]
+  const tool = isToolPane(tab) ? tab : null
+  const agentRunId = tool ? null : subagentRunOfPane(tab)
+  const Body = tool ? (panes[tool] as ComponentType<LeafProps> | undefined) : undefined
+  const agentName = useStore((s) => {
+    const run = agentRunId ? s.subagents.find((item) => item.id === agentRunId) : undefined
+    return run ? subagentPaneName(run) : ''
+  })
+  const name = tool ? text.tabs[tool] : agentName
   const [titleEl, setTitleEl] = useState<HTMLElement | null>(null)
   const [toolsEl, setToolsEl] = useState<HTMLElement | null>(null)
   const [menuGroups, setMenuGroups] = useState<ReadonlyMap<string, readonly PaneMenuItem[]>>(() => new Map())
@@ -398,7 +423,9 @@ function PaneCard({
       </div>
       <div className="wb-card-body">
         <div className="wb-pane" data-tab={tab} data-visible={shown ? '1' : '0'} data-testid={`wb-pane-${tab}`}>
-          {Body ? <PaneChromeContext.Provider value={chrome}><Body owner={owner} visible={shown && !blocked} onPreview={onPreview} path={previewPath} Preview={tab === 'files' ? panes.preview : undefined} /></PaneChromeContext.Provider> : (
+          {agentRunId ? (
+            <PaneChromeContext.Provider value={chrome}><SubagentTranscriptPane runId={agentRunId} /></PaneChromeContext.Provider>
+          ) : Body ? <PaneChromeContext.Provider value={chrome}><Body owner={owner} visible={shown && !blocked} onPreview={onPreview} path={previewPath} Preview={tab === 'files' ? panes.preview : undefined} /></PaneChromeContext.Provider> : (
             <EmptyState className="wb-nowire" title={text.notWired} description={text.notWiredHint} />
           )}
           {blocked ? (

@@ -112,7 +112,72 @@ async function run() {
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     assert.equal(await legacy, 'deny')
 
-    const closedBroker = new ApprovalBroker({ canAsk: () => false, open: () => assert.fail('不应打开'), close: () => {} })
+    const openedBefore = opened.length
+    broker.activate('r4', a)
+    const granting = broker.ask({ ...base, runId: 'r4', owner: a })
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    assert.equal(await granting, 'once')
+    assert.equal(await broker.ask({ ...base, runId: 'r4', owner: a }), 'once')
+    assert.equal(opened.length, openedBefore + 1)
+    const otherTool = broker.ask({ ...base, runId: 'r4', owner: a, tool: 'write' })
+    assert.equal(opened.length, openedBefore + 2)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await otherTool, 'deny')
+    const otherKind = broker.ask({ ...base, runId: 'r4', owner: a, kind: 'delete' })
+    assert.equal(opened.length, openedBefore + 3)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await otherKind, 'deny')
+    const otherRun = broker.ask({ ...base, runId: 'r5' })
+    assert.equal(opened.length, openedBefore + 4)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await otherRun, 'deny')
+
+    const outsideA = { ...base, runId: 'r4', owner: a, kind: 'outside', rememberDirs: ['/x'], canRemember: true }
+    const outsideAsk = broker.ask(outsideA)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    assert.equal(await outsideAsk, 'once')
+    assert.equal(await broker.ask(outsideA), 'once')
+    const outsideOther = broker.ask({ ...outsideA, rememberDirs: ['/y'] })
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await outsideOther, 'deny')
+
+    const moveAsk = broker.ask({ ...base, runId: 'r4', owner: a, kind: 'move', tool: 'session' })
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    assert.equal(await moveAsk, 'once')
+    const moveAgain = broker.ask({ ...base, runId: 'r4', owner: a, kind: 'move', tool: 'session' })
+    assert.equal(broker.list().length, 1)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await moveAgain, 'deny')
+
+    broker.activate('r4', b)
+    const afterSwitch = broker.ask({ ...base, runId: 'r4', owner: b })
+    assert.equal(broker.list().length, 1)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await afterSwitch, 'deny')
+
+    const regrant = broker.ask({ ...base, runId: 'r4', owner: b })
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await regrant
+    assert.equal(await broker.ask({ ...base, runId: 'r4', owner: b }), 'once')
+    broker.retire('r4', a)
+    assert.equal(await broker.ask({ ...base, runId: 'r4', owner: b }), 'once')
+    broker.retire('r4')
+    const afterRetire = broker.ask({ ...base, runId: 'r4', owner: b })
+    assert.equal(broker.list().length, 1)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal(await afterRetire, 'deny')
+
+    const childGrant = broker.ask({ ...base, subagentId: 'c1' })
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await childGrant
+    assert.equal(await broker.ask({ ...base, subagentId: 'c1' }), 'once')
+    broker.forgetSubagent('c1')
+    const childAfter = broker.ask({ ...base, subagentId: 'c1' })
+    assert.equal(broker.list().length, 1)
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    await childAfter
+
+    const closedBroker =new ApprovalBroker({ canAsk: () => false, open: () => assert.fail('不应打开'), close: () => {} })
     assert.equal(await closedBroker.ask({ ...base }), null)
 
     console.log('approval ledger ok')

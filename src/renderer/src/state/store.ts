@@ -314,6 +314,7 @@ export interface Store {
   copyLastReply: () => Promise<void>
   setUiScale: (v: number) => Promise<void>
   openBrowser: (url?: string, target?: BrowserOpenTarget) => Promise<void>
+  openLink: (url: string) => Promise<void>
   previewFile: (path: string, line?: number, cwd?: string, lineEnd?: number) => Promise<void>
   loadSubagents: () => Promise<void>
   startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<void>
@@ -2227,6 +2228,22 @@ export const useStore = create<Store>((rawSet, get) => {
       ? workspaceKeyFor(viewKeyRef(view))
       : conversationKeyOf(view.session))
     await browserOpener.open({ owner, url, guard: target !== undefined })
+  },
+
+  openLink: async (url) => {
+    const view = get()
+    const sessionId = view.session?.sessionId ?? view.session?.conversationId ?? ''
+    let decision: string
+    try {
+      decision = (await window.yan.browser.siteAccess(sessionId, url)).decision
+    } catch {
+      return
+    }
+    if (decision === 'deny' || decision === 'forbidden') {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.siteBlocked', { url })) })
+      return
+    }
+    await get().openBrowser(url)
   },
 
   previewFile: async (path, line, cwd, lineEnd) => {
