@@ -51,6 +51,11 @@
     note(`当前语言 ${before}，临时切到 ${target}`)
     q(`voice-language-${target}`)?.click()
     check(await until(() => store.getState().settings?.voiceInput?.language === target, 4000), '语言设置已写入并读回')
+    const selected = (lang) => {
+      const node = q(`voice-language-${lang}`)
+      return node?.getAttribute('aria-pressed') === 'true' || node?.getAttribute('aria-checked') === 'true' || node?.hasAttribute('data-selected') === true
+    }
+    check(await until(() => selected(target) && !selected(before), 4000), '分段控件回显新语言')
     q(`voice-language-${before}`)?.click()
     check(await until(() => (store.getState().settings?.voiceInput?.language ?? 'auto') === before, 4000), '已还原语言设置')
 

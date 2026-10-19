@@ -51,16 +51,25 @@
         field: !!query('v3-ascii-field')
       }
     }
+    const moreOpen = () => label()?.closest('.settings-more')?.getAttribute('data-open') === '1'
     const openAppearance = async () => {
-      if (!label()) {
+      if (!query('settings-root')) {
         query('v3-header-settings')?.click()
-        await until(() => !!query('v3-theme-light'), 6000)
+        await until(() => !!query('settings-root'), 6000)
       }
-      return until(() => !!label(), 6000)
+      if (!label()) {
+        query('v3-settings-nav-appearance')?.click()
+        await until(() => !!label(), 6000)
+      }
+      if (label() && !moreOpen()) {
+        label().closest('.settings-more')?.querySelector('[data-testid="settings-more-toggle"]')?.click()
+        await until(moreOpen, 3000)
+      }
+      return !!label() && moreOpen()
     }
     const backToSession = async () => {
-      query('v3-back')?.click()
-      return until(() => !!query('composer-input'), 6000)
+      query('settings-close')?.click()
+      return until(() => !query('settings-root') && !!query('composer-input'), 6000)
     }
 
     check(await openAppearance(), '外观分区打开并可看到动态背景开关')

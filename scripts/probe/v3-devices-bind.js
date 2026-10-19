@@ -20,10 +20,16 @@
   const enableInput = () => q('v3-devices-enable')?.querySelector('input') ?? q('v3-devices-enable')
   const enabled = () => !!enableInput()?.checked
   const badgeText = () => q('v3-devices-settings')?.querySelector('.ui-badge, [class*="badge"]')?.textContent ?? ''
-  const press = (testId) => {
+  const idle = () => until(() => !!enableInput() && !enableInput().disabled && !q('v3-devices-enable')?.hasAttribute('data-disabled'), 8000)
+  const press = async (testId) => {
+    await idle()
     const node = q(testId)
     node?.click()
     return !!node
+  }
+  const toggleEnable = async () => {
+    await idle()
+    enableInput()?.click()
   }
 
   try {
@@ -36,7 +42,7 @@
     check(!enabled(), '初始开关为关')
     check(q('v3-devices-bind-tailscale')?.getAttribute('aria-pressed') === 'true' || q('v3-devices-bind-tailscale')?.getAttribute('data-selected') === 'true', '默认监听 Tailscale')
 
-    enableInput()?.click()
+    await toggleEnable()
     check(await until(enabled, 5000), '点开关后开关回显为开')
     const tailscaleUp = await until(() => /100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(badgeText()), 4000)
     if (tailscaleUp) {
@@ -45,16 +51,16 @@
       check(await until(() => q('v3-devices-start-error'), 6000), `Tailscale 不在线时显示开启失败原因（${q('v3-devices-start-error')?.textContent?.trim() ?? '无'}）`)
     }
 
-    press('v3-devices-bind-loopback')
+    await press('v3-devices-bind-loopback')
     check(await until(() => badgeText().includes('127.0.0.1'), 8000), `改为仅本机后运行在 127.0.0.1（徽标=${badgeText()}）`)
     check(!q('v3-devices-start-error'), '运行后不再显示失败原因')
     check(await until(() => /手机和其他电脑连不上|cannot connect/.test(q('v3-devices-settings')?.innerText ?? ''), 3000), '仅本机时提示别的设备连不上')
 
-    press('v3-devices-bind-lan')
+    await press('v3-devices-bind-lan')
     const lanUp = await until(() => /(^|\D)(10|172|192)\.\d+\.\d+\.\d+:/.test(badgeText()), 8000)
     check(lanUp, `改为局域网后监听局域网地址（徽标=${badgeText()}）`)
     if (lanUp) {
-      press('v3-devices-pair')
+      await press('v3-devices-pair')
       check(await until(() => q('v3-devices-pairing-qr')?.querySelector('svg'), 6000), '生成配对码后显示二维码')
       check(/^\d{6}$/.test(q('v3-devices-pairing-code')?.querySelector('strong')?.textContent ?? ''), '显示 6 位配对码')
       q('v3-devices-pairing')?.scrollIntoView({ block: 'center' })
@@ -64,7 +70,7 @@
       check(await until(() => !q('v3-devices-pairing'), 4000), '取消配对后回到生成按钮')
     }
 
-    enableInput()?.click()
+    await toggleEnable()
     check(await until(() => !enabled(), 5000), '再点开关后回显为关')
     check(await until(() => !/:\d+/.test(badgeText()), 6000), `关闭后服务停止（徽标=${badgeText()}）`)
     check(document.documentElement.scrollWidth <= window.innerWidth + 1, '页面没有横向溢出')

@@ -35,6 +35,8 @@ const electronBin = createRequire(import.meta.url)('electron')
 const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
+const FOLLOWUP_DEBUG_PORT = process.env.YAN_PROBE_DEBUG_PORT || '9397'
+
 const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
 function modelForCase(fallback) {
   if (USE_LOCAL_TEST_MODEL && fallback && !/nonexistent|route-probe/i.test(fallback)) return TEST_MODEL
@@ -75,11 +77,15 @@ const CASES = {
   pending: { probe: 'scripts/probe/pending.js', delay: 9000, cost: 0 },
   pendingreal: { probe: 'scripts/probe/pending-real.js', delay: 15000, cost: 1 },
   'v3-shell': {
-    probe: 'scripts/probe/v3-shell.js', delay: 9000, cost: 0,
+    probe: 'scripts/probe/v3-shell.js', delay: 9000, cost: 0, visible: true,
     keys: 'ctrl+k,escape,enter', keysDelay: 11000
   },
   'v3-user-polish': { probe: 'scripts/probe/v3-user-polish.js', delay: 9000, cost: 0 },
-  'v3-user-followup': { probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0 },
+  'v3-user-followup': {
+    probe: 'scripts/probe/v3-user-followup.js', delay: 9000, cost: 0, visible: true,
+    env: { YAN_PROBE_DEBUG_PORT: FOLLOWUP_DEBUG_PORT },
+    driver: driveFollowupPointer
+  },
   'v3-ascii-once': {
     probe: 'scripts/probe/v3-ascii-once.js', delay: 9000, cost: 0, budget: 60000,
     keys: 'space', keysDelay: 15000
@@ -2353,6 +2359,134 @@ async function driveFilePreviewMutation({ caseCwd, delay }) {
     ok: true,
     text: `✓ 独立 Node 测试进程改写 fixture README.md 并推进 mtime（${file}）`
   }
+}
+
+async function connectProbePage(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) })).json()
+      const page = targets.find((t) => t.type === 'page' && /\/index\.html/.test(t.url ?? '') && !/auxwin|devtools:/.test(t.url ?? ''))
+      if (page?.webSocketDebuggerUrl) {
+        const socket = new WebSocket(page.webSocketDebuggerUrl)
+        await new Promise((resolveOpen, rejectOpen) => {
+          socket.addEventListener('open', resolveOpen, { once: true })
+          socket.addEventListener('error', rejectOpen, { once: true })
+        })
+        let nextId = 0
+        const pending = new Map()
+        let closed = false
+        socket.addEventListener('message', (event) => {
+          const message = JSON.parse(String(event.data))
+          const waiter = message.id ? pending.get(message.id) : null
+          if (!waiter) return
+          pending.delete(message.id)
+          if (message.error) waiter.reject(new Error(message.error.message))
+          else waiter.resolve(message.result)
+        })
+        socket.addEventListener('close', () => {
+          closed = true
+          for (const waiter of pending.values()) waiter.reject(new Error('CDP 连接已关闭'))
+          pending.clear()
+        })
+        const send = (method, params = {}) =>
+          new Promise((resolveSend, rejectSend) => {
+            if (closed) return rejectSend(new Error('CDP 连接已关闭'))
+            const id = ++nextId
+            pending.set(id, { resolve: resolveSend, reject: rejectSend })
+            socket.send(JSON.stringify({ id, method, params }))
+          })
+        const evaluate = async (expression) => (await send('Runtime.evaluate', { expression, returnByValue: true }))?.result?.value
+        return { send, evaluate, isClosed: () => closed, close: () => socket.close() }
+      }
+    } catch {
+    }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  return null
+}
+
+async function driveFollowupPointer() {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push(`  ${good ? '✓' : '✗'} ${text}`)
+    if (!good) ok = false
+  }
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+  const cdp = await connectProbePage(FOLLOWUP_DEBUG_PORT, 60_000)
+  say(!!cdp, `外部指针驱动连上主窗口 CDP（端口 ${FOLLOWUP_DEBUG_PORT}）`)
+  if (!cdp) return { ok, text: lines.join('\n') }
+  let scale = 1
+  const mouse = (type, x, y, pressed = false) =>
+    cdp.send('Input.dispatchMouseEvent', { type, x: x * scale, y: y * scale, button: pressed || type !== 'mouseMoved' ? 'left' : 'none', buttons: pressed && type !== 'mouseReleased' ? 1 : 0, clickCount: type === 'mouseMoved' ? 0 : 1 })
+  const calibrate = async () => {
+    await cdp.evaluate(`window.__followupProbeX = null, window.addEventListener('pointermove', (e) => { window.__followupProbeX = e.clientX }, { capture: true, once: true })`)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 400, button: 'none', buttons: 0 })
+    await pause(150)
+    const seen = await cdp.evaluate('window.__followupProbeX')
+    if (typeof seen === 'number' && seen > 0) scale = 400 / seen
+  }
+  const handled = new Set()
+  const deadline = Date.now() + 150_000
+  try {
+    while (Date.now() < deadline && !cdp.isClosed()) {
+      const stage = await cdp.evaluate('window.__followupDriver = true, window.__followupStage ?? null')
+      if (!stage || handled.has(stage)) {
+        await pause(100)
+        continue
+      }
+      handled.add(stage)
+      if (stage === 'sidebar-drag') {
+        const box = await cdp.evaluate(`(() => {
+          const r = document.querySelector('[data-testid="v3-sidebar-resizer"]')?.getBoundingClientRect()
+          const w = document.querySelector('[data-testid="v3-sidebar"]')?.getBoundingClientRect().width
+          return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w } : null
+        })()`)
+        if (box) {
+          await calibrate()
+          await mouse('mouseMoved', box.x, box.y)
+          await mouse('mousePressed', box.x, box.y, true)
+          for (let dx = 10; dx <= 80; dx += 10) {
+            await mouse('mouseMoved', box.x + dx, box.y, true)
+            await pause(16)
+          }
+          await mouse('mouseReleased', box.x + 80, box.y, true)
+          await pause(400)
+          const after = await cdp.evaluate(`(window.__followupSidebarDrag = document.querySelector('[data-testid="v3-sidebar"]').getBoundingClientRect().width > ${box.w} + 20, document.querySelector('[data-testid="v3-sidebar"]').getBoundingClientRect().width)`)
+          lines.push(`  · 外部指针拖动会话列表：${Math.round(box.w)}px → ${Math.round(after ?? 0)}px`)
+        } else {
+          lines.push('  · 外部指针拖动：没找到会话列表拖拽条')
+        }
+      } else if (stage === 'sidebar-hover') {
+        const y = await cdp.evaluate('Math.round(innerHeight / 2)')
+        await mouse('mouseMoved', 300, y)
+        await pause(50)
+        await mouse('mouseMoved', 4, y)
+        await pause(700)
+      } else if (stage === 'sidebar-leave') {
+        const size = await cdp.evaluate('({ w: innerWidth, h: innerHeight })')
+        await mouse('mouseMoved', size.w - 240, Math.round(size.h / 2))
+        await pause(60)
+        await mouse('mouseMoved', size.w - 200, Math.round(size.h / 2) + 10)
+        await pause(1000)
+      } else if (stage === 'narrow') {
+        const height = await cdp.evaluate('innerHeight')
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: 800, height, deviceScaleFactor: 0, mobile: false })
+        await pause(600)
+      } else if (stage === 'done') {
+        await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined)
+      }
+      await cdp.evaluate(`window.__followupDone = ${JSON.stringify(stage)}`)
+      if (stage === 'done') break
+    }
+    say(handled.has('done'), '外部指针驱动走完所有阶段')
+  } catch (error) {
+    if (!handled.has('done')) say(false, `外部指针驱动异常：${error?.message ?? error}`)
+  } finally {
+    cdp.close()
+  }
+  return { ok, text: lines.join('\n') }
 }
 
 async function driveRemoteRoutes() {

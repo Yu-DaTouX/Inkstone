@@ -33,12 +33,13 @@
       '界面跟到了重启后的新会话（没有停在旧会话上）'
     )
 
-    const ta = q('[data-testid="composer"]')
+    const ta = q('[data-testid="composer-input"]')
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '!echo AFTER_RESTART_OK')
     ta.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(300)
-    q('[data-testid="send"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    ok(await until(() => q('.msg.bash'), 15000), '重启后跑命令：对话里出现了命令行消息')
+    q('[data-testid="composer-send"]').click()
+    ok(await until(() => q('.v3-msg.bash'), 15000), '重启后跑命令：对话里出现了命令行消息')
+    ok(await until(() => (q('.v3-msg.bash')?.textContent ?? '').includes('AFTER_RESTART_OK'), 15000), '命令行消息对应这条命令')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }
