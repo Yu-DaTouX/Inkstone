@@ -76,11 +76,11 @@ ok(
 const lightVars = resolveMcpAppThemeVariables('light')
 const darkVars = resolveMcpAppThemeVariables('dark')
 ok(lightVars['--color-background-primary'] === '#FFFFFF', '浅色主背景是具体值')
-ok(darkVars['--color-background-primary'] === '#272725', '深色主背景是具体值')
-ok(lightVars['--color-text-primary'] === '#1D1D1B' && darkVars['--color-text-primary'] === '#ECECE9', '文字主色按主题取值')
+ok(darkVars['--color-background-primary'] === '#1A1A19', '深色主背景是具体值')
+ok(lightVars['--color-text-primary'] === '#0B0B0B' && darkVars['--color-text-primary'] === '#F0EFEC', '文字主色按主题取值')
 ok(
-  lightVars['--shadow-hairline'] === '0 0 0 1px rgba(29,29,27,.08)' &&
-    darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.08)',
+  lightVars['--shadow-hairline'] === '0 0 0 1px rgba(11,11,11,.1)' &&
+    darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.1)',
   '细线阴影按主题取值，不是 light-dark'
 )
 ok(
@@ -118,7 +118,7 @@ ok(built.platform === 'desktop' && built.displayMode === 'fullscreen', '不覆�
 ok(built.locale === 'zh-CN' && built.timeZone === 'Asia/Shanghai', '保留 provider 的 locale / timeZone')
 ok(built.deviceCapabilities?.hover === true, '保留 provider 的 deviceCapabilities')
 ok(built.styles?.variables?.['--brand'] === '#123456', '合并 provider 自定义变量')
-ok(built.styles?.variables?.['--color-text-primary'] === '#1D1D1B', '标准主题变量覆盖 provider 同名值')
+ok(built.styles?.variables?.['--color-text-primary'] === '#0B0B0B', '标准主题变量覆盖 provider 同名值')
 ok(!('css' in (built.styles ?? {})), '不透传 provider 的 styles.css（不放任任意样式注入）')
 
 const defaults = buildMcpAppHostContext({ theme: 'dark' })
@@ -230,7 +230,7 @@ await (async () => {
   ok(context?.theme === MCP_APP_DEFAULT_THEME, '缺省主题回退到宿主默认（非浅色）', String(context?.theme))
   ok(context?.platform === 'desktop' && context?.displayMode === 'inline', '缺省仍有 platform / displayMode')
   ok(
-    context?.styles?.variables?.['--color-text-primary'] === '#ECECE9',
+    context?.styles?.variables?.['--color-text-primary'] === '#F0EFEC',
     '首次 initialize 带 hostContext.styles.variables（深色具体值）',
     JSON.stringify(context?.styles?.variables?.['--color-text-primary'])
   )
@@ -258,7 +258,7 @@ await (async () => {
   ok(providerContext?.locale === 'zh-CN', '保留 provider 的 locale')
   ok(providerContext?.styles?.variables?.['--brand'] === '#123456', '合并 provider 自定义变量')
   ok(
-    providerContext?.styles?.variables?.['--color-text-primary'] === '#ECECE9',
+    providerContext?.styles?.variables?.['--color-text-primary'] === '#F0EFEC',
     '标准主题变量覆盖 provider 同名值'
   )
   ok(!('css' in (providerContext?.styles ?? {})), 'provider 的 styles.css 不透传')

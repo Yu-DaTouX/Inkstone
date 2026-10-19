@@ -36,7 +36,7 @@
     height: var(--s-6);
     border-radius: var(--r-full);
     background: var(--think-medium, var(--accent));
-    transition: background-color var(--dur-expand) var(--ease);
+    transition: background-color var(--dur-base) var(--ease);
   }
 
   .mtp-level {
@@ -44,8 +44,8 @@
     padding: 0 var(--s-4);
     border-radius: var(--r-xs);
     background: var(--sunken);
-    font-size: var(--t-meta);
-    transition: color var(--dur-expand) var(--ease);
+    font-size: var(--t-footnote);
+    transition: color var(--dur-base) var(--ease);
   }
 
   .mtp-trigger .mtp-level {
@@ -57,7 +57,7 @@
   .mtp-chev {
     flex: none;
     color: var(--fg3);
-    transition: transform var(--dur-pop) var(--ease);
+    transition: transform var(--dur-snap) var(--ease);
   }
 
   .mtp-trigger[aria-expanded='true'] .mtp-chev {
@@ -155,7 +155,7 @@
     background: var(--sunken);
     color: var(--fg);
     font: inherit;
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     outline: none;
   }
 
@@ -187,7 +187,7 @@
   .mtp-group-title {
     padding: var(--s-6) var(--s-8) var(--s-2);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -232,7 +232,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .mtp-tags {
@@ -246,12 +246,12 @@
 
   .mtp-tag {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .mtp-fav {
     flex: none;
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .mtp-tag-price {
@@ -264,7 +264,7 @@
 
   .mtp-check {
     flex: none;
-    color: var(--accent);
+    color: var(--accent-t);
     opacity: 0;
   }
 
@@ -277,7 +277,7 @@
     padding: var(--s-16) var(--s-8);
     text-align: center;
     color: var(--fg3);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .mtp-sep {
@@ -302,7 +302,7 @@
 
   .mtp-thinking-title {
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .mtp-thinking-fill {
@@ -313,9 +313,9 @@
     display: inline-flex;
     align-items: center;
     gap: var(--s-6);
-    font-size: var(--t-ui);
-    font-weight: var(--t-title-w);
-    transition: color var(--dur-expand) var(--ease);
+    font-size: var(--t-body);
+    font-weight: var(--t-heading-w);
+    transition: color var(--dur-base) var(--ease);
   }
 
   .mtp-head-level::before {
@@ -373,7 +373,7 @@
 
   .mtp-step-value {
     display: inline-block;
-    animation: v3-step-value-in var(--dur-pop) var(--ease);
+    animation: v3-step-value-in var(--dur-snap) var(--ease);
   }
 
   .mtp-slider {
@@ -437,9 +437,9 @@
     box-shadow: 0 0 12px color-mix(in srgb, var(--mtp-think) 55%, transparent);
     animation: v3-step-caret 1060ms step-end 4;
     transition:
-      background-color var(--dur-expand) var(--ease),
-      box-shadow var(--dur-expand) var(--ease),
-      scale var(--dur-expand) var(--ease);
+      background-color var(--dur-base) var(--ease),
+      box-shadow var(--dur-base) var(--ease),
+      scale var(--dur-base) var(--ease);
   }
 
   .mtp-track:hover .mtp-thumb {
@@ -488,12 +488,12 @@
     background: transparent;
     color: var(--fg3);
     font: inherit;
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     white-space: nowrap;
     cursor: pointer;
     transition:
-      color var(--dur-expand) var(--ease),
-      background-color var(--dur-expand) var(--ease);
+      color var(--dur-base) var(--ease),
+      background-color var(--dur-base) var(--ease);
   }
 
   .mtp-provider { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--s-8); }
@@ -514,7 +514,7 @@
 
   .mtp-scale-item[data-active='true'] {
     color: color-mix(in srgb, var(--mtp-think) 70%, var(--fg));
-    font-weight: var(--t-title-w);
+    font-weight: var(--t-heading-w);
     background: color-mix(in srgb, var(--mtp-think) 14%, transparent);
   }
 
@@ -524,7 +524,7 @@
     align-items: center;
     gap: var(--s-6);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     line-height: 1.4;
   }
 

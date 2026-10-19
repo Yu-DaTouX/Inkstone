@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from '../lib/reduced-motion'
+
 export const SHIMMER_WINDOW_PX = 44
 const SWEEP_MS = 1100
 const REST_MS = 1200
@@ -9,7 +11,7 @@ let timer = 0
 let sweepStart: CSSNumberish | null = null
 
 function reducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  return prefersReducedMotion()
 }
 
 function schedule(delay: number): void {

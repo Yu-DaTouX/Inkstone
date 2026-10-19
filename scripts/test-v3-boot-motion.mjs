@@ -82,7 +82,7 @@ ok(Boolean(promptOpacityRule), '.boot-prompt 初始不可见（opacity: 0）')
 const promptAnimRule = rulesFor(bootAnimationRules, '.boot-prompt').find((rule) => /animation:/.test(rule.body))
 assert.ok(promptAnimRule, '.boot-prompt 应有 animation 声明')
 ok(
-  /animation:\s*v3-boot-show\s+var\(--dur-pop\)\s+var\(--ease\)\s+calc\(var\(--boot-ms\)\s*\*\s*0\.75\)\s+forwards/.test(promptAnimRule.body),
+  /animation:\s*v3-boot-show\s+var\(--dur-snap\)\s+var\(--ease\)\s+calc\(var\(--boot-ms\)\s*\*\s*0\.75\)\s+forwards/.test(promptAnimRule.body),
   '.boot-prompt 在 --boot-ms 的 75% 处淡入'
 )
 
@@ -92,18 +92,18 @@ const cursorAnimRule = rulesFor(bootAnimationRules, '.boot-cursor').find((rule) 
 assert.ok(cursorAnimRule, '.boot-cursor 应有 animation 声明')
 const cursorAnim = cursorAnimRule.body.replace(/\s+/g, ' ')
 ok(
-  new RegExp('v3-boot-show\\s+var\\(--dur-pop\\)\\s+var\\(--ease\\)\\s+var\\(--boot-ms\\)\\s+forwards').test(cursorAnim),
+  new RegExp('v3-boot-show\\s+var\\(--dur-snap\\)\\s+var\\(--ease\\)\\s+var\\(--boot-ms\\)\\s+forwards').test(cursorAnim),
   '.boot-cursor 在 --boot-ms 处淡入'
 )
 ok(
-  new RegExp('v3-boot-breathe\\s+calc\\(var\\(--dur-breathe\\)\\s*/\\s*2\\)\\s+var\\(--ease\\)\\s+calc\\(var\\(--boot-ms\\)\\s*\\+\\s*var\\(--dur-pop\\)\\)\\s+infinite').test(cursorAnim),
+  new RegExp('v3-boot-breathe\\s+calc\\(var\\(--dur-breathe\\)\\s*/\\s*2\\)\\s+var\\(--ease\\)\\s+calc\\(var\\(--boot-ms\\)\\s*\\+\\s*var\\(--dur-snap\\)\\)\\s+infinite').test(cursorAnim),
   '.boot-cursor 淡入后按 --dur-breathe / 2（1.2s）无限呼吸'
 )
 
 const bootRule = rulesFor(bootAnimationRules, '.boot')[0]
 assert.ok(bootRule, 'boot 段应有 .boot 规则')
 ok(
-  /--boot-ms:\s*calc\(var\(--dur-expand\)\s*\*\s*2\)/.test(bootRule.body),
+  /--boot-ms:\s*calc\(var\(--dur-base\)\s*\*\s*2\)/.test(bootRule.body),
   '.boot 缺省 --boot-ms 走 v3 展开档令牌（等价 v2 的 --mo-slow × 2 量级）'
 )
 ok(
@@ -152,7 +152,7 @@ ok(!/@import\s+['"]\.\.\/styles\//.test(indexCss), 'v3 样式入口没有导入 
 const tokens = stripComments(read(TOKENS_CSS))
 const defined = new Set([...tokens.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]))
 const referenced = new Set([...bootTail.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/var\((--[a-z0-9-]+)\)/gi)].map((m) => m[1]))
-for (const token of ['--dur-expand', '--dur-pop', '--dur-breathe', '--ease']) {
+for (const token of ['--dur-base', '--dur-snap', '--dur-breathe', '--ease']) {
   ok(referenced.has(token), `boot 段引用 v3 令牌 ${token}`)
 }
 for (const token of referenced) {

@@ -11,7 +11,7 @@
     background: var(--bg);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
     overflow: hidden;
@@ -32,7 +32,7 @@
   }
 
   .aux-ask__title {
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     color: var(--fg3);
     letter-spacing: 0.04em;
   }
@@ -49,8 +49,8 @@
   }
 
   .aux-ask__input {
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
+    font-size: var(--t-prose);
+    line-height: var(--t-prose-lh);
     resize: none;
   }
 
@@ -80,7 +80,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     line-height: var(--size-btn);
   }
 
@@ -92,9 +92,9 @@
   }
 
   .aux-ask__status {
-    min-height: var(--t-meta-lh);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    min-height: var(--t-footnote-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
   }
 
   .aux-ask__hint {
@@ -120,13 +120,13 @@
   }
 
   .aux-mini__title {
-    font-size: var(--t-title);
-    font-weight: var(--t-title-w);
+    font-size: var(--t-heading);
+    font-weight: var(--t-heading-w);
   }
 
   .aux-mini__count {
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .aux-mini__head > *:last-child {
@@ -138,7 +138,7 @@
     margin: 0;
     padding: var(--s-16);
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     text-align: center;
   }
 
@@ -187,7 +187,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
   }
 
   .aux-mini__meta {
@@ -195,13 +195,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .aux-mini__time {
     color: var(--fg3);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
   }
 }

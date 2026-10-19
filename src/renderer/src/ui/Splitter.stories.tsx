@@ -55,7 +55,7 @@ export const Uncontrolled: Story = {
             aria-label="调整左右宽度（非受控）"
           />
         </Frame>
-        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-meta)' }}>
+        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-footnote)' }}>
           非受控：组件自持当前值，故事只镜像它报出的 onChange 值 {mirror}px。
         </p>
       </div>
@@ -81,7 +81,7 @@ export const Bounds: Story = {
             aria-label="调整左右宽度（min 60 / max 360 / step 20）"
           />
         </Frame>
-        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-meta)' }}>
+        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-footnote)' }}>
           受控值：{value}px（min 60 / max 360 / step 20，Home / End 到两端）
         </p>
       </div>
@@ -191,7 +191,7 @@ function Pane({ label, style }: { label: string; style: CSSProperties }) {
         padding: 'var(--s-8)',
         background: 'var(--side)',
         color: 'var(--fg2)',
-        fontSize: 'var(--t-meta)',
+        fontSize: 'var(--t-footnote)',
         overflow: 'hidden',
         whiteSpace: 'nowrap',
         ...style

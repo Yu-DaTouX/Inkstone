@@ -122,7 +122,7 @@ export const DialogSurface: Story = {
   render: () => (
     <div style={{ maxWidth: 420 }}>
       <Dialog title="删除这个会话？" aria-label="删除会话">
-        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-body)', lineHeight: 'var(--t-body-lh)' }}>
+        <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-prose)', lineHeight: 'var(--t-prose-lh)' }}>
           会话记录会从列表移除，pi 的会话文件不会被删除。
         </p>
         <div style={{ display: 'flex', gap: 'var(--s-8)', justifyContent: 'flex-end', marginTop: 'var(--s-16)' }}>
@@ -156,13 +156,13 @@ export const TabsBasic: Story = {
   )
 }
 
-const DENSITIES = ['compact', 'standard', 'comfortable'] as const
+const DENSITIES = ['compact', 'comfortable'] as const
 type DensityName = (typeof DENSITIES)[number]
 
 export const DensityMatrix: Story = {
-  name: '密度 · 紧凑 / 标准 / 宽松',
+  name: '密度 · 紧凑 / 舒适',
   render: () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'var(--s-16)' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--s-16)' }}>
       {DENSITIES.map((name) => (
         <DensityColumn key={name} name={name} />
       ))}
@@ -171,7 +171,11 @@ export const DensityMatrix: Story = {
 }
 
 function DensityColumn({ name }: { name: DensityName }) {
-  const d = tokens.density[name]
+  const wide = tokens.density.comfortable
+  const d =
+    name === 'compact'
+      ? tokens.d
+      : { row: wide['d-row'], prose: wide['d-prose'], 'prose-lh': wide['d-prose-lh'], gap: wide['d-gap'] }
   const style = {
     '--d-row': `${d.row}px`,
     '--d-prose': `${d.prose}px`,
@@ -188,7 +192,7 @@ function DensityColumn({ name }: { name: DensityName }) {
         padding: 'var(--s-12)'
       }}
     >
-      <header style={{ color: 'var(--fg2)', fontSize: 'var(--t-meta)', lineHeight: 'var(--t-meta-lh)' }}>
+      <header style={{ color: 'var(--fg2)', fontSize: 'var(--t-footnote)', lineHeight: 'var(--t-footnote-lh)' }}>
         {name} · row {d.row} / prose {d.prose}/{d['prose-lh']} / gap {d.gap}
       </header>
       <div style={{ display: 'grid', gap: 'var(--d-gap)', marginTop: 'var(--s-8)' }}>
@@ -203,7 +207,7 @@ function DensityColumn({ name }: { name: DensityName }) {
               borderRadius: 'var(--r-sm)',
               background: 'var(--bg)',
               color: 'var(--fg)',
-              fontSize: 'var(--t-ui)'
+              fontSize: 'var(--t-body)'
             }}
           >
             {title}
@@ -248,9 +252,9 @@ function ThemeColumn({ mode }: { mode: 'light' | 'dark' }) {
   } as CSSProperties
   return (
     <section style={style}>
-      <strong style={{ fontSize: 'var(--t-title)', fontWeight: 'var(--t-title-w)' }}>{mode === 'light' ? '浅色' : '深色'}</strong>
-      <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-ui)' }}>次要文字 fg2</p>
-      <p style={{ margin: 0, color: 'var(--fg3)', fontSize: 'var(--t-meta)' }}>元信息 fg3 · 12/16</p>
+      <strong style={{ fontSize: 'var(--t-heading)', fontWeight: 'var(--t-heading-w)' }}>{mode === 'light' ? '浅色' : '深色'}</strong>
+      <p style={{ margin: 0, color: 'var(--fg2)', fontSize: 'var(--t-body)' }}>次要文字 fg2</p>
+      <p style={{ margin: 0, color: 'var(--fg3)', fontSize: 'var(--t-footnote)' }}>元信息 fg3 · 12/16</p>
       <div
         style={{
           background: 'var(--surface)',
@@ -277,7 +281,7 @@ function ThemeColumn({ mode }: { mode: 'light' | 'dark' }) {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 'var(--s-8)', alignItems: 'center' }}>
-      <span style={{ width: 48, color: 'var(--fg3)', fontSize: 'var(--t-meta)' }}>{label}</span>
+      <span style={{ width: 48, color: 'var(--fg3)', fontSize: 'var(--t-footnote)' }}>{label}</span>
       {children}
     </div>
   )
@@ -285,7 +289,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function StatusDot({ color, label }: { color: string; label: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--s-6)', fontSize: 'var(--t-meta)', color: 'var(--fg2)' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--s-6)', fontSize: 'var(--t-footnote)', color: 'var(--fg2)' }}>
       <span
         aria-hidden="true"
         style={{

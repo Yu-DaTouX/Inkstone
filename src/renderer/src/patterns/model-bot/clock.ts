@@ -1,4 +1,5 @@
 import type { ModelBrand } from '../../../../shared/model-brand'
+import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
 import {
   BLEND_SECONDS,
   BOT_FORMS,
@@ -55,7 +56,6 @@ interface BotEntry {
   dirty: boolean
 }
 
-const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const FRAME_GAP_MS = 25
 const BLURRED_GAP_MS = 120
 
@@ -65,7 +65,7 @@ const images = new Map<string, HTMLImageElement>()
 const looks = new Map<string, BotLook>()
 let observer: IntersectionObserver | null = null
 let themeObserver: MutationObserver | null = null
-let reducedMedia: MediaQueryList | null = null
+let unsubscribeReduced: (() => void) | null = null
 let reduced = false
 let theme: Theme = 'light'
 let frame = 0
@@ -199,7 +199,7 @@ function schedule(): void {
 }
 
 function onReducedChange(): void {
-  reduced = !!reducedMedia?.matches
+  reduced = prefersReducedMotion()
   for (const entry of entries) entry.dirty = true
   schedule()
 }
@@ -232,9 +232,8 @@ function start(): void {
   window.addEventListener('blur', onBlur)
   window.addEventListener('focus', onFocus)
   theme = readTheme()
-  reducedMedia = window.matchMedia(REDUCED_QUERY)
-  reduced = reducedMedia.matches
-  reducedMedia.addEventListener('change', onReducedChange)
+  reduced = prefersReducedMotion()
+  unsubscribeReduced = subscribeReducedMotion(onReducedChange)
   themeObserver = new MutationObserver(onThemeChange)
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   document.addEventListener('visibilitychange', onVisibility)
@@ -250,7 +249,7 @@ function start(): void {
 }
 
 function stop(): void {
-  reducedMedia?.removeEventListener('change', onReducedChange)
+  unsubscribeReduced?.()
   themeObserver?.disconnect()
   observer?.disconnect()
   document.removeEventListener('visibilitychange', onVisibility)
@@ -258,7 +257,7 @@ function stop(): void {
   window.removeEventListener('focus', onFocus)
   if (frame) cancelAnimationFrame(frame)
   if (pacing) window.clearTimeout(pacing)
-  reducedMedia = null
+  unsubscribeReduced = null
   themeObserver = null
   observer = null
   frame = 0

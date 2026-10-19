@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { prefersReducedMotion as reducedMotionPreferred } from './reduced-motion'
 
 export function usePresence(open: boolean, ms: number): { mounted: boolean; closing: boolean } {
   const [mounted, setMounted] = useState(open)
@@ -38,7 +39,7 @@ export function usePresence(open: boolean, ms: number): { mounted: boolean; clos
 
 export function prefersReducedMotion(): boolean {
   try {
-    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
+    return reducedMotionPreferred()
   } catch {
     return false
   }

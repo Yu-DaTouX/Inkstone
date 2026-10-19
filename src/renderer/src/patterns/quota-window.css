@@ -21,7 +21,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg2);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .quota-win-value {
@@ -34,7 +34,7 @@
     column-gap: var(--s-8);
     min-width: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .quota-win[data-tone='ask'] {

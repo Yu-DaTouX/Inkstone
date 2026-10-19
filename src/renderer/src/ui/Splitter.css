@@ -49,8 +49,8 @@
     background: var(--line2);
     opacity: 0;
     transition:
-      opacity var(--dur-hover) var(--ease),
-      background var(--dur-hover) var(--ease);
+      opacity var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
   }
 
   .ui-splitter[aria-orientation='vertical']::after {

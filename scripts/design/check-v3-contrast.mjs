@@ -61,7 +61,18 @@ function bgColor(spec, mode) {
   return typeof spec === 'string' ? tokenColor(spec, mode) : tokenColor(spec.tint, mode, spec.over)
 }
 
-const MAIN_BASES = ['bg', 'side', 'surface', 'bubble', 'sunken', 'hover', 'hover-main']
+const MAIN_BASES = [
+  'bg',
+  'side',
+  'surface',
+  'surface-3',
+  'bubble',
+  'sunken',
+  { tint: 'hover', over: 'bg' },
+  { tint: 'hover', over: 'side' },
+  { tint: 'hover', over: 'surface' },
+  { tint: 'hover-main', over: 'bg' }
+]
 const STATUS_BASES = ['bg', 'side', 'surface']
 
 const checks = []
@@ -73,7 +84,8 @@ add('fg', MAIN_BASES, 4.5, true, '正文')
 add('fg2', MAIN_BASES, 4.5, true, '次要文字')
 add('fg3', MAIN_BASES, 4.5, true, '元信息/占位')
 add('on-ink', ['ink', 'ink-hover'], 4.5, true, '主按钮文字')
-add('accent', ['bg', 'side', 'surface'], 4.5, true, '链接/选中文字')
+add('on-tip', ['tip'], 4.5, true, '提示气泡文字')
+add('accent-t', ['bg', 'side', 'surface', 'surface-3'], 4.5, true, '链接/选中文字')
 add('run-t', STATUS_BASES, 4.5, true, '运行中文字')
 add('ask-t', [...STATUS_BASES, { tint: 'ask-bg', over: 'surface' }, { tint: 'ask-bg', over: 'bg' }], 4.5, true, '待确认文字')
 add('stall-t', [...STATUS_BASES, { tint: 'stall-bg', over: 'surface' }, { tint: 'stall-bg', over: 'bg' }], 4.5, true, '停滞文字')
@@ -89,9 +101,11 @@ const SEL_BASES = [
 ]
 add('fg', SEL_BASES, 4.5, true, '正文·选中')
 add('fg2', SEL_BASES, 4.5, true, '次要文字·选中')
-add('accent', SEL_BASES, 4.5, true, '链接·选中')
+add('accent-t', SEL_BASES, 4.5, true, '链接·选中')
 
-add('accent', ['bg', 'side', 'surface', 'bubble'], 3, true, '焦点环', 'nontext')
+add('accent', ['bg', 'side', 'surface', 'surface-3', 'bubble'], 3, true, '焦点环', 'nontext')
+add('git-add', ['bg', 'side', 'surface'], 3, true, 'git 新增计数', 'nontext')
+add('git-del', ['bg', 'side', 'surface'], 3, true, 'git 删除计数', 'nontext')
 for (const dot of ['ok', 'run', 'ask', 'stall', 'fail']) {
   checks.push({ fg: dot, bg: 'bg', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'side', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })

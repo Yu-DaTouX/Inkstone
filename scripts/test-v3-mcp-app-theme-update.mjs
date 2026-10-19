@@ -469,7 +469,7 @@ await (async () => {
   const darkInit = await dark.dispatch(darkPrepared.instanceId, rpc('ui/initialize', {}, 1))
   ok(darkInit?.result?.hostContext?.theme === 'dark', 'system + 系统深色：initialize 下发 dark（不是兜底）')
   ok(
-    darkInit?.result?.hostContext?.styles?.variables?.['--color-text-primary'] === '#ECECE9',
+    darkInit?.result?.hostContext?.styles?.variables?.['--color-text-primary'] === '#F0EFEC',
     'system 深色初始化仍带明确主题变量'
   )
 
@@ -490,7 +490,7 @@ await (async () => {
   assert.deepEqual(live, init.result.hostContext)
   ok(true, 'hostContext() 与 ui/initialize 返回同一份宿主上下文')
   ok(
-    live?.styles?.variables?.['--color-text-primary'] === '#1D1D1B',
+    live?.styles?.variables?.['--color-text-primary'] === '#0B0B0B',
     'hostContext() 复用 M1 同源主题变量'
   )
 

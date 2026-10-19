@@ -21,21 +21,26 @@ function buildCss() {
   lines.push('  :root {')
   lines.push('    color-scheme: light dark;')
   for (const [name, value] of Object.entries(tokens.color)) lines.push(`    --${name}: ${pair(value)};`)
+  for (const [name, value] of Object.entries(tokens.syntax ?? {})) lines.push(`    --syn-${name}: ${pair(value)};`)
+  const [inkLight, inkDark] = tokens.alphaInk
+  tokens.alpha.forEach((a, i) => lines.push(`    --alpha-${i}: ${pair([`rgba(${inkLight},${a})`, `rgba(${inkDark},${a})`])};`))
   tokens.data.forEach((value, i) => lines.push(`    --data-${i + 1}: ${pair(value)};`))
   for (const [name, value] of Object.entries(tokens.shadow)) lines.push(`    --shadow-${name}: ${value[0]};`)
+  for (const [name, value] of Object.entries(tokens.ring)) lines.push(`    --ring-${name}: ${value};`)
   for (const [name, value] of Object.entries(tokens.font)) lines.push(`    --font-${name}: ${value};`)
   for (const [name, [size, lh, weight]] of Object.entries(tokens.type)) {
     lines.push(`    --t-${name}: ${size}px;`)
     lines.push(`    --t-${name}-lh: ${lh}px;`)
     if (weight !== 400) lines.push(`    --t-${name}-w: ${weight};`)
   }
+  for (const [name, v] of Object.entries(tokens.weight)) lines.push(`    --w-${name}: ${v};`)
   tokens.space.forEach((v) => lines.push(`    --s-${String(v).replace('.', '_')}: ${v}px;`))
   for (const [name, v] of Object.entries(tokens.radius)) lines.push(`    --r-${name}: ${v}px;`)
   for (const [name, v] of Object.entries(tokens.size)) lines.push(`    --size-${name}: ${v}px;`)
   for (const [name, v] of Object.entries(tokens.motion)) lines.push(`    --${name.startsWith('ease') ? name : `dur-${name}`}: ${v};`)
+  lines.push(`    --press-scale: ${tokens.press.scale};`)
   for (const [name, v] of Object.entries(tokens.z ?? {})) lines.push(`    --z-${name}: ${v};`)
-  const std = tokens.density.standard
-  for (const [k, v] of Object.entries(std)) lines.push(`    --d-${k}: ${v}px;`)
+  for (const [k, v] of Object.entries(tokens.d)) lines.push(`    --d-${k}: ${v}px;`)
   lines.push('  }')
   lines.push("  :root[data-theme='light'] { color-scheme: light; }")
   lines.push("  :root[data-theme='dark'] { color-scheme: dark; }")
@@ -48,9 +53,13 @@ function buildCss() {
   lines.push(...darkShadowLines())
   lines.push('  }')
   for (const [name, values] of Object.entries(tokens.density)) {
-    if (name === 'standard') continue
     lines.push(`  :root[data-density='${name}'] {`)
-    for (const [k, v] of Object.entries(values)) lines.push(`    --d-${k}: ${v}px;`)
+    for (const [k, v] of Object.entries(values)) {
+      if (Array.isArray(v)) {
+        lines.push(`    --${k}: ${v[0]}px;`)
+        lines.push(`    --${k}-lh: ${v[1]}px;`)
+      } else lines.push(`    --${k}: ${v}px;`)
+    }
     lines.push('  }')
   }
   lines.push('}')
@@ -74,9 +83,9 @@ function buildAppThemeShared() {
     '--color-text-secondary': pair(c.fg2),
     '--color-text-tertiary': pair(c.fg3),
     '--color-text-inverse': pair(c['on-ink']),
-    '--color-text-info': pair(c.accent),
+    '--color-text-info': pair(c['accent-t']),
     '--color-text-danger': pair(c['fail-t']),
-    '--color-text-success': pair(c['run-t']),
+    '--color-text-success': pair(c['ok-t']),
     '--color-text-warning': pair(c['ask-t']),
     '--color-border-primary': pair(c.line2),
     '--color-border-secondary': pair(c.line2),
@@ -88,15 +97,15 @@ function buildAppThemeShared() {
     '--font-weight-medium': '500',
     '--font-weight-semibold': '600',
     '--font-weight-bold': '700',
-    '--font-text-xs-size': px(12),
-    '--font-text-sm-size': px(13.5),
-    '--font-text-md-size': px(15),
-    '--font-text-lg-size': px(17),
-    '--font-heading-xs-size': px(12),
-    '--font-heading-sm-size': px(13.5),
-    '--font-heading-md-size': px(15),
-    '--font-heading-lg-size': px(17),
-    '--font-heading-xl-size': px(20),
+    '--font-text-xs-size': px(tokens.type.caption[0]),
+    '--font-text-sm-size': px(tokens.type.footnote[0]),
+    '--font-text-md-size': px(tokens.type.body[0]),
+    '--font-text-lg-size': px(tokens.type.prose[0]),
+    '--font-heading-xs-size': px(tokens.type.footnote[0]),
+    '--font-heading-sm-size': px(tokens.type.body[0]),
+    '--font-heading-md-size': px(tokens.type.heading[0]),
+    '--font-heading-lg-size': px(16),
+    '--font-heading-xl-size': px(tokens.type.title[0]),
     '--font-heading-2xl-size': px(24),
     '--font-heading-3xl-size': px(28),
     '--border-radius-xs': px(tokens.radius.xs),
