@@ -1,15 +1,15 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Activity, Archive, CalendarClock, FileDiff, PanelLeftClose, Settings, SquarePen, Users } from 'lucide-react'
+import { Archive, CirclePlus, Clock, PanelLeftClose, Search, Settings, SquarePen, Unplug, Users } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Button, EmptyState, IconButton, SearchField } from '../../ui'
+import { Avatar, Button, EmptyState, IconButton, SearchField, StatusDot, type StatusDotKind } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { buildArchivedView, buildSidebarGroups, latestRunForSession, type SidebarGroup } from './sidebar-model'
-import { isUnreadRun, phaseWord, runTone, useRunsV3 } from '../../state/runs-v3'
+import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { ArchivedView } from './ArchivedView'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
@@ -17,6 +17,7 @@ import { sidebarText } from './sidebar-text'
 import { collabText } from '../collab/collab-text'
 import { ContentMatches, useContentSearch } from './ContentMatches'
 import { buildContentMatches } from './content-search'
+import { sessionStatusKind } from './session-status'
 import './Sidebar.css'
 
 const GROUP_LIMIT = 5
@@ -33,20 +34,20 @@ interface Props {
   preview?: boolean
   onPin?: () => void
   onClose?: () => void
-  onRuns?: () => void
   onSchedule?: () => void
-  onReview?: () => void
   onCollab?: () => void
   onSettings?: () => void
+  onSearch?: () => void
 }
 
-export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onReview, onCollab, onSettings, preview, onPin }: Props): ReactElement {
+export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, onSettings, onSearch, preview, onPin }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
   const own = sidebarText(lang)
   const asideRef = useRef<HTMLElement>(null)
   const [query, setQuery] = useState('')
+  const [filtering, setFiltering] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(() => new Set())
   const [visibleCounts, setVisibleCounts] = useState<ReadonlyMap<string, number>>(() => new Map())
@@ -157,8 +158,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
     let frame = 0
     const focus = (): void => {
       cancelAnimationFrame(frame)
+      setFiltering(true)
       frame = requestAnimationFrame(() => {
-        const input = asideRef.current?.querySelector('input')
+        const input = asideRef.current?.querySelector<HTMLInputElement>('.v3-side-search input')
         input?.focus()
         input?.select()
       })
@@ -199,6 +201,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
     })
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
+  const connDot: StatusDotKind = conn === 'ready' ? 'ok' : conn === 'starting' ? 'pending' : 'fail'
+  const connBroken = conn === 'exited' || conn === 'error'
+  const userName = settings?.profile?.name?.trim() || own.localUser
 
   return (
     <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar">
@@ -224,36 +229,40 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
       </div>
 
       <div className="v3-side-search">
-        <SearchField aria-label={t('rail.search')} value={query} onChange={setQuery} data-testid="v3-search" />
+        {filtering || query ? (
+          <SearchField
+            aria-label={own.filterSessions}
+            placeholder={own.filterSessions}
+            value={query}
+            onChange={setQuery}
+            autoFocus
+            onBlur={() => { if (!query) setFiltering(false) }}
+            onKeyDown={(event) => { if (event.key === 'Escape' && !query) setFiltering(false) }}
+            data-testid="v3-search"
+          />
+        ) : (
+          <button type="button" className="ui-row ui-row--field" aria-label={own.searchHint} title={own.searchHint} onClick={onSearch} data-testid="v3-search-open">
+            <span className="ui-row__lead"><Search size={16} aria-hidden /></span>
+            <span className="ui-row__label">{own.search}</span>
+          </button>
+        )}
       </div>
 
       <div className="v3-side-entries">
-        <button type="button" className="v3-entry" onClick={createGlobal} data-testid="v3-nav-new-chat">
-          <SquarePen size={16} aria-hidden />
-          <span className="v3-entry-label">{own.newChat}</span>
+        <button type="button" className="ui-row" onClick={createGlobal} data-testid="v3-nav-new-chat">
+          <span className="ui-row__lead"><CirclePlus size={16} aria-hidden /></span>
+          <span className="ui-row__label">{own.newChat}</span>
         </button>
         {onSchedule ? (
-          <button type="button" className="v3-entry" onClick={onSchedule} aria-current={route === 'schedule' ? 'true' : undefined} data-testid="v3-schedule-entry">
-            <CalendarClock size={16} aria-hidden />
-            <span className="v3-entry-label">{text.schedule}</span>
-          </button>
-        ) : null}
-        {onReview ? (
-          <button type="button" className="v3-entry" onClick={onReview} aria-current={route === 'review' ? 'true' : undefined} data-testid="v3-review-entry">
-            <FileDiff size={16} aria-hidden />
-            <span className="v3-entry-label">{text.review}</span>
+          <button type="button" className="ui-row" onClick={onSchedule} aria-current={route === 'schedule' ? 'page' : undefined} data-testid="v3-schedule-entry">
+            <span className="ui-row__lead"><Clock size={16} aria-hidden /></span>
+            <span className="ui-row__label">{text.schedule}</span>
           </button>
         ) : null}
         {onCollab ? (
-          <button type="button" className="v3-entry" onClick={onCollab} aria-current={route === 'collab' ? 'true' : undefined} data-testid="v3-collab-entry">
-            <Users size={16} aria-hidden />
-            <span className="v3-entry-label">{collabText(lang).nav}</span>
-          </button>
-        ) : null}
-        {onRuns ? (
-          <button type="button" className="v3-entry" onClick={onRuns} aria-current={route === 'runs' ? 'true' : undefined} data-testid="v3-runs-entry">
-            <Activity size={16} aria-hidden />
-            <span className="v3-entry-label">{own.runRecords}</span>
+          <button type="button" className="ui-row" onClick={onCollab} aria-current={route === 'collab' ? 'page' : undefined} data-testid="v3-collab-entry">
+            <span className="ui-row__lead"><Users size={16} aria-hidden /></span>
+            <span className="ui-row__label">{collabText(lang).nav}</span>
           </button>
         ) : null}
       </div>
@@ -285,20 +294,15 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
                   const isCurrent = isCurrentItem(item)
                   const title = manualTitles[item.id] ?? titles[item.id] ?? item.title
                   const run = latestRunForSession(runs, { id: item.id, path: item.path })
-                  const tone = run ? runTone(run.phase) : 'idle'
-                  const word = run && (tone === 'ask' || tone === 'stall' || tone === 'fail') ? phaseWord(lang, run.phase) : null
+                  const status = sessionStatusKind({ phase: run?.phase ?? null, unread: run ? isUnreadRun(run) : false, archived: !!item.archivedAt })
                   return (
                     <SidebarRow
                       key={item.path}
                       item={item}
                       title={title}
                       isCurrent={isCurrent}
-                      phase={run?.phase ?? null}
-                      model={run?.model ?? item.model}
-                      unread={run ? isUnreadRun(run) : false}
+                      status={status}
                       code={run?.code}
-                      word={word}
-                      tone={tone}
                       onOpen={() => openSession(item)}
                     />
                   )
@@ -306,7 +310,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
                 {!collapsed && group.list.length > GROUP_LIMIT ? (
                   <button
                     type="button"
-                    className="v3-show-more"
+                    className="ui-row v3-show-more"
                     aria-expanded={expanded}
                     onClick={() => showMore(group)}
                     data-testid="v3-group-more"
@@ -334,43 +338,53 @@ export const Sidebar = memo(function Sidebar({ onClose, onRuns, onSchedule, onRe
       {archivedCount > 0 || showArchived ? (
         <button
           type="button"
-          className="v3-archive-toggle"
+          className="ui-row v3-archive-toggle"
           aria-pressed={showArchived}
           onClick={() => setShowArchived((value) => !value)}
           data-testid="v3-archive-toggle"
         >
-          <Archive size={14} aria-hidden />
-          <span className="v3-entry-label">
+          <span className="ui-row__lead"><Archive size={16} aria-hidden /></span>
+          <span className="ui-row__label">
             {showArchived ? own.archivedBack : own.archivedEntryCount.replace('{n}', String(archivedCount))}
           </span>
         </button>
       ) : null}
 
       <div className="v3-side-foot">
+        <span className="v3-side-user" title={userName} data-testid="v3-side-user">
+          <span className="v3-side-avatar"><Avatar name={userName} /></span>
+          <span className="v3-side-user-name">{userName}</span>
+        </span>
+        {connBroken ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              isDisabled={retrying}
+              data-testid="v3-conn-retry"
+              onPress={() => {
+                setRetrying(true)
+                void window.yan.start().then(() => refreshSessions()).catch(() => undefined).finally(() => setRetrying(false))
+              }}
+            >
+              {t('conn.retry')}
+            </Button>
+            <IconTip label={own.connectionSettings}>
+              <IconButton aria-label={own.connectionSettings} onPress={() => useStore.getState().openSettings('devices')} data-testid="v3-conn-settings">
+                <Unplug size={16} />
+              </IconButton>
+            </IconTip>
+          </>
+        ) : null}
+        <span className="v3-side-conn" role="status" aria-label={connLabel} title={connDetail ? `${connLabel}\n${connDetail}` : connLabel} data-testid="v3-side-conn">
+          <StatusDot kind={connDot} />
+        </span>
         {onSettings ? (
           <IconTip label={text.settingsEntryHint}>
             <IconButton aria-label={text.settingsEntryHint} onPress={onSettings} data-testid="v3-side-settings">
               <Settings size={16} />
             </IconButton>
           </IconTip>
-        ) : null}
-        <span className="v3-side-conn" title={connDetail ? `${connLabel}\n${connDetail}` : connLabel}>
-          <span className={`v3-conn-dot v3-conn-dot-${conn}`} aria-hidden />
-          {connLabel}
-        </span>
-        {conn === 'exited' || conn === 'error' ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            isDisabled={retrying}
-            data-testid="v3-conn-retry"
-            onPress={() => {
-              setRetrying(true)
-              void window.yan.start().then(() => refreshSessions()).catch(() => undefined).finally(() => setRetrying(false))
-            }}
-          >
-            {t('conn.retry')}
-          </Button>
         ) : null}
       </div>
     </aside>

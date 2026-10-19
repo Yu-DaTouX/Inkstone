@@ -3,7 +3,11 @@
   .usage-panel__state,
   .usage-panel .settings-stats,
   .usage-panel .settings-breakdown {
-    padding: var(--s-12) var(--s-16);
+    padding: var(--s-8) 0;
+  }
+
+  .usage-panel > * + * {
+    border-top: 1px solid var(--alpha-1);
   }
 
   .usage-panel .settings-stats {
@@ -32,7 +36,7 @@
   .usage-panel .settings-bar__fill {
     width: 100%;
     transform-origin: left center;
-    transition: transform var(--dur-expand) var(--ease);
+    transition: transform var(--dur-base) var(--ease);
     animation: usage-bar-in 600ms var(--ease) both;
   }
 

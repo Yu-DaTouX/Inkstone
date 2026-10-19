@@ -10,7 +10,6 @@ export const COMMAND_ACTION_IDS = {
   toggleSidebar: 'toggleSidebar',
   toggleWorkspace: 'toggleWorkspace',
   toggleTheme: 'toggleTheme',
-  openRuns: 'openRuns',
   openSettings: 'openSettings',
   openSideBySide: 'openSideBySide',
   stopSession: 'stopSession',

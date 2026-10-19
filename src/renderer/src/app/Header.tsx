@@ -14,6 +14,7 @@ import { plainTitleText } from '../../../shared/title-text'
 
 interface Props {
   narrow: boolean
+  sidebarOverlay?: boolean
   sidebarOpen: boolean
   route: V3RouteName
   onToggleSidebar: () => void
@@ -25,6 +26,7 @@ interface Props {
   onToggleSessionBar: () => void
   openPanes: ReadonlySet<WorkbenchTabId>
   changesDirty: boolean
+  terminalRunning?: boolean
   onTogglePane: (tab: WorkbenchTabId) => void
 }
 
@@ -37,7 +39,7 @@ const TITLEBAR_PANES = [
 
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs']
 
-export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, changesDirty, onTogglePane }: Props): ReactElement {
+export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -53,16 +55,16 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
   const maximized = useStore((s) => s.maximized)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
+  const settingsOpen = useStore((s) => s.settingsOpen)
   const win = window.yan.win
 
   const preview = useHoverDelay(280, () => onPreviewSidebar?.())
+  const paneActive = (tab: WorkbenchTabId): boolean => (tab === 'changes' && changesDirty) || (tab === 'terminal' && terminalRunning)
+  const activeLabel = (tab: WorkbenchTabId): string => (tab === 'terminal' && terminalRunning ? `${toolText.tabs[tab]} · ${text.terminalRunning}` : toolText.tabs[tab])
 
   const title = useMemo(() => {
-    if (route === 'settings') return text.settingsTitle
-    if (route === 'runs') return text.runs
     if (route === 'usage') return t('usage.title')
     if (route === 'schedule') return t('sched.title')
-    if (route === 'review') return text.review
     if (route === 'collab') return collabText(lang).nav
     const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
     if (id && manualTitles[id]) return manualTitles[id]
@@ -72,13 +74,13 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
     if (!peekedSessionId && session?.sessionName) return session.sessionName
     if (firstUserTitle) return firstUserTitle
     return !peekedSessionId && !hasMessages ? text.newSessionTitle : t('rail.untitled')
-  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, hasMessages, manualTitles, titles, t, lang, text.settingsTitle, text.runs, text.review, text.newSessionTitle])
+  }, [route, peekedSessionId, session?.conversationId, session?.sessionId, session?.sessionName, sessions, firstUserTitle, hasMessages, manualTitles, titles, t, lang, text.newSessionTitle])
 
   return (
     <header className="v3-head">
       <div className="v3-head-left">
         {route === 'chat' ? (
-          !sidebarOpen || narrow ? (
+          !sidebarOpen || sidebarOverlay ? (
             <IconTip label={text.toggleSidebar}>
               <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : preview.start} onHoverEnd={preview.cancel} onPressStart={preview.cancel} data-testid="v3-rail-toggle">
                 <PanelLeft size={16} />
@@ -126,22 +128,23 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
             {narrow
               ? null
               : TITLEBAR_PANES.map(({ tab, Icon }) => (
-                  <IconTip key={tab} label={toolText.tabs[tab]}>
+                  <IconTip key={tab} label={activeLabel(tab)}>
                     <IconButton
-                      aria-label={toolText.tabs[tab]}
+                      aria-label={activeLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
                       onPress={() => onTogglePane(tab)}
                     >
                       <Icon size={16} />
-                      {tab === 'changes' && changesDirty ? <span className="v3-head-pane-dot" aria-hidden /> : null}
+                      {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
                     </IconButton>
                   </IconTip>
                 ))}
             <MenuTrigger>
-              <IconButton aria-label={toolText.viewOptions} title={toolText.viewOptions} data-testid="wb-more-tools">
+              <IconButton aria-label={toolText.viewOptions} title={toolText.viewOptions} className="v3-head-pane" data-testid="wb-more-tools">
                 <EllipsisVertical size={16} />
+                {narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab)) ? <span className="v3-head-pane-dot" aria-hidden /> : null}
               </IconButton>
               <Popover placement="bottom end" offset={6}>
                 <Menu
@@ -167,7 +170,7 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
             aria-label={text.settings}
             onPress={onSettings}
             data-testid="v3-header-settings"
-            data-active={route === 'settings' ? '1' : '0'}
+            data-active={settingsOpen ? '1' : '0'}
           >
             <Settings size={16} />
           </IconButton>

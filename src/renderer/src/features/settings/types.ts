@@ -13,8 +13,11 @@ export type SettingsSectionId =
   | 'shortcuts'
   | 'about'
 
+export type SettingsNavGroupId = 'general' | 'customize' | 'local'
+
 export interface SettingsSectionDef {
   readonly id: SettingsSectionId
+  readonly group: SettingsNavGroupId
   readonly icon:
     | 'moon'
     | 'clock'
@@ -30,18 +33,20 @@ export interface SettingsSectionDef {
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
-  { id: 'models', icon: 'key' },
-  { id: 'appearance', icon: 'moon' },
-  { id: 'session', icon: 'clock' },
-  { id: 'notifications', icon: 'bell' },
-  { id: 'security', icon: 'shield' },
-  { id: 'capabilities', icon: 'sparkles' },
-  { id: 'devices', icon: 'smartphone' },
-  { id: 'data', icon: 'hard-drive' },
-  { id: 'usage', icon: 'chart' },
-  { id: 'shortcuts', icon: 'keyboard' },
-  { id: 'about', icon: 'info' }
+  { id: 'models', icon: 'key', group: 'general' },
+  { id: 'appearance', icon: 'moon', group: 'general' },
+  { id: 'session', icon: 'clock', group: 'general' },
+  { id: 'notifications', icon: 'bell', group: 'general' },
+  { id: 'security', icon: 'shield', group: 'general' },
+  { id: 'capabilities', icon: 'sparkles', group: 'customize' },
+  { id: 'devices', icon: 'smartphone', group: 'local' },
+  { id: 'data', icon: 'hard-drive', group: 'local' },
+  { id: 'usage', icon: 'chart', group: 'local' },
+  { id: 'shortcuts', icon: 'keyboard', group: 'local' },
+  { id: 'about', icon: 'info', group: 'local' }
 ]
+
+export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupId[] = ['general', 'customize', 'local']
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'models'
 
@@ -110,4 +115,27 @@ export function resolveLegacyView(view: string | null | undefined): LegacyViewRe
   if (mapped) return { kind: 'section', view: name, section: mapped }
   if (KNOWN_V2_VIEWS.includes(name)) return { kind: 'unmigrated', view: name }
   return { kind: 'unknown', view: name }
+}
+
+export interface SettingsNavGroup {
+  readonly group: SettingsNavGroupId
+  readonly sections: readonly SettingsSectionDef[]
+}
+
+export function groupSettingsSections(sections: readonly SettingsSectionDef[] = SETTINGS_SECTIONS): SettingsNavGroup[] {
+  return SETTINGS_NAV_GROUPS.map((group) => ({ group, sections: sections.filter((section) => section.group === group) })).filter(
+    (entry) => entry.sections.length > 0
+  )
+}
+
+export function settingsViewFromHash(hash: string): string | null {
+  const path = hash.replace(/^#\/?/, '').split('?')[0]
+  const [head, view, ...rest] = path.split('/')
+  if (head !== 'settings' || rest.some(Boolean)) return null
+  if (!view) return ''
+  try {
+    return decodeURIComponent(view)
+  } catch {
+    return null
+  }
 }

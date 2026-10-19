@@ -1,13 +1,11 @@
 import type { Lang } from '../i18n'
 
 export interface V3Text {
-  runs: string
   runsEmpty: string
   runsProvisional: string
   runsBack: string
   runsStatus: string
   schedule: string
-  review: string
   settings: string
   settingsTitle: string
   appearance: string
@@ -32,6 +30,7 @@ export interface V3Text {
   newInProject: string
   settingsEntryHint: string
   keepOnTop: string
+  terminalRunning: string
   sessionBarNoRoom: string
   showSessionBar: string
   hideSessionBar: string
@@ -52,14 +51,12 @@ export interface V3Text {
 }
 
 const ZH: V3Text = {
-  runs: '运行总览',
   runsEmpty: '暂无运行。开始一件任务，它会出现在这里。',
   runsProvisional:
     '这是按现有运行实例（agent_start → agent_settled 的投影）列出的清单，尚未接入运行注册表（WP-11）；状态词不代表权威七态，也不含停滞计时。',
   runsBack: '返回会话',
   runsStatus: '状态',
   schedule: '定时任务',
-  review: '代码审查',
   settings: '设置',
   settingsTitle: '设置',
   appearance: '外观',
@@ -84,6 +81,7 @@ const ZH: V3Text = {
   newInProject: '在此项目新建会话',
   settingsEntryHint: '打开设置',
   keepOnTop: '窗口置顶',
+  terminalRunning: '命令运行中',
   sessionBarNoRoom: '会话栏已开启，窗口太窄暂不显示；点击关闭',
   showSessionBar: '显示会话栏',
   hideSessionBar: '隐藏会话栏',
@@ -104,14 +102,12 @@ const ZH: V3Text = {
 }
 
 const EN: V3Text = {
-  runs: 'Runs',
   runsEmpty: 'No runs yet. Start a task and it will show up here.',
   runsProvisional:
     'This lists the current runner instances (a projection of agent_start → agent_settled). It is not yet wired to the run registry (WP-11): the labels are not the authoritative seven states and there is no stall timing.',
   runsBack: 'Back to chat',
   runsStatus: 'Status',
   schedule: 'Scheduled tasks',
-  review: 'Code review',
   settings: 'Settings',
   settingsTitle: 'Settings',
   appearance: 'Appearance',
@@ -136,6 +132,7 @@ const EN: V3Text = {
   newInProject: 'New chat in this project',
   settingsEntryHint: 'Open settings',
   keepOnTop: 'Keep window on top',
+  terminalRunning: 'command running',
   sessionBarNoRoom: 'Session bar is on but the window is too narrow to show it. Click to turn it off',
   showSessionBar: 'Show session bar',
   hideSessionBar: 'Hide session bar',

@@ -51,7 +51,6 @@ const RENDERER_IDS = [
   'commandPalette',
   'newSession',
   'toggleSidebar',
-  'openRuns',
   'toggleWorkspace',
   'openSettings',
   'shortcutSheet',
@@ -88,7 +87,7 @@ assert.deepEqual(
 )
 assert.deepEqual(
   SHORTCUTS.filter((def) => def.terminalsYield).map((def) => def.id),
-  ['commandPalette', 'toggleSidebar', 'openRuns', 'focusComposer', 'copyLastReply'],
+  ['commandPalette', 'toggleSidebar', 'focusComposer', 'copyLastReply'],
   '终端让键只覆盖 xterm 真正会用的键'
 )
 assert.ok(SHORTCUTS.filter((def) => def.terminalsYield).every((def) => !def.rebindable), '终端让键保持固定')

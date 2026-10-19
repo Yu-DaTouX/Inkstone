@@ -14,8 +14,15 @@ import {
 import { BarChart3, Bell, Clock, HardDrive, Info, KeyRound, Keyboard, Moon, Shield, Smartphone, Sparkles } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { useUiV3 } from '../../../state/ui-v3'
-import { Button, SearchField } from '../../../ui'
+import {
+  Button,
+  SearchField,
+  SettingsDialog,
+  SettingsNav,
+  SettingsNavEmpty,
+  SettingsNavGroup,
+  SettingsNavItem
+} from '../../../ui'
 import { AppearanceSettings } from '../appearance/AppearanceSettings'
 import { ShortcutsSettings } from '../shortcuts/ShortcutsSettings'
 import { AboutSettings, DataSettings, DevicesSettings, NotificationsSettings, SecuritySettings, SessionSettings } from '../general'
@@ -23,12 +30,13 @@ import { UsageSettings } from '../usage/UsageSettings'
 import { settingsText, type SettingsText } from '../settings-text'
 import {
   DEFAULT_SETTINGS_SECTION,
+  groupSettingsSections,
   resolveLegacyView,
-  SETTINGS_SECTIONS,
+  type SettingsNavGroupId,
   type SettingsSectionDef,
   type SettingsSectionId
 } from '../types'
-import { getSettingsRequest, subscribeSettingsRequest } from './deep-link'
+import { getSettingsRequest, lastSettingsSection, rememberSettingsSection, subscribeSettingsRequest } from './deep-link'
 import { SETTINGS_SEARCH_ENTRIES } from '../search/entries'
 import {
   getSettingReveal,
@@ -71,17 +79,17 @@ const ModelsSettings = pickLazy(modelsGlob, 'ModelsSettings')
 const CapabilitiesSettings = pickLazy(capabilitiesGlob, 'CapabilitiesSettings')
 
 const SECTION_ICON: Record<SettingsSectionDef['icon'], ReactElement> = {
-  moon: <Moon size={15} aria-hidden />,
-  clock: <Clock size={15} aria-hidden />,
-  bell: <Bell size={15} aria-hidden />,
-  key: <KeyRound size={15} aria-hidden />,
-  sparkles: <Sparkles size={15} aria-hidden />,
-  shield: <Shield size={15} aria-hidden />,
-  smartphone: <Smartphone size={15} aria-hidden />,
-  'hard-drive': <HardDrive size={15} aria-hidden />,
-  chart: <BarChart3 size={15} aria-hidden />,
-  keyboard: <Keyboard size={15} aria-hidden />,
-  info: <Info size={15} aria-hidden />
+  moon: <Moon size={16} aria-hidden />,
+  clock: <Clock size={16} aria-hidden />,
+  bell: <Bell size={16} aria-hidden />,
+  key: <KeyRound size={16} aria-hidden />,
+  sparkles: <Sparkles size={16} aria-hidden />,
+  shield: <Shield size={16} aria-hidden />,
+  smartphone: <Smartphone size={16} aria-hidden />,
+  'hard-drive': <HardDrive size={16} aria-hidden />,
+  chart: <BarChart3 size={16} aria-hidden />,
+  keyboard: <Keyboard size={16} aria-hidden />,
+  info: <Info size={16} aria-hidden />
 }
 
 const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
@@ -96,6 +104,12 @@ const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
   usage: 'sectionUsage',
   shortcuts: 'sectionShortcuts',
   about: 'sectionAbout'
+}
+
+const GROUP_LABEL: Record<SettingsNavGroupId, keyof SettingsText> = {
+  general: 'groupGeneral',
+  customize: 'groupCustomize',
+  local: 'groupLocal'
 }
 
 const REVEAL_FRAMES = 90
@@ -207,20 +221,20 @@ function LegacyNotice({
 }
 
 export interface SettingsPageProps {
-  onBack?: () => void
-  onRuns?: () => void
+  onClose: () => void
   onShowOnboarding?: () => void
 }
 
-export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageProps = {}): ReactElement {
+export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const settings = useStore((s) => s.settings)
   const request = useSyncExternalStore(subscribeSettingsRequest, getSettingsRequest)
-  const [section, setSection] = useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION)
+  const [section, setSection] = useState<SettingsSectionId>(lastSettingsSection)
   const [legacy, setLegacy] = useState<{ view: string; kind: 'unmigrated' | 'unknown' } | null>(null)
   const [query, setQuery] = useState('')
   const searchBox = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
   const sectionLabel = useCallback((id: SettingsSectionId): string => text[SECTION_LABEL[id]], [text])
   const hits = useMemo(
     () => matchSettings(SETTINGS_SEARCH_ENTRIES, query, lang, sectionLabel),
@@ -239,11 +253,21 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
     }
   }, [request])
 
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => searchBox.current?.querySelector('input')?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  useEffect(() => {
+    rememberSettingsSection(section)
+    content.current?.closest('.ui-settings__content')?.scrollTo({ top: 0 })
+  }, [section])
+
   const select = useCallback((next: SettingsSectionId): void => {
     setSection(next)
     setLegacy(null)
   }, [])
-  const openAppearance = useCallback((): void => {
+  const openDefault = useCallback((): void => {
     setSection(DEFAULT_SETTINGS_SECTION)
     setLegacy(null)
   }, [])
@@ -258,84 +282,80 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
     event.preventDefault()
     searchBox.current?.querySelector('input')?.focus()
   }
-  const openRuns = useCallback((): void => {
-    if (onRuns) onRuns()
-    else useUiV3.getState().navigate({ name: 'runs' })
-  }, [onRuns])
 
-  if (!settings) {
-    return (
-      <div className="settings-page" data-loading="1">
-        <p className="settings-value" role="status">
-          {text.loading}
-        </p>
-      </div>
-    )
-  }
+  const search = (
+    <SearchField
+      ref={searchBox}
+      aria-label={text.searchLabel}
+      placeholder={text.searchPlaceholder}
+      value={query}
+      onChange={setQuery}
+      onSubmit={() => {
+        if (hits[0]) reveal(hits[0])
+      }}
+      className="settings-search"
+      data-testid="settings-search"
+    />
+  )
+
+  const nav = (
+    <SettingsNav label={text.navLabel} search={search}>
+      {query.trim() ? (
+        hits.length > 0 ? (
+          <SettingsNavGroup>
+            {hits.map((hit) => (
+              <SettingsNavItem
+                key={hit.id}
+                label={lang === 'en-US' ? hit.en : hit.zh}
+                hint={hit.more ? `${sectionLabel(hit.section)} · ${text.moreSettings}` : sectionLabel(hit.section)}
+                onPress={() => reveal(hit)}
+                data-testid={`settings-hit-${hit.id}`}
+              />
+            ))}
+          </SettingsNavGroup>
+        ) : (
+          <SettingsNavEmpty>{text.searchEmpty}</SettingsNavEmpty>
+        )
+      ) : (
+        groupSettingsSections().map(({ group, sections }) => (
+          <SettingsNavGroup key={group} title={text[GROUP_LABEL[group]]}>
+            {sections.map((entry) => (
+              <SettingsNavItem
+                key={entry.id}
+                icon={SECTION_ICON[entry.icon]}
+                label={text[SECTION_LABEL[entry.id]]}
+                current={!legacy && entry.id === section}
+                onPress={() => select(entry.id)}
+                data-testid={`v3-settings-nav-${entry.id}`}
+              />
+            ))}
+          </SettingsNavGroup>
+        ))
+      )}
+    </SettingsNav>
+  )
 
   return (
-    <div className="settings-page" data-testid="settings-root" onKeyDown={focusSearch}>
-      <nav className="settings-nav" aria-label={text.navLabel}>
-        <h2 className="settings-h2 settings-nav__title">{text.title}</h2>
-        <SearchField
-          ref={searchBox}
-          aria-label={text.searchLabel}
-          placeholder={text.searchPlaceholder}
-          value={query}
-          onChange={setQuery}
-          onSubmit={() => {
-            if (hits[0]) reveal(hits[0])
-          }}
-          className="settings-search"
-          data-testid="settings-search"
-        />
-        {query.trim() ? (
-          hits.length > 0 ? (
-            <div className="settings-nav__hits" data-testid="settings-search-hits">
-              {hits.map((hit) => (
-                <button
-                  key={hit.id}
-                  type="button"
-                  className="settings-nav__item settings-nav__hit"
-                  data-testid={`settings-hit-${hit.id}`}
-                  onClick={() => reveal(hit)}
-                >
-                  <span className="settings-nav__hit-label">{lang === 'en-US' ? hit.en : hit.zh}</span>
-                  <span className="settings-nav__hit-path">
-                    {hit.more ? `${sectionLabel(hit.section)} · ${text.moreSettings}` : sectionLabel(hit.section)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="settings-nav__empty" role="status">
-              {text.searchEmpty}
-            </p>
-          )
-        ) : SETTINGS_SECTIONS.map((entry) => {
-          const active = !legacy && entry.id === section
-          return (
-            <button
-              key={entry.id}
-              type="button"
-              className="settings-nav__item"
-              data-active={active ? '1' : '0'}
-              aria-current={active ? 'page' : undefined}
-              data-testid={`v3-settings-nav-${entry.id}`}
-              onClick={() => select(entry.id)}
-            >
-              {SECTION_ICON[entry.icon]}
-              <span>{text[SECTION_LABEL[entry.id]]}</span>
-            </button>
-          )
-        })}
-      </nav>
-
-      <div className="settings-main">
-        <div className="settings-main__col" key={legacy ? 'legacy' : section}>
+    <SettingsDialog
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+      title={text.title}
+      closeLabel={text.close}
+      nav={nav}
+      onKeyDown={focusSearch}
+      data-testid="settings-root"
+    >
+      {!settings ? (
+        <p className="settings-loading" role="status">
+          {text.loading}
+        </p>
+      ) : (
+        <div className="settings-main__col" key={legacy ? 'legacy' : section} ref={content}>
           {legacy ? null : <h2 className="settings-h2 settings-main__title">{text[SECTION_LABEL[section]]}</h2>}
           {legacy ? (
-            <LegacyNotice view={legacy.view} kind={legacy.kind} onDismiss={openAppearance} onBack={onBack} />
+            <LegacyNotice view={legacy.view} kind={legacy.kind} onDismiss={openDefault} onBack={onClose} />
           ) : section === 'appearance' ? (
             <AppearanceSettings />
           ) : section === 'session' ? (
@@ -347,14 +367,14 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
               component={ModelsSettings}
               title={text.missingTitle}
               body={text.missingBody}
-              onDismiss={openAppearance}
+              onDismiss={openDefault}
             />
           ) : section === 'capabilities' ? (
             <SubmoduleHost
               component={CapabilitiesSettings}
               title={text.missingTitle}
               body={text.missingBody}
-              onDismiss={openAppearance}
+              onDismiss={openDefault}
             />
           ) : section === 'shortcuts' ? (
             <ShortcutsSettings />
@@ -367,10 +387,10 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
           ) : section === 'about' ? (
             <AboutSettings onShowOnboarding={onShowOnboarding} />
           ) : (
-            <UsageSettings onOpenRuns={openRuns} />
+            <UsageSettings />
           )}
         </div>
-      </div>
-    </div>
+      )}
+    </SettingsDialog>
   )
 }

@@ -31,7 +31,7 @@ const {
 
 assert.deepEqual(
   SHORTCUTS.map((def) => def.id),
-  ['commandPalette', 'newSession', 'toggleSidebar', 'openRuns', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
+  ['commandPalette', 'newSession', 'toggleSidebar', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
     'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
     'cycleModel', 'cycleModelBack', 'cycleThinking', 'quickAsk'],
@@ -77,7 +77,6 @@ assert.equal(pressed({ key: 'k', ctrl: true }), 'commandPalette', 'Ctrl+K 命令
 assert.equal(pressed({ key: 'K', meta: true }), 'commandPalette', 'Cmd+K 命令面板（macOS 用 Cmd）')
 assert.equal(pressed({ key: 'n', ctrl: true }), 'newSession', 'Ctrl+N 新会话')
 assert.equal(pressed({ key: 'b', ctrl: true }), 'toggleSidebar', 'Ctrl+B 侧栏')
-assert.equal(pressed({ key: 'j', ctrl: true }), 'openRuns', 'Ctrl+J 运行总览')
 assert.equal(pressed({ key: ',', ctrl: true }), 'openSettings', 'Ctrl+, 设置')
 assert.equal(pressed({ key: '/', ctrl: true }), 'shortcutSheet', 'Ctrl+/ 快捷键表')
 assert.equal(pressed({ key: 'ArrowLeft', alt: true }), 'goBack', 'Alt+← 返回')

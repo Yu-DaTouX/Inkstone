@@ -15,7 +15,6 @@ export interface CommandText {
   toggleWorkspace: string
   themeToLight: string
   themeToDark: string
-  openRuns: string
   openSettings: string
   openSideBySide: string
   stopSession: string
@@ -56,7 +55,6 @@ const ZH: CommandText = {
   toggleWorkspace: '展开或收起工作区',
   themeToLight: '切换到浅色主题',
   themeToDark: '切换到深色主题',
-  openRuns: '运行总览',
   openSettings: '打开设置',
   openSideBySide: '并排打开',
   stopSession: '停止当前会话',
@@ -73,7 +71,7 @@ const ZH: CommandText = {
   roleAssistant: '助手',
   roleBash: '命令',
   helpRows: {
-    '>': '只看操作：新会话、侧栏、工作区、设置、主题、运行总览',
+    '>': '只看操作：新会话、侧栏、工作区、设置、主题',
     '@': '切换会话：按标题、项目或路径搜',
     '#': '搜索当前会话里的消息',
     '?': '显示这段前缀说明'
@@ -102,7 +100,6 @@ const EN: CommandText = {
   toggleWorkspace: 'Show or hide the workspace',
   themeToLight: 'Switch to light theme',
   themeToDark: 'Switch to dark theme',
-  openRuns: 'Runs overview',
   openSettings: 'Open settings',
   openSideBySide: 'Open side by side',
   stopSession: 'Stop current chat',
@@ -119,7 +116,7 @@ const EN: CommandText = {
   roleAssistant: 'Assistant',
   roleBash: 'Command',
   helpRows: {
-    '>': 'Actions only: new chat, sidebar, workspace, settings, theme, runs',
+    '>': 'Actions only: new chat, sidebar, workspace, settings, theme',
     '@': 'Switch chats by title, project or path',
     '#': 'Search messages in the current chat',
     '?': 'Show this prefix help'

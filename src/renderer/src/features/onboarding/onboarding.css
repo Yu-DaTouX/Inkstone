@@ -19,7 +19,7 @@
 
   .v3-ob-subtitle {
     margin: 0;
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     color: var(--fg2);
   }
 
@@ -42,7 +42,7 @@
     border-radius: var(--r-sm);
     background: transparent;
     color: var(--fg2);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     cursor: pointer;
   }
 
@@ -73,7 +73,7 @@
 
   .v3-ob-step[data-active='1'] .v3-ob-step__dot {
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .v3-ob-step[data-past='1'] .v3-ob-step__dot {
@@ -105,14 +105,14 @@
 
   .v3-ob-lead-title {
     margin: 0;
-    font: var(--t-h2) / var(--t-h2-lh) var(--font-ui);
-    font-weight: var(--t-h2-w);
+    font: var(--t-title) / var(--t-title-lh) var(--font-ui);
+    font-weight: var(--t-title-w);
     color: var(--fg);
   }
 
   .v3-ob-lead-desc {
     margin: 0;
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     color: var(--fg2);
     text-wrap: pretty;
   }
@@ -122,13 +122,13 @@
     padding: var(--s-10) var(--s-12);
     border-radius: var(--r-md);
     background: var(--sunken);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg2);
   }
 
   .v3-ob-hint {
     margin: 0;
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg3);
   }
 
@@ -145,7 +145,7 @@
     display: flex;
     align-items: center;
     gap: var(--s-8);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     color: var(--fg);
   }
 
@@ -155,7 +155,7 @@
     flex: none;
     width: 20px;
     height: 20px;
-    color: var(--accent);
+    color: var(--accent-t);
   }
 
   .v3-ob-actions {
@@ -191,12 +191,12 @@
   }
 
   .v3-ob-row__label {
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     color: var(--fg);
   }
 
   .v3-ob-row__desc {
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg3);
   }
 
@@ -227,7 +227,7 @@
   }
 
   .v3-ob-progress {
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg3);
     font-variant-numeric: tabular-nums;
   }

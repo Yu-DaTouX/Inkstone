@@ -77,13 +77,6 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['按日', '按模型', '图表', '表格', 'by day', 'by model', 'chart', 'table']
   },
   {
-    id: 'usage-runs',
-    section: 'usage',
-    zh: '运行总览',
-    en: 'Runs overview',
-    keywords: ['运行', 'runs']
-  },
-  {
     id: 'usage-currency',
     section: 'usage',
     zh: '显示货币',

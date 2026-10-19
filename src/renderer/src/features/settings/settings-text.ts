@@ -18,6 +18,10 @@ export interface SettingsText {
   sectionUsage: string
   sectionShortcuts: string
   sectionAbout: string
+  groupGeneral: string
+  groupCustomize: string
+  groupLocal: string
+  close: string
   onboardingTitle: string
   onboardingDesc: string
   onboardingAction: string
@@ -28,11 +32,11 @@ export interface SettingsText {
   themeLight: string
   themeDark: string
   density: string
+  densityDesc: string
   densityCompact: string
-  densityStandard: string
   densityComfortable: string
-  fontSizeUi: string
-  fontSizeNow: string
+  reduceMotion: string
+  reduceMotionDesc: string
   fontRead: string
   fontReadDesc: string
   fontCode: string
@@ -105,7 +109,6 @@ export interface SettingsText {
   usageLoading: string
   usageError: string
   usageRetry: string
-  usageRuns: string
   usageView: string
   usageChart: string
   usageTable: string
@@ -143,6 +146,10 @@ const ZH: SettingsText = {
   sectionUsage: '用量',
   sectionShortcuts: '快捷键',
   sectionAbout: '关于',
+  groupGeneral: '设置',
+  groupCustomize: '自定义',
+  groupLocal: '本机',
+  close: '关闭设置',
   onboardingTitle: '首次引导',
   onboardingDesc: '重新查看首次引导，不会重置设置。',
   onboardingAction: '重新查看引导',
@@ -152,12 +159,12 @@ const ZH: SettingsText = {
   theme: '主题',
   themeLight: '浅色',
   themeDark: '深色',
-  density: '界面密度',
+  density: '字号与密度',
+  densityDesc: '紧凑：界面 13px、正文 14px；舒适：界面 14px、正文 16px，控件与行距更大。',
   densityCompact: '紧凑',
-  densityStandard: '标准',
-  densityComfortable: '宽松',
-  fontSizeUi: '界面字号',
-  fontSizeNow: '当前 {n}px',
+  densityComfortable: '舒适',
+  reduceMotion: '减少动效',
+  reduceMotionDesc: '关闭过渡与动画。系统开启了减少动画时始终生效。',
   fontRead: '阅读字体',
   fontReadDesc: '界面与正文使用的字体。',
   fontCode: '代码字体',
@@ -230,7 +237,6 @@ const ZH: SettingsText = {
   usageLoading: '正在统计本机用量…',
   usageError: '用量统计读取失败。',
   usageRetry: '重试',
-  usageRuns: '运行总览',
   usageView: '视图',
   usageChart: '图表',
   usageTable: '表格',
@@ -268,6 +274,10 @@ const EN: SettingsText = {
   sectionUsage: 'Usage',
   sectionShortcuts: 'Keyboard shortcuts',
   sectionAbout: 'About',
+  groupGeneral: 'Settings',
+  groupCustomize: 'Customize',
+  groupLocal: 'This computer',
+  close: 'Close settings',
   onboardingTitle: 'First-run setup',
   onboardingDesc: 'Replay first-run setup; settings are kept.',
   onboardingAction: 'Replay setup',
@@ -277,12 +287,12 @@ const EN: SettingsText = {
   theme: 'Theme',
   themeLight: 'Light',
   themeDark: 'Dark',
-  density: 'Density',
+  density: 'Text size & density',
+  densityDesc: 'Compact: 13px interface, 14px body. Comfortable: 14px interface, 16px body, taller controls and rows.',
   densityCompact: 'Compact',
-  densityStandard: 'Standard',
   densityComfortable: 'Comfortable',
-  fontSizeUi: 'Interface font size',
-  fontSizeNow: 'Currently {n}px',
+  reduceMotion: 'Reduce motion',
+  reduceMotionDesc: 'Turn off transitions and animations. Always on when the system asks for reduced motion.',
   fontRead: 'Reading font',
   fontReadDesc: 'Font for the UI and body text.',
   fontCode: 'Code font',
@@ -355,7 +365,6 @@ const EN: SettingsText = {
   usageLoading: 'Crunching local usage…',
   usageError: 'Could not read usage statistics.',
   usageRetry: 'Retry',
-  usageRuns: 'Runs overview',
   usageView: 'View',
   usageChart: 'Chart',
   usageTable: 'Table',

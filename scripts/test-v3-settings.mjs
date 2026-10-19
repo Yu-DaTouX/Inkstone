@@ -64,6 +64,31 @@ for (const view of ['nonsense', '', '   ']) {
 }
 assert.equal(resolveLegacyView(undefined).kind, 'unknown')
 assert.equal(resolveLegacyView(null).kind, 'unknown')
+const { groupSettingsSections, settingsViewFromHash, SETTINGS_NAV_GROUPS } = types
+assert.deepEqual([...SETTINGS_NAV_GROUPS], ['general', 'customize', 'local'], '导航分三组：设置 / 自定义 / 本机')
+assert.deepEqual(
+  groupSettingsSections().map((entry) => [entry.group, entry.sections.map((section) => section.id)]),
+  [
+    ['general', ['models', 'appearance', 'session', 'notifications', 'security']],
+    ['customize', ['capabilities']],
+    ['local', ['devices', 'data', 'usage', 'shortcuts', 'about']]
+  ],
+  '分组保持原分区顺序，能力页单独一组'
+)
+assert.deepEqual(
+  groupSettingsSections().flatMap((entry) => entry.sections.map((section) => section.id)),
+  SETTINGS_SECTIONS.map((section) => section.id),
+  '分组拼接后与分区清单一致'
+)
+assert.equal(settingsViewFromHash('#/settings'), '', '#/settings 打开弹层不指定分区')
+assert.equal(settingsViewFromHash('#settings'), '')
+assert.equal(settingsViewFromHash('#/settings/models'), 'models', '#/settings/<分区> 定位分区')
+assert.equal(settingsViewFromHash('#/settings/'), '')
+assert.equal(settingsViewFromHash('#/settings/a/b'), null, '多段路径不是设置深链')
+assert.equal(settingsViewFromHash('#/settings/%E0%A4%A'), null, '坏编码不抛错')
+assert.equal(settingsViewFromHash('#/'), null)
+assert.equal(settingsViewFromHash('#/schedule'), null)
+assert.equal(settingsViewFromHash('#/settingsx'), null)
 assert.equal(isSettingsSectionId('usage'), true)
 assert.equal(isSettingsSectionId('auth'), false)
 
@@ -97,7 +122,12 @@ assert.ok(!appearance.includes('components/settings'), '外观页不引入 v2 �
 
 const panel = readFileSync(here('../src/renderer/src/app/SettingsPanelV3.tsx'), 'utf8')
 assert.ok(panel.includes('installSettingsDeepLink'), '入口安装正式 openSettings 订阅')
-assert.ok(panel.includes('onBack') && panel.includes('onRuns'), '入口保持 { onBack, onRuns } 签名')
+assert.ok(panel.includes('onShowOnboarding'), '入口保持 { onShowOnboarding } 签名')
+assert.ok(panel.includes('settingsOpen') && panel.includes('closeSettings'), '设置弹层由 store.settingsOpen 打开、closeSettings 关闭')
+assert.ok(panel.includes('consumeSettingsHash'), '#/settings 深链改为打开弹层')
+const shell = readFileSync(here('../src/renderer/src/app/ShellV3.tsx'), 'utf8')
+assert.ok(!shell.includes("navigate({ name: 'settings' })"), '外壳不再导航到设置整页路由')
+assert.ok(shell.includes('<SettingsPanelV3'), '外壳常驻挂载设置弹层宿主')
 assert.ok(!panel.includes('components/settings'), '入口不引入 v2 旧设置组件')
 
 const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')

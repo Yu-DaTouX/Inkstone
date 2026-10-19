@@ -71,7 +71,7 @@ export function ContentMatches({ query, state, matches, currentPath, text, onOpe
         <button
           key={match.path}
           type="button"
-          className="v3-row v3-hit"
+          className="ui-row v3-hit"
           aria-current={currentPath === match.path ? 'true' : undefined}
           onClick={() => onOpen(match)}
           data-testid="v3-content-match"

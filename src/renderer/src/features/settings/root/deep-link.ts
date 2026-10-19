@@ -1,5 +1,5 @@
 import { useStore } from '../../../state/store'
-import { useUiV3 } from '../../../state/ui-v3'
+import { DEFAULT_SETTINGS_SECTION, settingsViewFromHash, type SettingsSectionId } from '../types'
 
 export interface SettingsRequest {
   view: string
@@ -21,11 +21,22 @@ export function getSettingsRequest(): SettingsRequest | null {
   return current
 }
 
+let lastSection: SettingsSectionId = DEFAULT_SETTINGS_SECTION
+
+export function rememberSettingsSection(section: SettingsSectionId): void {
+  lastSection = section
+}
+
+export function lastSettingsSection(): SettingsSectionId {
+  return lastSection
+}
+
+export function openSettingsDialog(view?: string): void {
+  useStore.getState().openSettings(view || lastSection)
+}
+
 function record(view: string, revision: number): void {
   current = { view, at: Date.now(), revision }
-  if (useUiV3.getState().route.name !== 'settings') {
-    useUiV3.getState().navigate({ name: 'settings' })
-  }
   for (const listener of listeners) listener()
 }
 
@@ -69,5 +80,15 @@ export function resetSettingsDeepLinkForTest(): void {
   uninstallStore = null
   installed = false
   current = null
+  lastSection = DEFAULT_SETTINGS_SECTION
   listeners.clear()
+}
+
+export function consumeSettingsHash(): boolean {
+  if (typeof window === 'undefined') return false
+  const view = settingsViewFromHash(window.location.hash)
+  if (view === null) return false
+  window.history.replaceState(null, '', '#/')
+  openSettingsDialog(view)
+  return true
 }

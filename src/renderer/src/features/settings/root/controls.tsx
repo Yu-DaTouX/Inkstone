@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useI18n } from '../../../i18n'
-import { Button, SegmentedControl } from '../../../ui'
+import { Button, SegmentedControl, SettingRow, SettingRows } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { getSettingReveal, settingSelector, subscribeSettingReveal } from '../search/search-model'
 
@@ -16,32 +16,31 @@ export interface SettingsRowProps {
 
 export function SettingsRow({ label, description, block, nested, settingId, children }: SettingsRowProps): ReactElement {
   return (
-    <div
+    <SettingRow
       className="settings-row"
-      data-block={block ? '1' : '0'}
+      label={label}
+      description={description}
+      block={block}
+      indent={nested}
       data-nested={nested ? '1' : undefined}
       data-setting-id={settingId}
     >
-      <div className="settings-row__text">
-        <span className="settings-row__label">{label}</span>
-        {description != null ? <span className="settings-row__desc">{description}</span> : null}
-      </div>
-      <div className="settings-row__ctl">{children}</div>
-    </div>
+      {children}
+    </SettingRow>
   )
 }
 
 export function SettingsGroup({ label, children }: { label?: string; children: ReactNode }): ReactElement {
   return (
-    <div className="settings-group" role="group" aria-label={label}>
+    <SettingRows className="settings-group" label={label}>
       {children}
-    </div>
+    </SettingRows>
   )
 }
 
 export function SettingsReveal({ open, children }: { open: boolean; children: ReactNode }): ReactElement {
   return (
-    <div className="settings-reveal" data-open={open ? '1' : '0'} inert={!open} aria-hidden={!open}>
+    <div className="settings-reveal" data-open={open ? '1' : '0'} data-setting-rows-continue="" inert={!open} aria-hidden={!open}>
       <div className="settings-reveal__inner">{children}</div>
     </div>
   )

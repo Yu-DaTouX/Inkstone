@@ -6,7 +6,7 @@
   .peer-approval-timer {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
   }
 
@@ -19,7 +19,7 @@
   .peer-approval-dim {
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
+    font-size: var(--t-footnote);
   }
 
   .peer-approval-foot {

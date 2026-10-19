@@ -16,8 +16,8 @@
     box-sizing: border-box;
     border-radius: var(--r-lg);
     transition:
-      background-color var(--dur-hover) var(--ease),
-      box-shadow var(--dur-hover) var(--ease);
+      background-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-fast) var(--ease);
   }
 
   .v3-drop-zone[data-hit='0'] {
@@ -27,7 +27,7 @@
   .v3-drop-zone[data-hit='1'] {
     background: var(--sel);
     box-shadow: inset 0 0 0 2px var(--accent);
-    animation: v3-drop-in var(--dur-pop) var(--ease-out);
+    animation: v3-drop-in var(--dur-snap) var(--ease);
   }
 
   .v3-drop-label {
@@ -38,8 +38,8 @@
     padding: var(--s-4) var(--s-10);
     border-radius: var(--r-full);
     background: var(--accent);
-    color: var(--bg);
-    font-size: var(--t-ui);
+    color: var(--on-accent);
+    font-size: var(--t-body);
     white-space: nowrap;
   }
 
@@ -54,7 +54,7 @@
     background: var(--surface);
     box-shadow: var(--shadow-pop);
     color: var(--fg);
-    font-size: var(--t-ui);
+    font-size: var(--t-body);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

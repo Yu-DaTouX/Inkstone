@@ -10,7 +10,6 @@ export interface SidebarText {
   restoreSession: string
   projectSessionCount: string
   newChat: string
-  runRecords: string
   showMore: string
   showLess: string
   contentMatches: string
@@ -18,6 +17,11 @@ export interface SidebarText {
   contentFailed: string
   contentFallbackTitle: string
   contentArchived: string
+  search: string
+  searchHint: string
+  filterSessions: string
+  localUser: string
+  connectionSettings: string
 }
 
 const zh: SidebarText = {
@@ -32,14 +36,18 @@ const zh: SidebarText = {
   restoreSession: '取消归档',
   projectSessionCount: '{n} 个会话',
   newChat: '新建会话',
-  runRecords: '运行总览',
   showMore: '显示更多',
   showLess: '收起',
   contentMatches: '内容匹配',
   contentSearching: '正在搜索全文…',
   contentFailed: '全文搜索失败',
   contentFallbackTitle: '{date} 的会话',
-  contentArchived: '已归档'
+  contentArchived: '已归档',
+  search: '搜索',
+  searchHint: '搜索与命令（Ctrl+K）',
+  filterSessions: '筛选会话',
+  localUser: '本机',
+  connectionSettings: '连接设置'
 }
 
 const en: SidebarText = {
@@ -54,14 +62,18 @@ const en: SidebarText = {
   restoreSession: 'Unarchive',
   projectSessionCount: '{n} chats',
   newChat: 'New chat',
-  runRecords: 'Runs',
   showMore: 'Show more',
   showLess: 'Show less',
   contentMatches: 'In conversations',
   contentSearching: 'Searching conversations…',
   contentFailed: 'Full-text search failed',
   contentFallbackTitle: 'Chat from {date}',
-  contentArchived: 'Archived'
+  contentArchived: 'Archived',
+  search: 'Search',
+  searchHint: 'Search and commands (Ctrl+K)',
+  filterSessions: 'Filter chats',
+  localUser: 'This computer',
+  connectionSettings: 'Connection settings'
 }
 
 export function sidebarText(lang: string): SidebarText {

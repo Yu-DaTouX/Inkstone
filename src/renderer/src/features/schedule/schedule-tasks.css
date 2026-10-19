@@ -81,8 +81,8 @@
   }
 
   .sched-task-title {
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     color: var(--fg);
   }
 
@@ -93,8 +93,8 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     color: var(--fg2);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     overflow-wrap: anywhere;
   }
 
@@ -104,8 +104,8 @@
     gap: var(--s-8);
     margin: 0;
     color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     font-variant-numeric: tabular-nums;
   }
 
@@ -165,8 +165,8 @@
     align-items: center;
     gap: var(--s-8);
     color: var(--fg2);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
   }
 
   .sched-form-foot,
@@ -179,8 +179,8 @@
   .sched-confirm-body {
     margin: 0 0 var(--s-16);
     color: var(--fg);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
     overflow-wrap: anywhere;
   }
 

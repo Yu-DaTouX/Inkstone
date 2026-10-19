@@ -32,12 +32,7 @@ export function applyDeepLink(intent: DeepLinkIntent): void {
       return
     }
     case 'settings': {
-      ui.navigate({ name: 'settings' })
       store.openSettings(intent.section)
-      return
-    }
-    case 'runs': {
-      ui.navigate({ name: 'runs' })
       return
     }
     case 'pair': {

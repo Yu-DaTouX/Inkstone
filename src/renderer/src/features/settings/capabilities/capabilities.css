@@ -32,13 +32,12 @@
     flex-direction: column;
     gap: var(--s-20);
     min-width: 0;
-    max-width: var(--size-col);
   }
 
   .caps-note {
     margin: 0;
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .caps-group {
@@ -63,14 +62,14 @@
   .caps-group-title {
     margin: 0;
     color: var(--fg);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     font-weight: 600;
   }
 
   .caps-group-desc {
     margin: var(--s-2) 0 0;
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .caps-subgroup {
@@ -83,7 +82,7 @@
   .caps-subgroup-title {
     margin: 0;
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     letter-spacing: 0.02em;
   }
 
@@ -91,10 +90,6 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    overflow: hidden;
   }
 
   .caps-item {
@@ -102,21 +97,12 @@
     flex-direction: column;
     gap: var(--s-4);
     min-width: 0;
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    transition: background-color var(--dur-hover) var(--ease);
-  }
-
-  .caps-list > .caps-item {
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    padding: var(--s-8) 0;
+    transition: background-color var(--dur-fast) var(--ease);
   }
 
   .caps-list > * + * {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--alpha-1);
   }
 
   .caps-card {
@@ -149,7 +135,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg);
-    font: var(--t-ui) / var(--t-ui-lh) var(--font-ui);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
     font-weight: 600;
   }
 
@@ -158,7 +144,7 @@
     min-width: 0;
     overflow-wrap: anywhere;
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .caps-spacer {
@@ -192,7 +178,7 @@
     min-width: 0;
     overflow-wrap: anywhere;
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .caps-import {
@@ -219,7 +205,7 @@
     border-radius: var(--r-sm);
     background: var(--sunken);
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-mono);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -243,7 +229,7 @@
     justify-content: space-between;
     gap: var(--s-8);
     color: var(--fg3);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-ui);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .caps-overlay {
@@ -257,7 +243,7 @@
   .caps-confirm-body {
     margin: 0;
     color: var(--fg2);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    font: var(--t-prose) / var(--t-prose-lh) var(--font-ui);
     white-space: pre-wrap;
   }
 
@@ -269,7 +255,7 @@
     border-radius: var(--r-sm);
     background: var(--sunken);
     color: var(--fg2);
-    font: var(--t-meta) / var(--t-meta-lh) var(--font-mono);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

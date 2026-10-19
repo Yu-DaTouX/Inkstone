@@ -22,11 +22,7 @@ import './usage-settings.css'
 type Status = 'loading' | 'ready' | 'error'
 type UsageView = 'chart' | 'table'
 
-export interface UsageSettingsProps {
-  onOpenRuns?: () => void
-}
-
-export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactElement {
+export function UsageSettings(): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const [range, setRange] = useState<UsageRange>('all')
@@ -98,11 +94,6 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
             onChange={(value) => setRange(value)}
           />
           <span className="settings-spacer" />
-          {onOpenRuns ? (
-            <Button size="sm" variant="secondary" onPress={onOpenRuns} data-setting-id="usage-runs">
-              {text.usageRuns}
-            </Button>
-          ) : null}
         </div>
 
         {status === 'loading' ? <p className="settings-value usage-panel__state">{text.usageLoading}</p> : null}
