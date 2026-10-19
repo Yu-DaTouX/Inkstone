@@ -49,7 +49,7 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks',
+  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
   'test-skill-manager', 'test-sync-resolve', 'test-command-params'
 ]) {

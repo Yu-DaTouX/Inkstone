@@ -13,6 +13,7 @@ import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { splitMarkdownBlocks } from './markdown-blocks'
+import { useSmoothReveal } from './smooth-reveal'
 
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
 const MD_REHYPE: NonNullable<Options['rehypePlugins']> = [[rehypeHighlight, { detect: false, ignoreMissing: true }]]
@@ -279,7 +280,8 @@ export const Markdown = memo(function Markdown({
   sessionId?: string | null
   messageId?: string | null
 }): JSX.Element {
-  const deferredText = useDeferredValue(text)
+  const revealedText = useSmoothReveal(text, live)
+  const deferredText = useDeferredValue(revealedText)
   const renderedText = live ? deferredText : text
   const identity = useMarkdownIdentity(sessionId, messageId)
   const wasLive = useRef(false)
