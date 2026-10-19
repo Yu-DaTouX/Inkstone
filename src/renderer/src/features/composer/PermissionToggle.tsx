@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Dialog, Menu, MenuItem, MenuTrigger, Modal, ModalOverlay, Popover } from 'react-aria-components'
+import { Menu, MenuItem, MenuTrigger } from 'react-aria-components'
 import { Check, Shield } from 'lucide-react'
-import { Button } from '../../ui'
+import { Button, Dialog, Modal, ModalOverlay, Popover } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
@@ -54,10 +54,9 @@ export function PermissionToggle() {
         </Popover>
       </MenuTrigger>
 
-      <ModalOverlay className="composer-perm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
+      <ModalOverlay isOpen={confirmAll} onOpenChange={setConfirmAll} isDismissable>
         <Modal className="composer-perm-modal">
-          <Dialog className="composer-perm-dialog" aria-label={t('permission.label.all')}>
-            <p className="composer-perm-title">{t('permission.label.all')}</p>
+          <Dialog className="composer-perm-dialog" title={t('permission.label.all')} showClose={false}>
             <p className="composer-perm-body">{t('permission.desc.all')}</p>
             <div className="composer-perm-actions">
               <Button variant="secondary" size="sm" onPress={() => setConfirmAll(false)}>

@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { ArchiveRestore, Undo2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
+import { EmptyState, IconButton } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { setProjectArchived } from './ProjectHeader'
@@ -30,7 +30,7 @@ export function ArchivedView({
 
   return (
     <div className="v3-archived" data-testid="v3-archived-view">
-      {empty ? <p className="v3-side-empty">{own.archivedEmpty}</p> : null}
+      {empty ? <EmptyState size="sm" title={own.archivedEmpty} /> : null}
 
       {view.projects.length > 0 ? (
         <div className="v3-group">

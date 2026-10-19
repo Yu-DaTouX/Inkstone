@@ -11,7 +11,7 @@ import {
 import type { PeerGrantView } from '../../../../../shared/peer-protocol'
 import { pairInviteAddress, pairInviteLink } from '../../../../../shared/pair-invite'
 import { useStore } from '../../../state/store'
-import { Badge, Button, ListBoxItem, Select, Switch } from '../../../ui'
+import { Badge, Button, ListBoxItem, Notice, Select, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { formatWhen } from './general-model'
@@ -112,7 +112,7 @@ export function DeviceList({
             <span className="settings-device__name">
               {entry.name} {viaBadge(entry)}
               {entry.peer ? <> <Badge tone="accent">peer</Badge></> : null}
-              {entry.online ? <> <Badge tone="run">{local.online}</Badge></> : null}
+              {entry.online ? <> <Badge tone="ok">{local.online}</Badge></> : null}
             </span>
             <span className="settings-row__desc">
               {text.devicesPairedAt.replace('{time}', formatWhen(entry.pairedAt, text.devicesNever, lang))} ·{' '}
@@ -259,9 +259,9 @@ export function DevicesSettings(): ReactElement {
   return (
     <section className="settings-section" data-testid="v3-devices-settings">
       {error ? (
-        <p className="settings-row__desc settings-row__desc--error" role="alert">
+        <Notice tone="fail" compact>
           {error}
-        </p>
+        </Notice>
       ) : null}
 
       <SettingsGroup label={text.devicesEnable}>
@@ -273,7 +273,7 @@ export function DevicesSettings(): ReactElement {
               {text.devicesEnableDesc}
               <br />
               {status?.running ? (
-                <Badge tone="run">
+                <Badge tone="ok">
                   {text.devicesRunning} · {status.host}:{status.port}
                 </Badge>
               ) : (

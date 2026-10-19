@@ -22,14 +22,18 @@ import { useUiV3 } from '../../state/ui-v3'
 import {
   Badge,
   Button,
+  Card,
   Checkbox,
   CheckboxGroup,
   Dialog,
+  EmptyState,
   IconButton,
   ListBox,
   ListBoxItem,
   Modal,
   ModalOverlay,
+  Notice,
+  PageHeader,
   Select,
   TextArea,
   TextField,
@@ -41,7 +45,7 @@ import { InviteCard } from './InviteCard'
 import { usePendingPairInvite } from './pending-invite'
 import './collab.css'
 
-type Tone = 'info' | 'error'
+type Tone = 'info' | 'fail'
 
 interface Message {
   tone: Tone
@@ -138,7 +142,7 @@ function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
 
 function connectionBadge(peer: CollabPeerView, text: CollabText): { tone: BadgeTone; label: string } {
   const connection = peer.connection
-  if (connection.state === 'connected') return { tone: 'run', label: text.stateConnected }
+  if (connection.state === 'connected') return { tone: 'ok', label: text.stateConnected }
   if (connection.state === 'waiting') return { tone: 'stall', label: text.stateWaiting }
   if (connection.state === 'failed') return { tone: 'fail', label: text.stateFailed }
   return { tone: 'neutral', label: text.stateIdle }
@@ -155,7 +159,7 @@ function branchStates(branch: CollabRemoteBranchView, text: CollabText): Array<{
   const incoming = branch.incoming ?? 0
   const outgoing = branch.outgoing ?? 0
   const states: Array<{ tone: BadgeTone; label: string }> = []
-  states.push(incoming > 0 ? { tone: 'accent', label: fill(text.stateIncoming, { n: incoming }) } : { tone: 'run', label: text.stateUpToDate })
+  states.push(incoming > 0 ? { tone: 'accent', label: fill(text.stateIncoming, { n: incoming }) } : { tone: 'ok', label: text.stateUpToDate })
   if (outgoing > 0) states.push({ tone: 'neutral', label: fill(text.stateOutgoing, { n: outgoing }) })
   if (branch.fetchedOid !== branch.oid) states.push({ tone: 'stall', label: text.stateStale })
   return states
@@ -173,12 +177,18 @@ function MessageBar({ message, text, onDismiss }: { message: Message | null; tex
   return (
     <div className="collab-msg-slot" data-testid="v3-collab-message">
       {message ? (
-        <div className="collab-msg" data-tone={message.tone} role={message.tone === 'error' ? 'alert' : 'status'}>
-          <p className="collab-msg__text">{message.text}</p>
-          <IconButton aria-label={text.dismiss} size="sm" variant="ghost" onPress={onDismiss}>
-            <X size={14} aria-hidden />
-          </IconButton>
-        </div>
+        <Notice
+          className="collab-msg"
+          tone={message.tone}
+          data-tone={message.tone}
+          action={
+            <IconButton aria-label={text.dismiss} size="sm" variant="ghost" onPress={onDismiss}>
+              <X size={14} aria-hidden />
+            </IconButton>
+          }
+        >
+          <span className="collab-msg__text">{message.text}</span>
+        </Notice>
       ) : null}
     </div>
   )
@@ -291,9 +301,9 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
   if (state.status === 'error') {
     return (
       <div className="collab-compare" data-testid="v3-collab-compare-panel">
-        <p className="collab-error" role="alert">
+        <Notice tone="fail" compact>
           {fill(text.compareFailed, { error: state.error })}
-        </p>
+        </Notice>
       </div>
     )
   }
@@ -365,9 +375,9 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
           {diff.status === 'loading' ? (
             <p className="collab-hint">{text.diffLoading}</p>
           ) : diff.status === 'error' ? (
-            <p className="collab-error" role="alert">
+            <Notice tone="fail" compact>
               {fill(text.diffFailed, { error: diff.error })}
-            </p>
+            </Notice>
           ) : diff.body.trim() === '' ? (
             <p className="collab-hint">{text.diffEmpty}</p>
           ) : (
@@ -405,7 +415,7 @@ function PeerCard({ peer, text, busy, canConnect, onConnect, onDisconnect, onRem
   const chosen = REQUEST_OPS.filter((op) => ops.includes(op))
 
   return (
-    <li className="collab-card collab-peer" data-testid={`v3-collab-peer-${peer.id}`} data-state={connection.state}>
+    <Card as="li" className="collab-card collab-peer" data-testid={`v3-collab-peer-${peer.id}`} data-state={connection.state}>
       <div className="collab-peer__head">
         <span className="collab-peer__name">{peer.computer}</span>
         <Badge tone={badge.tone}>{badge.label}</Badge>
@@ -414,7 +424,7 @@ function PeerCard({ peer, text, busy, canConnect, onConnect, onDisconnect, onRem
         </span>
       </div>
       {connection.state === 'failed' ? (
-        <p className="collab-error">{fill(text.failedReason, { error: connection.error })}</p>
+        <Notice tone="fail" compact>{fill(text.failedReason, { error: connection.error })}</Notice>
       ) : null}
       {grant ? (
         <p className="collab-hint">{grantSummary(grant, text)}</p>
@@ -478,7 +488,7 @@ function PeerCard({ peer, text, busy, canConnect, onConnect, onDisconnect, onRem
           {text.remove}
         </Button>
       </div>
-    </li>
+    </Card>
   )
 }
 
@@ -607,7 +617,7 @@ function RemoteProjectPanel({
   const [withRequest, setWithRequest] = useState(false)
   const [requestTitle, setRequestTitle] = useState('')
   const [requestNote, setRequestNote] = useState('')
-  const [busy, run] = useBusy((cause) => notify('error', describe(cause)))
+  const [busy, run] = useBusy((cause) => notify('fail', describe(cause)))
   const seq = useRef(0)
 
   const load = useCallback(async (): Promise<void> => {
@@ -650,13 +660,13 @@ function RemoteProjectPanel({
 
   const ensureLinked = async (): Promise<boolean> => {
     if (!localProject) {
-      notify('error', text.needLocal)
+      notify('fail', text.needLocal)
       return false
     }
     if (view?.localProjectId === localProject.id) return true
     const result = await bridge.link(peer.id, project.id, localProject.id)
     if (!result.ok) {
-      notify('error', fill(text.linkFailed, { error: result.error }))
+      notify('fail', fill(text.linkFailed, { error: result.error }))
       return false
     }
     return true
@@ -670,7 +680,7 @@ function RemoteProjectPanel({
     void run('link', async () => {
       const result = await bridge.link(peer.id, project.id, next)
       if (!result.ok) {
-        notify('error', fill(text.linkFailed, { error: result.error }))
+        notify('fail', fill(text.linkFailed, { error: result.error }))
         return
       }
       const name = next ? localProjects.find((item) => item.id === next)?.name ?? next : ''
@@ -688,14 +698,14 @@ function RemoteProjectPanel({
       if (!(await ensureLinked())) return
       const result = await bridge.fetch(peer.id, project.id, branch.name)
       if (!result.ok) {
-        notify('error', fill(text.fetchFailed, { error: result.error }))
+        notify('fail', fill(text.fetchFailed, { error: result.error }))
         return
       }
       const data = result.data
       let summary = data.incoming === 0 && data.outgoing === 0 ? text.fetchUpToDate : fill(text.fetchCounts, { incoming: data.incoming, outgoing: data.outgoing })
       if (data.imported.length) summary += fill(text.fetchImported, { n: data.imported.length })
       if (data.importErrors.length) summary += fill(text.fetchImportErrors, { n: data.importErrors.length, errors: data.importErrors.join(' · ') })
-      notify(data.importErrors.length ? 'error' : 'info', fill(text.fetched, { ref: label, summary }))
+      notify(data.importErrors.length ? 'fail' : 'info', fill(text.fetched, { ref: label, summary }))
       await Promise.all([load(), onOverviewChanged()])
     })
   }
@@ -710,15 +720,15 @@ function RemoteProjectPanel({
 
   const push = (): void => {
     if (!localProject) {
-      notify('error', text.needLocal)
+      notify('fail', text.needLocal)
       return
     }
     if (!pushTarget) {
-      notify('error', text.needBranch)
+      notify('fail', text.needBranch)
       return
     }
     if (withRequest && !requestTitle.trim()) {
-      notify('error', text.needTitle)
+      notify('fail', text.needTitle)
       return
     }
     const target = localProject
@@ -732,7 +742,7 @@ function RemoteProjectPanel({
         ...(withRequest ? { request: { title: requestTitle.trim(), note: requestNote.trim() } } : {})
       })
       if (!result.ok) {
-        notify('error', fill(text.pushFailed, { error: result.error }))
+        notify('fail', fill(text.pushFailed, { error: result.error }))
         return
       }
       const ref = shortRef(result.data.trackingRef)
@@ -749,7 +759,7 @@ function RemoteProjectPanel({
   const mergeBlocked = !!localProject?.mergeInProgress
 
   return (
-    <article className="collab-card collab-project" data-testid={`v3-collab-project-${peer.id}-${project.id}`} aria-label={`${remoteTag} · ${project.name}`}>
+    <Card as="article" className="collab-card collab-project" data-testid={`v3-collab-project-${peer.id}-${project.id}`} aria-label={`${remoteTag} · ${project.name}`}>
       <header className="collab-project__head">
         <h4 className="collab-project__name">{project.name}</h4>
         <Badge tone="accent">{remoteTag}</Badge>
@@ -794,30 +804,33 @@ function RemoteProjectPanel({
       </div>
       {suggestedOnly ? <p className="collab-hint">{text.suggested}</p> : null}
       {!decided ? null : !localProject ? (
-        <p className="collab-note" role="note">
+        <Notice tone="ask" compact role="note">
           {text.needLocal}
-        </p>
+        </Notice>
       ) : !localProject.isRepo ? (
-        <p className="collab-note" role="note">
+        <Notice tone="ask" compact role="note">
           {fill(text.localNotRepo, { project: localProject.name })}
-        </p>
+        </Notice>
       ) : null}
       {!canPull ? (
-        <p className="collab-note" role="note">
+        <Notice tone="info" compact role="note">
           {text.noPull}
-        </p>
+        </Notice>
       ) : null}
       {localProject ? mergeNotice(localProject) : null}
 
       {error ? (
-        <div className="collab-error-row">
-          <p className="collab-error" role="alert">
-            {fill(text.projectFailed, { error })}
-          </p>
-          <Button size="sm" onPress={() => void load()}>
-            {text.retry}
-          </Button>
-        </div>
+        <Notice
+          tone="fail"
+          compact
+          action={
+            <Button size="sm" onPress={() => void load()}>
+              {text.retry}
+            </Button>
+          }
+        >
+          {fill(text.projectFailed, { error })}
+        </Notice>
       ) : null}
 
       <section className="collab-branches" aria-label={`${remoteTag} · ${text.branchesTitle}`}>
@@ -930,9 +943,9 @@ function RemoteProjectPanel({
         <p className="collab-label">{fill(text.pushTitle, { computer: peer.computer })}</p>
         <p className="collab-hint">{text.pushHint}</p>
         {!canPush ? (
-          <p className="collab-note" role="note">
+          <Notice tone="info" compact role="note">
             {text.noPush}
-          </p>
+          </Notice>
         ) : null}
         <div className="collab-push__row">
           <Select
@@ -981,7 +994,7 @@ function RemoteProjectPanel({
           </Button>
         </div>
       </section>
-    </article>
+    </Card>
   )
 }
 
@@ -1024,7 +1037,7 @@ function RequestItem({ bridge, text, lang, request, localProject, busy, onMerge,
         <span>· {formatCollabTime(request.createdAt, lang)}</span>
       </p>
       {request.note ? <p className="collab-request__note">{request.note}</p> : null}
-      {incoming && open && !localProject ? <p className="collab-note">{text.requestNoLocal}</p> : null}
+      {incoming && open && !localProject ? <Notice tone="ask" compact role="note">{text.requestNoLocal}</Notice> : null}
       {incoming && open ? (
         <div className="collab-actions">
           <Button
@@ -1090,7 +1103,7 @@ export function CollabPage(): ReactElement {
   const [reloadTick, setReloadTick] = useState(0)
   const [panelLocals, setPanelLocals] = useState<Record<string, string | null>>({})
   const notify = useCallback<Notify>((tone, value) => setMessage({ tone, text: value }), [])
-  const [busy, run] = useBusy((error) => notify('error', describe(error)))
+  const [busy, run] = useBusy((error) => notify('fail', describe(error)))
   const seq = useRef(0)
   const inflight = useRef(0)
 
@@ -1145,7 +1158,7 @@ export function CollabPage(): ReactElement {
     async (cwd: string, projectId: string, prompt: string): Promise<boolean> => {
       const created = await useStore.getState().newSession({ cwd, projectId, scope: 'project' })
       if (!created.ok) {
-        notify('error', fill(text.sessionFailed, { error: created.error ?? '' }))
+        notify('fail', fill(text.sessionFailed, { error: created.error ?? '' }))
         return false
       }
       useStore.getState().setSessionDraft(prompt)
@@ -1166,10 +1179,10 @@ export function CollabPage(): ReactElement {
       const conflicts = result.conflicts ?? []
       if (conflicts.length) {
         setRecords((prev) => ({ ...prev, [id]: { source: target.source, branch: target.project.currentBranch, files: conflicts, at: Date.now() } }))
-        notify('error', fill(text.mergeConflicts, { project: target.project.name }))
+        notify('fail', fill(text.mergeConflicts, { project: target.project.name }))
         return
       }
-      notify('error', fill(text.mergeFailed, { error: result.error }))
+      notify('fail', fill(text.mergeFailed, { error: result.error }))
     },
     [notify, text]
   )
@@ -1197,7 +1210,7 @@ export function CollabPage(): ReactElement {
       if (!bridge) return
       const result = await bridge.continueFrom(project.id, ref, importId)
       if (!result.ok) {
-        notify('error', fill(text.continueFailed, { error: result.error }))
+        notify('fail', fill(text.continueFailed, { error: result.error }))
         return
       }
       await openSessionWithPrompt(result.data.worktree, project.id, result.data.prompt)
@@ -1233,7 +1246,7 @@ export function CollabPage(): ReactElement {
         run: async () => {
           const result = await bridge.abortMerge(project.id)
           if (!result.ok) {
-            notify('error', fill(text.abortFailed, { error: result.error }))
+            notify('fail', fill(text.abortFailed, { error: result.error }))
           } else {
             setRecords((prev) => withoutKey(prev, project.id))
             notify('info', fill(text.aborted, { project: project.name }))
@@ -1273,7 +1286,7 @@ export function CollabPage(): ReactElement {
         ok = true
         notify('info', fill(text.paired, { computer: result.data.computer }))
       } else {
-        notify('error', fill(text.pairFailed, { error: result.error }))
+        notify('fail', fill(text.pairFailed, { error: result.error }))
       }
       await refresh()
     })
@@ -1283,7 +1296,7 @@ export function CollabPage(): ReactElement {
   const connect = (peer: CollabPeerView, ops: PeerOperation[], note: string): void => {
     if (!peerBridge) return
     if (!ops.length) {
-      notify('error', text.needOps)
+      notify('fail', text.needOps)
       return
     }
     void run(`connect:${peer.id}`, async () => {
@@ -1291,7 +1304,7 @@ export function CollabPage(): ReactElement {
       void refresh()
       const result = await pending
       if (result.ok) notify('info', fill(text.connected, { computer: peer.computer }))
-      else notify('error', fill(text.connectFailed, { computer: peer.computer, error: result.error }))
+      else notify('fail', fill(text.connectFailed, { computer: peer.computer, error: result.error }))
       await refreshAll()
     })
   }
@@ -1315,7 +1328,7 @@ export function CollabPage(): ReactElement {
       run: async () => {
         const removed = await peerBridge.remove(peer.id)
         if (removed) notify('info', fill(text.removed, { computer: peer.computer }))
-        else notify('error', fill(text.removeFailed, { computer: peer.computer }))
+        else notify('fail', fill(text.removeFailed, { computer: peer.computer }))
         await refresh()
       }
     })
@@ -1326,7 +1339,7 @@ export function CollabPage(): ReactElement {
     void run(`close:${request.id}`, async () => {
       const result = await bridge.closeRequest(request.id)
       if (result.ok) notify('info', fill(text.closed, { title: request.title || request.branch }))
-      else notify('error', fill(text.closeFailed, { error: result.error }))
+      else notify('fail', fill(text.closeFailed, { error: result.error }))
       await refresh()
     })
   }
@@ -1338,7 +1351,7 @@ export function CollabPage(): ReactElement {
     try {
       await current.run()
     } catch (error) {
-      notify('error', describe(error))
+      notify('fail', describe(error))
     } finally {
       setConfirmBusy(false)
       setConfirm(null)
@@ -1346,16 +1359,21 @@ export function CollabPage(): ReactElement {
   }
 
   const head = (
-    <header className="collab-head">
-      <h1 className="collab-title">
-        <Users size={18} aria-hidden /> {text.title}
-      </h1>
-      {bridge ? (
-        <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} onPress={() => void refreshAll()} data-testid="v3-collab-refresh">
-          {text.refresh}
-        </Button>
-      ) : null}
-    </header>
+  <PageHeader
+      className="collab-head"
+      title={
+        <span className="collab-title">
+          <Users size={18} aria-hidden /> {text.title}
+        </span>
+      }
+      actions={
+        bridge ? (
+          <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} onPress={() => void refreshAll()} data-testid="v3-collab-refresh">
+            {text.refresh}
+          </Button>
+        ) : null
+      }
+    />
   )
 
   if (!bridge) {
@@ -1365,9 +1383,9 @@ export function CollabPage(): ReactElement {
         <p className="collab-lede" data-testid="v3-collab-lede">
           {text.lede}
         </p>
-        <p className="collab-note" role="note" data-testid="v3-collab-missing">
+        <Notice tone="ask" role="note" data-testid="v3-collab-missing">
           {text.bridgeMissing}
-        </p>
+        </Notice>
       </div>
     )
   }
@@ -1409,14 +1427,16 @@ export function CollabPage(): ReactElement {
       </p>
       <MessageBar message={message} text={text} onDismiss={() => setMessage(null)} />
       {loadError ? (
-        <div className="collab-error-row">
-          <p className="collab-error" role="alert">
-            {fill(text.loadFailed, { error: loadError })}
-          </p>
-          <Button size="sm" onPress={() => void refreshAll()}>
-            {text.retry}
-          </Button>
-        </div>
+        <Notice
+          tone="fail"
+          action={
+            <Button size="sm" onPress={() => void refreshAll()}>
+              {text.retry}
+            </Button>
+          }
+        >
+          {fill(text.loadFailed, { error: loadError })}
+        </Notice>
       ) : null}
       {!overview && !loadError ? <p className="collab-hint">{text.loading}</p> : null}
 
@@ -1432,11 +1452,11 @@ export function CollabPage(): ReactElement {
         </h2>
         <p className="collab-hint">{text.peersHint}</p>
         {!peerBridge ? (
-          <p className="collab-note" role="note">
+          <Notice tone="ask" compact role="note">
             {text.peerMissing}
-          </p>
+          </Notice>
         ) : null}
-        {overview && peers.length === 0 ? <p className="collab-hint">{text.peersEmpty}</p> : null}
+        {overview && peers.length === 0 ? <EmptyState size="sm" title={text.peersEmpty} /> : null}
         {peers.length ? (
           <ul className="collab-peer-list">
             {peers.map((peer) => (
@@ -1462,7 +1482,7 @@ export function CollabPage(): ReactElement {
           {text.projectsTitle}
         </h2>
         {connectedPeers.length === 0 ? (
-          <p className="collab-hint">{text.projectsEmpty}</p>
+          <EmptyState size="sm" title={text.projectsEmpty} />
         ) : (
           connectedPeers.map(({ peer, grant }) => (
             <div className="collab-remote" key={peer.id} data-testid={`v3-collab-remote-${peer.id}`}>

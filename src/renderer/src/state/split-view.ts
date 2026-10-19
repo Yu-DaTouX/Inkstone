@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 
 export const MAX_SPLIT_TILES = 5
+export const SPLIT_COLUMN_MIN_WIDTH = 360
+
+export function splitColumnLimit(containerWidth: number): number {
+  if (!(containerWidth > 0)) return MAX_SPLIT_TILES
+  return Math.max(2, Math.min(MAX_SPLIT_TILES, Math.floor(containerWidth / SPLIT_COLUMN_MIN_WIDTH)))
+}
 
 export interface SplitSessionRef {
   sessionId?: string
@@ -19,6 +25,7 @@ const withUid = (ref: SplitSessionRef, uid?: string): SplitSessionRef => ({ ...r
 const normPath = (p?: string): string => (p ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 
 const AUX_TILE = /^(?:subagent|tool):/
+const TOOL_TILE = /^tool:/
 
 export const isAuxTile = (ref: SplitSessionRef | null | undefined): boolean => !!ref?.sessionId && AUX_TILE.test(ref.sessionId)
 
@@ -61,7 +68,7 @@ export function neighborOf(split: SplitLayout, index: number): number {
   return index + 1 < split.tiles.length ? index + 1 : index - 1
 }
 
-export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef, current: SplitSessionRef | null, at?: number): SplitLayout | null {
+export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef, current: SplitSessionRef | null, at?: number, limit: number = MAX_SPLIT_TILES): SplitLayout | null {
   if (!current) return split
   if (!split) {
     if (sameSplitSession(target, current)) return null
@@ -76,7 +83,7 @@ export function placeInSplit(split: SplitLayout | null, target: SplitSessionRef,
   if (existing >= 0) {
     tiles.splice(existing, 1)
     if (existing < slot) slot -= 1
-  } else if (tiles.length >= MAX_SPLIT_TILES) {
+  } else if (tiles.length >= limit) {
     let drop = -1
     for (let i = 0; i < tiles.length; i++) {
       if (i === split.live) continue
@@ -124,6 +131,8 @@ export const splitTileKey = (tile: SplitSessionRef): string => tile.uid || tile.
 interface SplitViewState {
   split: SplitLayout | null
   weights: Record<string, number>
+  containerWidth: number
+  setContainerWidth(width: number): void
   setWeights(next: Record<string, number>): void
   open(target: SplitSessionRef, current: SplitSessionRef | null, at?: number): void
   sync(displayed: SplitSessionRef | null): void
@@ -140,9 +149,14 @@ function keepWeights(weights: Record<string, number>, split: SplitLayout | null)
 export const useSplitView = create<SplitViewState>((set, get) => ({
   split: null,
   weights: {},
+  containerWidth: 0,
+  setContainerWidth: (width) => {
+    if (width !== get().containerWidth) set({ containerWidth: width })
+  },
   setWeights: (next) => set({ weights: { ...get().weights, ...next } }),
   open: (target, current, at) => {
-    const next = placeInSplit(get().split, target, current, at)
+    const limit = target.sessionId && TOOL_TILE.test(target.sessionId) ? MAX_SPLIT_TILES : splitColumnLimit(get().containerWidth)
+    const next = placeInSplit(get().split, target, current, at, limit)
     if (next !== get().split) set({ split: next, weights: keepWeights(get().weights, next) })
   },
   sync: (displayed) => {

@@ -116,7 +116,7 @@
     color: var(--run-t);
   }
 
-  .v3-split-state[data-tone='warn'] {
+  .v3-split-state[data-tone='ask'] {
     color: var(--ask-t);
   }
 
@@ -132,11 +132,5 @@
 
   .v3-split-empty {
     flex: 1;
-    display: grid;
-    place-items: center;
-    padding: var(--s-24);
-    color: var(--fg3);
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
   }
 }

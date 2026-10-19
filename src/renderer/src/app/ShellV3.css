@@ -152,9 +152,9 @@
   .v3-scrim {
     position: absolute;
     inset: 0;
-    z-index: 30;
+    z-index: calc(var(--z-drawer) - 10);
     background: var(--scrim);
-    animation: v3-fade var(--dur-pop) var(--ease-in);
+    animation: v3-fade var(--dur-pop) var(--ease-out);
   }
 
   @keyframes v3-fade {
@@ -257,29 +257,6 @@
     filter: brightness(0.85);
   }
 
-  .v3-page {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 20px 24px 32px;
-  }
-
-  .v3-page > * {
-    max-width: var(--size-col);
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .v3-page-note {
-    padding: 10px 12px;
-    margin-bottom: 16px;
-    border-radius: var(--r-md);
-    background: var(--sunken);
-    color: var(--fg2);
-    font-size: var(--t-meta);
-    line-height: 1.5;
-  }
-
   @keyframes v3-breathe {
     0%,
     100% {
@@ -294,10 +271,6 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
-  }
-
-  .v3-settings .v3-page-note {
-    margin-bottom: 0;
   }
 
   .v3-field {
@@ -386,5 +359,24 @@
     background: var(--ink);
     color: var(--on-ink);
     font-weight: 600;
+  }
+}
+
+@layer features {
+  .v3-conn-banner {
+    position: absolute;
+    top: var(--s-8);
+    left: 50%;
+    z-index: var(--z-rail);
+    width: min(560px, calc(100% - var(--s-32)));
+    transform: translateX(-50%);
+    box-shadow: var(--shadow-pop);
+  }
+}
+
+@layer features {
+  .v3-head .ui-btn[data-active='partial'] {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--line-ctl);
   }
 }

@@ -35,7 +35,7 @@ export function useUsageStats(range: UsageRange): UsageStatsResult | null {
   return stats
 }
 
-export function UsageOverview({ renderToggle, keepWhenEmpty, emptyNote, onOpenDetails, compact }: { renderToggle?: UsageToggleRenderer; keepWhenEmpty?: boolean; emptyNote?: string; onOpenDetails?: () => void; compact?: boolean } = {}) {
+export function UsageOverview({ renderToggle, keepWhenEmpty, emptyNote, onOpenDetails, compact }: { renderToggle: UsageToggleRenderer; keepWhenEmpty?: boolean; emptyNote?: string; onOpenDetails?: () => void; compact?: boolean }) {
   const t = useT()
   const [tab, setTab] = useState<UsageOverviewTab>('overview')
   const [range, setRange] = useState<UsageRange>('all')

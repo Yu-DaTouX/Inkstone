@@ -1,6 +1,6 @@
-import { Menu, MenuItem, MenuTrigger, Popover, Separator } from 'react-aria-components'
+import { Menu, MenuItem, MenuTrigger, Separator } from 'react-aria-components'
 import { Check, Folder, FolderOpen } from 'lucide-react'
-import { Button } from '../../ui'
+import { Button, Popover } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProjectRecord } from '../../../../shared/ipc'

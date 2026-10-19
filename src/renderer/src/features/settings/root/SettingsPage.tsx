@@ -118,6 +118,8 @@ function useRevealScroll(): void {
       }
       settle = setTimeout(() => {
         node.scrollIntoView({ block: 'center' })
+        if (node.tabIndex < 0) node.tabIndex = -1
+        node.focus({ preventScroll: true })
         node.setAttribute('data-flash', '1')
         flash = setTimeout(() => node.removeAttribute('data-flash'), FLASH_MS)
       }, REVEAL_SETTLE_MS)
@@ -289,12 +291,11 @@ export function SettingsPage({ onBack, onRuns, onShowOnboarding }: SettingsPageP
         />
         {query.trim() ? (
           hits.length > 0 ? (
-            <div className="settings-nav__hits" role="list" data-testid="settings-search-hits">
+            <div className="settings-nav__hits" data-testid="settings-search-hits">
               {hits.map((hit) => (
                 <button
                   key={hit.id}
                   type="button"
-                  role="listitem"
                   className="settings-nav__item settings-nav__hit"
                   data-testid={`settings-hit-${hit.id}`}
                   onClick={() => reveal(hit)}

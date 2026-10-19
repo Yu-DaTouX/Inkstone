@@ -136,6 +136,7 @@ const DEFINE = {
 const UI_STUB = `const h = (type, props) => ({ type, props: props || {} })
 export function Button(props) { return h('button', { 'data-testid': props['data-testid'], 'data-disabled': props.isDisabled ? '1' : undefined, 'data-pending': props.isPending ? '1' : undefined, onClick: props.onPress, children: props.children }) }
 export function IconButton() { return null }
+export function Notice(props) { return h('div', { 'data-testid': props['data-testid'], role: props.tone === 'fail' ? 'alert' : 'status', children: props.children }) }
 export function Dialog(props) { return h('div', { 'data-testid': props['data-testid'], children: [props.title, props.children] }) }
 export function Modal(props) { return h('div', { children: props.children }) }
 export function ModalOverlay(props) { return h('div', { 'data-open': props.isOpen ? '1' : '0', children: props.children }) }
@@ -457,7 +458,7 @@ async function main() {
     )
     await assert.rejects(
       lib.mergeSubagentResult('sub-42', { merge: async () => ({ ok: false }), discard: async () => ({ ok: true }) }),
-      /合并子代理结果失败/,
+      /state.error.subagentMergeFailed/,
       '无 error 字段时给出缺省失败文案'
     )
     await assert.rejects(

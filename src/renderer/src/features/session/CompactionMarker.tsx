@@ -6,6 +6,8 @@ import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
 
+const TONE = { ok: 'ok', warn: 'ask', err: 'fail' } as const
+
 export function CompactionMarker(): JSX.Element | null {
   const t = useT()
   const tt = useSessionText()
@@ -17,7 +19,7 @@ export function CompactionMarker(): JSX.Element | null {
   return (
     <div
       className="v3-compaction"
-      data-tone={compactionTone(model.run)}
+      data-tone={TONE[compactionTone(model.run)]}
       data-running={model.running ? '1' : '0'}
       data-testid="v3-compaction-marker"
     >
@@ -26,7 +28,7 @@ export function CompactionMarker(): JSX.Element | null {
       <span className="v3-compaction-text">{model.running ? compactionRunningText(t, model.run) : compactionSummary(t, model.run)}</span>
       {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
       {!model.running && model.run.status === 'failed' && model.run.error ? (
-        <span className="v3-compaction-error" title={model.run.error} data-testid="v3-compaction-error">{model.run.error}</span>
+        <span className="v3-compaction-error" title={model.run.error} data-testid="v3-compaction-error" role="alert">{model.run.error}</span>
       ) : null}
     </div>
   )

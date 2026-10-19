@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, RotateCw } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { viewIdentityOf } from '../../../state/view-identity'
-import { Badge, Button, Checkbox, CheckboxGroup, Dialog, Modal, ModalOverlay, Spinner } from '../../../ui'
+import { Badge, Button, Checkbox, CheckboxGroup, Dialog, EmptyState, Modal, ModalOverlay, Notice, Spinner } from '../../../ui'
 import type { NativeSessionHostRequest } from '../../../../../shared/native-session-host'
 import {
   isNativeSurfaceMode,
@@ -38,16 +38,21 @@ function surfaceStatus({
 }): JSX.Element {
   if (error !== undefined) {
     return (
-      <div className="native-surface__status" data-testid={testId}>
-        <AlertCircle size={16} aria-hidden="true" className="native-surface__status-icon" />
-        <p className="native-surface__status-title">{text.loadFailed}</p>
-        {error ? <p className="native-surface__status-detail">{error}</p> : null}
-        {onRetry ? (
-          <Button size="sm" onPress={onRetry} data-testid={`${testId}-retry`}>
-            {text.retry}
-          </Button>
-        ) : null}
-      </div>
+      <EmptyState
+        size="sm"
+        className="native-surface__status"
+        data-testid={testId}
+        icon={<AlertCircle size={16} />}
+        title={text.loadFailed}
+        description={error || undefined}
+        action={
+          onRetry ? (
+            <Button size="sm" onPress={onRetry} data-testid={`${testId}-retry`}>
+              {text.retry}
+            </Button>
+          ) : undefined
+        }
+      />
     )
   }
   return (
@@ -121,9 +126,7 @@ export function ScopeModelsView({
           </div>
         </CheckboxGroup>
       ) : (
-        <div className="native-surface__empty" data-testid="native-scope-empty">
-          {t.empty}
-        </div>
+        <EmptyState size="sm" data-testid="native-scope-empty" title={t.empty} />
       )}
       <div className="native-surface__foot">
         <Button size="sm" variant="ghost" onPress={onSelectAll} data-testid="native-scope-select-all">
@@ -134,13 +137,13 @@ export function ScopeModelsView({
         </Button>
         <span className="native-surface__spacer" />
         {error ? (
-          <span className="native-surface__note native-surface__note--err" data-testid="native-scope-error" role="status">
+          <Notice tone="fail" compact data-testid="native-scope-error">
             {error}
-          </span>
+          </Notice>
         ) : notice ? (
-          <span className="native-surface__note native-surface__note--ok" data-testid="native-scope-notice" role="status">
+          <Notice tone="ok" compact data-testid="native-scope-notice">
             {notice}
-          </span>
+          </Notice>
         ) : null}
         <Button size="sm" variant="primary" isDisabled={busy || !dirty} onPress={onSave} data-testid="native-scope-save">
           {busy ? t.saving : t.save}
@@ -335,13 +338,13 @@ export function TrustPanel({ text, view, busy, error, notice, onToggle, onShowEn
       <div className="native-surface__foot">
         <span className="native-surface__spacer" />
         {error ? (
-          <span className="native-surface__note native-surface__note--err" data-testid="native-trust-error" role="status">
+          <Notice tone="fail" compact data-testid="native-trust-error">
             {error}
-          </span>
+          </Notice>
         ) : notice ? (
-          <span className="native-surface__note native-surface__note--ok" data-testid="native-trust-notice" role="status">
+          <Notice tone="ok" compact data-testid="native-trust-notice">
             {notice}
-          </span>
+          </Notice>
         ) : null}
         <Button
           size="sm"
@@ -487,9 +490,7 @@ export function EntriesPanel({ text, view, busy, error, onRefresh, onBack }: Ent
           ))}
         </ol>
       ) : (
-        <div className="native-surface__empty" data-testid="native-entries-empty">
-          {t.empty}
-        </div>
+        <EmptyState size="sm" data-testid="native-entries-empty" title={t.empty} />
       )}
       {view.truncated ? (
         <p className="native-surface__note" data-testid="native-entries-limit">
@@ -510,9 +511,9 @@ export function EntriesPanel({ text, view, busy, error, onRefresh, onBack }: Ent
         ) : null}
         <span className="native-surface__spacer" />
         {error ? (
-          <span className="native-surface__note native-surface__note--err" data-testid="native-entries-error" role="status">
+          <Notice tone="fail" compact data-testid="native-entries-error">
             {error}
-          </span>
+          </Notice>
         ) : null}
         <Button
           size="sm"

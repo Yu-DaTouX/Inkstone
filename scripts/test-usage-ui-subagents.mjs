@@ -72,6 +72,8 @@ export async function runUsageUiTests() {
         t: tOf('zh-CN'),
         onTabChange: () => {},
         onRangeChange: () => {},
+        renderToggle: ({ value, options }) =>
+          createElement('div', null, options.map((o) => createElement('button', { key: o.value, 'aria-pressed': o.value === value }, o.label))),
         ...extra
       })
     )
@@ -80,7 +82,7 @@ export async function runUsageUiTests() {
   const zhHtml = renderOverview(mainSub)
   ok(zhHtml.includes('data-testid="usage-tokens"') && zhHtml.includes('100K'), '主数字渲染 Token 合计 100K')
   ok(!zhHtml.includes('usage-token-breakdown') && !zhHtml.includes('主会话 20K'), '主数字下只显示总数，不再拆主会话 / 子代理')
-  ok(zhHtml.includes('title="Token 含子代理与缓存读写；会话、消息、活跃天数仍只计主会话。"'), '主数字带口径 tooltip')
+  ok(zhHtml.includes('title="Token 含子 Agent 与缓存读写；会话、消息、活跃天数仍只计主会话。"'), '主数字带口径 tooltip')
   ok(zhHtml.includes('1') && zhHtml.includes('>会话<'), '会话数仍来自主会话（1）')
 
   const legacy = { ...mainSub }
@@ -88,7 +90,7 @@ export async function runUsageUiTests() {
   const legacyFallback = shared.tokenBreakdownOf(legacy)
   ok(legacyFallback.main === 100000 && legacyFallback.subagents === 0, 'tokenBreakdownOf 缺字段回退为全主会话')
   const legacyHtml = renderOverview(legacy)
-  ok(!legacyHtml.includes('子代理 0'), '缺 breakdown 的旧结果同样不出现拆分行')
+  ok(!legacyHtml.includes('子 Agent 0'), '缺 breakdown 的旧结果同样不出现拆分行')
 
   const childOnly = shared.aggregateUsageSources(
     { main: [], subagents: [day(recent, 3, 80000, 9, { 'p/b': 80000 })] },
@@ -131,7 +133,7 @@ export async function runUsageUiTests() {
   const gridEn = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: mainSub, text: enText }))
   ok(!gridEn.includes('Subagents 80K'), '设置页英文同样不拆分')
   const gridLegacy = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: legacy, text: zhText }))
-  ok(!gridLegacy.includes('子代理 0'), '设置页缺 breakdown 的旧结果同样不拆分')
+  ok(!gridLegacy.includes('子 Agent 0'), '设置页缺 breakdown 的旧结果同样不拆分')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`usage-ui-subagents: ${checks} checks passed`)

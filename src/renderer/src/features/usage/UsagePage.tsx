@@ -4,6 +4,7 @@ import { compactNumber, useMoney, useUsageStats } from './UsageOverview'
 import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'
+import { PageHeader } from '../../ui'
 import './usage-page.css'
 
 export function UsagePage() {
@@ -16,12 +17,11 @@ export function UsagePage() {
   const levels = useMemo(() => heatLevels(stats?.heat.map((day) => day.tokens) ?? []), [stats])
   const split = stats ? tokenBreakdownOf(stats) : null
   return (
-    <main className="usage-page" data-testid="usage-details" aria-busy={!stats}>
-      <header className="usage-page-head">
+    <div className="usage-page" data-testid="usage-details" aria-busy={!stats}>
+      <div className="usage-page-head">
         <span className="usage-page-mark" aria-hidden>&gt;_</span>
-        <h1>{stats?.userName || (lang === 'en-US' ? 'Local activity' : '本机活动')}</h1>
-        <p>{t('usage.title')}</p>
-      </header>
+        <PageHeader title={stats?.userName || (lang === 'en-US' ? 'Local activity' : '本机活动')} description={t('usage.title')} />
+      </div>
       <dl className="usage-page-stats">
         {[[t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'], [t('usage.cost'), stats ? money(stats.cost) : '—'], [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'], [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'], [t('usage.activeDays'), stats?.activeDays.toString() ?? '—']].map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}
       </dl>
@@ -40,7 +40,7 @@ export function UsagePage() {
             return <span key={day.date}>{monthStart ? monthStart.date.slice(5, 7) : i === 0 && !nextWeekStartsMonth ? day.date.slice(5, 7) : ''}</span>
           })}</div>
         </div>
-        <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子代理'} ${compactNumber(split.subagents)}` : '—'}</p>
+        <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子 Agent'} ${compactNumber(split.subagents)}` : '—'}</p>
       </section>
       <section className="usage-page-models">
         <h2>{t('usage.models')}</h2>
@@ -50,6 +50,6 @@ export function UsagePage() {
           return <li key={item.key} className="start-model"><span className="start-model-name" title={item.cost > 0 ? money(item.cost) : undefined}>{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{Math.round(share * 100)}%</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
         })}</ul>
       </section>
-    </main>
+    </div>
   )
 }

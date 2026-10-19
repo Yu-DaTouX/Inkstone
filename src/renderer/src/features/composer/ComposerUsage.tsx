@@ -187,6 +187,7 @@ export function ComposerUsage() {
         triggerRef={open === 'tokens' ? tokenTrigger : sessionTrigger}
         placement="top start"
         offset={8}
+        variant="panel"
         className="cu-pop"
       >
         <Dialog className="cu-dialog" aria-label={title} data-testid="composer-usage-details">

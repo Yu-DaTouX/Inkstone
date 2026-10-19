@@ -57,7 +57,7 @@ export function RelayRows({ saved, status, busy, configure }: RelayRowsProps): R
               <>
                 <br />
                 {state?.connected ? (
-                  <Badge tone="run">{t('remote.relayConnected')}</Badge>
+                  <Badge tone="ok">{t('remote.relayConnected')}</Badge>
                 ) : (
                   <Badge tone="stall">{state?.detail ?? t('remote.relayConnecting')}</Badge>
                 )}

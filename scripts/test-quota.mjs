@@ -89,19 +89,19 @@ export function runQuotaToneTests(ok, m) {
     [0, 'ok'],
     [50, 'ok'],
     [69.9, 'ok'],
-    [70, 'warn'],
-    [70.1, 'warn'],
-    [94.9, 'warn'],
-    [95, 'err'],
-    [99.9, 'err'],
-    [100, 'err'],
-    [137, 'err']
+    [70, 'ask'],
+    [70.1, 'ask'],
+    [94.9, 'ask'],
+    [95, 'fail'],
+    [99.9, 'fail'],
+    [100, 'fail'],
+    [137, 'fail']
   ]
   for (const [pct, want] of cases) {
     const got = quotaTone(pct)
     ok(got === want, `${pct}% → ${want}`, got === want ? '' : `实际 ${got}`)
   }
 
-  ok(quotaTone(10, true) === 'err', '供应商报 exceeded ⇒ 恒红（哪怕百分比很低）')
+  ok(quotaTone(10, true) === 'fail', '供应商报 exceeded ⇒ 恒红（哪怕百分比很低）')
   ok(quotaTone(Number.NaN) === 'ok', '拿不到比例（NaN）不误报红')
 }

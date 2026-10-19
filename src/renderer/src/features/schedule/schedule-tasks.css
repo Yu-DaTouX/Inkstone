@@ -14,40 +14,22 @@
   }
 
   .sched-page-head {
-    display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--s-12);
     margin-bottom: var(--s-12);
   }
 
   .sched-page-title {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--s-8);
-    margin: 0;
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    font-weight: var(--t-h2-w, 600);
   }
 
   .sched-page-notice {
     margin-block: 0 var(--s-16);
-    color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
   }
 
-  .sched-page-error,
-  .sched-form-error {
-    margin: 0 0 var(--s-12);
-    padding: var(--s-8) var(--s-12);
-    border: 1px solid var(--fail);
-    border-radius: var(--r-md);
-    background: var(--fail-bg);
-    color: var(--fail-t);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+  .sched-page-error {
+    margin-block: 0 var(--s-12);
   }
 
   .sched-list {
@@ -57,21 +39,7 @@
   }
 
   .sched-empty {
-    margin: var(--s-24) 0 0;
-    color: var(--fg3);
-  }
-
-  .sched-empty-title {
-    margin: 0 0 var(--s-2);
-    color: var(--fg);
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
-  }
-
-  .sched-empty-body {
-    margin: 0;
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
+    margin-top: var(--s-24);
   }
 
   .sched-task-list {
@@ -88,10 +56,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--s-12);
-    padding: var(--s-12) var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    background: var(--surface);
   }
 
   .sched-task[data-state='pending'] {
@@ -152,14 +116,6 @@
     white-space: nowrap;
   }
 
-  .sched-task-error {
-    margin: 0;
-    color: var(--fail-t);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    overflow-wrap: anywhere;
-  }
-
   .sched-task-actions {
     display: flex;
     flex: none;
@@ -211,13 +167,6 @@
     color: var(--fg2);
     font-size: var(--t-ui);
     line-height: var(--t-ui-lh);
-  }
-
-  .sched-notice {
-    margin: 0;
-    color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
   }
 
   .sched-form-foot,

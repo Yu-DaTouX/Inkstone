@@ -21,6 +21,7 @@ import {
 } from 'react-aria-components'
 import type { ReactNode } from 'react'
 import { Spinner } from './Progress'
+import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import './Table.css'
 
@@ -104,7 +105,8 @@ export interface TableEmptyStateProps {
 }
 
 export function TableEmptyState({ children, className }: TableEmptyStateProps) {
-  return <div className={cx('ui-table__empty', className)}>{children ?? '暂无数据'}</div>
+  const t = useOptionalT()
+  return <div className={cx('ui-table__empty', className)}>{children ?? t('ui.noData')}</div>
 }
 
 export interface TableLoadingStateProps {
@@ -113,10 +115,11 @@ export interface TableLoadingStateProps {
 }
 
 export function TableLoadingState({ children, className }: TableLoadingStateProps) {
+  const t = useOptionalT()
   return (
     <div className={cx('ui-table__loading', className)} role="status" aria-live="polite" aria-busy="true">
       <Spinner size={16} />
-      <span>{children ?? '正在加载…'}</span>
+      <span>{children ?? t('ui.loading')}</span>
     </div>
   )
 }

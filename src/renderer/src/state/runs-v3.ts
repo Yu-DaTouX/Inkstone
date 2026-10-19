@@ -328,7 +328,7 @@ const KIND_WORD: Record<RunKind, { zh: string; en: string }> = {
   session: { zh: '会话', en: 'Session' },
   subagent: { zh: '子 Agent', en: 'Subagent' },
   scheduled: { zh: '定时', en: 'Scheduled' },
-  review: { zh: '评审', en: 'Review' }
+  review: { zh: '审查', en: 'Review' }
 }
 
 function pick(lang: RunLang, entry: { zh: string; en: string }): string {

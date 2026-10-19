@@ -6,14 +6,18 @@ import { useStore } from '../../state/store'
 import {
   Badge,
   Button,
+  Card,
   Checkbox,
   CheckboxGroup,
   Dialog,
+  EmptyState,
   Input,
   Label,
   ListBoxItem,
   Modal,
   ModalOverlay,
+  Notice,
+  PageHeader,
   Radio,
   RadioGroup,
   Select,
@@ -72,7 +76,8 @@ export interface ScheduleTaskCardProps {
 
 export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, onDelete }: ScheduleTaskCardProps): ReactElement {
   return (
-    <li
+    <Card
+      as="li"
       className="sched-task"
       data-testid={`schedule-${task.id}`}
       data-state={task.pendingApproval ? 'pending' : task.enabled ? 'on' : 'off'}
@@ -101,9 +106,9 @@ export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, on
           ) : null}
         </p>
         {task.lastError ? (
-          <p className="sched-task-error" role="status" title={task.lastError}>
-            {t('sched.lastError', { error: task.lastError })}
-          </p>
+          <Notice tone="fail" compact role="status" className="sched-task-error">
+            <span title={task.lastError}>{t('sched.lastError', { error: task.lastError })}</span>
+          </Notice>
         ) : null}
       </div>
       <div className="sched-task-actions">
@@ -118,7 +123,7 @@ export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, on
           {t('sched.delete')}
         </Button>
       </div>
-    </li>
+    </Card>
   )
 }
 
@@ -233,11 +238,13 @@ function ScheduleEditor({ draft, editingId, busy, error, models, t, onChange, on
           ) : null}
         </div>
       </div>
-      <p className="sched-notice">{t('sched.notice')}</p>
+      <Notice tone="info" compact className="sched-notice">
+        {t('sched.notice')}
+      </Notice>
       {error ? (
-        <p className="sched-form-error" role="alert">
+        <Notice tone="fail" className="sched-form-error">
           {error}
-        </p>
+        </Notice>
       ) : null}
       <footer className="sched-form-foot">
         <Button onPress={onCancel}>{t('sched.cancel')}</Button>
@@ -331,37 +338,47 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
 
   return (
     <div className="sched-page" data-testid="v3-schedule-page">
-      <header className="sched-page-head">
-        <h1 className="sched-page-title">
-          <CalendarClock size={18} aria-hidden /> {t('sched.title')}
-        </h1>
-        <Button
-          variant="primary"
-          icon={<Plus size={15} aria-hidden />}
-          data-testid="schedule-new"
-          onPress={() => {
-            setEditorError('')
-            setEditing({ draft: blankDraft(defaultCwd) })
-          }}
-        >
-          {t('sched.new')}
-        </Button>
-      </header>
+      <PageHeader
+        className="sched-page-head"
+        title={
+          <span className="sched-page-title">
+            <CalendarClock size={18} aria-hidden /> {t('sched.title')}
+          </span>
+        }
+        actions={
+          <Button
+            variant="primary"
+            icon={<Plus size={15} aria-hidden />}
+            data-testid="schedule-new"
+            onPress={() => {
+              setEditorError('')
+              setEditing({ draft: blankDraft(defaultCwd) })
+            }}
+          >
+            {t('sched.new')}
+          </Button>
+        }
+      />
 
       {error ? (
-        <p className="sched-page-error" role="alert">
+        <Notice tone="fail" className="sched-page-error">
           {error}
-        </p>
+        </Notice>
       ) : null}
 
-      <p className="sched-page-notice">{t('sched.notice')}</p>
+      <Notice tone="info" compact className="sched-page-notice">
+        {t('sched.notice')}
+      </Notice>
 
       <div className="sched-list" aria-busy={loading || undefined}>
         {tasks.length === 0 && !loading ? (
-          <div className="sched-empty" data-testid="schedule-empty">
-            <p className="sched-empty-title">{t('sched.empty')}</p>
-            <p className="sched-empty-body">{t('sched.emptyBody')}</p>
-          </div>
+          <EmptyState
+            className="sched-empty"
+            data-testid="schedule-empty"
+            icon={<CalendarClock size={20} />}
+            title={t('sched.empty')}
+            description={t('sched.emptyBody')}
+          />
         ) : (
           <ul className="sched-task-list">
             {tasks.map((task) => (

@@ -3,7 +3,7 @@ import { useI18n } from '../../../i18n'
 import { BUILD_INFO, formatBuildTime } from '../../../../../shared/build-info'
 import type { AppUpdateStatus } from '../../../../../shared/app-update'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
+import { Button, Dialog, Modal, ModalOverlay, Notice, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel } from './general-model'
@@ -95,9 +95,9 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
   return (
     <section className="settings-section" data-testid="v3-about-settings">
       {error ? (
-        <p className="settings-row__desc settings-row__desc--error" role="alert">
+        <Notice tone="fail" compact>
           {error}
-        </p>
+        </Notice>
       ) : null}
 
       <div className="settings-rows">

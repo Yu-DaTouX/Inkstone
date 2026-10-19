@@ -4,7 +4,7 @@ import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
 import type { ApprovalChoice } from '../../../../shared/approval'
-import { Button } from '../../ui'
+import { Badge, Button } from '../../ui'
 import { Icon, type SessionIconName } from './Icon'
 import {
   allowsPointerPress,
@@ -118,7 +118,7 @@ export function ApprovalCard(): JSX.Element | null {
         <Icon name={icon} size={14} />
         <span className="v3-approval-title">{current.title}</span>
         {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} />{waited}</span> : null}
-        {approvals.length > 1 ? <span className="v3-badge" data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</span> : null}
+        {approvals.length > 1 ? <Badge data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</Badge> : null}
       </div>
 
       <div className="v3-approval-source" data-testid="v3-approval-source">
@@ -129,7 +129,7 @@ export function ApprovalCard(): JSX.Element | null {
 
       {child?.task ? (
         <div className="v3-approval-why" data-testid="v3-approval-task" title={child.task}>
-          <span className="v3-approval-why-label">{zh ? '子 Agent 任务' : 'Sub-agent task'}</span>
+          <span className="v3-approval-why-label">{zh ? '子 Agent 任务' : 'Subagent task'}</span>
           <span>{child.task.split('\n').find((line) => line.trim())?.trim() ?? child.task}</span>
         </div>
       ) : null}
@@ -149,7 +149,6 @@ export function ApprovalCard(): JSX.Element | null {
 
       <div className="v3-approval-foot">
         <span className="v3-approval-cwd" title={current.cwd}>{current.cwd}</span>
-        <span className="v3-code-sp" />
         <span className="v3-approval-keys" aria-hidden>Alt+Y / Alt+N</span>
         <Button size="sm" data-testid="v3-approval-deny" onPress={clickOnly(() => answer('deny'))}>{t('approval.deny')}</Button>
         {current.canRemember && rememberLabel ? (

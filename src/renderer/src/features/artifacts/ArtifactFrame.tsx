@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from 'lucide-react'
 import { useT, type MessageKey } from '../../i18n'
-import { Button, IconButton } from '../../ui'
+import { Button, IconButton, Notice } from '../../ui'
 import { HTML_ARTIFACT_SCHEME } from '../../../../shared/html-artifact-preview'
 import {
   BridgeRateLimiter,
   MAX_ACTIVE_FRAMES,
+  PIP_SIZE,
   clampFramePosition,
   clampInlineHeight,
   decodeBridgeMessage,
@@ -13,6 +14,7 @@ import {
   identityKey,
   inlineOverflows,
   moveFrame,
+  nudgeFrame,
   resizeFrame,
   selectFrameEvictions,
   type ArtifactForm,
@@ -311,6 +313,15 @@ export function ArtifactFrame({
     )
   }
 
+  const onHandleKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
+    if (form !== 'pip' || !pipRect) return
+    const next = nudgeFrame(pipRect, event.key, { alt: event.altKey, shift: event.shiftKey }, windowViewport())
+    if (!next) return
+    event.preventDefault()
+    event.stopPropagation()
+    setPipRect(next)
+  }
+
   const endInteraction = (event: React.PointerEvent<HTMLElement>): void => {
     if (interactionRef.current?.pointerId === event.pointerId) {
       event.currentTarget.releasePointerCapture?.(event.pointerId)
@@ -335,15 +346,15 @@ export function ArtifactFrame({
 
   if (!trusted) {
     return (
-      <div
-        className={`v3-artifact-frame v3-artifact-frame--invalid ${className ?? ''}`}
+      <Notice
+        tone="fail"
+        className={`v3-artifact-frame--invalid ${className ?? ''}`}
         data-testid="v3-artifact-frame"
         data-frame-key={key}
         data-form={form}
-        role="alert"
       >
-        <span>{t('artifact.htmlOutside')}</span>
-      </div>
+        {t('artifact.htmlOutside')}
+      </Notice>
     )
   }
 
@@ -457,9 +468,9 @@ export function ArtifactFrame({
           </div>
         )}
         {bridgeError ? (
-          <div className="v3-artifact-frame-error" role="alert" data-testid="v3-artifact-frame-bridge-error">
+          <Notice tone="fail" compact className="v3-artifact-frame-error" data-testid="v3-artifact-frame-bridge-error">
             {t(ERROR_KEYS[bridgeError])}
-          </div>
+          </Notice>
         ) : null}
         {inlineOverflow ? (
           <div className="v3-artifact-frame-fade" data-testid="v3-artifact-frame-fade">
@@ -473,8 +484,13 @@ export function ArtifactFrame({
             className="v3-artifact-frame-resize"
             data-testid="v3-artifact-frame-resize"
             role="separator"
+            tabIndex={0}
             aria-label={at('resizeHint')}
+            aria-valuenow={pipRect ? pipRect.width : undefined}
+            aria-valuemin={PIP_SIZE.min.width}
+            aria-valuemax={PIP_SIZE.max.width}
             title={at('resizeHint')}
+            onKeyDown={onHandleKeyDown}
             onPointerDown={beginInteraction('resize')}
             onPointerMove={onInteractionMove}
             onPointerUp={endInteraction}

@@ -119,8 +119,8 @@
     if (overridable) {
       check(await until(() => document.querySelectorAll('[data-testid^="v3-wb-quota-card-"]').length === 3, 4000), '渲染三张账号卡')
       check(q('v3-wb-quota-win-five_hour')?.dataset.tone === 'ok', '低用量窗口为 ok 色调')
-      check(q('v3-wb-quota-win-weekly')?.dataset.tone === 'warn', '85% 窗口为 warn 色调')
-      check(q('v3-wb-quota-win-monthly')?.dataset.tone === 'err', '用尽窗口为 err 色调')
+      check(q('v3-wb-quota-win-weekly')?.dataset.tone === 'ask', '85% 窗口为 ask 色调')
+      check(q('v3-wb-quota-win-monthly')?.dataset.tone === 'fail', '用尽窗口为 fail 色调')
       check(q('v3-wb-quota-win-monthly')?.textContent?.includes('100.0%'), '显示精确百分比')
       check(q('v3-wb-quota')?.textContent?.includes('3.50') || q('v3-wb-quota')?.textContent?.includes('$3.5'), '显示余额')
       check((q('v3-wb-quota-win-five_hour')?.querySelector('.quota-win-sub')?.textContent ?? '').length > 0, '窗口显示重置倒计时')

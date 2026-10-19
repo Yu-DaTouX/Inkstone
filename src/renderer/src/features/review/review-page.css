@@ -10,23 +10,29 @@
     background: var(--bg);
     color: var(--fg);
     overflow: hidden;
+    container: review-page / inline-size;
   }
 
   .review-head {
-    display: flex;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--s-8);
+  }
+
+  .review-head .ui-page-head__main {
+    flex: none;
+  }
+
+  .review-head .ui-page-head__actions {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
     min-width: 0;
   }
 
   .review-title {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--s-8);
-    margin: 0;
-    font-size: var(--t-h2);
-    line-height: var(--t-h2-lh);
-    font-weight: var(--t-h2-w, 600);
   }
 
   .review-owner {
@@ -38,17 +44,6 @@
     color: var(--fg3);
     font-family: var(--font-mono);
     font-size: var(--t-meta);
-  }
-
-  .review-hint {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    background: var(--stall-bg);
-    color: var(--stall-t);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
   }
 
   .review-grid {
@@ -103,28 +98,6 @@
     font-size: var(--t-ui);
     line-height: var(--t-ui-lh);
     overflow-wrap: anywhere;
-  }
-
-  .review-col-error {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border: 1px solid var(--fail);
-    border-radius: var(--r-sm);
-    background: var(--fail-bg);
-    color: var(--fail-t);
-    font-size: var(--t-ui);
-    line-height: var(--t-ui-lh);
-    overflow-wrap: anywhere;
-  }
-
-  .review-source-note {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border-left: 2px solid var(--accent);
-    background: var(--sunken);
-    color: var(--fg2);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
   }
 
   .review-sources {
@@ -320,17 +293,6 @@
     line-height: var(--t-ui-lh);
   }
 
-  .review-run-wiring {
-    margin: 0;
-    padding: var(--s-6) var(--s-10);
-    border: 1px solid var(--stall);
-    border-radius: var(--r-sm);
-    background: var(--stall-bg);
-    color: var(--stall-t);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-  }
-
   .review-finding-list {
     display: flex;
     flex-direction: column;
@@ -420,18 +382,6 @@
 
   .review-git-notice {
     flex: 1 0 100%;
-    margin: 0;
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-    overflow-wrap: anywhere;
-  }
-
-  .review-git-notice--ok {
-    color: var(--fg2);
-  }
-
-  .review-git-notice--err {
-    color: var(--fail-t);
   }
 
   .review-confirm-body {
@@ -490,7 +440,7 @@
     overflow-wrap: anywhere;
   }
 
-  @media (max-width: 1100px) {
+  @container review-page (max-width: 860px) {
     .review-grid {
       grid-template-columns: minmax(0, 1fr);
       overflow: auto;

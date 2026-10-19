@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ArrowUpRight, ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } from 'lucide-react'
-import { Button, IconButton, Meter } from '../../ui'
+import { Button, IconButton, Meter, Notice } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
@@ -108,7 +108,7 @@ interface QuotaTileModel {
   balance?: { label: string; amount: number; currency: string }
   checkedAt: number
   staleError?: string
-  problem?: { tone: 'warn' | 'err'; text: string }
+  problem?: { tone: 'ask' | 'fail'; text: string }
 }
 
 interface AccountCardSnapshot {
@@ -174,7 +174,7 @@ function liveQuotaModel(snapshot: ProviderQuota | null | undefined, t: TFunc, te
     !windows.length && typeof snapshot.remaining === 'number' && snapshot.currency && snapshot.currency !== 'PERCENT'
       ? { label: snapshot.label || text.balance, amount: snapshot.remaining, currency: snapshot.currency }
       : undefined
-  const problem = snapshot.error && !windows.length && !balance ? { tone: 'err' as const, text: t('acct.failed', { msg: snapshot.error }) } : undefined
+  const problem = snapshot.error && !windows.length && !balance ? { tone: 'fail' as const, text: t('acct.failed', { msg: snapshot.error }) } : undefined
   if (!windows.length && !balance && !problem) return null
   return { windows, balance, checkedAt: snapshot.checkedAt, staleError: snapshot.staleError, problem }
 }
@@ -182,9 +182,9 @@ function liveQuotaModel(snapshot: ProviderQuota | null | undefined, t: TFunc, te
 function cardQuotaModel(card: AccountQuotaCard, t: TFunc, text: OverviewText): QuotaTileModel | null {
   const problem =
     card.status === 'error'
-      ? { tone: 'err' as const, text: t('acct.failed', { msg: card.error ?? '' }) }
+      ? { tone: 'fail' as const, text: t('acct.failed', { msg: card.error ?? '' }) }
       : card.status === 'expired'
-        ? { tone: 'warn' as const, text: card.hint || text.quotaExpired }
+        ? { tone: 'ask' as const, text: card.hint || text.quotaExpired }
         : undefined
   if (!card.windows.length && !card.balance && !problem) return null
   return { windows: card.windows, balance: card.balance, checkedAt: card.checkedAt, staleError: card.staleError, problem }
@@ -223,7 +223,7 @@ function useQuotaTile(provider: string, running: boolean, t: TFunc, text: Overvi
     : account?.card
       ? cardQuotaModel(account.card, t, text)
       : account?.state === 'error'
-        ? { windows: [], checkedAt: 0, problem: { tone: 'err' as const, text: text.quotaFailed } }
+        ? { windows: [], checkedAt: 0, problem: { tone: 'fail' as const, text: text.quotaFailed } }
         : null
   return { model, now }
 }
@@ -351,7 +351,7 @@ interface TileProps {
   onToggle: (id: TileId) => void
   onOpen?: () => void
   openLabel?: string
-  tone?: 'ok' | 'warn' | 'err'
+  tone?: 'ok' | 'ask' | 'fail'
   children: ReactNode
 }
 
@@ -571,7 +571,7 @@ function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): Re
           </div>
         </div>
       ) : null}
-      {model.problem ? <p className="wb-quota-msg">{model.problem.text}</p> : null}
+      {model.problem ? <Notice tone={model.problem.tone} compact>{model.problem.text}</Notice> : null}
     </div>
   )
 }
@@ -642,7 +642,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
   const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
   const mcpSummary = mcp.state === 'ready' && mcp.servers.length > 0 ? text.mcpConnected(mcpReady, mcp.servers.length) : undefined
-  const mcpTone = mcp.servers.some((server) => server.status === 'error') ? 'err' : mcp.servers.some((server) => server.status === 'needs-auth') ? 'warn' : undefined
+  const mcpTone = mcp.servers.some((server) => server.status === 'error') ? 'fail' : mcp.servers.some((server) => server.status === 'needs-auth') ? 'ask' : undefined
 
   const quota = useQuotaTile(provider, agentRunning, t, text)
   const quotaModel = quota.model
@@ -656,11 +656,11 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     : quotaModel?.balance
       ? money(quotaModel.balance.amount, quotaModel.balance.currency)
       : quotaModel?.problem
-        ? quotaModel.problem.tone === 'warn'
+        ? quotaModel.problem.tone === 'ask'
           ? text.quotaExpired
           : text.quotaFailed
         : undefined
-  const quotaTone = bindingTone === 'warn' || bindingTone === 'err' ? bindingTone : !binding && !quotaModel?.balance ? quotaModel?.problem?.tone : undefined
+  const quotaTone = bindingTone === 'ask' || bindingTone === 'fail' ? bindingTone : !binding && !quotaModel?.balance ? quotaModel?.problem?.tone : undefined
 
   return (
     <div className="wb-overview" data-testid="wb-overview">

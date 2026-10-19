@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Dialog, Popover } from 'react-aria-components'
-import { Button } from '../ui'
+import { Dialog } from 'react-aria-components'
+import { Button, Popover } from '../ui'
 import { useT, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import type { ContextCategory } from '../state/context-breakdown'
@@ -107,6 +107,7 @@ ${limitNote}` : tip
         </span>
       </button>
       <Popover
+        variant="panel"
         className="ctx-pop"
         isOpen={open}
         onOpenChange={setOpen}

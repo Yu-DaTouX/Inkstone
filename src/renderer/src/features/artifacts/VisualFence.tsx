@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge } from '../../ui'
+import { Badge, Notice } from '../../ui'
 import {
   isVisualDataLang,
   parseVisualBlock,
@@ -349,7 +349,7 @@ function DataBlock({
     return (
       <div className="v3-visual-invalid">
         {fallback}
-        <div className="v3-visual-invalid-note">{t('vb.invalid', { error: parsed.error })}</div>
+        <Notice tone="fail" compact className="v3-visual-invalid-note">{t('vb.invalid', { error: parsed.error })}</Notice>
       </div>
     )
   }

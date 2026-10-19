@@ -6,14 +6,13 @@ import {
   ListBox,
   ListBoxItem,
   ListBoxSection,
-  Popover,
   SearchField,
   Separator,
   SliderThumb,
   SliderTrack
 } from 'react-aria-components'
 import { Check, ChevronDown, Search, Star } from 'lucide-react'
-import { Button, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
+import { Button, Popover, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
 import { useT } from '../i18n'
@@ -62,13 +61,15 @@ export function ThinkingSection({
   level,
   busy,
   onCommit,
-  fallback
+  fallback,
+  fallbackShort
 }: {
   levels: readonly string[]
   level: string
   busy: boolean
   onCommit: (level: string) => void
   fallback?: string
+  fallbackShort?: string
 }) {
   const t = useT()
   const hasLevels = levels.length > 1
@@ -135,20 +136,17 @@ export function ThinkingSection({
           {t('picker.think')}
         </span>
         <span className="mtp-thinking-fill" />
-        <span
-          className="mtp-head-level"
-          data-level={hasLevels ? headLevel : level}
-          data-testid="thinking-current"
-          title={fallback ?? t('picker.thinkDesc')}
-        >
-          {hasLevels ? (
+        {hasLevels ? (
+          <span className="mtp-head-level" data-level={headLevel} data-testid="thinking-current" title={t('picker.thinkDesc')}>
             <span key={headLevel} className="mtp-step-value">
               {levelLabel(t, headLevel)}
             </span>
-          ) : (
-            fallback
-          )}
-        </span>
+          </span>
+        ) : (
+          <span className="mtp-head-level" data-muted="true" data-testid="thinking-current" title={fallback}>
+            {fallbackShort}
+          </span>
+        )}
       </div>
       {hasLevels ? (
         <div className="mtp-step" data-level={headLevel}>
@@ -250,6 +248,16 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const notDeclared = !hasLevels && thinkingStatus === 'known' && !!cur
   const customProvider = !!cur?.provider && /^yan-/.test(cur.provider)
   const showThinkingSection = hasLevels || thinkingStatus !== 'known' || notDeclared
+  const capabilityNote = notDeclared
+    ? t(customProvider ? 'picker.thinkNotDeclaredCustom' : 'picker.thinkNotDeclared')
+    : thinkingStatus === 'unsupported'
+      ? t('picker.thinkUnsupported')
+      : t('picker.thinkUnknown')
+  const capabilityShort = notDeclared
+    ? levelLabel(t, 'off')
+    : thinkingStatus === 'unsupported'
+      ? t('picker.thinkUnsupportedShort')
+      : t('picker.thinkUnknownShort')
 
   useEffect(() => {
     if (open) void loadAuthProviders()
@@ -339,6 +347,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
       </span>
 
       <Popover
+        variant="panel"
         className="mtp-pop"
         isOpen={open}
         onOpenChange={setOpen}
@@ -349,7 +358,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
         <Dialog className="mtp-dialog" aria-label={t('picker.searchModel')}>
           <SearchField className="mtp-search" aria-label={t('picker.searchModel')} value={query} onChange={setQuery}>
             <Search className="mtp-search-icon" size={14} aria-hidden />
-            <Input className="mtp-search-input" placeholder={t('picker.searchModel')} />
+            <Input className="mtp-search-input" placeholder={t('picker.searchModel')} autoFocus />
           </SearchField>
 
           <Select className="mtp-provider" label={t('models.provider')} selectedKey={provider || '__all'} onSelectionChange={(key) => setProvider(key === '__all' ? '' : String(key))}>
@@ -423,21 +432,12 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 level={level}
                 busy={busy}
                 onCommit={(next) => void setThinking(next)}
-                fallback={
-                  notDeclared
-                    ? t(customProvider ? 'picker.thinkNotDeclaredCustom' : 'picker.thinkNotDeclared')
-                    : thinkingStatus === 'unsupported'
-                      ? t('picker.thinkUnsupported')
-                      : t('picker.thinkUnknown')
-                }
+                fallback={capabilityNote}
+                fallbackShort={capabilityShort}
               />
               {!hasLevels ? (
                 <div className="mtp-capability-note" data-testid="thinking-capability-status">
-                  {notDeclared
-                    ? t(customProvider ? 'picker.thinkNotDeclaredCustom' : 'picker.thinkNotDeclared')
-                    : thinkingStatus === 'unsupported'
-                      ? t('picker.thinkUnsupported')
-                      : t('picker.thinkUnknown')}
+                  {capabilityNote}
                   {notDeclared && customProvider ? (
                     <Button
                       variant="ghost"

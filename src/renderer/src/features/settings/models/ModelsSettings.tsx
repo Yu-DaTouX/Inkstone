@@ -11,6 +11,7 @@ import {
   Dialog,
   Modal,
   ModalOverlay,
+  Notice,
   Spinner,
   TextField,
   type BadgeTone
@@ -66,7 +67,7 @@ export function ModelsSettings(): ReactElement {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err' | 'info'; text: string } | null>(null)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'fail' | 'info'; text: string } | null>(null)
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
   const [codexLogging, setCodexLogging] = useState(false)
   const [pendingRemove, setPendingRemove] = useState<AuthProviderInfo | null>(null)
@@ -109,7 +110,7 @@ export function ModelsSettings(): ReactElement {
       useStore.setState({ authProviders: Array.isArray(list) ? list : [] })
       await refreshFileInfo()
     } catch (error) {
-      setMsg({ kind: 'err', text: readable(error) })
+      setMsg({ kind: 'fail', text: readable(error) })
     } finally {
       setChecking(false)
     }
@@ -128,10 +129,10 @@ export function ModelsSettings(): ReactElement {
         setDraft('')
         await refreshAfterWrite()
       } else {
-        setMsg({ kind: 'err', text: r.error ?? t('auth.saveFailed') })
+        setMsg({ kind: 'fail', text: r.error ?? t('auth.saveFailed') })
       }
     } catch (error) {
-      setMsg({ kind: 'err', text: readable(error) })
+      setMsg({ kind: 'fail', text: readable(error) })
     } finally {
       setBusy(false)
     }
@@ -147,10 +148,10 @@ export function ModelsSettings(): ReactElement {
         refreshModelsAfterRestart()
         await refreshAfterWrite()
       } else {
-        setMsg({ kind: 'err', text: r.error ?? t('auth.saveFailed') })
+        setMsg({ kind: 'fail', text: r.error ?? t('auth.saveFailed') })
       }
     } catch (error) {
-      setMsg({ kind: 'err', text: readable(error) })
+      setMsg({ kind: 'fail', text: readable(error) })
     } finally {
       setBusy(false)
       setPendingRemove(null)
@@ -168,10 +169,10 @@ export function ModelsSettings(): ReactElement {
           refreshModelsAfterRestart()
           await refreshAfterWrite()
         } else {
-          setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
+          setMsg({ kind: 'fail', text: r.error ?? t('auth.loginFail') })
         }
       } catch (error) {
-        setMsg({ kind: 'err', text: readable(error) })
+        setMsg({ kind: 'fail', text: readable(error) })
       } finally {
         setCodexLogging(false)
       }
@@ -185,10 +186,10 @@ export function ModelsSettings(): ReactElement {
         refreshModelsAfterRestart()
         await refreshAfterWrite()
       } else if (!r.cancelled) {
-        setMsg({ kind: 'err', text: r.error ?? t('auth.loginFail') })
+        setMsg({ kind: 'fail', text: r.error ?? t('auth.loginFail') })
       }
     } catch (error) {
-      setMsg({ kind: 'err', text: readable(error) })
+      setMsg({ kind: 'fail', text: readable(error) })
     } finally {
       setOauth(null)
     }
@@ -340,9 +341,9 @@ export function ModelsSettings(): ReactElement {
   return (
     <section className="ms-page" aria-label={text('title')}>
       {msg ? (
-        <p className={`ms-msg ms-msg--${msg.kind}`} role={msg.kind === 'err' ? 'alert' : 'status'}>
+        <Notice tone={msg.kind} className="ms-msg">
           {msg.text}
-        </p>
+        </Notice>
       ) : null}
 
       <div className="ms-services" data-testid="ms-services">
@@ -352,12 +353,13 @@ export function ModelsSettings(): ReactElement {
             <span className="ms-safety" data-testid="ms-file-info">
               {t('auth.safety')}
               {fileInfo ? (
-                <>
-                  {' · '}
-                  <code title={fileInfo.path}>{fileInfo.path}</code>
-                  {' · '}
-                  {fileInfo.exists ? t('auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
-                </>
+                <span className="ms-file">
+                  <code className="ms-file-path" title={fileInfo.path}>{fileInfo.path}</code>
+                  <span className="ms-file-count">
+                    {' · '}
+                    {fileInfo.exists ? t('auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
+                  </span>
+                </span>
               ) : null}
             </span>
           </div>

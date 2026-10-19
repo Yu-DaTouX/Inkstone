@@ -306,7 +306,7 @@ const H = 720
   assert.deepEqual(model.animationPolicy({ visible: true, focused: false, reducedMotion: false }), { active: true, fps: model.BLURRED_FPS })
   assert.deepEqual(model.animationPolicy({ visible: false, focused: true, reducedMotion: false }), { active: false, fps: 0 })
   assert.deepEqual(model.animationPolicy({ visible: true, focused: true, reducedMotion: true }), { active: false, fps: 0 })
-  assert.equal(model.TARGET_FPS, 60, '聚焦目标 60fps')
+  assert.equal(model.TARGET_FPS, 30, '聚焦目标 30fps')
   assert.equal(model.frameInterval(30), 1000 / 30)
   assert.equal(model.frameInterval(0), Number.POSITIVE_INFINITY)
   assert.equal(model.shouldDraw(1000, 1000, 30), false, '同一时刻不重复画')

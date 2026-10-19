@@ -1,7 +1,6 @@
 import '../design/index.css'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { Splitter } from '../ui'
-import { UsagePage } from '../features/usage/UsagePage'
 import { translate, useI18n, type Lang, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
@@ -22,15 +21,11 @@ import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
-import { RunsPage } from '../features/runs/RunsPage'
-import { ReviewPage } from '../features/review'
 import { loadSubagentReviewFindings } from '../features/review/subagent-findings'
-import { CollabPage } from '../features/collab'
-import { ScheduleTasksPage } from '../features/schedule'
 import { RunPill } from '../patterns/RunPill'
 import { Header } from './Header'
 import { applyAppearanceV3 } from '../lib/appearance-v3'
-import { SettingsPanelV3 } from './SettingsPanelV3'
+import { ConnBanner } from './ConnBanner'
 import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/onboarding'
 import { NativeSessionSurfaces } from '../features/session/native'
 import { V3ErrorBoundary } from './ErrorBoundary'
@@ -62,6 +57,13 @@ const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
   thinking: 'ctx.cat.thinking',
   tools: 'ctx.cat.tools'
 }
+
+const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
+const RunsPage = lazy(() => import('../features/runs/RunsPage').then((m) => ({ default: m.RunsPage })))
+const ReviewPage = lazy(() => import('../features/review').then((m) => ({ default: m.ReviewPage })))
+const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
+const ScheduleTasksPage = lazy(() => import('../features/schedule').then((m) => ({ default: m.ScheduleTasksPage })))
+const SettingsPanelV3 = lazy(() => import('./SettingsPanelV3').then((m) => ({ default: m.SettingsPanelV3 })))
 
 function contextSegments(
   slices: readonly ContextSlice[],
@@ -339,6 +341,10 @@ export default function ShellV3(): ReactElement {
   useRunnerVisibility(visibleSessions)
   const singlePane = !collapsedPanes(split, narrow)
   const chatWidth = bodyWidth - (workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0)
+  const toastInset = workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0
+  useEffect(() => {
+    document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
+  }, [toastInset])
   const sideReserve = subagentPanelShownWidth(sideWidth, chatWidth, SUBAGENT_LANE_EDGE) + LANE_GAP
   const panelInChat = singlePane && chatWidth - sideReserve >= MESSAGE_MIN_WIDTH
   const sideInLane = sideOpen && panelInChat
@@ -541,7 +547,7 @@ export default function ShellV3(): ReactElement {
         {narrow && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
-        <div className="v3-main">
+        <main className="v3-main">
           <Header
             narrow={narrow}
             sidebarOpen={sidebarOpen}
@@ -551,6 +557,7 @@ export default function ShellV3(): ReactElement {
             onSettings={() => useUiV3.getState().navigate({ name: 'settings' })}
             onBack={() => useUiV3.getState().goBack()}
             sessionBarOpen={sessionBarOn}
+            sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
             onOpenTool={(tab) => void openWorkspaceTab(tab)}
           />
@@ -561,6 +568,7 @@ export default function ShellV3(): ReactElement {
             data-workspace={workspaceShown ? 'open' : 'closed'}
             data-workspace-mode={panelMode}
           >
+            <Suspense fallback={null}>
             {route.name === 'settings' ? (
               <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
             ) : route.name === 'runs' ? (
@@ -575,6 +583,7 @@ export default function ShellV3(): ReactElement {
               <UsagePage />
             ) : (
               <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} data-side-panel={sideInLane ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
+                <ConnBanner />
                 <RunPill
                   className="v3-pillbar"
                   onOpen={openRunFromPill}
@@ -591,6 +600,7 @@ export default function ShellV3(): ReactElement {
                 ) : null}
               </div>
             )}
+            </Suspense>
             {panelMounted ? (
               <WorkbenchPanel
                 owner={owner}
@@ -620,7 +630,7 @@ export default function ShellV3(): ReactElement {
               <Splitter className="v3-workspace-resizer" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
             ) : null}
           </div>
-        </div>
+        </main>
       </div>
       <CommandPalette
         isOpen={paletteOpen}

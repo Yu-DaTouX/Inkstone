@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import type { SubagentRun } from '../../../../shared/ipc'
 
 export type SubagentReviewAction = 'merge' | 'discard'
@@ -50,12 +51,12 @@ export interface SubagentPatchIo {
 
 export async function loadSubagentPatch(patchPath: string, io?: SubagentPatchIo): Promise<SubagentPatch> {
   const api = io ?? (typeof window !== 'undefined' ? (window.yan as SubagentPatchIo | undefined) : undefined)
-  if (!api?.describeFiles || !api.readFileText) throw new Error('宿主文件接口不可用')
+  if (!api?.describeFiles || !api.readFileText) throw new Error(uiText('state.error.fileBridgeUnavailable'))
   const granted = await api.describeFiles([patchPath])
   const first = granted[0]
-  if (!first?.ok) throw new Error(first?.error ?? '补丁文件不可读')
+  if (!first?.ok) throw new Error(first?.error ?? uiText('state.error.patchUnreadable'))
   const res = await api.readFileText(first.path ?? patchPath)
-  if (!res.ok || typeof res.text !== 'string') throw new Error(res.error ?? '补丁读取失败')
+  if (!res.ok || typeof res.text !== 'string') throw new Error(res.error ?? uiText('state.error.patchReadFailed'))
   return { patch: res.text, truncated: res.truncated === true }
 }
 
@@ -72,16 +73,16 @@ export interface SubagentActionIo {
 function subagentActionIo(io?: SubagentActionIo): SubagentActionIo {
   if (io) return io
   const api = typeof window !== 'undefined' ? window.yan?.subagents : undefined
-  if (!api?.merge || !api?.discard) throw new Error('子 Agent 处置接口不可用')
+  if (!api?.merge || !api?.discard) throw new Error(uiText('state.error.subagentActionUnavailable'))
   return { merge: (id) => api.merge(id), discard: (id) => api.discard(id) }
 }
 
 export async function mergeSubagentResult(id: string, io?: SubagentActionIo): Promise<void> {
   const res = await subagentActionIo(io).merge(id)
-  if (!res?.ok) throw new Error(res?.error ?? '合并子代理结果失败')
+  if (!res?.ok) throw new Error(res?.error ?? uiText('state.error.subagentMergeFailed'))
 }
 
 export async function discardSubagentResult(id: string, io?: SubagentActionIo): Promise<void> {
   const res = await subagentActionIo(io).discard(id)
-  if (!res?.ok) throw new Error(res?.error ?? '放弃子代理结果失败')
+  if (!res?.ok) throw new Error(res?.error ?? uiText('state.error.subagentDiscardFailed'))
 }

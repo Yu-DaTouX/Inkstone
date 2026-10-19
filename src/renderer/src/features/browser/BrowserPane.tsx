@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Plus, RotateCw } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Input, IconButton, Tab, TabList, Tabs, TextField } from '../../ui'
+import { Button, EmptyState, Input, IconButton, Notice, Tab, TabList, Tabs, TextField } from '../../ui'
 import { claimResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
@@ -24,9 +24,7 @@ function withScheme(value: string): string {
 function Gate({ text, testId }: { text: string; testId: string }): ReactElement {
   return (
     <div className="v3-browser v3-browser--gate" data-testid={testId}>
-      <p className="v3-browser__gate-text" role="status">
-        {text}
-      </p>
+      <EmptyState size="sm" role="status" title={text} />
     </div>
   )
 }
@@ -113,19 +111,22 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     if (!state.open && (!browserOwnerKey || browserOwnerKey === owner.key)) {
       return (
         <div className="v3-browser v3-browser--gate" data-testid="browser-pane-not-open">
-          <p className="v3-browser__gate-text" role="status">
-            {text.notOpen}
-          </p>
-          <Button
-            variant="secondary"
+          <EmptyState
             size="sm"
-            data-testid="browser-pane-open"
-            isPending={opening}
-            style={{ marginTop: 'var(--s-8)' }}
-            onPress={() => void openHere()}
-          >
-            {opening ? text.opening : text.open}
-          </Button>
+            role="status"
+            title={text.notOpen}
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="browser-pane-open"
+                isPending={opening}
+                onPress={() => void openHere()}
+              >
+                {opening ? text.opening : text.open}
+              </Button>
+            }
+          />
         </div>
       )
     }
@@ -247,39 +248,47 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         <div className="v3-browser__status" data-testid="browser-pane-status" role="status">
           {state.loading ? <span className="v3-browser__loading">{t('browser.loading')}</span> : null}
           {state.loadError ? (
-            <div className="v3-browser__loaderror" data-testid="browser-pane-load-error" role="alert">
-              <span className="v3-browser__error" title={state.loadError.description}>
+            <Notice
+              tone="fail"
+              compact
+              data-testid="browser-pane-load-error"
+              action={
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid="browser-pane-retry"
+                    onPress={() => void navigate(state.loadError?.url)}
+                  >
+                    {t('browser.retry')}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid="browser-pane-error-external"
+                    onPress={() => {
+                      if (controlRef.current) {
+                        void window.yan.browser.openExternal(state.loadError?.url ?? state.url)
+                      }
+                    }}
+                  >
+                    {t('browser.openExternal')}
+                  </Button>
+                </>
+              }
+            >
+              <span title={state.loadError.description}>
                 {t('browser.pageFailed')}
               </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                data-testid="browser-pane-retry"
-                onPress={() => void navigate(state.loadError?.url)}
-              >
-                {t('browser.retry')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                data-testid="browser-pane-error-external"
-                onPress={() => {
-                  if (controlRef.current) {
-                    void window.yan.browser.openExternal(state.loadError?.url ?? state.url)
-                  }
-                }}
-              >
-                {t('browser.openExternal')}
-              </Button>
               <span className="v3-browser__error-url" title={state.loadError.url} data-testid="browser-pane-error-url">
                 {state.loadError.url}
               </span>
-            </div>
+            </Notice>
           ) : null}
           {error ? (
-            <span className="v3-browser__error" title={error}>
+            <Notice tone="fail" compact>
               {error}
-            </span>
+            </Notice>
           ) : null}
         </div>
       ) : null}

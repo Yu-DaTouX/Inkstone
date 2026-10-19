@@ -59,6 +59,22 @@ export async function runSplitViewTests(ok) {
   sp = placeInSplit(five, f, c, 0)
   ok(ids(sp) === 'fbcde', '已满插到最左：挤掉最左的非焦点块 a')
 
+  const { splitColumnLimit, SPLIT_COLUMN_MIN_WIDTH } = split
+  ok(SPLIT_COLUMN_MIN_WIDTH === 360, '分屏每列最小约 360px')
+  ok(splitColumnLimit(0) === 5 && splitColumnLimit(1900) === 5 && splitColumnLimit(1200) === 3 && splitColumnLimit(700) === 2 && splitColumnLimit(300) === 2, '列数按容器宽度限制：未量到宽度不限、最少保留 2 列、最多 5 列')
+  sp = placeInSplit({ tiles: [a, b, c], live: 0 }, d, a, undefined, 3)
+  ok(sp.tiles.length === 3 && sp.tiles.some((t) => t.sessionId === 'd') && sp.tiles[sp.live].sessionId === 'a', '宽度只容得下 3 列：不再新增第 4 列，改为替换离落点最近的非焦点块')
+  useSplitView.getState().close()
+  useSplitView.getState().setContainerWidth(1100)
+  useSplitView.getState().open(b, a)
+  useSplitView.getState().open(c, a)
+  useSplitView.getState().open(d, a)
+  ok(useSplitView.getState().split.tiles.length === 3, '仓库按容器宽度（1100px ⇒ 3 列）拒绝新增第 4 列')
+  useSplitView.getState().open({ sessionId: 'tool:terminal' }, a)
+  ok(useSplitView.getState().split.tiles.length === 4, '工具块另有最小宽度判断，不受会话列数限制')
+  useSplitView.getState().close()
+  useSplitView.getState().setContainerWidth(0)
+
   ok(ids(removeSplitTile({ tiles: [a, b, c], live: 2 }, 0)) === 'bc' && removeSplitTile({ tiles: [a, b, c], live: 2 }, 0).live === 1, '去掉焦点左边的块：焦点下标跟着前移')
   ok(removeSplitTile({ tiles: [a, b, c], live: 0 }, 2).live === 0, '去掉焦点右边的块：焦点不动')
   ok(removeSplitTile({ tiles: [a, b], live: 0 }, 1) === null, '只剩一块：退出分屏')

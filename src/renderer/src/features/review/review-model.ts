@@ -215,7 +215,7 @@ export function suggestedCommitMessage(changeSet: ReviewChangeSet): string {
 export function suggestedPullRequestTitle(changeSet: ReviewChangeSet): string {
   if (changeSet.branch) return changeSet.branch
   const first = changeSet.files[0]?.path
-  return first ? `评审：${first}` : ''
+  return first ? `审查：${first}` : ''
 }
 
 export type ReviewGitOutcomeKind =

@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import type { GitStatusEntry } from '../../../../shared/git'
@@ -25,7 +26,7 @@ function defaultGitSource(): ChangesGitSource {
   const source: ChangesGitSource = {
     async state(cwd: string): Promise<GitStateView> {
       const git = bridge()
-      if (!git) return { repo: null, error: '宿主 Git 接口不可用' }
+      if (!git) return { repo: null, error: uiText('state.error.gitUnavailable') }
       const res = await git.state(cwd)
       return { repo: res.repo, error: res.error }
     },
@@ -38,9 +39,9 @@ function defaultGitSource(): ChangesGitSource {
   if (bridge()?.changes) {
     source.entries = async (cwd: string): Promise<GitStatusEntry[]> => {
       const git = bridge()
-      if (!git?.changes) throw new Error('宿主 Git 接口不可用')
+      if (!git?.changes) throw new Error(uiText('state.error.gitUnavailable'))
       const res = await git.changes(cwd)
-      if (!res.ok) throw new Error(res.error ?? '逐文件改动读取失败')
+      if (!res.ok) throw new Error(res.error ?? uiText('state.error.changesReadFailed'))
       return res.files
     }
   }
@@ -51,9 +52,9 @@ function defaultLoadPatch(): PatchLoader | undefined {
   if (!bridge()?.diff) return undefined
   return async (cwd: string, path: string): Promise<ChangesPatch> => {
     const git = bridge()
-    if (!git?.diff) throw new Error('宿主 Git 接口不可用')
+    if (!git?.diff) throw new Error(uiText('state.error.gitUnavailable'))
     const res = await git.diff({ cwd, path })
-    if (!res.ok) throw new Error(res.error ?? 'diff 读取失败')
+    if (!res.ok) throw new Error(res.error ?? uiText('state.error.diffReadFailed'))
     return { patch: res.patch, truncated: res.truncated, binary: res.binary }
   }
 }
@@ -211,7 +212,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             {patchLoading ? (
               <p className="changes-pane__hint">{text.patchLoading}</p>
             ) : patchError ? (
-              <p className="changes-pane__hint changes-pane__hint--error">{text.patchError(patchError)}</p>
+              <p className="changes-pane__hint changes-pane__hint--error" role="alert">{text.patchError(patchError)}</p>
             ) : (
               <>
                 {patchTruncated ? <p className="changes-pane__hint">{text.patchTruncated}</p> : null}
@@ -262,11 +263,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         </div>
       ) : null}
       {loading && !repo ? <p className="changes-pane__hint">{text.loading}</p> : null}
-      {!loading && problem ? <p className={error ? 'changes-pane__hint changes-pane__hint--error' : 'changes-pane__hint'}>{problem}</p> : null}
+      {!loading && problem ? <p className={error ? 'changes-pane__hint changes-pane__hint--error' : 'changes-pane__hint'} role={error ? 'alert' : undefined}>{problem}</p> : null}
       {repo ? (
         <>
           {!source.entries && hasTracked ? <p className="changes-pane__hint">{text.entriesLimited}</p> : null}
-          {listError ? <p className="changes-pane__hint changes-pane__hint--error">{text.entriesFailed(listError)}</p> : null}
+          {listError ? <p className="changes-pane__hint changes-pane__hint--error" role="alert">{text.entriesFailed(listError)}</p> : null}
           {!canDiff ? <p className="changes-pane__hint">{text.noDiffChannel}</p> : null}
           {items.length === 0 ? (
             !hasTracked ? <p className="changes-pane__hint">{text.clean}</p> : null

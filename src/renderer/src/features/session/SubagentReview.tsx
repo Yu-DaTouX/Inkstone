@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
-import { Button, Dialog, Modal, ModalOverlay } from '../../ui'
+import { Button, Dialog, Modal, ModalOverlay, Notice } from '../../ui'
 import { DiffView } from '../diff'
 import { loadSubagentPatch, subagentReviewGate, type SubagentPatch } from './subagent-review'
 import './subagent-review.css'
@@ -194,9 +194,9 @@ export function SubagentReview({ run, onMerge, onDiscard, loadPatch }: SubagentR
           {patchLoading ? (
             <p className="v3-subagent-review-note">{text.loading}</p>
           ) : patchError ? (
-            <p className="v3-subagent-review-error" role="alert" data-testid="v3-subagent-review-diff-error">
+            <Notice tone="fail" compact data-testid="v3-subagent-review-diff-error">
               {text.loadFailed(patchError)}
-            </p>
+            </Notice>
           ) : patch ? (
             <>
               {patch.truncated ? <p className="v3-subagent-review-note">{text.truncated}</p> : null}
@@ -224,9 +224,9 @@ export function SubagentReview({ run, onMerge, onDiscard, loadPatch }: SubagentR
                 {confirming === 'merge' ? text.mergeBody : t('sa.discardConfirm')}
               </p>
               {actionError ? (
-                <p className="v3-subagent-review-error" role="alert" data-testid="v3-subagent-review-action-error">
+                <Notice tone="fail" compact data-testid="v3-subagent-review-action-error">
                   {actionError}
-                </p>
+                </Notice>
               ) : null}
               <div className="v3-subagent-review-foot">
                 <Button

@@ -9,7 +9,7 @@ export interface ContextUsageSummary {
   tokens: number
   windowSize: number
   percent: number | null
-  tone: 'ok' | 'warn' | 'err'
+  tone: 'ok' | 'ask' | 'fail'
   matchesModel: boolean
   afterCompactUnknown: boolean
   windowAssumed: boolean
@@ -55,8 +55,8 @@ export function contextUsageSummary(
   const known = matchesModel && typeof usage?.tokens === 'number' && windowSize > 0
   const tokens = known ? (usage!.tokens as number) : 0
   const percent = known ? (tokens / windowSize) * 100 : null
-  const tone: 'ok' | 'warn' | 'err' =
-    percent !== null && percent >= 95 ? 'err' : percent !== null && percent >= 80 ? 'warn' : 'ok'
+  const tone: 'ok' | 'ask' | 'fail' =
+    percent !== null && percent >= 95 ? 'fail' : percent !== null && percent >= 80 ? 'ask' : 'ok'
   return {
     known,
     tokens,

@@ -19,6 +19,7 @@ import {
   ListBoxItem,
   Modal,
   ModalOverlay,
+  Notice,
   Select,
   TextField
 } from '../../../ui'
@@ -40,7 +41,7 @@ export function CustomEndpointSettings(): ReactElement {
   const [fetching, setFetching] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [locals, setLocals] = useState<LocalModelServer[] | null>(null)
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'fail'; text: string } | null>(null)
   const [pendingRemove, setPendingRemove] = useState<CustomProviderView | null>(null)
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
@@ -58,7 +59,7 @@ export function CustomEndpointSettings(): ReactElement {
       const next = await window.yan.customProviders()
       if (alive.current) setList(next)
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     }
   }, [])
 
@@ -101,7 +102,7 @@ export function CustomEndpointSettings(): ReactElement {
       })
       if (!alive.current) return
       if (!result.ok) {
-        setMsg({ kind: 'err', text: (result.errors ?? []).join('；') })
+        setMsg({ kind: 'fail', text: (result.errors ?? []).join('；') })
         return
       }
       setList(result.providers ?? [])
@@ -109,7 +110,7 @@ export function CustomEndpointSettings(): ReactElement {
       setMsg({ kind: 'ok', text: t('customApi.saved') })
       refreshModelsAfterRestart()
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setBusy(false)
     }
@@ -122,7 +123,7 @@ export function CustomEndpointSettings(): ReactElement {
       const result = await window.yan.removeCustomProvider(item.id)
       if (!alive.current) return
       if (!result.ok) {
-        setMsg({ kind: 'err', text: (result.errors ?? []).join('；') })
+        setMsg({ kind: 'fail', text: (result.errors ?? []).join('；') })
         return
       }
       setList(result.providers ?? [])
@@ -130,7 +131,7 @@ export function CustomEndpointSettings(): ReactElement {
       setMsg({ kind: 'ok', text: t('customApi.removed') })
       refreshModelsAfterRestart()
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setBusy(false)
       setPendingRemove(null)
@@ -144,7 +145,7 @@ export function CustomEndpointSettings(): ReactElement {
     try {
       const found = await window.yan.discoverCustomModels(draft)
       if (!found.ok) {
-        setMsg({ kind: 'err', text: found.message })
+        setMsg({ kind: 'fail', text: found.message })
         return
       }
       const entries: CustomProviderModel[] = found.entries ?? found.models.map((id) => ({ id }))
@@ -166,7 +167,7 @@ export function CustomEndpointSettings(): ReactElement {
       )
       setMsg({ kind: 'ok', text: found.message })
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setFetching(false)
     }
@@ -179,7 +180,7 @@ export function CustomEndpointSettings(): ReactElement {
       const found = await window.yan.detectLocalModels()
       if (alive.current) setLocals(found)
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setDetecting(false)
     }
@@ -200,7 +201,7 @@ export function CustomEndpointSettings(): ReactElement {
       const entries: CustomProviderModel[] = found.entries ?? found.models.map((id) => ({ id }))
       beginDraft({ ...next, models: entries.length ? entries : [{ id: '' }] })
     } catch (error) {
-      setMsg({ kind: 'err', text: errorText(error) })
+      setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setFetching(false)
     }
@@ -213,7 +214,7 @@ export function CustomEndpointSettings(): ReactElement {
       const result = await window.yan.testCustomProvider(item.id, mode, item.models[0]?.id ?? '')
       if (alive.current) setTestResult({ id: item.id, result })
     } catch (error) {
-      if (alive.current) setMsg({ kind: 'err', text: errorText(error) })
+      if (alive.current) setMsg({ kind: 'fail', text: errorText(error) })
     } finally {
       if (alive.current) setTesting('')
     }
@@ -508,13 +509,9 @@ export function CustomEndpointSettings(): ReactElement {
       ) : null}
 
       {msg ? (
-        <p
-          className={`ms-msg ms-msg--${msg.kind}`}
-          role={msg.kind === 'err' ? 'alert' : 'status'}
-          data-testid="ms-custom-msg"
-        >
+        <Notice tone={msg.kind} className="ms-msg" data-testid="ms-custom-msg">
           {msg.text}
-        </p>
+        </Notice>
       ) : null}
 
       {pendingRemove ? (

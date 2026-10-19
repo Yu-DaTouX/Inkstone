@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { formatTokens } from '../../state/compaction-view'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -54,6 +55,7 @@ export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
   model: SubagentLineModel
   status: string
   dotClass: string
+  tone: string
 } {
   const t = useT()
   const { lang } = useI18n()
@@ -73,7 +75,8 @@ export function useSubagentView(run: SubagentRun, snapshot?: RunSnapshot): {
       : dotTone === 'err' ? 'err'
         : dotTone === 'ask' || dotTone === 'stall' || dotTone === 'warn' ? 'warn'
           : ''
-  return { model, status, dotClass }
+  const tone = dotClass === 'err' ? 'fail' : dotClass === 'warn' ? 'ask' : dotClass
+  return { model, status, dotClass, tone }
 }
 
 export function openSubagentPane(runId: string): void {
@@ -104,26 +107,36 @@ export function subagentDefaultFront(runs: SubagentRun[], selectedId: string | n
 
 type DeckRefocus = 'deck' | 'card' | null
 
+const NO_RUNS: SubagentRun[] = []
+
+function viewIdentityOf(s: ReturnType<typeof useStore.getState>): ReturnType<typeof sessionViewIdentity> {
+  return sessionViewIdentity({ peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath, session: s.session })
+}
+
 export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: TurnSubagentScope }): JSX.Element | null {
   const tt = useSessionText()
-  const subagents = useStore((s) => s.subagents)
-  const session = useStore((s) => s.session)
-  const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const peekedPath = useStore((s) => s.peekedPath)
-  const runs = useRunsV3((s) => s.runs)
+  const view = useStore(useShallow(viewIdentityOf))
+  const mine = useStore(useShallow((s): SubagentRun[] => {
+    if (!s.subagents.length) return NO_RUNS
+    const ids = new Set([turn.id, ...turn.sourceIds])
+    const identity = viewIdentityOf(s)
+    const sessionIds = identity.sessionId ? [identity.sessionId] : []
+    return (scope ? subagentRunsForTurnScope(s.subagents, scope) : selectSubagentRuns(s.subagents, { sessionIds }).all).filter(
+      (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
+    )
+  }))
+  const snapshots = useRunsV3(useShallow((s): Record<string, RunSnapshot | undefined> => {
+    const found: Record<string, RunSnapshot | undefined> = {}
+    for (const run of mine) found[run.id] = findSubagentSnapshot(s.runs, run.id)
+    return found
+  }))
   const [flat, setFlat] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const deckRef = useRef<HTMLDivElement | null>(null)
   const refocus = useRef<DeckRefocus>(null)
   const latest = useRef<{ index: number; ids: string[] }>({ index: 0, ids: [] })
 
-  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const selectedRunId = useSubagentPanel((s) => (s.owner === view.key ? s.runId : null))
-  const sessionIds = view.sessionId ? [view.sessionId] : []
-  const ids = new Set([turn.id, ...turn.sourceIds])
-  const mine = (scope ? subagentRunsForTurnScope(subagents, scope) : selectSubagentRuns(subagents, { sessionIds }).all).filter(
-    (run) => run.parentMessageId && ids.has(run.parentMessageId) && run.review !== 'merged' && run.review !== 'discarded'
-  )
   const ordered = subagentDeckOrder(mine)
   const pickedValid = picked !== null && ordered.some((run) => run.id === picked)
   const frontId = pickedValid ? picked : subagentDefaultFront(ordered, selectedRunId)
@@ -192,7 +205,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   if (!ordered.length) return null
   const live = ordered.filter(isLiveRun).length
   const renderRow = (run: SubagentRun, extra?: { front?: boolean; inert?: boolean }): JSX.Element => (
-    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={findSubagentSnapshot(runs, run.id)} front={extra?.front} inert={extra?.inert} />
+    <SubagentRow key={run.id} run={run} owner={view.key} snapshot={snapshots[run.id]} front={extra?.front} inert={extra?.inert} />
   )
 
   if (ordered.length === 1) {
@@ -286,7 +299,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
             {ordered.map((run, index) => {
               const slot = deckSlot(index, current)
               if (!deckVisible(slot)) return null
-              const snapshot = findSubagentSnapshot(runs, run.id)
+              const snapshot = snapshots[run.id]
               return (
                 <div
                   key={run.id}
@@ -336,7 +349,7 @@ function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
   onPick: () => void
 }): JSX.Element {
   const tt = useSessionText()
-  const { model, status, dotClass } = useSubagentView(run, snapshot)
+  const { model, status, dotClass, tone } = useSubagentView(run, snapshot)
   const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
   const title = run.brief?.title || compactTaskPaths(subagentTitle(model.task))
   const time = formatDuration(model.elapsedMs, { minSeconds: 1 })
@@ -349,7 +362,7 @@ function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
       data-depth={deckStripDepth(slot)}
       data-edge={slot < 0 ? 'top' : 'bottom'}
       data-state={model.outcomeKey}
-      data-tone={dotClass || undefined}
+      data-tone={tone || undefined}
       data-selected={selected ? '1' : undefined}
       data-attention={model.attention || !!model.error ? '1' : undefined}
       inert={slot === 0}
@@ -372,7 +385,7 @@ function SubagentStrip({ run, owner, snapshot, slot, onPick }: {
 function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun; owner: string; snapshot?: RunSnapshot; front?: boolean; inert?: boolean }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
-  const { model, status, dotClass } = useSubagentView(run, snapshot)
+  const { model, status, dotClass, tone } = useSubagentView(run, snapshot)
   const selected = useSubagentPanel((s) => s.runId === run.id && s.owner === owner)
   const tokens = subagentTokens([run])
   const models = useStore((s) => s.models)
@@ -400,7 +413,7 @@ function SubagentRow({ run, owner, snapshot, front, inert }: { run: SubagentRun;
         onClick={(event) => useSubagentPanel.getState().toggle(run.id, owner, event.currentTarget)}
         data-testid="v3-subagent-toggle"
       >
-        <span className="v3-subagent-glyph" data-tone={dotClass}>
+        <span className="v3-subagent-glyph" data-tone={tone}>
           <SubagentBot run={run} snapshot={snapshot} model={model} />
           <span className={`v3-dot ${dotClass}`} data-testid="v3-subagent-dot" />
         </span>

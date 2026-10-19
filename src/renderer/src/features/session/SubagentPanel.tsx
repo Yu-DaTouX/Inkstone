@@ -51,7 +51,7 @@ function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: bo
   const tt = useSessionText()
   const runs = useRunsV3((s) => s.runs)
   const snapshot = findSubagentSnapshot(runs, run.id)
-  const { model, status, dotClass } = useSubagentView(run, snapshot)
+  const { model, status, dotClass, tone } = useSubagentView(run, snapshot)
   const rootRef = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState<'stop' | 'retry' | null>(null)
   const width = useSubagentPanel((s) => s.width)
@@ -122,11 +122,11 @@ function PanelBody({ run, viewActive, edge }: { run: SubagentRun; viewActive: bo
     >
       <Splitter className="v3-sap-resizer" title={tt('subagentResize')} orientation="vertical" value={available - shownWidth} min={edge} max={Math.max(edge, available - 260)} step={16} aria-label={t('tile.resizeWidth')} onChange={(left) => setWidth(available - left)} onReset={() => setWidth(SUBAGENT_PANEL_WIDTH)} />
       <header className="v3-sap-head">
-        <span className="v3-sap-glyph" data-tone={dotClass} aria-hidden>
+        <span className="v3-sap-glyph" data-tone={tone} aria-hidden>
           <SubagentBot run={run} snapshot={snapshot} model={model} />
         </span>
         <div className="v3-sap-headtext">
-          <span className="v3-sap-pill" data-tone={dotClass}>
+          <span className="v3-sap-pill" data-tone={tone}>
             <span className={`v3-dot ${dotClass}`} aria-hidden />
             <span className="v3-sap-status" data-testid="v3-subagent-panel-status">{status}</span>
           </span>

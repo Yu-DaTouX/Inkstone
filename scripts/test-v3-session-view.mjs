@@ -196,7 +196,7 @@ export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView }
       'src/renderer/src/features/session/QuestionCard.tsx': `export function QuestionCard(){ return null }\nQuestionCard.__stub='question'`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
       'src/renderer/src/i18n/index.tsx': `export function useT(){ return (k)=>String(k) }\nexport function useI18n(){ return { t:(k)=>String(k) } }\nexport function translate(_l,k){ return String(k) }`,
-      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function Tabs(){ return null }\nexport function TabList(){ return null }\nexport function Tab(){ return null }\nexport function Dialog(){ return null }\nexport function Modal(){ return null }\nexport function ModalOverlay(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
+      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function Tabs(){ return null }\nexport function TabList(){ return null }\nexport function Tab(){ return null }\nexport function Dialog(){ return null }\nexport function Modal(){ return null }\nexport function ModalOverlay(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }\nexport function Notice(props){ return props.children ?? null }\nexport function ProgressBar(){ return null }\nexport function SegmentedControl(){ return null }`
     },
     shims
   )
@@ -218,7 +218,7 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
       'src/renderer/src/features/session/text.ts': `export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }`,
       'src/renderer/src/features/session/Icon.tsx': `export function Icon(){ return null }\nIcon.__stub='icon'`,
       'src/renderer/src/i18n/index.tsx': `export function useT(){ return (k)=>String(k) }\nexport function useI18n(){ return { t:(k)=>String(k) } }\nexport function translate(_l,k){ return String(k) }`,
-      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`,
+      'src/renderer/src/ui/index.ts': `export function IconButton(){ return null }\nexport function Button(){ return null }\nexport function Badge(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }\nexport function Notice(props){ return props.children ?? null }\nexport function ProgressBar(){ return null }\nexport function SegmentedControl(){ return null }`,
       'src/renderer/src/features/session/run-status.ts': `export function useRunProgress(){ return null }\nexport function runPhaseText(){ return '' }`,
       'src/renderer/src/lib/fork.ts': `export async function forkFromText(){}`
     },

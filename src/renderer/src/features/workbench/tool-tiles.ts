@@ -30,7 +30,11 @@ export const useChatWidth = create<{ width: number }>(() => ({ width: 0 }))
 export function watchChatWidth(host: HTMLElement | null): (() => void) | undefined {
   const chat = host?.closest<HTMLElement>('.v3-chat') ?? host
   if (!chat) return undefined
-  const update = (): void => useChatWidth.setState({ width: chat.getBoundingClientRect().width })
+  const update = (): void => {
+    const width = chat.getBoundingClientRect().width
+    useChatWidth.setState({ width })
+    useSplitView.getState().setContainerWidth(width)
+  }
   update()
   if (typeof ResizeObserver === 'undefined') return undefined
   const observer = new ResizeObserver(update)

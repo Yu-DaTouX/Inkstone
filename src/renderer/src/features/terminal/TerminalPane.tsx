@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Plus, RefreshCw, Terminal as TerminalIcon, X } from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
-import { Badge, Button, IconButton, type BadgeTone } from '../../ui'
+import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, type BadgeTone } from '../../ui'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { resourceOwner, claimResource, releaseResource } from '../../state/resource-owners'
 import { installImeFallback, installTerminalRenderer, terminalFontReady } from './terminal-appearance'
@@ -38,7 +38,7 @@ function statusOf(state: TerminalViewState): { key: MessageKey; tone: BadgeTone;
         tone: 'ask'
       }
     case 'done':
-      return { key: 'term.ok', tone: 'run' }
+      return { key: 'term.ok', tone: 'ok' }
     case 'error':
       return { key: 'term.error', tone: 'fail' }
     case 'idle':
@@ -212,11 +212,24 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
   return (
     <div className="term-pane" data-phase={state?.phase ?? 'idle'} data-visible={visible ? '1' : '0'} data-testid="terminal-pane">
-      <div className="term-pane-bar">
-        <TerminalIcon size={14} strokeWidth={1.75} aria-hidden className="term-pane-icon" />
-        <span className="term-pane-title" title={cwd || title}>
-          {title || cwd || t('tile.terminal')}
-        </span>
+      <PaneHeader
+        size="sm"
+        className="term-pane-bar"
+        icon={<TerminalIcon size={14} strokeWidth={1.75} />}
+        title={<span className="term-pane-title" title={cwd || title}>{title || cwd || t('tile.terminal')}</span>}
+        actions={
+          <>
+            <Button size="sm" variant="ghost" icon={<Plus size={14} strokeWidth={1.75} />} isDisabled={inactive} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new">
+              {t('term.new')}
+            </Button>
+            {canEnd ? (
+              <IconButton size="sm" variant="ghost" aria-label={t('tile.endTerminal')} onPress={() => void sessionRef.current?.kill()} data-testid="terminal-close">
+                <X size={14} strokeWidth={1.75} />
+              </IconButton>
+            ) : null}
+          </>
+        }
+      >
         {badge ? (
           <Badge tone={badge.tone} className="term-pane-badge">
             {t(badge.key)}
@@ -228,61 +241,65 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
             {t('term.exited', { code: state?.exitCode === null || state?.exitCode === undefined ? '—' : String(state.exitCode) })}
           </span>
         ) : null}
-        <span className="term-pane-spacer" />
-        <Button size="sm" variant="ghost" icon={<Plus size={14} strokeWidth={1.75} />} isDisabled={inactive} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new">
-          {t('term.new')}
-        </Button>
-        {canEnd ? (
-          <IconButton size="sm" variant="ghost" aria-label={t('tile.endTerminal')} onPress={() => void sessionRef.current?.kill()} data-testid="terminal-close">
-            <X size={14} strokeWidth={1.75} />
-          </IconButton>
-        ) : null}
-      </div>
+      </PaneHeader>
 
       {inactive ? (
-        <div className="term-pane-center" data-testid="terminal-inactive">
-          <p>{text.activateFirst}</p>
-        </div>
+        <EmptyState size="sm" className="term-pane-center" title={text.activateFirst} data-testid="terminal-inactive" />
       ) : null}
 
       {!inactive && unavailable ? (
-        <div className="term-pane-center" data-testid="terminal-unavailable">
-          <p>{t('term.unavailable')}</p>
-          {state?.error ? <code className="term-pane-error" data-testid="terminal-error">{state.error}</code> : null}
-          <Button size="sm" icon={<RefreshCw size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.retry()} data-testid="terminal-retry">
-            {t('term.retry')}
-          </Button>
+        <div className="term-pane-stack" data-testid="terminal-unavailable">
+          <EmptyState
+            size="sm"
+            title={t('term.unavailable')}
+            action={
+              <Button size="sm" icon={<RefreshCw size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.retry()} data-testid="terminal-retry">
+                {t('term.retry')}
+              </Button>
+            }
+          />
+          {state?.error ? <Notice tone="fail" compact className="term-pane-error" data-testid="terminal-error">{state.error}</Notice> : null}
         </div>
       ) : null}
 
       {!inactive && failed ? (
-        <div className="term-pane-center" data-testid="terminal-failed">
-          <p>{state?.notice || text.startFailed}</p>
-          <Button size="sm" icon={<RefreshCw size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.retry()} data-testid="terminal-retry">
-            {t('term.retry')}
-          </Button>
-        </div>
+        <EmptyState
+          size="sm"
+          className="term-pane-center"
+          title={state?.notice || text.startFailed}
+          data-testid="terminal-failed"
+          action={
+            <Button size="sm" icon={<RefreshCw size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.retry()} data-testid="terminal-retry">
+              {t('term.retry')}
+            </Button>
+          }
+        />
       ) : null}
 
       {!inactive && !unavailable && !failed && busy ? (
-        <div className="term-pane-note" data-testid="terminal-busy">
+        <Notice compact className="term-pane-note" data-testid="terminal-busy">
           {state?.phase === 'starting' ? text.starting : text.connecting}
-        </div>
+        </Notice>
       ) : null}
 
       {!inactive && !unavailable && !failed && !busy && !state?.terminalId ? (
-        <div className="term-pane-center" data-testid="terminal-empty">
-          <p>{t('term.none')}</p>
-          <Button size="sm" icon={<Plus size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new-empty">
-            {t('term.new')}
-          </Button>
-        </div>
+        <EmptyState
+          size="sm"
+          className="term-pane-center"
+          title={t('term.none')}
+          data-testid="terminal-empty"
+          action={
+            <Button size="sm" icon={<Plus size={14} strokeWidth={1.75} />} onPress={() => void sessionRef.current?.create()} data-testid="terminal-new-empty">
+              {t('term.new')}
+            </Button>
+          }
+        />
       ) : null}
 
       {state?.notice && !failed ? (
-        <div className="term-pane-note term-pane-note--alert" role="alert" data-testid="terminal-notice">
+        <Notice tone="fail" compact className="term-pane-note" data-testid="terminal-notice">
           {state.notice}
-        </div>
+        </Notice>
       ) : null}
 
       <div className="term-pane-host" ref={hostRef} data-testid="terminal-host" hidden={!showHost} />

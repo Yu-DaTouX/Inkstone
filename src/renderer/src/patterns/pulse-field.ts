@@ -9,6 +9,7 @@ type Pulse = { row: number; x: number; speed: number; life: number; burst?: bool
 const PITCH = 5
 const ROWS = 5
 const DOT = 2
+const AMBIENT_FRAME_MS = 30
 
 export class PulseField {
   private ctx: CanvasRenderingContext2D | null
@@ -24,6 +25,8 @@ export class PulseField {
   private frame = 0
   private last = 0
   private active = true
+  private calm = false
+  private blurred = false
   private written = ''
   private glow = new Float32Array(0)
   private reduced = false
@@ -38,6 +41,9 @@ export class PulseField {
     this.resizeObserver.observe(canvas)
     this.motion.addEventListener('change', this.onMotion)
     document.addEventListener('visibilitychange', this.onVisibility)
+    window.addEventListener('blur', this.onBlur)
+    window.addEventListener('focus', this.onFocus)
+    this.blurred = !document.hasFocus()
     this.resize()
   }
 
@@ -65,6 +71,8 @@ export class PulseField {
     this.resizeObserver.disconnect()
     this.motion.removeEventListener('change', this.onMotion)
     document.removeEventListener('visibilitychange', this.onVisibility)
+    window.removeEventListener('blur', this.onBlur)
+    window.removeEventListener('focus', this.onFocus)
   }
 
   private target(): number {
@@ -74,6 +82,15 @@ export class PulseField {
   private onMotion = (e: MediaQueryListEvent): void => {
     this.reduced = e.matches
     if (this.reduced) this.pulses = []
+    this.kick()
+  }
+
+  private onBlur = (): void => {
+    this.blurred = true
+  }
+
+  private onFocus = (): void => {
+    this.blurred = false
     this.kick()
   }
 
@@ -101,11 +118,16 @@ export class PulseField {
 
   private tick = (now: number): void => {
     this.frame = 0
+    if (this.calm && this.last && now - this.last < AMBIENT_FRAME_MS) {
+      this.kick()
+      return
+    }
     const dt = this.last ? Math.min(0.05, (now - this.last) / 1000) : 0
     this.last = now
     const moving = this.step(dt)
+    this.calm = this.v === 0 && !this.pulses.some((p) => p.burst)
     this.draw()
-    if (moving || (!this.reduced && this.active && this.level > 0)) this.kick()
+    if (moving || (!this.reduced && !this.blurred && this.active && this.level > 0)) this.kick()
   }
 
   private step(dt: number): boolean {
@@ -129,7 +151,7 @@ export class PulseField {
 
     const k = this.level / (this.count - 1)
     const fill = this.x * this.w
-    if (!this.reduced && this.active && this.level > 0) {
+    if (!this.reduced && !this.blurred && this.active && this.level > 0) {
       this.spawn += dt * (3 + k * 15)
       while (this.spawn > 1) {
         this.spawn -= 1

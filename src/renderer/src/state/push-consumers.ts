@@ -106,7 +106,7 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
         set({
           conn: 'error',
           connDetail: detail,
-          logs: [...s.logs, `[错误] pi 进程：${detail}`].slice(-200),
+          logs: [...s.logs, ctx.t('state.log.piError', { detail })].slice(-200),
           ...(s.session ? { session: { ...s.session, isAgentRunning: false } } : {})
         })
         ctx.alertAttention(s.settings, 'error', detail)
@@ -156,7 +156,7 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
       }
 
       if (s.startupPhase && (m.payload.notifyType ?? 'info') !== 'error') {
-        set({ logs: [...s.logs, `[扩展] ${text}`].slice(-200) })
+        set({ logs: [...s.logs, ctx.t('state.log.extension', { text })].slice(-200) })
         break
       }
 

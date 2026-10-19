@@ -8,7 +8,7 @@ import type {
 import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { levelLabel } from '../../../patterns/ThinkingBadge'
-import { Button, ListBoxItem, Select, Switch } from '../../../ui'
+import { Button, ListBoxItem, Notice, Select, Switch } from '../../../ui'
 import { SettingsGroup, SettingsRow, Segmented, type SegmentedOption } from '../root/controls'
 import { piNativeText, type PiNativeText } from './pi-native-text'
 
@@ -82,9 +82,9 @@ function numberOptions(values: number[], label: (n: number) => string, prefix: s
 
 function PiNativeError({ error }: { error: string }): ReactElement | null {
   return error ? (
-    <p className="settings-row__desc" data-tone="error" role="alert">
+    <Notice tone="fail" compact>
       {error}
-    </p>
+    </Notice>
   ) : null
 }
 

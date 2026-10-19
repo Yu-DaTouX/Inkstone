@@ -1,7 +1,6 @@
 @layer features {
   .dd-message {
-    margin: 0;
-    padding: var(--s-8) var(--s-16);
+    margin: var(--s-8) var(--s-16);
   }
 
   .dd-pairing {

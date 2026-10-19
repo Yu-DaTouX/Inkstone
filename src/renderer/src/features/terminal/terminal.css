@@ -13,30 +13,10 @@
     display: none;
   }
 
-  .term-pane-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    min-height: 28px;
-    padding: 0 var(--s-6) 0 var(--s-8);
-    border-bottom: 1px solid var(--line);
-    color: var(--fg2);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-  }
-
-  .term-pane-icon {
-    flex: none;
-    color: var(--fg3);
-  }
-
   .term-pane-title {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
     color: var(--fg2);
     font-family: var(--font-mono);
+    font-weight: 400;
   }
 
   .term-pane-badge {
@@ -46,10 +26,6 @@
   .term-pane-exited {
     flex: none;
     color: var(--fg3);
-  }
-
-  .term-pane-spacer {
-    flex: 1 1 auto;
   }
 
   .term-pane-host {
@@ -65,41 +41,27 @@
   }
 
   .term-pane-center {
+    flex: 1 1 auto;
+  }
+
+  .term-pane-stack {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: var(--s-8);
+    min-width: 0;
     padding: var(--s-16);
-    text-align: center;
-    color: var(--fg2);
-    font-size: var(--t-ui);
-  }
-
-  .term-pane-center p {
-    margin: 0;
-    max-width: 36ch;
   }
 
   .term-pane-error {
     max-width: 100%;
-    overflow-wrap: anywhere;
-    color: var(--fail-t);
     font-family: var(--font-mono);
-    font-size: var(--t-meta);
   }
 
   .term-pane-note {
     flex: none;
-    padding: var(--s-4) var(--s-8);
-    border-bottom: 1px solid var(--line);
-    color: var(--fg3);
-    font-size: var(--t-meta);
-    line-height: var(--t-meta-lh);
-  }
-
-  .term-pane-note--alert {
-    color: var(--fail-t);
+    margin: var(--s-6) var(--s-8) 0;
   }
 }

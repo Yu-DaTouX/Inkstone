@@ -27,6 +27,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--fail);
+    color: var(--fail-t);
   }
 }

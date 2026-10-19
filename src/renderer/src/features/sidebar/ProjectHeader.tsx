@@ -2,7 +2,7 @@ import { useRef, useState, type JSX } from 'react'
 import { Archive, ChevronRight, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Popover } from '../../ui'
+import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
@@ -247,7 +247,7 @@ function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; onCancel:
   return (
     <div className="v3-confirm">
       <p className="v3-confirm-body">{t('rail.removeProjectExplain', { name })}</p>
-      {error ? <p className="v3-confirm-error" role="alert">{error}</p> : null}
+      {error ? <Notice tone="fail" compact>{error}</Notice> : null}
       <div className="v3-confirm-actions">
         <Button variant="secondary" onPress={onCancel} isDisabled={busy}>{text.cancel}</Button>
         <Button
@@ -341,7 +341,7 @@ function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; 
                   </Button>
                 </span>
               </label>
-              {error ? <p className="v3-confirm-error" role="alert" data-testid="v3-project-directory-error">{error}</p> : null}
+              {error ? <Notice tone="fail" compact data-testid="v3-project-directory-error">{error}</Notice> : null}
               <div className="v3-confirm-actions">
                 <Button variant="secondary" onPress={close}>{text.cancel}</Button>
                 <Button variant="primary" isDisabled={busy || !cwd.trim()} onPress={() => void save(close)} data-testid="v3-project-directory-save">

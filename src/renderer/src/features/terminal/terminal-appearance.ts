@@ -1,26 +1,6 @@
 import type { ITerminalOptions, Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl'
 
-export function terminalAppearance(): ITerminalOptions {
-  const styles = getComputedStyle(document.documentElement)
-  return {
-    fontFamily: styles.getPropertyValue('--font-code').trim() || 'Consolas, monospace',
-    fontSize: 13,
-    lineHeight: 1.15,
-    letterSpacing: 0,
-    cursorBlink: true,
-    customGlyphs: true,
-    rescaleOverlappingGlyphs: true,
-    screenReaderMode: true,
-    theme: {
-      background: styles.getPropertyValue('--bg-0').trim(),
-      foreground: styles.getPropertyValue('--fg').trim(),
-      cursor: styles.getPropertyValue('--accent').trim(),
-      selectionBackground: styles.getPropertyValue('--accent-soft').trim()
-    }
-  }
-}
-
 export function installTerminalRenderer(term: Terminal, host: HTMLElement): void {
   const addon = new WebglAddon()
   host.dataset.terminalRenderer = 'dom'

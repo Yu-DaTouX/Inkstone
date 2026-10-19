@@ -88,6 +88,22 @@ export function resizeFrame(rect: FrameRect, dx: number, dy: number, viewport: F
   return clampFramePosition({ x: rect.x, y: rect.y, ...size }, viewport)
 }
 
+const NUDGE_STEP = 16
+const NUDGE_STEP_LARGE = 64
+
+export function nudgeFrame(
+  rect: FrameRect,
+  key: string,
+  modifiers: { alt: boolean; shift: boolean },
+  viewport: FrameSize
+): FrameRect | null {
+  const step = modifiers.shift ? NUDGE_STEP_LARGE : NUDGE_STEP
+  const dx = key === 'ArrowRight' ? step : key === 'ArrowLeft' ? -step : 0
+  const dy = key === 'ArrowDown' ? step : key === 'ArrowUp' ? -step : 0
+  if (dx === 0 && dy === 0) return null
+  return modifiers.alt ? moveFrame(rect, dx, dy, viewport) : resizeFrame(rect, dx, dy, viewport)
+}
+
 export const MAX_ACTIVE_FRAMES = 4
 
 export interface FrameSlot {

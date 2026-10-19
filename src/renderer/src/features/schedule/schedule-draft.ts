@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import {
   MAX_PROMPT_LENGTH,
   normalizeTrigger,
@@ -76,7 +77,7 @@ export type DraftCheck = { ok: true; input: ScheduleInput } | { ok: false; code:
 export function checkDraft(draft: TaskDraft): DraftCheck {
   const prompt = draft.prompt.trim()
   if (!prompt) return { ok: false, code: 'needPrompt', message: 'needPrompt' }
-  if (prompt.length > MAX_PROMPT_LENGTH) return { ok: false, code: 'invalidTrigger', message: `指令不能超过 ${MAX_PROMPT_LENGTH} 个字符` }
+  if (prompt.length > MAX_PROMPT_LENGTH) return { ok: false, code: 'invalidTrigger', message: uiText('sched.promptTooLong', { max: MAX_PROMPT_LENGTH }) }
   if (draft.kind === 'once') {
     const at = new Date(draft.at).getTime()
     if (!draft.at || !Number.isFinite(at) || at <= 0) return { ok: false, code: 'needAt', message: 'needAt' }

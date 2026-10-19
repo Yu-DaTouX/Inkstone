@@ -3,6 +3,11 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   Badge,
   Button,
+  Card,
+  EmptyState,
+  Notice,
+  PageHeader,
+  PaneHeader,
   CompletionSweep,
   Dialog,
   DialogTrigger,
@@ -138,6 +143,7 @@ export const BadgeKbdStates: Story = {
         'default',
         'tone-neutral',
         'tone-accent',
+        'tone-ok',
         'tone-run',
         'tone-ask',
         'tone-stall',
@@ -152,6 +158,7 @@ export const BadgeKbdStates: Story = {
         <Badge>默认</Badge>
         <Badge tone="neutral">中性</Badge>
         <Badge tone="accent">强调</Badge>
+        <Badge tone="ok">已完成</Badge>
         <Badge tone="run">运行中</Badge>
         <Badge tone="ask">等你确认</Badge>
         <Badge tone="stall">停滞</Badge>
@@ -162,6 +169,51 @@ export const BadgeKbdStates: Story = {
         <Kbd>B</Kbd>
         <span style={noteStyle}>组合键用并排的多个 Kbd 表达，不合并成一个字符串。</span>
       </Row>
+    </div>
+  )
+}
+
+export const NoticeEmptyStates: Story = {
+  name: 'Notice / EmptyState · 提示与空态',
+  parameters: {
+    stateMatrix: {
+      components: ['Notice', 'EmptyState'],
+      states: STATES('default', 'tone-info', 'tone-ok', 'tone-ask', 'tone-stall', 'tone-fail', 'empty'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-12)', maxWidth: 520 }}>
+      <Notice>默认提示：用于中性说明。</Notice>
+      <Notice tone="info" title="说明">信息提示带标题。</Notice>
+      <Notice tone="ok">已保存。</Notice>
+      <Notice tone="ask" action={<Button size="sm" variant="secondary">去处理</Button>}>需要你确认后才会继续。</Notice>
+      <Notice tone="stall" compact>已经很久没有新输出。</Notice>
+      <Notice tone="fail" title="连接失败">pi 进程已退出。</Notice>
+      <EmptyState title="还没有内容" description="空态用一句话说明原因，并给出下一步。" action={<Button size="sm">新建</Button>} />
+      <EmptyState size="sm" title="没有匹配项" />
+    </div>
+  )
+}
+
+export const HeaderCardStates: Story = {
+  name: 'PageHeader / PaneHeader / Card · 结构',
+  parameters: {
+    stateMatrix: {
+      components: ['PageHeader', 'PaneHeader', 'Card'],
+      states: STATES('default', 'hover'),
+      declared: ['hover']
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 560 }}>
+      <PageHeader title="运行" description="页面标题默认是 h2，顶栏保留唯一 h1。" actions={<Button size="sm">刷新</Button>} />
+      <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--r-md)' }}>
+        <PaneHeader title="改动" meta="3 个文件" actions={<IconButton aria-label="关闭">×</IconButton>} />
+        <PaneHeader size="sm" title="终端" />
+      </div>
+      <Card>默认卡片</Card>
+      <Card interactive padding="sm">可交互卡片：悬停时边框加深。</Card>
     </div>
   )
 }
@@ -346,7 +398,7 @@ export const TabsStates: Story = {
   render: () => (
     <Tabs aria-label="视图" defaultSelectedKey="chat">
       <TabList>
-        <Tab id="chat">对话</Tab>
+        <Tab id="chat">会话</Tab>
         <Tab id="files">文件</Tab>
         <Tab id="diff" onClose={() => undefined}>
           改动
@@ -356,7 +408,7 @@ export const TabsStates: Story = {
         </Tab>
       </TabList>
       <TabPanels>
-        <TabPanel id="chat">对话内容</TabPanel>
+        <TabPanel id="chat">会话内容</TabPanel>
         <TabPanel id="files">文件列表</TabPanel>
         <TabPanel id="diff">增删差异；右侧关闭按钮与切换是同级按钮。</TabPanel>
         <TabPanel id="settings">不可用页签不进入面板。</TabPanel>

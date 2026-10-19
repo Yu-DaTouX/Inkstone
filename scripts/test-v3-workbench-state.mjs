@@ -65,6 +65,7 @@ export function Menu(){ return null }
 export function MenuItem(){ return null }
 export function MenuTrigger(){ return null }
 export function Popover(){ return null }
+export function EmptyState(){ return null }
 export function cx(...a){ return a.filter(Boolean).join(' ') }`,
   overview: `export function OverviewPane(){ return null }`,
   i18n: `export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }`,

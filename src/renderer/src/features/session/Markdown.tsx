@@ -1,4 +1,4 @@
-import { createContext, useContext, memo, useDeferredValue, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
+import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -233,23 +233,37 @@ function hasUnclosedFence(text: string): boolean {
   return n % 2 === 1
 }
 
-const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset }: { text: string; offset: number }): JSX.Element {
+const FENCE_LINE = /^\s*(```|~~~)/m
+const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
+
+const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight }: { text: string; offset: number; highlight: boolean }): JSX.Element {
   return (
     <MarkdownOffset.Provider value={offset}>
-      <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={MD_REHYPE_PLAIN} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={MD_REMARK} rehypePlugins={highlight ? MD_REHYPE : MD_REHYPE_PLAIN} components={MD_COMPONENTS}>
         {text}
       </ReactMarkdown>
     </MarkdownOffset.Provider>
   )
 })
 
-function LiveMarkdown({ text }: { text: string }): JSX.Element {
+function LiveMarkdown({ text, highlight = false }: { text: string; highlight?: boolean }): JSX.Element {
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
   return (
     <div className="v3-prose">
-      {blocks.map((block) => <LiveMarkdownBlock key={block.offset} text={block.text} offset={block.offset} />)}
+      {blocks.map((block) => (
+        <LiveMarkdownBlock key={block.offset} text={block.text} offset={block.offset} highlight={highlight && FENCE_LINE.test(block.text)} />
+      ))}
     </div>
   )
+}
+
+function whenIdle(callback: () => void): () => void {
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout: 500 })
+    return () => window.cancelIdleCallback(handle)
+  }
+  const handle = window.setTimeout(callback, 50)
+  return () => window.clearTimeout(handle)
 }
 
 export const Markdown = memo(function Markdown({
@@ -268,6 +282,17 @@ export const Markdown = memo(function Markdown({
   const deferredText = useDeferredValue(text)
   const renderedText = live ? deferredText : text
   const identity = useMarkdownIdentity(sessionId, messageId)
+  const wasLive = useRef(false)
+  if (live) wasLive.current = true
+  const settling = !live && wasLive.current
+  const [highlightReady, setHighlightReady] = useState(false)
+  useEffect(() => {
+    if (!settling) {
+      setHighlightReady(false)
+      return undefined
+    }
+    return whenIdle(() => startTransition(() => setHighlightReady(true)))
+  }, [settling])
 
   const cached = live ? undefined : mdCache.get(renderedText)
   if (cached) {
@@ -293,6 +318,17 @@ export const Markdown = memo(function Markdown({
   }
 
   const unclosed = hasUnclosedFence(renderedText)
+  if (settling && !CROSS_BLOCK_REFERENCE.test(renderedText)) {
+    return (
+      <WidgetIdentityContext.Provider value={identity}>
+        <MessageSourceCwd.Provider value={sourceCwd}>
+          <MarkdownLive.Provider value={false}>
+            <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} />
+          </MarkdownLive.Provider>
+        </MessageSourceCwd.Provider>
+      </WidgetIdentityContext.Provider>
+    )
+  }
   const plugin = unclosed ? MD_REHYPE_PLAIN : MD_REHYPE
   const element = (
     <div className="v3-prose">

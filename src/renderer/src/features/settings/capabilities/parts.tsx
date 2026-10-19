@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react'
-import { Badge, Skeleton, type BadgeTone } from '../../../ui'
+import { Badge, Card, EmptyState, Notice, Skeleton, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
 
 export function Panel({ children, label }: { children: ReactNode; label: string }): ReactElement {
@@ -11,8 +11,15 @@ export function Panel({ children, label }: { children: ReactNode; label: string 
 }
 
 export function Note({ children, tone }: { children: ReactNode; tone?: 'caution' }): ReactElement {
+  if (tone === 'caution') {
+    return (
+      <Notice tone="ask" compact role="note">
+        {children}
+      </Notice>
+    )
+  }
   return (
-    <p className={cx('caps-note', tone === 'caution' && 'caps-note--caution')} role="note">
+    <p className="caps-note" role="note">
       {children}
     </p>
   )
@@ -20,14 +27,14 @@ export function Note({ children, tone }: { children: ReactNode; tone?: 'caution'
 
 export function Warn({ children }: { children: ReactNode }): ReactElement {
   return (
-    <p className="caps-warn" role="alert">
+    <Notice tone="fail" compact>
       {children}
-    </p>
+    </Notice>
   )
 }
 
 export function Empty({ children }: { children: ReactNode }): ReactElement {
-  return <p className="caps-empty">{children}</p>
+  return <EmptyState size="sm" title={children} />
 }
 
 export function Group({
@@ -54,7 +61,7 @@ export function Group({
         </div>
         {actions ? <div className="caps-actions">{actions}</div> : null}
       </div>
-      {card ? <div className="caps-card">{children}</div> : children}
+      {card ? <Card className="caps-card">{children}</Card> : children}
     </section>
   )
 }

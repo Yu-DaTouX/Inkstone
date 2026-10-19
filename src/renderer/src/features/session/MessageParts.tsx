@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, IconButton } from '../../ui'
+import { Badge, Button, IconButton, Notice } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX, isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ArtifactFrame } from '../artifacts/ArtifactFrame'
@@ -176,7 +176,7 @@ function ArtifactCard({
               onClick={() => void previewFile(artifact.path)}
             />
           ) : (
-            <span className="v3-artifact-error">{artifact.error || t('artifact.noPreview')}</span>
+            <Notice tone="fail" compact>{artifact.error || t('artifact.noPreview')}</Notice>
           )}
         </div>
       ) : null}
@@ -197,23 +197,28 @@ function ArtifactCard({
             onDisplayModeRequest={setForm}
           />
         ) : snapshot.status === 'paused' ? (
-          <div className="v3-artifact-note" role="status" data-testid="v3-artifact-paused">
-            <span>{t('artifact.htmlBusy')}</span>
-            <Button size="sm" variant="ghost" onPress={snapshot.resume}>
-              {t('artifact.htmlRetry')}
-            </Button>
-          </div>
+          <Notice
+            compact
+            data-testid="v3-artifact-paused"
+            action={
+              <Button size="sm" variant="ghost" onPress={snapshot.resume}>
+                {t('artifact.htmlRetry')}
+              </Button>
+            }
+          >
+            {t('artifact.htmlBusy')}
+          </Notice>
         ) : (
-          <div className={`v3-artifact-note${snapshot.status === 'error' ? ' failed' : ''}`} role={snapshot.status === 'error' ? 'alert' : 'status'}>
+          <Notice tone={snapshot.status === 'error' ? 'fail' : 'info'} compact>
             {snapshot.status === 'error' ? t(htmlErrorKey(snapshot.error)) : t('artifact.reading')}
-          </div>
+          </Notice>
         )
       ) : isCode ? (
         <pre className="v3-artifact-code">
           <code>{unavailable ? artifact.error || t('artifact.noPreview') : readError ? t('artifact.htmlRead') : text ?? t('artifact.reading')}</code>
         </pre>
       ) : (
-        <div className="v3-artifact-note">{unavailable ? artifact.error || t('artifact.unavailable') : t('artifact.binary')}</div>
+        <Notice tone={unavailable ? 'fail' : 'info'} compact>{unavailable ? artifact.error || t('artifact.unavailable') : t('artifact.binary')}</Notice>
       )}
     </section>
   )

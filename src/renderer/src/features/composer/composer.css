@@ -33,6 +33,10 @@
     color: var(--fg);
   }
 
+  .composer:has(.composer-text:focus-visible) {
+    border-color: var(--accent);
+  }
+
   .composer-wrap.is-dropping .composer {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--sel);
@@ -177,54 +181,6 @@
 
   .cq-tag-run {
     color: var(--run);
-  }
-
-  .cq-btn {
-    flex: none;
-    height: 20px;
-    padding: 0 var(--s-6);
-    border: 1px solid var(--line);
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg2);
-    font: inherit;
-    font-size: var(--t-meta);
-    cursor: pointer;
-  }
-
-  .cq-btn:hover {
-    color: var(--fg);
-    background: var(--surface);
-  }
-
-  .cq-primary {
-    border-color: transparent;
-    background: var(--ink);
-    color: var(--on-ink);
-  }
-
-  .cq-primary:hover {
-    background: var(--ink-hover);
-    color: var(--on-ink);
-  }
-
-  .cq-icon-btn {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border: none;
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg3);
-    cursor: pointer;
-  }
-
-  .cq-icon-btn:hover {
-    background: var(--surface);
-    color: var(--fg);
   }
 
   .composer-attachments {
@@ -444,7 +400,7 @@
   .composer-voice-error {
     max-width: 16ch;
     overflow: hidden;
-    color: var(--fail);
+    color: var(--fail-t);
     font-size: var(--t-meta);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -506,15 +462,8 @@
   }
 
   .cu-pop {
-    z-index: 40;
     min-width: 240px;
     max-width: min(340px, calc(100vw - 32px));
-    padding: var(--s-10);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
-    color: var(--fg);
   }
 
   .cu-dialog {
@@ -598,15 +547,9 @@
 
   .composer-plus-pop,
   .composer-permission-pop {
-    z-index: 40;
     width: max-content;
     max-width: min(420px, calc(100vw - 16px));
     min-width: 200px;
-    padding: var(--s-4);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
     color: var(--fg);
   }
 
@@ -636,9 +579,14 @@
     flex: none;
   }
 
-  .cpm-item[data-hovered],
-  .cpm-item[data-focused] {
-    background: var(--sel);
+  .cpm-item[data-hovered] {
+    background: var(--hover);
+  }
+
+  .cpm-item[data-focus-visible] {
+    background: var(--hover);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .cpm-item[data-current='true'] {
@@ -669,36 +617,14 @@
     border: none;
   }
 
-  .composer-perm-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgb(0 0 0 / 0.35);
-  }
-
   .composer-perm-modal {
     width: min(380px, calc(100vw - 32px));
-    padding: var(--s-16);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
   }
 
-  .composer-perm-dialog {
+  .composer-perm-dialog .ui-dialog__body {
     display: flex;
     flex-direction: column;
     gap: var(--s-10);
-    outline: none;
-  }
-
-  .composer-perm-title {
-    margin: 0;
-    font-size: var(--t-title);
-    font-weight: 600;
   }
 
   .composer-perm-body {

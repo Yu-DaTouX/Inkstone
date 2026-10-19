@@ -12,7 +12,7 @@ import {
 } from '../../../shared/quota-forecast'
 import './quota-window.css'
 
-export type QuotaWindowTone = 'ok' | 'warn' | 'err' | 'stale'
+export type QuotaWindowTone = 'ok' | 'ask' | 'fail' | 'stale'
 
 const READ_NOW_MS = 60_000
 

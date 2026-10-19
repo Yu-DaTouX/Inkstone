@@ -57,6 +57,7 @@ interface BotEntry {
 
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const FRAME_GAP_MS = 25
+const BLURRED_GAP_MS = 120
 
 const entries = new Set<BotEntry>()
 const byCanvas = new WeakMap<Element, BotEntry>()
@@ -69,6 +70,7 @@ let reduced = false
 let theme: Theme = 'light'
 let frame = 0
 let pacing = 0
+let focused = true
 
 function now(): number {
   return performance.now() / 1000
@@ -189,7 +191,7 @@ function tick(): void {
   if (again) pacing = window.setTimeout(() => {
     pacing = 0
     schedule()
-  }, FRAME_GAP_MS)
+  }, focused ? FRAME_GAP_MS : BLURRED_GAP_MS)
 }
 
 function schedule(): void {
@@ -216,7 +218,19 @@ function onVisibility(): void {
   schedule()
 }
 
+function onBlur(): void {
+  focused = false
+}
+
+function onFocus(): void {
+  focused = true
+  schedule()
+}
+
 function start(): void {
+  focused = document.hasFocus()
+  window.addEventListener('blur', onBlur)
+  window.addEventListener('focus', onFocus)
   theme = readTheme()
   reducedMedia = window.matchMedia(REDUCED_QUERY)
   reduced = reducedMedia.matches
@@ -240,6 +254,8 @@ function stop(): void {
   themeObserver?.disconnect()
   observer?.disconnect()
   document.removeEventListener('visibilitychange', onVisibility)
+  window.removeEventListener('blur', onBlur)
+  window.removeEventListener('focus', onFocus)
   if (frame) cancelAnimationFrame(frame)
   if (pacing) window.clearTimeout(pacing)
   reducedMedia = null

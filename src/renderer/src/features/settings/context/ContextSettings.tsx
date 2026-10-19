@@ -2,7 +2,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useCompactionInfo } from './use-compaction-info'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, Switch } from '../../../ui'
+import { Button, Card, Switch } from '../../../ui'
 import { contextUsageSummary } from '../../workbench/context-pane-view'
 import {
   AUTO_COMPACT_STEPS,
@@ -57,7 +57,7 @@ function ContextUsageMeter({
   const shown = useTweenedNumber(tokens ?? 0)
   const measurable = windowSize > 0 && tokens !== null
   const percent = measurable ? percentOf(tokens, windowSize) : 0
-  const level = measurable && warnAt !== null && tokens >= warnAt ? 'warn' : 'ok'
+  const level = measurable && warnAt !== null && tokens >= warnAt ? 'ask' : 'ok'
 
   return (
     <div className="settings-usage" data-level={level}>
@@ -154,7 +154,7 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
 
   return (
     <div className="settings-context" data-testid="v3-context-settings">
-      <div className="settings-usage-card" data-setting-id="session-compact-now">
+      <Card className="settings-usage-card" data-setting-id="session-compact-now">
         <ContextUsageMeter
           tokens={contextTokens}
           windowSize={contextWindow}
@@ -173,7 +173,7 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
         >
           {text.contextCompactNow}
         </Button>
-      </div>
+      </Card>
 
       <SettingsGroup label={text.contextAutoCompact}>
         <SettingsRow

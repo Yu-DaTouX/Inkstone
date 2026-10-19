@@ -104,7 +104,7 @@ const ZH: WorkbenchText = {
       tasks: '任务',
       ext: '扩展',
       mcp: 'MCP',
-      changes: '更改',
+      changes: '改动',
       quota: '额度'
     },
     noBranch: '未知分支',
@@ -117,7 +117,7 @@ const ZH: WorkbenchText = {
     taskDetail: '查看详情',
     runningCount: (n) => `运行中 ${n}`,
     doneCount: (n) => `${n} 项已结束`,
-    subagentGroup: '子代理',
+    subagentGroup: '子 Agent',
     backgroundGroup: '后台任务',
     showFinished: (n) => `显示已完成 ${n} 个`,
     hideFinished: '隐藏已完成',

@@ -28,7 +28,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-steering-mode', section: 'session', zh: '运行中插话', en: 'Steering while running', keywords: ['插话', '消息投递', 'steer', 'steering'], more: true },
   { id: 'session-follow-up-mode', section: 'session', zh: '排队消息', en: 'Queued messages', keywords: ['排队', '队列', 'follow-up', 'queue'], more: true },
   { id: 'session-subagent-notify', section: 'session', zh: '子 Agent 结束时通知发起会话', en: 'Notify the parent session when a subagent finishes', keywords: ['子代理', '子 Agent', 'subagent', '父会话'], more: true },
-  { id: 'session-loop-auto-continue', section: 'session', zh: '循环中止后自动继续', en: 'Auto-continue after a loop stop', keywords: ['循环', '续跑', '自动继续', 'loop', 'continue'], more: true },
+  { id: 'session-loop-auto-continue', section: 'session', zh: '循环停止后自动继续', en: 'Auto-continue after a loop stop', keywords: ['循环', '续跑', '自动继续', 'loop', 'continue'], more: true },
   { id: 'session-context-trim', section: 'session', zh: '裁剪较早的大段工具输出', en: 'Trim older large tool output', keywords: ['裁剪', '工具输出', 'trim', 'tool output'], more: true },
   { id: 'session-context-trim-at', section: 'session', zh: '裁剪起点', en: 'Trim threshold', keywords: ['裁剪阈值', 'trim threshold'], more: true },
   { id: 'session-idle-timeout', section: 'session', zh: '连接空闲超时', en: 'Connection idle timeout', keywords: ['超时', '本地模型', 'timeout', 'idle'], more: true },

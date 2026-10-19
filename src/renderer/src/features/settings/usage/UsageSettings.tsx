@@ -160,7 +160,7 @@ export function UsageSettings({ onOpenRuns }: UsageSettingsProps = {}): ReactEle
                         <span
                           className="settings-bar__fill"
                           style={{
-                            width: `${Math.max(2, bar.ratio * 100)}%`,
+                            transform: `scaleX(${Math.max(0.02, bar.ratio)})`,
                             background: dimension === 'day' ? 'var(--data-1)' : `var(--data-${(index % 8) + 1})`
                           }}
                         />

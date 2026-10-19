@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { RefreshCw } from 'lucide-react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, IconButton, Spinner } from '../../ui'
+import { Badge, Button, Card, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { money } from '../../../../shared/quota-mini'
 import { quotaReadingStale } from '../../../../shared/quota-forecast'
 import {
@@ -103,20 +103,17 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
         </IconButton>
       </div>
       {error ? (
-        <p className="wb-quota-msg" role="alert" data-testid="v3-wb-quota-error">
+        <Notice tone="fail" compact data-testid="v3-wb-quota-error">
           {report ? t('quota.stale', { msg: error }) : t('acct.failed', { msg: error })}
-        </p>
+        </Notice>
       ) : null}
-      {notice ? <p className="wb-quota-msg" role="status">{notice}</p> : null}
+      {notice ? <Notice compact>{notice}</Notice> : null}
 
       {cards.map((card) => (
         <QuotaCard key={`${card.source}:${card.key}`} card={card} busy={busyKey === card.key} locked={!!busyKey} onSwitch={() => void switchTo(card)} />
       ))}
       {report && cards.length === 0 ? (
-        <div className="wb-note-block" data-testid="v3-wb-quota-empty">
-          <p className="wb-note-title">{t('acct.emptyTitle')}</p>
-          <p className="wb-note-body">{t('acct.emptyBody')}</p>
-        </div>
+        <EmptyState className="wb-note-block" data-testid="v3-wb-quota-empty" title={t('acct.emptyTitle')} description={t('acct.emptyBody')} />
       ) : null}
 
       <p className="wb-ctx-note">{text.quotaHint}</p>
@@ -150,7 +147,7 @@ export function QuotaCard({
     .join(' · ')
 
   return (
-    <section className="wb-quota-card" data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
+    <Card as="section" className="wb-quota-card" data-testid={`v3-wb-quota-card-${card.source}-${card.provider}`}>
       <div className="wb-quota-id">
         <span className="wb-quota-name" title={[card.label, card.email].filter(Boolean).join(' · ') || undefined}>
           {title}
@@ -166,8 +163,8 @@ export function QuotaCard({
       </div>
       {meta ? <div className="wb-quota-meta" title={meta}>{meta}</div> : null}
 
-      {card.status === 'error' ? <p className="wb-quota-msg">{t('acct.failed', { msg: card.error ?? '' })}</p> : null}
-      {card.status === 'expired' ? <p className="wb-quota-msg">{card.hint}</p> : null}
+      {card.status === 'error' ? <Notice tone="fail" compact>{t('acct.failed', { msg: card.error ?? '' })}</Notice> : null}
+      {card.status === 'expired' ? <Notice tone="ask" compact>{card.hint}</Notice> : null}
 
       {stale && (card.windows.length || card.balance) ? (
         <p className="wb-quota-stale" title={t('quota.staleTip')} data-testid="v3-wb-quota-stale">
@@ -186,6 +183,6 @@ export function QuotaCard({
           </div>
         </div>
       ) : null}
-    </section>
+    </Card>
   )
 }

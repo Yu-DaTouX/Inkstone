@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { cx } from './cx'
 
-export type BadgeTone = 'neutral' | 'accent' | 'run' | 'ask' | 'stall' | 'fail'
+export type BadgeTone = 'neutral' | 'accent' | 'ok' | 'run' | 'ask' | 'stall' | 'fail'
 
 export interface BadgeProps {
   tone?: BadgeTone

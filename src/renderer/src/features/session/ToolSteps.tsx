@@ -7,7 +7,7 @@ import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolGroupLabel, toolRunLabel } from './tool-summary'
 import { GROUP_EXTRAS, LIVE_STEPS, capRecent, groupConsecutive, groupExtras, isFailedCall, isLiveCall, type StepGroup } from './tool-groups'
 import { Icon } from './Icon'
-import { Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
+import { Badge, Button, CompletionSweep, IconButton, Notice, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
 const OUTPUT_PREVIEW_LINES = 16
@@ -135,7 +135,7 @@ export function ToolSteps({ tools }: { tools: UIToolCall[] }): JSX.Element | nul
       )}
 
       {open && tools.some((c) => detailKind(c.name) === 'command' || detailKind(c.name) === 'change') ? (
-        <div className="v3-steps-note"><Icon name="external" size={13} /><span>{tt('toolDetail')}</span></div>
+        <Notice compact role="note" icon={<Icon name="external" size={13} />}>{tt('toolDetail')}</Notice>
       ) : null}
     </section>
   )
@@ -166,7 +166,7 @@ function StepGroupRow({ group }: { group: StepGroup }): JSX.Element {
       <button className="v3-step-head" aria-expanded={open} onClick={() => setManual(!open)} title={label} data-testid="v3-step-group">
         <span className={`v3-dot ${state}`} aria-hidden />
         <span className="v3-step-target">{label}</span>
-        {failed ? <span className="v3-badge err">{failed} {t('tool.failed')}</span> : null}
+        {failed ? <Badge tone="fail" className="v3-steps-badge">{failed} {t('tool.failed')}</Badge> : null}
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
       </button>
       {open ? (
@@ -204,7 +204,7 @@ function StepNode({ node, depth }: { node: ToolCallNode; depth: number }): JSX.E
         <span className="v3-step-verb">{call.name}</span>
         <ShimmerText className="v3-step-target" active={running} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
         {secs !== null && !running ? <span className="v3-step-time">{secs}s</span> : null}
-        {failed ? <span className="v3-badge err">{t('tool.failed')}</span> : call.cancelled ? <span className="v3-badge warn">{t('tool.cancelled')}</span> : call.incomplete ? <span className="v3-badge warn">{t('tool2.incomplete')}</span> : null}
+        {failed ? <Badge tone="fail" className="v3-steps-badge">{t('tool.failed')}</Badge> : call.cancelled ? <Badge tone="stall" className="v3-steps-badge">{t('tool.cancelled')}</Badge> : call.incomplete ? <Badge tone="stall" className="v3-steps-badge">{t('tool2.incomplete')}</Badge> : null}
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
       </button>
       {open ? <StepDetail call={call} /> : null}
@@ -239,7 +239,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
       {call.nestedCallsIncomplete ? <div className="v3-step-note">{t('tool2.nestedIncomplete')}</div> : null}
       {call.images?.length ? (
         <div className="v3-step-images">
-          {call.images.map((im, i) => im.data ? <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt="" className="v3-md-image" /> : im.url ? <img key={i} src={im.url} alt="" className="v3-md-image" /> : null)}
+          {call.images.map((im, i) => im.data ? <img key={i} src={`data:${im.mimeType};base64,${im.data}`} alt={t('tool.image', { tool: call.name })} className="v3-md-image" /> : im.url ? <img key={i} src={im.url} alt={t('tool.image', { tool: call.name })} className="v3-md-image" /> : null)}
         </div>
       ) : null}
       {kind === 'change' ? (

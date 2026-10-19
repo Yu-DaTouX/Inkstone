@@ -12,6 +12,7 @@ import {
   type TabsProps as RACTabsProps
 } from 'react-aria-components'
 import { X } from 'lucide-react'
+import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 
 export { TabPanels }
@@ -32,7 +33,8 @@ export interface TabProps extends RACTabProps {
   closeLabel?: string
 }
 
-export function Tab({ onClose, closeLabel = '关闭', className, children, ...props }: TabProps) {
+export function Tab({ onClose, closeLabel, className, children, ...props }: TabProps) {
+  const t = useOptionalT()
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,7 +59,7 @@ export function Tab({ onClose, closeLabel = '关闭', className, children, ...pr
             <span
               role="button"
               tabIndex={-1}
-              aria-label={closeLabel}
+              aria-label={closeLabel ?? t('ui.close')}
               className="ui-tab__close"
               onPointerDown={(event) => {
                 event.stopPropagation()

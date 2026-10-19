@@ -19,7 +19,7 @@ import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
 import { Icon } from '../features/session/Icon'
-import { Button, IconButton, Splitter } from '../ui'
+import { Button, EmptyState, IconButton, Splitter } from '../ui'
 import { collapsedPanes, isSessionTile, subagentRunIdOf } from './SideBySideLayout'
 import {
   KEY_STEP,
@@ -341,7 +341,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
             />
             <div className="composer-bar">
               {waiting ? (
-                <span className="v3-split-state" data-tone="warn">{t('split.waiting')}</span>
+                <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
               ) : running ? (
                 <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
               ) : null}
@@ -376,7 +376,7 @@ function AgentPane({ runId }: { runId: string }): JSX.Element {
     if (el && stickRef.current) el.scrollTop = el.scrollHeight
   }, [turns])
 
-  if (!run) return <div className="v3-split-empty" data-testid="v3-split-agent-missing">{t('delegate.missing')}</div>
+  if (!run) return <EmptyState className="v3-split-empty" data-testid="v3-split-agent-missing" title={t('delegate.missing')} />
   return (
     <div className="v3-conv">
       <div

@@ -1,3 +1,4 @@
+import { uiText } from '../../i18n/ui-text'
 import type {
   GitDiffResult
 } from '../../../../shared/git'
@@ -66,7 +67,7 @@ export function fetchDiff(bridge: ReviewBridge, query: ReviewDiffQueryInput): Pr
       unstaged: false,
       untracked: false,
       bytes: 0,
-      error: '会话来源的差异查询缺少会话归属，已阻止读取'
+      error: uiText('state.error.diffScopeMissing')
     })
   }
   return bridge.diff(query)

@@ -245,12 +245,12 @@
     )
 
     if (!paneNarrow) {
-      const usageTabs = (control) => [...document.querySelectorAll(`[data-usage-control="${control}"] [role="tab"]`)]
+      const usageTabs = (control) => [...document.querySelectorAll(`[data-usage-control="${control}"] [role="tab"], [data-usage-control="${control}"] [role="radio"]`)]
       const clickRange = async (label) => {
         const tab = usageTabs('range').find((el) => (el.textContent ?? '').trim() === label)
         tab?.click()
         if (!tab) return false
-        return until(() => tab.getAttribute('aria-selected') === 'true', 4000)
+        return until(() => tab.getAttribute('aria-selected') === 'true' || tab.getAttribute('aria-checked') === 'true', 4000)
       }
       check(await until(() => (query('usage-tokens')?.textContent ?? '').includes('8,000'), 6000), '概览主数字显示 8,000（all）')
       check(

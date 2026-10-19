@@ -47,6 +47,7 @@ export interface PreviewPaneProps {
 
 export interface ContextPaneProps {
   owner: WorkspaceOwner
+  visible?: boolean
 }
 
 export interface BranchPaneProps {

@@ -66,10 +66,10 @@ try {
   ok(low.includes('a@example.com'), '标题显示邮箱')
 
   const warn = html({ key: 'k2', windows: [{ id: 'weekly', label: '每周', used: 85, total: 100 }] })
-  ok(warn.includes('data-tone="warn"'), '85% 窗口：warn 色调')
+  ok(warn.includes('data-tone="ask"'), '85% 窗口：ask 色调')
 
   const exceeded = html({ key: 'k3', status: 'limited', windows: [{ id: 'monthly', label: '本月', used: 100, total: 100, exceeded: true, estimated: true }] })
-  ok(exceeded.includes('data-tone="err"'), '用尽窗口：err 色调')
+  ok(exceeded.includes('data-tone="fail"'), '用尽窗口：fail 色调')
   ok(exceeded.includes('ui-badge'), '推算窗口与已达上限都带徽标')
 
   const active = html({ key: 'k4', active: true, switchable: true })

@@ -4047,10 +4047,25 @@ export class AgentController extends EventEmitter {
     if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
     const res = await this.rpc.command('set_model', { provider, modelId })
     if (!res.success) return { ok: false, error: res.error }
-    await this.refreshState()
-    await this.listThinkingLevels()
+    await this.refreshStateWithThinkingLevels()
     await this.refreshStats()
     return { ok: true }
+  }
+
+  private async refreshStateWithThinkingLevels(): Promise<void> {
+    const rpc = this.rpc
+    if (!rpc) return
+    try {
+      const levels = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
+      const state = await rpc.command('get_state')
+      if (!state.success) return
+      const data = { ...(state.data as Record<string, unknown>) }
+      if (levels.success && !Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')) {
+        data.availableThinkingLevels = levels.data?.levels
+      }
+      this.setStateFrom(data)
+    } catch {
+    }
   }
 
   async listModels(): Promise<ModelInfo[]> {
@@ -4159,8 +4174,7 @@ export class AgentController extends EventEmitter {
       if (!res.data?.model) return { ok: false, error: '只有一个可用模型' }
       landed = res.data.model
     }
-    await this.refreshState()
-    await this.listThinkingLevels()
+    await this.refreshStateWithThinkingLevels()
     await this.refreshStats()
     return { ok: true, to: landed?.name || landed?.id }
   }

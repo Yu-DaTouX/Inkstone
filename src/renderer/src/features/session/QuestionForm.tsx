@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { QuestionField } from '../../../../shared/question-form'
-import { Button } from '../../ui'
+import { Button, Input, Slider, TextArea, TextField } from '../../ui'
 
 type Value = string | string[]
 
@@ -49,15 +49,23 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
       {fields.map((f) => {
         const v = values[f.name]
         const bad = missing.includes(f.name)
+        const errId = `v3qf-${f.name}-err`
+        const describedBy = bad ? errId : undefined
         return (
           <div key={f.name} className={`v3-qfield${bad ? ' missing' : ''}`}>
-            <label className="v3-qfield-label" htmlFor={`v3qf-${f.name}`}>
-              {f.label}{f.optional ? <span className="v3-qoptional">{t('qf.optional')}</span> : null}
-            </label>
+            {f.kind === 'range' ? (
+              <span className="v3-qfield-label">
+                {f.label}{f.optional ? <span className="v3-qoptional">{t('qf.optional')}</span> : null}
+              </span>
+            ) : (
+              <label className="v3-qfield-label" htmlFor={`v3qf-${f.name}`}>
+                {f.label}{f.optional ? <span className="v3-qoptional">{t('qf.optional')}</span> : null}
+              </label>
+            )}
 
             {f.kind === 'choice' || f.kind === 'multi' ? (
               <>
-                <div className="v3-qoptions" role="group" aria-label={f.label}>
+                <div className="v3-qoptions" role="group" aria-label={f.label} aria-describedby={bad ? errId : undefined}>
                   {f.options!.map((raw) => {
                     const o = typeof raw === 'string' ? { label: raw, description: undefined } : raw
                     const on = f.kind === 'multi' ? (v as string[]).includes(o.label) : v === o.label
@@ -83,14 +91,16 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
                     )
                   })}
                 </div>
-                <input
-                  className="v3-input v3-qother"
+                <TextField
+                  className="v3-qother"
                   id={`v3qf-${f.name}`}
+                  aria-label={`${f.label} (${t('q.customReply')})`}
                   placeholder={t('q.customReply')}
+                  isInvalid={bad}
+                  aria-describedby={describedBy}
                   value={other[f.name] ?? ''}
-                  disabled={busy}
-                  onChange={(e) => {
-                    const text = e.target.value
+                  isDisabled={busy}
+                  onChange={(text) => {
                     setOther((prev) => ({ ...prev, [f.name]: text }))
                     if (f.kind === 'choice' && text.trim()) set(f.name, '')
                     else setMissing((prev) => prev.filter((n) => n !== f.name))
@@ -98,27 +108,36 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
                 />
               </>
             ) : f.kind === 'range' ? (
-              <div className="v3-qrange">
-                <input id={`v3qf-${f.name}`} type="range" min={f.min} max={f.max} step={f.step ?? 1} value={v as string} disabled={busy} onChange={(e) => set(f.name, e.target.value)} />
-                <span className="v3-qrange-value">{v as string}</span>
-              </div>
-            ) : f.kind === 'text' ? (
-              <textarea id={`v3qf-${f.name}`} className="v3-input v3-textarea" rows={2} placeholder={f.placeholder} value={v as string} disabled={busy} onChange={(e) => set(f.name, e.target.value)} />
-            ) : (
-              <input
-                id={`v3qf-${f.name}`}
-                className="v3-input"
-                type={f.kind === 'date' ? 'date' : 'number'}
-                min={f.min}
-                max={f.max}
-                step={f.step}
-                placeholder={f.placeholder}
-                value={v as string}
-                disabled={busy}
-                onChange={(e) => set(f.name, e.target.value)}
+              <Slider
+                aria-label={f.label}
+                minValue={f.min ?? 0}
+                maxValue={f.max ?? 100}
+                step={f.step ?? 1}
+                value={Number(v)}
+                isDisabled={busy}
+                isInvalid={bad}
+                showValue
+                thumbLabels={[f.label]}
+                aria-describedby={describedBy}
+                onChange={(next) => set(f.name, String(Array.isArray(next) ? next[0] : next))}
               />
+            ) : f.kind === 'text' ? (
+              <TextArea id={`v3qf-${f.name}`} aria-label={f.label} rows={2} placeholder={f.placeholder} value={v as string} isDisabled={busy} isInvalid={bad} aria-describedby={describedBy} onChange={(text) => set(f.name, text)} />
+            ) : (
+              <TextField
+                id={`v3qf-${f.name}`}
+                aria-label={f.label}
+                type={f.kind === 'date' ? 'date' : 'number'}
+                value={v as string}
+                isDisabled={busy}
+                isInvalid={bad}
+                aria-describedby={describedBy}
+                onChange={(text) => set(f.name, text)}
+              >
+                <Input className="ui-input" min={f.min} max={f.max} step={f.step} placeholder={f.placeholder} />
+              </TextField>
             )}
-            {bad ? <span className="v3-qerror" role="alert">{t('qf.required')}</span> : null}
+            {bad ? <span className="v3-qerror" id={errId} role="alert">{t('qf.required')}</span> : null}
           </div>
         )
       })}
