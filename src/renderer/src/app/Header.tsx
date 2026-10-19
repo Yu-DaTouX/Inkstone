@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, FolderOpen, Globe, Minus, MoreHorizontal, PanelLeft, PanelRight, Pin, Settings, Square, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Minus, PanelLeft, Pin, Play, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
@@ -23,10 +23,21 @@ interface Props {
   sessionBarOpen: boolean
   sessionBarHidden?: boolean
   onToggleSessionBar: () => void
-  onOpenTool: (tab: WorkbenchTabId) => void
+  openPanes: ReadonlySet<WorkbenchTabId>
+  changesDirty: boolean
+  onTogglePane: (tab: WorkbenchTabId) => void
 }
 
-export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, onOpenTool }: Props): ReactElement {
+const TITLEBAR_PANES = [
+  { tab: 'terminal', Icon: Terminal },
+  { tab: 'changes', Icon: FileDiff },
+  { tab: 'browser', Icon: Play },
+  { tab: 'files', Icon: Folder }
+] as const
+
+const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs']
+
+export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -108,37 +119,40 @@ export function Header({ narrow, sidebarOpen, route, onToggleSidebar, onPreviewS
                 data-testid="v3-header-sessionbar"
                 data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
-                <PanelRight size={16} />
+                <SquareMenu size={16} />
               </IconButton>
             </IconTip>
             <Separator orientation="vertical" className="v3-head-sep" />
-            {narrow ? null : (
-            <>
-            <IconTip label={toolText.tabs.terminal}>
-              <IconButton aria-label={toolText.tabs.terminal} data-testid="wb-open-terminal" onPress={() => onOpenTool('terminal')}>
-                <Terminal size={16} />
-              </IconButton>
-            </IconTip>
-            <IconTip label={toolText.tabs.files}>
-              <IconButton aria-label={toolText.tabs.files} data-testid="wb-open-files" onPress={() => onOpenTool('files')}>
-                <FolderOpen size={16} />
-              </IconButton>
-            </IconTip>
-            <IconTip label={toolText.tabs.browser}>
-              <IconButton aria-label={toolText.tabs.browser} data-testid="wb-open-browser" onPress={() => onOpenTool('browser')}>
-                <Globe size={16} />
-              </IconButton>
-            </IconTip>
-            </>
-            )}
+            {narrow
+              ? null
+              : TITLEBAR_PANES.map(({ tab, Icon }) => (
+                  <IconTip key={tab} label={toolText.tabs[tab]}>
+                    <IconButton
+                      aria-label={toolText.tabs[tab]}
+                      aria-pressed={openPanes.has(tab)}
+                      className="v3-head-pane"
+                      data-testid={`wb-open-${tab}`}
+                      onPress={() => onTogglePane(tab)}
+                    >
+                      <Icon size={16} />
+                      {tab === 'changes' && changesDirty ? <span className="v3-head-pane-dot" aria-hidden /> : null}
+                    </IconButton>
+                  </IconTip>
+                ))}
             <MenuTrigger>
-              <IconButton aria-label={toolText.overview.moreTools} title={toolText.overview.moreTools} data-testid="wb-more-tools">
-                <MoreHorizontal size={16} />
+              <IconButton aria-label={toolText.viewOptions} title={toolText.viewOptions} data-testid="wb-more-tools">
+                <EllipsisVertical size={16} />
               </IconButton>
               <Popover placement="bottom end" offset={6}>
-                <Menu aria-label={toolText.overview.moreTools} className="wb-more-menu" data-testid="wb-more-menu">
-                  {(narrow ? (['terminal', 'files', 'browser', 'changes', 'preview', 'logs', 'branch', 'quota'] as const) : (['changes', 'preview', 'logs', 'branch', 'quota'] as const)).map((tab) => (
-                    <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} onAction={() => onOpenTool(tab)}>
+                <Menu
+                  aria-label={toolText.viewOptions}
+                  className="wb-more-menu"
+                  data-testid="wb-more-menu"
+                  onAction={(key) => onTogglePane(key as WorkbenchTabId)}
+                >
+                  {[...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES].map((tab) => (
+                    <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
+                      <span className="v3-head-check" aria-hidden>{openPanes.has(tab) ? <Check size={14} /> : null}</span>
                       {toolText.tabs[tab]}
                     </MenuItem>
                   ))}

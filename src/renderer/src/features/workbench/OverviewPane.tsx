@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { ArrowUpRight, ChevronDown, ChevronRight, Folder, GitBranch, ShieldCheck, Square } from 'lucide-react'
-import { Button, IconButton, Meter, Notice } from '../../ui'
+import {
+  Brain,
+  Copy,
+  Cpu,
+  FileText,
+  Files,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  GitCommitHorizontal,
+  Monitor,
+  ShieldCheck,
+  Square
+} from 'lucide-react'
+import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
@@ -31,6 +44,19 @@ import type { CapabilityMcpServerSettingView, CompactionRun, ProviderQuota, Quot
 import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
+import { RailCard } from './RailCard'
+import { RailSectionsMenu } from './RailSectionsMenu'
+import {
+  isRailSectionHidden,
+  isRailSectionOpen,
+  resolveRailOrder,
+  useRailSections,
+  type RailSectionId
+} from './rail-sections'
+import { outputFolder, outputName, sessionOutputs, useGitLineTotals } from './rail-data'
+import { railText, type RailText } from './rail-text'
+import { useRailReorder } from './use-rail-reorder'
+import { showPreview } from './tool-tiles'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -39,31 +65,8 @@ export interface OverviewPaneProps {
   onPreview?: (path: string) => void
 }
 
-type TileId = 'env' | 'context' | 'todos' | 'tasks' | 'ext' | 'mcp' | 'changes' | 'quota'
-
-const FOLD_KEY = 'inkstone.v3.overview.folds'
 const QUOTA_TICK_MS = 30_000
 const GIT_REFRESH_WHILE_RUNNING_MS = 4_000
-
-type FoldMap = Partial<Record<TileId, boolean>>
-
-function readFolds(): FoldMap {
-  if (typeof localStorage === 'undefined') return {}
-  try {
-    const raw = JSON.parse(localStorage.getItem(FOLD_KEY) ?? 'null') as unknown
-    return raw && typeof raw === 'object' ? (raw as FoldMap) : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeFolds(folds: FoldMap): void {
-  if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(FOLD_KEY, JSON.stringify(folds))
-  } catch {
-  }
-}
 
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean)
@@ -343,35 +346,53 @@ function compareRuns(a: SubagentRun, b: SubagentRun): number {
   return live !== 0 ? live : b.startedAt - a.startedAt
 }
 
-interface TileProps {
-  id: TileId
-  title: string
-  summary?: ReactNode
-  folded: boolean
-  onToggle: (id: TileId) => void
-  onOpen?: () => void
-  openLabel?: string
-  tone?: 'ok' | 'ask' | 'fail'
-  children: ReactNode
+type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'switchBranch'
+
+interface RowMenuItem {
+  key: RowMenuKey
+  label: string
+  icon: ReactNode
 }
 
-function Tile({ id, title, summary, folded, onToggle, onOpen, openLabel, tone, children }: TileProps): ReactElement {
+function RailRowMenu({
+  label,
+  icon,
+  value,
+  title,
+  menuLabel,
+  items,
+  onAction,
+  testId
+}: {
+  label: string
+  icon: ReactNode
+  value?: string
+  title: string
+  menuLabel: string
+  items: RowMenuItem[]
+  onAction: (key: RowMenuKey) => void
+  testId: string
+}): ReactElement {
+  const anchor = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
   return (
-    <section className="wb-tile" data-tile={id} data-folded={folded ? '1' : '0'} data-tone={tone} data-testid={`wb-tile-${id}`}>
-      <div className="wb-tile-head">
-        <Button variant="ghost" size="sm" className="wb-tile-toggle" aria-expanded={!folded} onPress={() => onToggle(id)}>
-          <span className="wb-tile-title">{title}</span>
-          {folded ? <ChevronRight size={12} className="wb-tile-chevron" aria-hidden /> : <ChevronDown size={12} className="wb-tile-chevron" aria-hidden />}
-          {summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
-        </Button>
-        {onOpen ? (
-          <IconButton variant="ghost" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpen}>
-            <ArrowUpRight size={13} aria-hidden />
-          </IconButton>
-        ) : null}
-      </div>
-      {folded || children == null ? null : <div className="wb-tile-body">{children}</div>}
-    </section>
+    <li className="wb-ov-item wb-rail-row" title={title}>
+      <Button ref={anchor} variant="ghost" size="sm" className="wb-rail-row-btn" aria-haspopup="menu" aria-expanded={open} onPress={() => setOpen(true)} data-testid={testId}>
+        <span className="wb-ov-item-icon">{icon}</span>
+        <span className="wb-ov-item-label">{label}</span>
+        {value ? <span className="wb-ov-item-value">{value}</span> : null}
+      </Button>
+      <Popover triggerRef={anchor} isOpen={open} onOpenChange={setOpen} placement="bottom start" offset={4}>
+        <Menu aria-label={menuLabel} autoFocus="first" onAction={(key) => onAction(key as RowMenuKey)} onClose={() => setOpen(false)}>
+          {items.map((item) => (
+            <MenuItem key={item.key} id={item.key} textValue={item.label}>
+              {item.icon}
+              {item.label}
+            </MenuItem>
+          ))}
+        </Menu>
+      </Popover>
+    </li>
   )
 }
 
@@ -576,10 +597,45 @@ function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): Re
   )
 }
 
+function OutputRows({ files, text, onOpen }: { files: ReturnType<typeof sessionOutputs>; text: RailText; onOpen: (path: string) => void }): ReactElement {
+  const statusLabel = { created: text.outputCreated, modified: text.outputModified, deleted: text.outputDeleted }
+  return (
+    <ul className="wb-ov-items" data-testid="wb-rail-outputs">
+      {files.map((file) => (
+        <li key={file.path} className="wb-ov-item wb-rail-row" title={`${statusLabel[file.status]} ${file.path}`}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="wb-rail-row-btn"
+            isDisabled={file.status === 'deleted'}
+            onPress={() => onOpen(file.path)}
+          >
+            <span className="wb-ov-item-icon">
+              <FileText size={14} aria-hidden />
+            </span>
+            <span className="wb-ov-item-label">{outputName(file.path)}</span>
+            {outputFolder(file.path) ? <span className="wb-ov-item-value">{outputFolder(file.path)}</span> : null}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function LineDelta({ added, removed, text }: { added: number; removed: number; text: RailText }): ReactElement {
+  return (
+    <span className="wb-rail-delta" aria-label={text.linesChanged(added, removed)}>
+      <span className="wb-rail-added">+{added}</span>
+      <span className="wb-rail-removed">−{removed}</span>
+    </span>
+  )
+}
+
 export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = useMemo(() => workbenchText(lang).overview, [lang])
+  const rail = useMemo(() => railText(lang), [lang])
   const todoText = useMemo(() => todoTileText(lang), [lang])
 
   const cwd = owner?.cwd || ''
@@ -595,31 +651,41 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const agentRunning = session?.isAgentRunning === true || session?.isStreaming === true
   const provider = session?.model?.provider ?? ''
 
-  const [folds, setFolds] = useState<FoldMap>(readFolds)
-  const toggle = (id: TileId): void => {
-    setFolds((prev) => {
-      const next = { ...prev, [id]: !prev[id] }
-      writeFolds(next)
-      return next
-    })
-  }
-  const isFolded = (id: TileId): boolean => folds[id] === true
+  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
+  const foldKey = view.key || 'none'
+  const savedOrder = useRailSections((s) => s.order)
+  const hidden = useRailSections((s) => s.hidden)
+  const foldsBySession = useRailSections((s) => s.foldsBySession)
+  const setSectionOpen = useRailSections((s) => s.setOpen)
+  const setOrder = useRailSections((s) => s.setOrder)
+  const order = useMemo(() => resolveRailOrder(savedOrder), [savedOrder])
+  const isOpen = (id: RailSectionId): boolean => isRailSectionOpen({ order: savedOrder, hidden, foldsBySession }, foldKey, id)
 
   const projectName = cwd ? settings?.projectNames?.[cwd] || lastSegment(cwd) : ''
   const mode: PermissionMode = normalizePermissionMode(settings?.permissionMode)
   const modeLabel = t(`permission.label.${mode}` as 'permission.label.danger')
+  const modelLabel = session?.model ? session.model.name || session.model.id : ''
+  const thinkingLevel = session?.thinkingLevel || 'off'
+  const thinkingLabel = t(`think.${thinkingLevel}` as MessageKey)
 
   const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
   const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}`
   const repo = useGitRepo(cwd || null, gitRefresh)
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
-  const changesSummary = !repo ? undefined : repo.changedCount > 0 ? text.changesFiles(repo.changedCount) : text.changesNone
+  const lineTotals = useGitLineTotals(cwd || null, !!repo && repo.changedCount > 0 && !isRailSectionHidden({ hidden }, 'changes'), gitRefresh)
+  const changesSummary = !repo
+    ? undefined
+    : repo.changedCount === 0
+      ? text.changesNone
+      : lineTotals
+        ? <LineDelta added={lineTotals.added} removed={lineTotals.removed} text={rail} />
+        : text.changesFiles(repo.changedCount)
 
-  const contextFolded = isFolded('context')
+  const contextOpen = isOpen('context')
   const autoCompactLimit = autoCompactLimitOf(session, settings)
   const contextData = useMemo(
-    () => (contextFolded ? null : contextPaneData({ session, stats, messages, autoCompactLimit })),
-    [contextFolded, session, stats, messages, autoCompactLimit]
+    () => (!contextOpen ? null : contextPaneData({ session, stats, messages, autoCompactLimit })),
+    [contextOpen, session, stats, messages, autoCompactLimit]
   )
   const usage = contextData?.usage ?? contextUsageSummary(session, stats, autoCompactLimit)
   const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : undefined
@@ -628,7 +694,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const hasTodos = hasTodoTileContent(todos)
   const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
 
-  const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
+  const outputs = useMemo(() => sessionOutputs(messages), [messages])
+
   const sessionIds = view.sessionId ? [view.sessionId] : []
   const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds }).sort(compareRuns)
   const allRuns = useRunsV3((s) => s.runs)
@@ -662,131 +729,254 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         : undefined
   const quotaTone = bindingTone === 'ask' || bindingTone === 'fail' ? bindingTone : !binding && !quotaModel?.balance ? quotaModel?.problem?.tone : undefined
 
-  return (
-    <div className="wb-overview" data-testid="wb-overview">
-      <Tile id="env" title={text.tiles.env} folded={isFolded('env')} onToggle={toggle}>
+  const openOutput = (path: string): void => {
+    if (!owner) return
+    showPreview(owner.key, path)
+    onOpenView('files')
+  }
+
+  const runRowAction = (key: RowMenuKey): void => {
+    switch (key) {
+      case 'reveal':
+        if (cwd) void window.yan.revealPath(cwd)
+        return
+      case 'copyPath':
+        if (cwd) void navigator.clipboard.writeText(cwd)
+        return
+      case 'openFiles':
+        onOpenView('files')
+        return
+      case 'copyBranch':
+        if (repo?.branch) void navigator.clipboard.writeText(repo.branch)
+        return
+      case 'switchBranch':
+        onOpenView('branch')
+    }
+  }
+
+  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; tone?: 'ok' | 'ask' | 'fail'; onOpenView?: () => void; body: ReactNode }>> = {
+    environment: {
+      body: (
         <ul className="wb-ov-items">
+          <li className="wb-ov-item" data-testid="wb-rail-local">
+            <Monitor size={14} className="wb-ov-item-icon" aria-hidden />
+            <span className="wb-ov-item-label">{rail.local}</span>
+          </li>
           {cwd ? (
-            <li className="wb-ov-item" title={cwd} data-testid="wb-ov-path">
-              <Folder size={14} className="wb-ov-item-icon" aria-hidden />
-              <span className="wb-ov-item-label">{projectName}</span>
-              {parentFolder(cwd) ? <span className="wb-ov-item-value">{parentFolder(cwd)}</span> : null}
-            </li>
+            <RailRowMenu
+              label={projectName}
+              icon={<Folder size={14} aria-hidden />}
+              value={parentFolder(cwd)}
+              title={cwd}
+              menuLabel={rail.folderMenu}
+              testId="wb-ov-path"
+              onAction={runRowAction}
+              items={[
+                { key: 'reveal', label: rail.reveal, icon: <FolderOpen size={14} aria-hidden /> },
+                { key: 'copyPath', label: rail.copyPath, icon: <Copy size={14} aria-hidden /> },
+                { key: 'openFiles', label: rail.openFiles, icon: <Files size={14} aria-hidden /> }
+              ]}
+            />
           ) : null}
           {branch ? (
-            <li className="wb-ov-item" title={`${text.branchLabel} ${branch}`}>
-              <GitBranch size={14} className="wb-ov-item-icon" aria-hidden />
-              <span className="wb-ov-item-label">{branch}</span>
+            <RailRowMenu
+              label={branch}
+              icon={<GitBranch size={14} aria-hidden />}
+              title={`${text.branchLabel} ${branch}`}
+              menuLabel={rail.branchMenu}
+              testId="wb-rail-branch"
+              onAction={runRowAction}
+              items={[
+                ...(repo?.branch ? [{ key: 'copyBranch' as const, label: rail.copyBranch, icon: <Copy size={14} aria-hidden /> }] : []),
+                { key: 'switchBranch', label: rail.switchBranch, icon: <GitBranch size={14} aria-hidden /> }
+              ]}
+            />
+          ) : null}
+        </ul>
+      )
+    },
+    settings: {
+      body: (
+        <ul className="wb-ov-items" data-testid="wb-rail-settings">
+          {modelLabel ? (
+            <li className="wb-ov-item" title={`${rail.model} ${modelLabel}`}>
+              <Cpu size={14} className="wb-ov-item-icon" aria-hidden />
+              <span className="wb-ov-item-label">{modelLabel}</span>
+              <span className="wb-ov-item-value">{rail.model}</span>
             </li>
           ) : null}
-          <li className="wb-ov-item" title={`${text.permissionLabel} ${modeLabel}`}>
+          {session?.model?.reasoning ? (
+            <li className="wb-ov-item" title={`${rail.thinking} ${thinkingLabel}`}>
+              <Brain size={14} className="wb-ov-item-icon" aria-hidden />
+              <span className="wb-ov-item-label">{thinkingLabel}</span>
+              <span className="wb-ov-item-value">{rail.thinking}</span>
+            </li>
+          ) : null}
+          <li className="wb-ov-item" title={`${rail.permission} ${modeLabel}`}>
             <ShieldCheck size={14} className="wb-ov-item-icon" aria-hidden />
             <span className="wb-ov-item-label">{modeLabel}</span>
+            <span className="wb-ov-item-value">{rail.permission}</span>
           </li>
         </ul>
-      </Tile>
+      )
+    },
+    context: {
+      summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
+      tone: contextTone,
+      onOpenView: () => onOpenView('context'),
+      body: contextData && usage.known ? (
+        <ContextDetail data={contextData} last={session?.lastCompaction} text={text} />
+      ) : (
+        <Meter aria-label={rail.sections.context} className="wb-ov-meter" value={0} minValue={0} maxValue={100} />
+      )
+    },
+    ...(quotaModel
+      ? {
+          usage: {
+            summary: quotaSummary,
+            tone: quotaTone,
+            onOpenView: () => onOpenView('quota'),
+            body: <QuotaDetail model={quotaModel} now={quota.now} />
+          }
+        }
+      : {}),
+    ...(mcp.state === 'error' || mcp.servers.length > 0
+      ? {
+          connectors: {
+            summary: mcpSummary,
+            tone: mcpTone,
+            body: (
+              <>
+                {mcp.state === 'error' ? <p className="wb-ov-note">{text.mcpFailed}</p> : null}
+                {mcp.servers.length > 0 ? (
+                  <ul className="wb-ov-items">
+                    {mcp.servers.map((server) => (
+                      <li key={server.id} className="wb-ov-item" title={text.mcpStatus[server.status]}>
+                        <span className="wb-ov-item-icon">
+                          <span className={`wb-ov-dot ${MCP_DOT[server.status]}`} aria-hidden />
+                        </span>
+                        <span className="wb-ov-item-label">{server.title || server.id}</span>
+                        <span className="wb-ov-item-value">
+                          {server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </>
+            )
+          }
+        }
+      : {}),
+    ...(hasTodos
+      ? {
+          progress: {
+            summary: rail.progress(todoModel.done, todoModel.total),
+            body: <TodoTileRows model={todoModel} text={todoText} />
+          }
+        }
+      : {}),
+    ...(outputs.length > 0
+      ? {
+          outputs: {
+            summary: String(outputs.length),
+            body: <OutputRows files={outputs} text={rail} onOpen={openOutput} />
+          }
+        }
+      : {}),
+    ...(repo
+      ? {
+          changes: {
+            summary: changesSummary,
+            onOpenView: () => onOpenView('changes'),
+            body: repo.changedCount > 0 ? (
+              <>
+                <ul className="wb-ov-items">
+                  {([
+                    [text.changesStaged, repo.stagedCount],
+                    [text.changesUnstaged, repo.unstagedCount],
+                    [text.changesUntracked, repo.untrackedCount]
+                  ] as const).filter(([, count]) => count > 0).map(([label, count]) => (
+                    <li key={label} className="wb-ov-item">
+                      <span className="wb-ov-item-label">{label}</span>
+                      <span className="wb-ov-item-value">{count}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="wb-rail-commit"
+                  icon={<GitCommitHorizontal size={14} aria-hidden />}
+                  onPress={() => onOpenView('changes')}
+                  data-testid="wb-rail-commit"
+                >
+                  {rail.commitChanges}
+                </Button>
+              </>
+            ) : null
+          }
+        }
+      : {}),
+    ...(taskTotal > 0
+      ? {
+          backgroundTasks: {
+            summary: taskSummary,
+            body: <TaskGroups subagents={runs} background={backgroundRuns} owner={view.key} lang={lang} text={text} />
+          }
+        }
+      : {}),
+    ...(extWidgets.length > 0
+      ? {
+          extensions: {
+            body: (
+              <div className="wb-ov-ext" data-testid="wb-ov-ext">
+                {extWidgets.map(([key, lines]) => (
+                  <pre key={key} className="wb-ov-ext-block" title={key}>{lines.join('\n')}</pre>
+                ))}
+              </div>
+            )
+          }
+        }
+      : {})
+  }
 
-      <Tile
-        id="context"
-        title={text.tiles.context}
-        summary={contextFolded || !contextData || !usage.known ? contextSummary : undefined}
-        folded={contextFolded}
-        onToggle={toggle}
-        onOpen={() => onOpenView('context')}
-        openLabel={`${text.openFull} ${text.tiles.context}`}
-        tone={contextTone}
-      >
-        {contextData && usage.known ? (
-          <ContextDetail data={contextData} last={session?.lastCompaction} text={text} />
-        ) : (
-          <Meter aria-label={text.tiles.context} className="wb-ov-meter" value={0} minValue={0} maxValue={100} />
-        )}
-      </Tile>
+  const visible = order.filter((id) => sections[id] && !isRailSectionHidden({ hidden }, id))
+  const railRef = useRef<HTMLDivElement>(null)
+  const reorder = useRailReorder(railRef, visible, order, setOrder, rail)
+  const menuAnchor = useRef<HTMLElement | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
-      {hasTodos ? (
-        <Tile id="todos" title={text.tiles.todos} summary={`${todoModel.done}/${todoModel.total}`} folded={isFolded('todos')} onToggle={toggle}>
-          <TodoTileRows model={todoModel} text={todoText} />
-        </Tile>
-      ) : null}
-
-      {taskTotal > 0 ? (
-        <Tile id="tasks" title={text.tiles.tasks} summary={taskSummary} folded={isFolded('tasks')} onToggle={toggle}>
-          <TaskGroups subagents={runs} background={backgroundRuns} owner={view.key} lang={lang} text={text} />
-        </Tile>
-      ) : null}
-
-      {extWidgets.length > 0 ? (
-        <Tile id="ext" title={text.tiles.ext} folded={isFolded('ext')} onToggle={toggle}>
-          <div className="wb-ov-ext" data-testid="wb-ov-ext">
-            {extWidgets.map(([key, lines]) => (
-              <pre key={key} className="wb-ov-ext-block" title={key}>{lines.join('\n')}</pre>
-            ))}
-          </div>
-        </Tile>
-      ) : null}
-
-      {mcp.state === 'error' || mcp.servers.length > 0 ? (
-        <Tile id="mcp" title={text.tiles.mcp} summary={mcpSummary} folded={isFolded('mcp')} onToggle={toggle} tone={mcpTone}>
-          {mcp.state === 'error' ? <p className="wb-ov-note">{text.mcpFailed}</p> : null}
-          {mcp.servers.length > 0 ? (
-            <ul className="wb-ov-items">
-              {mcp.servers.map((server) => (
-                <li key={server.id} className="wb-ov-item" title={text.mcpStatus[server.status]}>
-                  <span className="wb-ov-item-icon">
-                    <span className={`wb-ov-dot ${MCP_DOT[server.status]}`} aria-hidden />
-                  </span>
-                  <span className="wb-ov-item-label">{server.title || server.id}</span>
-                  <span className="wb-ov-item-value">
-                    {server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </Tile>
-      ) : null}
-
-      {repo ? (
-        <Tile
-          id="changes"
-          title={text.tiles.changes}
-          summary={changesSummary}
-          folded={isFolded('changes')}
-          onToggle={toggle}
-          onOpen={() => onOpenView('changes')}
-          openLabel={`${text.openFull} ${text.tiles.changes}`}
-        >
-          {repo.changedCount > 0 ? (
-            <ul className="wb-ov-items">
-              {([
-                [text.changesStaged, repo.stagedCount],
-                [text.changesUnstaged, repo.unstagedCount],
-                [text.changesUntracked, repo.untrackedCount]
-              ] as const).filter(([, count]) => count > 0).map(([label, count]) => (
-                <li key={label} className="wb-ov-item">
-                  <span className="wb-ov-item-label">{label}</span>
-                  <span className="wb-ov-item-value">{count}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </Tile>
-      ) : null}
-
-      {quotaModel ? (
-        <Tile
-          id="quota"
-          title={text.tiles.quota}
-          summary={quotaSummary}
-          folded={isFolded('quota')}
-          onToggle={toggle}
-          onOpen={() => onOpenView('quota')}
-          openLabel={`${text.openFull} ${text.tiles.quota}`}
-          tone={quotaTone}
-        >
-          <QuotaDetail model={quotaModel} now={quota.now} />
-        </Tile>
-      ) : null}
+  return (
+    <div className="wb-overview" ref={railRef} role="region" aria-label={rail.railLabel} aria-describedby="wb-rail-hint" data-testid="wb-overview">
+      <span id="wb-rail-hint" className="wb-rail-sr" hidden>{rail.reorderHint}</span>
+      <span className="wb-rail-sr" aria-live="polite">{reorder.announcement}</span>
+      {visible.map((id) => {
+        const section = sections[id]
+        if (!section) return null
+        return (
+          <RailCard
+            key={id}
+            id={id}
+            title={rail.sections[id]}
+            summary={section.summary}
+            tone={section.tone}
+            open={isOpen(id)}
+            onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
+            onOpenView={section.onOpenView}
+            openLabel={`${text.openFull} ${rail.sections[id]}`}
+            grip={reorder.gripFor(id)}
+            dragging={reorder.dragging === id}
+            onHeaderMenu={(anchor) => {
+              menuAnchor.current = anchor
+              setMenuOpen(true)
+            }}
+          >
+            {section.body}
+          </RailCard>
+        )
+      })}
+      <RailSectionsMenu anchor={menuAnchor} open={menuOpen} onOpenChange={setMenuOpen} text={rail} />
     </div>
   )
 }

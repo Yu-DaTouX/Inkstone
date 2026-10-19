@@ -204,6 +204,25 @@
     padding-right: 4px;
   }
 
+  .v3-head-pane {
+    position: relative;
+  }
+
+  .v3-head-pane-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+  }
+
+  .v3-head-check {
+    display: inline-flex;
+    width: 14px;
+  }
+
   .v3-head-badge {
     display: inline-block;
     min-width: 14px;

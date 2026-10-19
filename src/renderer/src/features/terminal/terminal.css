@@ -23,6 +23,21 @@
     flex: none;
   }
 
+  .term-pane-chrome-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    font-size: var(--t-meta);
+  }
+
+  .term-pane-chrome-title .term-pane-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .term-pane-exited {
     flex: none;
     color: var(--fg3);

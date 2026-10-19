@@ -34,7 +34,8 @@ import { OverviewPane } from '../features/workbench/OverviewPane'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, SUBAGENT_LANE_EDGE, subagentPanelShownWidth, useSubagentPanel } from '../features/session/subagent-panel-state'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
-import { revealToolTile } from '../features/workbench/tool-tiles'
+import { closeToolTile, isToolTiled, revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
+import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
@@ -144,6 +145,7 @@ export default function ShellV3(): ReactElement {
   const sidebarOpen = useUiV3((s) => s.sidebarOpen)
   const workspaceOpen = useUiV3((s) => s.workspaceOpen)
   const workspaceTab = useUiV3((s) => s.workspaceTab)
+  const workspacePanes = useUiV3((s) => s.workspacePanes)
   const hasMessages = useStore((s) => s.messages.length > 0)
   const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
   const workspaceShown = route.name === 'chat' && workspaceOpen && workspaceTab !== 'overview'
@@ -386,6 +388,26 @@ export default function ShellV3(): ReactElement {
 
   const requestActivation = (_tab: WorkbenchTabId): Promise<boolean> => activateWorkspaceOwner(captureActivationTarget())
 
+  const tiledTools = useTiledTools()
+  const openPanes = useMemo(
+    () => new Set<WorkbenchTabId>([...(workspaceShown ? workspacePanes : []), ...tiledTools]),
+    [workspaceShown, workspacePanes, tiledTools]
+  )
+  const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
+
+  const togglePane = (tab: WorkbenchTabId): void => {
+    if (isToolTiled(tab)) {
+      closeToolTile(tab)
+      return
+    }
+    const ui = useUiV3.getState()
+    if (workspaceShown && ui.workspacePanes.includes(tab)) {
+      ui.closeWorkspacePane(tab)
+      return
+    }
+    void openWorkspaceTab(tab)
+  }
+
   useEffect(() => {
     if (nativeSessionPanel?.mode !== 'tree') return
     setPanelMounted(true)
@@ -559,7 +581,9 @@ export default function ShellV3(): ReactElement {
             sessionBarOpen={sessionBarOn}
             sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown}
             onToggleSessionBar={toggleSessionBar}
-            onOpenTool={(tab) => void openWorkspaceTab(tab)}
+            openPanes={openPanes}
+            changesDirty={changesDirty}
+            onTogglePane={togglePane}
           />
           <RunAttentionToasts onOpen={openRunFromPill} />
           <div

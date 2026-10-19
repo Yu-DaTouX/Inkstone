@@ -13,6 +13,7 @@ const MAX_DIFF_BYTES = 1_500_000
 const MAX_UNTRACKED_BYTES = 1_000_000
 const BINARY_SNIFF_BYTES = 8000
 const DIFF_TIMEOUT_MS = 15_000
+const MAX_UNTRACKED_LINE_COUNTS = 200
 
 const READ_ENV: Record<string, string> = {
   GIT_OPTIONAL_LOCKS: '0',
@@ -215,7 +216,9 @@ export async function readChanges(cwd: string, authorize: AuthorizeReadCwd): Pro
       files.push(mapped)
     }
     files.sort((a, b) => a.path.localeCompare(b.path, 'zh-CN', { numeric: true, sensitivity: 'base' }))
+    const totals = await readLineTotals(scope, safety, files, status.unborn).catch(() => null)
     return {
+      ...(totals ?? {}),
       ok: true,
       root: scope.root,
       scope: scope.scopeRel,
@@ -229,6 +232,62 @@ export async function readChanges(cwd: string, authorize: AuthorizeReadCwd): Pro
   } catch (error) {
     return { ...failChanges(error instanceof Error ? error.message : String(error)), root: scope.root, scope: scope.scopeRel }
   }
+}
+
+function parseNumstat(stdout: string): Map<string, { added: number; removed: number }> {
+  const out = new Map<string, { added: number; removed: number }>()
+  for (const record of stdout.split('\0')) {
+    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(record.replace(/^\n+/, ''))
+    if (!m) continue
+    out.set(m[3], { added: m[1] === '-' ? 0 : Number(m[1]), removed: m[2] === '-' ? 0 : Number(m[2]) })
+  }
+  return out
+}
+
+async function countUntrackedLines(abs: string): Promise<number> {
+  const content = await readUntrackedContent(abs)
+  if (!content.ok || content.binary || !content.text) return 0
+  const breaks = content.text.split('\n').length - 1
+  return content.text.endsWith('\n') ? breaks : breaks + 1
+}
+
+async function readLineTotals(
+  scope: InspectScope,
+  safety: string[],
+  files: GitChangeEntry[],
+  unborn: boolean
+): Promise<{ added: number; removed: number }> {
+  const base = unborn ? ['--cached'] : ['HEAD']
+  const pathspec = scope.scopeRel === '.' ? [] : ['--', scope.scopeRel]
+  const res = await gitRun(
+    scope.root,
+    [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, '--numstat', '-z', ...base, ...pathspec],
+    { allowFailure: true, timeout: DIFF_TIMEOUT_MS, env: READ_ENV }
+  )
+  const stats = parseNumstat(res.stdout)
+  let added = 0
+  let removed = 0
+  let untrackedCounted = 0
+  for (const file of files) {
+    const abs = resolve(scope.scopeAbs, file.path)
+    if (file.untracked) {
+      if (untrackedCounted >= MAX_UNTRACKED_LINE_COUNTS) continue
+      untrackedCounted += 1
+      const lines = await countUntrackedLines(abs)
+      file.added = lines
+      file.removed = 0
+      added += lines
+      continue
+    }
+    const rootRel = normSlashes(relative(scope.root, abs))
+    const stat = stats.get(rootRel)
+    if (!stat) continue
+    file.added = stat.added
+    file.removed = stat.removed
+    added += stat.added
+    removed += stat.removed
+  }
+  return { added, removed }
 }
 
 async function isTracked(root: string, rootRel: string, safety: string[]): Promise<boolean> {

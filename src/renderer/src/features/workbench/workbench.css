@@ -4,23 +4,54 @@
     background: var(--bg);
   }
 
-  .wb-tablist {
-    background: transparent;
-  }
-
   .wb-pane-block {
     background: var(--sunken);
     border-radius: var(--r-md);
     color: var(--fg2);
   }
 
-  .wb-cell-secondary {
-    border-top: 1px solid var(--line);
+  .wb-card {
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
   }
 
-  .wb-actions [data-active='1'] {
-    background: var(--sel);
-    color: var(--fg);
+  .wb-card-arrow {
+    color: var(--fg3);
+  }
+
+  .wb-card-grip-bar {
+    background: var(--line2);
+  }
+
+  .wb-card-grip:focus-visible .wb-card-grip-bar {
+    background: var(--accent);
+  }
+
+  .wb-card-grip[data-active='1'] .wb-card-grip-bar {
+    background: var(--fg);
+  }
+
+  .wb-pane-indicator,
+  .wb-pane-out {
+    background: var(--accent);
+  }
+
+  .wb-pane-sep-bar {
+    background: var(--line2);
+  }
+
+  .wb-pane-sep[data-active='1'] .wb-pane-sep-bar {
+    background: var(--fg);
+  }
+
+  .wb-pane-sep:focus-visible .wb-pane-sep-bar,
+  .wb-pane-sep[data-drop='1'] .wb-pane-sep-bar {
+    background: var(--accent);
+  }
+
+  .wb-card-actions {
+    color: var(--fg2);
   }
 
   .wb-ctx-bar {
@@ -90,57 +121,6 @@
     z-index: 25;
   }
 
-  .wb-head {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    padding: var(--s-6) var(--s-8) 0;
-    min-width: 0;
-  }
-
-  .wb-tabstrip {
-    --wb-fade-start: 0px;
-    --wb-fade-end: 0px;
-    flex: 1;
-    display: flex;
-    min-width: 0;
-  }
-
-  .wb-tabstrip[data-fade-start='1'] {
-    --wb-fade-start: 16px;
-  }
-
-  .wb-tabstrip[data-fade-end='1'] {
-    --wb-fade-end: 16px;
-  }
-
-  .wb-tabstrip > .ui-tabs {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .wb-tablist {
-    display: flex;
-    gap: 2px;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    mask-image: linear-gradient(to right, transparent 0, #000 var(--wb-fade-start), #000 calc(100% - var(--wb-fade-end)), transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--wb-fade-start), #000 calc(100% - var(--wb-fade-end)), transparent 100%);
-  }
-
-  .wb-actions {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .wb-close {
-    flex: none;
-  }
-
   .wb-body {
     flex: 1;
     display: flex;
@@ -151,44 +131,299 @@
     overflow: hidden;
   }
 
-  .wb-cells {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    height: 100%;
+  .wb-panes {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .wb-pane-stack {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
     min-height: 0;
   }
 
-  .wb-cells[data-split='1'] {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--s-8);
+  .wb-pane-stack[data-direction='row'] {
+    flex-direction: row;
   }
 
-  .wb-cell {
+  .wb-pane-stack[data-direction='column'] {
+    flex-direction: column;
+  }
+
+  .wb-pane-tile {
     position: relative;
+    z-index: 1;
+    display: flex;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-width: 120px;
+    min-height: 120px;
+    transition: transform 300ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+
+  .wb-pane-tile[data-dragging='1'] {
+    z-index: 24;
+  }
+
+  .wb-pane-shell,
+  .wb-pane-host {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .wb-card {
+    position: relative;
+    flex: 1 1 0;
     display: flex;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
+    overflow: hidden;
   }
 
-  .wb-cell-secondary {
-    padding-top: var(--s-8);
-  }
-
-  .wb-cell-head {
+  .wb-pane-sep {
+    position: relative;
     flex: none;
     display: flex;
     align-items: center;
-    min-width: 0;
-    padding-bottom: var(--s-4);
+    justify-content: center;
+    outline: none;
+    touch-action: none;
   }
 
-  .wb-cell-head .ui-tabs {
+  .wb-pane-sep[data-direction='row'] {
+    width: var(--s-8);
+    align-self: stretch;
+    cursor: col-resize;
+  }
+
+  .wb-pane-sep[data-direction='column'] {
+    height: var(--s-8);
+    cursor: row-resize;
+  }
+
+  .wb-pane-sep[aria-disabled='true'] {
+    pointer-events: none;
+  }
+
+  .wb-pane-sep-bar {
+    border-radius: var(--r-full);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+
+  .wb-pane-sep[data-direction='row'] .wb-pane-sep-bar {
+    width: 3px;
+    height: 56px;
+  }
+
+  .wb-pane-sep[data-direction='column'] .wb-pane-sep-bar {
+    width: 56px;
+    height: 3px;
+  }
+
+  .wb-pane-sep:is(:hover, :focus-visible, [data-active='1'], [data-drop='1']) .wb-pane-sep-bar {
+    opacity: 1;
+  }
+
+  .wb-pane-sep[data-direction='row'][data-drop='1'] .wb-pane-sep-bar {
+    height: 100%;
+  }
+
+  .wb-pane-sep[data-direction='column'][data-drop='1'] .wb-pane-sep-bar {
+    width: 100%;
+  }
+
+  .wb-pane-indicator {
+    position: absolute;
+    z-index: 2;
+    border-radius: var(--r-full);
+    pointer-events: none;
+  }
+
+  .wb-pane-indicator:is([data-edge='left'], [data-edge='right']) {
+    top: 0;
+    bottom: 0;
+    width: 3px;
+  }
+
+  .wb-pane-indicator:is([data-edge='top'], [data-edge='bottom']) {
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .wb-pane-indicator[data-edge='left'] {
+    left: calc(var(--s-4) * -1 - 1.5px);
+  }
+
+  .wb-pane-indicator[data-edge='right'] {
+    right: calc(var(--s-4) * -1 - 1.5px);
+  }
+
+  .wb-pane-indicator[data-edge='top'] {
+    top: calc(var(--s-4) * -1 - 1.5px);
+  }
+
+  .wb-pane-indicator[data-edge='bottom'] {
+    bottom: calc(var(--s-4) * -1 - 1.5px);
+  }
+
+  .wb-pane-out {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--s-8) * -1 - 1.5px);
+    z-index: 2;
+    width: 3px;
+    border-radius: var(--r-full);
+    pointer-events: none;
+  }
+
+  .wb-card-grip {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    width: 44px;
+    height: 16px;
+    padding: 6px 0 0;
+    border: 0;
+    background: transparent;
+    outline: none;
+    transform: translateX(-50%);
+    cursor: move;
+    touch-action: none;
+  }
+
+  .wb-card-grip-bar {
+    width: 32px;
+    height: 3px;
+    border-radius: var(--r-full);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-hover) ease;
+  }
+
+  .wb-card-grip:is(:hover, :focus-visible, [data-active='1']) .wb-card-grip-bar {
+    opacity: 1;
+  }
+
+  .wb-panel[data-dragging='1'],
+  .wb-panel[data-dragging='1'] * {
+    cursor: move !important;
+    user-select: none;
+  }
+
+  .wb-panes[data-resizing='1'] {
+    user-select: none;
+  }
+
+  .wb-panel[data-dragging='1'],
+  .wb-panel[data-dragging='1'] .wb-body {
+    overflow: visible;
+  }
+
+  .wb-panel[data-dragging='1'] {
+    z-index: 30;
+  }
+
+  .wb-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wb-pane-tile,
+    .wb-pane-sep-bar,
+    .wb-card-grip-bar {
+      transition: none;
+    }
+  }
+
+  .wb-card[hidden] {
+    display: none;
+  }
+
+  .wb-card-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    min-height: 36px;
+    padding: var(--s-4) var(--s-6) var(--s-4) var(--s-12);
+  }
+
+  .wb-card-title {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    font-size: var(--t-body);
+    font-weight: 500;
+  }
+
+  .wb-card-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-card-arrow {
+    flex: none;
+  }
+
+  .wb-card-titleslot {
+    display: flex;
     flex: 1;
     min-width: 0;
   }
 
-  .wb-panes {
+  .wb-card-titleslot:empty {
+    display: none;
+  }
+
+  .wb-card-head:has(.wb-card-titleslot:not(:empty)) .wb-card-title {
+    display: none;
+  }
+
+  .wb-card-tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .wb-card-check {
+    display: inline-flex;
+    width: 14px;
+  }
+
+  .wb-card-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .wb-card-body {
     position: relative;
     flex: 1;
     min-height: 0;
@@ -469,19 +704,6 @@
 
   .wb-quota-stale {
     color: var(--fg3);
-  }
-
-  .wb-view[hidden],
-  .wb-cells[hidden] {
-    display: none;
-  }
-
-  .wb-view {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    min-width: 0;
   }
 
   .wb-overview {
@@ -817,6 +1039,63 @@
     padding: 0 var(--s-4);
     font-size: var(--t-meta);
   }
+
+  .wb-rail-grip {
+    flex: none;
+    display: inline-flex;
+    margin-left: calc(-1 * var(--s-8));
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .wb-tile[data-dragging='1'] .wb-rail-grip {
+    cursor: grabbing;
+  }
+
+  .wb-rail-row {
+    min-height: 0;
+  }
+
+  .wb-rail-row-btn {
+    flex: 1;
+    min-width: 0;
+    min-height: 24px;
+    justify-content: flex-start;
+    margin-left: calc(-1 * var(--s-4));
+    padding: 0 var(--s-4);
+  }
+
+  .wb-rail-row-btn > .ui-btn__label {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  .wb-rail-delta {
+    display: inline-flex;
+    gap: var(--s-6);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-rail-commit {
+    align-self: flex-start;
+  }
+
+  .wb-rail-check {
+    display: inline-flex;
+    width: 14px;
+  }
+
+  .wb-rail-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 @layer patterns {
@@ -877,5 +1156,26 @@
 
   .wb-ov-task[data-selected='1'] .wb-ov-task-main {
     background: var(--sel);
+  }
+
+  .wb-rail-grip {
+    color: var(--fg3);
+  }
+
+  .wb-tile[data-dragging='1'],
+  .wb-tile[data-picked='1'] {
+    border-color: var(--accent);
+  }
+
+  .wb-tile[data-dragging='1'] {
+    box-shadow: var(--shadow-pop);
+  }
+
+  .wb-rail-added {
+    color: var(--add);
+  }
+
+  .wb-rail-removed {
+    color: var(--del);
   }
 }

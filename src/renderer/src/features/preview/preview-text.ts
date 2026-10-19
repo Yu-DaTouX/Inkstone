@@ -25,6 +25,8 @@ export interface PreviewText {
   closeTab: string
   closeAllTabs: string
   crumbsLabel: string
+  readingMode: string
+  sourceMode: string
   edit: string
   viewMode: string
   save: string
@@ -63,6 +65,8 @@ const ZH: PreviewText = {
   closeTab: '关闭',
   closeAllTabs: '关闭全部',
   crumbsLabel: '文件路径',
+  readingMode: '阅读模式',
+  sourceMode: '查看源码',
   edit: '编辑',
   viewMode: '回到预览',
   save: '保存',
@@ -101,6 +105,8 @@ const EN: PreviewText = {
   closeTab: 'Close',
   closeAllTabs: 'Close all',
   crumbsLabel: 'File path',
+  readingMode: 'Reading view',
+  sourceMode: 'View source',
   edit: 'Edit',
   viewMode: 'Back to preview',
   save: 'Save',

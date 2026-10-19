@@ -61,6 +61,20 @@ export interface WorkbenchText {
   popout: string
   unmigrated: string
   secondaryPane: string
+  expand: string
+  collapse: string
+  closePane: string
+  paneMenu: (name: string) => string
+  moveBesideChat: string
+  viewOptions: string
+  changesScope: string
+  move: string
+  moveInstructions: string
+  movedTo: (name: string, position: number, count: number) => string
+  moveCancelled: (name: string) => string
+  moveSide: Record<'left' | 'right' | 'up' | 'down', string>
+  moveSideHint: Record<'left' | 'right' | 'up' | 'down', string>
+  resize: (before: string, after: string) => string
   tabs: Record<WorkbenchTabId, string>
   overview: OverviewText
 }
@@ -81,8 +95,27 @@ const ZH: WorkbenchText = {
   popout: '弹出为独立窗口',
   unmigrated: '未迁移',
   secondaryPane: '下半格页签',
+  expand: '展开',
+  collapse: '收起',
+  closePane: '关闭面板',
+  paneMenu: (name) => `${name}设置`,
+  moveBesideChat: '移到对话旁',
+  viewOptions: '视图选项',
+  changesScope: '工作区',
+  move: '移动',
+  moveInstructions: '用方向键调整面板位置：沿排列方向换位，垂直方向先预览再按回车移过去，Esc 取消。拖动时拖出面板左侧可移到对话旁，按 Esc 还原。',
+  movedTo: (name, position, count) => `「${name}」移到第 ${position} / ${count} 个位置`,
+  moveCancelled: (name) => `已取消移动「${name}」`,
+  moveSide: { left: '移到左侧', right: '移到右侧', up: '移到上方', down: '移到下方' },
+  moveSideHint: {
+    left: '按回车移到左侧，Esc 取消。',
+    right: '按回车移到右侧，Esc 取消。',
+    up: '按回车移到上方，Esc 取消。',
+    down: '按回车移到下方，Esc 取消。'
+  },
+  resize: (before, after) => `调整「${before}」和「${after}」的大小`,
   tabs: {
-    changes: '改动',
+    changes: '更改',
     terminal: '终端',
     files: '文件',
     browser: '浏览器',
@@ -153,6 +186,25 @@ const EN: WorkbenchText = {
   popout: 'Pop out into a window',
   unmigrated: 'Not migrated',
   secondaryPane: 'Lower pane tab',
+  expand: 'Expand',
+  collapse: 'Collapse',
+  closePane: 'Close panel',
+  paneMenu: (name) => `${name} settings`,
+  moveBesideChat: 'Move beside chat',
+  viewOptions: 'View options',
+  changesScope: 'Working tree',
+  move: 'Move',
+  moveInstructions: 'Use the arrow keys to move the panel: along its row or column to reorder, across it to preview a move, then Enter. Escape cancels. While dragging, drop left of the panel to move it beside the chat; Escape restores it.',
+  movedTo: (name, position, count) => `${name} is now in position ${position} of ${count}.`,
+  moveCancelled: (name) => `Moving ${name} was cancelled.`,
+  moveSide: { left: 'Move left', right: 'Move right', up: 'Move up', down: 'Move down' },
+  moveSideHint: {
+    left: 'Press Enter to move left, or Escape to cancel.',
+    right: 'Press Enter to move right, or Escape to cancel.',
+    up: 'Press Enter to move up, or Escape to cancel.',
+    down: 'Press Enter to move down, or Escape to cancel.'
+  },
+  resize: (before, after) => `Resize ${before} and ${after}`,
   tabs: {
     changes: 'Changes',
     terminal: 'Terminal',

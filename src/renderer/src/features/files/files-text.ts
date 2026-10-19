@@ -22,6 +22,8 @@ export interface FilesText {
   searchLabel: string
   searchPlaceholder: string
   searchClear: string
+  toggleTree: string
+  resizeTree: string
   searching: string
   searchEmpty: string
   searchFailed: string
@@ -53,6 +55,8 @@ const ZH: FilesText = {
   searchLabel: '筛选文件',
   searchPlaceholder: '筛选，或输入 ? 在文件中搜索',
   searchClear: '清除筛选',
+  toggleTree: '显示文件树',
+  resizeTree: '调整文件树宽度',
   searching: '正在搜索…',
   searchEmpty: '没有匹配',
   searchFailed: '搜索失败',
@@ -84,6 +88,8 @@ const EN: FilesText = {
   searchLabel: 'Filter files',
   searchPlaceholder: 'Filter, or type ? to search inside files',
   searchClear: 'Clear filter',
+  toggleTree: 'Show file tree',
+  resizeTree: 'Resize file tree',
   searching: 'Searching…',
   searchEmpty: 'No matches',
   searchFailed: 'Search failed',
