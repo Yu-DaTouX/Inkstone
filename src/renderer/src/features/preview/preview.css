@@ -32,6 +32,13 @@
     padding: var(--s-8) 0;
   }
 
+  .v3-preview-text--code {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+  }
+
   .v3-preview-reading {
     padding: var(--s-12) var(--s-16);
   }
@@ -199,6 +206,23 @@
 
   .v3-preview-tab.is-active .v3-preview-tab-name {
     color: var(--fg);
+  }
+
+  .v3-preview-tab[data-preview] .v3-preview-tab-name {
+    font-style: italic;
+  }
+
+  .v3-preview-tab[data-menu-open] {
+    background: var(--hover);
+  }
+
+  .v3-preview-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .v3-preview-tab-close {

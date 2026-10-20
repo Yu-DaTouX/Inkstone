@@ -54,6 +54,25 @@ export interface PreviewText {
   encodingNote: string
   mediaHint: string
   revealInTree: string
+  keepTab: string
+  closeOtherTabs: string
+  closeTabsRight: string
+  copy: string
+  copyAbsolute: string
+  copyRelative: string
+  copyName: string
+  previewTabHint: string
+  codeLabel: string
+  plainNote: string
+  fold: string
+  unfold: string
+  folded: string
+  wordWrap: string
+  indentGuides: string
+  showWhitespace: string
+  scrollPastEnd: string
+  tabSize: string
+  previewTabs: string
 }
 
 const ZH: PreviewText = {
@@ -109,7 +128,26 @@ const ZH: PreviewText = {
   outsideRoot: '此文件在工作目录之外。',
   encodingNote: '无法识别文本编码，内容可能显示为乱码。',
   mediaHint: '音视频与 PDF 请用系统程序打开。',
-  revealInTree: '在文件树中显示'
+  revealInTree: '在文件树中显示',
+  keepTab: '保持打开',
+  closeOtherTabs: '关闭其他',
+  closeTabsRight: '关闭右侧',
+  copy: '复制',
+  copyAbsolute: '绝对路径',
+  copyRelative: '相对路径',
+  copyName: '文件名',
+  previewTabHint: '预览',
+  codeLabel: '文件内容',
+  plainNote: '文件较大，按纯文本显示，不做语法着色。',
+  fold: '折叠',
+  unfold: '展开',
+  folded: '⋯',
+  wordWrap: '自动换行',
+  indentGuides: '缩进参考线',
+  showWhitespace: '显示空白字符',
+  scrollPastEnd: '可滚动到末行之后',
+  tabSize: 'Tab 宽度 {n}',
+  previewTabs: '预览标签'
 }
 
 const EN: PreviewText = {
@@ -165,7 +203,26 @@ const EN: PreviewText = {
   outsideRoot: 'This file is outside the working directory.',
   encodingNote: 'The text encoding was not recognized; content may look garbled.',
   mediaHint: 'Open audio, video and PDF files with a system app.',
-  revealInTree: 'Reveal in file tree'
+  revealInTree: 'Reveal in file tree',
+  keepTab: 'Keep open',
+  closeOtherTabs: 'Close others',
+  closeTabsRight: 'Close to the right',
+  copy: 'Copy',
+  copyAbsolute: 'Absolute path',
+  copyRelative: 'Relative path',
+  copyName: 'File name',
+  previewTabHint: 'preview',
+  codeLabel: 'File contents',
+  plainNote: 'Large file: shown as plain text without syntax colors.',
+  fold: 'Fold',
+  unfold: 'Unfold',
+  folded: '⋯',
+  wordWrap: 'Word wrap',
+  indentGuides: 'Indent guides',
+  showWhitespace: 'Show whitespace',
+  scrollPastEnd: 'Scroll past last line',
+  tabSize: 'Tab size {n}',
+  previewTabs: 'Preview tabs'
 }
 
 export function previewText(lang: Lang): PreviewText {

@@ -8,10 +8,9 @@ import {
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactElement,
-  type RefObject
+  type ReactElement
 } from 'react'
-import { ArrowUpRight, Check, ChevronRight, ChevronsDownUp, EllipsisVertical, Folder, List, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, ChevronsDownUp, EllipsisVertical, List, RefreshCw, Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, SearchField, Separator, Spinner } from '../../ui'
@@ -30,13 +29,22 @@ import {
 import { filesText, type FilesText } from './files-text'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { FilesRowMenu } from './FilesRowMenu'
-import { useFilesSearch, type FilesSearchState } from './use-files-search'
-import { parseFilesQuery, type FilesSearchRow } from './files-search'
+import { useFilesSearch } from './use-files-search'
+import {
+  CONTENT_QUERY_MAX,
+  DEFAULT_CONTENT_OPTIONS,
+  NAME_QUERY_MAX,
+  contentQueryFrom,
+  isContentQuery,
+  type ContentOptions
+} from './files-search'
+import { FilesSearchResults } from './FilesSearchResults'
 import { useFilesTree } from './use-files-tree'
 import { filesSplitLayout, useFilesSplit } from './use-files-split'
 import { canOpenTerminal, openFolderInTerminal } from './files-terminal'
 import type { FilesMenuTarget } from './files-menu'
 import type { FilesPaneProps } from '../workbench/types'
+import type { PreviewOpenOptions } from '../workbench/preview-state'
 import {
   PaneChromeContext,
   PaneTitle,
@@ -79,7 +87,7 @@ function StandaloneFilesPane(props: FilesPaneProps): ReactElement {
     })
   }, [])
   const chrome = useMemo<PaneChrome>(() => ({ title, tools, setMenu }), [title, tools, setMenu])
-  const ordered = ['preview', 'files'].map((source) => groups.get(source) ?? []).filter((items) => items.length > 0)
+  const ordered = ['preview', 'preview-view', 'files'].map((source) => groups.get(source) ?? []).filter((items) => items.length > 0)
   const all = ordered.flat()
   return (
     <div className="v3-files-standalone">
@@ -133,7 +141,9 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
   const resultsRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const [tabsHost, setTabsHost] = useState<HTMLElement | null>(null)
-  const search = useFilesSearch(owner, true, query, retry)
+  const [contentOptions, setContentOptions] = useState<ContentOptions>(DEFAULT_CONTENT_OPTIONS)
+  const search = useFilesSearch(owner, true, query, retry, contentOptions)
+  const contentMode = isContentQuery(query)
   const split = useFilesSplit()
   const [narrowTree, setNarrowTree] = useState(false)
   const hasPreview = !!Preview
@@ -147,9 +157,9 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
   const currentRel = previewPath ? toRelativePath(owner.cwd, previewPath) : null
 
   const openFile = useCallback(
-    (abs: string): void => {
+    (abs: string, options?: PreviewOpenOptions): void => {
       setNarrowTree(false)
-      onPreview?.(abs)
+      onPreview?.(abs, options)
     },
     [onPreview]
   )
@@ -245,7 +255,7 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
       event.preventDefault()
       if (effect.type === 'focus') focus(effect.path)
       else if (effect.type === 'toggle') toggle(effect.path)
-      else if (effect.type === 'preview') openFile(toAbsolutePath(owner.cwd, effect.path))
+      else if (effect.type === 'preview') openFile(toAbsolutePath(owner.cwd, effect.path), { preview: true })
       else if (effect.type === 'add') attach([effect.path])
     },
     [rows, canAdd, focus, toggle, openFile, owner.cwd, attach, selected, openMenu]
@@ -267,7 +277,7 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
       setSelected(new Set())
       if (row.blocked) return
       if (row.dir) toggle(row.path)
-      else openFile(toAbsolutePath(owner.cwd, row.path))
+      else openFile(toAbsolutePath(owner.cwd, row.path), { preview: event.detail < 2 })
     },
     [rows, state.focusPath, focus, toggle, openFile, owner.cwd]
   )
@@ -331,19 +341,6 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
     >
       <PaneTitle>
         <span className="v3-files-headlead" data-testid="v3-files-head">
-          {hasPreview ? (
-            <IconButton
-              size="sm"
-              aria-label={treeLabel}
-              title={`${treeLabel} (${treeShortcut})`}
-              aria-pressed={layout.treePressed}
-              aria-keyshortcuts="Control+Shift+Y"
-              data-testid="v3-files-tree-toggle"
-              onPress={toggleTree}
-            >
-              <List size={14} />
-            </IconButton>
-          ) : null}
           <span className="v3-files-headtitle">{text.title}</span>
           <span className="v3-files-headtabs" ref={setTabsHost} />
         </span>
@@ -359,10 +356,31 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
         >
           <Search size={14} />
         </IconButton>
+        {hasPreview ? (
+          <IconButton
+            size="sm"
+            aria-label={treeLabel}
+            title={`${treeLabel} (${treeShortcut})`}
+            aria-pressed={layout.treePressed}
+            aria-keyshortcuts="Control+Shift+Y"
+            data-testid="v3-files-tree-toggle"
+            onPress={toggleTree}
+          >
+            <List size={14} />
+          </IconButton>
+        ) : null}
       </PaneTools>
 
+      {Preview ? (
+        <div className="v3-files-preview" hidden={!layout.showPreview} data-testid="v3-files-preview">
+          <PaneChromeContext.Provider value={previewChrome}>
+            <Preview owner={owner} path={previewPath} treeShown={layout.showTree} onRevealInTree={revealInTree} />
+          </PaneChromeContext.Provider>
+        </div>
+      ) : null}
+
       <div className="v3-files-col" hidden={!layout.showTree} role="group" aria-label={text.treeLabel}>
-        <div className="v3-files-filter">
+        <div className="v3-files-filter" data-content={contentMode ? '1' : undefined} data-query={query ? '1' : undefined}>
           <SearchField
             ref={filterRef}
             aria-label={text.searchLabel}
@@ -371,9 +389,14 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
             className="v3-files-filter-field"
             data-testid="v3-files-search-input"
             isDisabled={!owner.cwd}
+            isInvalid={contentMode && search.error === 'pattern'}
+            maxLength={contentMode ? CONTENT_QUERY_MAX : NAME_QUERY_MAX}
             onChange={setQuery}
             onSubmit={() => {
-              const first = resultsRef.current?.querySelector<HTMLButtonElement>('.v3-files-result')
+              const list = resultsRef.current
+              const first =
+                (contentMode ? list?.querySelector<HTMLButtonElement>('.v3-files-result--line') : null) ??
+                list?.querySelector<HTMLButtonElement>('.v3-files-result')
               first?.click()
             }}
             onKeyDown={(event) => {
@@ -384,20 +407,51 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
               first.focus()
             }}
           />
-          {query ? (
-            <IconButton
-              size="sm"
-              className="v3-files-filter-clear"
-              aria-label={text.searchClear}
-              title={text.searchClear}
-              onPress={() => {
-                setQuery('')
-                filterInput()?.focus()
-              }}
-            >
-              <X size={12} />
-            </IconButton>
-          ) : null}
+          <span className="v3-files-filter-tail">
+            {contentMode ? (
+              <span className="v3-files-filter-options" role="group" aria-label={text.searchOptions} data-testid="v3-files-search-options">
+                {(
+                  [
+                    ['matchCase', 'Aa', text.matchCase],
+                    ['wholeWord', 'ab', text.wholeWord],
+                    ['regexp', '.*', text.useRegexp]
+                  ] as const
+                ).map(([key, glyph, label]) => (
+                  <IconButton
+                    key={key}
+                    size="sm"
+                    className="v3-files-filter-option"
+                    aria-label={label}
+                    title={label}
+                    aria-pressed={contentOptions[key]}
+                    data-option={key}
+                    data-testid={`v3-files-search-${key}`}
+                    onPress={(event) => {
+                      setContentOptions((current) => ({ ...current, [key]: !current[key] }))
+                      if (event.pointerType !== 'keyboard') filterInput()?.focus()
+                    }}
+                  >
+                    <span aria-hidden>{glyph}</span>
+                  </IconButton>
+                ))}
+              </span>
+            ) : null}
+            {query ? (
+              <IconButton
+                size="sm"
+                className="v3-files-filter-clear"
+                aria-label={text.searchClear}
+                title={text.searchClear}
+                data-testid="v3-files-search-clear"
+                onPress={() => {
+                  setQuery('')
+                  filterInput()?.focus()
+                }}
+              >
+                <X size={12} />
+              </IconButton>
+            ) : null}
+          </span>
         </div>
 
         {searching ? (
@@ -414,9 +468,13 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
               setQuery('')
               filterInput()?.focus()
             }}
+            onSearchContents={() => {
+              setQuery(contentQueryFrom(query))
+              filterInput()?.focus()
+            }}
             onOpen={(row) => {
               if (row.dir) revealInTree(toAbsolutePath(owner.cwd, row.path))
-              else openFile(toAbsolutePath(owner.cwd, row.path))
+              else openFile(toAbsolutePath(owner.cwd, row.path), row.line ? { preview: true, line: row.line } : { preview: true })
             }}
           />
         ) : (
@@ -491,14 +549,6 @@ function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPa
           data-testid="v3-files-edge"
           onClick={showTreeNow}
         />
-      ) : null}
-
-      {Preview ? (
-        <div className="v3-files-preview" hidden={!layout.showPreview} data-testid="v3-files-preview">
-          <PaneChromeContext.Provider value={previewChrome}>
-            <Preview owner={owner} path={previewPath} treeShown={layout.showTree} onRevealInTree={revealInTree} />
-          </PaneChromeContext.Provider>
-        </div>
       ) : null}
 
       <FilesRowMenu
@@ -655,132 +705,6 @@ function FilesRowView({
       <span className="v3-files-name">{row.name}</span>
       {row.link ? <ArrowUpRight size={12} className="v3-files-linkmark" aria-hidden /> : null}
     </button>
-  )
-}
-
-function FilesSearchResults({
-  text,
-  search,
-  raw,
-  cwd,
-  currentRel,
-  listRef,
-  onRetry,
-  onBack,
-  onClear,
-  onOpen
-}: {
-  text: FilesText
-  search: FilesSearchState
-  raw: string
-  cwd: string
-  currentRel: string | null
-  listRef: RefObject<HTMLDivElement | null>
-  onRetry: () => void
-  onBack: () => void
-  onClear: () => void
-  onOpen: (row: FilesSearchRow) => void
-}): ReactElement {
-  const parsed = parseFilesQuery(raw)
-  if (parsed.mode === 'content' && !parsed.query) {
-    return <p className="v3-files-note" data-testid="v3-files-search-hint">{text.contentHint}</p>
-  }
-  if (search.phase !== 'done' && !search.rows.length) {
-    return (
-      <div className="v3-files-note v3-files-note--busy" role="status" data-testid="v3-files-search-busy">
-        <Spinner size={12} />
-        <span>{text.searching}</span>
-      </div>
-    )
-  }
-  if (search.failed) {
-    return (
-      <div className="v3-files-note v3-files-note--error" data-testid="v3-files-search-failed">
-        <span>{search.mode === 'content' ? text.contentFailed : text.searchFailed}</span>
-        <Button size="sm" variant="ghost" onPress={onRetry}>
-          {text.retry}
-        </Button>
-      </div>
-    )
-  }
-  if (!search.rows.length) {
-    return <p className="v3-files-note" data-testid="v3-files-search-empty">{text.searchEmpty}</p>
-  }
-  const move = (event: KeyboardEvent<HTMLDivElement>): void => {
-    const items = [...(listRef.current?.querySelectorAll<HTMLButtonElement>('.v3-files-result') ?? [])]
-    const index = items.indexOf(document.activeElement as HTMLButtonElement)
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClear()
-      return
-    }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
-    event.preventDefault()
-    if (event.key === 'ArrowUp' && index <= 0) {
-      onBack()
-      return
-    }
-    const next =
-      event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? Math.min(index + 1, items.length - 1) : index - 1
-    items[next]?.focus()
-  }
-  return (
-    <div
-      className="v3-files-results"
-      ref={listRef}
-      role="list"
-      aria-busy={search.phase === 'searching'}
-      data-testid="v3-files-search-results"
-      onKeyDown={move}
-    >
-      {search.rows.map((row) => {
-        const location = row.line ? `${row.path}:${row.line}` : row.path
-        if (row.kind === 'line') {
-          return (
-            <button
-              key={row.key}
-              type="button"
-              role="listitem"
-              className="v3-files-result v3-files-result--line"
-              title={`${toAbsolutePath(cwd, row.path)}:${row.line}`}
-              data-testid={`v3-files-result-${row.key}`}
-              onClick={() => onOpen(row)}
-            >
-              <span className="v3-files-result-line">{row.line}</span>
-              <span className="v3-files-result-snippet">{row.text}</span>
-            </button>
-          )
-        }
-        const matched = row.nameParts.some((part) => part.hit)
-        return (
-          <button
-            key={row.key}
-            type="button"
-            role="listitem"
-            className="v3-files-result"
-            title={toAbsolutePath(cwd, location)}
-            data-current={currentRel === row.path ? '1' : undefined}
-            data-testid={`v3-files-result-${row.key}`}
-            onClick={() => onOpen(row)}
-          >
-            {row.dir ? (
-              <span className="v3-files-result-icon" aria-hidden>
-                <Folder size={14} />
-              </span>
-            ) : (
-              <FileTypeIcon name={row.name} className="v3-files-result-icon" />
-            )}
-            <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
-              {row.nameParts.map((part, index) =>
-                part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>
-              )}
-            </span>
-            {row.parent ? <span className="v3-files-result-path">{row.parent}</span> : null}
-          </button>
-        )
-      })}
-      {search.truncated ? <p className="v3-files-more">{text.searchTruncated}</p> : null}
-    </div>
   )
 }
 

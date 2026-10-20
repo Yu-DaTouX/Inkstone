@@ -5,6 +5,7 @@ import type {
   FileContentHit,
   FileContentSearchRequest,
   FileContentSearchResult,
+  FileContentTruncation,
   FileListingStatus
 } from '../shared/ipc'
 
@@ -23,10 +24,82 @@ const TEXT_EXTENSIONS = new Set([
 
 const MAX_DIRS = 2000
 const MAX_FILES = 2000
-const MAX_HITS = 200
+export const MAX_CONTENT_HITS = 241
 const MAX_FILE_BYTES = 1024 * 1024
-const MAX_LINE_CHARS = 200
+const PREVIEW_BEFORE = 160
+const PREVIEW_CHARS = 700
+const MAX_REGEX_LINE = 1000
 const READ_BATCH = 8
+const DEADLINE_MS = 8000
+
+const WORD_CLASS = '[\\p{L}\\p{N}_]'
+const WORD_CHAR = /[\p{L}\p{N}_]/u
+
+export interface ContentSearchOptions {
+  matchCase?: boolean
+  wholeWord?: boolean
+  regexp?: boolean
+}
+
+export interface ContentMatcher {
+  skips(line: string): boolean
+  match(line: string): Array<[number, number]>
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function compileContentMatcher(query: string, options: ContentSearchOptions = {}): ContentMatcher | null {
+  if (!query) return null
+  if (!options.regexp && query.includes('\n')) return null
+  const flags = options.matchCase ? 'gu' : 'giu'
+  let source = options.regexp ? query : escapeRegExp(query)
+  try {
+    new RegExp(source, flags)
+  } catch {
+    return null
+  }
+  if (options.wholeWord) {
+    const chars = [...query]
+    const wordEdge = (char: string | undefined): boolean => !!options.regexp || (char !== undefined && WORD_CHAR.test(char))
+    source = `${wordEdge(chars[0]) ? `(?<!${WORD_CLASS})` : ''}(?:${source})${wordEdge(chars[chars.length - 1]) ? `(?!${WORD_CLASS})` : ''}`
+  }
+  const pattern = new RegExp(source, flags)
+  const regexp = !!options.regexp
+  return {
+    skips: (line) => regexp && line.length > MAX_REGEX_LINE,
+    match: (line) => {
+      const ranges: Array<[number, number]> = []
+      pattern.lastIndex = 0
+      for (let found = pattern.exec(line); found !== null; found = pattern.exec(line)) {
+        if (found[0].length === 0) {
+          pattern.lastIndex += (line.codePointAt(found.index) ?? 0) > 0xffff ? 2 : 1
+          continue
+        }
+        ranges.push([found.index, found.index + found[0].length])
+      }
+      return ranges
+    }
+  }
+}
+
+function isLowSurrogate(line: string, index: number): boolean {
+  const code = line.charCodeAt(index)
+  return code >= 0xdc00 && code <= 0xdfff
+}
+
+export function contentPreview(line: string, ranges: ReadonlyArray<[number, number]>): { text: string; ranges: Array<[number, number]> } {
+  const first = ranges[0]?.[0] ?? 0
+  let offset = Math.max(0, first - PREVIEW_BEFORE)
+  if (offset > 0 && isLowSurrogate(line, offset)) offset -= 1
+  let end = Math.min(line.length, offset + PREVIEW_CHARS)
+  if (end < line.length && isLowSurrogate(line, end)) end -= 1
+  return {
+    text: line.slice(offset, end),
+    ranges: ranges.filter(([start, stop]) => start >= offset && stop <= end).map(([start, stop]) => [start - offset, stop - offset])
+  }
+}
 
 function statusForError(error: unknown): FileListingStatus {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
@@ -50,20 +123,32 @@ function isTextCandidate(name: string): boolean {
 
 export async function searchFileContents(
   request: FileContentSearchRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  now: () => number = Date.now
 ): Promise<FileContentSearchResult> {
-  const requestedLimit = Number.isFinite(request.limit) ? Math.floor(request.limit as number) : MAX_HITS
-  const limit = Math.max(1, Math.min(MAX_HITS, requestedLimit))
-  const query = String(request.query ?? '').trim().toLocaleLowerCase()
+  const requestedLimit = Number.isFinite(request.limit) ? Math.floor(request.limit as number) : MAX_CONTENT_HITS
+  const limit = Math.max(1, Math.min(MAX_CONTENT_HITS, requestedLimit))
+  const query = String(request.query ?? '').trim()
+  const truncation = new Set<FileContentTruncation>()
   const baseResult = (
     status: FileContentSearchResult['status'],
     hits: FileContentHit[] = [],
-    truncated = false,
     scannedFiles = 0,
     skippedFiles = 0
-  ): FileContentSearchResult => ({ request, hits, status, truncated, scannedFiles, skippedFiles })
+  ): FileContentSearchResult => ({
+    request,
+    hits,
+    status,
+    truncated: truncation.size > 0,
+    ...(truncation.size ? { truncation: [...truncation] } : {}),
+    scannedFiles,
+    skippedFiles
+  })
 
   if (!query) return baseResult('empty')
+
+  const matcher = compileContentMatcher(query, request)
+  if (!matcher) return baseResult('pattern')
 
   const cwd = String(request.cwd ?? '')
   if (!cwd || !isAbsolute(cwd) || hasTraversal(cwd)) return baseResult('invalid')
@@ -76,16 +161,16 @@ export async function searchFileContents(
     return baseResult(statusForError(error))
   }
 
+  const deadline = now() + DEADLINE_MS
   const files: Array<{ abs: string; rel: string; name: string }> = []
   const queue: Array<{ abs: string; rel: string }> = [{ abs: root, rel: '' }]
   let scannedDirs = 0
   let hadReadError = false
-  let truncated = false
 
   while (queue.length) {
-    if (signal?.aborted) return baseResult('cancelled', [], truncated)
+    if (signal?.aborted) return baseResult('cancelled')
     if (scannedDirs >= MAX_DIRS) {
-      truncated = true
+      truncation.add('scan-limit')
       break
     }
 
@@ -95,7 +180,7 @@ export async function searchFileContents(
     try {
       dirents = await readdir(current.abs, { withFileTypes: true })
     } catch (error) {
-      if (current.rel === '') return baseResult(statusForError(error), [], truncated)
+      if (current.rel === '') return baseResult(statusForError(error))
       hadReadError = true
       continue
     }
@@ -115,17 +200,17 @@ export async function searchFileContents(
 
     for (const dir of dirs) {
       if (scannedDirs + queue.length >= MAX_DIRS) {
-        truncated = true
+        truncation.add('scan-limit')
         break
       }
       queue.push({ abs: join(current.abs, dir.name), rel: current.rel ? `${current.rel}/${dir.name}` : dir.name })
     }
-    if (truncated) break
+    if (truncation.has('scan-limit')) break
 
     for (const entry of entries) {
       if (!isTextCandidate(entry.name)) continue
       if (files.length >= MAX_FILES) {
-        truncated = true
+        truncation.add('scan-limit')
         break
       }
       files.push({
@@ -134,7 +219,7 @@ export async function searchFileContents(
         name: entry.name
       })
     }
-    if (truncated) break
+    if (truncation.has('scan-limit')) break
 
     await new Promise<void>((resolveNext) => setImmediate(resolveNext))
   }
@@ -144,7 +229,11 @@ export async function searchFileContents(
   let skippedFiles = 0
 
   for (let start = 0; start < files.length; start += READ_BATCH) {
-    if (signal?.aborted) return baseResult('cancelled', hits, truncated, scannedFiles, skippedFiles)
+    if (signal?.aborted) return baseResult('cancelled', hits, scannedFiles, skippedFiles)
+    if (now() > deadline) {
+      truncation.add('timeout')
+      break
+    }
     const batch = files.slice(start, start + READ_BATCH)
     const loaded = await Promise.all(
       batch.map(async (file) => {
@@ -167,13 +256,26 @@ export async function searchFileContents(
         continue
       }
       scannedFiles += 1
-      const lines = item.text.split(/\r?\n/)
+      const lines = item.text.split(/\r\n?|\n/)
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]
-        if (!line.toLocaleLowerCase().includes(query)) continue
-        hits.push({ path: item.file.rel, name: item.file.name, line: index + 1, text: line.slice(0, MAX_LINE_CHARS) })
+        if (matcher.skips(line)) {
+          truncation.add('long-line')
+          continue
+        }
+        const ranges = matcher.match(line)
+        if (!ranges.length) continue
+        const preview = contentPreview(line, ranges)
+        hits.push({
+          path: item.file.rel,
+          name: item.file.name,
+          line: index + 1,
+          column: ranges[0][0] + 1,
+          text: preview.text,
+          ranges: preview.ranges
+        })
         if (hits.length >= limit) {
-          truncated = true
+          truncation.add('result-limit')
           reachLimit = true
           break
         }
@@ -183,7 +285,7 @@ export async function searchFileContents(
     if (reachLimit) break
   }
 
-  if (signal?.aborted) return baseResult('cancelled', hits, truncated, scannedFiles, skippedFiles)
+  if (signal?.aborted) return baseResult('cancelled', hits, scannedFiles, skippedFiles)
   const status: FileContentSearchResult['status'] = hadReadError ? 'partial' : hits.length ? 'ok' : 'empty'
-  return baseResult(status, hits, truncated, scannedFiles, skippedFiles)
+  return baseResult(status, hits, scannedFiles, skippedFiles)
 }

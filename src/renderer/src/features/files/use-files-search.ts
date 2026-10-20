@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FilesOwner } from './files-model'
 import {
-  contentSearchRows,
+  contentSearchError,
+  contentSearchLimit,
+  groupContentHits,
   nameSearchFailed,
   nameSearchRows,
   parseFilesQuery,
-  searchStatusFailed,
+  type ContentOptions,
+  type FilesSearchError,
+  type FilesSearchLimit,
   type FilesSearchRow
 } from './files-search'
 
@@ -18,16 +22,28 @@ export interface FilesSearchState {
   phase: 'idle' | 'searching' | 'done'
   rows: FilesSearchRow[]
   truncated: boolean
+  limit: FilesSearchLimit
+  shown: number
   failed: boolean
+  error: FilesSearchError | null
 }
 
-const IDLE: FilesSearchState = { mode: 'name', phase: 'idle', rows: [], truncated: false, failed: false }
+const IDLE: FilesSearchState = { mode: 'name', phase: 'idle', rows: [], truncated: false, limit: null, shown: 0, failed: false, error: null }
 
-export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string, retry = 0): FilesSearchState {
+export function useFilesSearch(
+  owner: FilesOwner,
+  active: boolean,
+  raw: string,
+  retry = 0,
+  options?: ContentOptions
+): FilesSearchState {
   const [state, setState] = useState<FilesSearchState>(IDLE)
   const sequenceRef = useRef(0)
   const parsed = parseFilesQuery(raw)
   const { cwd, key, generation } = owner
+  const matchCase = !!options?.matchCase
+  const wholeWord = !!options?.wholeWord
+  const regexp = !!options?.regexp
 
   useEffect(() => {
     if (!active || !parsed.query || !cwd) {
@@ -41,43 +57,59 @@ export function useFilesSearch(owner: FilesOwner, active: boolean, raw: string, 
     const mode = parsed.mode
     const query = parsed.query
     const timer = window.setTimeout(() => {
-      setState((prev) => ({ mode, phase: 'searching', rows: prev.mode === mode ? prev.rows : [], truncated: false, failed: false }))
+      setState((prev) => ({
+        ...IDLE,
+        mode,
+        phase: 'searching',
+        rows: prev.mode === mode && !prev.failed ? prev.rows : []
+      }))
       const context = { cwd, generation: generation ?? 0 }
       const requestId = `${key}:${sequence}`
       const run = async (): Promise<void> => {
         try {
           if (mode === 'content') {
-            const result = await window.yan.searchFileContents({ ...context, requestId, query })
+            const result = await window.yan.searchFileContents({ ...context, requestId, query, matchCase, wholeWord, regexp })
             if (sequenceRef.current !== sequence) return
+            const error = contentSearchError(result)
+            const groups = groupContentHits(error ? [] : result.hits)
+            const limit = error ? null : contentSearchLimit(result, groups)
             setState({
               mode,
               phase: 'done',
-              rows: contentSearchRows(result),
-              truncated: result.truncated,
-              failed: searchStatusFailed(result.status)
+              rows: groups.rows,
+              truncated: !!limit,
+              limit,
+              shown: groups.shown,
+              failed: !!error,
+              error
             })
             return
           }
           const result = await window.yan.searchFileNames({ ...context, requestId, query, limit: NAME_LIMIT })
           if (sequenceRef.current !== sequence) return
           if (result.error?.code === 'superseded') return
+          const failed = nameSearchFailed(result)
+          const rows = nameSearchRows(result)
           setState({
             mode,
             phase: 'done',
-            rows: nameSearchRows(result),
+            rows,
             truncated: result.truncated,
-            failed: nameSearchFailed(result)
+            limit: result.truncated ? 'scan' : null,
+            shown: rows.length,
+            failed,
+            error: failed ? 'error' : null
           })
         } catch {
           if (sequenceRef.current !== sequence) return
-          setState({ mode, phase: 'done', rows: [], truncated: false, failed: true })
+          setState({ ...IDLE, mode, phase: 'done', failed: true, error: 'error' })
         }
       }
       void run()
     }, mode === 'content' ? CONTENT_DELAY : NAME_DELAY)
 
     return () => window.clearTimeout(timer)
-  }, [active, parsed.mode, parsed.query, cwd, key, generation, retry])
+  }, [active, parsed.mode, parsed.query, cwd, key, generation, retry, matchCase, wholeWord, regexp])
 
   return state
 }

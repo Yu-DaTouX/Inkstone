@@ -116,7 +116,7 @@ export function useFilesSplit(): FilesSplit {
       target.setPointerCapture(event.pointerId)
       setDragWidth(startWidth)
       const move = (ev: globalThis.PointerEvent): void => {
-        latest = clampTreeWidth(startWidth + (ev.clientX - startX), paneWidthRef.current)
+        latest = clampTreeWidth(startWidth - (ev.clientX - startX), paneWidthRef.current)
         setDragWidth(latest)
       }
       const finish = (commit: boolean): void => {
@@ -145,7 +145,7 @@ export function useFilesSplit(): FilesSplit {
 
   const onDividerKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>): void => {
-      const delta = event.key === 'ArrowRight' ? KEY_STEP : event.key === 'ArrowLeft' ? -KEY_STEP : 0
+      const delta = event.key === 'ArrowLeft' ? KEY_STEP : event.key === 'ArrowRight' ? -KEY_STEP : 0
       if (event.key === 'Home') {
         event.preventDefault()
         commitWidth(TREE_WIDTH_MIN)

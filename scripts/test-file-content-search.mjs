@@ -50,6 +50,36 @@ export async function runFileContentSearchTests(ok, { searchFileContents }) {
     const empty = await searchFileContents({ ...context, requestId: 'c8', query: '   ' })
     ok(empty.status === 'empty' && empty.hits.length === 0, '内容搜索空查询返回 empty')
 
+    await writeFile(join(root, 'opts.ts'), 'const Foo = foo_bar + foobar\nfoo(Foo)\n' + ' '.repeat(300) + 'deepfoo tail\n')
+    const literal = await searchFileContents({ ...context, requestId: 'o1', query: 'foo' })
+    const literalLines = literal.hits.filter((h) => h.path === 'opts.ts')
+    ok(literalLines.length === 3, '内容搜索默认不区分大小写，每个匹配行一条')
+    ok(literalLines[0].column === 7 && JSON.stringify(literalLines[0].ranges) === JSON.stringify([[6, 9], [12, 15], [22, 25]]), '内容搜索返回首个匹配列号与全部匹配区间')
+    ok(literalLines[2].text.length < 300 && literalLines[2].text.slice(literalLines[2].ranges[0][0], literalLines[2].ranges[0][1]) === 'foo', '长行片段从匹配前 160 字截取且区间换算正确')
+
+    const cased = await searchFileContents({ ...context, requestId: 'o2', query: 'Foo', matchCase: true })
+    const casedLines = cased.hits.filter((h) => h.path === 'opts.ts')
+    ok(casedLines.length === 2 && JSON.stringify(casedLines[0].ranges) === JSON.stringify([[6, 9]]), '区分大小写只命中大小写一致的文本')
+
+    const whole = await searchFileContents({ ...context, requestId: 'o3', query: 'foo', wholeWord: true })
+    const wholeLines = whole.hits.filter((h) => h.path === 'opts.ts')
+    ok(wholeLines.length === 2 && JSON.stringify(wholeLines[0].ranges) === JSON.stringify([[6, 9]]), '全字匹配不命中 foo_bar、foobar、deepfoo')
+
+    const regex = await searchFileContents({ ...context, requestId: 'o4', query: 'foo\\(\\w+\\)', regexp: true })
+    ok(regex.hits.some((h) => h.path === 'opts.ts' && h.line === 2 && JSON.stringify(h.ranges) === JSON.stringify([[0, 8]])), '正则模式按正则匹配')
+
+    const literalParen = await searchFileContents({ ...context, requestId: 'o5', query: 'foo(' })
+    ok(literalParen.status === 'ok' && literalParen.hits.some((h) => h.path === 'opts.ts' && h.line === 2), '非正则模式把特殊字符当字面量')
+
+    const badRegex = await searchFileContents({ ...context, requestId: 'o6', query: 'foo(', regexp: true })
+    ok(badRegex.status === 'pattern' && badRegex.hits.length === 0, '非法正则返回 pattern 状态而不抛错')
+
+    const emptyMatch = await searchFileContents({ ...context, requestId: 'o7', query: 'x*', regexp: true })
+    ok(emptyMatch.status !== 'pattern', '可匹配空串的正则不会死循环')
+
+    const capped2 = await searchFileContents({ ...context, requestId: 'o8', query: 'captarget', limit: 2 })
+    ok(capped2.truncation?.includes('result-limit'), '命中上限时截断原因为 result-limit')
+
     const escaped = await searchFileContents({ cwd: '..', projectId: 'project-test', generation: 1, requestId: 'c9', query: 'lintarget' })
     ok(escaped.status === 'invalid' && escaped.hits.length === 0, '内容搜索拒绝相对越界 cwd')
     const traversed = await searchFileContents({ ...context, cwd: `${root}/..`, requestId: 'c10', query: 'lintarget' })
