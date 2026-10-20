@@ -7,6 +7,15 @@
 - 桌面端界面图标使用 [Lucide](https://lucide.dev)（ISC，npm 包 `lucide-react`）。
 - Android 应用的图标是本仓库自绘的「砚线」，随砚以 MIT 发布，不含第三方几何。几何写在 [`scripts/design/icons/inkline.json`](scripts/design/icons/inkline.json)，语义写在 [`catalog.json`](scripts/design/icons/catalog.json)，由 `npm run icons` 生成 `src/renderer/src/icons/sprite.ts`，由 `mobile/src/icons.tsx` 引用。
 - 更早的版本使用过 `lucide-static`（ISC）与 [reicon](https://reicon.dev)。分发这些旧版本时，其许可声明仍随对应版本保留。
+- 文件类型图标在 [`src/renderer/src/assets/file-icons/`](src/renderer/src/assets/file-icons/)。语言、工具与品牌类的标志取自 [Simple Icons](https://simpleicons.org) 16.35.0（项目整体 CC0-1.0，未作为依赖安装），只缩放到 16 网格并按深浅主题调整品牌色；文档类（文本、PDF、Word、幻灯片、表格、字体、图片、音视频、压缩包、数据库、锁文件等）以及 Vue、VS Code、PostCSS、Java、C#、PowerShell、Sass 为本仓库自绘，随砚以 MIT 发布。以下标志在 Simple Icons 中另有单独许可，对应 SVG 文件继续适用该许可：
+  - CC0-1.0：TypeScript、React、Python、Go、HTML5、CSS、Swift、Svelte、Astro、GraphQL、WebAssembly、Terraform、Docker、npm、Bun、Vite、ESLint、Prettier、Biome、Oxc、Babel、stylelint、Tailwind CSS、SVGO、Model Context Protocol、Claude、C、C++、Kotlin、Lua、Dart、TOML、YAML、pnpm、Node.js、Gradle、CMake、.ENV、GitHub Actions、NGINX、Prisma、Jest、Vitest、Elixir、Erlang、Haskell、Scala、Perl、Julia、Jupyter、Electron、Next.js、Turborepo、Vercel、Netlify、Cypress、esbuild、Nx、Markdown
+  - MIT：JavaScript（logo.js）、Bootstrap、Deno、Storybook
+  - CC-BY-3.0：Git（Jason Long）
+  - CC-BY-4.0：Yarn、Solidity、Angular
+  - CC-BY-SA-2.5：Ruby
+  - CC-BY-SA-4.0：Rust、Zig、PHP、R
+  - webpack：按 [OpenJS 商标政策](https://js.foundation/about/governance/trademark-policy) 使用
+- 上述标志的商标归各自所有者，砚仅用它们标识文件类型，不表示任何关联或认可。
 
 ## 子代理模型 Bot
 
