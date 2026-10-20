@@ -45,7 +45,7 @@
 
   .v3-preview-tabstrip--chrome {
     flex: 1;
-    margin-left: calc(-1 * var(--s-6));
+    padding: var(--s-2);
   }
 
   .v3-preview-code {
@@ -157,7 +157,20 @@
     scrollbar-width: none;
   }
 
+  .v3-preview-tabstrip[data-clip-start] {
+    mask-image: linear-gradient(to right, transparent, #000 var(--s-16));
+  }
+
+  .v3-preview-tabstrip[data-clip-end] {
+    mask-image: linear-gradient(to left, transparent, #000 var(--s-16));
+  }
+
+  .v3-preview-tabstrip[data-clip-start][data-clip-end] {
+    mask-image: linear-gradient(to right, transparent, #000 var(--s-16), #000 calc(100% - var(--s-16)), transparent);
+  }
+
   .v3-preview-tab {
+    flex: none;
     display: flex;
     align-items: center;
     gap: var(--s-2);
@@ -239,10 +252,7 @@
   }
 
   .v3-preview-tab-ico {
-    flex: none;
-    display: inline-flex;
-    padding-left: var(--s-4);
-    color: var(--fg3);
+    margin-left: var(--s-4);
   }
 
   .v3-preview-notes {

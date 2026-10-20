@@ -334,7 +334,7 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 14px;
+    left: 16px;
     width: calc(var(--files-depth, 0) * 10px);
     background-size: 10px 100%;
     background-repeat: repeat-x;
@@ -348,8 +348,8 @@
   .v3-files-glyph {
     position: relative;
     flex: none;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     display: grid;
     place-items: center;
   }
@@ -377,7 +377,7 @@
     min-height: var(--files-row, 24px);
     display: flex;
     align-items: center;
-    padding: 0 var(--s-12) 0 calc(var(--files-indent, 8px) + 16px);
+    padding: 0 var(--s-12) 0 calc(var(--files-indent, 8px) + 20px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -432,6 +432,10 @@
 
   .v3-files-result-icon {
     flex: none;
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
   }
 
   .v3-files-result-name {
@@ -454,7 +458,7 @@
   }
 
   .v3-files-result--line {
-    padding-left: 24px;
+    padding-left: 28px;
   }
 
   .v3-files-result-line {

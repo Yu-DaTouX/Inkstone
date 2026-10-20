@@ -1,0 +1,108 @@
+@layer reset, tokens, base, primitives, patterns, features, utilities;
+
+@layer primitives {
+  .ui-file-icon {
+    --file-icon-size: 16px;
+    --fti-tone: light-dark(#9E9D98, #85847E);
+    --fti-soft: light-dark(color-mix(in srgb, var(--fti-tone) 50%, transparent), color-mix(in srgb, var(--fti-tone) 64%, transparent));
+    --fti-tint: light-dark(color-mix(in srgb, var(--fti-tone) 20%, transparent), color-mix(in srgb, var(--fti-tone) 26%, transparent));
+    --fti-knock: light-dark(#FFFFFF, #1A1A19);
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: var(--file-icon-size);
+    height: var(--file-icon-size);
+    line-height: 0;
+  }
+
+  .ui-file-icon[data-tone='green'] {
+    --fti-tone: light-dark(#4E9F64, #6DBB83);
+  }
+
+  .ui-file-icon[data-tone='blue'] {
+    --fti-tone: light-dark(#3C82CF, #6EA5E6);
+  }
+
+  .ui-file-icon[data-tone='yellow'] {
+    --fti-tone: light-dark(#B98F10, #D8B54A);
+  }
+
+  .ui-file-icon[data-tone='orange'] {
+    --fti-tone: light-dark(#DA7340, #E99466);
+  }
+
+  .ui-file-icon[data-tone='red'] {
+    --fti-tone: light-dark(#D04D50, #E57A7C);
+  }
+
+  .ui-file-icon[data-tone='purple'] {
+    --fti-tone: light-dark(#8565C8, #AA92E6);
+  }
+
+  .ui-file-icon[data-tone='teal'] {
+    --fti-tone: light-dark(#2F968D, #58BDB3);
+  }
+
+  .ui-file-icon[data-size='14'] {
+    --file-icon-size: 14px;
+  }
+
+  .ui-file-icon[data-size='12'] {
+    --file-icon-size: 12px;
+  }
+
+  .ui-file-icon > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .ui-file-icon .fti-page {
+    fill: var(--fti-soft);
+  }
+
+  .ui-file-icon .fti-badge {
+    fill: var(--fti-tint);
+  }
+
+  .ui-file-icon .fti-fill,
+  .ui-file-icon .fti-text {
+    fill: var(--fti-tone);
+  }
+
+  .ui-file-icon .fti-round {
+    stroke: var(--fti-tone);
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+  }
+
+  .ui-file-icon .fti-text {
+    font-family: var(--font-ui);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.02em;
+  }
+
+  .ui-file-icon :is(.fti-line, .fti-knob, .fti-knock) {
+    fill: none;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ui-file-icon :is(.fti-line, .fti-knob) {
+    stroke: var(--fti-tone);
+  }
+
+  .ui-file-icon .fti-knob {
+    fill: var(--fti-knock);
+  }
+
+  .ui-file-icon .fti-knock {
+    stroke: var(--fti-knock);
+  }
+
+  .ui-file-icon .fti-knock-fill {
+    fill: var(--fti-knock);
+  }
+}

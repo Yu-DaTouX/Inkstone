@@ -8,7 +8,7 @@ import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/CodeEditor'
-import { filesIconSpec } from '../files/files-icon'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { Markdown } from '../session/Markdown'
 import { PaneTitle, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editor-language'
@@ -63,6 +63,24 @@ type PreviewView =
   | { kind: 'binary'; name: string; abs: string; bytes: number; media: boolean; notes: PreviewNote[] }
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
+
+function revealActiveTab(strip: HTMLElement): void {
+  const active = strip.querySelector<HTMLElement>('.v3-preview-tab.is-active')
+  if (active) {
+    const box = strip.getBoundingClientRect()
+    const tab = active.getBoundingClientRect()
+    if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left
+    else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right
+  }
+  markTabStripEdges(strip)
+}
+
+function markTabStripEdges(strip: HTMLElement): void {
+  const start = strip.scrollLeft > 2
+  const end = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2
+  strip.toggleAttribute('data-clip-start', start)
+  strip.toggleAttribute('data-clip-end', end)
+}
 
 export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
@@ -269,19 +287,35 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
 
   const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
   const activeTab = previewTabs?.active ?? activePath ?? ''
+  const tabStripRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const strip = tabStripRef.current
+    if (!strip) return undefined
+    revealActiveTab(strip)
+    const observer = new ResizeObserver(() => revealActiveTab(strip))
+    observer.observe(strip)
+    return () => observer.disconnect()
+  }, [activeTab, tabList.length, chrome])
   const tabStrip = tabList.length ? (
-    <div className={chrome ? 'v3-preview-tabstrip v3-preview-tabstrip--chrome' : 'v3-preview-tabstrip'} role="tablist" aria-label={text.tabsLabel} data-testid="v3-preview-tabs">
+    <div
+      ref={tabStripRef}
+      className={chrome ? 'v3-preview-tabstrip v3-preview-tabstrip--chrome' : 'v3-preview-tabstrip'}
+      role="tablist"
+      aria-label={text.tabsLabel}
+      data-testid="v3-preview-tabs"
+      onWheel={(event) => {
+        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) event.currentTarget.scrollLeft += event.deltaY
+      }}
+      onScroll={(event) => markTabStripEdges(event.currentTarget)}
+    >
       {tabList.map((tab) => {
-        const spec = filesIconSpec(previewTabLabel(tab))
         return (
         <span
           key={tab}
           className={`v3-preview-tab${tab === activeTab ? ' is-active' : ''}`}
           data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
         >
-          <span className="v3-preview-tab-ico" aria-hidden>
-            <spec.Icon size={12} />
-          </span>
+          <FileTypeIcon name={previewTabLabel(tab)} size={14} className="v3-preview-tab-ico" />
           <button
             type="button"
             role="tab"
