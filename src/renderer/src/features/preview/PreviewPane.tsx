@@ -8,16 +8,17 @@ import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/CodeEditor'
-import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { Markdown } from '../session/Markdown'
-import { PaneTitle, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
+import { PaneTitle, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editor-language'
-import { previewTabLabel } from '../workbench/preview-state'
 import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
-import { HighlightedCode } from './HighlightedCode'
+import { CodeView, type CodeViewTarget, type CodeViewText } from './CodeView'
+import { PreviewTabs } from './PreviewTabs'
+import { useFileViewSettings } from './use-file-view-settings'
+import { FILE_TAB_SIZES, type FileViewSettings } from './file-view-settings'
 import { previewBodyKind, previewNotes, previewProblem, type PreviewNote, type PreviewProblem } from './preview-issue'
 import { reportUnsavedEditor } from '../editor/unsaved-registry'
 import {
@@ -31,7 +32,6 @@ import {
 } from './preview-selection'
 import './preview.css'
 
-const MAX_RENDER_LINES = 2000
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
 
 function isMarkdownName(name: string): boolean {
@@ -64,24 +64,6 @@ type PreviewView =
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
 
-function revealActiveTab(strip: HTMLElement): void {
-  const active = strip.querySelector<HTMLElement>('.v3-preview-tab.is-active')
-  if (active) {
-    const box = strip.getBoundingClientRect()
-    const tab = active.getBoundingClientRect()
-    if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left
-    else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right
-  }
-  markTabStripEdges(strip)
-}
-
-function markTabStripEdges(strip: HTMLElement): void {
-  const start = strip.scrollLeft > 2
-  const end = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2
-  strip.toggleAttribute('data-clip-start', start)
-  strip.toggleAttribute('data-clip-end', end)
-}
-
 export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
@@ -91,7 +73,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const [selections, setSelections] = useState<ReadonlyMap<string, PreviewSelectionEntry>>(() => new Map())
   const previewTabs = usePreviewTabs(owner.key)
   const [draft, setDraft] = useState<PreviewDraft | null>(null)
-  const [sourceMode, setSourceMode] = useState(false)
+  const [sourceChoice, setSourceChoice] = useState<boolean | null>(null)
+  const [viewSettings, setViewSetting] = useFileViewSettings()
   const chrome = usePaneChrome()
 
   const scopeKey = previewScopeKey(owner)
@@ -199,6 +182,10 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   }, [editorId, unsavedPath])
   useEffect(() => () => reportUnsavedEditor(editorId, null), [editorId])
   const markdown = view.kind === 'text' && isMarkdownName(name)
+  const tabTarget = previewTabs?.target
+  const codeTarget: CodeViewTarget | null =
+    tabTarget && activePath && samePath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
+  const sourceMode = sourceChoice ?? !!codeTarget
   const reading = markdown && !sourceMode && !editing
 
   const freshnessTarget =
@@ -234,13 +221,14 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
 
   const beginEdit = useCallback(async (): Promise<void> => {
     if (!activeAbs) return
+    if (activePath) usePreviewBindings.getState().keep(owner.key, activePath)
     const result = await window.yan.readEditableFile(activeAbs, owner.cwd)
     if (!result.ok) {
       setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
       return
     }
     setDraft({ abs: activeAbs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
-  }, [activeAbs, owner.cwd])
+  }, [activeAbs, activePath, owner.key, owner.cwd])
 
   const saveDraft = useCallback(async (): Promise<void> => {
     if (!draft) return
@@ -287,58 +275,23 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
 
   const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
   const activeTab = previewTabs?.active ?? activePath ?? ''
-  const tabStripRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const strip = tabStripRef.current
-    if (!strip) return undefined
-    revealActiveTab(strip)
-    const observer = new ResizeObserver(() => revealActiveTab(strip))
-    observer.observe(strip)
-    return () => observer.disconnect()
-  }, [activeTab, tabList.length, chrome])
+  const bindings = usePreviewBindings.getState
   const tabStrip = tabList.length ? (
-    <div
-      ref={tabStripRef}
-      className={chrome ? 'v3-preview-tabstrip v3-preview-tabstrip--chrome' : 'v3-preview-tabstrip'}
-      role="tablist"
-      aria-label={text.tabsLabel}
-      data-testid="v3-preview-tabs"
-      onWheel={(event) => {
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) event.currentTarget.scrollLeft += event.deltaY
-      }}
-      onScroll={(event) => markTabStripEdges(event.currentTarget)}
-    >
-      {tabList.map((tab) => {
-        return (
-        <span
-          key={tab}
-          className={`v3-preview-tab${tab === activeTab ? ' is-active' : ''}`}
-          data-testid={`v3-preview-tab-${previewTabLabel(tab)}`}
-        >
-          <FileTypeIcon name={previewTabLabel(tab)} size={14} className="v3-preview-tab-ico" />
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === activeTab}
-            className="v3-preview-tab-name"
-            title={tab}
-            onClick={() => selectTab(tab)}
-          >
-            {previewTabLabel(tab)}
-          </button>
-          <button
-            type="button"
-            className="v3-preview-tab-close"
-            aria-label={`${text.closeTab}: ${previewTabLabel(tab)}`}
-            title={text.closeTab}
-            onClick={() => closeTab(tab)}
-          >
-            <X size={11} />
-          </button>
-        </span>
-        )
-      })}
-    </div>
+    <PreviewTabs
+      tabs={tabList}
+      active={activeTab}
+      preview={previewTabs?.preview ?? null}
+      cwd={owner.cwd}
+      chrome={!!chrome}
+      text={text}
+      onSelect={selectTab}
+      onClose={closeTab}
+      onKeep={(tab) => bindings().keep(owner.key, tab)}
+      onCloseOthers={(tab) => bindings().closeOthers(owner.key, tab)}
+      onCloseRight={(tab) => bindings().closeRight(owner.key, tab)}
+      onCloseAll={closeAllTabs}
+      onRevealInTree={onRevealInTree}
+    />
   ) : null
 
   const toolButtons = (
@@ -349,7 +302,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           aria-label={sourceMode ? text.readingMode : text.sourceMode}
           title={sourceMode ? text.readingMode : text.sourceMode}
           data-testid="v3-preview-reading-toggle"
-          onPress={() => setSourceMode((value) => !value)}
+          onPress={() => setSourceChoice(!sourceMode)}
         >
           {sourceMode ? <BookOpen size={14} /> : <Code2 size={14} />}
         </IconButton>
@@ -387,6 +340,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
         ]
       : []
   )
+
+  usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
   const crumbNav = crumbs.length > 1 ? (
     <nav className="v3-preview-crumbs" aria-label={text.crumbsLabel} data-testid="v3-preview-crumbs">
@@ -505,6 +460,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
         <CodeEditor
           value={draft.text}
           name={name}
+          settings={viewSettings}
           onChange={(value) =>
             setDraft((prev) => (prev && prev.abs === draft.abs ? { ...prev, text: value, failed: false } : prev))
           }
@@ -517,6 +473,8 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           artifacts={artifacts}
           ownsCurrent={ownsCurrent}
           reading={reading}
+          settings={viewSettings}
+          target={codeTarget}
           hasTabs={tabList.length > 0}
           treeShown={treeShown}
           onOpenArtifact={openArtifact}
@@ -532,6 +490,8 @@ function PreviewBody({
   artifacts,
   ownsCurrent,
   reading,
+  settings,
+  target,
   hasTabs,
   treeShown,
   onOpenArtifact
@@ -541,6 +501,8 @@ function PreviewBody({
   artifacts: AssistantArtifact[]
   ownsCurrent: boolean
   reading: boolean
+  settings: FileViewSettings
+  target: CodeViewTarget | null
   hasTabs: boolean
   treeShown: boolean
   onOpenArtifact: (path: string) => void
@@ -599,7 +561,7 @@ function PreviewBody({
       return (
         <>
           <PreviewNotes notes={view.notes.filter((note) => note !== 'too_large')} text={text} />
-          {reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} />}
+          {reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} settings={settings} target={target} />}
         </>
       )
     case 'image':
@@ -633,29 +595,58 @@ function PreviewBody({
 
 function TextView({
   view,
-  text
+  text,
+  settings,
+  target
 }: {
   view: Extract<PreviewView, { kind: 'text' }>
   text: PreviewText
+  settings: FileViewSettings
+  target: CodeViewTarget | null
 }): ReactElement {
-  const lines = view.text.split('\n')
-  const shown = lines.slice(0, MAX_RENDER_LINES)
-  const rangeLabel =
-    view.windowStart && view.windowEnd
-      ? text.lineRange.replace('{start}', String(view.windowStart)).replace('{end}', String(view.windowEnd))
-      : null
+  const labels = useMemo<CodeViewText>(
+    () => ({ label: text.codeLabel, plainNote: text.plainNote, fold: text.fold, unfold: text.unfold, folded: text.folded }),
+    [text]
+  )
   return (
-    <div className="v3-preview-text" data-testid="v3-preview-text">
-      {rangeLabel ? <div className="v3-preview-note">{rangeLabel}</div> : null}
-      <pre className="v3-preview-code">
-        <HighlightedCode code={shown.join('\n')} name={view.name} />
-      </pre>
-      {lines.length > MAX_RENDER_LINES ? (
-        <div className="v3-preview-note">{text.tooManyLines.replace('{n}', String(MAX_RENDER_LINES))}</div>
-      ) : null}
+    <div className="v3-preview-text v3-preview-text--code" data-testid="v3-preview-text">
+      <CodeView key={view.abs} text={view.text} name={view.name} settings={settings} firstNumber={view.windowStart ?? 1} target={target} labels={labels} />
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )
+}
+
+function samePath(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+}
+
+function viewSettingsMenu(
+  settings: FileViewSettings,
+  set: <K extends keyof FileViewSettings>(key: K, value: FileViewSettings[K]) => void,
+  text: PreviewText
+): PaneMenuItem[] {
+  const toggle = (key: 'wordWrap' | 'indentGuides' | 'showWhitespace' | 'scrollPastEnd' | 'previewTabs', label: string): PaneMenuItem => ({
+    id: `preview-view:${key}`,
+    label,
+    checked: settings[key],
+    onAction: () => {
+      set(key, !settings[key])
+      if (key === 'previewTabs' && settings.previewTabs) usePreviewBindings.getState().keepAll()
+    }
+  })
+  return [
+    toggle('wordWrap', text.wordWrap),
+    toggle('indentGuides', text.indentGuides),
+    toggle('showWhitespace', text.showWhitespace),
+    toggle('scrollPastEnd', text.scrollPastEnd),
+    ...FILE_TAB_SIZES.map((size) => ({
+      id: `preview-view:tab${size}`,
+      label: text.tabSize.replace('{n}', String(size)),
+      checked: settings.tabSize === size,
+      onAction: () => set('tabSize', size)
+    })),
+    toggle('previewTabs', text.previewTabs)
+  ]
 }
 
 function PreviewNotes({ notes, text }: { notes: PreviewNote[]; text: PreviewText }): ReactElement | null {

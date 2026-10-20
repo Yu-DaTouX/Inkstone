@@ -5,13 +5,14 @@ import { WORKBENCH_PANES } from './panes'
 import { useWorkspaceOwner } from './use-owner'
 import { activateWorkspaceOwner, captureActivationTarget } from './activation'
 import { showPreview, usePreviewPath } from './tool-tiles'
+import type { PreviewOpenOptions } from './preview-state'
 import { workbenchText } from './workbench-text'
 import { WORKBENCH_ACTIVE_TABS, type PreviewPaneProps, type WorkbenchTabId, type WorkspaceOwner } from './types'
 
 interface LeafProps {
   owner: WorkspaceOwner
   visible?: boolean
-  onPreview?: (path: string) => void
+  onPreview?: (path: string, options?: PreviewOpenOptions) => void
   path?: string
   Preview?: ComponentType<PreviewPaneProps>
 }
@@ -35,7 +36,7 @@ export function ToolTileBody({ tab }: { tab: WorkbenchTabId }): JSX.Element {
     <div className="v3-tool-tile-body">
       <div className="wb-pane" data-tab={tab} data-visible="1" data-testid={`tool-tile-pane-${tab}`}>
         {Body ? (
-          <Body owner={owner} visible={!blocked} onPreview={(path) => showPreview(owner.key, path)} path={previewPath} Preview={tab === 'files' ? WORKBENCH_PANES.preview : undefined} />
+          <Body owner={owner} visible={!blocked} onPreview={(path, options) => showPreview(owner.key, path, options)} path={previewPath} Preview={tab === 'files' ? WORKBENCH_PANES.preview : undefined} />
         ) : (
           <EmptyState className="wb-nowire" title={text.notWired} description={text.notWiredHint} />
         )}

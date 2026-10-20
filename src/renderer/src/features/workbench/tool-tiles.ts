@@ -6,13 +6,18 @@ import {
   closeAllPreviewTabs,
   closeOtherPreviewTabs,
   closePreviewTab,
+  closePreviewTabsToRight,
+  keepAllPreviewTabs,
+  keepPreviewTab,
   openPreviewTab,
   previewPathFor,
   previewTabsFor,
   selectPreviewTab,
   type PreviewBindings,
+  type PreviewOpenOptions,
   type PreviewTabs
 } from './preview-state'
+import { fileViewSettingsStore } from '../preview/use-file-view-settings'
 import { canTileTool, roomForAnotherTile, tileCapacity, toolTileIndex, toolTileRef, visibleToolTiles } from './tool-tile-refs'
 import type { WorkbenchTabId } from './types'
 
@@ -130,19 +135,25 @@ export function revealToolTile(tab: WorkbenchTabId): boolean {
 
 interface PreviewBindingsState {
   bindings: PreviewBindings
-  bind(ownerKey: string | null, path: string): void
+  bind(ownerKey: string | null, path: string, options?: PreviewOpenOptions): void
   select(ownerKey: string | null, path: string): void
+  keep(ownerKey: string | null, path: string): void
+  keepAll(): void
   close(ownerKey: string | null, path: string): void
   closeOthers(ownerKey: string | null, keep: string): void
+  closeRight(ownerKey: string | null, path: string): void
   closeAll(ownerKey: string | null): void
 }
 
 export const usePreviewBindings = create<PreviewBindingsState>((set, get) => ({
   bindings: new Map(),
-  bind: (ownerKey, path) => set({ bindings: openPreviewTab(get().bindings, ownerKey, path) }),
+  bind: (ownerKey, path, options) => set({ bindings: openPreviewTab(get().bindings, ownerKey, path, options) }),
   select: (ownerKey, path) => set({ bindings: selectPreviewTab(get().bindings, ownerKey, path) }),
+  keep: (ownerKey, path) => set({ bindings: keepPreviewTab(get().bindings, ownerKey, path) }),
+  keepAll: () => set({ bindings: keepAllPreviewTabs(get().bindings) }),
   close: (ownerKey, path) => set({ bindings: closePreviewTab(get().bindings, ownerKey, path) }),
   closeOthers: (ownerKey, keep) => set({ bindings: closeOtherPreviewTabs(get().bindings, ownerKey, keep) }),
+  closeRight: (ownerKey, path) => set({ bindings: closePreviewTabsToRight(get().bindings, ownerKey, path) }),
   closeAll: (ownerKey) => set({ bindings: closeAllPreviewTabs(get().bindings, ownerKey) })
 }))
 
@@ -154,8 +165,9 @@ export function usePreviewPath(ownerKey: string | null): string | undefined {
   return usePreviewBindings((s) => previewPathFor(s.bindings, ownerKey))
 }
 
-export function showPreview(ownerKey: string | null, path: string): void {
-  usePreviewBindings.getState().bind(ownerKey, path)
+export function showPreview(ownerKey: string | null, path: string, options?: PreviewOpenOptions): void {
+  const preview = options?.preview === true && fileViewSettingsStore().getSnapshot().previewTabs
+  usePreviewBindings.getState().bind(ownerKey, path, { ...options, preview })
   if (revealToolTile('files')) return
   const ui = useUiV3.getState()
   ui.setWorkspaceTab('files')

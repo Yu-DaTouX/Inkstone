@@ -31,18 +31,32 @@ const HIGHLIGHT_LANGUAGES = { ...common, powershell }
 const engine = createLowlight(HIGHLIGHT_LANGUAGES)
 engine.registerAlias(LANGUAGE_ALIASES)
 
-export function exceedsHighlightLimits(code: string): boolean {
-  if (code.length > HIGHLIGHT_MAX_CHARS) return true
+export interface HighlightLimits {
+  maxChars: number
+  maxLines: number
+  maxLineChars: number
+}
+
+export const MESSAGE_HIGHLIGHT_LIMITS: HighlightLimits = {
+  maxChars: HIGHLIGHT_MAX_CHARS,
+  maxLines: HIGHLIGHT_MAX_LINES,
+  maxLineChars: HIGHLIGHT_MAX_LINE_CHARS
+}
+
+export const FILE_HIGHLIGHT_LIMITS: HighlightLimits = { maxChars: 100_000, maxLines: 2_000, maxLineChars: 1_000 }
+
+export function exceedsHighlightLimits(code: string, limits: HighlightLimits = MESSAGE_HIGHLIGHT_LIMITS): boolean {
+  if (code.length > limits.maxChars) return true
   let lines = 1
   let lineStart = 0
   for (let i = 0; i < code.length; i += 1) {
     if (code.charCodeAt(i) !== 10) continue
-    if (i - lineStart > HIGHLIGHT_MAX_LINE_CHARS) return true
+    if (i - lineStart > limits.maxLineChars) return true
     lines += 1
-    if (lines > HIGHLIGHT_MAX_LINES) return true
+    if (lines > limits.maxLines) return true
     lineStart = i + 1
   }
-  return code.length - lineStart > HIGHLIGHT_MAX_LINE_CHARS
+  return code.length - lineStart > limits.maxLineChars
 }
 
 export function highlightLanguage(lang: string | null | undefined): string | null {
@@ -51,9 +65,9 @@ export function highlightLanguage(lang: string | null | undefined): string | nul
   return engine.registered(name) ? name : null
 }
 
-export function highlightTree(code: string, lang: string | null | undefined): Root | null {
+export function highlightTree(code: string, lang: string | null | undefined, limits: HighlightLimits = MESSAGE_HIGHLIGHT_LIMITS): Root | null {
   const name = highlightLanguage(lang)
-  if (!name || exceedsHighlightLimits(code)) return null
+  if (!name || exceedsHighlightLimits(code, limits)) return null
   try {
     return engine.highlight(name, code, { prefix: 'hljs-' })
   } catch {

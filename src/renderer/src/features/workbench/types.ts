@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import type { PreviewOpenOptions } from './preview-state'
 import type { PanePopoutTabId } from '../../../../shared/pane-popout'
 
 export type WorkbenchTabId = 'changes' | 'terminal' | 'files' | 'browser' | 'preview' | 'context' | 'branch' | 'logs' | 'quota'
@@ -29,7 +30,7 @@ export interface WorkspaceOwner {
 
 export interface FilesPaneProps {
   owner: WorkspaceOwner
-  onPreview?: (path: string) => void
+  onPreview?: (path: string, options?: PreviewOpenOptions) => void
   path?: string
   Preview?: ComponentType<PreviewPaneProps>
 }

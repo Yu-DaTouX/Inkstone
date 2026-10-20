@@ -40,6 +40,14 @@ function searchRequestFields(value: Record<string, unknown> | undefined): { requ
   return { requestId, query, ...(limit !== undefined ? { limit } : {}) }
 }
 
+function contentSearchOptions(value: Record<string, unknown> | undefined): Pick<FileContentSearchRequest, 'matchCase' | 'wholeWord' | 'regexp'> {
+  return {
+    matchCase: value?.matchCase === true,
+    wholeWord: value?.wholeWord === true,
+    regexp: value?.regexp === true
+  }
+}
+
 const watchIdsBySender = new Map<number, Set<string>>()
 const unsavedSenders = new Set<number>()
 
@@ -147,7 +155,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     const request = isObject(rawRequest) ? rawRequest : undefined
     const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
     const resolved = await resolveFileContext(s, requestedCwd, request)
-    const finalRequest: FileContentSearchRequest = { ...resolved.context, ...searchRequestFields(request) }
+    const finalRequest: FileContentSearchRequest = { ...resolved.context, ...searchRequestFields(request), ...contentSearchOptions(request) }
     if (!resolved.ok || !isSearchRequest(request)) {
       return { request: finalRequest, hits: [], status: 'invalid' as const, truncated: false, scannedFiles: 0, skippedFiles: 0 }
     }

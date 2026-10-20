@@ -1865,6 +1865,9 @@ export interface FileContentSearchRequest extends FileRequestContext {
   requestId: string
   query: string
   limit?: number
+  matchCase?: boolean
+  wholeWord?: boolean
+  regexp?: boolean
 }
 
 export interface FileContentHit {
@@ -1872,13 +1875,18 @@ export interface FileContentHit {
   name: string
   line: number
   text: string
+  column?: number
+  ranges?: Array<[number, number]>
 }
+
+export type FileContentTruncation = 'result-limit' | 'scan-limit' | 'timeout' | 'long-line'
 
 export interface FileContentSearchResult {
   request: FileContentSearchRequest
   hits: FileContentHit[]
-  status: FileListingStatus | 'partial' | 'cancelled'
+  status: FileListingStatus | 'partial' | 'cancelled' | 'pattern'
   truncated: boolean
+  truncation?: FileContentTruncation[]
   scannedFiles: number
   skippedFiles: number
 }

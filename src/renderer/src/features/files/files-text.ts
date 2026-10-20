@@ -29,6 +29,19 @@ export interface FilesText {
   contentFailed: string
   contentHint: string
   searchTruncated: string
+  contentEmpty: string
+  contentPattern: string
+  contentPermission: string
+  contentMissing: string
+  contentInvalid: string
+  contentMore: string
+  contentShown: string
+  contentScanLimit: string
+  searchInContents: string
+  searchOptions: string
+  matchCase: string
+  wholeWord: string
+  useRegexp: string
   attach: string
   copy: string
   copyAbsolute: string
@@ -78,6 +91,19 @@ const ZH: FilesText = {
   contentFailed: '无法搜索文件内容。',
   contentHint: '在 ? 后输入文字以搜索文件内容',
   searchTruncated: '结果较多，只显示前面一部分',
+  contentEmpty: '文件内容中没有匹配项',
+  contentPattern: '正则表达式无效',
+  contentPermission: '没有权限读取此项目，无法搜索文件内容。',
+  contentMissing: '工作目录已不存在，无法搜索文件内容。',
+  contentInvalid: '此工作目录不可搜索。',
+  contentMore: '此文件中还有更多匹配项',
+  contentShown: '只显示前 {n} 个匹配项，继续输入以缩小范围',
+  contentScanLimit: '项目较大，只搜索了部分文件',
+  searchInContents: '在文件内容中搜索',
+  searchOptions: '搜索选项',
+  matchCase: '区分大小写',
+  wholeWord: '全字匹配',
+  useRegexp: '使用正则表达式',
   attach: '作为上下文附加',
   copy: '复制',
   copyAbsolute: '绝对路径',
@@ -127,6 +153,19 @@ const EN: FilesText = {
   contentFailed: 'Couldn’t search file contents.',
   contentHint: 'Type after ? to search in files',
   searchTruncated: 'Too many matches; only the first part is shown',
+  contentEmpty: 'No matches in file contents',
+  contentPattern: 'Invalid regular expression',
+  contentPermission: 'No permission to read this project, so file contents can’t be searched.',
+  contentMissing: 'The working directory no longer exists.',
+  contentInvalid: 'This working directory can’t be searched.',
+  contentMore: 'More matches in this file',
+  contentShown: 'Only the first {n} matches are shown. Keep typing to narrow.',
+  contentScanLimit: 'Large project; only part of the files were searched',
+  searchInContents: 'Search in file contents',
+  searchOptions: 'Search options',
+  matchCase: 'Match case',
+  wholeWord: 'Match whole word',
+  useRegexp: 'Use regular expression',
   attach: 'Attach as context',
   copy: 'Copy',
   copyAbsolute: 'Absolute path',
