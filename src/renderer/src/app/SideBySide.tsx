@@ -6,7 +6,6 @@ import { createTurnProjector } from '../../../shared/turns'
 import type { UIMessage } from '../../../shared/ipc'
 import { sameSplitSession, splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 import { closeToolTile, dockToolTile, fitPaneTiles, toolTabOf, useTileCapacity, watchChatWidth } from '../features/workbench/tool-tiles'
-import { trackTileDrag } from '../features/workbench/tile-drag'
 import { toolTileText } from '../features/workbench/tool-tile-text'
 import { workbenchText } from '../features/workbench/workbench-text'
 import { ToolTileBody } from '../features/workbench/ToolTileBody'
@@ -20,6 +19,7 @@ import { Icon } from '../features/session/Icon'
 import { IconButton, Splitter } from '../ui'
 import { collapsedPanes } from './SideBySideLayout'
 import { closeSplitPane, focusSplitSession } from '../features/split/split-actions'
+import { startPaneDrag } from '../features/split/pane-drag'
 import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
 import { observeHeight } from '../features/split/split-measure'
 import { splitText } from '../features/split/split-text'
@@ -85,6 +85,8 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
         target={target}
         owner={liveTarget}
         index={index}
+        shown={shown}
+        position={position}
         leftSlot={slotAt(position - 1)}
         rightSlot={slotAt(position + 2)}
         movable={movable}
@@ -159,6 +161,8 @@ function PaneFrame({
   target,
   owner,
   index,
+  shown,
+  position,
   leftSlot,
   rightSlot,
   movable,
@@ -169,6 +173,8 @@ function PaneFrame({
   target: SplitSessionRef
   owner: SplitSessionRef
   index: number
+  shown: readonly SplitSessionRef[]
+  position: number
   leftSlot: number
   rightSlot: number
   movable: boolean
@@ -190,7 +196,7 @@ function PaneFrame({
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest('[data-tile-action]')) return
-    trackTileDrag(event, { id: key, title: tool ? toolName : title || t('split.untitled') }, (at) => useSplitView.getState().move(index, at))
+    startPaneDrag(event, { key, label: tool ? toolName : title || t('split.untitled'), shown, position })
   }
 
   const moveByKey = (event: ReactKeyboardEvent): void => {

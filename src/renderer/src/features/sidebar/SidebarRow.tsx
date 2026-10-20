@@ -56,7 +56,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
   const [renaming, setRenaming] = useState(false)
   const [renamePending, setRenamePending] = useState(false)
   const [draft, setDraft] = useState(title)
-  const dragging = useSplitDrag((s) => s.item?.path === item.path)
+  const dragging = useSplitDrag((s) => s.source === `session:${item.path}`)
 
   useEffect(() => {
     if (!renamePending || menuOpen) return

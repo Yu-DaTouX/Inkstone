@@ -8,7 +8,7 @@ const sources = [
   'src/renderer/src/state/split-view.ts',
   'src/renderer/src/app/SideBySideLayout.ts',
   'src/renderer/src/features/workbench/tool-tile-refs.ts',
-  'src/renderer/src/features/sidebar/session-drag.ts'
+  'src/renderer/src/features/split/split-drop-model.ts'
 ].map((file) => resolve(ROOT, file))
 
 const result = await build({
@@ -41,7 +41,8 @@ const {
   tileCapacity,
   fitToolTiles,
   fitPaneTiles,
-  dropZonesFor,
+  applyPaneDrop,
+  withHiddenTiles,
   sessionTiles,
   subagentTileRef,
   toolTabOf,
@@ -111,11 +112,10 @@ const fitted = fitPaneTiles({ tiles: [TERM, FILES, A], live: 2 }, 2)
 ok(order(fitted) === 'terminal,sa' && fitted.live === 1, '隐藏工具后焦点列序号随之换算')
 const sameLayout = { tiles: [A, TERM], live: 0 }
 ok(fitPaneTiles(sameLayout, 5) === sameLayout && fitPaneTiles(null, 2) === null, '无需隐藏时原样返回')
-const slotted = dropZonesFor(null, [
-  { left: 0, top: 0, width: 300, height: 400, slot: 0 },
-  { left: 300, top: 0, width: 300, height: 400, slot: 2 }
-])
-ok(slotted.map((zone) => zone.at).join(',') === '0,1,2,3', '落点序号按分屏序号给出（跳过隐藏列）')
+const hiddenAll = [A, TERM, B]
+const hiddenShown = [A, B]
+const paneSwapped = applyPaneDrop(hiddenShown, 0, { kind: 'swap', index: 1 })
+ok(order({ tiles: withHiddenTiles(hiddenAll, hiddenShown, paneSwapped) }) === 'sb,sa,terminal', '拖动换位只动显示中的列，被宽度藏起的工具保留并排在最后')
 ok(toolTileIndex({ tiles: [A, B, TERM], live: 0 }, 'terminal') === 2 && toolTileIndex(null, 'terminal') === -1, '按工具找到列下标')
 const narrowed = collapsedPanes({ tiles: [TERM, A], live: 1 }, true)
 ok(narrowed.tiles.length === 1 && narrowed.tiles[0] === A, '窄屏只留焦点会话')

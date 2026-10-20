@@ -7,9 +7,12 @@ import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuIte
 import { useI18n } from '../../i18n'
 import { useUiV3, workspaceLayoutFor } from '../../state/ui-v3'
 import { workbenchText, type WorkbenchText } from './workbench-text'
-import { previewPathFor } from './preview-state'
+import { previewPathFor, type PreviewOpenOptions } from './preview-state'
 import { canTileTool, hasTileRoom, openToolTile, showPreview, usePreviewBindings, useTiledTools } from './tool-tiles'
 import { toolTileText } from './tool-tile-text'
+import { toolTileRef } from './tool-tile-refs'
+import { dropToolInSplit } from '../split/split-actions'
+import type { SplitDropTarget } from '../split/split-drop-model'
 import { useWorkspaceBranch } from './use-workspace-branch'
 import { isSubagentPaneId, isToolPane, subagentRunOfPane } from './subagent-panes'
 import { useStore } from '../../state/store'
@@ -40,7 +43,7 @@ export interface WorkbenchPanelProps {
   panes: WorkbenchPaneComponents
   onClose: () => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
-  onPreview?: (path: string) => void
+  onPreview?: (path: string, options?: PreviewOpenOptions) => void
   onPopout?: (tab: WorkbenchTabId) => void
 }
 
@@ -120,16 +123,17 @@ export function WorkbenchPanel({
 
   const branch = useWorkspaceBranch(displayOwner?.cwd ?? null, open && shownPanes.includes('changes'))
 
-  const handlePreview = (path: string): void => {
-    showPreview(displayOwner?.key ?? null, path)
+  const handlePreview = (path: string, options?: PreviewOpenOptions): void => {
+    showPreview(displayOwner?.key ?? null, path, options)
     onPreview?.(path)
   }
 
   const emptiesPanel = (tab: WorkspacePaneId): boolean => shownPanes.every((other) => other === tab)
 
-  const moveBesideChat = (tab: WorkbenchTabId, at?: number): void => {
+  const moveBesideChat = (tab: WorkbenchTabId, target?: SplitDropTarget): void => {
     const current = owner?.sessionId || owner?.sessionFile ? { sessionId: owner.sessionId ?? undefined, path: owner.sessionFile } : null
-    if (!openToolTile(tab, current, at, emptiesPanel(tab))) return
+    const placed = target ? dropToolInSplit(toolTileRef(tab), target, current) : openToolTile(tab, current, undefined, emptiesPanel(tab))
+    if (!placed) return
     setWorkspaceFocus(false)
     closeWorkspacePane(tab)
   }
@@ -194,8 +198,8 @@ export function WorkbenchPanel({
               if (!expanded) setWorkspaceLayout(next)
             }}
             canMoveOut={(id) => mode !== 'full' && canTileTool(id) && hasTileRoom(emptiesPanel(id))}
-            onMoveOut={(id) => {
-              if (canTileTool(id)) moveBesideChat(id)
+            onMoveOut={(id, target) => {
+              if (canTileTool(id)) moveBesideChat(id, target)
             }}
             onDraggingChange={setDragging}
             renderTile={(id, handle) => {
@@ -240,12 +244,12 @@ export function WorkbenchPanel({
 interface LeafProps {
   owner: WorkspaceOwner
   visible?: boolean
-  onPreview?: (path: string) => void
+  onPreview?: (path: string, options?: PreviewOpenOptions) => void
   path?: string
   Preview?: ComponentType<PreviewPaneProps>
 }
 
-const MENU_SOURCE_ORDER = ['preview', 'files']
+const MENU_SOURCE_ORDER = ['preview', 'preview-view', 'files']
 
 function menuSourceRank(source: string): number {
   const index = MENU_SOURCE_ORDER.indexOf(source)
@@ -268,7 +272,7 @@ interface PaneCardProps {
   canMoveBeside: boolean
   moveBesideLabel: string
   onActivate: () => void
-  onPreview?: (path: string) => void
+  onPreview?: (path: string, options?: PreviewOpenOptions) => void
   onToggleExpand: () => void
   onClose: () => void
   onPopout: () => void

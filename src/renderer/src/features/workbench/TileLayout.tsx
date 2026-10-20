@@ -31,9 +31,22 @@ import {
   type TileTarget
 } from './tile-tree'
 import { box, createDropSnapshot, hitTestDrop, type Box, type DropSnapshot } from './tile-drop-zones'
+import { tileLandingBox } from './tile-boxes'
+import { canTileTool, toolTileRef } from './tool-tile-refs'
+import { useStore } from '../../state/store'
+import { displayedSessionOf, useSplitView } from '../../state/split-view'
+import { chatRoomy, labelGhost, measureDropGeometry, showDropPreview, trackPointerDrag, type DragSession } from '../split/split-drag'
+import {
+  DROP_INSET_PX,
+  dropBadge,
+  dropContextFor,
+  defaultDropTarget,
+  sessionDropTarget,
+  type DropBadge,
+  type SplitDropTarget
+} from '../split/split-drop-model'
 
 export type TileMoveSide = 'left' | 'right' | 'up' | 'down'
-type Edge = 'left' | 'right' | 'top' | 'bottom'
 
 export interface TileLayoutText {
   move: string
@@ -66,22 +79,17 @@ export interface TileLayoutProps {
   renderTile: (tileId: string, handle: TileHandle) => ReactNode
   onLayoutChange: (layout: TileLayout) => void
   canMoveOut?: (tileId: string) => boolean
-  onMoveOut?: (tileId: string) => void
+  onMoveOut?: (tileId: string, target: SplitDropTarget) => void
   onDraggingChange?: (dragging: boolean) => void
 }
 
 interface TileDrag {
   mode: 'tile'
   tileId: string
-  pointerId: number
-  start: { x: number; y: number }
-  delta: { x: number; y: number }
-  origin: { left: number; top: number } | null
-  slotShift: { x: number; y: number }
   startLayout: TileLayout
   snapshot: DropSnapshot | null
   pending: TileLayout | null
-  out: boolean
+  out: SplitDropTarget | null
 }
 
 interface Boundary {
@@ -113,40 +121,8 @@ function asBox(rect: DOMRect): Box {
   return box(rect.left, rect.top, rect.width, rect.height)
 }
 
-function sideEdge(side: 'start' | 'end', direction: 'row' | 'column'): Edge {
-  if (direction === 'row') return side === 'start' ? 'left' : 'right'
-  return side === 'start' ? 'top' : 'bottom'
-}
-
 function crossDirection(direction: 'row' | 'column'): 'row' | 'column' {
   return direction === 'row' ? 'column' : 'row'
-}
-
-function stackEdge(stack: TileStack, target: TileTarget | null): Edge | null {
-  if (!target) return null
-  if (target.kind === 'split' && target.stackId === stack.id && target.direction !== stack.direction) {
-    return sideEdge(target.index === 0 ? 'start' : 'end', target.direction)
-  }
-  const along = (target.kind === 'insert' && target.stackId === stack.id) || (target.kind === 'split' && target.stackId === stack.id)
-  if (!along) return null
-  if (target.index === 0) return sideEdge('start', stack.direction)
-  if (target.index >= stack.children.length) return sideEdge('end', stack.direction)
-  return null
-}
-
-function boundaryIndexOf(stack: TileStack, target: TileTarget | null): number | null {
-  if (!target || (target.kind !== 'insert' && target.kind !== 'split') || target.stackId !== stack.id) return null
-  if (target.kind === 'split' && target.direction !== stack.direction) return null
-  return target.index > 0 && target.index < stack.children.length ? target.index - 1 : null
-}
-
-function wrapEdge(tileId: string, target: TileTarget | null): Edge | null {
-  if (!target || target.kind !== 'wrap' || target.tileId !== tileId) return null
-  return sideEdge(target.index === 0 ? 'start' : 'end', target.direction)
-}
-
-function DropIndicator({ edge }: { edge: Edge }): ReactElement {
-  return <div className="wb-pane-indicator" data-edge={edge} aria-hidden />
 }
 
 function useContentHosts(): { host: (id: string) => HTMLDivElement; adopt: (id: string, shell: HTMLElement) => void; release: (id: string) => void } {
@@ -198,8 +174,6 @@ export function TileLayoutView({
   const instructionsId = useId()
   const [draggingTile, setDraggingTile] = useState<string | null>(null)
   const [resizing, setResizing] = useState<string | null>(null)
-  const [target, setTarget] = useState<TileTarget | null>(null)
-  const [outTarget, setOutTarget] = useState(false)
   const [preview, setPreview] = useState<{ tileId: string; side: TileMoveSide; target: TileTarget } | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const focusAfterMove = useRef<string | null>(null)
@@ -225,21 +199,31 @@ export function TileLayoutView({
     return element?.isConnected ? asBox(element.getBoundingClientRect()) : null
   }, [])
 
-  const settleTile = useCallback((tileId: string): void => {
-    const element = nodeEls.current.get(tileId)
-    if (!element) return
-    element.style.transition = ''
-    element.style.transform = ''
-  }, [])
-
   const finish = useCallback((): void => {
     interaction.current = null
     setDraggingTile(null)
     setResizing(null)
-    setTarget(null)
-    setOutTarget(false)
     latest.current.onDraggingChange?.(false)
   }, [])
+
+  const landingBadge = useCallback((next: TileLayout, tileId: string): DropBadge | null => {
+    const container = containerRef.current?.getBoundingClientRect()
+    if (!container) return null
+    const area = tileLandingBox(next, tileId, { left: container.left, top: container.top, width: container.width, height: container.height }, TILE_GAP)
+    if (!area) return null
+    return {
+      box: {
+        left: area.left + DROP_INSET_PX,
+        top: area.top + DROP_INSET_PX,
+        width: Math.max(0, area.width - 2 * DROP_INSET_PX),
+        height: Math.max(0, area.height - 2 * DROP_INSET_PX)
+      },
+      label: 'move',
+      hint: false
+    }
+  }, [])
+
+  useEffect(() => () => showDropPreview(null), [])
 
   const announceMove = useCallback((tileId: string, next: TileLayout): void => {
     const path = tilePath(next, tileId)
@@ -346,6 +330,69 @@ export function TileLayoutView({
     [measureBoundary, equalize, commitFlexes]
   )
 
+  const beginTileDrag = (tileId: string, startPointer: { x: number; y: number }): DragSession | null => {
+    const container = containerRef.current
+    if (!container || interaction.current) return null
+    const snapshot = createDropSnapshot({
+      layout: layoutRef.current,
+      containerRect: asBox(container.getBoundingClientRect()),
+      measure,
+      sourceTileId: tileId,
+      startPointer,
+      gap: TILE_GAP
+    })
+    const drag: TileDrag = { mode: 'tile', tileId, startLayout: layoutRef.current, snapshot, pending: null, out: null }
+    interaction.current = drag
+    setPreview(null)
+    showDropPreview(null)
+    setDraggingTile(tileId)
+    latest.current.onDraggingChange?.(true)
+    const chat = canTileTool(tileId) && chatRoomy() ? measureDropGeometry() : null
+    const ctx =
+      chat && canTileTool(tileId)
+        ? dropContextFor(useSplitView.getState().split, displayedSessionOf(useStore.getState()), toolTileRef(tileId), chat.host.width)
+        : null
+    const outHint = ctx && chat && defaultDropTarget(ctx)?.kind !== 'replace' ? dropBadge(null, ctx, chat) : null
+    return {
+      source: `tile:${tileId}`,
+      ghost: labelGhost(latest.current.tileName(tileId)),
+      hover: (point) => {
+        const rect = container.getBoundingClientRect()
+        if (ctx && chat && point.x < rect.left - OUT_THRESHOLD_PX && latest.current.canMoveOut?.(tileId)) {
+          drag.pending = null
+          const found = sessionDropTarget(ctx, chat, point.x, point.y)
+          drag.out = found && found.kind !== 'replace' ? found : null
+          const shown = drag.out ? dropBadge(drag.out, ctx, chat) : outHint
+          return { badge: shown ? { ...shown, label: 'move' } : null, over: true }
+        }
+        drag.out = null
+        if (!drag.snapshot) return { badge: null, over: true }
+        const hit = hitTestDrop(layoutRef.current, drag.snapshot, tileId, point)
+        drag.pending = hit.pendingLayout
+        if (hit.liveLayout && !layoutsEqual(hit.liveLayout, layoutRef.current)) changeLayout(hit.liveLayout)
+        return { badge: hit.pendingLayout ? landingBadge(hit.pendingLayout, tileId) : null, over: true }
+      },
+      drop: () => {
+        if (drag.out) {
+          if (!layoutsEqual(drag.startLayout, layoutRef.current)) changeLayout(drag.startLayout)
+          latest.current.onMoveOut?.(tileId, drag.out)
+          return
+        }
+        if (drag.pending && !layoutsEqual(drag.pending, layoutRef.current)) changeLayout(drag.pending)
+        if (!layoutsEqual(drag.startLayout, layoutRef.current)) announceMove(tileId, layoutRef.current)
+      },
+      cancel: () => {
+        if (!layoutsEqual(drag.startLayout, layoutRef.current)) changeLayout(drag.startLayout)
+        setAnnouncement(latest.current.text.moveCancelled(latest.current.tileName(tileId)))
+      },
+      end: finish
+    }
+  }
+
+  const previewMove = (tileId: string, to: TileTarget | null): void => {
+    showDropPreview(to ? landingBadge(moveTile(layoutRef.current, tileId, to), tileId) : null)
+  }
+
   const handleFor = (tileId: string): TileHandle => {
     const side = preview?.tileId === tileId ? preview.side : null
     const name = tileName(tileId)
@@ -357,55 +404,21 @@ export function TileLayoutView({
       previewing: side !== null,
       describedBy: instructionsId,
       onPointerDown: (event) => {
-        if (dragDisabled || event.button !== 0 || interaction.current) return
-        const container = containerRef.current
-        if (!container) return
+        if (dragDisabled || event.button !== 0 || interaction.current || !containerRef.current) return
         event.preventDefault()
         event.stopPropagation()
         const startPointer = { x: event.clientX, y: event.clientY }
-        const snapshot = createDropSnapshot({
-          layout: layoutRef.current,
-          containerRect: asBox(container.getBoundingClientRect()),
-          measure,
-          sourceTileId: tileId,
-          startPointer,
-          gap: TILE_GAP
-        })
-        const element = nodeEls.current.get(tileId)
-        const origin = element?.getBoundingClientRect()
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-        interaction.current = {
-          mode: 'tile',
-          tileId,
-          pointerId: event.pointerId,
-          start: startPointer,
-          delta: { x: 0, y: 0 },
-          origin: origin ? { left: origin.left, top: origin.top } : null,
-          slotShift: { x: 0, y: 0 },
-          startLayout: layoutRef.current,
-          snapshot,
-          pending: null,
-          out: false
-        }
-        if (element) {
-          element.style.transition = 'none'
-          element.style.transform = 'translate(0px, 0px)'
-        }
-        setPreview(null)
-        setTarget(null)
-        setDraggingTile(tileId)
-        latest.current.onDraggingChange?.(true)
+        trackPointerDrag(event, () => beginTileDrag(tileId, startPointer))
       },
       onKeyDown: (event) => {
         if (dragDisabled || interaction.current) return
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Escape') {
+        if (event.key === 'Enter' || event.key === ' ') {
           if (!preview || preview.tileId !== tileId) return
           event.preventDefault()
           const chosen = preview.target
           setPreview(null)
-          setTarget(null)
-          if (event.key === 'Escape') setAnnouncement(text.moveCancelled(name))
-          else commitKeyboardMove(tileId, chosen)
+          previewMove(tileId, null)
+          commitKeyboardMove(tileId, chosen)
           return
         }
         if (!NAV_KEYS.has(event.key) || !plainKey(event)) return
@@ -431,12 +444,12 @@ export function TileLayoutView({
                   : null
         if (sideMove) {
           setPreview({ tileId, ...sideMove })
-          setTarget(sideMove.target)
+          previewMove(tileId, sideMove.target)
           setAnnouncement(text.moveSideHint[sideMove.side])
           return
         }
         setPreview(null)
-        setTarget(null)
+        previewMove(tileId, null)
         const next =
           event.key === 'ArrowLeft' || event.key === 'ArrowUp'
             ? index - 1
@@ -451,87 +464,60 @@ export function TileLayoutView({
       onBlur: () => {
         if (interaction.current || preview?.tileId !== tileId) return
         setPreview(null)
-        setTarget(null)
+        previewMove(tileId, null)
       }
     }
   }
 
-  const active = draggingTile !== null || resizing !== null
+  const previewTile = preview?.tileId ?? null
   useEffect(() => {
-    if (!active) return undefined
+    if (previewTile === null) return undefined
+    const key = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing || interaction.current) return
+      event.preventDefault()
+      setPreview(null)
+      showDropPreview(null)
+      const { text: t, tileName: name } = latest.current
+      setAnnouncement(t.moveCancelled(name(previewTile)))
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [previewTile])
+
+  useEffect(() => {
+    if (resizing === null) return undefined
     const move = (event: globalThis.PointerEvent): void => {
       const current = interaction.current
-      if (!current || event.pointerId !== current.pointerId) return
-      if (current.mode === 'resize') {
-        const { boundary } = current
-        const stack = findStack(layoutRef.current, boundary.stackId)
-        if (!stack) return
-        const delta = boundary.direction === 'row' ? event.clientX - current.start.x : event.clientY - current.start.y
-        boundary.live = adjustFlexes(boundary.startFlexes, boundary.index, delta, boundary.pxPerFlex, TILE_MIN_PX)
-        applyFlexStyles(stack, boundary.live)
-        return
-      }
-      current.delta = { x: event.clientX - current.start.x, y: event.clientY - current.start.y }
-      const element = nodeEls.current.get(current.tileId)
-      if (element) element.style.transform = `translate(${current.delta.x + current.slotShift.x}px, ${current.delta.y + current.slotShift.y}px)`
-      const container = containerRef.current?.getBoundingClientRect()
-      const out = !!container && event.clientX < container.left - OUT_THRESHOLD_PX && !!latest.current.canMoveOut?.(current.tileId)
-      if (out !== current.out) {
-        current.out = out
-        setOutTarget(out)
-      }
-      if (out) {
-        current.pending = null
-        setTarget(null)
-        return
-      }
-      if (!current.snapshot) return
-      const hit = hitTestDrop(layoutRef.current, current.snapshot, current.tileId, { x: event.clientX, y: event.clientY })
-      current.pending = hit.pendingLayout
-      if (hit.liveLayout && !layoutsEqual(hit.liveLayout, layoutRef.current)) changeLayout(hit.liveLayout)
-      setTarget(hit.target)
+      if (!current || current.mode !== 'resize' || event.pointerId !== current.pointerId) return
+      const { boundary } = current
+      const stack = findStack(layoutRef.current, boundary.stackId)
+      if (!stack) return
+      const delta = boundary.direction === 'row' ? event.clientX - current.start.x : event.clientY - current.start.y
+      boundary.live = adjustFlexes(boundary.startFlexes, boundary.index, delta, boundary.pxPerFlex, TILE_MIN_PX)
+      applyFlexStyles(stack, boundary.live)
     }
     const up = (event: globalThis.PointerEvent): void => {
       const current = interaction.current
-      if (!current || event.pointerId !== current.pointerId) return
-      if (current.mode === 'resize') {
-        if (current.boundary.live) commitFlexes(current.boundary, current.boundary.live)
-        finish()
-        return
-      }
-      settleTile(current.tileId)
-      if (current.out) {
-        if (!layoutsEqual(current.startLayout, layoutRef.current)) changeLayout(current.startLayout)
-        finish()
-        latest.current.onMoveOut?.(current.tileId)
-        return
-      }
-      if (current.pending && !layoutsEqual(current.pending, layoutRef.current)) changeLayout(current.pending)
+      if (!current || current.mode !== 'resize' || event.pointerId !== current.pointerId) return
+      if (current.boundary.live) commitFlexes(current.boundary, current.boundary.live)
       finish()
-      announceMove(current.tileId, layoutRef.current)
     }
     const cancel = (): void => {
       const current = interaction.current
-      if (!current) return
-      if (current.mode === 'resize') {
-        const stack = findStack(layoutRef.current, current.boundary.stackId)
-        if (stack) applyFlexStyles(stack, current.boundary.startFlexes)
-        finish()
-        return
-      }
-      if (!layoutsEqual(current.startLayout, layoutRef.current)) changeLayout(current.startLayout)
-      settleTile(current.tileId)
+      if (!current || current.mode !== 'resize') return
+      const stack = findStack(layoutRef.current, current.boundary.stackId)
+      if (stack) applyFlexStyles(stack, current.boundary.startFlexes)
       finish()
-      setAnnouncement(latest.current.text.moveCancelled(latest.current.tileName(current.tileId)))
     }
     const key = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.isComposing || !interaction.current) return
+      if (event.key !== 'Escape' || event.isComposing || interaction.current?.mode !== 'resize') return
       event.preventDefault()
       event.stopImmediatePropagation()
       cancel()
     }
     const pointerCancel = (event: globalThis.PointerEvent): void => {
-      if (interaction.current && event.pointerId === interaction.current.pointerId) cancel()
+      const current = interaction.current
+      if (current?.mode === 'resize' && event.pointerId === current.pointerId) cancel()
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -545,20 +531,7 @@ export function TileLayoutView({
       window.removeEventListener('blur', cancel)
       window.removeEventListener('keydown', key, true)
     }
-  }, [active, applyFlexStyles, commitFlexes, changeLayout, finish, settleTile, announceMove])
-
-  useLayoutEffect(() => {
-    const current = interaction.current
-    if (!current || current.mode !== 'tile' || !current.origin) return
-    const element = nodeEls.current.get(current.tileId)
-    if (!element) return
-    const saved = element.style.transform
-    element.style.transform = 'none'
-    const rect = element.getBoundingClientRect()
-    element.style.transform = saved
-    current.slotShift = { x: current.origin.left - rect.left, y: current.origin.top - rect.top }
-    element.style.transform = `translate(${current.delta.x + current.slotShift.x}px, ${current.delta.y + current.slotShift.y}px)`
-  }, [layout])
+  }, [resizing, applyFlexStyles, commitFlexes, finish])
 
   useLayoutEffect(() => {
     const tileId = focusAfterMove.current
@@ -580,7 +553,6 @@ export function TileLayoutView({
   const renderNode = (node: TileNode, depth: number, parentDirection: 'row' | 'column' | null): ReactNode => {
     if (node.kind === 'tile') {
       if (!mounted.includes(node.tileId)) return null
-      const edge = wrapEdge(node.tileId, target)
       return (
         <div
           key={node.tileId}
@@ -596,12 +568,9 @@ export function TileLayoutView({
               if (shell) hosts.adopt(node.tileId, shell)
             }}
           />
-          {edge ? <DropIndicator edge={edge} /> : null}
         </div>
       )
     }
-    const edge = stackEdge(node, target)
-    const dropBoundary = boundaryIndexOf(node, target)
     return (
       <div
         key={node.id}
@@ -618,7 +587,6 @@ export function TileLayoutView({
               <TileSeparator
                 direction={node.direction}
                 active={resizing === `${node.id}:${index}`}
-                dropTarget={dropBoundary === index}
                 disabled={draggingTile !== null}
                 label={text.resize(nameOf(child, tileName), nameOf(node.children[index + 1], tileName))}
                 valueNow={Math.round((child.flex / (child.flex + node.children[index + 1].flex)) * 100)}
@@ -627,7 +595,6 @@ export function TileLayoutView({
             ) : null}
           </Fragment>
         ))}
-        {edge ? <DropIndicator edge={edge} /> : null}
       </div>
     )
   }
@@ -638,10 +605,8 @@ export function TileLayoutView({
       className="wb-panes"
       data-dragging={draggingTile ? '1' : undefined}
       data-resizing={resizing ? '1' : undefined}
-      data-out={outTarget ? '1' : undefined}
     >
       {visible.size > 0 ? renderNode(layout.root, 0, null) : null}
-      {outTarget ? <div className="wb-pane-out" aria-hidden /> : null}
       <span id={instructionsId} className="wb-sr" hidden>
         {text.moveInstructions}
       </span>
@@ -661,7 +626,6 @@ function nameOf(node: TileNode, tileName: (tileId: string) => string): string {
 interface TileSeparatorProps {
   direction: 'row' | 'column'
   active: boolean
-  dropTarget: boolean
   disabled: boolean
   label: string
   valueNow: number
@@ -670,7 +634,7 @@ interface TileSeparatorProps {
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
 }
 
-function TileSeparator({ direction, active, dropTarget, disabled, label, valueNow, onPointerDown, onDoubleClick, onKeyDown }: TileSeparatorProps): ReactElement {
+function TileSeparator({ direction, active, disabled, label, valueNow, onPointerDown, onDoubleClick, onKeyDown }: TileSeparatorProps): ReactElement {
   return (
     <div
       role="separator"
@@ -685,7 +649,6 @@ function TileSeparator({ direction, active, dropTarget, disabled, label, valueNo
       className="wb-pane-sep"
       data-direction={direction}
       data-active={active ? '1' : undefined}
-      data-drop={dropTarget ? '1' : undefined}
       onPointerDown={onPointerDown}
       onMouseDown={(event) => event.preventDefault()}
       onDoubleClick={onDoubleClick}

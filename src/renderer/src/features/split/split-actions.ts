@@ -83,6 +83,17 @@ export function dropSessionInSplit(item: { id?: string; path?: string }, target:
   return true
 }
 
+export function dropToolInSplit(ref: SplitSessionRef, target: SplitDropTarget, current: SplitSessionRef | null): boolean {
+  const view = useSplitView.getState()
+  const before = view.split
+  const next = applySessionDrop(before, target, ref, current)
+  if (!next) return false
+  const keep = before ? before.tiles[before.live] : current
+  const live = keep ? indexOfSession(next.tiles, keep) : -1
+  view.apply({ tiles: next.tiles, live: live >= 0 ? live : 0 })
+  return indexOfSession(useSplitView.getState().split?.tiles ?? [], ref) >= 0
+}
+
 export function openSessionInSplit(item: { id?: string; path?: string }, placement: 'default' | 'below' = 'default'): boolean {
   const store = useStore.getState()
   const current = displayedSessionOf(store)

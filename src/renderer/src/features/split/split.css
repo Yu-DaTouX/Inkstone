@@ -1,6 +1,6 @@
 @layer features {
-  :root[data-session-dragging],
-  :root[data-session-dragging] * {
+  :root[data-pointer-dragging],
+  :root[data-pointer-dragging] * {
     user-select: none;
     cursor: grabbing;
   }
@@ -86,6 +86,10 @@
       width var(--dur-snap) var(--ease),
       left var(--dur-snap) var(--ease),
       top var(--dur-snap) var(--ease);
+  }
+
+  .v3-session-ghost[data-kind='label'] .v3-session-ghost-row {
+    border-radius: var(--r-full);
   }
 
   .v3-session-ghost-clone {

@@ -127,6 +127,69 @@ console.log('松手后的布局')
   ok(drop.applySessionDrop(null, { kind: 'right' }, s('x'), null) === null, '没有当前会话时不建分屏')
 }
 
+console.log('分屏块拖动（与参考 dropZone / paneDrop 一致）')
+{
+  ok(drop.SESSION_DRAG_THRESHOLD === 4, '起拖阈值 4px（侧栏会话、分屏块、工作区面板共用）')
+  const two = [s('a'), s('b')]
+  const cols2 = [
+    { left: 300, top: 50, width: 500, height: 800 },
+    { left: 800, top: 50, width: 500, height: 800 }
+  ]
+  const zone = (x, y, cols = cols2, rowSplit = 0.5) => drop.paneDropZone(cols, rowSplit, x, y)
+  const z1 = zone(1100, 450)
+  ok(z1.col === 1 && z1.zone === 'swap' && z1.band === 'right' && !z1.edge, '右列中部：交换区，处在右侧边带但不在边缘 1/4', z1)
+  ok(zone(1250, 450).edge, '右列最外 1/4：边缘')
+  ok(zone(1000, 100).zone === 'above' && zone(1000, 800).zone === 'below', '上 1/3 叠到上方、下 1/3 叠到下方')
+  const swap = drop.paneDropTarget(two, 0, z1, 3)
+  ok(swap?.kind === 'swap' && swap.index === 1, '拖到另一块中部：交换', swap)
+  const tall = [s('a'), s('b', { below: true }), s('c')]
+  const edge = drop.paneDropTarget(tall, 1, zone(1250, 450), 3)
+  ok(edge?.kind === 'column' && edge.at === 2, '拖到最右边缘：右侧新列', edge)
+  const full = drop.paneDropTarget(tall, 1, zone(1250, 450), 2)
+  ok(full?.kind === 'swap' && full.index === 2, '列数已满：边缘不再给新列，退回交换', full)
+  ok(drop.paneDropTarget(two, 0, zone(1250, 450), 3)?.kind === 'swap', '两列时移到最右与交换结果相同：取交换')
+  const under = drop.paneDropTarget(two, 0, zone(1000, 800), 3)
+  ok(under?.kind === 'stack' && under.col === 1 && under.row === 1, '拖到另一列下 1/3：叠到下方', under)
+  const over = drop.paneDropTarget(two, 0, zone(1000, 100), 3)
+  ok(over?.kind === 'stack' && over.row === 0, '拖到另一列上 1/3：叠到上方', over)
+  ok(drop.paneDropTarget(two, 0, zone(500, 450), 3) === null, '拖回自己身上：无落点')
+
+  ok(ids(drop.applyPaneDrop(two, 0, { kind: 'swap', index: 1 })) === 'b,a', '交换两列')
+  ok(ids(drop.applyPaneDrop(two, 0, { kind: 'stack', col: 1, row: 1 })) === 'b,a↓', '叠到下方：源列消失，并到目标列下半')
+  ok(ids(drop.applyPaneDrop(two, 1, { kind: 'stack', col: 0, row: 0 })) === 'b,a↓', '叠到上方：原上方块降到下半')
+  const stacked = [s('a'), s('b', { below: true }), s('c')]
+  ok(ids(drop.applyPaneDrop(stacked, 1, { kind: 'column', at: 3 })) === 'a,c,b', '下方块拖到最右：拆成独立一列')
+  ok(ids(drop.applyPaneDrop(stacked, 2, { kind: 'column', at: 0 })) === 'c,a,b↓', '拖到最左：插到第一列前')
+  ok(ids(drop.applyPaneDrop(stacked, 2, { kind: 'swap', index: 1 })) === 'a,c↓,b', '与下方块交换：各自占对方的格子')
+  ok(drop.applyPaneDrop(stacked, 1, { kind: 'stack', col: 0, row: 1 }) === null, '叠回本列：没有变化')
+  ok(drop.applyPaneDrop(two, 0, { kind: 'column', at: 0 }) === null, '放回原位：没有变化')
+  ok(drop.applyPaneDrop([s('a'), s('b', { below: true })], 1, { kind: 'column', at: 2 }, 1) === null, '超出列数上限：不成立')
+
+  const hint = drop.paneDropBadge(null, two, 1, { host, columns: cols2, rowSplit: 0.5 }, 3)
+  ok(hint.hint && hint.label === 'swap' && hint.box.left === 308, '无落点：提示与第一列交换（变暗）', hint)
+  const move = drop.paneDropBadge({ kind: 'stack', col: 1, row: 1 }, two, 0, { host, columns: cols2, rowSplit: 0.5 }, 3)
+  ok(move.label === 'move' && !move.hint && move.box.top === 458 && move.box.height === 384, '叠到下方：文案「移到这里」，框下半', move)
+  const right = drop.paneDropBadge({ kind: 'column', at: 2 }, two, 0, { host, columns: cols2, rowSplit: 0.5 }, 3)
+  ok(Math.round(right.box.width) === Math.round(1000 / 3 - 16), '右侧新列：宽 = 宿主 / (列数 + 1)', right.box)
+  const swapBox = drop.paneDropBox({ kind: 'swap', index: 1 }, stacked, { host, columns: cols2, rowSplit: 0.5 })
+  ok(swapBox.top === 458 && swapBox.left === 308, '与下方块交换：只框下半', swapBox)
+  ok(drop.samePaneTarget({ kind: 'column', at: 2 }, { kind: 'column', at: 2 }) && !drop.samePaneTarget({ kind: 'swap', index: 1 }, { kind: 'column', at: 1 }), '落点相等判断')
+}
+
+console.log('工作区面板落点框')
+{
+  const tree = await loadTs('../src/renderer/src/features/workbench/tile-tree.ts')
+  const boxes = await loadTs('../src/renderer/src/features/workbench/tile-boxes.ts')
+  const layout = tree.columnLayout(['files', 'terminal'])
+  const root = { left: 0, top: 0, width: 400, height: 808 }
+  const all = boxes.layoutBoxes(layout, root, 8)
+  ok(all.files.height === 400 && all.terminal.top === 408, '按 flex 与 8px 间距切分', all)
+  const stackId = layout.root.id
+  const moved = tree.moveTile(layout, 'files', { kind: 'split', stackId, direction: 'row', index: 1 })
+  const landing = boxes.tileLandingBox(moved, 'files', root, 8)
+  ok(landing && landing.left === 204 && landing.width === 196, '拆到右侧：落点为右半列', landing)
+}
+
 console.log('行高边界（两行都不低于 320px，15–85%）')
 {
   const tall = drop.rowBoundsFor(1000)

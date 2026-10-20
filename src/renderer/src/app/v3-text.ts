@@ -32,8 +32,6 @@ export interface V3Text {
   hideSessionBar: string
   sessionMenu: string
   dragToSplit: string
-  dropLeft: string
-  dropRight: string
   deleteConfirmTitle: string
   deleteConfirmBody: string
   deleteConfirm: string
@@ -78,8 +76,6 @@ const ZH: V3Text = {
   hideSessionBar: '隐藏会话栏',
   sessionMenu: '会话操作',
   dragToSplit: '拖到会话区左右两侧可分屏打开',
-  dropLeft: '放到左侧',
-  dropRight: '放到右侧',
   deleteConfirmTitle: '删除这个会话？',
   deleteConfirmBody: '「{name}」会移到回收站。',
   deleteConfirm: '移入回收站',
@@ -124,8 +120,6 @@ const EN: V3Text = {
   hideSessionBar: 'Hide session bar',
   sessionMenu: 'Chat actions',
   dragToSplit: 'Drag onto the left or right of the chat to open side by side',
-  dropLeft: 'Drop on the left',
-  dropRight: 'Drop on the right',
   deleteConfirmTitle: 'Delete this chat?',
   deleteConfirmBody: '“{name}” will be moved to the trash.',
   deleteConfirm: 'Move to trash',

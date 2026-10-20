@@ -32,11 +32,6 @@
     background: var(--fg);
   }
 
-  .wb-pane-indicator,
-  .wb-pane-out {
-    background: var(--accent);
-  }
-
   .wb-pane-sep-bar {
     background: var(--line2);
   }
@@ -45,8 +40,7 @@
     background: var(--fg);
   }
 
-  .wb-pane-sep:focus-visible .wb-pane-sep-bar,
-  .wb-pane-sep[data-drop='1'] .wb-pane-sep-bar {
+  .wb-pane-sep:focus-visible .wb-pane-sep-bar {
     background: var(--accent);
   }
 
@@ -163,11 +157,11 @@
     flex-basis: 0;
     min-width: 120px;
     min-height: 120px;
-    transition: transform 300ms cubic-bezier(0.2, 0.9, 0.3, 1);
+    transition: opacity var(--dur-fast) ease;
   }
 
   .wb-pane-tile[data-dragging='1'] {
-    z-index: 24;
+    opacity: 0.5;
   }
 
   .wb-pane-shell,
@@ -230,62 +224,8 @@
     height: 3px;
   }
 
-  .wb-pane-sep:is(:hover, :focus-visible, [data-active='1'], [data-drop='1']) .wb-pane-sep-bar {
+  .wb-pane-sep:is(:hover, :focus-visible, [data-active='1']) .wb-pane-sep-bar {
     opacity: 1;
-  }
-
-  .wb-pane-sep[data-direction='row'][data-drop='1'] .wb-pane-sep-bar {
-    height: 100%;
-  }
-
-  .wb-pane-sep[data-direction='column'][data-drop='1'] .wb-pane-sep-bar {
-    width: 100%;
-  }
-
-  .wb-pane-indicator {
-    position: absolute;
-    z-index: 2;
-    border-radius: var(--r-full);
-    pointer-events: none;
-  }
-
-  .wb-pane-indicator:is([data-edge='left'], [data-edge='right']) {
-    top: 0;
-    bottom: 0;
-    width: 3px;
-  }
-
-  .wb-pane-indicator:is([data-edge='top'], [data-edge='bottom']) {
-    left: 0;
-    right: 0;
-    height: 3px;
-  }
-
-  .wb-pane-indicator[data-edge='left'] {
-    left: calc(var(--s-4) * -1 - 1.5px);
-  }
-
-  .wb-pane-indicator[data-edge='right'] {
-    right: calc(var(--s-4) * -1 - 1.5px);
-  }
-
-  .wb-pane-indicator[data-edge='top'] {
-    top: calc(var(--s-4) * -1 - 1.5px);
-  }
-
-  .wb-pane-indicator[data-edge='bottom'] {
-    bottom: calc(var(--s-4) * -1 - 1.5px);
-  }
-
-  .wb-pane-out {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: calc(var(--s-8) * -1 - 1.5px);
-    z-index: 2;
-    width: 3px;
-    border-radius: var(--r-full);
-    pointer-events: none;
   }
 
   .wb-card-grip {
@@ -320,23 +260,8 @@
     opacity: 1;
   }
 
-  .wb-panel[data-dragging='1'],
-  .wb-panel[data-dragging='1'] * {
-    cursor: move !important;
-    user-select: none;
-  }
-
   .wb-panes[data-resizing='1'] {
     user-select: none;
-  }
-
-  .wb-panel[data-dragging='1'],
-  .wb-panel[data-dragging='1'] .wb-body {
-    overflow: visible;
-  }
-
-  .wb-panel[data-dragging='1'] {
-    z-index: 30;
   }
 
   .wb-sr {
