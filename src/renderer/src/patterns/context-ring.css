@@ -24,8 +24,8 @@
   }
 
   .ctx-ring:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: none;
+    box-shadow: var(--ring-focus);
   }
 
   .ctx-ring-svg {

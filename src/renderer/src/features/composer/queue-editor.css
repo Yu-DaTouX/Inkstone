@@ -41,8 +41,11 @@
     outline: none;
   }
 
+  .cq-edit-input:focus {
+    border-color: var(--fg2);
+  }
+
   .cq-edit-input:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--sel);
+    box-shadow: var(--ring-focus);
   }
 }

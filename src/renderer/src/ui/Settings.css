@@ -178,8 +178,12 @@
     box-shadow: inset 0 0 0 1px var(--line2);
   }
 
+  .ui-settings-search:focus-within {
+    box-shadow: inset 0 0 0 1px var(--line-ctl);
+  }
+
   .ui-settings-search:has(.ui-settings-search__input:focus-visible) {
-    box-shadow: var(--ring-focus);
+    box-shadow: var(--ring-focus), inset 0 0 0 1px var(--line-ctl);
   }
 
   .ui-settings-search[data-disabled='1'] {

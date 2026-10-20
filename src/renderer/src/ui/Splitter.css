@@ -75,7 +75,7 @@
   }
 
   .ui-splitter:focus-visible::after {
-    outline: 2px solid var(--accent);
+    outline: var(--ring-outline);
     outline-offset: 2px;
   }
 

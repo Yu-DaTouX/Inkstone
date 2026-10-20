@@ -14,8 +14,6 @@
   .ui-combo__toggle[data-focus-visible],
   .ui-tab[data-focus-visible],
   .ui-tabpanel[data-focus-visible],
-  .ui-menu__item[data-focus-visible],
-  .ui-listbox__item[data-focus-visible],
   .ui-checkbox[data-focus-visible] .ui-checkbox__box,
   .ui-radio[data-focus-visible] .ui-radio__dot,
   .ui-switch[data-focus-visible] .ui-switch__track {
@@ -23,8 +21,6 @@
     box-shadow: var(--ring-focus);
   }
 
-  .ui-menu__item[data-focus-visible],
-  .ui-listbox__item[data-focus-visible],
   .ui-tab[data-focus-visible],
   .ui-tabpanel[data-focus-visible] {
     box-shadow: var(--ring-focus-inset);
@@ -233,6 +229,11 @@
   .ui-input[data-hovered],
   .ui-textarea[data-hovered] {
     border-color: var(--fg3);
+  }
+  .ui-input:focus,
+  .ui-textarea:focus {
+    outline: none;
+    border-color: var(--fg2);
   }
   .ui-input[data-disabled],
   .ui-textarea[data-disabled],
@@ -538,6 +539,10 @@
     border-radius: var(--r-sm);
     cursor: default;
     outline: none;
+  }
+  .ui-menu__item[data-focused]:not([data-disabled]),
+  .ui-listbox__item[data-focused]:not([data-disabled]) {
+    background: var(--hover);
   }
   .ui-menu__item[data-selected],
   .ui-listbox__item[data-selected] {

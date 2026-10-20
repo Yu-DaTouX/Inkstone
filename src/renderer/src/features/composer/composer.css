@@ -33,8 +33,8 @@
     color: var(--fg);
   }
 
-  .composer:has(.composer-text:focus-visible) {
-    border-color: var(--accent);
+  .composer:has(.composer-text:focus) {
+    border-color: var(--line2);
   }
 
   .composer-wrap.is-dropping .composer {
@@ -485,10 +485,8 @@
     background: var(--hover);
   }
 
-  .cpm-item[data-focus-visible] {
+  .cpm-item[data-focused] {
     background: var(--hover);
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
   }
 
   .cpm-item[data-current='true'] {

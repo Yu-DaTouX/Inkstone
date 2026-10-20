@@ -7,6 +7,7 @@ import { useRunsV3 } from './state/runs-v3'
 import { useLiveQuota } from './state/live-quota'
 import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
+import { installFocusModality } from './lib/focusModality'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
 
 const root = document.getElementById('root')
@@ -31,6 +32,8 @@ if (probeMode) {
 installAudioUnlock()
 
 installMotionPreferenceReporter()
+
+installFocusModality()
 
 installDeepLinkNavigation()
 
