@@ -1,3 +1,5 @@
+import { installFocusModality } from '../src/lib/focusModality'
+
 const THEME_KEY = 'yan.theme'
 
 function applyTheme(): void {
@@ -10,7 +12,7 @@ function applyTheme(): void {
 }
 
 applyTheme()
+installFocusModality()
 window.addEventListener('storage', (event) => {
   if (event.key === null || event.key === THEME_KEY) applyTheme()
 })
-export {}

@@ -6,7 +6,7 @@
   @keyframes v3-rail-tick-in { from { opacity: 0; transform: scaleX(0.2); } }
 
   .v3-rail-tick { border: 0; border-radius: var(--r-xs); background: none; }
-  .v3-rail-tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+  .v3-rail-tick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .v3-rail-bar {
     display: block;
     width: 16px;
@@ -63,7 +63,8 @@
   .v3-rail-item:hover { background: var(--hover); color: var(--fg); }
   .v3-rail-item:active { background: var(--press); color: var(--fg); }
   .v3-rail-item[data-current] { background: var(--sel); color: var(--fg); }
-  .v3-rail-item[data-focus] { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .v3-rail-item[data-focus] { background: var(--hover); color: var(--fg); }
+  .v3-rail-item[data-current][data-focus] { background: var(--sel); box-shadow: var(--ring-focus-inset); }
   .v3-rail-num {
     color: var(--fg3);
     font-size: var(--t-footnote);

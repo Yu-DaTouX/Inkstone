@@ -19,10 +19,15 @@
     background: var(--sel);
   }
 
+  :root[data-focus-modality='pointer'] {
+    --ring-focus: var(--ring-off);
+    --ring-focus-inset: var(--ring-off);
+    --ring-outline: none;
+  }
+
   :focus-visible {
-    outline: 1px solid var(--accent);
+    outline: var(--ring-outline);
     outline-offset: 1px;
-    box-shadow: 0 0 6px 2px var(--focus-glow);
   }
 
   :focus:not(:focus-visible) {

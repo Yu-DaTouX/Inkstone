@@ -160,7 +160,11 @@
   }
 
   .mtp-search-input:focus {
-    border-color: var(--accent);
+    border-color: var(--line-ctl);
+  }
+
+  .mtp-search-input:focus-visible {
+    box-shadow: var(--ring-focus);
   }
 
   .mtp-scroll {
@@ -209,14 +213,16 @@
     background: var(--hover);
   }
 
-  .mtp-item[data-focused],
-  .mtp-item[data-focus-visible] {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+  .mtp-item[data-focused] {
+    background: var(--hover);
   }
 
   .mtp-item[data-selected] {
     background: var(--sel);
+  }
+
+  .mtp-item[data-selected][data-focus-visible] {
+    box-shadow: var(--ring-focus-inset);
   }
 
   .mtp-item-main {
