@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
-import { File as FileIcon, Folder } from 'lucide-react'
+import { Folder } from 'lucide-react'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { Kbd } from '../../ui'
 import { useT, type TFunc } from '../../i18n'
 import type { SlashCommand } from '../../../../shared/ipc'
@@ -120,7 +121,7 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
               onClick={() => completion.completeAt(path)}
             >
               <span className="cmp-name">
-                {path.endsWith('/') ? <Folder size={12} aria-hidden /> : <FileIcon size={12} aria-hidden />}
+                {path.endsWith('/') ? <Folder size={14} aria-hidden /> : <FileTypeIcon name={path} size={14} />}
                 {path}
               </span>
               <span className="cmp-src">{path.endsWith('/') ? t('composer.dir') : t('composer.file')}</span>

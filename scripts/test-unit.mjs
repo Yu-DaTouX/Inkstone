@@ -54,7 +54,7 @@ for (const script of [
   'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
   'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-working-line-model',
-  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-preview-site-access', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel', 'test-evidence-dir'
+  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-preview-site-access', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel', 'test-file-type-icons', 'test-evidence-dir'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)

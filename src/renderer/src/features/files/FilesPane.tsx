@@ -28,7 +28,7 @@ import {
   type FilesRootStatus
 } from './files-model'
 import { filesText, type FilesText } from './files-text'
-import { filesIconSpec } from './files-icon'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { FilesRowMenu } from './FilesRowMenu'
 import { useFilesSearch, type FilesSearchState } from './use-files-search'
 import { parseFilesQuery, type FilesSearchRow } from './files-search'
@@ -614,7 +614,6 @@ function FilesRowView({
     )
   }
 
-  const spec = filesIconSpec(row.name)
   const expandable = row.dir && !row.blocked
   const linkNote = linkTitle(text, row)
   const title = [toAbsolutePath(cwd, row.path), linkNote].filter(Boolean).join('\n')
@@ -650,7 +649,7 @@ function FilesRowView({
         {row.dir ? (
           <ChevronRight size={12} className="v3-files-caret" data-open={row.open ? '1' : undefined} />
         ) : (
-          <spec.Icon size={12} />
+          <FileTypeIcon name={row.name} />
         )}
       </span>
       <span className="v3-files-name">{row.name}</span>
@@ -752,8 +751,6 @@ function FilesSearchResults({
             </button>
           )
         }
-        const spec = filesIconSpec(row.name)
-        const Icon = row.dir ? Folder : spec.Icon
         const matched = row.nameParts.some((part) => part.hit)
         return (
           <button
@@ -766,7 +763,13 @@ function FilesSearchResults({
             data-testid={`v3-files-result-${row.key}`}
             onClick={() => onOpen(row)}
           >
-            <Icon size={12} className="v3-files-result-icon" aria-hidden />
+            {row.dir ? (
+              <span className="v3-files-result-icon" aria-hidden>
+                <Folder size={14} />
+              </span>
+            ) : (
+              <FileTypeIcon name={row.name} className="v3-files-result-icon" />
+            )}
             <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
               {row.nameParts.map((part, index) =>
                 part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>
