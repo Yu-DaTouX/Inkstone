@@ -4,6 +4,8 @@ export interface SplitText {
   dragLabel: string
   openHere: string
   splitView: string
+  swap: string
+  moveHere: string
   openWith: string
   openInSplit: string
   openBelow: string
@@ -19,6 +21,8 @@ const zh: SplitText = {
   dragLabel: '在分屏中打开',
   openHere: '在此打开',
   splitView: '分屏',
+  swap: '交换',
+  moveHere: '移到这里',
   openWith: '打开方式',
   openInSplit: '分屏',
   openBelow: '在下方分屏',
@@ -34,6 +38,8 @@ const en: SplitText = {
   dragLabel: 'Open in split view',
   openHere: 'Open here',
   splitView: 'Split view',
+  swap: 'Swap',
+  moveHere: 'Move here',
   openWith: 'Open with',
   openInSplit: 'Split view',
   openBelow: 'Split view below',

@@ -13,7 +13,6 @@ import { useUiV3, useV3RouteSync } from '../state/ui-v3'
 import { startRunSync } from '../state/runs-v3'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
-import { SplitDropLayer } from '../features/sidebar/SplitDropLayer'
 import { SplitDragLayer } from '../features/split/SplitDragLayer'
 import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
 import { runSplitShortcut } from '../features/split/split-keys'
@@ -41,6 +40,7 @@ import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { closeToolTile, isToolTiled, revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
+import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
@@ -224,6 +224,7 @@ export default function ShellV3(): ReactElement {
   useEffect(() => { if (workspaceOpen) setPanelMounted(true) }, [workspaceOpen])
 
   const owner = useWorkspaceOwner()
+  useChatFilePreview(owner.key)
 
   const [paneClient] = useState(() => {
     const bridge = panePopoutBridge()
@@ -681,7 +682,6 @@ export default function ShellV3(): ReactElement {
         />
       ) : null}
       <NativeSessionSurfaces />
-      <SplitDropLayer />
       <SplitDragLayer />
       <NoticeBridge />
       <PeerApprovalDialog />

@@ -20,38 +20,7 @@ async function loadTs(relativePath) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 }
 
-const drag = await loadTs('../src/renderer/src/features/sidebar/session-drag.ts')
 const model = await loadTs('../src/renderer/src/features/sidebar/sidebar-model.ts')
-
-{
-  const area = { left: 300, top: 50, width: 800, height: 600 }
-  const single = drag.dropZonesFor(area, [])
-  ok(single.length === 2, '单会话：对话区分左右两个落点', single.length)
-  ok(single[0].at === 0 && single[0].side === 'left' && single[1].at === 1 && single[1].side === 'right', '左半插到前面、右半插到后面')
-  ok(single[0].rect.width + single[1].rect.width === 800, '两半合起来正好铺满')
-  ok(drag.hitDropZone(single, 310, 100) === 0, '命中左半')
-  ok(drag.hitDropZone(single, 1090, 600) === 1, '命中右半')
-  ok(drag.hitDropZone(single, 100, 100) === -1, '对话区外不命中')
-
-  const cols = [
-    { left: 720, top: 50, width: 380, height: 600 },
-    { left: 300, top: 50, width: 400, height: 600 }
-  ]
-  const split = drag.dropZonesFor(area, cols)
-  ok(split.length === 4, '分屏：每列各两个落点', split.length)
-  ok(split.map((z) => z.at).join(',') === '0,1,1,2', '按列从左到右排序后的插入位置', split.map((z) => z.at))
-  ok(split[0].rect.left === 300, '列按横坐标排序（与 DOM 顺序无关）', split[0].rect.left)
-
-  const tiny = drag.dropZonesFor({ left: 0, top: 0, width: 120, height: 90 }, [])
-  ok(tiny.length === 0, '区域过小（被挤没）不给落点')
-  ok(drag.dropZonesFor(null, []).length === 0, '没有对话区不给落点')
-}
-
-{
-  ok(!drag.passedThreshold(3, 4), '移动 5px 仍算点击')
-  ok(drag.passedThreshold(6, 0), '移动 6px 开始拖拽')
-  ok(drag.DRAG_THRESHOLD === 6, '阈值 6px')
-}
 
 {
   const s = (id, over = {}) => ({ id, path: `/s/${id}.jsonl`, cwd: '/p', title: id, updatedAt: 1, lastActivityAt: 1, ...over })
