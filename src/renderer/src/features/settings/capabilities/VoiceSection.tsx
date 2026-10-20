@@ -135,57 +135,61 @@ export function VoiceStatusPanel({ voice }: { voice: VoiceSetup }): ReactElement
   return (
     <Panel label={t('voice.title')}>
       <div className="caps-stack" data-testid="settings-voice" data-setting-id="caps-tools-voice">
-        <Group title={t('voice.title')} desc={t('voice.desc')} card>
-          <p className="caps-meta" data-testid="voice-state">
-            {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
-            {status?.model ? <span> {status.model.label}</span> : null}
-            {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
-          </p>
-          {status && !status.ready ? <Meta>{text('voiceSetupHint')}</Meta> : null}
-        </Group>
+        <Group title={t('voice.title')} desc={t('voice.desc')}>
+          <div className="caps-list">
+            <Item>
+              <p className="caps-meta" data-testid="voice-state">
+                {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
+                {status?.model ? <span> {status.model.label}</span> : null}
+                {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
+              </p>
+              {status && !status.ready ? <Meta>{text('voiceSetupHint')}</Meta> : null}
+            </Item>
 
-        {download ? (
-          <Item testId="voice-download">
-            <ItemHead>
-              <strong>{download.label}</strong>
-            </ItemHead>
-            <Meta>
-              {download.state === 'running'
-                ? t('voice.progress', { got: fmtBytes(download.received), total: fmtBytes(download.total) })
-                : download.state === 'done'
-                  ? t('voice.downloadDone')
-                  : download.state === 'cancelled'
-                    ? t('voice.downloadCancelled')
-                    : t('voice.downloadFailedMsg', { msg: download.error ?? '' })}
-            </Meta>
-            {download.state === 'running' ? (
-              <>
-                <Meter aria-label={download.label} value={download.received} minValue={0} maxValue={download.total || 1} />
-                <Actions>
-                  <Button size="sm" variant="secondary" onPress={() => void window.yan.voice.cancel().then(refresh)}>
-                    {t('voice.cancelDownload')}
-                  </Button>
-                </Actions>
-              </>
+            {download ? (
+              <Item testId="voice-download">
+                <ItemHead>
+                  <span className="caps-name">{download.label}</span>
+                </ItemHead>
+                <Meta>
+                  {download.state === 'running'
+                    ? t('voice.progress', { got: fmtBytes(download.received), total: fmtBytes(download.total) })
+                    : download.state === 'done'
+                      ? t('voice.downloadDone')
+                      : download.state === 'cancelled'
+                        ? t('voice.downloadCancelled')
+                        : t('voice.downloadFailedMsg', { msg: download.error ?? '' })}
+                </Meta>
+                {download.state === 'running' ? (
+                  <>
+                    <Meter aria-label={download.label} value={download.received} minValue={0} maxValue={download.total || 1} />
+                    <Actions>
+                      <Button variant="secondary" onPress={() => void window.yan.voice.cancel().then(refresh)}>
+                        {t('voice.cancelDownload')}
+                      </Button>
+                    </Actions>
+                  </>
+                ) : null}
+              </Item>
             ) : null}
-          </Item>
-        ) : null}
 
-        <div className="settings-rows">
-          <SettingsRow label={t('voice.language')} description={t('voice.languageDesc')} block settingId="caps-tools-voice-language">
-            <Segmented<VoiceLanguage>
-              label={t('voice.language')}
-              value={status?.language ?? 'auto'}
-              options={VOICE_LANGUAGES.map((lang) => ({
-                value: lang,
-                label: t(`voice.lang.${lang}` as 'voice.lang.auto'),
-                testId: `voice-language-${lang}`
-              }))}
-              onChange={(language) => void save({ ...(saved ?? {}), language })}
-            />
-          </SettingsRow>
-        </div>
-        {error ? <Warn>{error}</Warn> : null}
+            <div className="settings-rows">
+              <SettingsRow label={t('voice.language')} description={t('voice.languageDesc')} settingId="caps-tools-voice-language">
+                <Segmented<VoiceLanguage>
+                  label={t('voice.language')}
+                  value={status?.language ?? 'auto'}
+                  options={VOICE_LANGUAGES.map((lang) => ({
+                    value: lang,
+                    label: t(`voice.lang.${lang}` as 'voice.lang.auto'),
+                    testId: `voice-language-${lang}`
+                  }))}
+                  onChange={(language) => void save({ ...(saved ?? {}), language })}
+                />
+              </SettingsRow>
+            </div>
+          </div>
+          {error ? <Warn>{error}</Warn> : null}
+        </Group>
       </div>
     </Panel>
   )
@@ -211,14 +215,14 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
             </ItemHead>
             {status?.binary ? <Meta title={status.binary.path}>{status.binary.path}</Meta> : null}
             <Actions>
-              <Button size="sm" variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
+              <Button variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
                 {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
               </Button>
-              <Button size="sm" variant="secondary" onPress={() => void pick('binary')}>
+              <Button variant="secondary" onPress={() => void pick('binary')}>
                 {t('voice.pickEngine')}
               </Button>
               {saved?.binaryPath ? (
-                <Button size="sm" variant="secondary" onPress={() => void save({ ...saved, binaryPath: undefined })}>
+                <Button variant="secondary" onPress={() => void save({ ...saved, binaryPath: undefined })}>
                   {t('voice.clearEngine')}
                 </Button>
               ) : null}
@@ -235,7 +239,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                   return (
                     <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
                       <ItemHead>
-                        <strong>{tierLabel(candidate.spec.tier)}</strong>
+                        <span className="caps-name">{tierLabel(candidate.spec.tier)}</span>
                         {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
                         {selected ? <Badge tone="ok">{t('voice.inUse')}</Badge> : null}
                       </ItemHead>
@@ -250,7 +254,6 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                       <Actions>
                         {candidate.installed ? (
                           <Button
-                            size="sm"
                             variant="secondary"
                             isDisabled={selected}
                             onPress={() => void save({ ...(saved ?? {}), model: { kind: 'catalog', id: candidate.spec.id } })}
@@ -259,7 +262,6 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                           </Button>
                         ) : (
                           <Button
-                            size="sm"
                             variant="secondary"
                             isDisabled={busy || downloading}
                             onPress={() => void askPlan({ kind: 'model', id: candidate.spec.id })}
@@ -274,7 +276,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
               </div>
             ) : null}
             <Actions>
-              <Button size="sm" variant="secondary" onPress={() => void pick('model')}>
+              <Button variant="secondary" onPress={() => void pick('model')}>
                 {t('voice.pickModel')}
               </Button>
               {saved?.model?.kind === 'file' ? <Meta title={saved.model.path}>{saved.model.path}</Meta> : null}
@@ -285,7 +287,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
         {plan ? (
           <Item testId="voice-confirm">
             <ItemHead>
-              <strong>{t('voice.confirmTitle')}</strong>
+              <span className="caps-name">{t('voice.confirmTitle')}</span>
             </ItemHead>
             <Meta>
               {t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` })}
@@ -293,10 +295,10 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
             <Meta>{t('voice.confirmWhere', { path: plan.destination })}</Meta>
             <Meta title={plan.url}>{plan.url}</Meta>
             <Actions>
-              <Button size="sm" variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
+              <Button variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
                 {t('voice.confirmYes')}
               </Button>
-              <Button size="sm" variant="secondary" onPress={() => setPlan(null)}>
+              <Button variant="secondary" onPress={() => setPlan(null)}>
                 {t('voice.confirmNo')}
               </Button>
             </Actions>

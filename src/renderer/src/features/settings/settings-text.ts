@@ -6,7 +6,9 @@ export interface SettingsText {
   searchLabel: string
   searchPlaceholder: string
   searchEmpty: string
-  moreSettings: string
+  searchResults: string
+  searchMore: string
+  searchIn: string
   sectionAppearance: string
   sectionSession: string
   sectionNotifications: string
@@ -21,12 +23,40 @@ export interface SettingsText {
   groupGeneral: string
   groupCustomize: string
   groupLocal: string
+  navSkills: string
+  navMcp: string
+  navTools: string
+  navMarket: string
   close: string
   onboardingTitle: string
   onboardingDesc: string
   onboardingAction: string
   loading: string
   notReady: string
+  groupAppearanceLook: string
+  groupAppearanceFonts: string
+  groupAppearanceMotion: string
+  groupAppearanceInput: string
+  groupSessionContext: string
+  groupSessionGeneral: string
+  groupSessionRetry: string
+  groupSessionSubagents: string
+  groupNotifSound: string
+  groupNotifEvents: string
+  groupSecurityPermissions: string
+  groupSecurityProjects: string
+  groupDevicesAccess: string
+  groupDataBackup: string
+  groupDataStorage: string
+  groupDataSync: string
+  groupDataShare: string
+  groupUsageOverview: string
+  groupUsageBreakdown: string
+  groupUsageCurrency: string
+  groupShortcutsApp: string
+  groupAboutApp: string
+  groupAboutMore: string
+  groupModelsIntegrations: string
 
   theme: string
   themeLight: string
@@ -133,9 +163,11 @@ const ZH: SettingsText = {
   title: '设置',
   navLabel: '设置分区',
   searchLabel: '搜索设置',
-  searchPlaceholder: '搜索设置',
+  searchPlaceholder: '搜索',
   searchEmpty: '没有匹配的设置',
-  moreSettings: '更多设置',
+  searchResults: '设置搜索结果',
+  searchMore: '另有 {count} 项',
+  searchIn: '{label}，在{section}',
   sectionAppearance: '外观与语言',
   sectionSession: '会话与上下文',
   sectionNotifications: '通知',
@@ -149,13 +181,41 @@ const ZH: SettingsText = {
   sectionAbout: '关于',
   groupGeneral: '设置',
   groupCustomize: '自定义',
-  groupLocal: '本机',
+  groupLocal: '此电脑',
+  navSkills: '技能与扩展',
+  navMcp: 'MCP',
+  navTools: '本机工具',
+  navMarket: '插件市场',
   close: '关闭设置',
   onboardingTitle: '首次引导',
   onboardingDesc: '重新查看首次引导，不会重置设置。',
   onboardingAction: '重新查看引导',
   loading: '正在读取设置…',
   notReady: '设置还没就绪，稍后重试。',
+  groupAppearanceLook: '外观',
+  groupAppearanceFonts: '字体',
+  groupAppearanceMotion: '动效与背景',
+  groupAppearanceInput: '语言与输入',
+  groupSessionContext: '上下文',
+  groupSessionGeneral: '会话',
+  groupSessionRetry: '出错与重试',
+  groupSessionSubagents: '子 Agent',
+  groupNotifSound: '声音与系统通知',
+  groupNotifEvents: '提醒事件',
+  groupSecurityPermissions: '权限',
+  groupSecurityProjects: '项目',
+  groupDevicesAccess: '远程连接',
+  groupDataBackup: '备份',
+  groupDataStorage: '存储位置',
+  groupDataSync: '同步',
+  groupDataShare: '分享',
+  groupUsageOverview: '概览',
+  groupUsageBreakdown: '明细',
+  groupUsageCurrency: '货币',
+  groupShortcutsApp: '应用快捷键',
+  groupAboutApp: '版本与更新',
+  groupAboutMore: '运行环境与帮助',
+  groupModelsIntegrations: '其他接入',
 
   theme: '主题',
   themeLight: '浅色',
@@ -262,9 +322,11 @@ const EN: SettingsText = {
   title: 'Settings',
   navLabel: 'Settings sections',
   searchLabel: 'Search settings',
-  searchPlaceholder: 'Search settings',
+  searchPlaceholder: 'Search',
   searchEmpty: 'No matching settings',
-  moreSettings: 'More settings',
+  searchResults: 'Settings search results',
+  searchMore: '{count} more',
+  searchIn: '{label} in {section}',
   sectionAppearance: 'Appearance & language',
   sectionSession: 'Sessions & context',
   sectionNotifications: 'Notifications',
@@ -279,12 +341,40 @@ const EN: SettingsText = {
   groupGeneral: 'Settings',
   groupCustomize: 'Customize',
   groupLocal: 'This computer',
+  navSkills: 'Skills & extensions',
+  navMcp: 'MCP',
+  navTools: 'Local tools',
+  navMarket: 'Plugin market',
   close: 'Close settings',
   onboardingTitle: 'First-run setup',
   onboardingDesc: 'Replay first-run setup; settings are kept.',
   onboardingAction: 'Replay setup',
   loading: 'Loading settings…',
   notReady: 'Settings are not ready yet. Try again shortly.',
+  groupAppearanceLook: 'Appearance',
+  groupAppearanceFonts: 'Fonts',
+  groupAppearanceMotion: 'Motion & background',
+  groupAppearanceInput: 'Language & input',
+  groupSessionContext: 'Context',
+  groupSessionGeneral: 'Sessions',
+  groupSessionRetry: 'Errors & retries',
+  groupSessionSubagents: 'Subagents',
+  groupNotifSound: 'Sound & system notifications',
+  groupNotifEvents: 'Events',
+  groupSecurityPermissions: 'Permissions',
+  groupSecurityProjects: 'Projects',
+  groupDevicesAccess: 'Remote access',
+  groupDataBackup: 'Backup',
+  groupDataStorage: 'Storage',
+  groupDataSync: 'Sync',
+  groupDataShare: 'Sharing',
+  groupUsageOverview: 'Overview',
+  groupUsageBreakdown: 'Breakdown',
+  groupUsageCurrency: 'Currency',
+  groupShortcutsApp: 'App shortcuts',
+  groupAboutApp: 'Version & updates',
+  groupAboutMore: 'Runtime & help',
+  groupModelsIntegrations: 'Other integrations',
 
   theme: 'Theme',
   themeLight: 'Light',

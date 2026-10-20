@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react'
-import { Badge, Card, EmptyState, Notice, Skeleton, type BadgeTone } from '../../../ui'
+import { Badge, EmptyState, Notice, SettingSection, Skeleton, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
 
 export function Panel({ children, label }: { children: ReactNode; label: string }): ReactElement {
@@ -53,16 +53,9 @@ export function Group({
   children: ReactNode
 }): ReactElement {
   return (
-    <section className="caps-group" data-setting-id={settingId}>
-      <div className="caps-group-head">
-        <div className="caps-group-titles">
-          <h3 className="caps-group-title">{title}</h3>
-          {desc ? <p className="caps-group-desc">{desc}</p> : null}
-        </div>
-        {actions ? <div className="caps-actions">{actions}</div> : null}
-      </div>
-      {card ? <Card className="caps-card">{children}</Card> : children}
-    </section>
+    <SettingSection className="caps-group" title={title} description={desc} actions={actions} plain data-setting-id={settingId}>
+      {card ? <div className="caps-card">{children}</div> : children}
+    </SettingSection>
   )
 }
 
@@ -90,9 +83,9 @@ export function Actions({ children }: { children: ReactNode }): ReactElement {
   return <div className="caps-actions">{children}</div>
 }
 
-export function Meta({ children, title }: { children: ReactNode; title?: string }): ReactElement {
+export function Meta({ children, title, clamp }: { children: ReactNode; title?: string; clamp?: boolean }): ReactElement {
   return (
-    <p className="caps-meta" title={title}>
+    <p className={cx('caps-meta', clamp && 'caps-meta--clamp')} title={title}>
       {children}
     </p>
   )

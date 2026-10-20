@@ -151,6 +151,6 @@ assert.ok(types.includes("id: 'shortcuts'"), '分区加入导航清单')
 
 const root = readFileSync(here('../src/renderer/src/features/settings/root/SettingsPage.tsx'), 'utf8')
 assert.ok(root.includes('ShortcutsSettings'), '根页挂载快捷键分区')
-assert.ok(root.includes('v3-settings-nav-${entry.id}'), '导航仍用统一测试 id')
+assert.ok(root.includes('v3-settings-nav-${entry.section}'), '导航仍用统一测试 id')
 
 console.log('v3 设置快捷键分区：改绑 / 冲突 / 清洗 / 恢复默认 / 可改集合 / 文案 / 源码契约检查通过')

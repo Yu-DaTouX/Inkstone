@@ -2,7 +2,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useCompactionInfo } from './use-compaction-info'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Button, Card, Switch } from '../../../ui'
+import { Button, Switch } from '../../../ui'
 import { contextUsageSummary } from '../../workbench/context-pane-view'
 import {
   AUTO_COMPACT_STEPS,
@@ -62,7 +62,6 @@ function ContextUsageMeter({
   return (
     <div className="settings-usage" data-level={level}>
       <div className="settings-usage__head">
-        <span className="settings-usage__label">{usedLabel}</span>
         <span className="settings-usage__value" data-testid="v3-ctx-used">
           {tokens !== null ? kTokens(shown) : unknownText}
         </span>
@@ -106,7 +105,7 @@ function ContextUsageMeter({
   )
 }
 
-export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState }): ReactElement {
+export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettingsState; lede?: string }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const session = useStore((s) => s.session)
@@ -153,8 +152,8 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
   if (autoEnabled) markers.push({ key: 'compact', at: effective, label: text.contextCompactAt })
 
   return (
-    <div className="settings-context" data-testid="v3-context-settings">
-      <Card className="settings-usage-card" data-setting-id="session-compact-now">
+    <SettingsGroup title={text.groupSessionContext} description={lede} testId="v3-context-settings" className="settings-context">
+      <SettingsRow block settingId="session-compact-now" label={text.contextUsed}>
         <ContextUsageMeter
           tokens={contextTokens}
           windowSize={contextWindow}
@@ -166,44 +165,40 @@ export function ContextSettings({ piNative }: { piNative: PiNativeSettingsState 
         />
         <Button
           variant="secondary"
-          size="sm"
           isDisabled={!available || busy}
           data-testid="v3-ctx-compact-now"
           onPress={() => void compact()}
         >
           {text.contextCompactNow}
         </Button>
-      </Card>
+      </SettingsRow>
 
-      <SettingsGroup label={text.contextAutoCompact}>
-        <SettingsRow
-          settingId="session-auto-compact"
-          label={text.contextAutoCompact}
-        >
-          <Switch
-            aria-label={text.contextAutoCompact}
-            isSelected={autoEnabled}
-            isDisabled={!autoKnown}
-            onChange={toggleAutoCompaction}
-            data-testid="v3-ctx-auto-compact"
+      <SettingsRow settingId="session-auto-compact" label={text.contextAutoCompact}>
+        <Switch
+          aria-label={text.contextAutoCompact}
+          isSelected={autoEnabled}
+          isDisabled={!autoKnown}
+          onChange={toggleAutoCompaction}
+          data-testid="v3-ctx-auto-compact"
+        />
+      </SettingsRow>
+      <SettingsReveal open={autoEnabled}>
+        <SettingsRow nested settingId="session-compact-at" label={text.contextCompactAt} description={compactAtDescription}>
+          <Segmented
+            label={text.contextCompactAt}
+            value={String(compactAtValue)}
+            options={COMPACT_OPTIONS}
+            onChange={(value) => void patchSettings({ autoCompactTokens: Number(value) })}
           />
         </SettingsRow>
-        <SettingsReveal open={autoEnabled}>
-          <SettingsRow nested settingId="session-compact-at" label={text.contextCompactAt} description={compactAtDescription}>
-            <Segmented
-              label={text.contextCompactAt}
-              value={String(compactAtValue)}
-              options={COMPACT_OPTIONS}
-              onChange={(value) => void patchSettings({ autoCompactTokens: Number(value) })}
-            />
-          </SettingsRow>
-        </SettingsReveal>
-      </SettingsGroup>
-    </div>
+      </SettingsReveal>
+
+      <ContextTrimRows />
+    </SettingsGroup>
   )
 }
 
-export function ContextTrimRows(): ReactElement {
+function ContextTrimRows(): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
   const settings = useStore((s) => s.settings)
@@ -212,7 +207,7 @@ export function ContextTrimRows(): ReactElement {
   const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
 
   return (
-    <SettingsGroup label={text.contextTrim}>
+    <>
       <SettingsRow settingId="session-context-trim" label={text.contextTrim} description={text.contextTrimDesc}>
         <Switch
           aria-label={text.contextTrim}
@@ -231,6 +226,6 @@ export function ContextTrimRows(): ReactElement {
           />
         </SettingsRow>
       </SettingsReveal>
-    </SettingsGroup>
+    </>
   )
 }

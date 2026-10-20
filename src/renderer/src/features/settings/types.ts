@@ -13,23 +13,33 @@ export type SettingsSectionId =
   | 'shortcuts'
   | 'about'
 
-export type SettingsNavGroupId = 'general' | 'customize' | 'local'
+export type SettingsNavGroupId = 'general' | 'local' | 'customize'
+
+export type CapabilitiesTabId = 'skills' | 'mcp' | 'tools' | 'market'
+
+export const CAPABILITIES_TABS: readonly CapabilitiesTabId[] = ['skills', 'mcp', 'tools', 'market']
+
+export type SettingsIconId =
+  | 'moon'
+  | 'clock'
+  | 'bell'
+  | 'key'
+  | 'sparkles'
+  | 'shield'
+  | 'smartphone'
+  | 'hard-drive'
+  | 'chart'
+  | 'keyboard'
+  | 'info'
+  | 'scroll'
+  | 'plug'
+  | 'wrench'
+  | 'puzzle'
 
 export interface SettingsSectionDef {
   readonly id: SettingsSectionId
   readonly group: SettingsNavGroupId
-  readonly icon:
-    | 'moon'
-    | 'clock'
-    | 'bell'
-    | 'key'
-    | 'sparkles'
-    | 'shield'
-    | 'smartphone'
-    | 'hard-drive'
-    | 'chart'
-    | 'keyboard'
-    | 'info'
+  readonly icon: SettingsIconId
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
@@ -38,15 +48,50 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'session', icon: 'clock', group: 'general' },
   { id: 'notifications', icon: 'bell', group: 'general' },
   { id: 'security', icon: 'shield', group: 'general' },
-  { id: 'capabilities', icon: 'sparkles', group: 'customize' },
+  { id: 'usage', icon: 'chart', group: 'general' },
   { id: 'devices', icon: 'smartphone', group: 'local' },
   { id: 'data', icon: 'hard-drive', group: 'local' },
-  { id: 'usage', icon: 'chart', group: 'local' },
   { id: 'shortcuts', icon: 'keyboard', group: 'local' },
-  { id: 'about', icon: 'info', group: 'local' }
+  { id: 'about', icon: 'info', group: 'local' },
+  { id: 'capabilities', icon: 'sparkles', group: 'customize' }
 ]
 
-export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupId[] = ['general', 'customize', 'local']
+export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroupId[] = ['general', 'local', 'customize']
+
+const CAPABILITIES_TAB_ICON: Record<CapabilitiesTabId, SettingsIconId> = {
+  skills: 'scroll',
+  mcp: 'plug',
+  tools: 'wrench',
+  market: 'puzzle'
+}
+
+export interface SettingsNavEntry {
+  readonly key: string
+  readonly section: SettingsSectionId
+  readonly tab?: CapabilitiesTabId
+  readonly group: SettingsNavGroupId
+  readonly icon: SettingsIconId
+}
+
+export function settingsNavEntries(sections: readonly SettingsSectionDef[] = SETTINGS_SECTIONS): SettingsNavEntry[] {
+  return sections.flatMap((section): SettingsNavEntry[] =>
+    section.id === 'capabilities'
+      ? CAPABILITIES_TABS.map((tab) => ({
+          key: `capabilities-${tab}`,
+          section: section.id,
+          tab,
+          group: section.group,
+          icon: CAPABILITIES_TAB_ICON[tab]
+        }))
+      : [{ key: section.id, section: section.id, group: section.group, icon: section.icon }]
+  )
+}
+
+export function groupSettingsNav(entries: readonly SettingsNavEntry[] = settingsNavEntries()): { group: SettingsNavGroupId; entries: SettingsNavEntry[] }[] {
+  return SETTINGS_NAV_GROUPS.map((group) => ({ group, entries: entries.filter((entry) => entry.group === group) })).filter(
+    (entry) => entry.entries.length > 0
+  )
+}
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'models'
 

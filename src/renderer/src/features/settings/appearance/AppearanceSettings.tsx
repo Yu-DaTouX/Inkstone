@@ -7,7 +7,7 @@ import { Switch, TextField } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
 import { settingsText } from '../settings-text'
 import { generalText } from '../general/general-text'
-import { Segmented, SettingsMore, SettingsReveal, SettingsRow } from '../root/controls'
+import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
 
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
@@ -66,7 +66,6 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   return (
     <>
       <SettingsRow
-        block
         settingId={settingId}
         label={kind === 'ui' ? text.fontRead : text.fontCode}
         description={kind === 'ui' ? text.fontReadDesc : text.fontCodeDesc}
@@ -149,7 +148,7 @@ export function AppearanceSettings(): ReactElement {
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>
-      <div className="settings-rows">
+      <SettingsGroup title={text.groupAppearanceLook}>
         <SettingsRow settingId="appearance-theme" label={text.theme}>
           <Segmented
             label={text.theme}
@@ -159,21 +158,6 @@ export function AppearanceSettings(): ReactElement {
               { value: 'dark', label: text.themeDark, testId: 'v3-theme-dark' }
             ]}
             onChange={(value) => void patchSettings({ theme: value })}
-          />
-        </SettingsRow>
-
-        <SettingsRow settingId="appearance-language" label={text.language}>
-          <Segmented
-            label={text.language}
-            value={lang}
-            options={[
-              { value: 'zh-CN', label: '中文' },
-              { value: 'en-US', label: 'English' }
-            ]}
-            onChange={(value) => {
-              setLang(value)
-              void patchSettings({ lang: value })
-            }}
           />
         </SettingsRow>
 
@@ -197,6 +181,28 @@ export function AppearanceSettings(): ReactElement {
           onChange={(next) => void patchSettings({ workspaceTiles: next }).catch(() => undefined)}
           testId="v3-workspace-tiles-toggle"
         />
+      </SettingsGroup>
+
+      <SettingsGroup title={text.groupAppearanceFonts}>
+        <FontRow kind="ui" />
+        <FontRow kind="code" />
+      </SettingsGroup>
+
+      <SettingsGroup title={text.groupAppearanceInput}>
+        <SettingsRow settingId="appearance-language" label={text.language}>
+          <Segmented
+            label={text.language}
+            value={lang}
+            options={[
+              { value: 'zh-CN', label: '中文' },
+              { value: 'en-US', label: 'English' }
+            ]}
+            onChange={(value) => {
+              setLang(value)
+              void patchSettings({ lang: value })
+            }}
+          />
+        </SettingsRow>
 
         <SettingsRow
           settingId="appearance-send-key"
@@ -213,38 +219,34 @@ export function AppearanceSettings(): ReactElement {
             onChange={(value) => void patchSettings({ sendKey: value })}
           />
         </SettingsRow>
-      </div>
+      </SettingsGroup>
 
-      <SettingsMore>
-        <div className="settings-rows">
-          <FontRow kind="ui" />
-          <FontRow kind="code" />
-          <SwitchRow
-            settingId="appearance-reduce-motion"
-            label={text.reduceMotion}
-            description={text.reduceMotionDesc}
-            isSelected={reduceMotion}
-            onChange={(next) => void patchSettings({ reduceMotion: next }).catch(() => undefined)}
-            testId="v3-reduce-motion-toggle"
-          />
-          <SwitchRow
-            settingId="appearance-ascii-background"
-            label={text.asciiBackground}
-            description={text.asciiBackgroundDesc}
-            isSelected={asciiBackgroundEnabled(settings)}
-            onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
-            testId="v3-ascii-background-toggle"
-          />
-          <SwitchRow
-            settingId="appearance-smooth-text"
-            label={text.smoothText}
-            description={text.smoothTextDesc}
-            isSelected={smoothText}
-            onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
-            testId="v3-smooth-text-toggle"
-          />
-        </div>
-      </SettingsMore>
+      <SettingsGroup title={text.groupAppearanceMotion}>
+        <SwitchRow
+          settingId="appearance-reduce-motion"
+          label={text.reduceMotion}
+          description={text.reduceMotionDesc}
+          isSelected={reduceMotion}
+          onChange={(next) => void patchSettings({ reduceMotion: next }).catch(() => undefined)}
+          testId="v3-reduce-motion-toggle"
+        />
+        <SwitchRow
+          settingId="appearance-smooth-text"
+          label={text.smoothText}
+          description={text.smoothTextDesc}
+          isSelected={smoothText}
+          onChange={(next) => void patchSettings({ smoothText: next }).catch(() => undefined)}
+          testId="v3-smooth-text-toggle"
+        />
+        <SwitchRow
+          settingId="appearance-ascii-background"
+          label={text.asciiBackground}
+          description={text.asciiBackgroundDesc}
+          isSelected={asciiBackgroundEnabled(settings)}
+          onChange={(next) => void patchSettings(asciiBackgroundPatch(next)).catch(() => undefined)}
+          testId="v3-ascii-background-toggle"
+        />
+      </SettingsGroup>
     </section>
   )
 }

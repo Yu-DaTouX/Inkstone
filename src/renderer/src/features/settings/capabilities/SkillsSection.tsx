@@ -134,7 +134,7 @@ export function SkillsSection(): ReactElement {
         desc={t('cap.skillsDesc')}
         settingId="caps-skills"
         actions={
-          <Button size="sm" variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-skills-reload">
+          <Button variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-skills-reload">
             {text('sectionReload')}
           </Button>
         }
@@ -165,7 +165,6 @@ export function SkillsSection(): ReactElement {
                       {group.origin === 'session' ? (
                         <Actions>
                           <Button
-                            size="sm"
                             variant="secondary"
                             isDisabled={busySkill === skill.id}
                             onPress={() => void act('promote', skill)}
@@ -174,7 +173,6 @@ export function SkillsSection(): ReactElement {
                             {t('cap.skillPromote')}
                           </Button>
                           <Button
-                            size="sm"
                             variant="danger"
                             isDisabled={busySkill === skill.id}
                             onPress={() => void act('remove', skill)}
@@ -186,13 +184,12 @@ export function SkillsSection(): ReactElement {
                       ) : (
                         <Actions>
                           {skill.location ? (
-                            <Button size="sm" variant="secondary" onPress={() => void reveal(skill)} data-testid="caps-skill-reveal">
+                            <Button variant="secondary" onPress={() => void reveal(skill)} data-testid="caps-skill-reveal">
                               {text('skillReveal')}
                             </Button>
                           ) : null}
                           {skill.manage ? (
                             <Button
-                              size="sm"
                               variant="danger"
                               isDisabled={busySkill === skill.id}
                               onPress={() => void manage('trash', skill)}
@@ -213,7 +210,11 @@ export function SkillsSection(): ReactElement {
                         </Actions>
                       )}
                     </ItemHead>
-                    {skill.description ? <Meta>{skill.description}</Meta> : null}
+                    {skill.description ? (
+                      <Meta title={skill.description} clamp>
+                        {skill.description}
+                      </Meta>
+                    ) : null}
                     {skill.sourceUrl ? (
                       <Meta title={skill.sourceUrl}>{skill.sourceUrl.replace(/^https?:\/\//, '')}</Meta>
                     ) : null}

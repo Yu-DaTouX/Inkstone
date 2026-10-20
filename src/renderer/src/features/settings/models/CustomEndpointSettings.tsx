@@ -10,7 +10,7 @@ import { CUSTOM_API_CHOICES, type CustomProviderModel } from '../../../../../sha
 import { useT } from '../../../i18n'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import { mergeDiscoveredModels } from './review2-settings-guards'
-import { SettingsReveal } from '../root/controls'
+import { SettingsGroup, SettingsReveal } from '../root/controls'
 import {
   Badge,
   Button,
@@ -221,11 +221,14 @@ export function CustomEndpointSettings(): ReactElement {
   }
 
   return (
-    <section className="ms-custom" aria-label={t('customApi.title')} data-testid="ms-custom" data-setting-id="models-custom">
-      <div className="ms-group-title-row">
-        <h3 className="ms-group-title">{t('customApi.title')}</h3>
-        <span className="ms-note">{t('customApi.desc')}</span>
-      </div>
+    <SettingsGroup
+      title={t('customApi.title')}
+      description={t('customApi.desc')}
+      settingId="models-custom"
+      testId="ms-custom"
+      className="ms-custom"
+      plain
+    >
 
       {list === null ? <p className="ms-note">{t('customApi.loading')}</p> : null}
 
@@ -248,7 +251,6 @@ export function CustomEndpointSettings(): ReactElement {
               </div>
               <div className="ms-custom-actions">
                 <Button
-                  size="sm"
                   variant="secondary"
                   data-testid={`ms-custom-edit-${item.id}`}
                   isDisabled={busy}
@@ -264,7 +266,6 @@ export function CustomEndpointSettings(): ReactElement {
                   {t('customApi.edit')}
                 </Button>
                 <Button
-                  size="sm"
                   variant="secondary"
                   aria-expanded={testId === item.id}
                   data-testid={`ms-custom-test-${item.id}`}
@@ -276,7 +277,6 @@ export function CustomEndpointSettings(): ReactElement {
                   {t('customApi.test')}
                 </Button>
                 <Button
-                  size="sm"
                   variant="danger"
                   isDisabled={busy}
                   data-testid={`ms-custom-remove-${item.id}`}
@@ -291,7 +291,6 @@ export function CustomEndpointSettings(): ReactElement {
                 <div className="ms-custom-test" data-testid={`ms-custom-test-panel-${item.id}`}>
                   <div className="ms-custom-actions">
                     <Button
-                      size="sm"
                       isDisabled={!!testing}
                       data-testid={`ms-custom-test-endpoint-${item.id}`}
                       onPress={() => void runTest(item, 'endpoint')}
@@ -299,7 +298,6 @@ export function CustomEndpointSettings(): ReactElement {
                       {testing === `${item.id}:endpoint` ? t('customApi.testRunning') : t('customApi.testEndpoint')}
                     </Button>
                     <Button
-                      size="sm"
                       isDisabled={!!testing}
                       data-testid={`ms-custom-test-billable-${item.id}`}
                       onPress={() => void runTest(item, 'billable')}
@@ -404,7 +402,6 @@ export function CustomEndpointSettings(): ReactElement {
 
           <div className="ms-custom-actions">
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={busy}
               icon={<Plus size={13} aria-hidden />}
@@ -415,7 +412,6 @@ export function CustomEndpointSettings(): ReactElement {
               {t('customApi.addModel')}
             </Button>
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={fetching || busy}
               icon={<RefreshCw size={13} aria-hidden />}
@@ -425,11 +421,10 @@ export function CustomEndpointSettings(): ReactElement {
               {fetching ? t('customApi.fetching') : t('customApi.fetchModels')}
             </Button>
             <span className="ms-custom-spacer" />
-            <Button size="sm" variant="secondary" isDisabled={busy} onPress={cancelDraft}>
+            <Button variant="secondary" isDisabled={busy} onPress={cancelDraft}>
               {t('customApi.cancel')}
             </Button>
             <Button
-              size="sm"
               variant="primary"
               isDisabled={busy}
               data-testid="ms-custom-save"
@@ -442,7 +437,6 @@ export function CustomEndpointSettings(): ReactElement {
       ) : (
         <div className="ms-custom-actions">
           <Button
-            size="sm"
             variant="secondary"
             icon={<Plus size={13} aria-hidden />}
             data-testid="ms-custom-add"
@@ -451,7 +445,6 @@ export function CustomEndpointSettings(): ReactElement {
             {t('customApi.add')}
           </Button>
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={detecting}
             data-testid="ms-custom-detect"
@@ -490,7 +483,6 @@ export function CustomEndpointSettings(): ReactElement {
                 </div>
                 {server.purpose === 'chat' && server.running ? (
                   <Button
-                    size="sm"
                     isDisabled={fetching || busy}
                     data-testid={`ms-custom-local-use-${server.kind}`}
                     onPress={() => void fillFromLocal(server)}
@@ -528,12 +520,11 @@ export function CustomEndpointSettings(): ReactElement {
               <p className="ms-confirm-body">{t('customApi.removeConfirm')}</p>
               <p className="ms-confirm-target">{pendingRemove.id}</p>
               <div className="ms-confirm-actions">
-                <Button variant="secondary" size="sm" onPress={() => setPendingRemove(null)}>
+                <Button variant="secondary" onPress={() => setPendingRemove(null)}>
                   {t('ui.cancel')}
                 </Button>
                 <Button
                   variant="danger"
-                  size="sm"
                   isDisabled={busy}
                   data-testid="ms-custom-remove-confirm"
                   onPress={() => void remove(pendingRemove)}
@@ -545,6 +536,6 @@ export function CustomEndpointSettings(): ReactElement {
           </Modal>
         </ModalOverlay>
       ) : null}
-    </section>
+    </SettingsGroup>
   )
 }

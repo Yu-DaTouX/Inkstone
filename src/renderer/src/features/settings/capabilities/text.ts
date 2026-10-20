@@ -106,7 +106,7 @@ const ZH: Record<CapsTextKey, string> = {
   codegraphTitle: 'CodeGraph',
   codegraphGuide: '尚未加入 pi MCP；加入后可为项目建立代码索引。',
   voiceSetupTitle: '转写程序与模型',
-  voiceSetupHint: '在下方「更多设置」下载转写程序与模型。'
+  voiceSetupHint: '在下方「转写程序与模型」下载转写程序与模型。'
 }
 
 const EN: Record<CapsTextKey, string> = {
@@ -168,7 +168,7 @@ const EN: Record<CapsTextKey, string> = {
   codegraphTitle: 'CodeGraph',
   codegraphGuide: 'Not added to pi MCP yet; once added you can index the project.',
   voiceSetupTitle: 'Program & models',
-  voiceSetupHint: 'Download the program and a model under More settings below.'
+  voiceSetupHint: 'Download the program and a model under Program & models below.'
 }
 
 export function capsText(lang: string, key: CapsTextKey): string {

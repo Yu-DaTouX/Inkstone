@@ -111,7 +111,7 @@ function SearchBackendGroup(): ReactElement {
         desc={t('set.extToolsDesc')}
         card
         actions={
-          <Button size="sm" variant="secondary" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
+          <Button variant="secondary" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
             {checking ? t('set.searchBackendChecking') : t('set.extRecheck')}
           </Button>
         }
@@ -122,19 +122,19 @@ function SearchBackendGroup(): ReactElement {
         {install?.text ? install.ok ? <Meta>{install.text}</Meta> : <Warn>{install.text}</Warn> : null}
         <Actions>
           {backend ? (
-            <Button size="sm" variant="primary" isDisabled={!!install?.busy || checking} onPress={() => void runInstall()} data-testid="cap-search-install">
+            <Button variant="secondary" isDisabled={!!install?.busy || checking} onPress={() => void runInstall()} data-testid="cap-search-install">
               {install?.busy ? t('set.opencliInstalling') : backend.available ? t('set.opencliUpdate') : t('set.opencliInstall')}
             </Button>
           ) : null}
           {needsNode ? (
-            <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(NODE_DOWNLOAD)}>
+            <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(NODE_DOWNLOAD)}>
               {t('set.opencliGetNode')}
             </Button>
           ) : null}
-          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_EXTENSION)}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_EXTENSION)}>
             {t('set.opencliExtStore')}
           </Button>
-          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_RELEASES)}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_RELEASES)}>
             {t('set.releasePage')}
           </Button>
         </Actions>
@@ -165,7 +165,6 @@ function SearchApiGroup(): ReactElement {
         actions={
           config?.hintDismissed && !config.configured ? (
             <Button
-              size="sm"
               variant="secondary"
               data-testid="cap-search-api-rehint"
               onPress={() => void window.yan.search.setApiHintDismissed(false).then(load).catch(() => undefined)}
@@ -264,11 +263,11 @@ function SearchProviderItem({
             placeholder={placeholder}
             data-testid={`cap-search-api-key-${provider.id}`}
           />
-          <Button size="sm" variant="primary" type="submit" isDisabled={busy || !key.trim()}>
+          <Button variant="primary" type="submit" isDisabled={busy || !key.trim()}>
             {t('search.apiSave')}
           </Button>
           {state?.configured ? (
-            <Button size="sm" variant="danger" onPress={() => void clear()}>
+            <Button variant="danger" onPress={() => void clear()}>
               {t('search.apiClear')}
             </Button>
           ) : null}
@@ -276,7 +275,7 @@ function SearchProviderItem({
       ) : null}
       {error ? <Warn>{error}</Warn> : null}
       <Actions>
-        <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
+        <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
           {t('search.apiGet')}
         </Button>
       </Actions>

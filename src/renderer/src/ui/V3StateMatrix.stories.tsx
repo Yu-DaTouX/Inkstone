@@ -35,11 +35,15 @@ import {
   Separator,
   SettingRow,
   SettingRows,
+  SettingSection,
   SettingsDialog,
   SettingsNav,
-  SettingsNavEmpty,
   SettingsNavGroup,
   SettingsNavItem,
+  SettingsSearch,
+  SettingsSearchMatch,
+  SettingsTab,
+  SettingsTabBar,
   ShimmerText,
   showToast,
   Skeleton,
@@ -620,14 +624,18 @@ export const SettingsStates: Story = {
       components: [
         'SettingRow',
         'SettingRows',
+        'SettingSection',
         'SettingsDialog',
         'SettingsNav',
-        'SettingsNavEmpty',
         'SettingsNavGroup',
-        'SettingsNavItem'
+        'SettingsNavItem',
+        'SettingsSearch',
+        'SettingsSearchMatch',
+        'SettingsTab',
+        'SettingsTabBar'
       ],
-      states: STATES('default', 'open', 'selected', 'empty'),
-      declared: STATES('open')
+      states: STATES('default', 'hover', 'focus', 'open', 'selected', 'empty', 'disabled'),
+      declared: STATES('open', 'hover', 'focus')
     }
   },
   render: function SettingsStatesStory() {
@@ -635,19 +643,26 @@ export const SettingsStates: Story = {
     const [current, setCurrent] = useState('general')
     const [query, setQuery] = useState('')
     const items = [
-      { id: 'general', label: '通用', hint: '语言与外观' },
-      { id: 'models', label: '模型', hint: undefined },
-      { id: 'about', label: '关于', hint: undefined }
-    ].filter((item) => item.label.includes(query))
+      { id: 'general', label: '通用' },
+      { id: 'models', label: '模型' },
+      { id: 'about', label: '关于' }
+    ]
+    const results = items
+      .filter((item) => query.trim() !== '' && item.label.includes(query.trim()))
+      .map((item) => ({ key: item.id, kind: 'hit' as const, primary: item.label, secondary: '示例设置项', label: item.label }))
     const nav = (
       <SettingsNav
         label="设置分区"
         search={
-          <input
-            aria-label="搜索设置"
+          <SettingsSearch
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索设置"
+            onChange={setQuery}
+            results={results}
+            onSelect={(result) => setCurrent(result.key)}
+            label="搜索设置"
+            placeholder="搜索"
+            resultsLabel="设置搜索结果"
+            emptyLabel="没有匹配的设置"
           />
         }
       >
@@ -656,25 +671,30 @@ export const SettingsStates: Story = {
             <SettingsNavItem
               key={item.id}
               label={item.label}
-              hint={item.hint}
               current={current === item.id}
               onPress={() => setCurrent(item.id)}
             />
           ))}
         </SettingsNavGroup>
-        {items.length === 0 ? <SettingsNavEmpty>没有匹配的设置</SettingsNavEmpty> : null}
       </SettingsNav>
     )
+    const tabs = (
+      <SettingsTabBar label="设置分区">
+        {items.map((item) => (
+          <SettingsTab key={item.id} label={item.label} selected={current === item.id} onPress={() => setCurrent(item.id)} />
+        ))}
+      </SettingsTabBar>
+    )
     return (
-      <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 520 }}>
-        <SettingRows label="示例设置">
+      <div style={{ display: 'grid', gap: 'var(--s-16)', maxWidth: 560 }} data-density-scope="comfortable">
+        <SettingSection title="外观" description="分组标题与说明">
           <SettingRow label="语言" description="界面显示语言">
-            <Button size="sm" variant="secondary" onPress={() => undefined}>
+            <Button variant="secondary" onPress={() => undefined}>
               简体中文
             </Button>
           </SettingRow>
           <SettingRow label="缩进项" indent description="从属于上一项">
-            <Button size="sm" variant="ghost" onPress={() => undefined}>
+            <Button variant="ghost" onPress={() => undefined}>
               调整
             </Button>
           </SettingRow>
@@ -682,17 +702,39 @@ export const SettingsStates: Story = {
             <div style={bodyStyle}>块级控件区域</div>
           </SettingRow>
           <SettingRow label="只有文字" />
+        </SettingSection>
+        <SettingRows label="无标题分组">
+          <SettingRow label="停用的搜索框" description="禁用态">
+            <div style={{ width: 200 }}>
+              <SettingsSearch
+                value=""
+                onChange={() => undefined}
+                results={[]}
+                onSelect={() => undefined}
+                label="停用的搜索"
+                resultsLabel="结果"
+                emptyLabel="没有匹配的设置"
+                isDisabled
+              />
+            </div>
+          </SettingRow>
+          <SettingRow label="匹配高亮" description={<SettingsSearchMatch text="代码主题" query="主题" />} />
         </SettingRows>
-        <div style={{ width: 220 }}>{nav}</div>
+        <div style={{ display: 'flex', gap: 'var(--s-16)' }}>
+          <div style={{ width: 220 }}>{nav}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>{tabs}</div>
+        </div>
         <Button variant="secondary" onPress={() => setOpen(true)}>
           打开设置对话框
         </Button>
-        <SettingsDialog isOpen={open} onOpenChange={setOpen} title="设置" closeLabel="关闭" nav={nav}>
-          <SettingRows label="当前分区">
-            <SettingRow label={current} description="对话框内容区" />
-          </SettingRows>
+        <SettingsDialog isOpen={open} onOpenChange={setOpen} title="设置" closeLabel="关闭" nav={nav} narrowNav={tabs}>
+          <SettingSection title={current}>
+            <SettingRow label="当前分区" description="对话框内容区" />
+          </SettingSection>
         </SettingsDialog>
-        <p style={noteStyle}>设置对话框的「展开」状态需点击按钮后实际弹出，静态矩阵只声明。</p>
+        <p style={noteStyle}>
+          设置对话框的「展开」、搜索结果浮层的悬停与焦点需要实际交互，静态矩阵只声明；输入「通用」可看到结果，输入其它文字看到空结果。
+        </p>
       </div>
     )
   }

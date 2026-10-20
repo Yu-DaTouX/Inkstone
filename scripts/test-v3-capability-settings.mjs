@@ -110,7 +110,11 @@ const componentSource = readFileSync(
   ),
   'utf8'
 )
-assert.match(componentSource, /export function CapabilitiesSettings\(\): ReactElement/, 'CapabilitiesSettings 导出签名')
+assert.match(
+  componentSource,
+  /export function CapabilitiesSettings\(\{ tab, onTabChange \}: CapabilitiesSettingsProps\): ReactElement/,
+  'CapabilitiesSettings 导出签名：子页由导航受控'
+)
 
 const barrelSource = readFileSync(
   fileURLToPath(

@@ -15,7 +15,8 @@ import { Badge, Button, ListBoxItem, Notice, Select, Switch } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { formatWhen } from './general-model'
-import { Segmented, SettingsGroup, SettingsMore, SettingsRow } from '../root/controls'
+import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
+import { settingsText } from '../settings-text'
 import { RelayPairingPanel, RelayRows, relaySettingsOf } from './RelaySettings'
 import './devices-data.css'
 
@@ -94,7 +95,7 @@ export function DeviceList({
   ]
   if (entries.length === 0) {
     return (
-      <p className="settings-row__desc" data-testid="v3-devices-empty">
+      <p className="settings-row__desc settings-list-empty" data-testid="v3-devices-empty">
         {text.devicesNone}
       </p>
     )
@@ -119,7 +120,7 @@ export function DeviceList({
               {text.devicesLastSeen.replace('{time}', formatWhen(entry.lastSeenAt, text.devicesNever, lang))}
             </span>
           </div>
-          <Button size="sm" variant="danger" isDisabled={busy} onPress={entry.revoke}>
+          <Button variant="danger" isDisabled={busy} onPress={entry.revoke}>
             {text.devicesRevoke}
           </Button>
         </li>
@@ -134,7 +135,7 @@ export function DeviceList({
               {text.devicesRevokedAt.replace('{time}', formatWhen(entry.revokedAt, text.devicesNever, lang))}
             </span>
           </div>
-          <Button size="sm" variant="danger" isDisabled={busy} onPress={entry.forget}>
+          <Button variant="danger" isDisabled={busy} onPress={entry.forget}>
             {text.devicesForget}
           </Button>
         </li>
@@ -152,6 +153,7 @@ function pairingLinkOf(status: RemoteAccessStatus | null): string | null {
 export function DevicesSettings(): ReactElement {
   const { lang } = useI18n()
   const text = generalText(lang)
+  const labels = settingsText(lang)
   const local = devicesDataText(lang)
   const saved = useStore((s) => s.settings?.remoteAccess) ?? DEFAULT_REMOTE_ACCESS_SETTINGS
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
@@ -256,6 +258,13 @@ export function DevicesSettings(): ReactElement {
   const activeRelayPairing = relayPairing && relaySeconds > 0 ? relayPairing : null
   const grants: readonly PeerGrantView[] = status?.grants ?? []
 
+  const pairing = Boolean(directPairing || activeRelayPairing)
+  const pairHints = [
+    !status?.running && !saved.enabled ? text.devicesPairNeedsRunning : '',
+    loopbackOnly ? text.devicesPairLoopback : '',
+    relay.enabled && !relayConnected ? local.pairRelayWaiting : ''
+  ].filter(Boolean)
+
   return (
     <section className="settings-section" data-testid="v3-devices-settings">
       {error ? (
@@ -264,24 +273,24 @@ export function DevicesSettings(): ReactElement {
         </Notice>
       ) : null}
 
-      <SettingsGroup label={text.devicesEnable}>
+      <SettingsGroup title={labels.groupDevicesAccess}>
         <SettingsRow
           settingId="devices-enable"
           label={text.devicesEnable}
           description={
             <>
               {text.devicesEnableDesc}
-              <br />
-              {status?.running ? (
-                <Badge tone="ok">
-                  {text.devicesRunning} · {status.host}:{status.port}
-                </Badge>
-              ) : (
-                <Badge tone="neutral">{text.devicesStopped}</Badge>
-              )}
+              <span className="settings-row__status">
+                {status?.running ? (
+                  <Badge tone="ok">
+                    {text.devicesRunning} · {status.host}:{status.port}
+                  </Badge>
+                ) : (
+                  <Badge tone="neutral">{text.devicesStopped}</Badge>
+                )}
+              </span>
               {startError ? (
-                <span className="settings-row__desc settings-row__desc--error" role="alert" data-testid="v3-devices-start-error">
-                  <br />
+                <span className="settings-row__desc settings-row__desc--error settings-row__line" role="alert" data-testid="v3-devices-start-error">
                   {text.devicesStartFailed.replace('{error}', startError)}
                 </span>
               ) : null}
@@ -297,7 +306,23 @@ export function DevicesSettings(): ReactElement {
           />
         </SettingsRow>
 
-        <SettingsRow block settingId="devices-pair" label={text.devicesPair} description={text.devicesPairDesc}>
+        <SettingsRow
+          block={pairing}
+          settingId="devices-pair"
+          label={text.devicesPair}
+          description={
+            <>
+              {text.devicesPairDesc}
+              {!pairing
+                ? pairHints.map((hint) => (
+                    <span key={hint} className="settings-row__line">
+                      {hint}
+                    </span>
+                  ))
+                : null}
+            </>
+          }
+        >
           {directPairing ? (
             <div className="settings-device dd-pairing" data-testid="v3-devices-pairing">
               {link ? (
@@ -315,7 +340,6 @@ export function DevicesSettings(): ReactElement {
                 <div className="settings-actions">
                   {link ? (
                     <Button
-                      size="sm"
                       variant="secondary"
                       data-testid="v3-devices-pairing-copy"
                       onPress={() => {
@@ -328,7 +352,7 @@ export function DevicesSettings(): ReactElement {
                       {copied ? text.devicesPairCopied : text.devicesPairCopy}
                     </Button>
                   ) : null}
-                  <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => run(() => window.yan.remote.cancelPairing())}>
+                  <Button variant="secondary" isDisabled={busy} onPress={() => run(() => window.yan.remote.cancelPairing())}>
                     {text.devicesPairCancel}
                   </Button>
                 </div>
@@ -343,20 +367,10 @@ export function DevicesSettings(): ReactElement {
               onCancel={() => run(() => window.yan.remote.relayCancel())}
             />
           ) : null}
-          {!directPairing && !activeRelayPairing ? (
-            <div className="settings-actions">
-              <Button
-                size="sm"
-                variant="primary"
-                isDisabled={busy || !status?.running}
-                data-testid="v3-devices-pair"
-                onPress={() => run(() => window.yan.remote.pair())}
-              >
-                {text.devicesPairStart}
-              </Button>
+          {!pairing ? (
+            <>
               {relay.enabled ? (
                 <Button
-                  size="sm"
                   variant="secondary"
                   isDisabled={busy || !relayConnected}
                   data-testid="v3-relay-pair"
@@ -365,104 +379,104 @@ export function DevicesSettings(): ReactElement {
                   {local.pairViaRelay}
                 </Button>
               ) : null}
-              {!status?.running && !saved.enabled ? <span className="settings-row__desc">{text.devicesPairNeedsRunning}</span> : null}
-              {loopbackOnly ? <span className="settings-row__desc">{text.devicesPairLoopback}</span> : null}
-              {relay.enabled && !relayConnected ? <span className="settings-row__desc">{local.pairRelayWaiting}</span> : null}
-            </div>
+              <Button
+                variant="secondary"
+                isDisabled={busy || !status?.running}
+                data-testid="v3-devices-pair"
+                onPress={() => run(() => window.yan.remote.pair())}
+              >
+                {text.devicesPairStart}
+              </Button>
+            </>
           ) : null}
-        </SettingsRow>
-
-        <SettingsRow block settingId="devices-list" label={text.devicesList} description={text.devicesListDesc}>
-          <DeviceList
-            devices={status?.devices ?? []}
-            relayClients={status?.relay?.clients ?? []}
-            busy={busy}
-            text={text}
-            lang={lang}
-            onRevoke={(id) => run(() => window.yan.remote.revoke(id))}
-            onForget={(id) => run(() => window.yan.remote.forget(id))}
-            onRelayRevoke={(id) => run(() => window.yan.remote.relayRevoke(id))}
-            onRelayForget={(id) => run(() => window.yan.remote.relayForget(id))}
-          />
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsMore>
-        <SettingsGroup label={local.network}>
-          <SettingsRow block settingId="devices-bind" label={text.devicesBind} description={text.devicesBindDesc}>
-            <div className="settings-bind" data-testid="v3-devices-bind">
-              <Segmented<BindMode>
-                label={text.devicesBind}
-                value={bindMode}
-                disabled={busy}
-                onChange={chooseBind}
-                options={[
-                  { value: 'tailscale', label: text.devicesBindTailscale, testId: 'v3-devices-bind-tailscale' },
-                  { value: 'radmin', label: text.devicesBindRadmin, testId: 'v3-devices-bind-radmin' },
-                  { value: 'lan', label: text.devicesBindLan, testId: 'v3-devices-bind-lan' },
-                  { value: 'loopback', label: text.devicesBindLoopback, testId: 'v3-devices-bind-loopback' }
-                ]}
-              />
-              {bindMode === 'lan' && lanChoices.length > 1 ? (
-                <Select
-                  aria-label={text.devicesBindLanAddress}
-                  selectedKey={saved.bind}
-                  isDisabled={busy}
-                  onSelectionChange={(key) => {
-                    if (key != null && String(key) !== saved.bind) configure({ bind: String(key) })
-                  }}
-                >
-                  {lanChoices.map((address) => (
-                    <ListBoxItem key={address} id={address}>
-                      {address}
-                    </ListBoxItem>
-                  ))}
-                </Select>
-              ) : bindMode === 'lan' ? (
-                <span className="settings-value">{saved.bind}</span>
-              ) : null}
-              {radminMissing ? <span className="settings-row__desc">{text.devicesBindRadminNone}</span> : null}
-            </div>
-          </SettingsRow>
+      <SettingsGroup title={text.devicesList} description={text.devicesListDesc} settingId="devices-list" plain>
+        <DeviceList
+          devices={status?.devices ?? []}
+          relayClients={status?.relay?.clients ?? []}
+          busy={busy}
+          text={text}
+          lang={lang}
+          onRevoke={(id) => run(() => window.yan.remote.revoke(id))}
+          onForget={(id) => run(() => window.yan.remote.forget(id))}
+          onRelayRevoke={(id) => run(() => window.yan.remote.relayRevoke(id))}
+          onRelayForget={(id) => run(() => window.yan.remote.relayForget(id))}
+        />
+      </SettingsGroup>
 
-          <RelayRows saved={saved} status={status} busy={busy} configure={configure} />
-        </SettingsGroup>
-
-        <SettingsGroup label={text.devicesPeer}>
-          <SettingsRow block settingId="devices-peer" label={text.devicesPeer} description={text.devicesPeerDesc}>
-            {grants.length === 0 ? (
-              <p className="settings-row__desc" data-testid="v3-devices-peer-empty">
-                {text.devicesPeerNone}
-              </p>
-            ) : (
-              <ul className="settings-devices" data-testid="v3-devices-peer">
-                {grants.map((grant) => (
-                  <li className="settings-device" key={grant.connectionId}>
-                    <div className="settings-device__main">
-                      <span className="settings-device__name">{grant.deviceName}</span>
-                      <span className="settings-row__desc">
-                        {grant.projects.map((project) => project.name).join('、')} · {grant.operations.join(', ')}
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      isDisabled={busy}
-                      onPress={() =>
-                        void window.yan.peer
-                          .hostRevoke(grant.connectionId)
-                          .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
-                      }
-                    >
-                      {text.devicesPeerRevoke}
-                    </Button>
-                  </li>
+      <SettingsGroup title={local.network}>
+        <SettingsRow settingId="devices-bind" label={text.devicesBind} description={text.devicesBindDesc}>
+          <div className="settings-bind" data-testid="v3-devices-bind">
+            <Segmented<BindMode>
+              label={text.devicesBind}
+              value={bindMode}
+              disabled={busy}
+              onChange={chooseBind}
+              options={[
+                { value: 'tailscale', label: text.devicesBindTailscale, testId: 'v3-devices-bind-tailscale' },
+                { value: 'radmin', label: text.devicesBindRadmin, testId: 'v3-devices-bind-radmin' },
+                { value: 'lan', label: text.devicesBindLan, testId: 'v3-devices-bind-lan' },
+                { value: 'loopback', label: text.devicesBindLoopback, testId: 'v3-devices-bind-loopback' }
+              ]}
+            />
+            {bindMode === 'lan' && lanChoices.length > 1 ? (
+              <Select
+                aria-label={text.devicesBindLanAddress}
+                selectedKey={saved.bind}
+                isDisabled={busy}
+                onSelectionChange={(key) => {
+                  if (key != null && String(key) !== saved.bind) configure({ bind: String(key) })
+                }}
+              >
+                {lanChoices.map((address) => (
+                  <ListBoxItem key={address} id={address}>
+                    {address}
+                  </ListBoxItem>
                 ))}
-              </ul>
-            )}
-          </SettingsRow>
-        </SettingsGroup>
-      </SettingsMore>
+              </Select>
+            ) : bindMode === 'lan' ? (
+              <span className="settings-value">{saved.bind}</span>
+            ) : null}
+            {radminMissing ? <span className="settings-row__desc">{text.devicesBindRadminNone}</span> : null}
+          </div>
+        </SettingsRow>
+
+        <RelayRows saved={saved} status={status} busy={busy} configure={configure} />
+      </SettingsGroup>
+
+      <SettingsGroup title={text.devicesPeer} description={text.devicesPeerDesc} settingId="devices-peer" plain>
+        {grants.length === 0 ? (
+          <p className="settings-row__desc settings-list-empty" data-testid="v3-devices-peer-empty">
+            {text.devicesPeerNone}
+          </p>
+        ) : (
+          <ul className="settings-devices" data-testid="v3-devices-peer">
+            {grants.map((grant) => (
+              <li className="settings-device" key={grant.connectionId}>
+                <div className="settings-device__main">
+                  <span className="settings-device__name">{grant.deviceName}</span>
+                  <span className="settings-row__desc">
+                    {grant.projects.map((project) => project.name).join('、')} · {grant.operations.join(', ')}
+                  </span>
+                </div>
+                <Button
+                  variant="danger"
+                  isDisabled={busy}
+                  onPress={() =>
+                    void window.yan.peer
+                      .hostRevoke(grant.connectionId)
+                      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                  }
+                >
+                  {text.devicesPeerRevoke}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsGroup>
     </section>
   )
 }

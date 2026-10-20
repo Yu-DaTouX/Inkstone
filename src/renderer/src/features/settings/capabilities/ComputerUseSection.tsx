@@ -107,12 +107,12 @@ export function ComputerUseSection(): ReactElement | null {
             <Meta>{t('cu.needUv')}</Meta>
             <Actions>
               {status.canInstallUv ? (
-                <Button size="sm" variant="primary" isDisabled={busy !== null} onPress={() => void installUv()}>
+                <Button variant="secondary" isDisabled={busy !== null} onPress={() => void installUv()}>
                   {busy === 'uv' ? t('cu.uvInstalling') : t('cu.installUv')}
                 </Button>
               ) : null}
               {!status.canInstallUv || manual ? (
-                <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(UV_DOCS)}>
+                <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(UV_DOCS)}>
                   {t('cu.uvDocs')}
                 </Button>
               ) : null}
@@ -125,7 +125,6 @@ export function ComputerUseSection(): ReactElement | null {
             <Warn>{t('cu.uncertain')}</Warn>
             <Actions>
               <Button
-                size="sm"
                 variant="secondary"
                 isDisabled={busy !== null}
                 isPending={busy === 'resolve'}
@@ -139,13 +138,13 @@ export function ComputerUseSection(): ReactElement | null {
         ) : null}
         <Meta>{t('cu.scope')}</Meta>
         <Actions>
-          <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void refresh()}>
+          <Button variant="secondary" isDisabled={busy !== null} onPress={() => void refresh()}>
             {t('set.extRecheck')}
           </Button>
-          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(RELEASES)}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(RELEASES)}>
             {t('set.releasePage')}
           </Button>
-          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(REPO)}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(REPO)}>
             {t('cu.repo')}
           </Button>
         </Actions>

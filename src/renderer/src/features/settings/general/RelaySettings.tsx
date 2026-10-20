@@ -47,21 +47,15 @@ export function RelayRows({ saved, status, busy, configure }: RelayRowsProps): R
         description={
           <>
             {t('remote.relayDesc')}
-            {needsUrl ? (
-              <>
-                <br />
-                {text.relayNeedsUrl}
-              </>
-            ) : null}
+            {needsUrl ? <span className="settings-row__line">{text.relayNeedsUrl}</span> : null}
             {relay.enabled ? (
-              <>
-                <br />
+              <span className="settings-row__status">
                 {state?.connected ? (
                   <Badge tone="ok">{t('remote.relayConnected')}</Badge>
                 ) : (
                   <Badge tone="stall">{state?.detail ?? t('remote.relayConnecting')}</Badge>
                 )}
-              </>
+              </span>
             ) : null}
           </>
         }
@@ -75,7 +69,7 @@ export function RelayRows({ saved, status, busy, configure }: RelayRowsProps): R
         />
       </SettingsRow>
 
-      <SettingsRow nested block settingId="devices-relay-url" label={t('remote.relayUrl')} description={text.relayUrlDesc}>
+      <SettingsRow nested settingId="devices-relay-url" label={t('remote.relayUrl')} description={text.relayUrlDesc}>
         <TextField
           aria-label={t('remote.relayUrl')}
           className="settings-relay-url"
@@ -117,7 +111,6 @@ export function RelayPairingPanel({ pairing, secondsLeft, busy, onCancel }: Rela
         <span className="settings-row__desc">{t('remote.relayExpires', { seconds: secondsLeft })}</span>
         <div className="settings-actions">
           <Button
-            size="sm"
             variant="secondary"
             data-testid="v3-relay-copy"
             onPress={() => {
@@ -129,7 +122,7 @@ export function RelayPairingPanel({ pairing, secondsLeft, busy, onCancel }: Rela
           >
             {copied ? t('remote.relayCopied') : t('remote.relayCopy')}
           </Button>
-          <Button size="sm" variant="secondary" isDisabled={busy} onPress={onCancel}>
+          <Button variant="secondary" isDisabled={busy} onPress={onCancel}>
             {t('remote.pairCancel')}
           </Button>
         </div>

@@ -1,47 +1,10 @@
 @layer features {
 
-  .ms-page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-16);
-    min-width: 0;
-  }
-
   .ms-msg {
-    margin-bottom: var(--s-12);
-  }
-
-  .ms-services {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-16);
-    min-width: 0;
-  }
-
-  .ms-toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    flex-wrap: wrap;
-  }
-
-  .ms-toolbar-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-2);
-    flex: 1;
-    min-width: 0;
-  }
-
-  .ms-summary {
-    font-size: var(--t-prose);
-    color: var(--fg);
+    margin: 0;
   }
 
   .ms-safety {
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    color: var(--fg3);
     overflow-wrap: anywhere;
   }
 
@@ -67,12 +30,6 @@
     white-space: pre;
   }
 
-  .ms-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-  }
-
   .ms-group-title {
     margin: 0;
     color: var(--fg);
@@ -83,17 +40,16 @@
 
   .ms-note {
     margin: 0;
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
     color: var(--fg3);
   }
 
   .ms-service {
-    padding: var(--s-8) 0;
     display: flex;
-    flex-direction: column;
-    gap: var(--s-8);
-    transition: background-color var(--dur-fast) var(--ease);
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8) var(--s-16);
+    padding: var(--s-12) 0;
   }
 
   .ms-rows > * + *:not(.settings-reveal),
@@ -108,7 +64,7 @@
 
   .ms-rows-foot {
     display: flex;
-    padding: var(--s-6) 0;
+    padding: var(--s-8) 0;
   }
 
   .ms-rows-foot__chevron {
@@ -121,8 +77,9 @@
 
   .ms-service-main {
     display: flex;
+    flex: 1 1 240px;
     flex-direction: column;
-    gap: var(--s-2);
+    gap: var(--s-4);
     min-width: 0;
   }
 
@@ -134,7 +91,6 @@
   }
 
   .ms-service-name {
-    font-size: var(--t-prose);
     color: var(--fg);
     min-width: 0;
     overflow: hidden;
@@ -145,8 +101,6 @@
   .ms-service-hint,
   .ms-service-env {
     margin: 0;
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
     color: var(--fg3);
   }
 
@@ -159,16 +113,22 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
     color: var(--ask-t);
   }
 
   .ms-service-actions {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--s-8);
     flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .ms-service > .ms-oauth,
+  .ms-service > p {
+    flex-basis: 100%;
   }
 
   .ms-key-edit {
@@ -287,9 +247,9 @@
   .ms-custom-row {
     display: flex;
     align-items: center;
-    gap: var(--s-12);
+    gap: var(--s-16);
     flex-wrap: wrap;
-    padding: var(--s-8) 0;
+    padding: var(--s-12) 0;
     transition: background-color var(--dur-fast) var(--ease);
   }
 
@@ -316,7 +276,6 @@
     align-items: center;
     gap: var(--s-8);
     min-width: 0;
-    font-size: var(--t-prose);
     color: var(--fg);
     overflow-wrap: anywhere;
   }
@@ -326,7 +285,6 @@
     align-items: center;
     gap: var(--s-8);
     flex-wrap: wrap;
-    font-size: var(--t-footnote);
     color: var(--fg3);
     overflow-wrap: anywhere;
   }

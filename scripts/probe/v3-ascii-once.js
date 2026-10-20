@@ -51,7 +51,6 @@
         field: !!query('v3-ascii-field')
       }
     }
-    const moreOpen = () => label()?.closest('.settings-more')?.getAttribute('data-open') === '1'
     const openAppearance = async () => {
       if (!query('settings-root')) {
         query('v3-header-settings')?.click()
@@ -61,11 +60,7 @@
         query('v3-settings-nav-appearance')?.click()
         await until(() => !!label(), 6000)
       }
-      if (label() && !moreOpen()) {
-        label().closest('.settings-more')?.querySelector('[data-testid="settings-more-toggle"]')?.click()
-        await until(moreOpen, 3000)
-      }
-      return !!label() && moreOpen()
+      return !!label()
     }
     const backToSession = async () => {
       query('settings-close')?.click()

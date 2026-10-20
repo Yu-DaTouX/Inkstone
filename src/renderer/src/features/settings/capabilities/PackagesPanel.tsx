@@ -133,7 +133,7 @@ export function PackagesPanel({
           <Meta>{result.ok ? (result.output ?? 'ok') : (result.error ?? t('pkg.failed'))}</Meta>
           {result.detail ? (
             <>
-              <Button size="sm" variant="ghost" onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
+              <Button variant="ghost" onPress={() => setShowRaw((value) => !value)} data-testid="caps-pkg-detail-toggle">
                 {showRaw ? t('pkg.hideRaw') : t('pkg.showRaw')}
               </Button>
               {showRaw ? <pre className="caps-raw">{result.detail}</pre> : null}
@@ -161,7 +161,6 @@ export function PackagesPanel({
             {t('pkg.local')}
           </Checkbox>
           <Button
-            size="sm"
             variant="primary"
             isDisabled={!!busy || !source.trim()}
             onPress={() => void run('install', source.trim(), local)}
@@ -236,13 +235,13 @@ function PackageItem({
         {!entry.installed ? <Badge tone="fail">{t('pkg.missing')}</Badge> : null}
         <span className="caps-spacer" />
         <Actions>
-          <Button size="sm" variant="ghost" onPress={onToggle} data-testid="caps-pkg-detail">
+          <Button variant="ghost" onPress={onToggle} data-testid="caps-pkg-detail">
             {open ? t('pkg.hideDetail') : t('pkg.detail')}
           </Button>
-          <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => onRun('update')} data-testid="caps-pkg-update">
+          <Button variant="secondary" isDisabled={busy} onPress={() => onRun('update')} data-testid="caps-pkg-update">
             {t('pkg.update')}
           </Button>
-          <Button size="sm" variant="danger" isDisabled={busy} onPress={() => onRun('remove')} data-testid="caps-pkg-remove">
+          <Button variant="danger" isDisabled={busy} onPress={() => onRun('remove')} data-testid="caps-pkg-remove">
             {t('pkg.remove')}
           </Button>
         </Actions>

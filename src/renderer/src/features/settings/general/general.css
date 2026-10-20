@@ -4,30 +4,58 @@
   .settings-devices {
     display: flex;
     flex-direction: column;
-    gap: var(--s-6);
+    width: 100%;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
   .settings-root,
-  .settings-device {
+  .settings-devices > .settings-device {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--s-8) var(--s-12);
+    gap: var(--s-8) var(--s-16);
     min-width: 0;
-    padding: var(--s-8) var(--s-12);
-    border-radius: var(--r-sm);
-    background: var(--sunken);
+    padding: var(--s-12) 0;
+  }
+
+  .settings-root + .settings-root,
+  .settings-devices > .settings-device + .settings-device {
+    border-top: 1px solid var(--alpha-1);
+  }
+
+  .settings-roots {
+    margin-top: calc(var(--s-8) * -1);
+  }
+
+  .settings-root {
+    padding: var(--s-8) 0;
   }
 
   .settings-root__path {
     flex: 1 1 auto;
     min-width: 0;
     color: var(--fg2);
+    font-family: var(--font-mono);
     font-size: var(--t-footnote);
     overflow-wrap: anywhere;
+  }
+
+  .settings-list-empty {
+    margin: 0;
+    padding: var(--s-12) 0;
+  }
+
+  .settings-row__line {
+    display: block;
+  }
+
+  .settings-row__status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+    margin-top: var(--s-6);
   }
 
   .settings-bind {
@@ -55,7 +83,6 @@
 
   .settings-device__name {
     color: var(--fg);
-    font-size: var(--t-prose);
   }
 
   .settings-data {
@@ -76,9 +103,9 @@
     opacity: 0.65;
   }
 
-  .settings-relay-url {
-    width: 100%;
-    max-width: 480px;
+  .ui-setting-row__ctl > .settings-relay-url {
+    width: 280px;
+    max-width: 100%;
     min-width: 0;
   }
 
@@ -87,7 +114,7 @@
     max-width: 100%;
   }
 
-  .settings-font-field {
+  .ui-setting-row__ctl > .settings-font-field {
     width: 280px;
     max-width: 100%;
   }

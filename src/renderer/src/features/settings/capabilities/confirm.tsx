@@ -63,12 +63,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
               {pending.body ? <p className="caps-confirm-body">{pending.body}</p> : null}
               {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
               <div className="caps-confirm-actions">
-                <Button variant="secondary" size="sm" onPress={() => settle(false)}>
+                <Button variant="secondary" onPress={() => settle(false)}>
                   {pending.cancelLabel ?? t('ui.cancel')}
                 </Button>
                 <Button
                   variant={pending.tone === 'danger' ? 'danger' : 'primary'}
-                  size="sm"
                   data-testid="caps-confirm-accept"
                   onPress={() => settle(true)}
                 >

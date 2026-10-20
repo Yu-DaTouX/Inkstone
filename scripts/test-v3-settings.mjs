@@ -22,8 +22,8 @@ const { SETTINGS_SECTIONS, DEFAULT_SETTINGS_SECTION, isSettingsSectionId, resolv
 
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['models', 'appearance', 'session', 'notifications', 'security', 'capabilities', 'devices', 'data', 'usage', 'shortcuts', 'about'],
-  '11 个分区按使用频率排：模型、外观与语言、会话与上下文、通知、权限、能力、手机与远程、数据与同步、用量、快捷键、关于'
+  ['models', 'appearance', 'session', 'notifications', 'security', 'usage', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
+  '11 个分区按导航分组排：设置（模型、外观与语言、会话与上下文、通知、权限、用量）、此电脑（手机与远程、数据与同步、快捷键、关于）、自定义（能力）'
 )
 assert.ok(
   SETTINGS_SECTIONS.every((section) => typeof section.icon === 'string' && section.icon),
@@ -64,16 +64,30 @@ for (const view of ['nonsense', '', '   ']) {
 }
 assert.equal(resolveLegacyView(undefined).kind, 'unknown')
 assert.equal(resolveLegacyView(null).kind, 'unknown')
-const { groupSettingsSections, settingsViewFromHash, SETTINGS_NAV_GROUPS } = types
-assert.deepEqual([...SETTINGS_NAV_GROUPS], ['general', 'customize', 'local'], '导航分三组：设置 / 自定义 / 本机')
+const { groupSettingsSections, groupSettingsNav, settingsNavEntries, settingsViewFromHash, SETTINGS_NAV_GROUPS, CAPABILITIES_TABS } = types
+assert.deepEqual([...SETTINGS_NAV_GROUPS], ['general', 'local', 'customize'], '导航分三组：设置 / 此电脑 / 自定义')
 assert.deepEqual(
   groupSettingsSections().map((entry) => [entry.group, entry.sections.map((section) => section.id)]),
   [
-    ['general', ['models', 'appearance', 'session', 'notifications', 'security']],
-    ['customize', ['capabilities']],
-    ['local', ['devices', 'data', 'usage', 'shortcuts', 'about']]
+    ['general', ['models', 'appearance', 'session', 'notifications', 'security', 'usage']],
+    ['local', ['devices', 'data', 'shortcuts', 'about']],
+    ['customize', ['capabilities']]
   ],
-  '分组保持原分区顺序，能力页单独一组'
+  '分组保持分区顺序，能力页单独一组'
+)
+assert.deepEqual([...CAPABILITIES_TABS], ['skills', 'mcp', 'tools', 'market'], '能力页四个子页')
+assert.deepEqual(
+  groupSettingsNav().map((entry) => [entry.group, entry.entries.map((item) => item.key)]),
+  [
+    ['general', ['models', 'appearance', 'session', 'notifications', 'security', 'usage']],
+    ['local', ['devices', 'data', 'shortcuts', 'about']],
+    ['customize', ['capabilities-skills', 'capabilities-mcp', 'capabilities-tools', 'capabilities-market']]
+  ],
+  '导航条目：能力页拆成四个子页条目放在自定义组'
+)
+assert.ok(
+  settingsNavEntries().every((entry) => (entry.section === 'capabilities') === (entry.tab !== undefined) && entry.icon),
+  '只有能力子页带 tab，每个条目都有图标'
 )
 assert.deepEqual(
   groupSettingsSections().flatMap((entry) => entry.sections.map((section) => section.id)),

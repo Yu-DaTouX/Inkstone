@@ -39,7 +39,7 @@
     store.getState().openSettings('voice')
     check(await until(() => !!q('caps-settings'), 4000), '旧 voice 深链接进入能力页')
     check(await until(() => !!q('settings-voice'), 4000), '直接落在「本机工具」分页的本地转写')
-    check(q('caps-tab-tools')?.getAttribute('aria-selected') === 'true', '本机工具页签处于选中')
+    check(q('caps-tab-tools')?.getAttribute('aria-current') === 'page', '本机工具页签处于选中')
     check(await until(() => !!q('voice-state'), 4000), '显示就绪状态行')
     check(await until(() => !!q('voice-binary') && !!q('voice-models'), 4000), '有识别引擎与模型两块')
     check(await until(() => !!document.querySelector('[data-testid^="voice-model-"]'), 6000), '列出候选模型')

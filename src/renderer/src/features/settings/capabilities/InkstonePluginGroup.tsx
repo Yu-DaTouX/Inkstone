@@ -75,7 +75,7 @@ export function InkstonePluginGroup(): ReactElement {
       desc={t('market.oursDesc')}
       settingId="caps-market-inkstone"
       actions={
-        <Button size="sm" variant="ghost" isDisabled={refreshing} onPress={() => void load(true)} data-testid="caps-market-catalog-refresh">
+        <Button variant="ghost" isDisabled={refreshing} onPress={() => void load(true)} data-testid="caps-market-catalog-refresh">
           {refreshing ? t('pkg.working') : t('market.catalogRefresh')}
         </Button>
       }
@@ -98,7 +98,6 @@ export function InkstonePluginGroup(): ReactElement {
                 <Actions>
                   {entry.kind === 'export' || entry.kind === 'mcp' ? (
                     <Button
-                      size="sm"
                       variant="secondary"
                       isDisabled={exporting === entry.id}
                       onPress={() => void run(entry)}
@@ -107,7 +106,7 @@ export function InkstonePluginGroup(): ReactElement {
                       {exporting === entry.id ? t('pkg.working') : t(entry.kind === 'mcp' ? 'market.addMcp' : 'market.download')}
                     </Button>
                   ) : null}
-                  <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-market-source">
+                  <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-market-source">
                     {t('market.source')}
                   </Button>
                 </Actions>

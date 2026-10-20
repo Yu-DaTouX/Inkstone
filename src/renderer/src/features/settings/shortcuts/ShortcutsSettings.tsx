@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { RotateCcw } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import {
@@ -10,7 +11,8 @@ import {
 } from '../../../app/shortcuts'
 import type { AppSettings } from '../../../../../shared/ipc'
 import { shortcutText } from '../../commands/shortcut-text'
-import { Button, Card, Kbd } from '../../../ui'
+import { Button, IconButton, Kbd, SettingRow } from '../../../ui'
+import { SettingsGroup } from '../root/controls'
 import { bindingFromKeyStroke, clearShortcutOverrides, rebindShortcut } from './bindings'
 import { shortcutsText } from './shortcuts-text'
 import { settingsText } from '../settings-text'
@@ -101,97 +103,90 @@ export function ShortcutsSettings(): ReactElement {
 
   return (
     <section className="settings-section" aria-label={settingsText(lang).sectionShortcuts} data-testid="v3-shortcuts-settings">
-      <p className="settings-section__lede">{text.note}</p>
-
-      <Card padding="none" className="settings-shortcut-card" data-setting-id="shortcuts-keys">
-        <table className="settings-table">
-          <thead>
-            <tr>
-              <th>{text.columnAction}</th>
-              <th>{text.columnKeys}</th>
-              <th>{text.columnState}</th>
-              <th>{text.columnActions}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {defs.map((def) => {
-              const modified = overrides[def.id] !== undefined
-              const recording = recordingId === def.id
-              const rowNotice = notice?.id === def.id ? notice.text : null
-              return (
-                <Fragment key={def.id}>
-                  <tr data-testid={`v3-shortcut-${def.id}`} data-modified={modified ? '1' : '0'}>
-                    <td>{names.purposes[def.purposeKey]}</td>
-                    <td>
-                      {def.rebindable ? (
-                        <Button
-                          size="sm"
-                          variant={recording ? 'primary' : 'secondary'}
-                          isDisabled={recordingId !== null && !recording}
-                          data-testid={`v3-shortcut-record-${def.id}`}
-                          aria-label={`${text.recording} · ${names.purposes[def.purposeKey]}`}
-                          onPress={() => {
-                            setRecordingId(recording ? null : def.id)
-                            setNotice(null)
-                          }}
-                        >
-                          {recording ? text.recording : <Keys tokens={def.keys} />}
-                        </Button>
-                      ) : (
-                        <Keys tokens={def.keys} />
-                      )}
-                    </td>
-                    <td>{def.rebindable ? (modified ? text.modified : text.rebindable) : text.fixed}</td>
-                    <td>
-                      <div className="settings-shortcut-actions">
-                        {def.rebindable ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            isDisabled={!modified}
-                            data-testid={`v3-shortcut-reset-${def.id}`}
-                            onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
-                          >
-                            {text.restoreDefault}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                  {rowNotice ? (
-                    <tr className="settings-shortcut-notice" data-testid={`v3-shortcut-notice-${def.id}`}>
-                      <td colSpan={4} role="status">
+      <SettingsGroup
+        title={settingsText(lang).groupShortcutsApp}
+        description={text.note}
+        settingId="shortcuts-keys"
+        actions={
+          <span className="settings-actions" data-setting-id="shortcuts-reset-all">
+            <Button
+              variant="secondary"
+              isDisabled={!hasOverrides}
+              data-testid="v3-shortcut-reset-all"
+              onPress={() => {
+                persist({})
+                setRecordingId(null)
+                setNotice(null)
+              }}
+            >
+              {text.restoreAll}
+            </Button>
+          </span>
+        }
+      >
+        {defs.map((def) => {
+          const modified = overrides[def.id] !== undefined
+          const recording = recordingId === def.id
+          const rowNotice = notice?.id === def.id ? notice.text : null
+          const purpose = names.purposes[def.purposeKey]
+          return (
+            <SettingRow
+              key={def.id}
+              className="settings-row settings-shortcut"
+              label={purpose}
+              description={
+                modified || rowNotice ? (
+                  <>
+                    {modified ? text.modified : null}
+                    {rowNotice ? (
+                      <span className="settings-row__line settings-row__desc--error" role="status" data-testid={`v3-shortcut-notice-${def.id}`}>
                         {rowNotice}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
+                      </span>
+                    ) : null}
+                  </>
+                ) : undefined
+              }
+              data-testid={`v3-shortcut-${def.id}`}
+              data-modified={modified ? '1' : '0'}
+            >
+              {def.rebindable ? (
+                <IconButton
+                  variant="ghost"
+                  isDisabled={!modified}
+                  aria-label={`${text.restoreDefault} · ${purpose}`}
+                  data-testid={`v3-shortcut-reset-${def.id}`}
+                  onPress={() => persist(clearShortcutOverrides(overrides, def.id))}
+                >
+                  <RotateCcw size={16} />
+                </IconButton>
+              ) : null}
+              {def.rebindable ? (
+                <Button
+                  variant={recording ? 'primary' : 'secondary'}
+                  isDisabled={recordingId !== null && !recording}
+                  data-testid={`v3-shortcut-record-${def.id}`}
+                  aria-label={`${text.recording} · ${purpose}`}
+                  onPress={() => {
+                    setRecordingId(recording ? null : def.id)
+                    setNotice(null)
+                  }}
+                >
+                  {recording ? text.recording : <Keys tokens={def.keys} />}
+                </Button>
+              ) : (
+                <>
+                  <span className="settings-shortcut-fixed">{text.fixed}</span>
+                  <Keys tokens={def.keys} />
+                </>
+              )}
+            </SettingRow>
+          )
+        })}
+      </SettingsGroup>
 
-        <div className="settings-shortcut-foot" data-setting-id="shortcuts-reset-all">
-          <p className="settings-row__desc" role="status" data-testid="v3-shortcut-conflicts">
-            {conflicts.length
-              ? text.conflictFound.replace('{list}', conflicts.join(', '))
-              : text.conflictNone}
-          </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={!hasOverrides}
-            data-testid="v3-shortcut-reset-all"
-            onPress={() => {
-              persist({})
-              setRecordingId(null)
-              setNotice(null)
-            }}
-          >
-            {text.restoreAll}
-          </Button>
-        </div>
-      </Card>
+      <p className="settings-row__desc settings-shortcut-status" role="status" data-testid="v3-shortcut-conflicts">
+        {conflicts.length ? text.conflictFound.replace('{list}', conflicts.join(', ')) : text.conflictNone}
+      </p>
     </section>
   )
 }

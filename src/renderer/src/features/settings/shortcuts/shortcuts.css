@@ -1,65 +1,19 @@
 @layer features {
-  .settings-shortcut-card {
-    overflow-x: auto;
+  .settings-shortcut > .ui-setting-row__ctl {
+    flex-wrap: nowrap;
   }
 
-  .settings-shortcut-card .settings-table th,
-  .settings-shortcut-card .settings-table td {
-    padding: var(--s-10) var(--s-8);
-    vertical-align: middle;
+  .settings-shortcut-fixed {
+    color: var(--fg3);
+    font-size: var(--t-caption);
   }
 
-  .settings-shortcut-card .settings-table th:first-child,
-  .settings-shortcut-card .settings-table td:first-child {
-    padding-left: var(--s-16);
+  .settings-shortcut > .ui-setting-row__ctl > .settings-shortcut-keys {
+    min-height: var(--size-btn);
+    padding: 0 var(--s-12);
   }
 
-  .settings-shortcut-card .settings-table th:last-child,
-  .settings-shortcut-card .settings-table td:last-child {
-    padding-right: var(--s-16);
-  }
-
-  .settings-shortcut-card .settings-table tbody tr:last-child td {
-    border-bottom: 0;
-  }
-
-  .settings-shortcut-card .settings-table tbody tr {
-    transition: background-color var(--dur-fast) var(--ease);
-  }
-
-  @media (hover: hover) {
-    .settings-shortcut-card .settings-table tbody tr:hover {
-      background: color-mix(in srgb, var(--hover) 45%, transparent);
-    }
-  }
-
-  .settings-shortcut-foot {
-    border-top: 1px solid var(--line);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-12);
-    flex-wrap: wrap;
-    padding: var(--s-12) var(--s-16);
-  }
-
-  .settings-shortcut-foot > p {
-    margin: 0;
-  }
-
-  .settings-shortcut-notice td {
-    color: var(--fail-t);
-    font-size: var(--t-footnote);
-  }
-
-  .settings-shortcut-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .settings-shortcut-card .settings-table tbody tr {
-      transition: none;
-    }
+  .settings-shortcut-status {
+    margin: calc(var(--s-24) * -1) 0 0;
   }
 }

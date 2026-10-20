@@ -67,7 +67,6 @@ export function CodegraphStatusRow({ refreshKey }: { refreshKey: string }): Reac
       {status.cwd && !status.indexed && status.cliInstalled ? (
         <Actions>
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={indexing}
             isPending={indexing}

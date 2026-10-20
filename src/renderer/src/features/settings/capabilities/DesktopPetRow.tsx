@@ -119,13 +119,12 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
         <span className="caps-spacer" />
         <Actions>
           {!installed ? (
-            <Button size="sm" variant="primary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-install">
+            <Button variant="secondary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-install">
               {busy === 'install' ? t('pet.installing') : t('pet.install')}
             </Button>
           ) : (
             <>
               <Button
-                size="sm"
                 variant="secondary"
                 isDisabled={!!busy}
                 onPress={() =>
@@ -137,15 +136,15 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
               >
                 {running ? t('ocp.stop') : busy === 'start' ? t('pkg.working') : t('ocp.start')}
               </Button>
-              <Button size="sm" variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-update">
+              <Button variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-update">
                 {busy === 'install' ? t('pet.installing') : t('pet.reinstall')}
               </Button>
-              <Button size="sm" variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-pet-uninstall">
+              <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-pet-uninstall">
                 {t('pet.uninstall')}
               </Button>
             </>
           )}
-          <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-pet-source">
+          <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-pet-source">
             {t('market.source')}
           </Button>
         </Actions>
@@ -192,7 +191,7 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
             {t('ocp.autoStart')}
           </Checkbox>
           {status?.log.length ? (
-            <Button size="sm" variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
+            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
               {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
             </Button>
           ) : null}
