@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Minus, PanelLeft, Pin, Play, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Pin, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
@@ -33,7 +33,7 @@ interface Props {
 const TITLEBAR_PANES = [
   { tab: 'terminal', Icon: Terminal },
   { tab: 'changes', Icon: FileDiff },
-  { tab: 'browser', Icon: Play },
+  { tab: 'browser', Icon: Globe },
   { tab: 'files', Icon: Folder }
 ] as const
 
