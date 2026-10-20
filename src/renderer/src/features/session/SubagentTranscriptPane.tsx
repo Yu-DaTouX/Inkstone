@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { RotateCcw, Square } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
-import { Button, EmptyState, Notice } from '../../ui'
+import { Button, EmptyState, IconButton, Notice } from '../../ui'
 import { groupIntoTurns, type Turn } from '../../../../shared/turns'
 import { briefPrompt } from '../../../../shared/subagent-brief'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
@@ -18,7 +19,8 @@ import { SubagentStateIcon } from './SubagentState'
 import { SubagentReview } from './SubagentReview'
 import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
 import { SUBAGENT_CARD_BOT, compactTaskPaths, subagentTitle, useSubagentView } from './SubagentLine'
-import { retrySubagent, rowLang, stopSubagentChecked, useSubagentRow } from './subagent-actions'
+import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSubagentRow } from './subagent-actions'
+import { orderSubagentRuns, subagentNeighbor, subagentSiblings, useSubagentGroups } from './subagent-list'
 import { turnModelLabel } from './turn-model-label'
 import { TurnView } from './TurnView'
 import { useSessionText } from './text'
@@ -43,6 +45,72 @@ export function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' 
 
 export function subagentPaneName(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   return run.brief?.title || compactTaskPaths(subagentTitle(run.task))
+}
+
+const NO_IDS: string[] = []
+const FOCUS_TRIES = 12
+
+type PaneStep = 'prev' | 'next'
+
+function useSubagentGroupIds(run: SubagentRun): readonly string[] {
+  const published = useSubagentGroups((s) => s.byRun[run.id])
+  const fallback = useStore(useShallow((s): string[] => (published ? NO_IDS : orderSubagentRuns(subagentSiblings(s.subagents, run)).map((item) => item.id))))
+  return published ?? fallback
+}
+
+function focusPaneStep(runId: string, step: PaneStep, tries = FOCUS_TRIES): void {
+  const pick = (): HTMLElement | null => {
+    const wanted = document.querySelector<HTMLButtonElement>(`[data-subagent-step="${step}"][data-run-id="${runId}"]`)
+    if (wanted && !wanted.disabled) return wanted
+    return document.querySelector<HTMLButtonElement>(`[data-subagent-step="${step === 'prev' ? 'next' : 'prev'}"][data-run-id="${runId}"]`)
+  }
+  const found = pick()
+  if (found) {
+    found.focus()
+    return
+  }
+  if (tries > 0) window.requestAnimationFrame(() => focusPaneStep(runId, step, tries - 1))
+}
+
+function PaneSteps({ run }: { run: SubagentRun }): JSX.Element | null {
+  const tt = useSessionText()
+  const ids = useSubagentGroupIds(run)
+  const index = ids.indexOf(run.id)
+  if (ids.length < 2 || index < 0) return null
+  const prev = subagentNeighbor(ids, run.id, -1)
+  const next = subagentNeighbor(ids, run.id, 1)
+  const go = (target: string | null, step: PaneStep): void => {
+    if (!target) return
+    switchSubagentPane(run.id, target)
+    focusPaneStep(target, step)
+  }
+  return (
+    <span className="sa-pane-steps" data-testid="v3-subagent-pane-steps">
+      <IconButton
+        size="sm"
+        aria-label={tt('subagentPrev')}
+        isDisabled={!prev}
+        onPress={() => go(prev, 'prev')}
+        data-subagent-step="prev"
+        data-run-id={run.id}
+        data-testid="v3-subagent-pane-prev"
+      >
+        <Icon name="chevron-up" size={13} />
+      </IconButton>
+      <span className="sa-pane-pos" aria-live="polite" data-testid="v3-subagent-pane-pos">{`${index + 1} / ${ids.length}`}</span>
+      <IconButton
+        size="sm"
+        aria-label={tt('subagentNext')}
+        isDisabled={!next}
+        onPress={() => go(next, 'next')}
+        data-subagent-step="next"
+        data-run-id={run.id}
+        data-testid="v3-subagent-pane-next"
+      >
+        <Icon name="chevron-down" size={13} />
+      </IconButton>
+    </span>
+  )
 }
 
 export function SubagentTranscriptPane({ runId }: { runId: string }): JSX.Element {
@@ -113,6 +181,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
         </span>
       </PaneTitle>
       <PaneTools>
+        <PaneSteps run={run} />
         {row.canStop || row.state === 'stopping' ? (
           <Button
             size="sm"

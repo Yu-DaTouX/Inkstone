@@ -64,7 +64,16 @@ const RENDERER_IDS = [
   'workspaceTab3',
   'workspaceTab4',
   'workspaceTab5',
-  'workspaceTab6'
+  'workspaceTab6',
+  'splitFocusNext',
+  'splitFocusPrevious',
+  'splitNewRight',
+  'splitNewBelow',
+  'splitClose',
+  'splitFocusLeft',
+  'splitFocusRight',
+  'splitFocusUp',
+  'splitFocusDown'
 ]
 const HOST_IDS = ['cycleModel', 'cycleModelBack', 'cycleThinking', 'quickAsk']
 
@@ -82,7 +91,8 @@ for (const def of SHORTCUTS) {
 assert.deepEqual(
   SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
   ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
-    'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6'],
+    'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
+    'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
   '非终端让键、未由宿主注册的项可改绑'
 )
 assert.deepEqual(

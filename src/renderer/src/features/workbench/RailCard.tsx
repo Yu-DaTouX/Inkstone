@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
-import { ArrowUpRight, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, GripVertical } from 'lucide-react'
 import { Button, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 
@@ -70,9 +70,14 @@ export function RailCard({
           }
         }}
       >
-        <span className="wb-rail-grip" onPointerDownCapture={grip.onPointerDown}>
+        <Button variant="plain" size="sm" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
+          <span className="wb-tile-title">{title}</span>
+          <ChevronRight size={12} className="wb-tile-chevron" aria-hidden />
+          {summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
+        </Button>
+        <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
           <IconButton
-            variant="ghost"
+            variant="plain"
             size="sm"
             aria-label={grip.label}
             aria-pressed={grip.picked}
@@ -84,11 +89,6 @@ export function RailCard({
             <GripVertical size={12} aria-hidden />
           </IconButton>
         </span>
-        <Button variant="ghost" size="sm" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
-          <span className="wb-tile-title">{title}</span>
-          {open ? <ChevronDown size={12} className="wb-tile-chevron" aria-hidden /> : <ChevronRight size={12} className="wb-tile-chevron" aria-hidden />}
-          {summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
-        </Button>
         {onOpenView ? (
           <IconButton variant="ghost" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
             <ArrowUpRight size={13} aria-hidden />

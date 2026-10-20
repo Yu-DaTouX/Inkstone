@@ -43,8 +43,8 @@ const {
   bindPairObserver
 } = model
 
-ok(MIN_COLUMN === 300, '最小列宽沿用 v3 原有 300px')
-ok(KEY_STEP === 24, '方向键步长沿用旧 24px')
+ok(MIN_COLUMN === 320, '最小列宽对齐参考 320px')
+ok(KEY_STEP === 8, '方向键步长对齐参考 8px')
 
 ok(samePair(measurePair(600, 400), { left: 600, total: 1000 }), '首帧读取：两列像素宽得到 left/total')
 ok(samePair(measurePair(Number.NaN, -5), { left: 0, total: 0 }), '非法像素宽归一为 0，不产生 NaN')
@@ -99,9 +99,9 @@ ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退�
   const current = leftPxForWeights(1, 1, { left: 500, total })
   ok(near(current, 500), '等宽份额下左列像素为该列一半')
   const right = weightsForLeft(current + KEY_STEP, total, share)
-  ok(near(right.left, (share * (current + KEY_STEP)) / total), 'ArrowRight 24px 换算与旧键盘语义一致')
+  ok(near(right.left, (share * (current + KEY_STEP)) / total), 'ArrowRight 一步换算与键盘语义一致')
   const left = weightsForLeft(current - KEY_STEP, total, share)
-  ok(near(left.left, (share * (current - KEY_STEP)) / total), 'ArrowLeft 24px 换算与旧键盘语义一致')
+  ok(near(left.left, (share * (current - KEY_STEP)) / total), 'ArrowLeft 一步换算与键盘语义一致')
   ok(near(weightsForLeft(total, total, share).left, share), '在端点继续按方向键被夹到最大份额')
   ok(near(weightsForLeft(0, total, share).right, share), '在另一端点继续按方向键被夹到最小份额')
 }
@@ -259,7 +259,7 @@ try {
   ok(splitterHtml.includes('role="separator"'), '原语渲染 role=separator')
   ok(splitterHtml.includes('aria-orientation="vertical"'), '原语按竖线方向渲染')
   ok(splitterHtml.includes('aria-valuenow="600"'), '原语 aria-valuenow 承接像素值（不是百分比）')
-  ok(splitterHtml.includes('aria-valuemin="300"') && splitterHtml.includes('aria-valuemax="700"'), '原语 min/max 承接像素拖动范围')
+  ok(splitterHtml.includes('aria-valuemin="320"') && splitterHtml.includes('aria-valuemax="680"'), '原语 min/max 承接像素拖动范围')
   ok(splitterHtml.includes('tabindex="0"'), '原语自带键盘可聚焦')
   ok(splitterHtml.includes('data-testid="v3-split-resizer"'), '并排调用点的 testid 透传到原语')
 

@@ -21,7 +21,7 @@ export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
   "--color-border-secondary": "light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2))",
   "--color-border-tertiary": "light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1))",
   "--color-ring-primary": "#2A78D6",
-  "--font-sans": "\"Segoe UI Variable Text\", \"Segoe UI Variable\", \"Segoe UI\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"PingFang SC\", \"Noto Sans CJK SC\", system-ui, sans-serif",
+  "--font-sans": "\"Segoe UI Variable Text\", \"Segoe UI Variable\", \"Segoe UI\", \"Noto Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"PingFang SC\", \"Noto Sans CJK SC\", system-ui, sans-serif",
   "--font-mono": "\"Cascadia Mono\", \"Cascadia Code\", \"JetBrains Mono\", \"SF Mono\", Consolas, \"Microsoft YaHei UI\", monospace",
   "--font-weight-normal": "400",
   "--font-weight-medium": "500",

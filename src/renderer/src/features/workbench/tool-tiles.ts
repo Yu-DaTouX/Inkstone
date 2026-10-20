@@ -18,7 +18,7 @@ import type { WorkbenchTabId } from './types'
 
 export { canTileTool, fitPaneTiles, toolTabOf } from './tool-tile-refs'
 
-const NARROW_QUERY = '(max-width: 899px)'
+const NARROW_QUERY = '(max-width: 700px)'
 
 function subscribeNarrow(notify: () => void): () => void {
   if (typeof window === 'undefined' || !window.matchMedia) return () => {}

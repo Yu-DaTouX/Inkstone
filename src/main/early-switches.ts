@@ -6,9 +6,9 @@ export function smoothTextEnabledSync(file = join(YAN_DIR, 'desktop.json')): boo
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''))
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return (parsed as { smoothText?: unknown }).smoothText !== false
+      return (parsed as { smoothText?: unknown }).smoothText === true
     }
   } catch {
   }
-  return true
+  return false
 }

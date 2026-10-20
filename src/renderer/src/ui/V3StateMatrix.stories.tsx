@@ -26,6 +26,8 @@ import {
   MenuSection,
   MenuTrigger,
   Meter,
+  MeterRing,
+  MiniBars,
   Modal,
   ModalOverlay,
   Popover,
@@ -42,6 +44,8 @@ import {
   showToast,
   Skeleton,
   Spinner,
+  Stat,
+  StatGrid,
   StatusDot,
   StatusSlot,
   SubmenuTrigger,
@@ -265,6 +269,28 @@ export const ProgressSkeletonStates: Story = {
           <Skeleton shape="circle" height={32} width={32} />
         </div>
       </Row>
+    </div>
+  )
+}
+
+export const StatStates: Story = {
+  name: 'Stat / StatGrid / MeterRing / MiniBars · 指标格',
+  parameters: {
+    stateMatrix: {
+      components: ['Stat', 'StatGrid', 'MeterRing', 'MiniBars'],
+      states: STATES('default', 'value-known'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ maxWidth: 280 }}>
+      <StatGrid>
+        <Stat label="轮数" value="12" />
+        <Stat label="步数" value="48" />
+        <Stat label="总数" value="1.2M" unit="tok" />
+        <Stat label="累计命中率" value="82.4%" aside={<MeterRing aria-label="累计命中率" value={82.4} />} />
+        <Stat label="输出速度" value="64.2" unit="tok/s" span={2} aside={<MiniBars values={[40, 52, 61, 45, 70, 58, 66, 64]} />} />
+      </StatGrid>
     </div>
   )
 }

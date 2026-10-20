@@ -759,13 +759,18 @@
 
   .wb-tile-title {
     flex: none;
-    font-size: var(--t-prose);
-    font-weight: 600;
+    font-size: var(--t-body);
+    font-weight: var(--w-medium);
     white-space: nowrap;
   }
 
   .wb-tile-chevron {
     flex: none;
+    transition: transform var(--dur-snap) var(--ease);
+  }
+
+  .wb-tile-toggle[aria-expanded='true'] .wb-tile-chevron {
+    transform: rotate(90deg);
   }
 
   .wb-tile-summary {
@@ -775,7 +780,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--t-prose);
+    font-size: var(--t-body);
     font-variant-numeric: tabular-nums;
   }
 
@@ -803,6 +808,26 @@
       opacity: 1;
     }
     .wb-tile:is(:hover, :focus-within):has(.wb-tile-open) .wb-tile-summary {
+      opacity: 0;
+    }
+    .wb-rail-grip {
+      position: absolute;
+      top: 50%;
+      right: 0;
+      opacity: 0;
+      transform: translateY(-50%);
+      transition: opacity var(--dur-fast) ease;
+    }
+    .wb-rail-grip[data-with-open='1'] {
+      right: calc(var(--size-btn-sm) + var(--s-2));
+    }
+    .wb-tile-head:hover .wb-rail-grip,
+    .wb-rail-grip:focus-within,
+    .wb-tile:is([data-picked='1'], [data-dragging='1']) .wb-rail-grip {
+      opacity: 1;
+    }
+    .wb-tile-head:is(:hover, :has(.wb-rail-grip:focus-within)) .wb-tile-summary,
+    .wb-tile:is([data-picked='1'], [data-dragging='1']) .wb-tile-summary {
       opacity: 0;
     }
   }
@@ -1082,9 +1107,12 @@
   .wb-rail-grip {
     flex: none;
     display: inline-flex;
-    margin-left: calc(-1 * var(--s-8));
     touch-action: none;
     cursor: grab;
+  }
+
+  .wb-rail-grip > .ui-btn {
+    cursor: inherit;
   }
 
   .wb-tile[data-dragging='1'] .wb-rail-grip {
@@ -1153,6 +1181,16 @@
 
   .wb-ov-item-icon {
     color: var(--fg2);
+  }
+
+  .wb-tile-title {
+    color: var(--fg);
+  }
+
+  @media (hover: hover) {
+    .wb-tile-toggle:hover .wb-tile-chevron {
+      color: var(--fg);
+    }
   }
 
   .wb-tile[data-tone='ask'] .wb-tile-summary {

@@ -59,11 +59,10 @@
   }
   .v3-tiles-resizer.ui-splitter {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 7;
-    width: var(--s-8);
-    right: calc(var(--size-tiles) + var(--s-12) + var(--s-2));
+    top: var(--s-16);
+    bottom: var(--s-16);
+    left: calc(-1 * var(--s-12));
+    z-index: 1;
   }
   .v3-sessionbar > .wb-overview {
     gap: var(--s-8);
@@ -71,10 +70,10 @@
     scrollbar-width: none;
   }
   .v3-sessionbar .wb-tile {
-    padding: var(--s-10) var(--s-12) var(--s-12);
+    padding: var(--s-8) var(--s-12) var(--s-12);
   }
   .v3-sessionbar .wb-tile[data-folded='1'] {
-    padding-block: var(--s-6);
+    padding-bottom: var(--s-8);
   }
   .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-text {
     display: none;
@@ -83,7 +82,7 @@
     align-self: center;
     height: var(--s-16);
   }
-  .v3-workspace-resizer.ui-splitter { position: absolute; top: 0; bottom: 0; right: calc(var(--workspace-width) - 1px); z-index: 22; }
+  .v3-workspace-resizer.ui-splitter { position: absolute; top: 0; bottom: 0; right: calc(var(--workspace-width) - var(--s-10)); z-index: 22; }
 
   .v3-chat {
     position: relative;

@@ -6,7 +6,7 @@ import { Button, type ButtonProps, type ButtonSize } from './Button'
 export interface IconButtonProps
   extends Omit<ButtonProps, 'variant' | 'children' | 'icon' | 'trailingIcon' | 'block' | 'size'> {
   'aria-label': string
-  variant?: 'ghost' | 'secondary' | 'danger'
+  variant?: 'ghost' | 'plain' | 'secondary' | 'danger'
   size?: ButtonSize
   children: ReactNode
 }

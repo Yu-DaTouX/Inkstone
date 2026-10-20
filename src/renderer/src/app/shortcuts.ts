@@ -16,6 +16,15 @@ export type ShortcutId =
   | 'workspaceTab4'
   | 'workspaceTab5'
   | 'workspaceTab6'
+  | 'splitFocusNext'
+  | 'splitFocusPrevious'
+  | 'splitNewRight'
+  | 'splitNewBelow'
+  | 'splitClose'
+  | 'splitFocusLeft'
+  | 'splitFocusRight'
+  | 'splitFocusUp'
+  | 'splitFocusDown'
   | 'cycleModel'
   | 'cycleModelBack'
   | 'cycleThinking'
@@ -57,6 +66,15 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'workspaceTab4', keys: ['Alt', '4'], purposeKey: 'workspaceTab4', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab5', keys: ['Alt', '5'], purposeKey: 'workspaceTab5', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab6', keys: ['Alt', '6'], purposeKey: 'workspaceTab6', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusNext', keys: ['Ctrl', 'Alt', ']'], purposeKey: 'splitFocusNext', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusPrevious', keys: ['Ctrl', 'Alt', '['], purposeKey: 'splitFocusPrevious', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitNewRight', keys: ['Ctrl', 'Alt', '\\'], purposeKey: 'splitNewRight', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitNewBelow', keys: ['Ctrl', 'Alt', '-'], purposeKey: 'splitNewBelow', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitClose', keys: ['Ctrl', 'Alt', 'W'], purposeKey: 'splitClose', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusLeft', keys: ['Ctrl', 'Alt', '←'], purposeKey: 'splitFocusLeft', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusRight', keys: ['Ctrl', 'Alt', '→'], purposeKey: 'splitFocusRight', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusUp', keys: ['Ctrl', 'Alt', '↑'], purposeKey: 'splitFocusUp', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'splitFocusDown', keys: ['Ctrl', 'Alt', '↓'], purposeKey: 'splitFocusDown', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'cycleModel', keys: ['Ctrl', 'P'], purposeKey: 'cycleModel', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },
   { id: 'cycleModelBack', keys: ['Ctrl', 'Shift', 'P'], purposeKey: 'cycleModelBack', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },
   { id: 'cycleThinking', keys: ['Shift', 'Tab'], purposeKey: 'cycleThinking', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },

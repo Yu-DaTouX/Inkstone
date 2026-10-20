@@ -200,8 +200,8 @@ async function main() {
   ok(pushConsumers.includes("case 'todos':") && pushConsumers.includes('set({ todos: m.payload })'), 'store.todos 只由 todos 推送套用')
   const routing = await readFile(join(ROOT, 'src/renderer/src/state/push-routing.ts'), 'utf8')
   ok(routing.includes('viewingSessionId') && routing.includes('belongsToView'), '后台会话的待办只进 sessionRuntimes，不覆盖当前视图')
-  const sideBySide = await readFile(join(ROOT, 'src/renderer/src/app/SideBySide.tsx'), 'utf8')
-  ok(sideBySide.includes('void store.switchSession(target.path)'), '并排切焦点列走正式 switchSession（随之重投影 store.todos）')
+  const splitActions = await readFile(join(ROOT, 'src/renderer/src/features/split/split-actions.ts'), 'utf8')
+  ok(splitActions.includes('void store.switchSession(target.path)'),'并排切焦点列走正式 switchSession（随之重投影 store.todos）')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`\nv3-todo-tile: ${checks} checks passed`)

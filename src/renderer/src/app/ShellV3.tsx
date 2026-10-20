@@ -14,6 +14,10 @@ import { startRunSync } from '../state/runs-v3'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SplitDropLayer } from '../features/sidebar/SplitDropLayer'
+import { SplitDragLayer } from '../features/split/SplitDragLayer'
+import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
+import { runSplitShortcut } from '../features/split/split-keys'
+import { useSplitPersistence } from '../features/split/use-split-persistence'
 import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
 import { SideBySide } from './SideBySide'
 import { collapsedPanes, sessionTiles } from './SideBySideLayout'
@@ -50,7 +54,7 @@ import { resourceOwner } from '../state/resource-owners'
 import { autoCompactLimitOf, contextPaneData } from '../features/workbench/context-pane-view'
 import type { ContextSlice } from '../state/context-breakdown'
 import type { PaneContextSegment } from '../../../shared/pane-popout'
-import { sessionText } from '../features/session/text'
+import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import './ShellV3.css'
 
@@ -350,13 +354,15 @@ export default function ShellV3(): ReactElement {
   useLayoutEffect(() => {
     useSplitView.getState().sync(displayed)
   }, [displayed, storedSplit])
+  const splitParked = windowWidth <= SPLIT_CONSTRAINED_WIDTH
   const visibleSessions = useMemo(() => {
-    const layout = collapsedPanes(split, narrow)
+    const layout = collapsedPanes(split, splitParked)
     return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
-  }, [split, narrow, displayed])
+  }, [split, splitParked, displayed])
   useRunnerVisibility(visibleSessions)
   usePruneSubagentPanes()
-  const singlePane = !collapsedPanes(split, narrow)
+  useSplitPersistence()
+  const singlePane = !collapsedPanes(split, splitParked)
   const chatWidth = bodyWidth - (workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0)
   const toastInset = workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0
   useEffect(() => {
@@ -539,6 +545,11 @@ export default function ShellV3(): ReactElement {
             if (tab) void openWorkspaceTab(tab)
             return
           }
+          default:
+            if (ui.route.name === 'chat' && runSplitShortcut(shortcut, event.target)) {
+              event.preventDefault()
+              return
+            }
         }
       }
       if (event.key === 'Escape' && !typing) {
@@ -613,14 +624,12 @@ export default function ShellV3(): ReactElement {
             ) : (
               <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
                 <ConnBanner />
-                <SideBySide split={split} narrow={narrow} />
+                <SideBySide split={split} narrow={splitParked} />
                 {sessionBarShown ? (
                   <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
                     <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
+                    <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                   </aside>
-                ) : null}
-                {sessionBarShown ? (
-                  <Splitter className="v3-tiles-resizer" title={sessionText(lang, 'subagentResize')} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize tiles' : '调整磁贴宽度'} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
                 ) : null}
               </div>
             )}
@@ -651,7 +660,7 @@ export default function ShellV3(): ReactElement {
               />
             ) : null}
             {workspaceShown && panelMode === 'docked' ? (
-              <Splitter className="v3-workspace-resizer" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
+              <Splitter className="v3-workspace-resizer ui-splitter--gutter" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
             ) : null}
           </div>
         </main>
@@ -673,6 +682,7 @@ export default function ShellV3(): ReactElement {
       ) : null}
       <NativeSessionSurfaces />
       <SplitDropLayer />
+      <SplitDragLayer />
       <NoticeBridge />
       <PeerApprovalDialog />
     </V3ErrorBoundary>

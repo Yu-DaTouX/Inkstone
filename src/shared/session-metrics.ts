@@ -80,6 +80,39 @@ function effectiveMessages(messages: readonly UIMessage[]): UIMessage[] {
   return out
 }
 
+export interface StepDecode {
+  tokens: number
+  ms: number
+  approx: boolean
+}
+
+export function stepDecode(m: UIMessage): StepDecode | null {
+  if (m.role !== 'assistant') return null
+  const gt = m.generationTiming
+  const durationMs = gt && isNonNegative(gt.durationMs) ? gt.durationMs : null
+  const usage = sanitizeUsage(m.usage)
+  const out = usage ? usage.output : 0
+  const visible = visibleOutput(m, usage)
+  const realDecode = gt && isNonNegative(gt.decodeMs) && gt.decodeMs > 0 ? gt.decodeMs : null
+  const legacySpeed = gt === undefined && isNonNegative(m.speed) && m.speed > 0 ? m.speed : null
+  const burst = realDecode !== null && visible > 0 && (realDecode < MIN_DECODE_MS || visible / (realDecode / 1000) > MAX_PLAUSIBLE_TPS)
+  if (burst) {
+    return durationMs !== null && durationMs >= MIN_DECODE_MS && out > 0 ? { tokens: out, ms: durationMs, approx: true } : null
+  }
+  const decodeMs = realDecode ?? (legacySpeed !== null && out > 0 ? (out / legacySpeed) * 1000 : null)
+  const counted = realDecode !== null ? visible : out
+  return counted > 0 && decodeMs !== null ? { tokens: counted, ms: decodeMs, approx: false } : null
+}
+
+export function stepSpeeds(messages: readonly UIMessage[], limit: number): number[] {
+  const out: number[] = []
+  for (const m of effectiveMessages(messages)) {
+    const decode = stepDecode(m)
+    if (decode && decode.ms > 0) out.push(decode.tokens / (decode.ms / 1000))
+  }
+  return out.slice(Math.max(0, out.length - limit))
+}
+
 export function projectSessionMetrics(
   messages: readonly UIMessage[],
   stats: SessionStats | null | undefined,
@@ -202,27 +235,14 @@ export function projectSessionMetrics(
 
     const usage = sanitizeUsage(m.usage)
     const out = usage ? usage.output : 0
-    const visible = visibleOutput(m, usage)
     if (!m.error && (out > 0 || !hasUsageNumbers(usage))) tpsEligible += 1
     if (!m.error && (out > 0 || m.text || m.toolCalls?.length)) ttftEligible += 1
-    const realDecode = gt && isNonNegative(gt.decodeMs) && gt.decodeMs > 0 ? gt.decodeMs : null
-    const legacySpeed = gt === undefined && isNonNegative(m.speed) && m.speed > 0 ? m.speed : null
-    const burst = realDecode !== null && visible > 0 && (realDecode < MIN_DECODE_MS || visible / (realDecode / 1000) > MAX_PLAUSIBLE_TPS)
-    if (burst) {
-      if (durationMs !== null && durationMs >= MIN_DECODE_MS && out > 0) {
-        decodeOut += out
-        decodeTime += durationMs
-        tpsCovered += 1
-        tpsApprox = true
-      }
-    } else {
-      const decodeMs = realDecode ?? (legacySpeed !== null && out > 0 ? (out / legacySpeed) * 1000 : null)
-      const counted = realDecode !== null ? visible : out
-      if (counted > 0 && decodeMs !== null) {
-        decodeOut += counted
-        decodeTime += decodeMs
-        tpsCovered += 1
-      }
+    const decode = stepDecode(m)
+    if (decode) {
+      decodeOut += decode.tokens
+      decodeTime += decode.ms
+      tpsCovered += 1
+      if (decode.approx) tpsApprox = true
     }
 
     const ttft = gt && gt.startEvent === 'turn_start' && isNonNegative(gt.ttftMs) ? gt.ttftMs : null

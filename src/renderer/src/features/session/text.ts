@@ -22,15 +22,17 @@ export type SessionTextKey =
   | 'subagentLiveCount'
   | 'subagentDoneCount'
   | 'subagentFailedCount'
-  | 'subagentDeckHint'
-  | 'subagentDeckLabel'
-  | 'subagentDeckJump'
-  | 'subagentDeckGo'
+  | 'subagentStoppedCount'
+  | 'subagentAllDone'
+  | 'subagentListLabel'
+  | 'subagentShowMore'
   | 'subagentShowLess'
+  | 'subagentCalls'
+  | 'subagentPrev'
+  | 'subagentNext'
   | 'subagentRetried'
   | 'subagentResumed'
   | 'subagentNotRetried'
-  | 'subagentRunningTasks'
   | 'subagentOpenPane'
   | 'subagentBrief'
   | 'subagentGone'
@@ -146,15 +148,17 @@ const ZH: Record<SessionTextKey, string> = {
   subagentLiveCount: '{n} 进行中',
   subagentDoneCount: '{n} 完成',
   subagentFailedCount: '{n} 失败',
-  subagentDeckHint: '滚轮 · ↑↓ 翻张',
-  subagentDeckLabel: '子 Agent 卡片，聚焦后用上下方向键翻张',
-  subagentDeckJump: '翻到这一张',
-  subagentDeckGo: '第 {n} 个',
+  subagentStoppedCount: '{n} 已停止',
+  subagentAllDone: '全部完成',
+  subagentListLabel: '子 Agent 列表',
+  subagentShowMore: '再显示 {n} 个',
   subagentShowLess: '收起',
+  subagentCalls: '{n} 次',
+  subagentPrev: '上一个子 Agent',
+  subagentNext: '下一个子 Agent',
   subagentRetried: '已自动重试 {n} 次',
   subagentResumed: '已自动续跑 1 次',
   subagentNotRetried: '未自动重试',
-  subagentRunningTasks: '{n} 个任务正在运行',
   subagentOpenPane: '在工作区打开转录',
   subagentBrief: '简报',
   subagentGone: '任务已经结束，无需停止',
@@ -271,15 +275,17 @@ const EN: Record<SessionTextKey, string> = {
   subagentLiveCount: '{n} in progress',
   subagentDoneCount: '{n} done',
   subagentFailedCount: '{n} failed',
-  subagentDeckHint: 'Wheel · ↑↓ to flip',
-  subagentDeckLabel: 'Subagent cards, use the up and down arrow keys to flip when focused',
-  subagentDeckJump: 'Flip to this one',
-  subagentDeckGo: 'No. {n}',
+  subagentStoppedCount: '{n} stopped',
+  subagentAllDone: 'all done',
+  subagentListLabel: 'Subagents',
+  subagentShowMore: 'Show {n} more',
   subagentShowLess: 'Show less',
+  subagentCalls: '{n} calls',
+  subagentPrev: 'Previous subagent',
+  subagentNext: 'Next subagent',
   subagentRetried: 'Retried {n} times',
   subagentResumed: 'Auto-continued once',
   subagentNotRetried: 'Not retried',
-  subagentRunningTasks: '{n} running',
   subagentOpenPane: 'Open transcript in the workspace',
   subagentBrief: 'Brief',
   subagentGone: 'The task already ended; nothing to stop',

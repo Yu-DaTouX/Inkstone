@@ -1,10 +1,13 @@
 import { useMemo, type ReactElement } from 'react'
+import { MeterRing, MiniBars, Stat, StatGrid } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { selectSubagentRuns, subagentTokens } from '../../state/subagent-view'
-import { projectSessionMetrics } from '../../../../shared/session-metrics'
+import { projectSessionMetrics, stepSpeeds } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
-import { buildRailStats, type RailStatsModel, type RailStatsRow } from './rail-stats'
+import { buildRailStats, railStatTitle, type RailStatsModel } from './rail-stats'
+
+const SPEED_BARS = 12
 
 export function useRailStats(messages: UIMessage[], enabled: boolean): RailStatsModel | null {
   const t = useT()
@@ -19,33 +22,31 @@ export function useRailStats(messages: UIMessage[], enabled: boolean): RailStats
     const subTokens = subagentTokens(
       selectSubagentRuns(subagents, { sessionIds: viewSessionId ? [viewSessionId] : [] }).all
     )
-    return buildRailStats({ metrics, historyPartial, subagentTokens: subTokens, t })
+    return buildRailStats({ metrics, historyPartial, subagentTokens: subTokens, speeds: stepSpeeds(messages, SPEED_BARS), t })
   }, [enabled, messages, stats, historyPartial, subagents, viewSessionId, t])
-}
-
-function StatsRows({ rows, testId }: { rows: RailStatsRow[]; testId: string }): ReactElement {
-  return (
-    <ul className="wb-ov-items" data-testid={testId}>
-      {rows.map((row) => (
-        <li key={row.key} className="wb-ov-item" title={`${row.label} ${row.value}`}>
-          <span className="wb-ov-item-label">{row.label}</span>
-          <span className="wb-ov-item-value ui-meta-num">{row.value}</span>
-        </li>
-      ))}
-    </ul>
-  )
 }
 
 export function RailStatsBody({ model }: { model: RailStatsModel }): ReactElement {
   return (
-    <>
-      <StatsRows rows={model.session} testId="wb-rail-stats-session" />
-      <StatsRows rows={model.tokens} testId="wb-rail-stats-tokens" />
-      {model.notes.map((note) => (
-        <p key={note} className="wb-ov-note">
-          {note}
-        </p>
+    <StatGrid className="wb-rail-stats" data-testid="wb-rail-stats">
+      {model.stats.map((stat) => (
+        <Stat
+          key={stat.key}
+          data-stat={stat.key}
+          title={railStatTitle(stat)}
+          label={stat.label}
+          value={stat.value}
+          unit={stat.unit}
+          span={stat.key === 'tps' ? 2 : undefined}
+          aside={
+            stat.key === 'tps' && model.speeds.length > 1 ? (
+              <MiniBars values={model.speeds} />
+            ) : stat.key === 'hitRate' && model.hitPercent !== null ? (
+              <MeterRing aria-label={stat.label} value={model.hitPercent} minValue={0} maxValue={100} />
+            ) : undefined
+          }
+        />
       ))}
-    </>
+    </StatGrid>
   )
 }

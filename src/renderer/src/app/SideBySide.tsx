@@ -1,10 +1,10 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Eye, FileDiff, FolderOpen, GitBranch, Globe, GripVertical, PanelRight, ScrollText, Terminal, type LucideIcon } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { createTurnProjector } from '../../../shared/turns'
 import type { UIMessage } from '../../../shared/ipc'
-import { nearestSessionOf, sameSplitSession, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
+import { sameSplitSession, splitColumns, splitTileKey, useSplitView, type SplitLayout, type SplitSessionRef } from '../state/split-view'
 import { closeToolTile, dockToolTile, fitPaneTiles, toolTabOf, useTileCapacity, watchChatWidth } from '../features/workbench/tool-tiles'
 import { trackTileDrag } from '../features/workbench/tile-drag'
 import { toolTileText } from '../features/workbench/tool-tile-text'
@@ -17,10 +17,15 @@ import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
 import { Icon } from '../features/session/Icon'
-import { Button, IconButton, Splitter } from '../ui'
-import { collapsedPanes, isSessionTile } from './SideBySideLayout'
+import { IconButton, Splitter } from '../ui'
+import { collapsedPanes } from './SideBySideLayout'
+import { closeSplitPane, focusSplitSession } from '../features/split/split-actions'
+import { rowBoundsFor, rowSplitFor } from '../features/split/split-drop-model'
+import { observeHeight } from '../features/split/split-measure'
+import { splitText } from '../features/split/split-text'
 import {
   KEY_STEP,
+  LARGE_KEY_STEP,
   bindPairObserver,
   clampPairValue,
   pairBounds,
@@ -39,6 +44,16 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
   const capacity = useTileCapacity()
   const layout = fitPaneTiles(collapsedPanes(split, narrow), capacity)
   const weights = useSplitView((s) => s.weights)
+  const storedRow = useSplitView((s) => s.rowSplit)
+  const [hostHeight, setHostHeight] = useState(0)
+  const hostRef = useCallback((element: HTMLDivElement | null) => {
+    const stopWidth = watchChatWidth(element)
+    const stopHeight = observeHeight(element, setHostHeight)
+    return () => {
+      stopWidth?.()
+      stopHeight?.()
+    }
+  }, [])
 
   if (!layout || !split) {
     return (
@@ -49,57 +64,73 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
     )
   }
 
-  const closePane = (index: number): void => {
-    const view = useSplitView.getState()
-    const current = view.split
-    if (!current) return
-    if (index === current.live) {
-      const neighbor = current.tiles[nearestSessionOf(current.tiles, index)]
-      if (neighbor && isSessionTile(neighbor) && neighbor.path) void useStore.getState().switchSession(neighbor.path)
-    }
-    view.remove(index)
-  }
-
   const movable = !narrow && layout.tiles.length > 1
   const liveTarget = layout.tiles[layout.live]
   const shown = layout.tiles
+  const columns = splitColumns(shown)
+  const rowSplit = rowSplitFor(storedRow, hostHeight)
   const slotAt = (position: number): number => {
     if (position <= 0) return split.tiles.indexOf(shown[0])
     if (position < shown.length) return split.tiles.indexOf(shown[position])
     return split.tiles.indexOf(shown[shown.length - 1]) + 1
   }
 
+  const renderPane = (position: number): JSX.Element => {
+    const target = shown[position]
+    const tool = toolTabOf(target)
+    const live = position === layout.live
+    const index = split.tiles.indexOf(target)
+    return (
+      <PaneFrame
+        target={target}
+        owner={liveTarget}
+        index={index}
+        leftSlot={slotAt(position - 1)}
+        rightSlot={slotAt(position + 2)}
+        movable={movable}
+        live={live}
+        onClose={() => (tool ? closeToolTile(tool) : closeSplitPane(index))}
+      >
+        {tool ? (
+          <ToolTileBody tab={tool} />
+        ) : live ? (
+          <>
+            <div className="v3-conv"><SessionView /></div>
+            <div className="v3-composer"><Composer /></div>
+          </>
+        ) : (
+          <PeerPane target={target} />
+        )}
+      </PaneFrame>
+    )
+  }
+
   return (
-    <div className="v3-split" data-testid="v3-split" ref={watchChatWidth}>
-      {shown.map((target, position) => {
-        const tool = toolTabOf(target)
-        const live = position === layout.live
-        const index = split.tiles.indexOf(target)
+    <div
+      className="v3-split"
+      data-testid="v3-split"
+      data-columns={columns.length}
+      ref={hostRef}
+      style={{ '--split-row': rowSplit } as CSSProperties}
+    >
+      {columns.map((column, at) => {
+        const top = shown[column[0]]
         return (
-          <Fragment key={splitTileKey(target) || `pane-${index}`}>
-            {position > 0 ? <SplitResizer left={shown[position - 1]} right={target} /> : null}
-            <PaneFrame
-              target={target}
-              owner={liveTarget}
-              index={index}
-              leftSlot={slotAt(position - 1)}
-              rightSlot={slotAt(position + 2)}
-              movable={movable}
-              live={live}
-              weight={weights[splitTileKey(target)] ?? 1}
-              onClose={() => (tool ? closeToolTile(tool) : closePane(index))}
+          <Fragment key={splitTileKey(top) || `col-${at}`}>
+            {at > 0 ? <SplitResizer left={shown[columns[at - 1][0]]} right={top} /> : null}
+            <div
+              className="v3-split-column"
+              data-col={at}
+              data-stacked={column.length > 1 ? '1' : undefined}
+              style={{ flexGrow: weights[splitTileKey(top)] ?? 1, flexBasis: 0 }}
             >
-              {tool ? (
-                <ToolTileBody tab={tool} />
-              ) : live ? (
-                <>
-                  <div className="v3-conv"><SessionView /></div>
-                  <div className="v3-composer"><Composer /></div>
-                </>
-              ) : (
-                <PeerPane target={target} />
-              )}
-            </PaneFrame>
+              {column.map((position, row) => (
+                <Fragment key={splitTileKey(shown[position]) || `pane-${position}`}>
+                  {row > 0 ? <RowResizer height={hostHeight} value={rowSplit} /> : null}
+                  {renderPane(position)}
+                </Fragment>
+              ))}
+            </div>
           </Fragment>
         )
       })}
@@ -132,7 +163,6 @@ function PaneFrame({
   rightSlot,
   movable,
   live,
-  weight,
   onClose,
   children
 }: {
@@ -143,7 +173,6 @@ function PaneFrame({
   rightSlot: number
   movable: boolean
   live: boolean
-  weight: number
   onClose: () => void
   children: ReactNode
 }): JSX.Element {
@@ -157,6 +186,7 @@ function PaneFrame({
   const project = useSplitProject(target)
   const key = splitTileKey(target)
   const ToolIcon = tool ? TOOL_ICONS[tool] : undefined
+  const inactive = !tool && !live
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
     if ((event.target as HTMLElement).closest('[data-tile-action]')) return
@@ -171,18 +201,30 @@ function PaneFrame({
     focusGrip(key)
   }
 
+  const activateOnPress = (event: ReactPointerEvent<HTMLElement>): void => {
+    if (!inactive || event.button !== 0) return
+    const node = event.target as HTMLElement
+    if (node.closest('[data-tile-action], .v3-stream')) return
+    focusSplitSession(target)
+  }
+
   return (
     <section
       className="v3-split-col"
+      role="region"
+      aria-label={tool ? toolName : title || t('split.untitled')}
+      aria-current={live && !tool ? 'true' : undefined}
       data-live={live ? '1' : '0'}
       data-kind={tool ? 'tool' : 'session'}
+      data-split-inactive={inactive ? '' : undefined}
+      data-row={target.below ? '1' : '0'}
       data-testid="v3-split-col"
       data-pane={target.sessionId ?? target.path ?? ''}
       data-tile-key={key}
       data-split-index={index}
       data-tool-tile={tool ?? undefined}
       tabIndex={tool ? -1 : undefined}
-      style={{ flexGrow: weight, flexBasis: 0 }}
+      onPointerDownCapture={inactive ? activateOnPress : undefined}
     >
       <header className="v3-split-head" data-split-own data-movable={movable ? '1' : undefined} onPointerDownCapture={movable ? startDrag : undefined}>
         {movable ? (
@@ -247,9 +289,25 @@ function useSplitProject(target: SplitSessionRef): string {
   })
 }
 
+const samePath = (a?: string, b?: string): boolean => !!a && !!b && a.replace(/[\\/]+/g, '/').toLowerCase() === b.replace(/[\\/]+/g, '/').toLowerCase()
+
+function useSameCwdBusy(target: SplitSessionRef, cwd: string | undefined): boolean {
+  return useStore((s) => {
+    if (!cwd) return false
+    const live = s.session
+    if (live && live.sessionId !== target.sessionId && (live.isAgentRunning || live.isStreaming) && samePath(live.cwd, cwd)) return true
+    return Object.entries(s.sessionRuntimes).some(
+      ([id, runtime]) => id !== target.sessionId && (!!runtime.session?.isAgentRunning || !!runtime.session?.isStreaming) && samePath(runtime.session?.cwd, cwd)
+    )
+  })
+}
+
 function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const t = useT()
+  const { lang } = useI18n()
+  const text = splitText(lang)
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
+  const summary = useSplitSummary(target)
   const cached = runtime?.messages
   const shown = useMemo(() => shownMessages(target), [target])
   const [history, setHistory] = useState<UIMessage[] | null>(null)
@@ -257,6 +315,8 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
+  const model = runtime?.session?.model?.name ?? ''
+  const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
   const streamingId = runtime?.session?.isStreaming && messages.length ? messages[messages.length - 1].id : undefined
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: target.sessionId ? [target.sessionId] : [] }), [target.sessionId])
@@ -287,7 +347,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
         if ((event.target as HTMLElement).closest('button, [data-split-own]')) return
         const selection = window.getSelection()
         if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return
-        focusSession(target)
+        focusSplitSession(target)
       }}
     >
       <div className="v3-conv">
@@ -302,7 +362,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
           <div className="v3-stream-inner">
             {turns.length === 0 ? (
               <div className="v3-empty">
-                <p className="v3-empty-hint">{running ? t('chat.working') : t('split.continue')}</p>
+                <p className="v3-empty-hint">{running ? t('chat.working') : ''}</p>
               </div>
             ) : (
               turns.map((turn) => (
@@ -317,26 +377,29 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
       <div className="v3-composer">
         <div className="composer" data-testid="v3-split-peer-composer">
           <div className="composer-input">
-            <textarea
-              className="composer-text"
-              rows={1}
-              readOnly
-              tabIndex={-1}
-              value={draft}
-              placeholder={t('composer.ph')}
-              aria-label={t('split.continue')}
-              data-testid="v3-split-peer-input"
-            />
+            <div className="composer-line">
+              <textarea
+                className="composer-text"
+                rows={1}
+                readOnly
+                value={draft}
+                placeholder={t('composer.ph')}
+                aria-label={text.activate(summary?.title || t('split.untitled'))}
+                onFocus={() => focusSplitSession(target)}
+                data-testid="v3-split-peer-input"
+              />
+            </div>
             <div className="composer-bar">
-              {waiting ? (
-                <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
-              ) : running ? (
-                <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
-              ) : null}
-              <span className="composer-spacer" />
-              <Button size="sm" variant="primary" onPress={() => focusSession(target)} data-testid="v3-split-peer-focus">
-                {t('split.continue')}
-              </Button>
+              <div className="composer-tools">
+                {waiting ? (
+                  <span className="v3-split-state" data-tone="ask">{t('split.waiting')}</span>
+                ) : running ? (
+                  <span className="v3-split-state" data-tone="run">{t('split.running')}</span>
+                ) : cwdBusy ? (
+                  <span className="v3-split-state" data-testid="v3-split-peer-cwd-busy">{text.sameCwdRunning}</span>
+                ) : null}
+              </div>
+              {model ? <span className="v3-split-model">{model}</span> : null}
             </div>
           </div>
         </div>
@@ -345,27 +408,32 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   )
 }
 
-function focusSession(target: SplitSessionRef): void {
-  const store = useStore.getState()
-  store.requestComposerFocus(target)
-  if (target.path) {
-    void store.switchSession(target.path)
-    return
-  }
-  if (!target.sessionId) return
-  const runner = store.runners.find((item) => item.sessionId === target.sessionId)
-  store.applyPush({
-    ch: 'tray-select-session',
-    payload: {
-      sessionId: target.sessionId,
-      projectId: runner?.projectId,
-      cwd: runner?.cwd ?? store.settings?.cwd ?? ''
-    }
-  })
+function RowResizer({ height, value }: { height: number; value: number }): JSX.Element {
+  const { lang } = useI18n()
+  const bounds = rowBoundsFor(height)
+  const fixed = !(height > 0) || bounds.min >= bounds.max
+  return (
+    <Splitter
+      className="v3-split-row-resizer"
+      orientation="horizontal"
+      value={Math.round(value * height)}
+      min={Math.round(bounds.min * height)}
+      max={Math.round(bounds.max * height)}
+      step={KEY_STEP}
+      largeStep={LARGE_KEY_STEP}
+      isDisabled={fixed}
+      aria-label={splitText(lang).resizeRows}
+      data-testid="v3-split-row-resizer"
+      onChange={(next) => {
+        if (height > 0) useSplitView.getState().setRowSplit(next / height)
+      }}
+      onReset={() => useSplitView.getState().setRowSplit(0.5)}
+    />
+  )
 }
 
 function SplitResizer({ left, right }: { left: SplitSessionRef; right: SplitSessionRef }): JSX.Element {
-  const t = useT()
+  const { lang } = useI18n()
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [pair, setPair] = useState<PairMetrics | null>(null)
   const leftKey = splitTileKey(left)
@@ -396,7 +464,8 @@ function SplitResizer({ left, right }: { left: SplitSessionRef; right: SplitSess
         min={bounds.min}
         max={bounds.max}
         step={KEY_STEP}
-        aria-label={t('tile.resizeWidth')}
+        largeStep={LARGE_KEY_STEP}
+        aria-label={splitText(lang).resizeColumns}
         data-testid="v3-split-resizer"
         onChange={resizeTo}
         onReset={() => useSplitView.getState().setWeights({ [leftKey]: 1, [rightKey]: 1 })}

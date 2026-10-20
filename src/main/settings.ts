@@ -200,7 +200,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.workspaceTiles = settings.workspaceTiles === false ? false : undefined
-  settings.smoothText = settings.smoothText === false ? false : undefined
+  settings.smoothText = settings.smoothText === true ? true : undefined
   settings.usageCurrency = normalizeUsageCurrency(settings.usageCurrency)
   settings.sendKey =
     settings.sendKey === 'enter' || settings.sendKey === 'ctrlEnter' ? settings.sendKey : 'auto'

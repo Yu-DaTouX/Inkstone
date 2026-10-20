@@ -145,7 +145,7 @@ export function AppearanceSettings(): ReactElement {
   const reduceMotion = settings?.reduceMotion === true
   const sendKey: SendKeyChoice = settings?.sendKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter'
   const tiles = settings?.workspaceTiles !== false
-  const smoothText = settings?.smoothText !== false
+  const smoothText = settings?.smoothText === true
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>

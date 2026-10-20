@@ -102,6 +102,12 @@
   .ui-btn[data-pressed] {
     background: var(--press);
   }
+  .ui-btn--plain {
+    color: var(--fg2);
+  }
+  .ui-btn--plain[data-pressed] {
+    background: transparent;
+  }
   .ui-btn--primary[data-pressed] {
     background: var(--ink-hover);
     border-color: var(--ink-hover);
@@ -161,6 +167,9 @@
     }
     .ui-btn--danger:hover:not([data-disabled]):not([data-pending]) {
       background: var(--fail-bg);
+    }
+    .ui-btn--plain:hover:not([data-disabled]):not([data-pending]) {
+      color: var(--fg);
     }
   }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary):is([aria-pressed='true'], [data-active='1']):not([data-disabled]) {
@@ -880,6 +889,20 @@
   .ui-progress:not([aria-valuenow]) .ui-progress__fill {
     width: 40%;
     animation: ui-progress-indeterminate 1.2s var(--ease) infinite;
+  }
+  .ui-meter-ring {
+    display: inline-flex;
+    flex: none;
+  }
+  .ui-meter-ring svg {
+    display: block;
+  }
+  .ui-meter-ring__track {
+    stroke: var(--line);
+  }
+  .ui-meter-ring__fill {
+    stroke: var(--ink);
+    transition: stroke-dashoffset var(--dur-base) var(--ease);
   }
   .ui-spinner {
     display: inline-block;
