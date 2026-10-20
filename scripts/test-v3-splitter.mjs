@@ -27,6 +27,11 @@ const {
   resolveSplitValue,
   splitPointerDelta,
   splitValueFromPointer,
+  splitRawValueFromPointer,
+  splitDragCollapses,
+  splitDragMoved,
+  splitDragFrame,
+  SPLIT_TAP_SLOP,
   beginSplitDrag,
   ownsSplitDrag,
   moveSplitDrag,
@@ -58,7 +63,11 @@ check('导出全部纯函数', () => {
     beginSplitDrag,
     ownsSplitDrag,
     moveSplitDrag,
-    splitValueForKey
+    splitValueForKey,
+    splitRawValueFromPointer,
+    splitDragCollapses,
+    splitDragMoved,
+    splitDragFrame
   ]) {
     assert.equal(typeof fn, 'function')
   }
@@ -258,8 +267,63 @@ check('splitValueForKey：方向键在端点夹取', () => {
 
 check('splitValueForKey：无关按键返回 null', () => {
   for (const k of ['Enter', 'Escape', 'Tab', 'a', 'PageUp']) {
-    assert.equal(splitValueForKey(key({ key: k, value: 50 })), null)
+    assert.equal(splitValueForKey({ key: k, value: 50 }), null)
   }
+})
+
+check('splitRawValueFromPointer：拖动原始宽不夹取', () => {
+  const base = { orientation: 'vertical', startValue: 200, startX: 100, startY: 0, clientY: 0, min: 200, max: 420 }
+  assert.equal(splitRawValueFromPointer({ ...base, clientX: 0 }), 100)
+  assert.equal(splitRawValueFromPointer({ ...base, clientX: 120 }), 220)
+  assert.equal(splitRawValueFromPointer({ ...base, clientX: 400 }), 500, '越过上限仍返回原始宽')
+  assert.equal(splitRawValueFromPointer({ ...base, clientX: -200 }), -100, '越过下限仍返回原始宽')
+})
+
+check('splitDragCollapses：原始宽小于阈值即收起', () => {
+  assert.equal(splitDragCollapses(99, 100), true)
+  assert.equal(splitDragCollapses(100, 100), false, '等于阈值不收起')
+  assert.equal(splitDragCollapses(180, 100), false)
+  assert.equal(splitDragCollapses(-20, 100), true)
+})
+
+check('splitDragCollapses：没有阈值时不收起', () => {
+  assert.equal(splitDragCollapses(0, undefined), false)
+  assert.equal(splitDragCollapses(0, Number.NaN), false)
+})
+
+check('splitDragMoved：3px 内算点击', () => {
+  assert.equal(SPLIT_TAP_SLOP, 3)
+  assert.equal(splitDragMoved(0), false)
+  assert.equal(splitDragMoved(3), false)
+  assert.equal(splitDragMoved(-3), false)
+  assert.equal(splitDragMoved(4), true)
+  assert.equal(splitDragMoved(-4), true)
+  assert.equal(splitDragMoved(4, 10), false, '可自定义容差')
+})
+
+check('splitDragFrame：低于阈值隐藏且不提交宽度', () => {
+  const bounds = { collapseBelow: 100, min: 200, max: 420 }
+  assert.deepEqual(splitDragFrame(99, bounds), { hidden: true, value: null })
+  assert.deepEqual(splitDragFrame(-40, bounds), { hidden: true, value: null })
+})
+
+check('splitDragFrame：回到阈值即实时展开并夹取', () => {
+  const bounds = { collapseBelow: 100, min: 200, max: 420 }
+  assert.deepEqual(splitDragFrame(100, bounds), { hidden: false, value: 200 }, '等于阈值展开并夹到下限')
+  assert.deepEqual(splitDragFrame(328, bounds), { hidden: false, value: 328 })
+  assert.deepEqual(splitDragFrame(900, bounds), { hidden: false, value: 420 }, '越过上限夹到上限')
+})
+
+check('splitDragFrame：没有阈值或阈值非法时不隐藏', () => {
+  const bounds = { min: 200, max: 420 }
+  assert.deepEqual(splitDragFrame(0, bounds), { hidden: false, value: 200 })
+  assert.deepEqual(splitDragFrame(50, { ...bounds, collapseBelow: Number.NaN }), { hidden: false, value: 200 })
+})
+
+check('Shift 大步长可用于侧栏 32', () => {
+  const wide = { min: 200, max: 420 }
+  assert.equal(splitValueForKey(key({ ...wide, key: 'ArrowLeft', value: 288, step: 8, largeStep: 32, shiftKey: true })), 256)
+  assert.equal(splitValueForKey(key({ ...wide, key: 'ArrowLeft', value: 288, step: 8 })), 280)
 })
 
 console.log(`\nv3 Splitter 纯逻辑：${report.pass} 通过 / ${report.fail} 失败`)

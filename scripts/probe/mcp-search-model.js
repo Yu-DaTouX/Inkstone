@@ -40,7 +40,7 @@
   log('=== 模型 → MCP 能力发现 → describe → call（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
-  const ta = q('[data-testid="composer-input"]') ?? q('textarea')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return fail('找不到输入框')
 
   const PROMPT =
@@ -52,9 +52,7 @@
     `2. 最后把结果原样写进回复里，格式：${MARK}\n` +
     '3. 不要修改仓库里的代码或配置文件，也不要安装任何东西。'
 
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  setter.call(ta, PROMPT)
-  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  window.__yanComposer.set(PROMPT, ta)
   await sleep(250)
 
   const send = q('[data-testid="composer-send"]')

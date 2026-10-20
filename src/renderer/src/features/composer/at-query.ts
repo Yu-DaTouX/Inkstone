@@ -6,7 +6,16 @@ export interface AtQueryRange {
   quote?: '"' | "'"
 }
 
-export function findAtQuery(value: string, cursor: number = value.length): AtQueryRange | null {
+export interface AtQueryOptions {
+  inCode?: boolean
+}
+
+export function findAtQuery(
+  value: string,
+  cursor: number = value.length,
+  options: AtQueryOptions = {}
+): AtQueryRange | null {
+  if (options.inCode) return null
   const end = Math.max(0, Math.min(cursor, value.length))
   const isBoundary = (char: string | undefined): boolean =>
     !char || /[\s([{<'"：:;,，]/.test(char)

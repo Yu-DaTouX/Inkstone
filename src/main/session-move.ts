@@ -11,6 +11,7 @@ export interface SessionMovePrompt {
 export interface SessionMoveAnswer {
   decision: 'approved' | 'denied' | 'no-answer' | 'same' | 'invalid'
   target?: string
+  feedback?: string
   message: string
 }
 

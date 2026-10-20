@@ -2,6 +2,8 @@ export const SIDEBAR_WIDTH_MIN = 200
 export const SIDEBAR_WIDTH_MAX = 420
 export const SIDEBAR_WIDTH_DEFAULT = 288
 export const SIDEBAR_WIDTH_STEP = 8
+export const SIDEBAR_WIDTH_STEP_LARGE = 32
+export const SIDEBAR_DRAG_COLLAPSE = SIDEBAR_WIDTH_MIN / 2
 export const SIDEBAR_WIDTH_KEY = 'inkstone.v3.sidebarWidth'
 
 const AUTO_COLLAPSE_FLOOR = 700

@@ -1,7 +1,10 @@
-export async function runTileTreeTests(ok, tree, zones) {
+export async function runTileTreeTests(ok, tree, zones, indicator) {
   const {
     TILE_GAP,
-    TILE_MIN_PX,
+    TILE_MIN_WIDTH_PX,
+    TILE_MIN_HEIGHT_PX,
+    TILE_DRAG_LIFT,
+    tileMinPx,
     tileLeaf,
     tileStack,
     nextStackId,
@@ -26,7 +29,11 @@ export async function runTileTreeTests(ok, tree, zones) {
 
   const { box, createDropSnapshot, hitTestDrop, EDGE_STRIP_PX, DEAD_RADIUS_PX } = zones
 
-  ok(TILE_GAP === 8 && TILE_MIN_PX === 120, '常量与面板默认间距、最小宽度一致')
+  ok(
+    TILE_GAP === 12 && TILE_MIN_WIDTH_PX === 280 && TILE_MIN_HEIGHT_PX === 100 && TILE_DRAG_LIFT === 24,
+    '间距 12、最小横 280 / 纵 100、抬起位移 24 与参考一致'
+  )
+  ok(tileMinPx('row') === 280 && tileMinPx('column') === 100, '最小尺寸按排布方向取宽或高')
 
   const lonelyStack = tileStack('row', [])
   ok(nodeKey(tileLeaf('x')) === 'x' && nodeKey(lonelyStack) === lonelyStack.id, 'nodeKey 取卡片 id 或栈 id')
@@ -106,7 +113,9 @@ export async function runTileTreeTests(ok, tree, zones) {
   ok(flexed.root.children.map((child) => child.flex).join() === '3,1,1', 'withStackFlexes 按子节点顺序改比例')
   ok(withStackFlexes(base, 'missing-stack', [9]).root.children.map((child) => child.flex).join() === '1,1,1', '栈不存在时比例不变')
 
-  ok(adjustFlexes([1, 1], 0, 100, 100, 120).join() === '1,1', 'adjustFlexes 触到最小值时不动')
+  ok(adjustFlexes([1, 1], 0, 100, 100, tileMinPx('row')).join() === '1,1', 'adjustFlexes 触到 280 最小值时不动')
+  ok(adjustFlexes([2, 2], 0, 100, 100, tileMinPx('column')).join() === '3,1', '纵排按 100 的最小高度夹紧')
+  ok(adjustFlexes([2, 2], 0, 100, 100, tileMinPx('row')).join() === '2,2', '横排按 280 的最小宽度夹紧')
   const stretched = adjustFlexes([2, 2], 0, 100, 100, 120)
   ok(Math.abs(stretched[0] - 2.8) < 1e-9 && Math.abs(stretched[1] - 1.2) < 1e-9, 'adjustFlexes 按像素换算并守住最小值')
   ok(adjustFlexes([2, 2], 1, 50, 100, 120).join() === '2,2', 'adjustFlexes 没有下一个邻居时不动')
@@ -164,6 +173,25 @@ export async function runTileTreeTests(ok, tree, zones) {
   ok(twoSnapshot !== null, '两卡竖排能建立快照')
   ok(twoSnapshot.startPointer.x === 200 && twoSnapshot.startPointer.y === 100, '起点坐标转成容器内坐标')
   ok(twoSnapshot.nodeRects.b.left === 0 && twoSnapshot.nodeRects.b.top === 304, '量到的矩形转成容器内坐标')
+  const liftedSnapshot = createDropSnapshot({
+    layout: twoCards,
+    containerRect: container,
+    measure: measureTwo,
+    sourceTileId: 'a',
+    offset: { x: 0, y: TILE_DRAG_LIFT },
+    gap: TILE_GAP
+  })
+  ok(liftedSnapshot.nodeRects.a.top === -TILE_DRAG_LIFT && liftedSnapshot.nodeRects.b.top === 304, '抬起偏移只修正被拖卡片的命中框')
+
+  const { tileDropIndicator, tileDropEdge } = indicator
+  const leftBar = tileDropIndicator(twoCards, { kind: 'split', stackId: twoRootId, direction: 'row', index: 0 }, twoSnapshot.nodeRects, TILE_GAP / 2)
+  ok(leftBar.edge === 'left' && leftBar.left === -6 && leftBar.width === 3 && leftBar.height === 600, '根行左侧贴边条落在间隙里', leftBar)
+  const bottomBar = tileDropIndicator(twoCards, { kind: 'insert', stackId: twoRootId, index: 2 }, twoSnapshot.nodeRects, TILE_GAP / 2)
+  ok(bottomBar.edge === 'bottom' && bottomBar.top === 603 && bottomBar.height === 3, '根栈尾部贴边条贴在下边缘', bottomBar)
+  const wrapBar = tileDropIndicator(twoCards, { kind: 'wrap', tileId: 'b', direction: 'row', index: 1 }, twoSnapshot.nodeRects, TILE_GAP / 2)
+  ok(wrapBar.edge === 'right' && wrapBar.left === 403 && wrapBar.height === 296, 'wrap 右侧贴边条贴在目标卡右缘', wrapBar)
+  ok(tileDropEdge(columnLayout(['a', 'b', 'c']), { kind: 'insert', stackId: columnLayout(['a', 'b', 'c']).root.id, index: 1 }) === null, '栈中间插入没有贴边条')
+  ok(tileDropIndicator(twoCards, null, twoSnapshot.nodeRects, 6) === null, '没有落点就没有贴边条')
   ok(twoSnapshot.zones.some((zone) => zone.kind === 'rearrange' && zone.stackId === twoRootId), '源栈保留实时重排区')
   ok(
     twoSnapshot.zones.some(

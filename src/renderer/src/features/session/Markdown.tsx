@@ -1,7 +1,7 @@
-import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from 'react'
-import ReactMarkdown, { type Options } from 'react-markdown'
+import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
+import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useT } from '../../i18n'
+import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink, type LinkTarget } from '../../../../shared/links'
 import { fileUrl as toFileUrl } from '../../../../shared/file-url'
@@ -14,6 +14,7 @@ import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { splitMarkdownBlocks } from './markdown-blocks'
+import { rehypeKbd } from './markdown-kbd'
 import { useSmoothReveal } from './smooth-reveal'
 import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type MathPlugins } from './markdown-math'
 import { fadeSpans, rehypeRevealFade, spansForBlock, trackReveal, type FadeSpan, type FadeTrack } from './reveal-fade'
@@ -24,8 +25,8 @@ import '../../patterns/highlighted-code.css'
 type PluginList = NonNullable<Options['rehypePlugins']>
 
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
-const MD_REHYPE: PluginList = [rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
-const MD_REHYPE_PLAIN: PluginList = []
+const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
+const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
 const NO_FADE: readonly FadeSpan[] = []
 
 const pluginCache = new Map<string, { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList }>()
@@ -110,10 +111,29 @@ function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.Mou
   }
 }
 
-function LinkAnchor({ href, children }: { href?: string; children?: ReactNode }): JSX.Element {
+type AnchorProps = ClassAttributes<HTMLAnchorElement> & AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps
+
+function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   const t = useT()
   const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
+  const ariaLabel = typeof rest['aria-label'] === 'string' ? rest['aria-label'] : undefined
+  if (typeof href === 'string' && href.startsWith('#')) {
+    const anchorId = typeof rest['id'] === 'string' ? rest['id'] : undefined
+    const describedBy = typeof rest['aria-describedby'] === 'string' ? rest['aria-describedby'] : undefined
+    return (
+      <a
+        href={href}
+        id={anchorId}
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+        className="v3-md-link v3-md-anchor"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </a>
+    )
+  }
   const sourceCwd = useContext(MessageSourceCwd)
   const target = classifyLink(href)
   const onContextMenu = useLinkMenu(target, sourceCwd)
@@ -297,6 +317,31 @@ const MD_COMPONENTS: Options['components'] = {
   )
 }
 
+function footnoteIndex(referenceIndex: number, rereferenceIndex: number): string {
+  return `${referenceIndex + 1}${rereferenceIndex > 1 ? `-${rereferenceIndex}` : ''}`
+}
+
+function useFootnoteOptions(): NonNullable<Options['remarkRehypeOptions']> {
+  const t = useT()
+  return useMemo(
+    () => ({
+      footnoteLabel: t('chat.footnoteTitle'),
+      footnoteBackLabel: (referenceIndex: number, rereferenceIndex: number) =>
+        t('chat.footnoteBack', { index: footnoteIndex(referenceIndex, rereferenceIndex) })
+    }),
+    [t]
+  )
+}
+
+function MarkdownBody({ remark, rehype, text }: { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList; text: string }): JSX.Element {
+  const remarkRehypeOptions = useFootnoteOptions()
+  return (
+    <ReactMarkdown remarkPlugins={remark} rehypePlugins={rehype} components={MD_COMPONENTS} remarkRehypeOptions={remarkRehypeOptions}>
+      {text}
+    </ReactMarkdown>
+  )
+}
+
 function hasUnclosedFence(text: string): boolean {
   let n = 0
   for (const line of text.split('\n')) {
@@ -308,17 +353,15 @@ function hasUnclosedFence(text: string): boolean {
 const FENCE_LINE = /^\s*(```|~~~)/m
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
-const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
+function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
   const plugins = pluginsFor(highlight, math)
   const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
   return (
     <MarkdownOffset.Provider value={offset}>
-      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={rehype} components={MD_COMPONENTS}>
-        {text}
-      </ReactMarkdown>
+      <MarkdownBody remark={plugins.remark} rehype={rehype} text={text} />
     </MarkdownOffset.Provider>
   )
-})
+}
 
 function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[] }): JSX.Element {
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
@@ -378,6 +421,8 @@ export const Markdown = memo(function Markdown({
   const revealedText = useSmoothReveal(text, live)
   const deferredText = useDeferredValue(revealedText)
   const renderedText = live ? deferredText : text
+  const { lang } = useI18n()
+  const footnoteOptions = useFootnoteOptions()
   const fade = useRevealFade(renderedText, live)
   const math = useMathFor(renderedText)
   const identity = useMarkdownIdentity(sessionId, messageId)
@@ -394,7 +439,7 @@ export const Markdown = memo(function Markdown({
   }, [settling])
 
   const mathPending = math.needed && !math.plugins
-  const cacheKey = math.plugins ? `math:${renderedText}` : renderedText
+  const cacheKey = `${lang}|${math.plugins ? `math:${renderedText}` : renderedText}`
   const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     return (
@@ -433,7 +478,7 @@ export const Markdown = memo(function Markdown({
   const plugins = pluginsFor(!unclosed, math.plugins)
   const element = (
     <div className="v3-prose">
-      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={plugins.rehype} components={MD_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={plugins.rehype} components={MD_COMPONENTS} remarkRehypeOptions={footnoteOptions}>
         {renderedText}
       </ReactMarkdown>
     </div>

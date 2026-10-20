@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type JSX, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
@@ -10,14 +10,21 @@ import { useSessionText } from './text'
 import { useApprovalSlotClaimed, useClaimApprovalSlot } from './approval-slot'
 import {
   allowsPointerPress,
+  APPROVAL_ARM_MS,
   classifyApprovalShortcut,
+  createApprovalArming,
   createApprovalGate,
   isActivationKey,
   isApprovalCommitKey,
+  isApprovalDetailRead,
+  isApprovingChoice,
   isEditableElement,
   ownsApproval,
+  requiresApprovalReadGate,
+  type ApprovalArming,
   type ApprovalGate
 } from './approval-keys'
+import './approval.css'
 
 function overlayOutside(card: HTMLElement | null): boolean {
   return isModalOpen() || [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="menu"], [role="listbox"]')]
@@ -39,18 +46,31 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const switchSession = useStore((s) => s.switchSession)
   const current = approvals[0]
   const cardRef = useRef<HTMLDivElement>(null)
+  const detailRef = useRef<HTMLPreElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const gateRef = useRef<ApprovalGate | null>(null)
   if (!gateRef.current) gateRef.current = createApprovalGate()
+  const armingRef = useRef<ApprovalArming | null>(null)
+  if (!armingRef.current) armingRef.current = createApprovalArming()
+  const [armed, setArmed] = useState(false)
+  const [readId, setReadId] = useState<string | null>(null)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedback, setFeedback] = useState('')
   useClaimApprovalSlot(inline ? current?.id : null)
   const claimed = useApprovalSlotClaimed(current?.id)
   const active = !!current && (inline || !claimed)
+  const gated = !!current && active && requiresApprovalReadGate(current)
+  const readThrough = !!current && readId === current.id
+  const allowBlocked = gated && !readThrough
 
   const answer = useCallback(
-    (choice: ApprovalChoice): void => {
+    (choice: ApprovalChoice, reason?: string): void => {
       const request = current
       const id = request?.id
       if (!id) return
       if (!ownsApproval(useStore.getState().approvals, id)) return
+      if (isApprovingChoice(choice) && !armingRef.current?.isArmed(id)) return
+      if (isApprovingChoice(choice) && requiresApprovalReadGate(request) && readId !== id) return
       const gate = gateRef.current
       if (!gate || !gate.begin(id)) return
       const identity = request.owner || request.revision !== undefined
@@ -58,14 +78,14 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
         : undefined
       let result: Promise<unknown>
       try {
-        result = Promise.resolve(answerApproval(id, choice, identity))
+        result = Promise.resolve(answerApproval(id, choice, identity, reason))
       } catch {
         gate.release(id)
         return
       }
       void result.catch(() => undefined).finally(() => gate.release(id))
     },
-    [current, answerApproval]
+    [current, answerApproval, readId]
   )
 
   useEffect(() => {
@@ -73,6 +93,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     const onKey = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return
       const card = cardRef.current
+      if (feedbackRef.current && event.target instanceof Node && feedbackRef.current.contains(event.target)) return
       if (event.key === 'Escape') {
         if (!card?.contains(document.activeElement)) return
         event.preventDefault()
@@ -101,9 +122,39 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     const native = event.nativeEvent
     if (event.ctrlKey || event.metaKey) return
+    if (isEditableElement(event.target as Element)) return
     if (!isActivationKey({ key: event.key, isComposing: native.isComposing, keyCode: native.keyCode })) return
     event.preventDefault()
     event.stopPropagation()
+  }
+
+  const armId = current?.id
+  useEffect(() => {
+    armingRef.current?.arm(armId)
+    setArmed(false)
+    setFeedbackOpen(false)
+    setFeedback('')
+    if (!armId) return undefined
+    const timer = setTimeout(() => setArmed(true), APPROVAL_ARM_MS + 16)
+    return () => clearTimeout(timer)
+  }, [armId])
+
+  const detailKey = current?.detail ?? ''
+  useEffect(() => {
+    if (!armId) return undefined
+    if (!gated) {
+      setReadId(armId)
+      return undefined
+    }
+    const frame = requestAnimationFrame(() => {
+      const node = detailRef.current
+      if (!node || isApprovalDetailRead(node)) setReadId(armId)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [gated, armId, detailKey])
+
+  const onDetailScroll = (event: React.UIEvent<HTMLPreElement>): void => {
+    if (armId && isApprovalDetailRead(event.currentTarget)) setReadId(armId)
   }
 
   if (!current || !active) return null
@@ -131,6 +182,9 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
     if (!allowsPointerPress(event.pointerType)) return
     action()
   }
+  const denyWithFeedback = (): void => {
+    answer('deny', feedback.trim() || undefined)
+  }
 
   return (
     <div
@@ -140,6 +194,8 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       data-testid="v3-approval"
       data-kind={current.kind}
       data-inline={inline ? '1' : undefined}
+      data-armed={armed ? '1' : '0'}
+      data-read={allowBlocked ? '0' : '1'}
       ref={cardRef}
       onKeyDownCapture={onKeyDownCapture}
     >
@@ -173,20 +229,92 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
 
       {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: current.cwd })}</div> : null}
 
-      {current.detail ? <pre className="v3-approval-detail" data-testid="v3-approval-detail" title={current.detail}>{current.detail}</pre> : null}
+      {current.detail ? (
+        <pre
+          ref={detailRef}
+          className="v3-approval-detail"
+          data-testid="v3-approval-detail"
+          title={current.detail}
+          tabIndex={allowBlocked ? 0 : undefined}
+          onScroll={onDetailScroll}
+        >
+          {current.detail}
+        </pre>
+      ) : null}
+
+      {allowBlocked ? (
+        <p className="v3-approval-read-hint" role="status" data-testid="v3-approval-read-hint">
+          {t('approval.readHint')}
+        </p>
+      ) : null}
 
       {current.rememberDirs?.length ? <div className="v3-approval-dirs" title={current.rememberDirs.join('\n')}>{current.rememberDirs.join('  ·  ')}</div> : null}
 
+      {feedbackOpen ? (
+        <div className="v3-approval-feedback" data-testid="v3-approval-feedback">
+          <textarea
+            ref={feedbackRef}
+            autoFocus
+            className="v3-approval-feedback-input"
+            value={feedback}
+            rows={3}
+            spellCheck={false}
+            aria-label={t('approval.feedbackLabel')}
+            placeholder={t('approval.feedbackPh')}
+            data-testid="v3-approval-feedback-input"
+            onChange={(event) => setFeedback(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                setFeedbackOpen(false)
+                return
+              }
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault()
+                event.stopPropagation()
+                denyWithFeedback()
+              }
+            }}
+          />
+          <div className="v3-approval-feedback-actions">
+            <Button data-testid="v3-approval-feedback-deny" onPress={clickOnly(denyWithFeedback)}>{t('approval.feedbackDeny')}</Button>
+            <Button
+              variant="ghost"
+              data-testid="v3-approval-feedback-cancel"
+              onPress={() => {
+                setFeedback('')
+                setFeedbackOpen(false)
+              }}
+            >
+              {t('approval.feedbackCancel')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="v3-approval-foot">
-        <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(() => answer('deny'))}>{t('approval.deny')}</Button>
+        <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(denyWithFeedback)}>{t('approval.deny')}</Button>
+        {feedbackOpen ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="v3-approval-feedback-open"
+            title={t('approval.feedbackTip')}
+            onPress={() => setFeedbackOpen(true)}
+          >
+            {t('approval.feedback')}
+          </Button>
+        )}
         <span className="v3-approval-sp" />
         {current.canRemember && rememberLabel ? (
-          <Button data-testid="v3-approval-remember" onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
+          <Button data-testid="v3-approval-remember" isDisabled={allowBlocked} onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
         ) : null}
         {current.kind !== 'move' ? (
-          <Button data-testid="v3-approval-session" onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>
+          <Button data-testid="v3-approval-session" isDisabled={allowBlocked} onPress={clickOnly(() => answer('session'))}>{t('approval.session')}</Button>
         ) : null}
-        <Button variant="primary" data-testid="v3-approval-once" aria-keyshortcuts="Control+Enter Alt+Y" onPress={clickOnly(() => answer('once'))}>
+        <Button variant="primary" data-testid="v3-approval-once" aria-keyshortcuts="Control+Enter Alt+Y" isDisabled={allowBlocked} onPress={clickOnly(() => answer('once'))}>
           {t('approval.once')}
           <Kbd className="v3-approval-kbd">Ctrl ↵</Kbd>
         </Button>

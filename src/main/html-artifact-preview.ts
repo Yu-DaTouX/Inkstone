@@ -31,7 +31,8 @@ export function registerHtmlArtifactProtocol(): void {
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const source = details.frame?.url ?? ''
     if (details.resourceType === 'subFrame') {
-      const controlled = htmlArtifactPreviews.read(details.url) !== null || parseMcpAppUrl(details.url) !== null
+      const controlled =
+        htmlArtifactPreviews.read(details.url) !== null || parseMcpAppUrl(details.url) !== null
       callback({ cancel: !controlled })
     } else if (isPreviewUrl(source) || isPreviewUrl(details.referrer)) {
       callback({ cancel: !/^(data:|blob:)/.test(details.url) })
@@ -51,6 +52,7 @@ export function guardHtmlArtifactFrames(contents: WebContents): void {
     if (event.isMainFrame) return
     const parentInitiated = event.initiator === contents.mainFrame
     const directChild = event.frame?.parent === contents.mainFrame
-    if (!parentInitiated || !directChild || htmlArtifactPreviews.read(event.url) === null) event.preventDefault()
+    const controlled = htmlArtifactPreviews.read(event.url) !== null
+    if (!parentInitiated || !directChild || !controlled) event.preventDefault()
   })
 }

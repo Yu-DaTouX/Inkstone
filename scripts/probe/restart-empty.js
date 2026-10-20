@@ -34,8 +34,7 @@
     )
 
     const ta = q('[data-testid="composer-input"]')
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '!echo AFTER_RESTART_OK')
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
+    window.__yanComposer.set('!echo AFTER_RESTART_OK', ta)
     await sleep(300)
     q('[data-testid="composer-send"]').click()
     ok(await until(() => q('.v3-msg.bash'), 15000), '重启后跑命令：对话里出现了命令行消息')

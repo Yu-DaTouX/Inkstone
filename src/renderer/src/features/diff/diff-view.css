@@ -8,8 +8,17 @@
     height: 100%;
     background: var(--bg);
     font-family: var(--font-mono);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    font-size: var(--t-code);
+    line-height: var(--t-code-lh);
+  }
+
+  .diff-view--embedded {
+    height: auto;
+    min-height: 0;
+  }
+
+  .diff-view--embedded > .diff-view__body {
+    overflow: visible;
   }
 
   .diff-view__bar {
@@ -69,14 +78,17 @@
   }
 
   .diff-view__file {
+    position: sticky;
+    top: 0;
+    z-index: 4;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: var(--s-8);
-    padding: var(--s-4) var(--s-10);
+    height: 32px;
+    padding: 0 var(--s-10);
     background: var(--surface);
     border-bottom: 1px solid var(--line);
-    border-top: 1px solid var(--line);
   }
 
   .diff-view__file-path {
@@ -102,33 +114,54 @@
     color: var(--del);
   }
 
-  .diff-view__hunk {
+  .diff-view__separator {
     display: flex;
-    align-items: baseline;
-    gap: var(--s-8);
-    padding: var(--s-2) var(--s-10);
-    background: var(--sunken);
-    color: var(--fg2);
-    border-top: 1px solid var(--line);
+    align-items: center;
+    height: 32px;
+    margin-block: var(--s-8);
+    padding-inline: var(--s-8);
+    user-select: none;
   }
 
-  .diff-view__hunk-text {
-    white-space: pre;
+  .diff-view__separator[data-first] {
+    margin-top: 0;
+  }
+
+  .diff-view__separator[data-last] {
+    margin-bottom: 0;
+  }
+
+  .diff-view__separator-text {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding-inline: 1ch;
     overflow: hidden;
+    white-space: nowrap;
     text-overflow: ellipsis;
-  }
-
-  .diff-view__hunk-section {
     color: var(--fg3);
-    white-space: pre;
+  }
+
+  .diff-view__separator--expand {
+    justify-content: center;
+  }
+
+  .diff-view__separator-button {
+    max-width: 100%;
+  }
+
+  .diff-view__separator-button .ui-btn__label {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .diff-view__line {
-    display: flex;
-    align-items: baseline;
-    white-space: pre;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    min-height: var(--t-code-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .diff-view__line--add {
@@ -139,18 +172,35 @@
     background: var(--del-bg);
   }
 
-  .diff-view__gutter {
-    flex: 0 0 auto;
-    min-width: 3.5ch;
-    padding: 0 var(--s-6);
+  .diff-view__num {
+    box-sizing: content-box;
+    min-width: 3ch;
+    padding-left: calc(2ch + 5px);
+    padding-right: 1ch;
     text-align: right;
     color: var(--fg3);
     font-variant-numeric: tabular-nums;
     user-select: none;
   }
 
+  .diff-view__line--add .diff-view__num,
+  .diff-view__line--del .diff-view__num {
+    color: inherit;
+    opacity: 0.7;
+  }
+
+  .diff-view__code {
+    position: relative;
+    min-width: 0;
+    padding-inline: 2ch 1ch;
+    tab-size: 4;
+  }
+
   .diff-view__sign {
-    flex: 0 0 1.4ch;
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0;
+    width: 1ch;
     color: var(--fg3);
     user-select: none;
   }
@@ -165,11 +215,24 @@
 
   .diff-view__text {
     flex: 1 1 auto;
+    min-width: 0;
     padding-right: var(--s-12);
+    tab-size: 4;
+  }
+
+  .diff-view__gutter {
+    flex: 0 0 auto;
+    box-sizing: content-box;
+    min-width: 3ch;
+    padding-inline: var(--s-6) 1ch;
+    text-align: right;
+    color: var(--fg3);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
   }
 
   .diff-view__noeol {
-    padding: 0 var(--s-6);
+    display: block;
     color: var(--fg3);
     font-style: italic;
   }
@@ -186,6 +249,7 @@
     min-width: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    tab-size: 4;
   }
 
   .diff-view__cell + .diff-view__cell {
@@ -214,14 +278,5 @@
 
   .diff-view__cell--add .diff-view__word {
     background: color-mix(in srgb, var(--add) 26%, transparent);
-  }
-
-  .diff-view__gap-row {
-    display: flex;
-    justify-content: center;
-    padding: var(--s-2) 0;
-    background: var(--sunken);
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
   }
 }

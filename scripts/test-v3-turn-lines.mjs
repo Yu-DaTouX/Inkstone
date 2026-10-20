@@ -598,7 +598,7 @@ async function main() {
     lib.useUiV3.setState({ workspaceOpen: true, workspaceTab: 'subagent:s1', workspacePanes: ['files', 'subagent:s1', 'context'], workspaceLayout: layout })
     bundle.switchSubagentPane('s1', 's2')
     const ui = lib.useUiV3.getState()
-    ok(ui.workspacePanes.join() === 'files,subagent:s2,context' && ui.workspaceTab === 'subagent:s2' && lib.orderedTileIds(ui.workspaceLayout).join() === 'files,subagent:s2,context', '窗格切换在原位换成另一个子 Agent，不新增磁贴', { panes: ui.workspacePanes, tab: ui.workspaceTab })
+    ok(ui.workspacePanes.join() === 'files,subagent:s2,context' && ui.workspaceTab === 'subagent:s2' && lib.orderedTileIds(ui.workspaceLayout).filter((id) => id !== 'chat').join() === 'files,subagent:s2,context', '窗格切换在原位换成另一个子 Agent，不新增磁贴', { panes: ui.workspacePanes, tab: ui.workspaceTab })
     lib.useUiV3.setState({ workspacePanes: ['subagent:s2', 'subagent:s3'], workspaceTab: 'subagent:s2', workspaceLayout: lib.columnLayout(['subagent:s2', 'subagent:s3']) })
     bundle.switchSubagentPane('s2', 's3')
     ok(lib.useUiV3.getState().workspacePanes.join() === 'subagent:s2,subagent:s3' && lib.useUiV3.getState().workspaceTab === 'subagent:s3', '目标已打开时只切换焦点')
@@ -625,7 +625,13 @@ async function main() {
     ok(textOf(byTestId(active, 'v3-error-title')[0]) === 'errorTitleQuotaRate', '额度限流有类别标题', textOf(byTestId(active, 'v3-error-title')[0]))
     ok(byTestId(active, 'v3-error-retry').length === 1, '能定位提示时给重试')
     ok(byTestId(active, 'v3-error-model').length === 1, '限流也给换模型')
-    ok((byTestId(active, 'v3-error-body')[0].props.children || '').includes('原因：'), '正文含脱敏原因')
+    const fold = byTestId(active, 'v3-error-toggle')[0]
+    ok(!!fold && fold.props['aria-expanded'] === false, '原始错误默认折叠在「查看详情」里')
+    ok(byTestId(active, 'v3-error-body').length === 0, '折叠时不渲染正文')
+    fold.props.onPress()
+    const opened = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('429 rate limit exceeded') })
+    ok(flattenText(byTestId(opened, 'v3-error-body')[0]).includes('原因：'), '展开后正文含脱敏原因')
+    ok(byTestId(opened, 'v3-error-copy').length === 1, '展开后可复制详情')
 
     const auth = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('401 unauthorized') })
     ok(byTestId(auth, 'v3-error-retry').length === 0 && byTestId(auth, 'v3-error-model').length === 1, '认证失败不给重试，只给换模型')

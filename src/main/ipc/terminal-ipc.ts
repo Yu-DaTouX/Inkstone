@@ -1,6 +1,7 @@
 import type { TerminalStartRequest } from '../../shared/ipc'
 import {
   attachTerminal,
+  clearTerminal,
   killTerminal,
   listTerminals,
   resizeTerminal,
@@ -30,4 +31,5 @@ export function registerTerminalIpc(ipc: IpcRegistrar, fallbackCwd: () => string
   )
   rawHandle('yan:terminal:kill', (_e, id: string) => killTerminal(String(id ?? '')))
   rawHandle('yan:terminal:attach', (_e, id: string) => attachTerminal(String(id ?? '')))
+  rawHandle('yan:terminal:clear', (_e, id: string) => clearTerminal(String(id ?? '')))
 }

@@ -17,17 +17,14 @@
   log('=== 模型 → yan browser（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
-  const ta = q('[data-testid="composer-input"]') ?? q('textarea')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return fail('找不到输入框')
 
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  setter.call(
-    ta,
+  window.__yanComposer.set(
     '我需要你确认砚的内置浏览器现在能不能用。请自己找到砚提供的能力入口，' +
       '打开一个空白页（about:blank），然后确认它真的打开了，并告诉我当前页面 URL 与页面上的可交互元素数量。' +
       '不要安装任何东西，也不要改代码或读仓库文件。'
   )
-  ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(250)
 
   const send = q('[data-testid="composer-send"]')

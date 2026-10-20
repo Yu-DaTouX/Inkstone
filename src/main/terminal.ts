@@ -317,6 +317,14 @@ export function attachTerminal(id: string): TerminalSnapshot | null {
   return snapshotOf(entry)
 }
 
+export function clearTerminal(id: string): boolean {
+  const entry = sessions.get(id)
+  if (!entry) return false
+  batcher.drop(id)
+  entry.buffer = ''
+  return true
+}
+
 export function disposeTerminals(): void {
   for (const id of [...sessions.keys()]) killTerminal(id)
 }

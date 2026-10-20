@@ -144,14 +144,14 @@ for (const mode of ['danger', 'all']) {
 await writePrefs('danger')
 
 const baseCall = { server: 'srv', tool: 't', visibility: ['app'], cwd: 'C:/proj' }
-const allowAsk = () => Promise.resolve('once')
-const denyAsk = () => Promise.resolve('deny')
+const allowAsk = () => Promise.resolve({ choice: 'once' })
+const denyAsk = () => Promise.resolve({ choice: 'deny' })
 
 {
   const tracker = { calls: 0 }
   const result = await shared.approveAppViewCall(
     { ...baseCall, annotations: { readOnlyHint: true } },
-    () => { tracker.calls += 1; return Promise.resolve('once') }
+    () => { tracker.calls += 1; return Promise.resolve({ choice: 'once' }) }
   )
   ok(result.allowed && result.asked && tracker.calls === 1 && result.recorded, '无宿主授权时只读调用先询问（不静默放行）')
 
@@ -159,7 +159,7 @@ const denyAsk = () => Promise.resolve('deny')
   const now = Date.now()
   const trusted = await shared.approveAppViewCall(
     { ...baseCall, annotations: { readOnlyHint: true } },
-    () => { trustedTracker.calls += 1; return Promise.resolve('once') },
+    () => { trustedTracker.calls += 1; return Promise.resolve({ choice: 'once' }) },
     {
       serverFingerprint: 'f'.repeat(64),
       now,
@@ -175,12 +175,12 @@ const denyAsk = () => Promise.resolve('deny')
 }
 
 {
-  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve('once'))
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve({ choice: 'once' }))
   ok(result.allowed && result.asked && result.recorded, '用户允许一次时视图调用放行')
 }
 
 {
-  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve('remember'))
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve({ choice: 'remember' }))
   ok(result.allowed, '允许并记住也视为放行')
 }
 
@@ -196,7 +196,7 @@ const denyAsk = () => Promise.resolve('deny')
 
 {
   let asked = false
-  const result = await shared.approveAppViewCall({ ...baseCall, visibility: ['model'], annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve('once') })
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: ['model'], annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve({ choice: 'once' }) })
   ok(!result.allowed && !asked && /未向 App 视图开放/.test(result.reason ?? ''), 'visibility 不含 app 直接拒绝、不弹卡')
 }
 {
@@ -218,7 +218,7 @@ const denyAsk = () => Promise.resolve('deny')
 
 {
   let asked = false
-  const result = await shared.approveAppViewCall({ ...baseCall, permissionMode: 'all', annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve('deny') })
+  const result = await shared.approveAppViewCall({ ...baseCall, permissionMode: 'all', annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve({ choice: 'deny' }) })
   ok(result.allowed && !asked && result.recorded && result.reasons.length > 0, 'all 档不拦截但仍记录风险')
 }
 

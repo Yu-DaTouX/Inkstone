@@ -167,7 +167,7 @@ export interface HistoryMessage {
   timestamp?: number
   error?: string
   images?: Array<{ mimeType: string }>
-  toolCalls?: Array<{ id: string; name: string; status?: string }>
+  toolCalls?: Array<{ id: string; name: string; status?: string; denied?: boolean }>
   artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; unavailable?: boolean }>
 }
 

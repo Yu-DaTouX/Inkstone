@@ -1,18 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp, Square } from 'lucide-react'
 import { Button } from '../../ui'
 import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
-import { useStore } from '../../state/store'
+import { useStore, pendingSendsForView } from '../../state/store'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
 import { readFiles } from './attachment-files'
+import { loadDraft, saveDraft } from './draft-store'
 import { ModelThinkingPicker } from '../../patterns/ModelThinkingPicker'
 import { ContextRing } from '../../patterns/ContextRing'
 import { AttachmentStrip, ImageRefWarning } from './AttachmentStrip'
 import { imageRefPrefix, renumberImageRefsAfterRemoval, withImageLegend } from './image-refs'
 import { ComposerBorder } from './ComposerBorder'
-import { CompletionMenu } from './CompletionMenu'
+import { ComposerEditor, type ComposerEditorChange, type ComposerEditorHandle } from './ComposerEditor'
+import {
+  STRAY_ENTER_MS,
+  isComposingKey,
+  planComposerKey,
+  swallowStrayEnter,
+  type ComposerKeyEvent,
+  type ComposerPasteEvent
+} from './composer-keys'
+import { appendBlock, hasComposerText, prependBlock, type ComposerAtomSpec, type TextSelection } from './composer-text'
+import { ComposerMenu } from './ComposerMenu'
 import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
 import { ProjectPicker } from './ProjectPicker'
@@ -22,26 +33,38 @@ import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
   composerMode,
+  composerPlaceholderKey,
   composerPrompt,
   composerSendKeyHint,
   composerSubmitAction
 } from './composer-layout'
+import {
+  INITIAL_PROMPT_HISTORY,
+  humanPrompts,
+  promptHistoryStep,
+  queueRecallTarget,
+  type PromptHistoryNav
+} from './prompt-history'
 import './composer.css'
 
 let consumedComposerFocus = 0
-
-const MIN_H = 20
 
 export function Composer({ className }: { className?: string } = {}) {
   const t = useT()
   const { lang } = useI18n()
   const [value, setValue] = useState('')
   const [dragging, setDragging] = useState(false)
-  const ref = useRef<HTMLTextAreaElement>(null)
-  const cursorRef = useRef<number | null>(null)
+  const editorRef = useRef<ComposerEditorHandle>(null)
   const [cursor, setCursor] = useState<number | null>(null)
+  const [composing, setComposing] = useState(false)
   const lastEsc = useRef(0)
   const submittingRef = useRef(false)
+  const historyRef = useRef(INITIAL_PROMPT_HISTORY)
+  const [historyNav, setHistoryNav] = useState<PromptHistoryNav | null>(null)
+  const strayEnterUntil = useRef(-Infinity)
+  const armStrayEnter = useCallback((): void => {
+    strayEnterUntil.current = Date.now() + STRAY_ENTER_MS
+  }, [])
 
   const send = useStore((s) => s.send)
   const abort = useStore((s) => s.abort)
@@ -66,7 +89,9 @@ export function Composer({ className }: { className?: string } = {}) {
     return sid || (s.activeRunnerId ? `run:${s.activeRunnerId}` : '')
   })
   const freshSession = useStore((s) => s.messages.length === 0 && !s.peekedSessionId)
+  const firstRun = useStore((s) => s.sessions.every((item) => (item.messageCount ?? 0) === 0))
   const conversationKey = useStore((s) => s.peekedSessionId ?? s.session?.conversationId) ?? runtimeKey
+  const historyKey = runtimeKey || conversationKey
   const cachedDraft = useStore((s) => (runtimeKey ? s.sessionRuntimes[runtimeKey]?.draft ?? '' : ''))
   const setSessionDraft = useStore((s) => s.setSessionDraft)
 
@@ -78,6 +103,7 @@ export function Composer({ className }: { className?: string } = {}) {
   const consumeQueueRestore = useStore((s) => s.consumeQueueRestore)
 
   const attachmentCount = useStore((s) => s.attachments.length)
+  const attachments = useStore((s) => s.attachments)
   const clearAttachments = useStore((s) => s.clearAttachments)
   const addAttachments = useStore((s) => s.addAttachments)
   const addFileRefs = useStore((s) => s.addFileRefs)
@@ -85,44 +111,75 @@ export function Composer({ className }: { className?: string } = {}) {
   const composerFocus = useStore((s) => s.composerFocus)
 
   useEffect(() => {
+    armStrayEnter()
+  }, [armStrayEnter])
+
+  useEffect(() => {
+    historyRef.current = { ...INITIAL_PROMPT_HISTORY, resetKey: historyKey }
+    setHistoryNav(null)
+  }, [historyKey])
+
+  useEffect(() => {
     if (editorInject === null) return
     const { text, mode } = editorInject
-    setValue((v) => (mode === 'append' && v ? `${v}\n${text}` : text))
+    setValue((v) => (mode === 'append' ? appendBlock(v, text) : text))
     consumeEditorInject()
-    ref.current?.focus()
-  }, [editorInject, consumeEditorInject])
+    editorRef.current?.focus()
+    armStrayEnter()
+  }, [editorInject, consumeEditorInject, armStrayEnter])
 
   useEffect(() => {
     if (composerInsert === null) return
-    setValue((v) => (v ? `${v}\n${composerInsert}` : composerInsert))
+    setValue((v) => appendBlock(v, composerInsert))
     clearComposerInsert()
-    ref.current?.focus()
-  }, [composerInsert, clearComposerInsert])
+    editorRef.current?.focus()
+    armStrayEnter()
+  }, [composerInsert, clearComposerInsert, armStrayEnter])
 
   useEffect(() => {
     if (queueRestore === null) return
-    setValue((v) => (v ? `${queueRestore}\n${v}` : queueRestore))
+    setValue((v) => prependBlock(v, queueRestore))
     consumeQueueRestore()
-    ref.current?.focus()
-  }, [queueRestore, consumeQueueRestore])
+    editorRef.current?.focus()
+    armStrayEnter()
+  }, [queueRestore, consumeQueueRestore, armStrayEnter])
 
   useEffect(() => {
     if (composerFocus.tick === consumedComposerFocus) return
     if (composerFocus.sessionId && composerFocus.sessionId !== sessionId) return
     consumedComposerFocus = composerFocus.tick
-    requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }))
-  }, [composerFocus, sessionId])
+    armStrayEnter()
+    requestAnimationFrame(() => editorRef.current?.focus({ preventScroll: true }))
+  }, [composerFocus, sessionId, armStrayEnter])
 
   const hydratedKey = useRef<string | null>(null)
   const skipPersist = useRef(false)
   useEffect(() => {
     hydratedKey.current = conversationKey || null
     skipPersist.current = true
-    setValue(runtimeKey ? cachedDraft : '')
-    cursorRef.current = runtimeKey ? cachedDraft.length : null
-    setCursor(cursorRef.current)
+    const persisted = runtimeKey ? loadDraft(runtimeKey) : undefined
+    const restored = runtimeKey ? cachedDraft || persisted?.text || '' : ''
+    setValue(restored)
+    setCursor(runtimeKey ? restored.length : null)
+    if (persisted?.attachments.length && useStore.getState().attachments.length === 0) {
+      useStore.setState({ attachments: persisted.attachments })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationKey])
+  useEffect(() => {
+    if (!runtimeKey || hydratedKey.current !== conversationKey) return undefined
+    const timer = setTimeout(() => saveDraft(runtimeKey, { text: value, attachments }), 250)
+    return () => clearTimeout(timer)
+  }, [runtimeKey, conversationKey, value, attachments])
+  const latestDraft = useRef({ key: '', text: '', attachments })
+  latestDraft.current = { key: runtimeKey ?? '', text: value, attachments }
+  useEffect(
+    () => () => {
+      const { key, text, attachments: saved } = latestDraft.current
+      if (key) saveDraft(key, { text, attachments: saved })
+    },
+    []
+  )
   useEffect(() => {
     if (skipPersist.current) {
       skipPersist.current = false
@@ -132,37 +189,51 @@ export function Composer({ className }: { className?: string } = {}) {
     setSessionDraft(value, runtimeKey)
   }, [runtimeKey, conversationKey, setSessionDraft, value])
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.max(el.scrollHeight, MIN_H)}px`
-  }, [value])
-
   const insertAtCursor = useCallback((text: string): void => {
-    const el = ref.current
-    setValue((current) => {
-      const pos = el && document.activeElement === el ? el.selectionStart : cursorRef.current ?? current.length
-      cursorRef.current = pos + text.length
-      setCursor(pos + text.length)
-      requestAnimationFrame(() => {
-        el?.focus()
-        el?.setSelectionRange(pos + text.length, pos + text.length)
-      })
-      return `${current.slice(0, pos)}${text}${current.slice(pos)}`
-    })
+    editorRef.current?.insertText(text)
   }, [])
 
   const placeCursor = useCallback((pos: number): void => {
-    cursorRef.current = pos
     setCursor(pos)
     requestAnimationFrame(() => {
-      ref.current?.focus()
-      ref.current?.setSelectionRange(pos, pos)
+      editorRef.current?.focus()
+      editorRef.current?.setSelection(pos)
     })
   }, [])
 
-  const completion = useCompletion({ value, cursor, setValue, placeCursor })
+  const chipContext = useMemo(
+    () => ({
+      commands: commands.map((command) => command.name),
+      mentions: attachments.filter((item) => item.kind === 'file' && item.path).map((item) => item.path as string),
+      imagePrefix: imageRefPrefix(lang),
+      imageCount: attachments.filter((item) => item.kind !== 'file').length
+    }),
+    [attachments, commands, lang]
+  )
+
+  const insertAtom = useCallback(
+    (range: TextSelection, spec: ComposerAtomSpec, trailing?: string) =>
+      editorRef.current?.insertAtom(range, spec, trailing) ?? false,
+    []
+  )
+
+  const caretInCode = useCallback(() => editorRef.current?.caretInCode() ?? false, [])
+  const isComposing = useCallback(() => editorRef.current?.isComposing() ?? false, [])
+  const menuAnchor = useCallback(() => editorRef.current?.caretRect() ?? null, [])
+  const completion = useCompletion({
+    value,
+    cursor,
+    setValue,
+    placeCursor,
+    insertAtom,
+    caretInCode,
+    isComposing,
+    composing
+  })
+
+  useEffect(() => {
+    editorRef.current?.refreshStructure()
+  }, [chipContext])
 
   const clearAll = useCallback((): void => {
     setValue('')
@@ -216,7 +287,7 @@ export function Composer({ className }: { className?: string } = {}) {
       readAttachments: () => useStore.getState().attachments,
       send,
       holdSend: useStore.getState().holdSend,
-      focusComposer: () => ref.current?.focus()
+      focusComposer: () => editorRef.current?.focus()
     })
   }, [value, commands, models, t, session, thinkingLevels, roundRunning, compacting, runBash, notify, clearAll, restoreAttachments, send])
 
@@ -261,7 +332,7 @@ export function Composer({ className }: { className?: string } = {}) {
   )
 
   const onPaste = useCallback(
-    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    (e: ComposerPasteEvent) => {
       const files = [...e.clipboardData.items]
         .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
         .map((it) => it.getAsFile())
@@ -306,57 +377,107 @@ export function Composer({ className }: { className?: string } = {}) {
     [addAttachments, addFileRefs, addFileRefPaths, notify, t]
   )
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.defaultPrevented) return
-    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
-
-    if (completion.handleKey(e)) return
-
-    if (e.key === 'Enter') {
-      const mod = e.ctrlKey || e.metaKey
-      if (e.shiftKey) {
-        return
-      }
-      if (roundRunning) {
+  const recallHistory = (e: ComposerKeyEvent): boolean => {
+    const arrow = e.key === 'ArrowUp' || e.key === 'ArrowDown'
+    if (!arrow && historyRef.current.index === null) return false
+    if (arrow && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey)) return false
+    if (isComposingKey(e)) return false
+    const empty = editorRef.current?.isEmpty() ?? value === ''
+    if (arrow && e.key === 'ArrowUp' && empty && !completion.open && historyRef.current.index === null) {
+      const state = useStore.getState()
+      const target = queueRecallTarget({ followUp: state.queue.followUp, pending: pendingSendsForView(state) })
+      if (target) {
+        if (target.kind === 'pending') state.restoreSend(target.id)
+        else void state.removeQueued(target.id)
         e.preventDefault()
-        void submitMessage(compacting || e.altKey ? 'followUp' : 'steer')
-        return
+        return true
       }
-      const wantsSend = mod ? true : sendKey === 'enter' ? true : sendKey === 'ctrlEnter' ? false : true
-      if (wantsSend) {
-        e.preventDefault()
-        void submitMessage('steer')
-      }
+    }
+    const selection = editorRef.current?.getSelection()
+    const step = promptHistoryStep(historyRef.current, {
+      resetKey: historyKey,
+      key: e.key,
+      composing: false,
+      empty,
+      caretAtStart: !selection || selection.start === 0,
+      caretAtEnd: !selection || selection.end === value.length,
+      text: value,
+      prompts: humanPrompts(useStore.getState().messages)
+    })
+    const previousNav = historyRef.current.nav
+    historyRef.current = step.state
+    if (step.state.nav !== previousNav) setHistoryNav(step.state.nav)
+    if (step.action === 'swallow') {
+      e.preventDefault()
+      return true
+    }
+    if (!arrow) return false
+    if (step.action === 'recall' || step.action === 'restore') {
+      e.preventDefault()
+      const text = step.text ?? ''
+      if (text === value) placeCursor(text.length)
+      else setValue(text)
+      return true
+    }
+    return false
+  }
+
+  const onKeyDown = (e: ComposerKeyEvent): void => {
+    if (e.defaultPrevented || isComposingKey(e)) return
+    if (
+      swallowStrayEnter({
+        event: e,
+        until: strayEnterUntil.current,
+        now: Date.now(),
+        plainEnterSends: sendKey !== 'ctrlEnter'
+      })
+    ) {
+      e.preventDefault()
       return
     }
-
-    if (e.key === 'Escape' && roundRunning) {
-      if (value.trim() || attachmentCount > 0) return
-      e.preventDefault()
-      const now = Date.now()
-      if (now - lastEsc.current < 500) {
-        lastEsc.current = 0
-        void abort()
-      } else {
-        lastEsc.current = now
-      }
-    }
+    const completionHandled = completion.handleKey(e)
+    if (!completionHandled && recallHistory(e)) return
+    const plan = planComposerKey({
+      event: e,
+      completionHandled,
+      running: roundRunning,
+      compacting,
+      sendKey,
+      hasText: hasComposerText(value),
+      hasAttachments: attachmentCount > 0,
+      lastEsc: lastEsc.current,
+      now: Date.now()
+    })
+    if (plan.preventDefault) e.preventDefault()
+    lastEsc.current = plan.lastEsc
+    if (plan.action === 'steer') void submitMessage('steer')
+    else if (plan.action === 'followUp') void submitMessage('followUp')
+    else if (plan.action === 'abort') void abort()
   }
 
-  const rememberCursor = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
-    cursorRef.current = e.currentTarget.selectionStart
-    setCursor(e.currentTarget.selectionStart)
-  }
+  const handleEditorChange = useCallback((change: ComposerEditorChange): void => {
+    setValue(change.text)
+    setCursor(change.cursor)
+  }, [])
 
-  const canSend = value.trim().length > 0 || attachmentCount > 0
-  const placeholder = roundRunning
-    ? `Enter ${t('queue.steerNow')} · Alt+Enter ${t('queue.queueIt')}`
-    : t('composer.ph')
+  const rememberCursor = useCallback((position: number): void => {
+    setCursor(position)
+  }, [])
+
+  const canSend = hasComposerText(value) || attachmentCount > 0
   const mode = composerMode(value)
+  const placeholder = roundRunning
+    ? `Enter ${t('queue.steerNow')} · Ctrl+Q / Alt+Enter ${t('queue.queueIt')}`
+    : t(composerPlaceholderKey({ bash: mode === 'bash', session: !!sessionId && !freshSession, firstRun }))
   const prompt = composerPrompt(value)
+  const historyStatus = historyNav
+    ? `${t('composer.historyStatus', { n: historyNav.index, total: historyNav.total })}${
+        historyNav.hasDraft ? ` · ${t('composer.historyDraftHint')}` : ''
+      }`
+    : ''
   const submitAction = composerSubmitAction({
     running: roundRunning,
-    hasText: value.trim().length > 0,
+    hasText: hasComposerText(value),
     hasAttachments: attachmentCount > 0
   })
   const sendKeyHint = composerSendKeyHint(sendKey, false)
@@ -383,33 +504,26 @@ export function Composer({ className }: { className?: string } = {}) {
         <AttachmentStrip onRemoveImage={(n) => setValue((draft) => renumberImageRefsAfterRemoval(draft, n))} />
         <ImageRefWarning text={value} />
         <div className="composer-input">
-          <CompletionMenu completion={completion} />
+          <ComposerMenu completion={completion} anchor={menuAnchor} />
           <div className="composer-line">
             <span className="composer-prompt" aria-hidden>
               {prompt}
             </span>
-            <textarea
-              ref={ref}
-              className="composer-text"
+            <ComposerEditor
+              ref={editorRef}
               value={value}
+              cursor={cursor}
               placeholder={placeholder}
-              rows={1}
+              ariaLabel={t('composer.inputLabel')}
+              expanded={completion.open}
+              chipContext={chipContext}
+              activeOptionId={completion.open ? (completion.slashMatches.length > 0 ? `composer-slash-option-${completion.index}` : completion.atImages.length + completion.atMatches.length > 0 ? `composer-at-option-${completion.index}` : undefined) : undefined}
               data-testid="composer-input"
-              aria-label={t('composer.inputLabel')}
-              spellCheck={false}
-              role="combobox"
-              aria-expanded={completion.open}
-              aria-autocomplete="list"
-              aria-activedescendant={completion.open ? (completion.slashMatches.length > 0 ? `composer-slash-option-${completion.index}` : completion.atImages.length + completion.atMatches.length > 0 ? `composer-at-option-${completion.index}` : undefined) : undefined}
-              onChange={(e) => {
-                setValue(e.target.value)
-                cursorRef.current = e.target.selectionStart
-                setCursor(e.target.selectionStart)
-              }}
+              onChange={handleEditorChange}
+              onCursorChange={rememberCursor}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
-              onSelect={rememberCursor}
-              onClick={rememberCursor}
+              onCompositionChange={setComposing}
             />
           </div>
           <div className="composer-bar">
@@ -456,6 +570,9 @@ export function Composer({ className }: { className?: string } = {}) {
             )}
           </div>
         </div>
+        <span className="sr-only" role="status" aria-live="polite" data-testid="composer-history-status">
+          {historyStatus}
+        </span>
       </div>
     </div>
   )

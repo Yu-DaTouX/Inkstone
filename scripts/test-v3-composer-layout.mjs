@@ -36,7 +36,8 @@ function installGlobals() {
     addEventListener: () => {},
     removeEventListener: () => {},
     visibilityState: 'visible',
-    activeElement: null
+    activeElement: null,
+    documentElement: { style: {}, clientWidth: 0, clientHeight: 0 }
   }
   globalThis.window = {
     yan: new Proxy({}, { get: () => async () => undefined }),
@@ -62,8 +63,9 @@ export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value :
 export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null) } }
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
 export function forwardRef(fn) { return fn }
+export function useImperativeHandle(ref, factory) { const handle = factory(); if (ref) { if (typeof ref === 'function') ref(handle); else ref.current = handle } return handle }
 export function memo(fn) { return fn }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo }
+export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, useImperativeHandle, memo }
 `
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
 export { Fragment }
@@ -74,14 +76,16 @@ export const jsxDEV = jsx
 
 const STORE_STUB = `const state = {
   runners: [], activeRunnerId: null, session: null, settings: { sendKey: 'auto' },
-  attachments: [], messages: [], stats: null, models: [], commands: [], thinkingLevels: [],
+  attachments: [], messages: [], sessions: [], stats: null, models: [], commands: [], thinkingLevels: [],
   peekedSessionId: null, peekNote: null, sessionRuntimes: {}, authProviders: [],
   queue: { steering: [], followUp: [] }, pendingSends: [], notices: [], pendingSourceLinks: [],
   editorInject: null, composerInsert: null, queueRestore: null, composerFocus: { tick: 0 },
   send: async () => true, abort: async () => {}, runBash: async () => {}, notify: () => {}, holdSend: async () => {},
   clearAttachments: () => {}, addAttachments: () => {}, addFileRefs: async () => {}, addFileRefPaths: async () => {},
-  setSessionDraft: () => {}, consumeEditorInject: () => {}, clearComposerInsert: () => {}, consumeQueueRestore: () => {}
+  setSessionDraft: () => {}, consumeEditorInject: () => {}, clearComposerInsert: () => {}, consumeQueueRestore: () => {},
+  restoreSend: () => {}, removeQueued: async () => {}
 }
+export function pendingSendsForView(){ return [] }
 export function useStore(sel){ return sel ? sel(state) : state }
 useStore.getState = () => state
 useStore.setState = (patch) => { Object.assign(state, typeof patch === 'function' ? patch(state) : patch) }
@@ -99,7 +103,7 @@ const STUBS = {
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
   'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
-  'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
+  'src/renderer/src/features/composer/ComposerMenu.tsx': 'export function ComposerMenu(){ return null }',
   'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
   'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
   'src/renderer/src/features/composer/PermissionToggle.tsx': 'export function PermissionToggle(){ return null }',
@@ -318,7 +322,21 @@ async function main() {
     const line = byClass(card, 'composer-line')
     const lineChildren = children(line)
     ok(nameOf(lineChildren[0]) === 'span' && lineChildren[0].props['aria-hidden'] === true, '提示符在最左且 aria-hidden')
-    ok(nameOf(lineChildren[1]) === 'textarea' && lineChildren[1].props['data-testid'] === 'composer-input', '提示符之后是文本框，testid 保留')
+    ok(typeof lineChildren[1].type === 'function' && lineChildren[1].props['data-testid'] === 'composer-input', '提示符之后是编辑器门面，testid 保留')
+    ok(typeof lineChildren[1].props.onChange === 'function' && typeof lineChildren[1].props.onKeyDown === 'function', '门面仍以 onChange / onKeyDown 回调上层')
+
+    const editorText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerEditor.tsx'), 'utf8')
+    ok(!/<textarea/.test(editorText), '编辑器门面不再渲染 textarea')
+    ok(
+      /role="textbox"/.test(editorText) && /contentEditable/.test(editorText),
+      '宿主是可编辑节点（role=textbox + contenteditable）'
+    )
+    ok(/data-testid=\{props\['data-testid'\]\}/.test(editorText), '宿主透传 data-testid=composer-input')
+    ok(
+      /new EditorView\(/.test(editorText) && /from 'prosemirror-view'/.test(editorText),
+      '门面内部挂 ProseMirror EditorView'
+    )
+    ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
     ok(controlNames(tools).join('>') === 'PermissionToggle>ProjectPicker>PlusMenu', '左侧控件：权限在最左、新会话项目选择次之、＋随后；无模式/提示时不显示')
@@ -332,7 +350,7 @@ async function main() {
     ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
 
     const ta = byTestId(card, 'composer-input')
-    ta.props.onChange({ target: { value: '你好', selectionStart: 2 } })
+    ta.props.onChange({ text: '你好', cursor: 2 })
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '空闲 + 有字 → 发送')
 
@@ -341,19 +359,19 @@ async function main() {
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-stop') !== null, '运行中 + 空 + 无附件 → 停止')
     const ta2 = byTestId(tree, 'composer-input')
-    ta2.props.onChange({ target: { value: '插一句', selectionStart: 3 } })
+    ta2.props.onChange({ text: '插一句', cursor: 3 })
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有字 → 发送（插话）')
 
     const ta3 = byTestId(tree, 'composer-input')
-    ta3.props.onChange({ target: { value: '', selectionStart: 0 } })
+    ta3.props.onChange({ text: '', cursor: 0 })
     __state.attachments = [{ id: 'a1', name: 'x.png', mimeType: 'image/png', size: 1, data: '', preview: '', kind: 'image' }]
     tree = rt.render(Composer, {})
     ok(byTestId(tree, 'composer-send') !== null && byTestId(tree, 'composer-stop') === null, '运行中 + 有附件 → 发送')
     __state.attachments = []
 
     const ta4 = byTestId(tree, 'composer-input')
-    ta4.props.onChange({ target: { value: '!npm test', selectionStart: 9 } })
+    ta4.props.onChange({ text: '!npm test', cursor: 9 })
     tree = rt.render(Composer, {})
     const tools2 = byClass(tree, 'composer-tools')
     ok(controlNames(tools2)[0] === '#composer-mode', '输入 `!` 时模式徽标排在最左')
@@ -370,6 +388,13 @@ async function main() {
     ok(/\n\s*\.cborder\[data-state='working'\]\s*\{\s*opacity:\s*1/.test(composerCssText), '只有运行中才亮起顶边')
     ok(/\n\s*\.cborder\s*\{[^}]*border-radius:\s*inherit/.test(composerCssText), '顶边继承卡片圆角，不在圆角外露直角')
     ok(/\.cborder\[data-level='max'\]\s*\{\s*border-top-color:/.test(composerCssText), '顶边只染上边且颜色取档位')
+    ok(/\n\s*\.composer-text\s*\{[^}]*white-space:\s*pre-wrap/.test(composerCssText), '编辑器宿主保留连续空白与手动换行（pre-wrap）')
+    ok(/\n\s*\.composer-text\s*\{[^}]*max-height:/.test(composerCssText), '编辑器宿主自增高到上限后内部滚动')
+    ok(
+      /\.composer-text\[data-placeholder-visible='true'\]\[data-placeholder\]::before/.test(composerCssText),
+      '占位符由 data-placeholder 伪元素绘制（contenteditable 没有 ::placeholder）'
+    )
+    ok(!/\.composer-text::placeholder/.test(composerCssText), '不再残留 textarea 的 ::placeholder 规则')
     for (const rel of [
       'src/renderer/src/features/composer/Composer.tsx',
       'src/renderer/src/features/composer/composer.css',
@@ -382,6 +407,51 @@ async function main() {
       const v2Entry = /\bfrom\s+['"][^'"]*components\/ui['"]/.test(text)
       ok(!/styles\//.test(text) && !v2Entry, `${rel} 不 import v2 样式/旧控件入口（只允许复用 pulse-field 纯模块）`)
     }
+
+    const menuText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerMenu.tsx'), 'utf8')
+    ok(
+      menuText.includes(`querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })`),
+      '补全菜单把高亮项按 nearest 滚进视野'
+    )
+    ok(/querySelector<HTMLElement>\('\[data-selected="true"\]'\)[\s\S]{0,120}?\}, \[open, index\]\)/.test(menuText), '滚动只跟随高亮索引变化触发')
+    ok(
+      /pointerIndex\.current = next === index \? null : next\s*completion\.setIndex\(next\)/.test(menuText) &&
+        /if \(pointerIndex\.current === index\) \{\s*pointerIndex\.current = null\s*return\s*\}/.test(menuText),
+      '鼠标悬停改的高亮不回滚列表'
+    )
+    ok((menuText.match(/onMouseEnter=\{\(\) => hoverIndex\(/g) ?? []).length === 3, '三处选项的悬停都走同一入口')
+    ok(
+      /data-testid="composer-menu-status"/.test(menuText) && /aria-live="polite"/.test(menuText),
+      '补全浮层 portal 里带 aria-live 播报行'
+    )
+
+    ok(layout.composerPlaceholderKey({ bash: true, session: true, firstRun: true }) === 'composer.phBash', '占位符：bash 模式优先')
+    ok(layout.composerPlaceholderKey({ bash: false, session: true, firstRun: false }) === 'composer.phSession', '占位符：已有会话')
+    ok(layout.composerPlaceholderKey({ bash: false, session: false, firstRun: true }) === 'composer.phFirst', '占位符：首次使用')
+    ok(layout.composerPlaceholderKey({ bash: false, session: false, firstRun: false }) === 'composer.phDraft', '占位符：普通草稿')
+
+    const placeholderOf = () => byTestId(rt.render(Composer, {}), 'composer-input').props.placeholder
+    const typeInto = (text) => byTestId(rt.render(Composer, {}), 'composer-input').props.onChange({ text, cursor: text.length })
+    typeInto('')
+    __state.runners = []
+    __state.activeRunnerId = null
+    __state.sessions = [{ id: 's0', messageCount: 0 }]
+    __state.session = null
+    __state.messages = []
+    ok(placeholderOf() === 'composer.phFirst', '首次使用（没有任何会话消息）→ 「描述要构建…」')
+    __state.sessions = [{ id: 's0', messageCount: 3 }]
+    ok(placeholderOf() === 'composer.phDraft', '首页草稿（已有历史会话但当前没有会话）→ 「描述任务或提问」')
+    __state.session = { sessionId: 's1' }
+    __state.messages = [{ id: 'm1', role: 'user', text: '你好' }]
+    ok(placeholderOf() === 'composer.phSession', '会话内且无输入 → 「输入 / 使用命令」')
+    typeInto('!ls')
+    ok(placeholderOf() === 'composer.phBash', 'bash 模式 → 「输入 shell 命令」')
+    typeInto('')
+    __state.runners = [{ runId: 'r1', running: true }]
+    __state.activeRunnerId = 'r1'
+    ok(String(placeholderOf()).includes('Enter') && String(placeholderOf()).includes('queue.queueIt'), '回合运行中 → 保留发送/排队两条车道提示')
+    __state.runners = []
+    __state.activeRunnerId = null
 
     console.log(`\n结果：${checks} 项通过`)
   } finally {

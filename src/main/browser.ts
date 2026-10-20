@@ -45,6 +45,7 @@ import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { resolvesToPrivateAddress } from './browser/network-policy'
 import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
+import type { PreviewSiteGate } from './preview-site-gate'
 import { decideRequestBoundary } from './browser/network-boundary'
 
 type Push = (msg: MainPush) => void
@@ -199,7 +200,8 @@ export class BrowserController {
 
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
-    private readonly push: Push
+    private readonly push: Push,
+    private readonly siteGate: () => PreviewSiteGate | null = () => null
   ) {}
 
   getState(): BrowserState {
@@ -338,12 +340,16 @@ export class BrowserController {
       this.updateState()
     })
     view.webContents.setWindowOpenHandler(({ url }) => {
-      if (safeUrl(url)) void this.openBackgroundTab(url, tab.committedUrl || tab.openerUrl).catch((error) => this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`))
+      const target = safeUrl(url)
+      if (target) {
+        void this.openGatedTab(tab, target, tab.committedUrl || tab.openerUrl).catch((error) =>
+          this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`)
+        )
+      }
       return { action: 'deny' }
     })
-    view.webContents.on('will-navigate', (event, url) => {
-      if (!safeUrl(url)) event.preventDefault()
-    })
+    view.webContents.on('will-navigate', (event, url) => this.guardNavigation(tab, event, url))
+    view.webContents.on('will-redirect', (event, url) => this.guardNavigation(tab, event, url))
     view.webContents.debugger.on('message', (_event, method) => {
       if (method === 'Page.frameNavigated' || method === 'DOM.documentUpdated') {
         tab.registry.clear()
@@ -471,6 +477,47 @@ export class BrowserController {
     return this.getState()
   }
 
+  private guardNavigation(tab: BrowserTab, event: { preventDefault(): void }, rawUrl: string): void {
+    const url = safeUrl(rawUrl)
+    if (!url) {
+      event.preventDefault()
+      return
+    }
+    const gate = this.siteGate()
+    if (!gate) return
+    const verdict = gate.peek(tab.id, url)
+    if (verdict === 'allow') return
+    event.preventDefault()
+    if (verdict !== 'ask') return
+    void this.navigateAfterApproval(tab, url)
+  }
+
+  private async navigateAfterApproval(tab: BrowserTab, url: string): Promise<void> {
+    const gate = this.siteGate()
+    if (!gate) return
+    const decision = await gate.check(tab.id, url).catch(() => 'deny' as const)
+    if (decision !== 'allow') return
+    if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
+    tab.state.url = url
+    tab.state.title = ''
+    tab.state.loading = true
+    tab.pendingMainFrameUrl = url
+    this.updateState()
+    await tab.view.webContents.loadURL(url).catch(() => undefined)
+    if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
+    this.syncTabNavigation(tab)
+    this.updateState()
+  }
+
+  private async openGatedTab(tab: BrowserTab, url: string, openerUrl: string): Promise<void> {
+    const gate = this.siteGate()
+    if (gate && gate.peek(tab.id, url) !== 'allow') {
+      const decision = await gate.check(tab.id, url).catch(() => 'deny' as const)
+      if (decision !== 'allow') return
+    }
+    await this.openBackgroundTab(url, openerUrl)
+  }
+
   private async openBackgroundTab(rawUrl: string, openerUrl: string): Promise<void> {
     const url = safeUrl(rawUrl)
     if (!url) return
@@ -578,6 +625,7 @@ export class BrowserController {
     }
     this.detachViewFromAllWindows(tab.view)
     tab.observer.dispose()
+    this.siteGate()?.forgetSession(tab.id)
     await tab.cdp.detach().catch(() => undefined)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
     const priorIndex = [...this.tabs.keys()].indexOf(id)

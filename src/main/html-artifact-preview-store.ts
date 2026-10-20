@@ -10,15 +10,15 @@ export class HtmlArtifactPreviewStore {
 
   constructor(private readonly root: string, private readonly limit = 16) {}
 
-  async prepare(path: string): Promise<HtmlArtifactPreviewResult> {
+  async prepare(path: string, root = this.root): Promise<HtmlArtifactPreviewResult> {
     if (typeof path !== 'string' || !isAbsolute(path)) return { ok: false, error: 'outside' }
     if (!['.html', '.htm'].includes(extname(path).toLowerCase())) return { ok: false, error: 'type' }
     if (this.snapshots.size + this.pending >= this.limit) return { ok: false, error: 'busy' }
     const epoch = this.epoch
     this.pending++
     try {
-      const [root, target] = await Promise.all([realpath(this.root), realpath(path)])
-      const rel = relative(resolve(root), resolve(target))
+      const [rootReal, target] = await Promise.all([realpath(root), realpath(path)])
+      const rel = relative(resolve(rootReal), resolve(target))
       if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return { ok: false, error: 'outside' }
       const handle = await open(target, 'r')
       let html: string

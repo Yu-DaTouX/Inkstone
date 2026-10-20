@@ -19,17 +19,14 @@
   log('=== 模型 → 能力发现 → 技能正文（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
-  const ta = q('[data-testid="composer-input"]') ?? q('textarea')
+  const ta = q('[data-testid="composer-input"]')
   if (!ta) return fail('找不到输入框')
 
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  setter.call(
-    ta,
+  window.__yanComposer.set(
     '请帮我验证砚的「能力发现」现在是否可用：先看看你这会儿有哪些能力可用，' +
       '如果其中有一个和能力探测 / 回执有关的技能，就按它正文里写的步骤把它要求的事做掉。' +
       '不要修改仓库里的代码或配置文件，也不要安装任何东西。'
   )
-  ta.dispatchEvent(new Event('input', { bubbles: true }))
   await sleep(250)
 
   const send = q('[data-testid="composer-send"]')

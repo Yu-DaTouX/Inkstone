@@ -51,10 +51,20 @@ for (const script of [
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-split-drop-model', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-session-visual-logic',
+  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-user-text', 'test-session-find', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-stall-monitor', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-working-line-model',
-  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-preview-site-access', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view'
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
+  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf',
+  'test-session-reattach',
+  'test-composer-draft-store',
+  'test-composer-text',
+  'test-composer-edit',
+  'test-composer-menu-layout',
+  'test-tile-fit',
+  'test-tile-layouts',
+  'test-composer-keys',
+  'test-prompt-history',
+  'test-v3-approval-card'
 ]) {
   const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
   if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
@@ -889,10 +899,11 @@ const { runFilesWatchTests } = await import('./test-files-watch.mjs')
 const { runOpenGuardTests } = await import('./test-open-guard.mjs')
 const { runRailSectionsTests } = await import('./test-rail-sections.mjs')
 const { runTileTreeTests } = await import('./test-tile-tree.mjs')
+await import('./test-chat-tree.mjs')
 
-const [tileTree, tileDropZones] = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+const [tileTree, tileDropZones, tileDropIndicator] = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   Promise.all(
-    ['tile-tree', 'tile-drop-zones'].map((name) =>
+    ['tile-tree', 'tile-drop-zones', 'tile-drop-indicator'].map((name) =>
       build({
         entryPoints: [`src/renderer/src/features/workbench/${name}.ts`],
         outfile: `out/test/${name}.mjs`,
@@ -1639,7 +1650,7 @@ await runFileListingTests(ok, fileListing)
 await runFilesWatchTests(ok, filesWatch)
 await runOpenGuardTests(ok, openGuard)
 await runRailSectionsTests(ok, railSections)
-await runTileTreeTests(ok, tileTree, tileDropZones)
+await runTileTreeTests(ok, tileTree, tileDropZones, tileDropIndicator)
 await runFileContentSearchTests(ok, fileContentSearch)
 await runFileEditorTests(ok, fileEditor)
 

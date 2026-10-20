@@ -14,7 +14,10 @@ export interface TerminalBridge {
   resize(id: string, cols: number, rows: number): Promise<boolean>
   kill(id: string): Promise<boolean>
   attach(id: string): Promise<TerminalSnapshot | null>
+  clear(id: string): Promise<boolean>
 }
+
+export type TerminalAdopt = 'latest' | { id: string } | 'none'
 
 export type TerminalOwner = WorkspaceOwner
 
@@ -91,6 +94,7 @@ export interface TerminalSessionDeps {
   claim: (resourceId: string, ownerKey: string) => void
   release: (resourceId: string) => void
   text?: TerminalRuntimeText
+  adopt?: TerminalAdopt
 }
 
 const INITIAL_STATE: TerminalViewState = {
@@ -245,6 +249,15 @@ export class TerminalSession {
     await this.ensure()
   }
 
+  async clear(): Promise<void> {
+    const id = this.terminalId
+    if (!id) return
+    try {
+      await this.deps.bridge.clear(id)
+    } catch {
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
@@ -287,6 +300,12 @@ export class TerminalSession {
       return
     }
 
+    const adopt = this.deps.adopt ?? 'latest'
+    if (adopt === 'none') {
+      await this.createTerminal(my)
+      return
+    }
+
     let list: TerminalSnapshot[]
     try {
       list = await this.deps.bridge.list()
@@ -298,7 +317,8 @@ export class TerminalSession {
       this.started = false
       return
     }
-    const chosen = pickOwnedTerminal(selectOwnedTerminals(list, owner.key, this.deps.ownerOf))
+    const owned = selectOwnedTerminals(list, owner.key, this.deps.ownerOf)
+    const chosen = typeof adopt === 'object' ? owned.find((item) => item.id === adopt.id) ?? null : pickOwnedTerminal(owned)
     if (chosen) {
       await this.connect(chosen.id, my)
       return

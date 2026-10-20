@@ -337,6 +337,8 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
     })
     const payload = await response.json()
     if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
+    const feedback = typeof payload?.summary?.feedback === 'string' ? payload.summary.feedback.trim() : ''
+    if (feedback) return { allowed: false, why: `用户拒绝了这次操作，并给出理由：${feedback}。请按这个理由调整做法后再试` }
     return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? '没有得到用户确认' : '用户拒绝了这次操作' }
   } catch (err) {
     return { allowed: false, why: `没能取得用户确认（${String(err?.message ?? err).slice(0, 80)}）` }

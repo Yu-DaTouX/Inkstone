@@ -68,7 +68,7 @@ export function freshTreeState(
   ownerKey: string,
   cwd: string,
   generation: number,
-  showHidden: boolean
+  showHidden = false
 ): FilesTreeState {
   return {
     ownerKey,
@@ -365,11 +365,6 @@ export function handleTreeKey(input: FilesKeyInput): FilesKeyEffect {
     if (!row || row.blocked) return { type: 'none' }
     if (altKey && !ctrlKey && !metaKey && !row.dir && canAdd) return { type: 'add', path: currentPath }
     return row.dir ? { type: 'toggle', path: currentPath } : { type: 'preview', path: currentPath }
-  }
-
-  if (key.toLowerCase() === 'a' && !altKey && !ctrlKey && !metaKey) {
-    if (row && !row.dir && !row.blocked && canAdd) return { type: 'add', path: currentPath }
-    return { type: 'none' }
   }
 
   return { type: 'none' }

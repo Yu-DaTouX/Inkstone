@@ -42,17 +42,29 @@
   }
 
   kbd {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    height: calc(1em + 6px);
+    min-width: calc(1em + 6px);
+    padding: 0 3px;
+    border: 1px solid light-dark(color-mix(in srgb, currentColor 18%, transparent), color-mix(in srgb, currentColor 22%, transparent));
+    border-radius: var(--r-xs);
+    background: transparent;
+    color: var(--kbd-ink);
     font-family: var(--font-ui);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: 1;
     font-variant-numeric: tabular-nums;
+    text-align: center;
   }
 
   svg.lucide {
     stroke-width: 1.5;
   }
 
+  .sr-only,
   .v3-visually-hidden {
     position: absolute;
     width: 1px;

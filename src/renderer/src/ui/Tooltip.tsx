@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, type ReactNode } from 'react'
 import {
   Tooltip as RACTooltip,
   TooltipTrigger as RACTooltipTrigger,
@@ -27,3 +27,21 @@ export const Tooltip = forwardRef<HTMLDivElement, RACTooltipProps>(function Tool
     />
   )
 })
+
+export interface TooltipHintProps {
+  label: ReactNode
+  shortcut?: ReactNode
+  detail?: ReactNode
+}
+
+export function TooltipHint({ label, shortcut, detail }: TooltipHintProps) {
+  return (
+    <span className={cx('ui-tooltip__stack', shortcut == null && detail == null && 'ui-tooltip__line')}>
+      <span className="ui-tooltip__line">
+        <span className="ui-tooltip__label">{label}</span>
+        {shortcut != null ? <span className="ui-tooltip__shortcut">{shortcut}</span> : null}
+      </span>
+      {detail != null ? <span className="ui-tooltip__detail">{detail}</span> : null}
+    </span>
+  )
+}

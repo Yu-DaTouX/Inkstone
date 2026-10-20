@@ -85,6 +85,36 @@ export type SessionTextKey =
   | 'runNeedsApproval'
   | 'runRepeat'
   | 'runChangedFiles'
+  | 'stepRead'
+  | 'stepReadRunning'
+  | 'stepReadFailed'
+  | 'stepRan'
+  | 'stepRunning'
+  | 'stepRunFailed'
+  | 'stepEdited'
+  | 'stepEditing'
+  | 'stepEditFailed'
+  | 'stepCreated'
+  | 'stepCreating'
+  | 'stepWriteFailed'
+  | 'stepSearched'
+  | 'stepSearching'
+  | 'stepSearchFailed'
+  | 'stepListed'
+  | 'stepListing'
+  | 'stepListFailed'
+  | 'stepWebSearched'
+  | 'stepWebSearching'
+  | 'stepWebSearchFailed'
+  | 'stepReadDenied'
+  | 'stepRunDenied'
+  | 'stepEditDenied'
+  | 'stepWriteDenied'
+  | 'stepSearchDenied'
+  | 'stepListDenied'
+  | 'stepWebSearchDenied'
+  | 'errViewDetails'
+  | 'errCopyDetails'
   | 'workStopping'
   | 'workWaiting'
   | 'workRetry'
@@ -211,6 +241,36 @@ const ZH: Record<SessionTextKey, string> = {
   runNeedsApproval: '需要审批',
   runRepeat: '×{n}',
   runChangedFiles: '改动 {n} 个文件',
+  stepRead: '读取',
+  stepReadRunning: '正在读取',
+  stepReadFailed: '读取失败',
+  stepRan: '运行',
+  stepRunning: '正在运行',
+  stepRunFailed: '运行失败',
+  stepEdited: '编辑',
+  stepEditing: '正在编辑',
+  stepEditFailed: '编辑失败',
+  stepCreated: '写入',
+  stepCreating: '正在写入',
+  stepWriteFailed: '写入失败',
+  stepSearched: '搜索',
+  stepSearching: '正在搜索',
+  stepSearchFailed: '搜索失败',
+  stepListed: '列出',
+  stepListing: '正在列出',
+  stepListFailed: '列出失败',
+  stepWebSearched: '联网搜索',
+  stepWebSearching: '正在联网搜索',
+  stepWebSearchFailed: '联网搜索失败',
+  stepReadDenied: '已拒绝读取',
+  stepRunDenied: '已拒绝运行',
+  stepEditDenied: '已拒绝编辑',
+  stepWriteDenied: '已拒绝写入',
+  stepSearchDenied: '已拒绝搜索',
+  stepListDenied: '已拒绝列出',
+  stepWebSearchDenied: '已拒绝联网搜索',
+  errViewDetails: '查看详情',
+  errCopyDetails: '复制详情',
   workStopping: '正在停止…',
   workWaiting: '等你处理',
   workRetry: '重试中（{n}/{m}）',
@@ -338,8 +398,38 @@ const EN: Record<SessionTextKey, string> = {
   runNeedsApproval: 'Needs approval',
   runRepeat: '×{n}',
   runChangedFiles: '{n} files changed',
+  stepRead: 'Read',
+  stepReadRunning: 'Reading',
+  stepReadFailed: 'Failed to read',
+  stepRan: 'Ran',
+  stepRunning: 'Running',
+  stepRunFailed: 'Failed to run',
+  stepEdited: 'Edited',
+  stepEditing: 'Editing',
+  stepEditFailed: 'Failed to edit',
+  stepCreated: 'Created',
+  stepCreating: 'Creating',
+  stepWriteFailed: 'Failed to write',
+  stepSearched: 'Searched',
+  stepSearching: 'Searching',
+  stepSearchFailed: 'Failed to search',
+  stepListed: 'Listed',
+  stepListing: 'Listing',
+  stepListFailed: 'Failed to list',
+  stepWebSearched: 'Searched the web',
+  stepWebSearching: 'Searching the web',
+  stepWebSearchFailed: 'Failed to search the web',
+  stepReadDenied: 'Denied',
+  stepRunDenied: 'Denied',
+  stepEditDenied: 'Denied',
+  stepWriteDenied: 'Denied',
+  stepSearchDenied: 'Denied',
+  stepListDenied: 'Denied',
+  stepWebSearchDenied: 'Denied',
+  errViewDetails: 'View details',
+  errCopyDetails: 'Copy details',
   workStopping: 'Stopping…',
-  workWaiting: 'Waiting on you',
+  workWaiting: 'Needs your input',
   workRetry: 'Retrying ({n}/{m})',
   workRetryWait: 'Retrying in {s}s ({n}/{m})',
   workSending: 'Sending…',

@@ -5,6 +5,7 @@ export interface DiffViewText {
   nextHunk: string
   hunkOf: (index: number, total: number) => string
   expandLines: (count: number) => string
+  unmodified: (count: number) => string
   binaryFile: string
   tooLarge: (size: string) => string
   renderAnyway: string
@@ -21,6 +22,7 @@ export function diffViewText(lang: string): DiffViewText {
       nextHunk: 'Next change',
       hunkOf: (index, total) => `Change ${index} / ${total}`,
       expandLines: (count) => `Show ${count} unchanged line${count === 1 ? '' : 's'}`,
+      unmodified: (count) => `${count} unmodified line${count === 1 ? '' : 's'}`,
       binaryFile: 'Binary file — not shown as text',
       tooLarge: (size) => `Patch is ${size}; content rendering is disabled`,
       renderAnyway: 'Render anyway',
@@ -35,6 +37,7 @@ export function diffViewText(lang: string): DiffViewText {
     nextHunk: '下一处改动',
     hunkOf: (index, total) => `第 ${index} / ${total} 处改动`,
     expandLines: (count) => `展开 ${count} 行未改动`,
+    unmodified: (count) => `${count} 行未改动`,
     binaryFile: '二进制文件，无法按文本显示',
     tooLarge: (size) => `补丁约 ${size}，已停用正文渲染`,
     renderAnyway: '仍然渲染',

@@ -1,0 +1,96 @@
+@layer features {
+  .v3-user-text {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .v3-user-text > .v3-user-p {
+    min-width: 0;
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  .v3-user-text .v3-user-inline-code {
+    display: inline;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.0625em 0.25em;
+    border: 0.5px solid var(--line);
+    border-radius: 0.4em;
+    background: var(--alpha-1);
+    color: var(--fail-t);
+    font-family: var(--font-mono);
+    font-size: var(--t-code);
+    line-height: 1;
+    white-space: inherit;
+    overflow-wrap: anywhere;
+    vertical-align: baseline;
+  }
+
+  .v3-user-text .v3-user-link {
+    color: var(--accent-t);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor, transparent 60%);
+    text-underline-offset: 3px;
+    overflow-wrap: anywhere;
+  }
+
+  .v3-user-text .v3-user-link:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .v3-user-text .v3-user-link:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+    border-radius: var(--r-xs);
+  }
+
+  .v3-user-text > .v3-user-code {
+    min-width: 0;
+    max-width: 100%;
+    border-radius: 5px;
+    background: var(--surface);
+    box-shadow: var(--shadow-ring);
+    overflow: clip;
+  }
+
+  .v3-user-text .v3-user-pre {
+    display: block;
+    margin: 0;
+    padding: var(--s-4) 1ch;
+    background: inherit;
+    color: inherit;
+    font-family: var(--font-mono);
+    font-size: var(--t-code);
+    line-height: var(--t-code-lh);
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: normal;
+    word-break: break-word;
+    overflow: clip;
+  }
+
+  .v3-user-text .v3-user-pre > code {
+    display: block;
+    min-width: 0;
+    min-height: 1lh;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    white-space: inherit;
+    word-break: inherit;
+    tab-size: inherit;
+  }
+
+  .v3-bubble > .v3-user-text {
+    min-width: 0;
+  }
+}

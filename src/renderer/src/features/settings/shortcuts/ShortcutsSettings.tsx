@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { useI18n } from '../../../i18n'
+import { useI18n, useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import {
   applyShortcutOverrides,
@@ -35,6 +35,7 @@ interface RecordingNotice {
 
 export function ShortcutsSettings(): ReactElement {
   const { lang } = useI18n()
+  const t = useT()
   const text = shortcutsText(lang)
   const names = shortcutText(lang)
   const settings = useStore((s) => s.settings)
@@ -182,6 +183,24 @@ export function ShortcutsSettings(): ReactElement {
             </SettingRow>
           )
         })}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title={text.composerTitle}
+        description={text.composerNote}
+        settingId="shortcuts-composer"
+      >
+        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputSteer')} description={t('sheet.inputSteerNote')} data-testid="v3-shortcut-composer-steer">
+          <span className="settings-shortcut-fixed">{text.fixed}</span>
+          <Keys tokens={['Enter']} />
+        </SettingRow>
+        <SettingRow className="settings-row settings-shortcut" label={t('sheet.inputQueue')} description={t('sheet.inputQueueNote')} data-testid="v3-shortcut-composer-queue">
+          <span className="settings-shortcut-fixed">{text.fixed}</span>
+          <span className="settings-shortcut-keys">
+            <Keys tokens={['Ctrl', 'Q']} />
+            <Keys tokens={['Alt', 'Enter']} />
+          </span>
+        </SettingRow>
       </SettingsGroup>
 
       <p className="settings-row__desc settings-shortcut-status" role="status" data-testid="v3-shortcut-conflicts">

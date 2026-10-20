@@ -17,11 +17,11 @@ import { ModelPicker } from '../components/ModelPicker'
 import type { RemoteModel } from '../../../src/shared/remote-protocol'
 import { capabilityAllowed } from '../../../src/shared/capability-negotiation'
 
-type TimelineEntry = { kind: 'message'; key: string; message: HistoryMessage } | { kind: 'tools'; key: string; tools: Array<{ name: string; failed: boolean }> }
+type TimelineEntry = { kind: 'message'; key: string; message: HistoryMessage } | { kind: 'tools'; key: string; tools: Array<{ name: string; failed: boolean; denied: boolean }> }
 
 function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
   const entries: TimelineEntry[] = []
-  const tools = new Map<string, { name: string; failed: boolean }>()
+  const tools = new Map<string, { name: string; failed: boolean; denied: boolean }>()
   let firstToolMessage = ''
   const flushTools = () => {
     if (!tools.size) return
@@ -36,7 +36,8 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
       if (!firstToolMessage) firstToolMessage = message.id
       const key = tool.id || `${message.id}:${index}`
       const old = tools.get(key)
-      tools.set(key, { name: tool.name || old?.name || '工具', failed: tool.status === 'error' || !!old?.failed })
+      const denied = tool.denied === true || !!old?.denied
+      tools.set(key, { name: tool.name || old?.name || '工具', failed: (tool.status === 'error' && !denied) || !!old?.failed, denied })
     }
     if (message.role === 'assistant' && (message.text?.trim() || message.error || message.artifacts?.length)) flushTools()
     if (message.role === 'user' || message.text?.trim() || message.error || message.artifacts?.length) {
@@ -321,9 +322,10 @@ export function SessionScreen({
           if (item.kind === 'tools') {
             const expanded = expandedTools.includes(item.key)
             const failed = item.tools.filter((tool) => tool.failed).length
+            const denied = item.tools.filter((tool) => tool.denied).length
             const live = runInList && item.key === timeline.at(-1)?.key
             const state = live ? 'run' : failed ? 'fail' : 'done'
-            const summary = `${live ? '运行中' : failed ? '部分失败' : '完成'} · ${item.tools.length} 步${failed ? ` · ${failed} 项失败` : ''}`
+            const summary = `${live ? '运行中' : failed ? '部分失败' : '完成'} · ${item.tools.length} 步${failed ? ` · ${failed} 项失败` : ''}${denied ? ` · ${denied} 项已拒绝` : ''}`
             return <View style={styles.process}>
               <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`过程，${summary}，${expanded ? '收起' : '展开'}`} onPress={() => setExpandedTools((current) => expanded ? current.filter((key) => key !== item.key) : [...current, item.key])} style={styles.processHead}>
                 <View style={{ flex: 1, minWidth: 0 }}><ActivityLine state={state} text={summary} meta={expanded ? '收起' : '过程 ›'} /></View>
@@ -331,7 +333,7 @@ export function SessionScreen({
               {expanded ? item.tools.map((tool, index) => <View key={`${item.key}:${index}`} style={styles.toolRow}>
                 <Text style={[styles.tree, { color: p.fgMute }]}>{index === item.tools.length - 1 ? '└─' : '├─'}</Text>
                 <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: tool.failed ? p.err : p.fgDim, fontSize: font.sm, fontFamily: mono }}>{tool.name}</Text>
-                <Text style={[styles.tree, { color: tool.failed ? p.err : p.ok }]}>{tool.failed ? '✕' : '✓'}</Text>
+                <Text style={[styles.tree, { color: tool.failed ? p.err : tool.denied ? p.fgMute : p.ok }]}>{tool.failed ? '✕' : tool.denied ? '–' : '✓'}</Text>
               </View>) : null}
             </View>
           }

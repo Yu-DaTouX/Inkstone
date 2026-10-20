@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import {
   AlertCircle,
   ArrowDown,
+  Ban,
   Brain,
   Check,
   ChevronDown,
@@ -39,6 +40,7 @@ import {
 const ICONS = {
   alert: AlertCircle,
   'arrow-down': ArrowDown,
+  deny: Ban,
   brain: Brain,
   check: Check,
   'chevron-down': ChevronDown,

@@ -12,7 +12,12 @@ const {
   ownsApproval,
   createApprovalGate,
   isApprovalCommitKey,
-  isEditableElement
+  isEditableElement,
+  createApprovalArming,
+  isApprovingChoice,
+  requiresApprovalReadGate,
+  isApprovalDetailRead,
+  APPROVAL_ARM_MS
 } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
 const key = (overrides = {}) => ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...overrides })
@@ -91,5 +96,41 @@ assert.equal(isEditableElement({ tagName: 'INPUT', type: 'checkbox' }), false)
 assert.equal(isEditableElement({ tagName: 'DIV', isContentEditable: true }), true)
 assert.equal(isEditableElement({ tagName: 'BUTTON' }), false)
 assert.equal(isEditableElement(null), false)
+
+let now = 0
+const arming = createApprovalArming(() => now)
+arming.arm('A')
+now = APPROVAL_ARM_MS - 1
+assert.equal(arming.isArmed('A'), false, '新卡出现 400ms 内不批准')
+now = APPROVAL_ARM_MS
+assert.equal(arming.isArmed('A'), true, '400ms 后可以批准')
+arming.arm('A')
+assert.equal(arming.isArmed('A'), true, '同一张卡不重新计时')
+arming.arm('B')
+assert.equal(arming.isArmed('B'), false, '新卡重新计时')
+assert.equal(arming.isArmed('A'), false, '旧卡不再命中')
+arming.arm(null)
+assert.equal(arming.isArmed('B'), false, '没有卡时一律不算武装')
+assert.equal(APPROVAL_ARM_MS, 400)
+
+assert.equal(isApprovingChoice('deny'), false)
+assert.equal(isApprovingChoice('once'), true)
+assert.equal(isApprovingChoice('session'), true)
+assert.equal(isApprovingChoice('remember'), true)
+
+assert.equal(requiresApprovalReadGate({ kind: 'danger' }), true, '高危操作要读完才能批准')
+assert.equal(requiresApprovalReadGate({ kind: 'delete' }), true)
+assert.equal(requiresApprovalReadGate({ kind: 'outside' }), true)
+assert.equal(requiresApprovalReadGate({ kind: 'consent', danger: '删除或覆盖' }), true, '危险类别也要读')
+assert.equal(requiresApprovalReadGate({ kind: 'consent' }), false, '普通能力授权不拦')
+assert.equal(requiresApprovalReadGate({ kind: 'permission', tool: 'edit' }), false, '改文件不拦')
+assert.equal(requiresApprovalReadGate({ kind: 'permission', tool: 'bash' }), true, '命令行要读')
+assert.equal(requiresApprovalReadGate({ kind: 'move' }), false)
+
+assert.equal(isApprovalDetailRead({ scrollTop: 0, clientHeight: 100, scrollHeight: 100 }), true, '内容一屏放下视为已读')
+assert.equal(isApprovalDetailRead({ scrollTop: 0, clientHeight: 100, scrollHeight: 300 }), false)
+assert.equal(isApprovalDetailRead({ scrollTop: 199, clientHeight: 100, scrollHeight: 300 }), true, '滚到底算已读')
+assert.equal(isApprovalDetailRead({ scrollTop: 190, clientHeight: 100, scrollHeight: 300 }), false, '差一截还不算')
+assert.equal(isApprovalDetailRead({ scrollTop: 0, clientHeight: 0, scrollHeight: 0 }), true, '还没布局不算未读')
 
 console.log('v3 确认卡键盘策略：Enter 激活拦截、Ctrl+Enter 允许一次、Alt 快捷键、模态抑制、press 分类与在途去重检查通过')

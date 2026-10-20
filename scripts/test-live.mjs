@@ -193,7 +193,7 @@ const CASES = {
     afterExit: 'knowledgeCli'
   },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
-  queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1 },
+  queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1, budget: 150000 },
   queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
   browserclimodel: {
     probe: 'scripts/probe/browser-cli-model.js',
@@ -2813,7 +2813,14 @@ function runProbe(
       ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
     }
     if (SYNTHETIC_ONLY) probeEnv = syntheticEnvironment(probeEnv)
-    for (const k of ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) {
+    for (const k of [
+      'ELECTRON_RUN_AS_NODE',
+      'ELECTRON_RENDERER_URL',
+      'YAN_CLI_URL',
+      'YAN_CLI_TOKEN',
+      'YAN_SESSION_ID',
+      'YAN_PROJECT_ID'
+    ]) {
       delete probeEnv[k]
     }
     const showWindow = Boolean(process.env.YAN_SHOW_WINDOW || visible)

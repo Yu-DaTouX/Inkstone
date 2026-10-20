@@ -1,5 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment, TurnThinking } from '../../../../shared/turns'
+import { isDeniedCall } from './tool-title'
 
 export const LIVE_SEGMENTS = 3
 
@@ -64,8 +65,8 @@ export function processNotes(process: readonly TurnSegment[]): string[] {
   return process.flatMap((segment) => segment.commentary.map((part) => part.text))
 }
 
-export function failedCount(tools: readonly Pick<UIToolCall, 'status' | 'cancelled'>[]): number {
-  return tools.filter((call) => call.status === 'error' && !call.cancelled).length
+export function failedCount(tools: readonly Pick<UIToolCall, 'status' | 'cancelled' | 'denied' | 'output'>[]): number {
+  return tools.filter((call) => call.status === 'error' && !call.cancelled && !isDeniedCall(call)).length
 }
 
 export function runningTool(tools: readonly UIToolCall[]): UIToolCall | null {

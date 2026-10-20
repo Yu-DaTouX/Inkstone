@@ -2,6 +2,7 @@ import { isIP } from 'node:net'
 import { isLinkLocalHost } from './browser/network-boundary'
 
 export type SiteDecision = 'allow' | 'deny' | 'ask' | 'forbidden' | 'invalid'
+export type SiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
 
 const FORBIDDEN_HOSTS = new Set([
   '169.254.169.254',
@@ -18,7 +19,7 @@ const FORBIDDEN_HOSTS = new Set([
   'instance-data.ec2.internal'
 ])
 
-const MAX_ORIGINS_PER_SESSION = 500
+export const MAX_ALLOWED_SITES = 500
 
 function mappedIpv4(host: string): string | null {
   const inner = host.replace(/^\[|\]$/g, '').toLowerCase()
@@ -60,39 +61,146 @@ export function isForbiddenOrigin(origin: string): boolean {
   return FORBIDDEN_HOSTS.has(host) || isLinkLocalHost(host)
 }
 
-export class PreviewSiteAccess {
-  private readonly sessions = new Map<string, Map<string, boolean>>()
+export function siteLabel(origin: string): string {
+  const withoutScheme = origin.replace(/^https?:\/\//, '')
+  return withoutScheme.replace(/\/$/, '') || origin
+}
 
-  constructor(private readonly limitPerSession = MAX_ORIGINS_PER_SESSION) {}
+export function allowedSiteList(saved: unknown): string[] {
+  const out: string[] = []
+  for (const value of Array.isArray(saved) ? saved : []) {
+    if (typeof value !== 'string') continue
+    const origin = normalizeSiteOrigin(value)
+    if (!origin || origin !== value.trim() || out.includes(origin) || isForbiddenOrigin(origin)) continue
+    out.push(origin)
+    if (out.length >= MAX_ALLOWED_SITES) break
+  }
+  return out
+}
+
+export function siteAllowsUrl(saved: unknown, url: string): boolean {
+  const origin = normalizeSiteOrigin(url)
+  return origin !== null && allowedSiteList(saved).includes(origin)
+}
+
+function withScheme(value: string): string {
+  return /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`
+}
+
+export function addAllowedSite(
+  saved: unknown,
+  value: string
+): { result: SiteAddResult; list: string[]; origin?: string } {
+  const list = allowedSiteList(saved)
+  const raw = String(value ?? '').trim()
+  if (!raw) return { result: 'invalid', list }
+  const origin = normalizeSiteOrigin(withScheme(raw))
+  if (!origin) return { result: 'invalid', list }
+  const host = hostOfOrigin(origin)
+  if (!host.includes('.') && !host.includes(':') && host !== 'localhost') return { result: 'invalid', list }
+  if (isForbiddenOrigin(origin)) return { result: 'blocked', list }
+  if (list.includes(origin)) return { result: 'exists', list }
+  if (list.length >= MAX_ALLOWED_SITES) return { result: 'unavailable', list }
+  return { result: 'ok', list: [...list, origin], origin }
+}
+
+export function removeAllowedSite(
+  saved: unknown,
+  value: string
+): { removed: boolean; list: string[]; origin: string } {
+  const list = allowedSiteList(saved)
+  const raw = String(value ?? '').trim()
+  const origin = normalizeSiteOrigin(raw) ?? raw
+  if (!list.includes(origin)) return { removed: false, list, origin }
+  return { removed: true, list: list.filter((entry) => entry !== origin), origin }
+}
+
+export interface SiteAccessStore {
+  load(): string[] | Promise<string[]>
+  save(list: string[]): void
+}
+
+export class PreviewSiteAccess {
+  private allowed: string[]
+  private loaded: boolean
+  private readonly declined = new Map<string, Set<string>>()
+
+  constructor(
+    private readonly store?: SiteAccessStore,
+    private readonly limit = MAX_ALLOWED_SITES
+  ) {
+    this.allowed = []
+    this.loaded = !store
+  }
+
+  async ready(): Promise<void> {
+    if (this.loaded || !this.store) return
+    this.loaded = true
+    try {
+      this.allowed = allowedSiteList(await this.store.load()).slice(0, this.limit)
+    } catch {
+      this.allowed = []
+    }
+  }
+
+  sites(): string[] {
+    return [...this.allowed]
+  }
 
   decide(sessionId: string, url: string): { decision: SiteDecision; origin: string | null } {
     const origin = normalizeSiteOrigin(url)
     if (!origin) return { decision: 'invalid', origin: null }
     if (isForbiddenOrigin(origin)) return { decision: 'forbidden', origin }
-    const remembered = this.sessions.get(sessionId)?.get(origin)
-    if (remembered === undefined) return { decision: 'ask', origin }
-    return { decision: remembered ? 'allow' : 'deny', origin }
+    if (this.allowed.includes(origin)) return { decision: 'allow', origin }
+    if (this.declined.get(sessionId)?.has(origin)) return { decision: 'deny', origin }
+    return { decision: 'ask', origin }
   }
 
   record(sessionId: string, url: string, allowed: boolean): SiteDecision {
-    const origin = normalizeSiteOrigin(url)
-    if (!origin) return 'invalid'
-    if (isForbiddenOrigin(origin)) return 'forbidden'
-    let table = this.sessions.get(sessionId)
-    if (!table) {
-      table = new Map()
-      this.sessions.set(sessionId, table)
+    const verdict = this.decide(sessionId, url)
+    if (!verdict.origin) return verdict.decision
+    if (verdict.decision === 'forbidden' || verdict.decision === 'invalid') return verdict.decision
+    if (!allowed) {
+      const declined = this.declined.get(sessionId) ?? new Set<string>()
+      declined.add(verdict.origin)
+      this.declined.set(sessionId, declined)
+      return 'deny'
     }
-    if (!table.has(origin) && table.size >= this.limitPerSession) {
-      const oldest = table.keys().next().value
-      if (oldest !== undefined) table.delete(oldest)
-    }
-    if (table.get(origin) === false) return 'deny'
-    table.set(origin, allowed)
-    return allowed ? 'allow' : 'deny'
+    if (verdict.decision === 'deny') return 'deny'
+    if (verdict.decision === 'allow') return 'allow'
+    this.persist([...this.allowed, verdict.origin])
+    return 'allow'
+  }
+
+  add(value: string): { result: SiteAddResult; list: string[]; origin?: string } {
+    const added = addAllowedSite(this.allowed, value)
+    if (added.result !== 'ok') return added
+    if (added.list.length > this.limit) return { result: 'unavailable', list: this.sites() }
+    this.persist(added.list)
+    return added
+  }
+
+  remove(value: string): { removed: boolean; list: string[] } {
+    const removed = removeAllowedSite(this.allowed, value)
+    if (!removed.removed) return { removed: false, list: removed.list }
+    this.persist(removed.list)
+    return { removed: true, list: removed.list }
+  }
+
+  clear(): string[] {
+    this.persist([])
+    return []
   }
 
   forgetSession(sessionId: string): void {
-    this.sessions.delete(sessionId)
+    this.declined.delete(sessionId)
+  }
+
+  private persist(list: string[]): void {
+    this.allowed = allowedSiteList(list).slice(-this.limit)
+    try {
+      this.store?.save(this.sites())
+    } catch {
+    }
   }
 }

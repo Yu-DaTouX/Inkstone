@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, CornerUpRight, History, Pencil, Send, Trash2, Undo2 } from 'lucide-react'
-import { Button, IconButton } from '../../ui'
-import type { QueueState } from '../../../../shared/ipc'
+import { ChevronDown, ChevronUp, CornerUpRight, EllipsisVertical, History, Send } from 'lucide-react'
+import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../../ui'
+import type { QueueItem, QueueState } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
-import { locateQueueItem, planQueueEdit, planQueueMove, planQueueRemove } from './queue-plan'
+import { locateQueueItem, planQueueClear, planQueueEdit, planQueueMove, planQueueRemove } from './queue-plan'
 import './queue-editor.css'
 
 type ApplyQueueOrder = (next: QueueState) => Promise<void>
 
+type RowAction = 'steer' | 'edit' | 'up' | 'down' | 'retract' | 'delete'
+
 function applyQueueOrderAction(): ApplyQueueOrder | undefined {
   const state = useStore.getState() as unknown as { applyQueueOrder?: ApplyQueueOrder }
   return typeof state.applyQueueOrder === 'function' ? state.applyQueueOrder : undefined
+}
+
+function previewOf(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 export function QueueEditor() {
@@ -24,6 +30,7 @@ export function QueueEditor() {
   const pendingSends = pendingSendsForView({ pendingSends: allPendingSends, peekedSessionId, peekedPath, session })
   const releaseSend = useStore((s) => s.releaseSend)
   const restoreSend = useStore((s) => s.restoreSend)
+  const discardSend = useStore((s) => s.discardSend)
   const steerQueued = useStore((s) => s.steerQueued)
   const removeQueued = useStore((s) => s.removeQueued)
   const notify = useStore((s) => s.notify)
@@ -31,6 +38,7 @@ export function QueueEditor() {
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     if (editingId && !locateQueueItem(queue, editingId)) {
@@ -40,8 +48,8 @@ export function QueueEditor() {
   }, [queue, editingId])
 
   const { steering, followUp } = queue
-  if (steering.length + followUp.length + pendingSends.length === 0) return null
-
+  const total = steering.length + followUp.length + pendingSends.length
+  if (total === 0) return null
   const closeEdit = (): void => {
     setEditingId(null)
     setDraft('')
@@ -73,6 +81,15 @@ export function QueueEditor() {
   const remove = (id: string): void => {
     void runOrder(planQueueRemove(queue, id))
   }
+
+  const clearAll = (): void => {
+    for (const item of pendingSends) discardSend(item.id)
+    void runOrder(planQueueClear(queue))
+  }
+
+  const collapsible = total > 1
+  const showBody = !collapsible || expanded
+  const head = pendingSends[0] ?? steering[0] ?? followUp[0]
 
   const renderEditor = (id: string) => (
     <div className="cq-edit" data-testid="queue-edit-panel">
@@ -113,171 +130,162 @@ export function QueueEditor() {
     </div>
   )
 
-  const renderActions = (id: string, text: string, index: number, total: number, canSteer: boolean) => (
-    <span className="cq-actions">
-      {canSteer ? (
-        <IconButton
-          variant="ghost"
-          size="sm"
-          className="cq-action"
-          aria-label={t('queue.steer')}
-          title={t('queue.steerTip')}
-          data-testid="queue-steer"
-          onPress={() => void steerQueued(id)}
-        >
-          <CornerUpRight size={12} aria-hidden />
-        </IconButton>
-      ) : null}
+  const runAction = (id: string, text: string, action: RowAction): void => {
+    if (action === 'steer') void steerQueued(id)
+    else if (action === 'edit') {
+      setEditingId(id)
+      setDraft(text)
+    } else if (action === 'up') move(id, 'up')
+    else if (action === 'down') move(id, 'down')
+    else if (action === 'retract') void removeQueued(id)
+    else if (action === 'delete') remove(id)
+  }
+
+  const renderMenu = (
+    id: string,
+    text: string,
+    options: { index: number; total: number; canSteer: boolean }
+  ) => (
+    <MenuTrigger>
       <IconButton
         variant="ghost"
         size="sm"
-        className="cq-action"
-        aria-label={t('queue.edit')}
-        title={t('queue.editTip')}
-        data-testid="queue-edit-start"
-        onPress={() => {
-          setEditingId(id)
-          setDraft(text)
-        }}
+        className="cq-menu-trigger"
+        aria-label={t('queue.actions')}
+        title={t('queue.actions')}
+        data-testid="queue-actions"
       >
-        <Pencil size={12} aria-hidden />
+        <EllipsisVertical size={14} aria-hidden />
       </IconButton>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        className="cq-action"
-        aria-label={t('queue.moveUp')}
-        title={t('queue.moveUpTip')}
-        isDisabled={index === 0}
-        data-testid="queue-move-up"
-        onPress={() => move(id, 'up')}
-      >
-        <ArrowUp size={12} aria-hidden />
-      </IconButton>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        className="cq-action"
-        aria-label={t('queue.moveDown')}
-        title={t('queue.moveDownTip')}
-        isDisabled={index >= total - 1}
-        data-testid="queue-move-down"
-        onPress={() => move(id, 'down')}
-      >
-        <ArrowDown size={12} aria-hidden />
-      </IconButton>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        className="cq-action"
-        aria-label={t('queue.retract')}
-        title={t('queue.retractTip')}
-        data-testid="queue-retract"
-        onPress={() => void removeQueued(id)}
-      >
-        <Undo2 size={12} aria-hidden />
-      </IconButton>
-      <IconButton
-        variant="ghost"
-        size="sm"
-        className="cq-action cq-action-danger"
-        aria-label={t('queue.delete')}
-        title={t('queue.deleteTip')}
-        data-testid="queue-delete"
-        onPress={() => remove(id)}
-      >
-        <Trash2 size={12} aria-hidden />
-      </IconButton>
-    </span>
+      <Popover placement="bottom end" offset={4}>
+        <Menu aria-label={t('queue.actions')} className="cq-menu" onAction={(key) => runAction(id, text, key as RowAction)}>
+          {options.canSteer ? (
+            <MenuItem id="steer" textValue={t('queue.steer')} data-testid="queue-steer">
+              {t('queue.steer')}
+            </MenuItem>
+          ) : null}
+          <MenuItem id="edit" textValue={t('queue.edit')} data-testid="queue-edit-start">
+            {t('queue.edit')}
+          </MenuItem>
+          <MenuItem id="up" textValue={t('queue.moveUp')} isDisabled={options.index === 0}>
+            {t('queue.moveUp')}
+          </MenuItem>
+          <MenuItem id="down" textValue={t('queue.moveDown')} isDisabled={options.index >= options.total - 1}>
+            {t('queue.moveDown')}
+          </MenuItem>
+          <Separator />
+          <MenuItem id="retract" textValue={t('queue.retract')} data-testid="queue-retract">
+            {t('queue.retract')}
+          </MenuItem>
+          <MenuItem id="delete" textValue={t('queue.delete')} className="cq-menu-danger" data-testid="queue-delete">
+            {t('queue.delete')}
+          </MenuItem>
+        </Menu>
+      </Popover>
+    </MenuTrigger>
   )
 
-  return (
-    <div className="composer-queue" data-testid="queue-stack">
-      {pendingSends.map((item) => (
-        <div className="cq-row cq-pending" key={item.id} title={item.text} data-testid="queue-pending">
-          <Send className="cq-icon" size={12} aria-hidden />
-          <span className="cq-text">{item.text}</span>
-          {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
-          <span className="cq-tag">{t('queue.hold')}</span>
+  const renderPendingMenu = (id: string, label: string) => (
+    <MenuTrigger>
+      <IconButton
+        variant="ghost"
+        size="sm"
+        className="cq-menu-trigger"
+        aria-label={t('queue.actions')}
+        title={t('queue.actions')}
+        data-testid="pending-actions"
+      >
+        <EllipsisVertical size={14} aria-hidden />
+      </IconButton>
+      <Popover placement="bottom end" offset={4}>
+        <Menu
+          aria-label={t('queue.actions')}
+          className="cq-menu"
+          onAction={(key) => {
+            if (key === 'steer') void releaseSend(id, 'steer')
+            else if (key === 'follow') void releaseSend(id, 'followUp')
+            else if (key === 'restore') restoreSend(id)
+          }}
+        >
           {roundRunning ? (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                className="cq-action"
-                data-testid="pending-steer"
-                title={t('queue.steerNowTip')}
-                onPress={() => void releaseSend(item.id, 'steer')}
-              >
-                {t('queue.steerNow')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="cq-action"
-                data-testid="pending-follow"
-                title={t('queue.queueItTip')}
-                onPress={() => void releaseSend(item.id, 'followUp')}
-              >
-                {t('queue.queueIt')}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              className="cq-action"
-              data-testid="pending-send"
-              title={t('queue.sendNowTip')}
-              onPress={() => void releaseSend(item.id, 'followUp')}
-            >
-              {t('queue.sendNow')}
-            </Button>
-          )}
-          <IconButton
-            variant="ghost"
-            size="sm"
-            className="cq-action"
-            aria-label={t('queue.restore')}
-            title={t('queue.restoreTip')}
-            data-testid="pending-restore"
-            onPress={() => restoreSend(item.id)}
-          >
-            <Undo2 size={12} aria-hidden />
-          </IconButton>
-        </div>
-      ))}
+            <MenuItem id="steer" textValue={t('queue.steerNow')} data-testid="pending-steer">
+              {`${t('queue.steerNow')} · ${label}`}
+            </MenuItem>
+          ) : null}
+          <MenuItem id="follow" textValue={roundRunning ? t('queue.queueIt') : t('queue.sendNow')} data-testid="pending-follow">
+            {roundRunning ? t('queue.queueIt') : t('queue.sendNow')}
+          </MenuItem>
+          <Separator />
+          <MenuItem id="restore" textValue={t('queue.restore')} data-testid="pending-restore">
+            {t('queue.restore')}
+          </MenuItem>
+        </Menu>
+      </Popover>
+    </MenuTrigger>
+  )
 
-      {steering.map((item, index) =>
-        editingId === item.id ? (
-          <div className="cq-row cq-editing" key={item.id} data-testid="queue-row">
-            {renderEditor(item.id)}
-          </div>
+  const renderQueuedRow = (item: QueueItem, index: number, listLength: number, kind: 'steering' | 'followUp') =>
+    editingId === item.id ? (
+      <div className="cq-row cq-editing" key={item.id} data-testid="queue-row">
+        {renderEditor(item.id)}
+      </div>
+    ) : (
+      <div className={`cq-row ${kind === 'steering' ? 'cq-steering' : ''}`} key={item.id} title={item.text} data-testid="queue-row">
+        {kind === 'steering' ? (
+          <CornerUpRight className="cq-icon" size={12} aria-hidden />
         ) : (
-          <div className="cq-row cq-steering" key={item.id} title={item.text} data-testid="queue-row">
-            <CornerUpRight className="cq-icon" size={12} aria-hidden />
-            <span className="cq-text">{item.text}</span>
-            {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
-            <span className="cq-tag cq-tag-run">{t('queue.inserting')}</span>
-            {renderActions(item.id, item.text, index, steering.length, false)}
-          </div>
-        )
-      )}
+          <History className="cq-icon" size={12} aria-hidden />
+        )}
+        <span className="cq-text">{item.text}</span>
+        {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
+        {kind === 'steering' ? <span className="cq-tag cq-tag-run">{t('queue.inserting')}</span> : null}
+        <span className="cq-actions">
+          {renderMenu(item.id, item.text, { index, total: listLength, canSteer: kind === 'followUp' })}
+        </span>
+      </div>
+    )
 
-      {followUp.map((item, index) =>
-        editingId === item.id ? (
-          <div className="cq-row cq-editing" key={item.id} data-testid="queue-row">
-            {renderEditor(item.id)}
-          </div>
-        ) : (
-          <div className="cq-row" key={item.id} title={item.text} data-testid="queue-row">
-            <History className="cq-icon" size={12} aria-hidden />
-            <span className="cq-text">{item.text}</span>
-            {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
-            {renderActions(item.id, item.text, index, followUp.length, true)}
-          </div>
-        )
-      )}
+  return (
+    <div className="composer-queue" data-testid="queue-stack" data-count={total}>
+      {collapsible ? (
+        <button
+          type="button"
+          className="cq-row cq-collapsed"
+          aria-expanded={expanded}
+          aria-label={expanded ? t('queue.collapse') : t('queue.expand')}
+          data-testid="queue-toggle"
+          onClick={() => setExpanded((open) => !open)}
+        >
+          <span className="cq-count">{t('queue.count', { n: total })}</span>
+          {head ? <span className="cq-preview">{t('queue.next', { text: previewOf(head.text) })}</span> : <span className="cq-preview" />}
+          {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+        </button>
+      ) : null}
+
+      {showBody ? (
+        <>
+          {pendingSends.map((item) => (
+            <div className="cq-row cq-pending" key={item.id} title={item.text} data-testid="queue-pending">
+              <Send className="cq-icon" size={12} aria-hidden />
+              <span className="cq-text">{item.text}</span>
+              {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
+              <span className="cq-tag">{t('queue.hold')}</span>
+              <span className="cq-actions">{renderPendingMenu(item.id, item.text)}</span>
+            </div>
+          ))}
+
+          {steering.map((item, index) => renderQueuedRow(item, index, steering.length, 'steering'))}
+          {followUp.map((item, index) => renderQueuedRow(item, index, followUp.length, 'followUp'))}
+
+          {showBody && total > 0 ? (
+            <div className="cq-footer">
+              <Button variant="ghost" size="sm" className="cq-clear" data-testid="queue-clear-all" onPress={clearAll}>
+                {t('queue.clearAll')}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   )
 }

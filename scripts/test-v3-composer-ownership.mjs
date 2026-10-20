@@ -65,6 +65,7 @@ function installGlobals() {
     removeEventListener: () => {},
     visibilityState: 'visible',
     activeElement: null,
+    documentElement: { style: {}, clientWidth: 0, clientHeight: 0 },
     querySelector: () => null,
     createElement: () => ({ style: {}, setAttribute: () => {}, appendChild: () => {} })
   }
@@ -153,9 +154,10 @@ export function useContext(ctx) { return ctx && '__value' in ctx ? ctx.__value :
 export function createContext(value) { return { __isContext: true, __value: value, Provider: (p) => (p ? p.children : null), Consumer: (p) => (p && typeof p.children === 'function' ? p.children(value) : null) } }
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
 export function forwardRef(fn) { return fn }
+export function useImperativeHandle(ref, factory) { const handle = factory(); if (ref) { if (typeof ref === 'function') ref(handle); else ref.current = handle } return handle }
 export function memo(fn) { return fn }
 export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
-export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo, isValidElement }
+export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, useImperativeHandle, memo, isValidElement }
 `
 
 const JSX_SHIM = `import { createElement, Fragment } from './react-shim.mjs'
@@ -208,7 +210,7 @@ function makeStubMap() {
       'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
       'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
       'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',
-      'src/renderer/src/features/composer/CompletionMenu.tsx': 'export function CompletionMenu(){ return null }',
+      'src/renderer/src/features/composer/ComposerMenu.tsx': 'export function ComposerMenu(){ return null }',
       'src/renderer/src/features/composer/useCompletion.ts': 'export function useCompletion(){ return { open: false, index: 0, slashMatches: [], atMatches: [], handleKey(){ return false } } }',
       'src/renderer/src/features/composer/ComposerBorder.tsx': 'export function ComposerBorder(){ return null }',
       'src/renderer/src/features/composer/RunSlot.tsx': 'export function RunSlot(){ return null }',
@@ -652,7 +654,7 @@ async function main() {
     let tree = rt.render(Composer, {})
     let ta = findByTestId(tree, 'composer-input')
     ok(!!ta, 'Composer 渲染出输入框（真实组件已接上 store）')
-    ta.props.onChange({ target: { value: '保留这段草稿', selectionStart: 5 } })
+    ta.props.onChange({ text: '保留这段草稿', cursor: 5 })
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
     ok(ta.props.value === '保留这段草稿', '输入框已持有草稿', ta.props.value)
@@ -685,7 +687,7 @@ async function main() {
     const rt = hookRuntime()
     let tree = rt.render(Composer, {})
     let ta = findByTestId(tree, 'composer-input')
-    ta.props.onChange({ target: { value: '带附件发送', selectionStart: 5 } })
+    ta.props.onChange({ text: '带附件发送', cursor: 5 })
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
 
@@ -723,7 +725,7 @@ async function main() {
     let ta = findByTestId(tree, 'composer-input')
     ok(ta.props.value === 'B 的草稿', '打开 B（未激活）时输入框显示 B 的草稿', ta.props.value)
 
-    ta.props.onChange({ target: { value: 'B 的草稿 + 新字', selectionStart: 10 } })
+    ta.props.onChange({ text: 'B 的草稿 + 新字', cursor: 10 })
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
     await flush()
@@ -753,7 +755,7 @@ async function main() {
     const rt = hookRuntime()
     let tree = rt.render(Composer, {})
     let ta = findByTestId(tree, 'composer-input')
-    ta.props.onChange({ target: { value: '!echo hi', selectionStart: 8 } })
+    ta.props.onChange({ text: '!echo hi', cursor: 8 })
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
 

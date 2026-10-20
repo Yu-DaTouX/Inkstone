@@ -17,10 +17,8 @@
     }
     return false
   }
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
   const cjkRatio = (s) => {
     const chars = [...(s ?? '')].filter((c) => !/\s/.test(c))
     if (!chars.length) return 0

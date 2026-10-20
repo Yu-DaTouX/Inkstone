@@ -25,7 +25,7 @@ export function NoticeBridge() {
       showToast(noticeTitle(notice, t), {
         tone: notice.type === 'error' ? 'danger' : notice.type,
         action: noticeAction(notice, t),
-        timeout: notice.type === 'error' || notice.type === 'warning' || notice.action ? 10000 : 5000
+        timeout: notice.action ? undefined : notice.type === 'error' || notice.type === 'warning' ? 10000 : undefined
       })
       useStore.getState().dismissNotice(notice.id)
     }

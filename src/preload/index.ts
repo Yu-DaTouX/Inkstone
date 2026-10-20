@@ -61,6 +61,7 @@ import type {
   FileRequestContext,
   FileSearchResult,
   FilePreview,
+  PreviewBytes,
   FileRefInfo,
   FileTextResult,
   ForkPoint,
@@ -222,7 +223,7 @@ const api: YanBridge = {
   piNativeSettings: () => invoke<PiNativeSettingsResult>('yan:piNativeSettings'),
   setPiNativeSettings: (patch) => invoke<PiNativeSettingsResult>('yan:setPiNativeSettings', patch),
 
-  answerApproval: (id, choice, identity) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity),
+  answerApproval: (id, choice, identity, feedback) => invoke<{ ok: boolean }>('yan:approvalAnswer', id, choice, identity, feedback),
   pendingApprovals: () => invoke<ApprovalRequest[]>('yan:approvalPending'),
   setSteeringMode: (mode) => invoke<Ok>('yan:setSteeringMode', mode),
   setFollowUpMode: (mode) => invoke<Ok>('yan:setFollowUpMode', mode),
@@ -313,7 +314,8 @@ const api: YanBridge = {
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
   readPreview: (p, line, cwd, lineEnd) => invoke<FilePreview>('yan:readPreview', p, line, cwd, lineEnd),
-  prepareHtmlArtifact: (p) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlArtifact', p),
+  readPreviewBytes: (p, cwd) => invoke<PreviewBytes>('yan:readPreviewBytes', p, cwd),
+  prepareHtmlArtifact: (p, cwd) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlArtifact', p, cwd),
   releaseHtmlArtifact: (url) => invoke<void>('yan:releaseHtmlArtifact', url),
   prepareHtmlWidget: (html) => invoke<HtmlArtifactPreviewResult>('yan:prepareHtmlWidget', html),
   statPreview: (p, cwd) =>
@@ -453,6 +455,8 @@ const api: YanBridge = {
     cancel: () => invoke<void>('yan:storage:cancel')
   },
   revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
+  copyImage: (dataUrl) => invoke<{ ok: boolean; error?: string }>('yan:image:copy', dataUrl),
+  saveImage: (dataUrl, suggestedName) => invoke<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>('yan:image:save', dataUrl, suggestedName),
 
   getZoom: () => invoke<ZoomState>('yan:getZoom'),
   setUiScale: (v) => invoke<ZoomState>('yan:setUiScale', v),
@@ -489,6 +493,15 @@ const api: YanBridge = {
     close: () => invoke<BrowserState>('yan:browser:close'),
     navigate: (url) => invoke<Ok>('yan:browser:navigate', url),
     siteAccess: (sessionId, url) => invoke<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>('yan:browser:siteAccess', sessionId, url),
+    allowedSites: () => invoke<string[]>('yan:browser:allowedSites'),
+    addAllowedSite: (value) =>
+      invoke<{ result: 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'; list: string[]; origin?: string }>(
+        'yan:browser:addAllowedSite',
+        value
+      ),
+    removeAllowedSite: (value) => invoke<{ removed: boolean; list: string[] }>('yan:browser:removeAllowedSite', value),
+    clearAllowedSites: () => invoke<string[]>('yan:browser:clearAllowedSites'),
+    siteAskAnswer: (id, allowed) => invoke<void>('yan:browser:siteAskAnswer', id, allowed),
     back: () => invoke<Ok>('yan:browser:back'),
     forward: () => invoke<Ok>('yan:browser:forward'),
     reload: () => invoke<Ok>('yan:browser:reload'),
@@ -573,7 +586,8 @@ const api: YanBridge = {
     write: (id, data) => invoke<boolean>('yan:terminal:write', id, data),
     resize: (id, cols, rows) => invoke<boolean>('yan:terminal:resize', id, cols, rows),
     kill: (id) => invoke<boolean>('yan:terminal:kill', id),
-    attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id)
+    attach: (id) => invoke<TerminalSnapshot | null>('yan:terminal:attach', id),
+    clear: (id) => invoke<boolean>('yan:terminal:clear', id)
   },
 
   win: {

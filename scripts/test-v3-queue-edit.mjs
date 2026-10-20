@@ -35,7 +35,7 @@ const image = (data) => ({ data, mimeType: 'image/png' })
 
 {
   const plan = await load('../src/renderer/src/features/composer/queue-plan.ts')
-  const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, droppedQueueText } = plan
+  const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, planQueueClear, droppedQueueText } = plan
 
   const base = {
     steering: [item('s1', '插话一')],
@@ -71,6 +71,13 @@ const image = (data) => ({ data, mimeType: 'image/png' })
   ok(removed?.followUp.map((i) => i.id).join(',') === 'f1,f3', '删除只移除目标')
   ok(removed?.steering === base.steering, '删除不动另一类')
   ok(planQueueRemove(base, 'ghost') === null, '被接收的 id 删除返回 null')
+
+  process.stdout.write('\n▌ queue-plan：全部清除\n')
+  const cleared = planQueueClear(base)
+  ok(cleared?.steering.length === 0 && cleared?.followUp.length === 0, '全部清除清空两类队列')
+  ok(base.followUp.length === 3, '全部清除不就地修改原状态')
+  ok(planQueueClear({ steering: [], followUp: [] }) === null, '空队列全部清除返回 null')
+  ok(planQueueClear({ steering: [], followUp: [item('f1', '甲')] })?.steering.length === 0, '只有一类时也清空')
 
   process.stdout.write('\n▌ queue-plan：失败回填文本\n')
   const dropped = droppedQueueText({

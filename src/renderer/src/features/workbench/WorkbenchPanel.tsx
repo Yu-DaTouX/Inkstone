@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ComponentType, type ReactElement } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import { ArrowRight, Check, Columns2, EllipsisVertical, ExternalLink, Maximize2, Minimize2, X } from 'lucide-react'
 import { EmptyState, Focusable, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, Tooltip, TooltipTrigger } from '../../ui'
 import { TileLayoutView, type TileHandle } from './TileLayout'
-import { columnLayout, type TileLayout } from './tile-tree'
+import { CHAT_EMPTY_TILE_ID, CHAT_TILE_ID, chatFlexOf, columnLayout, foldChat, layoutWithChat, layoutsEqual, panesOnlyLayout, type TileLayout } from './tile-tree'
+import { fitOpenedLayout, withChatMinimum } from './tile-fit'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
 import { useI18n } from '../../i18n'
 import { useUiV3, workspaceLayoutFor } from '../../state/ui-v3'
@@ -16,6 +17,7 @@ import type { SplitDropTarget } from '../split/split-drop-model'
 import { useWorkspaceBranch } from './use-workspace-branch'
 import { isSubagentPaneId, isToolPane, subagentRunOfPane } from './subagent-panes'
 import { useStore } from '../../state/store'
+import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import { SubagentTranscriptPane, subagentPaneName } from '../session/SubagentTranscriptPane'
 import {
   WORKBENCH_ACTIVE_TABS,
@@ -41,6 +43,7 @@ export interface WorkbenchPanelProps {
   open: boolean
   mode: 'docked' | 'full'
   panes: WorkbenchPaneComponents
+  chat?: ReactNode
   onClose: () => void
   onRequestActivation: (tab: WorkbenchTabId) => Promise<boolean>
   onPreview?: (path: string, options?: PreviewOpenOptions) => void
@@ -52,6 +55,7 @@ export function WorkbenchPanel({
   open,
   mode,
   panes,
+  chat,
   onClose,
   onRequestActivation,
   onPreview,
@@ -61,15 +65,16 @@ export function WorkbenchPanel({
   const text = useMemo(() => workbenchText(lang), [lang])
   const tileText2 = useMemo(() => toolTileText(lang), [lang])
   const openPanes = useUiV3((s) => s.workspacePanes)
-  const focusTab = useUiV3((s) => s.workspaceTab)
+  const expandedPane = useUiV3((s) => s.workspaceExpandedTile)
   const focus = useUiV3((s) => s.workspaceFocus)
-  const setWorkspaceTab = useUiV3((s) => s.setWorkspaceTab)
   const closeWorkspacePane = useUiV3((s) => s.closeWorkspacePane)
   const setWorkspaceFocus = useUiV3((s) => s.setWorkspaceFocus)
   const storedLayout = useUiV3((s) => s.workspaceLayout)
   const setWorkspaceLayout = useUiV3((s) => s.setWorkspaceLayout)
   const tiled = useTiledTools()
   const [dragging, setDragging] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [bodyWidth, setBodyWidth] = useState(0)
 
   const shownPanes = useMemo(() => openPanes.filter((tab) => !(isToolPane(tab) && tiled.has(tab))), [openPanes, tiled])
   const [visited, setVisited] = useState<ReadonlySet<WorkspacePaneId>>(() => new Set())
@@ -86,19 +91,13 @@ export function WorkbenchPanel({
     if (!open && focus) setWorkspaceFocus(false)
   }, [open, focus, setWorkspaceFocus])
 
-  const expanded = focus && focusTab !== 'overview' && (shownPanes as readonly string[]).includes(focusTab) ? (focusTab as WorkspacePaneId) : null
+  const expanded = expandedPane && (shownPanes as readonly string[]).includes(expandedPane) ? (expandedPane as WorkspacePaneId) : null
   const visiblePanes: readonly WorkspacePaneId[] = expanded ? [expanded] : shownPanes
-  const mounted = useMemo<string[]>(
-    () => [
-      ...WORKBENCH_TABS.filter((tab) => visited.has(tab) && !tiled.has(tab)),
-      ...openPanes.filter((tab) => isSubagentPaneId(tab) && visited.has(tab))
-    ],
-    [visited, tiled, openPanes]
-  )
-  const layout = useMemo<TileLayout>(
-    () => (expanded ? columnLayout([expanded]) : workspaceLayoutFor(storedLayout ?? null, shownPanes)),
-    [expanded, storedLayout, shownPanes]
-  )
+
+  const liveSessionId = useStore((s) => s.session?.sessionId ?? null)
+  useEffect(() => {
+    useUiV3.getState().loadLayoutSession(liveSessionId)
+  }, [liveSessionId])
 
   const ownerKey = owner?.key ?? null
   const [shownKey, setShownKey] = useState<string | null>(ownerKey)
@@ -121,7 +120,66 @@ export function WorkbenchPanel({
     if (owner && ownerReady) setDisplayOwner(owner)
   }, [owner, ownerReady])
 
+  const activeOwner = displayOwner
+  const chatShown = mode === 'docked' && !expanded
+  const mounted = useMemo<string[]>(
+    () => [
+      CHAT_TILE_ID,
+      ...(activeOwner || !open ? [] : [CHAT_EMPTY_TILE_ID]),
+      ...WORKBENCH_TABS.filter((tab) => visited.has(tab) && !tiled.has(tab)),
+      ...openPanes.filter((tab) => isSubagentPaneId(tab) && visited.has(tab))
+    ],
+    [activeOwner, open, visited, tiled, openPanes]
+  )
+  const layout = useMemo<TileLayout>(() => {
+    const chatFlex = chatFlexOf(storedLayout)
+    if (!activeOwner) {
+      const idle = layoutWithChat(columnLayout([CHAT_EMPTY_TILE_ID]), chatFlex)
+      return open && chatShown ? idle : foldChat(idle)
+    }
+    if (!open) return layoutWithChat(null, chatFlex)
+    const tree = workspaceLayoutFor(storedLayout, shownPanes)
+    if (expanded) return foldChat(layoutWithChat(columnLayout([expanded]), chatFlex))
+    return chatShown ? tree : foldChat(tree)
+  }, [activeOwner, open, expanded, chatShown, storedLayout, shownPanes])
+
   const branch = useWorkspaceBranch(displayOwner?.cwd ?? null, open && shownPanes.includes('changes'))
+
+  useEffect(() => {
+    const element = bodyRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return undefined
+    const read = (): void => setBodyWidth(element.clientWidth)
+    read()
+    const observer = new ResizeObserver(read)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const openedPanes = useRef<readonly WorkspacePaneId[] | null>(null)
+  useLayoutEffect(() => {
+    const previous = openedPanes.current
+    openedPanes.current = shownPanes
+    if (!open || !activeOwner || expanded || previous === null || bodyWidth <= 0) return
+    if (!shownPanes.some((tab) => !previous.includes(tab))) return
+    const next = fitOpenedLayout(storedLayout, bodyWidth)
+    if (layoutsEqual(next, storedLayout)) return
+    setWorkspaceLayout(next, [])
+  }, [shownPanes, open, activeOwner, bodyWidth, storedLayout, setWorkspaceLayout])
+
+  const restoredFor = useRef<string | null>(null)
+  const lastWidth = useRef(0)
+  useLayoutEffect(() => {
+    if (!open || !activeOwner || expanded || bodyWidth <= 0) return
+    const grew = bodyWidth > lastWidth.current + 1
+    lastWidth.current = bodyWidth
+    const restore = restoredFor.current !== activeOwner.key
+    if (!restore && !grew) return
+    if (restore) restoredFor.current = activeOwner.key
+    if (shownPanes.length === 0) return
+    const next = withChatMinimum(storedLayout, bodyWidth)
+    if (layoutsEqual(next, storedLayout)) return
+    setWorkspaceLayout(next, [CHAT_TILE_ID])
+  }, [activeOwner, open, bodyWidth, storedLayout, shownPanes, setWorkspaceLayout])
 
   const handlePreview = (path: string, options?: PreviewOpenOptions): void => {
     showPreview(displayOwner?.key ?? null, path, options)
@@ -158,12 +216,7 @@ export function WorkbenchPanel({
   }
 
   const toggleExpand = (tab: WorkspacePaneId): void => {
-    if (expanded === tab) {
-      setWorkspaceFocus(false)
-      return
-    }
-    setWorkspaceTab(tab)
-    setWorkspaceFocus(true)
+    useUiV3.getState().toggleWorkspaceExpanded(tab)
   }
 
   const closePane = (tab: WorkspacePaneId): void => {
@@ -175,6 +228,8 @@ export function WorkbenchPanel({
     closeWorkspacePane(tab)
   }
 
+  const inactive = !activeOwner && open
+
   return (
     <section
       className="wb-panel"
@@ -182,60 +237,65 @@ export function WorkbenchPanel({
       data-mode={mode}
       data-focus={expanded ? '1' : '0'}
       data-dragging={dragging ? '1' : undefined}
+      hidden={!open && !chat}
       role="region"
       aria-label={text.title}
-      hidden={!open}
     >
-      <div className="wb-body">
-        {displayOwner ? (
-          <TileLayoutView
-            layout={layout}
-            mounted={mounted}
-            dragDisabled={!!expanded}
-            text={tileText}
-            tileName={(id) => (isToolPane(id) ? text.tabs[id] : subagentPaneTitle(id))}
-            onLayoutChange={(next) => {
-              if (!expanded) setWorkspaceLayout(next)
-            }}
-            canMoveOut={(id) => mode !== 'full' && canTileTool(id) && hasTileRoom(emptiesPanel(id))}
-            onMoveOut={(id, target) => {
-              if (canTileTool(id)) moveBesideChat(id, target)
-            }}
-            onDraggingChange={setDragging}
-            renderTile={(id, handle) => {
-              const tab = id as WorkspacePaneId
-              const tool = isToolPane(tab) ? tab : null
-              const shown = open && ownerReady && visiblePanes.includes(tab)
-              return (
-                <PaneCard
-                  tab={tab}
-                  shown={shown}
-                  expanded={expanded === tab}
-                  blocked={!displayOwner.active && WORKBENCH_ACTIVE_TABS.has(tab)}
-                  owner={displayOwner}
-                  panes={panes}
-                  text={text}
-                  title={tab === 'changes' && branch ? `${branch}` : tool ? text.tabs[tool] : ''}
-                  scope={tab === 'changes' && branch ? text.changesScope : undefined}
-                  previewPath={previewPathFor(previewBindings, displayOwner.key)}
-                  activating={activating}
-                  canPopout={!!tool && POPOUT_TABS.has(tool) && !!onPopout}
-                  canMoveBeside={mode !== 'full' && canTileTool(tab)}
-                  moveBesideLabel={tileText2.tileOut}
-                  onActivate={() => tool && attemptActivation(tool)}
-                  onPreview={handlePreview}
-                  onToggleExpand={() => toggleExpand(tab)}
-                  onClose={() => closePane(tab)}
-                  onPopout={() => tool && onPopout?.(tool)}
-                  onMoveBeside={() => tool && moveBesideChat(tool)}
-                  handle={handle}
-                />
-              )
-            }}
-          />
-        ) : (
-          <EmptyState className="wb-empty" data-testid="wb-empty" title={text.inactiveTitle} />
-        )}
+      <div className="wb-body" data-chat={chatShown ? '1' : undefined} ref={bodyRef}>
+        <TileLayoutView
+          layout={layout}
+          mounted={mounted}
+          dragDisabled={!!expanded || inactive}
+          text={tileText}
+          tileName={(id) => (id === CHAT_TILE_ID ? text.chatName : isToolPane(id) ? text.tabs[id] : subagentPaneTitle(id))}
+          onLayoutChange={(next) => {
+            if (expanded || inactive) return
+            if (chatShown) {
+              setWorkspaceLayout(next)
+              return
+            }
+            setWorkspaceLayout(layoutWithChat(panesOnlyLayout(next), chatFlexOf(storedLayout)), [])
+          }}
+          canMoveOut={(id) => mode !== 'full' && canTileTool(id) && hasTileRoom(emptiesPanel(id))}
+          onMoveOut={(id, target) => {
+            if (canTileTool(id)) moveBesideChat(id, target)
+          }}
+          onDraggingChange={setDragging}
+          renderTile={(id, handle) => {
+            if (id === CHAT_TILE_ID) return chat ?? null
+            if (id === CHAT_EMPTY_TILE_ID) return <EmptyState className="wb-empty" data-testid="wb-empty" title={text.inactiveTitle} />
+            if (!activeOwner) return null
+            const tab = id as WorkspacePaneId
+            const tool = isToolPane(tab) ? tab : null
+            const shown = open && ownerReady && visiblePanes.includes(tab)
+            return (
+              <PaneCard
+                tab={tab}
+                shown={shown}
+                expanded={expanded === tab}
+                suppress={dragging}
+                blocked={!activeOwner.active && WORKBENCH_ACTIVE_TABS.has(tab)}
+                owner={activeOwner}
+                panes={panes}
+                text={text}
+                title={tab === 'changes' && branch ? `${branch}` : tool ? text.tabs[tool] : ''}
+                scope={tab === 'changes' && branch ? text.changesScope : undefined}
+                previewPath={previewPathFor(previewBindings, activeOwner.key)}
+                activating={activating}
+                canPopout={!!tool && POPOUT_TABS.has(tool) && !!onPopout}
+                canMoveBeside={mode !== 'full' && canTileTool(tab)}
+                moveBesideLabel={tileText2.tileOut}
+                onActivate={() => tool && attemptActivation(tool)}
+                onPreview={handlePreview}
+                onToggleExpand={() => toggleExpand(tab)}
+                onClose={() => closePane(tab)}
+                onPopout={() => tool && onPopout?.(tool)}
+                onMoveBeside={() => tool && moveBesideChat(tool)}
+                handle={handle}
+              />
+            )
+          }}
+        />
       </div>
     </section>
   )
@@ -260,6 +320,7 @@ interface PaneCardProps {
   tab: WorkspacePaneId
   shown: boolean
   expanded: boolean
+  suppress: boolean
   blocked: boolean
   owner: WorkspaceOwner
   panes: WorkbenchPaneComponents
@@ -284,6 +345,7 @@ function PaneCard({
   tab,
   shown,
   expanded,
+  suppress,
   blocked,
   owner,
   panes,
@@ -304,6 +366,9 @@ function PaneCard({
   handle
 }: PaneCardProps): ReactElement {
   const [gripTip, setGripTip] = useState(false)
+  const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
+  const closeTip = `${text.closePane} · ${shortcutKeysText('workspaceClosePane', shortcutOverrides)}`
+  const expandTip = `${expanded ? text.collapse : text.expand} · ${shortcutKeysText('workspaceToggleMaximize', shortcutOverrides)}`
   const dragging = handle.dragging
   const tool = isToolPane(tab) ? tab : null
   const agentRunId = tool ? null : subagentRunOfPane(tab)
@@ -413,14 +478,14 @@ function PaneCard({
           <IconButton
             size="sm"
             aria-label={expanded ? text.collapse : text.expand}
-            title={expanded ? text.collapse : text.expand}
+            title={expandTip}
             aria-pressed={expanded}
             data-testid={`wb-card-expand-${tab}`}
             onPress={onToggleExpand}
           >
             {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </IconButton>
-          <IconButton size="sm" aria-label={text.closePane} title={text.closePane} data-testid={`wb-card-close-${tab}`} onPress={onClose}>
+          <IconButton size="sm" aria-label={text.closePane} title={closeTip} data-testid={`wb-card-close-${tab}`} onPress={onClose}>
             <X size={14} />
           </IconButton>
         </span>
@@ -429,7 +494,7 @@ function PaneCard({
         <div className="wb-pane" data-tab={tab} data-visible={shown ? '1' : '0'} data-testid={`wb-pane-${tab}`}>
           {agentRunId ? (
             <PaneChromeContext.Provider value={chrome}><SubagentTranscriptPane runId={agentRunId} /></PaneChromeContext.Provider>
-          ) : Body ? <PaneChromeContext.Provider value={chrome}><Body owner={owner} visible={shown && !blocked} onPreview={onPreview} path={previewPath} Preview={tab === 'files' ? panes.preview : undefined} /></PaneChromeContext.Provider> : (
+          ) : Body ? <PaneChromeContext.Provider value={chrome}><Body owner={owner} visible={shown && !blocked && !(suppress && tab === 'browser')} onPreview={onPreview} path={previewPath} Preview={tab === 'files' ? panes.preview : undefined} /></PaneChromeContext.Provider> : (
             <EmptyState className="wb-nowire" title={text.notWired} description={text.notWiredHint} />
           )}
           {blocked ? (

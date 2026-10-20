@@ -37,7 +37,7 @@ try {
   assert.equal((await call('ProjectClaude',{prompt:'No host'})).block,true)
   await build({entryPoints:['src/main/agent.ts'],outfile:resolve('out/test/cc-guard-host.mjs'),bundle:true,packages:'external',platform:'node',format:'esm',logLevel:'silent',plugins:[{name:'unused-electron',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const app={getLocale:()=> 'en',getPath:()=> ${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,loader:'js'}))}}]})
   const {AgentController}=await import(pathToFileURL(resolve('out/test/cc-guard-host.mjs')))
-  const reviewed=[];const host=new AgentController({cwd:root,push:()=>{},getPermissionMode:async()=> 'danger',confirmDanger:async input=>{reviewed.push(input);return 'allow'}})
+  const reviewed=[];const host=new AgentController({cwd:root,push:()=>{},getPermissionMode:async()=> 'danger',confirmDanger:async input=>{reviewed.push(input);return {decision:'allow'}}})
   const detail=JSON.stringify({prompt:'x'.repeat(3000),model:'haiku',mode:'full'})
   assert.equal((await host.runDangerConfirmCommand({tool:'AskClaude',detail,reasons:['Opaque delegation']})).summary.allowed,true)
   assert.equal(reviewed[0].detail,detail,'host preserves the entire delegation, including model and mode')

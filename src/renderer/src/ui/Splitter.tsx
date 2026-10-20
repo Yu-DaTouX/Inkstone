@@ -50,12 +50,39 @@ export interface SplitPointerInput {
 }
 
 export function splitValueFromPointer(input: SplitPointerInput): number {
+  return clampSplitValue(splitRawValueFromPointer(input), input.min, input.max)
+}
+
+export function splitRawValueFromPointer(input: SplitPointerInput): number {
   const delta = splitPointerDelta(
     input.orientation,
     input.clientX - input.startX,
     input.clientY - input.startY
   )
-  return clampSplitValue(input.startValue + delta, input.min, input.max)
+  return input.startValue + delta
+}
+
+export const SPLIT_TAP_SLOP = 3
+
+export function splitDragCollapses(raw: number, collapseBelow: number | undefined): boolean {
+  return typeof collapseBelow === 'number' && Number.isFinite(collapseBelow) && raw < collapseBelow
+}
+
+export function splitDragMoved(distance: number, slop: number = SPLIT_TAP_SLOP): boolean {
+  return Math.abs(distance) > slop
+}
+
+export interface SplitDragFrame {
+  hidden: boolean
+  value: number | null
+}
+
+export function splitDragFrame(
+  raw: number,
+  options: { collapseBelow?: number; min: number; max: number }
+): SplitDragFrame {
+  if (splitDragCollapses(raw, options.collapseBelow)) return { hidden: true, value: null }
+  return { hidden: false, value: clampSplitValue(raw, options.min, options.max) }
 }
 
 export interface SplitPointerLike {
@@ -71,6 +98,8 @@ export interface SplitDragSession {
   startValue: number
   startX: number
   startY: number
+  moved?: boolean
+  hidden?: boolean
 }
 
 export function beginSplitDrag(event: SplitPointerLike, value: number): SplitDragSession | null {
@@ -166,7 +195,10 @@ export interface SplitterProps
   step?: number
   largeStep?: number
   isDisabled?: boolean
+  collapseBelow?: number
   onChange?: (value: number) => void
+  onCollapse?: () => void
+  onDragHide?: (hidden: boolean) => void
   onReset?: () => void
 }
 
@@ -183,7 +215,10 @@ export function Splitter({
   step = 1,
   largeStep,
   isDisabled = false,
+  collapseBelow,
   onChange,
+  onCollapse,
+  onDragHide,
   onReset,
   className,
   onKeyDown,
@@ -222,6 +257,7 @@ export function Splitter({
 
   useEffect(
     () => () => {
+      if (dragRef.current?.hidden) onDragHide?.(false)
       releaseDrag()
     },
     []
@@ -231,7 +267,10 @@ export function Splitter({
   cancelDragRef.current = () => {
     const session = dragRef.current
     if (!session) return
+    const wasHidden = session.hidden === true
+    session.hidden = false
     endDrag()
+    if (wasHidden) onDragHide?.(false)
     const restored = clampSplitValue(session.startValue, min, max)
     if (!controlled) setUncontrolled(restored)
     onChange?.(restored)
@@ -259,14 +298,55 @@ export function Splitter({
     setDragging(true)
   }
 
+  const reportDragHide = (hidden: boolean): void => {
+    const session = dragRef.current
+    if (!session || session.hidden === hidden) return
+    session.hidden = hidden
+    onDragHide?.(hidden)
+  }
+
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const next = moveSplitDrag(dragRef.current, event, { orientation, min, max })
-    if (next === null) return
-    commit(next)
+    const session = dragRef.current
+    if (!session || !ownsSplitDrag(session, event)) return
+    const raw = splitRawValueFromPointer({
+      orientation,
+      startValue: session.startValue,
+      startX: session.startX,
+      startY: session.startY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      min,
+      max
+    })
+    if (splitDragMoved(splitPointerDelta(orientation, event.clientX - session.startX, event.clientY - session.startY))) {
+      session.moved = true
+    }
+    const frame = splitDragFrame(raw, { collapseBelow: onCollapse ? collapseBelow : undefined, min, max })
+    if (frame.hidden || frame.value === null) {
+      reportDragHide(true)
+      return
+    }
+    reportDragHide(false)
+    commit(frame.value)
   }
 
   const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const session = dragRef.current
+    if (!session || session.pointerId !== event.pointerId) return
+    const wasHidden = session.hidden === true
+    const collapse = wasHidden || session.moved !== true
     endDrag(event.pointerId)
+    if (wasHidden) onDragHide?.(false)
+    if (collapse) onCollapse?.()
+  }
+
+  const abortDrag = (pointerId?: number): void => {
+    const session = dragRef.current
+    if (!session) return
+    if (pointerId !== undefined && session.pointerId !== pointerId) return
+    const wasHidden = session.hidden === true
+    endDrag(pointerId)
+    if (wasHidden) onDragHide?.(false)
   }
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -312,8 +392,8 @@ export function Splitter({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
-      onLostPointerCapture={handlePointerEnd}
+      onPointerCancel={(event) => abortDrag(event.pointerId)}
+      onLostPointerCapture={(event) => abortDrag(event.pointerId)}
       onKeyDown={handleKeyDown}
       onDoubleClick={handleDoubleClick}
     />

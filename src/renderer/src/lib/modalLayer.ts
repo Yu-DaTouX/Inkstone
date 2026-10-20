@@ -38,6 +38,19 @@ export function isModalOpen(): boolean {
   return stack.length > 0
 }
 
+export function useModalCount(): number {
+  const [count, setCount] = useState(() => stack.length)
+  useEffect(() => {
+    const f = (): void => setCount(stack.length)
+    subs.add(f)
+    f()
+    return () => {
+      subs.delete(f)
+    }
+  }, [])
+  return count
+}
+
 export function isTopModal(token: symbol): boolean {
   return stack[stack.length - 1] === token
 }

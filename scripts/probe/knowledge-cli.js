@@ -41,8 +41,7 @@
 
     const ta = q('[data-testid="composer-input"]')
     if (!ta) return '✗ 找不到输入框'
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, prompt)
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
+    window.__yanComposer.set(prompt, ta)
     await sleep(200)
     const send = q('[data-testid="composer-send"]')
     if (!send || send.disabled) return '✗ 发送键不可用'

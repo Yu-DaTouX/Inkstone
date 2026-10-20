@@ -24,6 +24,7 @@ import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
 import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset } from '../shared/appearance'
+import { allowedSiteList } from './preview-site-access'
 
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
@@ -59,6 +60,7 @@ const DEFAULTS: AppSettings = {
   guardOutsideWrites: false,
   permissionMode: DEFAULT_PERMISSION_MODE,
   guardAllowRoots: [],
+  browserAllowedSites: [],
   checkpointsEnabled: true,
   sendKey: 'auto',
   responseDetail: 'standard',
@@ -197,6 +199,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.modelProviderOrder = cleanProviderOrder(settings.modelProviderOrder)
   settings.checkpointsEnabled = settings.checkpointsEnabled !== false
   settings.guardAllowRoots = cleanAllowRoots(settings.guardAllowRoots)
+  settings.browserAllowedSites = allowedSiteList(settings.browserAllowedSites)
   settings.subagentNotify = settings.subagentNotify === false ? false : undefined
   settings.streamLoopAutoContinue = settings.streamLoopAutoContinue === false ? false : undefined
   settings.workspaceTiles = settings.workspaceTiles === false ? false : undefined
@@ -354,6 +357,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.modelProviderOrder = cleanProviderOrder(next.modelProviderOrder)
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
+  next.browserAllowedSites = allowedSiteList(next.browserAllowedSites)
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
 
   if (Array.isArray(patch.recentCwds)) {

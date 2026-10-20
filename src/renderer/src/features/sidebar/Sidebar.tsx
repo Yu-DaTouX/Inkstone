@@ -8,8 +8,10 @@ import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { buildArchivedView, buildSidebarGroups, latestRunForSession, type SidebarGroup } from './sidebar-model'
+import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, latestRunForSession, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
+import { useSplitView } from '../../state/split-view'
+import { useNarrowLayout } from '../workbench/tool-tiles'
 import { ArchivedView } from './ArchivedView'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
@@ -17,11 +19,8 @@ import { sidebarText } from './sidebar-text'
 import { collabText } from '../collab/collab-text'
 import { ContentMatches, useContentSearch } from './ContentMatches'
 import { buildContentMatches } from './content-search'
-import { sessionStatusKind } from './session-status'
+import { paneShowsSession, sessionStatusKind, sessionUnread, visiblePaneSessions } from './session-status'
 import './Sidebar.css'
-
-const GROUP_LIMIT = 5
-const GROUP_STEP = 6
 
 function toggleKey(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
   const next = new Set(set)
@@ -51,7 +50,11 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const [showArchived, setShowArchived] = useState(false)
   const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(() => new Set())
   const [visibleCounts, setVisibleCounts] = useState<ReadonlyMap<string, number>>(() => new Map())
+  const [announcement, setAnnouncement] = useState('')
+  const [scrolled, setScrolled] = useState(false)
   const revealedRef = useRef('')
+  const listRef = useRef<HTMLElement>(null)
+  const pendingFocusRef = useRef('')
 
   const sessions = useStore((s) => s.sessions)
   const session = useStore((s) => s.session)
@@ -70,6 +73,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const messageCount = useStore((s) => s.messages.length)
   const currentSessionFile = useStore((s) => s.session?.sessionFile)
   const route = useUiV3((s) => s.route.name)
+  const split = useSplitView((s) => s.split)
+  const narrowPanes = useNarrowLayout()
+  const paneSessions = useMemo(() => (route === 'chat' ? visiblePaneSessions(split, narrowPanes) : []), [route, split, narrowPanes])
 
   useEffect(() => {
     const id = window.setTimeout(() => void refreshSessions(), 800)
@@ -146,13 +152,36 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     setCollapsedKeys((prev) => (prev.has(group.slot) ? toggleKey(prev, group.slot) : prev))
   }, [currentKey, groups, session?.sessionId, session?.sessionFile])
 
-  const visibleRows = (group: SidebarGroup): SessionSummary[] => {
-    const limit = visibleCounts.get(group.slot) ?? GROUP_LIMIT
-    if (group.list.length <= limit) return group.list
-    const head = group.list.slice(0, limit)
-    const current = group.list.find((item) => isCurrentItem(item))
-    return current && !head.includes(current) ? [...head, current] : head
-  }
+  const pageOf = (group: SidebarGroup): ReturnType<typeof groupPage> =>
+    groupPage(
+      group.list,
+      visibleCounts.get(group.slot) ?? 0,
+      group.list.find((item) => isCurrentItem(item)) ?? null
+    )
+
+  useEffect(() => {
+    const path = pendingFocusRef.current
+    if (!path) return
+    pendingFocusRef.current = ''
+    asideRef.current?.querySelector<HTMLElement>(`[data-session-path="${CSS.escape(path)}"] .v3-row`)?.focus()
+  }, [visibleCounts])
+
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const measure = (): void => {
+      list.style.setProperty('--v3-nav-lane', `${Math.max(0, list.offsetWidth - list.clientWidth)}px`)
+      setScrolled(list.scrollTop > 2)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(list)
+    list.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      observer.disconnect()
+      list.removeEventListener('scroll', measure)
+    }
+  }, [])
 
   useEffect(() => {
     let frame = 0
@@ -191,14 +220,27 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     void newSession({ cwd: group.cwd, projectId, scope: 'project' })
   }
 
-  const showMore = (group: SidebarGroup): void =>
+  const showMore = (group: SidebarGroup, keyboard: boolean): void => {
+    const revealed = visibleCounts.get(group.slot) ?? 0
+    const page = pageOf(group)
+    if (page.expanded) {
+      setVisibleCounts((prev) => {
+        const next = new Map(prev)
+        next.delete(group.slot)
+        return next
+      })
+      setAnnouncement(own.showLessAnnounce.replace('{group}', group.label))
+      return
+    }
+    const target = group.list[GROUP_PAGE_SIZE + revealed]
+    if (keyboard && target) pendingFocusRef.current = target.path
     setVisibleCounts((prev) => {
       const next = new Map(prev)
-      const limit = prev.get(group.slot) ?? GROUP_LIMIT
-      if (limit >= group.list.length) next.delete(group.slot)
-      else next.set(group.slot, limit + GROUP_STEP)
+      next.set(group.slot, revealed + GROUP_PAGE_SIZE)
       return next
     })
+    setAnnouncement(own.showMoreAnnounce.replace('{n}', String(page.revealable)).replace('{group}', group.label))
+  }
 
   const connLabel = conn === 'ready' ? t('conn.ready') : conn === 'starting' ? t('conn.starting') : t('conn.down')
   const connDot: StatusDotKind = conn === 'ready' ? 'ok' : conn === 'starting' ? 'pending' : 'fail'
@@ -267,7 +309,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         ) : null}
       </div>
 
-      <nav className="v3-side-list">
+      <nav className="v3-side-list" ref={listRef} data-scrolled={scrolled ? '1' : undefined}>
         {showArchived ? (
           <ArchivedView
             view={archivedView}
@@ -279,8 +321,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         ) : (
           groups.map((group) => {
             const collapsed = collapsedKeys.has(group.slot)
-            const expanded = (visibleCounts.get(group.slot) ?? GROUP_LIMIT) >= group.list.length
-            const rows = collapsed ? [] : visibleRows(group)
+            const page = pageOf(group)
+            const rows = collapsed ? [] : page.rows
             return (
               <div key={group.slot} className="v3-group" data-collapsed={collapsed ? '1' : undefined}>
                 <ProjectHeader
@@ -294,7 +336,9 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                   const isCurrent = isCurrentItem(item)
                   const title = manualTitles[item.id] ?? titles[item.id] ?? item.title
                   const run = latestRunForSession(runs, { id: item.id, path: item.path })
-                  const status = sessionStatusKind({ phase: run?.phase ?? null, unread: run ? isUnreadRun(run) : false, archived: !!item.archivedAt })
+                  const paneSelected = isCurrent || paneShowsSession(paneSessions, item)
+                  const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
+                  const status = sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt })
                   return (
                     <SidebarRow
                       key={item.path}
@@ -307,15 +351,20 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                     />
                   )
                 })}
-                {!collapsed && group.list.length > GROUP_LIMIT ? (
+                {!collapsed && group.list.length > GROUP_PAGE_SIZE ? (
                   <button
                     type="button"
                     className="ui-row v3-show-more"
-                    aria-expanded={expanded}
-                    onClick={() => showMore(group)}
+                    aria-expanded={page.expanded}
+                    aria-label={
+                      page.expanded
+                        ? own.showLessLabel.replace('{group}', group.label)
+                        : own.showMoreLabel.replace('{n}', String(page.revealable)).replace('{group}', group.label)
+                    }
+                    onClick={(event) => showMore(group, event.detail === 0)}
                     data-testid="v3-group-more"
                   >
-                    {expanded ? own.showLess : own.showMore}
+                    {page.expanded ? own.showLess : own.showMore.replace('{n}', String(page.revealable))}
                   </button>
                 ) : null}
               </div>
@@ -333,6 +382,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           />
         )}
         {query && total === 0 && !contentVisible ? <span className="v3-visually-hidden" aria-live="polite">{t('rail.noMatch')}</span> : null}
+        <span className="v3-visually-hidden" role="status">{announcement}</span>
       </nav>
 
       {archivedCount > 0 || showArchived ? (

@@ -33,6 +33,10 @@ export function runAtQueryTests(ok, atQuery) {
   const singleQuoted = findAtQuery(singleQuotedText, singleQuotedText.length)
   ok(singleQuoted?.query === 'src/我的 文件(1).md' && singleQuoted.quote === "'", '单引号路径保留原始引号类型')
 
+
+  ok(findAtQuery('`看 @src`', '`看 @src`'.length, { inCode: true }) === null, '行内码里的 @ 不触发文件引用')
+  ok(findAtQuery('看 @src', '看 @src'.length, {})?.query === 'src', '默认参数下 @ 触发行为不变')
+
   const secondText = '@one.txt 和 @src/ma'
   const second = findAtQuery(secondText, secondText.length)
   ok(second?.query === 'src/ma', '多处引用时只补全光标所在的最后一处')

@@ -21,11 +21,8 @@
   const store = window.__yanStore
   const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
-  const setValue = (el, text) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
-    setter.call(el, text)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setValue = (el, text) => composer.set(text, el)
   const pointer = (type, target, x, y) =>
     target.dispatchEvent(
       new PointerEvent(type, {

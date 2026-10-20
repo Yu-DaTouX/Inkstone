@@ -16,10 +16,8 @@
     }
     return false
   }
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
   const sid = () => store.getState().session?.sessionId ?? ''
   const send = async (text) => {
     const ta = q('[data-testid="composer-input"]')

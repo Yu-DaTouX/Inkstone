@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -13,8 +13,11 @@ import { build } from 'esbuild'
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dir = await mkdtemp(join(tmpdir(), 'yan-md-blocks-'))
 const outfile = join(dir, 'markdown-blocks.mjs')
+const kbdOutfile = join(dir, 'markdown-kbd.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-blocks.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
+await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-kbd.ts')], bundle: true, platform: 'node', format: 'esm', outfile: kbdOutfile, logLevel: 'error' })
 const { splitMarkdownBlocks } = await import(pathToFileURL(outfile).href)
+const { rehypeKbd } = await import(pathToFileURL(kbdOutfile).href)
 await rm(dir, { recursive: true, force: true })
 
 let pass = 0
@@ -27,6 +30,10 @@ function check(label, fn) {
 const html = (text) => renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text)).replace(/\n(?=<)|(?<=>)\n/g, '')
 const blockHtml = (text) => splitMarkdownBlocks(text).map((b) => html(b.text)).join('')
 const texts = (text) => splitMarkdownBlocks(text).map((b) => b.text)
+const kbdHtml = (text) =>
+  renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeKbd] }, text)).replace(/\n(?=<)|(?<=>)\n/g, '')
+const footnoteHtml = kbdHtml('脚注[^1]。\n\n[^1]: 定义内容。\n')
+const baseCss = await readFile(join(ROOT, 'src/renderer/src/design/base.css'), 'utf8')
 
 const answer = [
   '## 结论', '', '可以，按下面三步走：', '', '1. 先确认输入格式', '2. 写分帧函数', '3. 补边界测试', '',
@@ -79,6 +86,42 @@ check('引用定义不切分，HTML 块切分后渲染不变', () => {
 check('未换行的末行不触发切分', () => {
   assert.equal(texts('段一\n\n段二').length, 1)
   assert.equal(texts('段一\n\n段二\n').length, 2)
+})
+
+check('行内 <kbd> 渲染成元素，其余原始标签仍是文字', () => {
+  const keys = kbdHtml('按 <kbd>Ctrl</kbd>+<kbd>K</kbd> 中断。')
+  assert.ok(keys.includes('<kbd>Ctrl</kbd>+<kbd>K</kbd>'), keys)
+  assert.ok(!keys.includes('&lt;kbd&gt;'), keys)
+  const others = kbdHtml('<b>粗</b> <kbd onclick="alert(1)">Ctrl</kbd> <script>alert(1)</script>')
+  assert.ok(others.includes('<kbd>Ctrl</kbd>'), others)
+  assert.ok(/<(?:b|script)\b|onclick=/.test(others) === false, others)
+  assert.ok(others.includes('&lt;b&gt;') && others.includes('&lt;script&gt;'), others)
+})
+
+check('代码内的 <kbd> 保持原文', () => {
+  const code = kbdHtml('`<kbd>x</kbd>` 行内\n\n```\n<kbd>y</kbd>\n```\n')
+  assert.equal((code.match(/<kbd>/g) ?? []).length, 0, code)
+  assert.ok(code.includes('&lt;kbd&gt;x&lt;/kbd&gt;'), code)
+  assert.ok(code.includes('&lt;kbd&gt;y&lt;/kbd&gt;'), code)
+})
+
+check('未闭合的 <kbd> 不吞后续文字', () => {
+  assert.ok(kbdHtml('<kbd>Ctrl 没闭合').includes('&lt;kbd&gt;Ctrl 没闭合'))
+  assert.ok(kbdHtml('<kbd></kbd> 空').includes('&lt;kbd&gt;&lt;/kbd&gt;'))
+})
+
+check('脚注尾区块保留，标题靠 .sr-only 隐藏且结构不变', () => {
+  assert.ok(footnoteHtml.includes('<h2 class="sr-only" id="footnote-label">Footnotes</h2>'), footnoteHtml)
+  assert.ok(footnoteHtml.includes('<section data-footnotes="true" class="footnotes">'), footnoteHtml)
+  assert.ok(footnoteHtml.includes('data-footnote-backref'), footnoteHtml)
+})
+
+check('.sr-only 在 base.css 里是完整的无障碍隐藏规则', () => {
+  const rule = /\.sr-only[^{]*\{([^}]*)\}/.exec(baseCss)
+  assert.ok(rule, '.sr-only rule missing')
+  for (const declaration of ['position: absolute', 'width: 1px', 'height: 1px', 'clip-path: inset(50%)', 'white-space: nowrap']) {
+    assert.ok(rule[1].includes(declaration), `${declaration} missing in ${rule[1]}`)
+  }
 })
 
 const samples = [

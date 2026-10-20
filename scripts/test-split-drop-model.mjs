@@ -165,6 +165,18 @@ console.log('分屏块拖动（与参考 dropZone / paneDrop 一致）')
   ok(drop.applyPaneDrop(two, 0, { kind: 'column', at: 0 }) === null, '放回原位：没有变化')
   ok(drop.applyPaneDrop([s('a'), s('b', { below: true })], 1, { kind: 'column', at: 2 }, 1) === null, '超出列数上限：不成立')
 
+  const four = [s('a'), s('b', { below: true }), s('c'), s('d', { below: true })]
+  const ownTop = drop.paneDropTarget(four, 1, zone(500, 100), 3)
+  ok(ownTop?.kind === 'swap' && ownTop.index === 0, '两块列的行内上下换位：下方块拖到上三分之一与上方块交换', ownTop)
+  const ownBottom = drop.paneDropTarget(four, 0, zone(500, 780), 3)
+  ok(ownBottom?.kind === 'swap' && ownBottom.index === 1, '上方块拖到本列下三分之一与下方块交换', ownBottom)
+  ok(drop.paneDropTarget(four, 1, zone(500, 780), 3) === null, '下方块留在本列下方：没有落点')
+  const foreignAbove = drop.paneDropTarget(four, 3, zone(400, 100), 3)
+  ok(foreignAbove?.kind === 'swap' && foreignAbove.index === 0, '已有两块的列也能插到上方：与上方块交换而不是另开一列', foreignAbove)
+  const foreignBelow = drop.paneDropTarget(four, 3, zone(400, 780), 3)
+  ok(foreignBelow?.kind === 'swap' && foreignBelow.index === 1, '已有两块的列也能插到下方：与下方块交换', foreignBelow)
+  ok(ids(drop.applyPaneDrop(four, 3, foreignAbove, 3)) === 'd,b↓,c,a↓', '插到上方后目标列仍是两块，源块占上方格', ids(drop.applyPaneDrop(four, 3, foreignAbove, 3)))
+
   const hint = drop.paneDropBadge(null, two, 1, { host, columns: cols2, rowSplit: 0.5 }, 3)
   ok(hint.hint && hint.label === 'swap' && hint.box.left === 308, '无落点：提示与第一列交换（变暗）', hint)
   const move = drop.paneDropBadge({ kind: 'stack', col: 1, row: 1 }, two, 0, { host, columns: cols2, rowSplit: 0.5 }, 3)

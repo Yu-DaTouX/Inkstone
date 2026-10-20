@@ -542,13 +542,19 @@ async function main() {
     let closed = 0
     let tree = rt.render(WorkbenchPanel, panelProps({ open: true, onClose: () => { closed += 1 } }))
     let cards = slotsIn(tree, 0)
-    ok(tileViews(tree).length === 1 && tileViews(tree)[0].props.layout.root.direction === 'column', '所有面板放在同一个竖向平铺布局里')
+    const root = tileViews(tree)[0].props.layout.root
+    ok(
+      tileViews(tree).length === 1 && root.direction === 'row' && root.children[0].kind === 'tile' && root.children[0].tileId === 'chat' && root.children[1].direction === 'column',
+      '聊天块与面板在同一棵树里：根行 = 聊天 + 竖向面板列',
+      root
+    )
     ok(cards.filter((s) => s.props.shown).map((s) => s.props.tab).join() === 'changes,context', '两个打开的面板同时可见', cards.map((s) => s.props.tab))
-    ok(tileOrder(tileViews(tree)[0]).join() === 'changes,context', '按打开顺序从上到下排列', tileOrder(tileViews(tree)[0]))
+    ok(tileOrder(tileViews(tree)[0]).join() === 'chat,changes,context', '面板按打开顺序从上到下排列，聊天在根行首位', tileOrder(tileViews(tree)[0]))
     const swapped = tileViews(tree)[0].props.layout
-    tileViews(tree)[0].props.onLayoutChange({ root: { ...swapped.root, children: [...swapped.root.children].reverse() } })
+    const panesRoot = swapped.root.children[1]
+    tileViews(tree)[0].props.onLayoutChange({ root: { ...swapped.root, children: [swapped.root.children[0], { ...panesRoot, children: [...panesRoot.children].reverse() }] } })
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
-    ok(useUiV3.getState().workspacePanes.join() === 'context,changes' && tileOrder(tileViews(tree)[0]).join() === 'context,changes', '拖动后的布局写回 store 并决定顺序', useUiV3.getState().workspacePanes)
+    ok(useUiV3.getState().workspacePanes.join() === 'context,changes' && tileOrder(tileViews(tree)[0]).join() === 'chat,context,changes', '拖动后的布局写回 store 并决定顺序', useUiV3.getState().workspacePanes)
     tileViews(tree)[0].props.onLayoutChange(swapped)
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
     ok(tree.props['data-focus'] === '0', '未展开时面板不带 data-focus')
@@ -562,6 +568,7 @@ async function main() {
     tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
     cards = slotsIn(tree, 0)
     ok(tree.props['data-focus'] === '1', '展开后面板带 data-focus=1')
+    ok(tileViews(tree)[0].props.layout.root.children[0].flex === 0, '展开单个面板时聊天块折成 0 宽（留在树里不卸载）', tileViews(tree)[0].props.layout.root.children.map((c) => c.flex))
     ok(cards.find((s) => s.props.tab === 'context').props.shown === true, '展开的面板可见')
     ok(cards.find((s) => s.props.tab === 'changes').props.shown === false, '其他面板隐藏但保活')
 
@@ -576,6 +583,35 @@ async function main() {
     slotsIn(tree, 0).find((s) => s.props.tab === 'context').props.onClose()
     ok(useUiV3.getState().workspacePanes.length === 0 && closed === 1, '关闭最后一个面板时收起工作区')
     ok(useUiV3.getState().workspaceTab === 'overview', '没有面板时视图回到概览')
+  }
+
+  group('WorkbenchPanel：聊天进树后的容器状态（未激活 / 全屏 / 拖动抑制）')
+  {
+    useUiV3.setState({ workspaceTab: 'browser', workspacePanes: ['browser', 'terminal'], workspaceFocus: false, workspaceOpen: true })
+    const rt = hookRuntime()
+    let tree = rt.render(WorkbenchPanel, panelProps({ owner: null, open: true }))
+    const emptyTile = tileViews(tree)[0].props.renderTile('ws-empty', { ...STUB_HANDLE, tileId: 'ws-empty' })
+    ok(emptyTile?.props?.['data-testid'] === 'wb-empty', '没有 owner 时面板列回到「会话未激活」空状态', emptyTile?.props)
+    ok(tileOrder(tileViews(tree)[0]).join() === 'chat,ws-empty', '空状态占面板列，聊天块仍在根行里', tileOrder(tileViews(tree)[0]))
+    ok(tileViews(tree)[0].props.renderTile('browser', { ...STUB_HANDLE, tileId: 'browser' }) === null, '没有 owner 时不渲染面板块（只是保活，不装载）', tileViews(tree)[0].props.mounted)
+
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true, mode: 'full' }))
+    ok(tileOrder(tileViews(tree)[0]).join() === 'chat,browser,terminal', '窄窗全屏模式聊天块留在树里（不卸载）', tileOrder(tileViews(tree)[0]))
+    ok(tileViews(tree)[0].props.layout.root.children[0].flex === 0, '窄窗全屏模式聊天块 flex=0 不占宽', tileViews(tree)[0].props.layout.root.children.map((c) => c.flex))
+    ok(tileViews(tree)[0].props.mounted.includes('chat'), '全屏时聊天块仍在挂载集合里（不卸载）', tileViews(tree)[0].props.mounted)
+
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true, mode: 'docked' }))
+    ok(tileOrder(tileViews(tree)[0]).join() === 'chat,browser,terminal', 'docked 时聊天块回到根行首位', tileOrder(tileViews(tree)[0]))
+
+    tileViews(tree)[0].props.onDraggingChange(true)
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true, mode: 'docked' }))
+    ok(renderSlot(slotFor(tree, 'browser'), stubSet).leaf?.props?.visible === false, '拖动磁贴时原生浏览器视图隐藏')
+    ok(renderSlot(slotFor(tree, 'terminal'), stubSet).leaf?.props?.visible === true, '拖动磁贴不隐藏终端（不触发重新加载）')
+
+    tileViews(tree)[0].props.onDraggingChange(false)
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true, mode: 'docked' }))
+    ok(renderSlot(slotFor(tree, 'browser'), stubSet).leaf?.props?.visible === true, '拖动结束后浏览器视图恢复')
+    useUiV3.setState({ workspaceFocus: false })
   }
 
   await rm(outdir, { recursive: true, force: true })

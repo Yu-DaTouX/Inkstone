@@ -25,8 +25,24 @@ export type TileTarget =
   | { kind: 'split'; stackId: string; direction: TileDirection; index: number }
   | { kind: 'wrap'; tileId: string; direction: TileDirection; index: number }
 
-export const TILE_GAP = 8
-export const TILE_MIN_PX = 120
+export const TILE_GAP = 12
+export const TILE_MIN_WIDTH_PX = 280
+export const TILE_MIN_HEIGHT_PX = 100
+export const TILE_DRAG_LIFT = 24
+
+export const CHAT_TILE_ID = 'chat'
+export const CHAT_EMPTY_TILE_ID = 'ws-empty'
+export const CHAT_PANES_ID = 'ws-panes'
+export const CHAT_ROOT_ID = 'ws-root'
+export const CHAT_MIN_WIDTH_PX = 320
+export const CHAT_FLEX = 2
+export const CHAT_PANES_FLEX = 3
+
+export const tileMinPx = (direction: TileDirection): number =>
+  direction === 'row' ? TILE_MIN_WIDTH_PX : TILE_MIN_HEIGHT_PX
+
+export const tileMinPxOf = (tileId: string, direction: TileDirection): number =>
+  direction === 'row' && tileId === CHAT_TILE_ID ? CHAT_MIN_WIDTH_PX : tileMinPx(direction)
 
 interface Slot {
   stack: TileStack
@@ -126,7 +142,7 @@ function normalizeNode(node: TileNode): TileNode {
       continue
     }
     if (clean.children.length === 0) continue
-    if (clean.direction === node.direction) {
+    if (clean.direction === node.direction && clean.id !== CHAT_PANES_ID) {
       children.push(...clean.children)
       continue
     }
@@ -196,6 +212,138 @@ export function layoutsEqual(a: TileLayout, b: TileLayout, compareFlex = true): 
     return left.children.every((child, index) => same(child, right.children[index]))
   }
   return same(a.root, b.root)
+}
+
+export function chatOnlyLayout(chatFlex = CHAT_FLEX): TileLayout {
+  return { root: tileStack('row', [tileLeaf(CHAT_TILE_ID, chatFlex > 0 ? chatFlex : CHAT_FLEX)], 1, CHAT_ROOT_ID) }
+}
+
+export function chatFlexOf(layout: TileLayout | null): number {
+  if (!layout || orderedTileIds(layout).length <= 1) return CHAT_FLEX
+  const hit = locateTile(layout.root, CHAT_TILE_ID)
+  return hit && isTileNode(hit.node) ? hit.node.flex : CHAT_FLEX
+}
+
+export function panesLayoutOf(layout: TileLayout): TileLayout | null {
+  const rest = hasTile(layout, CHAT_TILE_ID) ? removeTile(layout, CHAT_TILE_ID) : layout
+  const ids = orderedTileIds(rest).filter((id) => id !== CHAT_TILE_ID)
+  if (ids.length === 0) return null
+  return orderedTileIds(rest).length === ids.length ? rest : columnLayout(ids)
+}
+
+export function panesOnlyLayout(layout: TileLayout): TileLayout {
+  return panesLayoutOf(layout) ?? columnLayout([])
+}
+
+export function foldChat(layout: TileLayout): TileLayout {
+  const hit = locateTile(layout.root, CHAT_TILE_ID)
+  if (!hit || hit.trail.length === 0 || !isTileNode(hit.node)) return layout
+  const parent = hit.trail[hit.trail.length - 1]
+  const children = parent.stack.children.map((child, index) => (index === parent.index ? withFlex(child, 0) : child))
+  return normalizeLayout({ root: replaceStackAt(hit.trail.slice(0, -1), withChildren(parent.stack, children)) })
+}
+
+export function layoutWithChat(panes: TileLayout | null, chatFlex = CHAT_FLEX): TileLayout {
+  const chat = tileLeaf(CHAT_TILE_ID, chatFlex > 0 ? chatFlex : CHAT_FLEX)
+  const side = panes && orderedTileIds(panes).length > 0 ? panes.root : null
+  if (!side) return chatOnlyLayout(chatFlex)
+  if (side.direction === 'row') {
+    const total = side.children.reduce((sum, child) => sum + child.flex, 0) || 1
+    const lanes = side.children.map((child) => withFlex(child, (child.flex / total) * CHAT_PANES_FLEX))
+    return normalizeLayout({ root: tileStack('row', [chat, ...lanes], 1, CHAT_ROOT_ID) })
+  }
+  const lanes = tileStack('column', [side], CHAT_PANES_FLEX, CHAT_PANES_ID)
+  return normalizeLayout({ root: tileStack('row', [chat, lanes], 1, CHAT_ROOT_ID) })
+}
+
+export const WIDE_PANE_IDS: ReadonlySet<string> = new Set(['files', 'changes', 'preview'])
+
+export function defaultSideFlex(tileId: string): number {
+  return WIDE_PANE_IDS.has(tileId) ? CHAT_PANES_FLEX : 1
+}
+
+export function paneFlexMemory(memory: Readonly<Record<string, number>> | null | undefined, tileId: string): number {
+  const remembered = memory ? memory[tileId] : undefined
+  const value = Number(remembered)
+  return Number.isFinite(value) && value > 0 ? value : defaultSideFlex(tileId)
+}
+
+export function initialLayout(tileId: string, flexByKind: Readonly<Record<string, number>> = {}): TileLayout {
+  return {
+    root: tileStack('row', [tileLeaf(CHAT_TILE_ID, CHAT_FLEX), tileLeaf(tileId, paneFlexMemory(flexByKind, tileId))], 1, CHAT_ROOT_ID)
+  }
+}
+
+export function stackUnder(layout: TileLayout, anchorTileId: string, tileId: string): TileLayout {
+  const hit = locateTile(layout.root, anchorTileId)
+  if (!hit || hit.trail.length === 0 || !isTileNode(hit.node)) return appendTile(layout, tileId)
+  const owner = hit.trail[hit.trail.length - 1]
+  const parent = owner.stack
+  const tile = tileLeaf(tileId)
+  const replacement =
+    parent.direction === 'column'
+      ? withChildren(parent, [...parent.children, tile])
+      : withChildren(
+          parent,
+          parent.children.map((child, index) =>
+            index === owner.index ? tileStack('column', [withFlex(child, 1), tile], child.flex) : child
+          )
+        )
+  return normalizeLayout({ root: replaceStackAt(hit.trail.slice(0, -1), replacement) })
+}
+
+export function openPane(
+  layout: TileLayout | null,
+  tileId: string,
+  flexByKind: Readonly<Record<string, number>> = {}
+): TileLayout {
+  const base = layout ? normalizeLayout(layout) : null
+  if (!base || !orderedTileIds(base).some((id) => id !== CHAT_TILE_ID)) return initialLayout(tileId, flexByKind)
+  if (hasTile(base, tileId)) return base
+  const root = base.root
+  const last = root.direction === 'row' && root.children.length > 0 ? root.children[root.children.length - 1] : root
+  if (isTileNode(last) && last.tileId !== CHAT_TILE_ID) return stackUnder(base, last.tileId, tileId)
+  const row = root.direction === 'row' ? root : tileStack('row', [withFlex(root, 1)])
+  return normalizeLayout({ root: withChildren(row, [...row.children, tileLeaf(tileId)]) })
+}
+
+export function flexChanges(before: TileLayout | null, after: TileLayout): string[] {
+  const collect = (layout: TileLayout | null): Map<string, number> => {
+    const out = new Map<string, number>()
+    const walk = (node: TileNode): void => {
+      if (isTileNode(node)) out.set(node.tileId, node.flex)
+      else for (const child of node.children) walk(child)
+    }
+    if (layout) walk(layout.root)
+    return out
+  }
+  const previous = collect(before)
+  const changed: string[] = []
+  for (const [tileId, flex] of collect(after)) {
+    const old = previous.get(tileId)
+    if (old === undefined || Math.abs(old - flex) > 1e-6) changed.push(tileId)
+  }
+  return changed
+}
+
+export function rememberPaneFlex(
+  layout: TileLayout,
+  changedKeys: readonly string[] | null | undefined,
+  flexByKind: Record<string, number> = {}
+): Record<string, number> {
+  if (!changedKeys || changedKeys.length === 0) return flexByKind
+  const root = layout.root
+  if (root.direction !== 'row') return flexByKind
+  const chat = root.children.find((child) => isTileNode(child) && child.tileId === CHAT_TILE_ID)
+  if (!chat || chat.flex <= 0) return flexByKind
+  let out = flexByKind
+  for (const child of root.children) {
+    if (!isTileNode(child) || child.tileId === CHAT_TILE_ID || !changedKeys.includes(child.tileId)) continue
+    const ratio = (2 * child.flex) / chat.flex
+    if (out[child.tileId] === ratio) continue
+    out = { ...out, [child.tileId]: ratio }
+  }
+  return out
 }
 
 export function appendTile(layout: TileLayout, tileId: string): TileLayout {

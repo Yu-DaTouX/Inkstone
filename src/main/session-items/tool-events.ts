@@ -1,4 +1,5 @@
 import type { UIToolCall } from '../../shared/ipc'
+import { isDangerDenial } from '../../shared/danger-block'
 import { imagesOf, type PiContentBlock } from '../normalize'
 
 export interface ToolResultPayload {
@@ -61,6 +62,7 @@ export function endToolExecution(call: UIToolCall, evt: ToolExecutionEnd, now: n
   call.cancelled = cancelled || undefined
   call.status = evt.isError && !cancelled ? 'error' : 'ok'
   call.output = toolResultText(result?.content)
+  if (call.status === 'error' && isDangerDenial(call.output)) call.denied = true
   call.images = imagesOf(result?.content)
   call.details = result?.details
   call.endedAt = now

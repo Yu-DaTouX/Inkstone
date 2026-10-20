@@ -21,11 +21,8 @@
   const qa = (testId) => [...document.querySelectorAll(`[data-testid="${testId}"]`)]
   const store = window.__yanStore
 
-  const setValue = (el, text) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
-    setter.call(el, text)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setValue = (el, text) => composer.set(text, el)
   const runningNow = (s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true
   const countOf = (s) => {
     const todos = s.todos ?? []

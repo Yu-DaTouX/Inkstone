@@ -1,9 +1,10 @@
-import { open, realpath, stat } from 'node:fs/promises'
+import { open, readFile, realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
-import type { FilePreview, FilePreviewIssue, FileRefInfo, FileRefKind, FileTextResult } from '../shared/ipc'
+import type { FilePreview, FilePreviewIssue, FileRefInfo, FileRefKind, FileTextResult, PreviewBytes } from '../shared/ipc'
 import { isWithin, realRoot, scopedPath } from './file-path-gate'
 import { decodeText, mediaOf } from './file-preview-classify'
+import { MAX_PDF_BYTES } from './office/pdf-text'
 
 const MAX_TEXT = 2 * 1024 * 1024
 const WINDOW_TRIGGER_LINES = 2000
@@ -227,6 +228,45 @@ export async function statPreview(
   const resolved = await resolvePreviewTarget(rawPath, cwd)
   if (!resolved.ok) return { ok: false, abs: '', mtimeMs: 0, size: 0, error: resolved.error }
   return { ok: true, abs: resolved.real, mtimeMs: resolved.st.mtimeMs, size: resolved.st.size }
+}
+
+export async function readPreviewBytes(rawPath: string, cwd: string): Promise<PreviewBytes> {
+  const resolved = await resolvePreviewTarget(rawPath, cwd)
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      abs: '',
+      name: basename(rawPath) || rawPath,
+      size: 0,
+      error: resolved.error,
+      issue: resolved.issue
+    }
+  }
+  const { real, st } = resolved
+  const name = basename(real)
+  if (st.size > MAX_PDF_BYTES) {
+    return {
+      ok: false,
+      abs: real,
+      name,
+      size: st.size,
+      error: `PDF 超过 ${Math.round(MAX_PDF_BYTES / 1024 / 1024)}MB`,
+      issue: 'too_large'
+    }
+  }
+  try {
+    const bytes = await readFile(real)
+    return {
+      ok: true,
+      abs: real,
+      name,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    }
+  } catch {
+    return { ok: false, abs: real, name, size: st.size, error: '读取失败（可能没有权限）', issue: 'unreadable' }
+  }
 }
 
 export async function readPreview(

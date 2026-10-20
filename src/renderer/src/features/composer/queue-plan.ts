@@ -54,6 +54,11 @@ export function planQueueRemove(state: QueueState, id: string): QueueState | nul
   return replaceList(state, found.kind, items)
 }
 
+export function planQueueClear(state: QueueState): QueueState | null {
+  if (state.steering.length === 0 && state.followUp.length === 0) return null
+  return { steering: [], followUp: [] }
+}
+
 export function droppedQueueText(state: QueueState): string {
   return [...state.steering, ...state.followUp]
     .map((item) => item.text)

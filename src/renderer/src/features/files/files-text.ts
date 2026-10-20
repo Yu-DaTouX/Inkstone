@@ -18,6 +18,8 @@ export interface FilesText {
   collapseAll: string
   showTree: string
   hideTree: string
+  showHidden: string
+  showHiddenDesc: string
   resizeTree: string
   goToFile: string
   searchLabel: string
@@ -80,6 +82,8 @@ const ZH: FilesText = {
   collapseAll: '折叠全部',
   showTree: '显示文件树',
   hideTree: '隐藏文件树',
+  showHidden: '显示隐藏项',
+  showHiddenDesc: '在文件树中显示以点开头的文件与文件夹，以及 .git、node_modules 等目录',
   resizeTree: '调整文件树大小',
   goToFile: '转到文件或搜索',
   searchLabel: '筛选文件',
@@ -142,6 +146,8 @@ const EN: FilesText = {
   collapseAll: 'Collapse all',
   showTree: 'Show file tree',
   hideTree: 'Hide file tree',
+  showHidden: 'Show hidden items',
+  showHiddenDesc: 'Show dotfiles and folders such as .git and node_modules in the file tree',
   resizeTree: 'Resize file tree',
   goToFile: 'Go to file or search',
   searchLabel: 'Filter files',

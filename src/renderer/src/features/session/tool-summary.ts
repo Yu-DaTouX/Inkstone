@@ -1,4 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
+import type { SessionTextKey } from './text'
+import { redactCommandSecrets, stepCategory, stepVerbKey, toolTarget } from './tool-title'
 
 type Kind = 'read' | 'search' | 'fetch' | 'run' | 'edit' | 'other'
 
@@ -19,19 +21,20 @@ export function generatingArgs(call: UIToolCall): boolean {
 }
 
 export function summarize(call: UIToolCall): string {
-  const a = call.args as Record<string, unknown> | undefined
-  if (!a || typeof a !== 'object') return ''
-  if (typeof a.command === 'string') return a.command
-  if (typeof a.code === 'string') return a.code.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
-  if (typeof a.file_path === 'string') return a.file_path.split(/[\\/]/).pop() || a.file_path
-  if (typeof a.path === 'string') return a.path.split(/[\\/]/).pop() || a.path
-  if (typeof a.pattern === 'string') return a.pattern
-  if (typeof a.query === 'string') return a.query
-  if (typeof a.url === 'string') return a.url
-  const keys = Object.keys(a)
-  return keys.length ? keys.slice(0, 3).join(', ') : ''
+  const target = toolTarget(call)
+  return stepCategory(call.name) === 'bash' ? redactCommandSecrets(target) : target
 }
 
 export function runningCallLabel(call: UIToolCall, generating: string): string {
   return `${call.name} ${generatingArgs(call) ? generating : summarize(call)}`.trim()
+}
+
+export function toolRunningLabel(
+  call: UIToolCall,
+  generating: string,
+  tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string
+): string {
+  const label = stepVerbKey(call, tt) ?? call.name
+  const meta = generatingArgs(call) ? generating : summarize(call)
+  return `${label} ${meta}`.trim()
 }

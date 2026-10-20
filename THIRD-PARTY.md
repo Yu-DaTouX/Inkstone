@@ -30,6 +30,8 @@
 | --- | --- |
 | React / React DOM / Zustand / CodeMirror 6 / mermaid / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
 | React Aria Components（`react-aria-components`） | Apache-2.0 |
+| [PDF.js](https://mozilla.github.io/pdf.js/)（npm 包 `pdfjs-dist`，文件预览里的 PDF 渲染） | Apache-2.0 |
+| [ProseMirror](https://prosemirror.net)（`prosemirror-model` / `-state` / `-view` / `-commands` / `-keymap` / `-history`，输入框编辑器） | MIT |
 | highlight.js（经 `lowlight`、`rehype-highlight` 使用） | BSD-3-Clause |
 | KaTeX（含其字体，经 `remark-math`、`rehype-katex` 按需加载） | MIT |
 | qrcode.react | ISC |

@@ -53,6 +53,37 @@ export interface PreviewText {
   outsideRoot: string
   encodingNote: string
   mediaHint: string
+  mediaLoadFailed: string
+  imageLoadFailedHint: string
+  mediaLoadFailedHint: string
+  frameFailed: string
+  pdfToolbar: string
+  pdfPrevPage: string
+  pdfNextPage: string
+  pdfFitWidth: string
+  pdfZoomIn: string
+  pdfZoomOut: string
+  pdfZoomReset: string
+  pdfFailed: string
+  pdfFailedHint: string
+  pdfPassword: string
+  pdfPasswordHint: string
+  pdfTooLarge: string
+  pdfTooLargeHint: string
+  htmlLoading: string
+  csvEmpty: string
+  csvFailed: string
+  csvFailedHint: string
+  csvFilterRows: string
+  csvRowCount: string
+  csvShownRows: string
+  csvSortBy: string
+  csvTableLabel: string
+  csvShowingRows: string
+  csvShowingColumns: string
+  csvShowingBoth: string
+  csvLongCells: string
+  csvMissingEnd: string
   revealInTree: string
   keepTab: string
   closeOtherTabs: string
@@ -62,6 +93,7 @@ export interface PreviewText {
   copyRelative: string
   copyName: string
   previewTabHint: string
+  moreTabs: string
   codeLabel: string
   plainNote: string
   fold: string
@@ -73,6 +105,27 @@ export interface PreviewText {
   scrollPastEnd: string
   tabSize: string
   previewTabs: string
+  find: string
+  findPlaceholder: string
+  findMatchCase: string
+  findWholeWord: string
+  findRegexp: string
+  findPrev: string
+  findNext: string
+  findClose: string
+  findNoResults: string
+  findInvalid: string
+  findStatus: string
+  goToLine: string
+  goToPlaceholder: string
+  goToInvalid: string
+  goToInvalidRange: string
+  goToClose: string
+  commentOnLine: string
+  commentOnLines: string
+  commentPlaceholder: string
+  commentSave: string
+  commentCancel: string
 }
 
 const ZH: PreviewText = {
@@ -128,6 +181,37 @@ const ZH: PreviewText = {
   outsideRoot: '此文件在工作目录之外。',
   encodingNote: '无法识别文本编码，内容可能显示为乱码。',
   mediaHint: '音视频与 PDF 请用系统程序打开。',
+  mediaLoadFailed: '无法加载这个文件',
+  imageLoadFailedHint: '这张图片没能加载，可能太大，或者已被移动、删除。',
+  mediaLoadFailedHint: '这个文件无法在这里播放：可能是格式不支持、文件太大，或者已被移动、删除。',
+  frameFailed: '这个文件没能渲染出来',
+  pdfToolbar: 'PDF 工具栏',
+  pdfPrevPage: '上一页',
+  pdfNextPage: '下一页',
+  pdfFitWidth: '适合宽度',
+  pdfZoomIn: '放大',
+  pdfZoomOut: '缩小',
+  pdfZoomReset: '缩放回 100%',
+  pdfFailed: '无法显示这个 PDF',
+  pdfFailedHint: '文件可能已损坏，或者格式不受支持。可以用系统程序打开，或者重试。',
+  pdfPassword: '这个 PDF 已加密',
+  pdfPasswordHint: '需要密码才能显示内容。可以用系统程序打开，输入密码后查看。',
+  pdfTooLarge: '这个 PDF 太大',
+  pdfTooLargeHint: '超过 64 MB 的 PDF 不在这里渲染，可以用系统程序打开。',
+  htmlLoading: '正在加载预览…',
+  csvEmpty: '这个文件是空的',
+  csvFailed: '无法把这个文件解析成表格',
+  csvFailedHint: '切换到源码可以看原始文本。',
+  csvFilterRows: '筛选行',
+  csvRowCount: '{n} 行',
+  csvShownRows: '{shown} / {total} 行',
+  csvSortBy: '按「{column}」排序',
+  csvTableLabel: '表格预览',
+  csvShowingRows: '只显示前 {rows} 行。{cells}切换到源码查看全部。',
+  csvShowingColumns: '只显示前 {cols} 列。{cells}切换到源码查看全部。',
+  csvShowingBoth: '只显示前 {rows} 行、前 {cols} 列。{cells}切换到源码查看全部。',
+  csvLongCells: '过长的单元格已截短。',
+  csvMissingEnd: '预览可能缺少文件结尾。',
   revealInTree: '在文件树中显示',
   keepTab: '保持打开',
   closeOtherTabs: '关闭其他',
@@ -137,6 +221,7 @@ const ZH: PreviewText = {
   copyRelative: '相对路径',
   copyName: '文件名',
   previewTabHint: '预览',
+  moreTabs: '更多文件',
   codeLabel: '文件内容',
   plainNote: '文件较大，按纯文本显示，不做语法着色。',
   fold: '折叠',
@@ -147,7 +232,28 @@ const ZH: PreviewText = {
   showWhitespace: '显示空白字符',
   scrollPastEnd: '可滚动到末行之后',
   tabSize: 'Tab 宽度 {n}',
-  previewTabs: '预览标签'
+  previewTabs: '预览标签',
+  find: '在文件中查找',
+  findPlaceholder: '查找…',
+  findMatchCase: '区分大小写',
+  findWholeWord: '全词匹配',
+  findRegexp: '使用正则表达式',
+  findPrev: '上一个匹配',
+  findNext: '下一个匹配',
+  findClose: '关闭查找',
+  findNoResults: '没有匹配',
+  findInvalid: '正则表达式无效',
+  findStatus: '{current} / {total}',
+  goToLine: '跳转到行',
+  goToPlaceholder: '行号，或 行:列',
+  goToInvalid: '输入 1–{lines} 之间的行号',
+  goToInvalidRange: '输入第 {first}–{last} 行之间的行号',
+  goToClose: '关闭跳转',
+  commentOnLine: '评论第 {line} 行',
+  commentOnLines: '评论第 {start}–{end} 行',
+  commentPlaceholder: '写下评论，回车加入输入框',
+  commentSave: '加入输入框',
+  commentCancel: '取消评论'
 }
 
 const EN: PreviewText = {
@@ -203,6 +309,37 @@ const EN: PreviewText = {
   outsideRoot: 'This file is outside the working directory.',
   encodingNote: 'The text encoding was not recognized; content may look garbled.',
   mediaHint: 'Open audio, video and PDF files with a system app.',
+  mediaLoadFailed: 'Couldn’t load this file',
+  imageLoadFailedHint: 'This image couldn’t be loaded. It may be too large, or it may have been deleted or moved.',
+  mediaLoadFailedHint: 'This file couldn’t be previewed. The format may not be supported, it may be too large, or it may have been deleted or moved.',
+  frameFailed: 'This file didn’t render',
+  pdfToolbar: 'PDF toolbar',
+  pdfPrevPage: 'Previous page',
+  pdfNextPage: 'Next page',
+  pdfFitWidth: 'Fit width',
+  pdfZoomIn: 'Zoom in',
+  pdfZoomOut: 'Zoom out',
+  pdfZoomReset: 'Reset zoom to 100%',
+  pdfFailed: 'Couldn’t display this PDF',
+  pdfFailedHint: 'The file may be damaged or in an unsupported format. Open it with a system app, or try again.',
+  pdfPassword: 'This PDF is encrypted',
+  pdfPasswordHint: 'A password is needed to show it. Open it with a system app to enter the password.',
+  pdfTooLarge: 'This PDF is too large',
+  pdfTooLargeHint: 'PDFs over 64 MB are not rendered here; open it with a system app.',
+  htmlLoading: 'Loading preview…',
+  csvEmpty: 'This file is empty',
+  csvFailed: 'Couldn’t parse this file as a table',
+  csvFailedHint: 'Switch to the source to see the raw text.',
+  csvFilterRows: 'Filter rows',
+  csvRowCount: '{n} rows',
+  csvShownRows: '{shown} / {total} rows',
+  csvSortBy: 'Sort by {column}',
+  csvTableLabel: 'Table preview',
+  csvShowingRows: 'Showing the first {rows} rows.{cells} Switch to the source to see more.',
+  csvShowingColumns: 'Showing the first {cols} columns.{cells} Switch to the source to see more.',
+  csvShowingBoth: 'Showing the first {rows} rows and {cols} columns.{cells} Switch to the source to see more.',
+  csvLongCells: ' Long cells are shortened.',
+  csvMissingEnd: 'This preview may be missing its end.',
   revealInTree: 'Reveal in file tree',
   keepTab: 'Keep open',
   closeOtherTabs: 'Close others',
@@ -212,6 +349,7 @@ const EN: PreviewText = {
   copyRelative: 'Relative path',
   copyName: 'File name',
   previewTabHint: 'preview',
+  moreTabs: 'More files',
   codeLabel: 'File contents',
   plainNote: 'Large file: shown as plain text without syntax colors.',
   fold: 'Fold',
@@ -222,7 +360,28 @@ const EN: PreviewText = {
   showWhitespace: 'Show whitespace',
   scrollPastEnd: 'Scroll past last line',
   tabSize: 'Tab size {n}',
-  previewTabs: 'Preview tabs'
+  previewTabs: 'Preview tabs',
+  find: 'Find in file',
+  findPlaceholder: 'Find…',
+  findMatchCase: 'Match case',
+  findWholeWord: 'Match whole word',
+  findRegexp: 'Use regular expression',
+  findPrev: 'Previous match',
+  findNext: 'Next match',
+  findClose: 'Close find bar',
+  findNoResults: 'No results',
+  findInvalid: 'Invalid regular expression',
+  findStatus: '{current} / {total}',
+  goToLine: 'Go to line',
+  goToPlaceholder: 'Line, or line:column',
+  goToInvalid: 'Type a line number from 1 to {lines}',
+  goToInvalidRange: 'Type a line number from {first} to {last}',
+  goToClose: 'Close go to line bar',
+  commentOnLine: 'Comment on line {line}',
+  commentOnLines: 'Comment on lines {start}–{end}',
+  commentPlaceholder: 'Add a comment; Enter adds it to the composer',
+  commentSave: 'Add to prompt',
+  commentCancel: 'Cancel comment'
 }
 
 export function previewText(lang: Lang): PreviewText {

@@ -32,6 +32,71 @@
     user-select: text;
   }
 
+  .v3-code-bar {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-4) var(--s-6);
+    min-width: 0;
+    padding: var(--s-4) var(--s-8);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-1);
+  }
+
+  .v3-code-bar-field {
+    flex: 1 1 120px;
+    min-width: 0;
+    max-width: 320px;
+  }
+
+  .v3-code-bar-field .ui-input {
+    font-size: var(--t-footnote);
+  }
+
+  .v3-code-bar-options {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .v3-code-bar-option {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: var(--t-footnote);
+  }
+
+  .v3-code-bar-word {
+    text-decoration: underline;
+  }
+
+  .v3-code-bar-status {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .v3-code-find {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ask) 26%, transparent);
+    color: inherit;
+  }
+
+  .v3-code-find[data-active] {
+    background: color-mix(in srgb, var(--ask) 60%, transparent);
+    color: var(--ink);
+  }
+
+  .v3-code-find[data-active] span {
+    color: inherit;
+  }
+
   .v3-code-scroller:focus-visible {
     outline: none;
   }
@@ -51,9 +116,54 @@
   }
 
   .v3-code-gutter {
+    position: relative;
     display: flex;
     align-items: flex-start;
     user-select: none;
+  }
+
+  .v3-code-comment {
+    position: absolute;
+    left: 0;
+    top: calc((var(--t-code-lh) - 16px) / 2);
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-xs);
+    background: var(--accent);
+    color: var(--on-accent);
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .v3-code-line:hover .v3-code-comment,
+  .v3-code-comment:focus-visible {
+    opacity: 1;
+  }
+
+  .v3-code-comment:hover,
+  .v3-code-comment:focus-visible {
+    background: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  }
+
+  .v3-code-comment:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .v3-code-line[data-comment] {
+    background: var(--sel);
+  }
+
+  .v3-code-line[data-comment] .v3-code-number {
+    color: var(--accent-t);
+  }
+
+  .v3-code-line[data-pending-comment] {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .v3-code-number {
@@ -107,6 +217,12 @@
     overflow-wrap: anywhere;
   }
 
+  .v3-code-view[data-word-wrap='on'] .v3-code-text {
+    --code-hang: min(calc(var(--code-indent-ch, 0) * 1ch), 40%);
+    padding-left: var(--code-hang);
+    text-indent: calc(var(--code-hang) * -1);
+  }
+
   .v3-code-text[data-guides] {
     background-image: repeating-linear-gradient(to right, var(--line2) 0 1px, transparent 1px var(--code-guide-step));
     background-size: calc(var(--code-guide-step) * var(--code-guides)) 100%;
@@ -158,5 +274,49 @@
   .v3-code-folded:hover {
     background: var(--hover);
     color: var(--fg);
+  }
+
+  .v3-code-comment-card {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-6);
+    min-width: 0;
+    margin: var(--s-2) var(--s-8) var(--s-6) calc(var(--code-number-width, 3ch) + 4ch);
+    padding: var(--s-6) var(--s-8);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    white-space: normal;
+    user-select: text;
+  }
+
+  .v3-code-comment-label {
+    flex: none;
+    padding-top: var(--s-4);
+    color: var(--fg3);
+    white-space: nowrap;
+  }
+
+  .v3-code-comment-field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .v3-code-comment-field .ui-textarea {
+    min-height: 0;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .v3-code-comment-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
   }
 }

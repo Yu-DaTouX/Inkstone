@@ -26,10 +26,13 @@ import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './c
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
 import { previewOffice } from './office/office-service'
 import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
+import type { ApprovalDecision } from '../shared/approval'
 import {
+  consentFeedbackSummary,
   consentKeyOf,
   consentVerdict,
   normalizeConsentParts,
+  type ConsentAnswer,
   type ConsentDecision,
   type ConsentKeyParts,
   type ConsentVerdict
@@ -383,8 +386,8 @@ export class AgentController extends EventEmitter {
   ) => Promise<CapabilityAuthorizationChoice>
   private readonly imageRequests = new Set<AbortController>()
   private confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
-  private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
-  private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+  private confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
+  private confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
   private cancelApprovals?: () => void
   private activateApprovals?: (owner: ApprovalOwner) => void
   private retireApprovals?: () => void
@@ -567,8 +570,8 @@ export class AgentController extends EventEmitter {
       request: CapabilityAuthorizationPrompt
     ) => Promise<CapabilityAuthorizationChoice>
     confirmExternalApi?: (request: ExternalApiConfirmationRequest) => Promise<boolean>
-    confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentDecision | null>
-    confirmDanger?: (request: DangerConfirmPrompt) => Promise<ConsentDecision | null>
+    confirmToolConsent?: (request: ToolConsentPrompt) => Promise<ConsentAnswer | null>
+    confirmDanger?: (request: DangerConfirmPrompt) => Promise<ApprovalDecision | null>
     cancelApprovals?: () => void
     activateApprovals?: (owner: ApprovalOwner) => void
     retireApprovals?: () => void
@@ -1255,8 +1258,8 @@ export class AgentController extends EventEmitter {
     }
     const answer = this.confirmToolConsent ? await this.confirmToolConsent({ parts, purpose, verdict, cwd: this.cwd, owner: this.approvalOwner() }) : null
     if (!answer) return { data: { verdict }, summary: summary('no-answer') }
-    await recordConsentAnswer(parts, answer)
-    return { data: { verdict }, summary: summary(answer) }
+    await recordConsentAnswer(parts, answer.decision)
+    return { data: { verdict }, summary: { ...summary(answer.decision), ...consentFeedbackSummary(answer.decision, answer.feedback) } }
   }
 
   private async runDangerConfirmCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
@@ -1273,10 +1276,10 @@ export class AgentController extends EventEmitter {
     const kind = params.kind === 'permission' || params.kind === 'delete' ? params.kind : undefined
     const toolCallId = typeof params.toolCallId === 'string' && params.toolCallId ? params.toolCallId.slice(0, 200) : undefined
     const answer = this.confirmDanger ? await this.confirmDanger({ tool, detail, reasons, cwd: this.cwd, owner: this.approvalOwner(), ...(toolCallId ? { toolCallId } : {}), ...(kind ? { kind } : {}), ...(outsideDirs.length ? { outsideDirs } : {}) }) : null
-    const decision = answer ?? 'no-answer'
+    const decision = answer?.decision ?? 'no-answer'
     return {
       data: { decision },
-      summary: { kind: 'danger-confirm', tool, decision, allowed: answer === 'allow' }
+      summary: { kind: 'danger-confirm', tool, decision, allowed: answer?.decision === 'allow', ...(answer?.feedback ? { feedback: answer.feedback } : {}) }
     }
   }
 
@@ -1293,7 +1296,13 @@ export class AgentController extends EventEmitter {
     const answer = await this.requestSessionMove({ dir, reason, cwd: this.cwd, sessionId, sessionFile })
     return {
       data: answer,
-      summary: { kind: 'session-move', decision: answer.decision, target: answer.target ?? dir, allowed: answer.decision === 'approved' }
+      summary: {
+        kind: 'session-move',
+        decision: answer.decision,
+        target: answer.target ?? dir,
+        allowed: answer.decision === 'approved',
+        ...(answer.feedback ? { feedback: answer.feedback, message: answer.message } : {})
+      }
     }
   }
 
@@ -4187,8 +4196,11 @@ export class AgentController extends EventEmitter {
     return [...paths]
   }
 
-  async getMessages(): Promise<UIMessage[]> {
-    return this.messages
+  async getMessages(opts: { includeStreaming?: boolean } = {}): Promise<UIMessage[]> {
+    const list = this.messages
+    if (!opts.includeStreaming) return list
+    const live = this.items.streamingMessage()
+    return live ? [...list, live] : list
   }
 
   async refreshState(): Promise<SessionState | null> {

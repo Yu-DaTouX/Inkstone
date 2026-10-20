@@ -40,6 +40,7 @@ import {
   SettingsSearch,
   SettingsTab,
   SettingsTabBar,
+  Skeleton,
   useSettingsNarrow,
   type SettingsSearchResult
 } from '../../../ui'
@@ -159,7 +160,7 @@ const NAV_GROUPS = groupSettingsNav(NAV_ENTRIES)
 
 const REVEAL_FRAMES = 90
 const REVEAL_SETTLE_MS = 240
-const FLASH_MS = 1800
+const FLASH_MS = 1950
 const SEARCH_CHILDREN = 2
 
 let lastCapabilitiesTab: CapabilitiesTabId = 'skills'
@@ -503,9 +504,12 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
       data-testid="settings-root"
     >
       {!settings ? (
-        <p className="settings-loading" role="status">
-          {text.loading}
-        </p>
+        <div className="settings-loading" role="status">
+          <span className="v3-visually-hidden">{text.loading}</span>
+          <Skeleton width="33%" height={20} />
+          <Skeleton width="66%" height={20} />
+          <Skeleton width="100%" height={20} />
+        </div>
       ) : (
         <div
           className="settings-main__col"

@@ -81,27 +81,25 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
   }
 
   const install = async (): Promise<void> => {
-    const accepted = await confirm({
+    await confirm({
       title: t('pet.install'),
       body: copy.target ?? copy.desc,
       detail: t('pet.installConfirm', { dir: status?.installDir ?? '' }),
       confirmLabel: t('pet.install'),
-      tone: 'default'
+      tone: 'default',
+      action: () => run('install', () => window.yan.desktopPet.install(), 'pet.installedOk')
     })
-    if (!accepted) return
-    await run('install', () => window.yan.desktopPet.install(), 'pet.installedOk')
   }
 
   const uninstall = async (): Promise<void> => {
-    const accepted = await confirm({
+    await confirm({
       title: t('pet.uninstall'),
       body: t('pet.uninstallConfirm'),
       detail: status?.installDir ?? '',
       confirmLabel: t('pet.uninstall'),
-      tone: 'danger'
+      tone: 'danger',
+      action: () => run('uninstall', () => window.yan.desktopPet.uninstall(), 'pet.uninstalledOk')
     })
-    if (!accepted) return
-    await run('uninstall', () => window.yan.desktopPet.uninstall(), 'pet.uninstalledOk')
   }
 
   const installed = status?.installed === true

@@ -20,11 +20,8 @@
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
   const store = window.__yanStore
 
-  const setValue = (el, text) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
-    setter.call(el, text)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setValue = (el, text) => composer.set(text, el)
   const activeRunner = (s) =>
     (s.runners ?? []).find((r) => r.isActive) ??
     (s.runners ?? []).find((r) => (r.runId ?? r.id) === s.activeRunnerId)

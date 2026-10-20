@@ -4,18 +4,33 @@ export interface SlashQueryRange {
   end: number
 }
 
-export function findSlashQuery(value: string, cursor: number = value.length): SlashQueryRange | null {
+export interface SlashQueryOptions {
+  inCode?: boolean
+}
+
+export const SLASH_QUERY_MAX = 50
+
+export function findSlashQuery(
+  value: string,
+  cursor: number = value.length,
+  options: SlashQueryOptions = {}
+): SlashQueryRange | null {
+  if (options.inCode) return null
   const end = Math.max(0, Math.min(cursor, value.length))
-  const before = value.slice(0, end)
-  const match = /^[ \t]*\/([^\s]*)/.exec(before)
-  if (!match) return null
+  const lineStart = value.lastIndexOf('\n', Math.max(0, end - 1)) + 1
+  const slash = value.lastIndexOf('/', end - 1)
+  if (slash < lineStart) return null
 
-  const query = match[1] ?? ''
-  const start = match[0].indexOf('/') + 1
-  const tokenEnd = start + query.length
+  const before = value.slice(lineStart, slash)
+  const atLineStart = /^[ \t]*$/.test(before)
+  if (!atLineStart && !/[ \t]$/.test(before)) return null
 
-  if (end > tokenEnd) return null
-  return { query, start, end: tokenEnd }
+  const query = value.slice(slash + 1, end)
+  if (query.length > SLASH_QUERY_MAX) return null
+  if (/[\s]/.test(query)) return null
+  if (query ? !/^[A-Za-z0-9]/.test(query) : !atLineStart) return null
+
+  return { query, start: slash + 1, end }
 }
 
 export function replaceSlashQuery(

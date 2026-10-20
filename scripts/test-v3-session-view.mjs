@@ -213,6 +213,7 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
       'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }`,
       'src/renderer/src/features/session/ToolSteps.tsx': `export function ToolSteps(){ return null }`,
       'src/renderer/src/features/session/Image.tsx': `export function MessageImage(){ return null }`,
+      'src/renderer/src/features/session/UserText.tsx': `export function UserText(props){ return props.text }`,
       'src/renderer/src/features/session/TurnChanges.tsx': `export function TurnChanges(){ return null }`,
       'src/renderer/src/features/session/Busy.tsx': `export function Busy(){ return null }`,
       'src/renderer/src/features/session/text.ts': `export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }`,
@@ -558,12 +559,10 @@ async function main() {
 
     const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: false })
     const proc = byTypeName(tree, 'TurnProcess')[0]
-    ok(!!proc, '带工具的回合把解说收进过程行 TurnProcess')
-    const folded = proc ? rt.render(proc.type, proc.props) : null
-    ok(folded ? byStub(folded, 'markdown').length === 0 : false, '过程行默认折叠，解说不铺开')
-    const toggle = folded ? collect(folded, (el) => el.props?.['data-testid'] === 'v3-process-toggle')[0] : null
-    toggle?.props.onClick()
+    ok(!!proc, '带工具的回合把解说收进 TurnProcess')
     const expanded = proc ? rt.render(proc.type, proc.props) : null
+    ok(expanded ? collect(expanded, (el) => el.props?.['data-testid'] === 'v3-process-toggle').length === 0 : false, '不再有「过程」外壳与展开按钮')
+    ok(expanded ? byStub(expanded, 'markdown').length > 0 : false, '解说不折叠，直接在工具组旁铺开')
     const mds = [...byStub(tree, 'markdown'), ...(expanded ? byStub(expanded, 'markdown') : [])]
     const commentary = mds.find((el) => el.props.messageId === turn.commentary[0].id)
     const response = mds.find((el) => el.props.messageId === turn.response.id)

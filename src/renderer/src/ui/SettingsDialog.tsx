@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { Dialog as RACDialog, Heading, Modal as RACModal } from 'react-aria-components'
 import { Search, SearchX, X } from 'lucide-react'
-import { popModal, pushModal } from '../lib/modalLayer'
+import { popModal, pushModal, useModalCount } from '../lib/modalLayer'
 import { useOptionalT } from '../i18n'
 import { cx } from './cx'
 import { IconButton } from './IconButton'
@@ -67,9 +67,10 @@ export function SettingsDialog({
 }: SettingsDialogProps): ReactElement {
   const t = useOptionalT()
   const stacked = narrow === true && narrowNav != null
+  const modalCount = useModalCount()
   return (
     <ModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable className="ui-settings-overlay">
-      <RACModal className="ui-settings-modal">
+      <RACModal className="ui-settings-modal" data-nested-dialog-open={modalCount > 1 ? '1' : undefined}>
         <RACDialog className="ui-settings-dialog">
           {({ close }) => {
             const closeButton = (

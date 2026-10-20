@@ -27,7 +27,7 @@ export async function runRemoteApprovalTests(ok) {
   const remote = remoteApprovalQuestion(request)
   ok(remote.sessionId === 's1' && remote.runId === 'r1' && remote.message.includes('child1') && remote.message.includes('danger fixture'), '实际批准卡保留父会话/运行/子 Agent 与完整操作')
   ok(applyHumanApproval(remote, { sessionId: 's1', runId: 'r1', digest: remote.approvalDigest, confirmed: true }, choice => broker.answer(request.id, choice ? 'once' : 'deny')).ok, '远程人工决定答复同一个 ApprovalBroker')
-  ok(await waiting === 'once' && broker.list().length === 0 && closed[0] === request.id, '原任务解除等待，桌面卡片同步移除')
+  ok((await waiting)?.choice === 'once' && broker.list().length === 0 && closed[0] === request.id, '原任务解除等待，桌面卡片同步移除')
   ok(!broker.answer(request.id, 'once'), '处理过的批准不能再次放行')
   const piResponses = []
   const ui = new UiRequests({ push: () => {}, respondToPi: response => piResponses.push(response) })

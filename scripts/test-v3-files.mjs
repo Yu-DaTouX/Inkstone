@@ -14,6 +14,17 @@ const result = await build({
 const mod = await import(
   `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
 )
+const hiddenResult = await build({
+  entryPoints: [fileURLToPath(new URL('../src/renderer/src/features/files/files-hidden.ts', import.meta.url))],
+  bundle: true,
+  write: false,
+  platform: 'node',
+  format: 'esm',
+  logLevel: 'silent'
+})
+const hiddenMod = await import(
+  `data:text/javascript;base64,${Buffer.from(hiddenResult.outputFiles[0].text).toString('base64')}`
+)
 
 const {
   canAttachToContext,
@@ -237,11 +248,11 @@ assert.deepEqual(
   { type: 'none' },
   '文件 ArrowRight 无动作'
 )
-assert.deepEqual(key({ path: 'README.md', key: 'a' }), { type: 'none' }, 'canAdd=false 时 a 不加入上下文')
+assert.deepEqual(key({ path: 'README.md', key: 'a' }), { type: 'none' }, '单键 a 不再加入上下文')
 assert.deepEqual(
   handleTreeKey({ rows: treeRows, currentPath: 'README.md', key: 'a', canAdd: true }),
-  { type: 'add', path: 'README.md' },
-  'canAdd=true 时 a 加入上下文'
+  { type: 'none' },
+  'canAdd=true 时单键 a 也不加入上下文'
 )
 assert.deepEqual(
   handleTreeKey({ rows: treeRows, currentPath: 'README.md', key: 'Enter', altKey: true, canAdd: true }),
@@ -298,5 +309,30 @@ assert.equal(canAttachToContext(OWNER, 's1'), true, '当前会话匹配才可加
 assert.equal(canAttachToContext(OWNER, 's2'), false, '会话不匹配不可加')
 assert.equal(canAttachToContext({ ...OWNER, active: false }, 's1'), false, '非活动会话不可加')
 assert.equal(canAttachToContext({ ...OWNER, sessionId: null }, null), false, '没有会话 id 不可加')
+
+const hiddenStorage = (() => {
+  const data = new Map()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value)
+  }
+})()
+assert.equal(hiddenMod.readFilesShowHidden(hiddenStorage), false, '默认不显示隐藏项')
+assert.equal(hiddenMod.readFilesShowHidden(null), false, '没有存储时也不显示隐藏项')
+const hiddenStore = hiddenMod.createFilesHiddenStore(hiddenStorage)
+let hiddenEvents = 0
+const offHidden = hiddenStore.subscribe(() => {
+  hiddenEvents += 1
+})
+hiddenStore.set(true)
+assert.equal(hiddenStore.getSnapshot(), true)
+assert.equal(hiddenMod.readFilesShowHidden(hiddenStorage), true, '开关写入存储')
+hiddenStore.set(true)
+assert.equal(hiddenEvents, 2, '重复设置也通知订阅者')
+offHidden()
+hiddenStore.set(false)
+assert.equal(hiddenEvents, 2, '取消订阅后不再通知')
+assert.equal(hiddenMod.readFilesShowHidden(hiddenStorage), false)
+assert.equal(freshTreeState('k', '/p', 1).showHidden, false, '新建树状态默认隐藏')
 
 console.log('v3 文件面板纯逻辑：reducer 代次 / 展平状态 / 键盘导航 / 虚拟化 / 路径 / 归属 检查通过')

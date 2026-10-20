@@ -63,7 +63,14 @@ export {
   type TabProps,
   type TabsProps
 } from './Tabs'
-export { Tooltip, TooltipTrigger, type TooltipProps, type TooltipTriggerComponentProps } from './Tooltip'
+export {
+  Tooltip,
+  TooltipHint,
+  TooltipTrigger,
+  type TooltipHintProps,
+  type TooltipProps,
+  type TooltipTriggerComponentProps
+} from './Tooltip'
 export { ToastRegion, showToast, toastQueue, type ShowToastOptions, type ToastContent, type ToastTone } from './Toast'
 export { Badge, Kbd, type BadgeProps, type BadgeTone } from './Badge'
 export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type StatusSlotProps, type StatusSlotTone } from './StatusDot'

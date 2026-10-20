@@ -264,6 +264,7 @@ export interface Store {
   holdSend: (text: string, images?: { data: string; mimeType: string }[]) => void
   releaseSend: (id: string, mode: 'steer' | 'followUp') => Promise<void>
   restoreSend: (id: string) => void
+  discardSend: (id: string) => void
   steerQueued: (queueId: string) => Promise<void>
   removeQueued: (queueId: string) => Promise<void>
   recoverComposerInput: (input: {
@@ -327,7 +328,7 @@ export interface Store {
   patchProfile: (p: Partial<UserProfile>) => Promise<void>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
   removeGuardAllowRoot: (path: string) => Promise<void>
-  answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity) => Promise<void>
+  answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string) => Promise<void>
   gitInstall: GitInstallProgress
   installGit: () => Promise<void>
   cancelGitInstall: () => Promise<void>
@@ -509,10 +510,10 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   return projection
 }
 
-function projectSnapshotKeepingPeek(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
+function projectSnapshotKeepingHistory(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
   const projection = projectRuntimeSnapshot(snapshot)
   if (projection.messages) projection.messages = reuseIfSame(state.messages, projection.messages) as typeof state.messages
-  if (snapshot.messages.length === 0 && state.messages.length > 0 && state.peekedPath) {
+  if (snapshot.messagesLoaded === false && state.messages.length > 0) {
     delete projection.messages
   }
   return projection
@@ -1149,7 +1150,7 @@ export const useStore = create<Store>((rawSet, get) => {
       if (active) {
         const runtime = runtimeFromRunner(active)
         const snapshot = snapshotForView(get(), findRuntimeSnapshot(get().sessionRuntimes, runtime.sessionId, runtime.runId))
-        if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
+        if (snapshot) set(projectSnapshotKeepingHistory(get(), snapshot))
       }
     } catch {
     }
@@ -1229,7 +1230,7 @@ export const useStore = create<Store>((rawSet, get) => {
                 view.session?.sessionId !== runtime.sessionId
               if (emptyView) snapshot = found
             }
-            if (snapshot) set(projectSnapshotKeepingPeek(get(), snapshot))
+            if (snapshot) set(projectSnapshotKeepingHistory(get(), snapshot))
           }
         }
         break
@@ -1598,6 +1599,10 @@ export const useStore = create<Store>((rawSet, get) => {
     }
   },
 
+  discardSend: (id) => {
+    set({ pendingSends: get().pendingSends.filter((p) => p.id !== id) })
+  },
+
   restoreSend: (id) => {
     const item = pendingSendsForView(get()).find((p) => p.id === id)
     if (!item) return
@@ -1892,7 +1897,7 @@ export const useStore = create<Store>((rawSet, get) => {
     )
     const usable = snapshotForView(get(), snapshot)
     set({
-      ...(usable ? projectSnapshotKeepingPeek(get(), usable) : {}),
+      ...(usable ? projectSnapshotKeepingHistory(get(), usable) : {}),
       queue: usable?.queue ?? EMPTY_QUEUE,
       ...(runId ? { activeRunnerId: runId } : {}),
       pendingActivation: null
@@ -2379,10 +2384,10 @@ export const useStore = create<Store>((rawSet, get) => {
     await window.yan.gitRuntimeCancel().catch(() => undefined)
   },
 
-  answerApproval: async (id, choice, identity) => {
+  answerApproval: async (id, choice, identity, feedback) => {
     set({ approvals: get().approvals.filter((item) => item.id !== id) })
     try {
-      await window.yan.answerApproval(id, choice, identity)
+      await window.yan.answerApproval(id, choice, identity, feedback)
     } catch {
     }
   },

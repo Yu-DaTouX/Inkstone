@@ -15,6 +15,34 @@ export type ApprovalKind = 'permission' | 'delete' | 'danger' | 'outside' | 'con
 
 export type ApprovalChoice = 'deny' | 'once' | 'session' | 'remember'
 
+export const APPROVAL_FEEDBACK_MAX = 500
+
+export function normalizeApprovalFeedback(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim().slice(0, APPROVAL_FEEDBACK_MAX)
+  return text || undefined
+}
+
+export function denyFeedbackNote(feedback: unknown): string {
+  const reason = normalizeApprovalFeedback(feedback)
+  return reason ? `用户拒绝了这次操作，并给出理由：${reason}。请按这个理由调整做法后再试` : ''
+}
+
+export function withDenyFeedback(text: string, feedback: unknown): string {
+  const note = denyFeedbackNote(feedback)
+  return note ? `${text} ${note}` : text
+}
+
+export interface ApprovalAnswer {
+  choice: ApprovalChoice
+  feedback?: string
+}
+
+export interface ApprovalDecision {
+  decision: 'allow' | 'deny'
+  feedback?: string
+}
+
 export type ApprovalPhase = 'pending' | 'sending' | 'resolved'
 
 export interface ApprovalOwner {
@@ -46,6 +74,7 @@ export interface ApprovalRequest {
   title: string
   detail: string
   reasons: string[]
+  danger?: string
   cwd: string
   rememberDirs?: string[]
   canRemember: boolean
