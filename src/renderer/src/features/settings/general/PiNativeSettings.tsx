@@ -101,7 +101,7 @@ export function PiRetryDetailRows({
   if (!settings) return null
   return (
     <>
-      <SettingsRow nested block settingId="session-retry-count" label={text.retryCount} description={text.retryCountDesc}>
+      <SettingsRow nested settingId="session-retry-count" label={text.retryCount} description={text.retryCountDesc}>
         <Segmented
           label={text.retryCount}
           value={String(settings.retryMaxRetries)}
@@ -110,7 +110,7 @@ export function PiRetryDetailRows({
           onChange={(value) => void state.patch({ retryMaxRetries: Number(value) })}
         />
       </SettingsRow>
-      <SettingsRow nested block settingId="session-retry-delay" label={text.retryDelay} description={text.retryDelayDesc}>
+      <SettingsRow nested settingId="session-retry-delay" label={text.retryDelay} description={text.retryDelayDesc}>
         <Segmented
           label={text.retryDelay}
           value={String(settings.retryBaseDelayMs)}
@@ -138,17 +138,13 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
   const entries = Object.entries(levels).sort(([a], [b]) => a.localeCompare(b))
 
   return (
-    <SettingsGroup label={text.thinking}>
-      <SettingsRow
-        settingId="models-thinking-levels"
-        label={text.thinking}
-        description={entries.length ? text.thinkingDesc : `${text.thinkingDesc} ${text.thinkingEmpty}`}
-        block
-      >
-        {null}
-      </SettingsRow>
+    <SettingsGroup
+      title={text.thinking}
+      description={entries.length ? text.thinkingDesc : `${text.thinkingDesc} ${text.thinkingEmpty}`}
+      settingId="models-thinking-levels"
+    >
       {entries.map(([key, value]) => (
-        <SettingsRow key={key} nested label={nameOf(key)} description={key}>
+        <SettingsRow key={key} label={nameOf(key)} description={key}>
           <div className="settings-actions">
             <Select
               aria-label={`${text.thinkingLevel} · ${nameOf(key)}`}
@@ -163,7 +159,6 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
               ))}
             </Select>
             <Button
-              size="sm"
               variant="danger"
               onPress={() => {
                 const next = { ...levels }
@@ -177,7 +172,7 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
           </div>
         </SettingsRow>
       ))}
-      <SettingsRow nested label={text.thinkingAdd} description={models.length ? undefined : text.thinkingNoModels}>
+      <SettingsRow label={text.thinkingAdd} description={models.length ? undefined : text.thinkingNoModels}>
         <div className="settings-actions">
           <Select
             aria-label={text.thinkingModel}
@@ -206,7 +201,6 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
             ))}
           </Select>
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={!model}
             onPress={() => {
@@ -232,8 +226,8 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
   ]
   return (
     <>
-      <SettingsGroup label={text.requests}>
-        <SettingsRow settingId="session-idle-timeout" label={text.idleTimeout} description={text.idleTimeoutDesc} block>
+      <SettingsGroup title={text.requests}>
+        <SettingsRow settingId="session-idle-timeout" label={text.idleTimeout} description={text.idleTimeoutDesc}>
           <Segmented
             label={text.idleTimeout}
             value={String(settings.httpIdleTimeoutMs)}
@@ -241,7 +235,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
             onChange={(value) => void state.patch({ httpIdleTimeoutMs: Number(value) })}
           />
         </SettingsRow>
-        <SettingsRow settingId="session-cache-warming" label={text.cacheWarming} description={text.cacheWarmingDesc} block>
+        <SettingsRow settingId="session-cache-warming" label={text.cacheWarming} description={text.cacheWarmingDesc}>
           <Segmented
             label={text.cacheWarming}
             value={settings.cacheWarming}
@@ -251,7 +245,7 @@ export function PiSessionGroups({ state, text }: { state: PiNativeSettingsState;
         </SettingsRow>
       </SettingsGroup>
 
-      <SettingsGroup label={text.images}>
+      <SettingsGroup title={text.images}>
         <SettingsRow settingId="session-images-resize" label={text.imagesAutoResize} description={text.imagesAutoResizeDesc}>
           <Switch
             aria-label={text.imagesAutoResize}
@@ -291,7 +285,7 @@ export function PiThinkingLevelsGroup(): ReactElement | null {
   )
 }
 
-export function PiProjectTrustGroup(): ReactElement | null {
+export function PiProjectTrustGroup({ title }: { title?: string }): ReactElement | null {
   const { lang } = useI18n()
   const text = piNativeText(lang)
   const state = usePiNativeSettings(text)
@@ -302,8 +296,8 @@ export function PiProjectTrustGroup(): ReactElement | null {
     { value: 'never', label: text.trustNever, testId: 'v3-pi-trust-never' }
   ]
   return (
-    <SettingsGroup label={text.trust}>
-      <SettingsRow settingId="security-project-trust" label={text.trust} description={`${text.trustDesc} ${text.effectNote}`} block>
+    <SettingsGroup title={title ?? text.trust}>
+      <SettingsRow settingId="security-project-trust" label={text.trust} description={`${text.trustDesc} ${text.effectNote}`}>
         <Segmented
           label={text.trust}
           value={state.settings.defaultProjectTrust}
@@ -316,7 +310,7 @@ export function PiProjectTrustGroup(): ReactElement | null {
   )
 }
 
-export function PiShareDestinationGroup(): ReactElement | null {
+export function PiShareDestinationGroup({ title }: { title?: string }): ReactElement | null {
   const { lang } = useI18n()
   const text = piNativeText(lang)
   const state = usePiNativeSettings(text)
@@ -327,8 +321,8 @@ export function PiShareDestinationGroup(): ReactElement | null {
     { value: 'radius', label: text.shareRadius, testId: 'v3-pi-share-radius' }
   ]
   return (
-    <SettingsGroup label={text.share}>
-      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc} ${text.effectNote}`} block>
+    <SettingsGroup title={title ?? text.share}>
+      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc} ${text.effectNote}`}>
         <Segmented
           label={text.share}
           value={state.settings.sessionShareDestination}

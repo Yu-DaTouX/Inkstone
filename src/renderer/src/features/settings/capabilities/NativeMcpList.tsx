@@ -59,7 +59,6 @@ export function NativeMcpItem({
         {sessionCommandsAllowed && server.transport === 'http' ? (
           <>
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={sessionDisabled}
               title={t('cap.nativeMcpLoginHint')}
@@ -69,7 +68,6 @@ export function NativeMcpItem({
               {t('cap.nativeMcpLogin')}
             </Button>
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={sessionDisabled}
               onPress={() => onSessionAction?.('logout', server.name)}
@@ -81,7 +79,6 @@ export function NativeMcpItem({
         ) : null}
         {sessionCommandsAllowed ? (
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={sessionDisabled}
             onPress={() => onSessionAction?.('reconnect', server.name)}
@@ -91,7 +88,6 @@ export function NativeMcpItem({
           </Button>
         ) : null}
         <Button
-          size="sm"
           variant="danger"
           isDisabled={manageBusy}
           onPress={() => onManage('remove', server)}

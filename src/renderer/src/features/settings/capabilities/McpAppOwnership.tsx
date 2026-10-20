@@ -215,7 +215,6 @@ function OwnershipRow({
         <span className="caps-spacer" />
         {view.inkstoneOnly ? null : (
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={disabled}
             isPending={busy}

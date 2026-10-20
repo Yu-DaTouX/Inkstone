@@ -7,7 +7,8 @@ import { Button, Notice } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
 import { devicesDataText } from './devices-data-text'
 import { bytesText } from './general-model'
-import { SettingsGroup, SettingsMore, SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
+import { settingsText } from '../settings-text'
 import { PiShareDestinationGroup } from './PiNativeSettings'
 import { SyncConflictsGroup, SyncGroup, fillTemplate, useSyncPanel } from '../sync/SyncSettings'
 import { syncText } from '../sync/text'
@@ -74,6 +75,7 @@ function describe(cause: unknown): string {
 export function DataSettings(): ReactElement {
   const { lang } = useI18n()
   const text = generalText(lang)
+  const labels = settingsText(lang)
   const local = devicesDataText(lang)
   const sync = syncText(lang)
   const panel = useSyncPanel()
@@ -186,7 +188,7 @@ export function DataSettings(): ReactElement {
 
   const openSummary = (action: 'create' | 'verify'): ReactElement | null =>
     summary?.action === action ? (
-      <Button size="sm" variant="secondary" onPress={() => void window.yan.revealPath(summary.value.path)}>
+      <Button variant="secondary" onPress={() => void window.yan.revealPath(summary.value.path)}>
         {text.dataOpen}
       </Button>
     ) : null
@@ -195,7 +197,7 @@ export function DataSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-data-settings">
-      <SettingsGroup label={text.dataBackupCreate}>
+      <SettingsGroup title={labels.groupDataBackup}>
         <SettingsRow
           settingId="data-backup-create"
           label={text.dataBackupCreate}
@@ -207,108 +209,100 @@ export function DataSettings(): ReactElement {
           }
         >
           {openSummary('create')}
-          <Button size="sm" variant="primary" isDisabled={busy !== null} data-testid="v3-data-backup-create" onPress={() => void backup('create')}>
+          <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-create" onPress={() => void backup('create')}>
             {busy === 'backup' ? text.dataBackupWorking : text.dataBackupCreate}
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="backup" />
+        <SettingsRow
+          settingId="data-backup-verify"
+          label={text.dataBackupVerify}
+          description={
+            <>
+              {local.dataBackupVerifyDesc}
+              {summaryLine('verify')}
+            </>
+          }
+        >
+          {openSummary('verify')}
+          <Button variant="secondary" isDisabled={busy !== null} onPress={() => void backup('verify')}>
+            {busy === 'verify' ? text.dataBackupWorking : text.dataBackupVerify}
+          </Button>
+        </SettingsRow>
+        <DataMessageLine message={message} scope="verify" />
       </SettingsGroup>
 
-      <SettingsGroup label={text.dataLocation}>
-        <SettingsRow block settingId="data-location" label={text.dataLocation} description={text.dataLocationDesc}>
-          <StorageFacts info={info} text={text} />
+      <SettingsGroup title={labels.groupDataStorage}>
+        <SettingsRow
+          settingId="data-location"
+          label={text.dataLocation}
+          description={
+            <>
+              {text.dataLocationDesc}
+              <StorageFacts info={info} text={text} />
+            </>
+          }
+        >
           {info ? (
-            <Button size="sm" variant="secondary" onPress={() => void window.yan.revealPath(info.realDir)}>
+            <Button variant="secondary" onPress={() => void window.yan.revealPath(info.realDir)}>
               {text.dataOpen}
             </Button>
           ) : null}
         </SettingsRow>
+        <SettingsRow
+          settingId="data-move"
+          label={text.dataMove}
+          description={
+            <>
+              {local.dataMoveDesc}
+              {target ? <span className="settings-row__line">{text.dataTarget.replace('{path}', target)}</span> : null}
+            </>
+          }
+        >
+          {canMove && target ? (
+            <>
+              <Button variant="secondary" isDisabled={busy !== null} onPress={() => setTarget(null)}>
+                {text.cancel}
+              </Button>
+              <Button variant="primary" isDisabled={busy !== null} data-testid="v3-data-move-confirm" onPress={() => void move()}>
+                {busy === 'storage' ? text.dataMoving : text.dataMoveConfirm}
+              </Button>
+            </>
+          ) : canMove ? (
+            <Button variant="secondary" data-testid="v3-data-move" onPress={() => void pick()}>
+              {text.dataMove}
+            </Button>
+          ) : null}
+        </SettingsRow>
+        <DataMessageLine message={message} scope="storage" />
       </SettingsGroup>
 
-      <SyncGroup panel={panel} />
+      <SyncGroup panel={panel} title={labels.groupDataSync} />
 
-      <SettingsMore>
-        <SettingsGroup label={text.dataMove}>
-          <SettingsRow
-            settingId="data-move"
-            label={text.dataMove}
-            description={
-              <>
-                {local.dataMoveDesc}
-                {target ? (
-                  <>
-                    <br />
-                    {text.dataTarget.replace('{path}', target)}
-                  </>
-                ) : null}
-              </>
-            }
-          >
-            {canMove && target ? (
-              <>
-                <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => setTarget(null)}>
-                  {text.cancel}
-                </Button>
-                <Button size="sm" variant="primary" isDisabled={busy !== null} data-testid="v3-data-move-confirm" onPress={() => void move()}>
-                  {busy === 'storage' ? text.dataMoving : text.dataMoveConfirm}
-                </Button>
-              </>
-            ) : canMove ? (
-              <Button size="sm" variant="secondary" data-testid="v3-data-move" onPress={() => void pick()}>
-                {text.dataMove}
-              </Button>
-            ) : null}
-          </SettingsRow>
-          <DataMessageLine message={message} scope="storage" />
-        </SettingsGroup>
+      <SyncConflictsGroup panel={panel} />
 
-        <SettingsGroup label={text.dataBackupVerify}>
-          <SettingsRow
-            settingId="data-backup-verify"
-            label={text.dataBackupVerify}
-            description={
-              <>
-                {local.dataBackupVerifyDesc}
-                {summaryLine('verify')}
-              </>
-            }
+      <SettingsGroup title={local.sessionTransfer}>
+        <SettingsRow settingId="data-session-export" label={sync.exportSession} description={local.dataExportDesc}>
+          <Button
+            variant="secondary"
+            isDisabled={busy !== null || !session?.sessionId}
+            data-testid="v3-data-export"
+            onPress={() => void exportSession()}
           >
-            {openSummary('verify')}
-            <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => void backup('verify')}>
-              {busy === 'verify' ? text.dataBackupWorking : text.dataBackupVerify}
+            {busy === 'session' ? sync.exporting : sync.exportSession}
+          </Button>
+        </SettingsRow>
+        {bridge ? (
+          <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
+            <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
+              {busy === 'import' ? sync.importing : sync.importSession}
             </Button>
           </SettingsRow>
-          <DataMessageLine message={message} scope="verify" />
-        </SettingsGroup>
+        ) : null}
+        <DataMessageLine message={message} scope="session" />
+      </SettingsGroup>
 
-        <SyncConflictsGroup panel={panel} />
-
-        <SettingsGroup label={local.sessionTransfer}>
-          <SettingsRow settingId="data-session-export" label={sync.exportSession} description={local.dataExportDesc}>
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={busy !== null || !session?.sessionId}
-              data-testid="v3-data-export"
-              onPress={() => void exportSession()}
-            >
-              {busy === 'session' ? sync.exporting : sync.exportSession}
-            </Button>
-          </SettingsRow>
-          {bridge ? (
-            <SettingsRow settingId="data-session-import" label={sync.importSession} description={local.dataImportDesc}>
-              <Button size="sm" variant="secondary" isDisabled={busy !== null} data-testid="v3-data-import" onPress={() => void importSession()}>
-                {busy === 'import' ? sync.importing : sync.importSession}
-              </Button>
-            </SettingsRow>
-          ) : null}
-          <DataMessageLine message={message} scope="session" />
-        </SettingsGroup>
-
-        <div>
-          <PiShareDestinationGroup />
-        </div>
-      </SettingsMore>
+      <PiShareDestinationGroup title={labels.groupDataShare} />
     </section>
   )
 }

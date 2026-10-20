@@ -126,7 +126,7 @@ export function McpAppRefresh(): ReactElement {
         {needsRefresh ? <span data-testid="v3-mcp-app-refresh-needed">{` · ${labels.needsRefresh}`}</span> : null}
       </Meta>
       <div className="caps-actions caps-actions--start">
-        <Button size="sm" variant="secondary" isDisabled={busy} onPress={() => void refresh()} data-testid="v3-mcp-app-refresh">
+        <Button variant="secondary" isDisabled={busy} onPress={() => void refresh()} data-testid="v3-mcp-app-refresh">
           {busy ? labels.refreshing : labels.refresh}
         </Button>
       </div>

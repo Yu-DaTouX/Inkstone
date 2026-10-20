@@ -9,7 +9,6 @@ import type {
 } from '../../../../../shared/ipc'
 import type { NativeMcpServerListView, NativeMcpServerView } from '../../../../../shared/mcp-native-import'
 import { Badge, Button } from '../../../ui'
-import { SettingsMore } from '../root/controls'
 import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { Actions, Group, Item, ItemHead, ListSkeleton, Meta, Panel, StatusBadge, Warn } from './parts'
@@ -131,7 +130,7 @@ export function McpSection(): ReactElement {
         desc={text('mcpListDesc')}
         settingId="caps-mcp-servers"
         actions={
-          <Button size="sm" variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-mcp-reload">
+          <Button variant="secondary" isPending={loading} onPress={() => void refresh()} data-testid="caps-mcp-reload">
             {text('sectionReload')}
           </Button>
         }
@@ -168,7 +167,6 @@ export function McpSection(): ReactElement {
                   <span className="caps-spacer" />
                   <Actions>
                     <Button
-                      size="sm"
                       variant="secondary"
                       isDisabled={managing !== null}
                       onPress={() => void addCodegraph()}
@@ -194,23 +192,21 @@ export function McpSection(): ReactElement {
         <NativeMcpStatusControl commands={commands} ready={snapshot !== null} />
       </Group>
 
-      <SettingsMore>
-        {legacyServers.length > 0 ? (
-          <Group title={text('mcpLegacyTitle')} desc={text('mcpLegacyDesc')} settingId="caps-mcp-legacy">
-            <div className="caps-list" data-testid="caps-mcp-servers">
-              {legacyServers.map((server) => (
-                <McpServerRow key={server.id} server={server} onChanged={refresh} />
-              ))}
-            </div>
-          </Group>
-        ) : null}
-        <div data-setting-id="caps-mcp-ownership">
-          <McpAppOwnership />
-        </div>
-        <div data-setting-id="caps-mcp-app-snapshot">
-          <McpAppRefresh />
-        </div>
-      </SettingsMore>
+      {legacyServers.length > 0 ? (
+        <Group title={text('mcpLegacyTitle')} desc={text('mcpLegacyDesc')} settingId="caps-mcp-legacy">
+          <div className="caps-list" data-testid="caps-mcp-servers">
+            {legacyServers.map((server) => (
+              <McpServerRow key={server.id} server={server} onChanged={refresh} />
+            ))}
+          </div>
+        </Group>
+      ) : null}
+      <div data-setting-id="caps-mcp-ownership">
+        <McpAppOwnership />
+      </div>
+      <div data-setting-id="caps-mcp-app-snapshot">
+        <McpAppRefresh />
+      </div>
     </Panel>
   )
 }
@@ -298,12 +294,11 @@ function McpServerRow({
         {server ? (
           <Actions>
             {connecting && operation ? (
-              <Button size="sm" variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
+              <Button variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
                 {t('cap.cancel')}
               </Button>
             ) : (
               <Button
-                size="sm"
                 variant="secondary"
                 isDisabled={!server.enabled}
                 onPress={() => void verify()}
@@ -456,7 +451,6 @@ function NativeMcpStatusControl({ commands, ready }: { commands: NativeMcpComman
         <>
           <div className="caps-actions caps-actions--start">
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={commands.busy}
               onPress={() => void commands.query()}

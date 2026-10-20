@@ -1,9 +1,13 @@
 @layer features {
-  .usage-panel__bar,
   .usage-panel__state,
   .usage-panel .settings-stats,
   .usage-panel .settings-breakdown {
     padding: var(--s-8) 0;
+  }
+
+  .usage-panel__state {
+    margin: 0;
+    color: var(--fg3);
   }
 
   .usage-panel > * + * {

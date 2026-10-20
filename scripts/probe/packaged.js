@@ -24,7 +24,8 @@
   const openSettings = async (section) => {
     if (!settingsOpen()) (await waitElement('[data-testid="v3-header-settings"]')).click()
     await waitElement('[data-testid="settings-root"]')
-    ;(await waitElement(`[data-testid="v3-settings-nav-${section}"]`)).click()
+    const nav = section === 'capabilities' ? 'caps-tab-skills' : `v3-settings-nav-${section}`
+    ;(await waitElement(`[data-testid="${nav}"]`)).click()
   }
   const closeSettings = async () => {
     for (let i = 0; i < 40 && settingsOpen(); i += 1) {
@@ -132,7 +133,7 @@
       const button = await waitElement(`[data-testid="caps-tab-${tab}"]`).catch(() => null)
       button?.click()
       await sleep(200)
-      ok(button?.getAttribute('aria-selected') === 'true', `解包态能力页签「${tab}」可切换`)
+      ok(button?.getAttribute('aria-current') === 'page', `解包态能力页签「${tab}」可切换`)
     }
     await closeSettings()
   } catch (error) {

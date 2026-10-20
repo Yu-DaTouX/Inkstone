@@ -7,7 +7,8 @@ import { Button, IconButton, Slider, Switch } from '../../../ui'
 import { previewSound } from '../../../lib/sound'
 import { generalText } from './general-text'
 import { DEFAULT_SOUND_SETTINGS, mergeSound } from './general-model'
-import { SettingsGroup, SettingsMore, SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
+import { settingsText } from '../settings-text'
 
 const EVENT_KEYS: readonly { id: SoundEvent; textKey: 'notifEventDone' | 'notifEventQuestion' | 'notifEventError' }[] = [
   { id: 'done', textKey: 'notifEventDone' },
@@ -25,6 +26,7 @@ function modelRef(): { model?: { provider: string; id: string } } {
 export function NotificationsSettings(): ReactElement {
   const { lang } = useI18n()
   const text = generalText(lang)
+  const labels = settingsText(lang)
   const sound = useStore((s) => s.settings?.sound) ?? DEFAULT_SOUND_SETTINGS
   const patchSettings = useStore((s) => s.patchSettings)
   const notify = useStore((s) => s.notify)
@@ -49,28 +51,13 @@ export function NotificationsSettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-notifications-settings">
-      <SettingsGroup label={text.notifSound}>
+      <SettingsGroup title={labels.groupNotifSound}>
         <SettingsRow settingId="notifications-sound" label={text.notifSound} description={text.notifSoundDesc}>
           <Switch
             aria-label={text.notifSound}
             isSelected={sound.enabled}
             onChange={(on) => write({ enabled: on })}
             data-testid="v3-notif-sound"
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          nested
-          settingId="notifications-system"
-          label={text.notifSystem}
-          description={sound.enabled ? text.notifSystemDesc : text.notifSystemNeedsSound}
-        >
-          <Switch
-            aria-label={text.notifSystem}
-            isSelected={sound.notifications}
-            isDisabled={!sound.enabled}
-            onChange={(on) => write({ notifications: on })}
-            data-testid="v3-notif-system"
           />
         </SettingsRow>
 
@@ -90,13 +77,41 @@ export function NotificationsSettings(): ReactElement {
             onChangeEnd={(next) => commitVolume(next as number)}
           />
         </SettingsRow>
+
+        <SettingsRow
+          nested
+          settingId="notifications-system"
+          label={text.notifSystem}
+          description={sound.enabled ? text.notifSystemDesc : text.notifSystemNeedsSound}
+        >
+          <Switch
+            aria-label={text.notifSystem}
+            isSelected={sound.notifications}
+            isDisabled={!sound.enabled}
+            onChange={(on) => write({ notifications: on })}
+            data-testid="v3-notif-system"
+          />
+        </SettingsRow>
+
+        <SettingsRow settingId="notifications-test" label={text.notifSystemTestLabel} description={text.notifSystemHelp}>
+          <Button
+            variant="secondary"
+            data-testid="v3-notif-system-test"
+            onPress={() =>
+              void window.yan
+                .notifyAttention({ kind: 'question', title: text.notifSystemTestLabel, body: text.notifSystemHelp, ...modelRef() })
+                .catch((error) => notify('error', String(error)))
+            }
+          >
+            {text.notifSystemTest}
+          </Button>
+        </SettingsRow>
       </SettingsGroup>
 
-      <div className="settings-rows">
+      <SettingsGroup title={labels.groupNotifEvents}>
         {EVENT_KEYS.map((event) => (
           <SettingsRow key={event.id} settingId={`notifications-event-${event.id}`} label={text[event.textKey]}>
             <IconButton
-              size="sm"
               aria-label={`${text.notifPreview} · ${text[event.textKey]}`}
               data-testid={`v3-notif-preview-${event.id}`}
               onPress={() => previewSound(event.id, sound.volume)}
@@ -112,26 +127,7 @@ export function NotificationsSettings(): ReactElement {
             />
           </SettingsRow>
         ))}
-      </div>
-
-      <SettingsMore>
-        <div className="settings-rows">
-          <SettingsRow settingId="notifications-test" label={text.notifSystemTestLabel} description={text.notifSystemHelp}>
-            <Button
-              size="sm"
-              variant="secondary"
-              data-testid="v3-notif-system-test"
-              onPress={() =>
-                void window.yan
-                  .notifyAttention({ kind: 'question', title: text.notifSystemTestLabel, body: text.notifSystemHelp, ...modelRef() })
-                  .catch((error) => notify('error', String(error)))
-              }
-            >
-              {text.notifSystemTest}
-            </Button>
-          </SettingsRow>
-        </div>
-      </SettingsMore>
+      </SettingsGroup>
     </section>
   )
 }

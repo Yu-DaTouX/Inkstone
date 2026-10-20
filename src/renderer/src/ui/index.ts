@@ -74,16 +74,31 @@ export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
 export { Slider, type SliderProps } from './Slider'
-export { SettingRow, SettingRows, type SettingRowProps, type SettingRowsProps } from './SettingRow'
+export {
+  SettingRow,
+  SettingRows,
+  SettingSection,
+  type SettingRowProps,
+  type SettingRowsProps,
+  type SettingSectionProps
+} from './SettingRow'
 export {
   SettingsDialog,
   SettingsNav,
-  SettingsNavEmpty,
   SettingsNavGroup,
   SettingsNavItem,
+  SettingsSearch,
+  SettingsSearchMatch,
+  SettingsTab,
+  SettingsTabBar,
+  useSettingsNarrow,
   type SettingsDialogProps,
   type SettingsNavItemProps,
-  type SettingsNavProps
+  type SettingsNavProps,
+  type SettingsSearchProps,
+  type SettingsSearchResult,
+  type SettingsSearchResultKind,
+  type SettingsTabProps
 } from './SettingsDialog'
 export {
   Tree,

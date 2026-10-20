@@ -20,7 +20,6 @@ export function PromptsSection(): ReactElement {
         settingId="caps-prompts"
         actions={
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={!hasSession}
             onPress={() => void reloadCommands()}

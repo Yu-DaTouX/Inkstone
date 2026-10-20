@@ -148,7 +148,6 @@ export function McpImportControl({
       <ItemHead>
         <span className="caps-spacer" />
         <Button
-          size="sm"
           variant="secondary"
           isDisabled={busy || blocked}
           onPress={() => void start()}

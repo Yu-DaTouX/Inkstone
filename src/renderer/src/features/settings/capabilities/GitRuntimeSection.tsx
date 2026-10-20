@@ -28,7 +28,7 @@ function InstallProgress({ progress, onCancel }: { progress: GitInstallProgress;
         isIndeterminate={!downloading}
       />
       <Actions>
-        <Button size="sm" variant="secondary" onPress={onCancel} data-testid="git-install-cancel">
+        <Button variant="secondary" onPress={onCancel} data-testid="git-install-cancel">
           {t('git.cancel')}
         </Button>
       </Actions>
@@ -138,7 +138,6 @@ export function GitRuntimeSection(): ReactElement | null {
           <Actions>
             {!healthy || runtime.managedInstalled ? (
               <Button
-                size="sm"
                 variant={healthy ? 'secondary' : 'primary'}
                 isDisabled={removing}
                 onPress={install}
@@ -153,7 +152,6 @@ export function GitRuntimeSection(): ReactElement | null {
             ) : null}
             {runtime.managedInstalled ? (
               <Button
-                size="sm"
                 variant="danger"
                 isDisabled={removing}
                 isPending={removing}
@@ -163,7 +161,7 @@ export function GitRuntimeSection(): ReactElement | null {
                 {t('git.remove')}
               </Button>
             ) : null}
-            <Button size="sm" variant="secondary" isDisabled={removing} onPress={() => void refresh()}>
+            <Button variant="secondary" isDisabled={removing} onPress={() => void refresh()}>
               {t('set.extRecheck')}
             </Button>
           </Actions>

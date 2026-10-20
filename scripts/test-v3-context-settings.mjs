@@ -60,7 +60,7 @@ const types = await loadTs('../src/renderer/src/features/settings/types.ts')
 const { resolveLegacyView, isSettingsSectionId, SETTINGS_SECTIONS } = types
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['models', 'appearance', 'session', 'notifications', 'security', 'capabilities', 'devices', 'data', 'usage', 'shortcuts', 'about'],
+  ['models', 'appearance', 'session', 'notifications', 'security', 'usage', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
   '上下文并入会话与上下文分区'
 )
 assert.equal(isSettingsSectionId('context'), false, 'context 不再是独立分区')

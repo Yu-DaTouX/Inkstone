@@ -4,7 +4,7 @@ import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { UsageRange } from '../../../../../shared/usage-stats'
 import { Button } from '../../../ui'
 import { settingsText } from '../settings-text'
-import { Segmented, SettingsMore } from '../root/controls'
+import { Segmented, SettingsGroup } from '../root/controls'
 import {
   compactNumber,
   dailyEntries,
@@ -83,121 +83,114 @@ export function UsageSettings(): ReactElement {
 
   return (
     <section className="settings-section" aria-label={text.sectionUsage}>
-      <p className="settings-section__lede">{text.usageNote}</p>
+      <SettingsGroup
+        title={text.groupUsageOverview}
+        description={text.usageNote}
+        settingId="usage-range"
+        plain
+        actions={<Segmented label={text.sectionUsage} value={range} options={rangeOptions} onChange={(value) => setRange(value)} />}
+      >
+        <div className="usage-panel">
+          {status === 'loading' ? <p className="settings-value usage-panel__state">{text.usageLoading}</p> : null}
 
-      <div className="settings-rows usage-panel">
-        <div className="settings-usage-bar usage-panel__bar" data-setting-id="usage-range">
-          <Segmented
-            label={text.sectionUsage}
-            value={range}
-            options={rangeOptions}
-            onChange={(value) => setRange(value)}
-          />
-          <span className="settings-spacer" />
+          {status === 'error' ? (
+            <div className="settings-usage-state usage-panel__state" role="alert">
+              <p className="settings-row__desc settings-row__desc--error">{text.usageError}</p>
+              <Button variant="secondary" onPress={retry}>
+                {text.usageRetry}
+              </Button>
+            </div>
+          ) : null}
+
+          {empty ? <p className="settings-value usage-panel__state">{text.usageEmpty}</p> : null}
+
+          {status === 'ready' && stats && !empty ? <UsageStatsGrid stats={stats} text={text} money={money} /> : null}
         </div>
-
-        {status === 'loading' ? <p className="settings-value usage-panel__state">{text.usageLoading}</p> : null}
-
-        {status === 'error' ? (
-          <div className="settings-usage-state usage-panel__state" role="alert">
-            <p className="settings-row__desc settings-row__desc--error">{text.usageError}</p>
-            <Button size="sm" variant="secondary" onPress={retry}>
-              {text.usageRetry}
-            </Button>
-          </div>
-        ) : null}
-
-        {empty ? <p className="settings-value usage-panel__state">{text.usageEmpty}</p> : null}
-
-        {status === 'ready' && stats && !empty ? <UsageStatsGrid stats={stats} text={text} money={money} /> : null}
-      </div>
+      </SettingsGroup>
 
       {status === 'ready' && stats && !empty ? (
-        <div className="settings-rows usage-panel">
-          <div className="settings-usage-bar usage-panel__bar" data-setting-id="usage-breakdown">
-            <Segmented
-              label={text.usageDimension}
-              value={dimension}
-              options={dimensionOptions}
-              onChange={(value) => setDimension(value)}
-            />
-            <span className="settings-spacer" />
-            <Segmented
-              label={text.usageView}
-              value={view}
-              options={viewOptions}
-              onChange={(value) => setView(value)}
-            />
-          </div>
-
-          <div className="settings-breakdown" data-testid="v3-usage-breakdown" data-dimension={dimension}>
-            <div className="settings-table-title">
+        <SettingsGroup
+          title={text.groupUsageBreakdown}
+          description={
+            <>
               {dimensionLabel}
               {dimension === 'day' ? <span className="settings-breakdown__cap"> · {text.usageDailyCap}</span> : null}
-            </div>
-
-            {bars && bars.length > 0 ? (
-              view === 'chart' ? (
-                <ol className="settings-bars" data-dimension={dimension} aria-label={dimensionLabel}>
-                  {bars.map((bar, index) => (
-                    <li
-                      key={bar.key}
-                      className="settings-bar"
-                      data-idle={bar.value > 0 ? undefined : '1'}
-                      title={`${bar.label} · ${compactNumber(bar.value)} token`}
-                    >
-                      <span className="settings-bar__label">{bar.label}</span>
-                      <span className="settings-bar__track" aria-hidden>
-                        {bar.value > 0 ? (
-                          <span
-                            className="settings-bar__fill"
-                            style={{
-                              transform: `scaleX(${Math.max(0.02, bar.ratio)})`,
-                              background: dimension === 'day' ? 'var(--data-1)' : `var(--data-${(index % 8) + 1})`
-                            }}
-                          />
-                        ) : null}
-                      </span>
-                      <span className="settings-bar__value">{compactNumber(bar.value)}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <div className="settings-table-wrap">
-                  <table className="settings-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">
-                          {dimension === 'day' ? text.usageDayColumn : text.usageModelColumn}
-                        </th>
-                        <th scope="col">{text.usageTokensColumn}</th>
-                        <th scope="col">{text.usageShareColumn}</th>
-                        {dimension === 'model' ? <th scope="col">{text.usageCostColumn}</th> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bars.map((bar) => (
-                        <tr key={bar.key} data-idle={bar.value > 0 ? undefined : '1'}>
-                          <td title={bar.key}>{bar.label}</td>
-                          <td className="settings-table__num">{compactNumber(bar.value)}</td>
-                          <td className="settings-table__num">{shareText(bar.share)}</td>
-                          {dimension === 'model' ? <td className="settings-table__num">{money(stats?.models.find((model) => model.key === bar.key)?.cost ?? 0)}</td> : null}
+            </>
+          }
+          settingId="usage-breakdown"
+          plain
+          actions={
+            <>
+              <Segmented label={text.usageDimension} value={dimension} options={dimensionOptions} onChange={(value) => setDimension(value)} />
+              <Segmented label={text.usageView} value={view} options={viewOptions} onChange={(value) => setView(value)} />
+            </>
+          }
+        >
+          <div className="usage-panel">
+            <div className="settings-breakdown" data-testid="v3-usage-breakdown" data-dimension={dimension}>
+              {bars && bars.length > 0 ? (
+                view === 'chart' ? (
+                  <ol className="settings-bars" data-dimension={dimension} aria-label={dimensionLabel}>
+                    {bars.map((bar, index) => (
+                      <li
+                        key={bar.key}
+                        className="settings-bar"
+                        data-idle={bar.value > 0 ? undefined : '1'}
+                        title={`${bar.label} · ${compactNumber(bar.value)} token`}
+                      >
+                        <span className="settings-bar__label">{bar.label}</span>
+                        <span className="settings-bar__track" aria-hidden>
+                          {bar.value > 0 ? (
+                            <span
+                              className="settings-bar__fill"
+                              style={{
+                                transform: `scaleX(${Math.max(0.02, bar.ratio)})`,
+                                background: dimension === 'day' ? 'var(--data-1)' : `var(--data-${(index % 8) + 1})`
+                              }}
+                            />
+                          ) : null}
+                        </span>
+                        <span className="settings-bar__value">{compactNumber(bar.value)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="settings-table-wrap">
+                    <table className="settings-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">
+                            {dimension === 'day' ? text.usageDayColumn : text.usageModelColumn}
+                          </th>
+                          <th scope="col">{text.usageTokensColumn}</th>
+                          <th scope="col">{text.usageShareColumn}</th>
+                          {dimension === 'model' ? <th scope="col">{text.usageCostColumn}</th> : null}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            ) : (
-              <p className="settings-value">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p>
-            )}
+                      </thead>
+                      <tbody>
+                        {bars.map((bar) => (
+                          <tr key={bar.key} data-idle={bar.value > 0 ? undefined : '1'}>
+                            <td title={bar.key}>{bar.label}</td>
+                            <td className="settings-table__num">{compactNumber(bar.value)}</td>
+                            <td className="settings-table__num">{shareText(bar.share)}</td>
+                            {dimension === 'model' ? <td className="settings-table__num">{money(stats?.models.find((model) => model.key === bar.key)?.cost ?? 0)}</td> : null}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                <p className="settings-value">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p>
+              )}
+            </div>
           </div>
-        </div>
+        </SettingsGroup>
       ) : null}
 
-      <SettingsMore>
+      <SettingsGroup title={text.groupUsageCurrency}>
         <UsageCurrency text={text} />
-      </SettingsMore>
+      </SettingsGroup>
     </section>
   )
 }

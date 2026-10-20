@@ -82,11 +82,10 @@ export function MarketSection(): ReactElement {
             placeholder={t('market.search')}
             data-testid="caps-market-search"
           />
-          <Button size="sm" variant="primary" isDisabled={loading || !query.trim()} onPress={search} data-testid="caps-market-search-btn">
+          <Button variant="primary" isDisabled={loading || !query.trim()} onPress={search} data-testid="caps-market-search-btn">
             {t('market.searchBtn')}
           </Button>
           <Button
-            size="sm"
             variant="secondary"
             onPress={() => void window.yan.browser.open('https://pi.dev/packages')}
             data-testid="caps-market-catalog"
@@ -111,7 +110,7 @@ export function MarketSection(): ReactElement {
                   <Badge>{pkg.version}</Badge>
                   <span className="caps-spacer" />
                   <Actions>
-                    <Button size="sm" variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
+                    <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
                       {t('market.choose')}
                     </Button>
                   </Actions>
@@ -119,11 +118,11 @@ export function MarketSection(): ReactElement {
                 {pkg.description ? <Meta title={pkg.description}>{pkg.description}</Meta> : null}
                 {pkg.publisher ? <Meta>{pkg.publisher}</Meta> : null}
                 <Actions>
-                  <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
+                  <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
                     npm
                   </Button>
                   {pkg.homepage ? (
-                    <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
+                    <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
                       {t('market.source')}
                     </Button>
                   ) : null}
@@ -135,14 +134,13 @@ export function MarketSection(): ReactElement {
 
         {total > MARKET_PAGE_SIZE ? (
           <div className="caps-pager">
-            <Button size="sm" variant="secondary" isDisabled={loading || offset === 0} onPress={() => goPage(Math.max(0, offset - MARKET_PAGE_SIZE))}>
+            <Button variant="secondary" isDisabled={loading || offset === 0} onPress={() => goPage(Math.max(0, offset - MARKET_PAGE_SIZE))}>
               {t('market.previous')}
             </Button>
             <Meta>
               {t('market.range', { from: range.from, to: range.to, total })}
             </Meta>
             <Button
-              size="sm"
               variant="secondary"
               isDisabled={loading || offset + MARKET_PAGE_SIZE >= total}
               onPress={() => goPage(offset + MARKET_PAGE_SIZE)}

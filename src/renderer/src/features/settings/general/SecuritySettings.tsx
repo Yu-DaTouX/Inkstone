@@ -5,7 +5,8 @@ import { useStore } from '../../../state/store'
 import { Button, Dialog, Modal, ModalOverlay, Switch } from '../../../ui'
 import { generalText } from './general-text'
 import { permissionNeedsConfirm } from './general-model'
-import { SettingsMore, SettingsRow, Segmented } from '../root/controls'
+import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
+import { settingsText } from '../settings-text'
 import { PiProjectTrustGroup } from './PiNativeSettings'
 
 export interface AllowRootsListProps {
@@ -30,7 +31,7 @@ export function AllowRootsList({ roots, emptyText, removeText, onRemove }: Allow
           <span className="settings-root__path" title={path}>
             {path}
           </span>
-          <Button size="sm" variant="danger" onPress={() => onRemove(path)}>
+          <Button variant="danger" onPress={() => onRemove(path)}>
             {removeText}
           </Button>
         </li>
@@ -42,6 +43,7 @@ export function AllowRootsList({ roots, emptyText, removeText, onRemove }: Allow
 export function SecuritySettings(): ReactElement {
   const { lang } = useI18n()
   const text = generalText(lang)
+  const labels = settingsText(lang)
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
   const removeGuardAllowRoot = useStore((s) => s.removeGuardAllowRoot)
@@ -56,9 +58,8 @@ export function SecuritySettings(): ReactElement {
 
   return (
     <section className="settings-section" data-testid="v3-security-settings">
-      <div className="settings-rows">
+      <SettingsGroup title={labels.groupSecurityPermissions}>
         <SettingsRow
-          block
           settingId="security-permission-mode"
           label={text.securityMode}
           description={mode === 'all' ? text.securityModeAllDesc : text.securityModeDangerDesc}
@@ -92,38 +93,35 @@ export function SecuritySettings(): ReactElement {
             data-testid="v3-security-outside"
           />
         </SettingsRow>
-      </div>
 
-      <SettingsMore>
-        <div className="settings-rows">
-          <SettingsRow
-            block
-            settingId="security-allow-roots"
-            label={text.securityAllowRoots}
-            description={text.securityAllowRootsDesc}
-          >
-            <AllowRootsList
-              roots={roots}
-              emptyText={text.securityAllowRootsEmpty}
-              removeText={text.securityAllowRootsRemove}
-              onRemove={(path) => void removeGuardAllowRoot(path)}
-            />
-          </SettingsRow>
-        </div>
-        <PiProjectTrustGroup />
-      </SettingsMore>
+        <SettingsRow
+          block
+          nested
+          settingId="security-allow-roots"
+          label={text.securityAllowRoots}
+          description={text.securityAllowRootsDesc}
+        >
+          <AllowRootsList
+            roots={roots}
+            emptyText={text.securityAllowRootsEmpty}
+            removeText={text.securityAllowRootsRemove}
+            onRemove={(path) => void removeGuardAllowRoot(path)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <PiProjectTrustGroup title={labels.groupSecurityProjects} />
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmAll} onOpenChange={setConfirmAll}>
         <Modal className="settings-confirm-modal">
           <Dialog className="settings-confirm" title={text.securityAllConfirmTitle} aria-label={text.securityAllConfirmTitle}>
             <p className="settings-row__desc">{text.securityAllConfirmBody}</p>
             <div className="settings-actions">
-              <Button variant="secondary" size="sm" onPress={() => setConfirmAll(false)}>
+              <Button variant="secondary" onPress={() => setConfirmAll(false)}>
                 {text.cancel}
               </Button>
               <Button
                 variant="danger"
-                size="sm"
                 data-testid="v3-security-all-confirm"
                 onPress={() => {
                   setConfirmAll(false)

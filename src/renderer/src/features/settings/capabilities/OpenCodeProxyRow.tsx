@@ -105,13 +105,12 @@ export function OpenCodeProxyRow(): ReactElement {
         <span className="caps-spacer" />
         <Actions>
           {!installed ? (
-            <Button size="sm" variant="primary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-install">
+            <Button variant="secondary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-install">
               {busy === 'install' ? t('ocp.installing') : t('ocp.install')}
             </Button>
           ) : (
             <>
               <Button
-                size="sm"
                 variant="secondary"
                 isDisabled={!!busy}
                 onPress={() =>
@@ -124,7 +123,6 @@ export function OpenCodeProxyRow(): ReactElement {
                 {running ? t('ocp.stop') : t('ocp.start')}
               </Button>
               <Button
-                size="sm"
                 variant="ghost"
                 isDisabled={!!busy || !running}
                 onPress={() => void run('refresh', () => window.yan.opencodeProxy.refresh(), 'ocp.refreshedOk', { n: status?.models.length ?? 0 })}
@@ -132,16 +130,15 @@ export function OpenCodeProxyRow(): ReactElement {
               >
                 {t('ocp.refresh')}
               </Button>
-              <Button size="sm" variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-update">
+              <Button variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-update">
                 {busy === 'install' ? t('ocp.installing') : t('ocp.update')}
               </Button>
-              <Button size="sm" variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-opencode-uninstall">
+              <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-opencode-uninstall">
                 {t('ocp.uninstall')}
               </Button>
             </>
           )}
           <Button
-            size="sm"
             variant="ghost"
             onPress={() => void window.yan.browser.openExternal('https://github.com/jasonxu114514/opencode2api')}
             data-testid="caps-opencode-source"
@@ -174,17 +171,17 @@ export function OpenCodeProxyRow(): ReactElement {
             {t('ocp.autoStart')}
           </Checkbox>
           {running ? (
-            <Button size="sm" variant="ghost" onPress={() => void window.yan.browser.openExternal(status?.consoleUrl ?? '')} data-testid="caps-opencode-console">
+            <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(status?.consoleUrl ?? '')} data-testid="caps-opencode-console">
               {t('ocp.console')}
             </Button>
           ) : null}
           {running && status?.consolePassword ? (
-            <Button size="sm" variant="ghost" onPress={copyPassword} data-testid="caps-opencode-password">
+            <Button variant="ghost" onPress={copyPassword} data-testid="caps-opencode-password">
               {copied ? t('ocp.copied') : t('ocp.copyPassword')}
             </Button>
           ) : null}
           {running && status?.log.length ? (
-            <Button size="sm" variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-opencode-log-toggle">
+            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-opencode-log-toggle">
               {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
             </Button>
           ) : null}

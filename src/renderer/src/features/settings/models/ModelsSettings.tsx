@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { AuthProviderInfo, OAuthLoginEvent } from '../../../../../shared/ipc'
 import { modelErrorText } from '../../../../../shared/model-errors'
-import { useT, type MessageKey } from '../../../i18n'
+import { useI18n, useT, type MessageKey } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { refreshModelsAfterRestart } from '../../../state/refresh-models'
 import {
@@ -17,7 +17,8 @@ import {
   type BadgeTone
 } from '../../../ui'
 import { canRemoveCredential, credentialFromEnv, entryState, type ServiceState } from './models-model'
-import { SettingsMore, SettingsReveal } from '../root/controls'
+import { SettingsGroup, SettingsReveal } from '../root/controls'
+import { settingsText } from '../settings-text'
 import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
 import { OpenCodeProxyRow } from '../capabilities/OpenCodeProxyRow'
 import { ConfirmProvider } from '../capabilities/confirm'
@@ -58,6 +59,7 @@ function stateTone(state: ServiceState): BadgeTone {
 export function ModelsSettings(): ReactElement {
   const t = useT()
   const text = useModelsText()
+  const labels = settingsText(useI18n().lang)
   const authProviders = useStore((s) => s.authProviders)
   const loadAuthProviders = useStore((s) => s.loadAuthProviders)
 
@@ -245,7 +247,6 @@ export function ModelsSettings(): ReactElement {
                 autoFocus
               />
               <Button
-                size="sm"
                 variant="primary"
                 isDisabled={busy || !draft.trim()}
                 onPress={() => void saveKey()}
@@ -253,7 +254,6 @@ export function ModelsSettings(): ReactElement {
                 {t('auth.save')}
               </Button>
               <Button
-                size="sm"
                 variant="secondary"
                 isDisabled={busy}
                 onPress={() => {
@@ -268,7 +268,6 @@ export function ModelsSettings(): ReactElement {
             <>
               {state === 'ready' && canRemoveCredential(p) ? (
                 <Button
-                  size="sm"
                   variant="secondary"
                   isDisabled={busy}
                   data-testid={`ms-remove-${p.id}`}
@@ -279,7 +278,6 @@ export function ModelsSettings(): ReactElement {
               ) : null}
               {isKey && state !== 'unknown' ? (
                 <Button
-                  size="sm"
                   variant="secondary"
                   isDisabled={busy}
                   data-testid={`ms-set-${p.id}`}
@@ -295,7 +293,6 @@ export function ModelsSettings(): ReactElement {
               {!isKey && state === 'loginable' ? (
                 loginInProgress(p) ? (
                   <Button
-                    size="sm"
                     variant="secondary"
                     data-testid={`ms-login-cancel-${p.id}`}
                     onPress={() => {
@@ -307,7 +304,6 @@ export function ModelsSettings(): ReactElement {
                   </Button>
                 ) : (
                   <Button
-                    size="sm"
                     variant="secondary"
                     isDisabled={busy || codexLogging || !!oauth}
                     data-testid={`ms-login-${p.id}`}
@@ -339,18 +335,19 @@ export function ModelsSettings(): ReactElement {
   }
 
   return (
-    <section className="ms-page" aria-label={text('title')}>
+    <section className="settings-section ms-page" aria-label={text('title')}>
       {msg ? (
         <Notice tone={msg.kind} className="ms-msg">
           {msg.text}
         </Notice>
       ) : null}
 
-      <div className="ms-services" data-testid="ms-services">
-        <div className="ms-toolbar">
-          <div className="ms-toolbar-info">
-            <span className="ms-summary">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
-            <span className="ms-safety" data-testid="ms-file-info">
+      <SettingsGroup
+        title={text('title')}
+        description={
+          <>
+            <span className="settings-row__line">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
+            <span className="ms-safety settings-row__line" data-testid="ms-file-info">
               {t('auth.safety')}
               {fileInfo ? (
                 <span className="ms-file">
@@ -362,9 +359,10 @@ export function ModelsSettings(): ReactElement {
                 </span>
               ) : null}
             </span>
-          </div>
+          </>
+        }
+        actions={
           <Button
-            size="sm"
             variant="secondary"
             isDisabled={checking}
             data-testid="ms-recheck"
@@ -374,62 +372,61 @@ export function ModelsSettings(): ReactElement {
             {checking ? <Spinner label={t('auth.checking')} /> : null}
             {checking ? t('auth.checking') : t('auth.recheck')}
           </Button>
-        </div>
-
+        }
+        testId="ms-services"
+        plain
+      >
         {authProviders.length === 0 ? <p className="ms-note">{text('noAuthInfo')}</p> : null}
+      </SettingsGroup>
 
-        {subscriptions.length > 0 ? (
-          <section className="ms-group" aria-label={t('auth.subs')} data-setting-id="models-subscriptions">
-            <h3 className="ms-group-title">{t('auth.subs')}</h3>
-            <div className="settings-rows ms-rows">{subscriptions.map(serviceRow)}</div>
-          </section>
-        ) : null}
+      {subscriptions.length > 0 ? (
+        <SettingsGroup title={t('auth.subs')} settingId="models-subscriptions" className="ms-group" plain>
+          <div className="settings-rows ms-rows">{subscriptions.map(serviceRow)}</div>
+        </SettingsGroup>
+      ) : null}
 
-        {keys.length > 0 ? (
-          <section className="ms-group" aria-label={t('auth.keys')} data-setting-id="models-api-keys">
-            <h3 className="ms-group-title">{t('auth.keys')}</h3>
-            <div className="settings-rows ms-rows">
-              {readyKeys.map(serviceRow)}
-              {otherKeys.length > 0 ? (
-                <>
-                  <SettingsReveal open={showAllKeys}>{otherKeys.map(serviceRow)}</SettingsReveal>
-                  <div className="ms-rows-foot">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={showAllKeys}
-                      icon={<ChevronDown size={14} className="ms-rows-foot__chevron" aria-hidden />}
-                      data-testid="ms-toggle-keys"
-                      onPress={() => setShowAllKeys((v) => !v)}
-                    >
-                      {showAllKeys
-                        ? text('hideAllKeys')
-                        : text('showAllKeys').replace('{n}', String(otherKeys.length))}
-                    </Button>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
-      </div>
-
-      <SettingsMore>
-        <CustomEndpointSettings />
-        <section className="ms-group" aria-label={t('cc.title')} data-setting-id="models-claude-code">
+      {keys.length > 0 ? (
+        <SettingsGroup title={t('auth.keys')} settingId="models-api-keys" className="ms-group" plain>
           <div className="settings-rows ms-rows">
+            {readyKeys.map(serviceRow)}
+            {otherKeys.length > 0 ? (
+              <>
+                <SettingsReveal open={showAllKeys}>{otherKeys.map(serviceRow)}</SettingsReveal>
+                <div className="ms-rows-foot">
+                  <Button
+                    variant="ghost"
+                    aria-expanded={showAllKeys}
+                    icon={<ChevronDown size={16} className="ms-rows-foot__chevron" aria-hidden />}
+                    data-testid="ms-toggle-keys"
+                    onPress={() => setShowAllKeys((v) => !v)}
+                  >
+                    {showAllKeys
+                      ? text('hideAllKeys')
+                      : text('showAllKeys').replace('{n}', String(otherKeys.length))}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </SettingsGroup>
+      ) : null}
+
+      <CustomEndpointSettings />
+
+      <SettingsGroup title={labels.groupModelsIntegrations} className="ms-group" plain>
+        <div className="settings-rows ms-rows">
+          <div data-setting-id="models-claude-code">
             <ClaudeCodeBridgeRow />
           </div>
-        </section>
-        <section className="ms-group" aria-label={text('openCodeProxy')} data-setting-id="models-opencode-proxy">
-          <ConfirmProvider>
-            <OpenCodeProxyRow />
-          </ConfirmProvider>
-        </section>
-        <div className="ms-group">
-          <PiThinkingLevelsGroup />
+          <div className="caps-list" data-setting-id="models-opencode-proxy">
+            <ConfirmProvider>
+              <OpenCodeProxyRow />
+            </ConfirmProvider>
+          </div>
         </div>
-      </SettingsMore>
+      </SettingsGroup>
+
+      <PiThinkingLevelsGroup />
 
       {pendingRemove ? (
         <ModalOverlay
@@ -445,12 +442,11 @@ export function ModelsSettings(): ReactElement {
               <p className="ms-confirm-body">{text('removeBody')}</p>
               <p className="ms-confirm-target">{providerName(pendingRemove)}</p>
               <div className="ms-confirm-actions">
-                <Button variant="secondary" size="sm" onPress={() => setPendingRemove(null)}>
+                <Button variant="secondary" onPress={() => setPendingRemove(null)}>
                   {t('ui.cancel')}
                 </Button>
                 <Button
                   variant="danger"
-                  size="sm"
                   data-testid="ms-remove-confirm"
                   isDisabled={busy}
                   onPress={() => void confirmRemove(pendingRemove)}
@@ -507,11 +503,11 @@ function OAuthPanel({
           <code className="ms-oauth-code" data-testid="ms-device-code">
             {device.userCode}
           </code>
-          <Button size="sm" variant="secondary" onPress={() => copy(device.userCode)}>
+          <Button variant="secondary" onPress={() => copy(device.userCode)}>
             {t('auth.copyCode')}
           </Button>
           {device.url ? (
-            <Button size="sm" variant="primary" onPress={() => void window.yan.browser.openExternal(device.url)}>
+            <Button variant="primary" onPress={() => void window.yan.browser.openExternal(device.url)}>
               {t('auth.openVerify')}
             </Button>
           ) : null}
@@ -520,10 +516,10 @@ function OAuthPanel({
       {authUrl && !device ? (
         <div className="ms-oauth-row">
           <span>{t('auth.browserOpened')}</span>
-          <Button size="sm" variant="secondary" onPress={() => void window.yan.browser.openExternal(authUrl.url)}>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(authUrl.url)}>
             {t('auth.openAgain')}
           </Button>
-          <Button size="sm" variant="secondary" onPress={() => copy(authUrl.url)}>
+          <Button variant="secondary" onPress={() => copy(authUrl.url)}>
             {t('auth.copyLink')}
           </Button>
         </div>
@@ -534,7 +530,7 @@ function OAuthPanel({
           {prompt.kind === 'select' && prompt.options?.length ? (
             <div className="ms-oauth-row">
               {prompt.options.map((o) => (
-                <Button key={o.id} size="sm" variant="secondary" onPress={() => reply(o.id)}>
+                <Button key={o.id} variant="secondary" onPress={() => reply(o.id)}>
                   {o.label}
                 </Button>
               ))}
@@ -554,7 +550,7 @@ function OAuthPanel({
                 onChange={setAnswer}
                 autoFocus
               />
-              <Button size="sm" variant="secondary" type="submit">
+              <Button variant="secondary" type="submit">
                 {t('auth.submit')}
               </Button>
             </form>

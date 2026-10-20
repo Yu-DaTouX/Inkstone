@@ -7,7 +7,7 @@ import { Button, Dialog, Modal, ModalOverlay, Notice, Switch } from '../../../ui
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
 import { piSourceLabel } from './general-model'
-import { SettingsMore, SettingsRow } from '../root/controls'
+import { SettingsGroup, SettingsRow } from '../root/controls'
 
 const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
   idle: 'aboutPhaseIdle',
@@ -100,7 +100,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
         </Notice>
       ) : null}
 
-      <div className="settings-rows">
+      <SettingsGroup title={settingsCopy.groupAboutApp}>
         <SettingsRow
           settingId="about-version"
           label={text.aboutVersion}
@@ -118,23 +118,8 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
           label={text.aboutUpdates}
           description={<span data-testid="v3-about-update-state">{phase}</span>}
         >
-          <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={!status || status.phase === 'checking' || status.phase === 'downloading'}
-            data-testid="v3-about-update-check"
-            onPress={() => act('check')}
-          >
-            {text.aboutUpdateCheck}
-          </Button>
-          {status?.phase === 'available' ? (
-            <Button size="sm" variant="primary" onPress={() => act('download')}>
-              {text.aboutUpdateDownload}
-            </Button>
-          ) : null}
           {status?.phase === 'manual' ? (
             <Button
-              size="sm"
               variant="secondary"
               onPress={() => {
                 if (status.releaseUrl) void openBrowser(status.releaseUrl)
@@ -143,11 +128,24 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
               {text.aboutUpdateReleases}
             </Button>
           ) : null}
+          {status?.phase === 'available' ? (
+            <Button variant="secondary" onPress={() => act('download')}>
+              {text.aboutUpdateDownload}
+            </Button>
+          ) : null}
           {status?.phase === 'downloaded' ? (
-            <Button size="sm" variant="primary" data-testid="v3-about-update-install" onPress={() => setConfirmInstall(true)}>
+            <Button variant="primary" data-testid="v3-about-update-install" onPress={() => setConfirmInstall(true)}>
               {text.aboutUpdateInstall}
             </Button>
           ) : null}
+          <Button
+            variant="secondary"
+            isDisabled={!status || status.phase === 'checking' || status.phase === 'downloading'}
+            data-testid="v3-about-update-check"
+            onPress={() => act('check')}
+          >
+            {text.aboutUpdateCheck}
+          </Button>
         </SettingsRow>
 
         <SettingsRow settingId="about-update-auto" label={text.aboutUpdateAuto} description={text.aboutUpdateAutoDesc}>
@@ -168,66 +166,63 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
             data-testid="v3-about-update-auto"
           />
         </SettingsRow>
-      </div>
+      </SettingsGroup>
 
-      <SettingsMore>
-        <div className="settings-rows">
-          <SettingsRow
-            settingId="about-repository"
-            label={text.aboutOpenSource}
-            description={<span className="settings-path">{BUILD_INFO.repositoryUrl || '—'}</span>}
+      <SettingsGroup title={settingsCopy.groupAboutMore}>
+        <SettingsRow
+          settingId="about-pi-redetect"
+          label={text.aboutPi}
+          description={
+            <>
+              {text.aboutPiDesc} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
+              {piInfo?.error ? ` · ${piInfo.error}` : ''}
+            </>
+          }
+        >
+          <Button variant="secondary" isDisabled={detecting} data-testid="v3-about-pi-redetect" onPress={() => void redetect()}>
+            {detecting ? text.aboutRedetecting : text.aboutRedetect}
+          </Button>
+        </SettingsRow>
+
+        <SettingsRow
+          settingId="about-repository"
+          label={text.aboutOpenSource}
+          description={<span className="settings-path">{BUILD_INFO.repositoryUrl || '—'}</span>}
+        >
+          <Button
+            variant="secondary"
+            isDisabled={!BUILD_INFO.repositoryUrl}
+            data-testid="v3-about-repo"
+            onPress={() => {
+              if (BUILD_INFO.repositoryUrl) void openBrowser(BUILD_INFO.repositoryUrl)
+            }}
           >
-            <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={!BUILD_INFO.repositoryUrl}
-              data-testid="v3-about-repo"
-              onPress={() => {
-                if (BUILD_INFO.repositoryUrl) void openBrowser(BUILD_INFO.repositoryUrl)
-              }}
-            >
-              {text.aboutOpen}
+            {text.aboutOpen}
+          </Button>
+        </SettingsRow>
+
+        {onShowOnboarding ? (
+          <SettingsRow
+            settingId="about-onboarding"
+            label={settingsCopy.onboardingTitle}
+            description={settingsCopy.onboardingDesc}
+          >
+            <Button variant="secondary" data-testid="v3-about-onboarding" onPress={onShowOnboarding}>
+              {settingsCopy.onboardingAction}
             </Button>
           </SettingsRow>
-
-          <SettingsRow
-            settingId="about-pi-redetect"
-            label={text.aboutPi}
-            description={
-              <>
-                {text.aboutPiDesc} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
-                {piInfo?.error ? ` · ${piInfo.error}` : ''}
-              </>
-            }
-          >
-            <Button size="sm" variant="secondary" isDisabled={detecting} data-testid="v3-about-pi-redetect" onPress={() => void redetect()}>
-              {detecting ? text.aboutRedetecting : text.aboutRedetect}
-            </Button>
-          </SettingsRow>
-
-          {onShowOnboarding ? (
-            <SettingsRow
-              settingId="about-onboarding"
-              label={settingsCopy.onboardingTitle}
-              description={settingsCopy.onboardingDesc}
-            >
-              <Button size="sm" variant="secondary" data-testid="v3-about-onboarding" onPress={onShowOnboarding}>
-                {settingsCopy.onboardingAction}
-              </Button>
-            </SettingsRow>
-          ) : null}
-        </div>
-      </SettingsMore>
+        ) : null}
+      </SettingsGroup>
 
       <ModalOverlay className="settings-confirm-overlay" isOpen={confirmInstall} onOpenChange={setConfirmInstall}>
         <Modal className="settings-confirm-modal">
           <Dialog className="settings-confirm" title={text.aboutUpdateInstall} aria-label={text.aboutUpdateInstall}>
             <p className="settings-row__desc">{text.aboutUpdateInstallConfirm}</p>
             <div className="settings-actions">
-              <Button variant="secondary" size="sm" onPress={() => setConfirmInstall(false)}>
+              <Button variant="secondary" onPress={() => setConfirmInstall(false)}>
                 {text.cancel}
               </Button>
-              <Button variant="primary" size="sm" data-testid="v3-about-update-install-confirm" onPress={install}>
+              <Button variant="primary" data-testid="v3-about-update-install-confirm" onPress={install}>
                 {text.aboutUpdateInstall}
               </Button>
             </div>

@@ -160,11 +160,11 @@ function SyncMessageLine({ message, scope }: { message: SyncMessage | null; scop
   )
 }
 
-export function SyncGroup({ panel }: { panel: SyncPanel }): ReactElement {
+export function SyncGroup({ panel, title }: { panel: SyncPanel; title?: string }): ReactElement {
   const { bridge, text, lang, status, conflicts, busy, message, configured } = panel
   if (!bridge) {
     return (
-      <SettingsGroup label={text.folder}>
+      <SettingsGroup title={title ?? text.folder}>
         <SettingsRow settingId="data-sync-folder" label={text.folder} description={text.bridgeMissing}>
           {null}
         </SettingsRow>
@@ -182,23 +182,29 @@ export function SyncGroup({ panel }: { panel: SyncPanel }): ReactElement {
       : text.modeManualHint
 
   return (
-    <SettingsGroup label={text.folder}>
-      <SettingsRow block settingId="data-sync-folder" label={text.folder} description={text.folderRecommend}>
-        <div className="settings-data" data-testid="v3-sync-folder">
-          <span className="settings-path" data-testid="v3-sync-folder-path" title={status?.syncRoot ?? ''}>
-            {status?.syncRoot ?? text.folderUnset}
-          </span>
-          <div className="settings-actions">
-            <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={panel.chooseFolder}>
-              {text.folderPick}
-            </Button>
-            {configured ? (
-              <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={panel.clearFolder}>
-                {text.folderClear}
-              </Button>
-            ) : null}
-          </div>
-        </div>
+    <SettingsGroup title={title ?? text.folder}>
+      <SettingsRow
+        settingId="data-sync-folder"
+        label={text.folder}
+        description={
+          <>
+            {text.folderRecommend}
+            <span className="settings-data" data-testid="v3-sync-folder">
+              <span className="settings-path" data-testid="v3-sync-folder-path" title={status?.syncRoot ?? ''}>
+                {status?.syncRoot ?? text.folderUnset}
+              </span>
+            </span>
+          </>
+        }
+      >
+        {configured ? (
+          <Button variant="secondary" isDisabled={busy !== null} onPress={panel.clearFolder}>
+            {text.folderClear}
+          </Button>
+        ) : null}
+        <Button variant="secondary" isDisabled={busy !== null} onPress={panel.chooseFolder}>
+          {text.folderPick}
+        </Button>
       </SettingsRow>
 
       <SettingsRow settingId="data-sync-mode" label={text.modeTitle} description={modeHint}>
@@ -241,14 +247,13 @@ export function SyncGroup({ panel }: { panel: SyncPanel }): ReactElement {
       >
         {conflicts.length > 0 ? (
           <Button
-            size="sm"
             variant="secondary"
             onPress={() => requestSettingReveal({ section: 'data', id: 'data-sync-conflicts' })}
           >
             {text.conflictsReview}
           </Button>
         ) : null}
-        <Button size="sm" variant="primary" isDisabled={busy !== null || !configured} onPress={panel.syncNow}>
+        <Button variant="secondary" isDisabled={busy !== null || !configured} onPress={panel.syncNow}>
           {busy === 'sync' ? text.syncing : text.syncNow}
         </Button>
       </SettingsRow>
@@ -276,54 +281,52 @@ export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElemen
   const { bridge, text, lang, conflicts, busy, message } = panel
   if (!bridge) return null
   return (
-    <SettingsGroup label={text.conflictsTitle}>
-      <SettingsRow block settingId="data-sync-conflicts" label={text.conflictsTitle} description={text.conflictsHint}>
-        {conflicts.length === 0 ? (
-          <p className="settings-row__desc" data-testid="v3-sync-conflicts-none">
-            {text.conflictsNone}
-          </p>
-        ) : (
-          <ul className="dd-conflicts" data-testid="v3-sync-conflicts">
-            {conflicts.map((conflict) => (
-              <li className="settings-device dd-conflict" key={conflict.id} data-testid={`v3-sync-conflict-${conflict.id}`}>
-                <div className="dd-conflict__head">
-                  <Badge tone="ask">{text.kinds[conflict.kind]}</Badge>
-                  <span className="settings-device__name dd-conflict__key" title={conflict.key}>
-                    {conflict.key}
+    <SettingsGroup title={text.conflictsTitle} description={text.conflictsHint} settingId="data-sync-conflicts" plain>
+      {conflicts.length === 0 ? (
+        <p className="settings-row__desc settings-list-empty" data-testid="v3-sync-conflicts-none">
+          {text.conflictsNone}
+        </p>
+      ) : (
+        <ul className="dd-conflicts" data-testid="v3-sync-conflicts">
+          {conflicts.map((conflict) => (
+            <li className="settings-device dd-conflict" key={conflict.id} data-testid={`v3-sync-conflict-${conflict.id}`}>
+              <div className="dd-conflict__head">
+                <Badge tone="ask">{text.kinds[conflict.kind]}</Badge>
+                <span className="settings-device__name dd-conflict__key" title={conflict.key}>
+                  {conflict.key}
+                </span>
+              </div>
+              <div className="dd-conflict__sides">
+                <div className="dd-conflict__side">
+                  <span className="settings-value">
+                    {text.localSide}
+                    {conflict.localDeviceName ? ` · ${conflict.localDeviceName}` : ''}
                   </span>
+                  <span className="settings-row__desc">{formatTime(conflict.localModifiedAt, lang)}</span>
+                  <p className="settings-path dd-conflict__preview">{conflict.localPreview ?? text.noLocal}</p>
                 </div>
-                <div className="dd-conflict__sides">
-                  <div className="dd-conflict__side">
-                    <span className="settings-value">
-                      {text.localSide}
-                      {conflict.localDeviceName ? ` · ${conflict.localDeviceName}` : ''}
-                    </span>
-                    <span className="settings-row__desc">{formatTime(conflict.localModifiedAt, lang)}</span>
-                    <p className="settings-path dd-conflict__preview">{conflict.localPreview ?? text.noLocal}</p>
-                  </div>
-                  <div className="dd-conflict__side">
-                    <span className="settings-value">{fillTemplate(text.remoteSide, { device: conflict.remoteDeviceName })}</span>
-                    <span className="settings-row__desc">{formatTime(conflict.remoteModifiedAt, lang)}</span>
-                    <p className="settings-path dd-conflict__preview">{conflict.remotePreview ?? text.noLocal}</p>
-                  </div>
+                <div className="dd-conflict__side">
+                  <span className="settings-value">{fillTemplate(text.remoteSide, { device: conflict.remoteDeviceName })}</span>
+                  <span className="settings-row__desc">{formatTime(conflict.remoteModifiedAt, lang)}</span>
+                  <p className="settings-path dd-conflict__preview">{conflict.remotePreview ?? text.noLocal}</p>
                 </div>
-                <div className="settings-actions">
-                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'local')}>
-                    {text.keepLocal}
-                  </Button>
-                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'remote')}>
-                    {text.keepRemote}
-                  </Button>
-                  <Button size="sm" variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'both')}>
-                    {text.keepBoth}
-                  </Button>
-                  {busy === conflict.id ? <span className="settings-row__desc">{text.resolving}</span> : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SettingsRow>
+              </div>
+              <div className="settings-actions">
+                <Button variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'local')}>
+                  {text.keepLocal}
+                </Button>
+                <Button variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'remote')}>
+                  {text.keepRemote}
+                </Button>
+                <Button variant="secondary" isDisabled={busy !== null} onPress={() => panel.resolve(conflict.id, 'both')}>
+                  {text.keepBoth}
+                </Button>
+                {busy === conflict.id ? <span className="settings-row__desc">{text.resolving}</span> : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       <SyncMessageLine message={message} scope="conflicts" />
     </SettingsGroup>
   )

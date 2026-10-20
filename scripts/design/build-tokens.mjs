@@ -53,7 +53,7 @@ function buildCss() {
   lines.push(...darkShadowLines())
   lines.push('  }')
   for (const [name, values] of Object.entries(tokens.density)) {
-    lines.push(`  :root[data-density='${name}'] {`)
+    lines.push(`  :root[data-density='${name}'], [data-density-scope='${name}'] {`)
     for (const [k, v] of Object.entries(values)) {
       if (Array.isArray(v)) {
         lines.push(`    --${k}: ${v[0]}px;`)

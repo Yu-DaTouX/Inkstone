@@ -9,6 +9,9 @@
     align-items: center;
     gap: var(--s-8) var(--s-16);
     min-width: 0;
+    padding: var(--s-12);
+    border-radius: var(--r-md);
+    background: var(--sunken);
   }
 
   .dd-lines {
@@ -24,7 +27,6 @@
   .dd-conflicts {
     display: flex;
     flex-direction: column;
-    gap: var(--s-8);
     width: 100%;
     margin: 0;
     padding: 0;
@@ -32,8 +34,15 @@
   }
 
   .dd-conflict {
+    display: flex;
     flex-direction: column;
     align-items: stretch;
+    gap: var(--s-8);
+    padding: var(--s-12) 0;
+  }
+
+  .dd-conflict + .dd-conflict {
+    border-top: 1px solid var(--alpha-1);
   }
 
   .dd-conflict__head {
