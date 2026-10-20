@@ -21,9 +21,7 @@ export interface RailText {
   openFiles: string
   copyBranch: string
   switchBranch: string
-  model: string
-  thinking: string
-  permission: string
+  resizeTiles: string
   progress: (done: number, total: number) => string
   statsSummary: (turns: number, tokens: string | null) => string
   outputsEmpty: string
@@ -38,7 +36,6 @@ const ZH: RailText = {
   railLabel: '会话详情',
   sections: {
     environment: '环境',
-    settings: '设置',
     stats: '会话统计',
     context: '上下文',
     usage: '用量',
@@ -66,9 +63,7 @@ const ZH: RailText = {
   openFiles: '在文件面板打开',
   copyBranch: '复制分支名',
   switchBranch: '切换分支',
-  model: '模型',
-  thinking: '思考',
-  permission: '权限',
+  resizeTiles: '调整磁贴宽度',
   progress: (done, total) => `${done} / ${total}`,
   statsSummary: (turns, tokens) => (tokens ? `${turns} 轮 · ${tokens}` : `${turns} 轮`),
   outputsEmpty: '本会话还没有写入文件',
@@ -83,7 +78,6 @@ const EN: RailText = {
   railLabel: 'Session details',
   sections: {
     environment: 'Environment',
-    settings: 'Settings',
     stats: 'Session stats',
     context: 'Context',
     usage: 'Usage',
@@ -111,9 +105,7 @@ const EN: RailText = {
   openFiles: 'Open in Files',
   copyBranch: 'Copy branch name',
   switchBranch: 'Switch branch',
-  model: 'Model',
-  thinking: 'Thinking',
-  permission: 'Permission',
+  resizeTiles: 'Resize tiles',
   progress: (done, total) => `${done} of ${total}`,
   statsSummary: (turns, tokens) => (tokens ? `${turns} turns · ${tokens}` : `${turns} turns`),
   outputsEmpty: 'No files written in this session yet',

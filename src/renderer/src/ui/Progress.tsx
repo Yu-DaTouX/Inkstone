@@ -76,6 +76,40 @@ export function Meter({ label, showValue = false, projectedPercent, className, .
   )
 }
 
+export interface MeterRingProps extends Omit<RACMeterProps, 'children'> {
+  size?: number
+  strokeWidth?: number
+}
+
+export function MeterRing({ size = 24, strokeWidth = 3, className, ...props }: MeterRingProps) {
+  const center = size / 2
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  return (
+    <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-meter-ring', cn))}>
+      {({ percentage }) => (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+          <circle className="ui-meter-ring__track" cx={center} cy={center} r={radius} strokeWidth={strokeWidth} fill="none" />
+          {percentage > 0 ? (
+            <circle
+              className="ui-meter-ring__fill"
+              cx={center}
+              cy={center}
+              r={radius}
+              strokeWidth={strokeWidth}
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * (1 - Math.min(100, percentage) / 100)}
+              transform={`rotate(-90 ${center} ${center})`}
+            />
+          ) : null}
+        </svg>
+      )}
+    </RACMeter>
+  )
+}
+
 export interface SpinnerProps {
   className?: string
   label?: string

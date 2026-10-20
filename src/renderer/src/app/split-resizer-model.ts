@@ -1,6 +1,8 @@
-export const MIN_COLUMN = 300
+export const MIN_COLUMN = 320
 
-export const KEY_STEP = 24
+export const KEY_STEP = 8
+
+export const LARGE_KEY_STEP = 32
 
 export interface PairMetrics {
   left: number

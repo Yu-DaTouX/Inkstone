@@ -2,7 +2,6 @@ import { create } from 'zustand'
 
 export const RAIL_SECTION_IDS = [
   'environment',
-  'settings',
   'stats',
   'context',
   'usage',
@@ -84,7 +83,7 @@ export function isRailSectionHidden(state: Pick<RailSectionsState, 'hidden'>, id
 }
 
 export function railSectionsAreDefault(state: Pick<RailSectionsState, 'order' | 'hidden'>): boolean {
-  if (state.hidden.some(canHideRailSection)) return false
+  if (state.hidden.some((id) => isRailSectionId(id) && canHideRailSection(id))) return false
   const order = resolveRailOrder(state.order)
   return order.every((id, index) => RAIL_SECTION_IDS[index] === id)
 }

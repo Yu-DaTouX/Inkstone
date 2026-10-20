@@ -1,0 +1,161 @@
+@layer features {
+  :root[data-session-dragging],
+  :root[data-session-dragging] * {
+    user-select: none;
+    cursor: grabbing;
+  }
+
+  .v3-split-drop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-drop);
+    pointer-events: none;
+  }
+
+  .v3-split-drop-badge {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--line2);
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--bg) 40%, transparent);
+    backdrop-filter: blur(2px);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: var(--w-medium);
+    transition:
+      left var(--dur-snap) var(--ease),
+      top var(--dur-snap) var(--ease),
+      width var(--dur-snap) var(--ease),
+      height var(--dur-snap) var(--ease),
+      opacity var(--dur-snap) var(--ease);
+    animation: v3-split-drop-in var(--dur-snap) var(--ease);
+  }
+
+  .v3-split-drop-badge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 24px 0 color-mix(in srgb, var(--accent) 20%, transparent);
+    pointer-events: none;
+  }
+
+  .v3-split-drop-label {
+    position: relative;
+    padding: var(--s-4) var(--s-10);
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: var(--on-accent);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-snap) var(--ease),
+      color var(--dur-snap) var(--ease);
+  }
+
+  .v3-split-drop-badge[data-hint] {
+    opacity: 0.45;
+  }
+
+  .v3-split-drop-badge[data-hint] .v3-split-drop-label {
+    background: var(--alpha-3);
+    color: var(--fg2);
+  }
+
+  .v3-session-ghost {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-toast);
+    pointer-events: none;
+    will-change: transform;
+  }
+
+  .v3-session-ghost-row {
+    position: absolute;
+    overflow: hidden;
+    border-radius: var(--r-sm);
+    background: var(--side);
+    box-shadow: var(--shadow-pop);
+    opacity: 0.9;
+    transition:
+      opacity var(--dur-snap) var(--ease),
+      width var(--dur-snap) var(--ease),
+      left var(--dur-snap) var(--ease),
+      top var(--dur-snap) var(--ease);
+  }
+
+  .v3-session-ghost-clone {
+    position: absolute;
+    inset: 0;
+    transition: opacity var(--dur-snap) var(--ease);
+  }
+
+  .v3-session-ghost-clone > .v3-srow {
+    height: 100%;
+  }
+
+  .v3-session-ghost-clone .v3-srow-more {
+    display: none;
+  }
+
+  .v3-session-ghost-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--s-8);
+    color: var(--fg);
+    font-size: var(--t-body);
+    font-weight: var(--w-medium);
+    opacity: 0;
+    transition: opacity var(--dur-snap) var(--ease);
+  }
+
+  .v3-session-ghost-label > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .v3-session-ghost[data-over] .v3-session-ghost-clone {
+    opacity: 0;
+  }
+
+  .v3-session-ghost[data-over] .v3-session-ghost-label {
+    opacity: 1;
+  }
+
+  .v3-session-ghost-measure {
+    position: absolute;
+    visibility: hidden;
+    width: max-content;
+    padding: 0 var(--s-12);
+    font-size: var(--t-body);
+    font-weight: var(--w-medium);
+    white-space: nowrap;
+  }
+
+  @keyframes v3-split-drop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-split-drop-badge,
+    .v3-split-drop-badge::before,
+    .v3-split-drop-label,
+    .v3-session-ghost-row,
+    .v3-session-ghost-clone,
+    .v3-session-ghost-label {
+      transition: none;
+      animation: none;
+    }
+  }
+}

@@ -116,6 +116,7 @@ export interface SplitKeyInput {
   min: number
   max: number
   step?: number
+  largeStep?: number
   orientation: SplitterOrientation
   shiftKey?: boolean
 }
@@ -123,7 +124,8 @@ export interface SplitKeyInput {
 export function splitValueForKey(input: SplitKeyInput): number | null {
   const { key, value, min, max, orientation } = input
   const base = Number.isFinite(input.step) && (input.step as number) > 0 ? (input.step as number) : 1
-  const step = input.shiftKey ? base * 10 : base
+  const large = Number.isFinite(input.largeStep) && (input.largeStep as number) > 0 ? (input.largeStep as number) : base * 10
+  const step = input.shiftKey ? large : base
   switch (key) {
     case 'ArrowLeft':
       return orientation === 'vertical' ? clampSplitValue(value - step, min, max) : null
@@ -162,6 +164,7 @@ export interface SplitterProps
   min?: number
   max?: number
   step?: number
+  largeStep?: number
   isDisabled?: boolean
   onChange?: (value: number) => void
   onReset?: () => void
@@ -178,6 +181,7 @@ export function Splitter({
   min = 0,
   max = 100,
   step = 1,
+  largeStep,
   isDisabled = false,
   onChange,
   onReset,
@@ -223,6 +227,28 @@ export function Splitter({
     []
   )
 
+  const cancelDragRef = useRef<() => void>(() => undefined)
+  cancelDragRef.current = () => {
+    const session = dragRef.current
+    if (!session) return
+    endDrag()
+    const restored = clampSplitValue(session.startValue, min, max)
+    if (!controlled) setUncontrolled(restored)
+    onChange?.(restored)
+  }
+
+  useEffect(() => {
+    if (!dragging) return undefined
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      cancelDragRef.current()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [dragging])
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (isDisabled || event.button !== 0) return
     const session = beginSplitDrag(event, current)
@@ -252,6 +278,7 @@ export function Splitter({
       min,
       max,
       step,
+      largeStep,
       orientation,
       shiftKey: event.shiftKey
     })

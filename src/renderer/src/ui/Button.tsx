@@ -6,7 +6,7 @@ import {
 } from 'react-aria-components'
 import { cx } from './cx'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'plain' | 'danger'
 export type ButtonSize = 'sm' | 'md'
 
 export interface ButtonProps extends RACButtonProps {

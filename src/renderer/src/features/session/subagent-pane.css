@@ -178,4 +178,20 @@
   .sa-pane-missing {
     height: 100%;
   }
+
+  .sa-pane-steps {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+  .sa-pane-pos {
+    min-width: 3.5em;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+  }
 }

@@ -1,17 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import {
-  Brain,
-  Copy,
-  Cpu,
-  FileText,
-  Files,
-  Folder,
-  FolderOpen,
-  GitBranch,
-  GitCommitHorizontal,
-  Monitor,
-  ShieldCheck
-} from 'lucide-react'
+import { Copy, FileText, Files, Folder, FolderOpen, GitBranch, GitCommitHorizontal, Monitor } from 'lucide-react'
 import { Button, Menu, MenuItem, Meter, Notice, Popover } from '../../ui'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -31,7 +19,6 @@ import { useSubagentStopping } from '../../state/subagent-stopping'
 import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
-import { normalizePermissionMode, type PermissionMode } from '../../../../shared/approval'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import type { RunSnapshot } from '../../../../shared/runs'
 import { money } from '../../../../shared/quota-mini'
@@ -478,11 +465,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const isOpen = (id: RailSectionId): boolean => isRailSectionOpen({ order: savedOrder, hidden, foldsBySession }, foldKey, id)
 
   const projectName = cwd ? settings?.projectNames?.[cwd] || lastSegment(cwd) : ''
-  const mode: PermissionMode = normalizePermissionMode(settings?.permissionMode)
-  const modeLabel = t(`permission.label.${mode}` as 'permission.label.danger')
-  const modelLabel = session?.model ? session.model.name || session.model.id : ''
-  const thinkingLevel = session?.thinkingLevel || 'off'
-  const thinkingLabel = t(`think.${thinkingLevel}` as MessageKey)
 
   const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
   const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}`
@@ -610,31 +592,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
               ]}
             />
           ) : null}
-        </ul>
-      )
-    },
-    settings: {
-      body: (
-        <ul className="wb-ov-items" data-testid="wb-rail-settings">
-          {modelLabel ? (
-            <li className="wb-ov-item" title={`${rail.model} ${modelLabel}`}>
-              <Cpu size={14} className="wb-ov-item-icon" aria-hidden />
-              <span className="wb-ov-item-label">{modelLabel}</span>
-              <span className="wb-ov-item-value">{rail.model}</span>
-            </li>
-          ) : null}
-          {session?.model?.reasoning ? (
-            <li className="wb-ov-item" title={`${rail.thinking} ${thinkingLabel}`}>
-              <Brain size={14} className="wb-ov-item-icon" aria-hidden />
-              <span className="wb-ov-item-label">{thinkingLabel}</span>
-              <span className="wb-ov-item-value">{rail.thinking}</span>
-            </li>
-          ) : null}
-          <li className="wb-ov-item" title={`${rail.permission} ${modeLabel}`}>
-            <ShieldCheck size={14} className="wb-ov-item-icon" aria-hidden />
-            <span className="wb-ov-item-label">{modeLabel}</span>
-            <span className="wb-ov-item-value">{rail.permission}</span>
-          </li>
         </ul>
       )
     },

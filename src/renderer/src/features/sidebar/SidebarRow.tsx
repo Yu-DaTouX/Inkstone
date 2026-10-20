@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { SessionStatusIcon } from './SessionStatusIcon'
+import { SessionStatusIcon, sessionStatusHasMark } from './SessionStatusIcon'
 import { sessionStatusLabel, type SessionStatusKind } from './session-status'
-import { passedThreshold, useSessionDrag } from './session-drag'
+import { startSessionRowDrag, useSplitDrag } from '../split/split-drag'
 import { SessionMenu, openSessionInSplit } from './SessionMenu'
 import { SidebarTip } from './SidebarTip'
 
@@ -18,6 +18,31 @@ export interface SidebarRowProps {
   status: SessionStatusKind
   code?: string
   onOpen: () => void
+}
+
+function FadeTitle({ text }: { text: string }): JSX.Element {
+  const boxRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const box = boxRef.current
+    const inner = textRef.current
+    if (!box || !inner) return
+    const measure = (): void => {
+      box.toggleAttribute('data-overflowing', inner.getBoundingClientRect().width > box.getBoundingClientRect().width + 0.5)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(box)
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <span ref={boxRef} className="v3-row-title">
+      <span ref={textRef} className="v3-row-title-text">{text}</span>
+    </span>
+  )
 }
 
 export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: SidebarRowProps): JSX.Element {
@@ -31,7 +56,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
   const [renaming, setRenaming] = useState(false)
   const [renamePending, setRenamePending] = useState(false)
   const [draft, setDraft] = useState(title)
-  const dragging = useSessionDrag((s) => s.item?.path === item.path)
+  const dragging = useSplitDrag((s) => s.item?.path === item.path)
 
   useEffect(() => {
     if (!renamePending || menuOpen) return
@@ -59,47 +84,9 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
   const onPointerDown = (event: ReactPointerEvent<HTMLButtonElement>): void => {
     if (event.button !== 0 || renaming) return
     draggedRef.current = false
-    const sx = event.clientX
-    const sy = event.clientY
-    let active = false
-
-    const move = (ev: PointerEvent): void => {
-      if (!active) {
-        if (!passedThreshold(ev.clientX - sx, ev.clientY - sy)) return
-        active = true
-        draggedRef.current = true
-        useSessionDrag.getState().begin({ id: item.id, path: item.path, title }, ev.clientX, ev.clientY)
-        document.body.dataset.v3Dragging = '1'
-        return
-      }
-      useSessionDrag.getState().move(ev.clientX, ev.clientY)
-    }
-    const finish = (commit: boolean): void => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', cancel)
-      window.removeEventListener('keydown', onKey, true)
-      window.removeEventListener('blur', cancel)
-      if (!active) return
-      const state = useSessionDrag.getState()
-      const zone = state.hit >= 0 ? state.zones[state.hit] : null
-      state.end()
-      delete document.body.dataset.v3Dragging
-      if (commit && zone) openSessionInSplit(item, zone.at)
-    }
-    const up = (): void => finish(true)
-    const cancel = (): void => finish(false)
-    const onKey = (ev: KeyboardEvent): void => {
-      if (ev.key !== 'Escape' || !active) return
-      ev.preventDefault()
-      ev.stopPropagation()
-      finish(false)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', cancel)
-    window.addEventListener('keydown', onKey, true)
-    window.addEventListener('blur', cancel)
+    startSessionRowDrag(event, { id: item.id, path: item.path, title }, () => {
+      draggedRef.current = true
+    })
   }
 
   const restoreRowFocus = (): void => {
@@ -155,6 +142,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
             data-menu={menuOpen ? '1' : undefined}
             data-muted={status === 'archived' ? '' : undefined}
             data-status={status}
+            data-mark={sessionStatusHasMark(status) ? '' : undefined}
             aria-current={isCurrent ? 'true' : undefined}
             onPointerDown={onPointerDown}
             onClick={(event) => {
@@ -170,10 +158,8 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
             }}
             data-testid="v3-session-row"
           >
-            <span className="ui-row__lead">
-              <SessionStatusIcon kind={status} label={statusLabel} />
-            </span>
-            <span className="v3-row-title">{title}</span>
+            <FadeTitle text={title} />
+            <SessionStatusIcon kind={status} label={statusLabel} />
           </button>
         </SidebarTip>
       )}

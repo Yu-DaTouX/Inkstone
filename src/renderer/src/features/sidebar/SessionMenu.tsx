@@ -1,19 +1,21 @@
 import { useState, type JSX, type RefObject } from 'react'
-import { Columns2, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Sparkles, Trash2 } from 'lucide-react'
+import { Columns2, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { displayedSessionOf, useSplitView } from '../../state/split-view'
-import { Button, Dialog, Menu, MenuItem, Modal, ModalOverlay, Popover } from '../../ui'
+import { indexOfSession, useSplitView } from '../../state/split-view'
+import { Button, Dialog, Menu, MenuItem, Modal, ModalOverlay, Popover, SubmenuTrigger } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
 import type { SessionSummary } from '../../../../shared/ipc'
 
-export function openSessionInSplit(item: { id: string; path: string }, at?: number): void {
-  const current = displayedSessionOf(useStore.getState())
-  useSplitView.getState().open({ sessionId: item.id, path: item.path }, current, at)
+import { closeSplitPane, openSessionInSplit as openInSplit } from '../split/split-actions'
+import { splitText } from '../split/split-text'
+
+export function openSessionInSplit(item: { id: string; path: string }): void {
+  openInSplit(item)
 }
 
-type MenuKey = `move:${string}` | 'split' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete'
+type MenuKey = `move:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -32,6 +34,8 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const [confirmDelete, setConfirmDelete] = useState(false)
   const projects = useStore((s) => s.settings?.projects)
   const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
+  const split = splitText(lang)
+  const splitIndex = useSplitView((s) => (s.split ? indexOfSession(s.split.tiles, { sessionId: item.id, path: item.path }) : -1))
 
   const run = (key: MenuKey): void => {
     const store = useStore.getState()
@@ -42,7 +46,13 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
     }
     switch (key) {
       case 'split':
-        openSessionInSplit(item)
+        openInSplit(item)
+        return
+      case 'split-below':
+        openInSplit(item, 'below')
+        return
+      case 'split-close':
+        if (splitIndex >= 0) closeSplitPane(splitIndex)
         return
       case 'rename':
         onRename()
@@ -72,13 +82,48 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
           autoFocus="first"
           onAction={(key) => run(key as MenuKey)}
           onClose={() => onOpenChange(false)}
-          disabledKeys={isCurrent ? ['split', 'delete'] : []}
+          disabledKeys={isCurrent ? ['delete'] : []}
           data-testid="v3-session-menu"
         >
-          <MenuItem id="split" textValue={t('rail.openSplit')}>
-            <Columns2 size={14} aria-hidden />
-            {t('rail.openSplit')}
-          </MenuItem>
+          <SubmenuTrigger>
+            <MenuItem id="open-with" textValue={split.openWith} data-testid="v3-session-open-with">
+              <SquareArrowOutUpRight size={14} aria-hidden />
+              {split.openWith}
+            </MenuItem>
+            <Popover placement="end top" offset={2}>
+              <Menu
+                aria-label={split.openWith}
+                onAction={(key) => {
+                  onOpenChange(false)
+                  run(key as MenuKey)
+                }}
+                disabledKeys={isCurrent && splitIndex < 0 ? ['split', 'split-below'] : []}
+                data-testid="v3-session-open-with-menu"
+              >
+                {splitIndex >= 0 ? (
+                  <MenuItem id="split-close" textValue={t('split.closeSide')}>
+                    <X size={14} aria-hidden />
+                    {t('split.closeSide')}
+                  </MenuItem>
+                ) : (
+                  <MenuItem id="split" textValue={split.openInSplit}>
+                    <Columns2 size={14} aria-hidden />
+                    {split.openInSplit}
+                  </MenuItem>
+                )}
+                {splitIndex < 0 ? (
+                  <MenuItem id="split-below" textValue={split.openBelow}>
+                    <Rows2 size={14} aria-hidden />
+                    {split.openBelow}
+                  </MenuItem>
+                ) : null}
+                <MenuItem id="reveal" textValue={t('rail.reveal')}>
+                  <FolderOpen size={14} aria-hidden />
+                  {t('rail.reveal')}
+                </MenuItem>
+              </Menu>
+            </Popover>
+          </SubmenuTrigger>
           <MenuItem id="rename" textValue={t('rail.rename')}>
             <Pencil size={14} aria-hidden />
             {t('rail.rename')}
@@ -107,10 +152,6 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
               {t('rail.moveSession')} · {project.name || shortProject(project.cwd)}
             </MenuItem>
           ))}
-          <MenuItem id="reveal" textValue={t('rail.reveal')}>
-            <FolderOpen size={14} aria-hidden />
-            {t('rail.reveal')}
-          </MenuItem>
           <MenuItem id="delete" textValue={t('rail.delete')} className="v3-menu-danger">
             <Trash2 size={14} aria-hidden />
             {isCurrent ? t('rail.cantDeleteCurrent') : t('rail.delete')}
