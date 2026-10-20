@@ -21,6 +21,7 @@ export interface SessionRuntimeSnapshot {
   runtime: RuntimeEnvelope
   session: SessionState | null
   messages: UIMessage[]
+  messagesLoaded: boolean
   stats: SessionStats | null
   queue: QueueState
   todos: SessionTodo[]
@@ -49,6 +50,7 @@ function emptyRuntime(runtime: RuntimeEnvelope): SessionRuntimeSnapshot {
     runtime,
     session: null,
     messages: [],
+    messagesLoaded: false,
     stats: null,
     queue: { steering: [], followUp: [] },
     todos: [],
@@ -200,11 +202,11 @@ export function reduceSessionRuntime(
   switch (message.ch) {
     case 'sync': {
       const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
-      next = { ...next, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
+      next = { ...next, messagesLoaded: true, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
       break
     }
     case 'msg-add':
-      next = { ...next, messages: [...next.messages, message.payload] }
+      next = { ...next, messagesLoaded: true, messages: [...next.messages, message.payload] }
       break
     case 'msg-update':
       next = { ...next, messages: patchMessage(next.messages, message.payload.id, message.payload.patch) }

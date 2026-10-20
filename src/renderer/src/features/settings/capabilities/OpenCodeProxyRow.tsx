@@ -60,27 +60,25 @@ export function OpenCodeProxyRow(): ReactElement {
   }
 
   const install = async (): Promise<void> => {
-    const accepted = await confirm({
+    await confirm({
       title: t('ocp.install'),
       body: t('market.opencodeTarget'),
       detail: t('ocp.installConfirm', { dir: status?.installDir ?? '' }),
       confirmLabel: t('ocp.install'),
-      tone: 'default'
+      tone: 'default',
+      action: () => run('install', () => window.yan.opencodeProxy.install(), 'ocp.installedOk')
     })
-    if (!accepted) return
-    await run('install', () => window.yan.opencodeProxy.install(), 'ocp.installedOk')
   }
 
   const uninstall = async (): Promise<void> => {
-    const accepted = await confirm({
+    await confirm({
       title: t('ocp.uninstall'),
       body: t('ocp.uninstallConfirm'),
       detail: status?.installDir ?? '',
       confirmLabel: t('ocp.uninstall'),
-      tone: 'danger'
+      tone: 'danger',
+      action: () => run('uninstall', () => window.yan.opencodeProxy.uninstall(), 'ocp.uninstalledOk')
     })
-    if (!accepted) return
-    await run('uninstall', () => window.yan.opencodeProxy.uninstall(), 'ocp.uninstalledOk')
   }
 
   const copyPassword = (): void => {

@@ -24,8 +24,8 @@
   const toastWatch = new MutationObserver(collectToasts)
   toastWatch.observe(document.body, { childList: true, subtree: true, characterData: true })
 
-  const ta = document.querySelector('.composer textarea')
-  ta?.focus()
+  const ta = document.querySelector('[data-testid="composer-input"]')
+  window.__yanComposer.focus(ta)
   out.push('  焦点: ' + (document.activeElement?.tagName ?? '-'))
 
   out.push('')
@@ -61,19 +61,19 @@
   out.push('')
   out.push('=== 3. 不干扰输入 ===')
   if (!ta) {
-    ok(false, '找不到 .composer textarea（输入区没渲染出来）')
+    ok(false, '找不到 [data-testid="composer-input"]（输入区没渲染出来）')
     out.push(
       `  诊断: .composer=${document.querySelectorAll('.composer').length} 个, ` +
-        `textarea=${document.querySelectorAll('textarea').length} 个, ` +
+        `composer-input=${document.querySelectorAll('[data-testid="composer-input"]').length} 个, ` +
         `body 子节点=${document.body.children.length} 个`
     )
   } else {
-    ok(true, '输入框还在（.composer textarea）')
+    ok(true, '输入框还在（contenteditable 宿主）')
+    ok(ta.isContentEditable, '输入框可编辑（contenteditable）')
     if (piReady) {
-      ok(!ta.disabled, '输入框未被禁用')
       ok(document.activeElement === ta, 'focus() 能落到输入框（没被别的元素抢走）')
     } else {
-      skip(`pi 未就绪 → 输入框按设计禁用（disabled=${ta.disabled}），不校验可用性`)
+      skip(`pi 未就绪（conn=${st.conn}）→ 不校验焦点是否被提示层抢走`)
     }
   }
 

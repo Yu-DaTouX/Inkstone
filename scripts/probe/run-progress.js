@@ -66,7 +66,7 @@
     ok(line()?.getAttribute('data-quiet') === 'true', '工具运行时工作行让位给工具行（data-quiet）', line()?.getAttribute('data-quiet'))
     const step = await waitFor(() => !!q('.v3-step[data-tool="read"][data-state="running"]'))
     ok(step, '运行中的工具行可见')
-    ok(/read/.test(q('.v3-step[data-tool="read"]')?.textContent ?? ''), '工具行带出工具名', q('.v3-step[data-tool="read"]')?.textContent)
+    ok(/rp-probe\.ts/.test(q('.v3-step[data-tool="read"]')?.textContent ?? ''), '工具行带出读取目标', q('.v3-step[data-tool="read"]')?.textContent)
 
     out.push('')
     out.push('=== 3. 收到可见思考流 ===')

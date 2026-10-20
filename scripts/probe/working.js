@@ -11,9 +11,9 @@
   const quiet = () => q('[data-testid="v3-turn-activity"][data-quiet]')
   const retrying = () => q('[data-testid="v3-turn-activity"][data-kind="retry"]')
   const border = () => q('[data-testid="composer-border"]')
-  const runningTool = (tool) =>
+  const runningTool = (tool, target) =>
     [q(`.v3-step[data-state="running"][data-tool="${tool}"]`), q('[data-testid="v3-process"] .v3-process-label')]
-      .find((el) => (el?.textContent ?? '').includes(tool))
+      .find((el) => (el?.textContent ?? '').includes(target))
   const user = { id: 'working-probe-u', role: 'user', text: '跑一下', timestamp: Date.now() - 3000 }
   const setState = (sessionPatch, assistant) => {
     store.setState({
@@ -48,7 +48,7 @@
     })
     ok(await until(() => border()?.dataset.state === 'working'), '工具等待时输入框顶边仍处于忙碌态', border()?.dataset.phase ?? '')
     ok(await until(() => !!quiet() && !working()), '工具执行期间工作行静默占位（运行中的过程行已显示工具）')
-    ok(await until(() => !!runningTool('bash')), '运行中的过程行带真实工具名', runningTool('bash')?.textContent ?? '')
+    ok(await until(() => !!runningTool('bash', 'echo probe')), '运行中的过程行带真实工具与命令', runningTool('bash', 'echo probe')?.textContent ?? '')
 
     setState({ isStreaming: false, isAgentRunning: true }, { thinking: '再想想', thinkingLive: true })
     ok(await until(() => (working()?.textContent ?? '').includes('思考中')), '再次思考时工作行显示思考阶段', working()?.textContent ?? '')

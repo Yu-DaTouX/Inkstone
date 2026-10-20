@@ -65,6 +65,8 @@ const RENDERER_IDS = [
   'workspaceTab4',
   'workspaceTab5',
   'workspaceTab6',
+  'workspaceClosePane',
+  'workspaceToggleMaximize',
   'splitFocusNext',
   'splitFocusPrevious',
   'splitNewRight',
@@ -92,6 +94,7 @@ assert.deepEqual(
   SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
   ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
+    'workspaceClosePane', 'workspaceToggleMaximize',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
   '非终端让键、未由宿主注册的项可改绑'
 )
@@ -120,6 +123,9 @@ assert.equal(pressed({ key: 'l', ctrl: true }), 'focusComposer', 'Ctrl+L 聚焦�
 assert.equal(pressed({ key: 'L', meta: true }), 'focusComposer', 'Cmd+L 聚焦输入框（macOS 用 Cmd）')
 assert.equal(pressed({ key: 'c', ctrl: true, shift: true }), 'copyLastReply', 'Ctrl+Shift+C 复制上一条回复')
 assert.equal(pressed({ key: '`', ctrl: true }), 'openTerminal', 'Ctrl+` 打开终端')
+assert.equal(pressed({ key: '\\', ctrl: true }), 'workspaceClosePane', 'Ctrl+\\ 关闭当前面板')
+assert.equal(pressed({ key: '\\', ctrl: true, shift: true }), 'workspaceToggleMaximize', 'Ctrl+Shift+\\ 最大化或还原当前面板')
+assert.equal(pressed({ key: '\\', ctrl: true, alt: true }), 'splitNewRight', 'Ctrl+Alt+\\ 仍是右侧分屏')
 assert.deepEqual(
   ['1', '2', '3', '4', '5', '6'].map((digit) => pressed({ key: digit, alt: true })),
   ['workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6'],

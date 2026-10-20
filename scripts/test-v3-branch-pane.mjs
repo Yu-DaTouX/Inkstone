@@ -49,7 +49,12 @@ export const jsxs = jsx
 const UI_STUB = `export function Button() { return null }
 export function IconButton() { return null }
 export function Spinner() { return null }
-export function Badge() { return null }`
+export function Badge() { return null }
+export function Dialog() { return null }
+export function DialogTrigger() { return null }
+export function Popover() { return null }
+export function TextField() { return null }
+export function Switch() { return null }`
 
 const TREE_STUB = `export function Tree() { return null }
 export function TreeItem() { return null }
@@ -735,7 +740,12 @@ async function main() {
     const rawCss = await readFile(join(ROOT, 'src/renderer/src/features/session/branch-tree.css'), 'utf8')
     const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '')
     ok(!/\.branch-row\b/.test(css), '不再保留旧私有行的样式')
-    ok(!/:hover|:focus-visible|\[data-selected\]|\[data-disabled\]/.test(css), '不自画 hover / 选中 / 焦点 / 禁用外观')
+    const rowRules = css
+      .split('}')
+      .map((rule) => rule.split('{')[0])
+      .filter((selector) => !selector.split(',').every((part) => /\.branch-bookmark(\[[^\]]*\])*\s*$/.test(part.trim())))
+      .join('}')
+    ok(!/:hover|:focus-visible|\[data-selected\]|\[data-disabled\]/.test(rowRules), '不自画 hover / 选中 / 焦点 / 禁用外观')
     ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), '不写死颜色（只用令牌变量）')
     ok(css.includes('.branch-tree__list') && css.includes('.branch-kind'), '保留版面与语义标识类')
     ok(!css.includes('@import'), '模块 CSS 不 @import')

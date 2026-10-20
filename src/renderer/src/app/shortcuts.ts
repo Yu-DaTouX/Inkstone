@@ -16,6 +16,8 @@ export type ShortcutId =
   | 'workspaceTab4'
   | 'workspaceTab5'
   | 'workspaceTab6'
+  | 'workspaceClosePane'
+  | 'workspaceToggleMaximize'
   | 'splitFocusNext'
   | 'splitFocusPrevious'
   | 'splitNewRight'
@@ -66,6 +68,8 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'workspaceTab4', keys: ['Alt', '4'], purposeKey: 'workspaceTab4', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab5', keys: ['Alt', '5'], purposeKey: 'workspaceTab5', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'workspaceTab6', keys: ['Alt', '6'], purposeKey: 'workspaceTab6', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'workspaceClosePane', keys: ['Ctrl', '\\'], purposeKey: 'workspaceClosePane', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'workspaceToggleMaximize', keys: ['Ctrl', 'Shift', '\\'], purposeKey: 'workspaceToggleMaximize', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusNext', keys: ['Ctrl', 'Alt', ']'], purposeKey: 'splitFocusNext', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusPrevious', keys: ['Ctrl', 'Alt', '['], purposeKey: 'splitFocusPrevious', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitNewRight', keys: ['Ctrl', 'Alt', '\\'], purposeKey: 'splitNewRight', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
@@ -117,6 +121,11 @@ export function applyShortcutOverrides(
 
 export function effectiveShortcutKeys(def: ShortcutDef, overrides: ShortcutOverrides): readonly string[] {
   return overrides[def.id] ?? def.keys
+}
+
+export function shortcutKeysText(id: ShortcutId, overrides: ShortcutOverrides = EMPTY_SHORTCUT_OVERRIDES): string {
+  const def = SHORTCUTS.find((item) => item.id === id)
+  return def ? effectiveShortcutKeys(def, overrides).join('+') : ''
 }
 
 const KEY_ALIAS: Record<string, string> = {

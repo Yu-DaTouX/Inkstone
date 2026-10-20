@@ -12,8 +12,11 @@ import {
   openPreviewTab,
   previewPathFor,
   previewTabsFor,
+  readPreviewBindings,
   selectPreviewTab,
+  writePreviewBindings,
   type PreviewBindings,
+  type PreviewBindingsStorage,
   type PreviewOpenOptions,
   type PreviewTabs
 } from './preview-state'
@@ -145,8 +148,18 @@ interface PreviewBindingsState {
   closeAll(ownerKey: string | null): void
 }
 
+function previewStorage(): PreviewBindingsStorage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const previewStorageRef = previewStorage()
+
 export const usePreviewBindings = create<PreviewBindingsState>((set, get) => ({
-  bindings: new Map(),
+  bindings: readPreviewBindings(previewStorageRef),
   bind: (ownerKey, path, options) => set({ bindings: openPreviewTab(get().bindings, ownerKey, path, options) }),
   select: (ownerKey, path) => set({ bindings: selectPreviewTab(get().bindings, ownerKey, path) }),
   keep: (ownerKey, path) => set({ bindings: keepPreviewTab(get().bindings, ownerKey, path) }),
@@ -156,6 +169,14 @@ export const usePreviewBindings = create<PreviewBindingsState>((set, get) => ({
   closeRight: (ownerKey, path) => set({ bindings: closePreviewTabsToRight(get().bindings, ownerKey, path) }),
   closeAll: (ownerKey) => set({ bindings: closeAllPreviewTabs(get().bindings, ownerKey) })
 }))
+
+let previewSaveTimer = 0
+usePreviewBindings.subscribe((state) => {
+  if (typeof window === 'undefined') return
+  window.clearTimeout(previewSaveTimer)
+  const bindings: PreviewBindings = state.bindings
+  previewSaveTimer = window.setTimeout(() => writePreviewBindings(previewStorageRef, bindings), 150)
+})
 
 export function usePreviewTabs(ownerKey: string | null): PreviewTabs | undefined {
   return usePreviewBindings((s) => previewTabsFor(s.bindings, ownerKey))

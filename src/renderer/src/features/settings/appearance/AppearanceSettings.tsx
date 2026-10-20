@@ -1,10 +1,12 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { AppSettings } from '../../../../../shared/ipc'
 import { FONT_UI_DEFAULT, resolveUiDensity, sanitizeFontName } from '../../../../../shared/appearance'
 import { useStore } from '../../../state/store'
 import { Switch, TextField } from '../../../ui'
 import { asciiBackgroundEnabled, asciiBackgroundPatch } from '../../ambient/ascii-field-model'
+import { filesHiddenStore } from '../../files/files-hidden'
+import { filesText } from '../../files/files-text'
 import { settingsText } from '../settings-text'
 import { generalText } from '../general/general-text'
 import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
@@ -145,6 +147,9 @@ export function AppearanceSettings(): ReactElement {
   const sendKey: SendKeyChoice = settings?.sendKey === 'ctrlEnter' ? 'ctrlEnter' : 'enter'
   const tiles = settings?.workspaceTiles !== false
   const smoothText = settings?.smoothText === true
+  const files = filesText(lang)
+  const hiddenStore = filesHiddenStore()
+  const showHidden = useSyncExternalStore(hiddenStore.subscribe, hiddenStore.getSnapshot, hiddenStore.getSnapshot)
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>
@@ -180,6 +185,15 @@ export function AppearanceSettings(): ReactElement {
           isSelected={tiles}
           onChange={(next) => void patchSettings({ workspaceTiles: next }).catch(() => undefined)}
           testId="v3-workspace-tiles-toggle"
+        />
+
+        <SwitchRow
+          settingId="appearance-files-show-hidden"
+          label={files.showHidden}
+          description={files.showHiddenDesc}
+          isSelected={showHidden}
+          onChange={(next) => hiddenStore.set(next)}
+          testId="v3-files-show-hidden-toggle"
         />
       </SettingsGroup>
 

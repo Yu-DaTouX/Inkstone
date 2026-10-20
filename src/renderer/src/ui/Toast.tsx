@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   UNSTABLE_Toast as RACToast,
   UNSTABLE_ToastContent as RACToastContent,
@@ -22,14 +23,17 @@ export interface ToastContent {
 
 export const toastQueue = new UNSTABLE_ToastQueue<ToastContent>({ maxVisibleToasts: 3 })
 
+export const DEFAULT_TOAST_TIMEOUT_MS = 6500
+
 export interface ShowToastOptions extends Omit<ToastContent, 'title'> {
   timeout?: number
   onClose?: () => void
 }
 
 export function showToast(title: string, options: ShowToastOptions = {}): string {
-  const { timeout = 5000, onClose, ...content } = options
-  return toastQueue.add({ title, ...content }, { timeout, onClose })
+  const { timeout = DEFAULT_TOAST_TIMEOUT_MS, onClose, ...content } = options
+  const persistent = content.action != null && options.timeout == null
+  return toastQueue.add({ title, ...content }, { timeout: persistent ? undefined : timeout, onClose })
 }
 
 function toneIcon(tone: ToastTone | undefined) {
@@ -47,6 +51,16 @@ function toneIcon(tone: ToastTone | undefined) {
 
 export function ToastRegion({ className }: { className?: string } = {}) {
   const t = useOptionalT()
+  useEffect(() => {
+    const pause = (): void => toastQueue.pauseAll()
+    const resume = (): void => toastQueue.resumeAll()
+    window.addEventListener('blur', pause)
+    window.addEventListener('focus', resume)
+    return () => {
+      window.removeEventListener('blur', pause)
+      window.removeEventListener('focus', resume)
+    }
+  }, [])
   return (
     <RACToastRegion
       queue={toastQueue}

@@ -79,15 +79,33 @@
 
   .v3-commentary { display: flex; flex-direction: column; gap: var(--s-8); }
 
-  .v3-process { min-width: 0; }
-  .v3-process-sum { min-width: 0; }
-  .v3-process-label { flex: 0 1 auto; min-width: 0; }
-  .v3-process-time { flex: none; }
-  .v3-process-body { display: flex; flex-direction: column; gap: var(--s-8); margin-top: var(--s-4); min-width: 0; }
+  .v3-process { display: flex; flex-direction: column; gap: var(--s-8); min-width: 0; }
   .v3-process-seg { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
-  .v3-process-notes { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; padding-left: var(--s-4); }
-  .v3-process-note { min-width: 0; }
+  .v3-process-notes { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
   .v3-process-more.ui-btn, .v3-steps-more.ui-btn { display: flex; width: fit-content; align-self: flex-start; }
+  .v3-steps-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: inherit; }
+  .v3-steps-label [data-failed] { color: var(--fail-t); }
+  .v3-steps-sum, .v3-step-head { width: fit-content; max-width: 100%; min-height: 0; }
+  .v3-steps-sum { gap: 2px; }
+  .v3-step-head { gap: 3px; }
+  .v3-step-group > .v3-step-head { gap: 2px; }
+  .v3-step-label { flex: none; color: var(--fg2); }
+  .v3-step[data-state='error'] .v3-step-label { color: var(--fail-t); }
+  .v3-step[data-state='denied'] .v3-step-label, .v3-step[data-state='denied'] .v3-steps-label { color: var(--fg3); }
+  .v3-step-deny { flex: none; color: var(--fg3); }
+  .v3-step-target { flex: 0 1 auto; }
+  .v3-step-target[data-code] { font-family: var(--font-mono); }
+  .v3-step-group > .v3-step-nest > .v3-step > .v3-step-head { gap: 3px; width: 100%; padding: var(--s-8) var(--s-10); }
+  .v3-step-cmd { margin: var(--s-4) 0 0; border-radius: var(--r-md); background: var(--bg); overflow: hidden; }
+  .v3-step-cmd-head { padding: var(--s-2) var(--s-8); color: var(--fg3); font-size: var(--t-footnote); }
+  .v3-step-cmd-line { margin: 0; padding: 0 var(--s-8) var(--s-8); font-family: var(--font-mono); font-size: var(--t-code); line-height: var(--t-code-lh); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }
+  .v3-step-cmd-prompt { color: var(--fg3); }
+  .v3-step-pre, .v3-step-patch { max-height: 400px; }
+  .v3-step-pre.out[data-error] { color: var(--fail-t); }
+  .v3-step-images .v3-md-image { max-width: 100%; max-height: 360px; border-radius: 5px; border: 1px solid var(--line); }
+  .v3-errorcard-details { display: flex; flex-direction: column; gap: var(--s-6); }
+  .v3-errorcard-detail-foot { display: flex; align-items: center; gap: var(--s-6); }
+  .v3-errorcard-status { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-para { min-width: 0; }
   .v3-para.dim { color: var(--fg2); }
 

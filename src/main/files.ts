@@ -20,7 +20,7 @@ function isDotName(name: string): boolean {
   return name.startsWith('.') && name !== '.' && name !== '..'
 }
 
-const MAX_ENTRIES = 400
+const MAX_ENTRIES = 500
 
 const MAX_SEARCH_RESULTS = 200
 const MAX_SEARCH_DIRS = 2000

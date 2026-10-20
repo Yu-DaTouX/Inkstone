@@ -53,8 +53,8 @@ export function Select<T extends object = object>({
         </Text>
       ) : null}
       <FieldError className="ui-field__error">{errorMessage}</FieldError>
-      <Popover offset={4}>
-        <ListBox className={listClassName}>{children}</ListBox>
+      <Popover offset={6}>
+        <ListBox className={cx('ui-listbox--select', listClassName)}>{children}</ListBox>
       </Popover>
     </RACSelect>
   )

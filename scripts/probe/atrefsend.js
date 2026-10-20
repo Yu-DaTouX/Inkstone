@@ -16,10 +16,8 @@
     }
     return false
   }
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
 
   try {
     for (let i = 0; i < 80; i++) {
@@ -44,7 +42,7 @@
     out.push('  第一项 = ' + JSON.stringify((first?.textContent ?? '').slice(0, 40)))
     first?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await sleep(500)
-    const afterPick = ta.value
+    const afterPick = composer.text(ta)
     out.push('  选中后输入框 = ' + JSON.stringify(afterPick))
     ok(/@README\.md\b/.test(afterPick), '候选补成了完整路径（@README.md）')
 

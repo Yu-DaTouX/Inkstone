@@ -6,10 +6,8 @@
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
   const pressAltEnter = (el) =>
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, bubbles: true, cancelable: true }))
   const store = window.__yanStore

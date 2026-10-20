@@ -36,9 +36,9 @@ export async function runFileListingTests(ok, { listDir, searchFiles }) {
 
     const manyDir = join(root, 'many')
     await mkdir(manyDir)
-    await Promise.all(Array.from({ length: 405 }, (_, i) => writeFile(join(manyDir, `file-${String(i).padStart(3, '0')}.txt`), 'x')))
+    await Promise.all(Array.from({ length: 505 }, (_, i) => writeFile(join(manyDir, `file-${String(i).padStart(3, '0')}.txt`), 'x')))
     const many = await listDir(root, 'many', false, context)
-    ok(many.truncated && many.entries.length === 400 && many.totalEntries === 405, '文件树对过大目录有界截断并报告总数')
+    ok(many.truncated && many.entries.length === 500 && many.totalEntries === 505, '文件树对过大目录有界截断并报告总数')
 
     const searchRequest = { ...context, requestId: 'search-1', query: 'agent', limit: 20 }
     const found = await searchFiles(searchRequest)

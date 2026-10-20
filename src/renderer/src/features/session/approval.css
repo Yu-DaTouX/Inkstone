@@ -1,0 +1,46 @@
+@layer features {
+  .v3-approval-read-hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .v3-approval-detail:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .v3-approval-feedback {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .v3-approval-feedback-input {
+    width: 100%;
+    min-height: 64px;
+    max-height: 160px;
+    padding: var(--s-8) var(--s-10);
+    border: 1px solid var(--line2);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    resize: vertical;
+    outline: none;
+  }
+
+  .v3-approval-feedback-input:focus-visible {
+    box-shadow: var(--ring-focus);
+  }
+
+  .v3-approval-feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-6);
+  }
+}

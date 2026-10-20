@@ -185,36 +185,68 @@
 
   .composer-attachments {
     display: flex;
-    gap: var(--s-6);
-    overflow-x: auto;
-    padding-bottom: var(--s-2);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-4) var(--s-4) var(--s-10);
   }
 
   .ca-tile {
     position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
     flex: none;
-    max-width: 220px;
-    height: 32px;
-    padding: 0 var(--s-8) 0 var(--s-4);
-    border: 1px solid var(--line);
+    width: 40px;
+    height: 40px;
+  }
+
+  .ca-body {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
     border-radius: var(--r-sm);
-    background: var(--sunken);
-    font-size: var(--t-footnote);
+    overflow: hidden;
+    background: var(--alpha-1);
     color: var(--fg2);
+    font: inherit;
+  }
+
+  .ca-body:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .ca-body-image {
+    cursor: pointer;
+  }
+
+  .ca-body-file {
+    align-content: center;
+    gap: 2px;
+  }
+
+  .ca-ext {
+    font-size: 10px;
+    line-height: 1;
+    text-transform: lowercase;
+    color: var(--fg3);
   }
 
   .ca-thumb {
-    width: 24px;
-    height: 24px;
-    border-radius: var(--r-xs);
+    width: 100%;
+    height: 100%;
     object-fit: cover;
   }
 
   .ca-ref {
-    flex: none;
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    z-index: 1;
+    transform: scale(.72);
+    transform-origin: 100% 100%;
+    pointer-events: none;
   }
 
   .ca-ref-warn {
@@ -222,46 +254,52 @@
     font-size: var(--t-footnote);
   }
 
-  .ca-file-ico {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--r-xs);
-    background: var(--surface);
-    color: var(--fg2);
-  }
-
   .ca-name {
-    min-width: 0;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
     overflow: hidden;
-    text-overflow: ellipsis;
+    clip-path: inset(50%);
     white-space: nowrap;
   }
 
-  .ca-size {
-    flex: none;
-    color: var(--fg3);
-  }
-
   .ca-del {
-    flex: none;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    z-index: 2;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
     border: none;
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg3);
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--alpha-2);
+    color: var(--fg2);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms var(--ease);
     cursor: pointer;
   }
 
+  .ca-tile:hover .ca-del,
+  .ca-tile:focus-within .ca-del {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .ca-del:hover {
-    background: var(--surface);
     color: var(--fg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ca-del {
+      transition: none;
+    }
   }
 
   .composer-input {
@@ -288,6 +326,7 @@
   }
 
   .composer-text {
+    position: relative;
     width: 100%;
     min-height: var(--t-prose-lh);
     max-height: min(24rem, 40svh);
@@ -298,18 +337,86 @@
     font-family: var(--font-ui);
     font-size: var(--t-prose);
     line-height: var(--t-prose-lh);
-    resize: none;
     outline: none;
     box-shadow: none;
     overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .composer-line .composer-text {
     padding-left: 0;
   }
 
-  .composer-text::placeholder {
+  .composer-text p {
+    margin: 0;
+  }
+
+  .composer-text pre.composer-code {
+    margin: 0;
+    padding: var(--s-2) var(--s-4);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    font-size: var(--t-code);
+    line-height: var(--t-prose-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .composer-text .composer-chip {
+    display: inline;
+    padding: 0 var(--s-4);
+    border-radius: var(--r-xs);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    user-select: none;
+    cursor: default;
+  }
+
+  .composer-text .composer-chip[data-kind='image'] {
+    background: var(--sel);
+    color: var(--accent-t);
+  }
+
+  .composer-text p > .composer-chip ~ .ProseMirror-trailingBreak {
+    display: none;
+  }
+
+  .composer-text .composer-chip.ProseMirror-selectednode {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .composer-text code.composer-inline-code {
+    padding: 0 var(--s-2);
+    border-radius: var(--r-xs);
+    background: var(--sunken);
+    font-family: var(--font-mono);
+    font-size: var(--t-code);
+  }
+
+  .composer-text s {
     color: var(--fg3);
+  }
+
+  .composer-text a {
+    color: var(--accent-t);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .composer-text[data-placeholder-visible='true'][data-placeholder]::before {
+    content: attr(data-placeholder);
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    color: var(--fg3);
+    pointer-events: none;
+    white-space: pre-wrap;
   }
 
   .composer-bar {
@@ -541,17 +648,26 @@
   }
 
   .cmp-menu {
+    position: fixed;
+    z-index: var(--z-pop);
     display: flex;
     flex-direction: column;
     gap: 1px;
-    max-height: 260px;
-    min-width: 0;
-    margin-bottom: var(--s-4);
-    padding-bottom: var(--s-2);
-    overflow: hidden auto;
-    border-bottom: 1px solid var(--line);
+    min-width: 240px;
+    max-width: 512px;
+    padding: var(--s-4);
+    border-radius: var(--r-lg);
+    background: var(--surface-3);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg);
     font-family: var(--font-ui);
     font-size: var(--t-body);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+  }
+
+  .cmp-menu[data-kind='at'] {
+    min-width: min(420px, calc(100vw - var(--s-16)));
   }
 
   .cmp-group {
@@ -596,6 +712,18 @@
     white-space: nowrap;
   }
 
+  .cmp-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cmp-hit {
+    color: var(--fg);
+    font-weight: 600;
+  }
+
   .cmp-thumb {
     flex: none;
     width: 18px;
@@ -618,20 +746,56 @@
   }
 
   .cmp-empty,
+  .cmp-state,
   .cmp-hint {
     padding: var(--s-2) var(--s-6);
     color: var(--fg3);
     font-size: var(--t-footnote);
   }
 
+  .cmp-state {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    min-height: var(--size-btn);
+  }
+
+  .cmp-retry {
+    padding: 0 var(--s-4);
+    border: 0;
+    border-radius: var(--r-xs);
+    background: var(--sel);
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+
   .cmp-hint {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s-2) var(--s-8);
+    padding-top: var(--s-4);
+    border-top: 1px solid var(--line);
   }
 
   .cmp-count {
     margin-left: auto;
+  }
+
+  .cmp-tip {
+    position: fixed;
+    z-index: var(--z-pop);
+    min-width: 10rem;
+    max-width: 26rem;
+    padding: var(--s-4) var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--tip);
+    color: var(--on-tip);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    box-shadow: var(--shadow-md);
+    overflow-wrap: anywhere;
+    pointer-events: none;
   }
 
   .v3-delegate {

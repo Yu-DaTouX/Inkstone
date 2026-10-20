@@ -214,6 +214,8 @@
 
   .caps-overlay {
     z-index: calc(var(--z-modal) + 100);
+    background: transparent;
+    backdrop-filter: none;
   }
 
   .caps-modal {

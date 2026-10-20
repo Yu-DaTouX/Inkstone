@@ -32,7 +32,8 @@ import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
-import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, pickReadingAnchor, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import { SessionFindBar } from './SessionFindBar'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, pickReadingAnchor, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import './session.css'
 
 const PAGER_TREE_DEBOUNCE_MS = 400
@@ -67,6 +68,15 @@ function domAnchor(box: HTMLElement): ReadingAnchor | null {
     return { id: node.dataset.turnId ?? '', top: rect.top - base, bottom: rect.bottom - base }
   })
   return pickReadingAnchor(rows.filter((row) => row.id), 0)
+}
+
+function rowAnchor(box: HTMLElement): ReadingAnchor | null {
+  const base = box.getBoundingClientRect().top
+  for (const node of box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')) {
+    const top = node.getBoundingClientRect().top - base
+    if (top >= -1) return node.dataset.turnId ? { turnId: node.dataset.turnId, offset: top } : null
+  }
+  return null
 }
 
 function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): ReadingAnchor | null {
@@ -250,6 +260,11 @@ export function SessionView(): JSX.Element {
     scrollsRef.current.set(identity, { top, bottom, anchor: bottom ? null : anchor })
   }, [identity])
 
+  const widthRef = useRef(0)
+  const recordRef = useRef(record)
+  recordRef.current = record
+  const readingRef = useRef<ReadingAnchor | null>(null)
+
   const applyFollow = useCallback((decision: FollowDecision) => {
     if (stickRef.current !== decision.stick) setStickNow(decision.stick)
     setShowJump(decision.showJump)
@@ -263,6 +278,7 @@ export function SessionView(): JSX.Element {
     applyFollow(decision)
     if (decision.repin) el.scrollTop = el.scrollHeight
     metricsRef.current = decision.repin ? domMetrics(el) : metrics
+    readingRef.current = decision.stick ? null : rowAnchor(el)
     record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
   }, [record, applyFollow])
 
@@ -302,8 +318,34 @@ export function SessionView(): JSX.Element {
     if (!node) return
     const inner = node.firstElementChild
     if (!inner) return
+    widthRef.current = node.clientWidth
     const observer = new ResizeObserver(() => {
-      if (stickRef.current && !settlingRef.current) node.scrollTop = node.scrollHeight
+      if (settlingRef.current) return
+      const width = node.clientWidth
+      const narrowed = widthRef.current > 0 && Math.abs(width - widthRef.current) > 0.5
+      widthRef.current = width
+      if (stickRef.current) {
+        node.scrollTop = node.scrollHeight
+        return
+      }
+      if (!narrowed) return
+      const anchor = readingRef.current
+      if (!anchor) return
+      const restore = (): void => {
+        if (stickRef.current || settlingRef.current) return
+        if (userScrollActive(intentRef.current, performance.now())) return
+        const target = [...node.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].find((el) => el.dataset.turnId === anchor.turnId)
+        if (!target) return
+        const offset = target.getBoundingClientRect().top - node.getBoundingClientRect().top
+        const max = Math.max(0, node.scrollHeight - node.clientHeight)
+        const next = Math.min(Math.max(0, node.scrollTop + offset - anchor.offset), max)
+        const shift = next - node.scrollTop
+        if (Math.abs(offset - anchor.offset - shift) > 4) return
+        if (Math.abs(shift) < 0.5) return
+        node.scrollTop = next
+        recordRef.current(next, false, { turnId: anchor.turnId, offset: anchor.offset })
+      }
+      requestAnimationFrame(() => requestAnimationFrame(restore))
     })
     observer.observe(inner)
     observer.observe(node)
@@ -394,6 +436,8 @@ export function SessionView(): JSX.Element {
   }, [virtual, setStickNow])
 
 
+  const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
+
   const jumpToBottom = useCallback(() => {
     setStickNow(true)
     setShowJump(false)
@@ -457,6 +501,8 @@ export function SessionView(): JSX.Element {
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />
 
       <MessageMenuHost />
+
+      <SessionFindBar enabled={viewActive} sessionKey={view.key} getScope={findScope} />
 
     </div>
   )

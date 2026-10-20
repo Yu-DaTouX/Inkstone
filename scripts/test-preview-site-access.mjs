@@ -43,11 +43,11 @@ async function run() {
     assert.equal(site.isForbiddenOrigin('http://127.0.0.1:3000'), false)
     assert.equal(site.isForbiddenOrigin('https://example.com'), false)
 
-    const access = new site.PreviewSiteAccess(2)
+    const access = new site.PreviewSiteAccess(undefined, 2)
     assert.deepEqual(access.decide('s1', 'https://example.com/a'), { decision: 'ask', origin: 'https://example.com' })
     assert.equal(access.record('s1', 'https://www.example.com/b', true), 'allow')
     assert.equal(access.decide('s1', 'https://example.com/c').decision, 'allow')
-    assert.equal(access.decide('s2', 'https://example.com/c').decision, 'ask')
+    assert.equal(access.decide('s2', 'https://example.com/c').decision, 'allow')
     assert.equal(access.record('s1', 'https://evil.test', false), 'deny')
     assert.equal(access.record('s1', 'https://evil.test', true), 'deny')
     assert.equal(access.decide('s1', 'https://evil.test/x').decision, 'deny')
@@ -55,7 +55,7 @@ async function run() {
     assert.equal(access.decide('s1', 'http://169.254.169.254/').decision, 'forbidden')
     assert.equal(access.decide('s1', 'ftp://x').decision, 'invalid')
     access.record('s1', 'https://third.test', true)
-    assert.equal(access.decide('s1', 'https://example.com').decision, 'ask')
+    assert.equal(access.decide('s1', 'https://example.com').decision, 'allow')
     access.forgetSession('s1')
     assert.equal(access.decide('s1', 'https://evil.test').decision, 'ask')
 
@@ -74,15 +74,15 @@ async function run() {
     assert.equal(await gate.check('s1', 'https://example.com/b'), 'allow')
     assert.deepEqual(asked, ['https://example.com'])
     assert.equal(await gate.check('s2', 'https://example.com/b'), 'allow')
-    assert.equal(asked.length, 2)
+    assert.equal(asked.length, 1)
     answer = false
     assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
     answer = true
     assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
-    assert.equal(asked.length, 3)
+    assert.equal(asked.length, 2)
     assert.equal(await gate.check('s1', 'http://169.254.169.254/'), 'forbidden')
     assert.equal(await gate.check('s1', 'file:///x'), 'invalid')
-    assert.equal(asked.length, 3)
+    assert.equal(asked.length, 2)
     release = () => {}
     const first = gate.check('s3', 'https://slow.test/')
     const second = gate.check('s3', 'https://slow.test/x')

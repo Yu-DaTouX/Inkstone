@@ -42,6 +42,29 @@ export interface ChangesText {
   imageMissing: string
   imageTooLarge: string
   imageEmpty: string
+  filesTitle: string
+  showFileList: string
+  hideFileList: string
+  resizeFileList: string
+  collapseAll: string
+  expandAll: string
+  layoutUnified: string
+  layoutSplit: string
+  splitNeedsWidth: string
+  largeDiffBanner: string
+  retry: string
+  fileNew: string
+  fileDeleted: string
+  fileRenamed: (path: string) => string
+  fileBinary: string
+  commitMessage: string
+  commitPlaceholder: string
+  stageAll: string
+  commitAction: string
+  commitBusy: string
+  commitDone: (summary: string) => string
+  commitFailed: (message: string) => string
+  commitClean: string
 }
 
 export function changesText(lang: string): ChangesText {
@@ -89,7 +112,30 @@ export function changesText(lang: string): ChangesText {
       imageAfter: 'After',
       imageMissing: 'Does not exist',
       imageTooLarge: 'Too large to preview',
-      imageEmpty: 'No image content to compare.'
+      imageEmpty: 'No image content to compare.',
+      filesTitle: 'Changed files',
+      showFileList: 'Show files',
+      hideFileList: 'Hide files',
+      resizeFileList: 'Resize file list',
+      collapseAll: 'Collapse all files',
+      expandAll: 'Expand all files',
+      layoutUnified: 'Unified',
+      layoutSplit: 'Side by side',
+      splitNeedsWidth: 'Needs a wider pane',
+      largeDiffBanner: 'Files are collapsed for large diffs. Select a file to expand it.',
+      retry: 'Retry',
+      fileNew: 'New file',
+      fileDeleted: 'Deleted file',
+      fileRenamed: (path) => `Renamed from ${path}`,
+      fileBinary: 'Binary file',
+      commitMessage: 'Commit message',
+      commitPlaceholder: 'Describe this change',
+      stageAll: 'Stage all',
+      commitAction: 'Commit',
+      commitBusy: 'Running Git…',
+      commitDone: (summary) => `Committed ${summary}`,
+      commitFailed: (message) => `Git action failed: ${message}`,
+      commitClean: 'Nothing to commit.'
     }
   }
   return {
@@ -135,6 +181,29 @@ export function changesText(lang: string): ChangesText {
     imageAfter: '之后',
     imageMissing: '不存在',
     imageTooLarge: '过大',
-    imageEmpty: '没有可对比的图片内容。'
+    imageEmpty: '没有可对比的图片内容。',
+    filesTitle: '更改的文件',
+    showFileList: '显示文件列表',
+    hideFileList: '隐藏文件列表',
+    resizeFileList: '调整文件列表宽度',
+    collapseAll: '折叠全部文件',
+    expandAll: '展开全部文件',
+    layoutUnified: '统一',
+    layoutSplit: '并排',
+    splitNeedsWidth: '面板更宽才能并排',
+    largeDiffBanner: '改动较大，文件已全部折叠。选择文件展开查看。',
+    retry: '重试',
+    fileNew: '新增文件',
+    fileDeleted: '已删除',
+    fileRenamed: (path) => `重命名自 ${path}`,
+    fileBinary: '二进制文件',
+    commitMessage: '提交说明',
+    commitPlaceholder: '描述这次改动',
+    stageAll: '全部暂存',
+    commitAction: '提交',
+    commitBusy: '正在执行 Git…',
+    commitDone: (summary) => `已提交 ${summary}`,
+    commitFailed: (message) => `Git 操作失败：${message}`,
+    commitClean: '没有可提交的改动。'
   }
 }

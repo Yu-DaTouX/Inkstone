@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -20,27 +20,10 @@ export interface SidebarRowProps {
   onOpen: () => void
 }
 
-function FadeTitle({ text }: { text: string }): JSX.Element {
-  const boxRef = useRef<HTMLSpanElement>(null)
-  const textRef = useRef<HTMLSpanElement>(null)
-
-  useLayoutEffect(() => {
-    const box = boxRef.current
-    const inner = textRef.current
-    if (!box || !inner) return
-    const measure = (): void => {
-      box.toggleAttribute('data-overflowing', inner.getBoundingClientRect().width > box.getBoundingClientRect().width + 0.5)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(box)
-    observer.observe(inner)
-    return () => observer.disconnect()
-  }, [])
-
+function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | null>; text: string }): JSX.Element {
   return (
     <span ref={boxRef} className="v3-row-title">
-      <span ref={textRef} className="v3-row-title-text">{text}</span>
+      <span className="v3-row-title-text">{text}</span>
     </span>
   )
 }
@@ -51,6 +34,8 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
   const statusWord = sessionStatusLabel(status, lang)
   const statusLabel = code && status !== 'idle' ? `${code} · ${statusWord}` : statusWord
   const rowRef = useRef<HTMLDivElement>(null)
+  const titleBoxRef = useRef<HTMLSpanElement>(null)
+  const [titleOverflowing, setTitleOverflowing] = useState(false)
   const draggedRef = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -81,6 +66,25 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
     if (isCurrent) rowRef.current?.scrollIntoView({ block: 'nearest' })
   }, [isCurrent])
 
+  useLayoutEffect(() => {
+    const box = titleBoxRef.current
+    const inner = box?.firstElementChild as HTMLElement | null | undefined
+    if (!box) {
+      setTitleOverflowing(false)
+      return
+    }
+    const measure = (): void => {
+      const overflowing = !!inner && inner.getBoundingClientRect().width > box.getBoundingClientRect().width + 0.5
+      box.toggleAttribute('data-overflowing', overflowing)
+      setTitleOverflowing(overflowing)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(box)
+    if (inner) observer.observe(inner)
+    return () => observer.disconnect()
+  }, [renaming, title])
+
   const onPointerDown = (event: ReactPointerEvent<HTMLButtonElement>): void => {
     if (event.button !== 0 || renaming) return
     draggedRef.current = false
@@ -104,6 +108,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
     <div
       ref={rowRef}
       className="v3-srow"
+      data-session-path={item.path}
       data-current={isCurrent ? '1' : undefined}
       data-menu={menuOpen ? '1' : undefined}
       data-dragging={dragging ? '1' : undefined}
@@ -135,7 +140,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
           data-testid="v3-session-rename"
         />
       ) : (
-        <SidebarTip label={title}>
+        <SidebarTip label={title} placement="right" isDisabled={!titleOverflowing || menuOpen || dragging}>
           <button
             type="button"
             className="ui-row v3-row"
@@ -158,7 +163,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
             }}
             data-testid="v3-session-row"
           >
-            <FadeTitle text={title} />
+            <FadeTitleBox boxRef={titleBoxRef} text={title} />
             <SessionStatusIcon kind={status} label={statusLabel} />
           </button>
         </SidebarTip>

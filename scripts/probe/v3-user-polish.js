@@ -86,11 +86,12 @@
     document.querySelector('.mtp-item')?.click(); await wait(300)
     check(picked[0]?.provider==='provider-b' && picked[0]?.id==='two', '跨供应商选择携带正确 provider 与 model')
     await openTool('files'); await wait(300)
-    const resizer=document.querySelector('.v3-workspace-resizer')
-    const before=document.querySelector('.wb-panel')?.getBoundingClientRect().width
+    const filesTile=()=>document.querySelector('.wb-pane-tile[data-tile-id="files"]')
+    const resizer=document.querySelector('.wb-pane-sep[data-direction="row"]')
+    const before=filesTile()?.getBoundingClientRect().width
     resizer?.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))
     await wait(200)
-    check(document.querySelector('.wb-panel')?.getBoundingClientRect().width > before, '右工作区键盘向左扩大宽度')
+    check(filesTile()?.getBoundingClientRect().width > before, '右工作区键盘向左扩大宽度')
     check(!!resizer && getComputedStyle(resizer).pointerEvents!=='none', '右工作区边缘提供可命中的拖拽条')
     window.__polishStage = 'resize'
     if (window.__polishDriver) {

@@ -13,9 +13,9 @@ import {
   type FilesSearchRow
 } from './files-search'
 
-const NAME_DELAY = 80
+const NAME_DELAY = 120
 const CONTENT_DELAY = 250
-const NAME_LIMIT = 200
+const NAME_LIMIT = 50
 
 export interface FilesSearchState {
   mode: 'name' | 'content'
@@ -89,7 +89,7 @@ export function useFilesSearch(
           if (sequenceRef.current !== sequence) return
           if (result.error?.code === 'superseded') return
           const failed = nameSearchFailed(result)
-          const rows = nameSearchRows(result)
+          const rows = query.endsWith('/') ? nameSearchRows(result) : nameSearchRows(result).filter((row) => !row.dir)
           setState({
             mode,
             phase: 'done',

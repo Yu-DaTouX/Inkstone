@@ -4,7 +4,7 @@
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
   const store = window.__yanStore
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  const composer = window.__yanComposer
 
   for (let i = 0; i < 60 && !store.getState().session?.model; i++) await sleep(300)
   out.push('模型：' + JSON.stringify(store.getState().session?.model?.id ?? store.getState().session?.model))
@@ -12,8 +12,7 @@
   const rows = []
   for (let n = 0; n < 1; n++) {
     const ta = q('[data-testid="composer-input"]')
-    setter.call(ta, '只回复两个字：好的')
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
+    composer.set('只回复两个字：好的', ta)
     await sleep(300)
     const users0 = qa('.v3-msg.user').length
     const send = q('[data-testid="composer-send"]')

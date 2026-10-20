@@ -7,8 +7,9 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
-import { Button, Dialog, Modal, ModalOverlay } from '../../../ui'
+import { Button, Dialog, Modal, ModalOverlay, Notice } from '../../../ui'
 import { useT } from '../../../i18n'
+import { runConfirmAction } from './confirm-action'
 
 export interface ConfirmOptions {
   title: string
@@ -17,6 +18,7 @@ export interface ConfirmOptions {
   confirmLabel: string
   cancelLabel?: string
   tone?: 'default' | 'danger'
+  action?: () => Promise<void> | void
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>
@@ -30,9 +32,13 @@ interface PendingConfirm extends ConfirmOptions {
 export function ConfirmProvider({ children }: { children: ReactNode }): ReactElement {
   const t = useT()
   const [pending, setPending] = useState<PendingConfirm | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | undefined>(undefined)
 
   const confirm = useCallback<ConfirmFn>((options) => {
     return new Promise<boolean>((resolve) => {
+      setBusy(false)
+      setError(undefined)
       setPending({ ...options, resolve })
     })
   }, [])
@@ -40,10 +46,29 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
   const value = useMemo(() => confirm, [confirm])
 
   const settle = (ok: boolean): void => {
+    setBusy(false)
+    setError(undefined)
     setPending((current) => {
       current?.resolve(ok)
       return null
     })
+  }
+
+  const accept = async (): Promise<void> => {
+    if (busy) return
+    if (!pending?.action) {
+      settle(true)
+      return
+    }
+    setBusy(true)
+    setError(undefined)
+    const outcome = await runConfirmAction(pending.action)
+    if (outcome.ok) {
+      settle(true)
+      return
+    }
+    setBusy(false)
+    setError(outcome.error ?? t('cap.skillActionFailed'))
   }
 
   return (
@@ -53,23 +78,33 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
         <ModalOverlay
           className="caps-overlay"
           isOpen
-          isDismissable
+          isDismissable={false}
+          isKeyboardDismissDisabled={busy}
           onOpenChange={(open) => {
-            if (!open) settle(false)
+            if (!open && !busy) settle(false)
           }}
         >
           <Modal className="caps-modal">
-            <Dialog title={pending.title} closeLabel={t('set.close')}>
+            <Dialog title={pending.title} alert closeLabel={t('set.close')}>
               {pending.body ? <p className="caps-confirm-body">{pending.body}</p> : null}
               {pending.detail ? <pre className="caps-confirm-detail">{pending.detail}</pre> : null}
+              {error ? (
+                <Notice tone="fail" compact>
+                  {error}
+                </Notice>
+              ) : null}
               <div className="caps-confirm-actions">
-                <Button variant="secondary" onPress={() => settle(false)}>
+                <Button variant="secondary" isDisabled={busy} onPress={() => settle(false)}>
                   {pending.cancelLabel ?? t('ui.cancel')}
                 </Button>
                 <Button
+                  autoFocus
                   variant={pending.tone === 'danger' ? 'danger' : 'primary'}
+                  isPending={busy}
+                  aria-busy={busy || undefined}
+                  className="caps-confirm-accept"
                   data-testid="caps-confirm-accept"
-                  onPress={() => settle(true)}
+                  onPress={() => void accept()}
                 >
                   {pending.confirmLabel}
                 </Button>

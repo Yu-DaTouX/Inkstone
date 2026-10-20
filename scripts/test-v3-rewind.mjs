@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -335,6 +335,13 @@ function collect(node, pred, out = []) {
   return out
 }
 
+function textOf(node) {
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (!node || typeof node !== 'object') return ''
+  return textOf(node.props?.children)
+}
+
 const byTestId = (tree, id) => collect(tree, (el) => el.props?.['data-testid'] === id)
 const buttonByTestId = (tree, id) => collect(tree, (el) => el.type?.__stub === 'button' && el.props?.['data-testid'] === id)
 const buttons = (tree) => collect(tree, (el) => el.type?.__stub === 'button')
@@ -464,8 +471,10 @@ async function main() {
     await flush()
     const tree = renderDialog('A', true)
     ok(buttonByTestId(tree, 'rewind-confirm').length === 0, '预览失败：不出现确认按钮')
-    const status = collect(tree, (el) => el.props?.['role'] === 'status')
-    ok(status.length === 1, '预览失败：有可见的状态提示')
+    const notice = collect(tree, (el) => el.props?.['tone'] === 'fail' && textOf(el).includes('没有活动会话'))
+    ok(notice.length === 1, '预览失败：有可见的状态提示', notice.length)
+    const noticeSrc = await readFile(join(ROOT, 'src/renderer/src/ui/Notice.tsx'), 'utf8')
+    ok(noticeSrc.includes("tone === 'fail' ? 'alert' : 'status'"), '失败提示经 Notice 原语给出 alert 语态')
     pending.preview = null
   }
 

@@ -6,7 +6,7 @@ import { completePath } from '../credentials'
 import { listDir, searchFiles } from '../files'
 import { searchFileContents } from '../file-content-search'
 import { readEditableFile, writeEditableFile } from '../file-editor'
-import { grantFiles, readGrantedText, readPreview, statPreview } from '../file-refs'
+import { grantFiles, readGrantedText, readPreview, readPreviewBytes, statPreview } from '../file-refs'
 import { filesWatcher } from '../files-watch'
 import { unsavedFiles } from '../unsaved-files'
 import { searchFileNames } from '../file-name-search'
@@ -82,7 +82,13 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
 
   handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
   handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
-  handle('yan:prepareHtmlArtifact', (path: string) => htmlArtifactPreviews.prepare(path))
+  handle('yan:prepareHtmlArtifact', async (path: string, requestedCwd?: string) => {
+    if (typeof requestedCwd !== 'string' || !requestedCwd.trim()) return htmlArtifactPreviews.prepare(String(path ?? ''))
+    const st = await getSettings()
+    const resolved = await resolveFileContext(st, st.cwd, { cwd: requestedCwd })
+    if (!resolved.ok) return { ok: false as const, error: 'read' as const }
+    return htmlArtifactPreviews.prepare(String(path ?? ''), resolved.context.cwd)
+  })
   handle('yan:prepareHtmlWidget', (html: unknown) => htmlArtifactPreviews.prepareInline(html))
   handle('yan:releaseHtmlArtifact', (url: string) => htmlArtifactPreviews.release(String(url ?? '')))
   handle('yan:readPreview', async (p: string, line?: number, requestedCwd?: string, lineEnd?: number) => {
@@ -97,6 +103,14 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
       typeof line === 'number' ? line : undefined,
       typeof lineEnd === 'number' ? lineEnd : undefined
     )
+  })
+  handle('yan:readPreviewBytes', async (p: string, requestedCwd?: string) => {
+    const s = await getSettings()
+    const resolved = await resolveFileContext(s, s.cwd, { cwd: requestedCwd ?? s.cwd })
+    if (!resolved.ok) {
+      return { ok: false, abs: '', name: '', size: 0, error: resolved.error, issue: 'invalid' as const }
+    }
+    return readPreviewBytes(String(p ?? ''), resolved.context.cwd)
   })
   handle('yan:statPreview', async (p: string, requestedCwd?: string) => {
     const s = await getSettings()

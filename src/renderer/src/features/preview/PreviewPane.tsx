@@ -5,7 +5,6 @@ import { useStore } from '../../state/store'
 import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
 import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
-import { filePreviewUrl } from '../../lib/file-preview-url'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/CodeEditor'
 import { Markdown } from '../session/Markdown'
@@ -15,12 +14,25 @@ import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
-import { CodeView, type CodeViewTarget, type CodeViewText } from './CodeView'
+import { CodeView, type CodeComment, type CodeViewTarget, type CodeViewText } from './CodeView'
 import { PreviewTabs } from './PreviewTabs'
 import { useFileViewSettings } from './use-file-view-settings'
 import { FILE_TAB_SIZES, type FileViewSettings } from './file-view-settings'
 import { previewBodyKind, previewNotes, previewProblem, type PreviewNote, type PreviewProblem } from './preview-issue'
+import {
+  csvDelimiterOf,
+  previewFormatOf,
+  previewFormatOpensAsSource,
+  previewFormatUsesText,
+  type PreviewFormat
+} from './preview-format'
+import { CsvTableView } from './CsvTableView'
+import { HtmlPreviewFrame } from './HtmlPreviewFrame'
+import { MediaView } from './MediaView'
+import { SvgView } from './SvgView'
 import { reportUnsavedEditor } from '../editor/unsaved-registry'
+import { serializeLineComment } from './code-line-comment'
+import { movePreviewTab, previewTabDetail } from '../workbench/preview-state'
 import {
   dropPreviewSelection,
   previewBaseName,
@@ -31,13 +43,6 @@ import {
   type PreviewSelectionEntry
 } from './preview-selection'
 import './preview.css'
-
-const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdx'])
-
-function isMarkdownName(name: string): boolean {
-  const dot = name.lastIndexOf('.')
-  return dot > 0 && MARKDOWN_EXTENSIONS.has(name.slice(dot + 1).toLowerCase())
-}
 
 function parentDir(abs: string): string {
   const at = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'))
@@ -57,8 +62,18 @@ interface PreviewDraft {
 type PreviewView =
   | { kind: 'empty' }
   | { kind: 'loading'; name: string }
-  | { kind: 'text'; name: string; abs: string; text: string; truncated: boolean; windowStart?: number; windowEnd?: number; notes: PreviewNote[] }
-  | { kind: 'image'; name: string; abs: string; notes: PreviewNote[] }
+  | {
+      kind: 'text'
+      format: PreviewFormat | null
+      name: string
+      abs: string
+      text: string
+      truncated: boolean
+      windowStart?: number
+      windowEnd?: number
+      notes: PreviewNote[]
+    }
+  | { kind: 'media'; format: 'image' | 'audio' | 'video' | 'pdf'; name: string; abs: string; notes: PreviewNote[] }
   | { kind: 'office'; name: string; abs: string; view: OfficeDocumentView }
   | { kind: 'binary'; name: string; abs: string; bytes: number; media: boolean; notes: PreviewNote[] }
   | { kind: 'problem'; name: string; problem: PreviewProblem }
@@ -125,8 +140,13 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
       }
       const notes = previewNotes(result)
       const body = previewBodyKind(result)
+      const format = previewFormatOf(result.name)
       if (!cancelled) {
         setDiskStat({ key: expectedViewKey, abs: result.abs, mtimeMs: result.mtimeMs, size: result.size })
+      }
+      if ((format === 'image' || format === 'audio' || format === 'video' || format === 'pdf') && result.abs) {
+        setViewSlot({ key: expectedViewKey, view: { kind: 'media', format, name: result.name, abs: result.abs, notes } })
+        return
       }
       const capability = previewKindOf(result.name)
       if (capability === 'office') {
@@ -136,8 +156,31 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
         }
         return
       }
+      if (format === 'svg' && result.abs) {
+        const source = await window.yan.readEditableFile(result.abs, cwd)
+        if (cancelled) return
+        if (source.ok) {
+          setViewSlot({
+            key: expectedViewKey,
+            view: {
+              kind: 'text',
+              format,
+              name: result.name,
+              abs: result.abs,
+              text: source.text,
+              truncated: result.truncated === true,
+              windowStart: result.windowStart,
+              windowEnd: result.windowEnd,
+              notes
+            }
+          })
+          return
+        }
+        setViewSlot({ key: expectedViewKey, view: { kind: 'media', format: 'image', name: result.name, abs: result.abs, notes } })
+        return
+      }
       if (body === 'image' && result.abs) {
-        setViewSlot({ key: expectedViewKey, view: { kind: 'image', name: result.name, abs: result.abs, notes } })
+        setViewSlot({ key: expectedViewKey, view: { kind: 'media', format: 'image', name: result.name, abs: result.abs, notes } })
         return
       }
       if (body === 'text' && typeof result.text === 'string') {
@@ -145,6 +188,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           key: expectedViewKey,
           view: {
             kind: 'text',
+            format,
             name: result.name,
             abs: result.abs,
             text: result.text,
@@ -181,12 +225,12 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
     reportUnsavedEditor(editorId, unsavedPath)
   }, [editorId, unsavedPath])
   useEffect(() => () => reportUnsavedEditor(editorId, null), [editorId])
-  const markdown = view.kind === 'text' && isMarkdownName(name)
+  const textPreview = view.kind === 'text' && previewFormatUsesText(view.format)
   const tabTarget = previewTabs?.target
   const codeTarget: CodeViewTarget | null =
     tabTarget && activePath && samePath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
-  const sourceMode = sourceChoice ?? !!codeTarget
-  const reading = markdown && !sourceMode && !editing
+  const sourceMode = sourceChoice ?? ((view.kind === 'text' && previewFormatOpensAsSource(view.format)) || !!codeTarget)
+  const reading = textPreview && !sourceMode && !editing
 
   const freshnessTarget =
     viewKey && diskStat && diskStat.key === viewKey
@@ -273,6 +317,30 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
     usePreviewBindings.getState().closeAll(owner.key)
   }, [owner.key])
 
+  const reorderTab = useCallback(
+    (tab: string, toIndex: number): void => {
+      const store = usePreviewBindings.getState()
+      usePreviewBindings.setState({ bindings: movePreviewTab(store.bindings, owner.key, tab, toIndex) })
+    },
+    [owner.key]
+  )
+
+  const addComment = useCallback(
+    (comment: CodeComment): void => {
+      if (!activeAbs) return
+      const serialized = serializeLineComment({
+        path: previewTabDetail(activeAbs, owner.cwd),
+        start: comment.start,
+        end: comment.end,
+        code: comment.code,
+        text: comment.text,
+        lang
+      })
+      if (serialized) useStore.getState().insertIntoComposer(serialized)
+    },
+    [activeAbs, owner.cwd, lang]
+  )
+
   const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
   const activeTab = previewTabs?.active ?? activePath ?? ''
   const bindings = usePreviewBindings.getState
@@ -290,13 +358,14 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
       onCloseOthers={(tab) => bindings().closeOthers(owner.key, tab)}
       onCloseRight={(tab) => bindings().closeRight(owner.key, tab)}
       onCloseAll={closeAllTabs}
+      onReorder={reorderTab}
       onRevealInTree={onRevealInTree}
     />
   ) : null
 
   const toolButtons = (
     <>
-      {markdown && !editing ? (
+      {textPreview && !editing ? (
         <IconButton
           size="sm"
           aria-label={sourceMode ? text.readingMode : text.sourceMode}
@@ -477,7 +546,12 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           target={codeTarget}
           hasTabs={tabList.length > 0}
           treeShown={treeShown}
+          cwd={owner.cwd}
           onOpenArtifact={openArtifact}
+          onComment={addComment}
+          onReveal={reveal}
+          onOpen={open}
+          onViewSource={() => setSourceChoice(true)}
         />
       )}
     </section>
@@ -494,7 +568,12 @@ function PreviewBody({
   target,
   hasTabs,
   treeShown,
-  onOpenArtifact
+  cwd,
+  onOpenArtifact,
+  onComment,
+  onReveal,
+  onOpen,
+  onViewSource
 }: {
   view: PreviewView
   text: PreviewText
@@ -505,7 +584,12 @@ function PreviewBody({
   target: CodeViewTarget | null
   hasTabs: boolean
   treeShown: boolean
+  cwd: string
   onOpenArtifact: (path: string) => void
+  onComment: (comment: CodeComment) => void
+  onReveal: () => void
+  onOpen: () => void
+  onViewSource: () => void
 }): ReactElement {
   const emptyTitle = hasTabs ? text.noSelection : text.emptyTitle
   const emptyHint = hasTabs ? text.noSelectionHint : treeShown ? text.emptyTree : text.emptyNoTree
@@ -561,16 +645,24 @@ function PreviewBody({
       return (
         <>
           <PreviewNotes notes={view.notes.filter((note) => note !== 'too_large')} text={text} />
-          {reading ? <MarkdownView view={view} text={text} /> : <TextView view={view} text={text} settings={settings} target={target} />}
+          {reading && view.format === 'markdown' ? (
+            <MarkdownView view={view} text={text} />
+          ) : reading && view.format === 'csv' ? (
+            <CsvTableView text={view.text} name={view.name} delimiter={csvDelimiterOf(view.name)} truncated={view.truncated} labels={text} />
+          ) : reading && view.format === 'html' ? (
+            <HtmlPreviewFrame abs={view.abs} name={view.name} cwd={cwd} labels={text} onViewSource={onViewSource} />
+          ) : reading && view.format === 'svg' ? (
+            <SvgView text={view.text} name={view.name} labels={text} onViewSource={onViewSource} />
+          ) : (
+            <TextView view={view} text={text} settings={settings} target={target} onComment={onComment} />
+          )}
         </>
       )
-    case 'image':
+    case 'media':
       return (
         <>
           <PreviewNotes notes={view.notes} text={text} />
-          <figure className="v3-preview-media" data-testid="v3-preview-image">
-            <img src={filePreviewUrl(view.abs)} alt={view.name} draggable={false} />
-          </figure>
+          <MediaView format={view.format} name={view.name} abs={view.abs} cwd={cwd} labels={text} onReveal={onReveal} onOpen={onOpen} />
         </>
       )
     case 'office':
@@ -597,20 +689,58 @@ function TextView({
   view,
   text,
   settings,
-  target
+  target,
+  onComment
 }: {
   view: Extract<PreviewView, { kind: 'text' }>
   text: PreviewText
   settings: FileViewSettings
   target: CodeViewTarget | null
+  onComment: (comment: CodeComment) => void
 }): ReactElement {
   const labels = useMemo<CodeViewText>(
-    () => ({ label: text.codeLabel, plainNote: text.plainNote, fold: text.fold, unfold: text.unfold, folded: text.folded }),
+    () => ({
+      label: text.codeLabel,
+      plainNote: text.plainNote,
+      fold: text.fold,
+      unfold: text.unfold,
+      folded: text.folded,
+      find: text.find,
+      findPlaceholder: text.findPlaceholder,
+      findMatchCase: text.findMatchCase,
+      findWholeWord: text.findWholeWord,
+      findRegexp: text.findRegexp,
+      findPrev: text.findPrev,
+      findNext: text.findNext,
+      findClose: text.findClose,
+      findNoResults: text.findNoResults,
+      findInvalid: text.findInvalid,
+      findStatus: text.findStatus,
+      goToLine: text.goToLine,
+      goToPlaceholder: text.goToPlaceholder,
+      goToInvalid: text.goToInvalid,
+      goToInvalidRange: text.goToInvalidRange,
+      goToClose: text.goToClose,
+      commentOnLine: text.commentOnLine,
+      commentOnLines: text.commentOnLines,
+      commentPlaceholder: text.commentPlaceholder,
+      commentSave: text.commentSave,
+      commentCancel: text.commentCancel
+    }),
     [text]
   )
   return (
     <div className="v3-preview-text v3-preview-text--code" data-testid="v3-preview-text">
-      <CodeView key={view.abs} text={view.text} name={view.name} settings={settings} firstNumber={view.windowStart ?? 1} target={target} labels={labels} />
+      <CodeView
+        key={view.abs}
+        text={view.text}
+        name={view.name}
+        settings={settings}
+        firstNumber={view.windowStart ?? 1}
+        target={target}
+        labels={labels}
+        onComment={onComment}
+      />
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )

@@ -20,11 +20,8 @@
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
   const store = window.__yanStore
 
-  const setValue = (el, text) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
-    setter.call(el, text)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setValue = (el, text) => composer.set(text, el)
   const hintText = () => (q('composer-keyhint')?.textContent ?? '').trim()
   const pressEnter = (el, ctrl) => {
     const ev = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: !!ctrl, bubbles: true, cancelable: true })
@@ -84,9 +81,9 @@
     const before = sends.length
     const prevented = pressEnter(ta, false)
     await wait(250)
-    check(ta.value.includes('YAN-V3-SENDKEY-PROBE'), 'Enter 没有触发发送（内容还在）')
+    check(composer.text(ta).includes('YAN-V3-SENDKEY-PROBE'), 'Enter 没有触发发送（内容还在）')
     check(sends.length === before, '没有调用 send（未出网）')
-    check(!prevented, 'Enter 未被拦截（交给换行 / 无动作）')
+    check(prevented && composer.text(ta).endsWith('\n'), 'Enter 由编辑器接管插入换行（内容未发出）')
     const ctrlPrevented = pressEnter(ta, true)
     check(await until(() => sends.length > before, 2000), 'Ctrl+Enter 走真实发送链（经 spy，未出网）')
     check(ctrlPrevented, 'Ctrl+Enter 被拦截去发送')
@@ -98,11 +95,21 @@
     await wait(200)
     setValue(ta, 'YAN-V3-IME-PROBE')
     await wait(120)
+    const sendsBeforeIme = sends.length
     const plainPrevented = pressEnter(ta, false)
+    await until(() => sends.length > sendsBeforeIme, 2000)
+    await wait(700)
+    setValue(ta, 'YAN-V3-IME-PROBE')
+    await wait(300)
+    const imeTextBefore = composer.text(ta)
+    ta.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
     const imePrevented = pressImeEnter(ta)
-    note(`非组合态 preventDefault=${plainPrevented} / 组合态 preventDefault=${imePrevented}`)
-    check(plainPrevented, '非组合态 Enter 被拦下处理（发送）')
-    check(!imePrevented, '组合态 Enter 未被拦（放行给输入法选词）')
+    await wait(150)
+    ta.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '' }))
+    await wait(150)
+    note(`非组合态 preventDefault=${plainPrevented} / 组合态 preventDefault=${imePrevented} / 组合态前文本=${JSON.stringify(imeTextBefore)} / 之后=${JSON.stringify(composer.text(ta))}`)
+    check(plainPrevented && sends.length > sendsBeforeIme, '非组合态 Enter 被拦下处理（发送）')
+    check(!imePrevented && composer.text(ta).includes('YAN-V3-IME-PROBE'), '组合态 Enter 未被拦（内容还在，没有发送）')
     setValue(ta, '')
 
     out.push('')

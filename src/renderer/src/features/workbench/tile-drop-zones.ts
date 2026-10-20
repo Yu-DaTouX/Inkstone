@@ -282,19 +282,25 @@ export function createDropSnapshot(input: {
   measure: (key: string) => Box | null
   sourceTileId: string
   startPointer?: { x: number; y: number } | null
+  offset?: { x: number; y: number }
   gap: number
 }): DropSnapshot | null {
   const { layout, containerRect, measure, sourceTileId, gap } = input
+  const offset = input.offset ?? { x: 0, y: 0 }
   const startPointer = input.startPointer ?? null
   const toLocal = (source: Box): Box =>
     box(source.left - containerRect.left, source.top - containerRect.top, source.width, source.height)
+  const lifted = (key: string, rect: Box): Box =>
+    key === sourceTileId && (offset.x !== 0 || offset.y !== 0)
+      ? box(rect.left - offset.x, rect.top - offset.y, rect.width, rect.height)
+      : rect
   const nodeRects: Record<string, Box> = {}
   const stacks: StackBox[] = []
   const tiles: TileBox[] = []
   const record = (node: TileNode, parent: TileStack | null, index: number): boolean => {
     const measured = measure(nodeKey(node))
     if (!measured) return false
-    const rect = toLocal(measured)
+    const rect = lifted(nodeKey(node), toLocal(measured))
     nodeRects[nodeKey(node)] = rect
     if (node.kind === 'tile') {
       if (parent) tiles.push({ tileId: node.tileId, rect, parent, index })

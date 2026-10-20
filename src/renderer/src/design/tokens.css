@@ -19,9 +19,13 @@
     --fg: light-dark(#0B0B0B, #F0EFEC);
     --fg2: light-dark(#52514E, #C3C2B7);
     --fg3: light-dark(#6B6A64, #9D9C95);
+    --fg-muted: #898781;
     --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1));
     --line2: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
     --line-ctl: light-dark(rgba(11,11,11,.48), rgba(255,255,255,.34));
+    --switch-track: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.1));
+    --switch-track-hover: light-dark(rgba(11,11,11,.35), rgba(255,255,255,.2));
+    --kbd-ink: light-dark(#6D6B67, #A5A49A);
     --ink: light-dark(#0B0B0B, #FFFFFF);
     --ink-hover: light-dark(#2B2B29, #E6E5E1);
     --on-ink: light-dark(#FFFFFF, #0B0B0B);
@@ -200,17 +204,17 @@
   }
   :root[data-density='comfortable'], [data-density-scope='comfortable'] {
     --t-caption: 12px;
-    --t-caption-lh: 18px;
+    --t-caption-lh: 16px;
     --t-footnote: 13px;
     --t-footnote-lh: 18px;
     --t-code: 13px;
     --t-code-lh: 19px;
     --t-body: 14px;
-    --t-body-lh: 22px;
+    --t-body-lh: 20px;
     --t-prose: 15px;
     --t-prose-lh: 24px;
     --t-heading: 15px;
-    --t-heading-lh: 22px;
+    --t-heading-lh: 20px;
     --t-title: 21px;
     --t-title-lh: 28px;
     --d-row: 32px;

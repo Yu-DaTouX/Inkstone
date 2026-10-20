@@ -146,6 +146,10 @@ export function guideLevels(texts: readonly string[], tabSize: number): { unit: 
   return { unit, levels }
 }
 
+export function wrapIndentColumns(texts: readonly string[], tabSize: number): number[] {
+  return texts.map((text) => leadingColumns(text, tabSize) ?? 0)
+}
+
 export function foldRegions(texts: readonly string[], tabSize: number): Map<number, number> {
   const raw = texts.map((text) => leadingColumns(text, tabSize))
   const regions = new Map<number, number>()

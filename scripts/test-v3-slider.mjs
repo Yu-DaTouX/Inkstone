@@ -162,7 +162,16 @@ async function main() {
   const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
   ok(cssCode.includes('@layer primitives'), 'Slider.css 落在 primitives 层')
   ok(!/#[0-9a-fA-F]{3,8}\b/.test(cssCode) && !/rgba?\(/.test(cssCode), 'CSS 不写死色值')
-  ok(cssCode.includes('var(--ink)') && cssCode.includes('var(--accent)') && cssCode.includes('var(--sunken)'), 'CSS 颜色取界面令牌')
+  const colorDecls = cssCode
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^(?:color|background(?:-color)?|border(?:-color)?|box-shadow)\s*:/.test(line))
+  const literalColors = colorDecls.filter((line) => !line.includes('var(--'))
+  ok(colorDecls.length > 0 && literalColors.length === 0, 'CSS 颜色取界面令牌（着色声明不写字面值）', literalColors)
+  const tokensCss = await readFile(join(process.cwd(), 'src/renderer/src/design/tokens.css'), 'utf8')
+  const tokenRefs = [...new Set(colorDecls.flatMap((line) => [...line.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1])))]
+  const undefinedRefs = tokenRefs.filter((name) => !new RegExp(`^\\s*${name}\\s*:`, 'm').test(tokensCss))
+  ok(tokenRefs.length > 0 && undefinedRefs.length === 0, 'CSS 颜色令牌都在 design/tokens.css 里定义', undefinedRefs)
   ok(cssCode.includes('.ui-slider__thumb[data-focus-visible]'), 'CSS 提供键盘焦点环样式')
 
   await rm(outdir, { recursive: true, force: true })

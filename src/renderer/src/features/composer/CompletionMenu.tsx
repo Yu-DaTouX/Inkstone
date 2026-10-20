@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import { Folder } from 'lucide-react'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { Kbd } from '../../ui'
@@ -20,11 +20,28 @@ function sourceLabel(t: TFunc, source: SlashCommand['source']): string {
 export function CompletionMenu({ completion }: { completion: CompletionState }) {
   const t = useT()
   const { open, index, slashMatches, atQuery } = completion
+  const listRef = useRef<HTMLDivElement>(null)
+  const pointerIndex = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    if (pointerIndex.current === index) {
+      pointerIndex.current = null
+      return
+    }
+    listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [open, index])
+
+  const hoverIndex = (next: number): void => {
+    pointerIndex.current = next === index ? null : next
+    completion.setIndex(next)
+  }
+
   if (!open) return null
 
   if (slashMatches.length > 0) {
     return (
-      <div className="cmp-menu" role="listbox" aria-label={t('composer.slashSelect')} data-testid="slash-menu">
+      <div ref={listRef} className="cmp-menu" role="listbox" aria-label={t('composer.slashSelect')} data-testid="slash-menu">
         {slashMatches.map((command, i) => (
           <Fragment key={`${command.source}:${command.name}:${command.module ?? ''}`}>
             {i === 0 || slashMatches[i - 1].source !== command.source ? (
@@ -45,7 +62,7 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
               disabled={!command.executable}
               title={command.availability}
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => completion.setIndex(i)}
+              onMouseEnter={() => hoverIndex(i)}
               onClick={() => completion.completeSlash(command)}
             >
               <span className="cmp-name">/{command.name}</span>
@@ -68,7 +85,7 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
   const { atImages, atMatches, atLoading, atError, atStatus, atTruncated, cwd } = completion
   const offset = atImages.length
   return (
-    <div className="cmp-menu" role="listbox" aria-label={t('composer.file')} data-testid="at-menu">
+    <div ref={listRef} className="cmp-menu" role="listbox" aria-label={t('composer.file')} data-testid="at-menu">
       {atImages.length ? <div className="cmp-group">{t('composer.imageRefGroup')}</div> : null}
       {atImages.map((option, i) => (
         <button
@@ -83,7 +100,7 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
           aria-selected={i === index}
           title={option.attachment.name}
           onMouseDown={(event) => event.preventDefault()}
-          onMouseEnter={() => completion.setIndex(i)}
+          onMouseEnter={() => hoverIndex(i)}
           onClick={() => completion.completeImage(option)}
         >
           <span className="cmp-name">
@@ -117,7 +134,7 @@ export function CompletionMenu({ completion }: { completion: CompletionState }) 
               aria-selected={i + offset === index}
               title={toAbsoluteFilePath(cwd, path)}
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => completion.setIndex(i + offset)}
+              onMouseEnter={() => hoverIndex(i + offset)}
               onClick={() => completion.completeAt(path)}
             >
               <span className="cmp-name">

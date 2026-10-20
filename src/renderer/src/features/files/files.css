@@ -349,7 +349,7 @@
   }
 
   .v3-files-scroll {
-    --files-row: var(--size-btn);
+    --files-row: 24px;
     flex: 1;
     min-height: 0;
     overflow-y: auto;

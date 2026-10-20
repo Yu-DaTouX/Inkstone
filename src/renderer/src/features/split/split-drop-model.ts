@@ -302,17 +302,25 @@ export function paneDropTarget(
     const next = target ? applyPaneDrop(tiles, from, target, maxColumns) : null
     return next ? layoutSignature(next) : null
   }
-  const stackTarget: PaneDropTarget | null =
-    column.length === 1 && fromCol !== zone.col
-      ? zone.zone === 'swap'
-        ? { kind: 'swap', index: column[0] }
-        : { kind: 'stack', col: zone.col, row: zone.zone === 'above' ? 0 : 1 }
-      : null
+  const stackTarget: PaneDropTarget | null = (() => {
+    if (fromCol === zone.col) return null
+    if (zone.zone === 'swap') return column.length === 1 ? { kind: 'swap', index: column[0] } : null
+    const row = zone.zone === 'above' ? 0 : 1
+    if (column.length === 1) return { kind: 'stack', col: zone.col, row }
+    const occupied = column[row]
+    return occupied !== undefined ? { kind: 'swap', index: occupied } : null
+  })()
   const cellIndex = column[zone.row]
   const cellTarget: PaneDropTarget | null =
     cellIndex !== undefined ? { kind: 'swap', index: cellIndex } : { kind: 'stack', col: zone.col, row: 1 }
   const bandTarget: PaneDropTarget | null =
-    zone.band === 'left' ? { kind: 'column', at: 0 } : zone.band === 'right' ? { kind: 'column', at: columns.length } : null
+    fromCol === zone.col
+      ? null
+      : zone.band === 'left'
+        ? { kind: 'column', at: 0 }
+        : zone.band === 'right'
+          ? { kind: 'column', at: columns.length }
+          : null
   const stack = outcome(stackTarget) ? stackTarget : null
   const cell = outcome(cellTarget) ? cellTarget : null
   const band = outcome(bandTarget) ? bandTarget : null

@@ -5,7 +5,12 @@ import type { PreviewSiteGate } from '../preview-site-gate'
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const NOT_READY = { ok: false, error: '浏览器未初始化' }
 
-export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserController | null, siteGate?: PreviewSiteGate): void {
+export function registerBrowserIpc(
+  ipc: IpcRegistrar,
+  browserOf: () => BrowserController | null,
+  siteGate?: PreviewSiteGate,
+  answerSiteAsk?: (id: string, allowed: boolean) => void
+): void {
   const { rawHandle } = ipc
   rawHandle('yan:browser:getState', () => browserOf()?.getState() ?? CLOSED_STATE)
   rawHandle('yan:browser:open', async (_e, url?: string) => browserOf()?.open(url) ?? CLOSED_STATE)
@@ -21,6 +26,17 @@ export function registerBrowserIpc(ipc: IpcRegistrar, browserOf: () => BrowserCo
   rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => ({
     decision: siteGate ? await siteGate.check(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
   }))
+  rawHandle('yan:browser:allowedSites', () => siteGate?.sites() ?? [])
+  rawHandle('yan:browser:addAllowedSite', (_e, value: unknown) =>
+    siteGate?.addSite(String(value ?? '')) ?? { result: 'unavailable', list: [] }
+  )
+  rawHandle('yan:browser:removeAllowedSite', (_e, value: unknown) =>
+    siteGate?.removeSite(String(value ?? '')) ?? { removed: false, list: [] }
+  )
+  rawHandle('yan:browser:clearAllowedSites', () => siteGate?.clearSites() ?? [])
+  rawHandle('yan:browser:siteAskAnswer', (_e, id: unknown, allowed: unknown) => {
+    if (typeof id === 'string') answerSiteAsk?.(id, allowed === true)
+  })
   rawHandle('yan:browser:back', () => browserOf()?.back() ?? NOT_READY)
   rawHandle('yan:browser:forward', () => browserOf()?.forward() ?? NOT_READY)
   rawHandle('yan:browser:reload', () => browserOf()?.reload() ?? NOT_READY)

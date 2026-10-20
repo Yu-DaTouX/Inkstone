@@ -137,7 +137,11 @@ async function buildSteps(outdir) {
 export function Badge(props){ return null }
 Badge.__stub='ui-badge'
 export function Notice(props){ return null }
-Notice.__stub='ui-notice'`,
+Notice.__stub='ui-notice'
+export function TextField(props){ return null }
+export function TextArea(props){ return null }
+export function Input(props){ return null }
+export function Slider(props){ return null }`,
         'src/renderer/src/i18n/index.tsx': `export function useI18n(){ return { lang: globalThis.__V3_LANG || 'zh-CN' } }
 export function useT(){ return (k, vars) => { let s = (globalThis.__V3_LANG === 'en-US' ? 'EN:' : 'ZH:') + String(k); if (vars) for (const [n, v] of Object.entries(vars)) s += '|' + n + '=' + v; return s } }
 export function translate(_l, k){ return String(k) }`
@@ -336,7 +340,7 @@ async function main() {
     ok(byTypeName(one.tree, 'ToolGroupRow').length === 0 && byTypeName(one.tree, 'StepNode').length === 1, '只有 1 条时保持单行')
   }
 
-  group('失败：组头写失败数并带徽标，不再自动展开')
+  group('失败：组头写失败数，失败只留红字，不再自动展开')
   {
     const { tree } = renderSteps([
       tool({ id: 'read-3', name: 'read' }),
@@ -346,12 +350,13 @@ async function main() {
     const head = byTestId(g.tree, 'v3-step-group')
     ok(head.props['aria-expanded'] === false, '有失败也保持折叠', head.props['aria-expanded'])
     ok(textOf(head).includes('（1 个失败）'), '摘要写失败数', textOf(head))
-    ok(collect(g.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '组头带失败徽标')
+    ok(collect(g.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 0, '组头不再挂失败徽标')
     head.props.onClick()
     const opened = renderComponent(g.rt, g.el.type, g.el.props)
     const failedNode = renderStepNode(opened, 'bash-err')
     ok(byTestId(failedNode.tree, 'v3-step').props['aria-expanded'] === false, '失败那一步默认折叠')
-    ok(collect(failedNode.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 1, '失败那一步仍带失败徽标')
+    ok(collect(failedNode.tree, (el) => el.type && el.type.__stub === 'ui-badge').length === 0, '失败那一步不挂徽标')
+    ok(textOf(byTestId(failedNode.tree, 'v3-step')).includes('运行失败'), '失败那一步的标题用失败时态的动词', textOf(byTestId(failedNode.tree, 'v3-step')))
   }
 
   group('展开状态存在会话级存储：重挂载不丢，重试时清除')
@@ -375,8 +380,8 @@ async function main() {
     ])
     const g = renderSub(tree, 'ToolGroupRow')
     const shimmer = byTypeName(g.tree, 'ShimmerText')
-    ok(shimmer.some((el) => el.props.active === true && textOf(el.props.children).includes('bash sleep 1')), '折叠的组头显示运行中的工具，文字带闪烁', shimmer.map((el) => [el.props.active, el.props.children]))
-    ok(collect(g.tree, (el) => el.props && el.props.className === 'v3-dot run').length === 1, '状态点为运行中')
+    ok(shimmer.some((el) => el.props.active === true && textOf(el.props.children).includes('正在运行 sleep 1')), '折叠的组头显示运行中的工具与进行时动词，文字带闪烁', shimmer.map((el) => [el.props.active, el.props.children]))
+    ok(collect(g.tree, (el) => el.props && String(el.props.className || '').startsWith('v3-dot')).length === 0, '不再画状态点')
 
     const single = renderSteps([tool({ id: 'p-1', name: 'read', status: 'pending' })])
     const runningNode = renderStepNode(single.tree, 'p-1')
@@ -390,7 +395,7 @@ async function main() {
     const tools = [tool({ id: 'r-a', name: 'read' }), tool({ id: 'b-a', name: 'bash', args: { command: 'rm -rf x' }, status: 'running' })]
     const g = renderSub(renderSteps(tools, new Set(['b-a'])).tree, 'ToolGroupRow')
     ok(byTestId(g.tree, 'v3-step-group-approval') !== null, '组头带「需要审批」')
-    ok(collect(g.tree, (el) => el.props && el.props.className === 'v3-dot warn').length === 1, '组状态为等待审批')
+    ok(collect(g.tree, (el) => el.props && String(el.props.className || '').startsWith('v3-dot')).length === 0, '不靠状态点表示等待审批')
     const lone = renderSteps([tools[1]], new Set(['b-a']))
     const node = renderStepNode(lone.tree, 'b-a')
     ok(byTestId(node.tree, 'v3-step-approval') !== null, '单行带「需要审批」')

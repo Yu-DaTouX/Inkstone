@@ -341,6 +341,10 @@ export class SessionItemProjector {
     return out
   }
 
+  streamingMessage(): UIMessage | null {
+    return this.streaming ? this.compose(this.streaming) : null
+  }
+
   private settledCount(): number {
     return this.slots.length - (this.streaming ? 1 : 0)
   }

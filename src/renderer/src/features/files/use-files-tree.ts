@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import type { RefObject, UIEvent } from 'react'
 import type { DirListing, FileRequestContext } from '../../../../shared/ipc'
 import {
@@ -16,6 +16,8 @@ import {
   type FilesWindow
 } from './files-model'
 
+import { filesHiddenStore } from './files-hidden'
+
 export interface FilesTreeController {
   state: FilesTreeState
   rows: FileTreeRow[]
@@ -29,15 +31,21 @@ export interface FilesTreeController {
   toggle: (path: string) => void
   collapseAll: () => void
   refresh: () => void
-  toggleHidden: () => void
 }
 
 let watchSeq = 0
 
 export function useFilesTree(owner: FilesOwner): FilesTreeController {
   const [state, dispatch] = useReducer(filesTreeReducer, undefined, () =>
-    freshTreeState(owner.key, owner.cwd, 0, true)
+    freshTreeState(owner.key, owner.cwd, 0, filesHiddenStore().getSnapshot())
   )
+  const hiddenStore = filesHiddenStore()
+  const showHiddenPref = useSyncExternalStore(hiddenStore.subscribe, hiddenStore.getSnapshot, hiddenStore.getSnapshot)
+  useEffect(() => {
+    if (state.showHidden === showHiddenPref) return
+    generationRef.current += 1
+    dispatch({ type: 'toggleHidden', generation: generationRef.current })
+  }, [showHiddenPref, state.showHidden])
   const generationRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const pendingFocusRef = useRef(false)
@@ -230,10 +238,5 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
     })
   }, [rowIndexOf, rowHeight])
 
-  const toggleHidden = useCallback((): void => {
-    generationRef.current += 1
-    dispatch({ type: 'toggleHidden', generation: generationRef.current })
-  }, [])
-
-  return { state, rows, status, highlight, reveal, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh, toggleHidden }
+  return { state, rows, status, highlight, reveal, viewWindow, scrollRef, onScroll, focus, toggle, collapseAll, refresh }
 }

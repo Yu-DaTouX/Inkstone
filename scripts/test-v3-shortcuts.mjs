@@ -34,6 +34,7 @@ assert.deepEqual(
   ['commandPalette', 'newSession', 'toggleSidebar', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack',
     'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
+    'workspaceClosePane', 'workspaceToggleMaximize',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown',
     'cycleModel', 'cycleModelBack', 'cycleThinking', 'quickAsk'],
   '外壳绑定项在前，宿主已注册项在后；顺序即展示顺序'
@@ -42,6 +43,7 @@ assert.deepEqual(
   SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
   ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
+    'workspaceClosePane', 'workspaceToggleMaximize',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],
   '只让非终端让键、未由宿主注册的项可改绑'
 )

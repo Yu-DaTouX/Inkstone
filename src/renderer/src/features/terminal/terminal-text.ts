@@ -8,6 +8,36 @@ export interface TerminalText {
   attachFailed: string
   bufferOverflow: string
   empty: string
+  tabTitle: string
+  tabNumber: (n: number) => string
+  tabs: string
+  newTab: string
+  closeTab: string
+  closeOthers: string
+  tabMenu: string
+  terminalMenu: string
+  viewMenu: string
+  fontSize: string
+  lineHeight: string
+  cursorStyle: string
+  cursorBlink: string
+  scrollback: string
+  cursorBlock: string
+  cursorBar: string
+  cursorUnderline: string
+  lines: (n: number) => string
+  copy: string
+  paste: string
+  selectAll: string
+  clear: string
+  find: string
+  findPlaceholder: string
+  findPrev: string
+  findNext: string
+  findClose: string
+  noResults: string
+  reload: string
+  listFailed: string
 }
 
 const ZH: TerminalText = {
@@ -17,7 +47,37 @@ const ZH: TerminalText = {
   startFailed: '终端启动失败，可重试',
   attachFailed: '终端连接失败，可重试',
   bufferOverflow: '终端连接缓冲超限，请重新连接',
-  empty: '没有打开的终端'
+  empty: '没有打开的终端',
+  tabTitle: '终端',
+  tabNumber: (n) => `终端 ${n}`,
+  tabs: '终端标签',
+  newTab: '新建终端',
+  closeTab: '关闭终端',
+  closeOthers: '关闭其他终端',
+  tabMenu: '终端标签菜单',
+  terminalMenu: '终端',
+  viewMenu: '视图设置',
+  fontSize: '字号',
+  lineHeight: '行高',
+  cursorStyle: '光标样式',
+  cursorBlink: '光标闪烁',
+  scrollback: '回放行数',
+  cursorBlock: '方块',
+  cursorBar: '竖线',
+  cursorUnderline: '下划线',
+  lines: (n) => `${n.toLocaleString()} 行`,
+  copy: '复制',
+  paste: '粘贴',
+  selectAll: '全选',
+  clear: '清屏',
+  find: '在终端中查找',
+  findPlaceholder: '在终端中查找…',
+  findPrev: '上一个匹配',
+  findNext: '下一个匹配',
+  findClose: '关闭查找',
+  noResults: '无结果',
+  reload: '重新加载',
+  listFailed: '终端列表读取失败，可重试'
 }
 
 const EN: TerminalText = {
@@ -27,7 +87,37 @@ const EN: TerminalText = {
   startFailed: 'Could not start the terminal. You can retry.',
   attachFailed: 'Could not connect to the terminal. You can retry.',
   bufferOverflow: 'Terminal connection buffer exceeded; reconnect.',
-  empty: 'No terminal open'
+  empty: 'No terminal open',
+  tabTitle: 'Terminal',
+  tabNumber: (n) => `Terminal ${n}`,
+  tabs: 'Terminal tabs',
+  newTab: 'New terminal',
+  closeTab: 'Close terminal',
+  closeOthers: 'Close other terminals',
+  tabMenu: 'Terminal tab menu',
+  terminalMenu: 'Terminal',
+  viewMenu: 'View options',
+  fontSize: 'Font size',
+  lineHeight: 'Line height',
+  cursorStyle: 'Cursor style',
+  cursorBlink: 'Blink cursor',
+  scrollback: 'Scrollback',
+  cursorBlock: 'Block',
+  cursorBar: 'Bar',
+  cursorUnderline: 'Underline',
+  lines: (n) => `${n.toLocaleString()} lines`,
+  copy: 'Copy',
+  paste: 'Paste',
+  selectAll: 'Select all',
+  clear: 'Clear terminal',
+  find: 'Find in terminal',
+  findPlaceholder: 'Find in terminal…',
+  findPrev: 'Previous match',
+  findNext: 'Next match',
+  findClose: 'Close find bar',
+  noResults: 'No results',
+  reload: 'Reload',
+  listFailed: 'Could not list the terminal tabs. You can retry.'
 }
 
 export function terminalText(lang: Lang): TerminalText {

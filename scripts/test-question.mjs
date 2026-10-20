@@ -1,4 +1,16 @@
+const HOST_ENV_KEYS = ['YAN_RUNNER_ID', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']
+
 export async function runQuestionTests(ok) {
+  const saved = Object.fromEntries(HOST_ENV_KEYS.map((key) => [key, process.env[key]]))
+  for (const key of HOST_ENV_KEYS) delete process.env[key]
+  try {
+    await runWithoutHost(ok)
+  } finally {
+    for (const key of HOST_ENV_KEYS) if (saved[key] !== undefined) process.env[key] = saved[key]
+  }
+}
+
+async function runWithoutHost(ok) {
   const mod = await import(new URL('../resources/pi-extensions/question.js', import.meta.url))
   const factory = mod.default
   ok(typeof factory === 'function', 'question.js 默认导出扩展工厂函数')

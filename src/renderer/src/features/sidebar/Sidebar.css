@@ -54,15 +54,16 @@
   .v3-root[data-sidebar-preview='1'] .v3-head { -webkit-app-region: no-drag; }
   .v3-sidebar-reveal { position: absolute; inset: var(--size-head) auto 0 0; width: var(--s-10); z-index: calc(var(--z-drawer) - 1); padding: 0; border: 0; background: transparent; -webkit-app-region: no-drag; }
   .v3-root:has(.v3-sidebar-resizer[data-dragging]) .v3-side { transition: none; }
+  .v3-root[data-side-drag='1'] .v3-sidebar-resizer::after { opacity: 0; }
   .v3-sidebar-resizer.ui-splitter { position: absolute; left: calc(var(--sidebar-width) - 1px); top: 0; bottom: 0; z-index: calc(var(--z-drawer) + 1); -webkit-app-region: no-drag; }
 
   .v3-side-top {
-    height: var(--size-head);
+    height: 46px;
     flex: none;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 8px 0 14px;
+    padding: 2px 8px 0 14px;
   }
 
   .v3-side-brand {
@@ -91,7 +92,7 @@
 
   .v3-side-search {
     flex: none;
-    padding: var(--s-4) var(--s-8) var(--s-8);
+    padding: var(--s-8) var(--s-8) var(--s-8);
   }
 
   .v3-side-search > * {
@@ -111,7 +112,12 @@
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: thin;
-    padding: 0 var(--s-8) var(--s-8);
+    scrollbar-gutter: stable;
+    padding: 0 max(0px, calc(var(--s-8) - var(--v3-nav-lane, 0px))) var(--s-8) var(--s-8);
+  }
+
+  .v3-side-list[data-scrolled='1'] {
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--s-12));
   }
 
   .v3-grp {
@@ -120,7 +126,7 @@
     gap: var(--s-4);
     min-height: calc(var(--s-12) + var(--d-row) - var(--s-8) + var(--s-4));
     padding: var(--s-12) 1px var(--s-4) var(--s-10);
-    color: var(--fg3);
+    color: var(--fg-muted);
     font-size: var(--t-footnote);
     line-height: var(--s-16);
   }
@@ -229,6 +235,7 @@
   }
 
   .v3-srow > .v3-row {
+    min-height: calc(var(--d-row) + var(--s-2));
     padding-left: calc(var(--s-2) + var(--s-8));
   }
 
@@ -236,9 +243,9 @@
     padding-right: calc(3px + var(--size-btn-sm));
   }
 
-  .v3-srow:hover > .v3-row:not([data-mark]) .v3-row-title,
-  .v3-srow:focus-within > .v3-row:not([data-mark]) .v3-row-title,
-  .v3-srow[data-menu='1'] > .v3-row:not([data-mark]) .v3-row-title {
+  .v3-srow:hover > .v3-row .v3-row-title,
+  .v3-srow:focus-within > .v3-row .v3-row-title,
+  .v3-srow[data-menu='1'] > .v3-row .v3-row-title {
     mask-image: linear-gradient(to left, transparent 0, transparent var(--s-20), var(--fg) calc(var(--s-20) + var(--s-24)));
   }
 

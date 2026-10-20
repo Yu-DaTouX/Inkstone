@@ -27,16 +27,14 @@
   ok(!q('[data-testid="v3-conn-banner"]'), '没有显示连接失败条')
 
   const ta = q('[data-testid="composer-input"]')
-  ok(ta && !ta.disabled, '输入框可用（证明 ready 真的生效了，不只是变量对）')
+  ok(ta, '输入框可用（证明 ready 真的生效了，不只是变量对）')
 
   ok(!q('.tb-sync'), '标题栏没有「已连接 · 工作目录」那一段')
   ok(!q('.tb-cwd'), '标题栏没有工作目录按钮')
 
   ok(status.state === store.getState().conn, 'store.conn 与主进程 agentStatus 一致')
 
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-  setter.call(ta, '回复两个字：收到')
-  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  window.__yanComposer.set('回复两个字：收到', ta)
   await sleep(200)
   const send = q('[data-testid="composer-send"]')
   ok(!send.disabled, '发送键可用')

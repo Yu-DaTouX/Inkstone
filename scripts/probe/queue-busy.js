@@ -7,10 +7,8 @@
   const log = (s) => out.push(s)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
   const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   const store = window.__yanStore
   if (!store) return '  ⤺ 跳过：没有 window.__yanStore'
@@ -25,12 +23,26 @@
   })
   let noticeMark = 0
   const notices = () => noticeLog.slice(noticeMark).map((n) => n.text).join(' | ')
-  const draft = () => q('[data-testid="composer-input"]')?.value ?? null
-  const rowButton = (text, testId) => {
-    const row = [...document.querySelectorAll('[data-testid="queue-row"]')].find((r) =>
-      (r.textContent ?? '').includes(text)
-    )
-    return row ? row.querySelector(`[data-testid="${testId}"]`) : null
+  const draft = () => {
+    const el = q('[data-testid="composer-input"]')
+    return el ? window.__yanComposer.text(el) : null
+  }
+  const rowMenuItem = async (text, testId) => {
+    const all = (sel) => [...document.querySelectorAll(sel)]
+    const menus = () => all('.cq-menu')
+    menus().at(-1)?.querySelector('[role="menuitem"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && menus().length; i++) await sleep(100)
+    const toggle = document.querySelector('[data-testid="queue-toggle"]')
+    if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click()
+    let row = null
+    for (let i = 0; i < 30 && !row; i++) {
+      row = all('[data-testid="queue-row"]').find((r) => text == null || (r.textContent ?? '').includes(text)) ?? null
+      if (!row) await sleep(100)
+    }
+    row?.querySelector('[data-testid="queue-actions"]')?.click()
+    for (let i = 0; i < 30 && !menus().length; i++) await sleep(100)
+    await sleep(150)
+    return menus()[0]?.querySelector(`[data-testid="${testId}"]`) ?? null
   }
 
   for (let i = 0; i < 30; i++) {
@@ -63,7 +75,7 @@
     await sleep(1500)
     ok(queued(A), 'A 已排队（此时工具还在跑）')
 
-    const steerBtn = rowButton(A, 'queue-steer')
+    const steerBtn = await rowMenuItem(A, 'queue-steer')
     ok(!!steerBtn, 'A 那一行有「插队」按钮')
     if (steerBtn) {
       noticeMark = noticeLog.length
@@ -80,7 +92,7 @@
     await sleep(1500)
     ok(queued(B), 'B 已排队')
 
-    const retractBtn = rowButton(B, 'queue-retract')
+    const retractBtn = await rowMenuItem(B, 'queue-retract')
     ok(!!retractBtn, 'B 那一行有「撤回」按钮')
     if (retractBtn) {
       noticeMark = noticeLog.length

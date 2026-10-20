@@ -303,7 +303,9 @@ export const SHORTCUT_NOTE_GROUPS: { id: ShortcutNoteGroup; rows: ShortcutNote[]
       { labelKey: 'sheet.inputComplete', keys: ['Tab'] },
       { labelKey: 'sheet.inputCloseMenu', keys: ['Esc'] },
       { labelKey: 'sheet.inputLong', keys: ['↑', '↑'], noteKey: 'sheet.inputLongNote' },
-      { labelKey: 'sheet.inputStop', keys: ['Esc'], noteKey: 'sheet.inputStopNote' }
+      { labelKey: 'sheet.inputStop', keys: ['Esc'], noteKey: 'sheet.inputStopNote' },
+      { labelKey: 'sheet.inputSteer', keys: ['Enter'], noteKey: 'sheet.inputSteerNote' },
+      { labelKey: 'sheet.inputQueue', keys: ['Ctrl', 'Q'], noteKey: 'sheet.inputQueueNote' }
     ]
   },
   {

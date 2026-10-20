@@ -10,9 +10,10 @@ import { TurnProcess } from './TurnProcess'
 import { splitTurnProcess } from './turn-process'
 import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
+import { UserText } from './UserText'
 import { Icon } from './Icon'
 import { Badge, IconButton, Notice } from '../../ui'
-import { imageRefLabel, imageRefPrefix, referencedImageNumbers, splitImageRefs, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
+import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { forkAt, forkFromText } from '../../lib/fork'
@@ -90,11 +91,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           </div>
         ) : msg.text ? (
           <div className="v3-bubble">
-            <span className="v3-bubble-text">
-              {splitImageRefs(displayText).map((part, i) =>
-                part.ref ? <mark key={i} className="v3-image-ref">{part.text}</mark> : part.text
-              )}
-            </span>
+            <UserText text={displayText} />
           </div>
         ) : null}
 
@@ -195,10 +192,6 @@ function NoteTurnView({ turn, sessionId }: { turn: NoteTurn; sessionId: string |
   )
 }
 
-function failedCount(turn: AssistantTurn): number {
-  return turn.tools.filter((c) => c.status === 'error' && !c.cancelled).length
-}
-
 export function replyText(turn: AssistantTurn): string {
   const text = (turn.segments.length
     ? turn.segments.flatMap((segment) => segment.response ? [segment.response.text] : [])
@@ -225,7 +218,6 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
     <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length}>
       <div className="v3-assistant-body">
         {edgeFirst ? <BranchSummary /> : null}
-        {streaming ? null : <SettledActivity turn={turn} />}
         {thinkingBySegment ? null : <ThinkingLine text={turn.thinking ?? ''} ms={turn.thinkingMs} live={turn.thinkingLive} />}
 
         {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
@@ -235,7 +227,6 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
             {processSegs.length ? (
               <TurnProcess
                 process={processSegs}
-                elapsedMs={turn.elapsedMs}
                 live={!!streaming && !split.reply}
                 sessionId={sessionId}
                 turnId={turn.id}
@@ -331,27 +322,6 @@ function ImageProgressFallbackNote(): JSX.Element {
   const tt = useSessionText()
   return (
     <Notice compact className="v3-fallback-note" role="note" icon={<Icon name="layers" size={13} />} data-testid="v3-image-progress-fallback">{tt('imageProgress')}</Notice>
-  )
-}
-
-function SettledActivity({ turn }: { turn: AssistantTurn }): JSX.Element {
-  const t = useT()
-  const failed = failedCount(turn)
-  const reason = turn.terminalReason
-  const kind = reason === 'failed' || (turn.error && reason !== 'stopped') ? 'err'
-    : reason === 'stopped' ? 'stop'
-      : reason === 'interrupted' ? 'stop'
-        : failed > 0 ? 'err' : 'done'
-  const glyph = kind === 'err' ? '✕' : kind === 'stop' ? '■' : '✓'
-  const label = turn.error || reason === 'failed' ? t('act.failed')
-    : reason === 'stopped' ? t('act.stopped')
-      : reason === 'interrupted' ? t('act.interrupted')
-        : failed > 0 ? t('act.partial') : t('act.done')
-  return (
-    <div className="v3-act" data-kind={kind} data-testid="v3-turn-activity">
-      <span className="v3-act-glyph" aria-hidden>{glyph}</span>
-      <span className="v3-act-text">{label}</span>
-    </div>
   )
 }
 

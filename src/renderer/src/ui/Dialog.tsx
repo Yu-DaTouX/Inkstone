@@ -41,10 +41,11 @@ export interface DialogProps extends RACDialogProps {
   title?: ReactNode
   closeLabel?: string
   showClose?: boolean
+  alert?: boolean
 }
 
 export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
-  { title, closeLabel, showClose = true, className, children, ...props },
+  { title, closeLabel, showClose = true, alert = false, className, children, ...props },
   ref
 ) {
   const t = useOptionalT()
@@ -55,10 +56,15 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
     return () => popModal(current)
   }, [])
   return (
-    <RACDialog {...props} ref={ref} className={cx('ui-dialog', className)}>
+    <RACDialog
+      {...props}
+      role={alert ? 'alertdialog' : props.role}
+      ref={ref}
+      className={cx('ui-dialog', alert && 'ui-dialog--alert', className)}
+    >
       {(renderProps) => (
         <>
-          {title != null || showClose ? (
+          {title != null || (showClose && !alert) ? (
             <div className="ui-dialog__head">
               {title != null ? (
                 <Heading slot="title" className="ui-dialog__title">
@@ -67,7 +73,7 @@ export const Dialog = forwardRef<HTMLElement, DialogProps>(function Dialog(
               ) : (
                 <span />
               )}
-              {showClose ? (
+              {showClose && !alert ? (
                 <IconButton
                   aria-label={closeLabel ?? t('ui.close')}
                   variant="ghost"

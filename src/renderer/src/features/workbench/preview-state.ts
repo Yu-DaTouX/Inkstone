@@ -1,4 +1,7 @@
 export const MAX_PREVIEW_BINDINGS = 5
+export const MAX_PREVIEW_TABS = 8
+export const PREVIEW_BINDINGS_STORAGE_KEY = 'yan.preview.bindings'
+export const MAX_PERSISTED_PREVIEW_OWNERS = MAX_PREVIEW_BINDINGS
 
 export interface PreviewTarget {
   path: string
@@ -23,6 +26,18 @@ export interface PreviewOpenOptions {
 export type PreviewBindings = ReadonlyMap<string, PreviewTabs>
 
 let targetNonce = 0
+
+function trimPreviewTabs(tabs: string[], keep: readonly (string | null | undefined)[]): string[] {
+  if (tabs.length <= MAX_PREVIEW_TABS) return tabs
+  const kept = new Set(keep.filter((path): path is string => !!path))
+  const next = tabs.slice()
+  while (next.length > MAX_PREVIEW_TABS) {
+    const index = next.findIndex((tab) => !kept.has(tab))
+    if (index < 0) break
+    next.splice(index, 1)
+  }
+  return next
+}
 
 function withBinding(
   bindings: PreviewBindings,
@@ -74,6 +89,7 @@ export function openPreviewTab(
     tabs = [...existing, path]
     if (asPreview) preview = path
   }
+  tabs = trimPreviewTabs(tabs, [path, preview])
   const target =
     typeof options.line === 'number' && options.line > 0
       ? {
@@ -153,6 +169,25 @@ export function closeAllPreviewTabs(bindings: PreviewBindings, ownerKey: string 
   return withBinding(bindings, ownerKey, null)
 }
 
+export function movePreviewTab(
+  bindings: PreviewBindings,
+  ownerKey: string | null,
+  path: string,
+  toIndex: number
+): PreviewBindings {
+  if (!ownerKey) return bindings
+  const current = bindings.get(ownerKey)
+  if (!current || !Number.isInteger(toIndex)) return bindings
+  const from = current.tabs.indexOf(path)
+  if (from < 0) return bindings
+  const to = Math.max(0, Math.min(current.tabs.length - 1, toIndex))
+  if (to === from) return bindings
+  const tabs = current.tabs.slice()
+  const [moved] = tabs.splice(from, 1)
+  tabs.splice(to, 0, moved)
+  return withBinding(bindings, ownerKey, compose(tabs, current.active, current.preview, current.target))
+}
+
 export function previewTabsFor(bindings: PreviewBindings, ownerKey: string | null): PreviewTabs | undefined {
   if (!ownerKey) return undefined
   return bindings.get(ownerKey)
@@ -172,4 +207,89 @@ export function previewTabDetail(path: string, cwd: string): string {
   const root = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
   const relative = root && abs.toLowerCase().startsWith(`${root.toLowerCase()}/`) ? abs.slice(root.length + 1) : abs
   return relative
+}
+
+export function previewTabDirectory(path: string, cwd: string): string | undefined {
+  const relative = previewTabDetail(path, cwd)
+  const index = relative.lastIndexOf('/')
+  if (index < 0) return undefined
+  return relative.slice(0, index) || '/'
+}
+
+export interface PreviewBindingsStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+function validPath(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function parsePreviewBinding(value: unknown): PreviewTabs | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as { tabs?: unknown; active?: unknown; preview?: unknown }
+  if (!Array.isArray(raw.tabs)) return null
+  const tabs: string[] = []
+  for (const tab of raw.tabs) {
+    if (validPath(tab) && !tabs.includes(tab)) tabs.push(tab)
+  }
+  if (!tabs.length) return null
+  const trimmed = tabs.slice(0, MAX_PREVIEW_TABS)
+  const active = validPath(raw.active) && trimmed.includes(raw.active) ? raw.active : trimmed[0]
+  const preview = validPath(raw.preview) && trimmed.includes(raw.preview) ? raw.preview : null
+  return compose(trimmed, active, preview, undefined)
+}
+
+export function parsePreviewBindings(raw: string | null | undefined): PreviewBindings {
+  if (!raw) return new Map()
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return new Map()
+  }
+  if (!data || typeof data !== 'object') return new Map()
+  const owners = (data as { owners?: unknown }).owners
+  if (!owners || typeof owners !== 'object') return new Map()
+  const out = new Map<string, PreviewTabs>()
+  for (const [key, value] of Object.entries(owners as Record<string, unknown>)) {
+    if (!key) continue
+    const binding = parsePreviewBinding(value)
+    if (binding) out.set(key, binding)
+  }
+  while (out.size > MAX_PERSISTED_PREVIEW_OWNERS) {
+    const oldest = out.keys().next().value
+    if (oldest === undefined) break
+    out.delete(oldest)
+  }
+  return out
+}
+
+export function serializePreviewBindings(bindings: PreviewBindings): string {
+  const owners: Record<string, { tabs: string[]; active: string; preview?: string }> = {}
+  for (const [key, value] of bindings) {
+    if (!key || !value.tabs.length) continue
+    owners[key] = {
+      tabs: value.tabs.slice(0, MAX_PREVIEW_TABS),
+      active: value.active,
+      ...(value.preview ? { preview: value.preview } : {})
+    }
+  }
+  return JSON.stringify({ version: 1, owners })
+}
+
+export function readPreviewBindings(storage: PreviewBindingsStorage | null): PreviewBindings {
+  if (!storage) return new Map()
+  try {
+    return parsePreviewBindings(storage.getItem(PREVIEW_BINDINGS_STORAGE_KEY))
+  } catch {
+    return new Map()
+  }
+}
+
+export function writePreviewBindings(storage: PreviewBindingsStorage | null, bindings: PreviewBindings): void {
+  if (!storage) return
+  try {
+    storage.setItem(PREVIEW_BINDINGS_STORAGE_KEY, serializePreviewBindings(bindings))
+  } catch {}
 }

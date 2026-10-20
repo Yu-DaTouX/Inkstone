@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } from '../../../../shared/ipc'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { findAtQuery, replaceAtQuery } from './at-query'
+import type { ComposerKeyEvent } from './composer-keys'
+import { replaceTextRange, type ComposerAtomSpec, type TextSelection } from './composer-text'
 import { imageRefLabel, imageRefMatches, imageRefPrefix } from './image-refs'
 
 export interface ImageRefOption {
@@ -12,9 +14,13 @@ export interface ImageRefOption {
 }
 import { findSlashQuery, replaceSlashQuery } from './slash-query'
 
+export type SlashLoadStatus = 'idle' | 'loading' | 'error'
+
 export interface CompletionState {
   slashQuery: string | null
   slashMatches: SlashCommand[]
+  slashStatus: SlashLoadStatus
+  retrySlash: () => void
   atQuery: string | null
   atImages: ImageRefOption[]
   atMatches: string[]
@@ -29,7 +35,7 @@ export interface CompletionState {
   completeSlash: (command: SlashCommand) => void
   completeAt: (path: string) => void
   completeImage: (option: ImageRefOption) => void
-  handleKey: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean
+  handleKey: (event: ComposerKeyEvent) => boolean
 }
 
 interface Options {
@@ -37,6 +43,10 @@ interface Options {
   cursor: number | null
   setValue: (value: string) => void
   placeCursor: (cursor: number) => void
+  insertAtom?: (range: TextSelection, spec: ComposerAtomSpec, trailing?: string) => boolean
+  caretInCode?: () => boolean
+  isComposing?: () => boolean
+  composing?: boolean
 }
 
 export function commandSourceRank(command: SlashCommand): number {
@@ -59,7 +69,17 @@ export function firstClause(text?: string): string {
   return head.length > 24 ? `${head.slice(0, 23)}…` : head
 }
 
-export function useCompletion({ value, cursor, setValue, placeCursor }: Options): CompletionState {
+export function useCompletion({
+  value,
+  cursor,
+  setValue,
+  placeCursor,
+  insertAtom,
+  caretInCode,
+  isComposing,
+  composing = false
+}: Options): CompletionState {
+  const typedComposing = composing || (isComposing?.() ?? false)
   const commands = useStore((s) => s.commands)
   const commandUse = useStore((s) => s.commandUse)
   const commandsAt = useStore((s) => s.commandsAt)
@@ -92,11 +112,18 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
   const [atTruncated, setAtTruncated] = useState(false)
   const [atDismissed, setAtDismissed] = useState(false)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  const [slashStatus, setSlashStatus] = useState<SlashLoadStatus>('idle')
 
-  const slashRange = useMemo(() => findSlashQuery(value, cursor ?? value.length), [cursor, value])
-  const slashQuery = slashRange?.query ?? null
-  const atRange = useMemo(() => findAtQuery(value, cursor ?? value.length), [cursor, value])
-  const atQuery = atRange?.query ?? null
+  const inCode = caretInCode?.() ?? false
+  const slashRange = useMemo(
+    () => findSlashQuery(value, cursor ?? value.length, { inCode }),
+    [cursor, inCode, value]
+  )
+  const atRange = useMemo(() => findAtQuery(value, cursor ?? value.length, { inCode }), [cursor, inCode, value])
+  const frozen = useRef<{ slash: string | null; at: string | null }>({ slash: null, at: null })
+  if (!typedComposing) frozen.current = { slash: slashRange?.query ?? null, at: atRange?.query ?? null }
+  const slashQuery = typedComposing ? frozen.current.slash : slashRange?.query ?? null
+  const atQuery = typedComposing ? frozen.current.at : atRange?.query ?? null
 
   const atImages = useMemo<ImageRefOption[]>(() => {
     if (atQuery === null || atRange?.quoted) return []
@@ -126,11 +153,28 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
       })
   }, [commands, slashQuery, commandUse])
 
+  const loadCommands = useCallback(() => {
+    setSlashStatus('loading')
+    const before = useStore.getState().commandsAt
+    return reloadCommands().then(
+      () => {
+        const current = useStore.getState()
+        setSlashStatus(current.commandsAt > before || current.commands.length > 0 ? 'idle' : 'error')
+      },
+      () => setSlashStatus('error')
+    )
+  }, [reloadCommands])
+
   useEffect(() => {
     if (slashQuery === null) return
+    setSlashStatus('idle')
     if (Date.now() - commandsAt < 30_000) return
-    void reloadCommands()
-  }, [slashQuery, commandsAt, reloadCommands])
+    void loadCommands()
+  }, [slashQuery, commandsAt, loadCommands])
+
+  const retrySlash = useCallback(() => {
+    void loadCommands()
+  }, [loadCommands])
 
   useEffect(() => {
     if (atQuery === null) {
@@ -198,15 +242,22 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     }
   }, [activeCwd, activeGeneration, activeProjectId, activeRunnerId, activeSessionId, atQuery])
 
+  const slashReady = slashMatches.length > 0 || slashStatus === 'loading' || slashStatus === 'error'
   useEffect(() => {
-    if (slashQuery !== null && slashMatches.length > 0 && !slashDismissed) {
-      setMenu({ open: true, index: 0 })
+    if (typedComposing) return
+    if (slashQuery !== null && slashReady && !slashDismissed) {
+      setMenu((m) => (m.open ? m : { open: true, index: 0 }))
     } else if (atQuery !== null && slashMatches.length === 0 && !atDismissed && (atImages.length > 0 || paths.length > 0 || atLoading || atError)) {
-      setMenu({ open: true, index: 0 })
+      setMenu((m) => (m.open ? m : { open: true, index: 0 }))
     } else {
       setMenu((m) => (m.open ? { open: false, index: 0 } : m))
     }
-  }, [atDismissed, atError, atImages.length, atLoading, atQuery, paths.length, slashDismissed, slashMatches.length, slashQuery])
+  }, [atDismissed, atError, atImages.length, atLoading, atQuery, paths.length, slashDismissed, slashMatches.length, slashQuery, slashReady, typedComposing])
+
+  useEffect(() => {
+    if (typedComposing) return
+    setMenu((m) => (m.open ? { ...m, index: 0 } : m))
+  }, [slashQuery, typedComposing])
 
   useEffect(() => {
     setSlashDismissed(false)
@@ -223,12 +274,22 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
       const range = findSlashQuery(value, cursor ?? value.length)
       if (!range) return
       const next = replaceSlashQuery(value, range, command.name)
-      setValue(next.value)
-      placeCursor(next.cursor)
+      const atomRange = { start: range.start - 1, end: range.end }
+      const spec: ComposerAtomSpec = {
+        kind: 'command',
+        raw: `/${command.name}`,
+        path: command.name,
+        label: command.name
+      }
+      const trailing = next.cursor > atomRange.start + spec.raw.length ? ' ' : ''
+      if (!insertAtom?.(atomRange, spec, trailing)) {
+        setValue(next.value)
+        placeCursor(next.cursor)
+      }
       setMenu({ open: false, index: 0 })
       markCommandUsed(command.name)
     },
-    [cursor, markCommandUsed, placeCursor, setValue, value]
+    [cursor, insertAtom, markCommandUsed, placeCursor, setValue, value]
   )
 
   const completeAt = useCallback(
@@ -236,8 +297,13 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
       const range = findAtQuery(value, cursor ?? value.length)
       if (!range) return
       const next = replaceAtQuery(value, range, path)
-      setValue(next.value)
-      placeCursor(next.cursor)
+      const raw = `@${next.value.slice(range.start, next.cursor)}`
+      const spec: ComposerAtomSpec = { kind: 'mention', raw, path }
+      const trailing = path.endsWith('/') || /^\s/.test(value.slice(range.end)) ? '' : ' '
+      if (!insertAtom?.({ start: range.start - 1, end: range.end }, spec, trailing)) {
+        setValue(next.value)
+        placeCursor(next.cursor)
+      }
       if (!path.endsWith('/')) {
         setAtDismissed(true)
         setMenu({ open: false, index: 0 })
@@ -245,7 +311,7 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
         setAtDismissed(false)
       }
     },
-    [cursor, placeCursor, setValue, value]
+    [cursor, insertAtom, placeCursor, setValue, value]
   )
 
   const completeImage = useCallback(
@@ -254,19 +320,37 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
       if (!range) return
       const after = value.slice(range.end)
       const insert = after.startsWith(' ') ? option.label : `${option.label} `
-      setValue(`${value.slice(0, range.start)}${insert}${after}`)
-      placeCursor(range.start + option.label.length + 1)
+      const next = replaceTextRange(value, { start: range.start, end: range.end }, insert)
+      const spec: ComposerAtomSpec = {
+        kind: 'image',
+        raw: `@${option.label}`,
+        path: option.label,
+        label: option.label
+      }
+      const trailing = insert.startsWith(option.label) ? insert.slice(option.label.length) : ''
+      if (!insertAtom?.({ start: range.start - 1, end: range.end }, spec, trailing)) {
+        setValue(next.text)
+        placeCursor(next.cursor)
+      }
       setAtDismissed(true)
       setMenu({ open: false, index: 0 })
     },
-    [cursor, placeCursor, setValue, value]
+    [cursor, insertAtom, placeCursor, setValue, value]
   )
 
   const setIndex = useCallback((index: number) => setMenu((m) => ({ ...m, index })), [])
 
-  const handleKey = (event: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+  const handleKey = (event: ComposerKeyEvent): boolean => {
     const count = slashMatches.length > 0 ? slashMatches.length : atImages.length + paths.length
-    if (!menu.open || count === 0) return false
+    if (!menu.open) return false
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (slashMatches.length > 0 || slashQuery !== null) setSlashDismissed(true)
+      else setAtDismissed(true)
+      setMenu({ open: false, index: 0 })
+      return true
+    }
+    if (count === 0) return false
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setMenu((m) => ({ ...m, index: (m.index + 1) % count }))
@@ -275,6 +359,11 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       setMenu((m) => ({ ...m, index: (m.index - 1 + count) % count }))
+      return true
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      setMenu((m) => ({ ...m, index: event.key === 'Home' ? 0 : count - 1 }))
       return true
     }
     if (event.key === 'Enter' || event.key === 'Tab') {
@@ -287,19 +376,14 @@ export function useCompletion({ value, cursor, setValue, placeCursor }: Options)
       }
       return true
     }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      if (slashMatches.length > 0) setSlashDismissed(true)
-      else setAtDismissed(true)
-      setMenu({ open: false, index: 0 })
-      return true
-    }
     return false
   }
 
   return {
     slashQuery,
     slashMatches,
+    slashStatus,
+    retrySlash,
     atQuery,
     atImages,
     atMatches: paths,

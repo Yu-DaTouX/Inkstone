@@ -17,6 +17,24 @@ export function composerPrompt(value: string): '$' | '›' {
   return value.startsWith('!') ? '$' : '›'
 }
 
+export interface ComposerPlaceholderState {
+  bash: boolean
+  session: boolean
+  firstRun: boolean
+}
+
+export type ComposerPlaceholderKey =
+  | 'composer.phBash'
+  | 'composer.phSession'
+  | 'composer.phFirst'
+  | 'composer.phDraft'
+
+export function composerPlaceholderKey(state: ComposerPlaceholderState): ComposerPlaceholderKey {
+  if (state.bash) return 'composer.phBash'
+  if (state.session) return 'composer.phSession'
+  return state.firstRun ? 'composer.phFirst' : 'composer.phDraft'
+}
+
 export interface ComposerSubmitState {
   running: boolean
   hasText: boolean

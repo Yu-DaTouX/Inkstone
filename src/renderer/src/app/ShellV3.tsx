@@ -17,7 +17,7 @@ import { SplitDragLayer } from '../features/split/SplitDragLayer'
 import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
 import { runSplitShortcut } from '../features/split/split-keys'
 import { useSplitPersistence } from '../features/split/use-split-persistence'
-import { SIDEBAR_WIDTH_DEFAULT, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
+import { SIDEBAR_DRAG_COLLAPSE, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, SIDEBAR_WIDTH_STEP_LARGE, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
 import { SideBySide } from './SideBySide'
 import { collapsedPanes, sessionTiles } from './SideBySideLayout'
 import { CommandPalette } from '../features/commands/CommandPalette'
@@ -25,6 +25,7 @@ import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
+import { BrowserSiteAskDialog } from '../features/browser/SiteAskDialog'
 import { SettingsPanelV3 } from './SettingsPanelV3'
 import { openSettingsDialog } from '../features/settings/root/deep-link'
 import { RunAttentionToasts } from '../patterns/RunAttentionToasts'
@@ -46,6 +47,7 @@ import { createPanePopoutClient } from '../features/workbench/pane-popout-client
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
 import { isSubagentPaneId, toolPanes } from '../features/workbench/subagent-panes'
+import { CHAT_MIN_WIDTH_PX, TILE_GAP, TILE_MIN_WIDTH_PX } from '../features/workbench/tile-tree'
 import { usePruneSubagentPanes } from '../features/workbench/use-subagent-panes'
 import { panePopoutBridge, paneTerminalBridge } from '../../auxwin/pane-bridge'
 import { pickOwnedTerminal, selectOwnedTerminals } from '../features/terminal/terminal-session'
@@ -104,6 +106,7 @@ export default function ShellV3(): ReactElement {
   }, [sidebarWidth])
   const sidebarWidthRef = useRef(sidebarWidth)
   sidebarWidthRef.current = sidebarWidth
+  const [sidebarDragHidden, setSidebarDragHidden] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
   const [sidebarCompact, setSidebarCompact] = useState(() => shouldAutoCollapseSidebar(window.innerWidth, sidebarWidth))
   useEffect(() => {
@@ -122,13 +125,6 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('resize', apply)
   }, [])
   const sidebarMax = sidebarMaxForWindow(windowWidth)
-  const [workspaceWidth, setWorkspaceWidth] = useState(() => {
-    try { const value = Number(localStorage.getItem('inkstone.v3.workspaceWidth')); return value >= 280 ? value : 420 } catch { return 420 }
-  })
-  useEffect(() => {
-    const timer = setTimeout(() => { try { localStorage.setItem('inkstone.v3.workspaceWidth', String(workspaceWidth)) } catch { } }, 150)
-    return () => clearTimeout(timer)
-  }, [workspaceWidth])
   const [tilesWidth, setTilesWidth] = useState(() => readTilesWidth(localStorage))
   const tilesFrame = useRef(0)
   const resizeTiles = useCallback((next: number) => {
@@ -141,7 +137,9 @@ export default function ShellV3(): ReactElement {
     return () => clearTimeout(timer)
   }, [tilesWidth])
   const bodyRef = useRef<HTMLDivElement>(null)
+  const chatRef = useRef<HTMLDivElement>(null)
   const [bodyWidth, setBodyWidth] = useState(1000)
+  const [measuredChatWidth, setMeasuredChatWidth] = useState(0)
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (!body) return
@@ -150,8 +148,6 @@ export default function ShellV3(): ReactElement {
     setBodyWidth(body.clientWidth)
     return () => observer.disconnect()
   }, [])
-  const maxWorkspace = Math.max(280, bodyWidth - 360)
-  const shownWorkspaceWidth = Math.min(workspaceWidth, maxWorkspace)
   useV3RouteSync()
   const { lang, setLang } = useI18n()
 
@@ -170,6 +166,7 @@ export default function ShellV3(): ReactElement {
   const workspaceOpen = useUiV3((s) => s.workspaceOpen)
   const workspaceTab = useUiV3((s) => s.workspaceTab)
   const workspacePanes = useUiV3((s) => s.workspacePanes)
+  const workspaceFocus = useUiV3((s) => s.workspaceFocus)
   const hasMessages = useStore((s) => s.messages.length > 0)
   const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
   const workspaceShown = route.name === 'chat' && workspaceOpen && workspaceTab !== 'overview'
@@ -219,12 +216,11 @@ export default function ShellV3(): ReactElement {
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const onboardDecided = useRef(false)
   const [narrow, setNarrow] = useState<boolean>(() => window.matchMedia('(max-width: 899px)').matches)
-  const [panelMode, setPanelMode] = useState<'docked' | 'full'>(() => (window.innerWidth < 900 ? 'full' : 'docked'))
-  const [panelMounted, setPanelMounted] = useState(workspaceOpen)
-  useEffect(() => { if (workspaceOpen) setPanelMounted(true) }, [workspaceOpen])
 
   const owner = useWorkspaceOwner()
   useChatFilePreview(owner.key)
+  const panelMode: 'docked' | 'full' =
+    bodyWidth > 0 && bodyWidth < CHAT_MIN_WIDTH_PX + TILE_MIN_WIDTH_PX + TILE_GAP ? 'full' : 'docked'
 
   const [paneClient] = useState(() => {
     const bridge = panePopoutBridge()
@@ -331,16 +327,6 @@ export default function ShellV3(): ReactElement {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
-  useEffect(() => {
-    const apply = (): void => {
-      const w = window.innerWidth
-      setPanelMode(w < 900 ? 'full' : 'docked')
-    }
-    apply()
-    window.addEventListener('resize', apply)
-    return () => window.removeEventListener('resize', apply)
-  }, [])
-
   const displayed = useMemo<SplitSessionRef | null>(
     () =>
       displayedSessionOf({
@@ -364,8 +350,19 @@ export default function ShellV3(): ReactElement {
   usePruneSubagentPanes()
   useSplitPersistence()
   const singlePane = !collapsedPanes(split, splitParked)
-  const chatWidth = bodyWidth - (workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0)
-  const toastInset = workspaceShown && panelMode === 'docked' ? shownWorkspaceWidth : 0
+  useLayoutEffect(() => {
+    if (route.name !== 'chat') return
+    const chat = chatRef.current
+    if (!chat) return
+    setMeasuredChatWidth(chat.clientWidth)
+    const observer = new ResizeObserver(() => setMeasuredChatWidth(chat.clientWidth))
+    observer.observe(chat)
+    return () => observer.disconnect()
+  }, [route.name])
+  const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
+  const chatClipped = route.name === 'chat' && workspaceShown && (panelMode === 'full' || workspaceFocus)
+  const chatClipWidth = chatClipped && measuredChatWidth > 0 ? measuredChatWidth : undefined
+  const toastInset = workspaceShown && panelMode === 'docked' && chatWidth > 0 ? Math.max(0, bodyWidth - chatWidth) : 0
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
@@ -434,7 +431,6 @@ export default function ShellV3(): ReactElement {
 
   useEffect(() => {
     if (nativeSessionPanel?.mode !== 'tree') return
-    setPanelMounted(true)
     useUiV3.getState().setWorkspaceTab('branch')
     useUiV3.getState().setWorkspaceOpen(true)
     useStore.getState().closeNativeSessionPanel()
@@ -443,7 +439,6 @@ export default function ShellV3(): ReactElement {
   const openWorkspaceTab = (tab: WorkbenchTabId): Promise<boolean> => {
     useUiV3.getState().navigate({ name: 'chat' })
     if (revealToolTile(tab)) return Promise.resolve(true)
-    setPanelMounted(true)
     useUiV3.getState().setWorkspaceTab(tab)
     if (!WORKBENCH_ACTIVE_TABS.has(tab)) {
       useUiV3.getState().setWorkspaceOpen(true)
@@ -546,6 +541,22 @@ export default function ShellV3(): ReactElement {
             if (tab) void openWorkspaceTab(tab)
             return
           }
+          case 'workspaceClosePane': {
+            const current = useUiV3.getState()
+            if (current.route.name !== 'chat' || !current.workspaceOpen || current.workspaceTab === 'overview') return
+            event.preventDefault()
+            const tab = current.workspaceTab
+            current.setWorkspaceFocus(false)
+            current.closeWorkspacePane(tab)
+            return
+          }
+          case 'workspaceToggleMaximize': {
+            const current = useUiV3.getState()
+            if (current.route.name !== 'chat' || !current.workspaceOpen || current.workspaceTab === 'overview') return
+            event.preventDefault()
+            current.toggleWorkspaceExpanded()
+            return
+          }
           default:
             if (ui.route.name === 'chat' && runSplitShortcut(shortcut, event.target)) {
               event.preventDefault()
@@ -582,10 +593,10 @@ export default function ShellV3(): ReactElement {
 
   return (
     <V3ErrorBoundary>
-      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen ? 'open' : 'closed'} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
+      <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
         {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={reveal.start} onPointerLeave={reveal.cancel} /> : null}
         <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
-        {sidebarOpen && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} onReset={() => setSidebarWidth(SIDEBAR_WIDTH_DEFAULT)} /> : null}
+        {(sidebarOpen || sidebarDragHidden) && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} largeStep={SIDEBAR_WIDTH_STEP_LARGE} collapseBelow={SIDEBAR_DRAG_COLLAPSE} onCollapse={() => useUiV3.getState().setSidebarOpen(false)} onDragHide={setSidebarDragHidden} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} /> : null}
         {sidebarCompact && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
@@ -611,58 +622,59 @@ export default function ShellV3(): ReactElement {
           <div
             className="v3-body"
             ref={bodyRef}
-            style={{ '--workspace-width': `${shownWorkspaceWidth}px` } as CSSProperties}
             data-workspace={workspaceShown ? 'open' : 'closed'}
             data-workspace-mode={panelMode}
           >
-            <Suspense fallback={null}>
             {route.name === 'schedule' ? (
-              <ScheduleTasksPage />
+              <Suspense fallback={null}>
+                <ScheduleTasksPage />
+              </Suspense>
             ) : route.name === 'collab' ? (
-              <CollabPage />
+              <Suspense fallback={null}>
+                <CollabPage />
+              </Suspense>
             ) : route.name === 'usage' ? (
-              <UsagePage />
-            ) : (
-              <div className="v3-chat" data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
-                <ConnBanner />
-                <SideBySide split={split} narrow={splitParked} />
-                {sessionBarShown ? (
-                  <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
-                    <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
-                    <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
-                  </aside>
-                ) : null}
-              </div>
-            )}
-            </Suspense>
-            {panelMounted ? (
-              <WorkbenchPanel
-                owner={owner}
-                open={workspaceShown}
-                mode={panelMode}
-                panes={WORKBENCH_PANES}
-                onClose={() => useUiV3.getState().setWorkspaceOpen(false)}
-                onRequestActivation={requestActivation}
-                onPopout={(tab) => {
-                  if (!paneClient || !owner) return
-                  if (tab === 'terminal') {
-                    void ownedTerminalId(owner.key).then((terminalId) => {
-                      if (terminalId) void paneClient.openTerminal(owner, terminalId)
-                    })
-                    return
-                  }
-                  if (tab === 'browser') {
-                    const viewId = useStore.getState().browserState.activeTabId
-                    if (viewId) void paneClient.open('browser', owner, { viewId })
-                    return
-                  }
-                  if (tab === 'context') void paneClient.open('context', owner)
-                }}
-              />
+              <Suspense fallback={null}>
+                <UsagePage />
+              </Suspense>
             ) : null}
-            {workspaceShown && panelMode === 'docked' ? (
-              <Splitter className="v3-workspace-resizer ui-splitter--gutter" orientation="vertical" value={bodyWidth - shownWorkspaceWidth} min={360} max={bodyWidth - 280} step={16} aria-label={lang === 'en-US' ? 'Resize workspace' : '调整工作区宽度'} onChange={(left) => setWorkspaceWidth(bodyWidth - left)} onReset={() => setWorkspaceWidth(420)} />
-            ) : null}
+            <WorkbenchPanel
+              owner={owner}
+              open={workspaceShown}
+              mode={panelMode}
+              panes={WORKBENCH_PANES}
+              chat={
+                route.name === 'chat' ? (
+                  <div className="v3-chat" ref={chatRef} data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, width: chatClipWidth, flex: chatClipWidth ? 'none' : undefined } as CSSProperties}>
+                    <ConnBanner />
+                    <SideBySide split={split} narrow={splitParked} />
+                    {sessionBarShown ? (
+                      <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
+                        <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
+                        <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
+                      </aside>
+                    ) : null}
+                  </div>
+                ) : undefined
+              }
+              onClose={() => useUiV3.getState().setWorkspaceOpen(false)}
+              onRequestActivation={requestActivation}
+              onPopout={(tab) => {
+                if (!paneClient || !owner) return
+                if (tab === 'terminal') {
+                  void ownedTerminalId(owner.key).then((terminalId) => {
+                    if (terminalId) void paneClient.openTerminal(owner, terminalId)
+                  })
+                  return
+                }
+                if (tab === 'browser') {
+                  const viewId = useStore.getState().browserState.activeTabId
+                  if (viewId) void paneClient.open('browser', owner, { viewId })
+                  return
+                }
+                if (tab === 'context') void paneClient.open('context', owner)
+              }}
+            />
           </div>
         </main>
       </div>
@@ -685,6 +697,7 @@ export default function ShellV3(): ReactElement {
       <SplitDragLayer />
       <NoticeBridge />
       <PeerApprovalDialog />
+      <BrowserSiteAskDialog />
     </V3ErrorBoundary>
   )
 }

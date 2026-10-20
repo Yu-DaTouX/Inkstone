@@ -1,28 +1,30 @@
 import { uiText } from '../../i18n/ui-text'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react'
-import { ArrowLeft, ChevronDown, GitCompare, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
+import { ChevronDown, ChevronRight, GitCompare, List, RefreshCw } from 'lucide-react'
+import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
-import { Badge, Button, IconButton, ListBox, ListBoxItem, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
+import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n } from '../../i18n'
-import { fileStatusLabel, porcelainFileStatus } from '../../lib/file-status'
-import { DiffView } from '../diff'
+import type { DiffViewMode } from '../diff'
 import { changesText } from './text'
-import { PaneTools, usePaneChrome } from '../workbench/pane-chrome'
+import { PaneTools, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import {
   WORKING_SCOPE,
   commitScope,
   compareLabel,
   isValidSha,
-  resolvePatchSource,
+  scopeKey,
   scopeToRequest,
   type ChangesScopeKind,
   type ChangesScopeState
 } from './changes-scope'
-import { ImageCompare } from './ImageCompare'
+import { ChangesFileDiff } from './ChangesFileDiff'
+import { buildFileTree, createLimitedQueue, flattenFileTree, isLargeDiff, sortChangeItems } from './file-list'
+import { useChangesFileList } from './use-file-list'
 import type {
   ChangeItem,
   ChangesGitSource,
-  ChangesImagePair,
   ChangesOwner,
   ChangesPatch,
   ChangesSnapshot,
@@ -41,8 +43,26 @@ export interface ChangesPaneProps {
 
 type YanGitBridge = NonNullable<Window['yan']['git']>
 
+const LAYOUT_KEY = 'inkstone.changes.layout'
+
 function bridge(): YanGitBridge | undefined {
   return typeof window === 'undefined' ? undefined : window.yan?.git
+}
+
+function readLayout(): DiffViewMode {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === 'split' ? 'split' : 'unified'
+  } catch {
+    return 'unified'
+  }
+}
+
+function writeLayout(mode: DiffViewMode): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, mode)
+  } catch {
+    return
+  }
 }
 
 function defaultGitSource(): ChangesGitSource {
@@ -51,7 +71,7 @@ function defaultGitSource(): ChangesGitSource {
       const git = bridge()
       if (!git) return { repo: null, error: uiText('state.error.gitUnavailable') }
       const res = await git.state(cwd)
-      return { repo: res.repo, error: res.error }
+      return { repo: res.repo, expected: res.expected, error: res.error }
     },
     async untracked(cwd: string): Promise<string[]> {
       const git = bridge()
@@ -102,6 +122,7 @@ function mergeItems(entries: ChangeEntry[], untracked: string[]): ChangeItem[] {
       path: entry.path,
       status: `${entry.x}${entry.y}`,
       untracked: entry.untracked,
+      origPath: entry.origPath,
       added: entry.added,
       removed: entry.removed
     })
@@ -109,7 +130,7 @@ function mergeItems(entries: ChangeEntry[], untracked: string[]): ChangeItem[] {
   for (const path of untracked) {
     if (!map.has(path)) map.set(path, { path, status: '??', untracked: true })
   }
-  return [...map.values()].sort((a, b) => a.path.localeCompare(b.path))
+  return sortChangeItems([...map.values()])
 }
 
 function classifyProblem(error: string, text: ReturnType<typeof changesText>): string {
@@ -132,13 +153,12 @@ type ListOutcome =
   | { ok: true; items: ChangeItem[]; head: string | null; meta: ListMeta; patches: Record<string, GitChangePatch> }
   | { ok: false; error: string }
 
-type PatchMode = 'text' | 'binary' | 'too-large' | 'image'
-
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
 export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: ChangesPaneProps): ReactElement {
   const uiLang = useI18n().lang
-  const text = useMemo(() => changesText(lang ?? uiLang), [lang, uiLang])
+  const resolvedLang = lang ?? uiLang
+  const text = useMemo(() => changesText(resolvedLang), [resolvedLang])
   const source = useMemo(() => gitSource ?? defaultGitSource(), [gitSource])
   const loader = useMemo(() => loadPatch ?? defaultLoadPatch(), [loadPatch])
   const chrome = usePaneChrome()
@@ -146,13 +166,17 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const cwd = owner.cwd
   const generation = owner.generation ?? 0
   const ownerId = `${ownerKey}\n${cwd}`
+  const fileList = useChangesFileList()
+  const schedule = useMemo(() => createLimitedQueue(4), [])
 
   const [tick, setTick] = useState(0)
   const [loading, setLoading] = useState(false)
   const [repo, setRepo] = useState<GitStateView['repo']>(null)
+  const [expected, setExpected] = useState<GitActionExpected | undefined>(undefined)
   const [error, setError] = useState('')
   const [listError, setListError] = useState('')
   const [items, setItems] = useState<ChangeItem[]>([])
+  const [patches, setPatches] = useState<Record<string, GitChangePatch>>({})
   const [meta, setMeta] = useState<ListMeta>(EMPTY_META)
   const [headSha, setHeadSha] = useState<string | null>(null)
   const [scopeState, setScopeState] = useState<{ ownerId: string; scope: ChangesScopeState }>({
@@ -161,20 +185,24 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   })
   const [shaDraft, setShaDraft] = useState('')
   const [shaInvalid, setShaInvalid] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [patch, setPatch] = useState('')
-  const [patchMode, setPatchMode] = useState<PatchMode>('text')
-  const [patchImage, setPatchImage] = useState<ChangesImagePair | null>(null)
-  const [patchTruncated, setPatchTruncated] = useState(false)
-  const [patchLoading, setPatchLoading] = useState(false)
-  const [patchError, setPatchError] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set())
+  const [activePath, setActivePath] = useState<string | null>(null)
+  const [reveal, setReveal] = useState<{ path: string; seq: number } | null>(null)
+  const [layout, setLayout] = useState<DiffViewMode>(readLayout)
+  const [message, setMessage] = useState('')
+  const [actionBusy, setActionBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
 
   const seqRef = useRef(0)
-  const patchSeqRef = useRef(0)
-  const patchesRef = useRef<Record<string, GitChangePatch>>({})
+  const initRef = useRef('')
   const lastOwnerRef = useRef(ownerId)
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const revealAtRef = useRef(0)
 
   const scope = scopeState.ownerId === ownerId ? scopeState.scope : WORKING_SCOPE
+  const initKey = `${ownerId}|${scopeKey(scope)}|${generation}`
   const scopeKind = scope.kind
   const scopeSha = scope.sha
   const request = useMemo(() => scopeToRequest({ kind: scopeKind, sha: scopeSha }), [scopeKind, scopeSha])
@@ -197,13 +225,10 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setError('')
     setListError('')
     setRepo(null)
+    setExpected(undefined)
     setItems([])
+    setPatches({})
     setMeta(EMPTY_META)
-    patchesRef.current = {}
-    setSelected(null)
-    setPatch('')
-    setPatchTruncated(false)
-    setPatchError('')
     const listPromise: Promise<ListOutcome> = (async (): Promise<ListOutcome> => {
       try {
         if (source.changes) {
@@ -240,16 +265,26 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       .then(([stateRes, listRes]) => {
         if (!alive || seq !== seqRef.current) return
         setRepo(stateRes.repo)
+        setExpected(stateRes.expected)
         setError(stateRes.error ?? '')
         if (listRes.ok) {
           setListError('')
           setItems(listRes.items)
+          setPatches(listRes.patches)
           setMeta(listRes.meta)
-          patchesRef.current = listRes.patches
+          if (initRef.current !== initKey) {
+            initRef.current = initKey
+            setExpanded(isLargeDiff(listRes.items) ? new Set() : new Set(listRes.items.map((item) => item.path)))
+            setCollapsedDirs(new Set())
+            setActivePath(null)
+          } else {
+            setExpanded((prev) => new Set(listRes.items.filter((item) => prev.has(item.path)).map((item) => item.path)))
+          }
           if (listRes.head) setHeadSha(listRes.head)
         } else {
           setListError(listRes.error)
           setItems([])
+          setPatches({})
         }
       })
       .finally(() => {
@@ -260,62 +295,76 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     }
   }, [ownerKey, cwd, generation, tick, source, request])
 
+  const large = useMemo(() => isLargeDiff(items), [items])
+  const narrow = fileList.paneWidth > 0 && fileList.paneWidth < 560
+  const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
+
+  const treeRows = useMemo(() => flattenFileTree(buildFileTree(items), collapsedDirs), [items, collapsedDirs])
+  const itemByPath = useMemo(() => new Map(items.map((item) => [item.path, item])), [items])
+
+  const selectFile = useCallback((path: string): void => {
+    setActivePath(path)
+    setExpanded((prev) => {
+      if (prev.has(path)) return prev
+      const next = new Set(prev)
+      next.add(path)
+      return next
+    })
+    setReveal((prev) => ({ path, seq: (prev?.seq ?? 0) + 1 }))
+  }, [])
+
+  const toggleFile = useCallback((path: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }, [])
+
+  const toggleDir = useCallback((path: string): void => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
-    setPatchImage(null)
-    setPatchMode('text')
-    if (!selected) {
-      setPatch('')
-      setPatchTruncated(false)
-      setPatchLoading(false)
-      setPatchError('')
-      return
-    }
-    const seq = ++patchSeqRef.current
-    const origin = resolvePatchSource(selected, patchesRef.current[selected])
-    setPatchError('')
-    setPatchTruncated(false)
-    if (origin.kind === 'inline') {
-      setPatch(origin.patch)
-      setPatchLoading(false)
-      return
-    }
-    setPatch('')
-    if (origin.kind === 'binary' || origin.kind === 'too-large') {
-      setPatchMode(origin.kind)
-      setPatchLoading(false)
-      return
-    }
-    if (!loader || !request) {
-      setPatchLoading(false)
-      return
-    }
-    let alive = true
-    setPatchLoading(true)
-    loader(cwd, selected, { scope: request, images: origin.kind === 'image' })
-      .then((value) => {
-        if (!alive || seq !== patchSeqRef.current) return
-        if (origin.kind === 'image' && value.image) {
-          setPatchMode('image')
-          setPatchImage(value.image)
-          return
+    if (!reveal) return
+    const scroller = scrollerRef.current
+    const node = scroller?.querySelector<HTMLElement>(`[data-path="${CSS.escape(reveal.path)}"]`)
+    if (!scroller || !node) return
+    revealAtRef.current = Date.now()
+    scroller.scrollTop += node.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  }, [reveal])
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (!scroller) return undefined
+    let frame = 0
+    const onScroll = (): void => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        if (Date.now() - revealAtRef.current < 250) return
+        const top = scroller.getBoundingClientRect().top + 32
+        for (const section of scroller.querySelectorAll<HTMLElement>('[data-path]')) {
+          if (section.getBoundingClientRect().bottom > top) {
+            const path = section.dataset.path ?? null
+            setActivePath((prev) => (prev === path ? prev : path))
+            return
+          }
         }
-        if (value.binary && !value.patch) {
-          setPatchMode('binary')
-          return
-        }
-        setPatch(value.patch)
-        setPatchTruncated(value.truncated === true)
       })
-      .catch((e: unknown) => {
-        if (alive && seq === patchSeqRef.current) setPatchError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
-        if (alive && seq === patchSeqRef.current) setPatchLoading(false)
-      })
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
     return () => {
-      alive = false
+      scroller.removeEventListener('scroll', onScroll)
+      if (frame) cancelAnimationFrame(frame)
     }
-  }, [selected, loader, cwd, tick, request])
+  }, [items.length])
 
   const chooseScope = (kind: ChangesScopeKind): void => {
     if (kind === scope.kind) return
@@ -333,10 +382,48 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setScopeState({ ownerId, scope: commitScope(shaDraft) })
   }
 
+  const refresh = useCallback((): void => {
+    setActionError('')
+    setActionNotice('')
+    setTick((n) => n + 1)
+  }, [])
+
+  const runAction = useCallback(
+    async (kind: 'stage-all' | 'commit'): Promise<void> => {
+      const git = bridge()
+      if (!git || !expected || actionBusy) return
+      setActionBusy(true)
+      setActionError('')
+      setActionNotice('')
+      try {
+        const requestId = `changes-${kind}-${Date.now()}`
+        const res =
+          kind === 'commit'
+            ? await git.action({ requestId, cwd, expected, kind: 'commit', message: message.trim() })
+            : await git.action({ requestId, cwd, expected, kind: 'stage-all' })
+        if (!res.ok) {
+          setActionError(text.commitFailed(res.failure?.message ?? ''))
+          return
+        }
+        if (kind === 'commit') {
+          setActionNotice(text.commitDone(res.summary ?? ''))
+          setMessage('')
+        }
+        setTick((n) => n + 1)
+      } catch (e: unknown) {
+        setActionError(text.commitFailed(e instanceof Error ? e.message : String(e)))
+      } finally {
+        setActionBusy(false)
+      }
+    },
+    [actionBusy, cwd, expected, message, text]
+  )
+
   const canDiff = loader !== undefined
   const hasEntries = Boolean(source.changes || source.entries)
   const hasTracked = (repo?.stagedCount ?? 0) + (repo?.unstagedCount ?? 0) > 0
-  const showingDetail = Boolean(selected) && canDiff
+  const hasWork = (repo?.changedCount ?? 0) > 0
+  const canAct = Boolean(bridge()?.action) && Boolean(expected) && hasWork && owner.active && !actionBusy
   const scopeLabels: Record<ChangesScopeKind, string> = {
     working: text.scopeWorking,
     branch: text.scopeBranch,
@@ -368,20 +455,94 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   ) : null
 
   const refreshButton = (
-    <IconButton
-      size="sm"
-      aria-label={text.refresh}
-      title={text.refresh}
-      isDisabled={loading}
-      onPress={() => setTick((n) => n + 1)}
-    >
+    <IconButton size="sm" aria-label={text.refresh} title={text.refresh} isDisabled={loading} onPress={refresh}>
       <RefreshCw size={14} aria-hidden="true" />
     </IconButton>
   )
 
+  const listToggle = fileList.canFit ? (
+    <IconButton
+      size="sm"
+      aria-label={fileList.shown ? text.hideFileList : text.showFileList}
+      title={fileList.shown ? text.hideFileList : text.showFileList}
+      aria-pressed={fileList.shown}
+      onPress={fileList.toggle}
+    >
+      <List size={14} aria-hidden="true" />
+    </IconButton>
+  ) : null
+
+  const displayMenu: PaneMenuItem[] = [
+    ...(fileList.canFit
+      ? [{ id: 'changes:files', label: fileList.shown ? text.hideFileList : text.showFileList, checked: fileList.shown, onAction: fileList.toggle }]
+      : []),
+    { id: 'changes:collapse', label: text.collapseAll, onAction: () => setExpanded(new Set()) },
+    {
+      id: 'changes:expand',
+      label: text.expandAll,
+      disabled: large,
+      onAction: () => setExpanded(new Set(items.map((item) => item.path)))
+    },
+    {
+      id: 'changes:split',
+      label: layout === 'split' && narrow ? `${text.layoutSplit} · ${text.splitNeedsWidth}` : text.layoutSplit,
+      checked: layout === 'split',
+      onAction: () => {
+        const next: DiffViewMode = layout === 'split' ? 'unified' : 'split'
+        setLayout(next)
+        writeLayout(next)
+      }
+    },
+    { id: 'changes:refresh', label: text.refresh, onAction: refresh }
+  ]
+  usePaneMenu('changes', displayMenu)
+
+  const onTreeKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    const row = (event.target as HTMLElement).closest<HTMLElement>('[data-row-path]')
+    if (!row) return
+    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-row-path]')]
+    const index = rows.indexOf(row)
+    const path = row.dataset.rowPath ?? ''
+    const isDir = row.dataset.rowKind === 'dir'
+    const focus = (at: number): void => rows[Math.max(0, Math.min(rows.length - 1, at))]?.focus()
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      focus(index + 1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      focus(index - 1)
+      return
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      focus(0)
+      return
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      focus(rows.length - 1)
+      return
+    }
+    if (!isDir) return
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      if (collapsedDirs.has(path)) toggleDir(path)
+      else focus(index + 1)
+      return
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      if (!collapsedDirs.has(path)) toggleDir(path)
+      else focus(index - 1)
+    }
+  }
+
   const head = chrome ? (
     <PaneTools>
       {scopeMenu}
+      {listToggle}
       {refreshButton}
     </PaneTools>
   ) : (
@@ -390,51 +551,16 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       <div className="changes-pane__actions">
         <Badge tone="neutral">{text.readOnly}</Badge>
         {scopeMenu}
+        {listToggle}
         {refreshButton}
       </div>
     </header>
   )
 
-  if (showingDetail && selected) {
-    return (
-      <section className={cx('changes-pane', className)} aria-label={text.title}>
-        {head}
-        {!owner.active ? <p className="changes-pane__hint">{text.inactiveHint}</p> : null}
-        <div className="changes-pane__detail">
-          <div className="changes-pane__detail-head">
-            <Button size="sm" variant="ghost" icon={<ArrowLeft size={14} aria-hidden="true" />} onPress={() => setSelected(null)}>
-              {text.back}
-            </Button>
-            <span className="changes-pane__detail-path" title={selected}>
-              {selected}
-            </span>
-          </div>
-          <div className="changes-pane__detail-body">
-            {patchLoading ? (
-              <p className="changes-pane__hint">{text.patchLoading}</p>
-            ) : patchError ? (
-              <p className="changes-pane__hint changes-pane__hint--error" role="alert">{text.patchError(patchError)}</p>
-            ) : patchMode === 'binary' ? (
-              <p className="changes-pane__hint">{text.patchBinary}</p>
-            ) : patchMode === 'too-large' ? (
-              <p className="changes-pane__hint">{text.patchTooLarge}</p>
-            ) : patchMode === 'image' && patchImage ? (
-              <ImageCompare before={patchImage.before} after={patchImage.after} text={text} />
-            ) : (
-              <>
-                {patchTruncated ? <p className="changes-pane__hint">{text.patchTruncated}</p> : null}
-                <DiffView patch={patch} lang={lang} showFileHeader={false} />
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-    )
-  }
-
   const problem = repo ? '' : error ? classifyProblem(error, text) : text.notRepo
   const compareWith = compareLabel(scope, meta)
   const needsSha = scope.kind === 'commit' && !request
+  const showEmpty = items.length === 0
 
   return (
     <section className={cx('changes-pane', className)} aria-label={text.title}>
@@ -504,43 +630,146 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       {repo ? (
         <>
           {!hasEntries && hasTracked ? <p className="changes-pane__hint">{text.entriesLimited}</p> : null}
-          {listError ? <p className="changes-pane__hint changes-pane__hint--error" role="alert">{text.entriesFailed(listError)}</p> : null}
+          {listError ? (
+            <div className="changes-pane__problem" role="alert">
+              <span>{text.entriesFailed(listError)}</span>
+              <Button size="sm" onPress={refresh}>
+                {text.retry}
+              </Button>
+            </div>
+          ) : null}
           {!canDiff ? <p className="changes-pane__hint">{text.noDiffChannel}</p> : null}
           {needsSha ? <p className="changes-pane__hint">{text.shaNeeded}</p> : null}
-          {items.length === 0 ? (
+          {showEmpty ? (
             scope.kind === 'working' ? (
-              !hasTracked ? <p className="changes-pane__hint">{text.clean}</p> : null
+              !hasTracked && !listError ? <p className="changes-pane__hint">{text.clean}</p> : null
             ) : !loading && !listError && !needsSha ? (
               <p className="changes-pane__hint">{text.scopeEmpty}</p>
             ) : null
           ) : (
-            <ListBox
-              aria-label={text.title}
-              className="changes-pane__list"
-              selectionMode={canDiff ? 'single' : 'none'}
-              selectedKeys={selected ? [selected] : []}
-              onSelectionChange={(keys) => {
-                const first = [...keys][0]
-                setSelected(first === undefined ? null : String(first))
-              }}
-            >
-              {items.map((item) => (
-                <ListBoxItem key={item.path} id={item.path} textValue={item.path} className="changes-pane__item">
-                  <span className="changes-pane__status" data-status={porcelainFileStatus(item.status)} title={item.status}>{fileStatusLabel(porcelainFileStatus(item.status), lang ?? uiLang)}</span>
-                  <span className="changes-pane__path" title={item.path}>
-                    {item.path}
-                  </span>
-                  {item.added !== undefined || item.removed !== undefined ? (
-                    <span className="changes-pane__delta">
-                      <span className="changes-pane__delta-add">+{item.added ?? 0}</span>
-                      <span className="changes-pane__delta-del">−{item.removed ?? 0}</span>
-                    </span>
-                  ) : null}
-                </ListBoxItem>
-              ))}
-            </ListBox>
+            <div className="changes-pane__layout" ref={fileList.hostRef} data-dragging={fileList.dragging || undefined}>
+              {fileList.shown ? (
+                <div className="changes-pane__files" style={{ width: fileList.width }}>
+                  <div className="changes-pane__tree" role="tree" aria-label={text.filesTitle} onKeyDown={onTreeKeyDown}>
+                    {treeRows.map((row) =>
+                      row.kind === 'dir' ? (
+                        <button
+                          key={`dir:${row.path}`}
+                          type="button"
+                          role="treeitem"
+                          aria-level={row.depth + 1}
+                          aria-expanded={!collapsedDirs.has(row.path)}
+                          data-row-path={row.path}
+                          data-row-kind="dir"
+                          className="changes-pane__folder"
+                          style={{ paddingLeft: `${8 + row.depth * 12}px` }}
+                          onClick={() => toggleDir(row.path)}
+                        >
+                          <ChevronRight size={12} aria-hidden="true" data-open={!collapsedDirs.has(row.path) || undefined} />
+                          <span className="changes-pane__folder-name">{row.name}</span>
+                        </button>
+                      ) : (
+                        <button
+                          key={`file:${row.path}`}
+                          type="button"
+                          role="treeitem"
+                          aria-level={row.depth + 1}
+                          aria-selected={activePath === row.path}
+                          data-row-path={row.path}
+                          data-row-kind="file"
+                          className="changes-pane__row"
+                          style={{ paddingLeft: `${8 + row.depth * 12}px` }}
+                          title={row.path}
+                          onClick={() => selectFile(row.path)}
+                        >
+                          <FileTypeIcon name={row.path} size={12} />
+                          <span className="changes-pane__row-name">{row.name}</span>
+                          {itemByPath.get(row.path)?.added !== undefined || itemByPath.get(row.path)?.removed !== undefined ? (
+                            <span className="changes-pane__row-counts">
+                              <span className="changes-pane__delta-add">+{itemByPath.get(row.path)?.added ?? 0}</span>
+                              <span className="changes-pane__delta-del">−{itemByPath.get(row.path)?.removed ?? 0}</span>
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <div
+                    className="changes-pane__divider"
+                    role="separator"
+                    tabIndex={0}
+                    aria-label={text.resizeFileList}
+                    aria-orientation="vertical"
+                    aria-valuemin={160}
+                    aria-valuemax={Math.round(fileList.limit)}
+                    aria-valuenow={Math.round(fileList.width)}
+                    onPointerDown={fileList.onDividerPointerDown}
+                    onKeyDown={fileList.onDividerKeyDown}
+                    onDoubleClick={fileList.resetWidth}
+                  />
+                </div>
+              ) : fileList.canFit ? (
+                <div
+                  className="changes-pane__edge"
+                  role="separator"
+                  tabIndex={0}
+                  aria-label={text.showFileList}
+                  aria-orientation="vertical"
+                  aria-valuemin={0}
+                  aria-valuemax={640}
+                  aria-valuenow={0}
+                  onClick={fileList.show}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowRight') return
+                    event.preventDefault()
+                    fileList.show()
+                  }}
+                />
+              ) : null}
+              <div className="changes-pane__main" ref={scrollerRef} tabIndex={-1}>
+                {large ? <p className="changes-pane__banner">{text.largeDiffBanner}</p> : null}
+                {items.map((item) => (
+                  <ChangesFileDiff
+                    key={item.path}
+                    item={item}
+                    entry={patches[item.path]}
+                    cwd={cwd}
+                    request={request ?? { kind: 'working' }}
+                    loader={loader}
+                    schedule={schedule}
+                    tick={tick}
+                    lang={resolvedLang}
+                    text={text}
+                    mode={mode}
+                    expanded={expanded.has(item.path)}
+                    onToggle={toggleFile}
+                    onRetry={refresh}
+                  />
+                ))}
+              </div>
+            </div>
           )}
-          {canDiff && items.length > 0 ? <p className="changes-pane__hint">{text.selectFile}</p> : null}
+          {scope.kind === 'working' ? (
+            <div className="changes-pane__commit">
+              <TextField
+                aria-label={text.commitMessage}
+                className="changes-pane__commit-field"
+                inputClassName="changes-pane__commit-input"
+                placeholder={text.commitPlaceholder}
+                value={message}
+                onChange={setMessage}
+              />
+              <Button size="sm" isDisabled={!canAct} onPress={() => void runAction('stage-all')}>
+                {text.stageAll}
+              </Button>
+              <Button size="sm" variant="primary" isDisabled={!canAct || !message.trim()} onPress={() => void runAction('commit')}>
+                {text.commitAction}
+              </Button>
+            </div>
+          ) : null}
+          {actionBusy ? <p className="changes-pane__hint">{text.commitBusy}</p> : null}
+          {actionError ? <p className="changes-pane__hint changes-pane__hint--error" role="alert">{actionError}</p> : null}
+          {actionNotice ? <p className="changes-pane__hint">{actionNotice}</p> : null}
         </>
       ) : null}
     </section>

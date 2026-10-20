@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto'
-import { isApprovalChoice, type ApprovalChoice, type ApprovalOwner, type ApprovalRequest, type ApprovalSnapshot } from '../shared/approval'
+import {
+  isApprovalChoice,
+  normalizeApprovalFeedback,
+  type ApprovalAnswer,
+  type ApprovalOwner,
+  type ApprovalRequest,
+  type ApprovalSnapshot
+} from '../shared/approval'
 import { ApprovalLedger, type ApprovalAnswerIdentity } from './approval-ledger'
 import { ApprovalSessionGrants } from './approval-session-grants'
 
 export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
 
 interface Waiter {
-  resolve: (choice: ApprovalChoice | null) => void
+  resolve: (answer: ApprovalAnswer | null) => void
   timer: ReturnType<typeof setTimeout>
 }
 
@@ -31,10 +38,10 @@ export class ApprovalBroker {
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
-  ask(input: ApprovalAskInput): Promise<ApprovalChoice | null> {
+  ask(input: ApprovalAskInput): Promise<ApprovalAnswer | null> {
     if (!this.deps.canAsk()) return Promise.resolve(null)
     const scope = scopeOf(input)
-    if (this.ledger.isCurrent(scope, input.owner) && this.grants.allows(scope, input)) return Promise.resolve('once')
+    if (this.ledger.isCurrent(scope, input.owner) && this.grants.allows(scope, input)) return Promise.resolve({ choice: 'once' })
     const request = this.ledger.add({ ...input, id: randomUUID(), createdAt: Date.now() }, scope)
     if (!request) return Promise.resolve(null)
     return new Promise((resolve) => {
@@ -45,7 +52,7 @@ export class ApprovalBroker {
     })
   }
 
-  answer(id: string, choice: unknown, identity?: ApprovalAnswerIdentity): boolean {
+  answer(id: string, choice: unknown, identity?: ApprovalAnswerIdentity, feedback?: unknown): boolean {
     if (!isApprovalChoice(choice)) return false
     const begun = this.ledger.begin(id, identity)
     if (!begun.ok) {
@@ -55,9 +62,10 @@ export class ApprovalBroker {
     this.publish()
     if (choice === 'session') {
       this.grants.grant(scopeOf(begun.request), begun.request)
-      return this.settle(id, 'once')
+      return this.settle(id, { choice: 'once' })
     }
-    return this.settle(id, choice)
+    const reason = choice === 'deny' ? normalizeApprovalFeedback(feedback) : undefined
+    return this.settle(id, reason ? { choice, feedback: reason } : { choice })
   }
 
   cancel(match: (request: ApprovalRequest) => boolean): number {
@@ -92,14 +100,14 @@ export class ApprovalBroker {
     return settled
   }
 
-  private settle(id: string, choice: ApprovalChoice | null): boolean {
+  private settle(id: string, answer: ApprovalAnswer | null): boolean {
     const waiter = this.waiters.get(id)
     if (!this.ledger.finish(id) || !waiter) return false
     this.waiters.delete(id)
     clearTimeout(waiter.timer)
     this.deps.close(id)
     this.publish()
-    waiter.resolve(choice)
+    waiter.resolve(answer)
     return true
   }
 

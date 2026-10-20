@@ -12,10 +12,8 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const q = (s) => document.querySelector(s)
   const qa = (s) => [...document.querySelectorAll(s)]
-  const setVal = (el, v) => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, v)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  const composer = window.__yanComposer
+  const setVal = (el, v) => composer.set(v, el)
   const store = window.__yanStore
   const noticeLog = []
   store.subscribe((s) => {
@@ -97,7 +95,7 @@
 
   const draftValue = () => {
     const el = q('[data-testid="composer-input"]')
-    return { text: el ? el.value : null, count: qa('[data-testid="composer-input"]').length, same: el === ta, connected: ta.isConnected }
+    return { text: el ? composer.text(el) : null, count: qa('[data-testid="composer-input"]').length, same: el === ta, connected: ta.isConnected }
   }
   const runtimeKey = () => {
     const s = store.getState()
@@ -110,7 +108,24 @@
   }
   log('  撤回前 key: ' + JSON.stringify(runtimeKey()))
   const retractTarget = [...store.getState().queue.steering, ...store.getState().queue.followUp][0]
-  const retractButton = q('[data-testid="queue-retract"]')
+  const rowMenuItem = async (text, testId) => {
+    const all = (sel) => [...document.querySelectorAll(sel)]
+    const menus = () => all('.cq-menu')
+    menus().at(-1)?.querySelector('[role="menuitem"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && menus().length; i++) await sleep(100)
+    const toggle = document.querySelector('[data-testid="queue-toggle"]')
+    if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click()
+    let row = null
+    for (let i = 0; i < 30 && !row; i++) {
+      row = all('[data-testid="queue-row"]').find((r) => text == null || (r.textContent ?? '').includes(text)) ?? null
+      if (!row) await sleep(100)
+    }
+    row?.querySelector('[data-testid="queue-actions"]')?.click()
+    for (let i = 0; i < 30 && !menus().length; i++) await sleep(100)
+    await sleep(150)
+    return menus()[0]?.querySelector(`[data-testid="${testId}"]`) ?? null
+  }
+  const retractButton = retractTarget ? await rowMenuItem(retractTarget.text, 'queue-retract') : null
   if (retractTarget && retractButton) {
     retractButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     const noticesText = () => noticeLog.map((n) => n.text).join(' | ')
@@ -191,9 +206,8 @@
   const dups = items.filter((i) => i.text === DUP)
   if (dups.length >= 2) {
     ok(true, `同一句话两次入队都保留了（${dups.length} 条，各自独立）`)
-    const rows = qa('[data-testid="queue-row"]')
-    const row = rows.find((r) => (r.textContent ?? '').includes(DUP))
-    const btn = row ? row.querySelector('[data-testid="queue-retract"]') : null
+    const btn = await rowMenuItem(DUP, 'queue-retract')
+    const row = qa('[data-testid="queue-row"]').find((r) => (r.textContent ?? '').includes(DUP))
     log(
       '  同文本行 = ' +
         (row ? JSON.stringify((row.textContent ?? '').trim().slice(0, 40)) : '无') +

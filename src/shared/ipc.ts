@@ -96,6 +96,7 @@ export interface UIToolCall {
   argsRaw?: string
   status: 'pending' | 'running' | 'ok' | 'error'
   cancelled?: boolean
+  denied?: boolean
   output?: string
   images?: UIMessageImage[]
   details?: unknown
@@ -668,6 +669,7 @@ export interface AppSettings {
   guardOutsideWrites?: boolean
   permissionMode?: PermissionMode
   guardAllowRoots?: string[]
+  browserAllowedSites?: string[]
   recentCwds: string[]
   projectNames: Record<string, string>
   projects: ProjectRecord[]
@@ -1074,7 +1076,10 @@ export interface SubagentBridge {
   discard(id: string): Promise<{ ok: boolean; error?: string }>
 }
 
+export type BrowserSiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
+
 export type MainPushBody =
+  | { ch: 'browser-site-ask'; payload: { id: string; origin: string; url: string } }
   | { ch: 'sync'; payload: UIMessage[] }
   | { ch: 'msg-add'; payload: UIMessage }
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
@@ -1532,7 +1537,7 @@ export interface YanBridge {
   piNativeSettings(): Promise<PiNativeSettingsResult>
   setPiNativeSettings(patch: Partial<PiNativeSettings>): Promise<PiNativeSettingsResult>
 
-  answerApproval(id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity): Promise<{ ok: boolean }>
+  answerApproval(id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string): Promise<{ ok: boolean }>
   pendingApprovals(): Promise<ApprovalRequest[]>
   setSteeringMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
@@ -1621,6 +1626,8 @@ export interface YanBridge {
 
   openPath(p: string): Promise<{ ok: boolean; error?: string }>
   revealPath(p: string): Promise<{ ok: boolean }>
+  copyImage(dataUrl: string): Promise<{ ok: boolean; error?: string }>
+  saveImage(dataUrl: string, suggestedName?: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
   backup(action: 'create' | 'verify'): Promise<import('./data-backup').BackupResult>
   storage: {
     info(): Promise<StorageInfoView>
@@ -1655,7 +1662,8 @@ export interface YanBridge {
   describeFiles(paths: string[]): Promise<FileRefInfo[]>
   readFileText(path: string): Promise<FileTextResult>
   readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
-  prepareHtmlArtifact(path: string): Promise<HtmlArtifactPreviewResult>
+  readPreviewBytes(path: string, cwd?: string): Promise<PreviewBytes>
+  prepareHtmlArtifact(path: string, cwd?: string): Promise<HtmlArtifactPreviewResult>
   releaseHtmlArtifact(url: string): Promise<void>
   prepareHtmlWidget(html: string): Promise<HtmlArtifactPreviewResult>
   statPreview(path: string, cwd?: string): Promise<{ ok: boolean; abs: string; mtimeMs: number; size: number; error?: string }>
@@ -1714,6 +1722,11 @@ export interface YanBridge {
     close(): Promise<BrowserState>
     navigate(url: string): Promise<{ ok: boolean; error?: string }>
     siteAccess(sessionId: string, url: string): Promise<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>
+    allowedSites(): Promise<string[]>
+    addAllowedSite(value: string): Promise<{ result: BrowserSiteAddResult; list: string[]; origin?: string }>
+    removeAllowedSite(value: string): Promise<{ removed: boolean; list: string[] }>
+    clearAllowedSites(): Promise<string[]>
+    siteAskAnswer(id: string, allowed: boolean): Promise<void>
     back(): Promise<{ ok: boolean; error?: string }>
     forward(): Promise<{ ok: boolean; error?: string }>
     reload(): Promise<{ ok: boolean; error?: string }>
@@ -1783,6 +1796,7 @@ export interface YanBridge {
     resize(id: string, cols: number, rows: number): Promise<boolean>
     kill(id: string): Promise<boolean>
     attach(id: string): Promise<TerminalSnapshot | null>
+    clear(id: string): Promise<boolean>
   }
 }
 
@@ -1982,6 +1996,17 @@ export interface FilePreview {
   media?: FilePreviewMedia
   encoding?: FilePreviewEncoding
   outsideRoot?: boolean
+}
+
+export interface PreviewBytes {
+  ok: boolean
+  abs: string
+  name: string
+  size: number
+  mtimeMs?: number
+  bytes?: Uint8Array
+  error?: string
+  issue?: FilePreviewIssue
 }
 
 export type FilePreviewIssue =

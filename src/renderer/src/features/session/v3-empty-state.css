@@ -36,6 +36,43 @@
     margin-top: var(--s-12);
   }
 
+  .v3-empty-waiting {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin-top: var(--s-16);
+    animation: v3-empty-rise 260ms var(--ease) both;
+  }
+
+  .v3-empty-waiting-head {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-regular);
+  }
+
+  .v3-empty-waiting-row {
+    gap: var(--s-8);
+    padding: 0 var(--s-8);
+  }
+
+  .v3-empty-waiting-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .v3-empty-waiting-ask {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
   @container (max-width: 760px) {
     .v3-empty-cols {
       grid-template-columns: minmax(0, 1fr);

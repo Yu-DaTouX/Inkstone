@@ -1,6 +1,6 @@
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
-import { app, shell, BrowserWindow, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, clipboard, ClipboardItem, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { openBlockedByExtension } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
@@ -8,6 +8,7 @@ import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path
 import { constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { loadModelPricing } from './model-pricing'
 import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
@@ -50,7 +51,7 @@ import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, qui
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
-import { createPreviewSiteGate } from './preview-site-gate'
+import { createPreviewSiteGate, type PreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
@@ -96,14 +97,14 @@ import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
-import type { ApprovalRequest } from '../shared/approval'
+import { withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
 import { registerCollabIpc } from './ipc/collab-ipc'
-import type { ConsentDecision } from '../shared/tool-consent'
+import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
@@ -149,6 +150,25 @@ function reportMainError(kind: string, error: unknown): void {
 
 process.on('uncaughtException', (error) => reportMainError('uncaughtException', error))
 process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
+
+const IMAGE_DATA_URL = /^data:image\/([a-z0-9.+-]+);base64,/i
+const IMAGE_EXTENSIONS: Record<string, string> = { png: 'png', jpeg: 'jpg', jpg: 'jpg', gif: 'gif', webp: 'webp', bmp: 'bmp' }
+
+function imageSaveBytes(dataUrl: unknown): { data: Buffer; ext: string } | null {
+  if (typeof dataUrl !== 'string') return null
+  const head = IMAGE_DATA_URL.exec(dataUrl)
+  if (!head) return null
+  const ext = IMAGE_EXTENSIONS[head[1].toLowerCase()]
+  if (!ext) return null
+  const data = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
+  return data.length ? { data, ext } : null
+}
+
+function imageFileName(suggested: unknown, ext: string): string {
+  const raw = typeof suggested === 'string' ? basename(suggested).replace(/[:*?"<>|]+/g, '').trim() : ''
+  const stem = raw ? raw.replace(/\.[a-z0-9]{1,5}$/i, '') : ''
+  return `${stem.slice(0, 80) || 'image'}.${ext}`
+}
 
 if (ELECTRON_USER_DATA_DIR) {
   app.setPath('userData', ELECTRON_USER_DATA_DIR)
@@ -365,7 +385,7 @@ const subagentService: SubagentService = new SubagentService({
       reasons: Array.isArray(params.reasons) ? params.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6).map(item => item.slice(0, 200)) : [],
       cwd, canRemember: false
     })
-    return answer === 'once'
+    return answer?.choice === 'once'
   },
   onChange: (run) => {
     if (run.status !== 'starting' && run.status !== 'running') {
@@ -559,6 +579,28 @@ function push(msg: MainPush): void {
   if (msg.ch === 'runs') auxWindows?.notifyRuns()
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
+}
+
+let browserSiteGate: PreviewSiteGate | null = null
+const browserSiteAsks = new Map<string, (allowed: boolean) => void>()
+
+function askBrowserSiteApproval(origin: string, url: string): Promise<boolean> {
+  if (!win || win.isDestroyed()) return Promise.resolve(false)
+  const id = randomUUID()
+  return new Promise<boolean>((resolve) => {
+    const settle = (allowed: boolean): void => {
+      if (!browserSiteAsks.delete(id)) return
+      clearTimeout(timer)
+      resolve(allowed)
+    }
+    const timer = setTimeout(() => settle(false), 120_000)
+    browserSiteAsks.set(id, settle)
+    push({ ch: 'browser-site-ask', payload: { id, origin, url } })
+  })
+}
+
+function answerBrowserSiteApproval(id: string, allowed: boolean): void {
+  browserSiteAsks.get(id)?.(allowed)
 }
 
 function botNotificationIcon(model: ModelRef, kind: NotificationBotKind): string | undefined {
@@ -1055,7 +1097,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
   const st = ag.getState()
   if (st) pushFrom(id, { ch: 'state', payload: st }, expected)
   try {
-    let payload = await ag.getMessages()
+    let payload = await ag.getMessages({ includeStreaming: true })
     if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
     if (opts.chainHistory && st?.sessionFile) {
       const chain = await readHistoryWithArtifacts(st.sessionFile).catch(() => null)
@@ -1436,9 +1478,10 @@ async function requestSessionMove(request: SessionMovePrompt): Promise<SessionMo
       ],
       cwd: request.cwd, canRemember: false
     })
-    if (choice !== 'once' && choice !== 'remember') {
-      return { decision: choice === 'deny' ? 'denied' : 'no-answer', target,
-        message: choice === 'deny' ? '用户拒绝移动，继续在当前文件夹工作。' : '没有得到答复，会话留在当前文件夹。' }
+    if (choice?.choice !== 'once' && choice?.choice !== 'remember') {
+      return { decision: choice?.choice === 'deny' ? 'denied' : 'no-answer', target,
+        ...(choice?.feedback ? { feedback: choice.feedback } : {}),
+        message: choice?.choice === 'deny' ? withDenyFeedback('用户拒绝移动，继续在当前文件夹工作。', choice.feedback) : '没有得到答复，会话留在当前文件夹。' }
     }
     if (runners !== registry || !pinnedTargetMatches(origin)) return { decision: 'invalid', target, message: '批准期间来源会话已变化，没有移动。' }
     scheduled = true
@@ -1814,7 +1857,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           return response.response === 1
         },
         getPermissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
-        confirmDanger: async (request): Promise<ConsentDecision | null> => {
+        confirmDanger: async (request): Promise<ApprovalDecision | null> => {
           const rememberDirs = [...new Set((request.outsideDirs ?? []).filter((p) => typeof p === 'string' && isAbsolute(p)).map((p) => dirname(resolve(p))))]
           const isPermission = request.kind === 'permission'
           const isDelete = request.kind === 'delete'
@@ -1836,13 +1879,15 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             ...(rememberDirs.length ? { rememberDirs } : {}),
             canRemember: rememberDirs.length > 0
           })
-          if (choice === 'remember') {
+          if (choice?.choice === 'remember') {
             if (rememberDirs.length) {
               const current = await getSettings()
               await patchSettings({ guardAllowRoots: [...(current.guardAllowRoots ?? []), ...rememberDirs] })
             }
           }
-          return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
+          if (!choice) return null
+          const allowed = choice.choice === 'once' || choice.choice === 'remember'
+          return choice.feedback ? { decision: allowed ? 'allow' : 'deny', feedback: choice.feedback } : { decision: allowed ? 'allow' : 'deny' }
         },
         cancelApprovals: () => {
           approvals.cancel((pending) => pending.runId === id && !pending.subagentId)
@@ -1854,7 +1899,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           approvals.retire(id)
         },
         requestSessionMove,
-        confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentDecision | null> => {
+        confirmToolConsent: async (request: ToolConsentPrompt): Promise<ConsentAnswer | null> => {
           const { parts, verdict } = request
           const choice = await approvals.ask({
             runId: id, sessionId: runners?.agentOf(id)?.getState()?.sessionId,
@@ -1869,9 +1914,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
               verdict.danger ? '危险类别不会因为同意次数多而自动放行。' : '同类操作多次同意后会自动放行；可在「设置 → 能力」里改为始终询问或清空记录。'
             ],
             cwd: request.cwd,
-            canRemember: false
+            canRemember: false,
+            ...(verdict.danger ? { danger: verdict.danger } : {})
           })
-          return choice === 'once' || choice === 'remember' ? 'allow' : choice === 'deny' ? 'deny' : null
+          if (choice?.choice === 'once' || choice?.choice === 'remember') return { decision: 'allow' }
+          if (choice?.choice !== 'deny') return null
+          return choice.feedback ? { decision: 'deny', feedback: choice.feedback } : { decision: 'deny' }
         }
       }),
     onChanged: () => {
@@ -2200,7 +2248,7 @@ function registerIpc(): void {
   )
   handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 
-  handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity)) }))
+  handle('yan:approvalAnswer', async (id: string, choice: unknown, identity?: unknown, feedback?: unknown) => ({ ok: approvals.answer(String(id ?? ''), choice, approvalIdentityFrom(identity), feedback) }))
   handle('yan:approvalPending', async () => approvals.list())
   handle('yan:piInfo', async () => {
     const s = await getSettings()
@@ -2416,13 +2464,13 @@ function registerIpc(): void {
     const rid = runners?.activeRunnerId
     const c = ac()?.getConn()
     if (c) push({ ch: 'proc', payload: { state: c.state, detail: c.detail } })
-    const st = ac()?.getState()
-    if (st) {
-      if (rid) pushFrom(rid, { ch: 'state', payload: st })
-      else push({ ch: 'state', payload: st })
+    if (rid) void pushRunnerSnapshot(rid)
+    else {
+      const st = ac()?.getState()
+      if (st) push({ ch: 'state', payload: st })
+      void ac()?.refreshStats()
+      void ac()?.refreshTodos()
     }
-    void ac()?.refreshStats()
-    void ac()?.refreshTodos()
     if (browser) push({ ch: 'browser-state', payload: browser.getState() })
     pushRunners()
   })
@@ -2471,6 +2519,28 @@ function registerIpc(): void {
     if (!p || !existsSync(p)) return { ok: false }
     shell.showItemInFolder(p)
     return { ok: true }
+  })
+
+  handle('yan:image:copy', async (dataUrl: unknown) => {
+    const bytes = imageSaveBytes(dataUrl)
+    if (!bytes) return { ok: false, error: 'image:invalid' }
+    const mime = `image/${bytes.ext === 'jpg' ? 'jpeg' : bytes.ext}`
+    await clipboard.write([new ClipboardItem({ [mime]: new Blob([bytes.data], { type: mime }) })])
+    return { ok: true }
+  })
+
+  handle('yan:image:save', async (dataUrl: unknown, suggestedName?: unknown) => {
+    if (!win) return { ok: false, error: 'window:missing' }
+    const bytes = imageSaveBytes(dataUrl)
+    if (!bytes) return { ok: false, error: 'image:invalid' }
+    const r = await dialog.showSaveDialog(win, {
+      title: '保存图片',
+      defaultPath: join(app.getPath('pictures'), imageFileName(suggestedName, bytes.ext)),
+      filters: [{ name: '图片', extensions: [bytes.ext] }]
+    })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    await writeFile(r.filePath, bytes.data)
+    return { ok: true, path: r.filePath }
   })
 
   handle('yan:pickImages', async (): Promise<Attachment[]> => {
@@ -2616,22 +2686,15 @@ function registerIpc(): void {
 
 
   const previewSites = createPreviewSiteGate({
-    confirm: async (origin) => {
-      if (!win || win.isDestroyed()) return false
-      const response = await dialog.showMessageBox(win, {
-        type: 'question',
-        title: '允许打开网站',
-        message: `允许在内置浏览器打开 ${origin}？`,
-        detail: '同一会话里每个站点只询问一次；选择不允许后，本会话不会再打开该站点。',
-        buttons: ['不允许', '允许'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true
-      })
-      return response.response === 1
+    confirm: (origin, url) => askBrowserSiteApproval(origin, url),
+    store: {
+      load: async () => (await getSettings()).browserAllowedSites ?? [],
+      save: (list) => void patchSettings({ browserAllowedSites: list }).catch(() => undefined)
     }
   })
-  registerBrowserIpc(ipc, () => browser, previewSites)
+  browserSiteGate = previewSites
+  void previewSites.ready()
+  registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval)
 
   registerPeerIpc(ipc, peerClient)
 
@@ -3032,7 +3095,7 @@ app.whenReady().then(async () => {
   registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
-  browser = new BrowserController(() => win, push)
+  browser = new BrowserController(() => win, push, () => browserSiteGate)
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)

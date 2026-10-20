@@ -1,4 +1,5 @@
 import type { Usage, UIMessage, UIMessageImage, UIToolCall } from '../shared/ipc'
+import { isDangerDenial } from '../shared/danger-block'
 import { modelErrorNotice } from '../shared/model-errors'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { estimateCost } from '../shared/model-pricing'
@@ -157,6 +158,14 @@ export function normalizeMessage(
 
   if (m.role === 'toolResult') {
     const images = imagesOf(m.content, localizeImage)
+    const output = Array.isArray(m.content)
+      ? m.content
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text ?? '')
+          .join('')
+      : typeof m.content === 'string'
+        ? m.content
+        : ''
     return {
       id,
       ...entry,
@@ -170,14 +179,8 @@ export function normalizeMessage(
           details: m.details,
           status: m.isError && !m.cancelled ? 'error' : 'ok',
           ...(m.cancelled ? { cancelled: true } : {}),
-          output: Array.isArray(m.content)
-            ? m.content
-                .filter((c) => c.type === 'text')
-                .map((c) => c.text ?? '')
-                .join('')
-            : typeof m.content === 'string'
-              ? m.content
-              : '',
+          ...(m.isError && !m.cancelled && isDangerDenial(output) ? { denied: true } : {}),
+          output,
           ...(images ? { images } : {})
         }
       ],

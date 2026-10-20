@@ -31,6 +31,9 @@ try {
   const output = join(work, 'move.mjs')
   await build({ entryPoints: ['src/main/session-move.ts'], outfile: output, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
   const { captureMoveContinuation, movedSessionContinuationPrompt, rewriteSessionCwd } = await import(pathToFileURL(output).href)
+  const approvalOutput = join(work, 'approval.mjs')
+  await build({ entryPoints: ['src/shared/approval.ts'], outfile: approvalOutput, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const { withDenyFeedback } = await import(pathToFileURL(approvalOutput).href)
   const agentSource = await readFile('src/main/agent.ts', 'utf8')
   const agentAst = ts.createSourceFile('agent.ts', agentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const methods = []
@@ -95,9 +98,9 @@ try {
       },
       guardExecute: () => hooks.busy ? { ok: false, error: 'fixture busy' } : { ok: true }
     }
-    context = { runners: registry, shuttingDown: false, sameRuntimeEnvelope, movedSessionContinuationPrompt, resolve, isAbsolute,
+    context = { runners: registry, shuttingDown: false, sameRuntimeEnvelope, movedSessionContinuationPrompt, withDenyFeedback, resolve, isAbsolute,
       validateCwd: async cwd => hooks.invalidCwd ? ({ ok: false, error: 'fixture invalid cwd' }) : ({ ok: true, cwd }),
-      approvals: { ask: async () => { await hooks.approval?.(context, origin); return hooks.choice ?? 'once' } },
+      approvals: { ask: async () => { await hooks.approval?.(context, origin); return { choice: hooks.choice ?? 'once', ...(hooks.feedback ? { feedback: hooks.feedback } : {}) } } },
       getSettings: async () => ({ projects: [{ id: 'project', cwd: target }], recentCwds: [] }),
       patchSettings: async () => { throw new Error('unexpected project creation') },
       rewriteSessionCwd: async (...args) => { if (hooks.rewriteFails) throw new Error('fixture write failure'); moved.push(args); await hooks.rewrite?.(context) },
@@ -136,6 +139,9 @@ try {
     f = fixture(hooks); await f.request(); await tick()
     ok(f.moved.length === moved && f.sent.length === 0 && f.events.length === 0, name + ' does not move or continue')
   }
+  f = fixture({ choice: 'deny', feedback: 'stay here' })
+  const deniedWithReason = await f.request()
+  ok(deniedWithReason.decision === 'denied' && deniedWithReason.feedback === 'stay here' && deniedWithReason.message.includes('stay here'), 'deny feedback reaches the move result message')
   for (const [name, hooks, didMove] of [
     ['manual stop', { approval: (_, a) => { a.loopGuardContinuationVersion++ } }, true],
     ['model failure', { approval: (_, a) => { a.sessionMoveFailureVersion++ } }, true],

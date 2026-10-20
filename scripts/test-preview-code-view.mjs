@@ -21,6 +21,11 @@ const highlight = await load('lib/code-highlight.ts')
 const settingsModel = await load('features/preview/file-view-settings.ts')
 const state = await load('features/workbench/preview-state.ts')
 const tabMenu = await load('features/preview/preview-tab-menu.ts')
+const find = await load('features/preview/code-find.ts')
+const goToLine = await load('features/preview/code-go-to-line.ts')
+const lineComment = await load('features/preview/code-line-comment.ts')
+const tabReorder = await load('features/preview/tab-reorder.ts')
+const tabStrip = await load('features/preview/preview-tab-strip.ts')
 
 let passed = 0
 const check = (name, fn) => {
@@ -217,6 +222,259 @@ check('标签键盘：Delete/Backspace 关闭，Shift+F10/菜单键打开菜单'
   assert.equal(tabMenu.previewTabKeyAction('F10', { ...none, shift: true }), 'menu')
   assert.equal(tabMenu.previewTabKeyAction('ContextMenu', none), 'menu')
   assert.equal(tabMenu.previewTabKeyAction('a', none), null)
+})
+
+check('换行续行缩进：行首列数按 Tab 宽度换算，空白行归零', () => {
+  assert.deepEqual(lines.wrapIndentColumns([':root {', '  a;', '', '\tb', '   '], 4), [0, 2, 0, 4, 0])
+  assert.deepEqual(lines.wrapIndentColumns(['  \tx'], 8), [8])
+  assert.deepEqual(lines.wrapIndentColumns([], 4), [])
+})
+
+check('查找：字面量不分大小写，可开关大小写与全词', () => {
+  const texts = ['const a = A;', 'a variable', 'Aa']
+  const plain = find.findMatches(texts, 'a')
+  assert.equal(plain.invalid, false)
+  assert.deepEqual(plain.matches.map((m) => [m.line, m.start, m.end]), [
+    [0, 6, 7],
+    [0, 10, 11],
+    [1, 0, 1],
+    [1, 3, 4],
+    [1, 6, 7],
+    [2, 0, 1],
+    [2, 1, 2]
+  ])
+  const cased = find.findMatches(texts, 'A', { matchCase: true, wholeWord: false, regexp: false })
+  assert.deepEqual(cased.matches.map((m) => [m.line, m.start]), [[0, 10], [2, 0]])
+  const word = find.findMatches(texts, 'a', { matchCase: true, wholeWord: true, regexp: false })
+  assert.deepEqual(word.matches.map((m) => [m.line, m.start]), [[0, 6], [1, 0]])
+})
+
+check('查找：正则与无效模式，零长度匹配不卡死，结果按上限截断', () => {
+  const texts = ['foo(1) bar(2)', 'baz']
+  const regex = find.findMatches(texts, '\\(\\d\\)', { matchCase: false, wholeWord: false, regexp: true })
+  assert.deepEqual(regex.matches.map((m) => [m.line, m.start, m.end]), [[0, 3, 6], [0, 10, 13]])
+  assert.equal(find.findMatches(texts, '(', { matchCase: false, wholeWord: false, regexp: true }).invalid, true)
+  assert.equal(find.findMatches(texts, 'x*', { matchCase: false, wholeWord: false, regexp: true }).matches.length, 0)
+  const capped = find.findMatches(['aaaa'], 'a', find.DEFAULT_FIND_OPTIONS, 3)
+  assert.equal(capped.matches.length, 3)
+  assert.equal(capped.capped, true)
+  assert.equal(find.findMatches([], 'a').matches.length, 0)
+  assert.equal(find.findMatches(['a'], '').matches.length, 0)
+})
+
+check('查找：步进环绕、状态、从当前行起选首个匹配', () => {
+  assert.equal(find.stepFindIndex(-1, 1, 4), 0)
+  assert.equal(find.stepFindIndex(3, 1, 4), 0)
+  assert.equal(find.stepFindIndex(0, -1, 4), 3)
+  assert.equal(find.stepFindIndex(0, 1, 0), -1)
+  assert.deepEqual(find.findStatus(-1, 0, false), { current: 0, total: 0, capped: false })
+  assert.deepEqual(find.findStatus(2, 10, true), { current: 3, total: 10, capped: true })
+  const matches = [{ line: 2, start: 0, end: 1 }, { line: 5, start: 0, end: 1 }]
+  assert.equal(find.firstMatchFromLine(matches, 4), 1)
+  assert.equal(find.firstMatchFromLine(matches, 9), 0)
+  assert.equal(find.firstMatchFromLine(matches, null), 0)
+  assert.equal(find.firstMatchFromLine([], 1), -1)
+})
+
+check('查找：跨 token 拆出匹配片段，活动匹配标出', () => {
+  const line = [
+    { text: 'const ', classes: ['hljs-keyword'] },
+    { text: 'value', classes: [] }
+  ]
+  const segments = find.splitLineMatches(line, [{ start: 6, end: 11 }])
+  assert.deepEqual(
+    segments.map((s) => [s.text, s.start, s.match]),
+    [
+      ['const ', 0, false],
+      ['value', 6, true]
+    ]
+  )
+  const split = find.splitLineMatches([{ text: 'abcdef', classes: [] }], [{ start: 1, end: 3 }, { start: 4, end: 5 }])
+  assert.deepEqual(
+    split.map((s) => [s.text, s.start, s.match]),
+    [
+      ['a', 0, false],
+      ['bc', 1, true],
+      ['d', 3, false],
+      ['e', 4, true],
+      ['f', 5, false]
+    ]
+  )
+  const byLine = find.matchesByLine([{ line: 1, start: 0, end: 2 }, { line: 1, start: 4, end: 5 }])
+  assert.equal(byLine.get(1).length, 2)
+})
+
+check('查找：快捷键只接管 Ctrl/⌘+F，Enter/Shift+Enter 与 F3 步进', () => {
+  const none = { key: 'f', ctrl: false, meta: false, alt: false, shift: false }
+  assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true }, false), 'open')
+  assert.equal(find.findShortcut({ ...none, key: 'f', meta: true }, true), 'open')
+  assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true }, true), null)
+  assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true, shift: true }, false), null)
+  assert.equal(find.findShortcut({ ...none, key: 'f', ctrl: true, alt: true }, false), null)
+  assert.equal(find.findShortcut({ ...none, key: 'g', ctrl: true }, false), null)
+  assert.equal(find.findStepKey('Enter', false), 1)
+  assert.equal(find.findStepKey('Enter', true), -1)
+  assert.equal(find.findStepKey('F3', false), 1)
+  assert.equal(find.findStepKey('F3', true), -1)
+  assert.equal(find.findStepKey('a', false), null)
+})
+
+check('跳行：解析行号与行列，越界拒绝，Ctrl+G 触发', () => {
+  assert.deepEqual(goToLine.parseLineLocation('12'), { line: 12 })
+  assert.deepEqual(goToLine.parseLineLocation(' 12 : 4 '), { line: 12, column: 4 })
+  assert.deepEqual(goToLine.parseLineLocation('7:'), { line: 7 })
+  assert.deepEqual(goToLine.parseLineLocation('7:0'), { line: 7 })
+  assert.equal(goToLine.parseLineLocation('0'), null)
+  assert.equal(goToLine.parseLineLocation('-3'), null)
+  assert.equal(goToLine.parseLineLocation('1.5'), null)
+  assert.equal(goToLine.parseLineLocation('a:1'), null)
+  assert.equal(goToLine.parseLineLocation(''), null)
+  assert.deepEqual(goToLine.validateLineLocation({ line: 10, column: 3 }, 10), { line: 10, column: 3 })
+  assert.equal(goToLine.validateLineLocation({ line: 11 }, 10), null)
+  assert.equal(goToLine.validateLineLocation(null, 10), null)
+  assert.equal(goToLine.validateLineLocation({ line: 999 }, 1499, 1000), null)
+  assert.deepEqual(goToLine.validateLineLocation({ line: 1200 }, 1499, 1000), { line: 1200 })
+  const key = { key: 'g', ctrl: true, meta: false, alt: false, shift: false }
+  assert.equal(goToLine.goToLineShortcut(key), true)
+  assert.equal(goToLine.goToLineShortcut({ ...key, code: 'KeyG', key: 'и' }), true)
+  assert.equal(goToLine.goToLineShortcut({ ...key, ctrl: false, meta: true }), false)
+  assert.equal(goToLine.goToLineShortcut({ ...key, shift: true }), false)
+  assert.equal(goToLine.goToLineShortcut({ ...key, key: 'h' }), false)
+})
+
+check('行评论：范围归一与行数夹取，引用代码带行号窗口并截断', () => {
+  assert.deepEqual(lineComment.commentRange(5, 3, 10), { start: 3, end: 5 })
+  assert.deepEqual(lineComment.commentRange(2, 2, 10), { start: 2, end: 2 })
+  assert.deepEqual(lineComment.commentRange(1, 99, 10), { start: 1, end: 10 })
+  assert.equal(lineComment.commentRange(11, 12, 10), null)
+  assert.equal(lineComment.commentRange(0, 2, 10), null)
+  assert.equal(lineComment.commentRange(1, 2, 0), null)
+  const texts = ['a', 'b', 'c', 'd']
+  assert.deepEqual(lineComment.commentQuoteLines(texts, 10, { start: 11, end: 12 }), ['b', 'c'])
+  assert.deepEqual(lineComment.commentQuoteLines(texts, 1, { start: 1, end: 4 }, 3), ['a', 'b', '…'])
+  assert.deepEqual(lineComment.commentQuoteLines(texts, 10, { start: 41, end: 42 }), [])
+})
+
+check('行评论：中文与英文序列化，空评论不入输入框', () => {
+  const zh = lineComment.serializeLineComment({
+    path: 'src\\a.ts',
+    start: 4,
+    end: 6,
+    code: '  one\n  two',
+    text: '  why?  ',
+    lang: 'zh-CN'
+  })
+  assert.equal(zh, '在 src/a.ts 第 4–6 行：\n> one\n>   two\nwhy?')
+  const single = lineComment.serializeLineComment({ path: 'a.ts', start: 2, end: 2, code: '', text: 'note', lang: 'en-US' })
+  assert.equal(single, 'In a.ts, line 2:\nnote')
+  assert.equal(lineComment.serializeLineComment({ path: 'a.ts', start: 2, end: 3, code: 'x', text: '   ', lang: 'en-US' }), '')
+  assert.equal(lineComment.lineCommentLabel({ start: 2, end: 2 }, 'en-US'), 'Line 2')
+  assert.equal(lineComment.lineCommentLabel({ start: 2, end: 5 }, 'zh-CN'), '第 2–5 行')
+})
+
+check('预览标签拖动：重排保留活动/预览/跳转，落点与插入位置换算', () => {
+  let b = new Map()
+  for (const p of ['a', 'b', 'd']) b = state.openPreviewTab(b, 'o', p)
+  b = state.openPreviewTab(b, 'o', 'c', { preview: true })
+  b = state.openPreviewTab(b, 'o', 'a', { line: 3 })
+  const moved = state.movePreviewTab(b, 'o', 'd', 1)
+  assert.deepEqual(moved.get('o').tabs, ['a', 'd', 'b', 'c'])
+  assert.equal(moved.get('o').active, 'a')
+  assert.equal(moved.get('o').preview, 'c')
+  assert.equal(moved.get('o').target.line, 3)
+  assert.equal(state.movePreviewTab(b, 'o', 'a', 0), b)
+  assert.equal(state.movePreviewTab(b, 'o', 'nope', 1), b)
+  assert.equal(state.movePreviewTab(b, null, 'a', 1), b)
+  assert.equal(state.movePreviewTab(b, 'o', 'a', 99).get('o').tabs[3], 'a')
+  assert.deepEqual(tabReorder.moveToIndex(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a'])
+  assert.deepEqual(tabReorder.dropIndexFor([10, 30, 50], 31), 2)
+  assert.equal(tabReorder.dropIndexFor([], 5), 0)
+  assert.equal(tabReorder.dropGapIndex(2, 0), 3)
+  assert.equal(tabReorder.dropGapIndex(1, 3), 1)
+  assert.equal(tabReorder.tabMoveKey({ key: 'ArrowRight', ctrl: true, meta: false, alt: false, shift: true }), 1)
+  assert.equal(tabReorder.tabMoveKey({ key: 'ArrowLeft', ctrl: true, meta: false, alt: false, shift: true }), -1)
+  assert.equal(tabReorder.tabMoveKey({ key: 'ArrowLeft', ctrl: true, meta: false, alt: false, shift: false }), null)
+})
+
+check('预览标签上限：超过 8 个时淘汰最早的标签，保留新标签与预览槽', () => {
+  let b = new Map()
+  for (const p of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']) b = state.openPreviewTab(b, 'o', p)
+  assert.equal(b.get('o').tabs.length, 8)
+  assert.deepEqual(b.get('o').tabs[0], 'b')
+  assert.equal(b.get('o').tabs.at(-1), 'i')
+  let pv = new Map()
+  for (const p of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) pv = state.openPreviewTab(pv, 'o', p)
+  pv = state.openPreviewTab(pv, 'o', 'p1', { preview: true })
+  pv = state.openPreviewTab(pv, 'o', 'p2', { preview: true })
+  assert.equal(pv.get('o').tabs.length, 8)
+  assert.ok(pv.get('o').tabs.includes('p2'))
+  assert.equal(pv.get('o').preview, 'p2')
+  assert.equal(pv.get('o').tabs[0], 'b')
+})
+
+check('预览标签持久化：读写往返、非法数据丢弃、活动与预览标记保留', () => {
+  let b = new Map()
+  b = state.openPreviewTab(b, 'owner-1', 'C:/w/a.ts')
+  b = state.openPreviewTab(b, 'owner-1', 'C:/w/b.ts', { preview: true })
+  b = state.openPreviewTab(b, 'owner-2', 'C:/w/c.ts')
+  const raw = state.serializePreviewBindings(b)
+  const back = state.parsePreviewBindings(raw)
+  assert.deepEqual(back.get('owner-1').tabs, ['C:/w/a.ts', 'C:/w/b.ts'])
+  assert.equal(back.get('owner-1').active, 'C:/w/b.ts')
+  assert.equal(back.get('owner-1').preview, 'C:/w/b.ts')
+  assert.deepEqual(back.get('owner-2').tabs, ['C:/w/c.ts'])
+  assert.equal(state.parsePreviewBindings('{oops').size, 0)
+  assert.equal(state.parsePreviewBindings(null).size, 0)
+  assert.equal(state.parsePreviewBindings('{"owners":{"k":{"tabs":[]}}}').size, 0)
+  const repaired = state.parsePreviewBindings('{"owners":{"k":{"tabs":["a","a","b"],"active":"z","preview":"z"}}}')
+  assert.deepEqual(repaired.get('k').tabs, ['a', 'b'])
+  assert.equal(repaired.get('k').active, 'a')
+  assert.equal(repaired.get('k').preview, undefined)
+  const store = {
+    data: new Map(),
+    getItem(key) {
+      return this.data.get(key) ?? null
+    },
+    setItem(key, value) {
+      this.data.set(key, value)
+    }
+  }
+  state.writePreviewBindings(store, b)
+  assert.equal(state.readPreviewBindings(store).get('owner-1').tabs.length, 2)
+  assert.equal(state.readPreviewBindings(null).size, 0)
+})
+
+check('预览标签目录：工具提示的第二行只给相对目录', () => {
+  assert.equal(state.previewTabDirectory('C:\\w\\src\\a.ts', 'C:\\w'), 'src')
+  assert.equal(state.previewTabDirectory('C:/w/src/deep/b.ts', 'C:/w'), 'src/deep')
+  assert.equal(state.previewTabDirectory('C:/w/a.ts', 'C:/w'), undefined)
+  assert.equal(state.previewTabDirectory('D:/x/a.ts', 'C:/w'), 'D:/x')
+})
+
+check('标签条：放得下时不滚动、不隐藏', () => {
+  const tabs = [{ id: 'a', start: 0, end: 100 }, { id: 'b', start: 102, end: 200 }]
+  assert.deepEqual(tabStrip.tabStripLayout({ tabs, width: 300, scrollLeft: 40, maxScroll: 0, activeId: 'a' }), { scrollLeft: 0, hiddenIds: [], overflowing: false })
+})
+
+check('标签条：滚动吸附到标签起点，左侧不出现半截标签', () => {
+  const tabs = Array.from({ length: 6 }, (_, i) => ({ id: `t${i}`, start: i * 100, end: i * 100 + 98 }))
+  const out = tabStrip.tabStripLayout({ tabs, width: 250, scrollLeft: 0, maxScroll: 348, activeId: 't5' })
+  assert.equal(out.scrollLeft, 348)
+  assert.deepEqual(out.hiddenIds, ['t0', 't1', 't2', 't3'])
+})
+
+check('标签条：右侧超出一部分的非当前标签收进溢出菜单', () => {
+  const tabs = Array.from({ length: 4 }, (_, i) => ({ id: `t${i}`, start: i * 100, end: i * 100 + 98 }))
+  const out = tabStrip.tabStripLayout({ tabs, width: 250, scrollLeft: 0, maxScroll: 148, activeId: 't0' })
+  assert.equal(out.scrollLeft, 0)
+  assert.deepEqual(out.hiddenIds, ['t2', 't3'])
+})
+
+check('标签条：当前标签在左侧视野外时滚回它的起点', () => {
+  const tabs = Array.from({ length: 6 }, (_, i) => ({ id: `t${i}`, start: i * 100, end: i * 100 + 98 }))
+  const out = tabStrip.tabStripLayout({ tabs, width: 250, scrollLeft: 300, maxScroll: 348, activeId: 't1' })
+  assert.equal(out.scrollLeft, 100)
+  assert.ok(!out.hiddenIds.includes('t1'))
 })
 
 process.stdout.write(`test-preview-code-view: ${passed} 项通过\n`)

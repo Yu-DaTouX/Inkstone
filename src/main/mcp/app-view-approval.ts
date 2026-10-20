@@ -1,6 +1,6 @@
 import {
   normalizePermissionMode,
-  type ApprovalChoice,
+  type ApprovalAnswer,
   type ApprovalRequest,
   type PermissionMode
 } from '../../shared/approval'
@@ -33,7 +33,7 @@ export interface AppViewHostContext {
   now?: number
 }
 
-export type AppViewAsk = (request: Omit<ApprovalRequest, 'id' | 'createdAt'>) => Promise<ApprovalChoice | null>
+export type AppViewAsk = (request: Omit<ApprovalRequest, 'id' | 'createdAt'>) => Promise<ApprovalAnswer | null>
 
 export interface AppViewAuditRecord {
   allowed: boolean
@@ -165,12 +165,13 @@ export async function approveAppViewCall(
     runId: call.runId
   }
 
-  let choice: ApprovalChoice | null
+  let answer: ApprovalAnswer | null
   try {
-    choice = await ask(request)
+    answer = await ask(request)
   } catch {
-    choice = null
+    answer = null
   }
+  const choice = answer?.choice ?? null
 
   const allowed = choice === 'once' || choice === 'remember'
   return finish({
@@ -181,7 +182,9 @@ export async function approveAppViewCall(
     reason: allowed
       ? undefined
       : choice === 'deny'
-        ? '用户拒绝了 App 视图的调用'
+        ? answer?.feedback
+          ? `用户拒绝了 App 视图的调用：${answer.feedback}`
+          : '用户拒绝了 App 视图的调用'
         : '没有得到用户确认（无窗口或超时）'
   })
 }

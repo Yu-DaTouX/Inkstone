@@ -2,6 +2,7 @@ import type { UIToolCall } from '../../../../shared/ipc'
 import { toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
+import { isDeniedCall } from './tool-title'
 
 export const TOOL_GROUP_MIN = 2
 export const RUN_LABEL_HOLD_MS = 650
@@ -22,7 +23,7 @@ export type ToolCategory =
 
 export type FileCategory = 'read' | 'edit' | 'create' | 'delete'
 
-export type ToolRunState = 'blocked' | 'running' | 'error' | 'cancelled' | 'ok'
+export type ToolRunState = 'blocked' | 'running' | 'denied' | 'error' | 'cancelled' | 'ok'
 
 export type ToolRunSegment =
   | { kind: 'category'; category: ToolCategory; name?: string; count: number; failed: number; allFailed: boolean }
@@ -102,6 +103,7 @@ export function toolCategory(call: Pick<UIToolCall, 'name' | 'args' | 'details'>
   if (EDIT.has(bare) || WRITE.has(bare) || DELETE.has(bare)) {
     const diff = readFileDiff(call.details)
     if (diff?.status === 'created') return 'create'
+    if (WRITE.has(bare)) return diff?.status === 'modified' ? 'edit' : 'create'
     if (diff?.status === 'deleted' || DELETE.has(bare)) return 'delete'
     return 'edit'
   }
@@ -128,8 +130,8 @@ function isLive(call: Pick<UIToolCall, 'status'>): boolean {
   return call.status === 'running' || call.status === 'pending'
 }
 
-function isFailure(call: Pick<UIToolCall, 'status' | 'cancelled'>): boolean {
-  return call.status === 'error' && !call.cancelled
+function isFailure(call: Pick<UIToolCall, 'status' | 'cancelled' | 'denied' | 'output'>): boolean {
+  return call.status === 'error' && !call.cancelled && !isDeniedCall(call)
 }
 
 function memberKey(call: UIToolCall, category: ToolCategory): string {
@@ -176,6 +178,7 @@ function runState(calls: readonly UIToolCall[], approvalIds: ReadonlySet<string>
   const last = calls[calls.length - 1]
   if (!last) return 'ok'
   if (isFailure(last)) return 'error'
+  if (isDeniedCall(last)) return 'denied'
   if (last.cancelled) return 'cancelled'
   return 'ok'
 }
@@ -322,7 +325,7 @@ function coalesceKey(node: ToolCallNode): string | null {
   if (!isFileCategory(category)) return null
   const path = pathOf(call)
   if (!path) return null
-  const outcome = isFailure(call) ? 'error' : call.cancelled ? 'cancelled' : 'ok'
+  const outcome = isFailure(call) ? 'error' : isDeniedCall(call) ? 'denied' : call.cancelled ? 'cancelled' : 'ok'
   return `${category}:${normalizeToolPath(path)}:${outcome}`
 }
 
@@ -393,15 +396,28 @@ function capitalize(text: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text
 }
 
-export function formatToolRun(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): string {
+export interface ToolRunPart {
+  text: string
+  failed: boolean
+}
+
+export function toolRunParts(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): ToolRunPart[] {
   const attributed = summary.segments.reduce((sum, segment) => sum + segment.failed, 0)
-  const parts = summary.segments.map((segment) => {
+  const parts: ToolRunPart[] = summary.segments.map((segment, index) => {
     const text = toolRunSegmentText(segment, tt)
-    return segment.failed > 0 ? text + tt('runFailed', { n: segment.failed }) : text
+    return {
+      text: (index ? tt('runJoin') : '') + (segment.failed > 0 ? text + tt('runFailed', { n: segment.failed }) : text),
+      failed: segment.allFailed
+    }
   })
-  const head = capitalize(parts.join(tt('runJoin')))
+  if (parts.length) parts[0] = { ...parts[0], text: capitalize(parts[0].text) }
   const rest = summary.failed - attributed
-  return rest > 0 ? head + tt('runFailed', { n: rest }) : head
+  if (rest > 0) parts.push({ text: tt('runFailed', { n: rest }), failed: true })
+  return parts
+}
+
+export function formatToolRun(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): string {
+  return toolRunParts(summary, tt).map((part) => part.text).join('')
 }
 
 export interface HeldRunLabel {

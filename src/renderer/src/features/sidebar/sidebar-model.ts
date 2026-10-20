@@ -141,6 +141,28 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
 }
 
+export const GROUP_PAGE_SIZE = 20
+
+export interface SidebarGroupPage {
+  rows: SessionSummary[]
+  hidden: number
+  revealable: number
+  expanded: boolean
+}
+
+export function groupPage(
+  list: readonly SessionSummary[],
+  revealed = 0,
+  keep?: SessionSummary | null
+): SidebarGroupPage {
+  const limit = GROUP_PAGE_SIZE + Math.max(0, revealed)
+  const expanded = list.length <= limit
+  const rows = expanded ? [...list] : list.slice(0, limit)
+  if (keep && !rows.includes(keep)) rows.push(keep)
+  const hidden = expanded ? 0 : list.length - limit
+  return { rows, hidden, revealable: Math.min(GROUP_PAGE_SIZE, hidden), expanded }
+}
+
 export interface ArchivedProject {
   record: ProjectRecord
   label: string

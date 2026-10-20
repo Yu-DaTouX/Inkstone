@@ -57,6 +57,7 @@ export interface WorkbenchText {
   notWired: string
   notWiredHint: string
   inactiveTitle: string
+  chatName: string
   split: string
   unsplit: string
   focus: string
@@ -91,6 +92,7 @@ const ZH: WorkbenchText = {
   notWired: '尚未接入',
   notWiredHint: '这个页签的界面还在接入中。',
   inactiveTitle: '会话未激活',
+  chatName: '聊天',
   split: '上下拆分',
   unsplit: '取消拆分',
   focus: '专注',
@@ -185,6 +187,7 @@ const EN: WorkbenchText = {
   notWired: 'Not wired yet',
   notWiredHint: 'This tab is still being integrated.',
   inactiveTitle: 'Session not active',
+  chatName: 'Chat',
   split: 'Split top and bottom',
   unsplit: 'Remove split',
   focus: 'Focus',

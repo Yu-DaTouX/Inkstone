@@ -6,12 +6,14 @@ import type {
   GitRepoState,
   GitStatusEntry
 } from '../../../../shared/git'
+import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { WorkspaceOwner } from '../workbench/types'
 
 export type ChangesOwner = WorkspaceOwner
 
 export interface GitStateView {
   repo: GitRepoState | null
+  expected?: GitActionExpected
   error?: string
 }
 
@@ -62,6 +64,7 @@ export interface ChangeItem {
   path: string
   status: string
   untracked: boolean
+  origPath?: string
   added?: number
   removed?: number
 }

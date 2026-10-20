@@ -2,11 +2,11 @@ import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
-import { formatShortDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
-import { generatingArgs, runningCallLabel, summarize } from './tool-summary'
-import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, type ToolRow, type ToolRunState } from './tool-run-model'
+import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
+import { isDeniedCall, shellTitle, toolStepTitle } from './tool-title'
+import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, toolRunParts, type ToolRow } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -27,17 +27,9 @@ export function detailKind(name: string): 'command' | 'change' | 'result' {
   return 'result'
 }
 
-function durationLabel(call: UIToolCall): string | null {
-  const { startedAt, endedAt } = call
-  if (typeof startedAt !== 'number' || typeof endedAt !== 'number' || endedAt <= startedAt) return null
-  return formatShortDuration(endedAt - startedAt)
-}
-
 function isRunning(call: UIToolCall): boolean {
   return call.status === 'running' || call.status === 'pending'
 }
-
-const DOT: Record<ToolRunState, string> = { blocked: 'warn', running: 'run', error: 'err', cancelled: 'warn', ok: 'ok' }
 
 function useCurrentApprovalCall(tools: readonly UIToolCall[], approvalIds: ReadonlySet<string>): string | null {
   const current = useStore((s) => s.approvals[0])
@@ -84,19 +76,24 @@ function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }
   const open = stored ?? false
   const { summary } = row
   const label = formatToolRun(summary, tt)
+  const parts = toolRunParts(summary, tt)
   const running = summary.running
-  const held = useHeldRunLabel(running ? running.id : null, running ? runningCallLabel(running, t('tool2.generatingArgs')) : label)
+  const held = useHeldRunLabel(running ? running.id : null, running ? toolRunningLabel(running, t('tool2.generatingArgs'), tt) : label)
   const shown = held.key !== null ? held.label : label
   const members = open ? coalesceNodes(row.nodes) : []
 
   return (
     <div className="v3-step v3-step-group" data-state={summary.state} data-depth={0}>
       <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={label} data-testid="v3-step-group">
-        <span className={`v3-dot ${DOT[summary.state]}`} aria-hidden />
-        <ShimmerText className="v3-step-target" active={!!running}>{shown}</ShimmerText>
+        {running ? (
+          <ShimmerText className="v3-steps-label" active>{shown}</ShimmerText>
+        ) : (
+          <span className="v3-steps-label">
+            {parts.map((part, index) => <span key={index} data-failed={part.failed || undefined}>{part.text}</span>)}
+          </span>
+        )}
         <ToolRunStats summary={summary} />
         {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
-        {summary.failed ? <Badge tone="fail" className="v3-steps-badge">{summary.failed} {t('tool.failed')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
       {asking ? <ApprovalCard inline /> : null}
@@ -115,25 +112,25 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const [stored, setOpen] = useToolExpansion(`step:${node.call.id}`)
   const call = node.call
   const running = isRunning(call)
-  const failed = call.status === 'error' && !call.cancelled
+  const denied = isDeniedCall(call)
   const open = stored ?? false
-  const duration = durationLabel(call)
-  const target = generatingArgs(call) ? t('tool2.generatingArgs') : summarize(call) || t('tool2.noTarget')
-  const state = blocked ? 'warn' : running ? 'run' : failed ? 'err' : call.cancelled ? 'warn' : 'ok'
+  const title = toolStepTitle(call, tt)
+  const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || t('tool2.noTarget')
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
 
   return (
-    <div className="v3-step" data-state={call.status} data-tool={call.name} data-depth={depth}>
-      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={target} data-testid="v3-step">
-        <CompletionSweep done={!running && !failed && !call.cancelled} settledAt={call.endedAt} />
-        <span className={`v3-dot ${state}`} aria-hidden />
-        {running ? null : <Icon name={failed ? 'warn' : call.cancelled ? 'stop' : 'check'} size={13} />}
-        <span className="v3-step-verb">{call.name}</span>
-        <ShimmerText className="v3-step-target" active={running && !blocked} lead={detailKind(call.name) === 'command' ? <span className="v3-dollar">$ </span> : null}>{target}</ShimmerText>
+    <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
+      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={`${title.label} ${meta}`.trim()} data-testid="v3-step">
+        <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
+        <span className="v3-step-label">
+          <ShimmerText active={running && !blocked}>{title.label}</ShimmerText>
+        </span>
+        {denied ? <Icon name="deny" size={13} className="v3-step-deny" /> : null}
+        <span className="v3-step-target" data-code={title.code || undefined}>
+          <ShimmerText active={running && !blocked}>{meta}</ShimmerText>
+        </span>
         {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
-        {duration !== null && !running ? <span className="v3-step-time">{duration}</span> : null}
         {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
-        {failed ? <Badge tone="fail" className="v3-steps-badge">{t('tool.failed')}</Badge> : call.cancelled ? <Badge tone="stall" className="v3-steps-badge">{t('tool.cancelled')}</Badge> : call.incomplete ? <Badge tone="stall" className="v3-steps-badge">{t('tool2.incomplete')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
       {asking ? <ApprovalCard inline /> : null}
@@ -143,15 +140,27 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   )
 }
 
+function commandOf(call: UIToolCall): string {
+  const args = call.args as Record<string, unknown> | undefined
+  if (!args || typeof args !== 'object') return ''
+  for (const key of ['command', 'cmd', 'script', 'code']) {
+    const value = args[key]
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return ''
+}
+
 function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const t = useT()
   const [copied, setCopied] = useState(false)
   const kind = detailKind(call.name)
   const diff = readFileDiff(call.details)
   const args = call.args as Record<string, unknown> | undefined
-  const onlyCommand = typeof args?.command === 'string' && Object.keys(args).every((k) => k === 'command' || k === 'timeout')
+  const command = kind === 'command' ? commandOf(call) : ''
+  const onlyCommand = !!command && Object.keys(args ?? {}).every((k) => k === 'command' || k === 'timeout')
   const argsText = onlyCommand ? '' : call.args && Object.keys(call.args as object).length ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? ''
-  const copyText = [call.args ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
+  const copyText = [command ? `$ ${command}` : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
+  const failed = call.status === 'error' && !call.cancelled && !isDeniedCall(call)
   const copy = (): void => {
     void navigator.clipboard.writeText(copyText || summarize(call)).then(
       () => { setCopied(true); window.setTimeout(() => setCopied(false), 1600) },
@@ -176,8 +185,14 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
         <ChangeDetail call={call} diff={diff} />
       ) : (
         <>
+          {command ? (
+            <div className="v3-step-cmd">
+              <div className="v3-step-cmd-head">{shellTitle(call.name)}</div>
+              <pre className="v3-step-cmd-line"><span className="v3-step-cmd-prompt" aria-hidden>$ </span>{command}</pre>
+            </div>
+          ) : null}
           {onlyCommand ? null : argsText ? <pre className="v3-step-pre args">{argsText}</pre> : null}
-          {call.output ? <StepOutput text={call.output} /> : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
+          {call.output ? <StepOutput text={call.output} error={failed || call.cancelled} /> : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
           {call.name.startsWith('mcp__') ? (
             <>
               <McpAppResult callId={call.id} title={call.name} />
@@ -190,7 +205,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   )
 }
 
-function StepOutput({ text }: { text: string }): JSX.Element {
+function StepOutput({ text, error = false }: { text: string; error?: boolean }): JSX.Element {
   const tt = useSessionText()
   const [expanded, setExpanded] = useState(false)
   const lines = text.split('\n')
@@ -198,7 +213,7 @@ function StepOutput({ text }: { text: string }): JSX.Element {
   const shown = truncated && !expanded ? lines.slice(0, OUTPUT_PREVIEW_LINES) : lines
   return (
     <>
-      <pre className="v3-step-pre out" data-testid="v3-step-output">{shown.join('\n')}</pre>
+      <pre className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">{shown.join('\n')}</pre>
       {truncated ? (
         <Button
           size="sm"
@@ -216,12 +231,13 @@ function StepOutput({ text }: { text: string }): JSX.Element {
 
 function ChangeDetail({ call, diff }: { call: UIToolCall; diff: FileDiff | null }): JSX.Element {
   const t = useT()
+  const denied = isDeniedCall(call)
   if (!diff) {
     return (
       <>
         <div className="v3-step-path">{callPath(call) || call.name}</div>
         <div className="v3-step-note">{t('tool.diffUnavailable')}</div>
-        {call.output ? <StepOutput text={call.output} /> : null}
+        {call.output ? <StepOutput text={call.output} error={call.status === 'error'} /> : null}
       </>
     )
   }
@@ -237,7 +253,7 @@ function ChangeDetail({ call, diff }: { call: UIToolCall; diff: FileDiff | null 
         {diff.added >= 0 ? <span className="v3-add">+{diff.added}</span> : null}
         {diff.removed >= 0 ? <span className="v3-del">−{diff.removed}</span> : null}
       </div>
-      {call.status === 'error' ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
+      {call.status === 'error' && !call.cancelled && !denied ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
       {tooLarge ? <div className="v3-step-note">{t('tool.diffTooLarge')}</div> : null}
       {diff.patch ? (
         <pre className="v3-step-patch">

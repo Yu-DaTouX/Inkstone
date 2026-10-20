@@ -1,3 +1,5 @@
+import { denyFeedbackNote, normalizeApprovalFeedback } from './approval'
+
 export interface ConsentKeyParts {
   capability: string
   action: string
@@ -7,6 +9,18 @@ export interface ConsentKeyParts {
 }
 
 export type ConsentDecision = 'allow' | 'deny'
+
+export interface ConsentAnswer {
+  decision: ConsentDecision
+  feedback?: string
+}
+
+export function consentFeedbackSummary(decision: ConsentDecision, feedback: unknown): { feedback?: string; message?: string } {
+  if (decision !== 'deny') return {}
+  const reason = normalizeApprovalFeedback(feedback)
+  if (!reason) return {}
+  return { feedback: reason, message: denyFeedbackNote(reason) }
+}
 
 export interface ConsentRecord {
   decision: ConsentDecision

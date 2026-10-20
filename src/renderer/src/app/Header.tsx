@@ -2,6 +2,7 @@ import { useMemo, type ReactElement } from 'react'
 import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Pin, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
+import { SHORTCUTS, type ShortcutId } from './shortcuts'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
@@ -39,6 +40,13 @@ const TITLEBAR_PANES = [
 
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs']
 
+const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
+  terminal: 'openTerminal',
+  changes: 'workspaceTab1',
+  browser: 'workspaceTab4',
+  files: 'workspaceTab3'
+}
+
 export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
@@ -61,6 +69,14 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const preview = useHoverDelay(280, () => onPreviewSidebar?.())
   const paneActive = (tab: WorkbenchTabId): boolean => (tab === 'changes' && changesDirty) || (tab === 'terminal' && terminalRunning)
   const activeLabel = (tab: WorkbenchTabId): string => (tab === 'terminal' && terminalRunning ? `${toolText.tabs[tab]} · ${text.terminalRunning}` : toolText.tabs[tab])
+  const withShortcut = (label: string, tab: WorkbenchTabId): string => {
+    const id = PANE_SHORTCUTS[tab]
+    if (!id) return label
+    const keys = SHORTCUTS.find((def) => def.id === id)?.keys
+    if (!keys?.length) return label
+    return lang === 'en-US' ? `${label} (${keys.join('+')})` : `${label}（${keys.join('+')}）`
+  }
+  const paneLabel = (tab: WorkbenchTabId): string => withShortcut(activeLabel(tab), tab)
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -128,9 +144,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             {narrow
               ? null
               : TITLEBAR_PANES.map(({ tab, Icon }) => (
-                  <IconTip key={tab} label={activeLabel(tab)}>
+                  <IconTip key={tab} label={paneLabel(tab)}>
                     <IconButton
-                      aria-label={activeLabel(tab)}
+                      aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}

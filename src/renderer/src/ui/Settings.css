@@ -4,6 +4,7 @@
   }
 
   .ui-settings-modal {
+    position: relative;
     display: flex;
     width: 100%;
     max-width: 1024px;
@@ -16,6 +17,26 @@
     box-shadow: var(--shadow-lg);
     color: var(--fg);
     outline: none;
+  }
+
+  .ui-settings-modal[data-nested-dialog-open] {
+    filter: blur(2px);
+  }
+
+  .ui-settings-modal::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    border-radius: inherit;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease);
+  }
+
+  .ui-settings-modal[data-nested-dialog-open]::after {
+    opacity: 1;
   }
 
   .ui-settings-dialog {
@@ -56,7 +77,7 @@
     flex: none;
     flex-direction: column;
     gap: var(--s-12);
-    width: 220px;
+    width: 192px;
     min-height: 0;
     border-right: 1px solid var(--alpha-2);
     background: var(--surface-1);
@@ -86,7 +107,7 @@
 
   .ui-settings-nav__title {
     margin: 0;
-    padding: var(--s-12) var(--s-8) 0;
+    padding: var(--s-8) var(--s-6) 0;
     color: var(--fg3);
     font-size: var(--t-caption);
     line-height: var(--t-caption-lh);
@@ -104,10 +125,10 @@
   .ui-settings-nav__item {
     display: flex;
     align-items: center;
-    gap: var(--s-12);
+    gap: var(--s-8);
     width: 100%;
     height: var(--size-btn);
-    padding: 0 var(--s-8);
+    padding: 0 var(--s-6);
     border: 0;
     border-radius: var(--r-sm);
     background: transparent;
@@ -145,7 +166,7 @@
   }
 
   .ui-settings-nav__item:focus-visible {
-    box-shadow: var(--ring-focus-inset);
+    box-shadow: var(--ring-focus);
   }
 
   @media (hover: hover) {
@@ -321,7 +342,7 @@
     flex: none;
     justify-content: flex-end;
     align-items: center;
-    padding: var(--s-12) var(--s-12) var(--s-8) var(--s-24);
+    padding: var(--s-8) var(--s-8) var(--s-6) var(--s-24);
   }
 
   .ui-settings__content {
@@ -450,7 +471,7 @@
     color: var(--fg);
     font-size: var(--t-heading);
     line-height: var(--t-heading-lh);
-    font-weight: var(--t-heading-w);
+    font-weight: 580;
   }
 
   .ui-setting-section__desc {

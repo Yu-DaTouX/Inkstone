@@ -360,10 +360,10 @@ try {
   const askOnce = broker.ask({ title: 't', kind: 'danger', tool: 'bash', detail: 'x' })
   check(opened.length === 1, 'L5 有窗口时打开一张卡')
   check(broker.answer(opened[0], 'once') === true, 'L5 卡上允许被接受')
-  check((await askOnce) === 'once', 'L5 允许答复返回 once')
+  check((await askOnce)?.choice === 'once', 'L5 允许答复返回 once')
   const askDeny = broker.ask({ title: 't', kind: 'danger', tool: 'bash', detail: 'x' })
   check(broker.answer(opened[1], 'deny') === true, 'L5 拒绝被接受')
-  check((await askDeny) === 'deny', 'L5 拒绝答复返回 deny')
+  check((await askDeny)?.choice === 'deny', 'L5 拒绝答复返回 deny')
   const askBad = broker.ask({ title: 't', kind: 'danger', tool: 'bash', detail: 'x' })
   check(broker.answer(opened[2], 'bogus') === false, 'L5 非合法答复被拒绝')
   canAsk = false

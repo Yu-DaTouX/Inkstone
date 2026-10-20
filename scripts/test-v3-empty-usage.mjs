@@ -166,7 +166,8 @@ async function main() {
   const narrowBlock = css.slice(css.indexOf('@container (max-width: 760px)'))
   ok(/\.start-usage\s*\{[^}]*display:\s*none/.test(narrowBlock), 'CSS：窄容器只收起 .start-usage，不隐藏问候')
   ok(/\.start-strip\s*\{[^}]*display:\s*flex/.test(narrowBlock), 'CSS：窄容器显示一行用量条，用量不整块消失')
-  ok(!/max-width\s*:/.test(css.replace(/@container\s*\([^)]*\)/g, '')), 'CSS：除容器查询判定外没有 max-width 规则（避免旧 max-width 让统计永远隐藏）')
+  const fixedCaps = [...css.replace(/@container\s*\([^)]*\)/g, '').matchAll(/max-width\s*:\s*([^;}]+)/g)].filter((m) => m[1].trim() !== '100%')
+  ok(fixedCaps.length === 0, 'CSS：除容器查询判定外没有固定 max-width 规则（避免旧 max-width 让统计永远隐藏）', fixedCaps.map((m) => m[0]))
   ok(css.includes('.v3-empty-cols:not(:has(> .start-usage))'), 'CSS：无用量面板时收成单列（修正 U2R 对固定轨道的解释，不让空轨道留白）')
 
   const patternCss = await readFile(join(process.cwd(), 'src/renderer/src/patterns/usage-pattern.css'), 'utf8')
@@ -178,7 +179,8 @@ async function main() {
 
   const sessionView = await readFile(join(process.cwd(), 'src/renderer/src/features/session/SessionView.tsx'), 'utf8')
   ok(sessionView.includes("import { V3EmptyState } from './V3EmptyState'"), 'SessionView 引入 V3EmptyState（入口补丁已应用）')
-  ok(/turns\.length === 0 \? <V3EmptyState( key=\{[^}]+\})? \/>/.test(sessionView), 'SessionView 空态分支渲染 V3EmptyState')
+  ok(/turns\.length === 0 \?[\s\S]{0,160}?<V3EmptyState\b[^>]*\/>/.test(sessionView), 'SessionView 空态分支渲染 V3EmptyState')
+  ok(sessionView.includes('switchLoading ? null : <V3EmptyState'), '切换会话加载中先不渲染空态（避免闪空）')
   ok(!sessionView.includes('function EmptyState(): JSX.Element') && !sessionView.includes('<EmptyState />'), '旧局部 EmptyState 已移除，不再有未接线的空态')
 
   const patternSrc = await readFile(join(process.cwd(), 'src/renderer/src/patterns/UsagePattern.tsx'), 'utf8')
@@ -206,7 +208,7 @@ async function main() {
   const sideBySide = await readFile(join(process.cwd(), 'src/renderer/src/app/SideBySide.tsx'), 'utf8')
   ok(sideBySide.includes('import { SessionView }') && sideBySide.includes('<SessionView />'), '真实入口 SideBySide 渲染 SessionView（与 ShellV3 同一链）')
 
-  ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && sessionView.includes('active={turns.length === 0}'), 'ASCII 层与空态判定未被本任务改动')
+  ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && /<AsciiField\s+active=\{turns\.length === 0[^}]*\}/.test(sessionView), 'ASCII 层与空态判定未被本任务改动')
   ok(sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问 / 停滞卡等既有分支仍保留')
   ok(sessionView.includes('VList') && sessionView.includes('renderTurns'), '虚拟列表与回合投影仍保留')
 

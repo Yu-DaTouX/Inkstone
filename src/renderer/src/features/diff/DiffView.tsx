@@ -12,6 +12,7 @@ import {
   patchExceedsLimit
 } from './limits'
 import { parsePatch } from './parse'
+import { hunkSeparators, unifiedLineNumber } from './separators'
 import { diffViewText, type DiffViewText } from './text'
 import type { DiffFile, DiffLine, DiffViewMode } from './types'
 import { wordDiff } from './word-diff'
@@ -25,6 +26,7 @@ export interface DiffViewProps {
   onModeChange?: (mode: DiffViewMode) => void
   context?: number
   showFileHeader?: boolean
+  embedded?: boolean
   lang?: string
   className?: string
   maxBytes?: number
@@ -33,9 +35,9 @@ export interface DiffViewProps {
 
 type RenderRow =
   | { kind: 'file'; key: string; file: DiffFile }
-  | { kind: 'hunk'; key: string; header: string; section: string }
+  | { kind: 'hunk'; key: string; text: string; title: string; separator: 'lines' | 'metadata'; first: boolean; last: boolean }
   | { kind: 'line'; key: string; line: DiffLine }
-  | { kind: 'gap'; key: string; gapId: string; count: number }
+  | { kind: 'gap'; key: string; gapId: string; count: number; first: boolean; last: boolean }
   | { kind: 'split'; key: string; row: DiffSideRow }
   | { kind: 'note'; key: string; text: string }
 
@@ -47,6 +49,7 @@ export function DiffView({
   onModeChange,
   context = DIFF_LIMITS.contextLines,
   showFileHeader = true,
+  embedded = false,
   lang,
   className,
   maxBytes = DIFF_LIMITS.maxBytes,
@@ -105,7 +108,9 @@ export function DiffView({
     scrollToRow(hunkRows[next])
   }
 
-  const shell = (children: ReactNode): ReactElement => <div className={cx('diff-view', className)}>{children}</div>
+  const shell = (children: ReactNode): ReactElement => (
+    <div className={cx('diff-view', embedded && 'diff-view--embedded', className)}>{children}</div>
+  )
 
   if (!patch.trim()) return shell(<div className="diff-view__empty">{text.empty}</div>)
 
@@ -122,60 +127,68 @@ export function DiffView({
     )
   }
 
-  const virtual = rows.length >= DIFF_LIMITS.virtualizeAt
+  const virtual = !embedded && rows.length >= DIFF_LIMITS.virtualizeAt
+
+  const body =
+    rows.length === 0 ? (
+      <div className="diff-view__empty">{text.empty}</div>
+    ) : virtual ? (
+      <VList ref={vlistRef} data={rows} className="diff-view__body" bufferSize={600}>
+        {(row: RenderRow) => renderRow(row, text, expandGap, lineSlot)}
+      </VList>
+    ) : (
+      <div className="diff-view__body" ref={bodyRef}>
+        {rows.map((row, index) => renderRow(row, text, expandGap, lineSlot, index))}
+      </div>
+    )
 
   return (
-    <section className={cx('diff-view', className)} aria-label={title ?? text.fileHeader}>
-      <div className="diff-view__bar">
-        <div className="diff-view__modes" role="group">
-          <Button
-            size="sm"
-            variant={mode === 'unified' ? 'primary' : 'secondary'}
-            icon={<Rows3 size={14} aria-hidden="true" />}
-            onPress={() => setMode('unified')}
-          >
-            {text.unified}
-          </Button>
-          <Button
-            size="sm"
-            variant={mode === 'split' ? 'primary' : 'secondary'}
-            icon={<Columns2 size={14} aria-hidden="true" />}
-            onPress={() => setMode('split')}
-          >
-            {text.split}
-          </Button>
-        </div>
-        {hunkRows.length > 0 ? (
-          <div className="diff-view__nav">
-            <IconButton size="sm" aria-label={text.prevHunk} title={text.prevHunk} isDisabled={hunkCursor <= 0} onPress={() => goHunk(-1)}>
-              <ChevronUp size={14} aria-hidden="true" />
-            </IconButton>
-            <span className="diff-view__nav-label" aria-live="polite">
-              {hunkCursor < 0 ? `— / ${hunkRows.length}` : text.hunkOf(hunkCursor + 1, hunkRows.length)}
-            </span>
-            <IconButton
+    <section
+      className={cx('diff-view', embedded && 'diff-view--embedded', className)}
+      aria-label={title ?? text.fileHeader}
+    >
+      {embedded ? null : (
+        <div className="diff-view__bar">
+          <div className="diff-view__modes" role="group">
+            <Button
               size="sm"
-              aria-label={text.nextHunk}
-              title={text.nextHunk}
-              isDisabled={hunkCursor >= hunkRows.length - 1}
-              onPress={() => goHunk(1)}
+              variant={mode === 'unified' ? 'primary' : 'secondary'}
+              icon={<Rows3 size={14} aria-hidden="true" />}
+              onPress={() => setMode('unified')}
             >
-              <ChevronDown size={14} aria-hidden="true" />
-            </IconButton>
+              {text.unified}
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === 'split' ? 'primary' : 'secondary'}
+              icon={<Columns2 size={14} aria-hidden="true" />}
+              onPress={() => setMode('split')}
+            >
+              {text.split}
+            </Button>
           </div>
-        ) : null}
-      </div>
-      {rows.length === 0 ? (
-        <div className="diff-view__empty">{text.empty}</div>
-      ) : virtual ? (
-        <VList ref={vlistRef} data={rows} className="diff-view__body" bufferSize={600}>
-          {(row: RenderRow) => renderRow(row, text, expandGap, lineSlot)}
-        </VList>
-      ) : (
-        <div className="diff-view__body" ref={bodyRef}>
-          {rows.map((row, index) => renderRow(row, text, expandGap, lineSlot, index))}
+          {hunkRows.length > 0 ? (
+            <div className="diff-view__nav">
+              <IconButton size="sm" aria-label={text.prevHunk} title={text.prevHunk} isDisabled={hunkCursor <= 0} onPress={() => goHunk(-1)}>
+                <ChevronUp size={14} aria-hidden="true" />
+              </IconButton>
+              <span className="diff-view__nav-label" aria-live="polite">
+                {hunkCursor < 0 ? `— / ${hunkRows.length}` : text.hunkOf(hunkCursor + 1, hunkRows.length)}
+              </span>
+              <IconButton
+                size="sm"
+                aria-label={text.nextHunk}
+                title={text.nextHunk}
+                isDisabled={hunkCursor >= hunkRows.length - 1}
+                onPress={() => goHunk(1)}
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+              </IconButton>
+            </div>
+          ) : null}
         </div>
       )}
+      {body}
     </section>
   )
 }
@@ -198,8 +211,21 @@ function buildRows(
       rows.push({ kind: 'note', key: key('n'), text: text.binaryFile })
       return
     }
+    const separators = hunkSeparators(file.hunks, text.unmodified)
     file.hunks.forEach((hunk, hunkIndex) => {
-      if (hunk.header) rows.push({ kind: 'hunk', key: key('h'), header: hunk.header, section: hunk.section })
+      const separator = separators[hunkIndex]
+      if (separator) {
+        rows.push({
+          kind: 'hunk',
+          key: key('h'),
+          text: separator.text,
+          title: hunk.header,
+          separator: separator.kind,
+          first: hunkIndex === 0,
+          last: hunkIndex === file.hunks.length - 1
+        })
+      }
+      const bodyStart = rows.length
       let buffer: DiffLine[] = []
       const flush = (): void => {
         if (buffer.length === 0) return
@@ -221,7 +247,14 @@ function buildRows(
           return
         }
         flush()
-        rows.push({ kind: 'gap', key: key('g'), gapId, count: folded.count })
+        rows.push({
+          kind: 'gap',
+          key: key('g'),
+          gapId,
+          count: folded.count,
+          first: rows.length === bodyStart,
+          last: false
+        })
       })
       flush()
     })
@@ -256,28 +289,49 @@ function renderRow(
       )
     case 'hunk':
       return (
-        <div key={row.key} {...attrs} className="diff-view__hunk">
-          <span className="diff-view__hunk-text">{row.header}</span>
-          {row.section ? <span className="diff-view__hunk-section">{row.section}</span> : null}
+        <div
+          key={row.key}
+          {...attrs}
+          className="diff-view__separator"
+          data-separator={row.separator}
+          data-first={row.first || undefined}
+          data-last={row.last || undefined}
+          title={row.title}
+        >
+          <span className="diff-view__separator-text">{row.text}</span>
         </div>
       )
     case 'line':
       return (
-        <div key={row.key} {...attrs} className={cx('diff-view__line', `diff-view__line--${row.line.kind}`)}>
-          <span className="diff-view__gutter">{row.line.oldLine ?? ''}</span>
-          <span className="diff-view__gutter">{row.line.newLine ?? ''}</span>
-          <span className="diff-view__sign" aria-hidden="true">
-            {row.line.kind === 'add' ? '+' : row.line.kind === 'del' ? '-' : ' '}
+        <div
+          key={row.key}
+          {...attrs}
+          className={cx('diff-view__line', `diff-view__line--${row.line.kind}`)}
+          data-old-line={row.line.oldLine ?? undefined}
+          data-new-line={row.line.newLine ?? undefined}
+        >
+          <span className="diff-view__num">{unifiedLineNumber(row.line) ?? ''}</span>
+          <span className="diff-view__code">
+            <span className="diff-view__sign" aria-hidden="true">
+              {row.line.kind === 'add' ? '+' : row.line.kind === 'del' ? '−' : ' '}
+            </span>
+            {row.line.text === '' ? '\u00a0' : row.line.text}
+            {row.line.noNewline ? <span className="diff-view__noeol">\ No newline at end of file</span> : null}
           </span>
-          <span className="diff-view__text">{row.line.text === '' ? '\u00a0' : row.line.text}</span>
-          {row.line.noNewline ? <span className="diff-view__noeol">\ No newline at end of file</span> : null}
           {lineSlot ? lineSlot(row.line, row.line.kind === 'del' ? 'old' : 'new') : null}
         </div>
       )
     case 'gap':
       return (
-        <div key={row.key} {...attrs} className="diff-view__gap-row">
-          <Button size="sm" variant="ghost" className="diff-view__gap" onPress={() => onExpand(row.gapId)}>
+        <div
+          key={row.key}
+          {...attrs}
+          className="diff-view__separator diff-view__separator--expand"
+          data-separator="lines"
+          data-first={row.first || undefined}
+          data-last={row.last || undefined}
+        >
+          <Button size="sm" variant="ghost" className="diff-view__separator-button" onPress={() => onExpand(row.gapId)}>
             {text.expandLines(row.count)}
           </Button>
         </div>
