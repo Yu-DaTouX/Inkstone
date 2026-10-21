@@ -4,7 +4,14 @@ import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
-import { MAX_TERMINALS_PER_OWNER, OutputBatcher, appendReplay, normalizeOwner, planOwnerSlot } from './terminal-registry'
+import {
+  EXITED_REPLAY_CHARS,
+  MAX_UNOWNED_TERMINALS,
+  OutputBatcher,
+  appendReplay,
+  normalizeOwner,
+  planOwnerSlot
+} from './terminal-registry'
 import type { TerminalProgramStatus } from '../shared/ipc'
 
 export { safeTerminalCut } from './terminal-registry'
@@ -54,7 +61,6 @@ export type TerminalSink = (event:
   | { kind: 'exit'; id: string; exitCode: number | null }) => void
 
 let loadError: string | null = null
-let spawnError: string | null = null
 let ptyModule: typeof import('node-pty') | null = null
 
 function ptyOrNull(): typeof import('node-pty') | null {
@@ -74,7 +80,7 @@ export function terminalAvailable(): boolean {
 }
 
 export function terminalLoadError(): string | null {
-  return loadError ?? spawnError
+  return loadError
 }
 
 const sessions = new Map<string, TerminalEntry>()
@@ -190,11 +196,10 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
   const owner = normalizeOwner(options.owner)
   if (owner) {
     const slot = planOwnerSlot([...sessions.values()].map((entry) => entry.info), owner)
-    if (!slot.allowed) {
-      spawnError = `每个会话最多 ${MAX_TERMINALS_PER_OWNER} 个终端，请先关闭不用的终端`
-      return null
-    }
+    if (!slot.allowed) return null
     for (const evicted of slot.evict) killTerminal(evicted)
+  } else if (sessions.size >= MAX_UNOWNED_TERMINALS) {
+    return null
   }
 
   let child: IPty
@@ -206,11 +211,9 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
       cwd,
       env: terminalEnvironment({ ...process.env, ...options.env })
     })
-  } catch (error) {
-    spawnError = error instanceof Error ? error.message : String(error)
+  } catch {
     return null
   }
-  spawnError = null
 
   const info: TerminalSessionInfo = {
     id,
@@ -237,6 +240,7 @@ export function startTerminal(options: TerminalStartOptions = {}): TerminalSnaps
     const current = sessions.get(id)
     if (!current) return
     batcher.flush(id)
+    current.buffer = appendReplay('', current.buffer, EXITED_REPLAY_CHARS, 0)
     const statusCleared = current.tracker.exit()
     current.info = { ...current.info, alive: false, exitCode: exitCode ?? null }
     if (statusCleared) {
@@ -323,6 +327,22 @@ export function clearTerminal(id: string): boolean {
   batcher.drop(id)
   entry.buffer = ''
   return true
+}
+
+function sameOwnerKey(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase()
+}
+
+export function closeTerminalsForOwner(owner: string): number {
+  const key = normalizeOwner(owner)
+  if (!key) return 0
+  let closed = 0
+  for (const [id, entry] of [...sessions]) {
+    const entryOwner = entry.info.owner
+    if (!entryOwner || !sameOwnerKey(entryOwner, key)) continue
+    if (killTerminal(id)) closed += 1
+  }
+  return closed
 }
 
 export function disposeTerminals(): void {

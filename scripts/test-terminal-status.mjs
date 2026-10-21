@@ -47,9 +47,7 @@ export async function runTerminalStatusTests() {
       legacyProgressToStatus,
       decodeStatusText,
       isTerminalStatusQuery,
-      PROGRAM_STATUS_QUERY,
       PROGRAM_STATUS_REPLY,
-      PI_PROGRAM_STATUS_QUERY,
       MAX_SEQUENCE_BYTES,
       MAX_MESSAGE_BYTES
     } = mod
@@ -59,13 +57,11 @@ export async function runTerminalStatusTests() {
       eq(scanner.write('\x1b]750'), [], '未成帧的 OSC 片段不产出事件')
       eq(scanner.write('1;?\x1b\\'), [{ kind: 'query' }], '查询帧被切开也能识别')
       ok(scanner.programStatusSeen, '查询也算程序在用 7501')
-      eq(PROGRAM_STATUS_QUERY, '\x1b]7501;?1\x1b\\', '终端回复带最小 payload（真实 pi 可接受的形态）')
-      eq(PROGRAM_STATUS_REPLY, PROGRAM_STATUS_QUERY, '能力回复的规范名与 terminal.ts 写回帧一致')
-      eq(PI_PROGRAM_STATUS_QUERY, '\x1b]7501;?\x1b\\', 'pi 查询帧与 pi 源码 PROGRAM_STATUS_QUERY 同值')
+      eq(PROGRAM_STATUS_REPLY, '\x1b]7501;?1\x1b\\', '终端回复带最小 payload（真实 pi 可接受的形态）')
       eq(isTerminalStatusQuery('7501;?'), true, '只认精确 7501;?')
       eq(isTerminalStatusQuery('7501;?1'), false, '带 payload 的能力回复不是查询')
       eq(isTerminalStatusQuery('7501;?something long'), false, '详细回显不是查询')
-      eq(PROGRAM_STATUS_QUERY.endsWith('\x1b\\'), true, '回复用 ST 终止')
+      eq(PROGRAM_STATUS_REPLY.endsWith('\x1b\\'), true, '回复用 ST 终止')
     }
 
     {
