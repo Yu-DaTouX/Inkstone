@@ -32,8 +32,6 @@ const {
   sameSplitSession,
   sessionTiles,
   sideBySideCandidate,
-  subagentRunIdOf,
-  subagentTileRef,
   useSplitView
 } = mod
 
@@ -52,13 +50,9 @@ function ok(cond, label, detail) {
 const A = { sessionId: 'sa', path: 'C:/projects/a/session.jsonl', uid: 'ta' }
 const B = { sessionId: 'sb', path: 'C:/projects/b/session.jsonl', uid: 'tb' }
 const C = { sessionId: 'sc', path: 'C:/projects/c/session.jsonl', uid: 'tc' }
-const SUB = subagentTileRef('run-1')
+const SUB = { sessionId: 'subagent:run-1' }
 
 group('子 Agent 伪列身份')
-ok(subagentTileRef('run-1').sessionId === 'subagent:run-1', '伪列 id 带固定前缀')
-ok(subagentRunIdOf(SUB) === 'run-1', '能从伪列还原子 Agent runId')
-ok(subagentRunIdOf(A) === null, '会话列不带子 Agent runId')
-ok(subagentRunIdOf(null) === null, '空列传 null')
 ok(isSessionTile(A) === true, '有 id 的会话列是会话')
 ok(isSessionTile({ path: 'C:/x.jsonl' }) === true, '只有路径的新会话也仍算会话')
 ok(isSessionTile(SUB) === false, '子 Agent 伪列不是会话')

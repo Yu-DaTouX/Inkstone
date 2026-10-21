@@ -406,7 +406,6 @@ function enterEvent() {
 }
 
 function resetStore(store, activation, overrides = {}) {
-  activation?.resetSessionActivationForTest?.()
   store.setState({
     sessions: SESSIONS,
     settings: { cwd: 'C:/proj', projects: [] },

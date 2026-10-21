@@ -191,12 +191,6 @@ export async function runAccountQuotaPaneTests(ok) {
 
   const main = await loadAccountQuotaMain()
   await runMainReportScenarios(check, main, join(iso, 'pi'))
-
-  await build({ entryPoints: ['src/renderer/src/lib/host-actions.ts'], outfile: join(OUT, 'host-actions.mjs'), bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
-  const hostActions = await import(pathToFileURL(join(OUT, 'host-actions.mjs')).href)
-  const launch = hostActions.HOST_ACTIONS.find((a) => a.id === 'launchAccounts')
-  check(launch?.tool === 'accounts', '宿主动作表：launchAccounts 打开 accounts 工具（现代入口）')
-  check(hostActions.HOST_ACTIONS.filter((a) => a.section === 'tools').some((a) => a.tool === 'accounts'), '工具区存在 accounts 启动项')
 } finally {
     await rm(iso, { recursive: true, force: true }).catch(() => undefined)
     if (priorData === undefined) delete process.env.YAN_DATA_DIR; else process.env.YAN_DATA_DIR = priorData

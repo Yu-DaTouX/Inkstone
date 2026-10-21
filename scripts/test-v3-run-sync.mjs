@@ -93,12 +93,7 @@ async function main() {
     sortRuns,
     phaseWord,
     phaseDetail,
-    toolSummary,
-    modelLabel,
-    contextPercent,
-    runTimeText,
     isUnreadRun,
-    isStickyRun,
     useRunsV3,
     startRunSync
   } = mod
@@ -218,7 +213,6 @@ async function main() {
     const visible = { sessionId: 's1' }
     const pills = attentionPills(runs, visible, 2)
     assert.deepEqual(pills.map((r) => r.runId), ['n2', 'st1'], '过滤可见会话、最多两条、按优先级')
-    assert.equal(isStickyRun(pills[0]), true, '等你确认不可关闭')
 
     const duplicated = [
       snapshot('x1', { kind: 'needs-you', since: 9, request: { id: 'q', type: 'confirm', summary: 'x' } }, { sessionId: 'dup' }),
@@ -253,18 +247,6 @@ async function main() {
     assert.equal(phaseWord('zh-CN', { kind: 'done', at: 1, seen: false }), '已完成')
     assert.equal(phaseDetail('zh-CN', { kind: 'failed', at: 1, cause: 'model-error', message: '上游 502', seen: false }), '上游 502')
     assert.equal(phaseDetail('zh-CN', { kind: 'done', at: 1, seen: true }), null)
-
-    const run = snapshot(
-      'a',
-      { kind: 'running', since: 1, activity: 'tool', tool: { name: 'edit', label: 'edit', callId: 'c' } },
-      { model: { provider: 'p', id: 'm', label: 'm', thinking: 'high' }, counts: { tools: 3, edits: 1, errors: 0 } }
-    )
-    assert.equal(modelLabel(run), 'm · high')
-    assert.equal(toolSummary('zh-CN', run), '工具 3 · 改动 1')
-    assert.equal(contextPercent(run), null, '没有 context 就不编百分比')
-    assert.equal(contextPercent({ ...run, context: { used: 10, window: 100, percent: 10 } }), 10)
-    assert.equal(modelLabel(snapshot('b', { kind: 'done', at: 1, seen: true })), null)
-    assert.equal(runTimeText('zh-CN', snapshot('c', { kind: 'done', at: 1000, seen: true }), 61000), '1 分钟前')
   }
 
   {

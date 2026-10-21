@@ -156,13 +156,6 @@ function buildAppThemeShared() {
   )
 }
 
-function buildAppThemeRenderer() {
-  return (
-    `/* ${HEADER} */\n` +
-    "export { APP_THEME_SHADOW_VARIABLES, APP_THEME_VARIABLES } from '../../../shared/mcp-app-theme.generated'\n"
-  )
-}
-
 function buildMobile() {
   const light = {}
   const dark = {}
@@ -177,7 +170,6 @@ function buildMobile() {
 const outputs = [
   [join(root, 'src/renderer/src/design/tokens.css'), buildCss()],
   [join(root, 'src/shared/mcp-app-theme.generated.ts'), buildAppThemeShared()],
-  [join(root, 'src/renderer/src/design/app-theme.generated.ts'), buildAppThemeRenderer()],
   [join(root, 'mobile/src/theme.v3.generated.ts'), buildMobile()]
 ]
 

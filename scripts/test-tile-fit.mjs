@@ -89,10 +89,9 @@ const {
   measureWidths,
   PANE_LANE_INSET_PX,
   readPaneFlexByKind,
-  writePaneFlexByKind,
   sanitizePaneFlexByKind,
   rememberPaneFlexByKind,
-  paneFlexByKindKey
+  TILE_LAYOUTS_KEY
 } = mod
 
 const rootOf = (layout) => layout.root
@@ -225,12 +224,16 @@ group('比例记忆：根行非 chat 直接子块 2*side/chat')
   ok(flexChanges(one, resized).includes('files'), 'flexChanges 找出被拖动的块', flexChanges(one, resized))
   ok(flexChanges(one, one).length === 0, '同布局没有变化')
 
-  const key = paneFlexByKindKey()
-  ok(key === 'inkstone.v3.tileLayouts', '比例记忆并入按会话的布局 store（同一个键）', key)
-  writePaneFlexByKind({ files: 1.5, changes: 0.75 })
+  ok(TILE_LAYOUTS_KEY === 'inkstone.v3.tileLayouts', '比例记忆并入按会话的布局 store（同一个键）', TILE_LAYOUTS_KEY)
+  const seedFlex = (flex) => {
+    const raw = localStorage.getItem(TILE_LAYOUTS_KEY)
+    const state = raw ? JSON.parse(raw) : { version: 1, lastPaneFlexByKind: {}, sessions: {}, order: [] }
+    localStorage.setItem(TILE_LAYOUTS_KEY, JSON.stringify({ ...state, lastPaneFlexByKind: flex }))
+  }
+  seedFlex({ files: 1.5, changes: 0.75 })
   const read = readPaneFlexByKind()
   ok(read.files === 1.5 && read.changes === 0.75, '记忆能落盘并读回', read)
-  writePaneFlexByKind({ files: 1.5 })
+  seedFlex({ files: 1.5 })
   const remembered = rememberPaneFlexByKind(resized, ['files'])
   ok(remembered.files === 2.5 && readPaneFlexByKind().files === 2.5, '记住被拖动的块时保留已有记忆', remembered)
   const sanitized = sanitizePaneFlexByKind({ files: 2, terminal: -1, browser: 'x', logs: 200 })

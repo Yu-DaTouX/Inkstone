@@ -38,7 +38,6 @@ const {
   pairBounds,
   clampPairValue,
   weightsForLeft,
-  leftPxForWeights,
   readPair,
   bindPairObserver
 } = model
@@ -49,7 +48,6 @@ ok(KEY_STEP === 8, '方向键步长对齐参考 8px')
 ok(samePair(measurePair(600, 400), { left: 600, total: 1000 }), '首帧读取：两列像素宽得到 left/total')
 ok(samePair(measurePair(Number.NaN, -5), { left: 0, total: 0 }), '非法像素宽归一为 0，不产生 NaN')
 ok(pairBounds(0).min === 0 && pairBounds(0).max === 0, '未测量时范围收成 0，原语不会拖出数值')
-ok(leftPxForWeights(1, 1, { left: 0, total: 0 }) === 0, '未测量时像素显示值退回下界')
 ok(samePair(null, null) === false, 'null 度量不算相同')
 
 {
@@ -87,17 +85,12 @@ ok(clampPairValue(Number.NaN, { min: 300, max: 700 }) === 300, '非有限值退�
   const oldLeft = (share * 524) / total
   const w = weightsForLeft(524, total, share)
   ok(near(w.left, oldLeft), '换算与旧分隔条 share×next/total 一致')
-  const px = leftPxForWeights(w.left, w.right, { left: 524, total })
-  ok(near(px, 524), '份额回推左列像素与拖动结果一致')
-  const shrunk = leftPxForWeights(w.left, w.right, { left: 0, total: 800 })
-  ok(near(shrunk, 800 * (w.left / (w.left + w.right))), '窗口变窄后仍按同一比例，不放大绝对像素')
 }
 
 {
   const total = 1000
   const share = 2
-  const current = leftPxForWeights(1, 1, { left: 500, total })
-  ok(near(current, 500), '等宽份额下左列像素为该列一半')
+  const current = (total * 1) / 2
   const right = weightsForLeft(current + KEY_STEP, total, share)
   ok(near(right.left, (share * (current + KEY_STEP)) / total), 'ArrowRight 一步换算与键盘语义一致')
   const left = weightsForLeft(current - KEY_STEP, total, share)

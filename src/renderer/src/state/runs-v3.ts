@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { translate, type Lang } from '../i18n'
+import { translate } from '../i18n'
+import { currentLang } from '../i18n/lang'
 import {
   compareRuns,
   isAttentionPhase,
@@ -9,10 +10,6 @@ import {
 } from '../../../shared/runs'
 
 export type RunLang = 'zh-CN' | 'en-US'
-
-function currentRunLang(): Lang {
-  return typeof document !== 'undefined' && document.documentElement.lang === 'en-US' ? 'en-US' : 'zh-CN'
-}
 
 export interface RunPush {
   revision: number
@@ -62,11 +59,6 @@ export function mergeRunUpdates(
   for (const id of update.remove) byId.delete(id)
   for (const run of update.upsert) byId.set(run.runId, run)
   return [...byId.values()].sort(compareRuns)
-}
-
-export function reducePush(runs: readonly RunSnapshot[], push: RunPush, revision: number): RunSnapshot[] {
-  if (push.revision <= revision) return runs as RunSnapshot[]
-  return mergeRunUpdates(runs, push)
 }
 
 function applyPush(state: RunsV3State, push: RunPush): RunsV3State {
@@ -177,7 +169,7 @@ function beginRunSync(): () => void {
   const fetchSnapshot = async (attempt: number): Promise<void> => {
     if (cancelled) return
     if (!bridge) {
-      useRunsV3.getState().dispatch({ type: 'snapshot-error', message: translate(currentRunLang(), 'runs.syncUnavailable') })
+      useRunsV3.getState().dispatch({ type: 'snapshot-error', message: translate(currentLang(), 'runs.syncUnavailable') })
       return
     }
     if (attempt > 0) useRunsV3.getState().dispatch({ type: 'snapshot-start' })
@@ -185,7 +177,7 @@ function beginRunSync(): () => void {
       const snapshot = await bridge.snapshot()
       if (cancelled) return
       if (!snapshot || typeof snapshot.revision !== 'number' || !Array.isArray(snapshot.runs)) {
-        throw new Error(translate(currentRunLang(), 'runs.snapshotMalformed'))
+        throw new Error(translate(currentLang(), 'runs.snapshotMalformed'))
       }
       useRunsV3.getState().dispatch({ type: 'snapshot', revision: snapshot.revision, runs: snapshot.runs })
     } catch (error) {
@@ -303,10 +295,6 @@ export function attentionPills(
   return [...bySession.values()].slice(0, Math.max(0, max))
 }
 
-export function isStickyRun(run: RunSnapshot): boolean {
-  return run.phase.kind === 'needs-you'
-}
-
 const PHASE_WORD: Record<RunPhase['kind'], { zh: string; en: string }> = {
   queued: { zh: '排队中', en: 'Queued' },
   running: { zh: '运行中', en: 'Running' },
@@ -373,67 +361,6 @@ export function activityWord(lang: RunLang, activity: RunActivity): string {
 export function isUnreadRun(run: RunSnapshot): boolean {
   const phase = run.phase
   return (phase.kind === 'done' || phase.kind === 'failed') && !phase.seen
-}
-
-export function toolSummary(lang: RunLang, run: RunSnapshot): string {
-  const { tools, edits, errors } = run.counts
-  if (lang === 'en-US') {
-    const parts = [`${tools} tool${tools === 1 ? '' : 's'}`]
-    if (edits) parts.push(`${edits} edit${edits === 1 ? '' : 's'}`)
-    if (errors) parts.push(`${errors} error${errors === 1 ? '' : 's'}`)
-    return parts.join(' · ')
-  }
-  const parts = [`工具 ${tools}`]
-  if (edits) parts.push(`改动 ${edits}`)
-  if (errors) parts.push(`错误 ${errors}`)
-  return parts.join(' · ')
-}
-
-export function modelLabel(run: RunSnapshot): string | null {
-  if (!run.model) return null
-  const name = run.model.label || run.model.id
-  return run.model.thinking ? `${name} · ${run.model.thinking}` : name
-}
-
-export function formatDuration(ms: number, lang: RunLang): string {
-  const total = Math.max(0, Math.round(ms / 1000))
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  if (lang === 'en-US') {
-    if (h) return `${h}h ${m}m`
-    if (m) return `${m}m ${s}s`
-    return `${s}s`
-  }
-  if (h) return `${h} 小时 ${m} 分`
-  if (m) return `${m} 分 ${s} 秒`
-  return `${s} 秒`
-}
-
-export function formatRelative(at: number, now: number, lang: RunLang): string {
-  const delta = Math.max(0, now - at)
-  if (delta < 60_000) return lang === 'en-US' ? 'just now' : '刚刚'
-  if (delta < 3_600_000) {
-    const n = Math.floor(delta / 60_000)
-    return lang === 'en-US' ? `${n} min ago` : `${n} 分钟前`
-  }
-  if (delta < 86_400_000) {
-    const n = Math.floor(delta / 3_600_000)
-    return lang === 'en-US' ? `${n} h ago` : `${n} 小时前`
-  }
-  return new Date(at).toLocaleDateString(lang)
-}
-
-export function runTimeText(lang: RunLang, run: RunSnapshot, now: number): string {
-  const phase = run.phase
-  if (phase.kind === 'failed' || phase.kind === 'stopped' || phase.kind === 'done') {
-    return formatRelative(phase.at, now, lang)
-  }
-  return formatDuration(now - phase.since, lang)
-}
-
-export function contextPercent(run: RunSnapshot): number | null {
-  return run.context?.percent ?? null
 }
 
 export interface RunUiText {

@@ -49,9 +49,6 @@ export function routePush(s: PushRoutingView, m: MainPush): PushRoute {
     const belongsToView = !viewing || !m.runtime.sessionId || m.runtime.sessionId === viewing
     const viewingFrame = !!viewing && m.runtime.sessionId === viewing
     return { patch, project: belongsToView && (active || viewingFrame) }
-  } else if (m.sessionKey) {
-    if (!s.activeRunnerId) return { patch: { activeRunnerId: m.sessionKey }, project: true }
-    if (s.activeRunnerId !== m.sessionKey) return { patch: null, project: false }
   }
   return { patch: null, project: true }
 }

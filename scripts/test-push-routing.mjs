@@ -24,11 +24,6 @@ export function runPushRoutingTests(ok, { routePush, viewingSessionId }) {
   const first = routePush({ ...base, activeRunnerId: null, runners: [] }, msg(runtimeA))
   ok(first.project === true && first.patch?.activeRunnerId === 'r1', '还没对齐身份时以第一条推送的实例为当前视图')
 
-  const legacyFirst = routePush({ ...base, activeRunnerId: null }, { ch: 'todos', sessionKey: 'k1', payload: [] })
-  ok(legacyFirst.project === true && legacyFirst.patch?.activeRunnerId === 'k1', '旧的 sessionKey 路径：首帧对齐当前实例')
-  const legacyOther = routePush(base, { ch: 'todos', sessionKey: 'k2', payload: [] })
-  ok(legacyOther.project === false, '旧的 sessionKey 路径：别的实例不投影')
-
   const global = routePush(base, { ch: 'runners', payload: [] })
   ok(global.project === true && global.patch === null, '不带身份的全局推送直接投影')
 
