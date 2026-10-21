@@ -23,6 +23,8 @@ import { PiThinkingLevelsGroup } from '../general/PiNativeSettings'
 import { OpenCodeProxyRow } from '../capabilities/OpenCodeProxyRow'
 import { ConfirmProvider } from '../capabilities/confirm'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
+import { ApiKeyList } from './ApiKeyList'
+import type { ApiKeyPools, ApiKeyView } from '../../../../../shared/api-keys'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
 import { useModelsText } from './models-text'
 import '../capabilities/capabilities.css'
@@ -51,8 +53,7 @@ const PROVIDER_HINT: Record<string, MessageKey> = {
 const EMPTY: never[] = []
 
 function stateTone(state: ServiceState): BadgeTone {
-  if (state === 'ready') return 'run'
-  if (state === 'loginable') return 'accent'
+  if (state === 'ready') return 'ok'
   return 'neutral'
 }
 
@@ -68,6 +69,8 @@ export function ModelsSettings(): ReactElement {
 
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [labelDraft, setLabelDraft] = useState('')
+  const [pools, setPools] = useState<ApiKeyPools>({})
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'fail' | 'info'; text: string } | null>(null)
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
@@ -75,8 +78,14 @@ export function ModelsSettings(): ReactElement {
   const [pendingRemove, setPendingRemove] = useState<AuthProviderInfo | null>(null)
   const [showAllKeys, setShowAllKeys] = useState(false)
 
+  const loadPools = async (): Promise<void> => {
+    const next = await window.yan.apiKeys().catch(() => null)
+    if (next) setPools(next)
+  }
+
   useEffect(() => {
     if (useStore.getState().authProviders.length === 0) void loadAuthProviders()
+    void loadPools()
     void window.yan
       .authFileInfo()
       .then(setFileInfo)
@@ -102,7 +111,10 @@ export function ModelsSettings(): ReactElement {
   const refreshAfterWrite = async (): Promise<void> => {
     await loadAuthProviders()
     await refreshFileInfo()
+    await loadPools()
   }
+
+  const authIdOf = (p: AuthProviderInfo): string => p.authKey || p.id
 
   const recheck = async (): Promise<void> => {
     setChecking(true)
@@ -123,12 +135,14 @@ export function ModelsSettings(): ReactElement {
     setBusy(true)
     setMsg(null)
     try {
-      const r = await window.yan.setApiKey(editing, draft)
+      const info = authProviders.find((p) => p.id === editing)
+      const r = await window.yan.addApiKey(info ? authIdOf(info) : editing, draft, labelDraft.trim() || undefined)
       if (r.ok) {
         setMsg({ kind: 'ok', text: t('auth.saved') })
         refreshModelsAfterRestart()
         setEditing(null)
         setDraft('')
+        setLabelDraft('')
         await refreshAfterWrite()
       } else {
         setMsg({ kind: 'fail', text: r.error ?? t('auth.saveFailed') })
@@ -138,6 +152,20 @@ export function ModelsSettings(): ReactElement {
     } finally {
       setBusy(false)
     }
+  }
+
+  const keyListDone = async (r: { ok: boolean; error?: string }, switched?: ApiKeyView): Promise<void> => {
+    if (!r.ok) {
+      setMsg({ kind: 'fail', text: r.error ?? t('auth.saveFailed') })
+      return
+    }
+    if (switched) {
+      setMsg({ kind: 'ok', text: text('keySwitched').replace('{label}', switched.label) })
+      refreshModelsAfterRestart()
+    } else {
+      setMsg(null)
+    }
+    await refreshAfterWrite()
   }
 
   const confirmRemove = async (info: AuthProviderInfo): Promise<void> => {
@@ -236,6 +264,17 @@ export function ModelsSettings(): ReactElement {
         <div className="ms-service-actions">
           {editingThis ? (
             <div className="ms-key-edit">
+              {state === 'ready' ? (
+                <TextField
+                  className="ms-key-edit-label"
+                  aria-label={text('keyLabelPlaceholder')}
+                  value={labelDraft}
+                  onChange={setLabelDraft}
+                  placeholder={text('keyLabelPlaceholder')}
+                  maxLength={40}
+                  isDisabled={busy}
+                />
+              ) : null}
               <TextField
                 aria-label={providerName(p)}
                 type="password"
@@ -259,6 +298,7 @@ export function ModelsSettings(): ReactElement {
                 onPress={() => {
                   setEditing(null)
                   setDraft('')
+                  setLabelDraft('')
                 }}
               >
                 {t('ui.cancel')}
@@ -284,10 +324,11 @@ export function ModelsSettings(): ReactElement {
                   onPress={() => {
                     setEditing(p.id)
                     setDraft('')
+                    setLabelDraft('')
                     setMsg(null)
                   }}
                 >
-                  {state === 'ready' ? t('auth.replace') : t('auth.setKey')}
+                  {state === 'ready' ? text('addKey') : t('auth.setKey')}
                 </Button>
               ) : null}
               {!isKey && state === 'loginable' ? (
@@ -324,6 +365,9 @@ export function ModelsSettings(): ReactElement {
           )}
         </div>
 
+        {isKey && !fromEnv && (pools[authIdOf(p)]?.length ?? 0) >= 2 ? (
+          <ApiKeyList provider={authIdOf(p)} keys={pools[authIdOf(p)] ?? []} disabled={busy || editingThis} onDone={keyListDone} />
+        ) : null}
         {activeOauth ? <OAuthPanel provider={p.id} events={oauth?.events ?? EMPTY} t={t} /> : null}
         {p.id === 'openai-codex' && codexLogging ? (
           <p className="ms-service-warn" data-testid="ms-codex-waiting">
@@ -439,7 +483,11 @@ export function ModelsSettings(): ReactElement {
         >
           <Modal className="ms-modal">
             <Dialog title={text('removeTitle')} closeLabel={t('ui.cancel')}>
-              <p className="ms-confirm-body">{text('removeBody')}</p>
+              <p className="ms-confirm-body">
+                {(pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
+                  ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
+                  : text('removeBody')}
+              </p>
               <p className="ms-confirm-target">{providerName(pendingRemove)}</p>
               <div className="ms-confirm-actions">
                 <Button variant="secondary" onPress={() => setPendingRemove(null)}>

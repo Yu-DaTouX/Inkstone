@@ -4,6 +4,7 @@ import { resolvePi } from '../protocol'
 import type { CustomProviderInput } from '../../shared/custom-provider'
 import { discoverCustomProviderModels, listCustomProviders, removeCustomProvider, saveCustomProvider, testCustomProviderBillable, testCustomProviderEndpoint } from '../custom-providers'
 import { authFileInfo, clearAuth, listAuthProviders, setApiKey } from '../credentials'
+import { addApiKey, clearApiKeys, listApiKeyPools, removeApiKey, renameApiKey, switchApiKey } from '../api-key-pool'
 import { detectToolchain } from '../toolchain'
 import { detectLocalModelServers } from '../local-models'
 import { cancelCodexLogin, startCodexLogin } from '../oauth'
@@ -33,10 +34,24 @@ export function registerAuthIpc(ipc: IpcRegistrar, deps: AuthIpcDeps): void {
   handle('yan:clearAuth', async (provider: string) => {
     const r = await clearAuth(provider)
     if (r.ok) {
+      await clearApiKeys(String(provider ?? ''))
       void restartAgent('凭证已清除').catch((error) => console.error('[auth] 凭证清除后刷新失败', error))
     }
     return r
   })
+  handle('yan:apiKeys', async () => listApiKeyPools())
+  handle('yan:addApiKey', async (provider: unknown, key: unknown, label?: unknown) => {
+    const r = await addApiKey(String(provider ?? ''), String(key ?? ''), typeof label === 'string' ? label : undefined)
+    if (r.ok) void restartAgent('API key 已更新').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))
+    return r
+  })
+  handle('yan:switchApiKey', async (provider: unknown, id: unknown) => {
+    const r = await switchApiKey(String(provider ?? ''), String(id ?? ''))
+    if (r.ok) void restartAgent('API key 已切换').catch((error) => console.error('[auth] 凭证更新后刷新失败', error))
+    return r
+  })
+  handle('yan:renameApiKey', async (provider: unknown, id: unknown, label: unknown) => renameApiKey(String(provider ?? ''), String(id ?? ''), String(label ?? '')))
+  handle('yan:removeApiKey', async (provider: unknown, id: unknown) => removeApiKey(String(provider ?? ''), String(id ?? '')))
   handle('yan:authFileInfo', async () => authFileInfo())
   handle('yan:toolchainStatus', async () => detectToolchain())
   handle('yan:customProviders', async () => listCustomProviders())

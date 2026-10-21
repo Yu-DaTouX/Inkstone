@@ -490,7 +490,7 @@ async function main() {
     const { line, row } = renderRow()
     ok(byTestId(line, 'v3-subagents-live').length === 0, '不再单独写「N 个任务正在运行」')
     const name = byTestId(row, 'v3-subagent-model')[0]
-    ok(textOf(name) === 'DeepSeek V4.1 Flash', '模型用菜单名', name && textOf(name))
+    ok(textOf(name) === 'DeepSeek V4.1 Flash · state.think.medium', '模型用菜单名，后接推理档位', name && textOf(name))
     ok(name?.props.title === flash, '悬停保留完整模型身份', name?.props.title)
     const stateIcon = collect(row, kind('SubagentStateIcon'))[0]
     ok(stateIcon?.props.state === 'running', '运行中的状态图标', stateIcon?.props.state)

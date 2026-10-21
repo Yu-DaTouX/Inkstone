@@ -90,6 +90,13 @@ export function collapseSkillInvocation(text: string): string {
   return args ? `/skill:${match[1]} ${args}` : `/skill:${match[1]}`
 }
 
+const IMAGE_HINT = String.raw`\[Image(?: converted from [^\]\n]+ to [^\]\n]+\.|: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.)\]`
+const TRAILING_IMAGE_HINTS = new RegExp(String.raw`(?:^|\n\n)${IMAGE_HINT}(?:\n${IMAGE_HINT})*$`)
+
+function stripImageHints(text: string): string {
+  return text.replace(TRAILING_IMAGE_HINTS, '')
+}
+
 export function normalizeMessage(
   m: PiMessage,
   idx: number,
@@ -110,13 +117,14 @@ export function normalizeMessage(
       }
     }
 
-    text = collapseSkillInvocation(text)
+    const images = imagesOf(m.content, localizeImage)
+    text = collapseSkillInvocation(images ? stripImageHints(text) : text)
     return {
       id,
       ...entry,
       role: 'user',
       text,
-      images: imagesOf(m.content, localizeImage),
+      images,
       timestamp: m.timestamp
     }
   }

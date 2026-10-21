@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { appendReminder } from './request-reminder.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
-const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with `yan tasks apply` before the first change and tick them off as they finish; the user follows progress in that panel.'
-const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change and tick them off as they finish; the user follows progress in that panel.'
+const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with `yan tasks apply` before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
+const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
 const CLI_ONLY_GROUPS = [
   '- question: ask the user when information or a decision is missing',
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
@@ -129,7 +129,7 @@ const ENVIRONMENT_SECTION = 'inkstone_environment'
 export const TASK_REMINDER_AFTER = 8
 export function taskReminder(tools = false) {
   const how = tools ? 'with the `todos` tool' : 'with `yan tasks apply`'
-  return `<system-reminder>This turn has run many tool calls without a to-do list. If the work has 3+ distinct steps, write them ${how} now and tick them off as they finish, so the user can follow progress; if it is a single step, ignore this.</system-reminder>`
+  return `<system-reminder>This turn has run many tool calls without a to-do list. If the work has 3+ distinct steps, write them ${how} now and tick them off as they finish, so the user can follow progress. Otherwise, if you have not written to the user since your opening line, add one short status line in your reply language alongside your next tool call, and keep working.</system-reminder>`
 }
 export const TASK_REMINDER = taskReminder(false)
 
@@ -192,6 +192,7 @@ function registerTaskReminder(pi, tools) {
   pi.on('message_end', (event) => {
     if (String(event?.message?.role ?? '') !== 'user') return
     calls = 0
+    planned = false
     reminded = false
   })
   pi.on('tool_call', (event) => {

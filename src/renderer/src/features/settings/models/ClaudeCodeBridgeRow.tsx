@@ -89,7 +89,7 @@ export function ClaudeCodeBridgeRow(): ReactElement {
       <div className="ms-service-main">
         <span className="ms-service-head">
           <span className="ms-service-name">{t('cc.title')}</span>
-          <Badge tone={installed === true ? 'run' : 'neutral'}>
+          <Badge tone={installed === true ? 'ok' : 'neutral'}>
             {installed === true ? t('cc.installedLabel') : t('cc.notInstalled')}
           </Badge>
         </span>

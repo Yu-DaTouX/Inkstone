@@ -82,7 +82,7 @@ const CATALOG: Omit<AuthProviderInfo, 'status'>[] = [
 
 const HOST_ONLY_PROVIDERS = new Set(['volcengine-ark'])
 
-async function readAuth(): Promise<Record<string, unknown>> {
+export async function readAuth(): Promise<Record<string, unknown>> {
   let raw: string
   try {
     raw = await readFile(AUTH_FILE, 'utf8')
@@ -176,7 +176,7 @@ export async function updateAuthFile<T>(
   }
 }
 
-function validProviderId(provider: string): boolean {
+export function validProviderId(provider: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(provider) && !['__proto__', 'prototype', 'constructor'].includes(provider)
 }
 

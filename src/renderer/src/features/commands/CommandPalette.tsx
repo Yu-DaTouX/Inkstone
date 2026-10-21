@@ -210,7 +210,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         id: COMMAND_ACTION_IDS.settingsUsage,
         group: 'action',
         label: text.settingsUsage,
-        keywords: 'settings usage tokens 设置 用量'
+        keywords: 'usage tokens cost 用量 费用'
       }
     ]
     if (running) {
@@ -405,7 +405,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         store.openSettings('capabilities')
         return { ok: true }
       case COMMAND_ACTION_IDS.settingsUsage:
-        store.openSettings('usage')
+        useUiV3.getState().navigate({ name: 'usage' })
         return { ok: true }
       case COMMAND_ACTION_IDS.stopSession:
         await store.abort()

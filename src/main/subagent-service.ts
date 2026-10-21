@@ -35,6 +35,7 @@ function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<st
 
 export interface SubagentServiceDeps {
   codemodeExtension?(): string | undefined
+  preambleExtension?(): string | undefined
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
@@ -73,7 +74,7 @@ export class SubagentService {
     this.controller = new SubagentController({
       cwd: s.cwd,
       piBin: s.piBin,
-      extensions: [this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      extensions: [this.deps.preambleExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),

@@ -99,6 +99,7 @@ import type {
   RemoteImageResult
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
+import type { ApiKeyPools } from '../shared/api-keys'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
 import type { DesktopPetResult, DesktopPetStatus } from '../shared/desktop-pet'
 import type { RunSnapshot } from '../shared/runs'
@@ -275,6 +276,11 @@ const api: YanBridge = {
   },
   setApiKey: (provider, key) => invoke<Ok>('yan:setApiKey', provider, key),
   clearAuth: (provider) => invoke<Ok>('yan:clearAuth', provider),
+  apiKeys: () => invoke<ApiKeyPools>('yan:apiKeys'),
+  addApiKey: (provider, key, label) => invoke<Ok>('yan:addApiKey', provider, key, label),
+  switchApiKey: (provider, id) => invoke<Ok>('yan:switchApiKey', provider, id),
+  renameApiKey: (provider, id, label) => invoke<Ok>('yan:renameApiKey', provider, id, label),
+  removeApiKey: (provider, id) => invoke<Ok>('yan:removeApiKey', provider, id),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
   accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
   codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),

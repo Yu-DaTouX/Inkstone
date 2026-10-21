@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent }
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
+import { THINK_LABEL } from '../../state/think-label'
 import { useRunsV3, phaseWord, runTone } from '../../state/runs-v3'
 import { findSubagentSnapshot, subagentLineModel, type SubagentLineModel } from './turn-lines'
 import { selectSubagentRuns, subagentRunsForTurnScope, type TurnSubagentScope } from '../../state/subagent-view'
@@ -242,6 +243,9 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const selected = useSubagentPaneOpen(run.id)
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
+  const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
+  const thinkText = thinking ? (THINK_LABEL[thinking] ? t(THINK_LABEL[thinking]) : thinking) : null
+  const modelText = modelName ? [modelName, thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ') : null
   const live = row.state === 'starting' || row.state === 'running'
   const label = compactTaskPaths(live && row.description ? row.description : row.label)
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
@@ -270,7 +274,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       <span className="v3-sa-title" data-testid="v3-subagent-task">
         {live ? <ShimmerText>{label}</ShimmerText> : label}
       </span>
-      {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{run.fork ? `${modelName} · fork` : modelName}</span> : null}
+      {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{modelText}</span> : null}
       {context ? <ContextGauge usage={context} className="v3-sa-usage" data-testid="v3-subagent-context" /> : null}
       {usage ? (
         <span className="v3-sa-usage" data-testid="v3-subagent-usage" title={row.state === 'failed' ? model.error ?? undefined : undefined}>{usage}</span>

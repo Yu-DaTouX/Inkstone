@@ -56,12 +56,7 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
   }, [])
 
   if (!layout || !split) {
-    return (
-      <>
-        <div className="v3-conv"><SessionView /></div>
-        <div className="v3-composer"><Composer /></div>
-      </>
-    )
+    return <LiveChat />
   }
 
   const movable = !narrow && layout.tiles.length > 1
@@ -96,10 +91,7 @@ export const SideBySide = memo(function SideBySide({ split, narrow }: SideBySide
         {tool ? (
           <ToolTileBody tab={tool} />
         ) : live ? (
-          <>
-            <div className="v3-conv"><SessionView /></div>
-            <div className="v3-composer"><Composer /></div>
-          </>
+          <LiveChat />
         ) : (
           <PeerPane target={target} />
         )}
@@ -148,6 +140,23 @@ const TOOL_ICONS: Partial<Record<WorkbenchTabId, LucideIcon>> = {
   preview: Eye,
   logs: ScrollText,
   branch: GitBranch
+}
+
+function LiveChat(): JSX.Element {
+  const convRef = useRef<HTMLDivElement | null>(null)
+  const composerRef = useCallback((element: HTMLDivElement | null) => {
+    let base = Infinity
+    return observeHeight(element, (height) => {
+      base = Math.min(base, height)
+      convRef.current?.style.setProperty('--composer-grow', `${height - base}px`)
+    })
+  }, [])
+  return (
+    <>
+      <div className="v3-conv" ref={convRef}><SessionView /></div>
+      <div className="v3-composer" ref={composerRef}><Composer /></div>
+    </>
+  )
 }
 
 function focusGrip(key: string): void {

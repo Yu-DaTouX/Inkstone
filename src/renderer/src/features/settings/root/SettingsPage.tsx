@@ -47,7 +47,7 @@ import {
 import { AppearanceSettings } from '../appearance/AppearanceSettings'
 import { ShortcutsSettings } from '../shortcuts/ShortcutsSettings'
 import { AboutSettings, DataSettings, DevicesSettings, NotificationsSettings, SecuritySettings, SessionSettings } from '../general'
-import { UsageSettings } from '../usage/UsageSettings'
+import { useUiV3 } from '../../../state/ui-v3'
 import { settingsText, type SettingsText } from '../settings-text'
 import {
   DEFAULT_SETTINGS_SECTION,
@@ -374,7 +374,10 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
   useEffect(() => {
     if (!request) return
     const resolved = resolveLegacyView(request.view)
-    if (resolved.kind === 'section') {
+    if (resolved.kind === 'section' && resolved.section === 'usage') {
+      useStore.getState().closeSettings()
+      useUiV3.getState().navigate({ name: 'usage' })
+    } else if (resolved.kind === 'section') {
       setSection(resolved.section)
       setLegacy(null)
     } else {
@@ -552,9 +555,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
             <DataSettings />
           ) : section === 'about' ? (
             <AboutSettings onShowOnboarding={onShowOnboarding} />
-          ) : (
-            <UsageSettings />
-          )}
+          ) : null}
         </div>
       )}
     </SettingsDialog>

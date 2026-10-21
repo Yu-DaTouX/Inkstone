@@ -25,7 +25,7 @@ const BRIEF = [
 ].join('\n')
 
 const DETAILED = [
-  'Response detail: DETAILED. The user chose this; it overrides the earlier "be concise" guideline.',
+  'Response detail: DETAILED. The user chose this; it overrides the earlier "be concise" and "not a recap" guidance.',
   '- Lead with the result. Besides the result, explain the trade-offs behind key choices, the steps that mattered,',
   '  a concrete example where it helps, and the boundaries where the approach applies or does not.',
   '- Still report errors, blockers and anything the user must decide.',

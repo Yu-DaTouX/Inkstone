@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { THINK_LABEL } from './think-label'
 import { translate, type Lang, type MessageKey, type TVars } from '../i18n'
 import { toolMissingText } from '../lib/toolchain-text'
 import type {
@@ -562,7 +563,10 @@ function findNewSessionSnapshot(
   }
   if (generation === undefined || !runId) return undefined
   return all.find(
-    (snapshot) => snapshot.runtime.runId === runId && snapshot.runtime.generation === generation
+    (snapshot) =>
+      snapshot.runtime.runId === runId &&
+      snapshot.runtime.generation === generation &&
+      (!sessionId || !snapshot.runtime.sessionId || snapshot.runtime.sessionId === sessionId)
   )
 }
 
@@ -757,15 +761,6 @@ let connWatchActive = false
 let capabilityRequestSeq = 0
 let commandRequestSeq = 0
 
-const THINK_LABEL: Record<string, MessageKey> = {
-  off: 'state.think.off',
-  minimal: 'state.think.minimal',
-  low: 'state.think.low',
-  medium: 'state.think.medium',
-  high: 'state.think.high',
-  xhigh: 'state.think.xhigh',
-  max: 'state.think.max'
-}
 
 function thinkLabelOf(level: string): string {
   const key = THINK_LABEL[level]

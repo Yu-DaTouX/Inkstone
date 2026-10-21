@@ -20,10 +20,10 @@ function language() {
 
 export function languageSystemPrompt(lang) {
   if (lang === 'zh-CN') {
-    return '推理（思考过程）与回复都必须使用简体中文：即使用户用其他语言提问、工具结果是英文，思考过程里也不要改用英文。例外：工作目录的项目指令（如 AGENTS.md、CLAUDE.md）规定了与用户沟通的语言时，按项目指令来。'
+    return '推理（思考过程）、工具调用之间的进度短句和最终回复都必须使用简体中文：即使用户用其他语言提问、工具结果或系统提示是英文，也不要改用英文；代码、命令、路径和标识符保持原样。例外：工作目录的项目指令（如 AGENTS.md、CLAUDE.md）规定了与用户沟通的语言时，按项目指令来。'
   }
   if (lang === 'en-US') {
-    return 'Both your reasoning (the thinking process) and the final reply must be in English: do not switch language inside the thinking process, even if the user writes in another language or tool output is in Chinese. Exception: when the project instructions in the working directory (such as AGENTS.md or CLAUDE.md) set a language for talking with the user, follow the project instructions instead.'
+    return 'Your reasoning (the thinking process), the short progress lines between tool calls and the final reply must all be in English: do not switch language even if the user writes in another language or tool output is in Chinese; code, commands, paths and identifiers stay as they are. Exception: when the project instructions in the working directory (such as AGENTS.md or CLAUDE.md) set a language for talking with the user, follow the project instructions instead.'
   }
   return null
 }

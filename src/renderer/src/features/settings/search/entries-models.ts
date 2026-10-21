@@ -61,27 +61,5 @@ export const MODELS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     en: 'Default thinking level per model',
     keywords: ['思考', '推理', 'thinking', 'reasoning', 'effort', '档位'],
     more: true
-  },
-  {
-    id: 'usage-range',
-    section: 'usage',
-    zh: '统计范围',
-    en: 'Time range',
-    keywords: ['全部', '近 30 天', '近 7 天', 'range', 'Token', '费用', 'cost', '统计']
-  },
-  {
-    id: 'usage-breakdown',
-    section: 'usage',
-    zh: '分组与视图',
-    en: 'Group by & view',
-    keywords: ['按日', '按模型', '图表', '表格', 'by day', 'by model', 'chart', 'table']
-  },
-  {
-    id: 'usage-currency',
-    section: 'usage',
-    zh: '显示货币',
-    en: 'Display currency',
-    keywords: ['货币', '汇率', 'exchange rate', 'currency', '人民币', 'CNY', 'USD', '原石'],
-    more: true
   }
 ]

@@ -5,13 +5,18 @@ import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../share
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'
 import { PageHeader } from '../../ui'
+import { settingsText } from '../settings/settings-text'
+import { dailyEntries, peakHourText, shareText, usageBars, type UsageDimension } from '../settings/usage/usage-model'
+import { UsageCurrency } from './UsageCurrency'
 import './usage-page.css'
 
 export function UsagePage() {
   const { lang } = useI18n()
   const t = useT()
+  const text = settingsText(lang)
   const models = useStore((s) => s.models)
   const [range, setRange] = useState<UsageRange>('all')
+  const [dimension, setDimension] = useState<UsageDimension>('model')
   const stats = useUsageStats(range)
   const money = useMoney()
   const levels = useMemo(() => heatLevels(stats?.heat.map((day) => day.tokens) ?? []), [stats])
@@ -26,19 +31,35 @@ export function UsagePage() {
     observer.observe(el)
     return () => observer.disconnect()
   }, [stats])
+  const modelName = (key: string): string => models.find((model) => `${model.provider}/${model.id}` === key)?.name || key
+  const rows = !stats
+    ? []
+    : dimension === 'day'
+      ? usageBars(dailyEntries(stats.heat, range)).reverse().map((bar) => ({ ...bar, cost: null as number | null }))
+      : usageBars(stats.models.map((item) => ({ key: item.key, label: modelName(item.key), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost }))
+  const tiles: Array<[string, string]> = [
+    [t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'],
+    [t('usage.cost'), stats ? money(stats.cost) : '—'],
+    [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'],
+    [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'],
+    [t('usage.activeDays'), stats?.activeDays.toString() ?? '—'],
+    [text.usagePeakHour, stats ? peakHourText(stats.peakHour) ?? text.usagePeakNone : '—']
+  ]
   return (
     <div className="usage-page" data-testid="usage-details" aria-busy={!stats}>
-      <div className="usage-page-head">
-        <span className="usage-page-mark" aria-hidden>&gt;_</span>
-        <PageHeader title={stats?.userName || (lang === 'en-US' ? 'Local activity' : '本机活动')} description={t('usage.title')} />
-      </div>
+      <PageHeader
+        className="usage-page-head"
+        title={t('usage.title')}
+        description={text.usageNote}
+        actions={renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: 'all', label: t('usage.all') }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: '7d', label: t('usage.days', { n: 7 }) }], onChange: (value) => setRange(value as UsageRange) })}
+      />
       <dl className="usage-page-stats">
-        {[[t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'], [t('usage.cost'), stats ? money(stats.cost) : '—'], [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'], [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'], [t('usage.activeDays'), stats?.activeDays.toString() ?? '—']].map(([label, value]) => <div key={label}><dd>{value}</dd><dt>{label}</dt></div>)}
+        {tiles.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={label === t('usage.tokens') ? t('usage.tokensHint') : undefined}>{value}</dd></div>)}
       </dl>
       <section className="usage-page-activity">
         <div className="usage-page-controls">
           <h2>{lang === 'en-US' ? 'Token activity' : 'Token 活动'}</h2>
-          {renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: 'all', label: t('usage.all') }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: '7d', label: t('usage.days', { n: 7 }) }], onChange: (value) => setRange(value as UsageRange) })}
+          <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子 Agent'} ${compactNumber(split.subagents)}` : '—'}</p>
         </div>
         <div ref={heatScroll} className="usage-page-heat-scroll"><div className="start-heat usage-page-heat" aria-label={lang === 'en-US' ? 'Daily Token activity' : '每日 Token 活动'}>
           {stats?.heat.map((day, i) => <span key={day.date} className="start-cell" data-level={levels[i]} title={`${day.date} · ${day.tokens.toLocaleString()} Token`} />)}
@@ -50,16 +71,25 @@ export function UsagePage() {
             return <span key={day.date}>{monthStart ? monthStart.date.slice(5, 7) : i === 0 && !nextWeekStartsMonth ? day.date.slice(5, 7) : ''}</span>
           })}</div>
         </div>
-        <p>{split ? `${lang === 'en-US' ? 'Main sessions' : '主会话'} ${compactNumber(split.main)} · ${lang === 'en-US' ? 'Subagents' : '子 Agent'} ${compactNumber(split.subagents)}` : '—'}</p>
       </section>
-      <section className="usage-page-models">
-        <h2>{t('usage.models')}</h2>
-        <ul className="start-models">{stats?.models.map((item) => {
-          const model = models.find((model) => `${model.provider}/${model.id}` === item.key)
-          const share = stats.tokens > 0 ? item.tokens / stats.tokens : 0
-          return <li key={item.key} className="start-model"><span className="start-model-name" title={item.cost > 0 ? money(item.cost) : undefined}>{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{Math.round(share * 100)}%</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
-        })}</ul>
+      <section className="usage-page-breakdown" data-testid="v3-usage-breakdown" data-dimension={dimension}>
+        <div className="usage-page-controls">
+          <h2>{text.groupUsageBreakdown}</h2>
+          {renderUsageToggle({ kind: 'range', value: dimension, label: text.usageDimension, options: [{ value: 'model', label: text.usageByModel }, { value: 'day', label: text.usageByDay }], onChange: (value) => setDimension(value as UsageDimension) })}
+        </div>
+        {dimension === 'day' && range === 'all' ? <p className="usage-page-note">{text.usageDailyCap}</p> : null}
+        {stats && rows.length === 0 ? <p className="usage-page-note">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p> : null}
+        <ul className="start-models usage-page-rows">{rows.map((row) => (
+          <li key={row.key} className="start-model" data-idle={row.value > 0 ? undefined : ''} title={row.key}>
+            <span className="start-model-name">{row.label}</span>
+            <span className="start-model-num usage-page-cost">{row.cost != null && row.cost > 0 ? money(row.cost) : ''}</span>
+            <span className="start-model-num">{compactNumber(row.value)}</span>
+            <span className="start-model-num">{row.value > 0 ? shareText(row.share) : ''}</span>
+            <span className="start-model-bar" aria-hidden><span style={{ width: `${row.ratio * 100}%` }} /></span>
+          </li>
+        ))}</ul>
       </section>
+      <UsageCurrency text={text} />
     </div>
   )
 }

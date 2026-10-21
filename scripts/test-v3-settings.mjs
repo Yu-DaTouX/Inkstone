@@ -22,7 +22,7 @@ const { SETTINGS_SECTIONS, DEFAULT_SETTINGS_SECTION, isSettingsSectionId, resolv
 
 assert.deepEqual(
   SETTINGS_SECTIONS.map((section) => section.id),
-  ['models', 'appearance', 'session', 'notifications', 'security', 'usage', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
+  ['models', 'appearance', 'session', 'notifications', 'security', 'devices', 'data', 'shortcuts', 'about', 'capabilities'],
   '11 个分区按导航分组排：设置（模型、外观与语言、会话与上下文、通知、权限、用量）、此电脑（手机与远程、数据与同步、快捷键、关于）、自定义（能力）'
 )
 assert.ok(
@@ -69,7 +69,7 @@ assert.deepEqual([...SETTINGS_NAV_GROUPS], ['general', 'local', 'customize'], '�
 assert.deepEqual(
   groupSettingsSections().map((entry) => [entry.group, entry.sections.map((section) => section.id)]),
   [
-    ['general', ['models', 'appearance', 'session', 'notifications', 'security', 'usage']],
+    ['general', ['models', 'appearance', 'session', 'notifications', 'security']],
     ['local', ['devices', 'data', 'shortcuts', 'about']],
     ['customize', ['capabilities']]
   ],
@@ -79,7 +79,7 @@ assert.deepEqual([...CAPABILITIES_TABS], ['skills', 'mcp', 'tools', 'market'], '
 assert.deepEqual(
   groupSettingsNav().map((entry) => [entry.group, entry.entries.map((item) => item.key)]),
   [
-    ['general', ['models', 'appearance', 'session', 'notifications', 'security', 'usage']],
+    ['general', ['models', 'appearance', 'session', 'notifications', 'security']],
     ['local', ['devices', 'data', 'shortcuts', 'about']],
     ['customize', ['capabilities-skills', 'capabilities-mcp', 'capabilities-tools', 'capabilities-market']]
   ],
