@@ -4,7 +4,6 @@ import { VList, type VListHandle } from 'virtua'
 import { useT } from '../../i18n'
 import { streamingMessageId, useStore } from '../../state/store'
 import { useThrottledValue } from '../../state/streaming-throttle'
-import { useRunsV3 } from '../../state/runs-v3'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
@@ -13,7 +12,6 @@ import { PendingRunNotice } from './RunNotice'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
-import { StalledCard, currentStalledRun } from './StalledCard'
 import { Icon } from './Icon'
 import { AsciiField } from '../ambient/AsciiField'
 import { asciiBackgroundEnabled } from '../ambient/ascii-field-model'
@@ -98,9 +96,7 @@ export function SessionView(): JSX.Element {
   const approvals = useStore((s) => s.approvals)
   const subagents = useStore((s) => s.subagents)
   const uiRequests = useStore((s) => s.uiRequests)
-  const abort = useStore((s) => s.abort)
   const settings = useStore((s) => s.settings)
-  const runs = useRunsV3((s) => s.runs)
   const switchLoading = useStore((s) => s.switchLoading)
 
   const view = useMemo(
@@ -493,7 +489,6 @@ export function SessionView(): JSX.Element {
       </ToolExpansionScope.Provider>
 
       <div className="v3-asks">
-        <StalledCard run={currentStalledRun(runs, view, viewActive)} onStop={() => void abort()} />
         {viewActive || (approvals[0] && approvalMatchesView(approvals[0], subagents, view)) ? <ApprovalCard /> : null}
         {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
       </div>

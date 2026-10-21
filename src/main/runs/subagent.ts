@@ -7,6 +7,7 @@ export interface SubagentRunIdentity {
   task?: string
   model?: string
   thinkingLevel?: string
+  activeSince?: number
 }
 
 export function subagentScopeId(id: string): string {

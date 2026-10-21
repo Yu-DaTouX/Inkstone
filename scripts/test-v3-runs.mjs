@@ -52,7 +52,7 @@ function baseState(shared, now = 1000) {
 }
 
 function runSharedReducerTests(shared) {
-  const { reduceRun, detectStall, DEFAULT_STALL_THRESHOLDS, isTerminalPhase, normalizeThresholds } = shared
+  const { reduceRun, isTerminalPhase } = shared
 
   let s = baseState(shared, 1000)
   s = reduceRun(s, { type: 'queued', reason: 'concurrency' }, 1000)
@@ -199,22 +199,11 @@ function runSharedReducerTests(shared) {
   assert.equal(seen.phase.seen, true)
 
   const running = baseState(shared, 1000)
-  assert.equal(detectStall(running, 1000 + DEFAULT_STALL_THRESHOLDS.noOutputMs - 1), null)
-  assert.equal(detectStall(running, 1000 + DEFAULT_STALL_THRESHOLDS.noOutputMs + 1), 'no-output')
-  const inTool = reduceRun(running, { type: 'tool-start', tool: { name: 'bash', label: 'npm run build', callId: 'c1' } }, 1000)
-  assert.equal(detectStall(inTool, 1000 + DEFAULT_STALL_THRESHOLDS.noOutputMs + 1), null, '工具执行中不按等待模型判定')
-  assert.equal(detectStall(inTool, 1000 + DEFAULT_STALL_THRESHOLDS.toolSilentMs + 1), 'tool-silent')
-  assert.equal(detectStall(inTool, 1000 + DEFAULT_STALL_THRESHOLDS.toolSilentMs + 1, DEFAULT_STALL_THRESHOLDS, { exemptTools: ['npm'] }), null)
-
   let parallel = reduceRun(running, { type: 'tool-start', tool: { name: 'bash', label: 'git status', callId: 'p1' } }, 1000)
   parallel = reduceRun(parallel, { type: 'tool-start', tool: { name: 'bash', label: 'grep -ril opencode', callId: 'p2' } }, 1000)
   parallel = reduceRun(parallel, { type: 'tool-end', callId: 'p1' }, 1100)
   assert.equal(parallel.phase.activity, 'tool', '并行工具未全部结束时仍算工具执行中')
   assert.equal(parallel.phase.tool.callId, 'p2')
-  assert.equal(detectStall(parallel, 1100 + DEFAULT_STALL_THRESHOLDS.noOutputMs + 1), null, '剩余工具运行中不能误报无响应')
-  assert.equal(detectStall(parallel, 1100 + DEFAULT_STALL_THRESHOLDS.toolSilentMs + 1, DEFAULT_STALL_THRESHOLDS, { exemptTools: ['git'] }), 'tool-silent')
-  parallel = reduceRun(parallel, { type: 'stall-detected', cause: 'tool-silent' }, 70_000)
-  assert.equal(parallel.phase.kind, 'stalled')
   parallel = reduceRun(parallel, { type: 'tool-end', callId: 'p2' }, 120_000)
   assert.equal(parallel.phase.kind, 'running')
   assert.equal(parallel.phase.activity, 'waiting-model')
@@ -227,9 +216,6 @@ function runSharedReducerTests(shared) {
   waitTool = reduceRun(waitTool, { type: 'request-answered', requestId: 'd1' }, 1300)
   assert.equal(waitTool.phase.activity, 'tool')
   assert.equal(waitTool.phase.tool.callId, 'w2')
-  assert.equal(detectStall(done, 999999), null, '终态永不标记停滞')
-
-  assert.deepEqual(normalizeThresholds({ noOutputMs: 1, toolSilentMs: 10 * 60_000 }), { noOutputMs: 30_000, toolSilentMs: 5 * 60_000 })
 }
 
 function runSignalMappingTests(main) {
@@ -372,24 +358,6 @@ async function runRegistryTests(main, shared, dir) {
   assert.equal(registry.get('run-wait').phase.kind, 'needs-you')
 
   assert.equal(registry.observe({ sessionId: 'unknown' }, { type: 'agent-start' }), null)
-
-  const stallHistory = new MemoryRunHistory()
-  let stallClock = 10_000
-  const stallStore = new SessionCodeStore({ root: dir, now: () => stallClock })
-  await stallStore.load()
-  await stallStore.assign('s3', 'session')
-  const stallRegistry = new RunRegistry({ codes: stallStore, history: stallHistory, now: () => stallClock })
-  stallRegistry.open({ sessionId: 's3', runId: 'run-stall' }, { kind: 'running', since: stallClock, activity: 'waiting-model' })
-  const marked = stallRegistry.tick(stallClock + 46_000)
-  assert.deepEqual(marked, ['run-stall'])
-  assert.equal(stallRegistry.get('run-stall').phase.kind, 'stalled')
-  assert.equal(stallRegistry.get('run-stall').phase.cause, 'no-output')
-  assert.equal(stallHistory.records.length, 0, '停滞不等于结束，不写历史')
-
-  const monitorCalls = []
-  const monitor = new main.StallMonitor({ tick: (now) => { monitorCalls.push(now); return [] }, now: () => 42, intervalMs: 1000 })
-  assert.deepEqual(monitor.runOnce(), [])
-  assert.deepEqual(monitorCalls, [42])
 
   const childStore = new SessionCodeStore({ root: dir })
   await childStore.load()

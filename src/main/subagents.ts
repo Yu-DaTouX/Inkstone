@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import { SubagentHistory } from './subagent-history'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentEndReason, SubagentRecovery, SubagentRun, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
-import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type UsageSnapshots } from '../shared/subagent-usage'
+import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
 import {
   briefPrompt,
   parseSubagentBrief,
@@ -123,6 +124,10 @@ interface Run extends SubagentRun {
   timer: NodeJS.Timeout
   pushTimer?: NodeJS.Timeout
   lastProgressAt: number
+  activeSince: number
+  activation: number
+  resumed?: boolean
+  baseUsage?: SubagentUsageTotals
   runningTools: Set<string>
   totalMs?: number
   idleMs: number
@@ -149,6 +154,10 @@ interface Run extends SubagentRun {
 }
 
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
+
+export type SubagentSendMode = 'steer' | 'followUp'
+export type SubagentSendFrom = 'parent' | 'user'
+export interface SubagentSendResult { ok: boolean; error?: string; run?: SubagentRun; delivery?: 'queued' | 'started' | 'resumed' }
 
 export interface SubagentOptions {
   cwd: string
@@ -178,6 +187,8 @@ export class SubagentController {
   private preparing = 0
   private launchGeneration = 0
   private pendingLaunches = new Set<Promise<void>>()
+  private resuming = new Map<string, { cancelled: boolean }>()
+  private activationSeq = 0
   private stoppingAll?: Promise<void>
   private opts: SubagentOptions
   private history: SubagentHistory
@@ -352,7 +363,7 @@ export class SubagentController {
       if (run.finalizing) { try { await run.finalizing } catch { } }
     }
     for (const run of this.list()) {
-      if (run.status === 'running' || run.status === 'starting') continue
+      if (run.status === 'running' || run.status === 'starting' || this.resuming.has(run.id)) continue
       if (run.review === 'pending' || run.review === 'conflict') continue
       const live = this.runs.get(run.id)
       if (live && !live.reviewDecided) continue
@@ -484,6 +495,8 @@ export class SubagentController {
       model,
       status: 'starting',
       startedAt: Date.now(),
+      activeSince: Date.now(),
+      activation: ++this.activationSeq,
       latestActivity: '启动中…',
       transcript: [],
       review: 'none',
@@ -502,23 +515,7 @@ export class SubagentController {
     }
     clearTimeout(run.timer)
     this.armWatch(run)
-
-    rpc.on('event', (evt: Record<string, unknown>) => this.handleEvent(run, evt))
-    rpc.on('stderr', (line: string) => {
-      const safe = sanitizeStderrLine(line)
-      if (!safe) return
-      run.stderrTail.push(safe)
-      if (run.stderrTail.length > MAX_STDERR_LINES) run.stderrTail.shift()
-    })
-    rpc.on('spawn-error', (err: Error) => {
-      const raw = err instanceof Error ? err.message : String(err)
-      run.exitInfo = { code: null, signal: null, spawnError: redactLocalDiagnostic(raw, 300) ?? '未知启动错误' }
-      this.handleProcessGone(run)
-    })
-    rpc.on('exit', (code: number | null, signal: string | null) => {
-      run.exitInfo = { ...(run.exitInfo ?? {}), code, signal }
-      this.handleProcessGone(run)
-    })
+    this.wireRpc(run, rpc)
 
     this.runs.set(id, run)
     releasePreparing()
@@ -571,16 +568,44 @@ export class SubagentController {
     }
   }
 
+  private wireRpc(run: Run, rpc: SubagentRpc): void {
+    const current = (): boolean => run.rpc === rpc
+    rpc.on('event', (evt: Record<string, unknown>) => { if (current()) this.handleEvent(run, evt) })
+    rpc.on('stderr', (line: string) => {
+      if (!current()) return
+      const safe = sanitizeStderrLine(line)
+      if (!safe) return
+      run.stderrTail.push(safe)
+      if (run.stderrTail.length > MAX_STDERR_LINES) run.stderrTail.shift()
+    })
+    rpc.on('spawn-error', (err: Error) => {
+      if (!current()) return
+      const raw = err instanceof Error ? err.message : String(err)
+      run.exitInfo = { code: null, signal: null, spawnError: redactLocalDiagnostic(raw, 300) ?? '未知启动错误' }
+      this.handleProcessGone(run)
+    })
+    rpc.on('exit', (code: number | null, signal: string | null) => {
+      if (!current()) return
+      run.exitInfo = { ...(run.exitInfo ?? {}), code, signal }
+      this.handleProcessGone(run)
+    })
+  }
+
+  private sessionDir(id: string): string {
+    return join(this.opts.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id)
+  }
+
   private async createRpc(
     ctx: SubagentOptions,
     cwd: string,
     model: string | undefined,
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
-    id: string
+    id: string,
+    sessionFile?: string
   ): Promise<SubagentRpc> {
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
-    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions })
+    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
     const approval = new CapabilityServer({
       opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
@@ -611,9 +636,186 @@ export class SubagentController {
     }
   }
 
+  async send(
+    id: string,
+    message: string,
+    mode: SubagentSendMode = 'steer',
+    origin: { parentSessionId?: string; from?: SubagentSendFrom } = {}
+  ): Promise<SubagentSendResult> {
+    const text = message.trim()
+    if (!text) return { ok: false, error: '追加内容为空' }
+    const from = origin.from ?? 'parent'
+    const live = this.runs.get(id)
+    const snapshot = live ? this.snapshot(live) : this.history.get(id)?.run
+    if (!snapshot) return { ok: false, error: '找不到这个子代理' }
+    if (from === 'parent' && snapshot.parentSessionId && origin.parentSessionId !== snapshot.parentSessionId) {
+      return { ok: false, error: '只能向本会话派出的子代理追加信息' }
+    }
+    if (this.resuming.has(id) || live?.status === 'starting') return { ok: false, error: '子代理正在启动，稍后再发' }
+    if (!live || live.status !== 'running' || live.settled) return this.resume(id, text, from)
+    if (live.wrapUp || live.settling || live.finalizing) return { ok: false, error: '子代理正在收尾，等它结束后再发即可续接' }
+    const activation = live.activation
+    const current = (): boolean => this.runs.get(id) === live && live.activation === activation && live.status === 'running' && !live.settled && !live.settling
+    try {
+      const res = await live.rpc.command('prompt', { message: forwardedMessage(text, mode, from), streamingBehavior: mode }, { timeoutMs: 10_000 })
+      if (!res.success) return { ok: false, error: res.error ?? '追加信息没有送达' }
+      if (!current()) return { ok: false, error: '子代理在发送期间已结束，这条信息可能没有被处理；请再发一次以续接' }
+      const disposition = (res.data as { disposition?: unknown } | undefined)?.disposition
+      const delivery = disposition === 'queued' ? 'queued' : 'started'
+      live.lastProgressAt = Date.now()
+      live.latestActivity = delivery === 'queued'
+        ? (mode === 'steer' ? '已收到追加信息，当前工具结束后处理' : '已收到追加信息，当前任务做完后处理')
+        : '已收到追加信息'
+      this.armWatch(live)
+      this.emit(live)
+      return { ok: true, run: this.snapshot(live), delivery }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
+    if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
+    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: `同时最多 ${MAX_CONCURRENT} 个子代理，先等一个结束或停掉它` }
+    const ticket = { cancelled: false }
+    const generation = this.launchGeneration
+    this.resuming.set(id, ticket)
+    this.preparing += 1
+    let reserved = true
+    const release = (): void => {
+      if (!reserved) return
+      reserved = false
+      this.preparing -= 1
+    }
+    let settleLaunch: () => void = () => {}
+    const pendingLaunch = new Promise<void>((resolve) => { settleLaunch = () => resolve() })
+    this.pendingLaunches.add(pendingLaunch)
+    const previous = this.runs.get(id)
+    const abandoned = (): boolean =>
+      ticket.cancelled || generation !== this.launchGeneration ||
+      (previous ? this.runs.get(id) !== previous : !this.history.get(id))
+    const abandonedError = (): SubagentSendResult => ({ ok: false, error: ticket.cancelled ? '续接已被停止' : '子代理已被停止或清理，没有续接' })
+    try {
+      if (previous?.settling) await previous.settling.catch(() => undefined)
+      if (previous?.finalizing) await previous.finalizing.catch(() => undefined)
+      if (abandoned()) return abandonedError()
+      const record = this.history.get(id)
+      const snapshot = previous ? this.snapshot(previous) : record?.run
+      if (!snapshot) return { ok: false, error: '找不到这个子代理' }
+      if (snapshot.status === 'running' || snapshot.status === 'starting') {
+        if (previous) return { ok: false, error: '子代理仍在运行，请再发一次' }
+        return { ok: false, error: '这个子代理上次运行被中断，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
+      }
+      if (snapshot.isolation === 'worktree') {
+        return { ok: false, error: 'worktree 子代理结束后不能续接：请先审阅它的改动；需要继续时重新派一个，并在任务里附上它的结论' }
+      }
+      if (snapshot.launchFailed) return { ok: false, error: '这个子代理没有成功启动过，不能续接，请重新派一个' }
+      const sessionFile = await latestSessionFile(this.sessionDir(id))
+      if (abandoned()) return abandonedError()
+      if (!sessionFile) return { ok: false, error: '找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
+
+      const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
+      const workspace: PreparedWorkspace = previous?.workspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
+      const ctx: SubagentOptions = { ...this.opts, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId }
+      let brief: SubagentBrief
+      let rpc: SubagentRpc
+      try {
+        brief = previous?.brief ?? resumeBrief(snapshot)
+        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile)
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+      if (abandoned()) {
+        await rpc.close().catch(() => undefined)
+        return abandonedError()
+      }
+
+      const now = Date.now()
+      const activation = ++this.activationSeq
+      const run: Run = previous ?? {
+        ...snapshot,
+        rpc,
+        timer: setTimeout(() => undefined, 0),
+        lastProgressAt: now,
+        activeSince: now,
+        activation,
+        runningTools: new Set(),
+        ...limitsFor(brief),
+        settled: false,
+        workspace,
+        msgSeq: lastMessageSeq(snapshot.transcript),
+        usageSnapshots: {},
+        baseUsage: snapshot.usage,
+        brief,
+        stderrTail: []
+      }
+      clearTimeout(run.timer)
+      Object.assign(run, {
+        rpc, activation, status: 'starting', settled: false, resumed: true, activeSince: now, lastProgressAt: now,
+        latestActivity: '正在续接…', stderrTail: [], runningTools: new Set<string>(),
+        contextRevision: (run.contextRevision ?? 0) + 1, diff: undefined, resultPath: undefined,
+        settling: undefined, finalizing: undefined, notified: false, reviewDecided: false, worktreeDone: false,
+        endedAt: undefined, endReason: undefined, error: undefined, stopReason: undefined, wrapUp: undefined,
+        progressWarning: undefined, recovery: undefined, retryAttempt: undefined, retryMaxAttempts: undefined,
+        lastModelErrorText: undefined, exitInfo: undefined, streamingId: undefined, dismissedAt: undefined
+      })
+      this.runs.set(id, run)
+      release()
+      this.wireRpc(run, rpc)
+      this.armWatch(run)
+      this.emit(run)
+
+      const current = (status: SubagentRun['status']): boolean => run.rpc === rpc && run.activation === activation && run.status === status
+      const stoppedError = (): SubagentSendResult => ({ ok: false, error: run.error ?? '子代理在续接期间已停止，这条信息没有被处理' })
+      try {
+        rpc.spawn()
+        const ready = await this.waitReady(rpc, 20_000)
+        if (!current('starting')) return stoppedError()
+        if (ticket.cancelled || generation !== this.launchGeneration) {
+          await this.stopRun(run, false)
+          return abandonedError()
+        }
+        if (!ready.ok) {
+          await this.fail(id, '子代理续接超时', 'startup')
+          return { ok: false, error: this.runs.get(id)?.error ?? '子代理续接超时' }
+        }
+        if (snapshot.model && ready.model && modelMismatch(snapshot.model, ready.model)) {
+          const error = `续接时模型 ${snapshot.model} 没有生效（pi 实际使用 ${ready.model}），请核对登录状态后重试`
+          await this.fail(id, error, 'startup')
+          return { ok: false, error }
+        }
+        if (ready.thinkingLevel) run.thinkingLevel = ready.thinkingLevel
+        run.status = 'running'
+        run.resumed = false
+        run.latestActivity = '已续接'
+        await this.writeMetadata(run)
+        if (!current('running')) return stoppedError()
+        this.emit(run)
+        const res = await rpc.command('prompt', { message: forwardedMessage(text, 'resume', from) }, { timeoutMs: 10_000 })
+        if (!current('running')) return stoppedError()
+        if (!res.success) {
+          await this.fail(id, res.error ?? '续接后发送信息失败')
+          return { ok: false, error: res.error ?? '续接后发送信息失败' }
+        }
+        return { ok: true, run: this.snapshot(run), delivery: 'resumed' }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (run.activation === activation && (run.status === 'starting' || run.status === 'running')) await this.fail(id, message)
+        return { ok: false, error: run.error ?? message }
+      }
+    } finally {
+      release()
+      if (this.resuming.get(id) === ticket) this.resuming.delete(id)
+      this.pendingLaunches.delete(pendingLaunch)
+      settleLaunch()
+    }
+  }
+
   async stop(id: string): Promise<{ ok: boolean; error?: string }> {
+    const ticket = this.resuming.get(id)
+    if (ticket) ticket.cancelled = true
     const run = this.runs.get(id)
-    if (!run) return this.history.get(id) ? { ok: true } : { ok: false, error: '找不到这个子代理' }
+    if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: '找不到这个子代理' }
     if (run.status !== 'running' && run.status !== 'starting') return { ok: true }
     await this.stopRun(run, false)
     return { ok: true }
@@ -671,7 +873,7 @@ export class SubagentController {
   private handleProcessGone(run: Run): void {
     if (run.status !== 'running' && run.status !== 'starting') return
     clearTimeout(run.timer)
-    if (run.status === 'starting') run.launchFailed = true
+    if (run.status === 'starting' && !run.resumed) run.launchFailed = true
     run.status = 'error'
     run.endReason = 'exited'
     run.wrapUp = undefined
@@ -690,7 +892,7 @@ export class SubagentController {
     if (!run) return
     if (run.status === 'done' || run.status === 'error' || run.settling) return
     clearTimeout(run.timer)
-    if (run.status === 'starting') run.launchFailed = true
+    if (run.status === 'starting' && !run.resumed) run.launchFailed = true
     const settling = (async () => {
       await run.rpc.close()
       if (run.settled || run.status === 'done' || run.status === 'error') return
@@ -868,14 +1070,14 @@ export class SubagentController {
   private armWatch(run: Run): void {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     clearTimeout(run.timer)
-    const at = Math.min(run.totalMs ? run.startedAt + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
+    const at = Math.min(run.totalMs ? run.activeSince + run.totalMs : Infinity, run.lastProgressAt + this.stallLimit(run))
     run.timer = setTimeout(() => this.onWatch(run), Math.max(10, at - Date.now()))
   }
 
   private onWatch(run: Run): void {
     if (run.wrapUp || (run.status !== 'running' && run.status !== 'starting')) return
     const now = Date.now()
-    if (run.totalMs && now >= run.startedAt + run.totalMs) void this.wrapUp(run, totalTimeoutText(run.totalMs))
+    if (run.totalMs && now >= run.activeSince + run.totalMs) void this.wrapUp(run, totalTimeoutText(run.totalMs))
     else if (now >= run.lastProgressAt + this.stallLimit(run)) void this.wrapUp(run, stallTimeoutText(this.stallLimit(run)))
     else this.armWatch(run)
   }
@@ -1007,7 +1209,7 @@ export class SubagentController {
       const usage = toUsage(raw.usage)
       if (usage) {
         run.usageSnapshots = ingestUsageSnapshot(run.usageSnapshots, msg.id, usage)
-        run.usage = accumulateUsage(run.usageSnapshots)
+        run.usage = addUsage(run.baseUsage, accumulateUsage(run.usageSnapshots))
       }
       if (type === 'message_end') {
         run.streamingId = undefined
@@ -1177,6 +1379,56 @@ function modelMismatch(requested: string, actual: string): boolean {
 
 function finiteCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : undefined
+}
+
+function forwardedMessage(text: string, mode: SubagentSendMode | 'resume', from: SubagentSendFrom): string {
+  const label = from === 'user' ? '【用户追加】' : '【主会话追加】'
+  const timing = mode === 'resume'
+    ? '你已经完成过原任务，这是新的消息；在之前的工作基础上继续'
+    : mode === 'steer' ? '请在继续之前先考虑这条信息' : '这是在你完成原任务后补充的要求'
+  return `${label}${timing}；仍在原任务范围内工作，结束时简短汇报。\n\n${text}`
+}
+
+function addUsage(base: SubagentUsageTotals | undefined, next: SubagentUsageTotals): SubagentUsageTotals {
+  if (!base || base.reportedMessages <= 0) return next
+  const sum = (a: number | null, b: number | null): number | null => (a === null && b === null ? null : (a ?? 0) + (b ?? 0))
+  return {
+    input: sum(base.input, next.input),
+    output: sum(base.output, next.output),
+    cacheRead: sum(base.cacheRead, next.cacheRead),
+    cacheWrite: sum(base.cacheWrite, next.cacheWrite),
+    totalTokens: sum(base.totalTokens, next.totalTokens),
+    cost: sum(base.cost, next.cost),
+    reportedMessages: base.reportedMessages + next.reportedMessages
+  }
+}
+
+function resumeBrief(run: SubagentRun): SubagentBrief {
+  if (run.brief) return run.brief
+  const parsed = parseSubagentBrief(undefined, run.task)
+  if (!parsed.ok) throw new Error(parsed.error)
+  return parsed.brief
+}
+
+function lastMessageSeq(transcript: readonly UIMessage[]): number {
+  let max = transcript.length
+  for (const message of transcript) {
+    const match = /^m(\d+)$/.exec(message.id)
+    if (match) max = Math.max(max, Number(match[1]))
+  }
+  return max
+}
+
+async function latestSessionFile(dir: string): Promise<string | undefined> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  let best: { path: string; mtime: number } | undefined
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+    const path = join(dir, entry.name)
+    const mtime = (await stat(path).catch(() => undefined))?.mtimeMs
+    if (mtime !== undefined && (!best || mtime > best.mtime)) best = { path, mtime }
+  }
+  return best?.path
 }
 
 const MODEL_ERROR_RESUME_PROMPT = '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误（超时、连接中断或服务过载）中断，且没有自动重试。请核对已完成的工具结果，继续尚未完成的原任务；不要重复已完成的操作。若原任务已完成或无法安全继续，请简短说明并结束。'

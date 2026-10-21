@@ -93,6 +93,7 @@ const KNOWN_COMMANDS = new Set([
   'subagent.start',
   'subagent.list',
   'subagent.get',
+  'subagent.send',
   'subagent.stop',
   'browser.navigate',
   'browser.open',

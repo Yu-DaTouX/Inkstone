@@ -277,7 +277,6 @@ async function main() {
         'src/renderer/src/features/session/ApprovalCard.tsx': 'export function ApprovalCard(){ return null }',
         'src/renderer/src/features/session/QuestionCard.tsx': 'export function QuestionCard(){ return null }',
         'src/renderer/src/features/session/OutlineRail.tsx': 'export function OutlineRail(){ return null }\nexport function userTurnRenderIndex(){ return 0 }',
-        'src/renderer/src/features/session/StalledCard.tsx': 'export function StalledCard(){ return null }\nexport function currentStalledRun(){ return null }',
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,
         'src/renderer/src/features/session/V3EmptyState.tsx': 'export function V3EmptyState(){ return null }',
         'src/renderer/src/features/session/RewindDialogV3.tsx': 'export function RewindDialogV3(){ return null }',

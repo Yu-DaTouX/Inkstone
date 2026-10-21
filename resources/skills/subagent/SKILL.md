@@ -11,7 +11,7 @@ description: 用户指定另一个模型完成任务，或需要独立上下文�
 2. 任务说明写清目标、必要上下文、输入文件和期望结果。只传有用材料，子 Agent 不自动获得完整主会话历史。
 3. 启动：`yan subagent start --task "任务" --title "短标题" --model "provider/model"`。`--title` 是界面显示的 2–8 字短标题，并行派多个时各写一个能区分的；`--model` 用完整的「供应商/模型」（不确定时只写模型名，宿主按已登录模型匹配，有歧义会列出候选，从中选一个重试）。一次派多个独立子 Agent 时，在同一条消息里并行发出。默认在当前文件夹执行，可能直接修改文件；只分析时加 `--read-only`。代码修改需要隔离时加 `--isolation worktree`，该选项才要求 Git。
    `claude-bridge/*` 模型不支持 `--read-only`，用它时不要加该选项。启动报错时如实告诉用户原因，不要自行省略 `--model` 或换成别的模型重试。
-4. 查询用 `yan subagent list` / `yan subagent get --id <ID>`，停止用 `yan subagent stop --id <ID>`。不用固定间隔 sleep 轮询；开启完成通知时结果会回到父会话。
+4. 查询用 `yan subagent list` / `yan subagent get --id <ID>`，停止用 `yan subagent stop --id <ID>`。用 `yan subagent send --id <ID> --message "信息"` 给子 Agent 发信息：运行中用于补充资料或纠正方向（当前工具结束后送达，要它做完原任务再处理时加 `--mode follow-up`）；已结束的会按原会话续接，它记得之前的工作，追问时优先用它而不是重派。worktree 子 Agent 结束后不能续接。不用固定间隔 sleep 轮询；开启完成通知时结果会回到父会话。
 5. 不让多个写入任务同时修改相同文件；需要用户选择的问题留给主会话。子 Agent 不再派出子 Agent。
 6. 汇报时标明子 Agent 的模型、结论和未验证项；出错或部分完成不能称为任务成功。worktree 的改动仍需审阅与采用，当前文件夹任务已经直接写入，不假装有待合并补丁。
 

@@ -318,8 +318,6 @@ const PHASE_WORD: Record<RunPhase['kind'], { zh: string; en: string }> = {
 }
 
 const STALL_WORD: Record<string, { zh: string; en: string }> = {
-  'no-output': { zh: '无响应', en: 'No output' },
-  'tool-silent': { zh: '工具无输出', en: 'Tool silent' },
   retry: { zh: '重试中', en: 'Retrying' },
   'rate-limit': { zh: '限流等待', en: 'Rate limited' },
   loop: { zh: '重复输出', en: 'Looping' }

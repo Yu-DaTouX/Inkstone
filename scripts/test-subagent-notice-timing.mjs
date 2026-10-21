@@ -558,7 +558,7 @@ try {
         await clock.advance(NOTICE_COALESCE_WINDOW_MS)
         check(sent.length === 1, '多条：三条合并成一次投递，不逐条唤醒父会话', String(sent.length))
         check(
-          ['sub-a', 'sub-b', 'sub-c'].every((id) => sent[0].text.includes(`id="${id}`) || sent[0].text.includes(`yan subagent get ${id}`)),
+          ['sub-a', 'sub-b', 'sub-c'].every((id) => sent[0].text.includes(`id="${id}`) || sent[0].text.includes(`yan subagent get --id ${id}`)),
           '多条：合并文本逐个列出每个运行的原有内容'
         )
         check(sent[0].text.includes('任务 sub-a') && sent[0].text.includes('任务 sub-c'), '多条：每个任务的标题都在同一条消息里')

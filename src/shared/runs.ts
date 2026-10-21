@@ -1,5 +1,5 @@
 export type RunKind = 'session' | 'subagent' | 'scheduled'
-export type StallCause = 'no-output' | 'tool-silent' | 'retry' | 'rate-limit' | 'loop'
+export type StallCause = 'retry' | 'rate-limit' | 'loop'
 export type FailCause = 'model-error' | 'pi-exit' | 'tool-fatal' | 'host'
 export type RunActivity = 'waiting-model' | 'thinking' | 'streaming' | 'tool' | 'compacting' | 'subagent'
 export type RunRequestType = 'danger' | 'select' | 'confirm' | 'input' | 'editor'
@@ -62,15 +62,6 @@ export interface RunSnapshot {
   counts: RunCounts
 }
 
-export interface StallThresholds {
-  noOutputMs: number
-  toolSilentMs: number
-}
-
-export const STALL_MIN_MS = 30_000
-export const STALL_MAX_MS = 5 * 60_000
-export const DEFAULT_STALL_THRESHOLDS: StallThresholds = { noOutputMs: 45_000, toolSilentMs: 60_000 }
-
 export interface StallResume {
   cause: StallCause
   detail?: string
@@ -131,7 +122,6 @@ export type RunSignal =
   | { type: 'title'; title: string }
   | { type: 'model'; model: RunModel }
   | { type: 'cost'; usd: number }
-  | { type: 'stall-detected'; cause: StallCause; detail?: string }
 
 const TERMINAL_KINDS: ReadonlySet<RunPhase['kind']> = new Set(['failed', 'stopped', 'done'])
 
@@ -287,9 +277,8 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
       }
       const activeTools = signal.callId ? state.activeTools.filter((t) => t.callId !== signal.callId) : state.activeTools.slice(1)
       const remaining = activeTools[activeTools.length - 1]
-      const toolSilent = state.phase.kind === 'stalled' && state.phase.cause === 'tool-silent'
-      if ((state.phase.kind === 'running' && state.phase.activity === 'tool') || toolSilent) {
-        const since = state.phase.kind === 'running' ? state.phase.since : now
+      if (state.phase.kind === 'running' && state.phase.activity === 'tool') {
+        const since = state.phase.since
         const phase: RunPhase = remaining
           ? { kind: 'running', since, activity: 'tool', tool: remaining }
           : { kind: 'running', since, activity: 'waiting-model' }
@@ -444,55 +433,9 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
     case 'cost':
       return touch(state, now, { costUsd: signal.usd })
 
-    case 'stall-detected': {
-      if (state.phase.kind !== 'running') return touch(state, now)
-      if (state.requests.length > 0) return touch(state, now)
-      return withPhase(
-        state,
-        now,
-        { kind: 'stalled', since: now, cause: signal.cause, ...(signal.detail ? { detail: signal.detail } : {}) }
-      )
-    }
-
     default:
       return state
   }
-}
-
-export function normalizeThresholds(input?: Partial<StallThresholds>): StallThresholds {
-  const clamp = (value: unknown, fallback: number): number => {
-    const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
-    return Math.min(STALL_MAX_MS, Math.max(STALL_MIN_MS, Math.round(n)))
-  }
-  return {
-    noOutputMs: clamp(input?.noOutputMs, DEFAULT_STALL_THRESHOLDS.noOutputMs),
-    toolSilentMs: clamp(input?.toolSilentMs, DEFAULT_STALL_THRESHOLDS.toolSilentMs)
-  }
-}
-
-export interface StallDetectOptions {
-  exemptTools?: string[]
-}
-
-export function detectStall(
-  state: RunState,
-  now: number,
-  thresholds: StallThresholds = DEFAULT_STALL_THRESHOLDS,
-  options: StallDetectOptions = {}
-): StallCause | null {
-  if (state.phase.kind !== 'running') return null
-  const elapsed = now - state.lastEventAt
-  if (elapsed <= 0) return null
-  if (state.phase.activity === 'tool') {
-    const tools = state.activeTools.length > 0 ? state.activeTools : state.phase.tool ? [state.phase.tool] : []
-    const exempt = (tool: RunTool): boolean => {
-      const haystacks = [tool.label, tool.name].filter((v) => v.length > 0)
-      return !!options.exemptTools?.some((prefix) => haystacks.some((text) => text.startsWith(prefix)))
-    }
-    if (tools.length > 0 && tools.every(exempt)) return null
-    return elapsed > thresholds.toolSilentMs ? 'tool-silent' : null
-  }
-  return elapsed > thresholds.noOutputMs ? 'no-output' : null
 }
 
 export const RUN_PHASE_ORDER: Record<RunPhase['kind'], number> = {

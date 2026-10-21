@@ -90,13 +90,18 @@ async function run() {
       assert.equal(host.snapshot().runs.find((r) => r.runId === childRunId).phase.kind, 'done')
       assert.equal(host.snapshot().runs.filter((r) => r.kind === 'subagent').length, 2)
 
+      host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1', activeSince: 3_000 }, messageEvent('text_delta'))
+      const resumed = host.snapshot().runs.filter((r) => r.kind === 'subagent' && r.sessionId === 'subagent:sub-a')
+      assert.ok(resumed.some((r) => r.runId !== childRunId && r.phase.kind === 'running'), '\u7eed\u63a5\u540e\u7684\u65b0\u6fc0\u6d3b\u91cd\u65b0\u5f00\u4e00\u6bb5\u8fd0\u884c')
+      host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1', activeSince: 3_000 }, { type: 'agent_settled', aborted: false })
+
       host.settleSubagent({ id: 'sub-b', parentSessionId: 's1' }, 'stopped')
       assert.ok(['stopped', 'cancelled', 'aborted'].includes(host.snapshot().runs.find((r) => r.code === 'S1·2').phase.kind) || host.snapshot().runs.find((r) => r.code === 'S1·2').phase.kind !== 'running', '\u5b50 Agent \u505c\u6b62\u540e\u8fdb\u5165\u7ec8\u6001')
       host.settleSubagent({ id: 'sub-never', parentSessionId: 's1' }, 'failed', 'x')
-      assert.equal(host.snapshot().runs.length, beforeTotal, '\u672a\u767b\u8bb0\u7684\u5b50 Agent \u4e0d\u65b0\u5efa\u8fd0\u884c')
+      assert.equal(host.snapshot().runs.length, beforeTotal + 1, '\u672a\u767b\u8bb0\u7684\u5b50 Agent \u4e0d\u65b0\u5efa\u8fd0\u884c')
 
       host.observeSubagentEvent({ id: 'sub-orphan' }, { type: 'agent_start' })
-      assert.equal(host.snapshot().runs.length, beforeTotal)
+      assert.equal(host.snapshot().runs.length, beforeTotal + 1)
 
       await host.dispose()
     }

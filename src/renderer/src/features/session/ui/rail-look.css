@@ -71,24 +71,6 @@
   }
   .v3-rail-item[data-current] .v3-rail-num { color: var(--accent-t); }
 
-  .v3-stall {
-    border: 1px solid var(--stall);
-    border-radius: var(--r-md);
-    background: var(--stall-bg);
-    color: var(--stall-t);
-    padding: var(--s-10) var(--s-12);
-  }
-  .v3-stall-title { color: var(--fg); font-weight: 600; }
-  .v3-stall-word { color: var(--stall-t); }
-  .v3-stall-timing {
-    margin-left: auto;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-variant-numeric: tabular-nums;
-  }
-  .v3-stall-detail { margin: 0; color: var(--fg2); font-size: var(--t-footnote); overflow-wrap: anywhere; }
-  .v3-stall-note { margin: 0; color: var(--fg3); font-size: var(--t-footnote); }
-
   @media (prefers-reduced-motion: reduce) {
     .v3-rail-dock,
     .v3-rail-track,

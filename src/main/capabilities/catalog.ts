@@ -51,6 +51,13 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     'yan subagent get --id <id>'
   ),
   builtin(
+    'subagent.send',
+    '向子代理追加信息',
+    '向本会话派出的子代理发信息：运行中用于补充或纠偏（默认当前工具结束后送达，follow-up 等它做完原任务）；已结束的按原会话续接，记得之前的工作。',
+    'external-action',
+    'yan subagent send --id <id> --message <text> [--mode steer|follow-up]'
+  ),
+  builtin(
     'subagent.stop',
     '停止子代理',
     '停止一个正在运行的子代理（其工作树改动保留，由用户决定合并或放弃）。',

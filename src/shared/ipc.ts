@@ -1069,6 +1069,7 @@ export interface SubagentBridge {
     expectedRuntime?: ExpectedRuntimeOwner
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
   stop(id: string): Promise<{ ok: boolean; error?: string }>
+  send(id: string, message: string): Promise<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>
   dismiss(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
   clearFinished(): Promise<void>

@@ -141,7 +141,7 @@ function runSummaryTests(mod) {
     run('e', { kind: 'done', at: 500, seen: false }, { code: 'S2' }),
     run('f', { kind: 'done', at: 600, seen: true }),
     run('g', { kind: 'stopped', at: 700, by: 'user' }),
-    run('h', { kind: 'stalled', since: 150, cause: 'no-output' }),
+    run('h', { kind: 'stalled', since: 150, cause: 'retry' }),
     run('i', { kind: 'queued', since: 120, reason: 'followup' })
   ]
   const s = summarizeAttention(runs)

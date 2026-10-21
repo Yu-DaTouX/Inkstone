@@ -39,6 +39,12 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
   })
   handle('yan:subagents:stop', async (id: string) => (await service.get()).stop(String(id ?? '')))
+  handle('yan:subagents:send', async (id: string, message: string) => {
+    const text = String(message ?? '')
+    if (text.length > 12_000) return { ok: false, error: '信息不能超过 12000 个字符' }
+    const result = await (await service.get()).send(String(id ?? ''), text, 'steer', { from: 'user' })
+    return { ok: result.ok, ...(result.error ? { error: result.error } : {}), ...(result.delivery ? { delivery: result.delivery } : {}) }
+  })
   handle('yan:subagents:dismiss', async (id: string) => (await service.get()).dismiss(String(id ?? '')))
   handle('yan:subagents:stopAll', async () => {
     await (await service.get()).stopAll()

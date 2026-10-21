@@ -7,9 +7,9 @@ export function subagentModelError(model: string | undefined, readOnly: boolean)
   return undefined
 }
 
-export function subagentPiArgs(options: { sessionDir: string; native: boolean; readOnly: boolean; model?: string; systemPrompt?: string; extensions?: string[] }): string[] {
+export function subagentPiArgs(options: { sessionDir: string; sessionFile?: string; native: boolean; readOnly: boolean; model?: string; systemPrompt?: string; extensions?: string[] }): string[] {
   const error = subagentModelError(options.model, options.readOnly)
   if (error) throw new Error(error)
-  const base = ['--session-dir', options.sessionDir, '--no-extensions', ...(options.extensions?.flatMap(path => ['--extension', path]) ?? []), ...(options.systemPrompt ? ['--append-system-prompt', options.systemPrompt] : []), ...(options.model ? ['--model', options.model] : [])]
+  const base = ['--session-dir', options.sessionDir, ...(options.sessionFile ? ['--session', options.sessionFile] : []), '--no-extensions', ...(options.extensions?.flatMap(path => ['--extension', path]) ?? []), ...(options.systemPrompt ? ['--append-system-prompt', options.systemPrompt] : []), ...(options.model ? ['--model', options.model] : [])]
   return options.readOnly ? [...base, '--no-skills', '--tools', 'read,grep,find,ls'] : agentOwnedPiArgs(base, options.native)
 }

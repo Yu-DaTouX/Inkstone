@@ -16,7 +16,7 @@ function phaseOf(item: MiniItem): RunPhase {
     case 'needs-you':
       return { kind: 'needs-you', since: item.since, request: { id: item.runId, type: 'confirm', summary: item.title } }
     case 'stalled':
-      return { kind: 'stalled', since: item.since, cause: 'no-output' }
+      return { kind: 'stalled', since: item.since, cause: 'retry' }
     case 'failed':
       return { kind: 'failed', at: item.since, cause: 'host', message: '', seen: !item.unread }
     case 'done':

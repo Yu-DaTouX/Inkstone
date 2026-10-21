@@ -281,43 +281,6 @@ export async function runRunsRegistryTests() {
     }
 
     {
-      let clock = 10_000
-      const history = new MemoryRunHistory()
-      const registry = new RunRegistry({ codes: codes({ t1: 'T01' }), history, now: () => clock, thresholds: () => ({}), exemptTools: () => [] })
-      registry.open({ sessionId: 't1', runId: 't1' })
-      clock = 10_000 + 45_000
-      assert.deepEqual(registry.tick(), [], '未过阈值不标记停滞')
-      clock = 10_000 + 45_001
-      assert.deepEqual(registry.tick(), ['t1'])
-      assert.equal(registry.get('t1').phase.kind, 'stalled')
-      assert.equal(registry.get('t1').phase.cause, 'no-output')
-      assert.equal(history.records.length, 0, '停滞不等于终态，不写历史')
-      clock += 100_000
-      assert.deepEqual(registry.tick(), [], '已停滞不重复标记')
-      assert.equal(registry.applyStall('t1', 'retry').phase.cause, 'no-output', '非 running 阶段不接受新的停滞原因')
-      assert.equal(registry.applyStall('missing', 'retry'), null)
-    }
-
-    {
-      let clock = 20_000
-      const registry = new RunRegistry({
-        codes: codes({ e1: 'S1' }),
-        now: () => clock,
-        thresholds: () => ({ noOutputMs: 1 }),
-        exemptTools: () => ['npm']
-      })
-      registry.open({ sessionId: 'e1', runId: 'e1' })
-      registry.observe({ sessionId: 'e1' }, { type: 'tool-start', tool: { name: 'bash', label: 'npm run build', callId: 'c1' } })
-      clock += 30_000
-      assert.deepEqual(registry.tick(), [], '阈值被夹到下限 30s，未超过')
-      clock += 1
-      assert.deepEqual(registry.tick(), [], '豁免工具不报停滞')
-      const stalled = registry.applyStall('e1', 'tool-silent')
-      assert.equal(stalled.phase.kind, 'stalled')
-      assert.equal(stalled.phase.cause, 'tool-silent')
-    }
-
-    {
       let clock = 1000
       const registry = new RunRegistry({ codes: codes({ a: 'S-a', b: 'S-b', c: 'S-c', d: 'S-d', e: 'S-e', f: 'S-f', g: 'S-g' }), now: () => clock })
       registry.observe({ sessionId: 'a' }, { type: 'queued', reason: 'followup' })
@@ -410,7 +373,6 @@ export async function runRunsRegistryTests() {
       registry.dispose()
       assert.equal(registry.open({ sessionId: 's1', runId: 'x2' }), null)
       assert.equal(registry.observe({ sessionId: 's1' }, { type: 'agent-start' }), null)
-      assert.deepEqual(registry.tick(), [])
     }
   } finally {
     await rm(dir, { recursive: true, force: true })
