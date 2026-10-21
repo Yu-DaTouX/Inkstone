@@ -65,17 +65,6 @@
     gap: var(--s-8);
   }
 
-  .settings-spacer {
-    flex: 1 1 auto;
-  }
-
-  .settings-usage-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    flex-wrap: wrap;
-  }
-
   .settings-usage-state {
     display: flex;
     align-items: center;
@@ -183,11 +172,6 @@
     gap: var(--s-8);
   }
 
-  .settings-table-title {
-    color: var(--fg2);
-    font-size: var(--t-prose);
-  }
-
   .settings-table {
     width: 100%;
     border-collapse: collapse;
@@ -225,11 +209,6 @@
 
   .settings-main__title {
     margin: 0;
-  }
-
-  .settings-section__lede {
-    margin: 0;
-    color: var(--fg3);
   }
 
   .settings-group,
@@ -400,17 +379,6 @@
     color: var(--fg2);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-  }
-
-  @keyframes settings-enter {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
   }
 
   @keyframes settings-flash-line {

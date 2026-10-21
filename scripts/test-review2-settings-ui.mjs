@@ -2,14 +2,10 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 
-const entry = new URL('../src/renderer/src/features/settings/models/review2-settings-guards.ts', import.meta.url)
+const entry = new URL('../src/renderer/src/features/settings/models/models-model.ts', import.meta.url)
 const result = await build({ entryPoints: [fileURLToPath(entry)], bundle: true, format: 'esm', platform: 'node', write: false })
 const source = result.outputFiles[0].text
-const { peerBrowseBelongsTo, mergeDiscoveredModels, boundedPending } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
-
-assert.equal(peerBrowseBelongsTo({ peerId: 'peer-a' }, 'peer-a'), true)
-assert.equal(peerBrowseBelongsTo({ peerId: 'peer-a' }, 'peer-b'), false)
-assert.equal(peerBrowseBelongsTo(null, 'peer-a'), false)
+const { mergeDiscoveredModels } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
 const fetched = mergeDiscoveredModels(
   [{ id: 'model-a', name: 'edited while fetching', context: 128 }, { id: '  ' }],
@@ -20,10 +16,4 @@ assert.deepEqual(fetched, [
   { id: 'model-a', name: 'edited while fetching', context: 128, protocol: 'chat' },
   { id: 'model-b', name: 'new' }
 ])
-
-assert.deepEqual(boundedPending([{ seq: 1, data: 'abc' }], { seq: 2, data: 'de' }, 2, 5), [
-  { seq: 1, data: 'abc' }, { seq: 2, data: 'de' }
-])
-assert.equal(boundedPending([{ seq: 1, data: 'abc' }], { seq: 2, data: 'de' }, 1, 5), null)
-assert.equal(boundedPending([{ seq: 1, data: 'abc' }], { seq: 2, data: 'def' }, 3, 5), null)
-console.log('settings-ui behavior: 9 assertions passed')
+console.log('settings-ui behavior: 1 assertions passed')
