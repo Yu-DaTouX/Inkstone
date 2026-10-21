@@ -126,7 +126,7 @@ try {
       movedSessionContinuationPrompt,
       resolve, isAbsolute,
       validateCwd: async cwd => ({ ok: true, cwd }),
-      approvals: { ask: async () => { await hooks.approval?.(context); return hooks.choice ?? 'once' } },
+      approvals: { ask: async () => { await hooks.approval?.(context); return { choice: hooks.choice ?? 'once' } } },
       getSettings: async () => ({ projects: [{ id: 'p-b', name: 'b', cwd: targetDir }], recentCwds: [] }),
       patchSettings: async patch => { warnings.push('patchSettings 被调用：' + JSON.stringify(patch)); return { projects: [], recentCwds: [] } },
       rewriteSessionCwd,
