@@ -111,6 +111,32 @@ const long = acq.reviewAcquiredSkill([{
 }])
 ok(long.review.truncated && long.blocked.length >= 1,'命中满额后，文末的提示注入仍被审查到')
 
+console.log('候选文件布局')
+{
+  const flat = acq.skillFilesLayout([
+    { path: 'SKILL.md', content: enc('# PDF\n') },
+    { path: 'scripts/run.py', content: 'print(1)\n' }
+  ])
+  ok(flat.files.length === 2 && flat.files[1].path === 'scripts/run.py', '多文件：脚本不被当成多余的 SKILL.md 丢掉')
+  ok(flat.files[1].content instanceof Uint8Array, '多文件：字符串内容编码成字节')
+  ok(flat.dirName === undefined, '多文件：平铺候选没有目录名')
+  const nested = acq.skillFilesLayout([
+    { path: 'skills/pdf/SKILL.md', content: enc('# PDF\n') },
+    { path: 'skills/pdf/scripts/fill.py', content: enc('print(2)\n') }
+  ])
+  ok(nested.dirName === 'pdf', '带目录前缀：目录名作为技能名候选', String(nested.dirName))
+  ok(nested.files.map((f) => f.path).join(',') === 'SKILL.md,scripts/fill.py', '带目录前缀：去掉 skills/<名>/ 前缀后落盘')
+  await rejects(
+    () => acq.skillFilesLayout([
+      { path: 'skills/a/SKILL.md', content: enc('a') },
+      { path: 'skills/b/SKILL.md', content: enc('b') }
+    ]),
+    'multiple-skills',
+    '一个候选声明了两个技能目录时拒绝'
+  )
+  await rejects(() => acq.skillFilesLayout([{ path: 'scripts/run.py', content: enc('x') }]), 'no-skill', '没有 SKILL.md 时拒绝')
+}
+
 console.log('落盘：本次会话 / 我的技能')
 const root = await mkdtemp(join(tmpdir(), 'yan-acquired-'))
 try {
@@ -130,6 +156,18 @@ try {
     '路径穿越被拒绝'
   )
   await rejects(() => acq.installAcquiredSkill({ root, scope: 'session', sessionId: '../x', name: 'pdf', description: '', files: downloaded, source }), 'session-id', '会话 id 不安全时拒绝')
+
+  const multi = acq.skillFilesLayout([
+    { path: 'SKILL.md', content: enc('# Multi\n') },
+    { path: 'scripts/run.py', content: enc('print(1)\n') }
+  ])
+  const multiEntry = await acq.installAcquiredSkill({ root, scope: 'session', sessionId, name: 'multi', description: 'M', files: multi.files, source })
+  ok(existsSync(join(multiEntry.dir, 'scripts', 'run.py')), '多文件技能：脚本与 SKILL.md 一起落盘')
+  ok(
+    (await acq.listSessionSkills(root, sessionId)).find((skill) => skill.name === 'multi')?.fileCount === 2,
+    '多文件技能：会话索引记 2 个文件'
+  )
+  await acq.removeSessionSkill(root, sessionId, 'multi')
 
   process.env.YAN_DATA_DIR = root
   const guide = await import('../out/test/capability-guide-session.mjs')

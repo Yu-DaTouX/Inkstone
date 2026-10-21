@@ -1,11 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const CAPABILITY_API_VERSION = 1
 
 export const CAPABILITY_RESULT_MAX_BYTES = 4 * 1024 * 1024
+
+export const CAPABILITY_OPS_MAX_FILES = 500
+
+export const CAPABILITY_OPS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface YanCliEnv {
   url: string
@@ -22,7 +26,6 @@ export interface CapabilityContext {
 
 export interface CapabilityCommandResult {
   data?: unknown
-  resultText?: string
   summary: Record<string, unknown>
 }
 
@@ -59,7 +62,7 @@ const NOT_IMPLEMENTED: CapabilityHandlers = {
   }
 }
 
-const KNOWN_COMMANDS = new Set([
+export const KNOWN_COMMANDS = new Set([
   'operations.status',
   'capabilities.search',
   'capabilities.discover',
@@ -119,6 +122,7 @@ const KNOWN_COMMANDS = new Set([
   'browser.disconnect-chrome',
   'search.query',
   'search.fetch',
+  'search.docs',
   'search.doctor'
 ])
 
@@ -177,11 +181,12 @@ export class CapabilityServer {
   }
 
   async start(ctx: CapabilityContext): Promise<{ url: string; token: string }> {
-    if (this.server) return { url: this.url, token: this.token }
+    if (this.server) throw new Error('一个能力服务实例只服务一个会话')
 
     this.ctx = ctx
     this.token = randomUUID()
     mkdirSync(this.opsDir, { recursive: true })
+    this.pruneOps()
 
     this.server = createServer((req, res) => {
       void this.handle(req, res)
@@ -330,6 +335,37 @@ export class CapabilityServer {
     }
   }
 
+  private pruneOps(): void {
+    const cutoff = Date.now() - CAPABILITY_OPS_MAX_AGE_MS
+    let kept = 0
+    const files: Array<{ path: string; at: number }> = []
+    try {
+      for (const name of readdirSync(this.opsDir)) {
+        if (!/\.(?:json|txt)$/.test(name)) continue
+        const path = join(this.opsDir, name)
+        try {
+          const info = statSync(path)
+          if (!info.isFile()) continue
+          files.push({ path, at: info.mtimeMs })
+        } catch {
+        }
+      }
+    } catch {
+      return
+    }
+    files.sort((a, b) => b.at - a.at)
+    for (const file of files) {
+      if (file.at < cutoff || kept >= CAPABILITY_OPS_MAX_FILES) {
+        try {
+          unlinkSync(file.path)
+        } catch {
+        }
+        continue
+      }
+      kept++
+    }
+  }
+
   private checkToken(header: string | undefined): boolean {
     const prefix = 'Bearer '
     if (!this.token || !header?.startsWith(prefix)) return false
@@ -339,11 +375,7 @@ export class CapabilityServer {
     return timingSafeEqual(got, want)
   }
 
-  private writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data' | 'resultText'>): { path: string; bytes: number } | null {
-    if (out.data !== undefined && out.resultText !== undefined) {
-      throw new CapabilityCommandError('result_shape_invalid', '宿主命令不能同时返回 JSON 数据与原始文本结果')
-    }
-    if (out.resultText !== undefined) return this.writeRawTextResult(opId, out.resultText)
+  private writeResult(opId: string, out: Pick<CapabilityCommandResult, 'data'>): { path: string; bytes: number } | null {
     if (out.data === undefined) return null
     let text: string
     try {
@@ -362,23 +394,6 @@ export class CapabilityServer {
       return null
     }
     return { path, bytes: Buffer.byteLength(text) }
-  }
-
-  private writeRawTextResult(opId: string, text: string): { path: string; bytes: number } {
-    const bytes = Buffer.byteLength(text)
-    if (bytes > CAPABILITY_RESULT_MAX_BYTES) {
-      throw new CapabilityCommandError(
-        'result_too_large',
-        `原始文本结果 ${bytes} 字节超过受管上限 ${CAPABILITY_RESULT_MAX_BYTES}，未写出半份结果`
-      )
-    }
-    const path = join(this.opsDir, `${opId}.txt`)
-    try {
-      writeFileSync(path, text, 'utf8')
-    } catch {
-      throw new CapabilityCommandError('result_write_failed', '无法写出受管文本结果；内容没有返回给模型')
-    }
-    return { path, bytes }
   }
 
   private remember(op: { id: string; command: string; at: number; ok: boolean; error?: string }): void {

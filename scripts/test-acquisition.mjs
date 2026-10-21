@@ -348,6 +348,36 @@ export async function runAcquisitionTests(ok, modules) {
 
   await runNpmArtifactTests(ok, npmArtifact, npmAcquisition, service)
   await runPackageAuthorizationTests(ok, packageAuthorizationShared, packageAuthorizationService)
+
+  {
+    const concurrentRoot = await mkdtemp(join(tmpdir(), 'yan-acq-shared-'))
+    try {
+      const first = service.acquisitionServiceFor(concurrentRoot)
+      const second = service.acquisitionServiceFor(join(concurrentRoot, '.'))
+      ok(first === second, '真文件：同一数据目录复用同一接入事务服务（跨调用串行写日志）')
+      await Promise.all([
+        first.begin({ planId: 'plan-a', candidateId: 'npm:a@1.0.0', digest: 'digest-a', projectId: 'proj-1' }),
+        second.begin({ planId: 'plan-b', candidateId: 'npm:b@1.0.0', digest: 'digest-b', projectId: 'proj-1' })
+      ])
+      const listed = await first.list()
+      ok(listed.length === 2, '真文件：并发 begin 两条事务都落进日志（不丢更新）', listed.map((tx) => tx.planId).join(','))
+
+      const stale = join(concurrentRoot, 'capabilities', 'acquisition.json.tmp')
+      await writeFile(stale, 'crashed write', 'utf8')
+      await first.begin({ planId: 'plan-c', candidateId: 'npm:c@1.0.0', digest: 'digest-c', projectId: 'proj-1' })
+      ok((await readFile(stale, 'utf8')) === 'crashed write', '真文件：遗留的固定名临时文件不被新写入覆盖（临时名唯一）')
+      const logText = await readFile(join(concurrentRoot, 'capabilities', 'acquisition.json'), 'utf8')
+      let parsed = null
+      try {
+        parsed = JSON.parse(logText)
+      } catch {
+      }
+      ok(!!parsed?.transactions, '真文件：并发写后日志仍是合法 JSON')
+      ok((await first.list()).length === 3, '真文件：遗留临时文件不影响下一次写入')
+    } finally {
+      await rm(concurrentRoot, { recursive: true, force: true })
+    }
+  }
 }
 
 async function runPackageAuthorizationTests(ok, shared, serviceModule) {

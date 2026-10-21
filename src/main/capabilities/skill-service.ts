@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute } from 'node:path'
 import type { Capability } from '../../shared/capabilities'
 import { skillCapabilityId } from '../../shared/capabilities'
 
@@ -93,12 +93,6 @@ export function stripSkillFrontmatter(content: string): string {
   return (after < 0 ? '' : normalized.slice(after + 1)).trim()
 }
 
-export function skillLocationAllowed(location: string, baseDir: string): boolean {
-  const target = resolve(location)
-  const root = resolve(baseDir)
-  return target === resolve(root, basename(target)) && target.startsWith(root + sep)
-}
-
 export function findSkill(
   commands: readonly RawSkillCommand[],
   id: string
@@ -112,9 +106,6 @@ export async function readSkillById(
 ): Promise<SkillReadResult> {
   const record = findSkill(commands, id)
   if (!record) throw new Error(`找不到这个技能：${id}`)
-  if (!skillLocationAllowed(record.location, record.baseDir)) {
-    throw new Error(`技能文件位置不合法（不在技能目录内）：${record.location}`)
-  }
   const raw = await readFile(record.location, 'utf8')
   const body = stripSkillFrontmatter(raw)
   const contentHash = createHash('sha256').update(body, 'utf8').digest('hex')

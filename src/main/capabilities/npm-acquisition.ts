@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { AcquisitionService, stagingDirOf, type StagedManifest } from './acquisition-service'
+import { acquisitionServiceFor, stagingDirOf, type StagedManifest } from './acquisition-service'
 import { fetchNpmArtifact, type FetchLike, type NpmArtifact } from './npm-artifact'
 
 export class NpmAcquisitionError extends Error {
@@ -34,7 +34,7 @@ export async function stageNpmAcquisition(input: StageNpmAcquisitionInput): Prom
   if (!input.integrity?.startsWith('sha512-')) {
     throw new NpmAcquisitionError('prepare-integrity-missing', 'npm 候选缺少 prepare 阶段固定的 SHA-512，拒绝下载')
   }
-  const service = new AcquisitionService({ root: input.root })
+  const service = acquisitionServiceFor(input.root)
   const transaction = await service.get(input.operationId)
   if (!transaction) throw new NpmAcquisitionError('unknown-operation', '下载前没有对应的接入事务')
   if (

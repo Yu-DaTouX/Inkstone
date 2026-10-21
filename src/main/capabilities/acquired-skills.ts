@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { reviewSkillFiles, type SkillSecurityFinding, type SkillSecurityReview } from '../../shared/skill-security'
 import { USER_SKILL_NAME_PATTERN } from '../../shared/user-skill'
 import { userSkillsDir } from '../user-skills'
 
 export type AcquiredSkillScope = 'session' | 'user'
+export type SkillFileInput = { path: string; content: string | Uint8Array }
 export type AcquiredSkillFile = { path: string; content: Uint8Array }
 export type AcquiredSkillSource = { candidateId: string; url?: string; repository?: string; commit?: string }
 
@@ -89,6 +90,47 @@ export function reviewAcquiredSkill(files: readonly AcquiredSkillFile[]): {
   const blocked = review.findings.filter((finding) => finding.code === 'prompt-injection')
   const warnings = review.findings.filter((finding) => finding.severity === 'high' && finding.code !== 'prompt-injection')
   return { review, blocked, warnings }
+}
+
+export function normalizeSkillFilePath(path: string): string {
+  const raw = String(path)
+  if (!raw || raw.includes('\0') || isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) || /^[\\/]/.test(raw)) {
+    throw new AcquiredSkillError('file-path', `Skill 文件路径不安全：${path}`)
+  }
+  const value = raw.replaceAll('\\', '/')
+  if (value.split('/').some((part) => part === '..' || part === '.')) {
+    throw new AcquiredSkillError('file-path', `Skill 文件路径不安全：${path}`)
+  }
+  return value
+}
+
+export function declaredSkillFile(root: string, path: string): { path: string; absolute: string } {
+  const value = normalizeSkillFilePath(path)
+  if (!/^skills\/[^/]+\/SKILL\.md$/i.test(value)) {
+    throw new AcquiredSkillError('file-path', `Skill 文件必须是 skills/<name>/SKILL.md：${value}`)
+  }
+  const base = resolve(root)
+  const absolute = resolve(base, value)
+  const escaped = relative(base, absolute)
+  if (/^\.\.(?:[\\/]|$)/.test(escaped) || isAbsolute(escaped)) {
+    throw new AcquiredSkillError('file-path', `Skill 文件路径越界：${path}`)
+  }
+  return { path: value, absolute }
+}
+
+export function skillFilesLayout(
+  listed: readonly SkillFileInput[]
+): { files: AcquiredSkillFile[]; dirName?: string } {
+  const skillMd = listed.find((file) => /(^|\/)SKILL\.md$/i.test(file.path))
+  if (!skillMd) throw new AcquiredSkillError('no-skill', '候选里没有 SKILL.md，拒绝接入')
+  const prefix = skillMd.path.slice(0, skillMd.path.length - 'SKILL.md'.length)
+  const stray = listed.find((file) => prefix && !file.path.startsWith(prefix))
+  if (stray) throw new AcquiredSkillError('multiple-skills', `一个候选只能接入一个技能；这个候选还声明了 ${stray.path}`)
+  const files = listed.map((file) => ({
+    path: file.path.slice(prefix.length),
+    content: typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content
+  }))
+  return { files, dirName: prefix.split('/').filter(Boolean).at(-1) }
 }
 
 export function sessionSkillsDir(root: string, sessionId: string): string {

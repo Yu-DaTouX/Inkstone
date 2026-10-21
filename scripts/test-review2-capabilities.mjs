@@ -27,7 +27,7 @@ try {
   await writeFile(settings, '{broken')
   const brokenListing = packages.listPackages('', temp)
   assert.equal(brokenListing.ok, false)
-  assert.ok(brokenListing.settingsError)
+  assert.match(String(brokenListing.error), /无法读取或解析/)
   await writeFile(settings, JSON.stringify({ packages: ['npm:../../outside'] }))
   assert.equal(packages.listPackages('', temp).ok, false)
   packages.configurePackageContext({ bin: () => null, isProjectTrusted: () => false })
