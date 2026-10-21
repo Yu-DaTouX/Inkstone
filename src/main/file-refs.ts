@@ -82,7 +82,7 @@ const IMAGE_MIME: Record<string, string> = {
   '.avif': 'image/avif'
 }
 
-const granted = new Map<string, { size: number; mime: string; kind: FileRefKind; name: string; at: number }>()
+const granted = new Map<string, { size: number; mime: string; kind: FileRefKind; name: string; mtimeMs: number }>()
 
 function classify(name: string): { mime: string; kind: FileRefKind } {
   const ext = extname(name).toLowerCase()
@@ -125,7 +125,7 @@ export async function grantFile(input: string): Promise<FileRefInfo> {
     return fail(input, `文件过大（${(st.size / 1024 / 1024).toFixed(1)}MB，上限 ${limit / 1024 / 1024}MB）`)
   }
 
-  granted.set(real, { size: st.size, mime, kind, name, at: Date.now() })
+  granted.set(real, { size: st.size, mime, kind, name, mtimeMs: st.mtimeMs })
   return { ok: true, input, path: real, name, size: st.size, mimeType: mime, kind }
 }
 
@@ -150,7 +150,7 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
   const meta = granted.get(real)
   if (!meta) return { ok: false, error: '这个文件没有加入上下文，不能在预览里读取' }
   const now = await stat(real).catch(() => null)
-  if (!now || now.size !== meta.size || now.mtimeMs > meta.at) {
+  if (!now || now.size !== meta.size || now.mtimeMs !== meta.mtimeMs) {
     return { ok: false, error: '文件已变化，请重新添加到上下文' }
   }
   if (meta.kind === 'pdf') {
