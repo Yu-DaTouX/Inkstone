@@ -279,7 +279,7 @@ async function main() {
     const bundle = await import(pathToFileURL(await buildComposer(outdir)).href)
     const { Composer, __state, layout } = bundle
 
-    ok(layout.COMPOSER_LEFT_ORDER.join('>') === 'mode>permission>plus>sendkey', '底栏左侧顺序：模式徽标→权限→＋→发送键提示')
+    ok(layout.COMPOSER_LEFT_ORDER.join('>') === 'mode>permission>plus', '底栏左侧顺序：模式徽标→权限→＋')
     ok(layout.COMPOSER_RIGHT_ORDER.join('>') === 'voice>context>model-thinking>run>send', '底栏右侧顺序：语音→上下文环→模型+思考→运行位→发送')
     ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
     ok(layout.composerPrompt('!ls') === '$' && layout.composerPrompt('普通') === '›', '提示符：直执行 $、普通 ›')
@@ -287,9 +287,6 @@ async function main() {
     ok(layout.composerSubmitAction({ running: true, hasText: true, hasAttachments: false }) === 'send', '运行中 + 有字 → 发送（插话）')
     ok(layout.composerSubmitAction({ running: true, hasText: false, hasAttachments: true }) === 'send', '运行中 + 有附件 → 发送')
     ok(layout.composerSubmitAction({ running: false, hasText: false, hasAttachments: false }) === 'send', '空闲 → 发送')
-    ok(layout.composerSendKeyHint('auto', false) === null, '默认发送键、非长文 → 不显示提示')
-    ok(layout.composerSendKeyHint('auto', true) === 'enter', '长文模式 → 显示 Enter 规则')
-    ok(layout.composerSendKeyHint('ctrlEnter', false) === 'ctrl', '发送键非默认 → 显示实际规则')
 
     const rt = hookRuntime()
     globalThis.__V3_HOOKS = rt
@@ -343,10 +340,12 @@ async function main() {
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
     ok(
-      barControls.join('>') === 'div>VoiceButton>ContextRing>ModelThinkingPicker>#composer-send',
-      '底栏右侧顺序：语音→上下文→模型+思考→发送（运行中只换成停止键，不另显标注）',
+      barControls.join('>') === 'div>div>ModelThinkingPicker>#composer-send',
+      '底栏右侧顺序：语音与上下文一组→模型+思考→发送（运行中只换成停止键，不另显标注）',
       barControls
     )
+    ok(controlNames(byClass(card, 'composer-aux')).join('>') === 'VoiceButton>ContextRing', '语音与上下文环收在右侧同一组')
+    ok(byTestId(card, 'composer-send').props.size === 'sm', '发送键用小号按钮')
     ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
 
     const ta = byTestId(card, 'composer-input')
@@ -379,7 +378,8 @@ async function main() {
 
     __state.settings = { sendKey: 'ctrlEnter' }
     tree = rt.render(Composer, {})
-    ok(byTestId(tree, 'composer-keyhint') !== null, '发送键非默认时显示发送键提示')
+    ok(byTestId(tree, 'composer-keyhint') === null, '发送键非默认时也不在底栏显示按键提示')
+
 
     const composerCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/composer.css'), 'utf8')
     ok(/\n\s*\.composer\s*\{[^}]*position:\s*relative/.test(composerCssText), '卡片为绝对定位的顶边提供定位上下文')

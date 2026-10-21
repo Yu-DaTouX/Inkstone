@@ -422,7 +422,7 @@
   .composer-bar {
     display: flex;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-8);
     min-width: 0;
   }
 
@@ -471,14 +471,16 @@
     white-space: nowrap;
   }
 
-  .composer-keyhint {
-    flex: 0 1 auto;
+  .composer-aux {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
     min-width: 0;
-    overflow: hidden;
     color: var(--fg3);
-    font-size: var(--t-footnote);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .composer-aux:empty {
+    display: none;
   }
 
   .composer-voice {
@@ -528,7 +530,8 @@
 
   .composer-send {
     flex: none;
-    min-width: var(--size-btn);
+    width: var(--size-btn-sm);
+    min-width: var(--size-btn-sm);
     padding: 0;
     border-radius: var(--r-full);
   }
@@ -836,10 +839,6 @@
   }
 
   @container (max-width: 620px) {
-    .composer-keyhint {
-      display: none;
-    }
-
     .composer-bar .ctx-ring-text {
       display: none;
     }

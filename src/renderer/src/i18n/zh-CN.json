@@ -418,8 +418,6 @@
   "composer.mention": "@ 引用",
   "composer.fileRefs": "（附件文件，可直接读取）\n{list}",
   "composer.go": "发送",
-  "composer.keyCtrlSend": "Ctrl+Enter 发送 · Enter 换行",
-  "composer.keyEnterSend": "Enter 发送 · Shift+Enter 换行",
   "composer.pathError": "读取目录失败，请检查当前项目权限",
   "composer.pathLoading": "正在读取当前项目目录…",
   "composer.pathNoMatch": "没有匹配的文件或目录",

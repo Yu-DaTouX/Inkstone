@@ -70,9 +70,10 @@
     note(resize ? '存在长文模式开关 composer-resize' : 'v3 没有长文模式开关 composer-resize（与 v2 差异，跳过该分支）')
 
     out.push('')
-    out.push('--- 2. Ctrl+Enter 模式提示 ---')
+    out.push('--- 2. Ctrl+Enter 模式 ---')
     await store.getState().patchSettings({ sendKey: 'ctrlEnter' })
-    check(await until(() => /Ctrl/i.test(hintText()), 3000), `提示变为「Ctrl+Enter 发送」（实际 ${JSON.stringify(hintText())}）`)
+    await wait(200)
+    check(hintText().length === 0, `切到 Ctrl+Enter 后底栏仍不显示按键提示（实际 ${JSON.stringify(hintText())}）`)
 
     out.push('')
     out.push('--- 3. 规则生效 ---')
