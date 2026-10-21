@@ -45,8 +45,11 @@ export interface FrameFlush {
 
 export function createFrameFlush(drain: () => void): FrameFlush {
   let handle: number | ReturnType<typeof setTimeout> | null = null
+  let scheduled = false
   const animated = typeof requestAnimationFrame === 'function'
   const clear = (): void => {
+    if (!scheduled) return
+    scheduled = false
     if (handle === null) return
     if (animated) cancelAnimationFrame(handle as number)
     else clearTimeout(handle as ReturnType<typeof setTimeout>)
@@ -54,8 +57,10 @@ export function createFrameFlush(drain: () => void): FrameFlush {
   }
   return {
     schedule() {
-      if (handle !== null) return
+      if (scheduled) return
+      scheduled = true
       const run = (): void => {
+        scheduled = false
         handle = null
         drain()
       }

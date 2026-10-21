@@ -10,7 +10,7 @@ import { toolTileText } from '../features/workbench/tool-tile-text'
 import { workbenchText } from '../features/workbench/workbench-text'
 import { ToolTileBody } from '../features/workbench/ToolTileBody'
 import type { WorkbenchTabId } from '../features/workbench/types'
-import { newestMessages, shownMessages } from '../state/split-snapshots'
+import { newestMessages } from '../state/split-snapshots'
 import { SessionView } from '../features/session/SessionView'
 import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
@@ -315,9 +315,8 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
   const summary = useSplitSummary(target)
   const cached = runtime?.messages
-  const shown = useMemo(() => shownMessages(target), [target])
   const [history, setHistory] = useState<UIMessage[] | null>(null)
-  const messages = useMemo(() => newestMessages(cached, shown, history ?? undefined) ?? [], [cached, shown, history])
+  const messages = useMemo(() => newestMessages(cached, history ?? undefined) ?? [], [cached, history])
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
   const waiting = (runtime?.uiRequests.length ?? 0) > 0

@@ -9,6 +9,11 @@ const settle = async () => {
   for (let i = 0; i < 6; i += 1) await sleep(0)
 }
 
+const flushPatches = async () => {
+  await sleep(20)
+  await settle()
+}
+
 export async function runSessionConcurrencyFrontendTests(ok) {
   const section = (name) => console.log(`\n## ${name}`)
 
@@ -609,6 +614,7 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         runtime: { sessionId: 'sess-a', runId: 'r1', generation: 2 },
         payload: { id: 'm-live', patch: { textDelta: '!' } }
       })
+      await flushPatches()
       ok(
         useStore.getState().messages.find((m) => m.id === 'm-live')?.text === 'hello!',
         'peek 之后按 id 的补丁仍能落到流式消息上'
@@ -636,6 +642,7 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         runtime,
         payload: { id: 'm-live', patch: { textDelta: '！' } }
       })
+      await flushPatches()
       ok(
         useStore.getState().messages.find((m) => m.id === 'm-live')?.text === '已流式两百多字！',
         'sync 之后按 id 的增量仍有落点'

@@ -24,6 +24,7 @@ export async function runRunStateTests() {
   for (const field of ['isAgentRunning', 'isCompacting', 'isStreaming']) {
     assert.equal(executionBusy({ [field]: true }, () => { throw new Error('unexpected shell read') }, () => 0), true)
   }
+  assert.equal(executionBusy({ pendingMessageCount: 2 }, () => { throw new Error('unexpected shell read') }, () => { throw new Error('unexpected UI read') }), true)
   assert.equal(executionBusy(null, () => true, () => { throw new Error('unexpected UI read') }), true)
   assert.equal(executionBusy(null, () => false, () => 1), true)
   assert.equal(executionBusy(null, () => false, () => 0), false)

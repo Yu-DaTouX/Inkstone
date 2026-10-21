@@ -4,7 +4,7 @@ import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } f
 import type { QueueItem } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
-import { locateQueueItem, planQueueOp, type QueueOp } from './queue-plan'
+import { locateQueueItem, type QueueOp } from './queue-plan'
 import './queue-editor.css'
 
 type RowAction = 'steer' | 'edit' | 'up' | 'down' | 'retract' | 'delete'
@@ -25,7 +25,7 @@ export function QueueEditor() {
   const restoreSend = useStore((s) => s.restoreSend)
   const steerQueued = useStore((s) => s.steerQueued)
   const removeQueued = useStore((s) => s.removeQueued)
-  const applyQueueOrder = useStore((s) => s.applyQueueOrder)
+  const applyQueueOp = useStore((s) => s.applyQueueOp)
   const roundRunning = useStore((s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running)
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -49,9 +49,7 @@ export function QueueEditor() {
 
   const runOrder = async (op: QueueOp): Promise<void> => {
     closeEdit()
-    const next = planQueueOp(useStore.getState().queue, op)
-    if (!next) return
-    await applyQueueOrder(next)
+    await applyQueueOp(op)
   }
 
   const commitEdit = (id: string, text: string): void => {

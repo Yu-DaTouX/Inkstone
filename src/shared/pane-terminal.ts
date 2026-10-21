@@ -31,6 +31,15 @@ export interface PaneTerminalLeaseView {
 
 export type PaneTerminalPushKind = 'data' | 'status' | 'exit' | 'invalidated'
 
+export interface PaneTerminalLeaseEvent {
+  kind: 'attached' | 'detached' | 'invalidated'
+  terminalId: string
+  ownerKey: string
+  leaseId: string
+  epoch: number
+  reason?: string
+}
+
 export type PaneTerminalPushEvent =
   | { leaseId: string; epoch: number; terminalId: string; kind: 'data'; data: string; seq: number }
   | { leaseId: string; epoch: number; terminalId: string; kind: 'status'; status?: TerminalProgramStatus }
@@ -61,6 +70,7 @@ export interface PaneTerminalBridge {
   detach(leaseId: string): Promise<boolean>
   closeSelf(): void
   onPush(cb: (event: PaneTerminalPushEvent) => void): () => void
+  onLease(cb: (event: PaneTerminalLeaseEvent) => void): () => void
 }
 
 export const PANE_TERMINAL_CHANNELS = {

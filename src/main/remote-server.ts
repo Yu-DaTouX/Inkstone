@@ -106,7 +106,6 @@ const CORS_HEADERS = {
 const REMOTE_CHANNELS = new Set([
   'msg-add',
   'msg-update',
-  'msg-remove',
   'tool',
   'state',
   'stats',

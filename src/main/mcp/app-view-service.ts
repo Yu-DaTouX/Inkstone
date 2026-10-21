@@ -484,13 +484,14 @@ export class McpAppViewService implements McpAppViewApi {
     }
   }
 
-  async release(instanceId: string): Promise<void> {
+  async release(instanceId: string): Promise<{ ok: boolean }> {
     const id = String(instanceId ?? '')
     const binding = this.instances.get(id)
-    if (!binding) return
+    if (!binding) return { ok: false }
     this.instances.delete(id)
     this.abortBinding(binding)
     this.store.release(binding.instanceId, binding.owner)
+    return { ok: true }
   }
 
   async audit(callId: string): Promise<McpAppViewAuditEntry[]> {

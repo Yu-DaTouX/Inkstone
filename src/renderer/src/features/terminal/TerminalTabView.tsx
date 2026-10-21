@@ -10,6 +10,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { resourceOwner, claimResource, releaseResource } from '../../state/resource-owners'
+import { paneTerminalBridge } from '../../../auxwin/pane-bridge'
 import { installImeFallback, installTerminalRenderer, terminalFontReady } from './terminal-appearance'
 import { observeTerminalEnvironment, readTerminalTheme, terminalFontFamily } from './terminal-theme'
 import {
@@ -220,6 +221,7 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       const controller = new TerminalSession({
         bridge: window.yan.terminal,
         onPush: (cb) => window.yan.onPush((msg) => cb(msg as unknown as TerminalPushMessage)),
+        onLease: (cb) => paneTerminalBridge()?.onLease?.(cb) ?? (() => {}),
         ownerOf: resourceOwner,
         claim: claimResource,
         release: releaseResource,

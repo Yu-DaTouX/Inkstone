@@ -3,12 +3,10 @@ import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   consentKeyOf,
-  consentVerdict,
   emptyConsentLedger,
   parseConsentLedger,
   recordConsent,
   type ConsentDecision,
-  type ConsentEntryView,
   type ConsentKeyParts,
   type ConsentLedger
 } from '../shared/tool-consent'
@@ -62,32 +60,3 @@ export function markConsentAuto(parts: ConsentKeyParts): Promise<ConsentLedger> 
   }))
 }
 
-export async function listConsentViews(): Promise<ConsentEntryView[]> {
-  const ledger = await readConsentLedger()
-  const now = Date.now()
-  return ledger.entries
-    .map((entry) => ({
-      key: entry.key,
-      parts: entry.parts,
-      verdict: consentVerdict(entry, entry.parts, now),
-      ...(entry.override ? { override: entry.override } : {}),
-      ...(entry.lastAutoAt ? { lastAutoAt: entry.lastAutoAt } : {}),
-      ...(entry.records.length ? { lastAnswerAt: entry.records[entry.records.length - 1].at } : {})
-    }))
-    .sort((a, b) => (b.lastAnswerAt ?? 0) - (a.lastAnswerAt ?? 0))
-}
-
-export function changeConsentEntry(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<ConsentLedger> {
-  return updateConsentLedger((ledger) => ({
-    ...ledger,
-    entries:
-      action === 'forget'
-        ? ledger.entries.filter((entry) => entry.key !== key)
-        : ledger.entries.map((entry) => {
-            if (entry.key !== key) return entry
-            if (action === 'always-ask') return { ...entry, override: 'always-ask' as const }
-            const { override: _override, ...rest } = entry
-            return rest
-          })
-  }))
-}
