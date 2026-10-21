@@ -14,6 +14,7 @@ export interface JumpRange {
 
 export const JUMP_RANGE_MAX = 200
 export const MIN_NUMBER_DIGITS = 3
+export const CODE_LINE_LIMIT = 20_000
 
 const NO_CLASSES: readonly string[] = []
 
@@ -90,6 +91,15 @@ export function jumpRange(line: number | undefined, lineEnd?: number): JumpRange
   return { first: line, last }
 }
 
+export function capCodeText(text: string, limit = CODE_LINE_LIMIT): { text: string; capped: boolean } {
+  let index = -1
+  for (let i = 0; i < limit; i += 1) {
+    index = text.indexOf('\n', index + 1)
+    if (index < 0) return { text, capped: false }
+  }
+  return { text: text.slice(0, index), capped: true }
+}
+
 export function scrollPastEndPadding(viewportHeight: number, lineHeight: number, paddingTop: number): number {
   return Math.max(0, viewportHeight - lineHeight - paddingTop - 0.5)
 }
@@ -118,6 +128,13 @@ export function indentUnit(texts: readonly string[], tabSize: number): number {
 
 export function indentColumns(texts: readonly string[], tabSize: number): number[] {
   const raw = texts.map((text) => leadingColumns(text, tabSize))
+  const following = new Array<number>(texts.length).fill(0)
+  let next = 0
+  for (let i = raw.length - 1; i >= 0; i -= 1) {
+    const value = raw[i]
+    if (value !== null) next = value
+    following[i] = next
+  }
   const result = new Array<number>(texts.length).fill(0)
   let previous = 0
   for (let i = 0; i < raw.length; i += 1) {
@@ -127,15 +144,7 @@ export function indentColumns(texts: readonly string[], tabSize: number): number
       previous = value
       continue
     }
-    let next = 0
-    for (let j = i + 1; j < raw.length; j += 1) {
-      const candidate = raw[j]
-      if (candidate !== null) {
-        next = candidate
-        break
-      }
-    }
-    result[i] = Math.min(previous, next)
+    result[i] = Math.min(previous, following[i])
   }
   return result
 }
@@ -153,18 +162,20 @@ export function wrapIndentColumns(texts: readonly string[], tabSize: number): nu
 export function foldRegions(texts: readonly string[], tabSize: number): Map<number, number> {
   const raw = texts.map((text) => leadingColumns(text, tabSize))
   const regions = new Map<number, number>()
+  const open: { index: number; indent: number }[] = []
+  const close = (end: number): void => {
+    const entry = open.pop()
+    if (entry && end > entry.index) regions.set(entry.index, end)
+  }
+  let last = -1
   for (let i = 0; i < raw.length; i += 1) {
     const indent = raw[i]
     if (indent === null) continue
-    let end = -1
-    for (let j = i + 1; j < raw.length; j += 1) {
-      const value = raw[j]
-      if (value === null) continue
-      if (value <= indent) break
-      end = j
-    }
-    if (end > i) regions.set(i, end)
+    while (open.length && open[open.length - 1].indent >= indent) close(last)
+    open.push({ index: i, indent })
+    last = i
   }
+  while (open.length) close(last)
   return regions
 }
 

@@ -202,7 +202,13 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
       }
       setViewSlot({ key: expectedViewKey, view: { kind: 'binary', name: result.name, abs: result.abs, bytes: result.size, media: body === 'media', notes } })
     }
-    void run()
+    void run().catch((error: unknown) => {
+      if (cancelled) return
+      setViewSlot({
+        key: expectedViewKey,
+        view: { kind: 'error', name, message: error instanceof Error && error.message ? error.message : text.failed }
+      })
+    })
     return () => {
       cancelled = true
     }
@@ -237,6 +243,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
       ? { abs: diskStat.abs, cwd: owner.cwd, mtimeMs: diskStat.mtimeMs, size: diskStat.size }
       : null
   usePreviewFreshness(ownsCurrent, freshnessTarget, () => setReload((value) => value + 1))
+  useEffect(() => setSourceChoice(null), [activePath])
 
   const openArtifact = useCallback(
     (artifactPath: string): void => {
@@ -267,37 +274,49 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const beginEdit = useCallback(async (): Promise<void> => {
     if (!activeAbs) return
     if (activePath) usePreviewBindings.getState().keep(owner.key, activePath)
-    const result = await window.yan.readEditableFile(activeAbs, owner.cwd)
-    if (!result.ok) {
+    try {
+      const result = await window.yan.readEditableFile(activeAbs, owner.cwd)
+      if (!result.ok) {
+        setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
+        return
+      }
+      setDraft({ abs: activeAbs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+    } catch {
       setDraft({ abs: activeAbs, text: '', original: '', hash: '', saving: false, conflict: false, failed: true })
-      return
     }
-    setDraft({ abs: activeAbs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
   }, [activeAbs, activePath, owner.key, owner.cwd])
 
   const saveDraft = useCallback(async (): Promise<void> => {
     if (!draft) return
     const current = draft
     setDraft((prev) => (prev ? { ...prev, saving: true } : prev))
-    const result = await window.yan.writeEditableFile(current.abs, current.text, current.hash, owner.cwd)
-    setDraft((prev) => {
-      if (!prev || prev.abs !== current.abs) return prev
-      if (result.status === 'saved') {
-        return { ...prev, original: current.text, hash: result.hash ?? prev.hash, saving: false, conflict: false, failed: false }
-      }
-      return { ...prev, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
-    })
-    if (result.status === 'saved') setReload((value) => value + 1)
+    try {
+      const result = await window.yan.writeEditableFile(current.abs, current.text, current.hash, owner.cwd)
+      setDraft((prev) => {
+        if (!prev || prev.abs !== current.abs) return prev
+        if (result.status === 'saved') {
+          return { ...prev, original: current.text, hash: result.hash ?? prev.hash, saving: false, conflict: false, failed: false }
+        }
+        return { ...prev, saving: false, conflict: result.status === 'conflict', failed: result.status !== 'conflict' }
+      })
+      if (result.status === 'saved') setReload((value) => value + 1)
+    } catch {
+      setDraft((prev) => (prev && prev.abs === current.abs ? { ...prev, saving: false, failed: true } : prev))
+    }
   }, [draft, owner.cwd])
 
   const reloadDraft = useCallback(async (): Promise<void> => {
     if (!draft) return
-    const result = await window.yan.readEditableFile(draft.abs, owner.cwd)
-    if (!result.ok) {
+    try {
+      const result = await window.yan.readEditableFile(draft.abs, owner.cwd)
+      if (!result.ok) {
+        setDraft((prev) => (prev ? { ...prev, conflict: false, failed: true } : prev))
+        return
+      }
+      setDraft({ abs: draft.abs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
+    } catch {
       setDraft((prev) => (prev ? { ...prev, conflict: false, failed: true } : prev))
-      return
     }
-    setDraft({ abs: draft.abs, text: result.text, original: result.text, hash: result.hash, saving: false, conflict: false, failed: false })
   }, [draft, owner.cwd])
 
   const selectTab = useCallback(
@@ -663,7 +682,7 @@ function PreviewBody({
       return (
         <>
           <PreviewNotes notes={view.notes} text={text} />
-          <MediaView format={view.format} name={view.name} abs={view.abs} cwd={cwd} labels={text} onReveal={onReveal} onOpen={onOpen} />
+          <MediaView key={view.abs} format={view.format} name={view.name} abs={view.abs} cwd={cwd} labels={text} onReveal={onReveal} onOpen={onOpen} />
         </>
       )
     case 'office':
@@ -726,7 +745,8 @@ function TextView({
       commentOnLines: text.commentOnLines,
       commentPlaceholder: text.commentPlaceholder,
       commentSave: text.commentSave,
-      commentCancel: text.commentCancel
+      commentCancel: text.commentCancel,
+      tooManyLines: text.tooManyLines
     }),
     [text]
   )

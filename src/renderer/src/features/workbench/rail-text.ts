@@ -62,7 +62,7 @@ const ZH: RailText = {
   copyPath: '复制路径',
   openFiles: '在文件面板打开',
   copyBranch: '复制分支名',
-  switchBranch: '切换分支',
+  switchBranch: '查看分支',
   resizeTiles: '调整磁贴宽度',
   progress: (done, total) => `${done} / ${total}`,
   statsSummary: (turns, tokens) => (tokens ? `${turns} 轮 · ${tokens}` : `${turns} 轮`),
@@ -70,7 +70,7 @@ const ZH: RailText = {
   outputCreated: '新建',
   outputModified: '修改',
   outputDeleted: '删除',
-  commitChanges: '提交更改',
+  commitChanges: '打开更改',
   linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`
 }
 
@@ -104,7 +104,7 @@ const EN: RailText = {
   copyPath: 'Copy path',
   openFiles: 'Open in Files',
   copyBranch: 'Copy branch name',
-  switchBranch: 'Switch branch',
+  switchBranch: 'View branches',
   resizeTiles: 'Resize tiles',
   progress: (done, total) => `${done} of ${total}`,
   statsSummary: (turns, tokens) => (tokens ? `${turns} turns · ${tokens}` : `${turns} turns`),
@@ -112,7 +112,7 @@ const EN: RailText = {
   outputCreated: 'Created',
   outputModified: 'Modified',
   outputDeleted: 'Deleted',
-  commitChanges: 'Commit changes',
+  commitChanges: 'Open changes',
   linesChanged: (added, removed) => `${added} lines added, ${removed} lines removed`
 }
 

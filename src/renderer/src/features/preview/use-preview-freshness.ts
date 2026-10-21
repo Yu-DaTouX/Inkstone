@@ -43,6 +43,8 @@ export function usePreviewFreshness(
         if (result.size !== undefined && current.size !== undefined && result.size !== current.size) {
           onStaleRef.current()
         }
+      } catch {
+        return
       } finally {
         checking = false
       }
