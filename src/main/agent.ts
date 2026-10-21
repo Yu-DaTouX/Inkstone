@@ -16,6 +16,7 @@ import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
 import { planSessionSync } from './session-sync-plan'
+import { clearQueueFile, loadQueue, saveQueue } from './queue-persistence'
 import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
@@ -162,6 +163,8 @@ const MAX_FLUSH_MS = 120
 
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
+const STOP_ABORT_TIMEOUT_MS = 5_000
+const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 
 type Push = (msg: MainPush) => void
 type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
@@ -752,6 +755,7 @@ export class AgentController extends EventEmitter {
   private consumedEmptyQueue = { steering: 0, followUp: 0 }
   private queueScope?: { rpc: PiRpc | null; sessionId?: string; generation?: number }
   private queueBusy = false
+  private queueWrite: Promise<void> = Promise.resolve()
   private queueOperations: Promise<void> = Promise.resolve()
   private titleLifecycle = 0
   private stopping = false
@@ -2336,7 +2340,7 @@ export class AgentController extends EventEmitter {
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
-          this.turn.outputTokens = Math.max(this.turn.outputTokens ?? 0, finalUsage.output)
+          this.turn.outputTokens = (this.turn.outputTokens ?? 0) + finalUsage.output
         }
         const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
         const genTiming = this.generationTimingOf(s, endedMono)
@@ -3194,7 +3198,30 @@ export class AgentController extends EventEmitter {
       steering: next.steering.filter(item => !isSubagentNotice(item.text)),
       followUp: next.followUp.filter(item => !isSubagentNotice(item.text))
     } })
+    this.queueWrite = this.persistQueue().catch(() => undefined)
     return next
+  }
+
+  private persistQueue(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return Promise.resolve()
+    const items = [...this.queueState.steering, ...this.queueState.followUp].filter(item => !isSubagentNotice(item.text))
+    const steering = this.queueState.steering.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
+    const followUp = this.queueState.followUp.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
+    const images = items.reduce((count, item) => count + (item.images?.length ?? 0), 0)
+    if (!steering.length && !followUp.length && images === 0) return clearQueueFile(sessionId)
+    return saveQueue({ sessionId, steering, followUp, images })
+  }
+
+  async reclaimSavedQueue(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return
+    if (this.queueState.steering.length || this.queueState.followUp.length) return
+    const saved = await loadQueue(sessionId).catch(() => null)
+    if (!saved) return
+    await clearQueueFile(sessionId).catch(() => undefined)
+    if (!saved.steering.length && !saved.followUp.length) return
+    this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, sessionId } })
   }
 
   private consumeQueued(text: string, images: NonNullable<QueueItem['images']>): void {
@@ -4542,12 +4569,18 @@ export class AgentController extends EventEmitter {
     this.stopping = true
     this.releaseExecutionAdmission()
     this.loopGuardContinuationVersion += 1
+    this.cancelApprovals?.()
+    this.retireApprovals?.()
+    const liveRpc = this.rpc
+    if (liveRpc?.running && (this.agentRunning || this.state?.isStreaming || this.bash)) {
+      if (this.turn.terminal === 'completed') this.turn.terminal = 'stopped'
+      await liveRpc.command('abort', {}, { timeoutMs: STOP_ABORT_TIMEOUT_MS }).catch(() => null)
+      await liveRpc.command('abort_bash', {}, { timeoutMs: STOP_ABORT_BASH_TIMEOUT_MS }).catch(() => null)
+    }
     this.nativeRuntime?.dispose()
     this.nativeRuntime = null
     this.titleLifecycle += 1
     this.cancelImages()
-    this.cancelApprovals?.()
-    this.retireApprovals?.()
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
@@ -4568,6 +4601,9 @@ export class AgentController extends EventEmitter {
     this.ui.pending.clear()
     await this.rpc?.close()
     this.rpc = null
+    await this.queueWrite.catch(() => undefined)
+    await this.persistQueue().catch(() => undefined)
+    await this.turn.writeTail.catch(() => undefined)
     this.items.reset()
     this.resetQueue()
   }
