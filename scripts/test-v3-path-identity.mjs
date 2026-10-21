@@ -114,6 +114,7 @@ function makeYan({ peek } = {}) {
     runBash: async () => ({ ok: true }),
     runnerStatuses: async () => [],
     listRunners: async () => [],
+    listSessions: async () => [],
     agentStatus: async () => ({ state: 'idle', detail: '' }),
     listModels: async () => [],
     listCommands: async () => [],
