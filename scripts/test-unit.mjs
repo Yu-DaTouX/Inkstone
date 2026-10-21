@@ -1658,6 +1658,9 @@ await runFileEditorTests(ok, fileEditor)
 const { runCredentialsTests } = await import('./test-credentials.mjs')
 await runCredentialsTests(ok)
 
+const { runApiKeyPoolTests } = await import('./test-api-key-pool.mjs')
+await runApiKeyPoolTests(ok)
+
 const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
 await runSettingsStoreTests(ok)
 

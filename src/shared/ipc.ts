@@ -1,3 +1,4 @@
+import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
 import type {
@@ -1587,6 +1588,11 @@ export interface YanBridge {
   onOAuthEvent(cb: (event: OAuthLoginEvent) => void): () => void
   setApiKey(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
   clearAuth(provider: string): Promise<{ ok: boolean; error?: string }>
+  apiKeys(): Promise<ApiKeyPools>
+  addApiKey(provider: string, key: string, label?: string): Promise<{ ok: boolean; error?: string }>
+  switchApiKey(provider: string, id: string): Promise<{ ok: boolean; error?: string }>
+  renameApiKey(provider: string, id: string, label: string): Promise<{ ok: boolean; error?: string }>
+  removeApiKey(provider: string, id: string): Promise<{ ok: boolean; error?: string }>
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
   accountQuota(): Promise<AccountQuotaReport>
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>

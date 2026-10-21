@@ -21,11 +21,9 @@ export async function runUsageUiTests() {
     "import * as React from 'react'",
     "import { renderToStaticMarkup } from 'react-dom/server'",
     `import * as UsageOverviewView from '${p('src/renderer/src/features/usage/UsageOverviewView.tsx')}'`,
-    `import * as UsageStatsGrid from '${p('src/renderer/src/features/settings/usage/UsageStatsGrid.tsx')}'`,
     `import * as i18n from '${p('src/renderer/src/i18n/index.tsx')}'`,
-    `import * as settingsText from '${p('src/renderer/src/features/settings/settings-text.ts')}'`,
     `import * as shared from '${p('src/shared/usage-stats.ts')}'`,
-    'export { React, renderToStaticMarkup, UsageOverviewView, UsageStatsGrid, i18n, settingsText, shared }'
+    'export { React, renderToStaticMarkup, UsageOverviewView, i18n, shared }'
   ].join('\n')
   const outfile = join(outdir, 'usage-ui.bundle.cjs')
   await build({
@@ -40,9 +38,7 @@ export async function runUsageUiTests() {
 
   const bundle = createRequire(import.meta.url)(outfile)
   const view = bundle.UsageOverviewView
-  const grid = bundle.UsageStatsGrid
   const i18n = bundle.i18n
-  const settingsText = bundle.settingsText
   const shared = bundle.shared
   const createElement = bundle.React.createElement
   const renderToStaticMarkup = bundle.renderToStaticMarkup
@@ -124,16 +120,6 @@ export async function runUsageUiTests() {
   ok(modelsHtml.includes('title="p/b"'), '子代理模型键直接来自 stats.models')
   ok(zhHtml.includes(`${recent} · 100K token`), '热力图单元格 token 数含子代理（当日 100K）')
 
-  const zhText = settingsText.settingsText('zh-CN')
-  const enText = settingsText.settingsText('en-US')
-  const gridZh = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: mainSub, text: zhText }))
-  ok(!gridZh.includes('settings-usage-breakdown') && !gridZh.includes('主会话 20K'), '设置页只显示总数，不再拆分')
-  ok(gridZh.includes('data-testid="settings-usage-tokens"') && gridZh.includes('100K'), '设置页 Token 值仍是合计 100K')
-  ok(gridZh.includes(`title="${zhText.usageTokensHint}"`), '设置页 Token 值带口径 tooltip')
-  const gridEn = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: mainSub, text: enText }))
-  ok(!gridEn.includes('Subagents 80K'), '设置页英文同样不拆分')
-  const gridLegacy = renderToStaticMarkup(createElement(grid.UsageStatsGrid, { stats: legacy, text: zhText }))
-  ok(!gridLegacy.includes('子 Agent 0'), '设置页缺 breakdown 的旧结果同样不拆分')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`usage-ui-subagents: ${checks} checks passed`)

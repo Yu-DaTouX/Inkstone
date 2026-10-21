@@ -349,6 +349,7 @@ const notifySubagentFinished = createSubagentNotifier({
 })
 const subagentSearch = new LookupCommands({ capabilityOpts: () => undefined, cwd: () => process.cwd() })
 const subagentService: SubagentService = new SubagentService({
+  preambleExtension: preambleExtensionPath,
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
   guardExtension: dangerGuardExtensionPath,

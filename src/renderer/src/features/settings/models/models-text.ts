@@ -16,6 +16,16 @@ export type ModelsTextKey =
   | 'pickerPriceHint'
   | 'pickerFavoriteCurrent'
   | 'pickerUnfavoriteCurrent'
+  | 'addKey'
+  | 'keyLabelPlaceholder'
+  | 'keyList'
+  | 'keyCurrent'
+  | 'keyUse'
+  | 'keyRename'
+  | 'keyDelete'
+  | 'keyDeleteConfirm'
+  | 'keySwitched'
+  | 'removeBodyMany'
 
 const ZH: Record<ModelsTextKey, string> = {
   title: '模型与服务',
@@ -34,7 +44,17 @@ const ZH: Record<ModelsTextKey, string> = {
   pickerRecent: '最近使用',
   pickerPriceHint: '每百万 token 的输入 / 输出价（美元）',
   pickerFavoriteCurrent: '收藏当前模型',
-  pickerUnfavoriteCurrent: '取消收藏当前模型'
+  pickerUnfavoriteCurrent: '取消收藏当前模型',
+  addKey: "添加 key",
+  keyLabelPlaceholder: "备注（可选）",
+  keyList: "已保存的 key",
+  keyCurrent: "当前",
+  keyUse: "使用",
+  keyRename: "改备注",
+  keyDelete: "删除",
+  keyDeleteConfirm: "确认删除",
+  keySwitched: "已切换到「{label}」，空闲后生效",
+  removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。"
 }
 
 const EN: Record<ModelsTextKey, string> = {
@@ -54,7 +74,17 @@ const EN: Record<ModelsTextKey, string> = {
   pickerRecent: 'Recently used',
   pickerPriceHint: 'Input / output price per million tokens (USD)',
   pickerFavoriteCurrent: 'Favorite current model',
-  pickerUnfavoriteCurrent: 'Unfavorite current model'
+  pickerUnfavoriteCurrent: 'Unfavorite current model',
+  addKey: "Add key",
+  keyLabelPlaceholder: "Label (optional)",
+  keyList: "Saved keys",
+  keyCurrent: "Current",
+  keyUse: "Use",
+  keyRename: "Rename",
+  keyDelete: "Delete",
+  keyDeleteConfirm: "Confirm delete",
+  keySwitched: "Switched to “{label}”; applies once idle",
+  removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models."
 }
 
 export function modelsText(lang: string, key: ModelsTextKey): string {

@@ -48,7 +48,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'session', icon: 'clock', group: 'general' },
   { id: 'notifications', icon: 'bell', group: 'general' },
   { id: 'security', icon: 'shield', group: 'general' },
-  { id: 'usage', icon: 'chart', group: 'general' },
   { id: 'devices', icon: 'smartphone', group: 'local' },
   { id: 'data', icon: 'hard-drive', group: 'local' },
   { id: 'shortcuts', icon: 'keyboard', group: 'local' },

@@ -144,6 +144,68 @@
     min-width: 0;
   }
 
+  .ms-key-edit .ms-key-edit-label {
+    flex: 0 1 9rem;
+  }
+
+  .ms-keys {
+    flex-basis: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--alpha-1);
+    border-radius: var(--r-md);
+  }
+
+  .ms-key {
+    display: flex;
+    align-items: center;
+    gap: var(--s-12);
+    min-height: 2.5rem;
+    padding: var(--s-4) var(--s-12);
+  }
+
+  .ms-key + .ms-key {
+    border-top: 1px solid var(--alpha-1);
+  }
+
+  .ms-key-label {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-key[data-active='0'] .ms-key-label {
+    color: var(--fg2);
+  }
+
+  .ms-key-mask {
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-mono);
+  }
+
+  .ms-key-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    margin-left: auto;
+  }
+
+  .ms-key-rename {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .ms-key-rename .ui-field {
+    flex: 1;
+    min-width: 0;
+  }
+
   .ms-cli {
     display: inline-flex;
     align-items: center;

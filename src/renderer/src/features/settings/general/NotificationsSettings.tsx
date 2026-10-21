@@ -37,15 +37,17 @@ export function NotificationsSettings(): ReactElement {
     setDraft(null)
   }, [sound.volume])
 
-  const write = (patch: Partial<SoundSettings>): void => {
+  const write = (patch: Partial<SoundSettings>): Promise<void> => {
     const latest = useStore.getState().settings?.sound ?? DEFAULT_SOUND_SETTINGS
-    void patchSettings({ sound: mergeSound(latest, patch) })
+    return patchSettings({ sound: mergeSound(latest, patch) })
   }
 
   const commitVolume = (value: number): void => {
-    setDraft(null)
-    if (value === sound.volume) return
-    write({ volume: value })
+    if (value === sound.volume) {
+      setDraft(null)
+      return
+    }
+    void write({ volume: value }).finally(() => setDraft((current) => (current === value ? null : current)))
     previewSound('done', value)
   }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { useI18n } from '../../../i18n'
-import { useStore } from '../../../state/store'
-import { ListBoxItem, Select, TextField } from '../../../ui'
+import { useI18n } from '../../i18n'
+import { useStore } from '../../state/store'
+import { ListBoxItem, Select, TextField } from '../../ui'
 import {
   currencyLabel,
   DEFAULT_USD_RATES,
@@ -12,9 +12,8 @@ import {
   YUANSHI,
   type FiatCurrency,
   type UsageCurrency as Currency
-} from '../../../../../shared/currency'
-import { SettingsRow } from '../root/controls'
-import type { SettingsText } from '../settings-text'
+} from '../../../../shared/currency'
+import type { SettingsText } from '../settings/settings-text'
 
 export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
   const { lang } = useI18n()
@@ -38,38 +37,39 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
     else setDraft(String(rate))
   }
 
+  const rateLabel = rateCode ? text.usageRate.replace('{code}', rateCode) : ''
   return (
-    <div className="settings-rows" data-testid="v3-usage-currency">
-      <SettingsRow label={text.usageCurrency} description={text.usageCurrencyDesc} settingId="usage-currency">
-        <Select
-          aria-label={text.usageCurrency}
-          selectedKey={currency}
-          onSelectionChange={(key) => save({ currency: String(key) as Currency })}
-        >
+    <section className="usage-page-currency" data-testid="v3-usage-currency">
+      <div className="usage-page-currency-row">
+        <div>
+          <h2>{text.usageCurrency}</h2>
+          <p>{text.usageCurrencyDesc}</p>
+        </div>
+        <div className="usage-page-currency-control"><Select aria-label={text.usageCurrency} selectedKey={currency} onSelectionChange={(key) => save({ currency: String(key) as Currency })}>
           {USAGE_CURRENCIES.map((code) => (
             <ListBoxItem key={code} id={code}>
               {currencyLabel(code, lang)}
             </ListBoxItem>
           ))}
-        </Select>
-      </SettingsRow>
+        </Select></div>
+      </div>
       {rateCode ? (
-        <SettingsRow
-          settingId="usage-rate"
-          label={text.usageRate.replace('{code}', rateCode)}
-          description={text.usageRateDesc.replace('{default}', String(DEFAULT_USD_RATES[rateCode])).replace('{sample}', formatMoney(1, current, lang))}
-        >
-          <TextField
-            aria-label={text.usageRate.replace('{code}', rateCode)}
+        <div className="usage-page-currency-row">
+          <div>
+            <h2>{rateLabel}</h2>
+            <p>{text.usageRateDesc.replace('{default}', String(DEFAULT_USD_RATES[rateCode])).replace('{sample}', formatMoney(1, current, lang))}</p>
+          </div>
+          <div className="usage-page-currency-control"><TextField
+            aria-label={rateLabel}
             value={draft}
             inputMode="decimal"
             onChange={setDraft}
             onBlur={commitRate}
             onKeyDown={(event) => { if (event.key === 'Enter') commitRate() }}
             data-testid="v3-usage-rate"
-          />
-        </SettingsRow>
+          /></div>
+        </div>
       ) : null}
-    </div>
+    </section>
   )
 }

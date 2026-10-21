@@ -50,9 +50,7 @@ export interface SettingsText {
   groupDataStorage: string
   groupDataSync: string
   groupDataShare: string
-  groupUsageOverview: string
   groupUsageBreakdown: string
-  groupUsageCurrency: string
   groupShortcutsApp: string
   groupAboutApp: string
   groupAboutMore: string
@@ -118,35 +116,18 @@ export interface SettingsText {
   range30: string
   range7: string
   usageSessions: string
-  usageMessages: string
-  usageTokens: string
-  usageTokensBreakdown: string
   usageTokensHint: string
-  usageActiveDays: string
   usagePeakHour: string
   usagePeakNone: string
-  usageModels: string
-  usageModelColumn: string
-  usageTokensColumn: string
-  usageShareColumn: string
-  usageCost: string
-  usageCostColumn: string
   usageCurrency: string
   usageCurrencyDesc: string
   usageRate: string
   usageRateDesc: string
   usageNoModels: string
-  usageEmpty: string
-  usageLoading: string
-  usageError: string
-  usageRetry: string
   usageView: string
-  usageChart: string
-  usageTable: string
   usageDimension: string
   usageByDay: string
   usageByModel: string
-  usageDayColumn: string
   usageNoDays: string
   usageDailyCap: string
 
@@ -209,9 +190,7 @@ const ZH: SettingsText = {
   groupDataStorage: '存储位置',
   groupDataSync: '同步',
   groupDataShare: '分享',
-  groupUsageOverview: '概览',
   groupUsageBreakdown: '明细',
-  groupUsageCurrency: '货币',
   groupShortcutsApp: '应用快捷键',
   groupAboutApp: '版本与更新',
   groupAboutMore: '运行环境与帮助',
@@ -277,37 +256,20 @@ const ZH: SettingsText = {
   range30: '近 30 天',
   range7: '近 7 天',
   usageSessions: '会话',
-  usageMessages: '消息',
-  usageTokens: 'Token',
-  usageTokensBreakdown: '主会话 {main} · 子 Agent {subagents}',
   usageTokensHint: 'Token 含子 Agent 与缓存；其余只计主会话。',
-  usageActiveDays: '活跃天数',
   usagePeakHour: '高峰时段',
   usagePeakNone: '暂无',
-  usageModels: '模型用量',
-  usageModelColumn: '模型',
-  usageTokensColumn: 'Token',
-  usageShareColumn: '占比',
-  usageCost: '费用',
-  usageCostColumn: '费用',
   usageCurrency: '显示货币',
   usageCurrencyDesc: '费用以美元记录，此处只改显示；1 原石 = 0.1 元。',
   usageRate: '1 USD = ? {code}',
   usageRateDesc: '默认 {default}；当前 $1 显示为 {sample}。',
   usageNoModels: '这段时间没有模型用量。',
-  usageEmpty: '这段时间还没有用量记录。',
-  usageLoading: '正在统计本机用量…',
-  usageError: '用量统计读取失败。',
-  usageRetry: '重试',
   usageView: '视图',
-  usageChart: '图表',
-  usageTable: '表格',
   usageDimension: '分组',
   usageByDay: '按日',
   usageByModel: '按模型',
-  usageDayColumn: '日期',
   usageNoDays: '这段时间没有按日记录。',
-  usageDailyCap: '按日图表与表格仅展示最近 30 天。',
+  usageDailyCap: '按日明细仅展示最近 30 天。',
 
   shortcutColumnAction: '作用',
   shortcutColumnKeys: '快捷键',
@@ -368,9 +330,7 @@ const EN: SettingsText = {
   groupDataStorage: 'Storage',
   groupDataSync: 'Sync',
   groupDataShare: 'Sharing',
-  groupUsageOverview: 'Overview',
   groupUsageBreakdown: 'Breakdown',
-  groupUsageCurrency: 'Currency',
   groupShortcutsApp: 'App shortcuts',
   groupAboutApp: 'Version & updates',
   groupAboutMore: 'Runtime & help',
@@ -436,37 +396,20 @@ const EN: SettingsText = {
   range30: 'Last 30 days',
   range7: 'Last 7 days',
   usageSessions: 'Sessions',
-  usageMessages: 'Messages',
-  usageTokens: 'Tokens',
-  usageTokensBreakdown: 'Main {main} · Subagents {subagents}',
   usageTokensHint: 'Tokens include subagents and cache; the rest count main sessions only.',
-  usageActiveDays: 'Active days',
   usagePeakHour: 'Peak hour',
   usagePeakNone: 'n/a',
-  usageModels: 'Usage by model',
-  usageModelColumn: 'Model',
-  usageTokensColumn: 'Tokens',
-  usageShareColumn: 'Share',
-  usageCost: 'Cost',
-  usageCostColumn: 'Cost',
   usageCurrency: 'Display currency',
   usageCurrencyDesc: 'Costs are stored in USD; this changes display only. 1 Primogem = ¥0.1.',
   usageRate: '1 USD = ? {code}',
   usageRateDesc: 'Default {default}; $1 currently shows as {sample}.',
   usageNoModels: 'No model usage in this range.',
-  usageEmpty: 'No usage recorded in this range yet.',
-  usageLoading: 'Crunching local usage…',
-  usageError: 'Could not read usage statistics.',
-  usageRetry: 'Retry',
   usageView: 'View',
-  usageChart: 'Chart',
-  usageTable: 'Table',
   usageDimension: 'Group by',
   usageByDay: 'By day',
   usageByModel: 'By model',
-  usageDayColumn: 'Date',
   usageNoDays: 'No daily records in this range.',
-  usageDailyCap: 'The daily chart and table show the most recent 30 days only.',
+  usageDailyCap: 'Daily breakdown shows the most recent 30 days only.',
 
   shortcutColumnAction: 'Action',
   shortcutColumnKeys: 'Keys',
