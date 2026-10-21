@@ -59,5 +59,12 @@ const http = createServer((req, res) => {
 })
 
 http.listen(PORT, '127.0.0.1', () => {
-  process.stderr.write(`yan-mcp-http-fixture listening on 127.0.0.1:${PORT}/mcp\n`)
+  const bound = http.address()
+  const port = typeof bound === 'object' && bound ? bound.port : PORT
+  process.stderr.write(`yan-mcp-http-fixture listening on 127.0.0.1:${port}/mcp\n`)
+})
+
+http.on('error', (error) => {
+  process.stderr.write(`yan-mcp-http-fixture 起不来（127.0.0.1:${PORT}）：${error?.message ?? error}\n`)
+  process.exit(1)
 })

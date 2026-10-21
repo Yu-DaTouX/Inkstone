@@ -111,11 +111,21 @@
   }
 
   ok(okSources.length >= 1, '至少一个目录源真实可用（这是 S5 的真实检索证据）', okSources.map((s) => s.sourceId).join(','))
-  ok(
-    okSources.some((s) => s.kind === 'mcp-registry' && s.candidateCount > 0),
-    '**MCP** 目录路径也真的返回了候选（两条路径都不能只是「源可达」）',
-    JSON.stringify(okSources.map((s) => ({ k: s.kind, n: s.candidateCount })))
+  ok(sources.length >= 3, '在线时仍记录每个源的状态（GitHub 技能 / npm / MCP Registry）', JSON.stringify(sources.map((s) => s.sourceId)))
+  const mcpSource = okSources.find((s) => s.kind === 'mcp-registry')
+  const mcpTimedOut = sources.some(
+    (s) => s.kind === 'mcp-registry' && !s.ok && /秒没有返回/.test(String(s.error ?? ''))
   )
+  if (mcpTimedOut) {
+    log('  · 外部原因：MCP Registry 这次检索在超时内没返回（服务端挂住），只记录「源不可用」，不判 MCP 候选')
+    ok(true, '**MCP** 来源超时被如实记录（ok:false + 可读原因）', JSON.stringify(sources.find((s) => s.kind === 'mcp-registry')?.error ?? '').slice(0, 120))
+  } else {
+    ok(
+      !!mcpSource && mcpSource.candidateCount > 0,
+      '**MCP** 目录路径也真的返回了候选（两条路径都不能只是「源可达」）',
+      JSON.stringify(okSources.map((s) => ({ k: s.kind, n: s.candidateCount })))
+    )
+  }
   ok(
     okSources.some((s) => s.kind === 'npm-registry' && s.candidateCount > 0),
     '**npm** 目录路径也真的返回了候选'

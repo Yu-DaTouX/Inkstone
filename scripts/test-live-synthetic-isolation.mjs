@@ -3,9 +3,23 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { join } from 'node:path'
 import ts from 'typescript'
-import { defaultLiveCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
+import { defaultLiveCases, localProviderCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 
 assert.deepEqual(defaultLiveCases({ ui: { cost: 0 }, paid: { cost: 1 }, quota: { cost: 0, needsCredentials: true }, install: { cost: 0, needsDownload: true } }), ['ui'])
+const owned = {
+  ui: { cost: 0 },
+  isolation: { cost: 0, abSessions: true },
+  hardkill: { cost: 0, hardKillAfterIntermediateTiming: true },
+  restarting: { cost: 0, restart: { probe: 'scripts/probe/x.js' } }
+}
+assert.deepEqual(defaultLiveCases(owned), ['ui'], '默认集合不选独占本机 provider fixture 的场景')
+assert.deepEqual(localProviderCases(['ui', 'isolation', 'hardkill', 'restarting'], owned), ['isolation', 'hardkill', 'restarting'])
+assert.deepEqual(localProviderCases(['ui', 'missing'], owned), [], '没有场景表条目的名字不算独占 provider')
+assert.deepEqual(
+  localProviderCases(defaultLiveCases(owned), owned),
+  [],
+  '默认集合不会触发「本机 provider fixture 场景请分开运行」'
+)
 assert.doesNotThrow(() => validateSyntheticSelection(['ui'], { ui: { cost: 0 } }, true))
 assert.throws(() => validateSyntheticSelection(['ui'], { ui: { cost: 0 } }, false), /isolated/)
 assert.throws(() => validateSyntheticSelection(['model'], { model: { cost: 1 } }, true), /model-dependent/)
