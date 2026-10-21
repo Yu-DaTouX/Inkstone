@@ -1,8 +1,15 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { toolExpansion } from './tool-expansion'
 import { holdRunLabel, type HeldRunLabel } from './tool-run-model'
+import { DEFAULT_TRANSCRIPT_VIEW, type TranscriptView } from './transcript-view-model'
 
 export const ToolExpansionScope = createContext('')
+
+export const TranscriptViewScope = createContext<TranscriptView>(DEFAULT_TRANSCRIPT_VIEW)
+
+export function useTranscriptViewScope(): TranscriptView {
+  return useContext(TranscriptViewScope)
+}
 
 export function useToolExpansionScope(): string {
   return useContext(ToolExpansionScope)

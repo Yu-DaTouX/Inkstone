@@ -103,7 +103,7 @@ export function useChangesFileList(): ChangesFileList {
       const onMove = (move: PointerEvent): void => {
         const session = dragRef.current
         if (!session) return
-        const next = Math.max(FILE_LIST_WIDTH.MIN, Math.min(limit, session.startWidth + move.clientX - session.startX))
+        const next = Math.max(FILE_LIST_WIDTH.MIN, Math.min(limit, session.startWidth - move.clientX + session.startX))
         latestRef.current = next
         setDragWidth(next)
       }
@@ -134,7 +134,7 @@ export function useChangesFileList(): ChangesFileList {
       const step = event.shiftKey ? KEY_STEP_LARGE : KEY_STEP
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault()
-        commitWidth(width + (event.key === 'ArrowLeft' ? -step : step))
+        commitWidth(width + (event.key === 'ArrowLeft' ? step : -step))
         return
       }
       if (event.key === 'Home') {

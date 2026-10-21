@@ -7,7 +7,10 @@ import { TurnArtifacts } from './MessageParts'
 import { ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
-import { splitTurnProcess } from './turn-process'
+import { conciseSegment, splitTurnProcess } from './turn-process'
+import { showsThinking } from './transcript-view-model'
+import { TranscriptViewScope } from './use-tool-run'
+import { useTranscriptView } from '../../state/transcript-view'
 import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
 import { UserText } from './UserText'
@@ -199,7 +202,11 @@ export function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, subagentScope }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope }): JSX.Element | null {
+function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope }): JSX.Element | null {
+  const view = useTranscriptView(sessionId)
+  const concise = !showsThinking(view)
+  const turn = concise ? { ...sourceTurn, segments: sourceTurn.segments.map(conciseSegment) } : sourceTurn
+  const turnThinking = concise && !turn.thinkingLive ? '' : turn.thinking ?? ''
   const edgeFirst = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).first)
   const edgeLast = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).last)
   const approvals = useStore((s) => s.approvals)
@@ -215,92 +222,94 @@ function AssistantTurnView({ turn, streaming, readOnly, sessionId, rewindOwner, 
   const thinkingBySegment = processSegs.length > 0
 
   return (
-    <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length}>
-      <div className="v3-assistant-body">
-        {edgeFirst ? <BranchSummary /> : null}
-        {thinkingBySegment ? null : <ThinkingLine text={turn.thinking ?? ''} ms={turn.thinkingMs} live={turn.thinkingLive} />}
-
-        {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
-
-        {split ? (
-          <>
-            {processSegs.length ? (
-              <TurnProcess
-                process={processSegs}
-                live={!!streaming && !split.reply}
-                sessionId={sessionId}
-                turnId={turn.id}
-                approvalIds={approvalIds}
-              />
-            ) : null}
-            {split.reply ? (
-              <div className="v3-seg" data-testid="v3-seg">
-                <div className="v3-para">
-                  <Markdown text={split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
-                </div>
-              </div>
-            ) : null}
-            {split.tail.map((seg, si) => {
-              const last = si === split.tail.length - 1
-              return (
-                <div key={seg.id} className="v3-seg" data-testid="v3-seg">
-                  {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} /> : null}
-                  {seg.commentary.length ? (
-                    <div className="v3-commentary">
-                      {seg.commentary.map((part, i) => (
-                        <div key={part.id} className="v3-para dim">
-                          <Markdown text={part.text} sourceCwd={part.sourceCwd} live={!!streaming && last && !seg.response && i === seg.commentary.length - 1} sessionId={sessionId} messageId={part.id} />
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <ToolSteps tools={seg.tools} approvalIds={approvalIds} />
-                  {seg.response ? (
-                    <div className="v3-para">
-                      <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </>
-        ) : (
-          <>
-            {commentary.length ? (
-              <div className="v3-commentary">
-                {commentary.map((part, i) => (
-                  <div key={part.id} className="v3-para dim">
-                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={!!streaming && i === commentary.length - 1} sessionId={sessionId} messageId={part.id} />
+    <TranscriptViewScope.Provider value={view}>
+      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view}>
+        <div className="v3-assistant-body">
+          {edgeFirst ? <BranchSummary /> : null}
+          {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
+  
+          {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
+  
+          {split ? (
+            <>
+              {processSegs.length ? (
+                <TurnProcess
+                  process={processSegs}
+                  live={!!streaming && !split.reply}
+                  sessionId={sessionId}
+                  turnId={turn.id}
+                  approvalIds={approvalIds}
+                />
+              ) : null}
+              {split.reply ? (
+                <div className="v3-seg" data-testid="v3-seg">
+                  <div className="v3-para">
+                    <Markdown text={split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
                   </div>
-                ))}
-              </div>
-            ) : null}
-            {turn.segments.length
-              ? turn.segments.map((segment) => segment.response ? (
-                  <div key={segment.id} className="v3-para">
-                    <Markdown text={segment.response.text} sourceCwd={segment.response.sourceCwd} live={!!streaming && segment.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={segment.response.id} />
+                </div>
+              ) : null}
+              {split.tail.map((seg, si) => {
+                const last = si === split.tail.length - 1
+                return (
+                  <div key={seg.id} className="v3-seg" data-testid="v3-seg">
+                    {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} /> : null}
+                    {seg.commentary.length ? (
+                      <div className="v3-commentary">
+                        {seg.commentary.map((part, i) => (
+                          <div key={part.id} className="v3-para dim">
+                            <Markdown text={part.text} sourceCwd={part.sourceCwd} live={!!streaming && last && !seg.response && i === seg.commentary.length - 1} sessionId={sessionId} messageId={part.id} />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <ToolSteps tools={seg.tools} approvalIds={approvalIds} />
+                    {seg.response ? (
+                      <div className="v3-para">
+                        <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
+                      </div>
+                    ) : null}
                   </div>
-                ) : null)
-              : turn.response && !turn.response.hasTools
-                ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
-                : null}
-            <ToolSteps tools={turn.tools} approvalIds={approvalIds} />
-          </>
-        )}
-
-        {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
-        {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
-
-        <SubagentLine turn={turn} scope={subagentScope} />
-
-        {edgeLast ? <CompactionMarker /> : null}
-
-        {streaming ? <LiveRunNotice /> : null}
-        {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-        {!streaming ? <TurnChanges turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
-        {!streaming ? <TurnMeta turn={turn} readOnly={readOnly} /> : null}
-      </div>
-    </article>
+                )
+              })}
+            </>
+          ) : (
+            <>
+              {commentary.length ? (
+                <div className="v3-commentary">
+                  {commentary.map((part, i) => (
+                    <div key={part.id} className="v3-para dim">
+                      <Markdown text={part.text} sourceCwd={part.sourceCwd} live={!!streaming && i === commentary.length - 1} sessionId={sessionId} messageId={part.id} />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {turn.segments.length
+                ? turn.segments.map((segment) => segment.response ? (
+                    <div key={segment.id} className="v3-para">
+                      <Markdown text={segment.response.text} sourceCwd={segment.response.sourceCwd} live={!!streaming && segment.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={segment.response.id} />
+                    </div>
+                  ) : null)
+                : turn.response && !turn.response.hasTools
+                  ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
+                  : null}
+              <ToolSteps tools={turn.tools} approvalIds={approvalIds} />
+            </>
+          )}
+  
+          {turn.artifacts.length ? <TurnArtifacts artifacts={turn.artifacts} sessionId={sessionId} messageId={turn.id} /> : null}
+          {liveImageProgress.length ? <ImageProgressFallbackNote /> : null}
+  
+          <SubagentLine turn={turn} scope={subagentScope} />
+  
+          {edgeLast ? <CompactionMarker /> : null}
+  
+          {streaming ? <LiveRunNotice /> : null}
+          {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
+          {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
+          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+        </div>
+      </article>
+    </TranscriptViewScope.Provider>
   )
 }
 

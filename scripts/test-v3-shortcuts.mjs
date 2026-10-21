@@ -35,7 +35,7 @@ assert.deepEqual(
     'stopRun', 'focusComposer', 'copyLastReply', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
     'workspaceClosePane', 'workspaceToggleMaximize',
-    'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown',
+    'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown', 'cycleTranscriptView',
     'cycleModel', 'cycleModelBack', 'cycleThinking', 'quickAsk'],
   '外壳绑定项在前，宿主已注册项在后；顺序即展示顺序'
 )

@@ -49,7 +49,6 @@
   }
   .v3-rail-card-title { font-weight: 600; }
   .v3-rail-card-count { font-variant-numeric: tabular-nums; }
-  .v3-rail-list { scrollbar-width: thin; }
   .v3-rail-item {
     border: 0;
     border-radius: var(--r-sm);

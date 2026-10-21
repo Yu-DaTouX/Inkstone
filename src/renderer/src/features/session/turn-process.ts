@@ -129,6 +129,19 @@ export function segmentSteps(segment: TurnSegment): { lead: ProcessThinking[]; s
   return { lead, steps }
 }
 
+export function conciseSegment(segment: TurnSegment): TurnSegment {
+  if (!segment.thinking && !segment.thinkingParts?.length) return segment
+  const live = segment.thinkingLive ? rawThinkingParts(segment).filter((part) => part.text.trim()).at(-1) : undefined
+  const kept = live ? { ...live, at: segment.tools.length } : null
+  return {
+    ...segment,
+    thinking: kept ? kept.text : '',
+    thinkingMs: kept?.ms,
+    thinkingLive: !!kept,
+    thinkingParts: kept ? [kept] : []
+  }
+}
+
 export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
   const merged: TurnSegment[] = []
   for (const segment of process) {

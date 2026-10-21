@@ -111,7 +111,6 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
     scrollbar-gutter: stable;
     padding: 0 max(0px, calc(var(--s-8) - var(--v3-nav-lane, 0px))) var(--s-8) var(--s-8);
   }
