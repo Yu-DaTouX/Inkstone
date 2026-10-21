@@ -4,6 +4,7 @@ import { basename, join } from 'node:path'
 import { atomicWriteFile } from './atomic'
 import { canonicalJson, sha256Hex } from './canonical'
 import { findForbiddenFields, pickSyncSettings } from './settings-whitelist'
+import type { AppSettings } from '../../shared/ipc'
 import type { SyncPaths, SyncRecord, SyncRecordKind } from './types'
 
 export function defaultSyncPaths(dataDir: string, piAgentDir = dataDir): SyncPaths {
@@ -64,8 +65,7 @@ async function readSettings(paths: SyncPaths): Promise<ReadResult> {
   }
 }
 
-async function applySettings(paths: SyncPaths, record: SyncRecord): Promise<void> {
-  const incoming = pickSyncSettings(JSON.parse(record.payload))
+async function writeSettings(paths: SyncPaths, incoming: Record<string, unknown>): Promise<void> {
   let current: Record<string, unknown> = {}
   if (existsSync(paths.settingsFile)) {
     try {
@@ -294,15 +294,36 @@ async function applySchedule(paths: SyncPaths, record: SyncRecord): Promise<void
   const tasks = Array.isArray(doc.tasks) ? (doc.tasks as Record<string, unknown>[]) : []
   const index = tasks.findIndex((task) => task && typeof task === 'object' && (task as Record<string, unknown>).id === incoming.id)
   if (index >= 0) {
-    tasks[index] = { ...tasks[index], ...incoming }
+    const local = tasks[index]
+    if (definitionSignature(local.prompt) !== definitionSignature(incoming.prompt) ||
+      definitionSignature(local.trigger) !== definitionSignature(incoming.trigger)) {
+      throw new Error(`定时任务 ${String(incoming.id)} 的提示词或触发时间与本机不同，已跳过（保留本机内容）`)
+    }
+    tasks[index] = {
+      ...local,
+      ...(incoming.name !== undefined ? { name: incoming.name } : {}),
+      ...(incoming.enabled !== undefined ? { enabled: incoming.enabled } : {}),
+      ...(incoming.pendingApproval !== undefined ? { pendingApproval: incoming.pendingApproval } : {})
+    }
   } else {
     tasks.push(incoming)
   }
   await atomicWriteFile(paths.schedulesFile, JSON.stringify({ v: 1, tasks }, null, 2))
 }
 
+function definitionSignature(value: unknown): string {
+  return value === undefined ? '' : canonicalJson(value)
+}
+
+export interface LocalStoreAppliers {
+  applySettings?: (patch: Partial<AppSettings>) => Promise<void>
+}
+
 export class LocalStore {
-  constructor(readonly paths: SyncPaths) {}
+  constructor(
+    readonly paths: SyncPaths,
+    private readonly appliers: LocalStoreAppliers = {}
+  ) {}
 
   async readAll(): Promise<ReadResult> {
     const parts = await Promise.all([
@@ -320,8 +341,11 @@ export class LocalStore {
 
   async apply(record: SyncRecord): Promise<void> {
     switch (record.kind) {
-      case 'settings':
-        return applySettings(this.paths, record)
+      case 'settings': {
+        const patch = pickSyncSettings(JSON.parse(record.payload))
+        if (this.appliers.applySettings) return this.appliers.applySettings(patch as Partial<AppSettings>)
+        return writeSettings(this.paths, patch)
+      }
       case 'prompt':
         return applyPrompt(this.paths, record)
       case 'skill':

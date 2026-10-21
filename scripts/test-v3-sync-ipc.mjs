@@ -113,6 +113,7 @@ await mkdir(exportDir, { recursive: true })
 let serviceCreates = []
 let syncCalls = 0
 let listCalls = 0
+let countCalls = 0
 let resolveCalls = []
 let syncResult = makeReport()
 let conflictsResult = []
@@ -138,6 +139,10 @@ const deps = {
       listConflicts: async () => {
         listCalls += 1
         return conflictsResult
+      },
+      countConflicts: async () => {
+        countCalls += 1
+        return conflictsResult.length
       },
       resolveConflict: async (id, resolution) => {
         resolveCalls.push({ id, resolution })
@@ -227,13 +232,50 @@ try {
   await check('sync 抛异常时 now 返回错误而不抛出', async () => {
     const saved = syncResult
     syncResult = null
-    const failingDeps = { ...deps, makeService: () => ({ sync: async () => { throw new Error('boom') }, listConflicts: async () => [], resolveConflict: async () => ({ ok: true }) }), config }
+    const failingDeps = { ...deps, makeService: () => ({ sync: async () => { throw new Error('boom') }, listConflicts: async () => [], countConflicts: async () => 0, resolveConflict: async () => ({ ok: true }) }), config }
     const local = captureRegistrar()
     registerSyncIpc(local.ipc, failingDeps)
     const result = await local.invoke('yan:sync:now')
     assert.equal(result.ok, false)
     assert.match(result.error, /boom/)
     syncResult = saved
+  })
+  await check('部分记录失败时 now 如实返回 ok=false 并带上错误', async () => {
+    syncResult = makeReport({ ok: false, errors: ['prompt:review：拒绝写出'] })
+    const result = await registrar.invoke('yan:sync:now')
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.errors, ['prompt:review：拒绝写出'])
+    syncResult = makeReport()
+  })
+  await check('同步进行中的 resolve 排在同步之后执行', async () => {
+    const events = []
+    const orderDeps = {
+      ...deps,
+      config,
+      makeService: () => ({
+        sync: async () => {
+          events.push('sync-start')
+          await new Promise((resolve) => setTimeout(resolve, 40))
+          events.push('sync-end')
+          return makeReport()
+        },
+        listConflicts: async () => [],
+        countConflicts: async () => 0,
+        resolveConflict: async () => {
+          events.push('resolve')
+          return { ok: true }
+        }
+      })
+    }
+    const local = captureRegistrar()
+    registerSyncIpc(local.ipc, orderDeps)
+    const syncing = local.invoke('yan:sync:now')
+    const deadline = Date.now() + 2000
+    while (!events.includes('sync-start') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5))
+    const resolving = local.invoke('yan:sync:resolve', 'conflict-1', 'local')
+    assert.equal((await syncing).ok, true)
+    assert.equal((await resolving).ok, true)
+    assert.deepEqual(events, ['sync-start', 'sync-end', 'resolve'])
   })
 
   section('冲突：列出与逐条处理')
@@ -273,8 +315,17 @@ try {
     assert.equal(result.error, '冲突已经处理')
     resolveResult = { ok: true }
   })
+  await check('status 只数文件个数，不逐条解析冲突 payload', async () => {
+    conflictsResult = [makeConflict(), makeConflict({ id: 'conflict-2' })]
+    const listBefore = listCalls
+    const countBefore = countCalls
+    const status = await registrar.invoke('yan:sync:status')
+    assert.equal(status.conflictCount, 2)
+    assert.equal(countCalls, countBefore + 1)
+    assert.equal(listCalls, listBefore)
+  })
   await check('listConflicts 抛异常时 status 不抛出，带 error', async () => {
-    const failingDeps = { ...deps, makeService: () => ({ sync: async () => makeReport(), listConflicts: async () => { throw new Error('read fail') }, resolveConflict: async () => ({ ok: true }) }), config }
+    const failingDeps = { ...deps, makeService: () => ({ sync: async () => makeReport(), listConflicts: async () => { throw new Error('read fail') }, countConflicts: async () => { throw new Error('read fail') }, resolveConflict: async () => ({ ok: true }) }), config }
     const local = captureRegistrar()
     registerSyncIpc(local.ipc, failingDeps)
     const status = await local.invoke('yan:sync:status')
@@ -379,7 +430,7 @@ try {
       ...deps,
       config: timedConfig,
       autoIntervalMs: 20,
-      makeService: () => ({ sync: async () => { calls += 1; return makeReport() }, listConflicts: async () => [], resolveConflict: async () => ({ ok: true }) })
+      makeService: () => ({ sync: async () => { calls += 1; return makeReport() }, listConflicts: async () => [], countConflicts: async () => 0, resolveConflict: async () => ({ ok: true }) })
     }
     const local = captureRegistrar()
     const timed = registerSyncIpc(local.ipc, timedDeps)
@@ -412,7 +463,7 @@ try {
     const messages = []
     const failingDeps = {
       ...deps,
-      makeService: () => ({ sync: async () => { throw new Error('offline') }, listConflicts: async () => [], resolveConflict: async () => ({ ok: true }) }),
+      makeService: () => ({ sync: async () => { throw new Error('offline') }, listConflicts: async () => [], countConflicts: async () => 0, resolveConflict: async () => ({ ok: true }) }),
       log: (message, error) => messages.push(`${message}:${error instanceof Error ? error.message : error}`),
       config
     }

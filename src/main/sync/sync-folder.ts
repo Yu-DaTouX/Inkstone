@@ -79,7 +79,7 @@ export class SyncFolder {
     }
     const out: ConflictRecord[] = []
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.json') || entry.name === 'index.json') continue
+      if (!isConflictFile(entry.name, entry.isFile())) continue
       try {
         const raw = JSON.parse(await readFile(join(this.conflictsDir, entry.name), 'utf8')) as ConflictRecord
         if (raw && typeof raw.id === 'string' && typeof raw.key === 'string' && typeof raw.remoteHash === 'string') out.push(raw)
@@ -88,6 +88,15 @@ export class SyncFolder {
     }
     out.sort((a, b) => b.detectedAt - a.detectedAt)
     return out
+  }
+
+  async countConflicts(): Promise<number> {
+    try {
+      const entries = await readdir(this.conflictsDir, { withFileTypes: true })
+      return entries.filter((entry) => isConflictFile(entry.name, entry.isFile())).length
+    } catch {
+      return 0
+    }
   }
 
   async findConflict(id: string): Promise<ConflictRecord | undefined> {
@@ -104,7 +113,7 @@ export class SyncFolder {
       return
     }
     for (const name of names) {
-      if (!name.endsWith('.json') || name === 'index.json') continue
+      if (!isConflictFile(name, true)) continue
       const file = join(this.conflictsDir, name)
       try {
         const raw = JSON.parse(await readFile(file, 'utf8')) as { id?: unknown }
@@ -112,28 +121,23 @@ export class SyncFolder {
       } catch {
       }
     }
-    const remaining = (await this.readConflicts()).filter((item) => item.id !== id)
-    await atomicWriteFile(join(this.conflictsDir, 'index.json'), JSON.stringify({ v: 1, conflicts: remaining }, null, 2))
   }
 
   async writeConflict(conflict: ConflictRecord): Promise<void> {
     await mkdir(this.conflictsDir, { recursive: true })
-    const existing = await this.readConflicts()
-    const duplicate = existing.find(
-      (item) => item.key === conflict.key && item.localHash === conflict.localHash && item.remoteHash === conflict.remoteHash
-    )
-    if (duplicate) return
-    const file = join(
-      this.conflictsDir,
-      `${stamp(conflict.detectedAt)}-${safeName(conflict.remoteDeviceName)}-${shortHash(conflict.key, 12)}-${shortHash(
-        conflict.localHash ?? 'none',
-        8
-      )}-${shortHash(conflict.remoteHash, 8)}.json`
-    )
+    const suffix = `-${shortHash(conflict.key, 12)}-${shortHash(conflict.localHash ?? 'none', 8)}-${shortHash(
+      conflict.remoteHash,
+      8
+    )}.json`
+    const names = await readdir(this.conflictsDir).catch(() => [] as string[])
+    if (names.some((name) => isConflictFile(name, true) && name.endsWith(suffix))) return
+    const file = join(this.conflictsDir, `${stamp(conflict.detectedAt)}-${safeName(conflict.remoteDeviceName)}${suffix}`)
     await atomicWriteFile(file, JSON.stringify({ v: 1, ...conflict }, null, 2))
-    const index = [...existing, conflict]
-    await atomicWriteFile(join(this.conflictsDir, 'index.json'), JSON.stringify({ v: 1, conflicts: index }, null, 2))
   }
+}
+
+function isConflictFile(name: string, isFile: boolean): boolean {
+  return isFile && name.endsWith('.json') && name !== 'index.json'
 }
 
 async function readRecordFile(file: string, expectedKind: SyncRecordKind, skipped: string[]): Promise<RemoteRecord | undefined> {
