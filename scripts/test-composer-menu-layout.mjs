@@ -129,4 +129,13 @@ assert.deepEqual(highlightParts('任意', ''), [{ text: '任意', hit: false }],
 assert.deepEqual(highlightParts('', 'x'), [], '空文本没有分段')
 assert.equal(highlightParts('模型', '模样').map((part) => part.text).join(''), '模型', '切分不改变文本')
 
-console.log('补全浮层定位：最大高/宽、向上锚定、边缘收边、气泡翻转与命中分段检查通过')
+const completionSource = fileURLToPath(new URL('../src/renderer/src/features/composer/useCompletion.ts', import.meta.url))
+const completionBundle = await build({ entryPoints: [completionSource], bundle: true, write: false, platform: 'node', format: 'esm' })
+const completion = await import(`data:text/javascript;base64,${Buffer.from(completionBundle.outputFiles[0].text).toString('base64')}`)
+
+assert.equal(completion.toAbsoluteFilePath('/home/me/repo', 'src/a.ts'), '/home/me/repo/src/a.ts', 'POSIX 路径用正斜杠拼接')
+assert.equal(completion.toAbsoluteFilePath('/home/me/repo/', 'src\\a.ts'), '/home/me/repo/src/a.ts', 'POSIX 路径把反斜杠归一成正斜杠')
+assert.equal(completion.toAbsoluteFilePath('E:\\repo', 'src/a.ts'), 'E:\\repo\\src\\a.ts', 'Windows 路径用反斜杠拼接')
+assert.equal(completion.toAbsoluteFilePath('E:\\repo', ''), 'E:\\repo', '空相对路径只返回根目录')
+
+console.log('补全浮层定位：最大高/宽、向上锚定、边缘收边、气泡翻转、命中分段与绝对路径拼接检查通过')

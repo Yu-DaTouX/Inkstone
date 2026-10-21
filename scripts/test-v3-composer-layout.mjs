@@ -283,6 +283,18 @@ async function main() {
     ok(layout.COMPOSER_RIGHT_ORDER.join('>') === 'voice>context>model-thinking>run>send', '底栏右侧顺序：语音→上下文环→模型+思考→运行位→发送')
     ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
     ok(layout.composerPrompt('!ls') === '$' && layout.composerPrompt('普通') === '›', '提示符：直执行 $、普通 ›')
+    ok(layout.composerLocalCommand('!ls', []) === true, '! 前缀是本地命令')
+    ok(layout.composerLocalCommand('/login', []) === true, '/login 是本地命令')
+    ok(layout.composerLocalCommand('/login extra', []) === true, '/login 带参数也是本地命令')
+    ok(
+      layout.composerLocalCommand('/model x', [{ source: 'yan', name: 'Model' }]) === true,
+      'yan/compatibility 命令名大小写不敏感'
+    )
+    ok(layout.composerLocalCommand('/model x', [{ source: 'pi', name: 'model' }]) === false, 'pi 命令不下发到本地通道')
+    ok(layout.composerLocalCommand('/nope', [{ source: 'yan', name: 'model' }]) === false, '未知命令不是本地命令')
+    ok(layout.composerLocalCommand(' /login', []) === false, '带前导空格的 /login 按普通文本发送')
+    ok(layout.composerLocalCommand('  !ls', []) === false, '带前导空格的 ! 不进直执行')
+    ok(layout.composerLocalCommand('/modely', [{ source: 'yan', name: 'model' }]) === false, '命令名需完整匹配')
     ok(layout.composerSubmitAction({ running: true, hasText: false, hasAttachments: false }) === 'stop', '运行中 + 空 + 无附件 → 停止')
     ok(layout.composerSubmitAction({ running: true, hasText: true, hasAttachments: false }) === 'send', '运行中 + 有字 → 发送（插话）')
     ok(layout.composerSubmitAction({ running: true, hasText: false, hasAttachments: true }) === 'send', '运行中 + 有附件 → 发送')

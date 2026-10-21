@@ -1,20 +1,13 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, CornerUpRight, EllipsisVertical, History, Send } from 'lucide-react'
 import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../../ui'
-import type { QueueItem, QueueState } from '../../../../shared/ipc'
+import type { QueueItem } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
-import { locateQueueItem, planQueueClear, planQueueEdit, planQueueMove, planQueueRemove } from './queue-plan'
+import { locateQueueItem, planQueueOp, type QueueOp } from './queue-plan'
 import './queue-editor.css'
 
-type ApplyQueueOrder = (next: QueueState) => Promise<void>
-
 type RowAction = 'steer' | 'edit' | 'up' | 'down' | 'retract' | 'delete'
-
-function applyQueueOrderAction(): ApplyQueueOrder | undefined {
-  const state = useStore.getState() as unknown as { applyQueueOrder?: ApplyQueueOrder }
-  return typeof state.applyQueueOrder === 'function' ? state.applyQueueOrder : undefined
-}
 
 function previewOf(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
@@ -30,10 +23,9 @@ export function QueueEditor() {
   const pendingSends = pendingSendsForView({ pendingSends: allPendingSends, peekedSessionId, peekedPath, session })
   const releaseSend = useStore((s) => s.releaseSend)
   const restoreSend = useStore((s) => s.restoreSend)
-  const discardSend = useStore((s) => s.discardSend)
   const steerQueued = useStore((s) => s.steerQueued)
   const removeQueued = useStore((s) => s.removeQueued)
-  const notify = useStore((s) => s.notify)
+  const applyQueueOrder = useStore((s) => s.applyQueueOrder)
   const roundRunning = useStore((s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running)
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -55,36 +47,29 @@ export function QueueEditor() {
     setDraft('')
   }
 
-  const runOrder = async (next: QueueState | null): Promise<void> => {
-    const apply = applyQueueOrderAction()
-    if (!apply) {
-      notify('error', t('queue.editUnavailable'))
-      closeEdit()
-      return
-    }
-    if (!next) {
-      closeEdit()
-      return
-    }
+  const runOrder = async (op: QueueOp): Promise<void> => {
     closeEdit()
-    await apply(next)
+    const next = planQueueOp(useStore.getState().queue, op)
+    if (!next) return
+    await applyQueueOrder(next)
   }
 
   const commitEdit = (id: string, text: string): void => {
-    void runOrder(planQueueEdit(queue, id, text))
+    void runOrder({ op: 'edit', id, text })
   }
 
   const move = (id: string, direction: 'up' | 'down'): void => {
-    void runOrder(planQueueMove(queue, id, direction))
+    void runOrder({ op: 'move', id, direction })
   }
 
   const remove = (id: string): void => {
-    void runOrder(planQueueRemove(queue, id))
+    void runOrder({ op: 'remove', id })
   }
 
   const clearAll = (): void => {
-    for (const item of pendingSends) discardSend(item.id)
-    void runOrder(planQueueClear(queue))
+    const state = useStore.getState()
+    for (const item of pendingSendsForView(state)) state.discardSend(item.id)
+    void runOrder({ op: 'clear' })
   }
 
   const collapsible = total > 1

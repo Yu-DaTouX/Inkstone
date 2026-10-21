@@ -4,10 +4,10 @@ import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
 import { isDeniedCall } from './tool-title'
 
-export const TOOL_GROUP_MIN = 2
+const TOOL_GROUP_MIN = 2
 export const RUN_LABEL_HOLD_MS = 650
 
-export type ToolCategory =
+type ToolCategory =
   | 'read'
   | 'edit'
   | 'create'
@@ -21,7 +21,7 @@ export type ToolCategory =
   | 'todo'
   | 'other'
 
-export type FileCategory = 'read' | 'edit' | 'create' | 'delete'
+type FileCategory = 'read' | 'edit' | 'create' | 'delete'
 
 export type ToolRunState = 'blocked' | 'running' | 'denied' | 'error' | 'cancelled' | 'ok'
 
@@ -45,7 +45,7 @@ export type ToolRow =
   | { kind: 'single'; id: string; node: ToolCallNode; standalone: boolean; blocked: boolean }
   | { kind: 'group'; id: string; firstId: string; nodes: ToolCallNode[]; summary: ToolRunSummary }
 
-export interface CoalescedNode {
+interface CoalescedNode {
   node: ToolCallNode
   repeat: number
   ids: string[]
@@ -115,7 +115,8 @@ function isFileCategory(category: ToolCategory): category is FileCategory {
 }
 
 export function normalizeToolPath(path: string): string {
-  return path.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+  const slashed = path.replace(/[\\/]+/g, '/').replace(/\/$/, '')
+  return path.startsWith('/') ? slashed : slashed.toLowerCase()
 }
 
 function pathOf(call: UIToolCall): string {
@@ -347,7 +348,7 @@ export function coalesceNodes(nodes: readonly ToolCallNode[]): CoalescedNode[] {
   return out
 }
 
-export type RunTextFn = (key: SessionTextKey, vars?: Record<string, string | number>) => string
+type RunTextFn = (key: SessionTextKey, vars?: Record<string, string | number>) => string
 
 const CATEGORY_TEXT: Record<Exclude<ToolCategory, 'other' | 'todo'>, [SessionTextKey, SessionTextKey]> = {
   read: ['runRead1', 'runRead'],
@@ -375,7 +376,7 @@ function joinVerbs(verbs: readonly string[], tt: RunTextFn): string {
   return tt('runAnd', { a: head, b: verbs[verbs.length - 1] })
 }
 
-export function toolRunSegmentText(segment: ToolRunSegment, tt: RunTextFn): string {
+function toolRunSegmentText(segment: ToolRunSegment, tt: RunTextFn): string {
   if (segment.kind === 'file') {
     const verbs = joinVerbs(segment.verbs.map((verb) => tt(FILE_VERB[verb])), tt)
     const onlyReads = segment.verbs.length === 1 && segment.verbs[0] === 'read'
@@ -396,7 +397,7 @@ function capitalize(text: string): string {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text
 }
 
-export interface ToolRunPart {
+interface ToolRunPart {
   text: string
   failed: boolean
 }

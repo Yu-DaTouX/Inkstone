@@ -1,9 +1,9 @@
 import type { HostT } from './host-actions'
 import type { Attachment } from '../../../shared/ipc'
 
-export type ComposerAttachment = Attachment
+type ComposerAttachment = Attachment
 
-export interface ComposerCommand {
+interface ComposerCommand {
   name: string
   source: 'yan' | 'pi' | 'extension' | 'skill' | 'prompt' | 'compatibility'
   executable: boolean
@@ -11,12 +11,12 @@ export interface ComposerCommand {
   availability?: string
 }
 
-export interface ComposerImage {
+interface ComposerImage {
   data: string
   mimeType: string
 }
 
-export interface ComposerSessionInfo {
+interface ComposerSessionInfo {
   sessionName?: string
   sessionId?: string
   messageCount?: number
@@ -24,7 +24,7 @@ export interface ComposerSessionInfo {
   thinkingLevel?: string
 }
 
-export type ComposerCommandResult = { ok: boolean; error?: string } | void
+type ComposerCommandResult = { ok: boolean; error?: string } | void
 
 export type NativeSessionAction =
   | 'tree'
@@ -36,7 +36,7 @@ export type NativeSessionAction =
   | 'export-jsonl'
   | 'new-session'
 
-export interface ComposerSendActions {
+interface ComposerSendActions {
   runBash(command: string, options?: { excludeFromContext?: boolean }): ComposerCommandResult | Promise<ComposerCommandResult>
   openSettings(tab?: string): void
   newSession(): void | Promise<unknown>
@@ -52,7 +52,7 @@ export interface ComposerSendActions {
   notify(level: 'info' | 'error', text: string): void
 }
 
-export interface ComposerSubmitPort {
+interface ComposerSubmitPort {
   text: string
   attachments: ComposerAttachment[]
   commands: ComposerCommand[]
@@ -73,7 +73,7 @@ export interface ComposerSubmitPort {
   focusComposer: () => void
 }
 
-export type ComposerSubmitOutcome = 'empty' | 'handled' | 'sent' | 'queued'
+type ComposerSubmitOutcome = 'empty' | 'handled' | 'sent' | 'queued'
 
 export async function submitComposerInput(port: ComposerSubmitPort): Promise<ComposerSubmitOutcome> {
   const raw = port.text.trim()
@@ -141,12 +141,13 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
     return runLocalCommand(port, localName ?? '', localArgs)
   }
 
+  if (port.isCompacting) {
+    port.holdSend(outgoing, images.length ? images : undefined)
+    port.clearAll()
+    return 'queued'
+  }
+
   if (port.roundRunning) {
-    if (port.isCompacting) {
-      port.holdSend(outgoing, images.length ? images : undefined)
-      port.clearAll()
-      return 'queued'
-    }
     const saved = port.readAttachments()
     port.clearAll()
     const sent = await port.send(outgoing, images.length ? images : undefined, 'followUp')
@@ -266,7 +267,7 @@ async function runNativeSessionCommand(
   return runResultCommand(port, () => native(action, args || undefined), name)
 }
 
-export async function runYanBuiltin(port: ComposerSubmitPort, name: string, args: string): Promise<void> {
+async function runYanBuiltin(port: ComposerSubmitPort, name: string, args: string): Promise<void> {
   const { actions: a, t } = port
   if (name === 'settings') a.openSettings()
   else if (name === 'export') await a.exportHtml(args || undefined)

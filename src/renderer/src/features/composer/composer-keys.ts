@@ -45,6 +45,10 @@ export function isComposingKey(event: ComposerKeyEvent): boolean {
 
 export const STRAY_ENTER_MS = 500
 
+export function swallowsPendingCompletionKey(key: string): boolean {
+  return key === 'Enter' || key === 'Tab'
+}
+
 export interface StrayEnterInput {
   event: ComposerKeyEvent
   until: number

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const source = fileURLToPath(new URL('../src/renderer/src/features/composer/composer-keys.ts', import.meta.url))
 const result = await build({ entryPoints: [source], bundle: true, write: false, platform: 'node', format: 'esm' })
-const { planComposerKey, isComposingKey, swallowStrayEnter } = await import(
+const { planComposerKey, isComposingKey, swallowStrayEnter, swallowsPendingCompletionKey } = await import(
   `data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`
 )
 
@@ -113,5 +113,10 @@ assert.equal(
   false,
   '非回车键不受保护影响'
 )
+
+assert.equal(swallowsPendingCompletionKey('Enter'), true, '补全菜单加载中时回车被吞，不发半截命令')
+assert.equal(swallowsPendingCompletionKey('Tab'), true, '补全菜单加载中时 Tab 被吞')
+assert.equal(swallowsPendingCompletionKey('ArrowDown'), false, '方向键不在加载中时被吞')
+assert.equal(swallowsPendingCompletionKey('a'), false, '普通字符不被吞')
 
 console.log('输入框键位策略：发送/换行/排队/双击中止/IME 与补全消费检查通过')
