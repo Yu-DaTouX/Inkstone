@@ -14,7 +14,7 @@ import type {
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
-import { mergeSyncHistory } from './session-message-merge'
+import { applySyncDelta, mergeSyncHistory } from './session-message-merge'
 
 export interface SessionRuntimeSnapshot {
   touchedAt?: number
@@ -203,6 +203,12 @@ export function reduceSessionRuntime(
     case 'sync': {
       const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
       next = { ...next, messagesLoaded: true, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
+      break
+    }
+    case 'sync-delta': {
+      const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
+      const merged = applySyncDelta(next.messages, message.payload, protectedTailId)
+      next = merged ? { ...next, messagesLoaded: true, messages: merged } : { ...next, messagesLoaded: false }
       break
     }
     case 'msg-add':

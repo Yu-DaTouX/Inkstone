@@ -49,7 +49,7 @@ import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
 import { markStopRequested } from '../features/session/stop-intent'
-import { mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
+import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
   composerDraftForView,
@@ -1221,6 +1221,35 @@ export const useStore = create<Store>((rawSet, get) => {
           peekedPath: null,
           peekedSessionId: null,
           peekNote: null
+        })
+        break
+      }
+      case 'sync-delta': {
+        const incoming = m.runtime?.sessionId
+        if (!pushBelongsToView(s, incoming)) break
+        const next = applySyncDelta(s.messages, m.payload, syncProtectedTail(s, m.runtime))
+        if (next) {
+          set({
+            messages: reuseIfSame(s.messages, next) as typeof s.messages,
+            peekedPath: null,
+            peekedSessionId: null,
+            peekNote: null
+          })
+          break
+        }
+        const requestedFrom = { runnerId: s.activeRunnerId, sessionId: s.session?.sessionId, peeked: s.peekedSessionId }
+        if (requestedFrom.peeked) break
+        void window.yan.getMessages().then((list) => {
+          const latest = get()
+          if (latest.activeRunnerId !== requestedFrom.runnerId) return
+          if (latest.session?.sessionId !== requestedFrom.sessionId) return
+          if (latest.peekedSessionId !== requestedFrom.peeked) return
+          set({
+            messages: reuseIfSame(
+              latest.messages,
+              mergeSyncHistory(list, latest.messages, syncProtectedTail(latest, m.runtime))
+            ) as typeof latest.messages
+          })
         })
         break
       }
