@@ -38,6 +38,17 @@ try {
   assert.deepEqual(plain, { status: 'done' }, '不含增量的补丁按覆盖合并')
   assert.equal('textDelta' in plain, false, '没出现过就不凭空加 textDelta')
 
+  const fullWins = mergeMessagePatch(
+    { textDelta: '你', thinkingDelta: '想' },
+    { text: '你好，世界！', thinking: '想清楚了', thinkingLive: false }
+  )
+  assert.deepEqual(fullWins, { text: '你好，世界！', thinking: '想清楚了', thinkingLive: false }, '同批全量 text/thinking 直接覆盖待合并的增量')
+  assert.equal('textDelta' in fullWins, false, '全量文本不再附带增量，避免在旧文本后面拼接')
+  assert.equal('thinkingDelta' in fullWins, false, 'thinking 同理')
+
+  const fullThenDelta = mergeMessagePatch({ text: '全文' }, { textDelta: '尾' })
+  assert.deepEqual(fullThenDelta, { text: '全文尾' }, '全量之后的增量并入全量文本，不留下会被旧文本覆盖的 textDelta')
+
   const batch = new MessagePatchBatch()
   batch.add('m1', { textDelta: 'a' })
   batch.add('m1', { textDelta: 'b' })
@@ -54,6 +65,16 @@ try {
   )
   assert.equal(batch.size, 0, 'drain 之后清空')
   assert.deepEqual(batch.drain(), [], '空批次 drain 得到空数组')
+
+  const lateFull = new MessagePatchBatch()
+  lateFull.add('m9', { textDelta: '你' })
+  lateFull.add('m9', { thinkingDelta: '想' })
+  lateFull.add('m9', { text: '你好，世界！', thinking: '想好了', thinkingLive: false })
+  assert.deepEqual(
+    lateFull.drain(),
+    [{ id: 'm9', patch: { text: '你好，世界！', thinking: '想好了', thinkingLive: false } }],
+    '同一帧里增量先到、收尾全量后到，落地结果就是全量文本（不再把全量盖成「旧文本 + 增量」）'
+  )
 
   let runs = 0
   const flush = createFrameFlush(() => {
