@@ -2257,6 +2257,8 @@
   "state.error.steerFailed": "插队失败",
   "state.error.removeQueuedFailed": "撤回失败",
   "state.error.queueEditFailed": "队列编辑失败",
+  "state.error.settingsSaveFailed": "设置没能保存，请重试",
+  "state.error.pickFailed": "选择文件失败",
   "state.error.sessionSwitchedCommandSkipped": "会话已切换，命令未执行",
   "state.error.commandFailed": "命令执行失败",
   "state.error.newSessionFailed": "新建失败",
