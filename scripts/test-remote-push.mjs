@@ -86,6 +86,18 @@ try {
   const notify = { text: '随便一条通知' }
   assert.equal(host.remotePushPayload('notify', notify), notify, '其它通道原样转发')
 
+  const settled = host.remotePushPayload('turn-settled', { sessionId: 's-branch', outcome: 'failed', secret: 'C:\\Users\\someone' })
+  assert.deepEqual(settled, { sessionId: 's-branch', outcome: 'failed' }, '回合终态只留会话 id 与结果')
+  assert.equal(host.remotePushPayload('turn-settled', { outcome: 'unknown' }).outcome, 'completed', '无法识别的终态按完成处理')
+
+  const modelError = host.remotePushPayload('agent-error', {
+    message: '服务商拒绝了模型或请求配置',
+    text: '400: invalid_request_error',
+    source: 'stop-reason',
+    traceId: 'should-drop'
+  })
+  assert.deepEqual(modelError, { message: '服务商拒绝了模型或请求配置', text: '400: invalid_request_error', source: 'stop-reason' }, '模型错误只留说明与原文')
+
   const summary = host.remoteSessionSummary({
     id: 's-branch',
     title: '分支会话',
@@ -114,6 +126,8 @@ try {
 
   const accessSource = readFileSync('src/main/remote-access.ts', 'utf8')
   assert.ok(/publish\(message: MainPush\)[\s\S]{0,200}remotePushPayload\(message\.ch/.test(accessSource), '远程广播前先投影载荷')
+  assert.ok(/new RemotePushCoalescer\(\(message\) => this\.deliver\(message\)\)/.test(accessSource), '远程广播先过合并器')
+  assert.ok(/\bdispose\(\)/.test(accessSource), '停止远程访问时丢弃未发出的快照')
 
   console.log('remote-push: 远程事件与摘要降敏、历史截断口径通过')
 } finally {
