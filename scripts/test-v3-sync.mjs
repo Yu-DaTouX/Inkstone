@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -18,7 +18,7 @@ await build({
   logLevel: 'warning'
 })
 const sync = await import(pathToFileURL(bundleFile).href)
-const { SyncService, exportSession, importSession, findForbiddenFields } = sync
+const { SyncService, exportSession, importSession, findForbiddenFields, pickSyncSettings, SESSION_TRANSFER_MAX_BYTES } = sync
 
 const report = { pass: 0, fail: 0 }
 let group = ''
@@ -276,6 +276,11 @@ try {
     const after = (await walk(join(conflictRoot, 'inkstone-sync', 'conflicts'))).filter((f) => !f.endsWith('index.json')).length
     assert.equal(after, before)
   })
+  await check('冲突目录不再写只写不读的 index.json，计数与列表一致', async () => {
+    const files = await walk(join(conflictRoot, 'inkstone-sync', 'conflicts'))
+    assert.equal(files.some((file) => file.endsWith('index.json')), false, files.join(', '))
+    assert.equal(await D.countConflicts(), (await D.listConflicts()).length)
+  })
 
   section('凭证与外泄断言：同步目录里不得出现凭证明文或凭证字段名')
   await check('所有同步文件都不含凭证值 / 本机路径', async () => {
@@ -403,6 +408,103 @@ try {
   await check('会话本体不进入同步目录', async () => {
     const files = await walk(syncRoot)
     assert.equal(files.some((file) => file.endsWith('.jsonl')), false)
+  })
+  await check('超过 64MB 的会话包拒绝导入，不落任何会话文件', async () => {
+    const huge = join(root, 'huge-bundle.json')
+    await writeFile(huge, JSON.stringify({ v: 1, kind: 'inkstone-session', exportedAt: 1, fileName: 'a.jsonl', content: 'x' }))
+    await truncate(huge, SESSION_TRANSFER_MAX_BYTES + 1)
+    const target = join(root, 'sessions-huge')
+    const imported = await importSession(huge, target)
+    assert.equal(imported.ok, false)
+    assert.match(imported.error, /过大/)
+    assert.equal(existsSync(target), false)
+  })
+  await check('超过 64MB 的会话拒绝导出，不写半份会话包', async () => {
+    const hugeSession = join(root, 'sessions-src', 'huge.jsonl')
+    await writeFile(hugeSession, JSON.stringify({ type: 'session', id: 'sess-huge' }))
+    await truncate(hugeSession, SESSION_TRANSFER_MAX_BYTES + 1)
+    const target = join(root, 'export', 'huge')
+    const exported = await exportSession(hugeSession, target)
+    assert.equal(exported.ok, false)
+    assert.match(exported.error, /过大/)
+    assert.equal(existsSync(`${target}.inkstone-session.json`), false)
+  })
+
+  section('安全：权限档与保护开关不再跨设备同步')
+  await check('白名单不再包含 permissionMode / guardOutsideWrites / checkpointsEnabled', () => {
+    const picked = pickSyncSettings({
+      permissionMode: 'all',
+      guardOutsideWrites: false,
+      checkpointsEnabled: false,
+      theme: 'light',
+      autoCompactTokens: 123
+    })
+    assert.deepEqual(picked, { theme: 'light', autoCompactTokens: 123 })
+  })
+  await check('拉取到的设置只经过注入的写入入口，不直写 desktop.json', async () => {
+    const farRoot = join(root, 'folder-applier')
+    await mkdir(farRoot, { recursive: true })
+    const dataE = join(root, 'device-e')
+    await mkdir(dataE, { recursive: true })
+    const captured = []
+    const E = new SyncService({
+      dataDir: dataE,
+      syncRoot: farRoot,
+      piAgentDir: dataE,
+      deviceId: 'device-e',
+      deviceName: 'Device E',
+      settingsApplier: async (patch) => {
+        captured.push(patch)
+      }
+    })
+    await writeJson(join(dataE, 'desktop.json'), { theme: 'dark', permissionMode: 'ask', apiKey: 'SECRET_KEY_123' })
+    await E.sync()
+    await writeJson(join(dataE, 'desktop.json'), { theme: 'light', permissionMode: 'ask', apiKey: 'SECRET_KEY_123' })
+    const pulled = await E.sync()
+    assert.deepEqual(pulled.errors, [])
+    assert.ok(pulled.pushed.includes('settings'), pulled.pushed.join(', '))
+    const dataF = join(root, 'device-f')
+    await mkdir(dataF, { recursive: true })
+    const received = []
+    const F = new SyncService({
+      dataDir: dataF,
+      syncRoot: farRoot,
+      piAgentDir: dataF,
+      deviceId: 'device-f',
+      deviceName: 'Device F',
+      settingsApplier: async (patch) => {
+        received.push(patch)
+      }
+    })
+    const report = await F.sync()
+    assert.deepEqual(report.errors, [])
+    assert.equal(received.length, 1, JSON.stringify(received))
+    assert.deepEqual(received[0], { theme: 'light' })
+    assert.equal(existsSync(join(dataF, 'desktop.json')), false, '注入写入入口后不应直写 desktop.json')
+  })
+
+  section('定时任务：本机内容不被远端覆盖')
+  await check('同名任务提示词不同时跳过并报错，本机保留', async () => {
+    const scheduleRoot = join(root, 'folder-schedule')
+    await mkdir(scheduleRoot, { recursive: true })
+    const dataG = join(root, 'device-g')
+    const dataH = join(root, 'device-h')
+    await seed(dataG, { schedule: { id: 's1', prompt: '检查项目状态' } })
+    await seed(dataH, { schedule: { id: 's1', prompt: '检查项目状态' } })
+    const G = service(dataG, 'device-g', 'Device G', scheduleRoot)
+    const H = service(dataH, 'device-h', 'Device H', scheduleRoot)
+    await G.sync()
+    await H.sync()
+    await writeJson(join(dataG, 'schedules.json'), {
+      v: 1,
+      tasks: [{ id: 's1', name: '每日巡检', prompt: '新的检查内容', trigger: { kind: 'daily', time: '09:00' }, enabled: true, createdBy: 'user', createdAt: 1 }]
+    })
+    await G.sync()
+    const pulled = await H.sync()
+    assert.equal(pulled.ok, false, 'partial failure 不应报 ok')
+    assert.ok(pulled.errors.some((item) => item.includes('提示词或触发时间')), pulled.errors.join('; '))
+    const doc = await readJson(join(dataH, 'schedules.json'))
+    assert.equal(doc.tasks.find((task) => task.id === 's1').prompt, '检查项目状态')
   })
 } finally {
   const rootStat = await stat(root).catch(() => null)

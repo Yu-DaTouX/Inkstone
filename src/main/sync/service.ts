@@ -9,6 +9,7 @@ import { LocalStore, defaultSyncPaths, forbiddenFieldsInRecord } from './local-s
 import { buildConflictCopy } from './resolve'
 import { SyncFolder } from './sync-folder'
 import type { SyncResolution } from '../../shared/sync'
+import type { AppSettings } from '../../shared/ipc'
 import type { BaselineFile, ConflictRecord, RemoteRecord, SyncPaths, SyncRecord, SyncReport } from './types'
 
 export interface SyncServiceOptions {
@@ -19,6 +20,7 @@ export interface SyncServiceOptions {
   deviceId?: string
   deviceName?: string
   now?: () => number
+  settingsApplier?: (patch: Partial<AppSettings>) => Promise<void>
 }
 
 const DEVICE_FILE = 'sync-device.json'
@@ -42,7 +44,7 @@ export class SyncService {
     this.dataDir = options.dataDir
     this.paths = { ...defaultSyncPaths(options.dataDir, options.piAgentDir), ...options.paths }
     this.folder = new SyncFolder(options.syncRoot)
-    this.store = new LocalStore(this.paths)
+    this.store = new LocalStore(this.paths, options.settingsApplier ? { applySettings: options.settingsApplier } : {})
     this.deviceFile = join(options.dataDir, DEVICE_FILE)
     this.stateFile = join(options.dataDir, STATE_FILE)
     if (options.deviceName) this.optionsDeviceName = options.deviceName
@@ -71,6 +73,10 @@ export class SyncService {
 
   async listConflicts(): Promise<ConflictRecord[]> {
     return this.folder.readConflicts()
+  }
+
+  countConflicts(): Promise<number> {
+    return this.folder.countConflicts()
   }
 
   get syncRoot(): string {
@@ -214,7 +220,7 @@ export class SyncService {
     } catch (error) {
       report.errors.push(`同步基线写入失败：${describe(error)}`)
     }
-    report.ok = true
+    report.ok = report.errors.length === 0
     return report
   }
 

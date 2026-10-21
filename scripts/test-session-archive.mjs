@@ -1,4 +1,7 @@
 import { build } from 'esbuild'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export async function runSessionArchiveTests(ok) {
@@ -21,6 +24,26 @@ export async function runSessionArchiveTests(ok) {
   ok(pick(7, [undefined]) === 'busy,old', '运行实例没有会话文件时不报错')
   ok(pick(60) === '', '60 天：都不够久')
   ok(selectAutoArchive(items, { days: 7, now, busyFiles: [] }).includes('active') === false, '最近有活动（lastActivityAt）的不选，哪怕 updatedAt 很旧')
+
+  const sweepDir = await mkdtemp(join(tmpdir(), 'yan-auto-archive-sweep-'))
+  try {
+    await build({ entryPoints: ['src/main/session-auto-archive.ts'], outfile: join(sweepDir, 'sweep.mjs'), bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+    const { runAutoArchiveSweep, AUTO_ARCHIVE_SWEEP_INTERVAL_MS } = await import(pathToFileURL(join(sweepDir, 'sweep.mjs')).href)
+    const archived = []
+    const archive = async (ids) => {
+      archived.push(ids)
+    }
+    const run = (extra) => runAutoArchiveSweep({ sessions: items, days: 7, busyFiles: [], archive, now, ...extra })
+
+    ok(AUTO_ARCHIVE_SWEEP_INTERVAL_MS === 6 * 60 * 60 * 1000, '自动归档每 6 小时一次')
+    ok((await runAutoArchiveSweep({ sessions: items, days: 0, busyFiles: [], archive, now })).join() === '' && archived.length === 0, '关闭自动归档时不写盘')
+    ok((await run({ busyFiles: ['C:/s/busy.jsonl'] })).join() === 'old', '只归档闲置够久且没有运行实例的会话')
+    ok(archived.length === 1 && archived[0].join() === 'old', '归档结果通过回调落盘一次')
+    archived.length = 0
+    ok((await run({ archive: async () => { throw new Error('disk full') } })).length === 0, '归档失败只放弃，不把错误抛给调用方')
+  } finally {
+    await rm(sweepDir, { recursive: true, force: true })
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
