@@ -67,7 +67,6 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html'),
-          'auxwin/mini': resolve('src/renderer/auxwin/mini.html'),
           'auxwin/pane': resolve('src/renderer/auxwin/pane.html')
         }
       }

@@ -21,25 +21,11 @@ const dir = await mkdtemp(join(tmpdir(), 'v3-aux-windows-'))
 try {
   const geometry = await compile('src/main/windows/geometry.ts', join(dir, 'geometry.mjs'))
   const state = await compile('src/main/windows/aux-state.ts', join(dir, 'state.mjs'))
-  const items = await compile('src/main/windows/attention-items.ts', join(dir, 'items.mjs'))
   const submit = await compile('src/main/windows/quick-ask-submit.ts', join(dir, 'submit.mjs'))
 
   const area = { x: 0, y: 0, width: 1920, height: 1080 }
 
   console.log('geometry')
-  check('迷你小窗贴工作区右上角', () => {
-    const b = geometry.computeMiniBounds({ area, size: { width: 320, height: 264 } })
-    assert.deepEqual(b, { x: 1588, y: 12, width: 320, height: 264 })
-  })
-  check('迷你小窗贴主窗口右上角', () => {
-    const b = geometry.computeMiniBounds({ area, anchor: { x: 100, y: 100, width: 1000, height: 800 }, size: { width: 320, height: 264 } })
-    assert.deepEqual(b, { x: 768, y: 112, width: 320, height: 264 })
-  })
-  check('迷你小窗裁回工作区（主窗口贴右边）', () => {
-    const b = geometry.computeMiniBounds({ area, anchor: { x: 1500, y: 0, width: 420, height: 600 }, size: { width: 320, height: 264 } })
-    assert.ok(b.x + b.width <= area.x + area.width)
-    assert.ok(b.y >= area.y)
-  })
   check('快速提问无主窗口时工作区居中偏上', () => {
     const b = geometry.computeQuickAskBounds({ area, size: { width: 560, height: 160 } })
     assert.deepEqual(b, { x: 680, y: 230, width: 560, height: 160 })
@@ -83,81 +69,6 @@ try {
     assert.equal(state.validateQuickAsk('hi', 'current', true), null)
     assert.equal(state.validateQuickAsk('hi', 'new', false), null)
   })
-  check('迷你小窗：默认关闭、启用后才能显示', () => {
-    let s = state.INITIAL_MINI_STATE
-    assert.equal(s.enabled, false)
-    s = state.miniReducer(s, { type: 'show' })
-    assert.equal(s.visible, false)
-    s = state.miniReducer(s, { type: 'set-enabled', enabled: true })
-    s = state.miniReducer(s, { type: 'show' })
-    assert.equal(s.visible, true)
-    s = state.miniReducer(s, { type: 'set-enabled', enabled: false })
-    assert.equal(s.visible, false)
-  })
-  check('迷你小窗：高度随条目增长并有上限', () => {
-    assert.equal(state.miniWindowHeight(0), 36 + 44)
-    assert.equal(state.miniWindowHeight(3), 36 + 132)
-    assert.equal(state.miniWindowHeight(100), 420)
-  })
-
-  console.log('attention-items')
-  const run = (runId, phase, overrides = {}) => ({
-    runId,
-    code: overrides.code ?? 'S1',
-    kind: 'session',
-    sessionId: overrides.sessionId ?? 's1',
-    title: overrides.title ?? '任务',
-    startedAt: 0,
-    phase,
-    counts: { tools: 0, edits: 0, errors: 0 }
-  })
-  const summary = {
-    needsYou: [run('a', { kind: 'needs-you', since: 200, request: { id: 'r', type: 'confirm', summary: 'q' } })],
-    stalled: [run('b', { kind: 'stalled', since: 300, cause: 'retry' })],
-    failed: [run('c', { kind: 'failed', at: 500, cause: 'host', message: 'x', seen: false })],
-    doneUnread: [run('d', { kind: 'done', at: 900, seen: false })],
-    active: [
-      run('a', { kind: 'needs-you', since: 200, request: { id: 'r', type: 'confirm', summary: 'q' } }),
-      run('b', { kind: 'stalled', since: 300, cause: 'retry' }),
-      run('e', { kind: 'running', since: 100, activity: 'waiting-model' }),
-      run('f', { kind: 'queued', since: 50, reason: 'followup' })
-    ],
-    waiting: true,
-    busy: true,
-    attentionCount: 3,
-    total: 6
-  }
-  check('条目按 等你→停滞→失败→运行中→排队→完成 排序', () => {
-    const list = items.attentionItems(summary)
-    assert.deepEqual(
-      list.map((item) => item.runId),
-      ['a', 'b', 'c', 'e', 'f', 'd']
-    )
-    assert.deepEqual(
-      list.map((item) => item.statusKey),
-      ['needs-you', 'stalled', 'failed', 'running', 'queued', 'done']
-    )
-  })
-  check('未读标记与阶段时间', () => {
-    const list = items.attentionItems(summary)
-    const failed = list.find((item) => item.runId === 'c')
-    assert.equal(failed.unread, true)
-    assert.equal(failed.since, 500)
-    const done = list.find((item) => item.runId === 'd')
-    assert.equal(done.unread, true)
-  })
-  check('同一类内进行中按等待时间从早到晚、终态从新到旧', () => {
-    const many = {
-      ...summary,
-      stalled: [
-        run('late', { kind: 'stalled', since: 900, cause: 'retry' }),
-        run('early', { kind: 'stalled', since: 100, cause: 'retry' })
-      ]
-    }
-    const stalled = items.attentionItems(many).filter((item) => item.statusKey === 'stalled')
-    assert.deepEqual(stalled.map((item) => item.runId), ['early', 'late'])
-  })
-
   console.log('quick-ask-submit')
   const fake = (overrides = {}) => {
     const calls = []

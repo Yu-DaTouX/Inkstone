@@ -249,5 +249,3 @@ export function PaneTerminalView({ bridge, onRequestClose }: PaneTerminalViewPro
     </div>
   )
 }
-
-export default PaneTerminalView
