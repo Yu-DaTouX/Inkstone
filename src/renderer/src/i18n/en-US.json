@@ -466,6 +466,7 @@
   "cap.nativeDisabled": "Disabled",
   "cap.nativeCommandArgs": "{command} · {count} args",
   "ctx.compactingReason": "Compacting · {reason}",
+  "ctx.compactingElapsed": "{seconds}s elapsed",
   "ctx.growthAfter": "{tokens} added since",
   "ctx.reasonEmergency": "physical fallback",
   "ctx.reasonManual": "manual",

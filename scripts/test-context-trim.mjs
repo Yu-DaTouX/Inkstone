@@ -97,8 +97,15 @@ export async function runContextTrimTests(ok, mod, limits) {
     ok(JSON.stringify(long) === unchanged, '长单轮：预算裁剪也不修改持久化原消息')
     const out = trimMessages(long, { trimmed: new Map(), projectedTokens: 200_000, threshold: 80_000, cacheCold: false })
     const ids = stubbed(out ?? [])
-    ok(ids.length === 9 && !ids.includes('c10') && !ids.includes('c11') && !ids.includes('c12'), '长单轮：超硬线可裁9组，但最后3组仍完整', ids.join(','))
+    ok(ids.length === 10 && !ids.includes('c11') && !ids.includes('c12'), '长单轮：超硬线按 20k 预算裁到只剩最近 2 组（每组约 10k token）', ids.join(','))
     ok(JSON.stringify(long) === unchanged, '长单轮：不修改持久化原消息')
+    const huge = [user, ...history(1).map(m => m.role === 'toolResult' ? { ...m, content: [{ type: 'text', text: 'x'.repeat(200_000) }] } : m).filter(m => m.role !== 'user')]
+    ok(trimMessages(huge, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) === undefined, '长单轮：最新一组即使远超 20k 预算也无条件保留')
+    const threeBig = [user, ...Array.from({ length: 8 }, (_, i) => ({
+      role: 'assistant', content: [{ type: 'toolCall', id: `b${i + 1}`, name: 'read', arguments: { path: `big/a0${i + 1}.txt` } }]
+    })).flatMap((step, i) => [step, { role: 'toolResult', toolCallId: `b${i + 1}`, toolName: 'read', content: [{ type: 'text', text: 'x'.repeat(50_000) }] }])]
+    const threeIds = stubbed(trimMessages(threeBig, { trimmed: new Map(), projectedTokens: 200_000, threshold: 80_000, cacheCold: false }) ?? [])
+    ok(threeIds.includes('b1') && threeIds.includes('b3') && !threeIds.includes('b7') && !threeIds.includes('b8'), '长单轮：单回合 8 个 50KB 工具组只无条件保护最新的 2 组（约 25k 输出），不再整回合绕过裁剪', threeIds.join(','))
     const few = [user, ...history(3).filter(m => m.role !== 'user')]
     ok(trimMessages(few, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) === undefined, '长单轮：再大也保留最近3组')
     const parallel = structuredClone(long)
@@ -107,7 +114,7 @@ export async function runContextTrimTests(ok, mod, limits) {
     ok(!pending.includes('c1'), '工具组：并行调用未全部返回时不裁同组已完成结果')
     parallel.splice(3, 0, { role: 'toolResult', toolCallId: 'parallel', toolName: 'read', content: [{ type: 'text', text: big }] })
     const complete = stubbed(trimMessages(parallel, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) ?? [])
-    ok(complete.includes('c1') && complete.includes('parallel') && !complete.includes('c10'), '工具组：并行结果按一组计算近期保护')
+    ok(complete.includes('c1') && complete.includes('parallel') && !complete.includes('c11'), '工具组：并行结果按一组计算近期保护', complete.join(','))
     const protectedMessages = structuredClone(long)
     protectedMessages[1].content[0] = { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: '/skills/office/SKILL.md' } }
     protectedMessages.find(m => m.toolCallId === 'c2').isError = true
@@ -120,7 +127,7 @@ export async function runContextTrimTests(ok, mod, limits) {
       return copy
     }).filter(m => m.role !== 'user')]
     const multiIds = stubbed(trimMessages(multi, { trimmed: new Map(), projectedTokens: 900_000, threshold: 80_000, contextWindow: 1_000_000 }) ?? [])
-    ok(multiIds.length === 6 && !multiIds.includes('c4') && !multiIds.includes('nc4'), '长轮：每个近期用户轮分别保留最近3组')
+    ok(multiIds.length === 8 && !multiIds.includes('c5') && !multiIds.includes('nc5'), '长轮：每个近期用户轮分别按 20k 预算保留最近 2 组')
   }
 
   {
@@ -184,7 +191,12 @@ export async function runContextTrimTests(ok, mod, limits) {
       const fallback = trimMessages(msgs, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000, spill: broken })
       const plain = fallback.find((m) => m.toolCallId === 'c1').content[0].text
       ok(!/Full output/.test(plain) && /Re-run the call/.test(plain), '落盘：写不进去时退回不带路径的存根', plain)
-      ok(/[\\/]inkstone-trimmed[\\/]a_b$/.test(mod.spillDir('a/b')) && /[\\/]inkstone-trimmed[\\/]session$/.test(mod.spillDir('..')), '落盘：会话目录名只保留安全字符')
+      ok(/[\\/]trimmed[\\/]a_b$/.test(mod.spillDir('a/b')) && /[\\/]trimmed[\\/]session$/.test(mod.spillDir('..')), '落盘：会话目录名只保留安全字符')
+      const previousDataDir = process.env.YAN_DATA_DIR
+      process.env.YAN_DATA_DIR = root
+      ok(mod.spillDir('s') === join(root, 'trimmed', 's'), '落盘：溢写目录落在 YAN_DATA_DIR/trimmed（跟数据目录一起清理，不再堆在 %TEMP%）', mod.spillDir('s'))
+      if (previousDataDir === undefined) delete process.env.YAN_DATA_DIR
+      else process.env.YAN_DATA_DIR = previousDataDir
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -238,7 +250,7 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
   ok(DEFAULT_TRIM_TOKENS === limits.DEFAULT_CONTEXT_TRIM_TOKENS && DEFAULT_COMPACT_TOKENS === limits.DEFAULT_AUTO_COMPACT_TOKENS, '阈值：扩展与 shared 的默认值一致')
 
-  const { mkdtempSync, writeFileSync, rmSync, existsSync } = await import('node:fs')
+  const { mkdtempSync, mkdirSync, utimesSync, writeFileSync, rmSync, existsSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const piDir = mkdtempSync(join(tmpdir(), 'yan-trim-pi-'))
@@ -376,7 +388,18 @@ export async function runContextTrimTests(ok, mod, limits) {
       const spillDirectory = mod.spillDir(fixtureSession)
       ok(existsSync(join(spillDirectory, 'c1.txt')), '落盘：扩展把被裁原文写进本会话的临时目录')
       spillCleanup.handlers.session_start({})
-      ok(!existsSync(spillDirectory), '会话开始：扩展自己清掉本会话的临时原文目录，不在 %TEMP% 留敏感输出')
+      ok(!existsSync(spillDirectory), '会话开始：扩展自己清掉本会话的临时原文目录')
+      const spillRoot = join(piDir, 'trimmed')
+      const staleDir = join(spillRoot, 'stale-session')
+      const freshDir = join(spillRoot, 'fresh-session')
+      mkdirSync(staleDir, { recursive: true })
+      mkdirSync(freshDir, { recursive: true })
+      writeFileSync(join(staleDir, 'c1.txt'), 'old')
+      writeFileSync(join(freshDir, 'c1.txt'), 'new')
+      const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
+      utimesSync(staleDir, old, old)
+      spillCleanup.handlers.session_start({})
+      ok(!existsSync(staleDir) && existsSync(freshDir), '回收：会话开始时清揉7 天前的其他会话原文，近期的不动')
     }
   } finally {
     rmSync(mod.spillDir(fixtureSession), { recursive: true, force: true })
