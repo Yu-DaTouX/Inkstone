@@ -45,10 +45,6 @@ export function boundsSignature(bounds: NativeBounds): string {
   return `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`
 }
 
-export function boundsArea(bounds: NativeBounds): number {
-  return bounds.width * bounds.height
-}
-
 export interface BoundsBridge {
   setBounds(bounds: NativeBounds): void | Promise<void>
 }

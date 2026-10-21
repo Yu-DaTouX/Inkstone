@@ -1,4 +1,3 @@
-import { shouldShowBrowser } from '../../state/browser-visibility'
 import type { WorkspaceOwner } from '../workbench/types'
 
 export interface BrowserSurfaceInputs {
@@ -15,15 +14,6 @@ export function browserControlAllowed(inputs: BrowserSurfaceInputs): boolean {
     inputs.browserOpen &&
     inputs.browserOwnerKey === inputs.owner.key
   )
-}
-
-export function browserNativeVisible(inputs: BrowserSurfaceInputs, overlayBlocked: boolean): boolean {
-  return shouldShowBrowser({
-    browserOpen: inputs.browserOpen,
-    rightPanelOpen: true,
-    activeBrowserSurface: browserControlAllowed(inputs),
-    overlayBlockers: overlayBlocked ? 1 : 0
-  })
 }
 
 export class BrowserSurfaceClaim {

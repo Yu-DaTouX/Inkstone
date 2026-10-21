@@ -4,7 +4,6 @@ export const FILE_LIST_WIDTH = { DEFAULT: 240, MIN: 160, MAX: 640 } as const
 export const FILE_LIST_MIN_PANE = FILE_LIST_WIDTH.DEFAULT + 160
 export const LARGE_DIFF_LINES = 5000
 export const LARGE_DIFF_FILES = 300
-export const SPLIT_MIN_WIDTH = 560
 
 export function clampFileListWidth(value: number, limit: number = FILE_LIST_WIDTH.MAX): number {
   const max = Math.max(FILE_LIST_WIDTH.MIN, Math.min(FILE_LIST_WIDTH.MAX, limit))

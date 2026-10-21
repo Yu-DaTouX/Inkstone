@@ -22,7 +22,6 @@ export interface ChangesText {
   patchLoading: string
   patchError: (message: string) => string
   patchTruncated: string
-  readOnly: string
   scopeLabel: string
   scopeWorking: string
   scopeBranch: string
@@ -93,7 +92,6 @@ export function changesText(lang: string): ChangesText {
       patchLoading: 'Loading diff…',
       patchError: (message) => `Failed to load diff: ${message}`,
       patchTruncated: 'This diff is truncated (not the complete content).',
-      readOnly: 'Read-only',
       scopeLabel: 'Compare scope',
       scopeWorking: 'Working tree',
       scopeBranch: 'Branch (vs merge-base)',
@@ -162,7 +160,6 @@ export function changesText(lang: string): ChangesText {
     patchLoading: '正在加载 diff…',
     patchError: (message) => `diff 加载失败：${message}`,
     patchTruncated: '这个 diff 已被截断，不是完整内容。',
-    readOnly: '只读',
     scopeLabel: '对比范围',
     scopeWorking: '工作区',
     scopeBranch: '分支（对 merge-base）',
