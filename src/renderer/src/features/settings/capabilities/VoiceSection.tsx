@@ -19,7 +19,7 @@ function fmtBytes(n: number): string {
   return `${Math.round(n / 1024 ** 2)} MB`
 }
 
-export type VoiceSetup = ReturnType<typeof useVoiceSetup>
+type VoiceSetup = ReturnType<typeof useVoiceSetup>
 
 export function useVoiceSetup() {
   const t = useT()

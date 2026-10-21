@@ -16,7 +16,7 @@ type PackageActionKind = 'install' | 'remove' | 'update'
 
 const RESULT_LABEL = { install: 'pkg.installBtn', update: 'pkg.update', remove: 'pkg.remove' } as const
 
-export interface PackagesPanelProps {
+interface PackagesPanelProps {
   initialSource?: string
   selectionKey?: number
   mode: 'install' | 'installed'

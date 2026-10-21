@@ -10,15 +10,13 @@ export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const MCP_APP_RESOURCE_MAX_BYTES = 2 * 1024 * 1024
 
 export const MCP_APP_META_UI = 'ui'
-export const MCP_APP_META_RESOURCE_URI = 'resourceUri'
-export const MCP_APP_META_CSP = 'csp'
-export const MCP_APP_META_VISIBILITY = 'visibility'
-export const MCP_APP_META_PREFERS_BORDER = 'prefersBorder'
+const MCP_APP_META_RESOURCE_URI = 'resourceUri'
+const MCP_APP_META_CSP = 'csp'
+const MCP_APP_META_VISIBILITY = 'visibility'
 
 export type McpAppVisibility = 'model' | 'app'
-export const MCP_APP_VISIBILITIES: readonly McpAppVisibility[] = ['model', 'app']
 
-export const MCP_APP_DEFAULT_VISIBILITY: readonly McpAppVisibility[] = ['model']
+const MCP_APP_DEFAULT_VISIBILITY: readonly McpAppVisibility[] = ['model']
 
 export interface McpAppCsp {
   connectDomains?: string[]
@@ -48,14 +46,6 @@ export function mcpAppVisibilityOf(meta: unknown): McpAppVisibility[] {
   if (!Array.isArray(raw)) return [...MCP_APP_DEFAULT_VISIBILITY]
   const values = raw.filter((value): value is McpAppVisibility => value === 'model' || value === 'app')
   return values.length ? [...new Set(values)] : [...MCP_APP_DEFAULT_VISIBILITY]
-}
-
-export function mcpAppIsAppVisible(meta: unknown): boolean {
-  return mcpAppVisibilityOf(meta).includes('app')
-}
-
-export function mcpAppIsModelVisible(meta: unknown): boolean {
-  return mcpAppVisibilityOf(meta).includes('model')
 }
 
 export function mcpAppCspOf(meta: unknown): McpAppCsp | null {

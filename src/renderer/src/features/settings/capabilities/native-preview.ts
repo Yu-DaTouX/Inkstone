@@ -12,7 +12,7 @@ export function httpOriginOf(raw: unknown): string | null {
   return url.origin
 }
 
-export interface NativeEntrySummary {
+interface NativeEntrySummary {
   description: string | null
   transport: 'stdio' | 'http' | 'other'
   command: string | null

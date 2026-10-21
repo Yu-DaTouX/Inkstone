@@ -85,7 +85,6 @@ interface McpAppInstance {
   mimeType: string
   bytes: number
   csp: string
-  createdAt: number
 }
 
 interface McpAppCacheEntry {
@@ -124,10 +123,6 @@ export class McpAppResourceStore {
     this.maxCacheEntries = options.maxCacheEntries ?? 64
     this.maxResourceBytes = options.maxResourceBytes ?? MCP_APP_RESOURCE_MAX_BYTES
     this.now = options.now ?? Date.now
-  }
-
-  serverHash(serverId: string): string {
-    return appServerHash(serverId)
   }
 
   get size(): number {
@@ -197,8 +192,7 @@ export class McpAppResourceStore {
       html: cached.html,
       mimeType: cached.mimeType,
       bytes: cached.bytes,
-      csp: cached.csp,
-      createdAt: this.now()
+      csp: cached.csp
     })
     return { ok: true, url: buildMcpAppUrl(serverHash, instanceId), instanceId, serverHash, bytes: cached.bytes, cached: fromCache }
   }
