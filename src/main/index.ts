@@ -15,6 +15,7 @@ import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
+import { readSessionTail, tailTurnInterrupted } from './session-tail'
 import { RunnerRegistry } from './runners'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
@@ -1709,10 +1710,11 @@ let restoreNotice: string | undefined
 
 async function turnsWereInterrupted(sessionFile: string): Promise<boolean> {
   const bucket = timingKey(sessionFile)
-  if (!bucket) return false
-  const records = await readTurnTimings(YAN_DIR, bucket).catch(() => [])
+  const records = bucket ? await readTurnTimings(YAN_DIR, bucket).catch(() => []) : []
   const last = [...records].sort((a, b) => a.endedAt - b.endedAt).at(-1)
-  return !!last && effectiveTerminalReason(last) === 'interrupted'
+  if (last && effectiveTerminalReason(last) === 'interrupted') return true
+  const tail = await readSessionTail(sessionFile).catch(() => ({}))
+  return tailTurnInterrupted(tail, last?.endedAt)
 }
 
 async function usableSessionFile(sessionFile: string | undefined): Promise<string | undefined> {
@@ -1755,7 +1757,7 @@ function flushRestoreNotice(): void {
   const message = restoreNotice
   if (!message) return
   restoreNotice = undefined
-  push({ ch: 'notify', payload: { id: `session-restore-${Date.now()}`, method: 'notify', notifyType: 'info', message } })
+  push({ ch: 'notify', payload: { id: 'session-restore', method: 'notify', notifyType: 'info', message } })
 }
 
 const pendingSubagentRuns = new Map<string, Extract<MainPush, { ch: 'subagent' }>['payload']>()
@@ -2429,7 +2431,10 @@ function registerIpc(): void {
     return info
   })
 
-  handle('yan:getState', async () => ac()?.getState() ?? null)
+  handle('yan:getState', async () => {
+    flushRestoreNotice()
+    return ac()?.getState() ?? null
+  })
   registerRunsIpc(ipc, {
     snapshot: () => runsHost?.snapshot() ?? { revision: 0, runs: [] },
     markSeen: (runId) => runsHost?.markSeen(runId) ?? { ok: false },
@@ -2645,7 +2650,6 @@ function registerIpc(): void {
     }
     if (browser) push({ ch: 'browser-state', payload: browser.getState() })
     pushRunners()
-    flushRestoreNotice()
     void reclaimQueuedMessages()
   })
 
