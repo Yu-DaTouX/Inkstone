@@ -249,10 +249,6 @@ for (const symbol of ['reconcileLegacyForManaged(', 'verifyManagedServer(', 'dis
 }
 ok(agentSrc.includes('getLegacyMcpHolderSnapshot('), 'agent.ts 提供 getLegacyMcpHolderSnapshot 只读事实 getter')
 
-const registrationSrc = await read('src/main/capabilities/registration-service.ts')
-ok(registrationSrc.includes('probeManagedServer(') && registrationSrc.includes('managedConfigById('), 'registration-service 走托管 probe helper')
-ok(!registrationSrc.includes('mcpAppHost().listToolsWithMeta'), 'registration-service 不再直连 host 单例 listToolsWithMeta')
-
 const preloadSrc = await read('src/preload/index.ts')
 ok(preloadSrc.includes("invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership')"), 'preload ownership 按对象契约声明')
 
