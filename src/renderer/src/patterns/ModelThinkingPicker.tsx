@@ -337,11 +337,15 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           data-testid="model-picker"
           onPress={() => setOpen((v) => !v)}
         >
-          <span className="mtp-dot" data-level={hasLevels ? level : 'off'} aria-hidden />
           <span className="mtp-model" data-testid="model-picker-name">
             {cur ? cur.name : t('picker.notReady')}
           </span>
-          {hasLevels && level !== 'off' ? <ThinkingBadge level={level} data-testid="thinking-badge" /> : null}
+          {hasLevels && level !== 'off' ? (
+            <>
+              <span className="mtp-trigger-sep" aria-hidden>·</span>
+              <ThinkingBadge level={level} data-testid="thinking-badge" />
+            </>
+          ) : null}
           <ChevronDown className="mtp-chev" size={12} aria-hidden />
         </Button>
       </span>

@@ -14,7 +14,8 @@
   .mtp-trigger {
     display: inline-flex;
     align-items: center;
-    gap: var(--s-6);
+    gap: var(--s-4);
+    color: var(--fg2);
     min-width: 0;
     max-width: 100%;
   }
@@ -30,13 +31,9 @@
     white-space: nowrap;
   }
 
-  .mtp-dot {
+  .mtp-trigger-sep {
     flex: none;
-    width: var(--s-6);
-    height: var(--s-6);
-    border-radius: var(--r-full);
-    background: var(--think-medium, var(--accent));
-    transition: background-color var(--dur-base) var(--ease);
+    color: var(--fg3);
   }
 
   .mtp-level {
@@ -49,9 +46,9 @@
   }
 
   .mtp-trigger .mtp-level {
-    box-sizing: content-box;
-    min-width: 2em;
-    text-align: center;
+    padding: 0;
+    background: transparent;
+    font-size: inherit;
   }
 
   .mtp-chev {
@@ -64,54 +61,26 @@
     transform: rotate(180deg);
   }
 
-  .mtp-dot[data-level='off'],
   .mtp-level[data-level='off'] {
     color: var(--think-off, var(--fg3));
   }
-  .mtp-dot[data-level='off'] {
-    background: var(--think-off, var(--fg3));
-  }
-  .mtp-dot[data-level='minimal'],
   .mtp-level[data-level='minimal'] {
     color: var(--think-minimal, var(--data-8));
   }
-  .mtp-dot[data-level='minimal'] {
-    background: var(--think-minimal, var(--data-8));
-  }
-  .mtp-dot[data-level='low'],
   .mtp-level[data-level='low'] {
     color: var(--think-low, var(--data-2));
   }
-  .mtp-dot[data-level='low'] {
-    background: var(--think-low, var(--data-2));
-  }
-  .mtp-dot[data-level='medium'],
   .mtp-level[data-level='medium'] {
     color: var(--think-medium, var(--data-1));
   }
-  .mtp-dot[data-level='medium'] {
-    background: var(--think-medium, var(--data-1));
-  }
-  .mtp-dot[data-level='high'],
   .mtp-level[data-level='high'] {
     color: var(--think-high, var(--data-3));
   }
-  .mtp-dot[data-level='high'] {
-    background: var(--think-high, var(--data-3));
-  }
-  .mtp-dot[data-level='xhigh'],
   .mtp-level[data-level='xhigh'] {
     color: var(--think-xhigh, var(--data-4));
   }
-  .mtp-dot[data-level='xhigh'] {
-    background: var(--think-xhigh, var(--data-4));
-  }
-  .mtp-dot[data-level='max'],
   .mtp-level[data-level='max'] {
     color: var(--think-max, var(--fail));
-  }
-  .mtp-dot[data-level='max'] {
-    background: var(--think-max, var(--fail));
   }
 
   .mtp-pop {
@@ -565,7 +534,6 @@
       animation: none;
     }
 
-    .mtp-dot,
     .mtp-level,
     .mtp-head-level,
     .mtp-scale-item,

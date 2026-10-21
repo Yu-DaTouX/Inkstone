@@ -35,7 +35,6 @@ import {
   composerMode,
   composerPlaceholderKey,
   composerPrompt,
-  composerSendKeyHint,
   composerSubmitAction
 } from './composer-layout'
 import {
@@ -480,8 +479,6 @@ export function Composer({ className }: { className?: string } = {}) {
     hasText: hasComposerText(value),
     hasAttachments: attachmentCount > 0
   })
-  const sendKeyHint = composerSendKeyHint(sendKey, false)
-
   return (
     <div
       className={`composer-wrap ${dragging ? 'is-dropping' : ''} ${className ?? ''}`}
@@ -536,36 +533,35 @@ export function Composer({ className }: { className?: string } = {}) {
               <PermissionToggle />
               {freshSession ? <ProjectPicker /> : null}
               <PlusMenu onInsert={insertAtCursor} />
-              {sendKeyHint ? (
-                <span className="composer-keyhint" data-testid="composer-keyhint">
-                  {sendKeyHint === 'enter' ? t('composer.keyEnterSend') : t('composer.keyCtrlSend')}
-                </span>
-              ) : null}
             </div>
-            <VoiceButton onText={insertAtCursor} />
-            <ContextRing />
+            <div className="composer-aux">
+              <VoiceButton onText={insertAtCursor} />
+              <ContextRing />
+            </div>
             <ModelThinkingPicker />
             {submitAction === 'stop' ? (
               <Button
                 variant="secondary"
+                size="sm"
                 aria-label={t('composer.stop')}
                 title={t('composer.stop')}
                 className="composer-send composer-stop"
                 data-testid="composer-stop"
                 onPress={() => void abort()}
               >
-                <Square size={14} aria-hidden />
+                <Square size={10} fill="currentColor" aria-hidden />
               </Button>
             ) : (
               <Button
                 variant="primary"
+                size="sm"
                 aria-label={t('composer.go')}
                 className="composer-send"
                 data-testid="composer-send"
                 isDisabled={!canSend}
                 onPress={() => void submitMessage('steer')}
               >
-                <ArrowUp size={16} aria-hidden />
+                <ArrowUp size={14} aria-hidden />
               </Button>
             )}
           </div>

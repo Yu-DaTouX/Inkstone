@@ -72,7 +72,7 @@
     const leftIds = () =>
       [...(tools?.querySelectorAll('[data-testid]') ?? [])]
         .map((el) => el.getAttribute('data-testid'))
-        .filter((id) => ['composer-mode', 'permission-picker', 'composer-plus', 'composer-keyhint'].includes(id))
+        .filter((id) => ['composer-mode', 'permission-picker', 'composer-plus'].includes(id))
     check(
       JSON.stringify(leftIds()) === JSON.stringify(['permission-picker', 'composer-plus']),
       `默认左侧顺序：权限 → ＋（实际 ${JSON.stringify(leftIds())}）`

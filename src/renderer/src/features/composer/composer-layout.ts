@@ -1,4 +1,4 @@
-export const COMPOSER_LEFT_ORDER = ['mode', 'permission', 'plus', 'sendkey'] as const
+export const COMPOSER_LEFT_ORDER = ['mode', 'permission', 'plus'] as const
 
 export const COMPOSER_RIGHT_ORDER = ['voice', 'context', 'model-thinking', 'run', 'send'] as const
 
@@ -43,13 +43,6 @@ export interface ComposerSubmitState {
 
 export function composerSubmitAction(state: ComposerSubmitState): 'stop' | 'send' {
   return state.running && !state.hasText && !state.hasAttachments ? 'stop' : 'send'
-}
-
-export type SendKeyRule = 'enter' | 'ctrl'
-
-export function composerSendKeyHint(sendKey: string, longForm: boolean): SendKeyRule | null {
-  if (!longForm && sendKey === 'auto') return null
-  return sendKey === 'ctrlEnter' ? 'ctrl' : 'enter'
 }
 
 export function thinkingLevelIndex(levels: readonly string[], level: string): number {

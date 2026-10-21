@@ -418,8 +418,6 @@
   "composer.mention": "@ Mention",
   "composer.fileRefs": "(Attached files — read them as needed)\n{list}",
   "composer.go": "Send",
-  "composer.keyCtrlSend": "Ctrl+Enter sends · Enter for a newline",
-  "composer.keyEnterSend": "Enter sends · Shift+Enter for a newline",
   "composer.pathError": "Could not read the directory; check project permissions",
   "composer.pathLoading": "Reading the current project directory…",
   "composer.pathNoMatch": "No matching file or directory",
