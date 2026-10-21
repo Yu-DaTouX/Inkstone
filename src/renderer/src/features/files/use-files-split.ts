@@ -80,6 +80,9 @@ export function useFilesSplit(): FilesSplit {
   const [treeShown, setTreeShown] = useState(() => readStored(TREE_SHOWN_KEY) !== '0')
   const paneWidthRef = useRef(0)
   paneWidthRef.current = paneWidth
+  const dragStopRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => () => dragStopRef.current?.(), [])
 
   useEffect(() => {
     if (!host) return undefined
@@ -119,11 +122,15 @@ export function useFilesSplit(): FilesSplit {
         latest = clampTreeWidth(startWidth - (ev.clientX - startX), paneWidthRef.current)
         setDragWidth(latest)
       }
-      const finish = (commit: boolean): void => {
+      const detach = (): void => {
+        dragStopRef.current = null
         target.removeEventListener('pointermove', move)
         target.removeEventListener('pointerup', up)
         target.removeEventListener('pointercancel', cancel)
         window.removeEventListener('keydown', onKey, true)
+      }
+      const finish = (commit: boolean): void => {
+        detach()
         setDragWidth(null)
         if (commit) commitWidth(latest)
       }
@@ -139,6 +146,7 @@ export function useFilesSplit(): FilesSplit {
       target.addEventListener('pointerup', up)
       target.addEventListener('pointercancel', cancel)
       window.addEventListener('keydown', onKey, true)
+      dragStopRef.current = detach
     },
     [storedWidth, commitWidth]
   )

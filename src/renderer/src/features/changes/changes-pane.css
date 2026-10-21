@@ -8,30 +8,6 @@
     height: 100%;
   }
 
-  .changes-pane__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8);
-    flex: 0 0 auto;
-    padding: var(--s-8) var(--s-10);
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .changes-pane__title {
-    margin: 0;
-    font-size: var(--t-heading);
-    font-weight: var(--t-heading-w);
-    line-height: var(--t-heading-lh);
-  }
-
-  .changes-pane__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-  }
-
   .changes-pane__hint {
     margin: 0;
     padding: var(--s-8) var(--s-10);
@@ -321,6 +297,8 @@
 
   .changes-file {
     min-width: 0;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
   }
 
   .changes-file__header {

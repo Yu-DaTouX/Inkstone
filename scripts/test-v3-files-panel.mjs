@@ -44,24 +44,17 @@ const nameRows = search.nameSearchRows({
 })
 assert.equal(nameRows[0].parent, 'src', '文件结果带父路径')
 assert.deepEqual(nameRows[0].nameParts[0], { text: 'ap', hit: true }, '文件结果带匹配高亮')
-const contentRows = search.contentSearchRows({
-  request: { cwd: '/p', generation: 1, requestId: 'r', query: 'x' },
-  hits: [
-    { path: 'a.ts', name: 'a.ts', line: 3, text: '  const x = 1' },
-    { path: 'a.ts', name: 'a.ts', line: 9, text: 'x()' },
-    { path: 'b/c.ts', name: 'c.ts', line: 1, text: 'x' }
-  ],
-  status: 'ok',
-  truncated: false,
-  scannedFiles: 2,
-  skippedFiles: 0
-})
+const contentRows = search.groupContentHits([
+  { path: 'a.ts', name: 'a.ts', line: 3, text: '  const x = 1' },
+  { path: 'a.ts', name: 'a.ts', line: 9, text: 'x()' },
+  { path: 'b/c.ts', name: 'c.ts', line: 1, text: 'x' }
+])
 assert.deepEqual(
-  contentRows.map((row) => `${row.kind}:${row.path}:${row.line ?? ''}`),
+  contentRows.rows.map((row) => `${row.kind}:${row.path}:${row.line ?? ''}`),
   ['entry:a.ts:', 'line:a.ts:3', 'line:a.ts:9', 'entry:b/c.ts:', 'line:b/c.ts:1'],
   '内容匹配按文件分组，每行带行号'
 )
-assert.equal(contentRows[1].text, 'const x = 1', '片段去掉首尾空白')
+assert.equal(contentRows.rows[1].text, 'const x = 1', '片段去掉首尾空白')
 assert.equal(search.nameSearchFailed({ error: { code: 'superseded' } }), false, '被新请求取代不算失败')
 assert.equal(search.nameSearchFailed({ error: { code: 'timeout' } }), true)
 
@@ -91,7 +84,15 @@ assert.equal(menu.filesMenuModel([{ path: 'x', name: 'x', dir: true, blocked: tr
 assert.equal(menu.canOpenWithSystem('run.bat'), false, '脚本不交给系统打开')
 assert.equal(menu.canOpenWithSystem('a.lnk'), false)
 assert.equal(menu.canOpenWithSystem('a.png'), true)
-assert.equal(menu.terminalCdCommand('C:\\a b'), 'cd "C:\\a b"\r')
+assert.equal(menu.cdCommandFor('C:\\a b'), 'cd "C:\\a b"\r')
+assert.equal(menu.cdCommandFor('/work/my dir'), 'cd "/work/my dir"\r', 'POSIX 路径同样加引号')
+assert.equal(menu.cdCommandFor('/work/a\nb'), null, '含换行的目录名不注入命令')
+assert.equal(menu.cdCommandFor('/work/a' + String.fromCharCode(7)), null, '含控制字符的目录名不注入命令')
+assert.equal(menu.cdCommandFor('/work/a"b'), null, '含双引号的目录名不注入命令')
+assert.equal(menu.cdCommandFor('/work/a$(id)'), null, '含 $ 的目录名不注入命令')
+assert.equal(menu.cdCommandFor('/work/a' + String.fromCharCode(96) + 'id'), null, '含反引号的目录名不注入命令')
+assert.equal(menu.cdCommandFor('/work/a%b'), null, '含百分号的目录名不注入命令')
+assert.equal(menu.cdCommandFor('   '), null, '空路径不生成命令')
 assert.equal(menu.attachablePaths(Array.from({ length: 150 }, (_, i) => ({ path: `f${i}`, name: `f${i}`, dir: false }))).length, 100, '附加最多 100 项')
 
 const layout = (over) => split.filesSplitLayout({ hasPreview: true, hasFile: false, paneWidth: 900, treeShown: true, narrowTree: false, ...over })

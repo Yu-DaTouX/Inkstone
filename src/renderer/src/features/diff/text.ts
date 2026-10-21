@@ -11,6 +11,7 @@ export interface DiffViewText {
   renderAnyway: string
   empty: string
   fileHeader: string
+  noNewline: string
 }
 
 export function diffViewText(lang: string): DiffViewText {
@@ -27,7 +28,8 @@ export function diffViewText(lang: string): DiffViewText {
       tooLarge: (size) => `Patch is ${size}; content rendering is disabled`,
       renderAnyway: 'Render anyway',
       empty: 'No changes to show',
-      fileHeader: 'File'
+      fileHeader: 'File',
+      noNewline: '\\ No newline at end of file'
     }
   }
   return {
@@ -42,6 +44,7 @@ export function diffViewText(lang: string): DiffViewText {
     tooLarge: (size) => `补丁约 ${size}，已停用正文渲染`,
     renderAnyway: '仍然渲染',
     empty: '没有可显示的改动',
-    fileHeader: '文件'
+    fileHeader: '文件',
+    noNewline: '\\ 文件末尾没有换行符'
   }
 }

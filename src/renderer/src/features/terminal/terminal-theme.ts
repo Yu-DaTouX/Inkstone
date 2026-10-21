@@ -65,7 +65,9 @@ export function readTerminalTheme(): ITheme {
   }
 }
 
-export function observeTerminalEnvironment(onChange: () => void): () => void {
+export type TerminalEnvironmentChange = 'appearance' | 'resize' | 'dpr'
+
+export function observeTerminalEnvironment(onChange: (change: TerminalEnvironmentChange) => void): () => void {
   if (typeof window === 'undefined') return () => {}
   if (!probe) {
     probe = document.createElement('span')
@@ -73,13 +75,15 @@ export function observeTerminalEnvironment(onChange: () => void): () => void {
     probe.style.display = 'none'
     document.body?.appendChild(probe)
   }
-  const themeObserver = new MutationObserver(onChange)
+  const onAppearance = (): void => onChange('appearance')
+  const onResize = (): void => onChange('resize')
+  const themeObserver = new MutationObserver(onAppearance)
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-density'] })
-  window.addEventListener('resize', onChange)
-  window.addEventListener(APPEARANCE_EVENT, onChange)
+  window.addEventListener('resize', onResize)
+  window.addEventListener(APPEARANCE_EVENT, onAppearance)
   let dprQuery: MediaQueryList | null = null
   const onDpr = (): void => {
-    onChange()
+    onChange('dpr')
     bindDpr()
   }
   const bindDpr = (): void => {
@@ -90,8 +94,8 @@ export function observeTerminalEnvironment(onChange: () => void): () => void {
   bindDpr()
   return () => {
     themeObserver.disconnect()
-    window.removeEventListener('resize', onChange)
-    window.removeEventListener(APPEARANCE_EVENT, onChange)
+    window.removeEventListener('resize', onResize)
+    window.removeEventListener(APPEARANCE_EVENT, onAppearance)
     dprQuery?.removeEventListener('change', onDpr)
   }
 }
