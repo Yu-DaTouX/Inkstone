@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { appendFile, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
 import type { PermissionMode } from '../../shared/approval'
@@ -71,6 +71,8 @@ export class McpAppViewAuditStore {
   private readonly newId: () => string
   private readonly maxFileBytes: number
   private readonly maxEntries: number
+  private readonly writtenBytes = new Map<string, number>()
+  private dirReady?: Promise<void>
 
   constructor(options: McpAppViewAuditStoreOptions = {}) {
     this.dir = options.dir ?? join(YAN_DIR, MCP_APP_AUDIT_DIRNAME, MCP_APP_AUDIT_SUBDIR)
@@ -102,9 +104,12 @@ export class McpAppViewAuditStore {
     if (input.argsHash) entry.argsHash = cleanText(input.argsHash, 128)
     if (input.reason) entry.reason = cleanText(input.reason, REASON_MAX)
 
-    await mkdir(this.dir, { recursive: true })
-    await this.rotateIfNeeded(path)
-    await appendFile(path, `${JSON.stringify(entry)}\n`, { encoding: 'utf8', mode: 0o600 })
+    const line = `${JSON.stringify(entry)}\n`
+    const bytes = Buffer.byteLength(line, 'utf8')
+    await this.ensureDir()
+    await this.rotateIfNeeded(path, bytes)
+    await appendFile(path, line, { encoding: 'utf8', mode: 0o600 })
+    this.writtenBytes.set(path, (this.writtenBytes.get(path) ?? 0) + bytes)
     return entry
   }
 
@@ -148,18 +153,28 @@ export class McpAppViewAuditStore {
     }
     await rm(path, { force: true }).catch(() => undefined)
     await rm(`${path}.1`, { force: true }).catch(() => undefined)
+    this.writtenBytes.delete(path)
   }
 
-  private async rotateIfNeeded(path: string): Promise<void> {
-    let size = 0
-    try {
-      size = (await stat(path)).size
-    } catch {
-      return
+  private ensureDir(): Promise<void> {
+    if (!this.dirReady) {
+      this.dirReady = mkdir(this.dir, { recursive: true }).then(
+        () => undefined,
+        (error: unknown) => {
+          this.dirReady = undefined
+          throw error
+        }
+      )
     }
-    if (size < this.maxFileBytes) return
+    return this.dirReady
+  }
+
+  private async rotateIfNeeded(path: string, nextBytes: number): Promise<void> {
+    const used = (this.writtenBytes.get(path) ?? 0) + nextBytes
+    if (used < this.maxFileBytes) return
     const rotated = `${path}.1`
     await rm(rotated, { force: true }).catch(() => undefined)
-    await rename(path, rotated)
+    await rename(path, rotated).catch(() => undefined)
+    this.writtenBytes.set(path, 0)
   }
 }

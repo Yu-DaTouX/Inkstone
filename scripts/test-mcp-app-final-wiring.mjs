@@ -158,7 +158,7 @@ function makeAssembly({ name = 'default', foreground = FACTS_A, records, hostToo
     ownerGuard,
     ask: (request) => {
       state.askLog.push(request)
-      return Promise.resolve('once')
+      return Promise.resolve({ choice: 'once' })
     },
     audit: new McpAppViewAuditStore({ dir: join(root, `audit-${name}`) }),
     serverConfigOf: () => SERVER_CONFIG,

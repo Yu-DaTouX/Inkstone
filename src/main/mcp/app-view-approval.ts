@@ -4,7 +4,7 @@ import {
   type ApprovalRequest,
   type PermissionMode
 } from '../../shared/approval'
-import { mcpCallDanger, mcpTarget } from '../../shared/mcp-approval'
+import { mcpCallDanger } from '../../shared/mcp-approval'
 import {
   bypassedTrustDecision,
   evaluateHostTrust,
@@ -152,11 +152,10 @@ export async function approveAppViewCall(
     askReasons = risks
   }
 
-  const { server: shownServer, tool: shownTool } = mcpTarget(toolName)
   const request: Omit<ApprovalRequest, 'id' | 'createdAt'> = {
     kind: 'danger',
     tool: toolName,
-    title: `App 视图请求调用 ${shownServer} / ${shownTool}`,
+    title: `App 视图请求调用 ${server} / ${tool}`,
     detail: JSON.stringify(call.args ?? {}).slice(0, 2000),
     reasons: askReasons,
     cwd: String(call.cwd ?? ''),

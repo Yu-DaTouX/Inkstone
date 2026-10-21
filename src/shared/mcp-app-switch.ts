@@ -111,7 +111,7 @@ export interface McpAppBridge {
   commitSwitch(token: string): Promise<McpAppSwitchCommitResponse>
 }
 
-export function mcpAppHttpOriginOf(raw: unknown): string | null {
+function mcpAppHttpOriginOf(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.trim() === '') return null
   let url: URL
   try {

@@ -27,8 +27,3 @@ export function mcpCallDanger(toolName: unknown, annotations: unknown): string[]
   const target = [server, tool].filter(Boolean).join(' / ')
   return [`MCP 工具可能修改数据或对外操作：${target}`]
 }
-
-export function mcpCallReasons(toolName: unknown, annotations: unknown, permissionMode: unknown): string[] {
-  if (permissionMode === 'all') return []
-  return mcpCallDanger(toolName, annotations)
-}

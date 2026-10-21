@@ -148,7 +148,7 @@ export function authorizationCovers(
   if (!host) return false
   return authorizations.some((auth) => {
     if (auth.host !== host) return false
-    if (auth.projectId && projectId && auth.projectId !== projectId) return false
+    if (auth.projectId !== undefined && auth.projectId !== projectId) return false
     return true
   })
 }
