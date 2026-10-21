@@ -33,4 +33,23 @@ export async function runNetworkPolicyTests(ok, policy) {
   ok(!isPrivateAddress('2001:4860:4860:0:0:0:0:8888'), '公网 IPv6 完整写法不被误判为私网')
   ok(await resolvesToPrivateAddress('127.0.0.1'), '直接 IP 不绕过私网识别')
   ok(await resolvesToPrivateAddress('localhost'), '域名解析到 loopback 时被识别')
+
+  const { PrivateDnsGuard } = policy
+  let lookups = 0
+  const release = []
+  const guard = new PrivateDnsGuard(async () => {
+    lookups += 1
+    await new Promise((resolve) => release.push(resolve))
+    return false
+  })
+  const shared = [guard.resolves('Example.COM.'), guard.resolves('example.com'), guard.resolves('example.com')]
+  ok(lookups === 1, '同一主机并发查询只解析一次')
+  release.splice(0).forEach((resolve) => resolve())
+  ok((await Promise.all(shared)).every((value) => value === false), '并发查询共享同一结果')
+  ok((await guard.resolves('example.com')) === false, '已缓存的结果直接命中')
+  ok(lookups === 1, '缓存命中时不再解析')
+  const failing = new PrivateDnsGuard(async () => {
+    throw new Error('dns 挂了')
+  })
+  ok((await failing.resolves('broken.test')) === false, '解析失败的域名当作公网（不阻断正常浏览）')
 }

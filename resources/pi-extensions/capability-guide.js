@@ -51,7 +51,7 @@ export const VISUAL_ANSWER_GUIDE = [
 ].join('\n')
 const VISUAL_SECTION = 'inkstone_visual_answer'
 
-export function visualAnswersEnabled() {
+function visualAnswersEnabled() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
     return JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))?.visualAnswers !== false
@@ -96,7 +96,7 @@ export function computerUseGuide(model) {
 export const COMPUTER_USE_GUIDE = computerUseGuide()
 const COMPUTER_USE_SECTION = 'inkstone_computer_use'
 
-export function computerUseEnabled() {
+function computerUseEnabled() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
     const file = process.env.YAN_MCP_SERVERS_FILE?.trim() || join(dir, 'mcp-servers.json')
@@ -142,7 +142,7 @@ export function withTaskReminder(payload, tools = false) {
   return appendReminder(payload, taskReminder(tools))
 }
 
-export const TODOS_TOOL = {
+const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
   description: 'Update the user\'s to-do panel. set: whole list; add: append; complete/uncomplete/remove: 1-based index; clear.',

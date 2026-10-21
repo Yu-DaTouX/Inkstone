@@ -359,8 +359,6 @@ async function testHostRuntime(runtime) {
   trustRuntime.handleNotify(hello.notify)
   const trust = await trustRuntime.getProjectTrust()
   ok(trust.effectiveTrusted === true && trust.explicitDecision === true && trust.ancestorTrustPath === null, 'getProjectTrust：自身条目 = explicitDecision')
-  const savedTrust = await trustRuntime.saveProjectTrust(false)
-  ok(savedTrust.ok === true && savedTrust.requiresRestart === true, 'saveProjectTrust 返回需要重建实例')
 
   const ancestorRuntime = makeRuntime({
     dispatcher: (envelope) => ({

@@ -4,24 +4,10 @@ import { cleanModelFavorites, modelKey, type ModelChoice } from '../../../../../
 
 export type ServiceState = 'ready' | 'loginable' | 'missing' | 'unknown'
 
-export function authInfoFor(
-  provider: string,
-  providers: readonly AuthProviderInfo[]
-): AuthProviderInfo | undefined {
-  const id = String(provider ?? '').trim()
-  if (!id) return undefined
-  return providers.find((info) => info.id === id || (info.authKey !== '' && info.authKey === id))
-}
-
 export function entryState(info: AuthProviderInfo): ServiceState {
   if (info.status === 'ready') return 'ready'
   if (info.status === 'unknown') return 'unknown'
   return info.inAppLogin ? 'loginable' : 'missing'
-}
-
-export function serviceState(provider: string, providers: readonly AuthProviderInfo[]): ServiceState {
-  const info = authInfoFor(provider, providers)
-  return info ? entryState(info) : 'unknown'
 }
 
 export function canRemoveCredential(info: AuthProviderInfo | undefined): boolean {
@@ -32,33 +18,7 @@ export function credentialFromEnv(info: AuthProviderInfo | undefined): boolean {
   return !!info && info.status === 'ready' && info.source === 'env'
 }
 
-export function needsInAppLogin(info: AuthProviderInfo): boolean {
-  return info.kind === 'subscription' && info.inAppLogin === true
-}
-
-export interface ServiceSplit {
-  subscriptions: AuthProviderInfo[]
-  keys: AuthProviderInfo[]
-  readyKeys: AuthProviderInfo[]
-  otherKeys: AuthProviderInfo[]
-}
-
-export function splitServices(providers: readonly AuthProviderInfo[]): ServiceSplit {
-  const subscriptions = providers.filter((p) => p.kind === 'subscription')
-  const keys = providers.filter((p) => p.kind !== 'subscription')
-  return {
-    subscriptions,
-    keys,
-    readyKeys: keys.filter((p) => p.status === 'ready'),
-    otherKeys: keys.filter((p) => p.status !== 'ready')
-  }
-}
-
-export function serviceSummary(providers: readonly AuthProviderInfo[]): { ready: number; total: number } {
-  return { ready: providers.filter((p) => p.status === 'ready').length, total: providers.length }
-}
-
-export function newestFirst(a: Pick<ModelChoice, 'provider' | 'id' | 'name'>, b: Pick<ModelChoice, 'provider' | 'id' | 'name'>): number {
+function newestFirst(a: Pick<ModelChoice, 'provider' | 'id' | 'name'>, b: Pick<ModelChoice, 'provider' | 'id' | 'name'>): number {
   const family = (m: Pick<ModelChoice, 'id'>): string => m.id.match(/^[a-z]+/i)?.[0] ?? m.id
   const group = a.provider.localeCompare(b.provider) || family(a).localeCompare(family(b))
   if (group) return group
@@ -76,7 +36,7 @@ export function newestFirst(a: Pick<ModelChoice, 'provider' | 'id' | 'name'>, b:
   )
 }
 
-export function providerRank(provider: string, order: readonly string[]): number {
+function providerRank(provider: string, order: readonly string[]): number {
   const i = order.indexOf(provider)
   return i < 0 ? order.length : i
 }
@@ -95,6 +55,22 @@ export function toggleFavorite(
     return favorites.filter((m) => modelKey(m) !== key)
   }
   return [...favorites, { provider: model.provider, id: model.id, ...(model.name ? { name: model.name } : {}) }]
+}
+
+export function mergeDiscoveredModels<T extends { id: string }>(
+  current: T[],
+  discovered: T[],
+  merge: (latest: T, found: T) => T
+): T[] {
+  const byId = new Map(discovered.map((entry) => [entry.id, entry]))
+  const kept = current
+    .filter((entry) => entry.id.trim())
+    .map((entry) => {
+      const found = byId.get(entry.id.trim())
+      return found ? merge(entry, found) : entry
+    })
+  const ids = new Set(kept.map((entry) => entry.id.trim()))
+  return [...kept, ...discovered.filter((entry) => !ids.has(entry.id))]
 }
 
 export const RECENT_STORAGE_KEY = 'inkstone.v3.modelPicker.recent'

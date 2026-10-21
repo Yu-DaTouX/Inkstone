@@ -119,7 +119,7 @@ async function buildBehaviorBundle(outdir) {
   const entryFile = join(outdir, 'branch-entry.ts')
   await writeFile(
     entryFile,
-    `export { buildTreeView, initialCollapsedForLeaf, moveTreeSelection, parseTreePayload } from '${posix(resolve(ROOT, 'src/shared/native-session'))}'
+    `export { buildTreeView, initialCollapsedForLeaf, parseTreePayload } from '${posix(resolve(ROOT, 'src/shared/native-session'))}'
 export { BranchTree, loadBranchTree, navigateBranch, nestBranchRows, renderBranchNodes, branchText } from '${posix(resolve(ROOT, 'src/renderer/src/features/session/BranchTree'))}'
 export { Tree, TreeItem, TreeItemContent, TreeChevron, TreeItemLabel, TreeEmptyState } from '${posix(UI_TREE_PATH)}'
 export { Badge, Button, IconButton, Spinner } from '${posix(UI_INDEX_PATH)}'
@@ -407,7 +407,6 @@ async function main() {
   const {
     buildTreeView,
     initialCollapsedForLeaf,
-    moveTreeSelection,
     parseTreePayload,
     BranchTree,
     loadBranchTree,
@@ -435,11 +434,6 @@ async function main() {
     ok(!byId.get('t1').onActiveBranch && !byId.get('u2').onActiveBranch, '旁支不标 active')
     ok(byId.get('u2').folded === true && byId.get('u2').hiddenCount === 1, '折叠行记隐藏后代数')
     ok(byId.get('u1').kind === 'user' && byId.get('a1').kind === 'assistant' && byId.get('t1').kind === 'tool', '条目类型投影正确')
-
-    ok(moveTreeSelection(view.rows, 'u1', 1) === 'a1', '向下移动一格')
-    ok(moveTreeSelection(view.rows, 'u2', 1) === 'u2', '到底停在端点不循环')
-    ok(moveTreeSelection(view.rows, 'a2', 9) === 'u2', '越界夹到末行')
-    ok(moveTreeSelection([], null, 1) === null, '空树移动安全')
 
     const parsed = parseTreePayload({ tree, leafId, extra: 1 })
     ok(parsed.tree.length === 2 && parsed.leafId === 'a2', 'parseTreePayload 取树与 leaf')
@@ -735,7 +729,6 @@ async function main() {
     ok(!src.includes('role="tree"'), '不再出现旧 role="tree" 字符串')
     ok(!/aria-level\s*=/.test(src), '不再手写 aria-level（层级交给 RAC）')
     ok(!src.includes('onKeyDown'), '不再自建键盘处理（键盘交给 RAC）')
-    ok(!src.includes('moveTreeSelection'), '不再自建选择移动（选择交给 RAC）')
 
     const rawCss = await readFile(join(ROOT, 'src/renderer/src/features/session/branch-tree.css'), 'utf8')
     const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '')

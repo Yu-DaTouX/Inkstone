@@ -165,7 +165,7 @@ function makeBridge(options = {}) {
     },
     ask: (request) => {
       state.askLog.push(request)
-      return Promise.resolve('once')
+      return Promise.resolve({ choice: 'once' })
     },
     audit: new McpAppViewAuditStore({ dir: join(root, `audit-${options.name ?? 'default'}`) }),
     serverConfigOf: () => SERVER_CONFIG,

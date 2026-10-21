@@ -1,4 +1,4 @@
-import type { AuxLocale, MiniStatusKey, QuickAskErrorCode } from './aux-bridge'
+import type { AuxLocale, QuickAskErrorCode } from './aux-bridge'
 
 type Dict = {
   quickAskTitle: string
@@ -12,16 +12,6 @@ type Dict = {
   expand: string
   hint: string
   noCurrent: string
-  miniTitle: string
-  miniEmpty: string
-  miniOpen: string
-  miniClose: string
-  statusNeedsYou: string
-  statusStalled: string
-  statusFailed: string
-  statusDone: string
-  statusQueued: string
-  statusRunning: string
   errEmpty: string
   errNoCurrent: string
   errStartFailed: string
@@ -43,16 +33,6 @@ const ZH: Dict = {
   expand: '发送并展开',
   hint: 'Enter 发送 · Ctrl+Enter 发送并展开 · Esc 关闭',
   noCurrent: '当前没有会话',
-  miniTitle: '运行中',
-  miniEmpty: '暂无需要处理的运行',
-  miniOpen: '打开',
-  miniClose: '关闭',
-  statusNeedsYou: '等你确认',
-  statusStalled: '停滞',
-  statusFailed: '失败',
-  statusDone: '刚完成',
-  statusQueued: '排队',
-  statusRunning: '运行中',
   errEmpty: '先写一个问题',
   errNoCurrent: '当前没有会话，请选择新会话',
   errStartFailed: '模型没有启动',
@@ -74,16 +54,6 @@ const EN: Dict = {
   expand: 'Send & open',
   hint: 'Enter to send · Ctrl+Enter send & open · Esc to close',
   noCurrent: 'No current session',
-  miniTitle: 'Running',
-  miniEmpty: 'Nothing needs you right now',
-  miniOpen: 'Open',
-  miniClose: 'Close',
-  statusNeedsYou: 'Needs you',
-  statusStalled: 'Stalled',
-  statusFailed: 'Failed',
-  statusDone: 'Done',
-  statusQueued: 'Queued',
-  statusRunning: 'Running',
   errEmpty: 'Type a question first',
   errNoCurrent: 'No current session — choose New session',
   errStartFailed: 'The model did not start',
@@ -95,24 +65,6 @@ const EN: Dict = {
 
 export function auxDict(locale: AuxLocale): Dict {
   return locale === 'en-US' ? EN : ZH
-}
-
-export function statusWord(locale: AuxLocale, status: MiniStatusKey): string {
-  const d = auxDict(locale)
-  switch (status) {
-    case 'needs-you':
-      return d.statusNeedsYou
-    case 'stalled':
-      return d.statusStalled
-    case 'failed':
-      return d.statusFailed
-    case 'done':
-      return d.statusDone
-    case 'queued':
-      return d.statusQueued
-    default:
-      return d.statusRunning
-  }
 }
 
 export function errorWord(locale: AuxLocale, code: QuickAskErrorCode | undefined): string {

@@ -234,7 +234,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
           id: `session:${item.path}`,
           group: 'session' as const,
           label: manualTitles[item.id] ?? titles[item.id] ?? (item.title?.trim() || shortPath(item.path)),
-          keywords: [item.cwd, item.path, item.projectId].filter(Boolean).join(' '),
+          keywords: [item.cwd, item.path, item.projectId].filter(Boolean).join(' ').toLowerCase(),
           sessionPath: item.path,
           meta: item.cwd ? shortPath(item.cwd) : ''
         })),
@@ -252,7 +252,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         id: `message:${message.id}`,
         group: 'message' as const,
         label: `${roleLabel(message.role, text)}: ${messageSnippet(message.text)}`,
-        keywords: message.text.slice(0, 2000),
+        keywords: message.text.slice(0, 2000).toLowerCase(),
         messageId: message.id
       }))
   }, [isOpen, parsed.mode, messages, text])

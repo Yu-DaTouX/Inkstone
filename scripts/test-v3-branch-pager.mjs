@@ -311,10 +311,6 @@ async function main() {
     ok(u2.forkId === 'a1' && u3.forkId === 'a1', '共同分叉点 = 父条目 a1')
     ok(u3.onActivePath === true && u2.onActivePath === false, '活动 leaf 路径只标记当前分支')
 
-    ok(model.branchPagerFor(tree, undefined) === null, '无稳定 entryId 不产生模型')
-    ok(model.branchPagerFor(tree, 'm0') === null, '合成序号 / 未知 id 查不到模型')
-    ok(model.branchPagerFor(tree, 'u1') === null, '根条目（没有父分叉点）不画 pager')
-
     const single = [user('s1', null, [assistant('s2', 's1', [user('s3', 's2')])])]
     ok(model.buildBranchPagerMap(single, 's3').size === 0, '单分支即使有 entryId 也不画 pager')
     ok(model.treeHasEntryId(tree, 'a3') === true && model.treeHasEntryId(tree, 'ghost') === false, 'treeHasEntryId 只认真实条目')
@@ -450,14 +446,14 @@ async function main() {
         'export { React, renderToStaticMarkup, TurnView }'
       ].join('\n')
       const turnStubs = {
-        'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(){ return null }\nexport function PlainText(){ return null }',
+        'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(){ return null }',
         'src/renderer/src/features/session/MessageParts.tsx': 'export function TurnArtifacts(){ return null }',
         'src/renderer/src/features/session/Thinking.tsx': 'export function ThinkingLine(){ return null }',
         'src/renderer/src/features/session/ToolSteps.tsx': 'export function ToolSteps(){ return null }',
         'src/renderer/src/features/session/Image.tsx': 'export function MessageImage(){ return null }',
         'src/renderer/src/features/session/text.ts': 'export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }',
         'src/renderer/src/features/session/ErrorCard.tsx': 'export function ErrorCard(){ return null }',
-        'src/renderer/src/features/session/CompactionMarker.tsx': 'export function CompactionMarker(){ return null }',
+        'src/renderer/src/features/session/CompactionMarker.tsx': 'export function CompactionMarker(){ return null }\nexport function CompactCommandEcho(){ return null }',
         'src/renderer/src/features/session/BranchSummary.tsx': 'export function BranchSummary(){ return null }',
         'src/renderer/src/features/session/SubagentLine.tsx': 'export function SubagentLine(){ return null }',
         'src/renderer/src/features/session/Icon.tsx': ICON_STUB,

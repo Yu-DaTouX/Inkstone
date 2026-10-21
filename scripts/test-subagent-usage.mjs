@@ -1,5 +1,5 @@
 export async function runSubagentUsageTests(ok) {
-  const { accumulateUsage, ingestUsageSnapshot, normalizeSubagentUsage, normalizeSubagentContextUsage } = await import('../out/test/subagent-usage.mjs')
+  const { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage } = await import('../out/test/subagent-usage.mjs')
 
   console.log('\n--- H-10b 子代理累计 usage ---')
   const u = (input, output, cacheRead = 0, cacheWrite = 0, totalTokens = input + output, cost = 0) => ({
@@ -31,11 +31,6 @@ export async function runSubagentUsageTests(ok) {
 
   ok(Object.keys(ingestUsageSnapshot({}, '', u(1, 1))).length === 0, '空 messageId 不写入')
 
-  ok(normalizeSubagentUsage(undefined) === undefined, '旧记录没有 usage 字段 → 未知')
-  ok(normalizeSubagentUsage({ reportedMessages: 0 }) === undefined, 'reportedMessages=0 视为未知')
-  const restored = normalizeSubagentUsage({ input: 3, output: 4, cacheRead: 5, cacheWrite: 6, totalTokens: 7, cost: 8, reportedMessages: 2 })
-  ok(restored && restored.input === 3 && restored.output === 4, '有统计的旧记录按原值读回')
-  ok(normalizeSubagentUsage({ reportedMessages: 1, input: 'bad', output: 2 })?.input === null, '脏字段回到 null 而不是 NaN')
 
   const context = normalizeSubagentContextUsage({ tokens: 34_000, contextWindow: 272_000, percent: 99 })
   ok(context?.tokens === 34_000 && context.percent === 12.5, '原生上下文已用/窗口计算占比，不信任不一致百分比')

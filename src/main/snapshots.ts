@@ -271,7 +271,8 @@ const TREE_MAX_DEPTH = 12
 const TREE_CONTENT_MAX_BYTES = 256 * 1024
 const TREE_CONTENT_BUDGET = 12 * 1024 * 1024
 const CHANGE_MAX_FILES = 40
-const MAX_ACTIVE_TREES = 8
+const MAX_ACTIVE_TREES = 32
+const MAX_EVICTED_TREES = 64
 
 export function captureTree(root: string, previous?: TreeSnapshot): TreeSnapshot {
   const snap: TreeSnapshot = { root, files: new Map(), truncated: false, unreadable: false, unreadableDirs: 0, scanned: 0 }
@@ -327,8 +328,6 @@ export function captureTree(root: string, previous?: TreeSnapshot): TreeSnapshot
           budget -= buf.byteLength
         } catch {
         }
-      } else if (st.size > TREE_CONTENT_MAX_BYTES) {
-        budget = Math.max(0, budget)
       }
       snap.files.set(key, entry)
       snap.scanned++
@@ -375,6 +374,7 @@ interface ActiveTree {
 }
 
 const activeTrees = new Map<string, ActiveTree>()
+const evictedTrees = new Map<string, string>()
 
 function treeKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
@@ -391,10 +391,18 @@ export function beginTreeSnapshot(callId: string, root: string, sessionId?: stri
     }
   }
   activeTrees.set(callId, { callId, sessionId, root, rootKey: key, snap: captureTree(root), concurrent })
+  evictedTrees.delete(callId)
   while (activeTrees.size > MAX_ACTIVE_TREES) {
     const oldest = activeTrees.keys().next().value
     if (oldest === undefined) break
     activeTrees.delete(oldest)
+    evictedTrees.delete(oldest)
+    evictedTrees.set(oldest, root)
+    while (evictedTrees.size > MAX_EVICTED_TREES) {
+      const stale = evictedTrees.keys().next().value
+      if (stale === undefined) break
+      evictedTrees.delete(stale)
+    }
   }
 }
 
@@ -433,7 +441,12 @@ function toChangeFile(before: TreeSnapshot, after: TreeSnapshot, change: TreeCha
 
 export function endTreeSnapshot(callId: string): WorkspaceChanges | null {
   const active = activeTrees.get(callId)
-  if (!active) return null
+  if (!active) {
+    const evictedRoot = evictedTrees.get(callId)
+    if (evictedRoot === undefined) return null
+    evictedTrees.delete(callId)
+    return { root: evictedRoot, files: [], total: 0, scanned: 0, unknown: 'truncated' }
+  }
   activeTrees.delete(callId)
 
   const after = captureTree(active.root, active.snap)

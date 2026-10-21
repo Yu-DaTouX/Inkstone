@@ -31,11 +31,11 @@ import './subagent-pane.css'
 const RETRYABLE = new Set(['failed', 'timeout', 'budget', 'stopped'])
 const PATHS_SHOWN = 12
 
-export function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
+function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   return run.brief ? briefPrompt(run.brief, run.task) : run.task
 }
 
-export function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' | 'transcript' | 'cwd'>): Turn[] {
+function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' | 'transcript' | 'cwd'>): Turn[] {
   const brief = subagentBriefText(run).trim()
   const task = run.task.trim()
   return groupIntoTurns(

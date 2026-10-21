@@ -1,4 +1,4 @@
-export interface AtQueryRange {
+interface AtQueryRange {
   query: string
   start: number
   end: number
@@ -6,7 +6,7 @@ export interface AtQueryRange {
   quote?: '"' | "'"
 }
 
-export interface AtQueryOptions {
+interface AtQueryOptions {
   inCode?: boolean
 }
 

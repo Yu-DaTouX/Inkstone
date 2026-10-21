@@ -40,10 +40,6 @@ export function viewKeyRef(input: ViewIdentityInput): { sessionId?: string; path
   return { sessionId: id.sessionId ?? undefined, path: id.sessionFile ?? undefined }
 }
 
-export function viewingSessionIdOf(input: ViewIdentityInput): string | undefined {
-  return viewIdentityOf(input).sessionId ?? undefined
-}
-
 export interface PathEvidence {
   pendingActivation?: { sessionId?: string; sessionFile?: string } | null
   session?: ViewIdentitySession | null

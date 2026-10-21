@@ -10,10 +10,10 @@ import {
   type MouseEvent,
   type ReactElement
 } from 'react'
-import { ArrowUpRight, Check, ChevronRight, ChevronsDownUp, EllipsisVertical, List, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, ChevronsDownUp, List, RefreshCw, Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, SearchField, Separator, Spinner } from '../../ui'
+import { Button, IconButton, SearchField, Spinner } from '../../ui'
 import {
   canAttachToContext,
   handleTreeKey,
@@ -49,11 +49,9 @@ import {
   PaneChromeContext,
   PaneTitle,
   PaneTools,
-  paneMenuSignature,
   usePaneChrome,
   usePaneMenu,
-  type PaneChrome,
-  type PaneMenuItem
+  type PaneChrome
 } from '../workbench/pane-chrome'
 import './files.css'
 
@@ -65,68 +63,11 @@ export function filesClaimsQuickOpen(): boolean {
   return !!active && !!active.closest(`[${FILES_QUICK_OPEN_ATTR}]`)
 }
 
-export function FilesPane(props: FilesPaneProps): ReactElement {
-  const outer = usePaneChrome()
-  if (outer) return <FilesPaneBody {...props} />
-  return <StandaloneFilesPane {...props} />
-}
-
-function StandaloneFilesPane(props: FilesPaneProps): ReactElement {
-  const { lang } = useI18n()
-  const text = filesText(lang)
-  const [title, setTitle] = useState<HTMLElement | null>(null)
-  const [tools, setTools] = useState<HTMLElement | null>(null)
-  const [groups, setGroups] = useState<ReadonlyMap<string, readonly PaneMenuItem[]>>(() => new Map())
-  const setMenu = useCallback((source: string, items: readonly PaneMenuItem[]): void => {
-    setGroups((prev) => {
-      if (paneMenuSignature(prev.get(source) ?? []) === paneMenuSignature(items)) return prev
-      const next = new Map(prev)
-      if (items.length) next.set(source, items)
-      else next.delete(source)
-      return next
-    })
-  }, [])
-  const chrome = useMemo<PaneChrome>(() => ({ title, tools, setMenu }), [title, tools, setMenu])
-  const ordered = ['preview', 'preview-view', 'files'].map((source) => groups.get(source) ?? []).filter((items) => items.length > 0)
-  const all = ordered.flat()
-  return (
-    <div className="v3-files-standalone">
-      <div className="v3-files-head">
-        <span className="v3-files-head-title" ref={setTitle} />
-        <span className="v3-files-head-tools" ref={setTools} />
-        {all.length ? (
-          <MenuTrigger>
-            <IconButton size="sm" aria-label={text.title} title={text.title}>
-              <EllipsisVertical size={14} />
-            </IconButton>
-            <Popover placement="bottom end" offset={4}>
-              <Menu aria-label={text.title} onAction={(key) => all.find((item) => item.id === key)?.onAction()}>
-                {ordered.flatMap((items, index) => [
-                  ...(index > 0 ? [<Separator key={`sep:${index}`} />] : []),
-                  ...items.map((item) => (
-                    <MenuItem key={item.id} id={item.id} textValue={item.label} aria-checked={item.checked}>
-                      {item.checked === undefined ? item.icon : <span className="v3-files-check" aria-hidden>{item.checked ? <Check size={14} /> : null}</span>}
-                      {item.label}
-                    </MenuItem>
-                  ))
-                ])}
-              </Menu>
-            </Popover>
-          </MenuTrigger>
-        ) : null}
-      </div>
-      <PaneChromeContext.Provider value={chrome}>
-        <FilesPaneBody {...props} />
-      </PaneChromeContext.Provider>
-    </div>
-  )
-}
-
 interface MenuState {
   targets: FilesMenuTarget[]
 }
 
-function FilesPaneBody({ owner, onPreview, path: previewPath, Preview }: FilesPaneProps): ReactElement {
+export function FilesPane({ owner, onPreview, path: previewPath, Preview }: FilesPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = filesText(lang)
   const chrome = usePaneChrome()

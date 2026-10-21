@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, ShieldAlert, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
@@ -109,6 +109,37 @@ interface ConversationRect {
   height: number
 }
 
+const VIEWPORT_FALLBACK = 800
+const viewportListeners = new Set<() => void>()
+let viewportListening = false
+
+function readViewportHeight(): number {
+  return typeof window === 'undefined' ? VIEWPORT_FALLBACK : window.innerHeight
+}
+
+function subscribeViewport(listener: () => void): () => void {
+  viewportListeners.add(listener)
+  if (!viewportListening && typeof window !== 'undefined') {
+    window.addEventListener('resize', notifyViewport)
+    viewportListening = true
+  }
+  return () => {
+    viewportListeners.delete(listener)
+    if (!viewportListeners.size && viewportListening) {
+      window.removeEventListener('resize', notifyViewport)
+      viewportListening = false
+    }
+  }
+}
+
+function notifyViewport(): void {
+  for (const listener of viewportListeners) listener()
+}
+
+function useViewportHeight(): number {
+  return useSyncExternalStore(subscribeViewport, readViewportHeight, () => VIEWPORT_FALLBACK)
+}
+
 export interface McpAppFrameProps {
   descriptor: Extract<McpAppViewDescriptor, { kind: 'ready' }>
   api: McpAppViewApi
@@ -144,7 +175,7 @@ export function McpAppFrame({
   const [reload, setReload] = useState(0)
   const [pipRect, setPipRect] = useState<FrameRect | null>(null)
   const [convRect, setConvRect] = useState<ConversationRect | null>(null)
-  const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight
+  const viewportHeight = useViewportHeight()
 
   const trusted = isMcpAppFrameUrl(descriptor.url)
 

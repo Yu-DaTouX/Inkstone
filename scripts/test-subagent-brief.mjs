@@ -2,10 +2,8 @@ export function runSubagentBriefTests(ok, mod) {
   const {
     parseSubagentBrief,
     briefPrompt,
-    briefLine,
     SUBAGENT_BRIEF_LIMITS,
     summarizeSubagentRun,
-    resultHasContent,
     SUBAGENT_SUMMARY_MAX
   } = mod
 
@@ -48,7 +46,6 @@ export function runSubagentBriefTests(ok, mod) {
 
     const sameGoal = briefPrompt(minimal.brief, '查一下这两个模块')
     ok(!/任务原话/.test(sameGoal), '目标与任务描述相同时不重复写一遍')
-    ok(briefLine(full.brief).includes('要交回') && briefLine(full.brief).includes('边界'), '一行摘要含交付物与边界')
     const legacyBudget = parseSubagentBrief({ maxToolCalls: 1000 }, '模型自主决定调用次数')
     ok(legacyBudget.ok && legacyBudget.brief.maxToolCalls === undefined, '旧调用预算兼容接收但不设置限制')
     ok(!/预算|最多.*次工具调用/.test(briefPrompt({ ...minimal.brief, maxToolCalls: 5 }, 'x')), '旧历史brief也不会生成调用预算指令')
@@ -81,14 +78,14 @@ export function runSubagentBriefTests(ok, mod) {
     ok(result.artifacts[0] === 'src/main/index.ts' && result.artifacts.length === 3, '成果：改动文件去重 + 结果文件')
     ok(result.openQuestions.length === 0, '未决问题**不猜**（恒为空，留给主 agent 判断）')
     ok(result.at === 1234, '时间由调用方给（便于稳定推送）')
-    ok(resultHasContent(result), '有摘要就算有内容')
+    ok(result.summary.length > 0 && result.artifacts.length === 3, '摘要与成果都有内容')
 
     const errOnly = summarizeSubagentRun({ transcript: [{ role: 'user', text: 'hi' }], error: 'pi 子进程提前退出', status: 'error' }, 5)
     ok(errOnly.summaryFrom === 'error' && /提前退出/.test(errOnly.summary), '没有助手正文时用错误文本并标注来源')
-    ok(!resultHasContent(errOnly) === false, '错误文本也算有内容（要让主 agent 看到）')
+    ok(errOnly.summary.length > 0, '错误文本也算有内容（要让主 agent 看到）')
 
     const empty = summarizeSubagentRun({ transcript: [], status: 'starting' }, 5)
-    ok(empty.summary === '' && empty.summaryFrom === 'none' && !resultHasContent(empty), '什么都没有时如实给空')
+    ok(empty.summary === '' && empty.summaryFrom === 'none' && empty.sources.length === 0 && empty.artifacts.length === 0, '什么都没有时如实给空')
 
     const long = summarizeSubagentRun(
       { transcript: [{ role: 'assistant', text: 'a'.repeat(SUBAGENT_SUMMARY_MAX + 50) }], status: 'done' },

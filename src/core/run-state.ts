@@ -5,6 +5,7 @@ export interface ExecutionState {
   isAgentRunning?: boolean
   isCompacting?: boolean
   isStreaming?: boolean
+  pendingMessageCount?: number
 }
 
 export interface RunIdentity {
@@ -26,6 +27,7 @@ export interface RunObservation extends RunIdentity {
 
 export function executionBusy(state: ExecutionState | null, hasRunningBash: () => boolean, pendingUiCount: () => number): boolean {
   if (state?.isAgentRunning === true || state?.isCompacting === true || state?.isStreaming === true) return true
+  if ((state?.pendingMessageCount ?? 0) > 0) return true
   if (hasRunningBash()) return true
   return pendingUiCount() > 0
 }

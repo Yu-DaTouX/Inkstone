@@ -40,6 +40,25 @@
   log('=== 模型 → MCP 能力发现 → describe → call（端到端）===')
   if (!store) return fail('没有 window.__yanStore')
 
+  const approvalCard = () => q('[data-testid="v3-approval"]')
+  const approvalDetails = new Set()
+  let approvalsAllowed = 0
+  const pumpApprovals = async () => {
+    const card = approvalCard()
+    if (!card) return
+    const detail = String(q('[data-testid="v3-approval-detail"]')?.textContent ?? '')
+    if (!approvalDetails.has(detail)) approvalDetails.add(detail)
+    if (card.dataset.read !== '1' || card.dataset.armed !== '1') return
+    const allow = q('[data-testid="v3-approval-once"]')
+    if (!allow || allow.disabled) return
+    allow.click()
+    approvalsAllowed += 1
+    await sleep(400)
+  }
+
+  const permissionMode = store.getState().settings?.permissionMode
+  log(`  权限档：${permissionMode}`)
+
   const ta = q('[data-testid="composer-input"]')
   if (!ta) return fail('找不到输入框')
 
@@ -65,6 +84,7 @@
   let broke = false
   while (Date.now() < deadline) {
     await sleep(500)
+    await pumpApprovals()
     if (roundRunning()) started = true
     if (started && !roundRunning() && !qa('.v3-step[data-state="running"]').length) {
       await sleep(1000)
@@ -72,6 +92,7 @@
       break
     }
   }
+  await pumpApprovals()
 
   const messages = store.getState().messages ?? []
   const assistant = messages.filter((m) => m.role === 'assistant')
@@ -114,6 +135,14 @@
     !/fixture|compute|mcp/i.test(PROMPT.split(MARK).join('')),
     '提示词不含服务名 / 工具名 / MCP 字样（标记除外；发现只能由模型自己做）'
   )
+  ok(permissionMode === 'danger', '跑在「自动批准」档（这是审批卡该出现的档位）', String(permissionMode))
+  ok(approvalDetails.size > 0, '自动批准档下非只读 MCP 调用弹出了审批卡（V5-7 安全行为）')
+  ok(
+    [...approvalDetails].some((detail) => /fixture\s*\/\s*compute/.test(detail)),
+    '审批卡内容就是「fixture / compute」这次 MCP 调用',
+    [...approvalDetails].map((d) => d.replace(/\s+/g, ' ').slice(0, 80)).join(' | ')
+  )
+  ok(approvalsAllowed > 0, '探针点了「允许」，调用随后继续', String(approvalsAllowed))
   ok(bashCalls.length > 0, '模型真的用了 bash')
   ok(searchCalls.length > 0, '模型先搜索能力目录（发现链）')
   ok(describeCalls.length > 0, '模型 describe 拿到参数 schema（用对了工具名）')

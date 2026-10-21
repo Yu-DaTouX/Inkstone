@@ -34,7 +34,6 @@ const {
   SPLIT_TAP_SLOP,
   beginSplitDrag,
   ownsSplitDrag,
-  moveSplitDrag,
   splitValueForKey
 } = mod
 
@@ -62,7 +61,6 @@ check('导出全部纯函数', () => {
     splitValueFromPointer,
     beginSplitDrag,
     ownsSplitDrag,
-    moveSplitDrag,
     splitValueForKey,
     splitRawValueFromPointer,
     splitDragCollapses,
@@ -202,27 +200,6 @@ check('ownsSplitDrag：按 pointerId 认领', () => {
   assert.equal(ownsSplitDrag(session, { pointerId: 7 }), true)
   assert.equal(ownsSplitDrag(session, { pointerId: 8 }), false)
   assert.equal(ownsSplitDrag(null, { pointerId: 7 }), false)
-})
-
-check('moveSplitDrag：无会话或别人的 pointerId 不动', () => {
-  const session = beginSplitDrag(pointer({ pointerId: 7 }), 42)
-  assert.equal(moveSplitDrag(null, pointer({ pointerId: 7 }), { orientation: 'vertical', min: 0, max: 100 }), null)
-  assert.equal(
-    moveSplitDrag(session, pointer({ pointerId: 8, clientX: 999 }), { orientation: 'vertical', min: 0, max: 100 }),
-    null
-  )
-})
-
-check('moveSplitDrag：同一 pointerId 得到夹取后的新值', () => {
-  const session = beginSplitDrag(pointer({ pointerId: 7, clientX: 100 }), 50)
-  assert.equal(
-    moveSplitDrag(session, pointer({ pointerId: 7, clientX: 130 }), { orientation: 'vertical', min: 0, max: 100 }),
-    80
-  )
-  assert.equal(
-    moveSplitDrag(session, pointer({ pointerId: 7, clientX: 1000 }), { orientation: 'vertical', min: 0, max: 100 }),
-    100
-  )
 })
 
 const key = (overrides = {}) => ({ key: '', min: 0, max: 100, step: 5, orientation: 'vertical', ...overrides })

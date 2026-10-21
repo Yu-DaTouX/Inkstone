@@ -117,6 +117,8 @@ export interface GeneralText {
   dataMove: string
   dataTarget: string
   dataMoveConfirm: string
+  dataMoveScheduled: string
+  dataMovePending: string
   dataMoving: string
   dataOpen: string
   dataNotMovable: string
@@ -272,6 +274,8 @@ const ZH: GeneralText = {
   dataMove: '移动到其它盘',
   dataTarget: '将迁移到：{path}',
   dataMoveConfirm: '迁移并重启',
+  dataMoveScheduled: '已安排在下次启动砚时迁移数据。',
+  dataMovePending: '已安排迁移到：{path}',
   dataMoving: '正在安排迁移…',
   dataOpen: '打开位置',
   dataNotMovable: '当前环境不支持移动数据目录。',
@@ -427,6 +431,8 @@ const EN: GeneralText = {
   dataMove: 'Move to another drive',
   dataTarget: 'Will move to: {path}',
   dataMoveConfirm: 'Move and restart',
+  dataMoveScheduled: 'Scheduled: data will move the next time Inkstone starts.',
+  dataMovePending: 'Scheduled to move to: {path}',
   dataMoving: 'Scheduling move…',
   dataOpen: 'Open location',
   dataNotMovable: 'Moving the data folder is not supported in this environment.',

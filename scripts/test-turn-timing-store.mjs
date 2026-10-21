@@ -243,5 +243,41 @@ export async function runTurnTimingStoreTests(ok) {
     await rm(ttDir, { recursive: true, force: true })
   }
 
+  {
+    const s = 'sess-entry-anchor'
+    ok(
+      await appendTurnTiming(dir, s, {
+        v: TURN_TIMING_VERSION,
+        logicalTurnId: 'm5',
+        anchorId: 'm5',
+        anchorEntryId: 'entry-root',
+        startedAt: 1000,
+        endedAt: 4000,
+        elapsedMs: 3000,
+        terminalReason: 'completed',
+        sourceIds: ['a-old']
+      }),
+      '带入口 id 的记录写入成功'
+    )
+    const records = await readTurnTimings(dir, s)
+    ok(records[0]?.anchorEntryId === 'entry-root', '入口 id 能读回（不依赖投影序号）')
+    const shifted = [
+      { id: 'm0', entryId: 'entry-prefix', role: 'user' },
+      { id: 'm1', entryId: 'entry-root', role: 'user' },
+      { id: 'm2', entryId: 'entry-a1', role: 'assistant' },
+      { id: 'm3', entryId: 'entry-u2', role: 'user' }
+    ]
+    ok(
+      applyTurnTimings(shifted, records)[2]?.turnTiming?.elapsedMs === 3000,
+      '前面插入一条消息后，计时按入口 id 仍落在原回合'
+    )
+    ok(applyTurnTimings(shifted, records)[3]?.turnTiming === undefined, '下一个回合不被误挂上上一轮的计时')
+    const legacyById = [{ id: 'm5', role: 'user' }, { id: 'm9', role: 'assistant' }]
+    ok(
+      applyTurnTimings(legacyById, records)[1]?.turnTiming?.elapsedMs === 3000,
+      '没有入口 id 的消息仍按投影 id 定位（旧行为不变）'
+    )
+  }
+
   await rm(dir, { recursive: true, force: true })
 }

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -11,7 +12,7 @@ const MAX_GRANTS = 1000
 const MAX_STORE_BYTES = 512 * 1024
 
 async function writeAtomic(path: string, content: string): Promise<void> {
-  const temp = `${path}.tmp`
+  const temp = `${path}.${randomBytes(4).toString('hex')}.tmp`
   await writeFile(temp, content, 'utf8')
   await rename(temp, path)
 }

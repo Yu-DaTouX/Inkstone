@@ -20,6 +20,7 @@ export class TurnTimingTracker {
   async persist(final: boolean, sessionFile: string | undefined, messages: UIMessage[]): Promise<void> {
     const bucket = timingKey(sessionFile)
     const elapsedMs = this.elapsedMs
+    const outputTokens = this.outputTokens
     const sourceIds = [...this.messageIds]
     const terminalReason = this.terminal
     if (final) {
@@ -30,9 +31,11 @@ export class TurnTimingTracker {
     }
     if (!bucket || elapsedMs === undefined || sourceIds.length === 0) return
     if (!final && this.persisted) return
-    const anchorId = [...messages]
+    const anchor = [...messages]
       .reverse()
-      .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+      .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))
+    const anchorId = anchor?.id
+    const anchorEntryId = anchor?.entryId
     const logicalTurnId = anchorId ?? sourceIds[0]
     const waitSpans = toolWaitSpans(
       messages
@@ -55,10 +58,11 @@ export class TurnTimingTracker {
       terminalReason,
       final,
       ...(anchorId ? { anchorId } : {}),
+      ...(anchorEntryId ? { anchorEntryId } : {}),
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
       ...(generationTimings.some(Boolean) ? { generationTimings, generationStamps } : {}),
-      ...(this.outputTokens ? { outputTokens: this.outputTokens } : {}),
+      ...(outputTokens ? { outputTokens } : {}),
       monotonicMs: elapsedMs
     }
     const write = this.writeTail.then(() => appendTurnTiming(YAN_DIR, bucket, record))

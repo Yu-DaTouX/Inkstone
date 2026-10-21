@@ -38,6 +38,10 @@ async function run() {
     assert.equal(m.toolCategory(call('a', 'write', { path: 'n.ts' }, { details: diff('n.ts', 3, 0, 'created') })), 'create')
     assert.equal(m.toolCategory(call('a', 'mcp__srv__read_file')), 'other')
     assert.equal(m.isStandaloneTool({ name: 'ask_user_question' }), true)
+    assert.equal(m.normalizeToolPath('C:\\Repo\\Src\\A.ts'), 'c:/repo/src/a.ts', 'Windows 路径归一时折叠大小写')
+    assert.equal(m.normalizeToolPath('/repo/Src/A.ts'), '/repo/Src/A.ts', 'POSIX 路径归一保留大小写')
+    assert.equal(m.normalizeToolPath('/repo/Src/A.ts/'), '/repo/Src/A.ts', '归一去掉结尾斜杠')
+    assert.equal(m.normalizeToolPath('Src\\A.ts'), 'src/a.ts', '相对路径按 Windows 习惯折叠大小写与分隔符')
 
     const single = m.buildToolRows([call('r1', 'read', { path: 'a.ts' })])
     assert.equal(single.length, 1)

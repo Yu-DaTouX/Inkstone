@@ -84,6 +84,8 @@ assert.equal(canImportMcp(server()), true)
 assert.equal(canImportMcp(server({ migratedToNative: { at: 'x', targetPath: 'y' } })), false, '已迁移不重复导入')
 assert.equal(canImportMcp(server({ enabled: false })), false, '停用不导入')
 assert.equal(canImportMcp(server({ id: WINDOWS_MCP_SERVER_ID })), false, 'windows-mcp 保留在砚里')
+assert.equal(canImportMcp(server({ ownedBy: 'inkstone' })), false, '砚托管服务改用「切换」流程，不直接导入')
+assert.equal(canImportMcp(server({ ownedBy: 'pi' })), true, 'pi 原生服务仍可导入')
 assert.equal(WINDOWS_MCP_SERVER_ID, 'windows-mcp')
 
 assert.equal(mcpStatusTone('ready'), 'run')

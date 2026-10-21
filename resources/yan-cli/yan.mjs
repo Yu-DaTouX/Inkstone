@@ -557,7 +557,6 @@ function readJsonFile(path, label) {
 }
 
 const { flags, positional } = parseArgs(process.argv.slice(2))
-if (flags.overwrite) fail(EXIT.usage, '--output 不支持覆盖已有文件；请选择新路径')
 
 if (positional[0] && RETIRED_GROUPS[positional[0]]) {
   fail(EXIT.usage, RETIRED_GROUPS[positional[0]], {

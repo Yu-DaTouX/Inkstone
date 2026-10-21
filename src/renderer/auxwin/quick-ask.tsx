@@ -49,9 +49,9 @@ function QuickAskApp(): ReactElement {
         requestAnimationFrame(focusInput)
       } else if (msg.payload.kind === 'submitting') {
         setSubmitting(true)
-      } else if (msg.payload.kind === 'result' && !msg.payload.result.ok) {
+      } else if (msg.payload.kind === 'result') {
         setSubmitting(false)
-        setError(msg.payload.result)
+        if (!msg.payload.result.ok) setError(msg.payload.result)
       }
     })
     requestAnimationFrame(focusInput)

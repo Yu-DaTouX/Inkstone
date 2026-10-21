@@ -44,10 +44,6 @@ async function run() {
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [{ id: 'b' }]), ['a', 'c'])
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }], [{ id: 'a' }, { id: 'n' }]), [])
 
-    assert.deepEqual(ui.restorableWorkspacePanes(['files', 'subagent:sub-1', 'subagent:bad id', 'subagent:sub-1', 'terminal'], 'files'), ['files', 'subagent:sub-1'])
-    assert.deepEqual(ui.restorableWorkspacePanes(['preview', 'changes'], 'files'), ['files', 'changes'])
-    assert.deepEqual(ui.restorableWorkspacePanes(null, 'overview'), [])
-
     const store = ui.useUiV3
     store.setState({ workspaceOpen: true, workspaceTab: 'files', workspacePanes: ['files'], workspaceFocus: false })
     store.getState().setWorkspaceTab('subagent:sub-1')

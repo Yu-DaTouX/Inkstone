@@ -63,6 +63,9 @@ export function copyTextFor(targets: readonly FilesMenuTarget[], cwd: string, ki
     .join('\n')
 }
 
-export function terminalCdCommand(abs: string): string {
-  return `cd "${abs.replace(/"/g, '')}"\r`
+const CD_UNSAFE = /[\u0000-\u001f\u007f"$`%]/
+
+export function cdCommandFor(abs: string): string | null {
+  if (!abs.trim() || CD_UNSAFE.test(abs)) return null
+  return `cd "${abs}"\r`
 }

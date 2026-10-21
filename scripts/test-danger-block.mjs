@@ -51,6 +51,15 @@ async function run() {
     ok(guard.includes(m.DANGER_BLOCK_NO_ANSWER_MARK), 'danger-guard 的无答复原因与共享常量一致')
     ok(guard.includes(m.DANGER_BLOCK_HOST_FAILURE_MARK), 'danger-guard 的宿主故障原因与共享常量一致')
 
+    process.stdout.write('\n▌确认超时顺序：扩展要比宿主晚落定，否则超时竞态被当成宿主故障\n')
+    const brokerOutfile = join(dir, 'approval-broker.mjs')
+    await build({ entryPoints: [posix(join(ROOT, 'src/main/approval-broker.ts'))], outfile: brokerOutfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+    const broker = await import(pathToFileURL(brokerOutfile).href)
+    const declared = /const CONFIRM_TIMEOUT_MS = ([0-9_\s*]+)/.exec(guard)
+    const guardTimeout = declared ? declared[1].replace(/_/g, '').split('*').map((part) => Number(part.trim())).reduce((a, b) => a * b, 1) : NaN
+    ok(Number.isFinite(guardTimeout), '能读出扩展自己的确认超时', declared?.[1])
+    ok(guardTimeout > broker.APPROVAL_TIMEOUT_MS, `扩展确认超时 ${guardTimeout}ms 长于宿主审批超时 ${broker.APPROVAL_TIMEOUT_MS}ms：先拿到 no-answer → 显示「未答复」而不是宿主故障`, [guardTimeout, broker.APPROVAL_TIMEOUT_MS])
+
     process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)
     if (fail > 0) process.exitCode = 1
   } finally {

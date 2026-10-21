@@ -21,6 +21,7 @@ function controlDir(): string {
 }
 const PENDING_FILE = (): string => join(controlDir(), 'storage-move.json')
 const RESULT_FILE = (): string => join(controlDir(), 'storage-move-result.json')
+const LOCK_FILE = (): string => join(controlDir(), 'storage-move.lock')
 
 export interface StorageMoveResult {
   ok: boolean
@@ -65,21 +66,24 @@ export interface StorageMoveProgress {
   totalBytes: number
 }
 
-async function tally(dir: string): Promise<{ files: number; bytes: number }> {
+async function tally(dir: string): Promise<{ files: number; bytes: number; latestMtime: number }> {
   let files = 0
   let bytes = 0
+  let latestMtime = 0
   const walk = async (d: string): Promise<void> => {
     for (const ent of await readdir(d, { withFileTypes: true })) {
       const p = join(d, ent.name)
       if (ent.isDirectory()) await walk(p)
       else if (ent.isFile()) {
+        const info = await stat(p)
         files++
-        bytes += (await stat(p)).size
+        bytes += info.size
+        if (info.mtimeMs > latestMtime) latestMtime = info.mtimeMs
       }
     }
   }
   await walk(dir)
-  return { files, bytes }
+  return { files, bytes, latestMtime }
 }
 
 function isJunction(p: string): boolean {
@@ -97,7 +101,11 @@ export function checkTarget(from: string, to: string): string | undefined {
   if (!rel || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) return '不能迁移到原数据目录里面'
   const back = relative(to, from)
   if (!back || (back !== '..' && !back.startsWith(`..${sep}`) && !isAbsolute(back))) return '不能迁移到包含原数据目录的文件夹'
-  if (existsSync(to) && readdirSync(to).length > 0) return '目标文件夹不是空的，请选一个空文件夹或新建一个'
+  try {
+    if (existsSync(to) && readdirSync(to).length > 0) return '目标文件夹不是空的，请选一个空文件夹或新建一个'
+  } catch {
+    return '无法读取目标文件夹（可能没有访问权限）'
+  }
   return undefined
 }
 
@@ -118,8 +126,6 @@ export function hasPendingStorageMove(): boolean {
 export async function runPendingStorageMove(onProgress?: (progress: StorageMoveProgress) => void): Promise<StorageMoveResult | undefined> {
   const pending = readJson<{ target?: string }>(PENDING_FILE())
   if (!pending?.target) return undefined
-  rmSync(PENDING_FILE(), { force: true })
-  if (!storageMovable()) return undefined
   const from = defaultAgentDir()
   const to = resolve(pending.target)
   const write = (r: Omit<StorageMoveResult, 'at' | 'from' | 'to'>): StorageMoveResult => {
@@ -131,6 +137,20 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
     }
     return result
   }
+  if (!storageMovable()) {
+    rmSync(PENDING_FILE(), { force: true })
+    return write({ ok: false, error: '便携版或测试环境的数据位置由启动方式决定，不能在这里迁移' })
+  }
+  try {
+    mkdirSync(controlDir(), { recursive: true })
+    writeFileSync(LOCK_FILE(), String(process.pid), { flag: 'wx' })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return write({ ok: false, error: '另一次数据位置迁移正在进行，请等它结束后重试' })
+    }
+    return write({ ok: false, error: `无法创建迁移标记文件：${error instanceof Error ? error.message : String(error)}` })
+  }
+  rmSync(PENDING_FILE(), { force: true })
   try {
     if (isJunction(from)) return write({ ok: false, error: '数据目录已经迁移过了' })
     if (!existsSync(from)) return write({ ok: false, error: '原数据目录不存在' })
@@ -173,6 +193,11 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
         await discardTarget()
         return write({ ok: false, error: `复制核对不一致（${source.files} → ${after.files} 个文件），已撤回，原数据未动` })
       }
+      const recheck = await tally(from)
+      if (recheck.files !== before.files || recheck.bytes !== before.bytes || recheck.latestMtime !== before.latestMtime) {
+        await discardTarget()
+        return write({ ok: false, error: '迁移期间数据目录仍在被写入（可能还有别的 pi 或砚在运行），已撤回，原数据未动' })
+      }
     } catch (error) {
       await discardTarget()
       throw error
@@ -206,6 +231,8 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
   } catch (e) {
     const stranded = !existsSync(from) ? findBackup(from) : undefined
     return write({ ok: false, ...(stranded ? { leftover: stranded } : {}), error: e instanceof Error ? e.message : String(e) })
+  } finally {
+    rmSync(LOCK_FILE(), { force: true })
   }
 }
 
@@ -250,7 +277,6 @@ export async function scheduleStorageMove(target: string): Promise<{ ok: boolean
   if (!storageMovable()) return { ok: false, error: '便携版或测试环境的数据位置由启动方式决定，不能在这里迁移' }
   const from = defaultAgentDir()
   if (isJunction(from)) return { ok: false, error: '数据目录已经迁移过了' }
-  if (/^[\\/]{2}/.test(target ?? '')) return { ok: false, error: checkTarget(from, target) }
   if (!target || !isAbsolute(target)) return { ok: false, error: '请选择一个完整的文件夹路径' }
   const to = resolve(target)
   const bad = checkTarget(from, to)

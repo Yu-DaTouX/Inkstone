@@ -520,6 +520,30 @@ export async function runGitRepoTests(ok) {
       '两条被认成「砚创建的」（落在默认容器里）'
     )
 
+    const { runGitAction: actWt } = await import('../out/test/git-actions-main.mjs')
+    const { readRepoState: stateWt, readExpected: expectedWt } = await import('../out/test/git-service.mjs')
+    await writeFile(join(wt, 'base.txt'), 'base staged for busy check\n')
+    const fullState = await stateWt(wt)
+    ok(
+      Array.isArray(fullState?.busyBranches) && fullState.busyBranches.length === 2,
+      '别的分支被其他工作树检出（busyBranches 非空）',
+      JSON.stringify(fullState?.busyBranches)
+    )
+    const stageBusy = await actWt({
+      requestId: 'busy-stage',
+      cwd: wt,
+      kind: 'stage',
+      paths: ['base.txt'],
+      expected: await expectedWt(wt)
+    })
+    ok(stageBusy.ok === true, '暂存在有其他工作树时仍成功', JSON.stringify(stageBusy.failure))
+    ok(
+      Array.isArray(stageBusy.state?.busyBranches) && stageBusy.state.busyBranches.length === 0,
+      '暂存结果不再读 refs（busyBranches 为空）',
+      JSON.stringify(stageBusy.state?.busyBranches)
+    )
+    ok(stageBusy.state?.stagedCount === 1, '暂存结果仍带状态计数', String(stageBusy.state?.stagedCount))
+
     const mainBlocked = await removeWorktree({ cwd: wt, path: wt })
     ok(mainBlocked.ok === false, '主工作树不能删')
     ok(

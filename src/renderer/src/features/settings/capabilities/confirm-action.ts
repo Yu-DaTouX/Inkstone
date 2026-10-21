@@ -1,4 +1,4 @@
-export interface ConfirmActionOutcome {
+interface ConfirmActionOutcome {
   ok: boolean
   error?: string
 }

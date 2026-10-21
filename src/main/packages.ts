@@ -22,7 +22,6 @@ export interface PackageListing {
   projectSettings: string
   entries: PackageEntry[]
   error?: string
-  settingsError?: string
 }
 
 export function packageNameOf(source: string): string {
@@ -135,8 +134,7 @@ export function listPackages(cwd: string, agentDirOverride?: string): PackageLis
       userSettings,
       projectSettings,
       entries: [],
-      error: error instanceof Error ? error.message : String(error),
-      settingsError: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error)
     }
   }
 }
@@ -264,7 +262,7 @@ function runPi(
         settled = true
         clearTimeout(timer)
         const out = `${String(stdout ?? '')}${String(stderr ?? '')}`.trim()
-        resolve({ ok: !error, output: timedOut ? `${out}${out ? '\\n' : ''}操作超时；Windows 已尝试结束 pi/npm/git 进程树，仍可能有未能结束的外部进程。` : out })
+        resolve({ ok: !error, output: timedOut ? `${out}${out ? '\n' : ''}操作超时；Windows 已尝试结束 pi/npm/git 进程树，仍可能有未能结束的外部进程。` : out })
       }
     )
   })

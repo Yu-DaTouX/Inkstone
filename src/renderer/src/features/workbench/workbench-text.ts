@@ -23,6 +23,7 @@ export interface OverviewText {
   contextUsed: string
   lastCompaction: string
   stopTask: string
+  stopFailed: string
   taskDetail: string
   runningCount: (n: number) => string
   doneCount: (n: number) => string
@@ -54,6 +55,7 @@ export interface WorkbenchText {
   open: string
   activateHint: string
   activate: string
+  activateFailed: string
   notWired: string
   notWiredHint: string
   inactiveTitle: string
@@ -89,6 +91,7 @@ const ZH: WorkbenchText = {
   open: '打开工作区',
   activateHint: '这个页签需要先在当前会话激活。',
   activate: '激活会话',
+  activateFailed: '激活会话失败',
   notWired: '尚未接入',
   notWiredHint: '这个页签的界面还在接入中。',
   inactiveTitle: '会话未激活',
@@ -152,6 +155,7 @@ const ZH: WorkbenchText = {
     contextUsed: '已用',
     lastCompaction: '上次压缩',
     stopTask: '停止任务',
+    stopFailed: '停止任务失败',
     taskDetail: '查看详情',
     runningCount: (n) => `运行中 ${n}`,
     doneCount: (n) => `${n} 项已结束`,
@@ -184,6 +188,7 @@ const EN: WorkbenchText = {
   open: 'Open workspace',
   activateHint: 'This tab requires the session to be active first.',
   activate: 'Activate session',
+  activateFailed: 'Could not activate the session',
   notWired: 'Not wired yet',
   notWiredHint: 'This tab is still being integrated.',
   inactiveTitle: 'Session not active',
@@ -247,6 +252,7 @@ const EN: WorkbenchText = {
     contextUsed: 'Used',
     lastCompaction: 'Last compaction',
     stopTask: 'Stop task',
+    stopFailed: 'Could not stop the task',
     taskDetail: 'View details',
     runningCount: (n) => `${n} running`,
     doneCount: (n) => `${n} finished`,

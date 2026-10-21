@@ -35,6 +35,9 @@ function mediaTypeOf(name: string): string {
     case '.avif': return 'image/avif'
     case '.svg': return 'image/svg+xml'
     case '.pdf': return 'application/pdf'
+    case '.docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    case '.pptx': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     case '.json': return 'application/json'
     case '.md': return 'text/markdown'
     case '.txt': return 'text/plain'
@@ -49,15 +52,20 @@ function mediaTypeOf(name: string): string {
   }
 }
 
+function isOfficeMediaType(mediaType: string): boolean {
+  return mediaType.startsWith('application/vnd.openxmlformats-officedocument.')
+}
+
 function kindOf(mediaType: string): AssistantArtifact['kind'] {
   if (mediaType === 'image/svg+xml') return 'svg'
   if (mediaType.startsWith('image/')) return 'image'
-  if (mediaType === 'application/pdf') return 'document'
+  if (mediaType === 'application/pdf' || isOfficeMediaType(mediaType)) return 'document'
   if (mediaType.startsWith('text/') || mediaType === 'application/json') return 'code'
   return 'binary'
 }
 
-function isPreviewable(kind: AssistantArtifact['kind']): boolean {
+function isPreviewable(kind: AssistantArtifact['kind'], mediaType: string): boolean {
+  if (kind === 'document') return mediaType === 'application/pdf' || isOfficeMediaType(mediaType)
   return kind === 'image' || kind === 'svg' || kind === 'code'
 }
 
@@ -128,7 +136,7 @@ export class ArtifactStore {
       kind,
       bytes: bytes.length,
       createdAt: Date.now(),
-      previewable: isPreviewable(kind),
+      previewable: isPreviewable(kind, mediaType),
       ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),

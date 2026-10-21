@@ -1,9 +1,9 @@
 import type { RetryRun, UIMessage } from '../../../../shared/ipc'
 import type { SessionTextKey } from './text'
 
-export const THOUGHT_HOLD_MS = 2000
-export const WORKING_SECONDS_FROM_MS = 2000
-export const THINKING_STEPS_S = [15, 30, 45, 60] as const
+const THOUGHT_HOLD_MS = 2000
+const WORKING_SECONDS_FROM_MS = 2000
+const THINKING_STEPS_S = [15, 30, 45, 60] as const
 
 export type WorkingKind =
   | 'stopping'
@@ -25,7 +25,7 @@ export interface ThinkingClock {
   ms: number | null
 }
 
-export interface WorkingLineInput {
+interface WorkingLineInput {
   running: boolean
   stopping?: boolean
   waiting?: boolean
@@ -80,7 +80,7 @@ export function trackThinking(
   return same ?? { identity: input.identity, live: false, startedAt: null, endedAt: null, ms: null }
 }
 
-export function wholeSecondsMs(elapsedMs: number | null): number | null {
+function wholeSecondsMs(elapsedMs: number | null): number | null {
   if (elapsedMs === null || !Number.isFinite(elapsedMs) || elapsedMs < WORKING_SECONDS_FROM_MS) return null
   return Math.floor(elapsedMs / 1000) * 1000
 }

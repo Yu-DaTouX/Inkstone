@@ -18,8 +18,6 @@ export const FRAME_SLACK_MS = 4
 export const FIELD_SEED = 1337
 export const ENTER_MS = 480
 export const EXIT_MS = 160
-export const FRONT_WIDTH = 64
-export const FRONT_RAG = 180
 export const FIELD_STRIDE = 2
 export const PLUME_COUNT = 4
 export const DROP_SLOT = 1.7
@@ -84,7 +82,6 @@ export interface FieldFrameInput {
   pulses?: ReadonlyArray<{ x: number; y: number; age: number }>
   anchor?: MousePoint | null
   enter?: number
-  exit?: number
 }
 
 export interface FieldFrame {
@@ -115,11 +112,6 @@ export function smoothstep(t: number): number {
 export function easeOutCubic(t: number): number {
   const x = 1 - clamp01(t)
   return 1 - x * x * x
-}
-
-export function easeInCubic(t: number): number {
-  const x = clamp01(t)
-  return x * x * x
 }
 
 export function hashInt(n: number): number {
@@ -231,10 +223,6 @@ export function inkAt(x: number, y: number, t: number, seed: number, sources: In
   return clamp01(blobs * 0.86 + sourceSum(sources.plumes, wx, wy) + sourceSum(sources.drops, wx, wy) - 0.06)
 }
 
-export function toneAt(x: number, y: number, t: number, seed: number): number {
-  return valueNoise3(x * 1.6 + 30 + t * 0.022, y * 1.6 - t * 0.012, t * 0.03, seed + 77)
-}
-
 export function stirPoint(x: number, y: number, mouse: { x: number; y: number } | null, radius: number, t: number): { x: number; y: number; k: number } {
   if (!mouse) return { x, y, k: 0 }
   const dx = x - mouse.x
@@ -246,10 +234,6 @@ export function stirPoint(x: number, y: number, mouse: { x: number; y: number } 
   const c = Math.cos(angle)
   const s = Math.sin(angle)
   return { x: mouse.x + dx * c - dy * s, y: mouse.y + dx * s + dy * c, k }
-}
-
-export function fieldValue(u: number, v: number, t: number, seed = 0, aspect = 1.6): number {
-  return inkAt(u * aspect, v, t, seed, inkSources(t, seed, aspect))
 }
 
 export function cellJitter(col: number, row: number, seed: number): number {
@@ -353,29 +337,6 @@ export function maskFactor(px: number, py: number, zones: readonly ClearZone[]):
   return factor
 }
 
-export function maxReach(width: number, height: number, anchor: MousePoint): number {
-  const dx = Math.max(anchor.x, width - anchor.x)
-  const dy = Math.max(anchor.y, height - anchor.y)
-  return Math.hypot(dx, dy) + FRONT_WIDTH + FRONT_RAG
-}
-
-export function revealRadius(reach: number, enter: number, exit: number): number {
-  const opening = easeOutCubic(enter) * reach
-  const closing = (1 - easeInCubic(exit)) * reach
-  return Math.min(opening, closing)
-}
-
-export function revealFactor(distance: number, radius: number, width = FRONT_WIDTH): number {
-  if (radius <= 0) return 0
-  return 1 - smoothstep((distance - (radius - width)) / width)
-}
-
-export function frontStrength(distance: number, radius: number, moving: boolean, width = FRONT_WIDTH): number {
-  if (!moving || radius <= 0) return 0
-  const x = (distance - (radius - width * 0.5)) / (width * 0.75)
-  return Math.exp(-x * x)
-}
-
 export function ensureFrame(prev: FieldFrame | null | undefined, cols: number, rows: number, cell: number): FieldFrame {
   const total = cols * rows
   if (prev && prev.alpha.length === total && prev.cols === cols) {
@@ -410,10 +371,9 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
   const seed = input.seed ?? FIELD_SEED
   const anchor = input.anchor ?? { x: input.width * 0.5, y: input.height * 0.44 }
   const enter = input.enter ?? 1
-  const exit = input.exit ?? 0
   const t = input.time
   const tick = input.tick ?? Math.floor(t * TICK_RATE)
-  const fade = (1 - exit) * Math.min(1, enter * 2)
+  const fade = Math.min(1, enter * 2)
   const height = input.height > 0 ? input.height : 1
   const mouse = input.mouse ? { x: input.mouse.x / height, y: input.mouse.y / height } : null
   const stirRadius = 250 / height
@@ -472,14 +432,12 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
         lerp(inkScratch[base + fcols], inkScratch[base + fcols + 1], tx),
         ty
       )
-      const shown = 1
-      const mask = shown > 0 ? maskFactor(px, py, zones) : 0
-      if (shown <= 0 || mask <= 0) {
+      const mask = maskFactor(px, py, zones)
+      if (mask <= 0) {
         band[idx] = 0
         continue
       }
-      const front = 0
-      const sample = clamp01(ink + cellJitter(col, row, seed) + front * 0.22)
+      const sample = clamp01(ink + cellJitter(col, row, seed))
       value[idx] = sample
       const nextBand = inkBand(sample)
       if (nextBand === 0) {
@@ -490,7 +448,7 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
         glyph[idx] = pickGlyph(nextBand, col, row, tick, seed)
       }
       band[idx] = nextBand
-      const a = cellAlpha(sample) * shown * fade * (1 + front * 0.9) * mask
+      const a = cellAlpha(sample) * fade * mask
       if (a <= 0.004) continue
       alpha[idx] = a > ALPHA_CEILING ? ALPHA_CEILING : a
       if (nextBand === 2) accent[idx] = ink > 0.72 ? 1 : 0

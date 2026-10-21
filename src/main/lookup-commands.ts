@@ -448,9 +448,12 @@ function searchQuerySummary(outcome: SearchOutcome, cached: boolean) {
   }
 }
 
+let cachedSearchRunner: AdapterRunner | null = null
+
 function searchRunner(): AdapterRunner {
+  if (cachedSearchRunner) return cachedSearchRunner
   const opencli = createOpencliRunner()
-  return (source, query, opts) => {
+  cachedSearchRunner = (source, query, opts) => {
     switch (source.id) {
       case 'brave': return runBraveSearch(query, opts)
       case 'tavily': return runTavilySearch(query, opts)
@@ -461,4 +464,5 @@ function searchRunner(): AdapterRunner {
       default: return opencli(source, query, opts)
     }
   }
+  return cachedSearchRunner
 }

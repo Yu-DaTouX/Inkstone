@@ -33,6 +33,18 @@ export interface RemoteHost extends SessionHost {
 
 let host: RemoteHost
 
+const REMOTE_SESSIONS_TTL_MS = 2000
+let sessionsCache: { at: number; limit: number; list: SessionSummary[] } | null = null
+
+async function remoteSessions(limit: number): Promise<SessionSummary[]> {
+  const now = Date.now()
+  if (sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) return sessionsCache.list
+  const settings = await getSettings()
+  const list = await listSessions(limit, settings.projects)
+  sessionsCache = { at: now, limit, list }
+  return list
+}
+
 export function configureRemoteHost(next: RemoteHost): void {
   host = next
 }
@@ -42,8 +54,8 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
     id: summary.id,
     title: summary.title,
     named: summary.named,
-    ...(summary.parentSession ? { parentSession: summary.parentSession } : {}),
-    ...(summary.branchOrigin ? { branchOrigin: summary.branchOrigin } : {}),
+    ...(summary.parentSession ? { parentSessionId: basename(summary.parentSession, '.jsonl') } : {}),
+    ...(summary.branchOrigin ? { branchOriginTitle: summary.branchOrigin.slice(0, 120) } : {}),
     ...(summary.lastActivityAt !== undefined ? { lastActivityAt: summary.lastActivityAt } : {}),
     ...(summary.lastReply ? { lastReply: summary.lastReply } : {}),
     createdAt: summary.createdAt,
@@ -53,7 +65,7 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
     ...(summary.projectId ? { projectId: summary.projectId } : {}),
     ...(summary.scope ? { scope: summary.scope } : {}),
     ...(summary.lastOpenedAt !== undefined ? { lastOpenedAt: summary.lastOpenedAt } : {}),
-    ...(summary.projectCandidates?.length ? { projectCandidates: summary.projectCandidates } : {}),
+    ...(summary.projectCandidates?.length ? { projectCandidateCount: summary.projectCandidates.length } : {}),
     cwdName: basename(summary.cwd) || summary.cwd
   }
 }
@@ -83,7 +95,7 @@ export function remoteSessionState(state: SessionState | null): Record<string, u
 }
 
 export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
-  const model = host.runners()?.agentOf(status.runId)?.getState()?.model
+  const model = host ? host.runners()?.agentOf(status.runId)?.getState()?.model : undefined
   return {
     id: status.id,
     runId: status.runId,
@@ -102,9 +114,38 @@ export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+function remoteTurnSettled(payload: unknown): Record<string, unknown> {
+  const box = asRecord(payload)
+  const outcome = box.outcome === 'failed' || box.outcome === 'stopped' || box.outcome === 'completed' ? box.outcome : 'completed'
+  return {
+    outcome,
+    ...(typeof box.sessionId === 'string' ? { sessionId: box.sessionId } : {})
+  }
+}
+
+function remoteModelError(payload: unknown): Record<string, unknown> {
+  const box = asRecord(payload)
+  return {
+    message: typeof box.message === 'string' ? box.message : '',
+    text: typeof box.text === 'string' ? box.text : '',
+    ...(typeof box.source === 'string' ? { source: box.source } : {})
+  }
+}
+
+export function remotePushPayload(channel: string, payload: unknown): unknown {
+  if (channel === 'state') return remoteSessionState((payload ?? null) as SessionState | null)
+  if (channel === 'runners') return Array.isArray(payload) ? payload.map((item) => remoteRunnerStatus(item as RunnerStatus)) : payload
+  if (channel === 'turn-settled') return remoteTurnSettled(payload)
+  if (channel === 'agent-error') return remoteModelError(payload)
+  return payload
+}
+
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
-  const settings = await getSettings()
-  const summaries = await filterChainRepresentatives(await listSessions(200, settings.projects))
+  const summaries = await filterChainRepresentatives(await remoteSessions(200))
   const state = host.ac()?.getState() ?? null
   const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
   const win = host.win()
@@ -146,13 +187,35 @@ export async function filterChainRepresentatives(list: SessionSummary[]): Promis
   return out
 }
 
-async function resolveChainSession(sessionId: string): Promise<
+function unsavedSessionSummary(sessionId: string): SessionSummary | null {
+  const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
+  if (!status?.cwd) return null
+  if (status.sessionFile) return null
+  const at = status.lastActiveAt ?? Date.now()
+  return {
+    id: sessionId,
+    path: '',
+    cwd: status.cwd,
+    title: '',
+    named: false,
+    createdAt: status.createdAt ?? at,
+    updatedAt: at,
+    messageCount: 0,
+    scope: status.projectId ? 'project' : 'global',
+    ...(status.projectId ? { projectId: status.projectId } : {})
+  }
+}
+
+async function resolveChainSession(sessionId: string, options: { allowUnsaved?: boolean } = {}): Promise<
   { ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }
 > {
-  const settings = await getSettings()
-  const list = await listSessions(500, settings.projects)
+  const list = await remoteSessions(500)
   const requested = list.find((item) => item.id === sessionId)
-  if (!requested) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  if (!requested) {
+    const unsaved = options.allowUnsaved ? unsavedSessionSummary(sessionId) : null
+    if (unsaved) return { ok: true, summary: unsaved }
+    return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  }
   await host.sessionChains.load()
   const representativePath = host.sessionChains.representativeOf(requested.path)
   const requestedKey = normalizeChainKey(requested.path)
@@ -169,8 +232,7 @@ async function resolveChainSession(sessionId: string): Promise<
 }
 
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
-  const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
   const result = await host.readHistoryWithArtifacts(summary.path)
@@ -192,14 +254,15 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
       returned: messages.length,
       hasMore: page.hasMore,
       nextBefore: page.nextBefore,
-      truncated: result.truncated,
+      truncated: result.truncated > 0,
+      truncatedBytes: result.truncated,
       bytes: result.bytes
     }
   }
 }
 
 export async function remoteSelectSession(sessionId: string): Promise<RemoteOperationResult> {
-  const resolved = await resolveChainSession(sessionId)
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   const settings = await getSettings()
@@ -214,14 +277,14 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
     ? undefined
     : (summary.projectId ?? host.projectIdForCwd(settings, cwdResult.cwd))
   const result = await host.runners()!.select({
-    sessionFile: summary.path,
+    ...(summary.path ? { sessionFile: summary.path } : {}),
     sessionId: summary.id,
     cwd: cwdResult.cwd,
     projectId,
     scope: summary.scope
   })
   await host.rememberRunnerSession(result, {
-    sessionFile: summary.path,
+    ...(summary.path ? { sessionFile: summary.path } : {}),
     cwd: cwdResult.cwd,
     projectId,
     scope: summary.scope
@@ -249,7 +312,7 @@ export async function remoteNewSession(): Promise<RemoteOperationResult> {
 }
 
 export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
-  const resolved = await resolveChainSession(sessionId)
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   const settings = await getSettings()
@@ -264,7 +327,7 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
     ? undefined
     : (summary.projectId ?? host.projectIdForCwd(settings, cwdResult.cwd))
   const selected = await host.runners()!.select({
-    sessionFile: summary.path,
+    ...(summary.path ? { sessionFile: summary.path } : {}),
     sessionId: summary.id,
     cwd: cwdResult.cwd,
     projectId,
@@ -278,7 +341,7 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
     return { ok: false, status: 409, error: '同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入' }
   }
   await host.rememberRunnerSession(selected, {
-    sessionFile: summary.path,
+    ...(summary.path ? { sessionFile: summary.path } : {}),
     cwd: cwdResult.cwd,
     projectId,
     scope: summary.scope
@@ -290,7 +353,7 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
 }
 
 export async function remoteModels(sessionId: string): Promise<RemoteOperationResult> {
-  const resolved = await resolveChainSession(sessionId)
+  const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
   if (!resolved.ok) return resolved
   const summary = resolved.summary
   const status = host.runners()?.statuses().find((item) => item.sessionId === summary.id)
@@ -448,8 +511,7 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
 }
 
 export async function remoteArtifact(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult> {
-  const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
   const result = await host.readHistoryWithArtifacts(summary.path)
   const artifact = result?.messages.flatMap((message) => message.artifacts ?? []).find((item) => item.id === artifactId)
@@ -468,7 +530,7 @@ export async function remoteArtifact(sessionId: string, artifactId: string): Pro
 }
 
 export async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
-  const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
   const history = await host.readHistoryWithArtifacts(summary.path)
   const image = history?.messages.find((message) => message.id === messageId)?.images?.[index]
@@ -499,8 +561,7 @@ export const peerGrants = new PeerGrantRegistry({
 })
 
 export async function peerSummaryOf(sessionId: string): Promise<SessionSummary | undefined> {
-  const settings = await getSettings()
-  return (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  return (await remoteSessions(500)).find((item) => item.id === sessionId)
 }
 
 export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
@@ -515,8 +576,7 @@ export const peerHostHandlers: PeerHostHandlers = {
       .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
   },
   async sessions(projectIds) {
-    const settings = await getSettings()
-    const list = (await listSessions(500, settings.projects))
+    const list = (await remoteSessions(500))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
     return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },

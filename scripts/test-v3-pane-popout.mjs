@@ -128,10 +128,10 @@ try {
     assert.equal(shared.isPanePopoutTab('files'), true)
     assert.equal(shared.isPanePopoutTab('preview'), false)
     assert.equal(shared.isPaneNativeTab('preview'), true)
-    assert.equal(shared.isPaneActionAllowed('files', 'files.preview'), true)
-    assert.equal(shared.isPaneActionAllowed('files', 'files.attach'), true)
-    assert.equal(shared.isPaneActionAllowed('context', 'files.preview'), false)
-    assert.equal(shared.isPaneActionAllowed('branch', 'refresh'), true)
+    assert.equal(shared.PANE_ALLOWED_ACTIONS.files.includes('files.preview'), true)
+    assert.equal(shared.PANE_ALLOWED_ACTIONS.files.includes('files.attach'), true)
+    assert.equal(shared.PANE_ALLOWED_ACTIONS.context.includes('files.preview'), false)
+    assert.equal(shared.PANE_ALLOWED_ACTIONS.branch.includes('refresh'), true)
   })
   check('通道名固定', () => {
     assert.equal(shared.PANE_POPOUT_CHANNELS.push, 'yan:pane-popout:push')
@@ -349,6 +349,45 @@ try {
     assert.equal(terminalCalls.at(-1)[0], 'invalidate')
     controllerNative.closeByContents(browserWin.webContents)
     assert.equal(controllerNative.ownsBrowser(browserWin.webContents), false)
+  })
+  check('宿主撤销租约后弹窗收到失效推送', () => {
+    reset()
+    let revoke = null
+    const fakeBrowser = {
+      kind: 'native-view',
+      begin: (request) => {
+        revoke = request.onInvalidate
+        return { ok: true, code: 'ok' }
+      },
+      updateBounds: () => ({ ok: true, code: 'ok' }),
+      navigate: async () => ({ ok: true, code: 'ok' }),
+      goBack: () => ({ ok: true, code: 'ok' }),
+      goForward: () => ({ ok: true, code: 'ok' }),
+      reload: () => ({ ok: true, code: 'ok' }),
+      navigationState: () => null,
+      close: async () => ({ ok: true, code: 'ok' }),
+      returnToHost: () => ({ ok: true, code: 'ok' }),
+      invalidateOwner: () => 1,
+      invalidateTab: () => true,
+      invalidateAll: () => {},
+      leaseOfTab: () => null,
+      leaseOfTarget: () => null,
+      isLeased: () => false,
+      owns: () => true,
+      dispose: () => {}
+    }
+    const controllerRevoke = controllerMod.createPanePopoutController(host, { browserTransfer: fakeBrowser })
+    const opened = controllerRevoke.open({ tab: 'browser', owner: ownerA, viewId: 'tab-9' })
+    assert.equal(opened.ok, true)
+    assert.equal(typeof revoke, 'function', 'begin 必须传 onInvalidate，宿主撤销才有人收')
+    const win = mockWindows().at(-1)
+    win.sent.length = 0
+    revoke({ tabId: 'tab-9' }, 'tab-closed')
+    assert.equal(controllerRevoke.browserStateFor(win.webContents).invalidated, true)
+    assert.equal(controllerRevoke.browserStateFor(win.webContents).invalidReason, '该页签已关闭')
+    assert.equal(win.sent.length, 1, '失效后推一次状态')
+    assert.equal(win.sent[0][1].tab, 'browser')
+    assert.equal(win.sent[0][1].invalidated, true)
   })
   check('多页签并存与 closeAll 回收', () => {
     reset()

@@ -41,12 +41,12 @@ export function useFilesTree(owner: FilesOwner): FilesTreeController {
   )
   const hiddenStore = filesHiddenStore()
   const showHiddenPref = useSyncExternalStore(hiddenStore.subscribe, hiddenStore.getSnapshot, hiddenStore.getSnapshot)
+  const generationRef = useRef(0)
   useEffect(() => {
     if (state.showHidden === showHiddenPref) return
     generationRef.current += 1
     dispatch({ type: 'toggleHidden', generation: generationRef.current })
   }, [showHiddenPref, state.showHidden])
-  const generationRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const pendingFocusRef = useRef(false)
   const [scrollTop, setScrollTop] = useState(0)

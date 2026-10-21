@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -24,8 +23,6 @@ function ok(cond, label, detail) {
 
 const entry = `
 export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/types'))}'
-export { MAX_MOUNTED_PANES, emptyMountState, nextVisited, mountedTabs } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/mount-state'))}'
-export { resolvePanelLayout, fallbackSecondary, cellForTab, extraVisibleTabs, nextSplitTab, splitTabOnPrimaryChange } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/panel-layout'))}'
 export { autoCompactLimitOf, contextUsageSummary, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
 export { contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
 export { restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
@@ -49,16 +46,6 @@ async function main() {
   const {
     WORKBENCH_TABS,
     WORKBENCH_ACTIVE_TABS,
-    MAX_MOUNTED_PANES,
-    emptyMountState,
-    nextVisited,
-    mountedTabs,
-    resolvePanelLayout,
-    fallbackSecondary,
-    cellForTab,
-    extraVisibleTabs,
-    nextSplitTab,
-    splitTabOnPrimaryChange,
     autoCompactLimitOf,
     contextUsageSummary,
     contextFromOf,
@@ -73,62 +60,10 @@ async function main() {
   {
     ok(WORKBENCH_TABS.includes('context'), '上下文在固定页签里', WORKBENCH_TABS)
     ok(WORKBENCH_TABS.slice(-3).join('>') === 'branch>logs>quota', '分支页之后依次是日志、额度（日志 / 额度页签追加在末尾）', WORKBENCH_TABS)
-    ok(MAX_MOUNTED_PANES === 9, '固定页签增到九个（加入日志与额度页）', MAX_MOUNTED_PANES)
     ok(!WORKBENCH_ACTIVE_TABS.has('context'), '上下文是只读页签，不需要会话激活')
     ok(restorableWorkbenchTab('context') === 'context', '只读的上下文页签原样恢复')
     ok(restorableWorkbenchTab('terminal') === 'overview', '终端降级到概览，不隐式起 PTY')
     ok(restorableWorkbenchTab('browser') === 'overview', '浏览器降级到概览，不隐式导航')
-
-    const empty = emptyMountState()
-    const splitRegistered = nextVisited(empty, { open: true, activeTab: 'changes', extra: ['context'] })
-    ok(splitRegistered.has('changes') && splitRegistered.has('context'), '拆分打开时主格与下半格都登记')
-    ok(nextVisited(splitRegistered, { open: true, activeTab: 'changes', extra: ['context'] }) === splitRegistered, '无变化时返回原引用')
-    ok(nextVisited(splitRegistered, { open: false, activeTab: 'terminal', extra: ['terminal'] }) === splitRegistered, '关闭不注销、不动已访问集合')
-    ok(mountedTabs(splitRegistered).join(',') === 'changes,context', '登记后按固定顺序渲染', mountedTabs(splitRegistered))
-  }
-
-  group('拆分与专注：上下两格、单页签最大化、两格不撞页签')
-  {
-    const off = resolvePanelLayout({ split: false, focus: false, activeTab: 'changes', splitTab: 'context' })
-    ok(off.primary === 'changes' && off.secondary === null, '不拆分时只有主格一块')
-
-    const on = resolvePanelLayout({ split: true, focus: false, activeTab: 'changes', splitTab: 'context' })
-    ok(on.primary === 'changes' && on.secondary === 'context', '拆分时上下两格各一页签')
-
-    const focus = resolvePanelLayout({ split: true, focus: true, activeTab: 'terminal', splitTab: 'context' })
-    ok(focus.primary === 'terminal' && focus.secondary === null, '专注压过拆分：只留当前页签一块')
-
-    const clash = resolvePanelLayout({ split: true, focus: false, activeTab: 'changes', splitTab: 'changes' })
-    ok(clash.secondary !== null && clash.secondary !== clash.primary, '两格撞同一页签时兜底到另一个页签', clash)
-    ok(clash.secondary === 'files', '兜底优先取只读页签而不是终端 / 浏览器', clash.secondary)
-
-    for (const tab of WORKBENCH_TABS) {
-      ok(!WORKBENCH_ACTIVE_TABS.has(fallbackSecondary(tab)), `兜底页签不从需要激活的页签里取（active=${tab}）`, fallbackSecondary(tab))
-      ok(fallbackSecondary(tab) !== tab, `兜底页签不等于主格（active=${tab}）`)
-    }
-
-    ok(cellForTab(on, 'changes') === 'primary', 'cellForTab 认出主格')
-    ok(cellForTab(on, 'context') === 'secondary', 'cellForTab 认出下半格')
-    ok(cellForTab(on, 'files') === null, '未显示的已访问页签不属于任何格子')
-    assert.deepEqual([...extraVisibleTabs(on)], ['context'], '拆分时下半格列入需要登记的页签')
-    assert.deepEqual([...extraVisibleTabs(off)], [], '不拆分时没有额外登记')
-
-    ok(nextSplitTab('context', 'changes', 'files') === 'files', '下半格可换到其它页签')
-    ok(nextSplitTab('context', 'changes', 'changes') === null, '下半格不允许选主格页签')
-    ok(nextSplitTab('context', 'changes', 'context') === null, '下半格选原值返回 null（不触发更新）')
-
-    ok(
-      splitTabOnPrimaryChange({ split: true, splitTab: 'context', prevActive: 'changes', nextActive: 'context' }) === 'changes',
-      '主格选到下半格页签时两格互换'
-    )
-    ok(
-      splitTabOnPrimaryChange({ split: true, splitTab: 'context', prevActive: 'changes', nextActive: 'files' }) === null,
-      '主格选无关页签时不改下半格'
-    )
-    ok(
-      splitTabOnPrimaryChange({ split: false, splitTab: 'context', prevActive: 'changes', nextActive: 'context' }) === null,
-      '不拆分时不触发互换'
-    )
   }
 
   group('上下文用量：只认同模型对齐后的 agent 总量')

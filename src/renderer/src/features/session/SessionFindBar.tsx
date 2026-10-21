@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../../i18n'
 import { isModalOpen } from '../../lib/modalLayer'
+import { useStore } from '../../state/store'
 import { Icon } from './Icon'
 import { IconButton } from '../../ui'
 import { stepFindIndex } from '../preview/code-find'
@@ -82,6 +83,8 @@ export function SessionFindBar({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
   const debounceRef = useRef<number | null>(null)
+  const streamDeferredRef = useRef(false)
+  const streaming = useStore((s) => !!s.session?.isStreaming)
   const composingRef = useRef(false)
   const closingRef = useRef(false)
 
@@ -249,7 +252,13 @@ export function SessionFindBar({
       if (timer || !found.current.query) return
       timer = window.setTimeout(() => {
         timer = 0
-        if (found.current.query) runRef.current(found.current.query, 'keep')
+        if (!found.current.query) return
+        if (useStore.getState().session?.isStreaming) {
+          streamDeferredRef.current = true
+          return
+        }
+        streamDeferredRef.current = false
+        runRef.current(found.current.query, 'keep')
       }, FIND_MUTATION_DEBOUNCE_MS)
     })
     observer.observe(scope, { childList: true, subtree: true, characterData: true })
@@ -258,6 +267,12 @@ export function SessionFindBar({
       if (timer) window.clearTimeout(timer)
     }
   }, [open, sessionKey, getScope])
+
+  useEffect(() => {
+    if (streaming || !streamDeferredRef.current) return
+    streamDeferredRef.current = false
+    if (open && found.current.query) runRef.current(found.current.query, 'keep')
+  }, [open, streaming])
 
   const previousSession = useRef(sessionKey)
   useEffect(() => {

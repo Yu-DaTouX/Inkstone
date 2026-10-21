@@ -103,9 +103,44 @@ function killProcessTree(child: ChildProcess): void {
     return
   }
   try {
+    process.kill(-pid, 'SIGKILL')
+    return
+  } catch {
+  }
+  try {
     child.kill('SIGKILL')
   } catch {
   }
+}
+
+const PI_CHILD_ENV_KEYS = [
+  'PATH',
+  'Path',
+  'SystemRoot',
+  'SystemDrive',
+  'windir',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'HOME',
+  'LANG',
+  'LC_ALL'
+] as const
+
+function piChildEnv(source: NodeJS.ProcessEnv, overrides: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const key of PI_CHILD_ENV_KEYS) {
+    const value = source[key]
+    if (typeof value === 'string' && value) env[key] = value
+  }
+  return { ...env, ...overrides }
 }
 
 interface CliOutcome {
@@ -130,12 +165,12 @@ function runPiList(opts: {
       child = spawn(opts.cmd, [...opts.args, 'mcp', 'list', '--json'], {
         cwd: opts.cwd,
         windowsHide: true,
-        env: {
-          ...process.env,
+        ...(process.platform === 'win32' ? {} : { detached: true }),
+        env: piChildEnv(process.env, {
           PI_CODING_AGENT_DIR: opts.agentDir,
           PI_OFFLINE: '1',
           ELECTRON_RUN_AS_NODE: '1'
-        },
+        }),
         stdio: ['ignore', 'pipe', 'pipe']
       })
     } catch (error) {

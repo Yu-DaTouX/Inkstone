@@ -47,19 +47,6 @@ export function weightsForLeft(leftPx: number, total: number, share: number): { 
   return { left, right: safeShare - left }
 }
 
-export function leftPxForWeights(
-  leftWeight: number,
-  rightWeight: number,
-  metrics: PairMetrics,
-  minColumn: number = MIN_COLUMN
-): number {
-  const bounds = pairBounds(metrics.total, minColumn)
-  const left = usable(leftWeight) ? leftWeight : 0
-  const right = usable(rightWeight) ? rightWeight : 0
-  if (!usable(metrics.total) || !usable(left + right)) return bounds.min
-  return clampPairValue((metrics.total * left) / (left + right), bounds)
-}
-
 export interface MeasuredElement {
   getBoundingClientRect(): { width: number }
 }

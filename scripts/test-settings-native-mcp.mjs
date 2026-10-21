@@ -14,7 +14,7 @@ for (const text of ['No MCP servers configured. Add them to mcp.json.', 'weather
 check(!isNativeMcpStatus('An unrelated extension loaded'), '不吞其它扩展通知')
 function deliver({ pending = true, sessionId = 's1', text = 'weather: connected, 3 tools (codemode)', startupPhase = true } = {}) {
   let state = { nativeMcpStatus: { sessionId: 's1', pending, text: '' }, notices: [], logs: [], startupPhase, settings: null }
-  const ctx = { get: () => state, set: patch => { state = { ...state, ...patch } }, alertAttention() {}, pushNotice: (list, type, text, id) => [...list, { type, text, id }] }
+  const ctx = { get: () => state, set: patch => { state = { ...state, ...patch } }, t: key => key, alertAttention() {}, pushNotice: (list, type, text, id) => [...list, { type, text, id }] }
   consumeQuestionPush({ ch: 'notify', runtime: { sessionId }, payload: { message: text, notifyType: 'info', id: 'n1' } }, state, ctx)
   return state
 }

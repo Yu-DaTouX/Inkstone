@@ -16,7 +16,7 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:getState', () => browserOf()?.getState() ?? CLOSED_STATE)
   rawHandle('yan:browser:open', async (_e, url?: string) => browserOf()?.open(url) ?? CLOSED_STATE)
   rawHandle('yan:browser:observe', async () => browserOf()?.observe() ?? {
-    generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0, domSnapshotCaptured: false
+    generationId: '', url: '', title: '', text: '', elements: [], accessibilityNodeCount: 0
   })
   rawHandle('yan:browser:network', async () => browserOf()?.network() ?? { capturedAt: Date.now(), entries: [], limit: 80 })
   rawHandle('yan:browser:newTab', async (_e, url?: string) => browserOf()?.newTab(url))

@@ -88,16 +88,19 @@ try {
   assert.equal(rows.mergeSubagentRun(lateStart, { ...base, status: 'running' }).status, 'running')
   assert.equal(rows.mergeSubagentRun({ ...base, status: 'error', endedAt: 9_000 }, { ...base, status: 'done', endedAt: 5_000 }).status, 'error', '终态之间以较晚结束者为准')
 
-  const list = rows.buildSubagentTaskRows({
-    runs: [lateStart, finished, { ...base, id: 'sub-b2', startedAt: 5_000 }, { ...base, id: 'sub-c3', startedAt: 3_000, status: 'running' }],
-    now: NOW,
-    stopping: new Set(['sub-c3'])
-  })
-  assert.deepEqual(list.map((row) => [row.id, row.state]), [['sub-b2', 'running'], ['sub-c3', 'stopping'], ['sub-a1', 'done']], '重复 id 合并，新任务在前')
-  assert.equal(rows.countRunningSubagentRows(list), 2)
+  const merged = [
+    rows.buildSubagentTaskRow(rows.mergeSubagentRun(lateStart, finished), { now: NOW }),
+    rows.buildSubagentTaskRow({ ...base, id: 'sub-b2', startedAt: 5_000 }, { now: NOW }),
+    rows.buildSubagentTaskRow({ ...base, id: 'sub-c3', startedAt: 3_000, status: 'running' }, { now: NOW, stopping: true })
+  ]
+  assert.deepEqual(merged.map((row) => [row.id, row.state]), [['sub-a1', 'done'], ['sub-b2', 'running'], ['sub-c3', 'stopping']], '逐条构建：重复 id 已由 merge 合并，停止中的任务可停止')
+  assert.equal(merged.filter((row) => row.canStop).length, 1)
 
-  const fromArray = rows.buildSubagentTaskRows({ runs: [base], now: NOW, stopping: ['sub-a1'] })
-  assert.equal(fromArray[0].state, 'stopping')
+  const single = rows.buildSubagentTaskRow(base, { now: NOW, stopping: true })
+  assert.equal(single.state, 'stopping')
+
+  assert.equal(rows.subagentRowLabel('running', 'Investigate', 'en-US'), 'Running: Investigate', '单词型标题不重复词干')
+  assert.equal(rows.subagentRowLabel('running', 'Investigate login flow', 'en-US'), 'Investigating login flow')
 
   console.log('test-subagent-task-rows: 通过')
 } finally {

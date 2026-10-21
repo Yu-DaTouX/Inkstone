@@ -1,5 +1,5 @@
 export async function runFileRefTests(ok) {
-  const { grantFile, grantFiles, isGranted, readGrantedText, readPreview, statPreview } = await import('../out/test/file-refs.mjs')
+  const { grantFile, grantFiles, readGrantedText, readPreview, statPreview } = await import('../out/test/file-refs.mjs')
   const { mkdtemp, writeFile, mkdir, rm, symlink } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join, resolve } = await import('node:path')
@@ -22,7 +22,6 @@ export async function runFileRefTests(ok) {
     const t = await grantFile(txt)
     ok(t.ok && t.kind === 'text' && t.name === 'hello.ts', '普通文本文件可引用')
     ok(resolve(t.path) === resolve(txt), '返回的是 realpath')
-    ok(isGranted(t.path), '引用后进入授权表')
     ok(t.mimeType === 'text/typescript', `按扩展名给 MIME（实际 ${t.mimeType}）`)
 
     const i = await grantFile(img)
@@ -52,6 +51,13 @@ export async function runFileRefTests(ok) {
     const bigRead = await readGrantedText(bigRef.path)
     ok(bigRead.ok && bigRead.truncated === true, '读取时标记截断')
     ok(bigRead.text.length === 2 * 1024 * 1024, `只读前 2MB（实际 ${bigRead.text.length}）`)
+
+    const changing = join(dir, 'changing.ts')
+    await writeFile(changing, 'export const v = 1\n')
+    const changingRef = await grantFile(changing)
+    await writeFile(changing, 'export const v = 22\n')
+    const changedRead = await readGrantedText(changingRef.path)
+    ok(!changedRead.ok && changedRead.error === '文件已变化，请重新添加到上下文', '登记后文件被改写 → 拒绝读取并提示重新添加', String(changedRead.error))
 
     const many = await grantFiles(Array.from({ length: 30 }, () => txt))
     ok(many.length === 20, `一次最多登记 20 个（实际 ${many.length}）`)

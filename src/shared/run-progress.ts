@@ -11,7 +11,7 @@ export type RunPhase =
   | 'failed'
   | 'cancelled'
 
-export interface RunProgressInput {
+interface RunProgressInput {
   running: boolean
   streaming: boolean
   compacting?: boolean
@@ -92,8 +92,4 @@ export function deriveRunProgress(input: RunProgressInput): RunProgress {
     long: long && phase !== 'compacting' && ACTIVE_PHASES.has(phase),
     elapsedMs
   }
-}
-
-export function runPhaseIsActive(phase: RunPhase): boolean {
-  return ACTIVE_PHASES.has(phase)
 }

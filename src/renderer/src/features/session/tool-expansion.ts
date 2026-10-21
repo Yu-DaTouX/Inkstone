@@ -1,6 +1,6 @@
 export const EXPANSION_LIMIT = 1000
 
-export interface ExpansionStore {
+interface ExpansionStore {
   get(scope: string, id: string): boolean | undefined
   set(scope: string, id: string, open: boolean): void
   forget(scope: string): void
@@ -12,7 +12,7 @@ export interface ExpansionStore {
 
 const SEP = '\u0000'
 
-export function expansionKey(scope: string, id: string): string {
+function expansionKey(scope: string, id: string): string {
   return `${scope}${SEP}${id}`
 }
 

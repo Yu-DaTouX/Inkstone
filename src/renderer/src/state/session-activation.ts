@@ -11,7 +11,3 @@ export function endSessionSwitch(gate: number): void {
 export function isSessionSwitchInFlight(): boolean {
   return switchInFlight !== null
 }
-
-export function resetSessionActivationForTest(): void {
-  switchInFlight = null
-}

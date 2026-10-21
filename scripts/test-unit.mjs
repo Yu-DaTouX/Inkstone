@@ -1,7 +1,9 @@
-import { mkdtemp, writeFile, mkdir, rm, readdir } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, rm, readdir, readFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { applyTestEnv, isIsolatedTestEnv } from './lib/test-env.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
@@ -22,6 +24,9 @@ import { runAccountQuotaPaneTests } from './test-account-quota-pane.mjs'
 import { runFileContentSearchTests } from './test-file-content-search.mjs'
 import { runFileEditorTests } from './test-file-editor.mjs'
 
+applyTestEnv()
+const isolatedEnv = isIsolatedTestEnv()
+
 await import('./test-live-synthetic-isolation.mjs')
 await import('./test-ui-survey-regressions.mjs')
 await import('./test-light-client.mjs')
@@ -34,15 +39,16 @@ await runCapabilityNegotiationTests()
 await import('./test-security-performance-fixes.mjs')
 await import('./test-browser-frame-origin.mjs')
 await import('./test-v3-deeplink.mjs')
-for (const script of [
+const inProcessScripts = [
   'test-attachment-prune-race', 'test-files-root-boundary',
   'test-mobile-model-url', 'test-open-path-boundary',
   'test-package-sources-fixture', 'test-package-timeout-fallback',
   'test-session-restore-rollback', 'test-subagent-stop-intent',
   'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
-]) await import(`./${script}.mjs`)
+]
+for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
-for (const script of [
+const spawnedScripts = [
   'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
   'test-readonly-model-registration', 'test-mcp-image-results',
@@ -66,10 +72,68 @@ for (const script of [
   'test-composer-keys',
   'test-prompt-history',
   'test-v3-approval-card'
-]) {
-  const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], { stdio: 'inherit', timeout: 60_000 })
-  if (result.error || result.status !== 0) throw new Error(`${script} 失败：${result.error?.message ?? result.signal ?? result.status}`)
+]
+
+const spawnFailures = []
+
+function runScript(script, timeoutMs) {
+  const startedAt = Date.now()
+  const result = spawnSync(process.execPath, [`scripts/${script}.mjs`], {
+    env: process.env,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: timeoutMs
+  })
+  const elapsed = Date.now() - startedAt
+  if (!result.error && result.status === 0) {
+    console.log(`✓ ${script} (${elapsed}ms)`)
+    return
+  }
+  const detail = result.error?.message ?? result.signal ?? result.status
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+  const tail = output.split('\n').slice(-40).join('\n')
+  const logPath = join('out', 'test-failures', `${script}.log`)
+  mkdirSync(join('out', 'test-failures'), { recursive: true })
+  try {
+    writeFileSync(logPath, output)
+  } catch {
+  }
+  console.log(`✗ ${script} (${elapsed}ms) ${detail}`)
+  spawnFailures.push({ script, detail, tail, logPath })
 }
+
+for (const script of spawnedScripts) runScript(script, 60_000)
+
+const scriptsOutsideUnitRun = {
+  'test-unit': 'the-harness-itself',
+  'test-live': 'live-harness',
+  'test-packaged': 'needs-packaged-release',
+  'test-upgrade-read': 'needs-packaged-release',
+  'test-relay-mobile': 'needs-mobile-dependencies',
+  'test-v3-story-coverage': 'story-matrix-missing-tooltip-hint',
+  'test-hermes-plugin-desktop': 'sessions-list-race-in-unit-run',
+  'test-cc-delegation-live': 'needs-real-claude-subscription',
+  'test-cc-subagent-live': 'needs-real-claude-subscription',
+  'test-cc-subscription-live': 'needs-real-claude-subscription',
+  'test-cross-provider-live': 'needs-real-claude-subscription',
+  'test-git-runtime-real': 'needs-real-portablegit-download',
+  'test-luna-progress-live': 'needs-real-luna-account'
+}
+
+async function pendingScripts() {
+  const files = (await readdir('scripts'))
+    .filter((name) => /^test-.*\.mjs$/.test(name))
+    .map((name) => name.slice(0, -4))
+  const ownSource = await readFile(new URL(import.meta.url), 'utf8')
+  const referenced = new Set([...ownSource.matchAll(/\.\/(test-[a-z0-9-]+)\.mjs/g)].map((match) => match[1]))
+  for (const name of inProcessScripts) referenced.add(name)
+  for (const name of spawnedScripts) referenced.add(name)
+  return files.filter((name) => !referenced.has(name) && !Object.hasOwn(scriptsOutsideUnitRun, name)).sort()
+}
+
+const scannedScripts = await pendingScripts()
+if (scannedScripts.length) console.log(`目录扫描新增 ${scannedScripts.length} 个：${scannedScripts.join(', ')}`)
+for (const script of scannedScripts) runScript(script, 120_000)
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))
@@ -299,7 +363,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/renderer/src/state/workbench.ts'],
+    entryPoints: ['src/renderer/src/state/workspace-key.ts'],
     outfile: 'out/test/workbench.mjs',
     bundle: true,
     format: 'esm',
@@ -654,31 +718,7 @@ const mcpRegistrationShared = await import('../node_modules/esbuild/lib/main.js'
     logLevel: 'silent'
   }).then(() => import('../out/test/mcp-registration.mjs'))
 )
-const mcpRegistrationService = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/capabilities/registration-service.ts'],
-    outfile: 'out/test/registration-service.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
-    logLevel: 'silent'
-  }).then(() => import('../out/test/registration-service.mjs'))
-)
 const { runMcpRegistrationTests } = await import('./test-mcp-registration.mjs')
-
-const mcpPackage = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/main/capabilities/mcp-package.ts'],
-    outfile: 'out/test/mcp-package.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'node',
-    external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
-    logLevel: 'silent'
-  }).then(() => import('../out/test/mcp-package.mjs'))
-)
-const { runMcpPackageTests } = await import('./test-mcp-package.mjs')
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1100,6 +1140,7 @@ const ok = (cond, label, extra = '') => {
 console.log(`临时会话目录: ${dir}`)
 console.log(`模块用的目录: ${SESSIONS_DIR}`)
 ok(SESSIONS_DIR === dir, 'YAN_SESSIONS_DIR 生效（测试不会碰真实会话）')
+ok(isolatedEnv, '测试环境已隔离（宿主 YAN_*/PI_* 已清空，数据目录在临时区）')
 
 await runSessionConcurrencyConflictTests(ok)
 await runSessionConcurrencyFrontendTests(ok)
@@ -1519,8 +1560,7 @@ await runMcpTests(ok, {
   manager: mcpManager,
   toolService: mcpToolService
 })
-await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared, service: mcpRegistrationService })
-await runMcpPackageTests(ok, mcpPackage)
+await runMcpRegistrationTests(ok, { shared: mcpRegistrationShared })
 runProjectKnowledgeSearchTests(ok, projectMemorySearch)
 await runExtensionInventoryTests(ok)
 
@@ -1777,32 +1817,6 @@ const customProvider = await import('../node_modules/esbuild/lib/main.js').then(
 const { runCustomProviderTests } = await import('./test-custom-provider.mjs')
 await runCustomProviderTests(ok, customProvider)
 
-const forkRebind = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/fork-rebind.ts'],
-    outfile: 'out/test/fork-rebind.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/fork-rebind.mjs'))
-)
-const { runForkRebindTests } = await import('./test-fork-rebind.mjs')
-await runForkRebindTests(ok, forkRebind)
-
-const forkContextMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  build({
-    entryPoints: ['src/shared/fork-context.ts'],
-    outfile: 'out/test/fork-context.mjs',
-    bundle: true,
-    format: 'esm',
-    platform: 'neutral',
-    logLevel: 'silent'
-  }).then(() => import('../out/test/fork-context.mjs'))
-)
-const { runForkContextTests } = await import('./test-fork-context.mjs')
-await runForkContextTests(ok, forkContextMod)
-
 const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/shared/git.ts'],
@@ -1914,6 +1928,8 @@ const { runQuestionLogTests } = await import('./test-question-log.mjs')
 console.log('\n--- 宿主提问：回放合并 + 按会话落盘 ---')
 await runQuestionLogTests(ok)
 console.log('\n--- P2. pi 包管理（真实 pi CLI，隔离 agent 目录）---')
+const piCliPath = join('resources', 'pi-runtime', 'dist', 'bundle', 'cli.js')
+if (!existsSync(piCliPath)) throw new Error(`内置 pi CLI 不在（${piCliPath}）：先跑 npm run vendor:pi`)
 await runPackagesTests(ok)
 const { runPluginMarketTests } = await import('./test-plugin-market.mjs')
 await runPluginMarketTests(ok)
@@ -2650,5 +2666,13 @@ await runSessionReadEquivalenceTests(ok)
 await import('./test-session-reader-stream.mjs')
 
 console.log(`\n${pass}/${pass + fail} 通过`)
+if (spawnFailures.length) {
+  console.log(`\n${spawnFailures.length} 个子进程测试失败：${spawnFailures.map((item) => item.script).join(', ')}`)
+  for (const item of spawnFailures) {
+    console.log(`\n--- ✗ ${item.script}：${item.detail} ---`)
+    console.log(item.tail || '（没有输出）')
+    console.log(`完整输出：${item.logPath}`)
+  }
+}
 await rm(dataDir, { recursive: true, force: true })
-process.exit(fail ? 1 : 0)
+process.exit(fail || spawnFailures.length ? 1 : 0)

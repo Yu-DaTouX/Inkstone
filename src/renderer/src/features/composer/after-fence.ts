@@ -25,6 +25,15 @@ export function afterFencePosition(state: EditorState): number | null {
   return afterFenceKey.getState(state) ?? null
 }
 
+export function fenceEndPosition(state: EditorState): number | null {
+  const { $from, empty } = state.selection
+  if (!empty) return null
+  if ($from.parent.type.name !== 'code_block') return null
+  if ($from.parentOffset !== $from.parent.content.size) return null
+  const after = $from.after()
+  return after === state.doc.content.size ? after : null
+}
+
 function textBreakAt(doc: ProseNode, pos: number): number {
   let consumed = 0
   for (const run of composerTextRuns(doc)) {
@@ -35,7 +44,7 @@ function textBreakAt(doc: ProseNode, pos: number): number {
 }
 
 export function afterFenceInsertTransaction(state: EditorState, text: string): Transaction | null {
-  const pos = afterFencePosition(state)
+  const pos = afterFencePosition(state) ?? fenceEndPosition(state)
   if (pos === null) return null
   const before = docToText(state.doc)
   const at = textBreakAt(state.doc, pos)

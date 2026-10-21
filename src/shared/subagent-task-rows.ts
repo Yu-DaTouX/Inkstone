@@ -23,16 +23,6 @@ export interface SubagentTaskRow {
   summaryLine: string | null
 }
 
-export interface SubagentTaskRowsInput {
-  runs: readonly SubagentRun[]
-  now: number
-  lang?: SubagentRowLang
-  connection?: SubagentConnection
-  stopping?: ReadonlySet<string> | readonly string[]
-}
-
-const DESCRIPTION_MAX = 80
-
 export function isLiveSubagentRun(run: Pick<SubagentRun, 'status'>): boolean {
   return run.status === 'starting' || run.status === 'running'
 }
@@ -62,7 +52,9 @@ export function subagentRunTokens(run: Pick<SubagentRun, 'usage'>): number | nul
   return total > 0 ? total : null
 }
 
-export function describeSubagentRun(run: Pick<SubagentRun, 'task' | 'brief'>): string {
+const DESCRIPTION_MAX = 80
+
+function describeSubagentRun(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   const raw = run.brief?.title?.trim() || run.brief?.goal?.trim() || run.task
   const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? ''
   const chars = [...firstLine]
@@ -130,14 +122,17 @@ const RULES: Record<SubagentRowLang, TenseRules> = {
     generic: { starting: 'Starting', running: 'Running', stopping: 'Stopping', done: 'Completed', failed: 'Failed', stopped: 'Stopped', unknown: 'Status unknown' },
     match(description) {
       const word = description.split(/\s+/, 1)[0]?.toLowerCase().replace(/[^a-z]/g, '') ?? ''
-      return word && EN_VERBS[word] ? { verb: word, rest: description.slice(description.indexOf(' ') + 1).trim() } : null
+      if (!word || !EN_VERBS[word]) return null
+      const space = description.indexOf(' ')
+      const rest = space < 0 ? '' : description.slice(space + 1).trim()
+      return rest ? { verb: word, rest } : null
     },
     join: (prefix, rest) => `${prefix} ${rest}`,
     genericJoin: (prefix, description) => `${prefix}: ${description}`
   }
 }
 
-export function tenseOfState(state: SubagentRowState): SubagentRowTense {
+function tenseOfState(state: SubagentRowState): SubagentRowTense {
   if (state === 'done') return 'done'
   if (state === 'failed' || state === 'stopped') return 'failed'
   return 'active'
@@ -209,20 +204,4 @@ export function buildSubagentTaskRow(
     canStop: state === 'starting' || state === 'running',
     summaryLine: state === 'done' ? subagentSummaryLine({ toolCalls, tokens, durationMs }, lang) : null
   }
-}
-
-export function buildSubagentTaskRows(input: SubagentTaskRowsInput): SubagentTaskRow[] {
-  const stopping = new Set(input.stopping ?? [])
-  return dedupeSubagentRuns(input.runs)
-    .map((run) => buildSubagentTaskRow(run, {
-      now: input.now,
-      ...(input.lang ? { lang: input.lang } : {}),
-      ...(input.connection ? { connection: input.connection } : {}),
-      stopping: stopping.has(run.id)
-    }))
-    .sort((a, b) => b.startedAt - a.startedAt)
-}
-
-export function countRunningSubagentRows(rows: readonly SubagentTaskRow[]): number {
-  return rows.filter((row) => row.state === 'starting' || row.state === 'running' || row.state === 'stopping').length
 }

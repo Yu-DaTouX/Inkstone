@@ -210,20 +210,6 @@
     width: 14px;
   }
 
-  .v3-head-badge {
-    display: inline-block;
-    min-width: 14px;
-    height: 14px;
-    padding: 0 4px;
-    border-radius: var(--r-full);
-    background: var(--run);
-    color: var(--on-accent);
-    font-size: 10px;
-    line-height: 14px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-
   .v3-win {
     display: flex;
     margin-left: 8px;
@@ -244,7 +230,7 @@
 
   .v3-winbtn-close:hover {
     background: var(--win-close);
-    color: #ffffff;
+    color: var(--on-accent);
   }
 
   .v3-winbtn:active {
@@ -254,24 +240,8 @@
 
   .v3-winbtn-close:active {
     background: var(--win-close);
-    color: #ffffff;
+    color: var(--on-accent);
     filter: brightness(0.85);
-  }
-
-  @keyframes v3-breathe {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.3;
-    }
-  }
-
-  .v3-settings {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
   }
 
   .v3-field {
@@ -281,38 +251,11 @@
     min-height: var(--size-btn);
   }
 
-  .v3-field-block {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
   .v3-field-label {
     width: 96px;
     flex: none;
     color: var(--fg3);
     font-size: var(--t-prose);
-  }
-
-  .v3-field-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .v3-field-value {
-    font-size: var(--t-prose);
-    color: var(--fg);
-  }
-
-  .v3-field-hint {
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    color: var(--fg3);
-  }
-
-  .v3-field-error {
-    font-size: var(--t-footnote);
-    color: var(--fail-t);
   }
 
   .v3-fatal {

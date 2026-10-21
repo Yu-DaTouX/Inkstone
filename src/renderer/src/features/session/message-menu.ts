@@ -6,7 +6,7 @@ export interface MessageMenuItem {
   run: () => void
 }
 
-export interface MessageMenuRequest {
+interface MessageMenuRequest {
   x: number
   y: number
   label: string
@@ -43,7 +43,7 @@ export function registerMessageMenuHost(): () => void {
   }
 }
 
-export function hasSelectedText(): boolean {
+function hasSelectedText(): boolean {
   if (typeof window === 'undefined' || typeof window.getSelection !== 'function') return false
   return (window.getSelection()?.toString() ?? '').trim().length > 0
 }

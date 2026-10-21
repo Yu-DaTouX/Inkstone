@@ -61,6 +61,13 @@ async function run() {
     }
 
     assert.equal(model.GROUP_PAGE_SIZE, 20, '分页阈值照参考为 20')
+    const runIndex = model.indexRuns(seenRuns)
+    assert.equal(runIndex.latest({ id: 's-open' })?.runId, 'r4', '按会话取最新一次运行')
+    assert.equal(runIndex.latest({ id: 's-other' })?.runId, 'r5')
+    assert.equal(runIndex.latest({ path: 'E:/a.jsonl' })?.runId, 'r6', '只给会话文件也能对上')
+    assert.equal(runIndex.latest({ id: 's-moved', path: 'E:/a.jsonl' })?.runId, 'r6', '会话与文件同时命中时取更晚的一次')
+    assert.equal(runIndex.latest({}), null, '没有任何标识时没有运行')
+    assert.equal(model.indexRuns([]).latest({ id: 's-open' }), null)
     const many = Array.from({ length: 45 }, (_, index) => ({ id: `s${index}`, path: `p${index}` }))
     const firstPage = model.groupPage(many)
     assert.equal(firstPage.rows.length, 20, '首屏只显示 20 条')

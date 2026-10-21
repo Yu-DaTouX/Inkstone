@@ -1,4 +1,4 @@
-import { readdir, stat, open, mkdir, rename } from 'node:fs/promises'
+import { readdir, stat, open, mkdir, rename, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { sep } from 'node:path'
@@ -8,6 +8,8 @@ import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { decorateSessions } from './session-layout'
 import { countSessionMessages, forgetSessionMessageCounts } from './session-message-count'
 import { parseSubagentNotice } from '../shared/subagent-notice'
+import { sessionSkillsDir } from './capabilities/acquired-skills'
+import { dropSession } from './sources'
 import { plainTitleText } from '../shared/title-text'
 
 export const SESSIONS_DIR =
@@ -256,6 +258,39 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
   }
 }
 
+const LIST_READ_CONCURRENCY = 8
+
+async function readSessionSummary(f: { path: string; mtimeMs: number; size: number }): Promise<SessionSummary | undefined> {
+  try {
+    const head = await readHead(f.path)
+    const dirName = f.path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
+    const named = !!head.name
+    const activity = await readLastActivity(f.path, f.size)
+    const summary: SessionSummary = {
+      id: head.id ?? f.path,
+      path: f.path,
+      cwd: head.cwd ?? decodeDirName(dirName) ?? '',
+      title: head.name ?? head.title ?? '(无标题)',
+      named,
+      parentSession: head.parentSession,
+      lastActivityAt:
+        activity.at ?? (head.createdAt || Math.round(f.mtimeMs)),
+      lastReply: activity.reply,
+      createdAt: head.createdAt || Math.round(f.mtimeMs),
+      updatedAt: Math.round(f.mtimeMs),
+      messageCount: await countSessionMessages(f.path),
+      model: undefined
+    }
+    if (head.parentSession) {
+      summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)
+    }
+    cache.set(f.path, { mtimeMs: f.mtimeMs, summary })
+    return summary
+  } catch {
+    return undefined
+  }
+}
+
 export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 
@@ -292,62 +327,77 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const picked = files.slice(0, limit)
 
-  const out: SessionSummary[] = []
-  for (const f of picked) {
-    const hit = cache.get(f.path)
-    if (hit && hit.mtimeMs === f.mtimeMs) {
-      out.push(hit.summary)
-      continue
-    }
-
-    try {
-      const head = await readHead(f.path)
-      const dirName = f.path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
-      const named = !!head.name
-      const activity = await readLastActivity(f.path, f.size)
-      const summary: SessionSummary = {
-        id: head.id ?? f.path,
-        path: f.path,
-        cwd: head.cwd ?? decodeDirName(dirName) ?? '',
-        title: head.name ?? head.title ?? '(无标题)',
-        named,
-        parentSession: head.parentSession,
-        lastActivityAt:
-          activity.at ?? (head.createdAt || Math.round(f.mtimeMs)),
-        lastReply: activity.reply,
-        createdAt: head.createdAt || Math.round(f.mtimeMs),
-        updatedAt: Math.round(f.mtimeMs),
-        messageCount: await countSessionMessages(f.path),
-        model: undefined
+  const out: Array<SessionSummary | undefined> = new Array(picked.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < picked.length) {
+      const index = cursor++
+      const f = picked[index]
+      const hit = cache.get(f.path)
+      if (hit && hit.mtimeMs === f.mtimeMs) {
+        out[index] = hit.summary
+        continue
       }
-      if (head.parentSession) {
-        summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)
-      }
-      cache.set(f.path, { mtimeMs: f.mtimeMs, summary })
-      out.push(summary)
-    } catch {
+      out[index] = await readSessionSummary(f)
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(LIST_READ_CONCURRENCY, picked.length) }, () => worker())
+  )
 
-  return projects ? decorateSessions(out, projects) : out
+  const summaries = out.filter((item): item is SessionSummary => item !== undefined)
+  return projects ? decorateSessions(summaries, projects) : summaries
 }
 
 const TRASH_DIR = join(YAN_DIR, 'trash', 'sessions')
+const TRASH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const TRASH_PRUNE_INTERVAL_MS = 60 * 60 * 1000
+const DELETED_MAX_TOKENS = 50
 const deleted = new Map<string, Array<{ from: string; to: string }>>()
+let trashPrunedAt = 0
 
-export async function deleteSession(path: string, protectedPath?: string): Promise<string> {
-  const resolved = resolve(path)
-  const root = resolve(SESSIONS_DIR)
-  const [realFile, realRoot] = await Promise.all([realpath(resolved), realpath(root)])
-  const comparable = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
-  const filePath = comparable(realFile)
-  const rootPath = comparable(realRoot).replace(/[\\/]$/, '')
-  if (filePath !== rootPath && !filePath.startsWith(`${rootPath}${sep}`)) {
-    throw new Error('只能删除会话目录下的文件')
+function comparablePath(value: string): string {
+  const normalized = process.platform === 'win32' ? value.toLowerCase() : value
+  return normalized.replace(/[\\/]$/, '')
+}
+
+function isUnderSessionsDir(realFile: string, realRoot = resolve(SESSIONS_DIR)): boolean {
+  const file = comparablePath(realFile)
+  const root = comparablePath(realRoot)
+  return file === root || file.startsWith(`${root}${sep}`)
+}
+
+export async function isSessionFileInSessionsDir(path: string): Promise<boolean> {
+  if (typeof path !== 'string' || !path.trim()) return false
+  try {
+    const [realFile, realRoot] = await Promise.all([realpath(resolve(path)), realpath(resolve(SESSIONS_DIR))])
+    return isUnderSessionsDir(realFile, realRoot) && realFile.toLowerCase().endsWith('.jsonl')
+  } catch {
+    return false
   }
-  if (!realFile.toLowerCase().endsWith('.jsonl')) {
-    throw new Error('不是会话文件')
+}
+
+async function pruneTrash(): Promise<void> {
+  if (Date.now() - trashPrunedAt < TRASH_PRUNE_INTERVAL_MS) return
+  trashPrunedAt = Date.now()
+  let entries
+  try {
+    entries = await readdir(TRASH_DIR, { withFileTypes: true })
+  } catch {
+    return
   }
+  const now = Date.now()
+  for (const entry of entries) {
+    const target = join(TRASH_DIR, entry.name)
+    try {
+      const info = await stat(target)
+      if (now - info.mtimeMs > TRASH_MAX_AGE_MS) await rm(target, { recursive: true, force: true })
+    } catch {
+    }
+  }
+}
+
+export async function sessionsToDelete(path: string): Promise<Array<{ path: string; sessionId?: string }>> {
   const all = await listSessions(Number.MAX_SAFE_INTEGER)
   const byParent = new Map<string, SessionSummary[]>()
   for (const session of all) {
@@ -366,13 +416,28 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
     if (!id) return
     for (const child of byParent.get(id) ?? []) visit(resolve(child.path), child.id)
   }
-  visit(resolved)
+  visit(path)
+  return targets
+}
+
+export async function deleteSession(path: string, protectedPath?: string): Promise<string> {
+  const resolved = resolve(path)
+  const realFile = await realpath(resolved)
+  const realRoot = await realpath(resolve(SESSIONS_DIR))
+  if (!isUnderSessionsDir(realFile, realRoot)) {
+    throw new Error('只能删除会话目录下的文件')
+  }
+  if (!realFile.toLowerCase().endsWith('.jsonl')) {
+    throw new Error('不是会话文件')
+  }
+  const targets = await sessionsToDelete(resolved)
   const paths = targets.map((target) => target.path)
   if (protectedPath && paths.includes(resolve(protectedPath))) {
     throw new Error('当前正在使用的会话位于将删除的分支中')
   }
 
   await mkdir(TRASH_DIR, { recursive: true })
+  await pruneTrash()
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const entries: Array<{ from: string; to: string }> = []
   try {
@@ -383,10 +448,32 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
       entries.push({ from: source, to: destination })
     }
   } catch (error) {
-    for (const entry of entries.reverse()) await rename(entry.to, entry.from).catch(() => undefined)
+    const failed: string[] = []
+    for (const entry of entries.reverse()) {
+      try {
+        await rename(entry.to, entry.from)
+      } catch {
+        failed.push(entry.from)
+      }
+    }
+    if (failed.length) {
+      throw new Error(`删除失败，回滚未完成：${failed.join(', ')}`, { cause: error })
+    }
     throw error
   }
+  for (const target of targets) {
+    if (!target.sessionId) continue
+    try {
+      await rm(sessionSkillsDir(YAN_DIR, target.sessionId), { recursive: true, force: true })
+    } catch {
+    }
+    dropSession(target.sessionId)
+  }
   deleted.set(token, entries)
+  if (deleted.size > DELETED_MAX_TOKENS) {
+    const oldest = deleted.keys().next().value
+    if (oldest) deleted.delete(oldest)
+  }
   return token
 }
 

@@ -68,6 +68,13 @@ export function compactionRunningText(t: TFunc, run: CompactionRun | undefined):
   return reason ? t('ctx.compactingReason', { reason }) : t('status.compacting')
 }
 
+export function compactionElapsedText(t: TFunc, run: CompactionRun | undefined, now = Date.now()): string | null {
+  if (!run || run.status !== 'running' || typeof run.startedAt !== 'number') return null
+  const seconds = Math.floor((now - run.startedAt) / 1000)
+  if (!Number.isFinite(seconds) || seconds < 1) return null
+  return t('ctx.compactingElapsed', { seconds: String(seconds) })
+}
+
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n)
   const k = n / 1000

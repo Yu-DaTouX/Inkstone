@@ -39,11 +39,23 @@ export interface ComposerKeyPlan {
 
 const DOUBLE_ESC_WINDOW = 500
 
+export function roundRunningOf(input: {
+  runnerRunning: boolean
+  isStreaming?: boolean
+  isCompacting?: boolean
+}): boolean {
+  return input.runnerRunning || input.isStreaming === true || input.isCompacting === true
+}
+
 export function isComposingKey(event: ComposerKeyEvent): boolean {
   return !!event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
 }
 
 export const STRAY_ENTER_MS = 500
+
+export function swallowsPendingCompletionKey(key: string): boolean {
+  return key === 'Enter' || key === 'Tab'
+}
 
 export interface StrayEnterInput {
   event: ComposerKeyEvent

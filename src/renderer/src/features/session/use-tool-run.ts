@@ -11,10 +11,6 @@ export function useTranscriptViewScope(): TranscriptView {
   return useContext(TranscriptViewScope)
 }
 
-export function useToolExpansionScope(): string {
-  return useContext(ToolExpansionScope)
-}
-
 export function useToolExpansion(id: string): [boolean | undefined, (open: boolean) => void] {
   const scope = useContext(ToolExpansionScope)
   const stored = useSyncExternalStore(toolExpansion.subscribe, () => toolExpansion.get(scope, id))

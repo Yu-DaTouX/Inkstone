@@ -45,7 +45,8 @@ await build({
   stdin: {
     contents:
       "export { RunnerRegistry } from './src/main/runners';" +
-      "export { registerMcpAppIpc, mcpAppHoldersFor, mayHoldMcpApp } from './src/main/ipc/mcp-app-ipc';",
+      "export { registerMcpAppIpc, mcpAppHoldersFor, mayHoldMcpApp } from './src/main/ipc/mcp-app-ipc';" +
+      "export { captureNativeStartupWitness } from './src/main/mcp/app-native-witness';",
     resolveDir: process.cwd(),
     loader: 'ts'
   },
@@ -410,6 +411,40 @@ try {
   agent.getLegacyMcpHolderSnapshot = () => null
   const holdersUnknown = await m.mcpAppHoldersFor(registry, { serverId: 'weather', scope: 'global' })
   ok(holdersUnknown.some((item) => item.runnerId === active.id), 'legacy 事实缺失（null）：按可能持有')
+} finally {
+  await state.registry?.stopAll().catch(() => undefined)
+}
+
+try {
+  await resetFiles({ project: true })
+  await rm(join(otherCwd, '.pi', 'mcp.json'), { force: true }).catch(() => undefined)
+  const captured = await m.captureNativeStartupWitness({ agentDir, cwd: otherCwd, bootId: 'boot-witness', generation: 1 })
+  ok(captured.ok === true, '见证：采集启动见证成功', captured.reason)
+  const snapshotOf = (witness) => ({
+    mcpHolderSnapshots: () => [
+      {
+        runnerId: 'r-witness',
+        generation: 1,
+        projectId: null,
+        cwd: otherCwd,
+        processRunning: true,
+        conn: 'ready',
+        busy: false,
+        nativeWitness: witness,
+        legacyMcpServices: null
+      }
+    ]
+  })
+  const proven = await m.mcpAppHoldersFor(snapshotOf(captured.witness), { serverId: 'weather', scope: 'global' })
+  ok(proven.length === 0, '见证证明启动时未加载：不算持有者（与宿主路径同一标准）')
+  const stillLoaded = await m.mcpAppHoldersFor(snapshotOf({ ...captured.witness, servers: ['weather'] }), {
+    serverId: 'weather',
+    scope: 'global'
+  })
+  ok(stillLoaded.length === 1, '启动见证里仍有该服务：仍算持有者')
+  await writeJson(nativeGlobal, NATIVE_GLOBAL)
+  const fileChanged = await m.mcpAppHoldersFor(snapshotOf(captured.witness), { serverId: 'weather', scope: 'global' })
+  ok(fileChanged.length === 1, '见证之后配置又变了：复核失败，仍算持有者')
 } finally {
   await state.registry?.stopAll().catch(() => undefined)
 }

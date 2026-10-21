@@ -188,20 +188,6 @@ console.log('分屏块拖动（与参考 dropZone / paneDrop 一致）')
   ok(drop.samePaneTarget({ kind: 'column', at: 2 }, { kind: 'column', at: 2 }) && !drop.samePaneTarget({ kind: 'swap', index: 1 }, { kind: 'column', at: 1 }), '落点相等判断')
 }
 
-console.log('工作区面板落点框')
-{
-  const tree = await loadTs('../src/renderer/src/features/workbench/tile-tree.ts')
-  const boxes = await loadTs('../src/renderer/src/features/workbench/tile-boxes.ts')
-  const layout = tree.columnLayout(['files', 'terminal'])
-  const root = { left: 0, top: 0, width: 400, height: 808 }
-  const all = boxes.layoutBoxes(layout, root, 8)
-  ok(all.files.height === 400 && all.terminal.top === 408, '按 flex 与 8px 间距切分', all)
-  const stackId = layout.root.id
-  const moved = tree.moveTile(layout, 'files', { kind: 'split', stackId, direction: 'row', index: 1 })
-  const landing = boxes.tileLandingBox(moved, 'files', root, 8)
-  ok(landing && landing.left === 204 && landing.width === 196, '拆到右侧：落点为右半列', landing)
-}
-
 console.log('行高边界（两行都不低于 320px，15–85%）')
 {
   const tall = drop.rowBoundsFor(1000)

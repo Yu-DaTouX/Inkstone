@@ -25,10 +25,6 @@ export function summarize(call: UIToolCall): string {
   return stepCategory(call.name) === 'bash' ? redactCommandSecrets(target) : target
 }
 
-export function runningCallLabel(call: UIToolCall, generating: string): string {
-  return `${call.name} ${generatingArgs(call) ? generating : summarize(call)}`.trim()
-}
-
 export function toolRunningLabel(
   call: UIToolCall,
   generating: string,

@@ -179,7 +179,7 @@ export function RemoteProvider({
     const events = new RemoteEventStream(connection, {
       onState: (state) => {
         if (streamTimer) { clearTimeout(streamTimer); streamTimer = null }
-        if (state === 'open' || state === 'closed') setStream(state)
+        if (state === 'open') setStream(state)
         else streamTimer = setTimeout(() => { streamTimer = null; setStream(state) }, 1500)
         if (state === 'open') void refreshInfo()
       },

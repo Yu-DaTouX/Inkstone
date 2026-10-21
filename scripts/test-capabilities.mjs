@@ -1,3 +1,5 @@
+import { readYanCliGroups } from './helpers/yan-cli-groups.mjs'
+
 export async function runCapabilityCatalogTests(ok, modules) {
   const caps = modules.capabilities
   const skill = modules.skill
@@ -157,12 +159,6 @@ export async function runCapabilityCatalogTests(ok, modules) {
   }
 
   {
-    const base = 'C:\\agent\\skills\\demo'
-    ok(skill.skillLocationAllowed('C:\\agent\\skills\\demo\\SKILL.md', base), 'path：技能目录内的路径允许')
-    ok(!skill.skillLocationAllowed('C:\\agent\\skills\\other\\SKILL.md', base), 'path：目录外的路径拒绝')
-  }
-
-  {
     const agentsDir = join(root, 'agent')
     const skillDir = join(agentsDir, 'skills', 'demo-skill')
     await mkdir(skillDir, { recursive: true })
@@ -235,6 +231,25 @@ export async function runCapabilityCatalogTests(ok, modules) {
 
     const search = caps.searchCapabilities(built.capabilities, { queryText: 'alpha 里搜索' })
     ok(search.hits.some((h) => h.capability.id === 'mcp:alpha/search'), 'MCP：按目标能搜到工具', search.hits.map((h) => h.capability.id).join(','))
+  }
+
+  {
+    const groups = readYanCliGroups()
+    const builtins = catalog.BUILTIN_CAPABILITIES
+    const uncovered = groups
+      .map((group) => group.group)
+      .filter((group) => !builtins.some((c) => String(c.source.location).startsWith(`yan ${group}`)))
+    ok(uncovered.length === 0, `能力目录覆盖 yan CLI 的每个命令组（缺：${uncovered.join(', ') || '无'}）`)
+
+    const catalogIds = builtins.map((c) => c.id)
+    ok(new Set(catalogIds).size === catalogIds.length, '内置能力 id 不重复')
+    ok(builtins.every((c) => c.kind === 'builtin' && c.source.owner === 'yan'), '内置能力来源与类型一致')
+
+    const built = catalog.buildCatalog([])
+    const search = caps.searchCapabilities(built.capabilities, { queryText: '联网搜索 网页' })
+    ok(search.hits.some((h) => h.capability.id === 'builtin:search'), '搜「联网搜索」能命中 search 组', search.hits.map((h) => h.capability.id).join(','))
+    const docs = caps.searchCapabilities(built.capabilities, { queryText: '开发文档 文档库' })
+    ok(docs.hits.some((h) => h.capability.id === 'builtin:search'), '搜「文档库」也能命中 search 组（含 search docs）', docs.hits.map((h) => h.capability.id).join(','))
   }
 
   await rm(root, { recursive: true, force: true })

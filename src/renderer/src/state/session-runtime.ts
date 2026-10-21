@@ -14,7 +14,7 @@ import type {
   UIMessage,
   UIToolCall
 } from '../../../shared/ipc'
-import { mergeSyncHistory } from './session-message-merge'
+import { applySyncDelta, mergeSyncHistory } from './session-message-merge'
 
 export interface SessionRuntimeSnapshot {
   touchedAt?: number
@@ -205,6 +205,12 @@ export function reduceSessionRuntime(
       next = { ...next, messagesLoaded: true, messages: mergeSyncHistory(message.payload, next.messages, protectedTailId) }
       break
     }
+    case 'sync-delta': {
+      const protectedTailId = previous?.session?.isStreaming ? previous.messages.at(-1)?.id : undefined
+      const merged = applySyncDelta(next.messages, message.payload, protectedTailId)
+      next = merged ? { ...next, messagesLoaded: true, messages: merged } : { ...next, messagesLoaded: false }
+      break
+    }
     case 'msg-add':
       next = { ...next, messagesLoaded: true, messages: [...next.messages, message.payload] }
       break
@@ -213,9 +219,6 @@ export function reduceSessionRuntime(
       break
     case 'artifact':
       next = { ...next, messages: patchArtifact(next.messages, message.payload.messageId, message.payload.artifact) }
-      break
-    case 'msg-remove':
-      next = { ...next, messages: next.messages.filter((item) => item.id !== message.payload) }
       break
     case 'tool':
       next = {

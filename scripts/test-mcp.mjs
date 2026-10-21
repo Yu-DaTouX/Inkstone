@@ -17,10 +17,6 @@ export async function runMcpTests(ok, modules) {
       mcp.mcpToolCapabilityId('a', 'echo') !== mcp.mcpToolCapabilityId('b', 'echo'),
       'ID：两家服务的同名工具**不会**被合并（§4 硬要求）'
     )
-    const parsed = mcp.parseMcpToolId('mcp:srv/tools/echo')
-    ok(parsed && parsed.serverId === 'srv' && parsed.toolName === 'tools/echo', 'ID：工具名里允许 `/`')
-    ok(mcp.parseMcpToolId('skill:x') === null, 'ID：非 mcp 前缀反解为 null')
-    ok(mcp.parseMcpToolId('mcp:srv') === null, 'ID：缺少工具名反解为 null')
   }
 
   {
@@ -109,6 +105,19 @@ export async function runMcpTests(ok, modules) {
     await writeFile(broken, '{ not json', 'utf8')
     const brokenLoaded = config.loadMcpServers({ YAN_MCP_SERVERS_FILE: broken })
     ok(Boolean(brokenLoaded.error), '配置：脏 JSON 报可读错误（不静默当空）')
+
+    const cacheFile = join(root, 'cache.json')
+    await writeFile(cacheFile, JSON.stringify({ servers: [{ id: 'c1', transport: 'stdio', command: process.execPath }] }), 'utf8')
+    const cacheEnv = { YAN_MCP_SERVERS_FILE: cacheFile }
+    const cachedFirst = config.loadMcpServersCached(cacheEnv)
+    const cachedSecond = config.loadMcpServersCached(cacheEnv)
+    ok(cachedFirst === cachedSecond && cachedFirst.servers[0].id === 'c1', '配置缓存：文件未变时复用同一解析结果')
+    await writeFile(
+      cacheFile,
+      JSON.stringify({ servers: [{ id: 'c2', title: 'size-changed', transport: 'stdio', command: process.execPath }] }),
+      'utf8'
+    )
+    ok(config.loadMcpServersCached(cacheEnv).servers[0].id === 'c2', '配置缓存：文件变化后读到新值')
   }
 
   {
@@ -118,15 +127,14 @@ export async function runMcpTests(ok, modules) {
 
   {
     const marker = join(root, 'sneaky-marker.txt')
-    const manager = new managerMod.McpConnectionManager([
-      {
-        id: 'fx',
-        transport: 'stdio',
-        command: process.execPath,
-        args: [fixture],
-        env: { YAN_MCP_FIXTURE_MARKER: marker }
-      }
-    ])
+    const fxConfig = {
+      id: 'fx',
+      transport: 'stdio',
+      command: process.execPath,
+      args: [fixture],
+      env: { YAN_MCP_FIXTURE_MARKER: marker }
+    }
+    const manager = new managerMod.McpConnectionManager([fxConfig])
     const resultsDir = join(root, 'results')
 
     try {
@@ -137,6 +145,20 @@ export async function runMcpTests(ok, modules) {
         '刚加的 web_search 也在列表里（来源搜索入口靠它）'
       )
       ok(manager.statusOf('fx').status === 'ready', '真连：握手成功后状态是 ready')
+
+      manager.syncServers([{ ...fxConfig, title: '改名后的服务' }])
+      ok(manager.list().find((entry) => entry.id === 'fx')?.title === '改名后的服务', 'syncServers：只改 title 也刷新 list() 里的配置')
+
+      let listCalls = 0
+      const realListTools = manager.listTools.bind(manager)
+      manager.listTools = (...args) => {
+        listCalls += 1
+        return realListTools(...args)
+      }
+      await toolService.describeMcpTool(manager, 'fx', 'add')
+      await toolService.describeMcpTool(manager, 'fx', 'add')
+      ok(listCalls === 1, '描述工具：第二次走缓存，不重复 tools/list', String(listCalls))
+      manager.listTools = realListTools
 
       const described = await toolService.describeMcpTool(manager, 'fx', 'add')
       ok(

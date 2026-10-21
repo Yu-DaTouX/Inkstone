@@ -36,11 +36,6 @@ export function readSourceFiles(): SourceFileRecord[] {
   }
 }
 
-export function listSourceFiles(sessionId: string): SourceFileRecord[] {
-  if (!sessionId) return []
-  return readSourceFiles().filter((record) => record.sessionId === sessionId)
-}
-
 export function addSourceFiles(sessionId: string, paths: string[]): void {
   if (!sessionId || !paths.length) return
   const all = readSourceFiles()
@@ -53,7 +48,3 @@ export function addSourceFiles(sessionId: string, paths: string[]): void {
   write([...others, ...mine].sort((a, b) => a.addedAt - b.addedAt))
 }
 
-export function removeSourceFile(sessionId: string, path: string): void {
-  if (!sessionId) return
-  write(readSourceFiles().filter((record) => !(record.sessionId === sessionId && record.path === path)))
-}

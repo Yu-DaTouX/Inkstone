@@ -1,4 +1,5 @@
-import { memo, useEffect, useState, type JSX } from 'react'
+import { memo, useEffect, useMemo, useState, type JSX } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useSessionText } from './text'
@@ -45,11 +46,12 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const t = useT()
   const { lang } = useI18n()
   const msg = turn.msg
-  const checkpointId = useStore((s) => {
-    if (readOnly || !msg.text || !rewindOwner) return null
-    const owned = s.checkpoints.filter((record) => record.sessionKey === rewindOwner)
-    return matchCheckpoint(owned, msg.text, msg.timestamp)?.id ?? null
-  })
+  const checkpoints = useStore((s) => s.checkpoints)
+  const checkpointId = useMemo(() => {
+    if (readOnly || !msg.text || !rewindOwner || checkpoints.length === 0) return null
+    const owned = checkpoints.filter((record) => record.sessionKey === rewindOwner)
+    return owned.length ? (matchCheckpoint(owned, msg.text, msg.timestamp)?.id ?? null) : null
+  }, [checkpoints, msg.text, msg.timestamp, readOnly, rewindOwner])
   const openRewind = useStore((s) => s.openRewind)
   const insertIntoComposer = useStore((s) => s.insertIntoComposer)
   const tt = useSessionText()
@@ -195,7 +197,7 @@ function NoteTurnView({ turn, sessionId }: { turn: NoteTurn; sessionId: string |
   )
 }
 
-export function replyText(turn: AssistantTurn): string {
+function replyText(turn: AssistantTurn): string {
   const text = (turn.segments.length
     ? turn.segments.flatMap((segment) => segment.response ? [segment.response.text] : [])
     : [turn.response?.text ?? '']).join('\n\n').trim()
@@ -207,11 +209,11 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
   const concise = !showsThinking(view)
   const turn = concise ? { ...sourceTurn, segments: sourceTurn.segments.map(conciseSegment) } : sourceTurn
   const turnThinking = concise && !turn.thinkingLive ? '' : turn.thinking ?? ''
-  const edgeFirst = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).first)
-  const edgeLast = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).last)
+  const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
   const showCompaction = useStore((s) => {
-    if (s.session?.compaction) return edgeLast
-    const anchor = compactionAnchorId(s.messages, s.session?.lastCompaction)
+    if (s.session?.compaction) return edge.last
+    if (!s.session?.lastCompaction) return false
+    const anchor = compactionAnchorId(s.messages, s.session.lastCompaction)
     return anchor !== null && turn.sourceIds.includes(anchor)
   })
   const approvals = useStore((s) => s.approvals)
@@ -230,7 +232,7 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
     <TranscriptViewScope.Provider value={view}>
       <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view}>
         <div className="v3-assistant-body">
-          {edgeFirst ? <BranchSummary /> : null}
+          {edge.first ? <BranchSummary /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
   
           {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} /> : null}
@@ -415,7 +417,7 @@ function turnClockFormats(): { clock: Intl.DateTimeFormat; full: Intl.DateTimeFo
   return clockFormats
 }
 
-export function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {
+function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {
   const date = new Date(timestamp)
   if (!Number.isFinite(date.getTime())) return null
   const formats = turnClockFormats()

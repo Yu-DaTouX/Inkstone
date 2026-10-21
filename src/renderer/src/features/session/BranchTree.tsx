@@ -31,7 +31,7 @@ import { Tree, TreeChevron, TreeItem, TreeItemContent, TreeItemLabel } from '../
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
 
-export interface BranchText {
+interface BranchText {
   title: string
   treeLabel: string
   hint: string
@@ -183,7 +183,7 @@ export interface BranchTransport {
   request: (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
 }
 
-export type BranchTreeLoad =
+type BranchTreeLoad =
   | { ok: true; tree: NativeTreeNode[]; leafId: string | null }
   | { ok: false; error: string }
 
@@ -220,7 +220,7 @@ export async function navigateBranch(
   }
 }
 
-export async function labelBranch(
+async function labelBranch(
   transport: BranchTransport,
   expectedSessionId: string,
   entryId: string,
@@ -236,7 +236,7 @@ export async function labelBranch(
   }
 }
 
-export interface BranchNode {
+interface BranchNode {
   row: NativeTreeRow
   children: BranchNode[]
 }
@@ -254,7 +254,7 @@ export function nestBranchRows(rows: readonly NativeTreeRow[]): BranchNode[] {
   return roots
 }
 
-export interface BranchNodeContext {
+interface BranchNodeContext {
   text: BranchText
   pending: string | null
   blocked: boolean
@@ -360,7 +360,7 @@ export function renderBranchNodes(nodes: readonly BranchNode[], ctx: BranchNodeC
   })
 }
 
-export interface BranchTreeProps {
+interface BranchTreeProps {
   owner: WorkspaceOwner
   transport: BranchTransport
   busy?: boolean

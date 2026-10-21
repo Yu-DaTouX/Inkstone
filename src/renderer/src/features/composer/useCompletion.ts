@@ -3,7 +3,7 @@ import type { Attachment, FileListingStatus, FileRequestContext, SlashCommand } 
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { findAtQuery, replaceAtQuery } from './at-query'
-import type { ComposerKeyEvent } from './composer-keys'
+import { swallowsPendingCompletionKey, type ComposerKeyEvent } from './composer-keys'
 import { replaceTextRange, type ComposerAtomSpec, type TextSelection } from './composer-text'
 import { imageRefLabel, imageRefMatches, imageRefPrefix } from './image-refs'
 
@@ -49,17 +49,23 @@ interface Options {
   composing?: boolean
 }
 
-export function commandSourceRank(command: SlashCommand): number {
+function commandSourceRank(command: SlashCommand): number {
   return { yan: 0, pi: 1, extension: 2, skill: 3, prompt: 4, compatibility: 5 }[command.source]
 }
 
+function foldCase(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  return /^[a-zA-Z]:/.test(trimmed) || trimmed.includes('\\') ? trimmed.toLowerCase() : trimmed
+}
+
 function sameFileCwd(a: string, b: string): boolean {
-  return a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
+  return foldCase(a) === foldCase(b)
 }
 
 export function toAbsoluteFilePath(cwd: string, rel: string): string {
   const root = cwd.replace(/[\\/]+$/, '')
-  return rel ? `${root}\\${rel.replace(/\//g, '\\')}` : root
+  const sep = root.includes('\\') ? '\\' : '/'
+  return rel ? `${root}${sep}${rel.replace(/[\\/]/g, sep)}` : root
 }
 
 export function firstClause(text?: string): string {
@@ -358,7 +364,13 @@ export function useCompletion({
       setMenu({ open: false, index: 0 })
       return true
     }
-    if (count === 0) return false
+    if (count === 0) {
+      if (swallowsPendingCompletionKey(event.key)) {
+        event.preventDefault()
+        return true
+      }
+      return false
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setMenu((m) => ({ ...m, index: (m.index + 1) % count }))

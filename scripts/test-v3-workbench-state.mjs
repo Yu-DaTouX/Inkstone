@@ -118,7 +118,6 @@ async function buildBundle(outdir) {
     entry,
     `export { WorkbenchPanel } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/WorkbenchPanel'))}'
 export { useUiV3, restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
-export { emptyMountState, nextVisited, mountedTabs, MAX_MOUNTED_PANES } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/mount-state'))}'
 export { openPreviewTab as bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/preview-state'))}'
 `
   )
@@ -364,7 +363,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { WorkbenchPanel, useUiV3, restorableWorkbenchTab, emptyMountState, nextVisited, mountedTabs, MAX_MOUNTED_PANES, bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } = mod
+  const { WorkbenchPanel, useUiV3, restorableWorkbenchTab, bindPreviewPath, previewPathFor, MAX_PREVIEW_BINDINGS } = mod
 
   const PaneStubs = {
     changes: stubPane('ChangesStub'),
@@ -392,23 +391,8 @@ async function main() {
     ...over
   })
 
-  group('mount-state / preview-state 纯函数规则')
+  group('preview-state 纯函数规则')
   {
-    const empty = emptyMountState()
-    ok(empty.size === 0, '初始 visited 为空集（默认关闭零挂载）')
-    ok(nextVisited(empty, { open: false, activeTab: 'changes' }) === empty, '关闭时 visited 原样返回（不注销、不新建）')
-    const opened = nextVisited(empty, { open: true, activeTab: 'changes' })
-    ok(opened.has('changes') && opened.size === 1, '首次 open 只登记当前页签')
-    ok(nextVisited(opened, { open: true, activeTab: 'changes' }) === opened, '同页签再次同步返回原引用（不触发重渲染）')
-    ok(nextVisited(opened, { open: false, activeTab: 'terminal' }) === opened, '关闭不因 activeTab 变化而清 visited')
-    const two = nextVisited(opened, { open: true, activeTab: 'terminal' })
-    ok(two.has('changes') && two.has('terminal'), '打开新页签不丢已访问页签')
-    let all = emptyMountState()
-    const fixedTabs = ['changes', 'terminal', 'files', 'browser', 'preview', 'context', 'branch', 'logs', 'quota']
-    for (const tab of fixedTabs) all = nextVisited(all, { open: true, activeTab: tab })
-    ok(MAX_MOUNTED_PANES === 9 && mountedTabs(all).length === 9, '九个固定页签最多九块', { max: MAX_MOUNTED_PANES, mounted: mountedTabs(all).length })
-    assert.deepEqual([...mountedTabs(all)], fixedTabs, '挂载顺序按固定页签顺序')
-
     const path = 'C:/proj/a/readme.md'
     let bindings = new Map()
     bindings = bindPreviewPath(bindings, 'sess-a', path)
@@ -479,6 +463,12 @@ async function main() {
     tabs = paneSlots(tree).map((s) => s.props.tab)
     ok(tabs.includes('terminal') && tabs.includes('files') && !tabs.includes('browser'), '重新打开沿用已访问集合，未访问页签仍不挂', tabs)
     ok(!tabs.includes('context'), '未点开的上下文页签不挂载（只读但不预建）', tabs)
+
+    useUiV3.getState().closeWorkspacePane('terminal')
+    tree = rt.render(WorkbenchPanel, panelProps({ open: true }))
+    tabs = paneSlots(tree).map((s) => s.props.tab)
+    ok(!tabs.includes('terminal'), '关闭的页签从挂载集合移除（面板定时器与订阅随之卸载）', tabs)
+    ok(tabs.includes('files'), '其它已打开页签仍挂载', tabs)
   }
 
   group('WorkbenchPanel：owner 切换先隐藏旧 owner；active/visible 双门')

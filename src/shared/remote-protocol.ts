@@ -19,12 +19,6 @@ export interface RemoteInfo {
   computer?: { name: string }
 }
 
-export interface RemotePairRequest {
-  code: string
-  deviceName: string
-  kind?: 'phone' | 'peer' | 'agent'
-}
-
 export interface RemotePairResponse {
   ok: true
   deviceId: string
@@ -160,10 +154,4 @@ export interface RemoteArtifact {
   createdAt: number
   previewable: boolean
   unavailable?: boolean
-}
-
-export interface RemoteError {
-  ok: false
-  error: string
-  code?: string
 }

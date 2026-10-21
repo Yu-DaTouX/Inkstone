@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 342c1f23233cf3e8156ca8343fa8a5fc5c313157eba2ed52ce0c95bf5cb52d32 */
+/* source-sha256: 24cf86e6a5f604dca428529e2d95f7a308af264584f7cf6b453edb480cf1cf4c */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",
@@ -176,7 +176,11 @@ function mergeCustomProviders(modelsJson, updates, removals = []) {
     if (!isYanProviderId(update.id)) continue;
     const previous = providers[update.id] ?? {};
     const entry = { ...previous, api: update.api, baseUrl: update.baseUrl };
-    entry.models = update.models;
+    const previousModels = Array.isArray(previous.models) ? previous.models.filter((m) => !!m && typeof m === "object") : [];
+    entry.models = update.models.map((model) => {
+      const prior = previousModels.find((item) => item.id === model.id);
+      return prior ? { ...prior, ...model } : model;
+    });
     if (update.apiKey) entry.apiKey = update.apiKey;
     else if (typeof previous.apiKey === "string") entry.apiKey = previous.apiKey;
     providers[update.id] = entry;

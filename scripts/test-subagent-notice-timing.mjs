@@ -464,7 +464,7 @@ try {
         const low = scenario({ siblings: { 'sess-low': 1 } })
         low.notify(finish('sub-low', 'sess-low', { startedAt: 0, endedAt: 100_000 }))
         await settle()
-        check(deadlines().length === 1 && deadlines()[0].ms === NOTICE_BATCH_MIN_WAIT_MS, '有兄弟：短任务抬到 2 分钟下限', JSON.stringify(clock.pending().map((t) => t.ms)))
+        check(deadlines().length === 1 && deadlines()[0].ms === NOTICE_BATCH_MIN_WAIT_MS, '有兄弟：短任务抬到 1 分钟下限', JSON.stringify(clock.pending().map((t) => t.ms)))
 
         const high = scenario({ siblings: { 'sess-high': 1 } })
         high.notify(finish('sub-high', 'sess-high', { startedAt: 0, endedAt: 2_000_000 }))

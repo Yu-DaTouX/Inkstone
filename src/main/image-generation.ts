@@ -617,6 +617,13 @@ async function sdWebUiImage(req: ImageGenerationRequest, sources: SourceImage[],
 
 const LOCAL_TIMEOUT_MS = 15 * 60_000
 
+export function comfyAbortRequests(promptId: string, managed: boolean): Array<{ path: string; body: string }> {
+  return [
+    ...(managed ? [{ path: '/interrupt', body: '{}' }] : []),
+    { path: '/queue', body: JSON.stringify({ delete: [promptId] }) }
+  ]
+}
+
 export function comfyCandidates(entries: ComfyWorkflowEntry[], wanted: string, edit: boolean): ComfyWorkflowEntry[] {
   const normalize = (name: string): string => name.toLowerCase().replace(/\.json$/, '').replace(/^.*\//, '')
   const named = wanted || process.env.YAN_COMFYUI_WORKFLOW?.trim() || ''
@@ -679,7 +686,7 @@ async function buildComfyPrompt(
   throw new ImageProviderError(candidates.length ? 'local_workflow_unsupported' : 'local_workflow_missing', problems.slice(0, 3).join('；') || undefined)
 }
 
-async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
+async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, managed: boolean, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
   const entries = await waitForImage(listComfyWorkflows(server.baseUrl).catch(() => []), signal)
   const wanted = stringParam(req.model, '')
   const candidates = comfyCandidates(entries, wanted, sources.length > 0)
@@ -709,15 +716,17 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
   if (!queued.ok) throw await httpError('local', queued)
   const promptId = ((await queued.json()) as { prompt_id?: string }).prompt_id
   if (!promptId) throw new ImageProviderError('local_image_result_missing')
-  const cancelQueued = (): void => {
-    void fetch(`${server.baseUrl}/queue`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delete: [promptId] }), signal: AbortSignal.timeout(5_000)
-    }).catch(() => undefined)
+  const abortPrompt = (): void => {
+    for (const request of comfyAbortRequests(promptId, managed)) {
+      void fetch(`${server.baseUrl}${request.path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: request.body, signal: AbortSignal.timeout(5_000)
+      }).catch(() => undefined)
+    }
   }
-  signal?.addEventListener('abort', cancelQueued, { once: true })
+  signal?.addEventListener('abort', abortPrompt, { once: true })
   try {
-    if (signal?.aborted) { cancelQueued(); checkImageCancelled(signal) }
+    if (signal?.aborted) { abortPrompt(); checkImageCancelled(signal) }
     report?.('generating', `${server.name} · ${chosen.name}`)
     const deadline = Date.now() + LOCAL_TIMEOUT_MS
     while (Date.now() < deadline) {
@@ -746,10 +755,10 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
       if (!file.ok) throw await httpError('local', file)
       return { bytes: Buffer.from(await file.arrayBuffer()), model: chosen.name }
     }
-    cancelQueued()
+    abortPrompt()
     throw new ImageProviderError('local_timeout')
   } finally {
-    signal?.removeEventListener('abort', cancelQueued)
+    signal?.removeEventListener('abort', abortPrompt)
   }
 }
 
@@ -842,11 +851,11 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     }
     if (!server) throw new ImageProviderError('local_service_missing')
     if (server.kind === 'comfyui') {
-      const release = holdManagedComfy(server.baseUrl)
+      const hold = holdManagedComfy(server.baseUrl)
       try {
-        generated = await comfyImage(req, sources, server, report, signal)
+        generated = await comfyImage(req, sources, server, hold.managed, report, signal)
       } finally {
-        release()
+        hold.release()
       }
     } else generated = await sdWebUiImage(req, sources, server, report, signal)
   } else {
@@ -857,6 +866,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
 
   if (generated.bytes.length === 0) throw new ImageProviderError('image_result_empty')
   const format = provider === 'mock' ? 'svg' : sniffFormat(generated.bytes) ?? formatOf(request.format)
+  checkImageCancelled(signal)
   report?.('saving', '正在保存受控文件')
   const artifact = await new ArtifactStore(context.artifactDir).save({
     sessionFile: context.sessionFile,

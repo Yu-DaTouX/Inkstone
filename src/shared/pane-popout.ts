@@ -247,7 +247,3 @@ export function isPanePopoutAnyTab(value: unknown): value is PanePopoutAnyTabId 
 export function isPopoutSupported(tab: PanePopoutAnyTabId): boolean {
   return PANE_TRANSFER_MATRIX[tab]?.support === 'supported'
 }
-
-export function isPaneActionAllowed(tab: PanePopoutTabId, type: PaneActionType): boolean {
-  return PANE_ALLOWED_ACTIONS[tab]?.includes(type) ?? false
-}

@@ -121,7 +121,11 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
     const detail = entry.live ? [row.latestActivity, modelName].filter(Boolean).join(' · ') : row.summaryLine ?? modelName
     const output = subagentOutputText(run)
     const stop = async (): Promise<void> => {
-      if ((await stopSubagentChecked(run.id)) === 'gone') onGone()
+      try {
+        if ((await stopSubagentChecked(run.id)) === 'gone') onGone()
+      } catch {
+        useStore.getState().notify('error', text.stopFailed)
+      }
     }
     return (
       <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
@@ -162,6 +166,8 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
         return
       }
       await window.yan.runs.stop(snapshot.runId)
+    } catch {
+      useStore.getState().notify('error', text.stopFailed)
     } finally {
       setStoppingRun(false)
     }

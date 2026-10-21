@@ -8,13 +8,13 @@ export const RECEIPT_PREFIX = '__inkstone_native_receipt__:'
 export const ENVELOPE_VERSION = 1
 const MAX_ARG_BYTES = 256 * 1024
 
-export function resolveAgentDir() {
+function resolveAgentDir() {
   const envDir = process.env.PI_CODING_AGENT_DIR?.trim()
   if (envDir) return resolve(envDir)
   return join(homedir(), '.pi', 'agent')
 }
 
-export function canonicalizeCwd(cwd) {
+function canonicalizeCwd(cwd) {
   const absolute = isAbsolute(cwd) ? resolve(cwd) : resolve(process.cwd(), cwd)
   try {
     return realpathSync(absolute)

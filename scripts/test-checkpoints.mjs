@@ -143,6 +143,65 @@ try {
 
   await cp.pruneCheckpoints(Date.now() + 31 * 24 * 3600 * 1000)
   ok((await cp.listCheckpoints(proj, 'sess-1')).length === 0, '超过 30 天的检查点被清理')
+
+  {
+    const conc = await mkdtemp(join(tmpdir(), 'yan-cp-conc-'))
+    try {
+      await writeFile(join(conc, 'a.txt'), 'A\n')
+      const [first, second] = await Promise.all([
+        cp.captureCheckpoint(conc, 'sess-a', '并发一'),
+        cp.captureCheckpoint(conc, 'sess-b', '并发二')
+      ])
+      ok(!!first && !!second, '同一目录上的两次检查点请求都排队完成', `${!!first} ${!!second}`)
+    } finally {
+      await rm(conc, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  {
+    const gcProj = await mkdtemp(join(tmpdir(), 'yan-cp-gc-'))
+    try {
+      for (const text of ['g1', 'g2', 'g3']) {
+        await writeFile(join(gcProj, 'a.txt'), `${text}\n`)
+        await cp.captureCheckpoint(gcProj, 'gc', text)
+      }
+      const indexDirOf = async (project) => {
+        const root = join(data, 'checkpoints')
+        for (const name of await readdir(root).catch(() => [])) {
+          const dir = join(root, name)
+          try {
+            const parsed = JSON.parse(await read(join(dir, 'index.json')))
+            if (parsed?.cwd && resolve(parsed.cwd).toLowerCase() === resolve(project).toLowerCase()) return { dir, index: parsed }
+          } catch {
+          }
+        }
+        return null
+      }
+      const writeIndex = async (dir, index) => writeFile(join(dir, 'index.json'), JSON.stringify(index))
+      const day = 24 * 3600 * 1000
+      const found = await indexDirOf(gcProj)
+      ok(found !== null && found.index.records.length === 3, 'gc 用例准备三个检查点', String(found?.index.records.length))
+      if (found) {
+        const now = Date.now()
+        found.index.records[0].at = now - 31 * day
+        found.index.lastGcAt = now - 8 * day
+        await writeIndex(found.dir, found.index)
+        await cp.pruneCheckpoints(now)
+        const first = JSON.parse(await read(join(found.dir, 'index.json')))
+        ok(first.records.length === 2, '过期检查点被清理', String(first.records.length))
+        ok(typeof first.lastGcAt === 'number' && Math.abs(first.lastGcAt - now) < 1000, '距上次 gc 超过 7 天后执行 gc 并记录时间')
+
+        first.records[0].at = now - 31 * day
+        await writeIndex(found.dir, first)
+        await cp.pruneCheckpoints(now + 60_000)
+        const second = JSON.parse(await read(join(found.dir, 'index.json')))
+        ok(second.records.length === 1, '第二次过期检查点也被清理', String(second.records.length))
+        ok(second.lastGcAt === first.lastGcAt, '同一天内不再重复 gc')
+      }
+    } finally {
+      await rm(gcProj, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
 } finally {
   await rm(data, { recursive: true, force: true }).catch(() => undefined)
   await rm(proj, { recursive: true, force: true }).catch(() => undefined)

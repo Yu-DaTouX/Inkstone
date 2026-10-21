@@ -245,10 +245,8 @@ export function reduceRun(state: RunState, signal: RunSignal, now: number): RunS
 
     case 'activity': {
       if (state.phase.kind === 'needs-you') return touch(state, now, { activityBeforeWait: signal.activity, activeTools: [] })
-      const stalled = state.phase.kind === 'stalled'
-      if (stalled || state.phase.kind === 'queued') {
-        const since = state.phase.kind === 'running' ? state.phase.since : now
-        return withPhase(state, now, { kind: 'running', since, activity: signal.activity }, { activityBeforeWait: signal.activity, activeTools: [] })
+      if (state.phase.kind === 'stalled' || state.phase.kind === 'queued') {
+        return withPhase(state, now, { kind: 'running', since: now, activity: signal.activity }, { activityBeforeWait: signal.activity, activeTools: [] })
       }
       if (state.phase.kind === 'running') {
         if (state.phase.activity === signal.activity && state.phase.tool === undefined && state.activeTools.length === 0) return touch(state, now)

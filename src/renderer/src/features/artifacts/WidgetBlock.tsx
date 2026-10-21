@@ -73,7 +73,18 @@ function buildDocument(html: string, generation: number): string {
 }
 
 const savedWidgetState = new Map<string, string>()
+const SAVED_WIDGET_STATE_MAX = 32
 let widgetGeneration = 0
+
+function rememberWidgetState(key: string, text: string): void {
+  savedWidgetState.delete(key)
+  savedWidgetState.set(key, text)
+  while (savedWidgetState.size > SAVED_WIDGET_STATE_MAX) {
+    const oldest = savedWidgetState.keys().next()
+    if (oldest.done) break
+    savedWidgetState.delete(oldest.value)
+  }
+}
 
 export interface WidgetBlockProps {
   html: string
@@ -172,7 +183,7 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
           onOpenLink={(link) => void openLink(link)}
           onMessage={(text) => setAsk(text)}
           onStateSave={(text) => {
-            savedWidgetState.set(key, text)
+            rememberWidgetState(key, text)
             setSavedAt(Date.now())
           }}
           onFrameReady={(frame) => {

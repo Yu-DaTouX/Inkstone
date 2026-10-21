@@ -1,10 +1,10 @@
-export interface TurnModelCatalogEntry {
+interface TurnModelCatalogEntry {
   provider: string
   id: string
   name?: string
 }
 
-export interface TurnModelLabel {
+interface TurnModelLabel {
   label: string
   identity: string
 }

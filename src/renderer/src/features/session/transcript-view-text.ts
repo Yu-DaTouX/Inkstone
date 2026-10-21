@@ -1,7 +1,7 @@
 import type { Lang } from '../../i18n'
 import type { TranscriptView } from './transcript-view-model'
 
-export interface TranscriptViewText {
+interface TranscriptViewText {
   menu: string
   label: string
   description: string

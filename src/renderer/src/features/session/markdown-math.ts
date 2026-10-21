@@ -1,7 +1,7 @@
 import type { Element, ElementContent, Root } from 'hast'
 import type { PluggableList } from 'unified'
 
-export type MathLoadState = 'idle' | 'pending' | 'ready' | 'failed'
+type MathLoadState = 'idle' | 'pending' | 'ready' | 'failed'
 
 export interface MathPlugins {
   remark: PluggableList

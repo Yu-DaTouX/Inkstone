@@ -73,7 +73,7 @@ export function terminalFindKeyAction(event: TerminalFindKeyEvent): TerminalFind
   const mod = !!(event.ctrlKey || event.metaKey)
   if (event.key === 'Escape') return 'close'
   if (mod && !event.altKey && !event.shiftKey && event.code === 'KeyF') return 'focus'
-  if (event.key === 'Enter') return event.shiftKey ? 'next' : 'previous'
+  if (event.key === 'Enter') return event.shiftKey ? 'previous' : 'next'
   if (mod && !event.altKey && event.code === 'KeyG') return event.shiftKey ? 'previous' : 'next'
   return null
 }

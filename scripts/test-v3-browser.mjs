@@ -30,12 +30,10 @@ const mod = await import(
 )
 const {
   browserControlAllowed,
-  browserNativeVisible,
   BrowserBoundsSync,
   BrowserSurfaceClaim,
   nativeBoundsFor,
   boundsSignature,
-  boundsArea,
   hasBlockingOverlay,
   shouldShowBrowser,
   OverlayBlockers
@@ -74,14 +72,21 @@ group('owner 门禁：只有活动且资源归属一致才能控制')
 group('可见性：叠加既有 shouldShowBrowser，overlay 遮挡时隐藏、解除后归还')
 {
   const base = { owner: owner(), visible: true, browserOpen: true, browserOwnerKey: 'k1' }
-  ok(browserNativeVisible(base, false) === true, '无遮挡 → 原生层可见')
-  ok(browserNativeVisible(base, true) === false, '有 overlay blocker → 原生层隐藏')
+  const visibleFor = (inputs, overlayBlocked) =>
+    shouldShowBrowser({
+      browserOpen: inputs.browserOpen,
+      rightPanelOpen: true,
+      activeBrowserSurface: browserControlAllowed(inputs),
+      overlayBlockers: overlayBlocked ? 1 : 0
+    })
+  ok(visibleFor(base, false) === true, '无遮挡 → 原生层可见')
+  ok(visibleFor(base, true) === false, '有 overlay blocker → 原生层隐藏')
   ok(
-    browserNativeVisible({ ...base, owner: owner({ active: false }) }, false) === false,
+    visibleFor({ ...base, owner: owner({ active: false }) }, false) === false,
     'active=false 即使没有遮挡也不可见'
   )
   ok(
-    browserNativeVisible({ ...base, browserOwnerKey: 'k2' }, false) === false,
+    visibleFor({ ...base, browserOwnerKey: 'k2' }, false) === false,
     '资源归别人时不显示这条会话的浏览器'
   )
   ok(
@@ -131,7 +136,7 @@ group('坐标：裁剪、半像素量化与签名')
   )
 
   const out = nativeBoundsFor(rect, { left: 0, top: 0, right: 400, bottom: 10, width: 400, height: 10 })
-  ok(boundsArea(out) === 0, '完全滚出裁剪区时面积归零（面板据此隐藏原生层）')
+  ok(out.width === 0 || out.height === 0, '完全滚出裁剪区时面积为零（面板据此隐藏原生层）', out)
 
   const frac = nativeBoundsFor(
     { left: 10.24, top: 20.26, right: 210.26, bottom: 120.24, width: 200.02, height: 99.98 },
@@ -162,14 +167,16 @@ group('边界流程：active=false 不驱动原生层，active 时才发坐标')
   const base = { owner: owner(), visible: true, browserOpen: true, browserOwnerKey: 'k1' }
 
   const inactive = { ...base, owner: owner({ active: false }) }
-  const visibleCalls = []
   let boundsWhenInactive = 0
   if (browserControlAllowed(inactive)) {
     new BrowserBoundsSync({ setBounds: () => (boundsWhenInactive += 1) }).sync(rect)
   }
-  visibleCalls.push(browserNativeVisible(inactive, false))
   ok(boundsWhenInactive === 0, 'inactive 时不发 setBounds')
-  ok(visibleCalls[0] === false, 'inactive 时原生层不可见')
+  ok(
+    shouldShowBrowser({ browserOpen: inactive.browserOpen, rightPanelOpen: true, activeBrowserSurface: browserControlAllowed(inactive), overlayBlockers: 0 }) ===
+      false,
+    'inactive 时原生层不可见'
+  )
 
   const boundsCalls = []
   if (browserControlAllowed(base)) new BrowserBoundsSync({ setBounds: (b) => boundsCalls.push(b) }).sync(rect)

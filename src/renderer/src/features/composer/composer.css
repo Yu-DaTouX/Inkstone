@@ -765,7 +765,6 @@
     font-size: var(--t-footnote);
   }
 
-  .cmp-empty,
   .cmp-state,
   .cmp-hint {
     padding: var(--s-2) var(--s-6);

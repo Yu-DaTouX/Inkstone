@@ -299,6 +299,9 @@ export async function runRunsRegistryTests() {
       assert.deepEqual(new Set(registry.runningStates().map((state) => state.sessionId)), new Set(['a', 'b', 'c', 'd']))
       assert.equal(registry.size(), 7)
       assert.equal(registry.get('missing'), undefined)
+      assert.equal(registry.activeRunIdFor('a'), registry.list().find((run) => run.sessionId === 'a').runId, 'activeRunIdFor 返回当前运行的 runId')
+      assert.equal(registry.activeRunIdFor('e'), undefined, '终态运行不再是 active')
+      assert.equal(registry.activeRunIdFor('nope'), undefined)
     }
 
     {

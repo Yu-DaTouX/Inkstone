@@ -11,7 +11,7 @@ export function codemodeEnabled() {
   }
 }
 
-export function applyCodemodePreference(pi, names) {
+function applyCodemodePreference(pi, names) {
   const all = pi.getAllTools?.() ?? []
   const available = name => all.some(tool => (typeof tool === 'string' ? tool : tool.name) === name)
   const without = names.filter(name => name !== 'codemode')

@@ -34,8 +34,20 @@ async function writeMapAtomic(file: string, value: TitleMap): Promise<void> {
   }
 }
 
+let titlesSnapshot: TitleMap = {}
+
 async function loadTitles(): Promise<TitleMap> {
-  return loadMap(TITLES_FILE)
+  const all = await loadMap(TITLES_FILE)
+  titlesSnapshot = all
+  return all
+}
+
+export function cachedTitlesSync(): TitleMap {
+  return titlesSnapshot
+}
+
+export async function primeCachedTitles(): Promise<void> {
+  await loadTitles().catch(() => undefined)
 }
 
 export async function manualTitles(): Promise<TitleMap> {
@@ -67,6 +79,7 @@ async function saveTitle(sessionId: string, title: string): Promise<void> {
   try {
     const all = await loadTitles()
     all[sessionId] = title
+    titlesSnapshot = { ...titlesSnapshot, [sessionId]: title }
     const keys = Object.keys(all)
     if (keys.length > 300) {
       for (const k of keys.slice(0, keys.length - 300)) delete all[k]

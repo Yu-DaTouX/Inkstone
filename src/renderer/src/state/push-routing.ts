@@ -33,7 +33,7 @@ export function routePush(s: PushRoutingView, m: MainPush): PushRoute {
       reduceSessionRuntime(s.sessionRuntimes, m.runtime, m),
       m.runtime
     )
-    if (m.ch === 'sync' || m.ch === 'state') {
+    if (m.ch === 'sync' || m.ch === 'sync-delta' || m.ch === 'state') {
       const keep = new Set([viewingSessionId(s) ?? '', m.runtime.sessionId || `run:${m.runtime.runId}`, ...(s.visibleSessionIds ?? [])])
       for (const runner of s.runners) if (runner.running || runner.waiting || runner.isActive) {
         keep.add(runner.sessionId || `run:${runner.runId}`)
@@ -49,9 +49,6 @@ export function routePush(s: PushRoutingView, m: MainPush): PushRoute {
     const belongsToView = !viewing || !m.runtime.sessionId || m.runtime.sessionId === viewing
     const viewingFrame = !!viewing && m.runtime.sessionId === viewing
     return { patch, project: belongsToView && (active || viewingFrame) }
-  } else if (m.sessionKey) {
-    if (!s.activeRunnerId) return { patch: { activeRunnerId: m.sessionKey }, project: true }
-    if (s.activeRunnerId !== m.sessionKey) return { patch: null, project: false }
   }
   return { patch: null, project: true }
 }

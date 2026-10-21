@@ -181,7 +181,7 @@ function makeHarness(options = {}) {
     },
     ask: options.ask ?? ((request) => {
       state.askLog.push(request)
-      return Promise.resolve('once')
+      return Promise.resolve({ choice: 'once' })
     }),
     audit,
     serverConfigOf: options.serverConfigOf ?? ((serverId) => (serverId === SERVER ? SERVER_CONFIG : null)),
@@ -256,7 +256,7 @@ await (async () => {
 })()
 
 await (async () => {
-  const deny = makeHarness({ name: 'deny', ask: () => Promise.resolve('deny') })
+  const deny = makeHarness({ name: 'deny', ask: () => Promise.resolve({ choice: 'deny' }) })
   const prepared = await deny.service.prepare('call-1')
   await init(deny.service, prepared.instanceId)
   const result = await deny.service.dispatch(prepared.instanceId, rpc('tools/call', { name: 'read', arguments: {} }, 3))
@@ -339,7 +339,7 @@ await (async () => {
     grants: [{ serverFingerprint: FINGERPRINT, scope: 'server', authorizer: 'user', expiresAt: 1_800_000_000_000 }],
     ask: () => {
       destructiveAsks += 1
-      return Promise.resolve('deny')
+      return Promise.resolve({ choice: 'deny' })
     }
   })
   const prepared = await destructive.service.prepare('call-1')
@@ -545,6 +545,75 @@ await (async () => {
   const snapFail = makeHarness({ name: 'snapshot-throw', snapshotStatus: () => { throw new Error('boom') } })
   const snapThrown = await snapFail.service.snapshot()
   ok(snapThrown.needsRefresh === true && snapThrown.toolCount === 0, '快照状态读取失败：按待刷新/0 工具处理')
+})()
+
+await (async () => {
+  const audit = new McpAppViewAuditStore({ dir: join(root, 'audit-clearsession') })
+  await audit.record('C:/sessions/a.jsonl', {
+    callId: 'c1',
+    toolName: 't',
+    phase: 'requested',
+    permissionMode: 'danger',
+    summary: 's'
+  })
+  const before = await audit.read('C:/sessions/a.jsonl')
+  await audit.clearSession('C:/sessions/a.jsonl')
+  const after = await audit.read('C:/sessions/a.jsonl')
+  ok(before.length === 1 && after.length === 0, '会话删除：clearSession 清掉该会话的审计文件')
+})()
+
+await (async () => {
+  const protoTool = appTool({
+    name: 'needsToString',
+    inputSchema: { type: 'object', properties: { toString: { type: 'string' } }, required: ['toString'] }
+  })
+  const harness = makeHarness({ name: 'proto-args', tools: [protoTool] })
+  const prepared = await harness.service.prepare('call-1')
+  await init(harness.service, prepared.instanceId)
+  const result = await harness.service.dispatch(prepared.instanceId, rpc('tools/call', { name: 'needsToString', arguments: {} }, 7))
+  ok(Boolean(result?.error) && /缺少必填参数/.test(result.error.message), '必填参数判定不过原型链（toString 未提供即缺参）', JSON.stringify(result?.error))
+  ok(harness.state.callLog.length === 0, '缺参不执行工具')
+})()
+
+await (async () => {
+  const bigText = 'x'.repeat(200_000)
+  const harness = makeHarness({
+    name: 'big-result',
+    callImpl: async () => ({
+      result: { content: [{ type: 'text', text: bigText }] },
+      meta: null,
+      structuredContent: null,
+      resourceUri: null,
+      uiCsp: null,
+      isError: false,
+      text: bigText
+    })
+  })
+  const prepared = await harness.service.prepare('call-1')
+  await init(harness.service, prepared.instanceId)
+  const result = await harness.service.dispatch(prepared.instanceId, rpc('tools/call', { name: 'read', arguments: { path: 'x' } }, 8))
+  const text = result?.result?.content?.[0]?.text ?? ''
+  ok(text.length < 40_000 && text.includes('已截断'), '大结果：文本内容截到 32KB 以内并带占位', String(text.length))
+
+  const mode = await harness.service.dispatch(prepared.instanceId, rpc('ui/request-display-mode', { mode: 'fullscreen' }, 9))
+  ok(mode?.result?.displayMode === 'inline', '显示模式：只回报 inline', JSON.stringify(mode?.result))
+})()
+
+await (async () => {
+  const harness = makeHarness({ name: 'reload', maxInstances: 2 })
+  const first = await harness.service.prepare('call-1')
+  await init(harness.service, first.instanceId)
+  const facts = factsFor('s1', 'r1', 3)
+  const secondCallId = 'call-2'
+  harness.service
+  ok(first.kind === 'ready', 'reload：首个实例准备成功')
+  ok(harness.service.resourceStore().size === 1, 'reload：资源存储登记了实例')
+  const removed = harness.service.resetForReload()
+  ok(removed === 1 && harness.service.resourceStore().size === 0, 'reload：重载后实例与资源缓存一起清空', String(removed))
+  const again = await harness.service.prepare('call-1')
+  ok(again.kind === 'ready', 'reload：清空后可以重新准备（不会 8 次后永久不可用）')
+  void facts
+  void secondCallId
 })()
 
 await rm(root, { recursive: true, force: true })

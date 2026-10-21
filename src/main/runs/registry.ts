@@ -284,6 +284,13 @@ export class RunRegistry {
     return entry ? snapshotOf(entry.state) : undefined
   }
 
+  activeRunIdFor(sessionId: string): string | undefined {
+    const id = this.active.get(sessionId)
+    if (!id) return undefined
+    const entry = this.runs.get(id)
+    return entry && !isTerminalPhase(entry.state.phase) ? id : undefined
+  }
+
   size(): number {
     return this.runs.size
   }

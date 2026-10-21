@@ -15,12 +15,15 @@ import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
+import { planSessionSync } from './session-sync-plan'
+import { clearQueueFile, loadQueue, saveQueue } from './queue-persistence'
 import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
+import { mcpApprovalNeeded, mcpCallDanger } from '../shared/mcp-approval'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
@@ -48,7 +51,7 @@ import {
 } from './normalize'
 import { SESSIONS_DIR, SESSIONS_DIR_IS_OVERRIDE } from './sessions'
 import { consumeQueuedItem, reconcileQueueItems, sameQueueImages, snapshotQueue } from './queue-items'
-import { applyQueueRewrite, type QueueRewriteResult } from './queue-edit'
+import { applyQueueRewrite, type QueueRewritePort, type QueueRewriteResult } from './queue-edit'
 import { contextWindowAssumed } from './custom-providers'
 import { clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
@@ -79,7 +82,6 @@ import { UiRequests, questionToolCallId, type HostUiResponse } from './ui-reques
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
 import { paramString } from './command-params'
-import { activeSkillArgs } from './capabilities/skill-files'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
 import {
@@ -109,6 +111,7 @@ import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
+import type { QueueEditOp } from '../shared/ipc'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
 import { comfyStatus, ComfyLaunchError, ensureComfyRunning, stopManagedComfy } from './comfy-launcher'
@@ -160,6 +163,9 @@ const FLUSH_MS = 16
 const MAX_FLUSH_MS = 120
 
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
+const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
+const STOP_ABORT_TIMEOUT_MS = 5_000
+const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 
 type Push = (msg: MainPush) => void
 type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
@@ -356,6 +362,29 @@ async function projectPiPackageArgs(cwd: string): Promise<string[]> {
 
 const EXECUTION_ADMISSION_GRACE_MS = 10_000
 
+function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState } | { error: string } {
+  if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
+  const steering = state.steering.findIndex((item) => item.id === op.id)
+  const kind = steering >= 0 ? 'steering' : state.followUp.some((item) => item.id === op.id) ? 'followUp' : undefined
+  if (!kind) return { error: '这条排队消息已被接收或撤回' }
+  const list = state[kind]
+  const index = steering >= 0 ? steering : list.findIndex((item) => item.id === op.id)
+  if (op.op === 'remove') return { next: { ...state, [kind]: list.filter((item) => item.id !== op.id) } }
+  if (op.op === 'edit') {
+    const text = op.text.trim()
+    if (!text) return { error: '消息内容为空' }
+    const items = [...list]
+    items[index] = { ...items[index], text }
+    return { next: { ...state, [kind]: items } }
+  }
+  const target = index + (op.direction === 'up' ? -1 : 1)
+  if (target < 0 || target >= list.length) return { next: state }
+  const items = [...list]
+  const [moved] = items.splice(index, 1)
+  items.splice(target, 0, moved)
+  return { next: { ...state, [kind]: items } }
+}
+
 export class AgentController extends EventEmitter {
   private rpc: PiRpc | null = null
   private nativeRuntime: NativeSessionRuntime | null = null
@@ -464,6 +493,8 @@ export class AgentController extends EventEmitter {
     this.items.load(messages)
   }
   private suppressPush = false
+  private scopeDepth = 0
+  private scopeChanged = false
   private extUi = new Map<string, ExtUiPush>()
   private extUiPending: Map<string, ExtUiPush> | null = null
   private streaming: {
@@ -483,7 +514,6 @@ export class AgentController extends EventEmitter {
     toolOpen?: boolean
   } | null = null
   private agentRunning = false
-  private wroteThisRun = false
   private streamLoopDetector: StreamLoopDetector | null = null
   private loopGuardTripped = false
   private loopGuardAbortSent = false
@@ -720,6 +750,7 @@ export class AgentController extends EventEmitter {
   private consumedEmptyQueue = { steering: 0, followUp: 0 }
   private queueScope?: { rpc: PiRpc | null; sessionId?: string; generation?: number }
   private queueBusy = false
+  private queueWrite: Promise<void> = Promise.resolve()
   private queueOperations: Promise<void> = Promise.resolve()
   private titleLifecycle = 0
   private stopping = false
@@ -754,9 +785,6 @@ export class AgentController extends EventEmitter {
 
     await this.ensureCapability()
 
-    const managedSkillArgs = this.capabilityOpts?.projectId
-      ? await activeSkillArgs(YAN_DIR, this.capabilityOpts.projectId)
-      : []
     const userSkillArgs = this.userSkills ? await this.userSkills().catch(() => [] as string[]) : []
     const probe = resolvePi({ override: this.piBin })
     const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
@@ -784,7 +812,6 @@ export class AgentController extends EventEmitter {
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
-        ...managedSkillArgs,
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
         ...projectPackageArgs,
@@ -952,6 +979,8 @@ export class AgentController extends EventEmitter {
   }
 
   private async hydrate(): Promise<void> {
+    const syncedBefore = this.messages
+    const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
     const state = await this.requireRpc().command('get_state').catch(() => null)
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
     const sessionFile = this.state?.sessionFile
@@ -994,7 +1023,7 @@ export class AgentController extends EventEmitter {
 
     this.pushedOut.clear()
 
-    this.push({ ch: 'sync', payload: this.messages })
+    this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
     const stats = await this.requireRpc().command('get_session_stats').catch(() => null)
     if (stats?.success) {
@@ -1007,6 +1036,30 @@ export class AgentController extends EventEmitter {
     this.titleTried.clear()
     this.lastTitle = undefined
     void this.maybeGenerateTitle()
+  }
+
+  private pushSessionSync(
+    scopeBefore: { sessionId?: string; sessionFile?: string },
+    syncedBefore: readonly UIMessage[]
+  ): void {
+    const next = this.messages
+    const sameSession =
+      this.state?.sessionId === scopeBefore.sessionId && this.state?.sessionFile === scopeBefore.sessionFile
+    const plan = sameSession ? planSessionSync(syncedBefore, next) : { kind: 'full' as const }
+    if (plan.kind === 'none') return
+    if (plan.kind === 'full') {
+      this.push({ ch: 'sync', payload: next })
+      return
+    }
+    this.push({
+      ch: 'sync-delta',
+      payload: {
+        anchorId: plan.anchorId,
+        anchorIndex: plan.anchorIndex,
+        anchorSignature: plan.anchorSignature,
+        messages: plan.messages
+      }
+    })
   }
 
   async getCustomEntries(): Promise<CustomEntry[]> {
@@ -1930,6 +1983,8 @@ export class AgentController extends EventEmitter {
         }
       }
 
+      if (action === 'call') await this.confirmMcpCall(manager, serverId, toolName, params)
+
       const rawArgs = params.arguments ?? params.args
       const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
       const expectedRevision = this.knowledgeString(params, [
@@ -1957,6 +2012,7 @@ export class AgentController extends EventEmitter {
         }
       }
     } catch (error) {
+      if (error instanceof CapabilityCommandError) throw error
       if (error instanceof McpToolError) {
         throw new CapabilityCommandError(error.code, error.message, error.data)
       }
@@ -1967,6 +2023,33 @@ export class AgentController extends EventEmitter {
 
   private knowledgeString(params: Record<string, unknown>, keys: string[]): string | undefined {
     return paramString(params, keys)
+  }
+
+  private async confirmMcpCall(
+    manager: McpConnectionManager,
+    serverId: string,
+    toolName: string,
+    params: Record<string, unknown>
+  ): Promise<void> {
+    if ((await this.getPermissionMode?.()) === 'all') return
+    const described = await describeMcpTool(manager, serverId, toolName)
+    if (!mcpApprovalNeeded(described.annotations)) return
+    const detail = JSON.stringify(params.arguments ?? params.args ?? {})
+    const answer = this.confirmDanger
+      ? await this.confirmDanger({
+          tool: 'yan mcp call',
+          detail: `${serverId} / ${toolName}\n${detail.slice(0, 2000)}`,
+          reasons: mcpCallDanger(`mcp__${serverId}__${toolName}`, described.annotations),
+          cwd: this.cwd,
+          owner: this.approvalOwner()
+        })
+      : null
+    if (answer?.decision !== 'allow') {
+      throw new CapabilityCommandError(
+        'mcp_call_denied',
+        answer?.feedback ? `用户拒绝了这次 MCP 调用：${answer.feedback}` : '没有得到用户确认，已拒绝这次 MCP 调用'
+      )
+    }
   }
 
   private async currentUserRound(): Promise<number> {
@@ -2197,7 +2280,7 @@ export class AgentController extends EventEmitter {
         const kind = String(ev.type ?? '')
 
         const u = toUsage(evt.usage as PiMessage['usage'], this.state?.model?.id)
-        if (u) this.streaming.usage = u
+        if (u && (this.streaming.usage?.output !== u.output || this.streaming.usage?.input !== u.input)) this.streaming.usage = u
 
         if (
           !this.streaming.firstTokenAt &&
@@ -2252,7 +2335,7 @@ export class AgentController extends EventEmitter {
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {
-          this.turn.outputTokens = Math.max(this.turn.outputTokens ?? 0, finalUsage.output)
+          this.turn.outputTokens = (this.turn.outputTokens ?? 0) + finalUsage.output
         }
         const sp = this.speedOf({ ...s, usage: finalUsage }, Date.now(), this.turn.startedAt)
         const genTiming = this.generationTimingOf(s, endedMono)
@@ -2320,7 +2403,6 @@ export class AgentController extends EventEmitter {
         }, Date.now())
         if (started.created) this.push({ ch: 'msg-add', payload: started.created })
         const call = started.call
-        if (isWriteTool(call.name) || isShellTool(call.name)) this.wroteThisRun = true
         if (isWriteTool(call.name)) {
           const path = writePathOf(call.args)
           if (path) snapshotBefore(call.id, path)
@@ -2365,7 +2447,6 @@ export class AgentController extends EventEmitter {
         break
 
       case 'agent_start':
-        this.wroteThisRun = false
         this.turn.responseDetail = this.currentResponseDetail()
         if (!this.timingContinues || this.turn.startedMono === undefined) this.startTimingSegment()
         else if (this.turn.terminal === 'failed') this.turn.terminal = 'completed'
@@ -2475,7 +2556,18 @@ export class AgentController extends EventEmitter {
         this.markStreaming(false)
         void this.refreshState()
         void this.refreshStats()
-        void this.hydrate()
+        void this.hydrate().catch((error) => {
+          console.warn('[agent] 压缩后刷新会话失败', error)
+          this.push({
+            ch: 'notify',
+            payload: {
+              id: `hydrate-${Date.now()}`,
+              method: 'notify',
+              notifyType: 'warning',
+              message: '压缩后刷新会话失败，请切一次会话或重新打开'
+            }
+          })
+        })
         break
 
       case 'thinking_level_changed':
@@ -2537,6 +2629,7 @@ export class AgentController extends EventEmitter {
               message: `模型额度已到限，已停止自动重试。${modelErrorNotice(retryError)}`
             }
           })
+          this.push({ ch: 'quota-wait', payload: {} } as unknown as MainPush)
           void this.abortRetry()
           break
         }
@@ -3100,7 +3193,30 @@ export class AgentController extends EventEmitter {
       steering: next.steering.filter(item => !isSubagentNotice(item.text)),
       followUp: next.followUp.filter(item => !isSubagentNotice(item.text))
     } })
+    this.queueWrite = this.persistQueue().catch(() => undefined)
     return next
+  }
+
+  private persistQueue(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return Promise.resolve()
+    const items = [...this.queueState.steering, ...this.queueState.followUp].filter(item => !isSubagentNotice(item.text))
+    const steering = this.queueState.steering.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
+    const followUp = this.queueState.followUp.filter(item => !isSubagentNotice(item.text)).map(item => item.text)
+    const images = items.reduce((count, item) => count + (item.images?.length ?? 0), 0)
+    if (!steering.length && !followUp.length && images === 0) return clearQueueFile(sessionId)
+    return saveQueue({ sessionId, steering, followUp, images })
+  }
+
+  async reclaimSavedQueue(): Promise<void> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return
+    if (this.queueState.steering.length || this.queueState.followUp.length) return
+    const saved = await loadQueue(sessionId).catch(() => null)
+    if (!saved) return
+    await clearQueueFile(sessionId).catch(() => undefined)
+    if (!saved.steering.length && !saved.followUp.length) return
+    this.push({ ch: 'queue-reclaimed', payload: { steering: saved.steering, followUp: saved.followUp, sessionId } })
   }
 
   private consumeQueued(text: string, images: NonNullable<QueueItem['images']>): void {
@@ -3166,7 +3282,6 @@ export class AgentController extends EventEmitter {
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
       this.queueScope = { rpc: this.rpc, sessionId, generation }
-      this.queueConsumed.clear()
       try {
         return await work()
       } finally {
@@ -3288,9 +3403,6 @@ export class AgentController extends EventEmitter {
     const payload: Record<string, unknown> = { message: text }
     if (images?.length) {
       payload.images = images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType }))
-    }
-    if (this.agentRunning || this.state?.isStreaming || this.state?.isCompacting) {
-      payload.streamingBehavior = mode ?? 'followUp'
     }
 
     return this.queueRun(async () => {
@@ -3435,17 +3547,31 @@ export class AgentController extends EventEmitter {
     return this.queueRun(async () => {
       if (!this.rpc) return { ok: false, error: 'pi 尚未就绪', dropped: [...next.steering, ...next.followUp] }
       const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
-      return applyQueueRewrite({
-        clearQueue: async () => {
-          const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-          this.requireRpc()
-          return { success: res.success, error: res.error, steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
-        },
-        adoptCleared: (steering, followUp) => this.publishQueue(steering, followUp, true),
-        publish: (queue) => { this.publishQueueItems(queue) },
-        refill: (steering, followUp) => this.refillQueue(steering, followUp)
-      }, original, next)
+      return applyQueueRewrite(this.queueRewritePort(), original, next)
     })
+  }
+
+  async editQueue(op: QueueEditOp): Promise<QueueRewriteResult> {
+    return this.queueRun(async () => {
+      if (!this.rpc) return { ok: false, error: 'pi 尚未就绪' }
+      const original: QueueState = { steering: [...this.queueState.steering], followUp: [...this.queueState.followUp] }
+      const plan = planQueueEditOp(original, op)
+      if ('error' in plan) return { ok: false, error: plan.error }
+      return applyQueueRewrite(this.queueRewritePort(), original, plan.next)
+    })
+  }
+
+  private queueRewritePort(): QueueRewritePort {
+    return {
+      clearQueue: async () => {
+        const res = await this.requireRpc().command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+        this.requireRpc()
+        return { success: res.success, error: res.error, steering: res.data?.steering ?? [], followUp: res.data?.followUp ?? [] }
+      },
+      adoptCleared: (steering, followUp) => this.publishQueue(steering, followUp, true),
+      publish: (queue) => { this.publishQueueItems(queue) },
+      refill: (steering, followUp) => this.refillQueue(steering, followUp)
+    }
   }
 
   private async editQueued(queueId: string, promote: boolean): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }> {
@@ -3629,7 +3755,7 @@ export class AgentController extends EventEmitter {
         cancelled?: boolean
         truncated?: boolean
         fullOutputPath?: string
-      }>('bash', payload, { id: reqId, timeoutMs: 0 + 30 * 60_000 })
+      }>('bash', payload, { id: reqId, timeoutMs: BASH_REQUEST_TIMEOUT_MS })
 
       const b = this.bash?.reqId === reqId ? this.bash : undefined
       if (b) this.bash = null
@@ -3713,8 +3839,8 @@ export class AgentController extends EventEmitter {
     return this.bash !== null
   }
 
-  hasWrittenThisRun(): boolean {
-    return this.wroteThisRun
+  getPendingMessageCount(): number {
+    return this.state?.pendingMessageCount ?? 0
   }
 
   private resetSessionScope(): void {
@@ -3747,24 +3873,31 @@ export class AgentController extends EventEmitter {
   }
 
   private async changeSessionScope<T>(run: (changed: () => void) => Promise<T>): Promise<T> {
-    let changed = false
-    this.suppressPush = true
-    this.extUiPending = new Map()
+    this.scopeDepth += 1
+    if (this.scopeDepth === 1) {
+      this.scopeChanged = false
+      this.suppressPush = true
+      this.extUiPending = new Map()
+    }
     try {
       return await run(() => {
-        changed = true
+        this.scopeChanged = true
         this.retryRun = null
       })
     } finally {
-      const pending = this.extUiPending
-      this.extUiPending = null
-      this.suppressPush = false
-      if (changed) {
-        const previous = [...this.extUi.entries()]
-        this.extUi.clear()
-        for (const [key, msg] of previous) if (!pending.has(key)) this.push(extUiRemoval(msg))
+      this.scopeDepth -= 1
+      if (this.scopeDepth === 0) {
+        const pending = this.extUiPending ?? new Map<string, ExtUiPush>()
+        this.extUiPending = null
+        this.suppressPush = false
+        if (this.scopeChanged) {
+          const previous = [...this.extUi.entries()]
+          this.extUi.clear()
+          for (const [key, msg] of previous) if (!pending.has(key)) this.push(extUiRemoval(msg))
+        }
+        this.scopeChanged = false
+        for (const msg of pending.values()) this.push(msg)
       }
-      for (const msg of pending.values()) this.push(msg)
     }
   }
 
@@ -4428,15 +4561,21 @@ export class AgentController extends EventEmitter {
   }
 
   async stop(): Promise<void> {
-    this.loopGuardContinuationVersion += 1
     this.stopping = true
     this.releaseExecutionAdmission()
+    this.loopGuardContinuationVersion += 1
+    this.cancelApprovals?.()
+    this.retireApprovals?.()
+    const liveRpc = this.rpc
+    if (liveRpc?.running && (this.agentRunning || this.state?.isStreaming || this.bash)) {
+      if (this.turn.terminal === 'completed') this.turn.terminal = 'stopped'
+      await liveRpc.command('abort', {}, { timeoutMs: STOP_ABORT_TIMEOUT_MS }).catch(() => null)
+      await liveRpc.command('abort_bash', {}, { timeoutMs: STOP_ABORT_BASH_TIMEOUT_MS }).catch(() => null)
+    }
     this.nativeRuntime?.dispose()
     this.nativeRuntime = null
     this.titleLifecycle += 1
     this.cancelImages()
-    this.cancelApprovals?.()
-    this.retireApprovals?.()
     this.capabilityServer?.stop()
     this.capabilityServer = undefined
     this.yanCliEnv = undefined
@@ -4457,6 +4596,9 @@ export class AgentController extends EventEmitter {
     this.ui.pending.clear()
     await this.rpc?.close()
     this.rpc = null
+    await this.queueWrite.catch(() => undefined)
+    await this.persistQueue().catch(() => undefined)
+    await this.turn.writeTail.catch(() => undefined)
     this.items.reset()
     this.resetQueue()
   }

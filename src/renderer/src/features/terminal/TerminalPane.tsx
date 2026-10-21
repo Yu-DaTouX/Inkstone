@@ -9,6 +9,7 @@ import { selectOwnedTerminals } from './terminal-session'
 import type { TerminalAdopt, TerminalViewState } from './terminal-session'
 import {
   canAddTerminalTab,
+  othersThan,
   pickActiveAfterClose,
   terminalTabLabel
 } from './terminal-tabs'
@@ -18,6 +19,7 @@ import { TerminalTabStrip, type TerminalTabItem } from './TerminalTabStrip'
 import { TerminalFindBar } from './TerminalFindBar'
 import { TerminalViewMenu } from './TerminalViewMenu'
 import type { TerminalFindDirection } from './terminal-find'
+import { onActivateTerminal } from './terminal-activate'
 import type { TerminalPaneProps } from '../workbench/types'
 import type { TerminalAvailability, TerminalProgramStatus, TerminalSnapshot } from '../../../../shared/ipc'
 import './terminal.css'
@@ -59,6 +61,7 @@ interface TabSeed {
 type PanePhase = 'idle' | 'loading' | 'inactive' | 'unavailable' | 'error' | 'ready'
 
 const BELL_FLASH_MS = 1200
+const FIND_DELAY = 120
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? '')
@@ -78,6 +81,10 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const loadSeq = useRef(0)
   const localSeq = useRef(0)
   const bellTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const focusFrame = useRef(0)
+  const focusSeq = useRef(0)
+  const findTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const [view, setView] = useState<TerminalViewSettings>(() => terminalViewStore().get())
   const [tabs, setTabs] = useState<TabSeed[]>([])
@@ -94,6 +101,16 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   useEffect(() => terminalViewStore().subscribe(() => setView(terminalViewStore().get())), [])
 
   useEffect(() => () => clearTimeout(bellTimer.current), [])
+
+  useEffect(
+    () => () => {
+      focusSeq.current += 1
+      cancelAnimationFrame(focusFrame.current)
+      clearTimeout(focusTimer.current)
+      clearTimeout(findTimer.current)
+    },
+    []
+  )
 
   const load = useCallback(async (): Promise<void> => {
     const my = ++loadSeq.current
@@ -180,16 +197,22 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
   const focusTerminal = useCallback((key: string): void => {
     const hostId = `terminal-host-${key}`
+    const seq = (focusSeq.current += 1)
+    cancelAnimationFrame(focusFrame.current)
+    clearTimeout(focusTimer.current)
     let attempts = 0
     const tryFocus = (): void => {
+      if (focusSeq.current !== seq) return
       const handle = handles.current.get(key)
       handle?.focus()
       const focused = document.activeElement?.closest?.('[data-testid^="terminal-host-"]') ?? null
       if (focused?.getAttribute('data-testid') === hostId) return
       attempts += 1
-      if (attempts < 10) setTimeout(tryFocus, 40)
+      if (attempts < 10) focusTimer.current = setTimeout(() => {
+        focusFrame.current = requestAnimationFrame(tryFocus)
+      }, 40)
     }
-    requestAnimationFrame(tryFocus)
+    focusFrame.current = requestAnimationFrame(tryFocus)
   }, [])
 
   const selectTab = useCallback(
@@ -198,6 +221,17 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
       focusTerminal(key)
     },
     [focusTerminal]
+  )
+
+  useEffect(
+    () =>
+      onActivateTerminal((key, id) => {
+        if (key !== ownerRef.current.key) return
+        if (!tabs.some((tab) => tab.key === id)) return
+        setActive(id)
+        focusTerminal(id)
+      }),
+    [tabs, focusTerminal]
   )
 
   const newTab = useCallback((): void => {
@@ -212,7 +246,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
   const closeTab = useCallback(
     (key: string): void => {
       void handles.current.get(key)?.session()?.kill()
-      setTabs((previous) => previous.filter((tab) => tab.key !== key))
+      setTabs((previous) => othersThan(previous, key))
       setStates((previous) => {
         if (!(key in previous)) return previous
         const next = { ...previous }
@@ -248,6 +282,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     if (!active) return
     const handle = handles.current.get(active)
     const previous = findQuery
+    clearTimeout(findTimer.current)
     setFindOpen(false)
     setFindQuery('')
     setFindNone(false)
@@ -262,6 +297,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
   const runFind = useCallback(
     (query: string, direction: TerminalFindDirection, reset: boolean): void => {
+      clearTimeout(findTimer.current)
       const handle = active ? handles.current.get(active) : undefined
       if (!query) {
         handle?.resetFind()
@@ -273,7 +309,16 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     [active]
   )
 
+  const runFindLater = useCallback(
+    (query: string): void => {
+      clearTimeout(findTimer.current)
+      findTimer.current = setTimeout(() => runFind(query, 'previous', true), FIND_DELAY)
+    },
+    [runFind]
+  )
+
   const closeFind = useCallback((): void => {
+    clearTimeout(findTimer.current)
     setFindOpen(false)
     if (active) handles.current.get(active)?.focus()
     setFindNone(false)
@@ -521,7 +566,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
             text={text}
             onQuery={(query) => {
               setFindQuery(query)
-              runFind(query, 'previous', true)
+              runFindLater(query)
             }}
             onStep={(direction) => runFind(findQuery, direction, false)}
             onClose={closeFind}

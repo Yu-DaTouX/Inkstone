@@ -41,7 +41,13 @@ function docx(zip: ZipReader): OfficeSection[] {
     )
     return rows.map((row) => `<w:p><w:t>${row.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c] ?? c)}</w:t></w:p>`).join('')
   })
-  const lines = blocksOf(body, 'w:p').map((paragraph) => textsOf(paragraph, 'w:t').join('').trim()).filter(Boolean)
+  const lines = blocksOf(body, 'w:p')
+    .map((paragraph) => {
+      const text = textsOf(paragraph, 'w:t').join('').trim()
+      if (!/<w:(?:drawing|pict)\b/.test(paragraph)) return text
+      return text ? `${text} [图片]` : '[图片]'
+    })
+    .filter(Boolean)
   return [{ title: '正文', lines }]
 }
 
@@ -79,15 +85,38 @@ function xlsx(zip: ZipReader): OfficeSection[] {
     }
     sections.push({ title: `工作表：${name}`, lines })
   }
+  sections.push(...charts(zip))
   return sections
 }
 
-function slideNumber(path: string): number {
+function charts(zip: ZipReader): OfficeSection[] {
+  const paths = zip
+    .names()
+    .filter((path) => /^xl\/charts\/chart[^/]*\.xml$/.test(path))
+    .sort((a, b) => xmlIndex(a) - xmlIndex(b))
+  const out: OfficeSection[] = []
+  for (const path of paths) {
+    const xml = zip.text(path)
+    if (!xml) continue
+    const title = textsOf(blocksOf(xml, 'c:title')[0] ?? '', 'a:t').join('').trim() || path.slice('xl/charts/'.length)
+    const lines: string[] = []
+    for (const serie of blocksOf(xml, 'c:ser')) {
+      const name = textsOf(blocksOf(serie, 'c:tx')[0] ?? '', 'c:v').join('').trim()
+      const ranges = textsOf(serie, 'c:f').map((range) => range.trim()).filter(Boolean)
+      if (!name && ranges.length === 0) continue
+      lines.push(ranges.length ? `${name || '未命名系列'}: ${ranges.join(' , ')}` : name)
+    }
+    out.push({ title: `图表：${title}`, lines })
+  }
+  return out
+}
+
+function xmlIndex(path: string): number {
   return Number(/(\d+)\.xml$/.exec(path)?.[1] ?? 0)
 }
 
 function pptx(zip: ZipReader): OfficeSection[] {
-  const slides = zip.names().filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort((a, b) => slideNumber(a) - slideNumber(b))
+  const slides = zip.names().filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort((a, b) => xmlIndex(a) - xmlIndex(b))
   if (slides.length === 0) throw new Error('没有找到幻灯片，不是有效的 PPT 文件')
   return slides.map((path) => {
     const xml = zip.text(path) ?? ''
@@ -96,7 +125,7 @@ function pptx(zip: ZipReader): OfficeSection[] {
     const notes = notesXml
       ? blocksOf(notesXml, 'a:p').map((paragraph) => textsOf(paragraph, 'a:t').join('').trim()).filter((line) => line && !/^\d+$/.test(line))
       : []
-    return { title: `第 ${slideNumber(path)} 页`, lines: notes.length ? [...lines, '— 备注 —', ...notes] : lines }
+    return { title: `第 ${xmlIndex(path)} 页`, lines: notes.length ? [...lines, '— 备注 —', ...notes] : lines }
   })
 }
 

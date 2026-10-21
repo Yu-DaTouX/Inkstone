@@ -91,16 +91,25 @@ export function draftOf(map: DraftMap, key: string | null | undefined): StoredDr
   return map[key]
 }
 
+let cache: DraftMap | null = null
+
+function normalize(map: DraftMap): DraftMap {
+  cache = map
+  return map
+}
+
 export function readDrafts(): DraftMap {
-  if (typeof localStorage === 'undefined') return {}
+  if (cache) return cache
+  if (typeof localStorage === 'undefined') return normalize({})
   try {
-    return parseDrafts(JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? 'null'))
+    return normalize(parseDrafts(JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? 'null')))
   } catch {
-    return {}
+    return normalize({})
   }
 }
 
 export function writeDrafts(map: DraftMap): void {
+  normalize(map)
   if (typeof localStorage === 'undefined') return
   try {
     if (Object.keys(map).length === 0) localStorage.removeItem(DRAFT_STORAGE_KEY)

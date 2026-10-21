@@ -340,7 +340,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const rejected = results.filter((r) => !r.ok)
     ok(accepted.length === 24, '并发启动时24个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
     ok(rejected.length === 1, '第25个并发请求被拒绝', `拒绝=${rejected.length}`)
-    ok(/最多 24 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
+    ok(/最多运行 24 个子代理（当前 24 个）/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限和当前占用的名额', JSON.stringify(rejected[0]?.error))
     await ctrl.stop(accepted[0].run.id)
     ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 24, '停止后可补回一个名额')
     await ctrl.stopAll()
@@ -955,6 +955,130 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(existsSync(join(root, 'new.txt')) && history.get(run.id)?.review === 'discarded', '历史放弃不清理旧 cwd 或删除原项目，调用快照仍保留')
     } finally {
       await rm(root, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-emit-'))
+    const factory = makeRpcFactory()
+    let throwing = true
+    const ctrl = new SubagentController({
+      cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: factory.createRpc,
+      onChange: () => { if (throwing) throw new Error('推送处理器崩了') }
+    })
+    try {
+      const started = await ctrl.start('推送失败不影响运行', undefined, 'controlled-cwd')
+      ok(started.ok, '推送回调抛错不打断启动', started.error)
+      throwing = false
+      const rpc = factory.created[0]
+      rpc.command = async (type, payload, options) => {
+        if (type === 'abort') {
+          ok(options?.timeoutMs === 5_000, 'abort 带 5 秒超时，不会按默认 30 秒挂住退出')
+          return { success: true }
+        }
+        return { success: true }
+      }
+      const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { total: 0 } }
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第一版结论' }], usage } })
+      ok(ctrl.get(started.run.id)?.result?.summary.includes('第一版结论'), '结果摘要来自最后一条助手消息')
+      ok(ctrl.get(started.run.id)?.toolCalls === 0, '推送回调抛错后仍继续处理事件')
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第二版结论' }], usage } })
+      ok(ctrl.get(started.run.id)?.result?.summary.includes('第二版结论'), '摘要缓存随新消息失效')
+      const stopStarted = Date.now()
+      ok((await ctrl.stop(started.run.id)).ok && Date.now() - stopStarted < 2_000, 'abort 立即返回时停止很快结束')
+
+      const liveFactory = makeRpcFactory()
+      const live = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: liveFactory.createRpc, onChange: () => {} })
+      const liveRun = await live.start('收尾期间放弃改动', undefined, 'controlled-cwd')
+      liveFactory.created[0].emit('event', { type: 'agent_settled', aborted: false })
+      const discarded = await live.discard(liveRun.run.id)
+      ok(discarded.ok, '收尾期间放弃改动不抛错', discarded.error)
+      ok(await waitFor(() => live.get(liveRun.run.id)?.review === 'discarded'), '放弃标记不被收尾覆盖', live.get(liveRun.run.id)?.review)
+
+      const stale = { id: 'sub-1234abcd', task: '旧记录', cwd: archive, rootCwd: archive, startedAt: 1_000, status: 'done',
+        isolation: 'shared-cwd', review: 'none', transcript: [], toolCalls: 0, schemaVersion: 1, hidden: false,
+        limits: { totalMs: 1_000, stallTimeoutMs: 2_000, graceMs: 3_000 }, patchPath: join(archive, 'old.patch') }
+      await writeFile(join(archive, 'sub-1234abcd.json'), JSON.stringify(stale), 'utf8')
+      const reloaded = new SubagentController({ cwd: archive, archiveDir: archive, onChange: () => {} })
+      await reloaded.loadHistory()
+      const loaded = reloaded.get('sub-1234abcd')
+      ok(!!loaded && loaded.status === 'done', '历史记录可读回')
+      ok(!('limits' in loaded) && !('patchPath' in loaded) && !('schemaVersion' in loaded), '读回的历史不带写入专用字段', Object.keys(loaded).join(','))
+    } finally {
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-drain-'))
+    const factory = makeRpcFactory()
+    const abortMs = 60
+    let live = 0
+    let peak = 0
+    const createRpc = (opts) => {
+      const rpc = factory.createRpc(opts)
+      rpc.command = async (type) => {
+        if (type !== 'abort') return { success: true }
+        live += 1
+        peak = Math.max(peak, live)
+        await new Promise((resolve) => setTimeout(resolve, abortMs))
+        live -= 1
+        return { success: true }
+      }
+      return rpc
+    }
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc, onChange: () => {} })
+    try {
+      const ids = []
+      for (let i = 0; i < 8; i += 1) {
+        const res = await ctrl.start(`并排启动 ${i}`, undefined, 'controlled-cwd')
+        ok(res.ok, `第 ${i + 1} 个子代理启动成功`, res.error)
+        ids.push(res.run.id)
+      }
+      const serialMs = ids.length * abortMs
+      const startedAt = Date.now()
+      await ctrl.stopAll()
+      const elapsed = Date.now() - startedAt
+      ok(peak >= 2, '停止全部时多路 abort 同时在飞', `峰值 ${peak}`)
+      ok(peak <= 4, '同时在飞的 abort 不超过有界并发上限', `峰值 ${peak}`)
+      ok(elapsed < serialMs, '停止全部比逐个串行更快', `${elapsed}ms < ${serialMs}ms`)
+      ok(ids.every((id) => ctrl.get(id)?.status === 'cancelled'), '有界并发停止后每个都收尾为已停止', ids.map((id) => ctrl.get(id)?.status).join(','))
+      ok(factory.created.every((rpc) => rpc.closed), '每个子代理进程都关掉')
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-drain-fail-'))
+    const factory = makeRpcFactory()
+    let brokenClose = 0
+    const createRpc = (opts) => {
+      const rpc = factory.createRpc(opts)
+      if (factory.created.length === 2) {
+        rpc.close = async () => {
+          brokenClose += 1
+          throw new Error('关闭失败')
+        }
+      }
+      return rpc
+    }
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc, onChange: () => {} })
+    try {
+      const ids = []
+      for (let i = 0; i < 4; i += 1) {
+        const res = await ctrl.start(`一起收尾 ${i}`, undefined, 'controlled-cwd')
+        ids.push(res.run.id)
+      }
+      let rejected = false
+      await ctrl.stopAll().catch(() => { rejected = true })
+      ok(rejected, '某个子代理关不掉时停止全部会报错', String(brokenClose))
+      ok(ids.every((id) => ctrl.get(id)?.status === 'cancelled'), '一个失败不影响其余全部收尾', ids.map((id) => ctrl.get(id)?.status).join(','))
+      ok(factory.created.filter((rpc) => rpc.closed).length === 3, '其余子代理进程都已关闭', String(factory.created.filter((rpc) => rpc.closed).length))
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
+      await rm(archive, { recursive: true, force: true })
     }
   }
 }

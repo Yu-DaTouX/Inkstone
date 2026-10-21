@@ -144,7 +144,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
             <span className="rewind-spacer" />
             {phase === 'ready' && preview && preview.total > 0 ? <Button variant="primary" onPress={() => void run()} data-testid="rewind-confirm">{t('rewind.confirm')}</Button> : null}
             {phase === 'done' && undoId ? <Button onPress={() => void undo()} data-testid="rewind-undo">{t('rewind.undo')}</Button> : null}
-            <Button onPress={close} isDisabled={phase === 'working'}>{phase === 'done' || phase === 'undone' ? t('rewind.close') : t('rewind.cancel')}</Button>
+            <Button onPress={close} isDisabled={phase === 'working'} data-testid="rewind-done">{phase === 'done' || phase === 'undone' ? t('rewind.close') : t('rewind.cancel')}</Button>
           </div>
         </Dialog>
       </Modal>

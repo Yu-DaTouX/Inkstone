@@ -12,8 +12,11 @@ export interface SidebarGroup {
 }
 
 export function sameCwd(a: string, b: string): boolean {
-  const normalize = (value: string): string => value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
-  return normalize(a) === normalize(b)
+  return normalizeCwd(a) === normalizeCwd(b)
+}
+
+function normalizeCwd(value: string): string {
+  return value.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 
 export function shortProject(path: string): string {
@@ -25,18 +28,30 @@ function activityOf(session: SessionSummary): number {
   return session.lastActivityAt ?? session.updatedAt
 }
 
-export function latestRunForSession(
-  runs: readonly RunSnapshot[],
-  session: { id?: string; path?: string }
-): RunSnapshot | null {
-  let found: RunSnapshot | null = null
-  for (const run of runs) {
-    const matches =
-      (!!session.id && run.sessionId === session.id) || (!!session.path && run.sessionPath === session.path)
-    if (!matches) continue
-    if (!found || run.startedAt > found.startedAt) found = run
+export interface RunIndex {
+  latest(session: { id?: string | null; path?: string | null }): RunSnapshot | null
+}
+
+export function indexRuns(runs: readonly RunSnapshot[]): RunIndex {
+  const byId = new Map<string, RunSnapshot>()
+  const byPath = new Map<string, RunSnapshot>()
+  const keep = (map: Map<string, RunSnapshot>, key: string, run: RunSnapshot): void => {
+    const previous = map.get(key)
+    if (!previous || run.startedAt > previous.startedAt) map.set(key, run)
   }
-  return found
+  for (const run of runs) {
+    if (run.sessionId) keep(byId, run.sessionId, run)
+    if (run.sessionPath) keep(byPath, run.sessionPath, run)
+  }
+  return {
+    latest(session) {
+      const bySession = session.id ? byId.get(session.id) : undefined
+      const byFile = session.path ? byPath.get(session.path) : undefined
+      if (!bySession) return byFile ?? null
+      if (!byFile) return bySession
+      return byFile.startedAt > bySession.startedAt ? byFile : bySession
+    }
+  }
 }
 
 export function unreadRunIdsForSession(
@@ -66,11 +81,16 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   const { sessions, projects, projectNames, currentProjectId, currentCwd, titles, manualTitles } = options
   const query = options.query.trim().toLowerCase()
   const recordById = new Map(projects.map((project) => [project.id, project]))
+  const recordByCwd = new Map<string, ProjectRecord>()
+  for (const project of projects) {
+    const key = normalizeCwd(project.cwd)
+    if (!recordByCwd.has(key)) recordByCwd.set(key, project)
+  }
 
   const labelFor = (session: SessionSummary): { key: string; slot: string; label: string; projectId?: string; cwd: string } => {
     const record =
       (session.projectId ? recordById.get(session.projectId) : undefined) ??
-      (session.cwd ? projects.find((project) => sameCwd(project.cwd, session.cwd)) : undefined)
+      (session.cwd ? recordByCwd.get(normalizeCwd(session.cwd)) : undefined)
     if (record) {
       return {
         key: `project:${record.id}`,
@@ -101,10 +121,14 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
     const haystack = [item.title, item.session.cwd, item.group.label, item.session.path]
     return haystack.some((value) => value.toLowerCase().includes(query))
   }
+  const groupLabels = new Map<string, string>()
+  for (const item of decorated) {
+    if (!groupLabels.has(item.group.key)) groupLabels.set(item.group.key, item.group.label)
+  }
   const groupHit = (key: string): boolean => {
     if (!query) return false
-    const sample = decorated.find((item) => item.group.key === key)
-    return sample ? sample.group.label.toLowerCase().includes(query) : false
+    const label = groupLabels.get(key)
+    return label ? label.toLowerCase().includes(query) : false
   }
 
   const byKey = new Map<string, SidebarGroup>()
@@ -195,6 +219,16 @@ export function buildArchivedView(options: {
 }): ArchivedView {
   const query = options.query.trim().toLowerCase()
   const archivedProjects = options.projects.filter((project) => project.archived)
+  const idCounts = new Map<string, number>()
+  const cwdCounts = new Map<string, number>()
+  for (const session of options.sessions) {
+    if (session.archivedAt) continue
+    if (session.projectId) idCounts.set(session.projectId, (idCounts.get(session.projectId) ?? 0) + 1)
+    else if (session.cwd) {
+      const key = session.cwd.toLowerCase()
+      cwdCounts.set(key, (cwdCounts.get(key) ?? 0) + 1)
+    }
+  }
   const labelOf = (record: ProjectRecord): string => record.name || options.projectNames[record.cwd] || shortProject(record.cwd)
   const titleOf = (session: SessionSummary): string =>
     options.manualTitles[session.id] ?? options.titles[session.id] ?? session.title
@@ -203,11 +237,7 @@ export function buildArchivedView(options: {
     .map((record) => ({
       record,
       label: labelOf(record),
-      sessionCount: options.sessions.filter(
-        (session) =>
-          !session.archivedAt &&
-          (session.projectId ? session.projectId === record.id : !!session.cwd && session.cwd.toLowerCase() === record.cwd.toLowerCase())
-      ).length
+      sessionCount: (idCounts.get(record.id) ?? 0) + (cwdCounts.get(record.cwd.toLowerCase()) ?? 0)
     }))
     .filter((item) => !query || item.label.toLowerCase().includes(query) || item.record.cwd.toLowerCase().includes(query))
     .sort((a, b) => b.record.updatedAt - a.record.updatedAt)

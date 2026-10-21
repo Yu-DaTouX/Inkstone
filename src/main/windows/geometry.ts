@@ -11,7 +11,6 @@ export interface Size {
 }
 
 export const QUICK_ASK_SIZE: Size = { width: 560, height: 160 }
-export const MINI_SIZE: Size = { width: 320, height: 264 }
 export const AUX_MARGIN = 12
 
 export function clampToArea(bounds: Rect, area: Rect): Rect {
@@ -39,16 +38,4 @@ export function computeQuickAskBounds(input: {
   const centerX = anchor ? anchor.x + (anchor.width - size.width) / 2 : input.area.x + (input.area.width - size.width) / 2
   const topY = anchor ? anchor.y + (anchor.height - size.height) * ratio : input.area.y + (input.area.height - size.height) * ratio
   return clampToArea({ x: centerX, y: topY, width: size.width, height: size.height }, input.area)
-}
-
-export function computeMiniBounds(input: { area: Rect; anchor?: Rect; size?: Size; margin?: number }): Rect {
-  const size = input.size ?? MINI_SIZE
-  const margin = input.margin ?? AUX_MARGIN
-  const anchor = input.anchor
-  const right = anchor ? anchor.x + anchor.width : input.area.x + input.area.width
-  const top = anchor ? anchor.y : input.area.y
-  return clampToArea(
-    { x: right - size.width - margin, y: top + margin, width: size.width, height: size.height },
-    input.area
-  )
 }

@@ -143,11 +143,8 @@ try {
     ok(service.getCallResult('call-1', { sessionId: 's-other', projectId: owner.projectId }) === null, '跨 owner 拒绝：别的 runner 读不到结果')
     ok(service.getCallResult('call-other', owner) === null, '只读结果接口：未知 callId 返回 null')
 
-    let seen
-    const off = service.onCallResult((event) => { seen = event })
-    await service.call({ owner, callId: 'call-2', serverId: 'app-stdio', toolName: 'no_visibility_note', args: {} })
-    off()
-    ok(seen?.callId === 'call-2' && seen?.text === 'plain', '结构化结果回调：每次调用都会通知')
+    const second = await service.call({ owner, callId: 'call-2', serverId: 'app-stdio', toolName: 'no_visibility_note', args: {} })
+    ok(second.text === 'plain' && service.getCallResult('call-2', owner)?.text === 'plain', '连续调用：结果按 callId 可读回')
 
     const huge = await service.call({ owner, callId: 'call-huge', serverId: 'app-stdio', toolName: 'read_only_note', args: { text: 'x'.repeat(40_000) } })
     ok(huge.truncated && huge.textBytes > 40_000, '32KB：超限调用标记 truncated 并如实回报字节数')
@@ -648,6 +645,23 @@ try {
       providerServer.closeAllConnections?.()
       await new Promise((done) => providerServer.close(done))
     }
+  }
+
+  {
+    const envFileA = join(root, 'singleton-a.json')
+    const envFileB = join(root, 'singleton-b.json')
+    await writeFile(
+      envFileA,
+      JSON.stringify({ servers: [{ id: 'singleton-a', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: { at: 'x', natives: [] } }] })
+    )
+    await writeFile(
+      envFileB,
+      JSON.stringify({ servers: [{ id: 'singleton-b', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: { at: 'x', natives: [] } }] })
+    )
+    const withA = proxy.mcpAppProxyService({ env: { YAN_MCP_SERVERS_FILE: envFileA } })
+    const withB = proxy.mcpAppProxyService({ env: { YAN_MCP_SERVERS_FILE: envFileB } })
+    ok(withA === withB, '单例：调用记录只有一份（App 视图按 callId 读回）')
+    ok(withB.managedConfigOrNull('singleton-b') !== null && withB.managedConfigOrNull('singleton-a') === null, '单例：后续 env 入参被采纳而不是被吞掉')
   }
 
   console.log(`\n托管 MCP 代理通道：${checks} 项检查通过`)

@@ -2,7 +2,7 @@ import { app, net } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -37,22 +37,63 @@ const BINARY_NAMES = ['whisper-cli.exe', 'whisper-cli']
 const MAX_BINARY_ZIP_BYTES = 100 * 1024 * 1024
 const MAX_BINARY_ENTRY_BYTES = 64 * 1024 * 1024
 const PLAN_TTL_MS = 30 * 60_000
+const WORKER_IDLE_MS = 10 * 60_000
+const WHISPER_ASSET_SHA256: Record<string, string> = {
+  'b5454/whisper-bin-x64.zip': '6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb',
+  'b5454/whisper-bin-win-cpu-arm64.zip': '28c37e7b598c3d9bbfef94f3bd67f2ee6f12b7c86f3da5edcf5e4308d615ff6d'
+}
+
+export function whisperAssetSha256(tag: string, assetName: string): string | undefined {
+  return WHISPER_ASSET_SHA256[`${tag}/${assetName}`]
+}
+
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+export function whisperAssetProblem(expected: string | undefined, digest: string): string | undefined {
+  if (!expected) return '没有这个版本转写程序的校验值，已中止下载'
+  return digest === expected ? undefined : '程序包校验失败（SHA-256 不一致），已删除下载内容'
+}
 
 interface PendingPlan {
   plan: VoiceDownloadPlan
   createdAt: number
 }
 
+interface AssetPlan {
+  tag: string
+  name: string
+}
+
 export class VoiceService {
   private plans = new Map<string, PendingPlan>()
+  private assets = new Map<string, AssetPlan>()
   private progress: VoiceDownloadProgress | null = null
   private abort: AbortController | null = null
   private backend: 'cuda' | 'cpu' | 'unknown' = 'unknown'
   private worker: { process: ChildProcess; key: string; url: string; token: string; proxy: ReturnType<typeof createHttpServer> } | null = null
   private workerStart: Promise<string> | null = null
+  private idleTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly getSettings: () => Promise<VoiceInputSettings | undefined>) {
-    app.on('before-quit', () => { this.worker?.process.kill(); this.worker?.proxy.close(); this.worker = null; this.abort?.abort() })
+    app.on('before-quit', () => { this.stopWorker(); this.abort?.abort() })
+  }
+
+  private stopWorker(): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
+    const worker = this.worker
+    this.worker = null
+    if (!worker) return
+    worker.proxy.close()
+    if (worker.process.exitCode === null) worker.process.kill()
+  }
+
+  private scheduleWorkerIdle(): void {
+    if (!this.worker) return
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = setTimeout(() => this.stopWorker(), WORKER_IDLE_MS)
+    this.idleTimer.unref?.()
   }
 
   private async server(binary: string, model: string, language: string): Promise<string | null> {
@@ -60,8 +101,8 @@ export class VoiceService {
     if (!(await isFile(executable))) return null
     const key = `${binary}|${model}|${language}`
     if (this.workerStart) await this.workerStart
-    if (this.worker?.key === key) return this.worker.url
-    this.worker?.process.kill(); this.worker?.proxy.close(); this.worker = null
+    if (this.worker?.key === key) { this.scheduleWorkerIdle(); return this.worker.url }
+    this.stopWorker()
     this.workerStart = (async () => {
       const port = await new Promise<number>((resolve, reject) => {
         const listener = createServer(); listener.on('error', reject)
@@ -96,6 +137,7 @@ export class VoiceService {
             })
             const url = `http://127.0.0.1:${proxyPort}`
             this.worker = { process: child, key, url, token, proxy }
+            this.scheduleWorkerIdle()
             return url
           } } catch { }
           await new Promise((resolve) => setTimeout(resolve, 150))
@@ -224,11 +266,11 @@ export class VoiceService {
         for (const name of names) {
           for (const release of releases) {
             const asset = release.assets?.find((item) => item.name === name)
-            if (asset) { selected = { release, asset }; break }
+            if (asset && whisperAssetSha256(release.tag_name ?? '', asset.name)) { selected = { release, asset }; break }
           }
           if (selected) break
         }
-        if (!selected) return { ok: false, error: '官方发布暂时没有适合这台电脑的转写程序，请稍后重试或指定已有程序' }
+        if (!selected) return { ok: false, error: '官方发布暂时没有可校验的转写程序，请稍后重试或指定已有程序' }
         const { release, asset } = selected
         plan = {
           planId: randomUUID(),
@@ -239,11 +281,21 @@ export class VoiceService {
           sizeKnown: true,
           destination: BIN_DIR
         }
+        this.assets.set(plan.planId, { tag: release.tag_name ?? '', name: asset.name })
       }
+      this.dropStalePlans()
       this.plans.set(plan.planId, { plan, createdAt: Date.now() })
       return { ok: true, plan }
     } catch (error) {
       return { ok: false, error: `无法连接下载服务器：${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+
+  private dropStalePlans(): void {
+    for (const [id, pending] of this.plans) {
+      if (Date.now() - pending.createdAt <= PLAN_TTL_MS) continue
+      this.plans.delete(id)
+      this.assets.delete(id)
     }
   }
 
@@ -252,10 +304,12 @@ export class VoiceService {
     if (!pending || Date.now() - pending.createdAt > PLAN_TTL_MS) return { ok: false, error: '下载确认已失效，请重新查看大小后再确认' }
     if (this.progress?.state === 'running') return { ok: false, error: '已有下载在进行' }
     this.plans.delete(planId)
+    const asset = this.assets.get(planId)
+    this.assets.delete(planId)
     const { plan } = pending
     this.abort = new AbortController()
     this.progress = { planId, label: plan.label, received: 0, total: plan.bytes, state: 'running' }
-    void this.runDownload(plan, this.abort.signal)
+    void this.runDownload(plan, asset, this.abort.signal)
     return { ok: true }
   }
 
@@ -263,7 +317,7 @@ export class VoiceService {
     this.abort?.abort()
   }
 
-  private async runDownload(plan: VoiceDownloadPlan, signal: AbortSignal): Promise<void> {
+  private async runDownload(plan: VoiceDownloadPlan, asset: AssetPlan | undefined, signal: AbortSignal): Promise<void> {
     const partDir = plan.target.kind === 'model' ? MODELS_DIR : VOICE_DIR
     const part = join(partDir, `${plan.target.kind === 'model' ? basename(plan.destination) : 'whisper-bin'}.part`)
     try {
@@ -293,6 +347,8 @@ export class VoiceService {
       if (plan.target.kind === 'model') {
         await rename(part, plan.destination)
       } else {
+        const problem = whisperAssetProblem(asset ? whisperAssetSha256(asset.tag, asset.name) : undefined, sha256Hex(await readFile(part)))
+        if (problem) throw new Error(problem)
         if (this.workerStart) await this.workerStart.catch(() => undefined)
         if (this.worker) {
           const worker = this.worker.process; this.worker.proxy.close(); this.worker = null
@@ -335,6 +391,7 @@ export class VoiceService {
         const response = await fetch(`${url}/inference`, { method: 'POST', body: form, headers: { Authorization: `Bearer ${worker.token}` }, signal: AbortSignal.timeout(120_000) })
         if (!response.ok) throw new Error(`本地转写服务 HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`)
         const result = await response.json() as { text?: string; error?: string }
+        this.scheduleWorkerIdle()
         const text = (result.text ?? '').trim()
         if (!text) return { ok: false, error: result.error ?? '没有识别到内容，请靠近麦克风再试一次' }
         return { ok: true, text, elapsedMs: Date.now() - started }

@@ -55,7 +55,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const sessionBarLabel = sessionBarOpen ? (sessionBarHidden ? text.sessionBarNoRoom : text.hideSessionBar) : text.showSessionBar
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
-  const firstUserTitle = useStore((s) => plainTitleText(s.messages.find((message) => message.role === 'user')?.text ?? '').slice(0, 80))
+  const firstUser = useStore((s) => s.messages.find((message) => message.role === 'user') ?? null)
+  const firstUserTitle = useMemo(() => plainTitleText(firstUser?.text ?? '').slice(0, 80), [firstUser])
   const hasMessages = useStore((s) => s.messages.length > 0)
   const manualTitles = useStore((s) => s.manualTitles)
   const titles = useStore((s) => s.titles)

@@ -25,7 +25,6 @@ export interface RememberSessionInput {
   cwd: string
   projectId?: string
   scope?: SessionScope
-  spaceId?: string | null
   opened?: boolean
   archived?: boolean
   pinned?: boolean
@@ -74,7 +73,6 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     .map((x) => x.slice(0, 80))
     .slice(0, 20)
   const projectId = typeof o.projectId === 'string' && o.projectId.trim() ? o.projectId.slice(0, 80) : undefined
-  const spaceId = typeof o.spaceId === 'string' && o.spaceId.trim() ? o.spaceId.slice(0, 80) : undefined
   const scope: SessionScope = o.scope === 'project' || o.scope === 'pending' ? o.scope : 'global'
   const createdAt = Number.isFinite(o.createdAt) ? Number(o.createdAt) : now()
   const updatedAt = Number.isFinite(o.updatedAt) ? Number(o.updatedAt) : createdAt
@@ -88,7 +86,6 @@ function sanitizeEntry(item: unknown): SessionLayoutEntry | null {
     cwd: o.cwd,
     scope,
     ...(projectId ? { projectId } : {}),
-    ...(spaceId ? { spaceId } : {}),
     ...(candidates.length ? { projectCandidates: candidates } : {}),
     createdAt,
     updatedAt,
@@ -223,7 +220,6 @@ export async function decorateSessions(
       return {
         ...summary,
         ...(entry.projectId ? { projectId: entry.projectId } : {}),
-        ...(entry.spaceId ? { spaceId: entry.spaceId } : {}),
         scope: entry.scope,
         ...(entry.lastOpenedAt ? { lastOpenedAt: entry.lastOpenedAt } : {}),
         ...(entry.archivedAt ? { archivedAt: entry.archivedAt } : {}),
@@ -262,13 +258,6 @@ export async function rememberSession(input: RememberSessionInput): Promise<Sess
       cwd: input.cwd || previous?.cwd || '',
       scope: nextScope,
       ...(input.projectId ? { projectId: input.projectId } : {}),
-      ...(input.spaceId === undefined
-        ? previous?.spaceId
-          ? { spaceId: previous.spaceId }
-          : {}
-        : input.spaceId
-          ? { spaceId: input.spaceId.slice(0, 80) }
-          : {}),
       ...(nextScope === 'pending' && previous?.projectCandidates?.length
         ? { projectCandidates: previous.projectCandidates }
         : {}),

@@ -3,12 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { ChevronDown, ChevronRight, GitCompare, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
-import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
+import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, TextField, cx } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n } from '../../i18n'
 import type { DiffViewMode } from '../diff'
 import { changesText } from './text'
-import { PaneTools, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
+import { PaneTools, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import {
   WORKING_SCOPE,
   commitScope,
@@ -161,7 +161,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const text = useMemo(() => changesText(resolvedLang), [resolvedLang])
   const source = useMemo(() => gitSource ?? defaultGitSource(), [gitSource])
   const loader = useMemo(() => loadPatch ?? defaultLoadPatch(), [loadPatch])
-  const chrome = usePaneChrome()
   const ownerKey = owner.key
   const cwd = owner.cwd
   const generation = owner.generation ?? 0
@@ -224,11 +223,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     setLoading(true)
     setError('')
     setListError('')
-    setRepo(null)
-    setExpected(undefined)
-    setItems([])
-    setPatches({})
-    setMeta(EMPTY_META)
     const listPromise: Promise<ListOutcome> = (async (): Promise<ListOutcome> => {
       try {
         if (source.changes) {
@@ -300,6 +294,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
 
   const treeRows = useMemo(() => flattenFileTree(buildFileTree(items), collapsedDirs), [items, collapsedDirs])
+  const tabbableRowPath = useMemo(() => {
+    const paths = treeRows.map((row) => row.path)
+    if (activePath && paths.includes(activePath)) return activePath
+    return paths[0] ?? null
+  }, [treeRows, activePath])
   const itemByPath = useMemo(() => new Map(items.map((item) => [item.path, item])), [items])
 
   const selectFile = useCallback((path: string): void => {
@@ -540,22 +539,12 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     }
   }
 
-  const head = chrome ? (
+  const head = (
     <PaneTools>
       {scopeMenu}
       {listToggle}
       {refreshButton}
     </PaneTools>
-  ) : (
-    <header className="changes-pane__head">
-      <h2 className="changes-pane__title">{text.title}</h2>
-      <div className="changes-pane__actions">
-        <Badge tone="neutral">{text.readOnly}</Badge>
-        {scopeMenu}
-        {listToggle}
-        {refreshButton}
-      </div>
-    </header>
   )
 
   const problem = repo ? '' : error ? classifyProblem(error, text) : text.notRepo
@@ -662,6 +651,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                           aria-expanded={!collapsedDirs.has(row.path)}
                           data-row-path={row.path}
                           data-row-kind="dir"
+                          tabIndex={row.path === tabbableRowPath ? 0 : -1}
                           className="changes-pane__folder"
                           style={{ paddingLeft: `${8 + row.depth * 12}px` }}
                           onClick={() => toggleDir(row.path)}
@@ -678,6 +668,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                           aria-selected={activePath === row.path}
                           data-row-path={row.path}
                           data-row-kind="file"
+                          tabIndex={row.path === tabbableRowPath ? 0 : -1}
                           className="changes-pane__row"
                           style={{ paddingLeft: `${8 + row.depth * 12}px` }}
                           title={row.path}

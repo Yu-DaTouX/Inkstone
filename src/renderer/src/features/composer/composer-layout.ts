@@ -5,7 +5,7 @@ export const COMPOSER_RIGHT_ORDER = ['voice', 'context', 'model-thinking', 'run'
 export type ComposerLeftControl = (typeof COMPOSER_LEFT_ORDER)[number]
 export type ComposerRightControl = (typeof COMPOSER_RIGHT_ORDER)[number]
 
-export type ComposerMode = 'bash' | 'cmd' | null
+type ComposerMode = 'bash' | 'cmd' | null
 
 export function composerMode(value: string): ComposerMode {
   if (value.startsWith('!')) return 'bash'
@@ -17,13 +17,23 @@ export function composerPrompt(value: string): '$' | '›' {
   return value.startsWith('!') ? '$' : '›'
 }
 
-export interface ComposerPlaceholderState {
+export function composerLocalCommand(value: string, commands: readonly { source: string; name: string }[]): boolean {
+  if (value.startsWith('!')) return true
+  if (value === '/login' || value.startsWith('/login ')) return true
+  const name = /^\/([^\s]+)/.exec(value)?.[1]?.toLowerCase()
+  if (!name) return false
+  return commands.some(
+    (command) => (command.source === 'yan' || command.source === 'compatibility') && command.name.toLowerCase() === name
+  )
+}
+
+interface ComposerPlaceholderState {
   bash: boolean
   session: boolean
   firstRun: boolean
 }
 
-export type ComposerPlaceholderKey =
+type ComposerPlaceholderKey =
   | 'composer.phBash'
   | 'composer.phSession'
   | 'composer.phFirst'
@@ -35,7 +45,7 @@ export function composerPlaceholderKey(state: ComposerPlaceholderState): Compose
   return state.firstRun ? 'composer.phFirst' : 'composer.phDraft'
 }
 
-export interface ComposerSubmitState {
+interface ComposerSubmitState {
   running: boolean
   hasText: boolean
   hasAttachments: boolean

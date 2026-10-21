@@ -1,13 +1,23 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
-const source = fileURLToPath(new URL('../src/renderer/src/features/diff/pure.ts', import.meta.url))
+const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+
+const entry = [
+  "export * from './src/renderer/src/features/diff/types.ts'",
+  "export * from './src/renderer/src/features/diff/limits.ts'",
+  "export * from './src/renderer/src/features/diff/parse.ts'",
+  "export * from './src/renderer/src/features/diff/align.ts'",
+  "export * from './src/renderer/src/features/diff/word-diff.ts'",
+  "export * from './src/renderer/src/features/diff/fold.ts'"
+].join('\n')
+
 const result = await build({
-  entryPoints: [source],
+  stdin: { contents: entry, resolveDir: ROOT, sourcefile: 'v3-diff-test-entry.ts', loader: 'ts' },
   bundle: true,
   write: false,
   platform: 'node',
@@ -16,7 +26,7 @@ const result = await build({
 })
 const mod = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
-const { alignHunk, byteLength, DIFF_LIMITS, foldLines, formatBytes, isBinaryPatch, patchExceedsLimit, parsePatch, tokenizeLine, unquotePath, wordDiff } = mod
+const { alignHunk, byteLength, DIFF_LIMITS, foldLines, formatBytes, isBinaryPatch, parsePatch, tokenizeLine, unquotePath, wordDiff } = mod
 
 const workdir = mkdtempSync(join(tmpdir(), 'yan-v3-diff-'))
 const patchPath = join(workdir, 'synthetic.patch')
@@ -208,9 +218,14 @@ rmSync(workdir, { recursive: true, force: true })
   assert.equal(isBinaryPatch('Binary files a/x and b/x differ'), true)
   assert.equal(isBinaryPatch('GIT binary patch\nliteral 12'), true)
   assert.equal(isBinaryPatch('--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b'), false)
-  assert.equal(patchExceedsLimit('x'.repeat(10), 5), true)
-  assert.equal(patchExceedsLimit('x'.repeat(10), 100), false)
   assert.equal(DIFF_LIMITS.maxBytes < DIFF_LIMITS.hardMaxBytes, true, '软上限要小于硬上限')
+}
+
+{
+  const viewSource = readFileSync(join(ROOT, 'src/renderer/src/features/diff/DiffView.tsx'), 'utf8')
+  assert.equal(viewSource.includes('last: false'), false, '折叠行不再固定 last=false（末尾折叠行按实际位置标记）')
+  assert.equal(viewSource.includes('No newline at end of file'), false, '文件末尾无换行的提示走 i18n 文案')
+  assert.equal(viewSource.includes('patchExceedsLimit'), false, '字节上限直接用已算出的字节数判断，不重复编码')
 }
 
 console.log('R4 diff 纯逻辑：解析 / 对齐 / 词差 / 折叠 / 降级 全部通过')

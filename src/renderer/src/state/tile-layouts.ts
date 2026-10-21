@@ -276,21 +276,8 @@ export function writeTileLayoutEntry(key: string, entry: TileLayoutEntry): TileL
   return entry
 }
 
-export function dropTileLayoutEntry(key: string): void {
-  const state = readTileLayouts()
-  if (!state.sessions[key]) return
-  const sessions = { ...state.sessions }
-  delete sessions[key]
-  writeTileLayouts({ ...state, sessions, order: state.order.filter((item) => item !== key) })
-}
-
 export function readPaneFlexByKind(): PaneFlexByKind {
   return readTileLayouts().lastPaneFlexByKind
-}
-
-export function writePaneFlexByKind(value: PaneFlexByKind): void {
-  const state = readTileLayouts()
-  writeTileLayouts({ ...state, lastPaneFlexByKind: sanitizePaneFlexByKind(value) })
 }
 
 export function rememberPaneFlexByKind(layout: TileLayout, changedKeys: readonly string[]): PaneFlexByKind {
@@ -298,8 +285,4 @@ export function rememberPaneFlexByKind(layout: TileLayout, changedKeys: readonly
   const next = rememberPaneFlex(layout, changedKeys, state.lastPaneFlexByKind)
   if (next !== state.lastPaneFlexByKind) writeTileLayouts({ ...state, lastPaneFlexByKind: next })
   return next
-}
-
-export function paneFlexByKindKey(): string {
-  return TILE_LAYOUTS_KEY
 }

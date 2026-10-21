@@ -141,6 +141,22 @@ export async function runExecutionAdmissionTests(ok) {
 
   {
     const { reg } = make()
+    const a = await reg.select({ cwd: 'C:/fallback', sessionFile: 'C:/fallback/a.jsonl' })
+    const b = await reg.select({ cwd: 'C:/fallback', sessionFile: 'C:/fallback/b.jsonl', activate: false })
+    busy(reg, a.id, true)
+    ok(reg.confirmExecute(a.id, 999999) === true, '本 cwd 没有 claim 时，自己已经在跑的兜底仍放行')
+    const claimB = reg.admitExecute(b.id)
+    ok(claimB.ok === false, 'a 在跑时 b 拿不到 claim')
+    busy(reg, a.id, false)
+    const claim = reg.admitExecute(b.id)
+    ok(claim.ok === true, 'b 先入场拿到 claim')
+    busy(reg, a.id, true)
+    ok(reg.confirmExecute(a.id, 999999) === false, '别人持有 claim 时旧 token 不能靠兜底放行')
+    ok(reg.confirmExecute(b.id, claim.token) === true, '持有 claim 的一方照常 confirm')
+  }
+
+  {
+    const { reg } = make()
     const a = await reg.select({ cwd: 'C:/removed', sessionFile: 'C:/removed/a.jsonl' })
     const b = await reg.select({ cwd: 'C:/removed', sessionFile: 'C:/removed/b.jsonl', activate: false })
     const old = reg.admitExecute(a.id)
@@ -154,10 +170,21 @@ export async function runExecutionAdmissionTests(ok) {
   {
     const { reg } = make()
     const a = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/a.jsonl' })
+    const moved = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/b.jsonl' })
+    ok(moved.ok && moved.via === 'reuse' && moved.id === a.id && (moved.generation ?? 0) > 1, '空闲实例复用换会话后代次前进', JSON.stringify(moved))
+    const fresh = reg.admitExecute(a.id)
+    ok(fresh.ok === true, '换代次后可以重新入场', JSON.stringify(fresh))
+    reg.releaseExecute(a.id, fresh.token)
+    ok(reg.admitExecute(a.id).ok === true, '新 claim 正常归还后可以再入场')
+  }
+
+  {
+    const { reg } = make()
+    const a = await reg.select({ cwd: 'C:/restart', sessionFile: 'C:/restart/a.jsonl' })
     const old = reg.admitExecute(a.id)
     ok(old.ok === true, '旧代次入场成功')
-    const moved = await reg.select({ cwd: 'C:/epoch', sessionFile: 'C:/epoch/b.jsonl' })
-    ok(moved.ok && moved.via === 'reuse' && (moved.generation ?? 0) > 1, '复用换会话后代次前进', JSON.stringify(moved))
+    const reloaded = await reg.restartOne(a.id)
+    ok(reloaded.ok === true, '重载运行实例成功', JSON.stringify(reloaded))
     ok(reg.confirmExecute(a.id, old.token) === false, '换代次后旧 token 不能通过 confirm')
     const fresh = reg.admitExecute(a.id)
     ok(fresh.ok === true, '新代次可以重新入场', JSON.stringify(fresh))
@@ -165,6 +192,27 @@ export async function runExecutionAdmissionTests(ok) {
     ok(reg.confirmExecute(a.id, fresh.token) === true, '旧代 token release 不会清掉新代 claim')
     reg.releaseExecute(a.id, fresh.token)
     ok(reg.admitExecute(a.id).ok === true, '新 claim 正常归还后可以再入场')
+  }
+
+  {
+    const { reg } = make()
+    const a = await reg.select({ cwd: 'C:/pending', sessionFile: 'C:/pending/a.jsonl' })
+    const claim = reg.admitExecute(a.id)
+    ok(claim.ok === true, '先入场拿到 claim（模拟「已发送未开跑」）')
+    const other = await reg.select({ cwd: 'C:/pending', sessionFile: 'C:/pending/b.jsonl' })
+    ok(other.ok === true && other.id !== a.id, '持有 claim 的实例不被复用，另开一个运行实例', JSON.stringify(other))
+    ok(other.via !== 'reuse', '另一个会话不会被塞进正在发送的实例（消息不会落到错会话）', String(other.via))
+    ok(reg.confirmExecute(a.id, claim.token) === true, '原实例的 claim 仍有效（没有被切走）')
+    reg.releaseExecute(a.id, claim.token)
+  }
+
+  {
+    const { reg } = make()
+    const a = await reg.select({ cwd: 'C:/waiting', sessionFile: 'C:/waiting/a.jsonl' })
+    const agent = reg.agentOf(a.id)
+    agent.state = { ...agent.state, pendingMessageCount: 1 }
+    const other = await reg.select({ cwd: 'C:/waiting', sessionFile: 'C:/waiting/b.jsonl' })
+    ok(other.ok === false, '还有待处理消息的实例算忙碌：同 cwd 不再开第二个', JSON.stringify(other))
   }
 
   {
