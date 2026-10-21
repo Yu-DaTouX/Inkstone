@@ -306,13 +306,12 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
   
           <SubagentLine turn={turn} scope={subagentScope} />
   
-          {showCompaction ? <CompactCommandEcho /> : null}
-          {showCompaction ? <CompactionMarker /> : null}
-  
           {streaming ? <LiveRunNotice /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+          {showCompaction ? <CompactCommandEcho /> : null}
+          {showCompaction ? <CompactionMarker /> : null}
         </div>
       </article>
     </TranscriptViewScope.Provider>
