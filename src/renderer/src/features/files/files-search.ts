@@ -267,10 +267,6 @@ export function groupContentHits(
   return { rows, shown, truncated }
 }
 
-export function contentSearchRows(result: FileContentSearchResult): FilesSearchRow[] {
-  return groupContentHits(result.hits).rows
-}
-
 export type FilesSearchError = 'pattern' | 'permission' | 'missing' | 'invalid' | 'error'
 
 export type FilesSearchLimit = 'results' | 'scan' | null
@@ -298,10 +294,6 @@ export function contentSearchLimit(result: FileContentSearchResult, groups: Cont
   if (reasons.some((reason) => reason !== 'result-limit')) return 'scan'
   if (groups.truncated || reasons.includes('result-limit')) return 'results'
   return result.truncated ? 'scan' : null
-}
-
-export function searchStatusFailed(status: string): boolean {
-  return status !== 'ok' && status !== 'empty' && status !== 'partial' && status !== 'cancelled'
 }
 
 export function nameSearchFailed(result: FileNameSearchResult): boolean {

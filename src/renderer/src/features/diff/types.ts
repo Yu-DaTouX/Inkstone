@@ -38,7 +38,3 @@ export interface DiffParseResult {
 }
 
 export type DiffViewMode = 'unified' | 'split'
-
-export function hunkHasLineNumbers(hunk: DiffHunk): boolean {
-  return hunk.lines.some((line) => line.oldLine !== null || line.newLine !== null)
-}
