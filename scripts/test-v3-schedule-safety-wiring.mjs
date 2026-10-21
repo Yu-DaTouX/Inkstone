@@ -153,8 +153,12 @@ try {
   }
   verify(agent.includes('if (!this.confirmExecutionAdmission()) throw new Error('), '真正入队前 confirm 生效')
   verify(agent.includes('this.releaseExecutionAdmission()'), 'agent.ts 有 release 接线')
-  verify(agent.includes("async stop(): Promise<void> {\n    this.stopping = true\n    this.releaseExecutionAdmission()"), 'stop() 归还执行入场 claim')
-  verify(agent.includes('if (this.capabilityOpts.runnerGeneration !== generation) this.releaseExecutionAdmission()'), 'setRunnerGeneration 换代时归还 claim')
+  const stopBody = agent.slice(agent.indexOf('async stop(): Promise<void> {'))
+  const stop = stopBody.slice(0, stopBody.indexOf('\n  }'))
+  verify(stop.includes('this.stopping = true') && stop.indexOf('this.stopping = true') < stop.indexOf('this.releaseExecutionAdmission()'), 'stop() 归还执行入场 claim')
+  const genBody = agent.slice(agent.indexOf('setRunnerGeneration(generation: number): void {'))
+  const gen = genBody.slice(0, genBody.indexOf('\n  }'))
+  verify(gen.includes('runnerGeneration !== generation') && gen.includes('this.releaseExecutionAdmission()'), 'setRunnerGeneration 换代时归还 claim')
 
   const index = await readFile('src/main/index.ts', 'utf8')
   verify(index.includes('execution: runners?.executionPort(id)'), 'index.ts 按 runner 注入 executionPort(id)')

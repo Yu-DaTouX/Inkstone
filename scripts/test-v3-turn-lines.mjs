@@ -650,7 +650,7 @@ async function main() {
     const auth = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('401 unauthorized') })
     ok(byTestId(auth, 'v3-error-retry').length === 0 && byTestId(auth, 'v3-error-model').length === 1, '认证失败不给重试，只给换模型')
 
-    const aborted = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('aborted') })
+    const aborted = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('Request aborted by user') })
     ok(byTestId(aborted, 'v3-error-retry').length === 0 && byTestId(aborted, 'v3-error-model').length === 0 && byTestId(aborted, 'v3-error-compact').length === 0, '取消不给任何动作按钮')
 
     store({

@@ -110,10 +110,10 @@ try {
   const first = await registry.select({ cwd })
   verify(first.ok && first.id && first.runId === first.id, '首个实例建成并带身份')
   const r1 = first.id
-  agents[0].state.isAgentRunning = true
-  const second = await registry.select({ cwd, sessionFile: 'second-session' })
+  const second = await registry.select({ cwd, sessionFile: 'second-session', activate: false })
   verify(second.ok && second.id && second.id !== r1, '同 cwd 另建一个空闲实例')
   const r2 = second.id
+  agents[0].state.isAgentRunning = true
 
   verify(registry.guardExecute(r2).ok === false, '同 cwd busy 冲突：对空闲实例发送被拒')
   verify(registry.guardExecute(r1).ok === true, '同 cwd busy：对忙碌实例自己的插话放行')
