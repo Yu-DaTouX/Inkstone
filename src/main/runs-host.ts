@@ -15,8 +15,6 @@ import type { ApprovalRequest } from '../shared/approval'
 import type { RunObserver, RunObserverContext } from './agent'
 import { YAN_DIR } from './paths'
 
-const SILENT_LONG_TOOLS = ['bash', 'powershell', 'shell', 'exec', 'subagent']
-
 export interface RunsSnapshot {
   revision: number
   runs: RunSnapshot[]
@@ -97,14 +95,13 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
         payload: { revision, upsert: payload.upsert, remove: payload.remove }
       })
     },
-    onError: (error: RunError) => log(`${error.code}：${error.message}`),
-    exemptTools: () => SILENT_LONG_TOOLS
+    onError: (error: RunError) => log(`${error.code}：${error.message}`)
   })
 
   const codeState = new Map<string, 'pending' | 'ready' | 'failed'>()
   const buffered = new Map<string, { ctx: RunContext; signal: RunSignal }[]>()
   const pendingApprovals = new Map<string, RunContext>()
-  const openedSubagents = new Set<string>()
+  const openedSubagents = new Map<string, number>()
 
   const codeKeyOf = (ctx: RunContext): string =>
     ctx.kind === 'subagent' ? (ctx.parentSessionId ?? '') : ctx.sessionId
@@ -341,8 +338,9 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
       const parentRunId = run.parentSessionId ? activeParentRunId(run.parentSessionId) : undefined
       const ctx = subagentRunContext(run, parentRunId ? { parentRunId } : {})
       if (!ctx) return
-      if (!openedSubagents.has(run.id)) {
-        openedSubagents.add(run.id)
+      const activation = run.activeSince ?? 0
+      if (openedSubagents.get(run.id) !== activation) {
+        openedSubagents.set(run.id, activation)
         feed(ctx, { type: 'agent-start' })
       }
       const signals = signalsFromPiEvent(evt, options.now?.() ?? Date.now())

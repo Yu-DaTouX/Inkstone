@@ -393,7 +393,7 @@
         ['1', 'S12·1', '审查样式依赖检查器', { kind: 'running', since: now - 70_000, activity: 'tool', tool: { name: 'bash', label: '检查样式依赖', callId: 'fixture-call-1' } }],
         ['2', 'S12·2', '核对运行投影归属', { kind: 'running', since: now - 40_000, activity: 'streaming' }],
         ['3', 'S12·3', '确认删除本轮临时产物', { kind: 'needs-you', since: now - 30_000, request: { id: 'fixture-req-3', type: 'danger', summary: '删除 .tmp/v3-ui 下的临时截图' } }],
-        ['4', 'S12·4', '整理截图证据清单', { kind: 'stalled', since: now - 25_000, cause: 'no-output' }],
+        ['4', 'S12·4', '整理截图证据清单', { kind: 'stalled', since: now - 25_000, cause: 'retry' }],
         ['5', 'S12·5', '更新公开文档索引', { kind: 'done', at: now - 10_000, seen: false }]
       ].map(([index, code, title, phase]) => ({
         runId: `v3-fixture-run-${index}`,

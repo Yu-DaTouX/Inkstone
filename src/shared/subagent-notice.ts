@@ -48,7 +48,7 @@ export function buildSubagentNotice(
           : ''
     lines.push(`改动：${run.diff.files} 个文件 +${run.diff.additions}/-${run.diff.deletions}${review}`)
   }
-  lines.push(`完整过程：yan subagent get ${run.id}`)
+  lines.push(`完整过程：yan subagent get --id ${run.id}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')
   return `<${SUBAGENT_NOTICE_TAG} id="${run.id}" status="${status}">\n${lines.join('\n')}\n</${SUBAGENT_NOTICE_TAG}>`
 }

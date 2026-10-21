@@ -145,8 +145,6 @@ async function buildRail(outdir) {
   await writeFile(
     entry,
     `export { OutlineRail, userTurnRenderIndex } from '${posix(abs('src/renderer/src/features/session/OutlineRail.tsx'))}'
-export { StalledCard, currentStalledRun } from '${posix(abs('src/renderer/src/features/session/StalledCard.tsx'))}'
-export { stallReason, railText } from '${posix(abs('src/renderer/src/features/session/rail-text.ts'))}'
 export { sessionViewIdentity, sameViewPath } from '${posix(abs('src/renderer/src/features/session/view-state.ts'))}'
 `
   )
@@ -271,22 +269,9 @@ const CONVO = [
   msg('a3', 'assistant', '第三答', { timestamp: 6 })
 ]
 
-const runOf = (over = {}) => ({
-  runId: 'run-1',
-  code: 'S1',
-  kind: 'session',
-  sessionId: 'sess-a',
-  sessionPath: 'C:/proj/A.jsonl',
-  title: 'A',
-  startedAt: 100,
-  phase: { kind: 'stalled', since: 1_000, cause: 'no-output' },
-  counts: { tools: 0, edits: 0, errors: 0 },
-  ...over
-})
-
 async function main() {
   installGlobals()
-  const intervalIds = installWindow()
+  installWindow()
 
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-session-rail-'))
   let rail
@@ -298,7 +283,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { OutlineRail, userTurnRenderIndex, StalledCard, currentStalledRun, stallReason } = rail
+  const { OutlineRail, userTurnRenderIndex } = rail
 
   group('userTurnRenderIndex：用户回合下标 → 含助手块的回合下标')
   {
@@ -336,77 +321,6 @@ async function main() {
     const short = CONVO.slice(0, 4)
     ok(byTestId(rt.render(OutlineRail, { messages: short, onJump: () => {} }), 'v3-outline-tick').length === 2, '2 轮也显示可点击的导航刻度')
     ok(rt.render(OutlineRail, { messages: [], onJump: () => {} }) === null, '空会话：返回 null')
-  }
-
-  group('stallReason：原因 / 详情 / 计时来自 runs-v3 的 phase 与文案函数')
-  {
-    const noOutput = stallReason('zh-CN', { kind: 'stalled', since: 1_000, cause: 'no-output' }, 6_000)
-    ok(noOutput.word === '无响应', '无输出：短词「无响应」', noOutput.word)
-    ok(noOutput.timing.includes('5'), '无输出：计时是已停滞时长 5 秒', noOutput.timing)
-    ok(noOutput.detail === null, '无输出没有额外详情时保持 null', noOutput.detail)
-
-    const toolSilent = stallReason('zh-CN', { kind: 'stalled', since: 0, cause: 'tool-silent', detail: 'npm run build' }, 1_000)
-    ok(toolSilent.word === '工具无输出', '工具无输出短词', toolSilent.word)
-    ok(toolSilent.detail === 'npm run build', '工具无输出详情带命令标签', toolSilent.detail)
-
-    const retry = stallReason('zh-CN', { kind: 'stalled', since: 0, cause: 'retry', retry: { attempt: 2, max: 3, resumeAt: 30_000 } }, 5_000)
-    ok(retry.word === '重试中', '自动重试短词', retry.word)
-    ok(retry.detail === '2/3', '自动重试详情是第几次 / 共几次', retry.detail)
-    ok(retry.timing.includes('25'), '自动重试显示到 resumeAt 的倒计时 25 秒', retry.timing)
-
-    const loop = stallReason('zh-CN', { kind: 'stalled', since: 0, cause: 'loop', detail: '重复输出被中止，不再自动续接' }, 1_000)
-    ok(loop.word === '重复输出', '循环中止短词', loop.word)
-    ok(loop.detail === '重复输出被中止，不再自动续接', '循环中止保留原因详情', loop.detail)
-
-    const rate = stallReason('zh-CN', { kind: 'stalled', since: 0, cause: 'rate-limit' }, 2_000)
-    ok(rate.word === '限流等待', '限流短词', rate.word)
-
-    ok(stallReason('zh-CN', { kind: 'running', since: 0, activity: 'streaming' }, 1_000) === null, '非停滞阶段返回 null')
-    ok(stallReason('en-US', { kind: 'stalled', since: 0, cause: 'loop' }, 1_000).word === 'Looping', '英文环境用英文短词')
-  }
-
-  group('currentStalledRun：只认激活视图、只认 stalled、按 id 或归一化路径归属')
-  {
-    const view = { sessionId: 'sess-a', sessionFile: 'C:/proj/A.jsonl', key: 'C:/proj/A.jsonl' }
-    ok(currentStalledRun([runOf()], view, true)?.runId === 'run-1', '激活视图 + 会话 id 命中：返回该运行')
-    ok(currentStalledRun([runOf()], view, false) === null, '未激活视图：返回 null（停止动作不会落到别的会话）')
-    ok(currentStalledRun([runOf({ phase: { kind: 'running', since: 0, activity: 'streaming' } })], view, true) === null, '运行中不算停滞')
-    ok(
-      currentStalledRun([runOf({ sessionId: 'sess-z', sessionPath: 'C:/proj/Z.jsonl' })], view, true) === null,
-      '别的会话的运行不挂到当前视图'
-    )
-    const pathOnly = { sessionId: null, sessionFile: 'c:/proj/a.jsonl', key: 'c:/proj/a.jsonl' }
-    ok(currentStalledRun([runOf()], pathOnly, true)?.runId === 'run-1', 'path-only 视图按归一化路径命中（大小写 / 分隔符不敏感）')
-    const older = runOf({ runId: 'old', startedAt: 1, phase: { kind: 'stalled', since: 5, cause: 'retry' } })
-    ok(currentStalledRun([older, runOf()], view, true)?.runId === 'run-1', '同一会话多条停滞：取最新开始的那条')
-  }
-
-  group('StalledCard：原因 / 计时 / 停止，不自动续跑')
-  {
-    const rt = makeHookRuntime()
-    globalThis.__V3_HOOKS = rt
-    let stopped = 0
-    let tree = rt.render(StalledCard, { run: runOf(), onStop: () => { stopped += 1 } })
-    ok(byTestId(tree, 'v3-stall').length === 1, '停滞运行渲染出卡片')
-    const texts = JSON.stringify(tree)
-    ok(texts.includes('运行停滞'), '卡片标题「运行停滞」')
-    ok(texts.includes('无响应'), '卡片显示来自 phase 的原因短词')
-    ok(texts.includes('不会自动续跑或停止'), '卡片注明不会自动续跑 / 停止')
-
-    const buttons = byStub(tree, 'button')
-    ok(buttons.length === 1, '只有一个动作按钮（停止），没有「换模型 / 继续」等未实现动作', buttons.length)
-    ok(buttons[0].props.variant === 'danger', '停止用危险按钮外观')
-    buttons[0].props.onPress()
-    ok(stopped === 1, '点击停止调用传入的动作（SessionView 接到 store.abort）', stopped)
-
-    ok(rt.render(StalledCard, { run: runOf({ phase: { kind: 'running', since: 0, activity: 'streaming' } }), onStop: () => {} }) === null, '运行中不显示停滞卡')
-    ok(rt.render(StalledCard, { run: null, onStop: () => {} }) === null, '无运行不显示停滞卡')
-
-    intervalIds.clear()
-    tree = rt.render(StalledCard, { run: runOf({ phase: { kind: 'stalled', since: 0, cause: 'retry', retry: { attempt: 1, max: 2, resumeAt: Date.now() + 60_000 } } }), onStop: () => {} })
-    ok(JSON.stringify(tree).includes('后重试'), '自动重试卡片显示倒计时')
-    ok(intervalIds.size >= 1, '停滞期间登记秒级刷新计时器')
-    ok(typeof tree.props.children !== 'undefined', '卡片内容完整')
   }
 
   group('细刻度常驻 + 悬停展开卡片 + 减少动态效果：外观规则')

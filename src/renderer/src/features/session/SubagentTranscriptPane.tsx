@@ -17,6 +17,8 @@ import { SubagentBot } from './SubagentBot'
 import { Icon } from './Icon'
 import { SubagentStateIcon } from './SubagentState'
 import { SubagentReview } from './SubagentReview'
+import { SubagentComposer } from './SubagentComposer'
+import { forwardedText } from './subagent-composer'
 import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
 import { SUBAGENT_CARD_BOT, compactTaskPaths, subagentTitle, useSubagentView } from './SubagentLine'
 import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSubagentRow } from './subagent-actions'
@@ -39,7 +41,7 @@ export function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' 
   return groupIntoTurns(
     run.transcript
       .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== task))
-      .map((item) => ({ ...item, sourceCwd: item.sourceCwd ?? run.cwd }))
+      .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
   )
 }
 
@@ -235,6 +237,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
         <PathList label={tt('subagentSources')} items={model.sources} />
         <PathList label={tt('subagentArtifacts')} items={model.artifacts} />
         <SubagentReview run={run} onMerge={mergeSubagentResult} onDiscard={discardSubagentResult} />
+        <SubagentComposer key={run.id} run={run} />
       </footer>
     </div>
   )

@@ -131,6 +131,32 @@
     display: none;
   }
 
+  .sa-composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .sa-composer-box {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--s-8);
+  }
+
+  .sa-composer-field .ui-textarea {
+    min-height: 0;
+    max-height: 160px;
+    resize: none;
+    field-sizing: content;
+  }
+
+  .sa-composer-hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+  }
+
   .sa-pane-summary {
     margin: 0;
     color: var(--fg3);

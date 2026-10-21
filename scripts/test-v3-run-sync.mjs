@@ -177,7 +177,7 @@ async function main() {
   {
     let state = runsV3Reducer(initialRunsV3State, {
       type: 'push',
-      push: { revision: 4, upsert: [snapshot('a', { kind: 'stalled', since: 1, cause: 'no-output' })], remove: [] }
+      push: { revision: 4, upsert: [snapshot('a', { kind: 'stalled', since: 1, cause: 'retry' })], remove: [] }
     })
     state = runsV3Reducer(state, { type: 'snapshot-start' })
     state = runsV3Reducer(state, { type: 'snapshot-error', message: 'ECONNREFUSED' })
@@ -222,7 +222,7 @@ async function main() {
 
     const duplicated = [
       snapshot('x1', { kind: 'needs-you', since: 9, request: { id: 'q', type: 'confirm', summary: 'x' } }, { sessionId: 'dup' }),
-      snapshot('x2', { kind: 'stalled', since: 8, cause: 'no-output' }, { sessionId: 'dup' })
+      snapshot('x2', { kind: 'stalled', since: 8, cause: 'retry' }, { sessionId: 'dup' })
     ]
     assert.deepEqual(attentionPills(duplicated, {}, 2).map((r) => r.runId), ['x1'])
 

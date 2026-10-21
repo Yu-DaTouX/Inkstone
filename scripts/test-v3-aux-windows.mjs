@@ -113,12 +113,12 @@ try {
   })
   const summary = {
     needsYou: [run('a', { kind: 'needs-you', since: 200, request: { id: 'r', type: 'confirm', summary: 'q' } })],
-    stalled: [run('b', { kind: 'stalled', since: 300, cause: 'no-output' })],
+    stalled: [run('b', { kind: 'stalled', since: 300, cause: 'retry' })],
     failed: [run('c', { kind: 'failed', at: 500, cause: 'host', message: 'x', seen: false })],
     doneUnread: [run('d', { kind: 'done', at: 900, seen: false })],
     active: [
       run('a', { kind: 'needs-you', since: 200, request: { id: 'r', type: 'confirm', summary: 'q' } }),
-      run('b', { kind: 'stalled', since: 300, cause: 'no-output' }),
+      run('b', { kind: 'stalled', since: 300, cause: 'retry' }),
       run('e', { kind: 'running', since: 100, activity: 'waiting-model' }),
       run('f', { kind: 'queued', since: 50, reason: 'followup' })
     ],
@@ -150,8 +150,8 @@ try {
     const many = {
       ...summary,
       stalled: [
-        run('late', { kind: 'stalled', since: 900, cause: 'no-output' }),
-        run('early', { kind: 'stalled', since: 100, cause: 'no-output' })
+        run('late', { kind: 'stalled', since: 900, cause: 'retry' }),
+        run('early', { kind: 'stalled', since: 100, cause: 'retry' })
       ]
     }
     const stalled = items.attentionItems(many).filter((item) => item.statusKey === 'stalled')

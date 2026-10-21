@@ -57,6 +57,106 @@ async function waitFor(predicate, timeoutMs = 5000) {
 
 export async function runSubagentControllerTests(ok, SubagentController) {
   {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-send-'))
+    const factory = makeRpcFactory(), queued = [], prompts = [], finished = []
+    let promptGate = null
+    const createRpc = opts => {
+      const rpc = factory.createRpc(opts), inner = rpc.command
+      rpc.command = async (type, payload, options) => {
+        if (type === 'prompt') prompts.push({ rpc, payload })
+        if (type === 'prompt' && !payload?.streamingBehavior && promptGate) await promptGate
+        if (type === 'prompt' && payload?.streamingBehavior) {
+          queued.push(payload)
+          return { success: true, data: { disposition: 'queued' } }
+        }
+        return inner(type, payload, options)
+      }
+      return rpc
+    }
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, parentSessionId: 'parent-a', prepare: fakePrepare,
+      createRpc, onChange: () => {}, onFinished: run => finished.push(run) })
+    try {
+      const started = await ctrl.start('原任务', undefined, 'controlled-cwd')
+      const id = started.run.id
+      ok((await ctrl.send(id, '   ')).ok === false, '空追加被拒绝')
+      ok((await ctrl.send(id, '补充', 'steer', { parentSessionId: 'parent-b' })).error?.includes('本会话'), '其他会话不能向它追加')
+      ok((await ctrl.send(id, '补充')).error?.includes('本会话'), '主会话来源不带会话身份时也不能追加')
+      ok(queued.length === 0, '被拒绝的追加不会发给 pi')
+      const steer = await ctrl.send(id, '改查 src/main', 'steer', { parentSessionId: 'parent-a' })
+      ok(steer.ok && steer.delivery === 'queued', 'steer 追加送达并标记排队', JSON.stringify(steer))
+      ok(queued[0].streamingBehavior === 'steer' && queued[0].message.startsWith('【主会话追加】') && queued[0].message.endsWith('改查 src/main'), '经 prompt 按 steer 排队，并标明来自主会话')
+      ok(ctrl.get(id).latestActivity.includes('当前工具结束后'), '活动摘要说明送达时机', ctrl.get(id).latestActivity)
+      const follow = await ctrl.send(id, '做完再列出测试', 'followUp', { parentSessionId: 'parent-a' })
+      ok(follow.ok && queued[1].streamingBehavior === 'followUp', 'follow-up 模式按 followUp 排队')
+      factory.created[0].emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => ctrl.get(id)?.status === 'done'), '子代理正常结束')
+      const noSession = await ctrl.send(id, '接着查', 'steer', { from: 'user' })
+      ok(!noSession.ok && noSession.error.includes('会话记录') && factory.created.length === 1, '没有会话记录时不续接', noSession.error)
+      const sessionDir = join(archive, 'sessions', id)
+      await mkdir(sessionDir, { recursive: true })
+      await writeFile(join(sessionDir, 'a.jsonl'), '{}\n')
+      const resumed = await ctrl.send(id, '接着查 src/renderer', 'steer', { from: 'user' })
+      ok(resumed.ok && resumed.delivery === 'resumed', '结束后再发会续接', JSON.stringify(resumed))
+      const second = factory.created[1]
+      ok(!!second && second.args.includes('--session') && second.args[second.args.indexOf('--session') + 1] === join(sessionDir, 'a.jsonl'), '续接用原会话文件重新拉起 pi', JSON.stringify(second?.args))
+      const resumePrompt = prompts.at(-1)
+      ok(resumePrompt.rpc === second && !resumePrompt.payload.streamingBehavior && resumePrompt.payload.message.startsWith('【用户追加】你已经完成过原任务') && resumePrompt.payload.message.endsWith('接着查 src/renderer'), '续接后按新一轮发送，并标明来自用户')
+      ok(ctrl.get(id).status === 'running' && !ctrl.get(id).endedAt && !ctrl.get(id).error, '续接后回到运行中并清掉结束状态')
+      factory.created[0].emit('exit', 0, null)
+      ok(ctrl.get(id).status === 'running', '旧进程迟到的退出事件不影响续接后的运行')
+      second.emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => ctrl.get(id)?.status === 'done' && finished.filter(run => run.id === id).length === 2), '续接后的结束会再通知一次父会话', String(finished.length))
+      ok((await ctrl.send('sub-ffffffff', 'x')).error === '找不到这个子代理', '未知 id 报找不到')
+
+      const createdBeforeStop = factory.created.length
+      const early = ctrl.send(id, '停掉我', 'steer', { from: 'user' })
+      const earlyStop = await ctrl.stop(id)
+      const earlyResult = await early
+      ok(earlyStop.ok && !earlyResult.ok && earlyResult.error.includes('停止'), '续接刚开始时点停止会取消续接', earlyResult.error)
+      ok(factory.created.length === createdBeforeStop && ctrl.get(id).status === 'done', '取消的续接不会拉起进程，也不改状态')
+
+      let openGate = () => {}
+      promptGate = new Promise(resolve => { openGate = resolve })
+      const slow = ctrl.send(id, '慢一点', 'steer', { from: 'user' })
+      ok(await waitFor(() => prompts.at(-1)?.payload.message.endsWith('慢一点')), '续接后的消息已发出')
+      await ctrl.stop(id)
+      openGate()
+      promptGate = null
+      const slowResult = await slow
+      ok(!slowResult.ok && slowResult.error.includes('没有被处理') && ctrl.get(id).status === 'cancelled', '发送途中被停止时不报送达成功', slowResult.error)
+
+      const clearing = ctrl.send(id, '清理时继续', 'steer', { from: 'user' })
+      await ctrl.clearFinished()
+      const clearingResult = await clearing
+      ok(clearingResult.ok && ctrl.get(id)?.status === 'running', '续接进行中时清理已结束不会把它清掉', JSON.stringify(clearingResult))
+      factory.created.at(-1).emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => ctrl.get(id)?.status === 'done'), '再次续接后正常结束')
+
+      const tree = await ctrl.start('改代码', undefined, 'worktree')
+      factory.created.at(-1).emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => ctrl.get(tree.run.id)?.status === 'done'), 'worktree 子代理结束')
+      const refused = await ctrl.send(tree.run.id, '再改一点', 'steer', { from: 'user' })
+      ok(!refused.ok && refused.error.includes('worktree'), 'worktree 子代理结束后不续接', refused.error)
+
+      const reopened = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc, onChange: () => {} })
+      await reopened.loadHistory()
+      const before = factory.created.length
+      const cold = await reopened.send(id, '重启后接着问', 'steer', { parentSessionId: 'parent-a' })
+      ok(cold.ok && cold.delivery === 'resumed' && factory.created.length === before + 1, '重启后可从历史续接', JSON.stringify(cold))
+      ok(reopened.get(id).transcript.length === ctrl.get(id).transcript.length && reopened.get(id).status === 'running', '历史续接保留原记录')
+      factory.created.at(-1).emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => reopened.get(id)?.status === 'done'), '历史续接后正常结束')
+      const draining = reopened.send(id, '停止全部时续接', 'steer', { from: 'user' })
+      await reopened.stopAll()
+      const drainingResult = await draining
+      ok(!drainingResult.ok && reopened.get(id).status !== 'running' && reopened.get(id).status !== 'starting', '停止全部会取消进行中的续接', JSON.stringify({ drainingResult, status: reopened.get(id).status }))
+    } finally {
+      await ctrl.stopAll()
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
     const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-coalesce-'))
     const factory = makeRpcFactory(), pushed = []
     const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare,

@@ -166,6 +166,37 @@ export class SubagentService {
       }
     }
 
+    if (command === 'subagent.send') {
+      const message = typeof params.message === 'string' ? params.message.trim() : ''
+      if (!message) {
+        throw new CapabilityCommandError('subagent_message_required', 'subagent send 需要 message')
+      }
+      if (message.length > 12_000) {
+        throw new CapabilityCommandError('subagent_message_too_long', '追加信息不能超过 12000 个字符')
+      }
+      const rawMode = typeof params.mode === 'string' ? params.mode.trim().toLowerCase() : ''
+      if (rawMode && rawMode !== 'steer' && rawMode !== 'follow-up' && rawMode !== 'followup') {
+        throw new CapabilityCommandError('subagent_mode_invalid', 'mode 只能是 steer 或 follow-up')
+      }
+      const mode = rawMode === 'follow-up' || rawMode === 'followup' ? 'followUp' : 'steer'
+      const result = await ctrl.send(id, message, mode, { parentSessionId: context.parentSessionId, from: 'parent' })
+      if (!result.ok || !result.run) {
+        throw new CapabilityCommandError('subagent_send_failed', result.error ?? `追加信息失败：${id}`)
+      }
+      return {
+        data: result.run,
+        summary: {
+          kind: 'subagent',
+          action: 'send',
+          id,
+          mode: result.delivery === 'resumed' ? 'resume' : mode === 'followUp' ? 'follow-up' : 'steer',
+          delivery: result.delivery,
+          status: result.run.status,
+          latestActivity: result.run.latestActivity
+        }
+      }
+    }
+
     if (command === 'subagent.stop') {
       const result = await ctrl.stop(id)
       if (!result.ok) {

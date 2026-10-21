@@ -1,22 +1,17 @@
 import {
   compareRuns,
   createRunState,
-  detectStall,
   formatChildCode,
   isImmediatePhase,
   isTerminalPhase,
-  normalizeThresholds,
   reduceRun,
   snapshotOf,
-  DEFAULT_STALL_THRESHOLDS,
   type RunKind,
   type RunModel,
   type RunPhase,
   type RunSignal,
   type RunSnapshot,
-  type RunState,
-  type StallCause,
-  type StallThresholds
+  type RunState
 } from '../../shared/runs'
 import { DurableRunHistory, type RunHistoryRecord, type RunHistorySegment, type RunHistoryWriter } from './history'
 import { runSignalFromDangerConfirmation, runSignalFromPiExit, runSignalFromUiRequest, runSignalFromUiResolved, signalsFromPiEvent } from './pi-events'
@@ -54,8 +49,6 @@ export interface RunRegistryOptions {
   newRunId?: () => string
   codes?: SessionCodeStore
   history?: RunHistoryWriter
-  thresholds?: () => Partial<StallThresholds>
-  exemptTools?: () => string[]
   onChange?: (change: RunChange) => void
   onError?: (error: RunError) => void
 }
@@ -104,10 +97,6 @@ export class RunRegistry {
 
   private reportError(error: RunError): void {
     this.options.onError?.(error)
-  }
-
-  private thresholds(): StallThresholds {
-    return normalizeThresholds(this.options.thresholds?.() ?? DEFAULT_STALL_THRESHOLDS)
   }
 
   private resolveCode(ctx: RunContext): string | undefined {
@@ -278,26 +267,6 @@ export class RunRegistry {
     const entry = this.runs.get(runId)
     if (!entry) return null
     return this.apply(entry, { type: 'seen' }, this.now())
-  }
-
-  tick(now: number = this.now()): string[] {
-    if (this.disposed) return []
-    const thresholds = this.thresholds()
-    const exemptTools = this.options.exemptTools?.() ?? []
-    const stalled: string[] = []
-    for (const entry of this.runs.values()) {
-      if (isTerminalPhase(entry.state.phase)) continue
-      const cause = detectStall(entry.state, now, thresholds, { exemptTools })
-      if (!cause) continue
-      if (this.applyStall(entry.state.runId, cause, now)) stalled.push(entry.state.runId)
-    }
-    return stalled
-  }
-
-  applyStall(runId: string, cause: StallCause, now: number = this.now()): RunSnapshot | null {
-    const entry = this.runs.get(runId)
-    if (!entry || isTerminalPhase(entry.state.phase)) return null
-    return this.apply(entry, { type: 'stall-detected', cause }, now)
   }
 
   runningStates(): RunState[] {

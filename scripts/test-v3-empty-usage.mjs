@@ -209,7 +209,7 @@ async function main() {
   ok(sideBySide.includes('import { SessionView }') && sideBySide.includes('<SessionView />'), '真实入口 SideBySide 渲染 SessionView（与 ShellV3 同一链）')
 
   ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && /<AsciiField\s+active=\{turns\.length === 0[^}]*\}/.test(sessionView), 'ASCII 层与空态判定未被本任务改动')
-  ok(sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问 / 停滞卡等既有分支仍保留')
+  ok(!sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问分支仍保留，停滞卡已移除')
   ok(sessionView.includes('VList') && sessionView.includes('renderTurns'), '虚拟列表与回合投影仍保留')
 
   await rm(outdir, { recursive: true, force: true })

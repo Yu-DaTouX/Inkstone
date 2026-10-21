@@ -39,6 +39,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan schedule list | delete --id <ID> | pause --id <ID>
   yan subagent list
   yan subagent get --id <子代理ID>
+  yan subagent send --id <子代理ID> --message "追加信息"
   yan subagent stop --id <子代理ID>
   yan browser <动作> [选项]     内置浏览器（yan browser --help 看全部动作）
   yan search query --query-text "关键词"  联网搜索（--recent / --site 限时间和站点，可重复 --query-text 一次查多个）
@@ -291,6 +292,12 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                   "timeoutMinutes":10}}
   list                         查看所有子代理的状态与活动摘要
   get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
+  send   --id <子代理ID> --message <信息> [--mode steer|follow-up]
+                               向本会话派出的子代理发信息；也可 --request-file send.json
+                               运行中：steer（默认）在当前工具结束后送达，用来纠偏或补充资料；
+                                       follow-up 等它做完原任务再处理
+                               已结束：用它原来的会话续接，它记得之前做过的事（追问不用重派、不用重讲背景）
+                               worktree 子代理结束后、或没启动成功的，不能续接
   stop   --id <子代理ID>        停止一个仍在运行的子代理
 
 说明：
@@ -425,10 +432,11 @@ const GROUP_SPECS = {
     required: { create: ['prompt'], delete: ['id'], pause: ['id'] }
   },
   subagent: {
-    actions: ['start', 'list', 'get', 'stop'],
+    actions: ['start', 'list', 'get', 'send', 'stop'],
     required: {
       start: ['task'],
       get: ['id'],
+      send: ['id', 'message'],
       stop: ['id']
     }
   },

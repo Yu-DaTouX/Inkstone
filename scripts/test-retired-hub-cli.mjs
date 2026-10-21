@@ -154,6 +154,19 @@ async function main() {
       ok(r.status === 0, '假宿主回执 ok 时 CLI 退出码为 0', `status=${r.status}`)
     }
 
+    {
+      const before = trap.seen.length
+      const r = await runCli(['subagent', 'send', '--id', 'sub-1a2b', '--message', '改查 src/main', '--mode', 'follow-up'], fakeEnv(trap.url))
+      await settle()
+      const parsed = JSON.parse(trap.seen[trap.seen.length - 1].body)
+      ok(trap.seen.length === before + 1 && parsed.command === 'subagent.send', 'subagent send 路由到 subagent.send', parsed.command)
+      ok(parsed.params.id === 'sub-1a2b' && parsed.params.message === '改查 src/main' && parsed.params.mode === 'follow-up', 'send 透传 id / message / mode', JSON.stringify(parsed.params))
+      ok(r.status === 0, 'send 回执 ok 时退出码为 0', `status=${r.status}`)
+      const missing = await runCli(['subagent', 'send', '--id', 'sub-1a2b'], fakeEnv(trap.url))
+      await settle()
+      ok(missing.status === 2 && trap.seen.length === before + 1, '缺 --message 时本地报用法错误，不发请求', `status=${missing.status}`)
+    }
+
     console.log('2) 宿主白名单行为')
     const mod = await compileCapabilityServer(tmpDir)
     const { CapabilityServer, CAPABILITY_API_VERSION } = mod
@@ -201,6 +214,8 @@ async function main() {
         const body = await rpc('subagent.start', { task: 'probe' })
         ok(body.ok === true, 'subagent.start 仍在白名单')
         ok(handled[handled.length - 1] === 'subagent.start', 'subagent.start 抵达 handler')
+        const sent = await rpc('subagent.send', { id: 'sub-1a2b', message: 'probe' })
+        ok(sent.ok === true && handled[handled.length - 1] === 'subagent.send', 'subagent.send 在白名单并抵达 handler')
       }
 
       {
