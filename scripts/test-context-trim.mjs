@@ -173,6 +173,10 @@ export async function runContextTrimTests(ok, mod, limits) {
       const path = join(root, 's1', 'c1.txt')
       ok(stub.includes(`Full output: ${path}`) && /offset\/limit/.test(stub), '落盘：存根给出原文路径与按段读取提示', stub)
       ok(readFileSync(path, 'utf8') === big, '落盘：文件内容就是被裁掉的原文')
+      if (process.platform !== 'win32') {
+        const { statSync } = await import('node:fs')
+        ok((statSync(path).mode & 0o777) === 0o600, '落盘：原文文件只给当前用户读写（0o600）')
+      }
       rmSync(path)
       const again = trimMessages(msgs, { trimmed: new Map(stubbed(out).map(id => [id, 1])), projectedTokens: 10, threshold: 80_000, spill })
       ok(again.find((m) => m.toolCallId === 'c1').content[0].text === stub && existsSync(path), '落盘：文件丢失时按原文补写，存根逐字不变')
@@ -234,7 +238,7 @@ export async function runContextTrimTests(ok, mod, limits) {
   }
   ok(DEFAULT_TRIM_TOKENS === limits.DEFAULT_CONTEXT_TRIM_TOKENS && DEFAULT_COMPACT_TOKENS === limits.DEFAULT_AUTO_COMPACT_TOKENS, '阈值：扩展与 shared 的默认值一致')
 
-  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+  const { mkdtempSync, writeFileSync, rmSync, existsSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const piDir = mkdtempSync(join(tmpdir(), 'yan-trim-pi-'))
@@ -280,6 +284,16 @@ export async function runContextTrimTests(ok, mod, limits) {
       ok(fails === 1, '自动压缩：失败后上下文没明显增长前不重试（不每轮报失败）')
       handlers.agent_settled({}, failing(500_000))
       ok(fails === 2, '自动压缩：失败后增长超过 20% 再试')
+
+      process.env.YAN_COMPACT_WATCHDOG_MS = '20'
+      let stuck = 0
+      const never = (tokens) => ({ getContextUsage: () => ({ tokens, contextWindow: 1_050_000 }), compact: () => { stuck += 1 } })
+      handlers.agent_settled({}, never(1_000_000))
+      ok(stuck === 1, '自动压缩：发起一次不会回调的压缩')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 60))
+      handlers.agent_settled({}, never(1_000_000))
+      ok(stuck === 2, '自动压缩：回调丢失后由看门狗复位，不会永久停摆')
+      delete process.env.YAN_COMPACT_WATCHDOG_MS
     }
 
     {
@@ -356,6 +370,13 @@ export async function runContextTrimTests(ok, mod, limits) {
         f.handlers[event]({})
         ok(stubbed(f.run(input, 1000)).length === 0, `${event}：清理旧存根与用量记录，复用调用ID不污染新上下文`)
       }
+
+      const spillCleanup = fixture()
+      spillCleanup.run(input, 20000)
+      const spillDirectory = mod.spillDir(fixtureSession)
+      ok(existsSync(join(spillDirectory, 'c1.txt')), '落盘：扩展把被裁原文写进本会话的临时目录')
+      spillCleanup.handlers.session_start({})
+      ok(!existsSync(spillDirectory), '会话开始：扩展自己清掉本会话的临时原文目录，不在 %TEMP% 留敏感输出')
     }
   } finally {
     rmSync(mod.spillDir(fixtureSession), { recursive: true, force: true })

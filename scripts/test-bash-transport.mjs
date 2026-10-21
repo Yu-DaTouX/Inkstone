@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,6 +11,37 @@ import { planPythonPath } from '../resources/pi-extensions/windows-python.js'
 
 assert.equal(bashQuotedPath('C:\\Users\\a b\\x.sh'), `'C:/Users/a b/x.sh'`)
 assert.equal(bashQuotedPath("C:\\Users\\o'neil\\x.sh"), `'C:/Users/o'\\''neil/x.sh'`)
+
+const deadPid = await new Promise((resolvePid, rejectPid) => {
+  const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' })
+  const pid = child.pid
+  child.on('error', rejectPid)
+  child.on('exit', () => resolvePid(pid))
+})
+const sweepDir = await mkdtemp(join(tmpdir(), 'yan-bash-transport-sweep-'))
+try {
+  const stale = join(sweepDir, `yan-bash-${deadPid}-deadbeefdeadbeef.sh`)
+  await writeFile(stale, 'echo leaked')
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000)
+  await utimes(stale, old, old)
+  const freshName = `yan-bash-${deadPid}-0011223344556677.sh`
+  const fresh = join(sweepDir, freshName)
+  await writeFile(fresh, 'echo fresh')
+  const unrelated = join(sweepDir, 'notes.txt')
+  await writeFile(unrelated, 'x')
+  let used = ''
+  const ops = fileTransportOperations({
+    async exec() {
+      used = (await readdir(sweepDir)).find((name) => name.startsWith('yan-bash-') && name.includes(String(process.pid)))
+      return 'ok'
+    }
+  }, { dir: sweepDir })
+  assert.equal(await ops.exec('echo ok', tmpdir()), 'ok')
+  assert.ok(used && new RegExp(`^yan-bash-${process.pid}-[0-9a-f]+\\.sh$`).test(used), '临时命令文件名里带 pid（清理时判断归属）')
+  assert.deepEqual((await readdir(sweepDir)).sort(), ['notes.txt', freshName].sort(), '启动时只删超过一小时且进程已退出的命令文件')
+} finally {
+  await rm(sweepDir, { recursive: true, force: true })
+}
 
 if (process.platform !== 'win32') {
   console.log('bash-transport: ok (non-Windows, pure checks only)')
