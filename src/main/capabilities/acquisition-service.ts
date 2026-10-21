@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path'
 import {
@@ -83,7 +83,7 @@ export function operationIdOf(input: { planId: string; planRevision?: number }):
 }
 
 async function writeFileAtomic(path: string, text: string): Promise<void> {
-  const tmp = `${path}.tmp`
+  const tmp = `${path}.${randomBytes(4).toString('hex')}.tmp`
   await writeFile(tmp, text, 'utf8')
   await rename(tmp, path)
 }
@@ -99,6 +99,17 @@ function toBuffer(content: string | Uint8Array): Buffer {
 export type AcquisitionServiceOptions = {
   root: string
   limits?: ArtifactLimits
+}
+
+const servicesByRoot = new Map<string, AcquisitionService>()
+
+export function acquisitionServiceFor(root: string): AcquisitionService {
+  const key = resolve(root)
+  const existing = servicesByRoot.get(key)
+  if (existing) return existing
+  const created = new AcquisitionService({ root: key })
+  servicesByRoot.set(key, created)
+  return created
 }
 
 export class AcquisitionService {

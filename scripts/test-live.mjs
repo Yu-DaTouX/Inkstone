@@ -3421,8 +3421,7 @@ async function main() {
       CASES.mcpregister.env = {
         YAN_MCP_REGISTRY_URL: `${mcpRegCatalogOrigin}/v0/servers`,
         YAN_NPM_SEARCH_URL: `${mcpRegCatalogOrigin}/npm`,
-        YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json'),
-        YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP: '1'
+        YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json')
       }
       process.on('exit', () => {
         try {

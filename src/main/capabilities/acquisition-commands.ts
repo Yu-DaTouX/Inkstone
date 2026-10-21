@@ -6,27 +6,23 @@ import { YAN_DIR } from '../paths'
 import { searchCapabilities } from '../../shared/capabilities'
 import { buildCatalog } from './catalog'
 import type { McpCatalogEntry } from './catalog'
-import { AcquisitionService, operationIdOf, stagingDirOf } from './acquisition-service'
+import { acquisitionServiceFor, operationIdOf } from './acquisition-service'
 import { PackageAuthorizationService } from './package-authorization-service'
 import { readRepoState } from '../git-service'
 import { fetchNpmPackageMetadata } from './npm-artifact'
 import { stageNpmAcquisition } from './npm-acquisition'
-import { resolveMcpPackage, smokeMcpPackage } from './mcp-package'
-import { McpRegistrationService } from './registration-service'
-import type { McpRegistrationOutcome } from './registration-service'
-import { draftRemoteMcpRegistration } from '../../shared/mcp-registration'
-import type { AcquireAuthorization } from '../../shared/mcp-registration'
 import { discoverCapabilities, planForCandidate } from './discovery/discover'
 import type { AcquisitionPlan, CapabilityCandidate } from '../../shared/discovery'
-import { declaredSkillFile } from './skill-files'
 import { fetchSkillFiles } from './skill-source'
 import { fetchGithubSkillFiles, parseSkillRepo } from './github-skills'
 import {
   acquiredSkillName,
+  declaredSkillFile,
   installAcquiredSkill,
   listSessionSkills,
   parseSkillFrontmatter,
   reviewAcquiredSkill,
+  skillFilesLayout,
   SOURCE_META_FILE,
   type AcquiredSkillFile,
   type AcquiredSkillScope
@@ -332,10 +328,6 @@ export class CapabilityAcquisition {
 
     if (candidate.installKind === 'skill-files') return this.acquireSkill({ plan, candidate })
 
-    if (candidate.installKind === 'remote') {
-      return this.acquireRemoteMcp({ plan, candidate, digest, operationId, explicitAuthorize })
-    }
-
     let packageGrant = await new PackageAuthorizationService(YAN_DIR).find({
       candidateId: candidate.candidateId,
       digest,
@@ -366,7 +358,7 @@ export class CapabilityAcquisition {
           candidate,
           operationId,
           executable: false,
-          state: !packageGrant ? 'needs-authorization' : plan.policyResult,
+          state: 'needs-authorization',
           notice:
             '本地包 / Skill 可能执行代码或改变模型后续行为。模型不能自行授权；用 `--authorize` 发起砚的确认对话框并由你选择后，才会保存精确候选 + 指纹 + 项目级授权。'
         },
@@ -381,7 +373,7 @@ export class CapabilityAcquisition {
       }
     }
 
-    const service = new AcquisitionService({ root: YAN_DIR })
+    const service = acquisitionServiceFor(YAN_DIR)
     const created = await service.begin({
       planId: plan.planId,
       planRevision: plan.revision,
@@ -397,7 +389,7 @@ export class CapabilityAcquisition {
     let npmFailure: string | undefined
     const localPackage = candidate.localPackage
     const canStageNpmPackage =
-      (candidate.installKind === 'pi-package' || candidate.installKind === 'mcp-package') &&
+      candidate.installKind === 'pi-package' &&
       localPackage?.registryType === 'npm' &&
       typeof localPackage.identifier === 'string' &&
       typeof (localPackage.version ?? candidate.version) === 'string' &&
@@ -448,26 +440,6 @@ export class CapabilityAcquisition {
         tx.operationId,
         `等待对应下载 / 安装器（installKind=${candidate.installKind}${localPackage?.registryType ? `, registryType=${localPackage.registryType}` : ''}；当前不执行不支持的来源）`
       )
-    }
-
-    if (candidate.installKind === 'mcp-package' && tx.state === 'pending-boundary' && !npmStaged && !npmFailure) {
-      const checked = await service.verifyStaged(tx.operationId)
-      if (checked.ok) npmStaged = true
-      else npmFailure = `受管 MCP staging 复核失败：${checked.problems.join('；')}`
-    }
-
-    if (candidate.installKind === 'mcp-package') {
-      return this.finishMcpPackageAcquire({
-        service,
-        tx,
-        plan,
-        candidate,
-        digest,
-        operationId,
-        npmStaged,
-        npmFailure,
-        localPackage
-      })
     }
 
     if (npmStaged && localPackage?.identifier && (localPackage.version ?? candidate.version)) {
@@ -544,12 +516,7 @@ export class CapabilityAcquisition {
           const source = declaredSkillFile(this.host.cwd(), path)
           return { path: source.path, content: await readFile(source.absolute) }
         }))
-    if (listed.length !== 1) throw new CapabilityCommandError('skill_multiple', '一个候选只能接入一个技能（这个候选声明了多个 SKILL.md）')
-    const [file] = listed
-    return {
-      files: [{ path: 'SKILL.md', content: typeof file.content === 'string' ? new TextEncoder().encode(file.content) : file.content }],
-      dirName: file.path.split('/').at(-2)
-    }
+    return skillFilesLayout(listed)
   }
 
   private skillApprovalMessage(input: {
@@ -574,8 +541,8 @@ export class CapabilityAcquisition {
       : input.truncated ? '命中较多，已截断，请自行查看来源' : '未发现高风险写法'
     return [
       `Agent 想接入技能「${input.name}」`,
-      `用途：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || '（没有描述）'}`,
       `来源：${source}`,
+      `发布方自述：${input.description.length > 240 ? `${input.description.slice(0, 239)}…` : input.description || '（没有描述）'}`,
       `内容：${files.length} 个文件，${formatSize(total)}${scripts.length > 0 ? `；含 ${scripts.length} 个脚本（${exts}），按技能做事时模型可能运行它们` : ''}`,
       `审查：${review}`,
       ...(input.userBlocked ? [input.userBlocked] : []),
@@ -709,427 +676,6 @@ export class CapabilityAcquisition {
     } catch (error) {
       const notice = `安装失败，未改动技能目录：${error instanceof Error ? error.message : String(error)}`
       return { data: { state: 'failed', candidate: { candidateId: candidate.candidateId, title: name }, notice }, summary: summary('failed') }
-    }
-  }
-
-  async finishMcpPackageAcquire(input: {
-    service: AcquisitionService
-    tx: Awaited<ReturnType<AcquisitionService['get']>>
-    plan: AcquisitionPlan
-    candidate: CapabilityCandidate
-    digest: string
-    operationId: string
-    npmStaged: boolean
-    npmFailure?: string
-    localPackage?: CapabilityCandidate['localPackage']
-  }) {
-    const { service, plan, candidate, digest, operationId, localPackage } = input
-    let tx = input.tx
-    if (!tx) throw new CapabilityCommandError('acquire_failed', '接入事务已经不存在')
-    if (input.npmFailure || !input.npmStaged || !localPackage?.identifier || !(localPackage.version ?? candidate.version)) {
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          transaction: tx,
-          executable: false,
-          state: tx.state,
-          downloaded: input.npmStaged,
-          installed: false,
-          notice: input.npmFailure
-            ? `MCP npm 包下载 / staging 失败：${input.npmFailure}。同一计划可显式使用 --retry 重试（最多一次）。`
-            : 'MCP npm 包已登记接入事务，但固定制品尚未完成 staging；没有运行包代码。'
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          state: tx.state,
-          executed: false
-        }
-      }
-    }
-
-    const packageRoot = join(stagingDirOf(YAN_DIR, operationId), 'payload', 'package')
-    let resolved: Awaited<ReturnType<typeof resolveMcpPackage>>
-    try {
-      resolved = await resolveMcpPackage({
-        packageRoot,
-        candidateId: candidate.candidateId,
-        title: candidate.title,
-        expectedName: localPackage.identifier,
-        expectedVersion: localPackage.version ?? candidate.version!
-      })
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      await service.fail(operationId, `MCP 包入口解析失败：${detail}`).catch(() => undefined)
-      throw new CapabilityCommandError('acquire_failed', detail)
-    }
-
-    const registration = new McpRegistrationService({ root: YAN_DIR })
-    if (tx.state === 'activated' || tx.state === 'resumed') {
-      const managed = (await registration.listManaged()).find((record) => record.serverId === resolved.config.id)
-      const check = managed
-        ? await registration.reverify(managed)
-        : { ok: false, reasons: ['受管记录里没有这个本地 MCP 服务'] }
-      if (!check.ok) {
-        return {
-          data: {
-            plan,
-            candidate,
-            operationId,
-            serverId: resolved.config.id,
-            executable: false,
-            state: tx.state,
-            replayed: true,
-            warnings: check.reasons,
-            notice: `本地 MCP 服务 ${resolved.config.id} 的幂等复核未通过：${check.reasons.join('；')}`
-          },
-          summary: {
-            kind: 'capabilities',
-            action: 'acquire',
-            planId: plan.planId,
-            operationId,
-            serverId: resolved.config.id,
-            state: tx.state,
-            executed: false,
-            replayed: true
-          }
-        }
-      }
-      if (tx.state === 'activated') tx = await service.markResumed(operationId, '同一计划的本地 MCP 连接复核通过')
-      this.host.resetMcpManager()
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          serverId: resolved.config.id,
-          executable: true,
-          state: tx.state,
-          replayed: true,
-          tools: managed?.tools ?? [],
-          notice: `这个计划已经登记过本地 MCP 服务 ${resolved.config.id}，本次只做连接复核。`
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          serverId: resolved.config.id,
-          state: tx.state,
-          executed: false,
-          replayed: true
-        }
-      }
-    }
-
-    if (tx.state !== 'pending-boundary') {
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          executable: false,
-          state: tx.state,
-          transaction: tx,
-          notice: `本地 MCP 事务当前处于 ${tx.state}，没有执行包代码。`
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          state: tx.state,
-          executed: false
-        }
-      }
-    }
-
-    try {
-      tx = await service.markAcquiring(operationId, '受管 staging 已复核，开始本地 MCP 无副作用协议冒烟')
-      const smoke = await smokeMcpPackage({ config: resolved.config })
-      if (!smoke.ok) {
-        await service.fail(operationId, `本地 MCP 冒烟失败：${smoke.problems.join('；')}`)
-        throw new CapabilityCommandError('acquire_failed', smoke.problems.join('；'))
-      }
-      tx = await service.markVerifying(operationId, `MCP tools/list 冒烟通过，列到 ${smoke.tools.length} 个工具`)
-      const outcome = await registration.registerStdio({
-        config: resolved.config,
-        projectId: plan.projectId,
-        operationId,
-        probe: async (config) => {
-          if (
-            config.command !== resolved.config.command ||
-            JSON.stringify(config.args ?? []) !== JSON.stringify(resolved.config.args ?? [])
-          ) {
-            throw new Error('本地 MCP 登记配置与刚通过 smoke 的入口不一致')
-          }
-          return { tools: smoke.tools.map((tool) => tool.name) }
-        }
-      })
-      tx = await service.activate({
-        operationId,
-        receipt: {
-          planId: plan.planId,
-          planRevision: plan.revision,
-          candidateId: candidate.candidateId,
-          digest,
-          scope: 'project-managed',
-          projectId: plan.projectId,
-          installedPaths: [outcome.configPath, resolved.packageRoot],
-          verification: 'protocol-reachable'
-        },
-        verify: async () => ({ ok: true, problems: [] })
-      })
-      const managed = (await registration.listManaged()).find((record) => record.serverId === outcome.serverId)
-      const check = managed
-        ? await service.resumeCheck({
-            operationId,
-            expected: { planId: plan.planId, planRevision: plan.revision, digest },
-            verify: async () => {
-              const reverified = await registration.reverify(managed)
-              return { ok: reverified.ok, problems: reverified.reasons }
-            }
-          })
-        : { ok: false, reasons: ['受管登记记录缺失（本地 MCP 登记没完成）'] }
-      tx = check.ok
-        ? await service.markResumed(operationId, '本地 MCP 冒烟、登记与连接复核通过，可继续原目标')
-        : await service.fail(operationId, `本地 MCP 激活后复核没通过：${check.reasons.join('；')}`)
-      this.host.resetMcpManager()
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          serverId: outcome.serverId,
-          tools: outcome.tools,
-          configPath: outcome.configPath,
-          executable: check.ok,
-          state: tx.state,
-          installed: check.ok,
-          resume: { goalId: plan.goalId, continueHint: '本地 MCP 已登记；原目标可以继续' },
-          ...(check.ok ? {} : { problems: check.reasons }),
-          notice: check.ok
-            ? `已接入本地 MCP 服务 ${outcome.serverId}（工具 ${outcome.tools.length} 个）：固定 npm 制品、无副作用冒烟与项目隔离登记均通过。`
-            : `本地 MCP 服务 ${outcome.serverId} 已处理，但激活后复核没通过：${check.reasons.join('；')}`
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          serverId: outcome.serverId,
-          state: tx.state,
-          executed: check.ok
-        }
-      }
-    } catch (error) {
-      if (error instanceof CapabilityCommandError) throw error
-      const detail = error instanceof Error ? error.message : String(error)
-      await service.fail(operationId, detail).catch(() => undefined)
-      throw new CapabilityCommandError('acquire_failed', detail)
-    }
-  }
-
-  async acquireRemoteMcp(input: {
-    plan: AcquisitionPlan
-    candidate: CapabilityCandidate
-    digest: string
-    operationId: string
-    explicitAuthorize: boolean
-  }) {
-    const { plan, candidate, digest, operationId, explicitAuthorize } = input
-    const draftResult = draftRemoteMcpRegistration(candidate)
-    if (!draftResult.ok) {
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          executable: false,
-          state: 'unsupported',
-          notice: draftResult.detail
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          state: 'unsupported',
-          executed: false
-        }
-      }
-    }
-    const { draft } = draftResult
-    const registration = new McpRegistrationService({ root: YAN_DIR })
-    let authorization: AcquireAuthorization | null = null
-    let authorized =
-      plan.policyResult === 'automatic' || (await registration.isAuthorized(draft.endpoint, plan.projectId))
-    if (!authorized && explicitAuthorize) {
-      const choice = await this.host.confirmCapabilityAuthorization()?.({
-        kind: 'remote-mcp',
-        title: candidate.title,
-        source: candidate.candidateId,
-        projectId: plan.projectId,
-        cwd: this.host.cwd(),
-        digest,
-        endpoint: draft.endpoint
-      }) ?? 'deny'
-      if (choice === 'allow') {
-        authorization = await registration.authorize({
-          url: draft.endpoint,
-          via: 'user-confirmed-dialog',
-          projectId: plan.projectId
-        })
-        authorized = true
-      }
-    }
-    if (!authorized) {
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId,
-          endpoint: draft.endpoint,
-          serverId: draft.serverId,
-          executable: false,
-          state: 'needs-authorization',
-          warnings: draft.warnings,
-          notice:
-            '候选来自公开目录（metadata-only），不足以自动登记。可以用 ' +
-            '`yan capabilities acquire --plan <计划ID> --authorize` 请求砚显示确认对话框；只有你在对话框里允许后才会持久授权这个 host（只记 host，不记凭证）。'
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId,
-          state: 'needs-authorization',
-          executed: false,
-          endpoint: draft.endpoint
-        }
-      }
-    }
-
-    const service = new AcquisitionService({ root: YAN_DIR })
-    const created = await service.begin({
-      planId: plan.planId,
-      planRevision: plan.revision,
-      candidateId: candidate.candidateId,
-      digest,
-      projectId: plan.projectId
-    })
-    if (created.state === 'activated' || created.state === 'resumed') {
-      const managed = (await registration.listManaged()).find((record) => record.serverId === draft.serverId)
-      const check = managed ? await registration.reverify(managed) : { ok: false, reasons: ['受管记录里没有这个服务'] }
-      const tx =
-        check.ok && created.state === 'activated'
-          ? await service.markResumed(created.operationId, '复核通过（同一计划的幂等重放）')
-          : created
-      return {
-        data: {
-          plan,
-          candidate,
-          operationId: tx.operationId,
-          serverId: draft.serverId,
-          executable: true,
-          state: tx.state,
-          replayed: true,
-          ...(check.ok ? {} : { warnings: check.reasons }),
-          notice: check.ok
-            ? `这个计划已经登记过 ${draft.serverId}，本次只做复核，没有重复写入配置。`
-            : `这个计划登记过 ${draft.serverId}，但复核没通过：${check.reasons.join('；')}`
-        },
-        summary: {
-          kind: 'capabilities',
-          action: 'acquire',
-          planId: plan.planId,
-          operationId: tx.operationId,
-          state: tx.state,
-          executed: false,
-          replayed: true
-        }
-      }
-    }
-
-    await service.markAcquiring(operationId, `登记远程 MCP（核验 ${draft.endpoint} 后写入受管配置）`)
-    let outcome: McpRegistrationOutcome
-    try {
-      outcome = await registration.registerRemote({
-        draft,
-        projectId: plan.projectId,
-        operationId
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      await service.fail(operationId, message).catch(() => undefined)
-      throw new CapabilityCommandError('acquire_failed', message)
-    }
-
-    await service.markVerifying(operationId, `端点核验通过，列到 ${outcome.tools.length} 个工具`)
-    await service.activate({
-      operationId,
-      receipt: {
-        planId: plan.planId,
-        planRevision: plan.revision,
-        candidateId: candidate.candidateId,
-        digest,
-        scope: 'project-managed',
-        projectId: plan.projectId,
-        installedPaths: [outcome.configPath],
-        verification: 'protocol-reachable'
-      },
-      verify: async () => ({ ok: true, problems: [] })
-    })
-    const managed = (await registration.listManaged()).find((record) => record.serverId === outcome.serverId)
-    const check = managed
-      ? await service.resumeCheck({
-          operationId,
-          expected: { planId: plan.planId, digest, planRevision: plan.revision },
-          verify: async () => {
-            const reverified = await registration.reverify(managed)
-            return { ok: reverified.ok, problems: reverified.reasons }
-          }
-        })
-      : { ok: false, reasons: ['受管登记记录缺失（登记没完成）'] }
-    const tx = check.ok
-      ? await service.markResumed(operationId, '登记 + 连接复核通过，可继续原目标')
-      : await service.fail(operationId, `激活后复核没通过：${check.reasons.join('；')}`)
-
-    this.host.resetMcpManager()
-
-    return {
-      data: {
-        plan,
-        candidate,
-        operationId,
-        serverId: outcome.serverId,
-        endpoint: draft.endpoint,
-        tools: outcome.tools,
-        configPath: outcome.configPath,
-        executable: true,
-        state: tx.state,
-        ...(authorization ? { authorization } : {}),
-        warnings: outcome.warnings,
-        resume: { goalId: plan.goalId, continueHint: '登记完成；原目标可以继续（能力目录里已经能看到它）' },
-        ...(check.ok ? {} : { problems: check.reasons }),
-        notice: check.ok
-          ? `已登记远程 MCP 服务 ${outcome.serverId}（工具 ${outcome.tools.length} 个）：一次真连核验通过后才写配置，写的是受管配置。`
-          : `服务 ${outcome.serverId} 已写入配置，但激活后复核没通过：${check.reasons.join('；')}`
-      },
-      summary: {
-        kind: 'capabilities',
-        action: 'acquire',
-        planId: plan.planId,
-        operationId,
-        serverId: outcome.serverId,
-        state: tx.state,
-        executed: check.ok,
-        toolCount: outcome.tools.length
-      }
     }
   }
 

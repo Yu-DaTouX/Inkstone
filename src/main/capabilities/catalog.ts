@@ -78,6 +78,97 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     '按操作 ID 取回之前一次命令的完整结果文件（stdout 只有摘要，细节在这里）。',
     'read',
     'yan operations status --id <id>'
+  ),
+  builtin(
+    'capabilities',
+    '能力目录检索与接入',
+    '在可用能力目录里检索（search / discover），为候选生成接入计划（prepare），再按用户批准接入（acquire）。',
+    'external-action',
+    'yan capabilities search --query-file query.json'
+  ),
+  builtin(
+    'skill',
+    '技能读取与保存',
+    '读取当前已加载技能的正文（read）；把整理好的做法保存成「我的技能」（save）。',
+    'write',
+    'yan skill read --id <技能ID>'
+  ),
+  builtin(
+    'mcp',
+    'MCP 服务',
+    '列出已登记的 MCP 服务、查看某个工具的参数（describe），或调用工具（call）。',
+    'unknown',
+    'yan mcp list'
+  ),
+  builtin(
+    'search',
+    '联网搜索与读页',
+    '联网搜索（可限定近期 / 站点）、读网页正文、查开发文档库；搜索后端是否可用用 `yan search doctor` 诊断。',
+    'external-action',
+    'yan search --help'
+  ),
+  builtin(
+    'knowledge',
+    '项目知识库',
+    '检索 / 读取本项目已确认的知识条目，或把这次得到的结论提成待用户确认的知识建议。',
+    'read',
+    'yan knowledge search --query-file query.json'
+  ),
+  builtin(
+    'schedule',
+    '定时任务',
+    '新建、列出、暂停或删除定时任务；新建后要用户在「定时任务」页确认过才会运行。',
+    'external-action',
+    'yan schedule list'
+  ),
+  builtin(
+    'consent',
+    '征求用户同意',
+    '需要用户明确同意的操作先问一次，说清能力、操作、资源与用途。',
+    'external-action',
+    'yan consent request --capability <能力> --action <操作>'
+  ),
+  builtin(
+    'session',
+    '移动会话到别的文件夹',
+    '任务属于另一个文件夹时，请用户批准把这个会话移过去。',
+    'write',
+    'yan session move --dir <文件夹>'
+  ),
+  builtin(
+    'artifact',
+    '附加产物到会话',
+    '把项目内的文件作为产物附到会话里，让用户直接看到结果文件。',
+    'write',
+    'yan artifact attach --path <项目内文件>'
+  ),
+  builtin(
+    'image',
+    '生成图片',
+    '用设置里配置的图片服务商生成图片，也可启动 / 停止 / 查询本地 ComfyUI。',
+    'external-action',
+    'yan image generate --request-file image.json'
+  ),
+  builtin(
+    'office',
+    '读取 Office 与 PDF',
+    '读取 .docx / .xlsx / .pptx / .pdf 里的文字内容。',
+    'read',
+    'yan office read --path <文件>'
+  ),
+  builtin(
+    'file',
+    '删除到回收站',
+    '删除文件或目录改为移到系统回收站，用户可以从回收站恢复。',
+    'write',
+    'yan file trash --path <文件或目录>'
+  ),
+  builtin(
+    'question',
+    '向用户提问',
+    '向用户提一个或几个问题并等回答；会话里有 question 工具时优先用工具，这个命令是兼容入口。',
+    'external-action',
+    'yan question ask --request-file question.json'
   )
 ]
 
