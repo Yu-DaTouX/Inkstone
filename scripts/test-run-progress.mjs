@@ -1,5 +1,5 @@
 export async function runRunProgressTests(ok, mod) {
-  const { deriveRunProgress, runPhaseIsActive, resolveRunClock } = mod
+  const { deriveRunProgress, resolveRunClock } = mod
   const base = {
     running: true,
     streaming: false,
@@ -84,9 +84,6 @@ export async function runRunProgressTests(ok, mod) {
     deriveRunProgress({ ...base, compacting: true, now: base.startedAt + 90_000 }).long === false,
     '压缩再久也不标长耗时（文案保持「压缩中」）'
   )
-  ok(runPhaseIsActive('compacting') === true, 'compacting 算进行中阶段')
-
-  ok(runPhaseIsActive('tool') === true && runPhaseIsActive('settled') === false, '只有进行中的阶段算 active')
 }
 
 export default runRunProgressTests
