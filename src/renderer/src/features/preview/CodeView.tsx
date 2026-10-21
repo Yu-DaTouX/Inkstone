@@ -16,6 +16,8 @@ import { VList, type VListHandle } from 'virtua'
 import { IconButton, Input, TextArea, TextField } from '../../ui'
 import { exceedsHighlightLimits, FILE_HIGHLIGHT_LIMITS, highlightLanguage, highlightTree } from '../../lib/code-highlight'
 import {
+  capCodeText,
+  CODE_LINE_LIMIT,
   foldRegions,
   guideLevels,
   jumpRange,
@@ -86,6 +88,7 @@ export interface CodeViewText {
   commentPlaceholder: string
   commentSave: string
   commentCancel: string
+  tooManyLines: string
 }
 
 export interface CodeComment {
@@ -390,7 +393,8 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
   const listRef = useRef<VListHandle>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const language = useMemo(() => pickLanguage(name, (value) => highlightLanguage(value) !== null), [name])
-  const source = useMemo(() => text.replace(/\r\n/g, '\n'), [text])
+  const limited = useMemo(() => capCodeText(text.replace(/\r\n/g, '\n')), [text])
+  const source = limited.text
   const tree = useMemo(() => (language ? highlightTree(source, language, FILE_HIGHLIGHT_LIMITS) : null), [source, language])
   const tooSlow = useMemo(
     () => !!language && !PLAIN_LANGUAGES.has(language) && highlightLanguage(language) !== null && !tree && exceedsHighlightLimits(source, FILE_HIGHLIGHT_LIMITS),
@@ -760,6 +764,11 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
       {tooSlow ? (
         <p role="note" className="v3-code-note">
           {labels.plainNote}
+        </p>
+      ) : null}
+      {limited.capped ? (
+        <p role="note" className="v3-code-note" data-testid="v3-code-capped">
+          {labels.tooManyLines.replace('{n}', String(CODE_LINE_LIMIT))}
         </p>
       ) : null}
       {bar === 'find' ? (

@@ -40,6 +40,7 @@ const MAC = /Mac|iPhone|iPad/.test(typeof navigator === 'undefined' ? '' : navig
 const WORKER_URL = new URL(workerSrc, document.baseURI).href
 
 let worker: Worker | null = null
+const FIND_TEXT_CACHE = new WeakMap<PDFDocumentProxy, string[][]>()
 try {
   worker = new Worker(WORKER_URL, { type: 'module' })
   GlobalWorkerOptions.workerPort = worker
@@ -190,6 +191,11 @@ export function PdfView({
 
   useEffect(() => {
     if (bar !== 'find' || pagesText || !doc) return
+    const cached = FIND_TEXT_CACHE.get(doc)
+    if (cached) {
+      setPagesText(cached)
+      return
+    }
     let live = true
     void (async () => {
       const lines: string[][] = []
@@ -199,6 +205,7 @@ export function PdfView({
         lines.push(pdfTextLines(content.items.filter((item) => 'str' in item)))
         if (!live) return
       }
+      FIND_TEXT_CACHE.set(doc, lines)
       if (live) setPagesText(lines)
     })()
     return () => {

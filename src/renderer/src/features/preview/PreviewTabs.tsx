@@ -83,6 +83,9 @@ export function PreviewTabs({
   const [menuPath, setMenuPath] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ path: string; gap: number } | null>(null)
   const dragRef = useRef<{ path: string; from: number; to: number; startX: number; moved: boolean } | null>(null)
+  const dragCleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => () => dragCleanupRef.current?.(), [])
 
   useEffect(() => {
     const strip = stripRef.current
@@ -246,17 +249,29 @@ export function PreviewTabs({
       document.removeEventListener('pointerdown', settle, true)
       document.removeEventListener('keydown', settle, true)
       window.clearTimeout(timer)
+      dragCleanupRef.current = null
     }
     let timer = 0
-    const finish = (commit: boolean): void => {
+    const detach = (): void => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
       window.removeEventListener('keydown', key)
       window.removeEventListener('blur', blur)
+    }
+    const teardown = (): void => {
+      detach()
+      cleanup()
+    }
+    dragCleanupRef.current = teardown
+    const finish = (commit: boolean): void => {
+      detach()
       dragRef.current = null
       setDrag(null)
-      if (!state.moved) return
+      if (!state.moved) {
+        teardown()
+        return
+      }
       document.addEventListener('click', swallow, true)
       document.addEventListener('pointerdown', settle, true)
       document.addEventListener('keydown', settle, true)

@@ -53,12 +53,14 @@ const indentFolding = foldService.of((state, lineStart) => {
   return end > line.to ? { from: line.to, to: end } : null
 })
 
-function viewOptions(settings: FileViewSettings): Extension[] {
+function viewOptions(settings: FileViewSettings, readOnly: boolean): Extension[] {
   return [
     settings.wordWrap ? EditorView.lineWrapping : [],
     EditorState.tabSize.of(settings.tabSize),
     settings.showWhitespace ? highlightWhitespace() : [],
-    settings.scrollPastEnd ? scrollPastEnd() : []
+    settings.scrollPastEnd ? scrollPastEnd() : [],
+    EditorView.editable.of(!readOnly),
+    EditorState.readOnly.of(readOnly)
   ]
 }
 
@@ -115,6 +117,10 @@ export function CodeEditor({ value, name, readOnly, settings = DEFAULT_FILE_VIEW
   const optionsRef = useRef(new Compartment())
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const readOnlyRef = useRef(readOnly === true)
+  readOnlyRef.current = readOnly === true
+  const nameRef = useRef(name)
+  nameRef.current = name
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
   onChangeRef.current = onChange
@@ -138,8 +144,8 @@ export function CodeEditor({ value, name, readOnly, settings = DEFAULT_FILE_VIEW
       bracketMatching(),
       highlightSelectionMatches(),
       syntaxHighlighting(HIGHLIGHT),
-      languageRef.current.of(editorLanguage(name)),
-      optionsRef.current.of(viewOptions(settingsRef.current)),
+      languageRef.current.of(editorLanguage(nameRef.current)),
+      optionsRef.current.of(viewOptions(settingsRef.current, readOnlyRef.current)),
       keymap.of([
         {
           key: 'Mod-s',
@@ -158,8 +164,6 @@ export function CodeEditor({ value, name, readOnly, settings = DEFAULT_FILE_VIEW
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString())
       }),
-      EditorView.editable.of(readOnly !== true),
-      EditorState.readOnly.of(readOnly === true),
       THEME
     ]
     const view = new EditorView({ state: EditorState.create({ doc: value, extensions }), parent: host })
@@ -168,7 +172,7 @@ export function CodeEditor({ value, name, readOnly, settings = DEFAULT_FILE_VIEW
       view.destroy()
       viewRef.current = null
     }
-  }, [name, readOnly])
+  }, [])
 
   useEffect(() => {
     const view = viewRef.current
@@ -184,8 +188,8 @@ export function CodeEditor({ value, name, readOnly, settings = DEFAULT_FILE_VIEW
   }, [name])
 
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: optionsRef.current.reconfigure(viewOptions(settings)) })
-  }, [settings])
+    viewRef.current?.dispatch({ effects: optionsRef.current.reconfigure(viewOptions(settings, readOnly === true)) })
+  }, [settings, readOnly])
 
   useEffect(() => {
     if (readOnly) return

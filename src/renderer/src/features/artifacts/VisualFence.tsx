@@ -370,7 +370,7 @@ function DataBlock({
 }
 
 export interface VisualFenceProps {
-  lang: VisualBlockLang
+  lang: Exclude<VisualBlockLang, 'mermaid'>
   text: string
   live: boolean
   fallback: ReactNode
@@ -386,9 +386,6 @@ export function VisualFence({ lang, text, live, fallback, blockId }: VisualFence
   )
   if (lang === 'yan-widget') {
     return live ? pending : <WidgetBlock html={text} fallback={fallback} blockId={blockId} />
-  }
-  if (lang === 'mermaid') {
-    return <>{fallback}</>
   }
   return <DataBlock lang={lang} text={text} live={live} fallback={fallback} pending={pending} />
 }

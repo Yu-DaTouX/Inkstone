@@ -68,7 +68,8 @@ const okPreview = (p) => ({
 })
 
 function makeYan() {
-  const calls = { readPreview: [], office: [], reveal: [], open: [] }
+  const calls = { readPreview: [], office: [], reveal: [], open: [], readEditable: [] }
+  const editReject = new Set()
   const deferreds = new Map()
   const failures = new Map()
   const presets = new Map()
@@ -95,6 +96,11 @@ function makeYan() {
         return { ok: true, sections: [{ title: 'sheet', lines: [`office:${baseName(abs)}`] }], note: '' }
       }
     },
+    readEditableFile: async (abs, cwd) => {
+      calls.readEditable.push({ abs, cwd })
+      if (editReject.has(abs)) throw new Error('ipc 断线')
+      return { ok: true, text: `editable:${baseName(abs)}`, hash: 'h1' }
+    },
     revealPath: async (p) => {
       calls.reveal.push(p)
     },
@@ -102,7 +108,7 @@ function makeYan() {
       calls.open.push(p)
     }
   }
-  return { yan, calls, deferreds, failures, presets }
+  return { yan, calls, deferreds, failures, presets, editReject }
 }
 
 function installWindow(yan) {
@@ -202,8 +208,7 @@ function makeStubMap() {
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
       'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
-      'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
-      'src/renderer/src/features/preview/HighlightedCode.tsx': 'export function HighlightedCode(p){ return { type: "code", props: { children: p.code } } }'
+      'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }
@@ -400,7 +405,7 @@ function setStore({ sessionId, messages }) {
 
 async function main() {
   installGlobals()
-  const { yan, calls, deferreds, failures, presets } = makeYan()
+  const { yan, calls, deferreds, failures, presets, editReject } = makeYan()
   installWindow(yan)
 
   const outdir = await mkdtemp(join(tmpdir(), 'yan-v3-preview-owner-'))
@@ -660,6 +665,37 @@ async function main() {
     )
     const listed = tiles.usePreviewBindings.getState().bindings.get(OWNER_A.key)
     ok(!!listed && listed.tabs.length === 2 && listed.active === 'C:/proj/a/b.md', '标签条与绑定一致（不是单个无绑定标签）', listed)
+  }
+
+  group('编辑器：读文件被拒绝时给出失败提示，不停在空编辑态')
+  {
+    newRuntime()
+    setStore({ sessionId: 'sess-a', messages: [] })
+    calls.readEditable.length = 0
+    let tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/note.txt' })
+    const find = (label) => collect(tree, (n) => n.props && n.props['data-testid'] === `icon:${label}`)[0]
+    const toggle = find('编辑')
+    ok(!!toggle && typeof toggle.props.onPress === 'function', '可编辑文件出现编辑按钮', treeText(tree).slice(0, 200))
+    editReject.add('C:/abs/note.txt')
+    toggle.props.onPress()
+    tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/note.txt' })
+    ok(calls.readEditable.length === 1 && calls.readEditable[0].abs === 'C:/abs/note.txt', '点编辑按绝对路径读取一次', calls.readEditable)
+    ok(treeText(tree).includes('保存失败'), '读取被拒绝时编辑栏显示保存失败')
+    editReject.delete('C:/abs/note.txt')
+  }
+
+  group('切换文件时复位「查看源码」选择')
+  {
+    newRuntime()
+    setStore({ sessionId: 'sess-a', messages: [] })
+    const labels = (tree) => collect(tree, (n) => n.props && typeof n.props['aria-label'] === 'string' && n.props['data-testid'] === `icon:${n.props['aria-label']}`).map((n) => n.props['aria-label'])
+    let tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/note.md' })
+    ok(labels(tree).includes('查看源码'), '文档默认按阅读模式显示', labels(tree))
+    collect(tree, (n) => n.props && n.props['data-testid'] === 'icon:查看源码')[0].props.onPress()
+    tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/note.md' })
+    ok(labels(tree).includes('阅读模式') && !labels(tree).includes('查看源码'), '手动切到源码模式', labels(tree))
+    tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/other.md' })
+    ok(labels(tree).includes('查看源码') && !labels(tree).includes('阅读模式'), '换一个文件后回到阅读模式', labels(tree))
   }
 
   await rm(outdir, { recursive: true, force: true })

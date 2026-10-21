@@ -80,7 +80,9 @@ export function WorkbenchPanel({
   const [visited, setVisited] = useState<ReadonlySet<WorkspacePaneId>>(() => new Set())
   useEffect(() => {
     if (!open) return
-    setVisited((prev) => (shownPanes.every((tab) => prev.has(tab)) ? prev : new Set([...prev, ...shownPanes])))
+    setVisited((prev) =>
+      prev.size === shownPanes.length && shownPanes.every((tab) => prev.has(tab)) ? prev : new Set(shownPanes)
+    )
   }, [open, shownPanes])
 
   useEffect(() => {
@@ -212,7 +214,9 @@ export function WorkbenchPanel({
   const attemptActivation = (tab: WorkbenchTabId): void => {
     if (activating) return
     setActivating(true)
-    void onRequestActivation(tab).finally(() => setActivating(false))
+    void onRequestActivation(tab)
+      .catch(() => useStore.getState().notify('error', text.activateFailed))
+      .finally(() => setActivating(false))
   }
 
   const toggleExpand = (tab: WorkspacePaneId): void => {

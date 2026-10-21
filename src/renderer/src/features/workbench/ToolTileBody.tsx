@@ -1,5 +1,6 @@
 import { useState, type ComponentType, type JSX } from 'react'
 import { useI18n } from '../../i18n'
+import { useStore } from '../../state/store'
 import { EmptyState } from '../../ui'
 import { WORKBENCH_PANES } from './panes'
 import { useWorkspaceOwner } from './use-owner'
@@ -29,7 +30,9 @@ export function ToolTileBody({ tab }: { tab: WorkbenchTabId }): JSX.Element {
   const activate = (): void => {
     if (activating) return
     setActivating(true)
-    void activateWorkspaceOwner(captureActivationTarget()).finally(() => setActivating(false))
+    void activateWorkspaceOwner(captureActivationTarget())
+      .catch(() => useStore.getState().notify('error', text.activateFailed))
+      .finally(() => setActivating(false))
   }
 
   return (

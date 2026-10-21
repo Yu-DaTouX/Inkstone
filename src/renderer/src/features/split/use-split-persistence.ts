@@ -15,21 +15,24 @@ function storage(): Storage | undefined {
 }
 
 export function useSplitPersistence(): void {
-  const sessionsReady = useStore((s) => s.sessions.length > 0)
+  const sessions = useStore((s) => s.sessions)
   const restored = useRef(false)
 
   useEffect(() => {
-    if (restored.current || !sessionsReady) return
-    restored.current = true
+    if (restored.current || sessions.length === 0) return
     const view = useSplitView.getState()
-    if (view.split) return
-    const snapshot = restoreSplit(readSavedSplit(storage()), useStore.getState().sessions)
+    if (view.split) {
+      restored.current = true
+      return
+    }
+    const snapshot = restoreSplit(readSavedSplit(storage()), sessions)
     if (!snapshot?.split) return
+    restored.current = true
     useSplitView.setState({ split: snapshot.split, weights: snapshot.weights, rowSplit: snapshot.rowSplit })
     const displayed = displayedSessionOf(useStore.getState())
     const live = snapshot.split.tiles[snapshot.split.live]
     if (live && (!displayed || indexOfSession(snapshot.split.tiles, displayed) < 0)) focusSplitSession(live)
-  }, [sessionsReady])
+  }, [sessions])
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
