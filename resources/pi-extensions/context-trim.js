@@ -12,13 +12,17 @@ const HARD_RATIO = 1.5
 const MIN_BATCH_THRESHOLD_RATIO = 0.25
 const MIN_BATCH_CONTEXT_RATIO = 0.2
 const CAPACITY_PRESSURE_RATIO = 0.8
+const MIN_PRESSURE_THRESHOLD_RATIO = 0.1
+const MIN_PRESSURE_CONTEXT_RATIO = 0.05
 export const CACHE_COLD_MS = 5 * 60 * 1000
 const RETRY_GROWTH = 1.2
 const KEEP_TURNS = 3
 const KEEP_TOOL_GROUPS = 3
 const KEEP_RECENT_TOOL_RESULTS = 8
 const KEEP_RECENT_TOOL_TOKENS = 20_000
-const MIN_TRIM_CHARS = 4_000
+const MIN_TRIM_CHARS = 1_500
+const MIN_INPUT_TRIM_CHARS = 1_000
+const INPUT_TRIM_TOOLS = new Set(['write', 'edit'])
 const IMAGE_TOKENS = 2_800
 
 export function piCompactionEnabled() {
@@ -129,6 +133,24 @@ export function createSpiller(dirFor) {
   return spill
 }
 
+const inputKey = (id) => `input:${id}`
+const baseId = (key) => (String(key).startsWith('input:') ? String(key).slice(6) : key)
+
+export function trimmedInput(call) {
+  const args = call?.arguments ?? {}
+  const path = args.path ?? args.file_path
+  const what = call?.name === 'write'
+    ? `${typeof args.content === 'string' ? args.content.split('\n').length : '?'} lines written`
+    : `${Array.isArray(args.edits) ? args.edits.length : 1} replacement(s)`
+  return { ...(path ? { path } : {}), trimmed: `[Earlier ${call?.name ?? 'tool'} input trimmed to save context: ${what}. Read the file for its current content.]` }
+}
+
+function inputGain(call) {
+  const text = JSON.stringify(call?.arguments ?? {})
+  if (text.length < MIN_INPUT_TRIM_CHARS) return 0
+  return Math.max(0, estimateTokens(text) - estimateTokens(JSON.stringify(trimmedInput(call))))
+}
+
 function usageKey(message) {
   const usage = message?.usage
   if (message?.role !== 'assistant' || !usage || ['error', 'aborted'].includes(message.stopReason)) return undefined
@@ -138,8 +160,9 @@ function usageKey(message) {
 }
 
 function savedTokens(messages, trimmed) {
+  const ids = new Set(messages.filter(m => m?.role === 'toolResult').map(m => m.toolCallId))
   let saved = 0
-  for (const message of messages) if (message?.role === 'toolResult') saved += trimmed.get(message.toolCallId) ?? 0
+  for (const [key, gain] of trimmed) if (ids.has(baseId(key))) saved += gain
   return saved
 }
 
@@ -188,7 +211,9 @@ function activeToolResults(messages) {
 
 export function trimMessages(messages, { trimmed, projectedTokens, threshold, cacheCold = true, contextWindow = 0, spill }) {
   const calls = new Map()
+  const failed = new Set()
   for (const m of messages) {
+    if (m?.role === 'toolResult' && m.isError) failed.add(m.toolCallId)
     if (m?.role !== 'assistant') continue
     for (const part of m.content ?? []) if (part?.type === 'toolCall') calls.set(part.id, part)
   }
@@ -216,6 +241,20 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
       const cut = (start, end, recentTurns, keep) => {
         for (let i = start; i < end && effective > target; i++) {
           const m = messages[i]
+          if (m?.role === 'assistant') {
+            for (const call of m.content ?? []) {
+              if (call?.type !== 'toolCall' || !INPUT_TRIM_TOOLS.has(call.name) || failed.has(call.id)) continue
+              const key = inputKey(call.id)
+              if (trimmed.has(key) || proposed.has(key) || keep?.has(call.id)) continue
+              const group = groups.get(call.id)
+              if (!group?.complete || (recentTurns && group.recent)) continue
+              const gain = inputGain(call)
+              if (!gain) continue
+              proposed.set(key, gain)
+              effective -= gain
+            }
+            continue
+          }
           if (m?.role !== 'toolResult' || m.isError || trimmed.has(m.toolCallId) || proposed.has(m.toolCallId)) continue
           if (keep?.has(m.toolCallId)) continue
           const group = groups.get(m.toolCallId)
@@ -241,7 +280,8 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
         cut(boundary, messages.length, true, keep)
       }
       const minimumGain = Math.max(threshold * MIN_BATCH_THRESHOLD_RATIO, before * MIN_BATCH_CONTEXT_RATIO)
-      if (capacityPressure || before - effective >= minimumGain) {
+      const pressureGain = Math.max(threshold * MIN_PRESSURE_THRESHOLD_RATIO, before * MIN_PRESSURE_CONTEXT_RATIO)
+      if (before - effective >= (capacityPressure ? pressureGain : minimumGain)) {
         for (const [id, gain] of proposed) trimmed.set(id, gain)
       }
     }
@@ -249,6 +289,12 @@ export function trimMessages(messages, { trimmed, projectedTokens, threshold, ca
 
   let changed = false
   const next = messages.map((m) => {
+    if (m?.role === 'assistant') {
+      const content = m.content ?? []
+      if (!content.some(part => part?.type === 'toolCall' && trimmed.has(inputKey(part.id)))) return m
+      changed = true
+      return { ...m, content: content.map(part => (part?.type === 'toolCall' && trimmed.has(inputKey(part.id)) ? { ...part, arguments: trimmedInput(part) } : part)) }
+    }
     if (m?.role !== 'toolResult' || !trimmed.has(m.toolCallId)) return m
     changed = true
     const call = calls.get(m.toolCallId) ?? { name: m.toolName }
@@ -298,7 +344,7 @@ export default function contextTrimExtension(pi) {
     let anchor
     for (let i = messages.length - 1; i >= 0 && !anchor; i--) anchor = usageKey(messages[i])
     const resultIds = new Set(messages.filter(m => m?.role === 'toolResult').map(m => m.toolCallId))
-    for (const id of trimmed.keys()) if (!resultIds.has(id)) trimmed.delete(id)
+    for (const id of trimmed.keys()) if (!resultIds.has(baseId(id))) trimmed.delete(id)
     const reflected = lastResponse && lastResponse.key === anchor ? lastResponse.saved : 0
     const usage = ctx?.getContextUsage?.()
     const threshold = trimAt(settings.trimTokens, usage?.contextWindow ?? 0)

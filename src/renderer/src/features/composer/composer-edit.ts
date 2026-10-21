@@ -15,6 +15,8 @@ import {
   type TextSelection as TextRange
 } from './composer-text'
 
+import { afterFenceKey, fenceTailPosition } from './after-fence'
+
 const OBJECT = '\uFFFC'
 const LINK_TARGET = /^(?:https?:\/\/|mailto:|tel:)[\w\-.~:/?#[\]@!$&'*+,;=%{}|^()]+$/i
 const BARE_URL = /(?:^|[\s(])((?:https?:\/\/|mailto:)[^\s<>"]+)$/i
@@ -140,7 +142,8 @@ export function structureTransaction(state: EditorState, options: ComposerDocume
   const cursor = textOffsetForPosition(state.doc, state.selection.from)
   const tr = state.tr.replaceWith(0, state.doc.content.size, doc.content)
   const at = positionForTextOffset(tr.doc, cursor)
-  return tr.setSelection(TextSelection.create(tr.doc, at))
+  tr.setSelection(TextSelection.create(tr.doc, at))
+  return tr.setMeta(afterFenceKey, fenceTailPosition(tr.doc, cursor))
 }
 
 export function fenceTransaction(state: EditorState, options: ComposerDocumentOptions = {}): Transaction | null {

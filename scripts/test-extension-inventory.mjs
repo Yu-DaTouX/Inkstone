@@ -109,7 +109,7 @@ export async function runExtensionInventoryTests(ok) {
           file === 'shell-fallback.js' &&
           toolCalls === 1 &&
           /const template = core\.createBashToolDefinition\(/.test(source) &&
-          /\.registerTool\(\{\s*\.\.\.template,\s*execute:/.test(source)
+          /\.registerTool\(\{\s*\.\.\.template,\s*parameters: withDescriptionParameter\(template\.parameters\),\s*execute:/.test(source)
         const mcpAppProxy =
           file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
         const hostTool =

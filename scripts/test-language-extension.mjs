@@ -26,6 +26,8 @@ export async function runLanguageExtensionTests(ok, mod) {
   const en = languageSystemPrompt('en-US')
   ok(typeof zh === 'string' && zh.includes('推理'), 'zh-CN 的句子明确要求推理也跟随', String(zh))
   ok(typeof en === 'string' && /think/i.test(en), 'en-US 的句子明确要求推理也跟随', String(en))
+  ok(zh.includes('AGENTS.md') && zh.includes('按项目指令'), 'zh-CN：项目指令规定沟通语言时按项目来', String(zh))
+  ok(/AGENTS\.md/.test(en) && /follow the project instructions/.test(en), 'en-US：项目指令规定沟通语言时按项目来', String(en))
   ok(languageSystemPrompt('ja-JP') === null, '不认识的语言不注入任何要求', String(languageSystemPrompt('ja-JP')))
   ok(languageSystemPrompt(undefined) === null, '语言缺失时也不注入', String(languageSystemPrompt(undefined)))
 

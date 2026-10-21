@@ -4,6 +4,7 @@ import { CapabilityCommandError, type CapabilityCommandResult } from './capabili
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
+import { forkContextError, type SubagentForkSource } from './subagent-fork'
 
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
@@ -13,6 +14,24 @@ const SUBAGENT_SYSTEM_PROMPT = [
   '- Decide how many tool calls the task needs; stop when you have enough evidence to report.',
   '- Finish with a concise report: what you changed or found, and how you verified it.'
 ].join('\n')
+
+function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<string, unknown> } {
+  return {
+    data: run,
+    summary: {
+      kind: 'subagent',
+      action: 'start',
+      id: run.id,
+      status: run.status,
+      isolation: run.isolation,
+      ...(run.fork ? { fork: true } : {}),
+      task: run.task,
+      latestActivity: run.latestActivity,
+      deliverables: run.brief?.deliverables.length ?? 0,
+      sources: run.brief?.sources.length ?? 0
+    }
+  }
+}
 
 export interface SubagentServiceDeps {
   codemodeExtension?(): string | undefined
@@ -24,6 +43,7 @@ export interface SubagentServiceDeps {
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>
   confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean | SubagentDangerAnswer>
+  forkSource?(context: SubagentCommandContext): SubagentForkSource | string
   onChange(run: SubagentRun): void
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
   onRemove(id: string): void
@@ -68,6 +88,33 @@ export class SubagentService {
     return this.controller
   }
 
+  private async startFork(
+    ctrl: SubagentController,
+    task: string,
+    requested: string | undefined,
+    readOnly: boolean,
+    isolation: unknown,
+    briefInput: unknown,
+    context: SubagentCommandContext
+  ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    if (readOnly || isolation === 'worktree') {
+      throw new CapabilityCommandError('subagent_fork_isolation', 'fork 子代理只在当前目录运行，不能和 --read-only 或 --isolation worktree 一起用；需要只读或隔离时改派普通子代理')
+    }
+    const source = this.deps.forkSource?.(context) ?? 'fork 子代理不可用：找不到来源会话'
+    if (typeof source === 'string') throw new CapabilityCommandError('subagent_fork_unavailable', source)
+    if (requested && requested !== source.model) {
+      const resolved = this.deps.resolveModelLabel ? await this.deps.resolveModelLabel(requested, context) : undefined
+      if (!resolved?.ok || resolved.label !== source.model) {
+        throw new CapabilityCommandError('subagent_fork_model', `fork 子代理沿用当前会话的模型 ${source.model}，不能改用 ${requested}；需要别的模型时改派普通子代理`)
+      }
+    }
+    const tooLarge = forkContextError(source)
+    if (tooLarge) throw new CapabilityCommandError('subagent_fork_context', tooLarge)
+    const result = await ctrl.start(task, source.model, 'shared-cwd', briefInput, source)
+    if (!result.ok || !result.run) throw new CapabilityCommandError('subagent_start_failed', result.error ?? '子代理启动失败')
+    return startSummary(result.run)
+  }
+
   readonly capabilityHost: SubagentCommandHost = {
     run: (command, params, context) => this.run(command, params, context)
   }
@@ -91,15 +138,16 @@ export class SubagentService {
         )
       }
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
+      const readOnly = params.readOnly === true || params['read-only'] === true
+      const title = typeof params.title === 'string' ? params.title : undefined
+      const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
+      if (params.fork === true) return this.startFork(ctrl, task, requested, readOnly, params.isolation, briefInput, context)
       let model = requested
       if (this.deps.resolveModelLabel) {
         const resolved = await this.deps.resolveModelLabel(requested ?? '', context)
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const readOnly = params.readOnly === true || params['read-only'] === true
-      const title = typeof params.title === 'string' ? params.title : undefined
-      const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
       const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
@@ -107,21 +155,7 @@ export class SubagentService {
           result.error ?? '子代理启动失败'
         )
       }
-      const run = result.run
-      return {
-        data: run,
-        summary: {
-          kind: 'subagent',
-          action: 'start',
-          id: run.id,
-          status: run.status,
-          isolation: run.isolation,
-          task: run.task,
-          latestActivity: run.latestActivity,
-          deliverables: run.brief?.deliverables.length ?? 0,
-          sources: run.brief?.sources.length ?? 0
-        }
-      }
+      return startSummary(result.run)
     }
 
     if (command === 'subagent.list') {

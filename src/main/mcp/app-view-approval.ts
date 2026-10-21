@@ -146,7 +146,7 @@ export async function approveAppViewCall(
     if (trust.trusted) {
       return finish({ allowed: true, asked: false, reasons: [], trust })
     }
-    askReasons = [`该 App 调用缺少宿主服务器授权，只读工具也需每次确认：${server} / ${tool}`]
+    askReasons = [`该 App 调用缺少宿主服务器授权，只读工具也需要确认（可选「在此会话中允许」）：${server} / ${tool}`]
   } else {
     trust = bypassedTrustDecision(context?.serverFingerprint, '破坏性 / 未知注解，授权不适用，按原规则逐次询问')
     askReasons = risks

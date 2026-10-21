@@ -463,6 +463,9 @@ export function mcpCandidateOf(raw: unknown, discoveredAt: string): CapabilityCa
   }
 }
 
+const MCP_REGISTRY_TIMEOUT_MS = 45_000
+const MCP_REGISTRY_PAGES = 1
+
 async function searchMcpRegistry(
   query: string,
   fetchImpl: FetchLike,
@@ -472,7 +475,8 @@ async function searchMcpRegistry(
   const candidates: CapabilityCandidate[] = []
   let pages = 0
   let cursor: string | undefined
-  for (let page = 0; page < MAX_PAGES_PER_SOURCE; page++) {
+  const registryTimeoutMs = Math.max(timeoutMs, MCP_REGISTRY_TIMEOUT_MS)
+  for (let page = 0; page < MCP_REGISTRY_PAGES; page++) {
     const base = safeSourceUrl(MCP_REGISTRY_URL)
     if (!base) throw new Error('MCP_REGISTRY_URL 只允许 HTTPS（本机测试可用 localhost HTTP）')
     const urlObject = new URL(base)
@@ -481,8 +485,13 @@ async function searchMcpRegistry(
     if (cursor) urlObject.searchParams.set('cursor', cursor)
     const url = urlObject.href
     const res = await fetchImpl(url, {
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(registryTimeoutMs),
       headers: { accept: 'application/json' }
+    }).catch((error: unknown) => {
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+        throw new Error(`MCP Registry 搜索 ${Math.round(registryTimeoutMs / 1000)} 秒没有返回（${url}）`)
+      }
+      throw error
     })
     if (!res.ok) throw new Error(`MCP Registry 返回 HTTP ${res.status}`)
     const body = await readBoundedJson(res, 2 *  1024 * 1024) as { servers?: unknown[]; metadata?: Record<string, unknown> }

@@ -25,12 +25,12 @@ import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
 import { LiveRunNotice } from './RunNotice'
-import { CompactionMarker } from './CompactionMarker'
+import { CompactCommandEcho, CompactionMarker } from './CompactionMarker'
 import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { TurnChanges } from './TurnChanges'
-import { viewEdge } from './turn-lines'
+import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, UserTurn } from '../../../../shared/turns'
 
@@ -209,6 +209,11 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
   const turnThinking = concise && !turn.thinkingLive ? '' : turn.thinking ?? ''
   const edgeFirst = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).first)
   const edgeLast = useStore((s) => viewEdge(turn.sourceIds, s.messages, !!streaming).last)
+  const showCompaction = useStore((s) => {
+    if (s.session?.compaction) return edgeLast
+    const anchor = compactionAnchorId(s.messages, s.session?.lastCompaction)
+    return anchor !== null && turn.sourceIds.includes(anchor)
+  })
   const approvals = useStore((s) => s.approvals)
   const approvalIds = streaming ? approvalCallIds(approvals, turn.tools, sessionId) : undefined
   const promoted = turn.response?.hasTools ? (turn.responseParts?.length ? turn.responseParts : [turn.response]) : []
@@ -301,7 +306,8 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
   
           <SubagentLine turn={turn} scope={subagentScope} />
   
-          {edgeLast ? <CompactionMarker /> : null}
+          {showCompaction ? <CompactCommandEcho /> : null}
+          {showCompaction ? <CompactionMarker /> : null}
   
           {streaming ? <LiveRunNotice /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}

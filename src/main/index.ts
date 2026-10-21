@@ -393,6 +393,11 @@ const subagentService: SubagentService = new SubagentService({
     if (answer?.choice === 'deny') return { decision: 'deny' as const, ...(answer.feedback ? { feedback: answer.feedback } : {}) }
     return { decision: 'no-answer' as const }
   },
+  forkSource: (context) => {
+    const parent = (context.parentRunId ? runners?.agentOf(context.parentRunId) : null) ??
+      (context.parentSessionId ? runners?.agentForSession(context.parentSessionId) : null) ?? null
+    return parent ? parent.forkSource() : '来源会话已关闭，不能派 fork 子代理'
+  },
   onChange: (run) => {
     if (run.status !== 'starting' && run.status !== 'running') {
       approvals.cancel((pending) => pending.subagentId === run.id)
@@ -3330,7 +3335,10 @@ app.whenReady().then(async () => {
       host: mcpAppHost(),
       runtime: mcpAppViewRuntime.runtime,
       ownerGuard: mcpAppViewRuntime.ownerGuard,
-      ask: (request) => approvals.ask(request),
+      ask: (request) => {
+        const owner = request.runId ? runners?.agentOf(request.runId)?.approvalOwner() : undefined
+        return approvals.ask(owner ? { ...request, owner } : request)
+      },
       audit: new McpAppViewAuditStore(),
       serverConfigOf: (serverId) => loadMcpServers().servers.find((server) => server.id === serverId) ?? null,
       permissionMode: async () => (await getSettings()).permissionMode ?? 'danger',

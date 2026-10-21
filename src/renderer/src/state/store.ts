@@ -161,6 +161,7 @@ export interface Store {
   stats: SessionStats | null
   queue: QueueState
   pendingSends: PendingSend[]
+  compactCommand: { sessionId: string; text: string } | null
   quotaResume: QuotaResumeWait | null
   runTail: { sessionId: string; id: string } | null
   messages: UIMessage[]
@@ -974,6 +975,7 @@ export const useStore = create<Store>((rawSet, get) => {
   stats: null,
   queue: EMPTY_QUEUE,
   pendingSends: [],
+  compactCommand: null,
   quotaResume: null,
   runTail: null,
   messages: [],
@@ -2111,6 +2113,8 @@ export const useStore = create<Store>((rawSet, get) => {
 
   compact: async (customInstructions) => {
     if (!(await get().ensureActivated())) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    const sessionId = get().session?.sessionId
+    if (sessionId) set({ compactCommand: { sessionId, text: customInstructions ? `/compact ${customInstructions}` : '/compact' } })
     return piCall(() => window.yan.compact(customInstructions))
   },
 

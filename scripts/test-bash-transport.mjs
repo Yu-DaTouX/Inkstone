@@ -24,7 +24,11 @@ const ctx = { cwd, sessionManager: { getSessionId: () => 'test', getSessionFile:
 let registered
 registerBashFileTransport({ registerTool: (tool) => { registered = tool } }, core)
 assert.equal(registered?.name, 'bash', '覆盖的是 pi 的 bash 工具')
-assert.deepEqual(registered.parameters, core.createBashToolDefinition(cwd).parameters, '参数形状与 pi 原生一致')
+const nativeParameters = JSON.parse(JSON.stringify(core.createBashToolDefinition(cwd).parameters))
+assert.deepEqual({ ...registered.parameters, properties: { ...registered.parameters.properties, description: undefined } }, { ...nativeParameters, properties: { ...nativeParameters.properties, description: undefined } }, '除说明参数外与 pi 原生一致')
+assert.equal(registered.parameters.properties.description?.type, 'string', '多一个可选的说明参数')
+assert.ok(!registered.parameters.required?.includes('description'), '说明参数可省略')
+assert.equal((await registered.execute('t', { command: 'echo described', description: '打个招呼' }, undefined, undefined, ctx)).content.map((c) => c.text ?? '').join('').trim(), 'described', '带说明参数照常执行')
 
 async function run(command) {
   const result = await registered.execute('t', { command }, undefined, undefined, ctx)

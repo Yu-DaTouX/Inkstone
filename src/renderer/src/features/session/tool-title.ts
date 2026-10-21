@@ -117,9 +117,16 @@ export function fileBaseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
 }
 
+const DESCRIPTION_MAX = 120
+
+export function stepDescription(call: Pick<UIToolCall, 'args'>): string {
+  const value = textArg(call, ['description']).replace(/\s+/g, ' ').trim()
+  return value.length > DESCRIPTION_MAX ? `${value.slice(0, DESCRIPTION_MAX - 1)}\u2026` : value
+}
+
 export function toolTarget(call: Pick<UIToolCall, 'name' | 'args'>): string {
   const category = stepCategory(call.name)
-  if (category === 'bash') return redactCommandSecrets(commandText(call))
+  if (category === 'bash') return stepDescription(call) || redactCommandSecrets(commandText(call))
   if (category === 'read' || category === 'edit' || category === 'write') {
     const path = textArg(call, ['file_path', 'path', 'file'])
     if (path) return fileBaseName(path)
@@ -160,10 +167,12 @@ export function toolStepTitle(
 ): ToolStepTitle {
   const category = stepCategory(call.name)
   const verb = stepVerbKey(call, tt)
+  const description = category === 'bash' ? stepDescription(call) : ''
+  if (description) return { label: description, meta: '', code: false }
   return {
     label: verb ?? call.name,
     meta: toolTarget(call),
-    code: category === 'bash'
+    code: category === 'bash' && !stepDescription(call)
   }
 }
 

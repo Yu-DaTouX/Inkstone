@@ -182,6 +182,17 @@ async function main() {
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'error' && c[2] === '上下文不可压缩'), '/compact 失败报告原文')
     ok(!r.calls.some((c) => c[0] === 'clearAll'), '/compact 失败保留草稿')
+    ok(r.calls.findIndex((c) => c[0] === 'clearText') < r.calls.findIndex((c) => c[0] === 'notify'), '/compact 提交时先清空输入框')
+    ok(r.calls.some((c) => c[0] === 'restoreText' && c[1] === '/compact'), '/compact 失败把命令放回输入框')
+
+    let finishCompact
+    r = recordingPort({ text: '/compact', commands, actions: { compact: () => new Promise((resolve) => { finishCompact = resolve }) } })
+    const pendingCompact = S.submitComposerInput(r.port)
+    await Promise.resolve()
+    ok(r.calls.some((c) => c[0] === 'clearText'), '/compact 压缩进行中输入框已清空')
+    finishCompact({ ok: true })
+    await pendingCompact
+    ok(!r.calls.some((c) => c[0] === 'restoreText'), '/compact 成功不还原命令')
 
     r = recordingPort({
       text: '/export',

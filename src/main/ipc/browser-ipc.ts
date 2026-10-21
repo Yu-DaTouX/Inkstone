@@ -1,6 +1,7 @@
 import type { BrowserController } from '../browser'
 import type { IpcRegistrar } from './registrar'
 import type { PreviewSiteGate } from '../preview-site-gate'
+import { fetchRemoteImage } from '../remote-image'
 
 const CLOSED_STATE = { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false }
 const NOT_READY = { ok: false, error: '浏览器未初始化' }
@@ -26,6 +27,10 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => ({
     decision: siteGate ? await siteGate.check(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
   }))
+  rawHandle('yan:browser:remoteImage', async (_e, sessionId: unknown, url: unknown, prompt: unknown) => {
+    await siteGate?.ready()
+    return fetchRemoteImage({ gate: siteGate ?? null }, typeof sessionId === 'string' ? sessionId : '', url, prompt === true)
+  })
   const loadedGate = async (): Promise<PreviewSiteGate | undefined> => {
     await siteGate?.ready()
     return siteGate

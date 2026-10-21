@@ -39,7 +39,7 @@ export async function runContextTrimTests(ok, mod, limits) {
     const trimmed = new Map()
     const skill = turn(1, big, 'read', { path: 'C:\\x\\skills\\office\\SKILL.md' })
     const msgs = [...skill, ...history(6).map((m) => (m.toolCallId ? { ...m, toolCallId: `n${m.toolCallId}` } : m.content?.[0]?.type === 'toolCall' ? { ...m, content: [{ ...m.content[0], id: `n${m.content[0].id}` }] } : m))]
-    const out = trimMessages(msgs, { trimmed, projectedTokens: 200_000, threshold: 80_000 })
+    const out = trimMessages(msgs, { trimmed, projectedTokens: 85_000, threshold: 80_000 })
     ok(!stubbed(out ?? []).includes('c1'), '裁剪：技能文件的读取结果不裁')
   }
 
@@ -57,6 +57,33 @@ export async function runContextTrimTests(ok, mod, limits) {
     const trimmed = new Map()
     const small =Array.from({ length: 8 }, (_, i) => turn(i + 1, 'short output')).flat()
     ok(trimMessages(small, { trimmed, projectedTokens: 200_000, threshold: 80_000 }) === undefined, '裁剪：小输出不值得换成存根')
+  }
+
+  {
+    const mid = 'y'.repeat(2_400)
+    const midHistory = Array.from({ length: 40 }, (_, i) => turn(i + 1, mid)).flat()
+    const ids = stubbed(trimMessages(midHistory, { trimmed: new Map(), projectedTokens: 100_000, threshold: 80_000 }) ?? [])
+    ok(ids.includes('c1') && !ids.includes('c40'), '裁剪：较早的中等输出（1500–4000 字符）也会成批换成存根', ids.join(','))
+  }
+
+  {
+    const content = Array.from({ length: 1000 }, (_, i) => `line ${i} ${'z'.repeat(30)}`).join('\n')
+    const writeTurn = (i) => turn(i, 'Successfully wrote', 'write', { path: `src/f${i}.ts`, content })
+    const editTurn = (i) => turn(i, 'Successfully replaced 1 block(s)', 'edit', { path: `src/e${i}.ts`, edits: [{ oldText: content, newText: content }] })
+    const msgs = [...writeTurn(1), ...editTurn(2), ...Array.from({ length: 4 }, (_, i) => writeTurn(i + 3)).flat()]
+    const trimmed = new Map()
+    const out = trimMessages(msgs, { trimmed, projectedTokens: 85_000, threshold: 80_000 })
+    const argsOf = (list, id) => list.find((m) => m.role === 'assistant' && m.content[0]?.id === id).content[0].arguments
+    ok(out && /^\[Earlier write input trimmed/.test(argsOf(out, 'c1').trimmed) && argsOf(out, 'c1').path === 'src/f1.ts' && !('content' in argsOf(out, 'c1')), '裁剪：旧的 write 参数换成带路径的存根', JSON.stringify(out && argsOf(out, 'c1')))
+    ok(/edit input trimmed/.test(argsOf(out, 'c2').trimmed) && argsOf(out, 'c2').path === 'src/e2.ts', '裁剪：旧的 edit 参数换成带路径的存根')
+    ok(argsOf(out, 'c6').content === content, '裁剪：最近几轮的写入参数原样保留')
+    ok(argsOf(msgs, 'c1').content === content, '裁剪：不改原调用对象（会话记录不受影响）')
+    const again = trimMessages([...msgs, ...writeTurn(7)], { trimmed, projectedTokens: 60_000, threshold: 80_000 })
+    ok(again && JSON.stringify(argsOf(again, 'c1')) === JSON.stringify(argsOf(out, 'c1')), '裁剪：已裁的参数在后续请求里保持同一存根（前缀稳定）')
+    const failedEdit = [...turn(1, 'x', 'edit', { path: 'a.ts', edits: [{ oldText: content, newText: 'n' }] }).map((m) => (m.role === 'toolResult' ? { ...m, isError: true } : m)), ...Array.from({ length: 6 }, (_, i) => writeTurn(i + 2)).flat()]
+    const failedOut = trimMessages(failedEdit, { trimmed: new Map(), projectedTokens: 85_000, threshold: 80_000 })
+    ok(failedOut && argsOf(failedOut, 'c2').trimmed, '裁剪：失败 edit 之后的旧写入照常裁剪')
+    ok(argsOf(failedOut ?? failedEdit, 'c1').edits?.[0]?.oldText === content, '裁剪：失败的 edit 保留原参数（模型可能要据此重试）')
   }
 
   {

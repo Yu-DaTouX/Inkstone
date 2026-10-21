@@ -1,6 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { SessionTextKey } from './text'
-import { redactCommandSecrets, stepCategory, stepVerbKey, toolTarget } from './tool-title'
+import { redactCommandSecrets, stepCategory, stepDescription, stepVerbKey, toolTarget } from './tool-title'
 
 type Kind = 'read' | 'search' | 'fetch' | 'run' | 'edit' | 'other'
 
@@ -34,7 +34,10 @@ export function toolRunningLabel(
   generating: string,
   tt: (key: SessionTextKey, vars?: Record<string, string | number>) => string
 ): string {
+  if (generatingArgs(call)) return `${stepVerbKey(call, tt) ?? call.name} ${generating}`.trim()
+  const description = stepCategory(call.name) === 'bash' ? stepDescription(call) : ''
+  if (description) return description
   const label = stepVerbKey(call, tt) ?? call.name
-  const meta = generatingArgs(call) ? generating : summarize(call)
+  const meta = summarize(call)
   return `${label} ${meta}`.trim()
 }

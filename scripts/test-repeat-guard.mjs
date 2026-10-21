@@ -87,10 +87,10 @@ export async function runRepeatGuardTests(ok) {
     ok(handlers.tool_call(call('pnpm build')) === undefined, '提醒场景：第 1 次')
     ok(handlers.tool_call(call('pnpm build')) === undefined, '提醒场景：第 2 次（到提醒线）')
     const warned = handlers.before_provider_request({ payload })
-    ok(Array.isArray(warned?.messages) && warned.messages.length === payload.messages.length + 1, '第 2 次之后注入一条提醒')
+    ok(Array.isArray(warned?.messages) && warned.messages.length === payload.messages.length, '第 2 次之后注入一条提醒，不新增消息')
     ok(
-      JSON.stringify(warned.messages[1]).includes('Repeat guard'),
-      '提醒插在用户消息**之前**（与 language.js 同一个位置口径）'
+      JSON.stringify(warned.messages.at(-1)).includes('Repeat guard') && JSON.stringify(warned.messages[0]) === JSON.stringify(payload.messages[0]),
+      '提醒追加在请求末尾，不改动前面的消息（保住提示缓存前缀）'
     )
     ok(handlers.before_provider_request({ payload }) === undefined, '同一条串只提醒一次（不做复读机）')
 

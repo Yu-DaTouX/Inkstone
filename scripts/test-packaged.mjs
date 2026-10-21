@@ -225,6 +225,20 @@ const probeEnv = cleanEnv({
   YAN_PROBE_DELAY: String(delay),
   YAN_PROBE_OUT: outFile
 })
+const listenersOn = (port) => {
+  try {
+    return new Set(
+      execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true })
+        .split(/\r?\n/)
+        .map((line) => line.trim().split(/\s+/))
+        .filter((cols) => cols[0] === 'TCP' && cols[1]?.endsWith(`:${port}`) && cols[3] === 'LISTENING')
+        .map((cols) => cols[4])
+    )
+  } catch {
+    return new Set()
+  }
+}
+const remoteListenersBefore = listenersOn(37892)
 const child = spawn(exePath, [
   `--yan-probe=${join(root, 'scripts', 'probe', 'packaged.js')}`,
   `--yan-probe-delay=${delay}`,
@@ -334,9 +348,13 @@ if (!exeFromArg) {
 
 {
   const probe = await remoteProbe
+  const newListeners = [...listenersOn(remoteDefaultPort)].filter((pid) => !remoteListenersBefore.has(pid))
+  const preexisting = remoteListenersBefore.size > 0
   runChecks.push([
-    probe.reachable === false,
-    `远程服务默认不监听（127.0.0.1:${remoteDefaultPort} 连不上：${probe.why ?? 'ok'}）`
+    preexisting ? newListeners.length === 0 : probe.reachable === false,
+    preexisting
+      ? `远程服务默认不监听（${remoteDefaultPort} 已被测试前就在的进程 ${[...remoteListenersBefore].join(',')} 占用；被测实例没有新增监听）`
+      : `远程服务默认不监听（127.0.0.1:${remoteDefaultPort} 连不上：${probe.why ?? 'ok'}）`
   ])
 }
 

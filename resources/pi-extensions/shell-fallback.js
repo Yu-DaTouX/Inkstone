@@ -20,6 +20,16 @@ function toolName(entry) {
   return ''
 }
 
+export const COMMAND_DESCRIPTION = 'What this command is for, in a few words of the user\'s language (shown to the user as the step title instead of the raw command), e.g. "查看构建日志" or "Run the unit tests".'
+
+export function withDescriptionParameter(parameters) {
+  const plain = JSON.parse(JSON.stringify(parameters ?? { type: 'object', properties: {} }))
+  return {
+    ...plain,
+    properties: { ...(plain.properties ?? {}), description: { type: 'string', description: COMMAND_DESCRIPTION } }
+  }
+}
+
 export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFixer({ shimDir: join(tmpdir(), 'yan-python-shim') }) } = {}) {
   const spawnHook = (context) => ({ ...context, env: fixEnv(context.env) })
   const bashTool = (cwd) => {
@@ -35,8 +45,11 @@ export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFi
   const template = core.createBashToolDefinition(process.cwd())
   pi.registerTool({
     ...template,
-    execute: (toolCallId, params, signal, onUpdate, ctx) =>
-      bashTool(ctx?.cwd ?? process.cwd()).execute(toolCallId, params, signal, onUpdate, ctx)
+    parameters: withDescriptionParameter(template.parameters),
+    execute: (toolCallId, params, signal, onUpdate, ctx) => {
+      const { description: _description, ...rest } = params ?? {}
+      return bashTool(ctx?.cwd ?? process.cwd()).execute(toolCallId, rest, signal, onUpdate, ctx)
+    }
   })
 }
 

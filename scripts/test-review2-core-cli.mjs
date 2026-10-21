@@ -21,9 +21,13 @@ try {
   const remoteHooks = new Map()
   repeat({ on: (name, fn) => remoteHooks.set(name, fn) })
   for (let i = 0; i < 3; i++) remoteHooks.get('tool_call')({ toolName: 'read', input: { path: 'x' } })
-  const remote = remoteHooks.get('before_provider_request')({ payload: { messages: [{ role: 'user', content: 'keep' }] } }, { model: { provider: 'openai' } })
-  assert.equal(remote.messages[0].role, 'system')
-  pass('repeat guard local reminder appends to user without changing message prefix')
+  const toolLoop = [{ role: 'user', content: 'keep' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't1' }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1' }] }]
+  const remote = remoteHooks.get('before_provider_request')({ payload: { messages: toolLoop } }, { model: { provider: 'anthropic' } })
+  assert.equal(remote.messages.length, 3)
+  assert.ok(!remote.messages.some(message => message.role === 'system'))
+  assert.deepEqual(remote.messages.slice(0, 2), toolLoop.slice(0, 2))
+  assert.match(JSON.stringify(remote.messages[2].content.at(-1)), /Repeat guard/)
+  pass('repeat guard reminder appends to the last user message for every provider, never inserting a system message mid-history')
 
   const lockOut = join(temp, 'lock.mjs')
   await build({ entryPoints: ['src/core/data-root-lock.ts'], outfile: lockOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })

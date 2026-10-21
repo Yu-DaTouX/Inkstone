@@ -14,6 +14,7 @@ export type SessionTextKey =
   | 'subagentScopeWorktree'
   | 'subagentScopeReadOnly'
   | 'subagentScopeShared'
+  | 'subagentScopeFork'
   | 'subagentReviewPending'
   | 'subagentResize'
   | 'subagentSources'
@@ -170,6 +171,7 @@ const ZH: Record<SessionTextKey, string> = {
   subagentScopeWorktree: '工作树',
   subagentScopeReadOnly: '只读',
   subagentScopeShared: '共享目录',
+  subagentScopeFork: 'fork · 继承当前对话',
   subagentReviewPending: '待审查',
   subagentResize: '调整大小',
   subagentSources: '来源',
@@ -327,6 +329,7 @@ const EN: Record<SessionTextKey, string> = {
   subagentScopeWorktree: 'Worktree',
   subagentScopeReadOnly: 'Read-only',
   subagentScopeShared: 'Shared folder',
+  subagentScopeFork: 'fork · inherits this conversation',
   subagentReviewPending: 'Awaiting review',
   subagentResize: 'Resize',
   subagentSources: 'Sources',
