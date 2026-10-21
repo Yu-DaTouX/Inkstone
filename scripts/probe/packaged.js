@@ -29,8 +29,9 @@
   }
   const closeSettings = async () => {
     for (let i = 0; i < 40 && settingsOpen(); i += 1) {
-      document.activeElement?.blur?.()
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      const close = q('[data-testid="settings-close"]')
+      if (close) close.click()
+      else (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await sleep(100)
     }
   }
