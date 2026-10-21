@@ -1,4 +1,4 @@
-import { normalizeBaseUrl } from './api/client'
+import { normalizeBaseUrl } from './api/base-url'
 import { parseRelayLink, type RelayPairing } from './api/relay'
 
 export interface PairingPrefill {

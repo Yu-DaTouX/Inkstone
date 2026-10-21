@@ -26,9 +26,10 @@ async function activeProjects(): Promise<Array<{ id: string; name: string; cwd: 
   return (await getSettings()).projects.filter((project) => !project.archived).map(({ id, name, cwd }) => ({ id, name, cwd }))
 }
 
-function notifyIncoming(win: BrowserWindow | null, request: CollabMergeRequest): void {
+async function notifyIncoming(win: BrowserWindow | null, request: CollabMergeRequest): Promise<void> {
   if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
-  if (!Notification.isSupported()) return
+  const sound = (await getSettings()).sound
+  if (sound?.enabled !== true || sound.notifications === false || !Notification.isSupported()) return
   new Notification({ title: '多人协作 · 合并请求', body: `${request.peerName.replace(/^砚\s*·\s*/, '')}：${request.title}（${request.branch}）` }).show()
 }
 
@@ -50,7 +51,7 @@ export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): Colla
       if (!created.ok || !created.path) return { ok: false, error: created.failure?.message ?? '创建工作树失败' }
       return { ok: true, path: created.path, branch: created.branch ?? branch }
     },
-    notifyIncoming: (request) => notifyIncoming(deps.win(), request)
+    notifyIncoming: (request) => void notifyIncoming(deps.win(), request)
   })
 
   deps.peerHost.collab = createCollabHost({

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
+import type { Readable } from 'node:stream'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { hostname } from 'node:os'
 import { negotiateCapabilities } from '../shared/capability-negotiation'
@@ -18,7 +19,7 @@ import {
 import type { RemoteHumanApproval } from '../shared/remote-protocol'
 import type { RemoteImageInput } from '../shared/remote-protocol'
 import type { RemoteDeviceStore } from './remote-devices'
-import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
+import { PEER_CONNECTION_HEADER, PEER_OPERATIONS, type PeerGrantView, type PeerOperation, type PeerProjectRef } from '../shared/peer-protocol'
 import type { PeerGrantRegistry } from './peer-grants'
 import type { PeerCollabHost, PeerCollabReply } from './collab/host'
 
@@ -79,6 +80,7 @@ export interface RemoteServerOptions {
   peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   onLog?: (text: string, level?: 'info' | 'error') => void
   relayToken?: string
+  peerGraceMs?: number
 }
 
 
@@ -94,6 +96,8 @@ const MAX_NAME_CHARS = 200
 const SESSION_ID_MAX = 200
 const PAIR_RATE_WINDOW_MS = 60_000
 const PAIR_RATE_LIMIT = 10
+const PEER_STREAM_GRACE_MS = 60_000
+const RELAY_HANDOFF_HEADER = 'x-yan-relay-client'
 const CORS_HEADERS = {
   'access-control-allow-headers': `authorization, content-type, x-yan-remote-token, ${REMOTE_IDEMPOTENCY_HEADER}`,
   'access-control-allow-methods': 'GET, POST, OPTIONS'
@@ -201,6 +205,8 @@ export class RemoteServer {
   private heartbeat: NodeJS.Timeout | null = null
   private readonly clients = new Set<ServerResponse>()
   private readonly peerClients = new Map<string, ServerResponse>()
+  private readonly peerGraceTimers = new Map<string, NodeJS.Timeout>()
+  private readonly openStreams = new Set<Readable>()
   private readonly token: string | null
   private boundPort: number
   private seq = 0
@@ -276,6 +282,10 @@ export class RemoteServer {
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
+    for (const timer of this.peerGraceTimers.values()) clearTimeout(timer)
+    this.peerGraceTimers.clear()
+    for (const stream of this.openStreams) stream.destroy()
+    this.openStreams.clear()
     for (const client of this.clients) {
       try {
         client.end()
@@ -290,14 +300,62 @@ export class RemoteServer {
     const server = this.server
     this.server = null
     if (!server) return
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+    server.closeAllConnections()
+    const deadline = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 3000)
+      timer.unref?.()
+    })
+    await Promise.race([closed, deadline])
+  }
+
+  private pipeStream(stream: Readable, res: ServerResponse): void {
+    this.openStreams.add(stream)
+    const forget = (): void => {
+      this.openStreams.delete(stream)
+    }
+    stream.on('error', () => {
+      forget()
+      res.destroy()
+    })
+    stream.on('close', forget)
+    res.on('close', () => {
+      forget()
+      stream.destroy()
+    })
+    stream.pipe(res)
   }
 
   disconnectConnection(connectionId: string): void {
+    const timer = this.peerGraceTimers.get(connectionId)
+    if (timer) clearTimeout(timer)
+    this.peerGraceTimers.delete(connectionId)
     const client = this.peerClients.get(connectionId)
     if (!client) return
     this.peerClients.delete(connectionId)
     try { client.end() } catch { }
+  }
+
+  private peerGrace(): number {
+    return this.options.peerGraceMs ?? PEER_STREAM_GRACE_MS
+  }
+
+  private resumePeerStream(connectionId: string, deviceId: string): PeerGrantView | null {
+    const timer = this.peerGraceTimers.get(connectionId)
+    if (!timer) return null
+    clearTimeout(timer)
+    this.peerGraceTimers.delete(connectionId)
+    return this.options.peers?.grants.list().find((item) => item.connectionId === connectionId && item.deviceId === deviceId && item.activatedAt !== null) ?? null
+  }
+
+  private schedulePeerRevoke(connectionId: string): void {
+    if (this.peerGraceTimers.has(connectionId)) return
+    const timer = setTimeout(() => {
+      this.peerGraceTimers.delete(connectionId)
+      this.options.peers?.grants.revoke(connectionId)
+    }, this.peerGrace())
+    timer.unref?.()
+    this.peerGraceTimers.set(connectionId, timer)
   }
 
   disconnectDevice(deviceId: string): void {
@@ -341,7 +399,11 @@ export class RemoteServer {
       return true
     } catch {
       this.clients.delete(client)
-      for (const [id, response] of this.peerClients) if (response === client) this.peerClients.delete(id)
+      for (const [id, response] of this.peerClients) {
+        if (response !== client) continue
+        this.peerClients.delete(id)
+        this.schedulePeerRevoke(id)
+      }
       client.destroy()
       return false
     }
@@ -425,6 +487,13 @@ export class RemoteServer {
     this.writeOperation(res, await result)
   }
 
+  private relayHeaderTrusted(req: IncomingMessage): boolean {
+    const expected = this.options.relayToken
+    if (!expected) return true
+    const presented = req.headers['x-yan-relay']
+    return typeof presented === 'string' && constantTimeEqual(expected, presented)
+  }
+
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const origin = req.headers.origin
     if (origin) {
@@ -438,6 +507,11 @@ export class RemoteServer {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, CORS_HEADERS)
       res.end()
+      return
+    }
+
+    if (!this.relayHeaderTrusted(req)) {
+      writeError(res, 403, '请求没有经过可信任的中继通道', 'relay_token_required')
       return
     }
 
@@ -561,9 +635,7 @@ export class RemoteServer {
       const found = await this.options.handlers.image(sessionId, messageId, index)
       if ('ok' in found) { this.writeOperation(res, found); return }
       res.writeHead(200, { 'content-type': found.mediaType, 'content-length': found.bytes, 'cache-control': 'no-store', ...CORS_HEADERS })
-      const stream = createReadStream(found.path)
-      stream.on('error', () => res.destroy())
-      stream.pipe(res)
+      this.pipeStream(createReadStream(found.path), res)
       return
     }
 
@@ -707,7 +779,7 @@ export class RemoteServer {
 
     if (req.method === 'GET' && parts.length === 1 && parts[0] === 'events') {
       if (this.clients.size + this.peerClients.size >= 32) return writeError(res, 429, '事件连接过多，请关闭其他连接后重试')
-      const grant = connectionId ? grants.activate(connectionId, device.id) : null
+      const grant = connectionId ? (this.resumePeerStream(connectionId, device.id) ?? grants.activate(connectionId, device.id)) : null
       if (!grant || !connectionId) return writeError(res, 401, '本次连接未获批准、已使用过或已失效，请重新申请', 'peer_connection_required')
       res.writeHead(200, {
         'content-type': 'text/event-stream; charset=utf-8',
@@ -718,7 +790,7 @@ export class RemoteServer {
       this.peerClients.set(connectionId, res)
       res.on('close', () => {
         this.peerClients.delete(connectionId)
-        grants.revoke(connectionId)
+        this.schedulePeerRevoke(connectionId)
       })
       this.writeSse(res, `event: grant\ndata: ${JSON.stringify(grant)}\n\n`)
       return
@@ -834,9 +906,8 @@ export class RemoteServer {
       'cache-control': 'no-store'
     })
     const stream = createReadStream(reply.path)
-    stream.on('error', () => res.destroy())
     res.on('close', () => reply.done())
-    stream.pipe(res)
+    this.pipeStream(stream, res)
   }
 
   private async pair(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -846,7 +917,10 @@ export class RemoteServer {
     }
     const now = Date.now()
     this.pairAttempts = this.pairAttempts.filter((at) => now - at < PAIR_RATE_WINDOW_MS)
-    const source = req.socket?.remoteAddress ?? 'unknown'
+    const relayClient = this.options.relayToken ? req.headers[RELAY_HANDOFF_HEADER] : undefined
+    const source = typeof relayClient === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(relayClient)
+      ? `relay:${relayClient}`
+      : req.socket?.remoteAddress ?? 'unknown'
     for (const [key, attempts] of this.pairAttemptsBySource) {
       const recent = attempts.filter((at) => now - at < PAIR_RATE_WINDOW_MS)
       if (recent.length) this.pairAttemptsBySource.set(key, recent)
@@ -923,9 +997,7 @@ export class RemoteServer {
       'cache-control': 'no-store',
       ...CORS_HEADERS
     })
-    const stream = createReadStream(found.path)
-    stream.on('error', () => res.destroy())
-    stream.pipe(res)
+    this.pipeStream(createReadStream(found.path), res)
   }
 
   private writeOperation(res: ServerResponse, result: RemoteOperationResult, replayed = false): void {
