@@ -1,4 +1,5 @@
 export const BrowserWindow = class {}
+export const app = { getPath: () => '', getName: () => 'inkstone', isPackaged: false }
 export const session = { fromPartition: () => ({}) }
 
 export function delayingNativeConfigReader(readReal, delays = {}) {

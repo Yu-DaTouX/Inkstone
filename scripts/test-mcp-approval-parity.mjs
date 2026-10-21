@@ -131,7 +131,7 @@ for (const mode of ['danger', 'all']) {
   await writePrefs(mode)
   for (const { key, annotations } of CASES) {
     const name = toolNameOf(key)
-    const expected = shared.mcpCallReasons(name, annotations, mode).length > 0
+    const expected = (mode === 'all' ? [] : shared.mcpCallDanger(name, annotations)).length > 0
     const asked = await observedAsk(name)
     ok(
       asked === expected,
@@ -220,6 +220,22 @@ const denyAsk = () => Promise.resolve({ choice: 'deny' })
   let asked = false
   const result = await shared.approveAppViewCall({ ...baseCall, permissionMode: 'all', annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve({ choice: 'deny' }) })
   ok(result.allowed && !asked && result.recorded && result.reasons.length > 0, 'all 档不拦截但仍记录风险')
+}
+
+{
+  let approvedRequest = null
+  const called = await shared.approveAppViewCall(
+    { server: 'a__b', tool: 'c', visibility: ['app'], cwd: 'C:/proj', annotations: { destructiveHint: true } },
+    (request) => {
+      approvedRequest = request
+      return Promise.resolve({ choice: 'once' })
+    }
+  )
+  ok(
+    called.allowed && approvedRequest?.title === 'App 视图请求调用 a__b / c',
+    '审批卡标题用真实 server / tool（名字含 __ 也不错位）',
+    approvedRequest?.title
+  )
 }
 
 {

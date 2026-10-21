@@ -216,6 +216,15 @@ try {
     'windows-mcp：保留在砚的连接里，不导入'
   )
 
+  await writeJson(hostConfigFile, {
+    servers: [{ id: 'managed-svc', transport: 'stdio', command: 'node', ownedBy: 'inkstone', appHost: { at: '2026-01-01T00:00:00.000Z', natives: [] } }]
+  })
+  await fails(
+    () => m.prepareNativeMcpImport({ host, serverId: 'managed-svc', owner: { id: 'r' } }),
+    'inkstone_managed',
+    '砚托管服务：拒绝直接导入（不建第二条连接）'
+  )
+
   await writeJson(hostConfigFile, { servers: [{ id: 'weather', transport: 'stdio', command: 'node' }] })
   await fails(
     () => m.prepareNativeMcpImport({ host, serverId: 'weather', owner: { id: 'r' } }),

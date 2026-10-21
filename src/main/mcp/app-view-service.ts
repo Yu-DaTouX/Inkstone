@@ -8,6 +8,7 @@ import type {
   McpAppViewSnapshot
 } from '../../shared/mcp-app-view'
 import { isCompleteMcpAppOwner, type McpAppOwner } from '../../shared/mcp-app-preview'
+import { truncateUtf8 } from '../../shared/mcp'
 import { approveAppViewCall, type AppViewAsk } from './app-view-approval'
 import {
   buildMcpAppHostContext,
@@ -158,7 +159,6 @@ interface InstanceBinding {
   serverId: string
   resourceUri: string
   title: string
-  createdAt: number
   initialized: boolean
   abort: AbortController
   seenIds: Set<string>
@@ -170,6 +170,7 @@ const DEFAULT_MAX_CONCURRENT = 4
 const DEFAULT_MAX_SEEN_IDS = 512
 const DEFAULT_MAX_INSTANCES = 8
 const DEFAULT_MAX_CALL_SESSIONS = 512
+const APP_RESULT_TEXT_MAX_BYTES = 32 * 1024
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -219,13 +220,13 @@ function validateToolArgs(schema: unknown, args: Record<string, unknown>): strin
   if (!shape) return null
   if (Array.isArray(shape.required)) {
     for (const key of shape.required) {
-      if (typeof key === 'string' && !(key in args)) return `缺少必填参数：${key}`
+      if (typeof key === 'string' && !Object.prototype.hasOwnProperty.call(args, key)) return `缺少必填参数：${key}`
     }
   }
   const props = asRecord(shape.properties)
   if (!props) return null
   for (const [key, definition] of Object.entries(props)) {
-    if (!(key in args)) continue
+    if (!Object.prototype.hasOwnProperty.call(args, key)) continue
     const def = asRecord(definition)
     if (!def) continue
     if (typeof def.type === 'string' && !matchesJsonType(def.type, args[key])) {
@@ -233,6 +234,24 @@ function validateToolArgs(schema: unknown, args: Record<string, unknown>): strin
     }
   }
   return null
+}
+
+function limitResultContent(result: unknown): unknown {
+  const record = asRecord(result)
+  if (!record || !Array.isArray(record.content)) return result
+  let limited = false
+  const content = record.content.map((item) => {
+    const entry = asRecord(item)
+    if (!entry || typeof entry.text !== 'string') return item
+    const truncated = truncateUtf8(entry.text, APP_RESULT_TEXT_MAX_BYTES)
+    if (!truncated.truncated) return item
+    limited = true
+    return {
+      ...entry,
+      text: `${truncated.text}\n\n[结果 ${truncated.bytes} 字节，超过 ${APP_RESULT_TEXT_MAX_BYTES} 字节上限，已截断]`
+    }
+  })
+  return limited ? { ...record, content } : result
 }
 
 function isFacts(value: unknown): value is McpAppViewRunnerFacts {
@@ -411,7 +430,6 @@ export class McpAppViewService implements McpAppViewApi {
       serverId,
       resourceUri,
       title,
-      createdAt: this.now(),
       initialized: false,
       abort: new AbortController(),
       seenIds: new Set(),
@@ -448,11 +466,8 @@ export class McpAppViewService implements McpAppViewApi {
         return null
       case MCP_APP_METHODS.sizeChanged:
         return null
-      case MCP_APP_METHODS.requestDisplayMode: {
-        const requested = typeof params.mode === 'string' ? params.mode : ''
-        const displayMode = ['inline', 'fullscreen', 'pip'].includes(requested) ? requested : 'inline'
-        return this.rpcResult(id, { displayMode })
-      }
+      case MCP_APP_METHODS.requestDisplayMode:
+        return this.rpcResult(id, { displayMode: 'inline' })
       case MCP_APP_METHODS.toolsCall:
         if (id === undefined) return this.rpcError(null, -32600, 'tools/call 必须是带 id 的请求')
         if (!binding.initialized) return this.rpcError(id, -32002, 'App 尚未完成初始化，拒绝调用工具')
@@ -567,17 +582,13 @@ export class McpAppViewService implements McpAppViewApi {
     return removed
   }
 
-  invalidateOwner(owner: McpAppOwner): number {
-    let removed = 0
-    for (const [instanceId, binding] of this.instances) {
-      if (this.sameOwner(binding.owner, owner)) {
-        this.instances.delete(instanceId)
-        this.abortBinding(binding)
-        removed++
-      }
-    }
+  resetForReload(): number {
+    const removed = this.instances.size
+    for (const binding of this.instances.values()) this.abortBinding(binding)
+    this.instances.clear()
+    this.callSessions.clear()
     try {
-      this.store.invalidateOwner(owner)
+      this.store.clear()
     } catch {
     }
     return removed
@@ -711,7 +722,7 @@ export class McpAppViewService implements McpAppViewApi {
         ...(outcome.structuredContent ? { structuredContent: outcome.structuredContent } : {}),
         ...(outcome.meta ? { _meta: outcome.meta } : {})
       }
-      return this.rpcResult(id, result)
+      return this.rpcResult(id, limitResultContent(result))
     } finally {
       binding.inFlight--
     }
@@ -803,18 +814,6 @@ export class McpAppViewService implements McpAppViewApi {
     } catch {
       return false
     }
-  }
-
-  private sameOwner(a: McpAppOwner, b: McpAppOwner): boolean {
-    return (
-      a.serverId === b.serverId &&
-      a.sessionId === b.sessionId &&
-      a.sessionFile === b.sessionFile &&
-      a.projectId === b.projectId &&
-      a.runnerId === b.runnerId &&
-      a.generation === b.generation &&
-      a.toolCallId === b.toolCallId
-    )
   }
 
   private serverFingerprint(serverId: string): string | null {

@@ -30,6 +30,7 @@ export interface McpToolDescription {
   inputSchema: unknown
   schemaRevision: string
   selfReportedReadOnly: boolean
+  annotations?: unknown
 }
 
 export interface McpCallOutcome {
@@ -54,7 +55,7 @@ export async function describeMcpTool(
   serverId: string,
   toolName: string
 ): Promise<McpToolDescription> {
-  const tools = await manager.listTools(serverId)
+  const tools = await manager.listToolsCached(serverId)
   const tool = tools.find((t) => t.name === toolName)
   if (!tool) {
     throw new McpToolError('tool_not_found', `MCP 服务 ${serverId} 上没有这个工具：${toolName}`, {
@@ -68,7 +69,8 @@ export async function describeMcpTool(
     ...(tool.description ? { description: tool.description } : {}),
     inputSchema: tool.inputSchema ?? null,
     schemaRevision: schemaRevisionOf(tool.inputSchema),
-    selfReportedReadOnly: Boolean(tool.annotations?.readOnlyHint)
+    selfReportedReadOnly: Boolean(tool.annotations?.readOnlyHint),
+    ...(tool.annotations ? { annotations: tool.annotations } : {})
   }
 }
 

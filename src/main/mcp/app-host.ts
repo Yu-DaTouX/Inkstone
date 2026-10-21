@@ -1,5 +1,5 @@
 import { McpConnectionManager, type McpRawToolDescriptor, type McpRequestOptions } from './connection-manager'
-import { loadMcpServers } from './config'
+import { loadMcpServersCached } from './config'
 import { toolResultText, type McpServerStatus } from '../../shared/mcp'
 import {
   isInkstoneManaged,
@@ -193,7 +193,7 @@ export class McpAppHost {
   }
 
   listManagedServers(): McpAppServerConfig[] {
-    return loadMcpServers(this.env).servers.filter(isInkstoneManaged)
+    return loadMcpServersCached(this.env).servers.filter(isInkstoneManaged)
   }
 
   statusOf(serverId: string): { status: McpServerStatus; error?: string } {
@@ -225,7 +225,7 @@ export class McpAppHost {
   }
 
   private async evaluateOwnership(serverId: string, options: McpAppRequestOptions): Promise<OwnershipEvaluation> {
-    const config = loadMcpServers(this.env).servers.find((server) => server.id === serverId)
+    const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
     if (!config) {
       return { ok: false, error: new McpAppUnmanagedError(`MCP 服务 ${serverId} 不在配置里，拒绝由砚宿主连接`) }
     }
@@ -333,7 +333,7 @@ export class McpAppHost {
   }
 
   async reconcile(serverId: string): Promise<McpAppReconcileResult> {
-    const config = loadMcpServers(this.env).servers.find((server) => server.id === serverId)
+    const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
     const managed = Boolean(config && isInkstoneManaged(config))
     if (!config || !managed) {
       const closed = await this.runPool(serverId, () => this.dropPooled(serverId))
@@ -367,7 +367,7 @@ export class McpAppHost {
 
   async reconcileAll(): Promise<McpAppReconcileResult[]> {
     const ids = new Set<string>(this.pool.keys())
-    for (const server of loadMcpServers(this.env).servers) ids.add(server.id)
+    for (const server of loadMcpServersCached(this.env).servers) ids.add(server.id)
     const results: McpAppReconcileResult[] = []
     for (const serverId of ids) results.push(await this.reconcile(serverId))
     return results

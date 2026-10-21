@@ -122,7 +122,10 @@ export class McpConnectionManager {
     for (const id of [...this.connections.keys()]) {
       const conn = this.connections.get(id)!
       const next = wanted.get(id)
-      if (next && sameConnectionConfig(conn.config, next)) continue
+      if (next && sameConnectionConfig(conn.config, next)) {
+        conn.config = next
+        continue
+      }
       this.connections.delete(id)
       this.toolCache.delete(id)
       releases.push({ serverId: id, release: this.detachAndRelease(conn) })
@@ -362,7 +365,11 @@ export class McpConnectionManager {
     const ttlMs = options.ttlMs ?? 60_000
     if (!options.refresh) {
       const cached = this.toolCache.get(serverId)
-      if (cached && Date.now() - cached.at < ttlMs) return cached.tools
+      if (cached && Date.now() - cached.at < ttlMs) {
+        const conn = this.connections.get(serverId)
+        if (conn) conn.tools = cached.tools
+        return cached.tools
+      }
     }
     const tools = await this.listTools(serverId)
     this.toolCache.set(serverId, { tools, at: Date.now() })

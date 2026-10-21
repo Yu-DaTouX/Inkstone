@@ -34,12 +34,15 @@ export function mcpToolCapabilityId(serverId: string, toolName: string): string 
   return `mcp:${serverId}/${toolName}`
 }
 
-export function parseMcpToolId(id: string): { serverId: string; toolName: string } | null {
-  if (!id.startsWith('mcp:')) return null
-  const rest = id.slice('mcp:'.length)
-  const slash = rest.indexOf('/')
-  if (slash <= 0 || slash === rest.length - 1) return null
-  return { serverId: rest.slice(0, slash), toolName: rest.slice(slash + 1) }
+export function truncateUtf8(
+  text: string,
+  maxBytes: number
+): { text: string; bytes: number; truncated: boolean } {
+  const buffer = Buffer.from(text, 'utf8')
+  if (buffer.length <= maxBytes) return { text, bytes: buffer.length, truncated: false }
+  let end = maxBytes
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1
+  return { text: buffer.subarray(0, end).toString('utf8'), bytes: buffer.length, truncated: true }
 }
 
 export interface SchemaCheckResult {
