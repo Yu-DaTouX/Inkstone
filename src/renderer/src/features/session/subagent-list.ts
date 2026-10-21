@@ -3,9 +3,9 @@ import { isLiveSubagentRun, subagentRunTokens } from '../../../../shared/subagen
 import type { SubagentRun } from '../../../../shared/ipc'
 import type { RunSnapshot } from '../../../../shared/runs'
 
-export const SUBAGENT_LIST_SHOWN = 5
+const SUBAGENT_LIST_SHOWN = 5
 
-export type SubagentListRank = 0 | 1 | 2 | 3
+type SubagentListRank = 0 | 1 | 2 | 3
 
 type PhaseKind = RunSnapshot['phase']['kind']
 

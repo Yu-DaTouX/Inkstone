@@ -1,6 +1,6 @@
 export const USER_TEXT_LIMITS = { maxCodeUnits: 200_000, maxFences: 64, maxRuns: 256 }
 
-export type UserTextSegment =
+type UserTextSegment =
   | { kind: 'text'; text: string }
   | { kind: 'code'; text: string; lang: string }
 

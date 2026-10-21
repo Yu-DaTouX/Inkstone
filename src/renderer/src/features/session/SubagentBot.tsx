@@ -6,7 +6,7 @@ import type { RunSnapshot } from '../../../../shared/runs'
 import type { SubagentLineModel } from './turn-lines'
 import { subagentActiveTool } from './subagent-tool'
 
-export function subagentBotMood(model: Pick<SubagentLineModel, 'phase' | 'outcomeKey'>): BotMood {
+function subagentBotMood(model: Pick<SubagentLineModel, 'phase' | 'outcomeKey'>): BotMood {
   const kind = model.phase?.kind
   if (kind === 'needs-you' || kind === 'stalled') return 'ask'
   if (kind === 'queued') return 'wake'

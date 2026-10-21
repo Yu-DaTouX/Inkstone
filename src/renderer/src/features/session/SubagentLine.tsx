@@ -81,7 +81,7 @@ function viewIdentityOf(s: ReturnType<typeof useStore.getState>): ReturnType<typ
   return sessionViewIdentity({ peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath, session: s.session })
 }
 
-export function subagentCountsText(totals: SubagentListTotals, tt: SessionText): string {
+function subagentCountsText(totals: SubagentListTotals, tt: SessionText): string {
   return [
     tt('subagentCount', { n: totals.total }),
     totals.live ? tt('subagentLiveCount', { n: totals.live }) : null,
@@ -91,7 +91,7 @@ export function subagentCountsText(totals: SubagentListTotals, tt: SessionText):
   ].filter(Boolean).join(' · ')
 }
 
-export function subagentCollapsedText(totals: SubagentListTotals, tt: SessionText, lang: string): string {
+function subagentCollapsedText(totals: SubagentListTotals, tt: SessionText, lang: string): string {
   if (!totals.ended) return subagentCountsText(totals, tt)
   const outcome = totals.failed || totals.stopped
     ? subagentCountsText(totals, tt)
@@ -103,7 +103,7 @@ export function subagentCollapsedText(totals: SubagentListTotals, tt: SessionTex
   return `${outcome} · ${usage}`
 }
 
-export function subagentRowUsage(
+function subagentRowUsage(
   row: Pick<SubagentTaskRow, 'state' | 'latestActivity' | 'toolCalls' | 'tokens'>,
   error: string | null,
   failedWord: string,
@@ -117,7 +117,7 @@ export function subagentRowUsage(
   return [row.state === 'starting' ? null : row.latestActivity, row.toolCalls > 0 ? tt('subagentCalls', { n: row.toolCalls }) : null].filter(Boolean).join(' · ')
 }
 
-export function subagentContextUsage(
+function subagentContextUsage(
   usage: SubagentRun['contextUsage']
 ): { tokens: number; windowSize: number; percent: number; tone: 'ok' | 'ask' | 'fail' } | null {
   if (!usage || typeof usage.tokens !== 'number' || !(usage.contextWindow > 0)) return null

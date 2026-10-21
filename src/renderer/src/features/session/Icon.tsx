@@ -75,7 +75,7 @@ const ICONS = {
   close: X
 }
 
-export type SessionIconName = keyof typeof ICONS
+type SessionIconName = keyof typeof ICONS
 
 export function Icon({ name, size = 16, className }: { name: SessionIconName; size?: number; className?: string }): JSX.Element {
   const Cmp = ICONS[name]

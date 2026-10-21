@@ -6,12 +6,12 @@ export interface FindNode {
   nextSibling?: FindNode | null
 }
 
-export interface FindTextSegment {
+interface FindTextSegment {
   node: FindNode
   start: number
 }
 
-export interface FindText {
+interface FindText {
   text: string
   segments: FindTextSegment[]
 }
@@ -200,9 +200,9 @@ export function centeringOffset(rect: { top: number; height: number }, bounds: {
   return rect.top + rect.height / 2 - (bounds.top + bounds.bottom) / 2
 }
 
-export type SessionFindAction = 'open' | 'close' | 'next' | 'prev' | null
+type SessionFindAction = 'open' | 'close' | 'next' | 'prev' | null
 
-export interface SessionFindKeyState extends FindKeyState {
+interface SessionFindKeyState extends FindKeyState {
   open: boolean
   defaultPrevented?: boolean
 }
@@ -218,7 +218,7 @@ export function sessionFindAction(state: SessionFindKeyState, mac: boolean): Ses
   return null
 }
 
-export interface SessionFindFocus {
+interface SessionFindFocus {
   own: boolean
   inConversation: boolean
   inComposer: boolean

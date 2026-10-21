@@ -1,9 +1,9 @@
 import { useEffect, useState, type JSX } from 'react'
 import { prefersReducedMotion, subscribeReducedMotion } from '../../lib/reduced-motion'
 
-export const BLINK_HALF_PERIOD_MS = 600
+const BLINK_HALF_PERIOD_MS = 600
 
-export function nextBlinkVisible(visible: boolean, running: boolean): boolean {
+function nextBlinkVisible(visible: boolean, running: boolean): boolean {
   return running ? !visible : true
 }
 

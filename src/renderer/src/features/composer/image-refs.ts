@@ -1,4 +1,4 @@
-export type ImageRefPrefix = '图' | 'img'
+type ImageRefPrefix = '图' | 'img'
 
 const REF = /@(图|img)(\d+)(?!\d)/gi
 const REMOVED_REF = /@(图|img)\?/gi

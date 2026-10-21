@@ -18,11 +18,11 @@ export interface BranchPagerModel {
 
 export type BranchPagerRequest = (request: NativeSessionHostRequest) => Promise<NativeSessionHostResult>
 
-export type BranchPagerTreeLoad =
+type BranchPagerTreeLoad =
   | { ok: true; tree: NativeTreeNode[]; leafId: string | null }
   | { ok: false; error: string }
 
-export interface BranchPagerActionResult {
+interface BranchPagerActionResult {
   ok: boolean
   error?: string
 }
@@ -203,15 +203,6 @@ export function buildBranchPagerMap(
     })
   }
   return models
-}
-
-export function branchPagerFor(
-  tree: readonly NativeTreeNode[],
-  entryId: string | null | undefined,
-  leafId: string | null = null
-): BranchPagerModel | null {
-  if (!entryId) return null
-  return buildBranchPagerMap(tree, leafId).get(entryId) ?? null
 }
 
 export function treeHasEntryId(

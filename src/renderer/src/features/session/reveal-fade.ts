@@ -19,7 +19,7 @@ export interface FadeSpan {
   age: number
 }
 
-export function emptyFadeTrack(text = ''): FadeTrack {
+function emptyFadeTrack(text = ''): FadeTrack {
   return { text, marks: [] }
 }
 

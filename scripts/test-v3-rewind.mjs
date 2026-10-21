@@ -224,7 +224,7 @@ export { createTurnProjector } from '${posix(abs('src/shared/turns.ts'))}'
 export { textFingerprint } from '${posix(abs('src/shared/checkpoints.ts'))}'
 `,
     {
-      'src/renderer/src/features/session/Markdown.tsx': `export function Markdown(){ return null }\nexport function PlainText(){ return null }`,
+      'src/renderer/src/features/session/Markdown.tsx': `export function Markdown(){ return null }`,
       'src/renderer/src/features/session/MessageParts.tsx': `export function TurnArtifacts(){ return null }`,
       'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }`,
       'src/renderer/src/features/session/ToolSteps.tsx': `export function ToolSteps(){ return null }`,

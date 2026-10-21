@@ -1,23 +1,23 @@
-export interface SessionViewIdentity {
+interface SessionViewIdentity {
   sessionId: string | null
   sessionFile: string | null
   key: string
 }
 
-export interface SessionViewIdentitySession {
+interface SessionViewIdentitySession {
   sessionId?: string
   conversationId?: string
   sessionFile?: string
   conversationFile?: string
 }
 
-export interface SessionViewIdentityInput {
+interface SessionViewIdentityInput {
   peekedSessionId: string | null
   peekedPath: string | null
   session: SessionViewIdentitySession | null
 }
 
-export function normalizeViewPath(path?: string | null): string {
+function normalizeViewPath(path?: string | null): string {
   return (path ?? '').replace(/[\\/]+/g, '/').toLowerCase()
 }
 

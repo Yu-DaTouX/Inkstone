@@ -16,7 +16,7 @@ function subscribe(listener: Listener): () => void {
   return () => listeners.delete(listener)
 }
 
-export function claimApprovalSlot(id: string): () => void {
+function claimApprovalSlot(id: string): () => void {
   claims.set(id, (claims.get(id) ?? 0) + 1)
   emit()
   return () => {

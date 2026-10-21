@@ -3,21 +3,21 @@ import type { SubagentRun } from '../../../../shared/ipc'
 
 export type SubagentReviewAction = 'merge' | 'discard'
 
-export type SubagentReviewBlock =
+type SubagentReviewBlock =
   | 'not-worktree'
   | 'running'
   | 'no-worktree'
   | 'nothing-to-review'
   | 'no-patch'
 
-export interface SubagentReviewGate {
+interface SubagentReviewGate {
   canReview: boolean
   canPatch: boolean
   canDiscard: boolean
   blocked: SubagentReviewBlock | null
 }
 
-export type ReviewableRun = Pick<SubagentRun, 'isolation' | 'review' | 'status' | 'diff'>
+type ReviewableRun = Pick<SubagentRun, 'isolation' | 'review' | 'status' | 'diff'>
 
 export function subagentReviewGate(run: ReviewableRun): SubagentReviewGate {
   const worktree = run.isolation === 'worktree'
@@ -44,7 +44,7 @@ export interface SubagentPatch {
   truncated: boolean
 }
 
-export interface SubagentPatchIo {
+interface SubagentPatchIo {
   describeFiles(paths: string[]): Promise<Array<{ ok: boolean; path?: string; error?: string }>>
   readFileText(path: string): Promise<{ ok: boolean; text?: string; truncated?: boolean; error?: string }>
 }
@@ -60,12 +60,12 @@ export async function loadSubagentPatch(patchPath: string, io?: SubagentPatchIo)
   return { patch: res.text, truncated: res.truncated === true }
 }
 
-export interface SubagentActionResult {
+interface SubagentActionResult {
   ok: boolean
   error?: string
 }
 
-export interface SubagentActionIo {
+interface SubagentActionIo {
   merge(id: string): Promise<SubagentActionResult>
   discard(id: string): Promise<SubagentActionResult>
 }

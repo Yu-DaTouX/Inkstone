@@ -1,4 +1,4 @@
-export interface ForkTarget {
+interface ForkTarget {
   entryId?: string
   text: string
 }

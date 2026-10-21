@@ -208,7 +208,7 @@ export { sessionViewIdentity, viewMatchesProjectedSession, approvalMatchesView }
 export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
 `,
     {
-      'src/renderer/src/features/session/Markdown.tsx': `export const Markdown=(props)=>{ Markdown.__calls.push(props); return null }\nMarkdown.__stub='markdown'\nMarkdown.__calls=[]\nexport function PlainText(){ return null }`,
+      'src/renderer/src/features/session/Markdown.tsx': `export const Markdown=(props)=>{ Markdown.__calls.push(props); return null }\nMarkdown.__stub='markdown'\nMarkdown.__calls=[]`,
       'src/renderer/src/features/session/MessageParts.tsx': `export function TurnArtifacts(props){ TurnArtifacts.__calls.push(props); return null }\nTurnArtifacts.__stub='turn-artifacts'\nTurnArtifacts.__calls=[]`,
       'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }`,
       'src/renderer/src/features/session/ToolSteps.tsx': `export function ToolSteps(){ return null }`,

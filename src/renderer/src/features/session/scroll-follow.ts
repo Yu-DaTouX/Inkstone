@@ -1,5 +1,5 @@
 export const JUMP_THRESHOLD_PX = 200
-export const BOTTOM_EPSILON_PX = 40
+const BOTTOM_EPSILON_PX = 40
 export const USER_SCROLL_INTENT_MS = 1000
 
 export interface ScrollMetrics {
@@ -19,7 +19,7 @@ export interface ReadingAnchor {
   offset: number
 }
 
-export interface AnchorRow {
+interface AnchorRow {
   id: string
   top: number
   bottom: number

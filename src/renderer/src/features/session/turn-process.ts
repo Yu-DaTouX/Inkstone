@@ -1,10 +1,9 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment, TurnThinking } from '../../../../shared/turns'
-import { isDeniedCall } from './tool-title'
 
-export const LIVE_SEGMENTS = 3
+const LIVE_SEGMENTS = 3
 
-export interface TurnProcessSplit {
+interface TurnProcessSplit {
   process: TurnSegment[]
   reply: TurnSegment | null
   tail: TurnSegment[]
@@ -57,46 +56,21 @@ export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessS
   return { process, reply, tail: segments.slice(at + 1) }
 }
 
-export function processTools(process: readonly TurnSegment[]): UIToolCall[] {
-  return process.flatMap((segment) => segment.tools)
-}
-
-export function processNotes(process: readonly TurnSegment[]): string[] {
-  return process.flatMap((segment) => segment.commentary.map((part) => part.text))
-}
-
-export function failedCount(tools: readonly Pick<UIToolCall, 'status' | 'cancelled' | 'denied' | 'output'>[]): number {
-  return tools.filter((call) => call.status === 'error' && !call.cancelled && !isDeniedCall(call)).length
-}
-
-export function runningTool(tools: readonly UIToolCall[]): UIToolCall | null {
-  for (let i = tools.length - 1; i >= 0; i -= 1) {
-    const status = tools[i].status
-    if (status === 'running' || status === 'pending') return tools[i]
-  }
-  return null
-}
-
-export function narrationLine(text: string): string {
-  const line = text.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
-  return line.replace(/^(#{1,6}\s+|[-*+]\s+|>\s+)/, '').replace(/[`*_]/g, '')
-}
-
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {
   if (segment.thinkingParts) return segment.thinkingParts
   if (!hasThinking(segment)) return []
   return [{ text: segment.thinking, at: 0, ...(segment.thinkingMs ? { ms: segment.thinkingMs } : {}) }]
 }
 
-export interface ProcessThinking extends TurnThinking {
+interface ProcessThinking extends TurnThinking {
   live: boolean
 }
 
-export type ProcessStep =
+type ProcessStep =
   | { kind: 'thinking'; key: string; thinking: ProcessThinking }
   | { kind: 'tools'; key: string; tools: UIToolCall[] }
 
-export function segmentThinking(segment: TurnSegment): ProcessThinking[] {
+function segmentThinking(segment: TurnSegment): ProcessThinking[] {
   const joined: TurnThinking[] = []
   for (const part of rawThinkingParts(segment)) {
     if (!part.text.trim()) continue

@@ -20,7 +20,7 @@ import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../u
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
 const OUTPUT_PREVIEW_LINES = 16
-export const NEST_VISIBLE = 3
+const NEST_VISIBLE = 3
 
 export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean): { shown: readonly T[]; earlier: number } {
   if (showAll || children.length <= NEST_VISIBLE) return { shown: children, earlier: 0 }

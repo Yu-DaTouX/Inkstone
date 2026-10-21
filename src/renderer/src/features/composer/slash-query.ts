@@ -1,14 +1,14 @@
-export interface SlashQueryRange {
+interface SlashQueryRange {
   query: string
   start: number
   end: number
 }
 
-export interface SlashQueryOptions {
+interface SlashQueryOptions {
   inCode?: boolean
 }
 
-export const SLASH_QUERY_MAX = 50
+const SLASH_QUERY_MAX = 50
 
 export function findSlashQuery(
   value: string,

@@ -1,6 +1,6 @@
 import type { SubagentRun } from '../../../../shared/ipc'
 
-export type SubagentComposerMode = 'steer' | 'resume' | 'busy' | 'hidden'
+type SubagentComposerMode = 'steer' | 'resume' | 'busy' | 'hidden'
 
 export function subagentComposerMode(run: Pick<SubagentRun, 'status' | 'isolation' | 'launchFailed' | 'wrapUp'>): SubagentComposerMode {
   if (run.isolation === 'worktree' && run.status !== 'running') return 'hidden'

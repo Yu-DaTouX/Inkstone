@@ -3,7 +3,7 @@ export const TRANSCRIPT_VIEWS = ['concise', 'thinking', 'verbose'] as const
 export type TranscriptView = (typeof TRANSCRIPT_VIEWS)[number]
 
 export const DEFAULT_TRANSCRIPT_VIEW: TranscriptView = 'concise'
-export const SESSION_VIEW_LIMIT = 100
+const SESSION_VIEW_LIMIT = 100
 
 export type SessionViews = Readonly<Record<string, TranscriptView>>
 
@@ -12,7 +12,7 @@ export interface TranscriptViewPrefs {
   sessions: SessionViews
 }
 
-export function isTranscriptView(value: unknown): value is TranscriptView {
+function isTranscriptView(value: unknown): value is TranscriptView {
   return typeof value === 'string' && (TRANSCRIPT_VIEWS as readonly string[]).includes(value)
 }
 
@@ -33,7 +33,7 @@ export function nextTranscriptView(current: TranscriptView): TranscriptView {
   return TRANSCRIPT_VIEWS[(TRANSCRIPT_VIEWS.indexOf(current) + 1) % TRANSCRIPT_VIEWS.length]
 }
 
-export function normalizeSessionViews(value: unknown, limit = SESSION_VIEW_LIMIT): Record<string, TranscriptView> {
+function normalizeSessionViews(value: unknown, limit = SESSION_VIEW_LIMIT): Record<string, TranscriptView> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const entries = Object.entries(value as Record<string, unknown>).filter(
     (entry): entry is [string, TranscriptView] => entry[0] !== '' && isTranscriptView(entry[1])

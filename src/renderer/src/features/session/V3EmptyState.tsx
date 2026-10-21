@@ -9,7 +9,7 @@ import { UsageStrip } from '../../patterns/UsageStrip'
 import { BlinkCursor } from './BlinkCursor'
 import './v3-empty-state.css'
 
-export interface V3EmptyStateProps {
+interface V3EmptyStateProps {
   usage?: ReactNode
 }
 
