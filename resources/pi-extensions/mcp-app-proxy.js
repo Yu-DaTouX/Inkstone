@@ -50,7 +50,7 @@ function safeAnnotations(annotations) {
   return Object.keys(copy).length > 0 ? copy : undefined
 }
 
-export function buildToolDefinitions(tools, projectId) {
+function buildToolDefinitions(tools, projectId) {
   const definitions = []
   const names = new Map()
   for (const entry of tools) {

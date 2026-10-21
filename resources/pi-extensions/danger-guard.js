@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 
-const CONFIRM_TIMEOUT_MS = 4 * 60 * 1000
+const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
 
 export function isBroadTarget(raw) {
   let target = String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')
@@ -242,46 +242,6 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   return [...new Set(hits)].slice(0, 6)
 }
 
-export const DELETE_HEADS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'unlink', 'remove-item', 'ri', 'shred', 'trash'])
-
-export function hasDelete(command) {
-  for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
-    if (DELETE_HEADS.has(commandOf(segment).head)) return true
-  }
-  return false
-}
-
-export function shellDeleteTargets(command, cwd) {
-  const out = []
-  for (const segment of String(command ?? '').split(SEGMENT_SPLIT)) {
-    const { head, args } = commandOf(segment)
-    if (!DELETE_HEADS.has(head)) continue
-    const flagged = []
-    args.forEach((a, i) => { if (PS_PATH_FLAGS.has(a.toLowerCase()) && args[i + 1]) flagged.push(args[i + 1]) })
-    const raws = flagged.length ? flagged : args.filter((a) => !/^-/.test(a) && !/^\d?>/.test(a))
-    for (const raw of raws) {
-      const target = resolveTarget(raw, cwd)
-      if (target) out.push(target)
-    }
-  }
-  return [...new Set(out)]
-}
-
-export function isTempPath(target) {
-  const roots = [tmpdir(), process.env.TEMP, process.env.TMP, '/tmp', '/var/tmp']
-    .filter((p) => typeof p === 'string' && p.trim())
-    .map((p) => normalizePath(p).replace(/\/$/, ''))
-  const normalized = normalizePath(target)
-  return roots.some((root) => normalized !== root && normalized.startsWith(`${root}/`))
-}
-
-export function trashHint(targets = []) {
-  const list = targets.length ? `要删除的是：${targets.slice(0, 6).join('、')}。` : ''
-  return '砚的权限设置不对这次删除做确认，删除要移到回收站，方便用户找回。' + list +
-    '请改用 `yan file trash --path <路径>`；多个路径用 `yan file trash --request-file trash.json`（{"paths":[…]}）。' +
-    '系统临时目录里的文件可以直接删除。'
-}
-
 function guardPrefs() {
   try {
     const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
@@ -297,7 +257,7 @@ function guardPrefs() {
   }
 }
 
-export function claudeDelegationDanger(toolName, input, cwd) {
+function claudeDelegationDanger(toolName, input, cwd) {
   if (['read', 'write', 'edit', 'bash', 'powershell', 'grep', 'find', 'ls', 'multi_edit', 'apply_patch'].includes(toolName)) return []
   const readConfig = (path) => {
     try { return JSON.parse(readFileSync(path, 'utf8'))?.askClaude ?? {} } catch { return {} }
