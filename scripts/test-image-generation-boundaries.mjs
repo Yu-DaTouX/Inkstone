@@ -33,7 +33,7 @@ try {
   globalThis.fetch = async () => { throw new Error('No network allowed in image boundary tests') }
   const outfile = join(compiled, 'fixture.mjs')
   await build({
-    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
+    stdin: { contents: "export * from './src/main/artifacts.ts'; export * from './src/main/image-generation.ts'; export * from './src/main/comfy-launcher.ts'; export * from './src/main/local-models.ts'; export { AgentController } from './src/main/agent.ts';", resolveDir: process.cwd(), sourcefile: 'image-boundary-fixture.ts' },
     outfile, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'silent',
     plugins: [{ name: 'unused-electron', setup(b) {
       b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }))
@@ -222,6 +222,43 @@ try {
   lateHistory.resolve(Response.json({ 'running-owned-prompt': { outputs: { '3': { images: [{ filename: 'late.png', type: 'output' }] } } } })); await tick()
   ok(!calls.some(c => c.url.endsWith('/interrupt') || c.url.includes('/view?')), 'active ComfyUI cancellation must not globally interrupt or fetch late output')
   ok((await new ArtifactStore(artifactDir).list(runningFile)).length === 0, 'active canceled ComfyUI result must not be saved')
+
+  ok(
+    JSON.stringify(mod.comfyAbortRequests('p1', false)) === JSON.stringify([{ path: '/queue', body: '{"delete":["p1"]}' }]),
+    'external ComfyUI cancellation only removes the owned queue item'
+  )
+  ok(
+    JSON.stringify(mod.comfyAbortRequests('p1', true)) === JSON.stringify([{ path: '/interrupt', body: '{}' }, { path: '/queue', body: '{"delete":["p1"]}' }]),
+    'self-launched ComfyUI cancellation interrupts the running job before removing the queue item'
+  )
+
+  {
+    const probes = { count: 0 }
+    globalThis.fetch = async () => { probes.count += 1; return Response.json({}, { status: 404 }) }
+    await mod.detectLocalModelServers()
+    const afterFirst = probes.count
+    ok(afterFirst > 0, 'detecting local servers probes them the first time')
+    await mod.detectLocalModelServers()
+    ok(probes.count === afterFirst, 'a repeated detection inside the cache window reuses the result')
+    mod.resetLocalImageCache()
+    await mod.detectLocalModelServers()
+    ok(probes.count > afterFirst, 'an explicit reset probes again')
+  }
+
+  {
+    const installDir = join(root, 'fake-comfy')
+    const pythonPath = process.platform === 'win32' ? join(installDir, 'venv', 'Scripts', 'python.exe') : join(installDir, 'venv', 'bin', 'python')
+    await mkdir(join(pythonPath, '..'), { recursive: true })
+    await mkdir(join(installDir, 'user'), { recursive: true })
+    await writeFile(join(installDir, 'main.py'), '')
+    process.env.YAN_COMFYUI_DIR = installDir
+    delete process.env.YAN_COMFYUI_PYTHON
+    ok((await mod.findLaunchableComfy()) === null, 'a ComfyUI folder without Python is not launchable')
+    await writeFile(pythonPath, '')
+    ok((await mod.findLaunchableComfy()) === null, 'the launch folder scan is cached instead of rescanning every call')
+    const status = await mod.comfyStatus()
+    ok(status.installDir === installDir && status.launchable, 'a status refresh picks up the folder that became launchable')
+  }
   console.log(`image-generation-boundaries: ${checks} checks passed; existing artifact/adapters also passed (no real network/model, no app build)`)
 } finally {
   globalThis.fetch = originalFetch

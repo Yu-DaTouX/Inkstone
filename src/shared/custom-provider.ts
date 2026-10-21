@@ -243,7 +243,11 @@ export function mergeCustomProviders(
     if (!isYanProviderId(update.id)) continue
     const previous = (providers[update.id] ?? {}) as Json
     const entry: Json = { ...previous, api: update.api, baseUrl: update.baseUrl }
-    entry.models = update.models
+    const previousModels = Array.isArray(previous.models) ? (previous.models as unknown[]).filter((m): m is Json => !!m && typeof m === 'object') : []
+    entry.models = update.models.map((model) => {
+      const prior = previousModels.find((item) => item.id === model.id)
+      return prior ? { ...prior, ...model } : model
+    })
     if (update.apiKey) entry.apiKey = update.apiKey
     else if (typeof previous.apiKey === 'string') entry.apiKey = previous.apiKey
     providers[update.id] = entry

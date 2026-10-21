@@ -548,6 +548,24 @@ export async function runProjectMemoryTests(ok, modules) {
       ok(refused?.code === 'read_failed', '状态不明时拒绝写入（否则等于用空库覆盖）', refused?.code)
     }
 
+    console.log('\n--- 10b. 恢复写入与提交并发不丢条目 ---')
+    {
+      const C = { projectId: 'proj-concurrent-recovery', cwd: 'C:\\work\\concurrent' }
+      const cDir = dirOf('proj-concurrent-recovery')
+      const kept = await commit(C, draft({ text: '并发恢复前已提交的一条' }))
+      await writeFile(store.manifestPath(cDir), '{"schemaVersion":1,"projectId":', 'utf8')
+      await writeFile(store.manifestBackupPath(cDir), '{}\n', 'utf8')
+      const [restored, committed] = await Promise.all([
+        store.loadManifest(C.projectId, opts),
+        commit(C, draft({ text: '恢复期间新提交的一条' }))
+      ])
+      ok(restored.status === 'recovered' || restored.status === 'ok', '并发期间的 manifest 恢复有结果', restored.status)
+      ok(committed?.ok === true, '并发期间的新提交成功')
+      const texts = (await store.listKnowledge(C, opts)).map((entry) => entry.text).sort()
+      ok(texts.length === 2, `恢复写入没有盖掉并发提交（实际 ${texts.length} 条）`)
+      ok(texts.includes(kept.entry.text) && texts.includes('恢复期间新提交的一条'), '两条都在')
+    }
+
     console.log('\n--- 11. 删除后旧候选不复活 ---')
     {
       const secret = '绝密的用户决定：只有 A 项目知道'

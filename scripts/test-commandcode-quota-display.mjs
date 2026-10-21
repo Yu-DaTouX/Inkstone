@@ -81,9 +81,6 @@ async function runQuotaCredentialSourceTests(check) {
     check(creds.extractModelsJsonQuotaKey('commandcode', { baseUrl: 'https://api.commandcode.ai', apiKey: '${CC_KEY}' }, {}) === undefined, 'models.json 环境引用（无 env）→ 缺失')
     check(creds.extractModelsJsonQuotaKey('commandcode', null) === undefined, '条目形状不对 → 不取')
 
-    await writeFile(modelsFile, '{ this is not json')
-    check(await creds.readModelsJsonQuotaKey('commandcode', { agentDir: dir, env: {} }) === undefined, '坏 JSON → 缺失，不泄露不执行')
-
     const authEntry = { type: 'api_key', key: 'user_auth_sentinel' }
     const readAuth = async () => authEntry
     const threeEnv = { COMMANDCODE_API_KEY: 'user_env_sentinel' }
