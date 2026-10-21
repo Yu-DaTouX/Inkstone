@@ -2,15 +2,9 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import type { TFunc } from '../../i18n'
 import { HEAT_WEEKS, heatLevels, localDay, type UsageRange } from '../../../../shared/usage-stats'
 import type { ModelInfo, UsageStatsResult } from '../../../../shared/ipc'
+import { compactNumber, shareText } from './usage-format'
 
 const HEAT_SHOWN = 20
-
-export function compactNumber(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)}B`
-  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`
-  if (n >= 1e4) return `${(n / 1e3).toFixed(0)}K`
-  return n.toLocaleString()
-}
 
 export interface UsageToggleProps {
   kind: 'tab' | 'range'
@@ -196,7 +190,7 @@ export function UsageOverviewView({
                     <span style={{ width: `${Math.max(0.5, share * 100)}%` }} />
                   </span>
                   <span className="start-model-num">{compactNumber(m.tokens)}</span>
-                  <span className="start-model-num">{share >= 0.01 ? `${Math.round(share * 100)}%` : '<1%'}</span>
+                  <span className="start-model-num">{shareText(share)}</span>
                 </li>
               )
             })

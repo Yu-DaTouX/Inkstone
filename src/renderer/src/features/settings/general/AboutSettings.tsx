@@ -40,6 +40,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
   useEffect(() => {
     alive.current = true
     const refresh = (): void => {
+      if (document.visibilityState !== 'visible') return
       void window.yan.appUpdate
         .status()
         .then((value) => {

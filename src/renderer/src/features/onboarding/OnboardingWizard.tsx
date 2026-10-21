@@ -63,7 +63,7 @@ export function OnboardingWizard({ onClose, initialStep, onOpenSettings }: Onboa
   const patchSettings = useStore((s) => s.patchSettings)
   const authReady = useStore((s) => s.authProviders.some((p) => p.status === 'ready'))
 
-  const [index, setIndex] = useState(() => (initialStep ? stepIndexOf(initialStep) : 0))
+  const [index, setIndex] = useState(() => clampStepIndex(initialStep ? stepIndexOf(initialStep) : 0))
   const [touched, setTouched] = useState<ReadonlySet<OnboardingStepId>>(() => new Set())
   const markTouched = useCallback((id: OnboardingStepId): void => {
     setTouched((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))

@@ -41,6 +41,11 @@ export function StorageFacts({ info, text }: StorageFactsProps): ReactElement {
           {text.dataStranded.replace('{path}', info.strandedBackup)}
         </span>
       ) : null}
+      {info.pendingTarget ? (
+        <span className="settings-row__desc" data-testid="v3-data-pending">
+          {text.dataMovePending.replace('{path}', info.pendingTarget)}
+        </span>
+      ) : null}
       {last && !last.ok && last.error ? (
         <span className="settings-row__desc settings-row__desc--error">
           {text.dataLastFailed.replace('{error}', last.error)}
@@ -88,19 +93,19 @@ export function DataSettings(): ReactElement {
   const [message, setMessage] = useState<DataMessage | null>(null)
 
   useEffect(() => {
-    let alive = true
     void window.yan.storage
       .info()
-      .then((value) => {
-        if (alive) setInfo(value)
-      })
-      .catch((cause) => {
-        if (alive) setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
-      })
-    return () => {
-      alive = false
-    }
+      .then((value) => setInfo(value))
+      .catch((cause) => setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) }))
   }, [])
+
+  const loadInfo = async (): Promise<void> => {
+    try {
+      setInfo(await window.yan.storage.info())
+    } catch (cause) {
+      setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
+    }
+  }
 
   const pick = async (): Promise<void> => {
     setMessage(null)
@@ -118,7 +123,13 @@ export function DataSettings(): ReactElement {
     setMessage(null)
     try {
       const result = await window.yan.storage.schedule(target, true)
-      if (!result.ok) setMessage({ scope: 'storage', tone: 'fail', text: result.error ?? text.dataMoveConfirm })
+      if (result.ok) {
+        setMessage({ scope: 'storage', tone: 'info', text: text.dataMoveScheduled })
+        setTarget(null)
+        await loadInfo()
+      } else {
+        setMessage({ scope: 'storage', tone: 'fail', text: result.error ?? text.dataMoveConfirm })
+      }
     } catch (cause) {
       setMessage({ scope: 'storage', tone: 'fail', text: describe(cause) })
     } finally {

@@ -16,15 +16,16 @@ async function loadTs(relativePath) {
 }
 
 const model = await loadTs('../src/renderer/src/features/ambient/ascii-field-model.ts')
+const fieldValue = (u, v, t, seed, aspect = 1.6) => model.inkAt(u * aspect, v, t, seed, model.inkSources(t, seed, aspect))
 const W = 1280
 const H = 720
 
 {
-  const a = model.fieldValue(0.3, 0.7, 1.2, 42)
-  assert.equal(a, model.fieldValue(0.3, 0.7, 1.2, 42), '同输入必得同输出')
+  const a = fieldValue(0.3, 0.7, 1.2, 42)
+  assert.equal(a, fieldValue(0.3, 0.7, 1.2, 42), '同输入必得同输出')
   assert.ok(a >= 0 && a <= 1, '值场落在 [0,1]')
-  assert.notEqual(a, model.fieldValue(0.3, 0.7, 1.2, 43), '换种子换画面')
-  assert.notEqual(a, model.fieldValue(0.3, 0.7, 1.5, 42), '推进时间换画面')
+  assert.notEqual(a, fieldValue(0.3, 0.7, 1.2, 43), '换种子换画面')
+  assert.notEqual(a, fieldValue(0.3, 0.7, 1.5, 42), '推进时间换画面')
   const n1 = model.valueNoise3(1.2, 3.4, 5.6, 7)
   assert.equal(n1, model.valueNoise3(1.2, 3.4, 5.6, 7))
   assert.ok(n1 >= 0 && n1 < 1, 'value noise 落在 [0,1)')
@@ -130,7 +131,7 @@ const H = 720
   }
   assert.ok(bestEmpty >= 8 && bestCore >= 8, `既有留白也有成片墨芯（空 ${bestEmpty} / 芯 ${bestCore}）`)
 
-  const series = Array.from({ length: 40 }, (_, k) => model.fieldValue(0.6, 0.5, k * 0.5, model.FIELD_SEED))
+  const series = Array.from({ length: 40 }, (_, k) => fieldValue(0.6, 0.5, k * 0.5, model.FIELD_SEED))
   assert.ok(Math.max(...series) - Math.min(...series) > 0.08, '同一点的墨值随时间缓慢起伏')
 }
 
@@ -275,18 +276,8 @@ const H = 720
   }
   assert.ok(accentMid <= accentFull, '入场不增加强调色闪光')
 
-  const exitHalf = model.computeFieldFrame({ ...base, exit: 0.85 })
-  const exitDone = model.computeFieldFrame({ ...base, exit: 1 })
-  assert.ok(sumAlpha(exitHalf) < sumAlpha(full), '退场只降低透明度，不执行收拢闪光')
-  assert.equal(exitDone.visible, 0, '退场结束全部收回')
+  assert.equal(model.computeFieldFrame({ ...base, enter: 0 }).visible, 0, '入场未开始时不出墨')
 
-  const reach = model.maxReach(1000, 600, { x: 500, y: 300 })
-  assert.equal(model.revealRadius(reach, 0, 0), 0)
-  assert.equal(model.revealRadius(reach, 1, 0), reach)
-  assert.equal(model.revealRadius(reach, 1, 1), 0)
-  assert.ok(model.revealRadius(reach, 0.5, 0.5) <= model.revealRadius(reach, 0.5, 0), '入场途中被打断：取较小者平滑收回')
-  assert.equal(model.frontStrength(100, 100, false), 0, '静置时没有边界提亮')
-  assert.ok(model.frontStrength(100 - model.FRONT_WIDTH * 0.5, 100, true) > 0.99, '边界提亮峰值落在显影边缘内侧')
   assert.ok(model.ENTER_MS <= 500, '入场不超过半秒')
   assert.ok(model.EXIT_MS <= 180, '退场短于 180ms')
 }

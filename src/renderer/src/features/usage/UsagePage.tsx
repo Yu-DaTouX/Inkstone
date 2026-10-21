@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useI18n, useT } from '../../i18n'
-import { compactNumber, useMoney, useUsageStats } from './UsageOverview'
+import { compactNumber, shareText, useMoney, useUsageStats } from './UsageOverview'
 import { heatLevels, tokenBreakdownOf, type UsageRange } from '../../../../shared/usage-stats'
 import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'
@@ -57,7 +57,7 @@ export function UsagePage() {
         <ul className="start-models">{stats?.models.map((item) => {
           const model = models.find((model) => `${model.provider}/${model.id}` === item.key)
           const share = stats.tokens > 0 ? item.tokens / stats.tokens : 0
-          return <li key={item.key} className="start-model"><span className="start-model-name" title={item.cost > 0 ? money(item.cost) : undefined}>{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{Math.round(share * 100)}%</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
+          return <li key={item.key} className="start-model"><span className="start-model-name" title={item.cost > 0 ? money(item.cost) : undefined}>{model?.name || item.key}</span><span className="start-model-num">{compactNumber(item.tokens)}</span><span className="start-model-num">{shareText(share)}</span><span className="start-model-bar"><span style={{ width: `${share * 100}%` }} /></span></li>
         })}</ul>
       </section>
     </div>

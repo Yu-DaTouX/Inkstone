@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { UsageRange } from '../../../../shared/usage-stats'
@@ -6,9 +6,7 @@ import type { UsageStatsResult } from '../../../../shared/ipc'
 import { formatMoney } from '../../../../shared/currency'
 import { UsageOverviewView, type UsageOverviewTab, type UsageToggleRenderer } from './UsageOverviewView'
 
-const memo = new Map<UsageRange, UsageStatsResult>()
-
-export { compactNumber } from './UsageOverviewView'
+export { compactNumber, shareText } from './usage-format'
 
 export function useMoney(): (usd: number) => string {
   const { lang } = useI18n()
@@ -17,14 +15,15 @@ export function useMoney(): (usd: number) => string {
 }
 
 export function useUsageStats(range: UsageRange): UsageStatsResult | null {
-  const [stats, setStats] = useState<UsageStatsResult | null>(() => memo.get(range) ?? null)
+  const cache = useRef<Map<UsageRange, UsageStatsResult>>(new Map())
+  const [stats, setStats] = useState<UsageStatsResult | null>(null)
   useEffect(() => {
     let alive = true
-    setStats(memo.get(range) ?? null)
+    setStats(cache.current.get(range) ?? null)
     window.yan
       .usageStats(range)
       .then((next) => {
-        memo.set(range, next)
+        cache.current.set(range, next)
         if (alive) setStats(next)
       })
       .catch(() => undefined)

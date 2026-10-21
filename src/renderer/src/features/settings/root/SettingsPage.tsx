@@ -72,41 +72,8 @@ import {
 } from '../search/search-model'
 import '../settings.css'
 
-export interface CapabilitiesHostProps {
-  tab: CapabilitiesTabId
-  onTabChange: (tab: CapabilitiesTabId) => void
-}
-
-function pickLazy<P extends object>(
-  record: Record<string, () => Promise<unknown>>,
-  exportName: string
-): LazyExoticComponent<ComponentType<P>> | null {
-  const loader = Object.values(record)[0]
-  if (!loader) return null
-  return lazy(async () => {
-    const mod = (await loader()) as Record<string, unknown>
-    const component = mod[exportName]
-    if (typeof component !== 'function') throw new Error(`设置子模块缺少导出 ${exportName}`)
-    return { default: component as ComponentType<P> }
-  })
-}
-
-const modelsGlob = {
-  ...import.meta.glob('../index.ts'),
-  ...import.meta.glob('../index.tsx'),
-  ...import.meta.glob('../models/index.ts'),
-  ...import.meta.glob('../models/index.tsx'),
-  ...import.meta.glob('../models/ModelsSettings.tsx')
-}
-const capabilitiesGlob = {
-  ...import.meta.glob('../index.ts'),
-  ...import.meta.glob('../index.tsx'),
-  ...import.meta.glob('../capabilities/index.ts'),
-  ...import.meta.glob('../capabilities/index.tsx'),
-  ...import.meta.glob('../capabilities/CapabilitiesSettings.tsx')
-}
-const ModelsSettings = pickLazy<Record<string, never>>(modelsGlob, 'ModelsSettings')
-const CapabilitiesSettings = pickLazy<CapabilitiesHostProps>(capabilitiesGlob, 'CapabilitiesSettings')
+const ModelsSettings = lazy(async () => ({ default: (await import('../models/index')).ModelsSettings }))
+const CapabilitiesSettings = lazy(async () => ({ default: (await import('../capabilities/index')).CapabilitiesSettings }))
 
 const ICON_SIZE = 20
 
@@ -178,7 +145,17 @@ interface SearchTarget {
   nav: SettingsNavEntry
 }
 
-function useRevealScroll(): void {
+function revealAnchor(node: HTMLElement): { anchor: HTMLElement; folded: boolean } {
+  if (!node.closest('[inert]')) return { anchor: node, folded: false }
+  let anchor: HTMLElement | null = null
+  for (const row of Array.from(node.ownerDocument.querySelectorAll<HTMLElement>('[data-setting-id]'))) {
+    if (row === node) break
+    if (!row.closest('[inert]')) anchor = row
+  }
+  return { anchor: anchor ?? node, folded: true }
+}
+
+function useRevealScroll(foldedHint: string): void {
   const target = useSyncExternalStore(subscribeSettingReveal, getSettingReveal, getSettingReveal)
   useEffect(() => {
     if (!target) return
@@ -193,11 +170,13 @@ function useRevealScroll(): void {
         return
       }
       settle = setTimeout(() => {
-        node.scrollIntoView({ block: 'center' })
-        if (node.tabIndex < 0) node.tabIndex = -1
-        node.focus({ preventScroll: true })
-        node.setAttribute('data-flash', '1')
-        flash = setTimeout(() => node.removeAttribute('data-flash'), FLASH_MS)
+        const { anchor, folded } = revealAnchor(node)
+        anchor.scrollIntoView({ block: 'center' })
+        if (anchor.tabIndex < 0) anchor.tabIndex = -1
+        anchor.focus({ preventScroll: true })
+        anchor.setAttribute('data-flash', '1')
+        if (folded) useStore.getState().notify('info', foldedHint)
+        flash = setTimeout(() => anchor.removeAttribute('data-flash'), FLASH_MS)
       }, REVEAL_SETTLE_MS)
     }
     frame = requestAnimationFrame(seek)
@@ -206,67 +185,42 @@ function useRevealScroll(): void {
       if (settle) clearTimeout(settle)
       if (flash) clearTimeout(flash)
     }
-  }, [target])
+  }, [target, foldedHint])
 }
 
 function SubmoduleHost<P extends object>({
   component: Host,
-  props,
-  title,
-  body,
-  onDismiss
+  props
 }: {
-  component: LazyExoticComponent<ComponentType<P>> | null
+  component: LazyExoticComponent<ComponentType<P>>
   props: P
-  title: string
-  body: string
-  onDismiss: () => void
 }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
 
-  if (Host) {
-    return (
-      <Suspense fallback={<p className="settings-value">{text.loading}</p>}>
-        <Host {...props} />
-      </Suspense>
-    )
-  }
-
   return (
-    <section className="settings-section" data-testid="settings-missing">
-      <h3 className="settings-h2">{title}</h3>
-      <p className="settings-note" role="note">
-        {body}
-      </p>
-      <div className="settings-actions">
-        <Button variant="secondary" onPress={onDismiss}>
-          {text.backToAppearance}
-        </Button>
-      </div>
-    </section>
+    <Suspense fallback={<p className="settings-value">{text.loading}</p>}>
+      <Host {...props} />
+    </Suspense>
   )
 }
 
 function LegacyNotice({
   view,
-  kind,
   onDismiss,
   onBack
 }: {
   view: string
-  kind: 'unmigrated' | 'unknown'
   onDismiss: () => void
   onBack?: () => void
 }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
-  const title = kind === 'unmigrated' ? text.unmigratedTitle : text.unknownTitle
-  const body = (kind === 'unmigrated' ? text.unmigratedBody : text.unknownBody).replace('{view}', view || text.unknownTitle)
+  const body = text.unknownBody.replace('{view}', view || text.unknownTitle)
 
   return (
     <section className="settings-section" data-testid="settings-legacy">
-      <h3 className="settings-h2">{title}</h3>
+      <h3 className="settings-h2">{text.unknownTitle}</h3>
       <p className="settings-note" role="note">
         {body}
       </p>
@@ -297,7 +251,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
   const narrow = useSettingsNarrow()
   const [section, setSection] = useState<SettingsSectionId>(lastSettingsSection)
   const [capsTab, setCapsTab] = useState<CapabilitiesTabId>(lastCapabilitiesTab)
-  const [legacy, setLegacy] = useState<{ view: string; kind: 'unmigrated' | 'unknown' } | null>(null)
+  const [legacy, setLegacy] = useState<{ view: string } | null>(null)
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -306,7 +260,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
     (entry: SettingsNavEntry): string => (entry.tab ? text[TAB_LABEL[entry.tab]] : text[SECTION_LABEL[entry.section]]),
     [text]
   )
-  useRevealScroll()
+  useRevealScroll(text.revealFolded)
 
   const search = useMemo(() => {
     const targets = new Map<string, SearchTarget>()
@@ -378,7 +332,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
       setSection(resolved.section)
       setLegacy(null)
     } else {
-      setLegacy({ view: resolved.view, kind: resolved.kind })
+      setLegacy({ view: resolved.view })
     }
   }, [request])
 
@@ -519,7 +473,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
         >
           {legacy ? null : <h2 className="v3-visually-hidden settings-main__title">{pageTitle}</h2>}
           {legacy ? (
-            <LegacyNotice view={legacy.view} kind={legacy.kind} onDismiss={openDefault} onBack={onClose} />
+            <LegacyNotice view={legacy.view} onDismiss={openDefault} onBack={onClose} />
           ) : section === 'appearance' ? (
             <AppearanceSettings />
           ) : section === 'session' ? (
@@ -527,21 +481,9 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
           ) : section === 'notifications' ? (
             <NotificationsSettings />
           ) : section === 'models' ? (
-            <SubmoduleHost
-              component={ModelsSettings}
-              props={{}}
-              title={text.missingTitle}
-              body={text.missingBody}
-              onDismiss={openDefault}
-            />
+            <SubmoduleHost component={ModelsSettings} props={{}} />
           ) : section === 'capabilities' ? (
-            <SubmoduleHost
-              component={CapabilitiesSettings}
-              props={{ tab: capsTab, onTabChange: setCapsTab }}
-              title={text.missingTitle}
-              body={text.missingBody}
-              onDismiss={openDefault}
-            />
+            <SubmoduleHost component={CapabilitiesSettings} props={{ tab: capsTab, onTabChange: setCapsTab }} />
           ) : section === 'shortcuts' ? (
             <ShortcutsSettings />
           ) : section === 'security' ? (

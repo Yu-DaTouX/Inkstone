@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { CalendarClock, Plus } from 'lucide-react'
-import { describeTrigger, type ScheduledTask } from '../../../../shared/schedule'
-import { useT, type TFunc } from '../../i18n'
+import { type ScheduledTask, type ScheduleTrigger } from '../../../../shared/schedule'
+import { useI18n, useT, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import {
   Badge,
@@ -44,9 +44,9 @@ import {
 } from './schedule-client'
 import './schedule-tasks.css'
 
-export function formatWhen(ms: number | undefined): string {
+export function formatWhen(ms: number | undefined, lang: string): string {
   if (!ms) return '—'
-  return new Date(ms).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(ms).toLocaleString(lang === 'en-US' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function shortModel(model: string): string {
@@ -64,9 +64,29 @@ const KIND_LABEL: Record<TriggerKind, Parameters<TFunc>[0]> = {
 }
 const DAY_KEYS: Parameters<TFunc>[0][] = ['sched.d0', 'sched.d1', 'sched.d2', 'sched.d3', 'sched.d4', 'sched.d5', 'sched.d6']
 
+export function describeTriggerText(trigger: ScheduleTrigger, t: TFunc, lang: string): string {
+  if (trigger.kind === 'daily') return t('sched.desc.daily', { time: trigger.time })
+  if (trigger.kind === 'weekly') {
+    const days = [...trigger.days].sort()
+    const key = days.join(',')
+    if (key === '1,2,3,4,5') return t('sched.desc.weekdays', { time: trigger.time })
+    if (key === '0,6') return t('sched.desc.weekend', { time: trigger.time })
+    if (days.length === 7) return t('sched.desc.daily', { time: trigger.time })
+    const names = days.map((day) => t(DAY_KEYS[day])).join(lang === 'en-US' ? ', ' : '、')
+    return t('sched.desc.weekly', { days: names, time: trigger.time })
+  }
+  if (trigger.kind === 'interval') {
+    return trigger.minutes % 60 === 0
+      ? t('sched.desc.intervalHours', { n: String(trigger.minutes / 60) })
+      : t('sched.desc.intervalMinutes', { n: String(trigger.minutes) })
+  }
+  return t('sched.desc.once', { when: formatWhen(trigger.at, lang) })
+}
+
 export interface ScheduleTaskCardProps {
   task: ScheduledTask
   busy: boolean
+  lang: string
   t: TFunc
   onToggle(enabled: boolean): void
   onRunNow(): void
@@ -74,7 +94,7 @@ export interface ScheduleTaskCardProps {
   onDelete(): void
 }
 
-export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, onDelete }: ScheduleTaskCardProps): ReactElement {
+export function ScheduleTaskCard({ task, busy, lang, t, onToggle, onRunNow, onEdit, onDelete }: ScheduleTaskCardProps): ReactElement {
   return (
     <Card
       as="li"
@@ -96,9 +116,9 @@ export function ScheduleTaskCard({ task, busy, t, onToggle, onRunNow, onEdit, on
           {task.prompt}
         </p>
         <p className="sched-task-meta">
-          <span>{describeTrigger(task.trigger)}</span>
-          {task.enabled && task.nextRunAt ? <span>{t('sched.next', { when: formatWhen(task.nextRunAt) })}</span> : null}
-          {task.lastRunAt ? <span>{t('sched.last', { when: formatWhen(task.lastRunAt) })}</span> : null}
+          <span>{describeTriggerText(task.trigger, t, lang)}</span>
+          {task.enabled && task.nextRunAt ? <span>{t('sched.next', { when: formatWhen(task.nextRunAt, lang) })}</span> : null}
+          {task.lastRunAt ? <span>{t('sched.last', { when: formatWhen(task.lastRunAt, lang) })}</span> : null}
           {task.model ? (
             <span className="sched-task-model" title={task.model}>
               {shortModel(task.model)}
@@ -261,6 +281,7 @@ export interface ScheduleTasksPageProps {
 }
 
 export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): ReactElement {
+  const { lang } = useI18n()
   const t = useT()
   const models = useStore((s) => s.models)
   const defaultCwd = useStore((s) => s.settings?.cwd ?? '')
@@ -287,7 +308,10 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
 
   useEffect(() => {
     void refresh()
-    const timer = setInterval(() => void refresh(), 30_000)
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refresh()
+    }, 30_000)
     return () => clearInterval(timer)
   }, [refresh])
 
@@ -307,9 +331,9 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
 
   const submit = async (): Promise<void> => {
     if (!editing) return
-    const checked = checkDraft(editing.draft)
+    const checked = checkDraft(editing.draft, t)
     if (!checked.ok) {
-      setEditorError(checked.code === 'needPrompt' ? t('sched.needPrompt') : checked.code === 'needAt' ? t('sched.needAt') : checked.message)
+      setEditorError(checked.message)
       return
     }
     setBusy('save')
@@ -386,6 +410,7 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
                 key={task.id}
                 task={task}
                 busy={busy === task.id || busy === 'save'}
+                lang={lang}
                 t={t}
                 onToggle={(enabled) => void run(task.id, () => setTaskEnabled(schedule, task.id, enabled))}
                 onRunNow={() => void run(task.id, () => runTaskNow(schedule, task.id))}
