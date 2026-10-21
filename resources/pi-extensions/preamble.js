@@ -8,7 +8,7 @@ export const PROGRESS_GUIDANCE = 'Work quietly. Before substantive tool work, sa
 
 const DOCS_BLOCK = /<docs>\n([\s\S]*?)\n<\/docs>/
 
-export function compactDocs(body) {
+function compactDocs(body) {
   const main = /Main documentation:\s*(.+)/.exec(body)?.[1]?.trim()
   if (!main) return undefined
   return `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, skills or models): ${main}; docs/ and examples/ sit next to it.`
@@ -16,7 +16,7 @@ export function compactDocs(body) {
 
 const PROGRESS_SECTION = 'inkstone_progress'
 
-export function withInkstonePreamble(messages) {
+function withInkstonePreamble(messages) {
   if (!Array.isArray(messages)) return undefined
   let changed = false
   const next = messages.map((message) => {

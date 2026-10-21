@@ -1,8 +1,6 @@
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-export const READ_ONLY_TOOL_NAMES = ['git_inspect', 'web_search', 'web_fetch']
-
 const GIT_ACTIONS = ['diff', 'log', 'show', 'status', 'blame']
 const GIT_TIMEOUT_MS = 30_000
 const GIT_MAX_BUFFER = 16 * 1024 * 1024
