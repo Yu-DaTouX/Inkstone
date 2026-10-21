@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
@@ -31,11 +31,22 @@ export function comfyLaunchCommand(installDir: string): ComfyLaunch | null {
   return { python, args: [...(python === portable ? ['-s'] : []), 'main.py', ...extra], cwd: installDir }
 }
 
+const LAUNCH_CACHE_MS = 30_000
+let launchCache: { at: number; value: Promise<string | null> } | null = null
+
 export async function findLaunchableComfy(): Promise<string | null> {
-  for (const dir of await comfyInstallCandidates()) {
-    if (isComfyInstall(dir) && comfyLaunchCommand(dir)) return dir
-  }
-  return null
+  if (launchCache && Date.now() - launchCache.at < LAUNCH_CACHE_MS) return launchCache.value
+  const value = (async () => {
+    for (const dir of await comfyInstallCandidates()) {
+      if (isComfyInstall(dir) && comfyLaunchCommand(dir)) return dir
+    }
+    return null
+  })().catch((error) => {
+    launchCache = null
+    throw error
+  })
+  launchCache = { at: Date.now(), value }
+  return value
 }
 
 interface Managed {
@@ -73,12 +84,20 @@ async function pickPort(): Promise<number> {
 
 function killTree(child: ChildProcess): void {
   if (!child.pid) return
-  try {
-    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-    else process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill()
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGTERM')
+      return
+    } catch {
+      child.kill()
+      return
+    }
   }
+  const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+  const fallback = setTimeout(() => child.kill(), 5_000)
+  fallback.unref?.()
+  killer.once('exit', () => clearTimeout(fallback))
+  killer.once('error', () => child.kill())
 }
 
 async function serverAt(baseUrl: string): Promise<LocalModelServer | null> {
@@ -90,6 +109,11 @@ async function serverAt(baseUrl: string): Promise<LocalModelServer | null> {
   } catch {
     return null
   }
+}
+
+function resetLocalCaches(): void {
+  resetLocalImageCache()
+  launchCache = null
 }
 
 function scheduleIdleStop(): void {
@@ -129,7 +153,7 @@ async function launch(installDir: string, report?: (detail: string) => void): Pr
     state.exited = true
     clearTimeout(state.idleTimer)
     if (managed === state) managed = null
-    resetLocalImageCache()
+    resetLocalCaches()
   })
   child.once('error', (error) => keep(Buffer.from(error.message)))
 
@@ -140,7 +164,7 @@ async function launch(installDir: string, report?: (detail: string) => void): Pr
     if (state.exited) throw new ComfyLaunchError('local_launch_failed', state.log.slice(-3).join(' | ').slice(0, 300) || 'ComfyUI 启动后立即退出')
     const server = await serverAt(baseUrl)
     if (server) {
-      resetLocalImageCache()
+      resetLocalCaches()
       report?.(`ComfyUI 已就绪（${Math.round((Date.now() - state.startedAt) / 1000)} 秒）`)
       scheduleIdleStop()
       return server
@@ -170,15 +194,18 @@ export async function ensureComfyRunning(report?: (detail: string) => void): Pro
   return starting
 }
 
-export function holdManagedComfy(baseUrl: string): () => void {
+export function holdManagedComfy(baseUrl: string): { release: () => void; managed: boolean } {
   const state = managed
-  if (!state || state.baseUrl !== baseUrl) return () => {}
+  if (!state || state.baseUrl !== baseUrl) return { release: () => {}, managed: false }
   state.busy += 1
   clearTimeout(state.idleTimer)
   state.idleStopAt = undefined
-  return () => {
-    state.busy = Math.max(0, state.busy - 1)
-    if (managed === state) scheduleIdleStop()
+  return {
+    managed: true,
+    release: () => {
+      state.busy = Math.max(0, state.busy - 1)
+      if (managed === state) scheduleIdleStop()
+    }
   }
 }
 
@@ -188,7 +215,7 @@ export function stopManagedComfy(): boolean {
   clearTimeout(state.idleTimer)
   managed = null
   killTree(state.child)
-  resetLocalImageCache()
+  resetLocalCaches()
   return true
 }
 
@@ -204,7 +231,7 @@ export interface ComfyStatus {
 }
 
 export async function comfyStatus(): Promise<ComfyStatus> {
-  resetLocalImageCache()
+  resetLocalCaches()
   const running = managed && !managed.exited ? await serverAt(managed.baseUrl) : null
   const other = running ? null : await detectLocalImageService()
   const server = running ?? (other?.kind === 'comfyui' ? other : null)

@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
@@ -313,12 +313,20 @@ function alive(child: ChildProcess | undefined): boolean {
 
 function killTree(child: ChildProcess): void {
   if (!child.pid) return
-  try {
-    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-    else process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill()
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGTERM')
+      return
+    } catch {
+      child.kill()
+      return
+    }
   }
+  const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+  const fallback = setTimeout(() => child.kill(), 5_000)
+  fallback.unref?.()
+  killer.once('exit', () => clearTimeout(fallback))
+  killer.once('error', () => child.kill())
 }
 
 function detach(): void {

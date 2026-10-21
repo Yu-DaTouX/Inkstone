@@ -1,5 +1,6 @@
 import { hostname } from 'node:os'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { link, mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { projectKnowledgeDir } from './paths'
@@ -411,11 +412,7 @@ async function rebuildManifest(
   }
 }
 
-export async function loadManifest(
-  projectId: string,
-  opts: ProjectKnowledgeStoreOptions = {}
-): Promise<ManifestLoad> {
-  const dir = projectMemoryDir(projectId, opts.root)
+async function recoverManifest(projectId: string, dir: string): Promise<ManifestLoad> {
   const path = manifestPath(dir)
   const main = await readManifestFile(path, projectId)
   if (main.status === 'ok') return { status: 'ok', manifest: main.manifest, path }
@@ -443,6 +440,24 @@ export async function loadManifest(
     }
   }
   return { status: 'missing', path }
+}
+
+export async function loadManifest(
+  projectId: string,
+  opts: ProjectKnowledgeStoreOptions = {}
+): Promise<ManifestLoad> {
+  const dir = projectMemoryDir(projectId, opts.root)
+  const path = manifestPath(dir)
+  const main = await readManifestFile(path, projectId)
+  if (main.status === 'ok') return { status: 'ok', manifest: main.manifest, path }
+  if (main.status === 'unreadable') return { status: 'unreadable', path, error: main.error }
+  if (!existsSync(dir)) return { status: 'missing', path }
+  const lock = await acquireProjectKnowledgeLock(dir, opts)
+  try {
+    return await recoverManifest(projectId, dir)
+  } finally {
+    await lock.release()
+  }
 }
 
 async function loadEntry(
@@ -521,7 +536,7 @@ export async function commitKnowledge(args: CommitKnowledgeArgs): Promise<Knowle
   await mkdir(dir, { recursive: true })
   const lock = await acquireProjectKnowledgeLock(dir, opts)
   try {
-    const manifest = manifestOf(await loadManifest(identity.projectId, opts), identity.projectId)
+    const manifest = manifestOf(await recoverManifest(identity.projectId, dir), identity.projectId)
 
     const requestedId = typeof request.id === 'string' && isSafeKnowledgeId(request.id) ? request.id : null
     const current = requestedId ? await loadEntry(dir, findKnowledgePointer(manifest, requestedId), true) : null
@@ -582,7 +597,7 @@ export async function deleteKnowledge(args: DeleteKnowledgeArgs): Promise<Knowle
   await mkdir(dir, { recursive: true })
   const lock = await acquireProjectKnowledgeLock(dir, opts)
   try {
-    const manifest = manifestOf(await loadManifest(identity.projectId, opts), identity.projectId)
+    const manifest = manifestOf(await recoverManifest(identity.projectId, dir), identity.projectId)
     const id = typeof request.id === 'string' && isSafeKnowledgeId(request.id) ? request.id : null
     const current = id ? await loadEntry(dir, findKnowledgePointer(manifest, id), true) : null
 

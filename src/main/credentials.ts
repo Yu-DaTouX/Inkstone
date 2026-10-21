@@ -245,6 +245,12 @@ function checkViaPi(
   })
 }
 
+export function authEntryHasSecret(entry: unknown): boolean {
+  if (typeof entry === 'string') return entry.trim().length > 0
+  const value = entry as { type?: unknown; key?: unknown } | null
+  return !!value && (!!value.key || value.type === 'oauth')
+}
+
 export async function listAuthProviders(
   pi: { cmd: string; args: string[] },
   deep = false
@@ -252,8 +258,7 @@ export async function listAuthProviders(
   const auth = await readAuth()
   const configured = new Set<string>()
   for (const [k, v] of Object.entries(auth)) {
-    const o = v as { type?: string; key?: string } | null
-    if (o && (o.key || o.type === 'oauth')) configured.add(k)
+    if (authEntryHasSecret(v)) configured.add(k)
   }
 
   const fromEnv = (name: string): boolean => {

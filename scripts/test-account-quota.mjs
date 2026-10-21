@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, rmdir, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, rmdir, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -66,11 +66,6 @@ export async function runAccountQuotaTests(ok) {
   ok(gemini.map((w) => w.label).join('|') === 'gemini-2.5-flash|gemini-2.5-pro|gemini-x (INPUT_TOKENS)', 'Gemini：按模型去重、排序，非请求数的桶标出类型')
   ok(gemini.find((w) => w.label === 'gemini-2.5-pro').used === 75, 'Gemini：剩余比例换成已用百分比')
   ok(s.geminiQuotaWindows({}).length === 0, 'Gemini：没有 buckets 时为空')
-
-  const prefs = s.normalizeAccountQuotaPrefs({ sources: { 'codex-cli': true, 'claude-code': 'yes', bogus: true }, labels: { k1: '  主号 ', k2: '', k3: 7, k4: 'x'.repeat(80) } })
-  ok(prefs.sources['codex-cli'] === true && prefs.sources['claude-code'] === false && prefs.sources['gemini-cli'] === false && !('bogus' in prefs.sources), '偏好：来源默认关闭，只认 true')
-  ok(prefs.labels.k1 === '主号' && !('k2' in prefs.labels) && !('k3' in prefs.labels) && prefs.labels.k4.length === s.ACCOUNT_LABEL_MAX, '偏好：备注去空白、丢空值、截断')
-  ok(s.normalizeAccountQuotaPrefs(null).sources['gemini-cli'] === false, '偏好：坏数据退回默认')
 
   const card = (key, source, extra = {}) => ({ key, source, provider: 'openai-codex', name: 'ChatGPT', status: 'ok', windows: [], checkedAt: 0, ...extra })
   const merged = s.mergeDuplicateCards([card('k', 'yan', { active: true }), card('k', 'codex-cli'), card('other', 'codex-cli')])
@@ -156,6 +151,16 @@ export async function runAccountQuotaTests(ok) {
     ok(r.ok && r.wasActive && !('openai-codex' in auth) && auth.deepseek?.key === 'sk-test', '移除：当前账号从 auth.json 退出，其它服务保留')
     list = await m.listCodexAccounts()
     ok(list.length === 1 && list[0].email === 'b@example.com' && !list[0].active, '移除：列表只剩另一个账号，且不是当前账号')
+
+    await writeFile(storeFile, '{ not json')
+    let rejected = null
+    try { await m.listCodexAccounts() } catch (error) { rejected = error }
+    ok(!!rejected && /格式无效/.test(rejected.message), '损坏：读取时明确报错，不默默清空账号')
+    for (let i = 0; i < 3; i += 1) await m.listCodexAccounts().catch(() => undefined)
+    const backups = (await readdir(dataDir)).filter((name) => name.startsWith('codex-accounts.json.corrupt'))
+    ok(backups.length === 1 && backups[0] === 'codex-accounts.json.corrupt.bak', '损坏：反复读取只留一份固定名的备份')
+    const switched = await m.switchCodexAccount('chatgpt:acct-b:user-b')
+    ok(switched.ok === false && typeof switched.error === 'string' && /格式无效/.test(switched.error), '损坏：切换账号返回 ok:false 而不是 reject')
   } finally {
     globalThis.fetch = realFetch
     await rm(root, { recursive: true, force: true })

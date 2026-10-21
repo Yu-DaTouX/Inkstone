@@ -59,7 +59,7 @@ export async function saveLocalModelUrls(urls: unknown[]): Promise<string[]> {
     await unlink(temp).catch(() => undefined)
     throw error
   }
-  imageCache = null
+  resetLocalImageCache()
   return clean
 }
 
@@ -324,7 +324,7 @@ async function runningImageServices(roots: Roots): Promise<LocalModelServer[]> {
   return [...sd, ...comfy].filter((server): server is LocalModelServer => !!server)
 }
 
-export async function detectLocalModelServers(): Promise<LocalModelServer[]> {
+async function discoverLocalModelServers(): Promise<LocalModelServer[]> {
   const roots = await probeRoots()
   const [chat, images] = await Promise.all([
     Promise.all(unique(roots.chat, (item) => item.root).map((item) => probeChat(item.root, item.target))),
@@ -349,9 +349,21 @@ export async function detectLocalModelServers(): Promise<LocalModelServer[]> {
 }
 
 let imageCache: { at: number; value: Promise<LocalModelServer | null> } | null = null
+let modelsCache: { at: number; value: Promise<LocalModelServer[]> } | null = null
 
 export function resetLocalImageCache(): void {
   imageCache = null
+  modelsCache = null
+}
+
+export function detectLocalModelServers(): Promise<LocalModelServer[]> {
+  if (modelsCache && Date.now() - modelsCache.at < IMAGE_CACHE_MS) return modelsCache.value
+  const value = discoverLocalModelServers().catch((error) => {
+    modelsCache = null
+    throw error
+  })
+  modelsCache = { at: Date.now(), value }
+  return value
 }
 
 export function detectLocalImageService(): Promise<LocalModelServer | null> {
