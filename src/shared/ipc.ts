@@ -1078,9 +1078,17 @@ export interface SubagentBridge {
 
 export type BrowserSiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
 
+export interface SessionSyncDelta {
+  anchorId: string
+  anchorIndex: number
+  anchorSignature: string
+  messages: UIMessage[]
+}
+
 export type MainPushBody =
   | { ch: 'browser-site-ask'; payload: { id: string; origin: string; url: string } }
   | { ch: 'sync'; payload: UIMessage[] }
+  | { ch: 'sync-delta'; payload: SessionSyncDelta }
   | { ch: 'msg-add'; payload: UIMessage }
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
   | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }

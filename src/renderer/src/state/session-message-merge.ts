@@ -1,4 +1,5 @@
-import type { UIMessage } from '../../../shared/ipc'
+import type { SessionSyncDelta, UIMessage } from '../../../shared/ipc'
+import { messageSyncSignature } from '../../../shared/session-sync'
 import { keepLocalImages } from './keep-images'
 import { latestTimestamp } from './split-snapshots'
 
@@ -54,6 +55,37 @@ function mergeById(snapshot: UIMessage[], live: UIMessage[]): UIMessage[] {
     return version
   })
   return changed ? merged : snapshot
+}
+
+export function applySyncDelta(
+  current: UIMessage[],
+  delta: SessionSyncDelta,
+  protectedTailId?: string
+): UIMessage[] | null {
+  const at = current.findIndex((message) => message.id === delta.anchorId)
+  if (at < 0 || at !== delta.anchorIndex) return null
+  if (messageSyncSignature(current[at]) !== delta.anchorSignature) return null
+  const seen = new Set<string>()
+  for (const message of delta.messages) {
+    if (seen.has(message.id)) return null
+    seen.add(message.id)
+  }
+  const known = new Map(current.slice(at + 1).map((message) => [message.id, message]))
+  const out = current.slice(0, at + 1)
+  for (const message of delta.messages) {
+    const existing = known.get(message.id)
+    out.push(existing ? newerMessageVersion(message, existing) : message)
+  }
+  if (!protectedTailId) return out
+  const tailIndex = current.findIndex((message) => message.id === protectedTailId)
+  if (tailIndex < 0) return out
+  const ids = new Set(out.map((message) => message.id))
+  for (const message of current.slice(tailIndex)) {
+    if (ids.has(message.id)) continue
+    ids.add(message.id)
+    out.push(message)
+  }
+  return out
 }
 
 export function mergeSyncHistory(

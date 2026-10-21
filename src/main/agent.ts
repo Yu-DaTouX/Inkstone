@@ -15,6 +15,7 @@ import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
+import { planSessionSync } from './session-sync-plan'
 import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
@@ -979,6 +980,8 @@ export class AgentController extends EventEmitter {
   }
 
   private async hydrate(): Promise<void> {
+    const syncedBefore = this.messages
+    const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
     const state = await this.requireRpc().command('get_state').catch(() => null)
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
     const sessionFile = this.state?.sessionFile
@@ -1021,7 +1024,7 @@ export class AgentController extends EventEmitter {
 
     this.pushedOut.clear()
 
-    this.push({ ch: 'sync', payload: this.messages })
+    this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
     const stats = await this.requireRpc().command('get_session_stats').catch(() => null)
     if (stats?.success) {
@@ -1034,6 +1037,30 @@ export class AgentController extends EventEmitter {
     this.titleTried.clear()
     this.lastTitle = undefined
     void this.maybeGenerateTitle()
+  }
+
+  private pushSessionSync(
+    scopeBefore: { sessionId?: string; sessionFile?: string },
+    syncedBefore: readonly UIMessage[]
+  ): void {
+    const next = this.messages
+    const sameSession =
+      this.state?.sessionId === scopeBefore.sessionId && this.state?.sessionFile === scopeBefore.sessionFile
+    const plan = sameSession ? planSessionSync(syncedBefore, next) : { kind: 'full' as const }
+    if (plan.kind === 'none') return
+    if (plan.kind === 'full') {
+      this.push({ ch: 'sync', payload: next })
+      return
+    }
+    this.push({
+      ch: 'sync-delta',
+      payload: {
+        anchorId: plan.anchorId,
+        anchorIndex: plan.anchorIndex,
+        anchorSignature: plan.anchorSignature,
+        messages: plan.messages
+      }
+    })
   }
 
   async getCustomEntries(): Promise<CustomEntry[]> {
