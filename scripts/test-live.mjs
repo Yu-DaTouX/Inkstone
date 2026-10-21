@@ -165,6 +165,7 @@ const CASES = {
   browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000, visible: true },
   composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
   questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
+  sidebardensity: { probe: 'scripts/probe/sidebar-density.js', delay: 4000, cost: 0, visible: true },
   restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
   title: {
     probe: 'scripts/probe/title.js',
@@ -204,6 +205,7 @@ const CASES = {
     knowledgeSeed: true,
     afterExit: 'knowledgeCli'
   },
+  compactdraft: { probe: 'scripts/probe/compact-draft.js', fixture: true, piSettings: { compaction: { enabled: false, reserveTokens: 4096, keepRecentTokens: 200 } }, delay: 12000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   subagentfork: { probe: 'scripts/probe/subagent-fork.js', fixture: true, delay: 12000, cost: 1, budget: 600000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'subagentForkCache' },
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1, budget: 150000 },
