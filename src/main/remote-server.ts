@@ -121,7 +121,9 @@ const REMOTE_CHANNELS = new Set([
   'ui-deadline',
   'ui-resolved',
   'approval',
-  'approval-close'
+  'approval-close',
+  'turn-settled',
+  'agent-error'
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
