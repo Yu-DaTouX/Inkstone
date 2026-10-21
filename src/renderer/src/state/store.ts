@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { translate, type Lang, type MessageKey, type TVars } from '../i18n'
+import { translate, type MessageKey, type TVars } from '../i18n'
+import { currentLang } from '../i18n/lang'
 import { toolMissingText } from '../lib/toolchain-text'
 import type {
   AppSettings,
@@ -15,6 +16,7 @@ import type {
   MessagePatch,
   ModelInfo,
   PiInfo,
+  QueueItem,
   QueueMode,
   QueueState,
   RuntimeEnvelope,
@@ -30,7 +32,6 @@ import type {
   TerminalSessionInfo,
   UIMessage,
   UIToolCall,
-  UserProfile,
   ApprovalAnswerIdentity,
   ApprovalChoice,
   ApprovalRequest,
@@ -41,7 +42,6 @@ import type {
 import type { CheckpointRecord } from '../../../shared/checkpoints'
 import { stripIpcErrorPrefix } from '../../../shared/ipc-error'
 import { attentionForOutcome } from '../../../shared/turn-outcome'
-import { isWorkspaceMode, type WorkspaceMode } from '../../../shared/workspace-mode'
 import { playSound } from '../lib/sound'
 import { pickProjectSession as pickProjectSessionTarget } from './project-session'
 import { isCapabilityResponseStale } from './capability-request'
@@ -60,6 +60,7 @@ import {
   sameComposerView,
   type ComposerSubmitIdentity
 } from './composer-recovery'
+import type { QueueOp } from '../features/composer/queue-plan'
 import { decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
 import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
@@ -77,18 +78,10 @@ import { routePush, viewingSessionId } from './push-routing'
 import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
 import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
-import { addSourceFiles } from './source-files'
-import { newestMessages, shownMessages } from './split-snapshots'
 import { useSplitView } from './split-view'
 import { claimResource, releaseResource, resourceOwner } from './resource-owners'
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 import { useSubagentStopping } from './subagent-stopping'
-
-function currentLang(): Lang {
-  const fromSettings = useStore.getState().settings?.lang
-  if (fromSettings) return fromSettings
-  return typeof document !== 'undefined' && document.documentElement?.lang === 'en-US' ? 'en-US' : 'zh-CN'
-}
 
 function uiText(key: MessageKey, vars?: TVars): string {
   return translate(currentLang(), key, vars)
@@ -103,12 +96,6 @@ function attentionTitle(event: SoundEvent): string {
     case 'error':
       return uiText('state.attention.error')
   }
-}
-
-function legacyWorkspaceMode(): WorkspaceMode | null {
-  if (typeof localStorage === 'undefined') return null
-  const value = localStorage.getItem('yan.workspace-mode')
-  return isWorkspaceMode(value) ? value : null
 }
 
 function alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string, title?: string, source?: ModelInfo | null): void {
@@ -175,7 +162,6 @@ export interface Store {
   authProviders: AuthProviderInfo[]
 
   settings: AppSettings | null
-  shortcutRecording: boolean
   settingsOpen: boolean
   nativeSessionPanel: {
     mode: import('../../../shared/native-session').NativeSessionMode | 'entries'
@@ -199,7 +185,6 @@ export interface Store {
   browserState: BrowserState
   browserNativeVisible: boolean
   terminals: TerminalSessionInfo[]
-  terminalAvailable: boolean
   filePreview: FilePreviewState | null
   filePreviews: Record<string, FilePreviewState>
   subagents: SubagentRun[]
@@ -240,7 +225,6 @@ export interface Store {
   runners: RunnerStatus[]
   sessionRuntimes: SessionRuntimeMap
   approvals: ApprovalRequest[]
-  workspaceMode: WorkspaceMode
 
   bootstrap: () => Promise<void>
   syncRunners: () => Promise<void>
@@ -276,6 +260,7 @@ export interface Store {
     notice?: string
   }) => void
   applyQueueOrder: (next: QueueState) => Promise<void>
+  applyQueueOp: (op: QueueOp) => Promise<void>
   armQuotaResume: () => Promise<boolean>
   cancelQuotaResume: () => void
   abort: () => Promise<void>
@@ -321,12 +306,10 @@ export interface Store {
   loadSubagents: () => Promise<void>
   startSubagent: (task: string, model?: string, isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<void>
   stopSubagent: (id: string) => Promise<void>
-  openSubagent: (id: string | null) => void
   openExternalChrome: (url?: string) => Promise<void>
   closeExternalChrome: () => Promise<void>
   syncLocalProfile: () => Promise<ChromeSyncReport>
   syncPageStorage: () => Promise<ChromeSyncReport>
-  patchProfile: (p: Partial<UserProfile>) => Promise<void>
   patchSettings: (p: Partial<AppSettings>) => Promise<void>
   removeGuardAllowRoot: (path: string) => Promise<void>
   answerApproval: (id: string, choice: ApprovalChoice, identity?: ApprovalAnswerIdentity, feedback?: string) => Promise<void>
@@ -895,6 +878,7 @@ async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<
   await useStore.getState().send(QUOTA_RESUME_PROMPT)
 }
 let approvalBootstrapSeq = 0
+let approvalsBootstrapped = false
 let approvalChanges = new Map<string, ApprovalRequest | null>()
 let settingsPatchQueue: Promise<unknown> = Promise.resolve()
 let rightPanelPatchSeq = 0
@@ -922,6 +906,13 @@ const withFileTab = (
     releaseResource('file:' + stale)
   }
   return all
+}
+
+type QueueEditArg = QueueState | QueueOp
+type QueueEditResult = { ok: boolean; error?: string; dropped?: QueueItem[] }
+
+function queueEditRequest(arg: QueueEditArg): Promise<QueueEditResult> {
+  return (window.yan.queueEdit as unknown as (arg: QueueEditArg) => Promise<QueueEditResult>)(arg)
 }
 
 export const useStore = create<Store>((rawSet, get) => {
@@ -965,6 +956,21 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', stripIpcErrorPrefix(message)) })
     }
   })
+  const settleQueueEdit = async (sessionId: string | undefined, res: QueueEditResult): Promise<void> => {
+    if (res.ok) return
+    const dropped = res.dropped ?? []
+    if (dropped.length) {
+      const current = get()
+      set(applyQueueRecovery(current, {
+        sessionId,
+        text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
+        images: dropped.flatMap((item) => item.images ?? []),
+        idPrefix: 'queue-image',
+        notice: uiText('state.queue.editFailedRestored')
+      }))
+    }
+    set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.queueEditFailed')) })
+  }
   return {
   conn: 'starting',
   connDetail: '',
@@ -987,7 +993,6 @@ export const useStore = create<Store>((rawSet, get) => {
   sessionRuntimes: {},
   approvals: [],
   gitInstall: { phase: 'idle' },
-  workspaceMode: 'daily',
 
   models: [],
   thinkingLevels: [],
@@ -997,7 +1002,6 @@ export const useStore = create<Store>((rawSet, get) => {
   commandUse: readCommandUse(),
 
   settings: null,
-  shortcutRecording: false,
   settingsOpen: false,
   nativeSessionPanel: null,
   closeNativeSessionPanel: () => set({ nativeSessionPanel: null }),
@@ -1034,7 +1038,6 @@ export const useStore = create<Store>((rawSet, get) => {
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
   browserNativeVisible: false,
   terminals: [],
-  terminalAvailable: true,
   filePreview: null,
   filePreviews: {},
   subagents: [],
@@ -1066,6 +1069,7 @@ export const useStore = create<Store>((rawSet, get) => {
   bootstrap: async () => {
     const bootstrapApprovals = ++approvalBootstrapSeq
     approvalChanges = new Map()
+    approvalsBootstrapped = false
     const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { } })
     const api = window.yan
     performance.mark('yan:bootstrap-start')
@@ -1084,20 +1088,10 @@ export const useStore = create<Store>((rawSet, get) => {
       ])
 
     performance.mark('yan:bootstrap-fetched')
-    let settings = loadedSettings
-    if (settings.workspaceMode === undefined) {
-      const migrated = legacyWorkspaceMode() ?? 'daily'
-      try {
-        settings = await api.patchSettings({ workspaceMode: migrated })
-      } catch {
-        settings = { ...settings, workspaceMode: migrated }
-      }
-      if (typeof localStorage !== 'undefined') localStorage.removeItem('yan.workspace-mode')
-    }
+    const settings = loadedSettings
 
     set({
       settings,
-      workspaceMode: settings.workspaceMode ?? 'daily',
       sessions,
       session: session ?? get().session,
       messages: messages.length ? messages : get().messages,
@@ -1122,6 +1116,7 @@ export const useStore = create<Store>((rawSet, get) => {
       for (const item of get().approvals) if (!approvalChanges.has(item.id)) byId.set(item.id, item)
       set({ approvals: [...byId.values()] })
       approvalChanges.clear()
+      approvalsBootstrapped = true
     }).catch(() => undefined)
     void window.yan.appUpdate
       .status()
@@ -1159,8 +1154,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   applyPush: (m) => {
-    if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
-    else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
+    if (!approvalsBootstrapped) {
+      if (m.ch === 'approval') approvalChanges.set(m.payload.id, m.payload)
+      else if (m.ch === 'approval-close') approvalChanges.set(m.payload.id, null)
+    }
 
     if (m.ch === 'queue-reclaimed') {
       const current = get()
@@ -1189,10 +1186,26 @@ export const useStore = create<Store>((rawSet, get) => {
 
     const s = get()
 
-    const route = routePush({ ...s, visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) }, m)
+    const route = routePush(
+      {
+        runners: s.runners,
+        activeRunnerId: s.activeRunnerId,
+        sessionRuntimes: s.sessionRuntimes,
+        peekedSessionId: s.peekedSessionId,
+        peekedPath: s.peekedPath,
+        session: s.session,
+        visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : [])
+      },
+      m
+    )
     if (route.patch) set(route.patch)
     if (!route.project) {
       if (m.ch === 'ui-request' && route.patch) alertAttention(s.settings, 'question', m.payload.message ?? m.payload.title, undefined, null)
+      return
+    }
+
+    if (m.ch === 'quota-wait') {
+      void get().armQuotaResume()
       return
     }
 
@@ -1334,6 +1347,9 @@ export const useStore = create<Store>((rawSet, get) => {
           set({ notices: pushNotice(get().notices, 'info', uiText('state.compact.done')) })
         } else if (endedRun?.status === 'failed') {
           set({ notices: pushNotice(get().notices, 'error', uiText('state.compact.failed', { error: endedRun.error ?? uiText('state.error.unknownReason') })) })
+        }
+        if (endedRun) {
+          for (const item of pendingSendsForView(get())) void get().releaseSend(item.id, 'followUp')
         }
         if (Array.isArray(m.payload.availableThinkingLevels)) {
           const levels = keepRef(get().thinkingLevels, m.payload.availableThinkingLevels)
@@ -1543,7 +1559,13 @@ export const useStore = create<Store>((rawSet, get) => {
     const provider = session?.model?.provider
     if (!session || !provider) return false
     if (get().quotaResume) return true
-    const snapshot = await window.yan.providerQuota(provider, get().settings?.providerBudgets?.[provider])
+    const snapshot = await window.yan
+      .providerQuota(provider, get().settings?.providerBudgets?.[provider])
+      .catch(() => null)
+    if (!snapshot) {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.unknownError')) })
+      return false
+    }
     if (!snapshot.windows?.length || snapshot.staleError) {
       set({ notices: pushNotice(get().notices, 'error', snapshot.staleError ?? snapshot.error ?? uiText('state.quota.noWindows')) })
       return false
@@ -1667,39 +1689,35 @@ export const useStore = create<Store>((rawSet, get) => {
 
   applyQueueOrder: async (next) => {
     const sessionId = get().session?.sessionId
-    const res = await piCall(() => window.yan.queueEdit(next))
-    if (res.ok) return
-    const dropped = res.dropped ?? []
-    if (dropped.length) {
-      const current = get()
-      set(applyQueueRecovery(current, {
-        sessionId,
-        text: dropped.map((item) => item.text ?? '').filter((text) => text).join('\n'),
-        images: dropped.flatMap((item) => item.images ?? []),
-        idPrefix: 'queue-image',
-        notice: uiText('state.queue.editFailedRestored')
-      }))
-    }
-    set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.queueEditFailed')) })
+    await settleQueueEdit(sessionId, await piCall(() => window.yan.queueEdit(next)))
+  },
+
+  applyQueueOp: async (op) => {
+    const sessionId = get().session?.sessionId
+    await settleQueueEdit(sessionId, await piCall(() => queueEditRequest(op)))
   },
 
   abort: async () => {
     const sessionId = get().session?.sessionId
     markStopRequested(sessionId)
-    const cleared = await window.yan.abort(expectedRuntimeFor(get(), composerSubmitIdentity(get())))
-    if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
-    const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
-    const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
-    const current = get()
-    const texts = items.length ? items.map((item) => item.text ?? '').filter((text) => text) : back
-    if (texts.length || items.some((item) => item.images?.length)) {
-      set(applyQueueRecovery(current, {
-        sessionId,
-        text: texts.join('\n'),
-        images: items.flatMap((item) => item.images ?? []),
-        idPrefix: 'queue-image',
-        notice: uiText('state.queue.restored', { count: texts.length })
-      }))
+    try {
+      const cleared = await window.yan.abort(expectedRuntimeFor(get(), composerSubmitIdentity(get())))
+      if (cleared.error) set({ notices: pushNotice(get().notices, 'error', cleared.error) })
+      const back = [...cleared.steering, ...cleared.followUp].filter(Boolean)
+      const items = [...(cleared.items?.steering ?? []), ...(cleared.items?.followUp ?? [])]
+      const current = get()
+      const texts = items.length ? items.map((item) => item.text ?? '').filter((text) => text) : back
+      if (texts.length || items.some((item) => item.images?.length)) {
+        set(applyQueueRecovery(current, {
+          sessionId,
+          text: texts.join('\n'),
+          images: items.flatMap((item) => item.images ?? []),
+          idPrefix: 'queue-image',
+          notice: uiText('state.queue.restored', { count: texts.length })
+        }))
+      }
+    } catch (error) {
+      set({ notices: pushNotice(get().notices, 'error', error instanceof Error && error.message ? stripIpcErrorPrefix(error.message) : uiText('state.error.unknownError')) })
     }
   },
 
@@ -1782,8 +1800,7 @@ export const useStore = create<Store>((rawSet, get) => {
     let sum = findSummary()
     const cachedSnapshot = (sum?.id ? get().sessionRuntimes[sum.id] : undefined) ??
       findSnapshotByPath(get().sessionRuntimes, path)
-    const splitShown = useSplitView.getState().split ? shownMessages({ sessionId: sum?.id, path }) : undefined
-    const cachedMessages = newestMessages(splitShown, cachedSnapshot?.messages)
+    const cachedMessages = cachedSnapshot?.messages
     const left = get()
     const leftView = {
       peekedPath: left.peekedPath,
@@ -2119,7 +2136,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   stop: async () => {
-    await window.yan.abort()
+    try {
+      await window.yan.abort()
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.commandFailed')) })
+    }
   },
 
   setModel: async (provider, id, quiet = false) => {
@@ -2135,7 +2156,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   setThinking: async (level) => {
-    await window.yan.setThinking(level)
+    try {
+      await window.yan.setThinking(level)
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotSwitchThinking')) })
+    }
   },
 
   setAutoCompaction: async (on) => {
@@ -2165,7 +2190,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   abortRetry: async () => {
-    await window.yan.abortRetry()
+    try {
+      await window.yan.abortRetry()
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.commandFailed')) })
+    }
   },
 
   cycleModel: async () => {
@@ -2317,8 +2346,7 @@ export const useStore = create<Store>((rawSet, get) => {
       const run = res.run
       const idx = get().subagents.findIndex((r) => r.id === run.id)
       set({
-        subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run],
-        subagentPreviewId: run.id
+        subagents: idx >= 0 ? get().subagents.map((r) => (r.id === run.id ? run : r)) : [...get().subagents, run]
       })
     }
   },
@@ -2331,8 +2359,6 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.subagentStopFailed')) })
     }
   },
-
-  openSubagent: (id) => set({ subagentPreviewId: id }),
 
   openExternalChrome: async (url) => {
     const res = await window.yan.browser.openExternalChrome(url)
@@ -2358,13 +2384,13 @@ export const useStore = create<Store>((rawSet, get) => {
     return report
   },
 
-  patchProfile: async (p) => {
-    const next = await persistSettingsPatch({ profile: { ...get().settings?.profile, ...p } as UserProfile })
-    set({ settings: next })
-  },
-
   patchSettings: async (p) => {
-    set({ settings: await persistSettingsPatch(p) })
+    try {
+      set({ settings: await persistSettingsPatch(p) })
+    } catch (cause) {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.settingsSaveFailed')) })
+      throw cause
+    }
   },
 
   removeGuardAllowRoot: async (path) => {
@@ -2468,13 +2494,12 @@ export const useStore = create<Store>((rawSet, get) => {
     const unique = [...new Set(paths.filter(Boolean))]
     if (!unique.length) return
 
-    const infos = await window.yan.describeFiles(unique)
+    let infos: Awaited<ReturnType<typeof window.yan.describeFiles>>
     try {
-      const sessionId = get().session?.sessionId
-      if (sessionId) {
-        addSourceFiles(sessionId, unique)
-      }
+      infos = await window.yan.describeFiles(unique)
     } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotReference')) })
+      return
     }
 
     const refs: Attachment[] = []
@@ -2519,12 +2544,20 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   pickImages: async () => {
-    get().addAttachments(await window.yan.pickImages())
+    try {
+      get().addAttachments(await window.yan.pickImages())
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
+    }
   },
 
   pickFiles: async () => {
-    const paths = await window.yan.pickFilePaths()
-    if (paths.length) await get().addFileRefPaths(paths)
+    try {
+      const paths = await window.yan.pickFilePaths()
+      if (paths.length) await get().addFileRefPaths(paths)
+    } catch {
+      set({ notices: pushNotice(get().notices, 'error', uiText('state.error.pickFailed')) })
+    }
   },
 
   answerUi: (res) => {
@@ -2635,6 +2668,7 @@ export const useStore = create<Store>((rawSet, get) => {
         }
       } catch {
       }
+      if (cur === 'ready') tries = 0
       const delay = cur === 'ready' ? 5000 : tries++ < 20 ? 500 : 3000
       setTimeout(() => void tick(), delay)
     }
