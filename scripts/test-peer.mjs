@@ -23,10 +23,12 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
   })
   const commands = []
   const started = []
+  const peerGraceMs = 120
   server = new RemoteServer({
     host: '127.0.0.1',
     port: 0,
     devices,
+    peerGraceMs,
     handlers: {
       async snapshot() {
         return { sessions: [{ id: 's-a' }, { id: 's-b' }] }
@@ -152,9 +154,14 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
 
     stream.close()
     await wait(80)
-    ok(revokedStreams.includes(grant.connectionId), '砚对砚：事件流断开后授权被作废')
-    ok((await call('/remote/v1/peer/sessions', { token: peer, connection: grant.connectionId })).status === 401, '砚对砚：断开后旧连接 id 立即失效')
-    ok((await openStream(peer, grant.connectionId)).status === 401, '砚对砚：旧连接 id 不能重新激活（重连必须重新批准）')
+    ok(!revokedStreams.includes(grant.connectionId), '砚对砚：事件流断开先进入宽限期，不立即作废授权')
+    ok((await call('/remote/v1/peer/sessions', { token: peer, connection: grant.connectionId })).status === 200, '砚对砚：宽限期内旧连接仍可继续用')
+    const resumed = await openStream(peer, grant.connectionId)
+    ok(resumed.status === 200, '砚对砚：同一条连接可重连并复用原授权')
+    resumed.close()
+    await wait(peerGraceMs + 120)
+    ok(revokedStreams.includes(grant.connectionId), '砚对砚：宽限期结束后授权被作废')
+    ok((await call('/remote/v1/peer/sessions', { token: peer, connection: grant.connectionId })).status === 401, '砚对砚：宽限期结束后旧连接 id 失效')
 
     nextDecision = () => ({ approve: true, projectIds: ['p-a'], operations: ['read', 'transfer', 'send'] })
     const second = (await call('/remote/v1/peer/connect', { token: peer, method: 'POST', body: { operations: ['read', 'transfer', 'send'] } })).body.data.grant

@@ -33,6 +33,18 @@ export interface RemoteHost extends SessionHost {
 
 let host: RemoteHost
 
+const REMOTE_SESSIONS_TTL_MS = 2000
+let sessionsCache: { at: number; limit: number; list: SessionSummary[] } | null = null
+
+async function remoteSessions(limit: number): Promise<SessionSummary[]> {
+  const now = Date.now()
+  if (sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) return sessionsCache.list
+  const settings = await getSettings()
+  const list = await listSessions(limit, settings.projects)
+  sessionsCache = { at: now, limit, list }
+  return list
+}
+
 export function configureRemoteHost(next: RemoteHost): void {
   host = next
 }
@@ -42,8 +54,8 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
     id: summary.id,
     title: summary.title,
     named: summary.named,
-    ...(summary.parentSession ? { parentSession: summary.parentSession } : {}),
-    ...(summary.branchOrigin ? { branchOrigin: summary.branchOrigin } : {}),
+    ...(summary.parentSession ? { parentSessionId: basename(summary.parentSession, '.jsonl') } : {}),
+    ...(summary.branchOrigin ? { branchOriginTitle: summary.branchOrigin.slice(0, 120) } : {}),
     ...(summary.lastActivityAt !== undefined ? { lastActivityAt: summary.lastActivityAt } : {}),
     ...(summary.lastReply ? { lastReply: summary.lastReply } : {}),
     createdAt: summary.createdAt,
@@ -53,7 +65,7 @@ export function remoteSessionSummary(summary: SessionSummary): Record<string, un
     ...(summary.projectId ? { projectId: summary.projectId } : {}),
     ...(summary.scope ? { scope: summary.scope } : {}),
     ...(summary.lastOpenedAt !== undefined ? { lastOpenedAt: summary.lastOpenedAt } : {}),
-    ...(summary.projectCandidates?.length ? { projectCandidates: summary.projectCandidates } : {}),
+    ...(summary.projectCandidates?.length ? { projectCandidateCount: summary.projectCandidates.length } : {}),
     cwdName: basename(summary.cwd) || summary.cwd
   }
 }
@@ -83,7 +95,7 @@ export function remoteSessionState(state: SessionState | null): Record<string, u
 }
 
 export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown> {
-  const model = host.runners()?.agentOf(status.runId)?.getState()?.model
+  const model = host ? host.runners()?.agentOf(status.runId)?.getState()?.model : undefined
   return {
     id: status.id,
     runId: status.runId,
@@ -102,9 +114,14 @@ export function remoteRunnerStatus(status: RunnerStatus): Record<string, unknown
   }
 }
 
+export function remotePushPayload(channel: string, payload: unknown): unknown {
+  if (channel === 'state') return remoteSessionState((payload ?? null) as SessionState | null)
+  if (channel === 'runners') return Array.isArray(payload) ? payload.map((item) => remoteRunnerStatus(item as RunnerStatus)) : payload
+  return payload
+}
+
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
-  const settings = await getSettings()
-  const summaries = await filterChainRepresentatives(await listSessions(200, settings.projects))
+  const summaries = await filterChainRepresentatives(await remoteSessions(200))
   const state = host.ac()?.getState() ?? null
   const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
   const win = host.win()
@@ -149,8 +166,7 @@ export async function filterChainRepresentatives(list: SessionSummary[]): Promis
 async function resolveChainSession(sessionId: string): Promise<
   { ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }
 > {
-  const settings = await getSettings()
-  const list = await listSessions(500, settings.projects)
+  const list = await remoteSessions(500)
   const requested = list.find((item) => item.id === sessionId)
   if (!requested) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
   await host.sessionChains.load()
@@ -169,8 +185,7 @@ async function resolveChainSession(sessionId: string): Promise<
 }
 
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
-  const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
 
   const result = await host.readHistoryWithArtifacts(summary.path)
@@ -192,7 +207,8 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
       returned: messages.length,
       hasMore: page.hasMore,
       nextBefore: page.nextBefore,
-      truncated: result.truncated,
+      truncated: result.truncated > 0,
+      truncatedBytes: result.truncated,
       bytes: result.bytes
     }
   }
@@ -448,8 +464,7 @@ export async function remoteAnswer(questionId: string, answer: RemoteAnswer): Pr
 }
 
 export async function remoteArtifact(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult> {
-  const settings = await getSettings()
-  const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
   const result = await host.readHistoryWithArtifacts(summary.path)
   const artifact = result?.messages.flatMap((message) => message.artifacts ?? []).find((item) => item.id === artifactId)
@@ -468,7 +483,7 @@ export async function remoteArtifact(sessionId: string, artifactId: string): Pro
 }
 
 export async function remoteMessageImage(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult> {
-  const summary = (await listSessions(500, (await getSettings()).projects)).find((item) => item.id === sessionId)
+  const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
   if (!summary) return { ok: false, status: 404, error: '找不到目标会话' }
   const history = await host.readHistoryWithArtifacts(summary.path)
   const image = history?.messages.find((message) => message.id === messageId)?.images?.[index]
@@ -499,8 +514,7 @@ export const peerGrants = new PeerGrantRegistry({
 })
 
 export async function peerSummaryOf(sessionId: string): Promise<SessionSummary | undefined> {
-  const settings = await getSettings()
-  return (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+  return (await remoteSessions(500)).find((item) => item.id === sessionId)
 }
 
 export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
@@ -515,8 +529,7 @@ export const peerHostHandlers: PeerHostHandlers = {
       .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
   },
   async sessions(projectIds) {
-    const settings = await getSettings()
-    const list = (await listSessions(500, settings.projects))
+    const list = (await remoteSessions(500))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
     return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },

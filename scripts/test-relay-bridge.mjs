@@ -100,6 +100,7 @@ const relayToken = 'test-relay-token-1234567890'
 const server = new M.RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers, relayToken })
 await server.start()
 const relay = new FakeRelay()
+const relayUrl = `http://127.0.0.1:${server.info.port}`
 const bridge = new M.RelayBridge(dataDir, {
   target: () => ({ host: '127.0.0.1', port: server.info.port, relayToken }),
   startYanPairing: () => devices.startPairing(),
@@ -150,7 +151,9 @@ try {
     const legacy = await devices.pair(devices.currentPairing().code, '旧礁石', 'agent')
     assert.equal(legacy.ok, true)
     assert.equal(legacy.device.kind, 'agent')
-    const call = (method, path, body) => fetch(`http://127.0.0.1:${server.info.port}${path}`, { method, headers: { authorization: `Bearer ${legacy.token}`, 'content-type': 'application/json', 'idempotency-key': 'legacy-reef-0001' }, body: body ? JSON.stringify(body) : undefined })
+    const call = (method, path, body) => fetch(`http://127.0.0.1:${server.info.port}${path}`, { method, headers: { authorization: `Bearer ${legacy.token}`, 'content-type': 'application/json', 'idempotency-key': 'legacy-reef-0001', 'x-yan-relay': relayToken }, body: body ? JSON.stringify(body) : undefined })
+    const direct = await fetch(`http://127.0.0.1:${server.info.port}/remote/v1/info`, { headers: { authorization: `Bearer ${legacy.token}` } })
+    assert.equal(direct.status, 403, '中继服务不接受没带中继令牌的直连')
     const info = await call('GET', '/remote/v1/info')
     assert.equal(info.status, 200)
     assert.deepEqual((await info.json()).capabilities, [])
@@ -195,6 +198,17 @@ try {
     for (const c of (await bridge.status()).clients) if (c.revokedAt === null) await bridge.revoke(c.id)
     assert.ok(id)
     assert.equal((await connect(relay, link2, { key, pair: false })).welcome.t, 'denied')
+  })
+
+  await check('中继来源各用各的配对限流桶', async () => {
+    const attempt = async (client) => (await fetch(new URL('/remote/v1/pair', relayUrl), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yan-relay': relayToken, ...(client ? { 'x-yan-relay-client': client } : {}) },
+      body: JSON.stringify({ code: '000000', deviceName: '限流测试' })
+    })).status
+    for (let index = 0; index < 10; index++) assert.equal(await attempt('client-a'), 403)
+    assert.equal(await attempt('client-a'), 429, '同一中继客户端超过次数后被限流')
+    assert.equal(await attempt('client-b'), 403, '另一个中继客户端不受牵连')
   })
 
   await check('篡改的加密帧让连接断开', async () => {

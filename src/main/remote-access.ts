@@ -11,6 +11,7 @@ import { RemoteDeviceStore } from './remote-devices'
 import { randomBytes } from 'node:crypto'
 import { RelayBridge } from './relay-bridge'
 import { RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
+import { remotePushPayload } from './remote-host'
 import type { PeerGrantRegistry } from './peer-grants'
 
 type AddressKind = RemoteAccessStatus['addresses'][number]['kind']
@@ -198,6 +199,7 @@ export class RemoteAccess {
 
   disconnectConnection(connectionId: string): void {
     this.server?.disconnectConnection(connectionId)
+    this.relayServer?.disconnectConnection(connectionId)
   }
 
   async stop(): Promise<void> {
@@ -209,8 +211,10 @@ export class RemoteAccess {
   }
 
   publish(message: MainPush): void {
-    this.server?.publish(message)
-    this.relayServer?.publish(message)
+    if (!this.server && !this.relayServer) return
+    const projected = { ...message, payload: remotePushPayload(message.ch, message.payload) } as MainPush
+    this.server?.publish(projected)
+    this.relayServer?.publish(projected)
   }
 
   startPairing(): { code: string; expiresAt: number } {

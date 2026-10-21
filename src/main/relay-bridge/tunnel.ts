@@ -183,6 +183,7 @@ export class TunnelSession {
     }
     headers['x-yan-relay'] = target.relayToken
     headers['x-yan-relay-kind'] = kind
+    if (this.client) headers['x-yan-relay-client'] = this.client.id
     if (payload.length) headers['content-length'] = String(payload.length)
 
     const req = httpRequest({ host: target.host, port: target.port, method, path: `${url.pathname}${url.search}`, headers, timeout: REQUEST_TIMEOUT_MS }, (res) => {
