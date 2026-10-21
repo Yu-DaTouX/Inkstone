@@ -57,9 +57,8 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
           <span className="ui-tab__label">{kids}</span>
           {onClose ? (
             <span
-              role="button"
-              tabIndex={-1}
-              aria-label={closeLabel ?? t('ui.close')}
+              aria-hidden="true"
+              title={closeLabel ?? t('ui.close')}
               className="ui-tab__close"
               onPointerDown={(event) => {
                 event.stopPropagation()
@@ -67,11 +66,10 @@ export function Tab({ onClose, closeLabel, className, children, ...props }: TabP
               }}
               onClick={(event) => {
                 event.stopPropagation()
-                event.preventDefault()
                 onClose()
               }}
             >
-              <X size={13} aria-hidden="true" />
+              <X size={13} />
             </span>
           ) : null}
         </>

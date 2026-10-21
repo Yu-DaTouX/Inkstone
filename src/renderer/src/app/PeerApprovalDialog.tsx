@@ -3,6 +3,7 @@ import type { PeerApprovalRequest, PeerOperation } from '../../../shared/peer-pr
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
 import { Button, Checkbox, CheckboxGroup, Dialog, Modal, ModalOverlay } from '../ui'
+import { peerDecisionOutcome, withoutApprovalRequest } from './peer-approval-model'
 import './peer-approval.css'
 
 export function PeerApprovalDialog() {
@@ -12,6 +13,8 @@ export function PeerApprovalDialog() {
   const [projects, setProjects] = useState<string[]>([])
   const [operations, setOperations] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
   const current = queue[0]
 
   useEffect(() => {
@@ -25,6 +28,7 @@ export function PeerApprovalDialog() {
   useEffect(() => {
     setProjects([])
     setOperations(current?.operations ?? [])
+    setError('')
   }, [current?.requestId])
 
   useEffect(() => {
@@ -39,19 +43,35 @@ export function PeerApprovalDialog() {
 
   if (!current) return null
 
-  const decide = (approve: boolean): void => {
-    void window.yan.peer.hostDecide({
-      requestId: current.requestId,
-      approve,
-      projectIds: projects,
-      operations: operations as PeerOperation[]
-    })
-    setQueue((list) => list.filter((item) => item.requestId !== current.requestId))
+  const decide = async (approve: boolean): Promise<void> => {
+    if (pending) return
+    const requestId = current.requestId
+    setPending(true)
+    setError('')
+    let accepted: boolean | null = null
+    try {
+      accepted = await window.yan.peer.hostDecide({
+        requestId,
+        approve,
+        projectIds: projects,
+        operations: operations as PeerOperation[]
+      })
+    } catch {
+      accepted = null
+    } finally {
+      setPending(false)
+    }
+    const outcome = peerDecisionOutcome(accepted)
+    if (outcome === 'failed') {
+      setError(t('peer.decideFailed'))
+      return
+    }
+    setQueue((list) => withoutApprovalRequest(list, requestId))
   }
   const seconds = Math.max(0, Math.ceil((current.expiresAt - now) / 1000))
 
   return (
-    <ModalOverlay isOpen isDismissable onOpenChange={(open) => { if (!open) decide(false) }}>
+    <ModalOverlay isOpen isDismissable onOpenChange={(open) => { if (!open) void decide(false) }}>
       <Modal className="peer-approval">
         <Dialog title={t('peer.approveTitle')} closeLabel={t('peer.deny')} data-testid="peer-approval">
           <p className="peer-approval-timer" role="timer">{t('peer.approveExpires', { seconds })}</p>
@@ -73,14 +93,15 @@ export function PeerApprovalDialog() {
               <Checkbox key={op} value={op}>{t(`peer.op.${op}` as 'peer.op.read')}</Checkbox>
             ))}
           </CheckboxGroup>
+          {error ? <p className="peer-approval-error" role="alert">{error}</p> : null}
           <div className="peer-approval-foot">
             <span className="peer-approval-dim">{t('peer.approveNotShared')}</span>
             <span className="peer-approval-spacer" />
-            <Button onPress={() => decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
+            <Button isDisabled={pending} onPress={() => void decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
             <Button
               variant="primary"
-              isDisabled={!projects.length || !operations.length}
-              onPress={() => decide(true)}
+              isDisabled={pending || !projects.length || !operations.length}
+              onPress={() => void decide(true)}
               data-testid="peer-approve"
             >
               {t('peer.approve')}

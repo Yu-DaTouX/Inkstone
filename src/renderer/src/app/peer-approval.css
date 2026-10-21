@@ -22,6 +22,11 @@
     font-size: var(--t-footnote);
   }
 
+  .peer-approval-error {
+    margin: 0;
+    color: var(--fail-t);
+  }
+
   .peer-approval-foot {
     display: flex;
     flex-wrap: wrap;
