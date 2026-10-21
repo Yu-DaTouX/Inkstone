@@ -374,6 +374,46 @@ if (symlinkOk) {
     assert.ok(deniedDiff.error)
     assert.equal(deniedDiff.patch, '')
   })
+
+  git(repo, ['remote', 'add', 'origin', 'git@github.com:inkstone/demo.git'])
+  const cachedBefore = git(repo, ['diff', '--cached', '--name-only']).trim()
+  const deniedState = await regDeny.invoke('yan:git:state', repo)
+  const deniedRefs = await regDeny.invoke('yan:git:refs', repo)
+  const deniedUntracked = await regDeny.invoke('yan:git:untracked', repo)
+  const deniedWorktrees = await regDeny.invoke('yan:git:worktrees', repo)
+  const deniedIdentity = await regDeny.invoke('yan:git:identity', repo)
+  const deniedRemotes = await regDeny.invoke('yan:git:remotes', repo)
+  const deniedAction = await regDeny.invoke('yan:git:action', {
+    requestId: 'deny-stage-all',
+    cwd: repo,
+    kind: 'stage-all',
+    expected: { head: null, indexDigest: '', statusDigest: '' }
+  })
+  check('未授权 cwd：state / refs / untracked / worktrees 全部 fail closed', () => {
+    assert.equal(deniedState.repo, null)
+    assert.ok(deniedState.error)
+    assert.equal(deniedRefs.ok, false)
+    assert.deepEqual(deniedRefs.refs, [])
+    assert.ok(deniedRefs.error)
+    assert.deepEqual(deniedUntracked, [])
+    assert.equal(deniedWorktrees.ok, false)
+    assert.deepEqual(deniedWorktrees.worktrees, [])
+  })
+  check('未授权 cwd：identity / remotes 不泄露', () => {
+    assert.equal(deniedIdentity, null)
+    assert.deepEqual(deniedRemotes, [])
+  })
+  check('未授权 cwd：git 写操作被拒且真的没改 index', () => {
+    assert.equal(deniedAction.ok, false)
+    assert.ok(deniedAction.failure?.message)
+    assert.equal(git(repo, ['diff', '--cached', '--name-only']).trim(), cachedBefore)
+  })
+  const allowedIdentity = await register(makeAuthorize([repo])).invoke('yan:git:identity', repo)
+  const allowedRemotes = await reg.invoke('yan:git:remotes', repo)
+  check('已授权 cwd：同样的通道仍能读到内容（拒绝不是因为仓库没内容）', () => {
+    assert.equal(allowedIdentity?.name, 'demo')
+    assert.deepEqual(allowedRemotes, ['origin'])
+  })
 }
 
 {

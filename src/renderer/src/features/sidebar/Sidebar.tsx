@@ -6,7 +6,8 @@ import { useUiV3 } from '../../state/ui-v3'
 import { Avatar, Button, EmptyState, IconButton, SearchField, StatusDot, type StatusDotKind } from '../../ui'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
-import { v3Text } from '../../app/v3-text'
+import { v3Text, withShortcutKeys } from '../../app/v3-text'
+import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, latestRunForSession, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
@@ -246,6 +247,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const connDot: StatusDotKind = conn === 'ready' ? 'ok' : conn === 'starting' ? 'pending' : 'fail'
   const connBroken = conn === 'exited' || conn === 'error'
   const userName = settings?.profile?.name?.trim() || own.localUser
+  const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverridesFromSettings(settings)))
 
   return (
     <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar">
@@ -255,8 +257,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           <span className="v3-side-name">Inkstone</span>
         </span>
         <div className="v3-side-top-actions">
-          <IconTip label={text.newChatShortcut}>
-            <IconButton aria-label={text.newChatShortcut} onPress={createGlobal} data-testid="v3-new-chat">
+          <IconTip label={newChatLabel}>
+            <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
               <SquarePen size={16} />
             </IconButton>
           </IconTip>

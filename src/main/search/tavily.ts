@@ -9,6 +9,11 @@ interface TavilyBody {
   results?: Array<Record<string, unknown>>
 }
 
+function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
+  if (!signal) return fetchImpl
+  return (input, init) => fetchImpl(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal })
+}
+
 export async function runTavilySearch(query: string, opts: SourceRequest, fetchImpl: typeof fetch = fetch): Promise<SourceRun> {
   const started = Date.now()
   const elapsed = (): number => Date.now() - started
@@ -38,8 +43,9 @@ export async function runTavilySearch(query: string, opts: SourceRequest, fetchI
       })
     },
     opts.timeoutMs,
-    fetchImpl
+    withCallerAbort(fetchImpl, opts.signal)
   )
+  if (opts.signal?.aborted) return { source: 'tavily', rows: null, skipped: true, elapsedMs: elapsed() }
   if (!res.ok) {
     return { source: 'tavily', rows: null, error: { code: res.code, message: res.message }, ...(res.timedOut ? { timedOut: true } : {}), elapsedMs: elapsed() }
   }

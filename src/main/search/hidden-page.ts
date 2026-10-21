@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { BrowserWindow, session } from 'electron'
 import { shouldBlockHiddenPageRequest } from '../browser/network-boundary'
 import { resolvesToPrivateAddress } from '../browser/network-policy'
@@ -29,12 +28,14 @@ export class HiddenPageCancelled extends Error {
   }
 }
 
+const HIDDEN_PARTITION = 'yan-hidden-search'
+let openHiddenPages = 0
+
 export async function withHiddenPage<T>(
   timeoutMs: number,
   fn: (win: BrowserWindow, signal: AbortSignal) => Promise<T>,
   external?: AbortSignal
 ): Promise<T> {
-  const partition = `yan-hidden-${randomUUID()}`
   const controller = new AbortController()
   let rejectCancelled: (reason: Error) => void = () => {}
   const cancelled = new Promise<never>((_resolve, reject) => {
@@ -50,11 +51,13 @@ export async function withHiddenPage<T>(
     show: false,
     width: 1100,
     height: 900,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition, backgroundThrottling: false }
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: HIDDEN_PARTITION, backgroundThrottling: false }
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   const privateDns = new Map<string, { privateTarget: boolean; expiresAt: number }>()
-  session.fromPartition(partition).webRequest.onBeforeRequest((details, callback) => {
+  const request = session.fromPartition(HIDDEN_PARTITION).webRequest
+  openHiddenPages += 1
+  request.onBeforeRequest((details, callback) => {
     void shouldBlockHiddenPageRequest(details.url, async (hostname) => {
       const key = hostname.toLowerCase()
       const cached = privateDns.get(key)
@@ -80,5 +83,7 @@ export async function withHiddenPage<T>(
     external?.removeEventListener('abort', cancel)
     controller.abort()
     if (!win.isDestroyed()) win.destroy()
+    openHiddenPages = Math.max(0, openHiddenPages - 1)
+    if (openHiddenPages === 0) request.onBeforeRequest(null)
   }
 }

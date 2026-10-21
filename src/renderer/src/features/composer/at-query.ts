@@ -34,6 +34,7 @@ export function findAtQuery(
   if (at < 0) return null
 
   const tokenStart = at + 1
+  if (/[\r\n]/.test(value.slice(tokenStart, end))) return null
   const first = value[tokenStart]
   if (first === '"' || first === "'") {
     for (let i = tokenStart + 1; i < end; i += 1) {

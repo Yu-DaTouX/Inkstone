@@ -314,6 +314,49 @@ export async function runSearchTests(ok, mod) {
   }
 
   {
+    const dir = mkdtempSync(join(tmpdir(), 'yan-opencli-wire-'))
+    const fake = (name, body) => {
+      const file = join(dir, name)
+      writeFileSync(file, body)
+      return file
+    }
+    const source = SEARCH_SOURCES[0]
+    const run = (file, timeoutMs = 15_000) => createOpencliRunner(file)(source, 'q', { limit: 2, timeoutMs })
+
+    const envelope = fake(
+      'envelope.mjs',
+      'console.log(JSON.stringify({ ok: true, data: [{ title: "W", url: "https://w/1", snippet: "s" }] }))\n'
+    )
+    const wrapped = await run(envelope)
+    ok(wrapped.rows?.length === 1 && wrapped.rows[0].title === 'W', 'opencli 2.0 的 {ok,data} 外壳能取出结果数组')
+    ok(!wrapped.error, '{ok:true,data:[…]} 不再被当成后端错误')
+
+    const nested = fake('nested.mjs', 'console.log(JSON.stringify({ ok: true, data: { results: [{ title: "R" }] } }))\n')
+    const nestedRun = await run(nested)
+    ok(nestedRun.rows?.length === 1 && nestedRun.rows[0].title === 'R', '外壳里的 results / items 容器也认')
+
+    const bare = fake('bare.mjs', 'console.log(JSON.stringify([{ title: "B" }]))\n')
+    const bareRun = await run(bare)
+    ok(bareRun.rows?.length === 1 && bareRun.rows[0].title === 'B', '直接输出数组的旧格式仍然可用')
+
+    const emptyData = fake('empty.mjs', 'console.log(JSON.stringify({ ok: true, data: [] }))\n')
+    const emptyRun = await run(emptyData)
+    ok(Array.isArray(emptyRun.rows) && emptyRun.rows.length === 0 && !emptyRun.error, '外壳里是空数组 → empty，不是错误')
+
+    const failed = fake(
+      'failed.mjs',
+      'console.log(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: "No articles found" } }))\nprocess.exitCode = 1\n'
+    )
+    const failure = await run(failed)
+    ok(failure.rows === null && failure.error?.code === 'NOT_FOUND', '外壳里的失败码照实上报（不是 backend_error）')
+    ok(/No articles found/.test(failure.error?.message ?? ''), '外壳里的失败说明照实上报（不是整段 JSON）')
+
+    const huge = fake('huge.mjs', 'process.stdout.write("[" + "1,".repeat(400000))\n')
+    const hugeRun = await run(huge)
+    ok(hugeRun.rows === null && hugeRun.error?.code === 'output_too_large', '超出输出上限 → output_too_large')
+  }
+
+  {
     const inElectronFound = resolveJsRuntime(() => 'C:\\nodejs\\node.exe', 'C:\\electron\\electron.exe', true)
     ok(inElectronFound.file === 'C:\\nodejs\\node.exe', 'Electron 下跑 JS 入口改用 PATH 里的真实 node')
     ok(!inElectronFound.error, '找到真实 node 时不报错')

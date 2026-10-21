@@ -31,6 +31,12 @@ try {
   runSubagentBriefTests(ok, brief)
   runSubagentOutcomeTests(ok, { brief, outcome, notice, repeatGuard })
   await runSubagentControllerTests(ok, controller.SubagentController)
+  const summary = controller.dangerConfirmSummary
+  ok(summary(true).allowed === true && summary(true).decision === 'allow', '\u65e7\u5e03\u5c14\u5141\u8bb8\u4ecd\u653e\u884c')
+  ok(summary(undefined).decision === 'no-answer' && summary(undefined).allowed === false, '\u6ca1\u6709\u5ba1\u6279\u901a\u9053\u65f6\u7b97\u672a\u7b54\u590d')
+  const denied = summary({ decision: 'deny', feedback: '\u6539\u7528\u9879\u76ee\u5185\u8def\u5f84' })
+  ok(denied.allowed === false && denied.decision === 'deny' && denied.feedback === '\u6539\u7528\u9879\u76ee\u5185\u8def\u5f84', '\u5b50\u4ee3\u7406\u62d2\u7edd\u7406\u7531\u4f20\u56de danger-guard', JSON.stringify(denied))
+  ok(summary({ decision: 'no-answer' }).decision === 'no-answer', '\u672a\u7b54\u590d\u4e0d\u518d\u5f53\u4f5c\u62d2\u7edd')
   console.log(`子代理定向检查通过：${checks}项（独立数据目录、假RPC、临时Git）`)
 } finally {
   for (const key of envKeys) {

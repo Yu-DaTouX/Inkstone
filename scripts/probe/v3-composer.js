@@ -103,6 +103,7 @@
     const rightLabels = () =>
       [...(bar?.children ?? [])]
         .filter((el) => el !== tools)
+        .flatMap((el) => (el.matches('.composer-aux') ? [...el.children] : [el]))
         .map((el) => {
           if (el.matches('.composer-voice')) return 'voice'
           if (el.matches('.ctx-ring-wrap')) return 'context'

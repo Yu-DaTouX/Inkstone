@@ -20,6 +20,12 @@ import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../u
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 
 const OUTPUT_PREVIEW_LINES = 16
+export const NEST_VISIBLE = 3
+
+export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean): { shown: readonly T[]; earlier: number } {
+  if (showAll || children.length <= NEST_VISIBLE) return { shown: children, earlier: 0 }
+  return { shown: children.slice(-NEST_VISIBLE), earlier: children.length - NEST_VISIBLE }
+}
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 
 export function detailKind(name: string): 'command' | 'change' | 'result' {
@@ -112,6 +118,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(`step:${node.call.id}`)
+  const [nestAll, setNestAll] = useToolExpansion(`nest:${node.call.id}`)
   const call = node.call
   const running = isRunning(call)
   const denied = isDeniedCall(call)
@@ -120,6 +127,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const title = toolStepTitle(call, tt)
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || t('tool2.noTarget')
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
+  const nested = visibleNestedNodes(children, nestAll === true || verbose)
 
   return (
     <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
@@ -138,7 +146,16 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
       </button>
       {asking ? <ApprovalCard inline /> : null}
       {open ? <StepDetail call={call} /> : null}
-      {children.length ? <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>{children.map((child) => <StepNode key={child.call.id} node={child} depth={depth + 1} />)}</div> : null}
+      {children.length ? (
+        <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
+          {nested.earlier ? (
+            <Button variant="ghost" size="sm" className="v3-step-earlier" onPress={() => setNestAll(true)} data-testid="v3-step-earlier">
+              {t('tool2.nestEarlier', { n: nested.earlier })}
+            </Button>
+          ) : null}
+          {nested.shown.map((child) => <StepNode key={child.call.id} node={child} depth={depth + 1} />)}
+        </div>
+      ) : null}
     </div>
   )
 }

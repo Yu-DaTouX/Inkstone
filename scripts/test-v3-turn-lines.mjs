@@ -474,7 +474,7 @@ async function main() {
     }
     const flash = 'commandcode/deepseek/deepseek-v4.1-flash'
     store({
-      subagents: [subagentRun({ model: flash, thinkingLevel: 'medium', latestActivity: '运行 read', toolCalls: 9 })],
+      subagents: [subagentRun({ model: flash, thinkingLevel: 'medium', latestActivity: '运行 read', toolCalls: 9, contextUsage: { tokens: 50_000, contextWindow: 200_000, percent: 25 } })],
       models: [{ provider: 'commandcode', id: 'deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' }]
     })
     const { line, row } = renderRow()
@@ -485,13 +485,17 @@ async function main() {
     const stateIcon = collect(row, kind('SubagentStateIcon'))[0]
     ok(stateIcon?.props.state === 'running', '运行中的状态图标', stateIcon?.props.state)
     ok(collect(byTestId(row, 'v3-subagent-task')[0], stub('ui-shimmer')).length === 1, '运行中的标题用 ShimmerText')
-    ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '运行 read · subagentCalls', '运行中用量列是最近动作 · 调用次数', textOf(byTestId(row, 'v3-subagent-usage')[0]))
+    ok(byTestId(row, 'v3-subagent-usage').length === 0, '运行中不写最近动作与调用次数')
+    const gauge = collect(row, kind('ContextGauge'))[0]
+    ok(gauge?.props.usage.percent === 25 && gauge?.props['data-testid'] === 'v3-subagent-context', '运行中显示上下文圆环', gauge?.props.usage)
+    const liveTitle = textOf(byTestId(row, 'v3-subagent-task')[0])
+    ok(!liveTitle.startsWith('进行中') && !liveTitle.startsWith('Running'), '运行中标题不带状态词', liveTitle)
     ok(byTestId(row, 'v3-subagent-time').length === 1, '运行中显示用时')
 
     store({ subagents: [subagentRun({ model: flash })], models: [] })
     const bare = renderRow().row
     ok(textOf(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', textOf(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
-    ok(byTestId(bare, 'v3-subagent-usage').length === 0, '还没有动作与调用时不画空的用量列')
+    ok(byTestId(bare, 'v3-subagent-usage').length === 0 && collect(bare, kind('ContextGauge')).length === 0, '上下文未知时不画圆环与空的用量列')
 
     store({ subagents: [subagentRun({ status: 'error', endedAt: 4_000, error: '模型请求超时\n详细堆栈', toolCalls: 2 })], models: [] })
     const failed = renderRow().row

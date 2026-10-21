@@ -2,7 +2,7 @@ import { useMemo, type ReactElement } from 'react'
 import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Pin, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
-import { SHORTCUTS, type ShortcutId } from './shortcuts'
+import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
@@ -10,7 +10,7 @@ import { workbenchText } from '../features/workbench/workbench-text'
 import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
 import { IconTip } from './IconTip'
-import { v3Text } from './v3-text'
+import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
 
 interface Props {
@@ -64,6 +64,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
   const settingsOpen = useStore((s) => s.settingsOpen)
+  const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
   const win = window.yan.win
 
   const preview = useHoverDelay(280, () => onPreviewSidebar?.())
@@ -72,11 +73,12 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const withShortcut = (label: string, tab: WorkbenchTabId): string => {
     const id = PANE_SHORTCUTS[tab]
     if (!id) return label
-    const keys = SHORTCUTS.find((def) => def.id === id)?.keys
-    if (!keys?.length) return label
-    return lang === 'en-US' ? `${label} (${keys.join('+')})` : `${label}（${keys.join('+')}）`
+    const keys = shortcutKeysText(id, shortcutOverrides)
+    if (!keys) return label
+    return lang === 'en-US' ? `${label} (${keys})` : `${label}（${keys}）`
   }
   const paneLabel = (tab: WorkbenchTabId): string => withShortcut(activeLabel(tab), tab)
+  const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -111,9 +113,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
           </IconTip>
         )}
         {route === 'chat' && !sidebarOpen ? (
-          <IconTip label={text.newChatShortcut}>
+          <IconTip label={newChatLabel}>
             <IconButton
-              aria-label={text.newChatShortcut}
+              aria-label={newChatLabel}
               onPress={() => void useStore.getState().newSession({ scope: 'global' })}
               data-testid="v3-head-new-chat"
             >

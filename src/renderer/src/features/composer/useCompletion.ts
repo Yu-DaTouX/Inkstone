@@ -186,6 +186,14 @@ export function useCompletion({
       setAtDismissed(false)
       return
     }
+    if (atDismissed) {
+      setPaths([])
+      setAtLoading(false)
+      setAtError(false)
+      setAtStatus('empty')
+      setAtTruncated(false)
+      return
+    }
     setPaths([])
     setAtLoading(true)
     setAtError(false)
@@ -240,7 +248,7 @@ export function useCompletion({
       alive = false
       clearTimeout(id)
     }
-  }, [activeCwd, activeGeneration, activeProjectId, activeRunnerId, activeSessionId, atQuery])
+  }, [atDismissed, activeCwd, activeGeneration, activeProjectId, activeRunnerId, activeSessionId, atQuery])
 
   const slashReady = slashMatches.length > 0 || slashStatus === 'loading' || slashStatus === 'error'
   useEffect(() => {

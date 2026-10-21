@@ -227,6 +227,7 @@ const openFenceState = (() => {
 })()
 assert.ok(fenceTransaction(openFenceState, {}) === null, '未收尾的围栏不合成代码块')
 
+
 const emptyState = stateOf('')
 assert.ok(structureTransaction(emptyState, { commands: ['model'] }) === null, '没有可识别的原子时不重建文档')
 
@@ -325,5 +326,16 @@ const codeBlockState = EditorState.create({
   selection: TextSelection.create(codeBlockDoc, 2)
 })
 assert.equal(caretInCode(codeBlockState), true, '代码块里光标判为代码')
+
+const linkedDoc = textToDoc('看 https://example.com/a ')
+let linkedText = ''
+let linkFrom = -1
+linkedDoc.descendants((node, pos) => {
+  if (node.isText && node.marks.some((mark) => mark.type.name === 'link')) { linkFrom = pos; linkedText = node.text }
+})
+assert.ok(linkFrom > 0 && linkedText === 'https://example.com/a', '粘贴文本中的 URL 带链接标记')
+const linkedState = EditorState.create({ doc: linkedDoc })
+const editedLink = linkedState.tr.insertText('bc', linkFrom + linkedText.length - 1, linkFrom + linkedText.length)
+assert.equal(docToText(editedLink.doc), '看 https://example.com/bc ', '改过的链接文字原样发出，不改写成 [文本](旧链接)')
 
 console.log('输入框文档层 · 含括号 URL 自动链接与代码内判据检查通过')

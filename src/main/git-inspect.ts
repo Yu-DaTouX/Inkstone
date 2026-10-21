@@ -509,16 +509,29 @@ async function readUntrackedContent(
   return { ok: true, text: buf.toString('utf8'), binary, truncated: size > MAX_UNTRACKED_BYTES, size }
 }
 
+const C_STYLE_ESCAPES: Record<number, string> = {
+  0x07: '\\a',
+  0x08: '\\b',
+  0x09: '\\t',
+  0x0a: '\\n',
+  0x0b: '\\v',
+  0x0c: '\\f',
+  0x0d: '\\r',
+  0x22: '\\"',
+  0x5c: '\\\\'
+}
+
+function needsCQuote(byte: number): boolean {
+  return byte < 0x20 || byte === 0x7f || byte === 0x22 || byte === 0x5c
+}
+
 function gitQuotePath(path: string): string {
-  if (/^[\x21-\x7e]+$/.test(path) && !path.includes('"') && !path.includes('\\')) return path
   const bytes = Buffer.from(path, 'utf8')
+  if (!bytes.some(needsCQuote)) return path
   let out = '"'
   for (const byte of bytes) {
-    if (byte === 0x22) out += '\\"'
-    else if (byte === 0x5c) out += '\\\\'
-    else if (byte === 0x09) out += '\\t'
-    else if (byte === 0x0a) out += '\\n'
-    else if (byte === 0x0d) out += '\\r'
+    const escape = C_STYLE_ESCAPES[byte]
+    if (escape) out += escape
     else if (byte < 0x20 || byte >= 0x7f) out += `\\${byte.toString(8).padStart(3, '0')}`
     else out += String.fromCharCode(byte)
   }

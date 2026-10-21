@@ -132,6 +132,10 @@ for (const id of ['v3-theme-light', 'v3-theme-dark']) {
 }
 assert.ok(!appearance.includes('uiVersion') && !appearance.includes('v3-switch-v2'), '外观页不再有界面版本切换')
 assert.ok(appearance.includes("patchSettings({ theme:"), '主题改动来自用户点击')
+for (const line of appearance.split('\n')) {
+  if (!line.includes('patchSettings(')) continue
+  assert.ok(line.includes('.catch('), `外观页设置写入要处理失败：${line.trim()}`)
+}
 assert.ok(!appearance.includes('components/settings'), '外观页不引入 v2 旧设置组件')
 
 const panel = readFileSync(here('../src/renderer/src/app/SettingsPanelV3.tsx'), 'utf8')

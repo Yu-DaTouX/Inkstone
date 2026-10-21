@@ -118,6 +118,9 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   const ariaLabel = typeof rest['aria-label'] === 'string' ? rest['aria-label'] : undefined
+  const sourceCwd = useContext(MessageSourceCwd)
+  const target = classifyLink(href)
+  const onContextMenu = useLinkMenu(target, sourceCwd)
   if (typeof href === 'string' && href.startsWith('#')) {
     const anchorId = typeof rest['id'] === 'string' ? rest['id'] : undefined
     const describedBy = typeof rest['aria-describedby'] === 'string' ? rest['aria-describedby'] : undefined
@@ -134,9 +137,6 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       </a>
     )
   }
-  const sourceCwd = useContext(MessageSourceCwd)
-  const target = classifyLink(href)
-  const onContextMenu = useLinkMenu(target, sourceCwd)
 
   const onClick = (e: React.MouseEvent): void => {
     e.preventDefault()

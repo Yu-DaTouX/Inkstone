@@ -124,4 +124,13 @@ const barrelSource = readFileSync(
 )
 assert.match(barrelSource, /CapabilitiesSettings/, 'capabilities/index.ts re-export')
 
+const marketSource = readFileSync(
+  fileURLToPath(
+    new URL('../src/renderer/src/features/settings/capabilities/MarketSection.tsx', import.meta.url)
+  ),
+  'utf8'
+)
+assert.doesNotMatch(marketSource, /browser\.open\(/, '插件市场不用应用内浏览器：设置弹层会挡住它')
+assert.match(marketSource, /browser\.openExternal\('https:\/\/pi\.dev\/packages'\)/, '「目录」走系统外链打开')
+
 console.log('test-v3-capability-settings: ok')

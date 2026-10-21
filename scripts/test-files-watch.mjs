@@ -76,6 +76,52 @@ export async function runFilesWatchTests(ok, { FilesWatcher }) {
     }
     const limited = await watcher.set('w6', root, many, () => {})
     ok(limited.dirs.length === 256 && limited.dropped.length === 4, '目录监听对监听数量设上限并报告被丢弃的目录')
+
+    const created = []
+    const fakeWatch = (dir, _options, listener) => {
+      const handlers = new Map()
+      const entry = {
+        dir,
+        closed: false,
+        emit: () => listener('change', 'x'),
+        fail: () => handlers.get('error')?.(new Error('EPERM')),
+        close() {
+          entry.closed = true
+        },
+        on(event, handler) {
+          handlers.set(event, handler)
+          return entry
+        }
+      }
+      created.push(entry)
+      return entry
+    }
+
+    const flaky = new FilesWatcher(fakeWatch)
+    const fired = []
+    const firstAttach = await flaky.set('f1', root, ['src'], (dir) => fired.push(dir))
+    ok(firstAttach.dirs.includes('src') && created.length === 1, '目录监听可以挂上替身 watcher')
+    created[0]?.emit()
+    ok(await waitFor(() => fired.includes('src')), '替身 watcher 的事件能通知到监听方')
+    fired.length = 0
+    created[0]?.fail()
+    await flaky.set('f1', root, ['src'], (dir) => fired.push(dir))
+    ok(created.length === 2, '**watcher 出错后下次 set 重新挂上监听**（旧实现永久失效）')
+    created[1]?.emit()
+    ok(await waitFor(() => fired.includes('src')), '重新挂上后该目录的实时刷新恢复')
+    flaky.dispose()
+
+    let attempts = 0
+    const broken = new FilesWatcher((dir, options, listener) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('EMFILE')
+      return fakeWatch(dir, options, listener)
+    })
+    const firstTry = await broken.set('f2', root, ['src'], () => {})
+    ok(firstTry.dirs.length === 0 && firstTry.dropped.includes('src'), '挂不上监听的目录报为 dropped，不假装已监听')
+    const secondTry = await broken.set('f2', root, ['src'], () => {})
+    ok(attempts === 2 && secondTry.dirs.includes('src') && !secondTry.dropped.includes('src'), '上次挂失败的目录下次 set 会重新挂上')
+    broken.dispose()
   } finally {
     watcher.dispose()
     await rm(root, { recursive: true, force: true })

@@ -15,7 +15,7 @@ import {
   type SubagentBrief
 } from '../shared/subagent-brief'
 import { PiRpc, resolvePi } from './protocol'
-import { CapabilityServer } from './capability-server'
+import { CapabilityServer, type CapabilityCommandResult } from './capability-server'
 import { nativePiToolsSupported } from '../shared/agent-context'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { redactDiagnosticText } from '../shared/redact-diagnostic'
@@ -154,6 +154,14 @@ interface Run extends SubagentRun {
 }
 
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
+const READ_ONLY_HOST_COMMANDS = ['search.query', 'search.fetch']
+
+export interface SubagentDangerAnswer { decision: 'allow' | 'deny' | 'no-answer'; feedback?: string }
+
+export function dangerConfirmSummary(answer: boolean | SubagentDangerAnswer | undefined): { allowed: boolean; decision: SubagentDangerAnswer['decision']; feedback?: string } {
+  if (answer === undefined || typeof answer === 'boolean') return { allowed: answer === true, decision: answer === true ? 'allow' : answer === false ? 'deny' : 'no-answer' }
+  return { allowed: answer.decision === 'allow', decision: answer.decision, ...(answer.decision === 'deny' && answer.feedback ? { feedback: answer.feedback } : {}) }
+}
 
 export type SubagentSendMode = 'steer' | 'followUp'
 export type SubagentSendFrom = 'parent' | 'user'
@@ -168,9 +176,11 @@ export interface SubagentOptions {
   parentMessageId?: string
   projectId?: string
   archiveDir?: string
-  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
+  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean | SubagentDangerAnswer>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   extensions?: string[]
+  readOnlyExtension?: string
+  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult>
   appendSystemPrompt?: string
   onChange: (run: SubagentRun) => void
   onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
@@ -605,14 +615,17 @@ export class SubagentController {
   ): Promise<SubagentRpc> {
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
-    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions })
+    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
+    const readOnlyHost = isolation === 'controlled-cwd' && ctx.readOnlyExtension ? ctx.runReadOnlyCommand : undefined
     const approval = new CapabilityServer({
       opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
-      onlyCommands: ['danger.confirm'],
-      handlers: { run: async (_command, params) => ({ summary: {
-        kind: 'danger-confirm', allowed: await ctx.confirmDanger?.(params, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }) ?? false
-      } }) }
+      onlyCommands: readOnlyHost ? ['danger.confirm', ...READ_ONLY_HOST_COMMANDS] : ['danger.confirm'],
+      handlers: { run: async (command, params) => {
+        if (readOnlyHost && READ_ONLY_HOST_COMMANDS.includes(command)) return readOnlyHost(command, params, cwd)
+        const answer = await ctx.confirmDanger?.(params, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id })
+        return { summary: { kind: 'danger-confirm', ...dangerConfirmSummary(answer) } }
+      } }
     })
     try {
       const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })

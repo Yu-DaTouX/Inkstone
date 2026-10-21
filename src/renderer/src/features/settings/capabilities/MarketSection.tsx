@@ -87,7 +87,7 @@ export function MarketSection(): ReactElement {
           </Button>
           <Button
             variant="secondary"
-            onPress={() => void window.yan.browser.open('https://pi.dev/packages')}
+            onPress={() => void window.yan.browser.openExternal('https://pi.dev/packages')}
             data-testid="caps-market-catalog"
           >
             {t('pkg.catalog')}

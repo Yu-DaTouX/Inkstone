@@ -154,4 +154,13 @@ const root = readFileSync(here('../src/renderer/src/features/settings/root/Setti
 assert.ok(root.includes('ShortcutsSettings'), '根页挂载快捷键分区')
 assert.ok(root.includes('v3-settings-nav-${entry.section}'), '导航仍用统一测试 id')
 
+const header = readFileSync(here('../src/renderer/src/app/Header.tsx'), 'utf8')
+assert.ok(header.includes('shortcutOverridesFromSettings'), '顶栏快捷键提示读用户改键后的覆盖值')
+assert.ok(header.includes('shortcutKeysText(id, shortcutOverrides)'), '面板按钮按生效键位显示')
+assert.ok(header.includes("shortcutKeysText('newSession', shortcutOverrides)"), '新建会话提示按生效键位显示')
+const v3Text = readFileSync(here('../src/renderer/src/app/v3-text.ts'), 'utf8')
+assert.ok(!v3Text.includes('Ctrl+N'), '新会话文案不写死 Ctrl+N')
+assert.ok(v3Text.includes("newChatShortcut: '新会话（{keys}）'"), '新会话文案用 {keys} 占位')
+assert.ok(v3Text.includes("newChatShortcut: 'New chat ({keys})'"), '英文新会话文案用 {keys} 占位')
+
 console.log('v3 设置快捷键分区：改绑 / 冲突 / 清洗 / 恢复默认 / 可改集合 / 文案 / 源码契约检查通过')

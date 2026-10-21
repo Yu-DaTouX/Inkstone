@@ -6,10 +6,18 @@ interface ScopeGrants {
   keys: Set<string>
 }
 
-export function sessionGrantKey(request: Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'>): string | null {
+type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title'>>
+
+function operationClass(request: GrantFields): string {
+  if (request.kind === 'consent') return `${request.title ?? ''}\u0000${request.danger ?? ''}`
+  if (request.kind === 'danger' || request.kind === 'delete') return `${[...(request.reasons ?? [])].sort().join('\n')}\u0000${request.danger ?? ''}`
+  return ''
+}
+
+export function sessionGrantKey(request: GrantFields): string | null {
   if (request.kind === 'move') return null
   const dirs = [...(request.rememberDirs ?? [])].sort().join('\n')
-  return `${request.kind}\u0000${request.tool}\u0000${dirs}`
+  return `${request.kind}\u0000${request.tool}\u0000${dirs}\u0000${operationClass(request)}`
 }
 
 export class ApprovalSessionGrants {
@@ -26,7 +34,7 @@ export class ApprovalSessionGrants {
     return true
   }
 
-  allows(scope: string | undefined, request: Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs' | 'owner'>): boolean {
+  allows(scope: string | undefined, request: GrantFields & Pick<ApprovalRequest, 'owner'>): boolean {
     const key = sessionGrantKey(request)
     const entry = scope ? this.scopes.get(scope) : undefined
     if (!entry || !key) return false

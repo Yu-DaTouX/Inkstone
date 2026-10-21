@@ -213,20 +213,26 @@ export function clearRepoCache(): void {
   repoCache.clear()
 }
 
-const STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--no-optional-locks']
+const STATUS_ARGS = ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']
+const STATUS_FALLBACK_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all']
+
+interface StatusSnapshot {
+  status: GitStatusParse
+  stdout: string
+}
+
+async function readStatusSnapshot(root: string): Promise<StatusSnapshot> {
+  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true })
+  if (res.ok || res.stdout) return { status: parseStatusV2(res.stdout), stdout: res.stdout }
+  const fallback = await gitRun(root, STATUS_FALLBACK_ARGS, { allowFailure: true })
+  if (!fallback.ok && !fallback.stdout) {
+    throw new Error(res.error ?? fallback.error ?? 'git status 失败')
+  }
+  return { status: parseStatusV2(fallback.stdout), stdout: fallback.stdout }
+}
 
 export async function readStatus(root: string): Promise<GitStatusParse> {
-  const res = await gitRun(root, STATUS_ARGS, { allowFailure: true })
-  if (!res.ok && !res.stdout) {
-    const fallback = await gitRun(root, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'], {
-      allowFailure: true
-    })
-    if (!fallback.ok && !fallback.stdout) {
-      throw new Error(res.error ?? fallback.error ?? 'git status 失败')
-    }
-    return parseStatusV2(fallback.stdout)
-  }
-  return parseStatusV2(res.stdout)
+  return (await readStatusSnapshot(root)).status
 }
 
 export interface RefListing {
@@ -303,18 +309,17 @@ export function readRepoSnapshot(repo: RepoIdentity): Promise<{ repo: GitRepoSta
   const running = snapshotsInFlight.get(repo.root)
   if (running) return running
   const task = (async () => {
-    const [headRes, indexRes, statusRes] = await Promise.all([
+    const [headRes, indexRes, snapshot] = await Promise.all([
       gitRun(repo.root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFailure: true, timeout: 8000 }),
       gitRun(repo.root, ['ls-files', '-s', '-z'], { allowFailure: true }),
-      gitRun(repo.root, STATUS_ARGS, { allowFailure: true })
+      readStatusSnapshot(repo.root)
     ])
-    const status = !statusRes.ok && !statusRes.stdout ? await readStatus(repo.root) : parseStatusV2(statusRes.stdout)
     return {
-      repo: repoStateFrom(repo, status, null),
+      repo: repoStateFrom(repo, snapshot.status, null),
       expected: {
         head: headRes.ok ? headRes.stdout.trim() || null : null,
         indexDigest: digestOf([indexRes.stdout]),
-        statusDigest: digestOf([statusRes.stdout])
+        statusDigest: digestOf([snapshot.stdout])
       }
     }
   })().finally(() => snapshotsInFlight.delete(repo.root))
@@ -359,16 +364,16 @@ function repoStateFrom(repo: RepoIdentity, status: GitStatusParse, refs: RefList
 }
 
 export async function readExpected(root: string): Promise<GitActionExpected> {
-  const [headRes, indexRes, statusRes] = await Promise.all([
+  const [headRes, indexRes, snapshot] = await Promise.all([
     gitRun(root, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowFailure: true, timeout: 8000 }),
     gitRun(root, ['ls-files', '-s', '-z'], { allowFailure: true }),
-    gitRun(root, STATUS_ARGS, { allowFailure: true })
+    readStatusSnapshot(root)
   ])
   const head = headRes.ok ? headRes.stdout.trim() || null : null
   return {
     head,
     indexDigest: digestOf([indexRes.stdout]),
-    statusDigest: digestOf([statusRes.stdout])
+    statusDigest: digestOf([snapshot.stdout])
   }
 }
 

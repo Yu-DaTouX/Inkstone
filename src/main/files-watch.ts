@@ -33,6 +33,12 @@ export class FilesWatcher {
   private readonly generations = new Map<string, number>()
   private generationSeq = 0
 
+  private readonly watchImpl: typeof watch
+
+  constructor(watchImpl: typeof watch = watch) {
+    this.watchImpl = watchImpl
+  }
+
   private bump(watchId: string): number {
     const next = ++this.generationSeq
     this.generations.set(watchId, next)
@@ -79,11 +85,14 @@ export class FilesWatcher {
     for (const key of previous.keys()) {
       if (!wanted.has(key)) this.detach(key, watchId)
     }
-    for (const key of wanted.keys()) {
-      if (!previous.has(key)) this.attach(key, watchId)
+    for (const key of wanted.keys()) this.attach(key, watchId)
+    const attached = new Map<string, string>()
+    for (const [key, dir] of wanted) {
+      if (this.watched.has(key)) attached.set(key, dir)
+      else if (!dropped.includes(dir)) dropped.push(dir)
     }
-    this.targets.set(watchId, { dirs: wanted, onChange })
-    return { dirs: [...wanted.values()], dropped }
+    this.targets.set(watchId, { dirs: attached, onChange })
+    return { dirs: [...attached.values()], dropped }
   }
 
   release(watchId: string): void {
@@ -118,7 +127,7 @@ export class FilesWatcher {
     }
     let watcher: FSWatcher
     try {
-      watcher = watch(key, { persistent: false }, () => this.onEvent(key))
+      watcher = this.watchImpl(key, { persistent: false }, () => this.onEvent(key))
     } catch {
       return
     }

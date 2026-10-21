@@ -38,6 +38,14 @@ try {
   check(args.includes('/fixture/danger-guard.js') && !args.includes('--no-extensions'), '写入任务保留危险护栏与原生 Provider 发现')
   const readOnly = launch.subagentPiArgs({ sessionDir: root, native: true, readOnly: true })
   check(readOnly.includes('read,grep,find,ls') && readOnly.includes('--no-extensions'), '只读任务不能被自动发现扩展恢复写入工具')
+  const readOnlyPlus = launch.subagentPiArgs({ sessionDir: root, native: true, readOnly: true, readOnlyExtension: '/fixture/readonly-tools.js' })
+  check(readOnlyPlus[readOnlyPlus.indexOf('--tools') + 1] === 'read,grep,find,ls,git_inspect,web_search,web_fetch' && readOnlyPlus.includes('/fixture/readonly-tools.js'), '只读任务带上 git_inspect 与联网工具，仍不含 bash/edit/write')
+  const readonlyTools = await import(pathToFileURL(join(process.cwd(), 'resources/pi-extensions/readonly-tools.js')).href)
+  const gitDiff = readonlyTools.gitInspectArgs('diff', ['HEAD~1', '--stat', '--', 'src/a.ts'])
+  check(gitDiff.argv?.includes('--no-ext-diff') && gitDiff.argv.includes('--no-textconv') && gitDiff.argv.includes('--no-optional-locks'), 'git_inspect 关闭外部 diff 驱动与可选锁')
+  check(!!readonlyTools.gitInspectArgs('diff', ['--output=x.txt']).error, 'git_inspect 拒绝 --output 写文件')
+  check(!!readonlyTools.gitInspectArgs('log', ['-o', 'x']).error && !!readonlyTools.gitInspectArgs('commit', []).error, 'git_inspect 拒绝写入选项与非只读动作')
+  check(!readonlyTools.gitInspectArgs('show', ['HEAD', '--', '--output=名字.ts']).error, '-- 之后的路径不按选项拦截')
   const { CapabilityServer } = await load('server', 'src/main/capability-server.ts')
   let confirmed = 0
   const server = new CapabilityServer({ opsDir: join(root, 'ops'), onlyCommands: ['danger.confirm'], handlers: {

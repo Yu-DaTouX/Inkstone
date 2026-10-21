@@ -26,6 +26,10 @@ function fontPatch(kind: 'ui' | 'code', preset: string, custom?: string): Partia
   ) as Partial<AppSettings>
 }
 
+function reportSaveFailure(error: unknown): void {
+  useStore.getState().notify('error', error instanceof Error ? error.message : String(error))
+}
+
 function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
   const { lang } = useI18n()
   const text = settingsText(lang)
@@ -51,7 +55,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
     if (clean === undefined) return
     setDraft(null)
     if (clean === custom) return
-    void patchSettings(fontPatch(kind, 'custom', clean))
+    void patchSettings(fontPatch(kind, 'custom', clean)).catch(reportSaveFailure)
   }
 
   const options: readonly { value: FontChoice; label: string }[] =
@@ -81,7 +85,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
           options={options}
           onChange={(value) => {
             if (value !== 'custom') setDraft(null)
-            void patchSettings(fontPatch(kind, value))
+            void patchSettings(fontPatch(kind, value)).catch(reportSaveFailure)
           }}
         />
       </SettingsRow>
@@ -167,7 +171,7 @@ export function AppearanceSettings(): ReactElement {
               { value: 'light', label: text.themeLight, testId: 'v3-theme-light' },
               { value: 'dark', label: text.themeDark, testId: 'v3-theme-dark' }
             ]}
-            onChange={(value) => void patchSettings({ theme: value })}
+            onChange={(value) => void patchSettings({ theme: value }).catch(reportSaveFailure)}
           />
         </SettingsRow>
 
@@ -179,7 +183,7 @@ export function AppearanceSettings(): ReactElement {
               { value: 'compact', label: text.densityCompact, testId: 'v3-density-compact' },
               { value: 'comfortable', label: text.densityComfortable, testId: 'v3-density-comfortable' }
             ]}
-            onChange={(value) => void patchSettings({ density: value, fontSizeUi: FONT_UI_DEFAULT })}
+            onChange={(value) => void patchSettings({ density: value, fontSizeUi: FONT_UI_DEFAULT }).catch(reportSaveFailure)}
           />
         </SettingsRow>
 
@@ -227,7 +231,7 @@ export function AppearanceSettings(): ReactElement {
             ]}
             onChange={(value) => {
               setLang(value)
-              void patchSettings({ lang: value })
+              void patchSettings({ lang: value }).catch(reportSaveFailure)
             }}
           />
         </SettingsRow>
@@ -244,7 +248,7 @@ export function AppearanceSettings(): ReactElement {
               { value: 'enter', label: general.appearanceSendKeyEnter, testId: 'v3-send-key-enter' },
               { value: 'ctrlEnter', label: general.appearanceSendKeyCtrl, testId: 'v3-send-key-ctrl' }
             ]}
-            onChange={(value) => void patchSettings({ sendKey: value })}
+            onChange={(value) => void patchSettings({ sendKey: value }).catch(reportSaveFailure)}
           />
         </SettingsRow>
       </SettingsGroup>

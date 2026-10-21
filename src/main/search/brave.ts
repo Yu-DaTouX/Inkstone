@@ -29,10 +29,11 @@ export async function runBraveSearch(query: string, opts: SourceRequest, fetchIm
   if (opts.recent) url.searchParams.set('freshness', BRAVE_FRESHNESS[opts.recent])
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs)
+  const signal = opts.signal ? AbortSignal.any([controller.signal, opts.signal]) : controller.signal
   try {
     const res = await fetchImpl(url, {
       headers: { Accept: 'application/json', 'X-Subscription-Token': key },
-      signal: controller.signal
+      signal
     })
     if (!res.ok) {
       const code = res.status === 401 || res.status === 403 ? 'api_key_rejected' : res.status === 429 ? 'rate_limited' : 'http_error'
@@ -52,6 +53,9 @@ export async function runBraveSearch(query: string, opts: SourceRequest, fetchIm
     }))
     return { source: 'brave', rows, elapsedMs: elapsed() }
   } catch (e) {
+    if (opts.signal?.aborted) {
+      return { source: 'brave', rows: null, skipped: true, elapsedMs: elapsed() }
+    }
     if (controller.signal.aborted) {
       return { source: 'brave', rows: null, timedOut: true, error: { code: 'timeout', message: `超过 ${opts.timeoutMs}ms 没有返回` }, elapsedMs: elapsed() }
     }

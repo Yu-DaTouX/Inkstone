@@ -199,6 +199,34 @@ export function parseBackendError(raw: string): { code?: string; message?: strin
   return out
 }
 
+const ROW_CONTAINER_KEYS = ['data', 'results', 'items'] as const
+
+export function backendRows(value: unknown, depth = 2): unknown[] | null {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== 'object' || depth <= 0) return null
+  const obj = value as Record<string, unknown>
+  for (const key of ROW_CONTAINER_KEYS) {
+    const found = backendRows(obj[key], depth - 1)
+    if (found) return found
+  }
+  return null
+}
+
+export function backendEnvelopeError(value: unknown): { code?: string; message?: string } | null {
+  if (!value || typeof value !== 'object') return null
+  const obj = value as Record<string, unknown>
+  if (obj.ok !== false) return null
+  const detail = obj.error && typeof obj.error === 'object' ? (obj.error as Record<string, unknown>) : {}
+  const code = typeof detail.code === 'string' ? detail.code : undefined
+  const message =
+    typeof detail.message === 'string' && detail.message.trim()
+      ? detail.message.trim()
+      : typeof detail.hint === 'string' && detail.hint.trim()
+        ? detail.hint.trim()
+        : undefined
+  return { ...(code ? { code } : {}), ...(message ? { message } : {}) }
+}
+
 export function createOpencliRunner(explicit?: string, target = resolveBackendTarget(explicit)): AdapterRunner {
   return (source, query, opts) =>
     new Promise<SourceRun>((resolve) => {
@@ -283,24 +311,47 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           return
         }
         const text = out.trim()
-        if (text.startsWith('[')) {
+        if (text.startsWith('[') || text.startsWith('{')) {
+          let parsed: unknown
           try {
-            const parsed = JSON.parse(text) as unknown
-            resolve({
-              source: source.id,
-              rows: Array.isArray(parsed) ? parsed : null,
-              elapsedMs
-            })
-            return
+            parsed = JSON.parse(text) as unknown
           } catch {
             resolve({
               source: source.id,
               rows: null,
-              error: { code: 'bad_output', message: '后端输出不是合法 JSON（可能被截断）' },
+              error: {
+                code: overflow ? 'output_too_large' : 'bad_output',
+                message: overflow ? '后端输出超过上限，JSON 被截断' : '后端输出不是合法 JSON（可能被截断）'
+              },
               elapsedMs
             })
             return
           }
+          const rows = backendRows(parsed)
+          if (rows) {
+            resolve({ source: source.id, rows, elapsedMs })
+            return
+          }
+          const failure = backendEnvelopeError(parsed)
+          if (failure) {
+            resolve({
+              source: source.id,
+              rows: null,
+              error: { code: failure.code ?? 'backend_error', message: failure.message ?? `后端退出码 ${code}` },
+              elapsedMs
+            })
+            return
+          }
+          resolve({
+            source: source.id,
+            rows: null,
+            error: {
+              code: overflow ? 'output_too_large' : 'bad_output',
+              message: `后端输出的 JSON 里没有结果数组（${text.slice(0, 300)}）`
+            },
+            elapsedMs
+          })
+          return
         }
         const parsedErr = parseBackendError(text || err)
         resolve({

@@ -26,14 +26,18 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => ({
     decision: siteGate ? await siteGate.check(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
   }))
-  rawHandle('yan:browser:allowedSites', () => siteGate?.sites() ?? [])
-  rawHandle('yan:browser:addAllowedSite', (_e, value: unknown) =>
-    siteGate?.addSite(String(value ?? '')) ?? { result: 'unavailable', list: [] }
+  const loadedGate = async (): Promise<PreviewSiteGate | undefined> => {
+    await siteGate?.ready()
+    return siteGate
+  }
+  rawHandle('yan:browser:allowedSites', async () => (await loadedGate())?.sites() ?? [])
+  rawHandle('yan:browser:addAllowedSite', async (_e, value: unknown) =>
+    (await loadedGate())?.addSite(String(value ?? '')) ?? { result: 'unavailable', list: [] }
   )
-  rawHandle('yan:browser:removeAllowedSite', (_e, value: unknown) =>
-    siteGate?.removeSite(String(value ?? '')) ?? { removed: false, list: [] }
+  rawHandle('yan:browser:removeAllowedSite', async (_e, value: unknown) =>
+    (await loadedGate())?.removeSite(String(value ?? '')) ?? { removed: false, list: [] }
   )
-  rawHandle('yan:browser:clearAllowedSites', () => siteGate?.clearSites() ?? [])
+  rawHandle('yan:browser:clearAllowedSites', async () => (await loadedGate())?.clearSites() ?? [])
   rawHandle('yan:browser:siteAskAnswer', (_e, id: unknown, allowed: unknown) => {
     if (typeof id === 'string') answerSiteAsk?.(id, allowed === true)
   })

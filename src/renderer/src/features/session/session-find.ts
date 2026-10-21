@@ -217,3 +217,24 @@ export function sessionFindAction(state: SessionFindKeyState, mac: boolean): Ses
   if (state.key === 'F3' && !state.meta && !state.ctrl) return state.shift ? 'prev' : 'next'
   return null
 }
+
+export interface SessionFindFocus {
+  own: boolean
+  inConversation: boolean
+  inComposer: boolean
+  idle: boolean
+  open: boolean
+  modalOpen: boolean
+}
+
+export function sessionFindAllowed(action: SessionFindAction, state: SessionFindFocus): boolean {
+  if (!action) return false
+  if (state.modalOpen) return action === 'close' && state.open
+  if (state.own) return true
+  if (action === 'open') return state.inConversation || state.inComposer || state.idle
+  return state.open || state.inConversation || state.inComposer
+}
+
+export function findStepQuery(live: string | null | undefined, committed: string): string {
+  return live ?? committed
+}
