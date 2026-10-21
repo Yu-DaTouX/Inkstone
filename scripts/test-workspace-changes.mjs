@@ -168,6 +168,14 @@ export function runWorkspaceChangesTests(ok, mod) {
 
     ok(endTreeSnapshot('never-started') === null, '没拍过快照的调用 → null（不显示改动卡片）')
 
+    beginTreeSnapshot('evict-0', root, 's1')
+    for (let index = 1; index <= 32; index += 1) beginTreeSnapshot(`evict-${index}`, root, 's1')
+    const evicted = endTreeSnapshot('evict-0')
+    ok(evicted !== null, '被淘汰的快照不静默返回 null', String(evicted))
+    ok(evicted?.unknown === 'truncated', '被淘汰的快照标 truncated（如实说没记录）', String(evicted?.unknown))
+    ok(evicted?.total === 0 && evicted?.files.length === 0, '被淘汰的快照不编造差异')
+    for (let index = 1; index <= 32; index += 1) endTreeSnapshot(`evict-${index}`)
+
     const unreadable = tempRoot('unreadable')
     const missing = join(unreadable.root, 'not-there')
     unreadable.cleanup()

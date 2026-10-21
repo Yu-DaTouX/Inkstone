@@ -1,6 +1,11 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
-import { extname, isAbsolute, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { dirname, extname, isAbsolute, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import type { UtilityProcess } from 'electron'
+import { compileContentMatcher, splitContentLines } from './file-content-match'
+import type { ContentLineMatch, ContentMatchJob, ContentMatchOutcome, ContentSearchOptions } from './file-content-match'
 import type {
   FileContentHit,
   FileContentSearchRequest,
@@ -8,6 +13,32 @@ import type {
   FileContentTruncation,
   FileListingStatus
 } from '../shared/ipc'
+
+export { compileContentMatcher, matchContentLines, splitContentLines } from './file-content-match'
+export type {
+  ContentLineMatch,
+  ContentMatchJob,
+  ContentMatchOutcome,
+  ContentMatcher,
+  ContentSearchOptions
+} from './file-content-match'
+
+export type ContentMatchRunner = (job: ContentMatchJob, signal: AbortSignal) => Promise<ContentMatchOutcome>
+
+export interface ContentWorkerReply {
+  id: string
+  matches?: ContentLineMatch[]
+  longLines?: number
+  limitReached?: boolean
+  cancelled?: boolean
+  error?: string
+}
+
+export interface ContentSearchRunOptions {
+  signal?: AbortSignal
+  now?: () => number
+  match?: ContentMatchRunner
+}
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '.hg'])
 
@@ -28,61 +59,10 @@ export const MAX_CONTENT_HITS = 241
 const MAX_FILE_BYTES = 1024 * 1024
 const PREVIEW_BEFORE = 160
 const PREVIEW_CHARS = 700
-const MAX_REGEX_LINE = 1000
 const READ_BATCH = 8
 const DEADLINE_MS = 8000
-
-const WORD_CLASS = '[\\p{L}\\p{N}_]'
-const WORD_CHAR = /[\p{L}\p{N}_]/u
-
-export interface ContentSearchOptions {
-  matchCase?: boolean
-  wholeWord?: boolean
-  regexp?: boolean
-}
-
-export interface ContentMatcher {
-  skips(line: string): boolean
-  match(line: string): Array<[number, number]>
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-export function compileContentMatcher(query: string, options: ContentSearchOptions = {}): ContentMatcher | null {
-  if (!query) return null
-  if (!options.regexp && query.includes('\n')) return null
-  const flags = options.matchCase ? 'gu' : 'giu'
-  let source = options.regexp ? query : escapeRegExp(query)
-  try {
-    new RegExp(source, flags)
-  } catch {
-    return null
-  }
-  if (options.wholeWord) {
-    const chars = [...query]
-    const wordEdge = (char: string | undefined): boolean => !!options.regexp || (char !== undefined && WORD_CHAR.test(char))
-    source = `${wordEdge(chars[0]) ? `(?<!${WORD_CLASS})` : ''}(?:${source})${wordEdge(chars[chars.length - 1]) ? `(?!${WORD_CLASS})` : ''}`
-  }
-  const pattern = new RegExp(source, flags)
-  const regexp = !!options.regexp
-  return {
-    skips: (line) => regexp && line.length > MAX_REGEX_LINE,
-    match: (line) => {
-      const ranges: Array<[number, number]> = []
-      pattern.lastIndex = 0
-      for (let found = pattern.exec(line); found !== null; found = pattern.exec(line)) {
-        if (found[0].length === 0) {
-          pattern.lastIndex += (line.codePointAt(found.index) ?? 0) > 0xffff ? 2 : 1
-          continue
-        }
-        ranges.push([found.index, found.index + found[0].length])
-      }
-      return ranges
-    }
-  }
-}
+const MATCH_BATCH_TIMEOUT_MS = 2000
+const MAX_WORKERS = 2
 
 function isLowSurrogate(line: string, index: number): boolean {
   const code = line.charCodeAt(index)
@@ -121,14 +101,114 @@ function isTextCandidate(name: string): boolean {
   return ext.length > 0 && TEXT_EXTENSIONS.has(ext)
 }
 
+interface WorkerSlot {
+  proc: UtilityProcess
+  pending: number
+}
+
+const slots = new Set<WorkerSlot>()
+
+function workerPath(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), 'file-content-search-worker.js')
+}
+
+async function spawnSlot(): Promise<WorkerSlot> {
+  const { utilityProcess } = await import('electron')
+  const proc = utilityProcess.fork(workerPath(), [], { serviceName: 'Inkstone content search', stdio: 'ignore' })
+  const slot: WorkerSlot = { proc, pending: 0 }
+  proc.once('exit', () => slots.delete(slot))
+  slots.add(slot)
+  return slot
+}
+
+async function acquireSlot(): Promise<WorkerSlot> {
+  let best: WorkerSlot | null = null
+  for (const slot of slots) if (!best || slot.pending < best.pending) best = slot
+  if (best && (best.pending === 0 || slots.size >= MAX_WORKERS)) return best
+  return spawnSlot()
+}
+
+function killSlot(slot: WorkerSlot): void {
+  slots.delete(slot)
+  slot.proc.kill()
+}
+
+async function runInWorker(job: ContentMatchJob, signal: AbortSignal): Promise<ContentMatchOutcome> {
+  const slot = await acquireSlot()
+  const id = randomUUID()
+  slot.pending += 1
+  return new Promise<ContentMatchOutcome>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const cleanup = (): void => {
+      if (timer) clearTimeout(timer)
+      timer = null
+      slot.proc.off('message', onMessage)
+      slot.proc.off('exit', onExit)
+      signal.removeEventListener('abort', onAbort)
+      slot.pending = Math.max(0, slot.pending - 1)
+    }
+    const onMessage = (message: ContentWorkerReply): void => {
+      if (!message || message.id !== id) return
+      cleanup()
+      if (message.error) {
+        reject(new Error(message.error))
+        return
+      }
+      resolve({
+        matches: message.matches ?? [],
+        longLines: message.longLines ?? 0,
+        limitReached: message.limitReached === true,
+        ...(message.cancelled ? { cancelled: true } : {})
+      })
+    }
+    const onExit = (): void => {
+      cleanup()
+      reject(new Error('内容搜索进程已退出'))
+    }
+    const onTimeout = (): void => {
+      cleanup()
+      killSlot(slot)
+      reject(new Error('timeout'))
+    }
+    const onAbort = (): void => {
+      cleanup()
+      slot.proc.postMessage({ type: 'cancel', id })
+      reject(new Error('aborted'))
+    }
+    slot.proc.on('message', onMessage)
+    slot.proc.once('exit', onExit)
+    signal.addEventListener('abort', onAbort, { once: true })
+    timer = setTimeout(onTimeout, MATCH_BATCH_TIMEOUT_MS)
+    slot.proc.postMessage({
+      type: 'match',
+      id,
+      query: job.query,
+      options: job.options,
+      texts: job.texts,
+      limit: job.limit
+    })
+  })
+}
+
+export function disposeContentSearch(): void {
+  for (const slot of [...slots]) killSlot(slot)
+}
+
 export async function searchFileContents(
   request: FileContentSearchRequest,
-  signal?: AbortSignal,
-  now: () => number = Date.now
+  options: ContentSearchRunOptions = {}
 ): Promise<FileContentSearchResult> {
+  const signal = options.signal ?? new AbortController().signal
+  const now = options.now ?? Date.now
+  const match = options.match ?? runInWorker
   const requestedLimit = Number.isFinite(request.limit) ? Math.floor(request.limit as number) : MAX_CONTENT_HITS
   const limit = Math.max(1, Math.min(MAX_CONTENT_HITS, requestedLimit))
   const query = String(request.query ?? '').trim()
+  const matchOptions: ContentSearchOptions = {
+    matchCase: request.matchCase === true,
+    wholeWord: request.wholeWord === true,
+    regexp: request.regexp === true
+  }
   const truncation = new Set<FileContentTruncation>()
   const baseResult = (
     status: FileContentSearchResult['status'],
@@ -146,9 +226,7 @@ export async function searchFileContents(
   })
 
   if (!query) return baseResult('empty')
-
-  const matcher = compileContentMatcher(query, request)
-  if (!matcher) return baseResult('pattern')
+  if (!compileContentMatcher(query, matchOptions)) return baseResult('pattern')
 
   const cwd = String(request.cwd ?? '')
   if (!cwd || !isAbsolute(cwd) || hasTraversal(cwd)) return baseResult('invalid')
@@ -249,40 +327,53 @@ export async function searchFileContents(
       })
     )
 
-    let reachLimit = false
+    const kept: Array<{ file: { abs: string; rel: string; name: string }; text: string }> = []
     for (const item of loaded) {
       if (item.skip) {
         skippedFiles += 1
         continue
       }
       scannedFiles += 1
-      const lines = item.text.split(/\r\n?|\n/)
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index]
-        if (matcher.skips(line)) {
-          truncation.add('long-line')
-          continue
-        }
-        const ranges = matcher.match(line)
-        if (!ranges.length) continue
-        const preview = contentPreview(line, ranges)
-        hits.push({
-          path: item.file.rel,
-          name: item.file.name,
-          line: index + 1,
-          column: ranges[0][0] + 1,
-          text: preview.text,
-          ranges: preview.ranges
-        })
-        if (hits.length >= limit) {
-          truncation.add('result-limit')
-          reachLimit = true
-          break
-        }
-      }
-      if (reachLimit) break
+      kept.push({ file: item.file, text: item.text })
     }
-    if (reachLimit) break
+    if (!kept.length) continue
+
+    const budget = Math.max(1, limit - hits.length)
+    let outcome: ContentMatchOutcome
+    try {
+      outcome = await match({ query, options: matchOptions, texts: kept.map((item) => item.text), limit: budget }, signal)
+    } catch (error) {
+      if (signal?.aborted) return baseResult('cancelled', hits, scannedFiles, skippedFiles)
+      if ((error as Error | undefined)?.message === 'timeout') truncation.add('timeout')
+      else hadReadError = true
+      break
+    }
+    if (outcome.cancelled) return baseResult('cancelled', hits, scannedFiles, skippedFiles)
+    if (outcome.longLines > 0) truncation.add('long-line')
+
+    const lineSets = kept.map((item) => splitContentLines(item.text))
+    let reachLimit = outcome.limitReached
+    for (const found of outcome.matches) {
+      const item = kept[found.file]
+      if (!item) continue
+      const preview = contentPreview(lineSets[found.file][found.line - 1] ?? '', found.ranges)
+      hits.push({
+        path: item.file.rel,
+        name: item.file.name,
+        line: found.line,
+        column: found.ranges[0][0] + 1,
+        text: preview.text,
+        ranges: preview.ranges
+      })
+      if (hits.length >= limit) {
+        reachLimit = true
+        break
+      }
+    }
+    if (reachLimit) {
+      truncation.add('result-limit')
+      break
+    }
   }
 
   if (signal?.aborted) return baseResult('cancelled', hits, scannedFiles, skippedFiles)

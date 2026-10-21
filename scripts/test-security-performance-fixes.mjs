@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build, transform } from 'esbuild'
-import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
-import { statSync, existsSync } from 'node:fs'
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
 import { tmpdir } from 'node:os'
@@ -107,7 +107,7 @@ try {
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: historyDir, YAN_DIR: temp, statSync, existsSync, ...attachments,
+    PI_AGENT_DIR: historyDir, YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments,
     referencedAttachmentNames: async files => {
       const refs = await attachments.referencedAttachmentNames(files)
       if (mutate) await writeFile(sessionFile, validImageRow + '\n{}')
@@ -133,7 +133,7 @@ try {
     handle: (_channel, callback) => { missing = callback },
     deps: { isSessionBusy: () => false },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, statSync, existsSync, ...attachments
+    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments
   })
   const skipped = await missing()
   assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)

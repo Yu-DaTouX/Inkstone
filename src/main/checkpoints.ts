@@ -26,157 +26,6 @@ const STAT_BATCH = 64
 const ASSESS_TIMEOUT_MS = 8_000
 const EXTRA_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.gradle/', '.next/', '.cache/', '.turbo/']
 
-const CP_DIFF_TIMEOUT_MS = 20_000
-const CP_PATCH_TIMEOUT_MS = 30_000
-const CP_MAX_PATCH_BYTES = 4_000_000
-const CP_READ_GLOBALS = ['--literal-pathspecs'] as const
-const CP_DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color', '--no-renames'] as const
-
-export interface CheckpointBaseline {
-  id: string
-  sha: string
-  at: number
-  preview: string
-}
-
-export interface CheckpointTreeDiff {
-  ok: boolean
-  error?: string
-  nameStatus: string
-  numstat: string
-  patch: string
-  patchTruncated: boolean
-  timedOut?: boolean
-}
-
-export interface CheckpointFileDiff {
-  ok: boolean
-  error?: string
-  path: string
-  patch: string
-  truncated: boolean
-  binary: boolean
-  bytes: number
-}
-
-function isShadowSha(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value)
-}
-
-function capUtf8Bytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
-  const buf = Buffer.from(text, 'utf8')
-  if (buf.length <= maxBytes) return { text, truncated: false }
-  let cut = buf.subarray(0, maxBytes).lastIndexOf(0x0a)
-  if (cut <= 0) cut = maxBytes
-  return { text: buf.subarray(0, cut).toString('utf8'), truncated: true }
-}
-
-function safeShadowPath(input: unknown): string | null {
-  const raw = String(input ?? '')
-  if (!raw || raw.length > 4096 || raw.includes('\0')) return null
-  if (/^[A-Za-z]:/.test(raw)) return null
-  const cleaned = raw.replace(/\\/g, '/')
-  if (cleaned.startsWith('/')) return null
-  if (cleaned.startsWith('-')) return null
-  const parts = cleaned.split('/')
-  if (parts.some((part) => part === '' || part === '.' || part === '..')) return null
-  return parts.join('/')
-}
-
-function checkpointDiffArgs(sha: string, extra: string[], paths?: string[]): string[] {
-  const args = [...CP_READ_GLOBALS, 'diff-index', '--cached', ...CP_DIFF_FLAGS, ...extra, sha]
-  if (paths && paths.length > 0) args.push('--', ...paths)
-  return args
-}
-
-export async function findSessionBaseline(cwd: string, sessionKey: string): Promise<CheckpointBaseline | null> {
-  if (!isCheckpointableDir(cwd) || !sessionKey) return null
-  const dir = projectDir(cwd)
-  const index = await readIndex(dir, cwd)
-  for (const record of index.records) {
-    if (record.kind !== 'turn' || record.sessionKey !== sessionKey) continue
-    const sha = shaOf(record)
-    if (!sha) continue
-    const present = await shadowGit(cwd, dir, ['cat-file', '-e', `${sha}^{commit}`], { allowFailure: true, timeout: 8_000 })
-    if (!present.ok) continue
-    return { id: record.id, sha, at: record.at, preview: record.preview }
-  }
-  return null
-}
-
-export function readCheckpointTreeDiff(
-  cwd: string,
-  sha: string,
-  opts: { maxBytes?: number; timeoutMs?: number } = {}
-): Promise<CheckpointTreeDiff> {
-  const empty: CheckpointTreeDiff = { ok: false, nameStatus: '', numstat: '', patch: '', patchTruncated: false }
-  if (!isCheckpointableDir(cwd) || !isShadowSha(sha)) {
-    return Promise.resolve({ ...empty, error: '检查点基线不可用' })
-  }
-  const maxBytes = opts.maxBytes ?? CP_MAX_PATCH_BYTES
-  const timeoutMs = opts.timeoutMs ?? CP_DIFF_TIMEOUT_MS
-  return serialized(normalizeCwd(cwd), async () => {
-    const dir = projectDir(cwd)
-    const tree = await snapshotTree(cwd, dir)
-    if (!tree) return { ...empty, error: '没能读取项目文件当前的状态（文件过多或读取失败）' }
-    const [nameStatus, numstat, patchRes] = await Promise.all([
-      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--name-status', '-z']), { allowFailure: true, timeout: timeoutMs }),
-      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--numstat', '-z']), { allowFailure: true, timeout: timeoutMs }),
-      shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--patch']), { allowFailure: true, timeout: CP_PATCH_TIMEOUT_MS })
-    ])
-    if (!nameStatus.ok && !nameStatus.stdout) {
-      return { ...empty, error: nameStatus.error ?? '读取会话基线差异失败' }
-    }
-    const capped = capUtf8Bytes(patchRes.stdout, maxBytes)
-    return {
-      ok: true,
-      nameStatus: nameStatus.stdout,
-      numstat: numstat.stdout,
-      patch: capped.text,
-      patchTruncated: capped.truncated,
-      ...(nameStatus.timedOut || numstat.timedOut || patchRes.timedOut ? { timedOut: true } : {})
-    }
-  })
-}
-
-export function readCheckpointFileDiff(
-  cwd: string,
-  sha: string,
-  rawPath: string,
-  opts: { maxBytes?: number; timeoutMs?: number } = {}
-): Promise<CheckpointFileDiff> {
-  const fail = (error: string, path = String(rawPath ?? '')): CheckpointFileDiff => ({
-    ok: false,
-    error,
-    path,
-    patch: '',
-    truncated: false,
-    binary: false,
-    bytes: 0
-  })
-  if (!isCheckpointableDir(cwd) || !isShadowSha(sha)) return Promise.resolve(fail('检查点基线不可用'))
-  const rel = safeShadowPath(rawPath)
-  if (!rel) return Promise.resolve(fail('路径不合法'))
-  const maxBytes = opts.maxBytes ?? CP_MAX_PATCH_BYTES
-  const timeoutMs = opts.timeoutMs ?? CP_PATCH_TIMEOUT_MS
-  return serialized(normalizeCwd(cwd), async () => {
-    const dir = projectDir(cwd)
-    const tree = await snapshotTree(cwd, dir)
-    if (!tree) return fail('没能读取项目文件当前的状态', rel)
-    const res = await shadowGit(cwd, dir, checkpointDiffArgs(sha, ['--patch'], [rel]), { allowFailure: true, timeout: timeoutMs })
-    if (!res.ok && !res.stdout) return fail(res.error ?? '读取补丁失败', rel)
-    const capped = capUtf8Bytes(res.stdout, maxBytes)
-    return {
-      ok: true,
-      path: rel,
-      patch: capped.text,
-      truncated: capped.truncated,
-      binary: /(^|\n)(Binary files .+? differ|GIT binary patch)\s*(\n|$)/.test(capped.text),
-      bytes: Buffer.byteLength(res.stdout, 'utf8')
-    }
-  })
-}
-
 interface StoredRecord extends CheckpointRecord {
   sha: string
 }
@@ -187,6 +36,7 @@ interface Index {
   records: StoredRecord[]
   lastTree?: string
   lastSha?: string
+  lastGcAt?: number
 }
 
 function normalizeCwd(cwd: string): string {
@@ -207,6 +57,7 @@ export function isCheckpointableDir(cwd: string): boolean {
 }
 
 const locks = new Map<string, Promise<unknown>>()
+const GC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 function serialized<T>(key: string, task: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve()
   const next = previous.catch(() => undefined).then(task)
@@ -219,7 +70,7 @@ async function readIndex(dir: string, cwd: string): Promise<Index> {
   try {
     const parsed = JSON.parse(await readFile(join(dir, 'index.json'), 'utf8')) as Partial<Index>
     if (parsed?.version === 1 && Array.isArray(parsed.records)) {
-      return { version: 1, cwd: cwd || (typeof parsed.cwd === 'string' ? parsed.cwd : ''), records: parsed.records, lastTree: parsed.lastTree, lastSha: parsed.lastSha }
+      return { version: 1, cwd: cwd || (typeof parsed.cwd === 'string' ? parsed.cwd : ''), records: parsed.records, lastTree: parsed.lastTree, lastSha: parsed.lastSha, lastGcAt: parsed.lastGcAt }
     }
   } catch {
   }
@@ -364,16 +215,11 @@ async function commitTree(cwd: string, dir: string, tree: string, message: strin
   return sha
 }
 
-const inflight = new Set<string>()
-
 export function captureCheckpoint(cwd: string, sessionKey: string, text: string, budgetMs = 10_000): Promise<CheckpointRecord | null> {
   if (!isCheckpointableDir(cwd) || !sessionKey) return Promise.resolve(null)
   const key = normalizeCwd(cwd)
-  if (inflight.has(key)) return Promise.resolve(null)
-  inflight.add(key)
   let expired = false
   const work = serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', () => expired)).catch(() => null)
-  void work.finally(() => inflight.delete(key))
   const timeout = new Promise<null>((done) => setTimeout(() => { expired = true; done(null) }, budgetMs).unref?.())
   return Promise.race([work, timeout])
 }
@@ -521,11 +367,15 @@ export async function pruneCheckpoints(now = Date.now()): Promise<void> {
       const alive = new Set(kept.map((r) => shaOf(r)).filter((s): s is string => !!s))
       const dropped = new Set(index.records.map((r) => shaOf(r)).filter((s): s is string => !!s && !alive.has(s)))
       const cwd = index.cwd
+      let gcAt = index.lastGcAt
       if (cwd && existsSync(cwd)) {
         for (const sha of dropped) await shadowGit(cwd, dir, ['update-ref', '-d', `refs/cp/${sha}`], { allowFailure: true })
-        await shadowGit(cwd, dir, ['gc', '--prune=now', '--quiet'], { allowFailure: true, timeout: 120_000 })
+        if (now - (index.lastGcAt ?? 0) >= GC_INTERVAL_MS) {
+          await shadowGit(cwd, dir, ['gc', '--prune=now', '--quiet'], { allowFailure: true, timeout: 120_000 })
+          gcAt = now
+        }
       }
-      await writeIndex(dir, { ...index, records: kept })
+      await writeIndex(dir, { ...index, records: kept, ...(gcAt ? { lastGcAt: gcAt } : {}) })
     } catch {
     }
     })
