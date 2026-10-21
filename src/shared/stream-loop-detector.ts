@@ -12,7 +12,7 @@ export interface StreamLoopDetector {
   reset(): void
 }
 
-export const STREAM_LOOP_LIMITS = {
+const STREAM_LOOP_LIMITS = {
   thinkingMinRepeat: 512,
   textMinRepeat: 256,
   maxCycle: 512,
@@ -107,17 +107,23 @@ function canonicalTemplate(period: string): string {
 
 function templateSuppressed(template: string): boolean {
   let sawContent = false
-  for (const raw of template.split('\n')) {
+  let start = 0
+  while (start <= template.length) {
+    const newline = template.indexOf('\n', start)
+    const end = newline === -1 ? template.length : newline
+    const raw = template.slice(start, end)
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
-    if (line.trim().length === 0) continue
-    if (looksLikeStructuredRecord(line)) return true
-    sawContent = true
+    if (line.trim().length > 0) {
+      if (looksLikeStructuredRecord(line)) return true
+      sawContent = true
+    }
+    if (end === template.length) break
+    start = end + 1
   }
   return !sawContent
 }
 
-function templateQualifies(tail: string, n: number, p: number, template: string): boolean {
-  if (templateSuppressed(template)) return false
+function templateQualifies(tail: string, n: number, p: number): boolean {
   const first = tail[n - p]
   let distinct = false
   let wordish = false
@@ -145,6 +151,8 @@ function trailingCycleRepeats(tail: string, maxPeriod: number, minRepeat: number
   for (let p = 1; p <= maxPeriod; p++) {
     if (n < p + minRepeat) break
     if (tail.charCodeAt(n - 1) !== tail.charCodeAt(n - 1 - p)) continue
+    const template = canonicalTemplate(tail.slice(n - p, n))
+    if (templateSuppressed(template)) continue
     const needed = Math.max(minRepeat, 2 * p)
     let matched = 0
     for (let i = n - 1; i >= p && matched < needed; i--) {
@@ -152,7 +160,7 @@ function trailingCycleRepeats(tail: string, maxPeriod: number, minRepeat: number
       matched++
     }
     if (matched < needed) continue
-    if (!templateQualifies(tail, n, p, canonicalTemplate(tail.slice(n - p, n)))) continue
+    if (!templateQualifies(tail, n, p)) continue
     return matched
   }
   return null

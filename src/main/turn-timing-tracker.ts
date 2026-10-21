@@ -30,9 +30,11 @@ export class TurnTimingTracker {
     }
     if (!bucket || elapsedMs === undefined || sourceIds.length === 0) return
     if (!final && this.persisted) return
-    const anchorId = [...messages]
+    const anchor = [...messages]
       .reverse()
-      .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))?.id
+      .find((m) => m.role === 'user' && /^m\d+$/.test(m.id))
+    const anchorId = anchor?.id
+    const anchorEntryId = anchor?.entryId
     const logicalTurnId = anchorId ?? sourceIds[0]
     const waitSpans = toolWaitSpans(
       messages
@@ -55,6 +57,7 @@ export class TurnTimingTracker {
       terminalReason,
       final,
       ...(anchorId ? { anchorId } : {}),
+      ...(anchorEntryId ? { anchorEntryId } : {}),
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
       ...(generationTimings.some(Boolean) ? { generationTimings, generationStamps } : {}),

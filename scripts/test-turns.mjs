@@ -1,5 +1,5 @@
 export async function runTurnTests(ok) {
-  const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, turnUsage, turnUsageOf, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs, currentTurnMessages } =
+  const { groupIntoTurns, createTurnProjector, splitParagraphs, cacheHitRate, formatHitRate, addUsage, hasUsageNumbers, toolWaitSpans, waitSpansMs } =
     await import('../out/test/turns.mjs')
 
   {
@@ -79,7 +79,6 @@ export async function runTurnTests(ok) {
       JSON.stringify({ id: turns[2]?.id, elapsedMs: turns[2]?.elapsedMs, usage: turns[2]?.usage })
     )
     ok(JSON.stringify(createTurnProjector()(messages)) === JSON.stringify(turns), '隐藏通知的投影与分组同口径')
-    ok(currentTurnMessages(messages).some(m => m.id === 'a1'), '宿主通知不重置本轮用量范围')
   }
 
   console.log('\n--- 11. 回合分组（消息合并）---')
@@ -304,7 +303,7 @@ export async function runTurnTests(ok) {
       asst('a1', '中间', { toolCalls: [tool('t1', 'read')], usage: msg({ input: 10, output: 1, totalTokens: 11 }) }),
       asst('a2', '答完', { usage: msg({ input: 10, output: 50, cacheRead: 900, cacheWrite: 5, totalTokens: 960, cost: 0.02 }) })
     ])
-    const u = turnUsage(t[1])
+    const u = t[1].usage
     ok(u?.output === 51, '整轮输出 = 1 + 50（每条消息是该次请求的独立用量，不是累计值）', `实际 ${u?.output}`)
     ok(u?.input === 20, '整轮输入 = 10 + 10', `实际 ${u?.input}`)
     ok(u?.cacheRead === 900 && u?.cacheWrite === 5, 'cacheRead / cacheWrite 同步相加')
@@ -328,7 +327,6 @@ export async function runTurnTests(ok) {
     ok(hasUsageNumbers(undefined) === false, '缺失不算有用量')
     ok(hasUsageNumbers(msg()) === false, '全 0 不算有用量（流式途中可能先报全 0）')
     ok(hasUsageNumbers(msg({ cacheWrite: 1 })) === true, '只有 cacheWrite 也算有用量')
-    ok(turnUsageOf([usr('u1', 'x'), asst('a1', '答', { usage: msg({ output: 7 }) })]).usage?.output === 7, 'turnUsageOf 直接从消息算聚合')
   }
 
   console.log('\n--- 14.5 工具等待分段（H-6b） ---')
@@ -359,56 +357,26 @@ export async function runTurnTests(ok) {
     ok(noWait[1].waitMs === undefined && noWait[1].waitSpans === undefined, '没有工具调用就不写等待字段')
   }
 
-  console.log('\n--- 15. 当前回合范围（用量条只认本轮）---')
+  console.log('\n--- 15. 回合错误归属（后段成功不覆盖错误）---')
   {
-    const msg = { input: 10, output: 50, cacheRead: 900, cacheWrite: 0, totalTokens: 960, cost: 0 }
+    const t = groupIntoTurns([
+      usr('u1', 'x'),
+      asst('a1', '出错了', { error: '模型不可用' }),
+      asst('a2', '重试成功', { elapsedMs: 2000 })
+    ])
+    ok(t[1].error === '模型不可用', '后段成功的消息不覆盖同回合的错误', String(t[1].error))
+    ok(t[1].errorMsgId === 'a1', '错误归属到第一条出错消息', String(t[1].errorMsgId))
+    ok(t[1].elapsedMs === 2000, '耗时仍取最后一条消息', String(t[1].elapsedMs))
 
-    {
-      const scope = currentTurnMessages([
-        usr('u1', '第一轮'),
-        asst('a1', '答完', { usage: msg, speed: 42, elapsedMs: 1234 }),
-        usr('u2', '第二轮'),
-        asst('a2', '刚开始', { responseDetail: 'unknown' })
-      ])
-      ok(scope.length === 1 && scope[0].id === 'a2', '范围从最后一个 user 消息之后开始', scope.map((m) => m.id).join(','))
-      ok(!scope.some((m) => m.usage), '新一轮没报 usage 时，取不到上一轮的用量')
-      ok(!scope.some((m) => m.speed), '也取不到上一轮的速度（不会被标成实时）')
-    }
+    const two = groupIntoTurns([
+      usr('u1', 'x'),
+      asst('a1', '第一次出错', { error: '第一' }),
+      asst('a2', '第二次出错', { error: '第二' })
+    ])
+    ok(two[1].error === '第一' && two[1].errorMsgId === 'a1', '多条出错消息取第一条', `${two[1].error}/${two[1].errorMsgId}`)
 
-    {
-      const scope = currentTurnMessages([
-        usr('u1', '第一轮'),
-        asst('a1', '答完', { usage: msg, speed: 42 }),
-        usr('u2', '第二轮刚发出')
-      ])
-      ok(scope.length === 0, '新一轮还没回消息时范围为空', `实际 ${scope.length}`)
-    }
-
-    {
-      const scope = currentTurnMessages([
-        usr('u1', '第一轮'),
-        asst('a1', '答完', { usage: msg }),
-        { id: 'b1', role: 'bash', text: '$ ls' },
-        asst('a2', '接着答')
-      ])
-      ok(scope.length === 1 && scope[0].id === 'a2', 'bash 消息同样开启新回合', scope.map((m) => m.id).join(','))
-    }
-
-    {
-      const all = [asst('a1', '片段一'), asst('a2', '片段二')]
-      const scope = currentTurnMessages(all)
-      ok(scope.length === 2, '没有分界消息时返回全部消息', `实际 ${scope.length}`)
-    }
-
-    {
-      const scope = currentTurnMessages([
-        usr('u1', '干活'),
-        asst('a1', '先看看', { toolCalls: [tool('t1', 'read')], usage: msg, speed: 30 }),
-        asst('a2', '干完了', { usage: { ...msg, output: 80 }, speed: 55 })
-      ])
-      ok(scope.length === 2, '工具往返的多条 assistant 都在本轮范围内', `实际 ${scope.length}`)
-      ok(scope[scope.length - 1].speed === 55, '范围里能拿到本轮最新的速度')
-    }
+    const clean = groupIntoTurns([usr('u1', 'x'), asst('a1', '答完', { elapsedMs: 900 })])
+    ok(clean[1].error === undefined && clean[1].errorMsgId === undefined, '没有错误时不写错误字段')
 
     console.log('\n--- 16. 工作段（推理跟随正文位置）---')
 

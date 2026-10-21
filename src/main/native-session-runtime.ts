@@ -107,11 +107,6 @@ export interface ReloadResult {
   requiresRestart?: boolean
 }
 
-export interface ProjectTrustSaveResult {
-  ok: boolean
-  requiresRestart: boolean
-}
-
 export function encodeEnvelope(id: string, op: string, args: Record<string, unknown>): string {
   const json = JSON.stringify({ v: ENVELOPE_VERSION, host: 'inkstone', id, op, args })
   return Buffer.from(json, 'utf8').toString('base64url')
@@ -151,7 +146,10 @@ export class NativeSessionRuntime {
   private ready = false
   private capabilities: readonly string[] = []
   private helloInfo: { reason?: string } | null = null
-  private readonly readyWaiters = new Set<() => void>()
+  private readonly readyWaiters = new Set<{
+    resolve: () => void
+    reject: (error: NativeBridgeError) => void
+  }>()
 
   constructor(
     private readonly transport: NativeSessionTransport,
@@ -184,7 +182,7 @@ export class NativeSessionRuntime {
       this.capabilities = Array.isArray(list)
         ? list.filter((item): item is string => typeof item === 'string')
         : []
-      for (const wake of this.readyWaiters) wake()
+      for (const waiter of this.readyWaiters) waiter.resolve()
       this.readyWaiters.clear()
       return true
     }
@@ -212,12 +210,18 @@ export class NativeSessionRuntime {
   whenReady(timeoutMs: number = this.defaultTimeoutMs): Promise<void> {
     if (this.ready) return Promise.resolve()
     return new Promise((resolve, reject) => {
-      const wake = () => {
-        clearTimeout(timer)
-        resolve()
+      const waiter = {
+        resolve: () => {
+          clearTimeout(timer)
+          resolve()
+        },
+        reject: (error: NativeBridgeError) => {
+          clearTimeout(timer)
+          reject(error)
+        }
       }
       const timer = setTimeout(() => {
-        this.readyWaiters.delete(wake)
+        this.readyWaiters.delete(waiter)
         reject(
           new NativeBridgeError(
             '原生会话桥未就绪（未收到扩展报到），请确认已把 native-session-bridge.js 作为 --extension 注入',
@@ -225,7 +229,7 @@ export class NativeSessionRuntime {
           )
         )
       }, timeoutMs)
-      this.readyWaiters.add(wake)
+      this.readyWaiters.add(waiter)
     })
   }
 
@@ -238,7 +242,7 @@ export class NativeSessionRuntime {
     this.ready = false
     this.capabilities = []
     this.helloInfo = null
-    for (const wake of this.readyWaiters) wake()
+    for (const waiter of this.readyWaiters) waiter.reject(new NativeBridgeError(reason, 'rpc_failed'))
     this.readyWaiters.clear()
   }
 
@@ -378,10 +382,5 @@ export class NativeSessionRuntime {
       ancestorTrustPath: effectiveTrusted && entry !== cwd ? entry : null,
       entry
     }
-  }
-
-  async saveProjectTrust(trusted: boolean): Promise<ProjectTrustSaveResult> {
-    await this.invoke('trust_save', { decision: trusted }, this.defaultTimeoutMs)
-    return { ok: true, requiresRestart: true }
   }
 }

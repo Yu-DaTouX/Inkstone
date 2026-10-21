@@ -5,11 +5,12 @@ import type { WaitSpan } from '../shared/turns'
 
 export const TURN_TIMING_VERSION = 1
 
-export interface TurnTimingRecord extends TurnTimingMeta {
+interface TurnTimingRecord extends TurnTimingMeta {
   v: number
   runId?: string
   waitSpans?: WaitSpan[]
   anchorId?: string
+  anchorEntryId?: string
   sourceIds: string[]
   generationTimings?: (GenerationTiming | null)[]
   generationStamps?: (number | null)[]
@@ -83,6 +84,7 @@ function parseRecord(line: string): TurnTimingRecord | null {
     elapsedMs: Math.max(1, Math.round(item.elapsedMs)),
     terminalReason: item.terminalReason,
     ...(typeof item.anchorId === 'string' && item.anchorId ? { anchorId: item.anchorId } : {}),
+    ...(typeof item.anchorEntryId === 'string' && item.anchorEntryId ? { anchorEntryId: item.anchorEntryId } : {}),
     sourceIds,
     ...(typeof item.monotonicMs === 'number' && Number.isFinite(item.monotonicMs)
       ? { monotonicMs: item.monotonicMs }
@@ -134,7 +136,7 @@ function parseWaitSpans(raw: unknown[]): WaitSpan[] {
   return spans
 }
 
-export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimingRecord {
+function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimingRecord {
   const withRun = list.filter((r) => !!r.runId)
   if (!withRun.length) return list[list.length - 1]
   const byRun = new Map<string, TurnTimingRecord>()
@@ -159,6 +161,7 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     generationStamps.push(...(r.generationStamps ?? r.generationTimings.map(() => null)))
   }
   const anchorId = runs.map((r) => r.anchorId).find((a) => !!a)
+  const anchorEntryId = runs.map((r) => r.anchorEntryId).find((a) => !!a)
   const reported = runs.filter((r) => typeof r.outputTokens === 'number')
   const outputTokens = reported.length
     ? reported.reduce((n, r) => n + (r.outputTokens ?? 0), 0)
@@ -171,6 +174,7 @@ export function mergeTurnRecords(id: string, list: TurnTimingRecord[]): TurnTimi
     endedAt: Math.max(...runs.map((r) => r.endedAt)),
     sourceIds,
     ...(anchorId ? { anchorId } : {}),
+    ...(anchorEntryId ? { anchorEntryId } : {}),
     ...(waitSpans.length ? { waitSpans } : {}),
     ...(generationTimings.length ? { generationTimings } : {}),
     ...(generationStamps.some((v) => v !== null) ? { generationStamps } : {}),
@@ -208,6 +212,10 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
   if (!records.length || !messages.length) return messages
   const indexById = new Map<string, number>()
   messages.forEach((m, i) => indexById.set(m.id, i))
+  const indexByEntryId = new Map<string, number>()
+  messages.forEach((m, i) => {
+    if (m.entryId) indexByEntryId.set(m.entryId, i)
+  })
   const assistantByStamp = new Map<number, string | null>()
   for (const m of messages) {
     if (m.role !== 'assistant' || typeof m.timestamp !== 'number') continue
@@ -215,17 +223,15 @@ export function applyTurnTimings(messages: UIMessage[], records: TurnTimingRecor
   }
 
   const assistantsOf = (record: TurnTimingRecord): { list: UIMessage[]; anchored: boolean } => {
-    const anchor = record.anchorId
-    if (anchor) {
-      const start = indexById.get(anchor)
-      if (start !== undefined) {
-        const list: UIMessage[] = []
-        for (let i = start + 1; i < messages.length; i += 1) {
-          if (messages[i].role === 'user') break
-          if (messages[i].role === 'assistant') list.push(messages[i])
-        }
-        if (list.length) return { list, anchored: true }
+    const start = (record.anchorEntryId ? indexByEntryId.get(record.anchorEntryId) : undefined) ??
+      (record.anchorId ? indexById.get(record.anchorId) : undefined)
+    if (start !== undefined) {
+      const list: UIMessage[] = []
+      for (let i = start + 1; i < messages.length; i += 1) {
+        if (messages[i].role === 'user') break
+        if (messages[i].role === 'assistant') list.push(messages[i])
       }
+      if (list.length) return { list, anchored: true }
     }
     const sourceSet = new Set(record.sourceIds)
     return {

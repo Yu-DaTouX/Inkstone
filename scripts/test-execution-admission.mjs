@@ -141,6 +141,22 @@ export async function runExecutionAdmissionTests(ok) {
 
   {
     const { reg } = make()
+    const a = await reg.select({ cwd: 'C:/fallback', sessionFile: 'C:/fallback/a.jsonl' })
+    const b = await reg.select({ cwd: 'C:/fallback', sessionFile: 'C:/fallback/b.jsonl', activate: false })
+    busy(reg, a.id, true)
+    ok(reg.confirmExecute(a.id, 999999) === true, '本 cwd 没有 claim 时，自己已经在跑的兜底仍放行')
+    const claimB = reg.admitExecute(b.id)
+    ok(claimB.ok === false, 'a 在跑时 b 拿不到 claim')
+    busy(reg, a.id, false)
+    const claim = reg.admitExecute(b.id)
+    ok(claim.ok === true, 'b 先入场拿到 claim')
+    busy(reg, a.id, true)
+    ok(reg.confirmExecute(a.id, 999999) === false, '别人持有 claim 时旧 token 不能靠兜底放行')
+    ok(reg.confirmExecute(b.id, claim.token) === true, '持有 claim 的一方照常 confirm')
+  }
+
+  {
+    const { reg } = make()
     const a = await reg.select({ cwd: 'C:/removed', sessionFile: 'C:/removed/a.jsonl' })
     const b = await reg.select({ cwd: 'C:/removed', sessionFile: 'C:/removed/b.jsonl', activate: false })
     const old = reg.admitExecute(a.id)
