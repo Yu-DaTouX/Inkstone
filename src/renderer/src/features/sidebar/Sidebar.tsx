@@ -11,6 +11,7 @@ import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/short
 import type { SessionSummary } from '../../../../shared/ipc'
 import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, latestRunForSession, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
+import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { useSplitView } from '../../state/split-view'
 import { useNarrowLayout } from '../workbench/tool-tiles'
 import { ArchivedView } from './ArchivedView'
@@ -206,8 +207,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     useUiV3.getState().navigate({ name: 'chat' })
     void switchSession(item.path).then(() => {
       if (useStore.getState().peekedPath !== item.path) return
-      const run = latestRunForSession(useRunsV3.getState().runs, item)
-      if (run && isUnreadRun(run)) useRunsV3.getState().requestMarkSeen(run.runId)
+      markSessionRunsSeen(item)
     })
   }
 
@@ -250,7 +250,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverridesFromSettings(settings)))
 
   return (
-    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar">
+    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="compact">
       <div className="v3-side-top">
         <span className="v3-side-brand">
           <BrandMark size={16} decorative />

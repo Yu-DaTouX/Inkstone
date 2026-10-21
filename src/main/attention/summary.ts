@@ -47,10 +47,10 @@ export function summarizeAttention(runs: readonly RunSnapshot[]): AttentionSumma
         active.push(run)
         break
       case 'failed':
-        if (!phase.seen) failed.push(run)
+        if (!phase.seen && run.kind !== 'subagent') failed.push(run)
         break
       case 'done':
-        if (!phase.seen) doneUnread.push(run)
+        if (!phase.seen && run.kind !== 'subagent') doneUnread.push(run)
         break
       case 'stopped':
         break

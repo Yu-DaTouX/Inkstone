@@ -202,6 +202,30 @@
     --shadow-thumb: inset 0 0 0 1px rgba(255,255,255,.1), 0 1px 2px rgba(0,0,0,.4);
     --shadow-card: inset 0 0 0 1px rgba(255,255,255,.1);
   }
+  [data-density-scope='compact'] {
+    --t-caption: 11px;
+    --t-caption-lh: 17px;
+    --t-footnote: 12px;
+    --t-footnote-lh: 15px;
+    --t-code: 12px;
+    --t-code-lh: 17px;
+    --t-body: 13px;
+    --t-body-lh: 19px;
+    --t-prose: 14px;
+    --t-prose-lh: 20px;
+    --t-heading: 14px;
+    --t-heading-lh: 18px;
+    --t-title: 20px;
+    --t-title-lh: 25px;
+    --d-row: 26px;
+    --d-prose: 14px;
+    --d-prose-lh: 20px;
+    --d-gap: 15px;
+    --size-btn: 24px;
+    --size-btn-sm: 20px;
+    --size-icon: 16px;
+    --r-sm: 6px;
+  }
   :root[data-density='comfortable'], [data-density-scope='comfortable'] {
     --t-caption: 12px;
     --t-caption-lh: 16px;

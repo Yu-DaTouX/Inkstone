@@ -19,6 +19,18 @@ async function run() {
     const terminal = await compile('src/renderer/src/features/terminal/terminal-running.ts', join(dir, 'terminal.mjs'))
 
     assert.equal(layout.SIDEBAR_WIDTH_DEFAULT, 288)
+
+    const seenRuns = [
+      { runId: 'r1', sessionId: 's-open', sessionPath: 'E:/a.jsonl', startedAt: 1, phase: { kind: 'done', at: 2, seen: false } },
+      { runId: 'r2', sessionId: 's-open', startedAt: 3, phase: { kind: 'failed', at: 4, seen: false } },
+      { runId: 'r3', sessionId: 's-open', startedAt: 5, phase: { kind: 'done', at: 6, seen: true } },
+      { runId: 'r4', sessionId: 's-open', startedAt: 7, phase: { kind: 'running', since: 7 } },
+      { runId: 'r5', sessionId: 's-other', startedAt: 8, phase: { kind: 'done', at: 9, seen: false } },
+      { runId: 'r6', sessionId: 's-moved', sessionPath: 'E:/a.jsonl', startedAt: 10, phase: { kind: 'done', at: 11, seen: false } }
+    ]
+    assert.deepEqual(model.unreadRunIdsForSession(seenRuns, { id: 's-open' }), ['r1', 'r2'], '同一会话所有未读结束运行都标已读，不只最新一次')
+    assert.deepEqual(model.unreadRunIdsForSession(seenRuns, { id: 's-open', path: 'E:/a.jsonl' }), ['r1', 'r2', 'r6'], '按会话文件也能对上')
+    assert.deepEqual(model.unreadRunIdsForSession(seenRuns, { id: null, path: null }), [], '没有当前会话时不标')
     assert.equal(layout.clampSidebarWidth(null), 288, '没有存储值用默认宽')
     assert.equal(layout.clampSidebarWidth(''), 288)
     assert.equal(layout.clampSidebarWidth('abc'), 288)

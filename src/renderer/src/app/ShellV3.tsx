@@ -13,6 +13,7 @@ import { isModalOpen } from '../lib/modalLayer'
 import { dismissBootSplash } from '../lib/boot-splash'
 import { useUiV3, useV3RouteSync } from '../state/ui-v3'
 import { startRunSync } from '../state/runs-v3'
+import { useCurrentRunsSeen } from '../state/use-current-runs-seen'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { SplitDragLayer } from '../features/split/SplitDragLayer'
@@ -287,6 +288,7 @@ export default function ShellV3(): ReactElement {
   }, [applyPush, bootstrap, startConnWatch])
 
   useEffect(() => startRunSync(), [])
+  useCurrentRunsSeen()
 
   useEffect(() => {
     if (!settings) return

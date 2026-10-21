@@ -39,6 +39,17 @@ export function latestRunForSession(
   return found
 }
 
+export function unreadRunIdsForSession(
+  runs: readonly RunSnapshot[],
+  session: { id?: string | null; path?: string | null }
+): string[] {
+  if (!session.id && !session.path) return []
+  return runs
+    .filter((run) => (!!session.id && run.sessionId === session.id) || (!!session.path && run.sessionPath === session.path))
+    .filter((run) => (run.phase.kind === 'done' || run.phase.kind === 'failed') && !run.phase.seen)
+    .map((run) => run.runId)
+}
+
 interface BuildOptions {
   sessions: readonly SessionSummary[]
   query: string

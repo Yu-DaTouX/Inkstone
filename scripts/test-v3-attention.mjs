@@ -161,6 +161,15 @@ function runSummaryTests(mod) {
   ])
   assert.deepEqual(two.doneUnread.map((r) => r.runId), ['y', 'x'])
 
+  const children = summarizeAttention([
+    run('sd', { kind: 'done', at: 30, seen: false }, { kind: 'subagent' }),
+    run('sf', { kind: 'failed', at: 40, cause: 'model-error', message: '子代理失败', seen: false }, { kind: 'subagent' }),
+    run('sn', { kind: 'needs-you', since: 50, request: { id: 'r2', type: 'confirm', summary: '子代理要确认' } }, { kind: 'subagent' })
+  ])
+  assert.deepEqual(children.doneUnread, [], '子代理完成由父会话接收，不算待处理')
+  assert.deepEqual(children.failed, [], '子代理失败由父会话接收，不算待处理')
+  assert.equal(children.attentionCount, 1, '子代理等确认仍算待处理')
+
   const quiet = summarizeAttention([run('q', { kind: 'done', at: 1, seen: true }), run('r', { kind: 'stopped', at: 2, by: 'host' })])
   assert.equal(quiet.busy, false)
   assert.equal(quiet.attentionCount, 0)

@@ -14,6 +14,16 @@ function darkShadowLines(indent = '    ') {
   return Object.entries(tokens.shadow).map(([name, value]) => `${indent}--shadow-${name}: ${value[1]};`)
 }
 
+function baseDensityValue(key) {
+  const groups = [['t-', tokens.type], ['d-', tokens.d], ['size-', tokens.size], ['r-', tokens.radius]]
+  for (const [prefix, group] of groups) {
+    if (!key.startsWith(prefix)) continue
+    const value = group[key.slice(prefix.length)]
+    if (value !== undefined) return Array.isArray(value) ? value.slice(0, 2) : value
+  }
+  throw new Error(`密度令牌 ${key} 没有对应的基础值`)
+}
+
 function buildCss() {
   const lines = []
   lines.push(`/* ${HEADER} */`)
@@ -51,6 +61,16 @@ function buildCss() {
   lines.push('  }')
   lines.push("  :root[data-theme='dark'] {")
   lines.push(...darkShadowLines())
+  lines.push('  }')
+  const overridden = new Set(Object.values(tokens.density).flatMap((values) => Object.keys(values)))
+  lines.push("  [data-density-scope='compact'] {")
+  for (const k of overridden) {
+    const value = baseDensityValue(k)
+    if (Array.isArray(value)) {
+      lines.push(`    --${k}: ${value[0]}px;`)
+      lines.push(`    --${k}-lh: ${value[1]}px;`)
+    } else lines.push(`    --${k}: ${value}px;`)
+  }
   lines.push('  }')
   for (const [name, values] of Object.entries(tokens.density)) {
     lines.push(`  :root[data-density='${name}'], [data-density-scope='${name}'] {`)
