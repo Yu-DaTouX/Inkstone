@@ -1,5 +1,19 @@
+function ownsLocalProvider(entry) {
+  return Boolean(entry && (entry.abSessions || entry.hardKillAfterIntermediateTiming || entry.restart))
+}
+
 export function defaultLiveCases(cases) {
-  return Object.keys(cases).filter(name => cases[name].cost === 0 && !cases[name].needsCredentials && !cases[name].needsDownload)
+  return Object.keys(cases).filter(
+    (name) =>
+      cases[name].cost === 0 &&
+      !cases[name].needsCredentials &&
+      !cases[name].needsDownload &&
+      !ownsLocalProvider(cases[name])
+  )
+}
+
+export function localProviderCases(names, cases) {
+  return names.filter((name) => ownsLocalProvider(cases[name]))
 }
 
 export function validateSyntheticSelection(names, cases, isolated) {

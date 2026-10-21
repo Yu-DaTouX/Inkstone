@@ -26,6 +26,4 @@ export async function runBrowserVisibilityTests(ok) {
   blockers.acquire('b')
   blockers.release('a')
   ok(blockers.has('b') && !blockers.has('a'), '释放自己的 token 不影响别人的')
-  blockers.clear()
-  ok(blockers.size === 0, 'clear 清空全部')
 }

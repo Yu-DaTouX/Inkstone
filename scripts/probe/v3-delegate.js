@@ -29,6 +29,23 @@
     q('composer-plus-delegate')?.click()
     return until(() => !!q('v3-delegate-dialog'), 3000)
   }
+  const press = (el) => {
+    if (!el) return false
+    const base = { bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1, detail: 1 }
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }))
+    el.dispatchEvent(new MouseEvent('mousedown', base))
+    el.dispatchEvent(new PointerEvent('pointerup', { ...base, buttons: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true }))
+    el.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }))
+    el.dispatchEvent(new MouseEvent('click', { ...base, buttons: 0 }))
+    return true
+  }
+  const pressByKey = (el) => {
+    if (!el) return false
+    el.focus()
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+    return true
+  }
 
   try {
     out.push('=== v3 手动派发子 Agent（隔离探针，不提交）===')
@@ -75,8 +92,11 @@
 
     out.push('')
     out.push('--- 4. 取消 ---')
-    ;[...document.querySelectorAll('[data-testid="v3-delegate-dialog"] button')].find((b) => b.textContent?.trim() === '取消' || b.textContent?.trim() === 'Cancel')?.click()
-    check(await until(() => !q('v3-delegate-dialog'), 3000), '取消后表单关闭')
+    const cancelButton = [...document.querySelectorAll('[data-testid="v3-delegate-dialog"] button')].find((b) => b.textContent?.trim() === '取消' || b.textContent?.trim() === 'Cancel')
+    press(cancelButton)
+    const closedByPress = await until(() => !q('v3-delegate-dialog'), 3000)
+    if (!closedByPress) pressByKey(cancelButton)
+    check(closedByPress || (await until(() => !q('v3-delegate-dialog'), 3000)), '取消后表单关闭')
 
     out.push('')
     out.push('--- 5. peek 别的会话时入口禁用 ---')

@@ -238,7 +238,9 @@
       ok(n2 === n1, '对已处理过的 id 再撤回不会谎报“已撤回”')
       ok(store.getState().queueRestore !== null || left > 0, '撤回过的文本要么回到草稿、要么队列里还有同名项')
     } else {
-      ok(false, '找不到同文本队列行的撤回按钮')
+      const stillQueued = snapItems().filter((i) => i.text === DUP).length
+      if (stillQueued < 2) log(`  ⤺ 跳过同文本用例：找行的这几秒里模型已把排队项收走（现 ${stillQueued} 条，队列总共 ${snapItems().length} 条）`)
+      else ok(false, `找不到同文本队列行的撤回按钮（store 里还有 ${stillQueued} 条同文本排队项）`)
     }
   } else {
     log(`  ⤺ 跳过同文本用例：模型这轮已经把排队项收走（剩 ${dups.length} 条）`)
