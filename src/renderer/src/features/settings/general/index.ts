@@ -8,7 +8,6 @@ export { DataSettings, StorageFacts } from './DataSettings'
 export { AboutSettings, type AboutSettingsProps } from './AboutSettings'
 export {
   GENERAL_LEGACY_MAP,
-  GENERAL_SECTION_ORDER,
   DEFAULT_SOUND_SETTINGS,
   bytesText,
   formatWhen,

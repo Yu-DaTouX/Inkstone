@@ -129,28 +129,8 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   ...GENERAL_LEGACY_MAP
 }
 
-const KNOWN_V2_VIEWS: readonly string[] = [
-  'auth',
-  'appearance',
-  'input',
-  'workspace',
-  'capabilities',
-  'voice',
-  'devices',
-  'about',
-  'sound',
-  'status',
-  'knowledge',
-  'packages',
-  'market',
-  'remote',
-  'peer',
-  'usage'
-]
-
 export type LegacyViewResolution =
   | { kind: 'section'; view: string; section: SettingsSectionId }
-  | { kind: 'unmigrated'; view: string }
   | { kind: 'unknown'; view: string }
 
 export function resolveLegacyView(view: string | null | undefined): LegacyViewResolution {
@@ -158,19 +138,12 @@ export function resolveLegacyView(view: string | null | undefined): LegacyViewRe
   if (isSettingsSectionId(name)) return { kind: 'section', view: name, section: name }
   const mapped = LEGACY_VIEW_TO_SECTION[name]
   if (mapped) return { kind: 'section', view: name, section: mapped }
-  if (KNOWN_V2_VIEWS.includes(name)) return { kind: 'unmigrated', view: name }
   return { kind: 'unknown', view: name }
 }
 
 export interface SettingsNavGroup {
   readonly group: SettingsNavGroupId
   readonly sections: readonly SettingsSectionDef[]
-}
-
-export function groupSettingsSections(sections: readonly SettingsSectionDef[] = SETTINGS_SECTIONS): SettingsNavGroup[] {
-  return SETTINGS_NAV_GROUPS.map((group) => ({ group, sections: sections.filter((section) => section.group === group) })).filter(
-    (entry) => entry.sections.length > 0
-  )
 }
 
 export function settingsViewFromHash(hash: string): string | null {

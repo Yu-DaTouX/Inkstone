@@ -12,15 +12,6 @@ export const GENERAL_LEGACY_MAP: Readonly<Record<string, GeneralSectionId>> = {
   status: 'about'
 }
 
-export const GENERAL_SECTION_ORDER: readonly GeneralSectionId[] = [
-  'session',
-  'notifications',
-  'security',
-  'devices',
-  'data',
-  'about'
-]
-
 export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   enabled: false,
   volume: 0.4,
