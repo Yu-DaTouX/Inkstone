@@ -1,6 +1,9 @@
 import type { IpcRegistrar } from './registrar'
 import type { ExpectedRuntimeOwner } from '../../shared/ipc'
 import type { SubagentService } from '../subagent-service'
+import { normalizeSubagentId } from '../../shared/subagent-id'
+
+const INVALID_ID = { ok: false, error: '子代理 id 不合法' }
 
 export interface SubagentParentContext {
   cwd: string
@@ -38,20 +41,38 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
     const mode = isolation === 'controlled-cwd' ? 'controlled-cwd' : isolation === 'worktree' ? 'worktree' : 'shared-cwd'
     return ctrl.start(String(task ?? ''), typeof model === 'string' ? model : undefined, mode)
   })
-  handle('yan:subagents:stop', async (id: string) => (await service.get()).stop(String(id ?? '')))
+  handle('yan:subagents:stop', async (id: string) => {
+    const runId = normalizeSubagentId(id)
+    if (!runId) return INVALID_ID
+    return (await service.get()).stop(runId)
+  })
   handle('yan:subagents:send', async (id: string, message: string) => {
+    const runId = normalizeSubagentId(id)
+    if (!runId) return INVALID_ID
     const text = String(message ?? '')
     if (text.length > 12_000) return { ok: false, error: '信息不能超过 12000 个字符' }
-    const result = await (await service.get()).send(String(id ?? ''), text, 'steer', { from: 'user' })
+    const result = await (await service.get()).send(runId, text, 'steer', { from: 'user' })
     return { ok: result.ok, ...(result.error ? { error: result.error } : {}), ...(result.delivery ? { delivery: result.delivery } : {}) }
   })
-  handle('yan:subagents:dismiss', async (id: string) => (await service.get()).dismiss(String(id ?? '')))
+  handle('yan:subagents:dismiss', async (id: string) => {
+    const runId = normalizeSubagentId(id)
+    if (!runId) return INVALID_ID
+    return (await service.get()).dismiss(runId)
+  })
   handle('yan:subagents:stopAll', async () => {
     await (await service.get()).stopAll()
   })
   handle('yan:subagents:clear', async () => {
     await (await service.get()).clearFinished()
   })
-  handle('yan:subagents:merge', async (id: string) => (await service.get()).merge(String(id ?? '')))
-  handle('yan:subagents:discard', async (id: string) => (await service.get()).discard(String(id ?? '')))
+  handle('yan:subagents:merge', async (id: string) => {
+    const runId = normalizeSubagentId(id)
+    if (!runId) return INVALID_ID
+    return (await service.get()).merge(runId)
+  })
+  handle('yan:subagents:discard', async (id: string) => {
+    const runId = normalizeSubagentId(id)
+    if (!runId) return INVALID_ID
+    return (await service.get()).discard(runId)
+  })
 }

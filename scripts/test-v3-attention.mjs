@@ -152,7 +152,7 @@ function runSummaryTests(mod) {
   assert.deepEqual(s.active.map((r) => r.runId), ['a', 'i', 'h', 'b'])
   assert.equal(s.waiting, true)
   assert.equal(s.busy, true)
-  assert.equal(s.attentionCount, 3, 'needs-you + 失败未读 + 完成未读')
+  assert.equal(s.attentionCount, 4, 'needs-you + 停顿 + 失败未读 + 完成未读（与渲染端 isAttentionPhase 同口径）')
   assert.equal(s.total, 9)
 
   const two = summarizeAttention([
@@ -293,6 +293,15 @@ function runTrayTests(mod) {
   assert.equal(live.length, 2)
   assert.equal(live[0].label, '● 日志改造.jsonl · 运行中')
   assert.equal(live[1].label, 'r2 · 启动中')
+
+  const titled = buildAttentionMenu({
+    zh: true,
+    statuses: [{ id: 'r3', title: '  迁移用量页 ', sessionFile: 'C:/x/2026-10-22T10-00-00.jsonl', cwd: 'C:/x', running: true, waiting: false, conn: 'ready', isActive: false }],
+    summary: mod.summarizeAttention([]),
+    callbacks: { show() {}, newSession() {}, selectSession() {}, quit() {} }
+  })
+  assert.equal(titled.find((n) => n.type === 'submenu').items[0].label, '迁移用量页 · 运行中', '托盘列出会话标题而不是会话文件名')
+  assert.equal(mod.summarizeAttention([run('s', { kind: 'stalled', since: 5, cause: 'retry' })]).attentionCount, 1, '限流重试中的运行也算待处理')
 
   live[0].click()
   assert.equal(h.log.show, 1)

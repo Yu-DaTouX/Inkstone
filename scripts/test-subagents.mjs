@@ -957,4 +957,55 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       await rm(root, { recursive: true, force: true })
     }
   }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-emit-'))
+    const factory = makeRpcFactory()
+    let throwing = true
+    const ctrl = new SubagentController({
+      cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: factory.createRpc,
+      onChange: () => { if (throwing) throw new Error('推送处理器崩了') }
+    })
+    try {
+      const started = await ctrl.start('推送失败不影响运行', undefined, 'controlled-cwd')
+      ok(started.ok, '推送回调抛错不打断启动', started.error)
+      throwing = false
+      const rpc = factory.created[0]
+      rpc.command = async (type, payload, options) => {
+        if (type === 'abort') {
+          ok(options?.timeoutMs === 5_000, 'abort 带 5 秒超时，不会按默认 30 秒挂住退出')
+          return { success: true }
+        }
+        return { success: true }
+      }
+      const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { total: 0 } }
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第一版结论' }], usage } })
+      ok(ctrl.get(started.run.id)?.result?.summary.includes('第一版结论'), '结果摘要来自最后一条助手消息')
+      ok(ctrl.get(started.run.id)?.toolCalls === 0, '推送回调抛错后仍继续处理事件')
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第二版结论' }], usage } })
+      ok(ctrl.get(started.run.id)?.result?.summary.includes('第二版结论'), '摘要缓存随新消息失效')
+      const stopStarted = Date.now()
+      ok((await ctrl.stop(started.run.id)).ok && Date.now() - stopStarted < 2_000, 'abort 立即返回时停止很快结束')
+
+      const liveFactory = makeRpcFactory()
+      const live = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc: liveFactory.createRpc, onChange: () => {} })
+      const liveRun = await live.start('收尾期间放弃改动', undefined, 'controlled-cwd')
+      liveFactory.created[0].emit('event', { type: 'agent_settled', aborted: false })
+      const discarded = await live.discard(liveRun.run.id)
+      ok(discarded.ok, '收尾期间放弃改动不抛错', discarded.error)
+      ok(await waitFor(() => live.get(liveRun.run.id)?.review === 'discarded'), '放弃标记不被收尾覆盖', live.get(liveRun.run.id)?.review)
+
+      const stale = { id: 'sub-1234abcd', task: '旧记录', cwd: archive, rootCwd: archive, startedAt: 1_000, status: 'done',
+        isolation: 'shared-cwd', review: 'none', transcript: [], toolCalls: 0, schemaVersion: 1, hidden: false,
+        limits: { totalMs: 1_000, stallTimeoutMs: 2_000, graceMs: 3_000 }, patchPath: join(archive, 'old.patch') }
+      await writeFile(join(archive, 'sub-1234abcd.json'), JSON.stringify(stale), 'utf8')
+      const reloaded = new SubagentController({ cwd: archive, archiveDir: archive, onChange: () => {} })
+      await reloaded.loadHistory()
+      const loaded = reloaded.get('sub-1234abcd')
+      ok(!!loaded && loaded.status === 'done', '历史记录可读回')
+      ok(!('limits' in loaded) && !('patchPath' in loaded) && !('schemaVersion' in loaded), '读回的历史不带写入专用字段', Object.keys(loaded).join(','))
+    } finally {
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
 }

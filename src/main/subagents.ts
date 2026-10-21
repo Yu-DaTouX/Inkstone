@@ -60,6 +60,7 @@ function wrapUpMessage(text: string): string {
   return `【宿主提示】${text}。不要再调用任何工具，立刻用已有的资料交出结论：先说已确认的结论，再说明哪些部分没来得及核实。`
 }
 const MAX_TRANSCRIPT = 200
+const ABORT_TIMEOUT_MS = 5_000
 
 const MAX_STDERR_LINES = 20
 const MAX_STDERR_LINE_CHARS = 400
@@ -145,6 +146,7 @@ interface Run extends SubagentRun {
   reviewDecided?: boolean
   msgSeq: number
   streamingId?: string
+  resultKey?: string
   stopReason?: string
   usageSnapshots: UsageSnapshots
   contextRevision?: number
@@ -275,7 +277,37 @@ export class SubagentController {
       error: run.error,
       usage: run.usage,
       brief: run.brief,
-      result: summarizeSubagentRun(
+      result: this.resultOf(run)
+    }
+  }
+
+  private emit(run: Run): void {
+    clearTimeout(run.pushTimer)
+    run.pushTimer = undefined
+    if (this.runs.get(run.id) !== run) return
+    try {
+      this.opts.onChange(this.snapshot(run))
+    } catch (error) {
+      console.warn('[subagent] 推送子代理状态失败', error)
+    }
+    this.rememberPushedTranscript(run)
+  }
+
+  private resultOf(run: Run): NonNullable<SubagentRun['result']> {
+    const last = run.transcript[run.transcript.length - 1]
+    const key = [
+      run.transcript.length,
+      last?.id ?? '',
+      last?.text.length ?? 0,
+      last?.toolCalls?.length ?? 0,
+      run.diff?.files ?? 0,
+      run.diff?.patchPath ?? '',
+      run.resultPath ?? '',
+      run.error ?? ''
+    ].join('|')
+    if (run.resultKey !== key || !run.result) {
+      run.resultKey = key
+      run.result = summarizeSubagentRun(
         {
           transcript: run.transcript,
           diffPaths: run.diff?.paths,
@@ -286,14 +318,7 @@ export class SubagentController {
         run.endedAt ?? run.startedAt
       )
     }
-  }
-
-  private emit(run: Run): void {
-    clearTimeout(run.pushTimer)
-    run.pushTimer = undefined
-    if (this.runs.get(run.id) !== run) return
-    this.opts.onChange(this.snapshot(run))
-    this.rememberPushedTranscript(run)
+    return run.result
   }
 
   private rememberPushedTranscript(run: Run): void {
@@ -872,7 +897,7 @@ export class SubagentController {
     run.error = undefined
     const settling = (async () => {
       try {
-        await run.rpc.command('abort')
+        await run.rpc.command('abort', undefined, { timeoutMs: ABORT_TIMEOUT_MS })
       } catch {
       }
       clearTimeout(run.timer)
@@ -925,7 +950,7 @@ export class SubagentController {
     run.error = run.error ?? describeProcessExit(run.exitInfo ?? {}, run.stderrTail)
     run.endedAt = Date.now()
     this.emit(run)
-    void this.finalize(run, false)
+    void this.finalize(run, false).catch((error) => console.warn('[subagent] 收尾失败', error))
   }
 
   private startupAbort(run: Run): { ok: false; error: string } {
@@ -1045,9 +1070,15 @@ export class SubagentController {
     }
   }
 
+  private async awaitSettled(run: Run): Promise<void> {
+    if (run.settling) { try { await run.settling } catch { } }
+    if (run.finalizing) { try { await run.finalizing } catch { } }
+  }
+
   async merge(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'merged')
+    await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，结束后才能合并' }
     if (run.review === 'merged') return { ok: true }
     if (run.review !== 'pending' && run.review !== 'conflict') {
@@ -1058,36 +1089,45 @@ export class SubagentController {
       return { ok: false, error: '没有可合并的补丁，已保留工作区供检查' }
     }
 
-    const res = await applyPatch(run.workspace.rootCwd, patchPath)
-    if (!res.ok) {
-      run.review = 'conflict'
-      run.error = res.error
+    try {
+      const res = await applyPatch(run.workspace.rootCwd, patchPath)
+      if (!res.ok) {
+        run.review = 'conflict'
+        run.error = res.error
+        await this.writeMetadata(run, patchPath)
+        this.emit(run)
+        return res
+      }
+
+      run.review = 'merged'
+      run.resultPath = patchPath
+      run.error = undefined
+      await cleanupWorkspace(run.workspace)
+      run.worktreeDone = true
       await this.writeMetadata(run, patchPath)
       this.emit(run)
-      return res
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: `合并失败：${error instanceof Error ? error.message : String(error)}` }
     }
-
-    run.review = 'merged'
-    run.resultPath = patchPath
-    run.error = undefined
-    await cleanupWorkspace(run.workspace)
-    run.worktreeDone = true
-    await this.writeMetadata(run, patchPath)
-    this.emit(run)
-    return { ok: true }
   }
 
   async discard(id: string): Promise<{ ok: boolean; error?: string }> {
     const run = this.runs.get(id)
     if (!run) return this.reviewHistory(id, 'discarded')
+    await this.awaitSettled(run)
     if (run.status === 'running' || run.status === 'starting') return { ok: false, error: '子代理仍在运行，先停止它' }
-    run.review = 'discarded'
-    run.resultPath = run.diff?.patchPath
-    await cleanupWorkspace(run.workspace)
-    run.worktreeDone = true
-    await this.writeMetadata(run, run.diff?.patchPath)
-    this.emit(run)
-    return { ok: true }
+    try {
+      run.review = 'discarded'
+      run.resultPath = run.diff?.patchPath
+      await cleanupWorkspace(run.workspace)
+      run.worktreeDone = true
+      await this.writeMetadata(run, run.diff?.patchPath)
+      this.emit(run)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: `放弃改动失败：${error instanceof Error ? error.message : String(error)}` }
+    }
   }
 
   private async reviewHistory(id: string, review: 'merged' | 'discarded'): Promise<{ ok: boolean; error?: string }> {
@@ -1381,7 +1421,7 @@ export class SubagentController {
       } catch {
       }
       await this.finalize(run, false)
-    })()
+    })().catch((error) => console.warn('[subagent] 收尾失败', error))
   }
 
   private async waitTranscriptQuiet(run: Run, quietMs = 600, maxMs = 5000): Promise<void> {
