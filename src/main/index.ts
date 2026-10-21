@@ -6,15 +6,15 @@ import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
-import { constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { access, appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { loadModelPricing } from './model-pricing'
 import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
 import { applyRememberedModel } from './model-default'
-import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
+import { applyTurnTimings, effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
 import { RunnerRegistry } from './runners'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
@@ -27,7 +27,8 @@ import { syncNativeCompactionLines, type LineModel } from './native-compaction-l
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
-import { moveSessionLayout, rememberSession } from './session-layout'
+import { getSessionLayout, moveSessionLayout, rememberSession } from './session-layout'
+import { samePath } from '../shared/session-path'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { readChainMessages } from './session-history'
@@ -77,7 +78,7 @@ import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagent
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
 import { SyncService } from './sync'
-import { SESSIONS_DIR } from './sessions'
+import { isSessionFileInSessionsDir, SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
@@ -92,7 +93,6 @@ import { isAuthorizedFileCwd, isRunnerProjectCwd } from './file-context'
 import { lockDataRoot } from '../core/data-root-lock'
 import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
-import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
 import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
@@ -112,7 +112,8 @@ import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
 import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
 import { localCommandDescriptors } from './command-registry'
-import { writeExitSnapshot } from './exit-snapshot'
+import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
+import { QUEUE_RECOVERY_DIR } from './queue-persistence'
 import { installStdioGuard } from './stdio-guard'
 import { decodeControlCommand, writeControlResponse, type ControlCommand, type ControlResponse } from './control-protocol'
 import { smoothTextEnabledSync } from './early-switches'
@@ -128,6 +129,17 @@ import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueSn
 import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
+
+let exitReason: string | undefined
+
+function crashLogDir(): string {
+  const dir = join(YAN_DIR, 'logs')
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch {
+  }
+  return dir
+}
 
 installStdioGuard(
   { stdout: process.stdout, stderr: process.stderr },
@@ -148,9 +160,30 @@ function reportMainError(kind: string, error: unknown): void {
     console.error(text)
   } catch {
   }
+  try {
+    const stamp = new Date().toISOString()
+    appendFileSync(join(crashLogDir(), `main-${stamp.slice(0, 10)}.log`), `${stamp} ${text}\n`, 'utf8')
+  } catch {
+  }
 }
 
+process.on('exit', (code) => {
+  try {
+    writeFileSync(join(crashLogDir(), 'last-exit.json'), JSON.stringify({
+      at: Date.now(),
+      code,
+      reason: exitReason ?? 'unspecified',
+      shuttingDown,
+      quitting: isQuitting,
+      windows: BrowserWindow.getAllWindows().length,
+      uptime: Math.round(process.uptime())
+    }), 'utf8')
+  } catch {
+  }
+})
+
 process.on('uncaughtException', (error) => {
+  exitReason = 'uncaughtException'
   reportMainError('uncaughtException', error)
   setImmediate(() => app.exit(1))
 })
@@ -1370,6 +1403,7 @@ function requestExit(options: { relaunch?: boolean } = {}): Promise<ExitResult> 
     if (choice === 'cancel') return { action: 'cancelled' }
 
     isQuitting = true
+    exitReason = choice === 'save' ? 'user-save-and-exit' : 'user-interrupt-exit'
     const mode = choice === 'save' ? 'save' : 'interrupt'
     await writeExitSnapshot(mode, runners?.statuses() ?? []).catch((error) => {
       console.error('[exit-snapshot] 写入失败：', error)
@@ -1656,6 +1690,78 @@ async function rememberRunnerSession(
 
 let starting: Promise<{ ok: boolean; error?: string }> | null = null
 let agentResponseDetail: 'brief' | 'standard' | 'detailed' = 'standard'
+
+interface SessionRestore {
+  sessionFile: string
+  interrupted: boolean
+}
+
+let restoreNotice: string | undefined
+
+async function turnsWereInterrupted(sessionFile: string): Promise<boolean> {
+  const bucket = timingKey(sessionFile)
+  if (!bucket) return false
+  const records = await readTurnTimings(YAN_DIR, bucket).catch(() => [])
+  const last = [...records].sort((a, b) => a.endedAt - b.endedAt).at(-1)
+  return !!last && effectiveTerminalReason(last) === 'interrupted'
+}
+
+async function usableSessionFile(sessionFile: string | undefined): Promise<string | undefined> {
+  if (!sessionFile) return undefined
+  if (!existsSync(sessionFile)) return undefined
+  if (!(await isSessionFileInSessionsDir(sessionFile).catch(() => false))) return undefined
+  return sessionFile
+}
+
+async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
+  const snapshot = await readExitSnapshot().catch(() => null)
+  if (!snapshot) return undefined
+  const settings = await getSettings()
+  const runner = pickRestoreRunner(snapshot, settings.cwd)
+  await clearExitSnapshot().catch(() => undefined)
+  const sessionFile = await usableSessionFile(runner?.sessionFile)
+  if (!sessionFile) return undefined
+  return { sessionFile, interrupted: runner?.running === true || (await turnsWereInterrupted(sessionFile)) }
+}
+
+async function restoreLastSession(): Promise<SessionRestore | undefined> {
+  const settings = await getSettings()
+  const layout = await getSessionLayout().catch(() => null)
+  const candidates = (layout?.entries ?? []).filter((entry) =>
+    !!entry.sessionFile && !entry.archivedAt && samePath(entry.cwd, settings.cwd)
+  )
+  const pick = candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))[0]
+  const sessionFile = await usableSessionFile(pick?.sessionFile)
+  if (!sessionFile) return undefined
+  return { sessionFile, interrupted: await turnsWereInterrupted(sessionFile) }
+}
+
+async function restorePreviousSession(): Promise<SessionRestore | undefined> {
+  const restored = (await restoreFromExitSnapshot().catch(() => undefined)) ?? (await restoreLastSession().catch(() => undefined))
+  if (restored?.interrupted) restoreNotice = '上次退出时这一回合没有结束，已恢复该会话；已生成的内容保留在会话里。'
+  return restored
+}
+
+function flushRestoreNotice(): void {
+  const message = restoreNotice
+  if (!message) return
+  restoreNotice = undefined
+  push({ ch: 'notify', payload: { id: `session-restore-${Date.now()}`, method: 'notify', notifyType: 'info', message } })
+}
+
+async function reclaimQueuedMessages(): Promise<void> {
+  const pending = await readdir(QUEUE_RECOVERY_DIR).catch(() => [] as string[])
+  if (!pending.some((name) => name.endsWith('.json'))) return
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (starting) await starting.catch(() => undefined)
+    const agent = ac()
+    if (agent?.getState()?.sessionId) {
+      await agent.reclaimSavedQueue().catch(() => undefined)
+      return
+    }
+    await new Promise((done) => setTimeout(done, 250))
+  }
+}
 
 let extensionSourcesReported = false
 
@@ -2492,6 +2598,8 @@ function registerIpc(): void {
     }
     if (browser) push({ ch: 'browser-state', payload: browser.getState() })
     pushRunners()
+    flushRestoreNotice()
+    void reclaimQueuedMessages()
   })
 
   handle('yan:openPath', async (p: string) => {
@@ -2746,7 +2854,6 @@ function registerIpc(): void {
 
   registerCollabIpc(ipc, { peerClient, peerHost: peerHostHandlers, worktreeLinks: worktreeOrigins, win: () => win })
 
-  registerConsentIpc(ipc)
 
   registerOfficeIpc(ipc, async (requestedCwd) => {
     const settings = await getSettings()
@@ -3139,7 +3246,7 @@ configureRemoteHost({
 
 app.whenReady().then(async () => {
   await storageMoveReady
-  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { reportMainError('data-root-writer', error); app.exit(1); return }
+  try { releaseDesktopDataRoot = await lockDataRoot(YAN_DIR) } catch (error) { exitReason = 'data-root-lock'; reportMainError('data-root-writer', error); app.exit(1); return }
   registerDeepLinkProtocol(app, { isPackaged: app.isPackaged, execPath: process.execPath, appPath: process.argv[1] })
   registerHtmlArtifactProtocol()
   void loadModelPricing()
@@ -3390,7 +3497,8 @@ app.whenReady().then(async () => {
 
   await migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error))
 
-  const started = await startAgent()
+  const restore = await restorePreviousSession()
+  const started = await startAgent(restore ? { sessionFile: restore.sessionFile } : undefined)
 
   await startRemoteServer()
 
@@ -3417,6 +3525,7 @@ app.whenReady().then(async () => {
   })
 }).catch((error) => {
   reportMainError('whenReady', error)
+  exitReason = 'whenReady'
   dialog.showErrorBox('砚无法启动', error instanceof Error ? error.message : String(error))
   app.exit(1)
 })
@@ -3434,7 +3543,12 @@ app.on('before-quit', (e) => {
     return
   }
   isQuitting = true
+  exitReason = exitReason ?? 'app-quit'
   if (shuttingDown) return
   e.preventDefault()
   void shutdown().then(() => app.quit())
+})
+
+app.on('child-process-gone', (_event, details) => {
+  reportMainError(`child-process-gone:${details.type}`, new Error(`${details.reason} code=${details.exitCode}`))
 })
