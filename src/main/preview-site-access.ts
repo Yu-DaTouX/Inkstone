@@ -61,11 +61,6 @@ export function isForbiddenOrigin(origin: string): boolean {
   return FORBIDDEN_HOSTS.has(host) || isLinkLocalHost(host)
 }
 
-export function siteLabel(origin: string): string {
-  const withoutScheme = origin.replace(/^https?:\/\//, '')
-  return withoutScheme.replace(/\/$/, '') || origin
-}
-
 export function allowedSiteList(saved: unknown): string[] {
   const out: string[] = []
   for (const value of Array.isArray(saved) ? saved : []) {
@@ -76,11 +71,6 @@ export function allowedSiteList(saved: unknown): string[] {
     if (out.length >= MAX_ALLOWED_SITES) break
   }
   return out
-}
-
-export function siteAllowsUrl(saved: unknown, url: string): boolean {
-  const origin = normalizeSiteOrigin(url)
-  return origin !== null && allowedSiteList(saved).includes(origin)
 }
 
 function withScheme(value: string): string {
@@ -173,7 +163,9 @@ export class PreviewSiteAccess {
     }
     if (verdict.decision === 'deny') return 'deny'
     if (verdict.decision === 'allow') return 'allow'
-    this.persist([...this.allowed, verdict.origin])
+    const added = addAllowedSite(this.allowed, verdict.origin)
+    if (added.result !== 'ok' || added.list.length > this.limit) return 'deny'
+    this.persist(added.list)
     return 'allow'
   }
 
@@ -202,7 +194,7 @@ export class PreviewSiteAccess {
   }
 
   private persist(list: string[]): void {
-    this.allowed = allowedSiteList(list).slice(-this.limit)
+    this.allowed = allowedSiteList(list).slice(0, this.limit)
     try {
       this.store?.save(this.sites())
     } catch {

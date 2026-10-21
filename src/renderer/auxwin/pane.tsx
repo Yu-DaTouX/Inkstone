@@ -355,11 +355,17 @@ function PaneBrowserView({ bridge }: { bridge: PaneBrowserBridge | null }): Reac
       if (event.key === 'Escape') void bridge.returnToHost().catch(() => {})
     }
     window.addEventListener('keydown', onKey)
+    const off = panePopoutBridge()?.onPush((view) => {
+      const next = view as unknown as PaneBrowserStateView
+      if (!next || next.tab !== 'browser' || next.tabId !== state?.tabId) return
+      setState(next)
+    })
     return () => {
       alive = false
       window.removeEventListener('keydown', onKey)
+      off?.()
     }
-  }, [bridge])
+  }, [bridge, state?.tabId])
 
   useEffect(() => {
     if (!bridge) return

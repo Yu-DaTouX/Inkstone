@@ -250,6 +250,14 @@ export class PiRpc extends EventEmitter {
 
   spawn(): void {
     if (this.child) return
+    this.closed = false
+    this.finished = false
+    this.sawExit = false
+    this.spawnError = null
+    if (this.exitDrainTimer) {
+      clearTimeout(this.exitDrainTimer)
+      this.exitDrainTimer = null
+    }
 
     const rpcArgs = [...this.probe.args, '--mode', 'rpc', ...(this.opts.args ?? [])]
 
@@ -474,9 +482,12 @@ export class PiRpc extends EventEmitter {
 
     return new Promise((resolve) => {
       let done = false
+      let timer: NodeJS.Timeout | null = null
       const finish = (): void => {
         if (done) return
         done = true
+        if (timer) clearTimeout(timer)
+        child.off('exit', finish)
         resolve()
       }
 
@@ -486,13 +497,14 @@ export class PiRpc extends EventEmitter {
       } catch {
       }
 
-      setTimeout(() => {
+      timer = setTimeout(() => {
         try {
           child.kill()
         } catch {
         }
         finish()
       }, 1500)
+      timer.unref?.()
     })
   }
 }

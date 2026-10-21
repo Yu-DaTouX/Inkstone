@@ -43,10 +43,12 @@ import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
-import { resolvesToPrivateAddress } from './browser/network-policy'
+import { PrivateDnsGuard } from './browser/network-policy'
 import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
 import type { PreviewSiteGate } from './preview-site-gate'
 import { decideRequestBoundary } from './browser/network-boundary'
+import { decideExternalRequest } from './browser/external-boundary'
+import { createStateFlush, ownedViewVisible } from './browser/host-state'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -123,8 +125,6 @@ interface TargetParts {
   network: NetworkTracker
 }
 
-const PRIVATE_DNS_CACHE_LIMIT = 200
-
 export interface BrowserHostTransfer {
   readonly tabId: string
   readonly ownerKey: string
@@ -170,13 +170,18 @@ export class BrowserController {
   getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
   private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
-  private permissionHandlerAttached = false
+  private permissionHandlersAttached = false
+  private requestBoundaryAttached = false
   private permissionLog: BrowserPermissionRecord[] = []
   private blockedRequests: BrowserBlockedRequest[] = []
   private readonly permissionGrants = new Set<string>()
-  private readonly privateDnsCache = new Map<string, { private: boolean; expiresAt: number }>()
+  private readonly privateDns = new PrivateDnsGuard()
+  private viewVisibleRequested = false
+  private readonly stateFlush = createStateFlush(() => this.updateState())
   private external: ExternalTarget | null = null
   private externalOpening: Promise<BrowserActionResult> | null = null
+  private externalBoundaryCdp: RawCdp | null = null
+  private externalPendingUrl = ''
   private activeMode: 'embedded' | 'external' = 'embedded'
 
   private externalTabId(targetId: string): string {
@@ -201,7 +206,8 @@ export class BrowserController {
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly push: Push,
-    private readonly siteGate: () => PreviewSiteGate | null = () => null
+    private readonly siteGate: () => PreviewSiteGate | null = () => null,
+    private readonly approveProfileSync: () => Promise<boolean> = async () => false
   ) {}
 
   getState(): BrowserState {
@@ -356,33 +362,43 @@ export class BrowserController {
       }
     })
     if (!this.downloadSessionAttached) {
-      this.downloadSessionAttached = true
-      view.webContents.session.on('will-download', (_event, item, contents) => {
-        const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
-        void this.handleDownload(item, owner).catch((error) => {
-          item.cancel()
-          this.pushError(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`)
+      try {
+        view.webContents.session.on('will-download', (_event, item, contents) => {
+          const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
+          void this.handleDownload(item, owner).catch((error) => {
+            item.cancel()
+            this.pushError(`浏览器下载无法保存：${error instanceof Error ? error.message : String(error)}`)
+          })
         })
-      })
+        this.downloadSessionAttached = true
+      } catch (error) {
+        this.pushError(`浏览器下载监听未能启用：${error instanceof Error ? error.message : String(error)}`)
+      }
     }
-    if (!this.permissionHandlerAttached) {
-      this.permissionHandlerAttached = true
-      const ses = view.webContents.session
-      ses.setPermissionRequestHandler((wc, permission, callback, details) => {
-        const name = String(permission)
-        const rawUrl = (details as { requestingUrl?: unknown } | undefined)?.requestingUrl
-        const origin = normalizePermissionOrigin(rawUrl) ?? normalizePermissionOrigin(wc.getURL()) ?? ''
-        const allowed = Boolean(origin && this.permissionGrants.has(permissionKey(name, origin)))
-        this.recordPermission(name, origin, allowed ? 'allowed' : 'blocked')
-        this.updateState()
-        callback(allowed)
-      })
-      ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
-        const origin = normalizePermissionOrigin(requestingOrigin)
-        return Boolean(origin && this.permissionGrants.has(permissionKey(String(permission), origin)))
-      })
-
-      ses.webRequest.onBeforeRequest((details, callback) => {
+    if (!this.permissionHandlersAttached) {
+      try {
+        const ses = view.webContents.session
+        ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+          const name = String(permission)
+          const rawUrl = (details as { requestingUrl?: unknown } | undefined)?.requestingUrl
+          const origin = normalizePermissionOrigin(rawUrl) ?? normalizePermissionOrigin(wc.getURL()) ?? ''
+          const allowed = Boolean(origin && this.permissionGrants.has(permissionKey(name, origin)))
+          this.recordPermission(name, origin, allowed ? 'allowed' : 'blocked')
+          this.updateState()
+          callback(allowed)
+        })
+        ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+          const origin = normalizePermissionOrigin(requestingOrigin)
+          return Boolean(origin && this.permissionGrants.has(permissionKey(String(permission), origin)))
+        })
+        this.permissionHandlersAttached = true
+      } catch (error) {
+        this.pushError(`浏览器权限处理未能启用：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (!this.requestBoundaryAttached) {
+      try {
+        view.webContents.session.webRequest.onBeforeRequest((details, callback) => {
         let target: URL
         try {
           target = new URL(details.url)
@@ -419,6 +435,10 @@ export class BrowserController {
           })
           .catch(() => callback({}))
       })
+        this.requestBoundaryAttached = true
+      } catch (error) {
+        this.pushError(`浏览器网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
+      }
     }
     void cdp.attach().catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
@@ -591,7 +611,7 @@ export class BrowserController {
     return this.getState()
   }
 
-  async closeTab(id = this.activeTabId ?? ''): Promise<BrowserState> {
+  async closeTab(id = this.activeTabId ?? '', options: { silent?: boolean } = {}): Promise<BrowserState> {
     const externalTargetId = this.externalTargetId(id)
     if (externalTargetId && this.external) {
       const ext = this.external
@@ -636,16 +656,18 @@ export class BrowserController {
       this.activeTabId = next?.id ?? null
       this.showOnlyOwnedView(this.activeTabId)
     }
-    this.updateState()
+    if (!options.silent) this.updateState()
     return this.getState()
   }
 
   async close(): Promise<BrowserState> {
     const ids = [...this.tabs.keys()]
-    for (const id of ids) await this.closeTab(id)
+    for (const id of ids) await this.closeTab(id, { silent: true })
     await this.closeExternalChrome()
     this.userControl = false
     this.nativeBounds = undefined
+    this.viewVisibleRequested = false
+    this.stateFlush.cancel()
     this.updateState()
     return this.getState()
   }
@@ -724,7 +746,7 @@ export class BrowserController {
   private showOnlyOwnedView(activeId: string | null): void {
     for (const tab of this.tabs.values()) {
       if (tab.borrowedBy) continue
-      tab.view.setVisible(tab.id === activeId)
+      tab.view.setVisible(ownedViewVisible(activeId, tab.id, this.viewVisibleRequested))
     }
   }
 
@@ -804,7 +826,9 @@ export class BrowserController {
     const value = raw && raw.trim() ? raw.trim() : tab?.state.url ?? ''
     const url = safeUrl(value)
     if (!url || url === 'about:blank') return { ok: false, error: '没有可打开的外部地址' }
-    void shell.openExternal(url)
+    void shell.openExternal(url).catch((error) => {
+      this.pushError(`无法用系统浏览器打开：${error instanceof Error ? error.message : String(error)}`)
+    })
     return { ok: true }
   }
 
@@ -833,9 +857,7 @@ export class BrowserController {
     let chrome: ChildProcess | null = null
     try {
       await mkdir(profileDir, { recursive: true })
-      const syncReport = existsSync(join(profileDir, 'Local State'))
-        ? undefined
-        : await syncLocalChromeData(profileDir)
+      const syncReport = await this.profileSyncReport(profileDir)
       chrome = launchChrome({
         profileDir,
         port,
@@ -849,6 +871,7 @@ export class BrowserController {
       const cdp = new RawCdp(page.webSocketDebuggerUrl)
       await cdp.attach()
       const registry = new ElementRegistry()
+      await this.enableExternalBoundary(cdp)
       await this.setupExternalDownloads(cdp)
       this.external = {
         cdp,
@@ -975,6 +998,8 @@ export class BrowserController {
     if (!ext) return this.getState()
     this.external = null
     this.externalDownloads.clear()
+    this.externalBoundaryCdp = null
+    this.externalPendingUrl = ''
     ext.observer.dispose()
     await ext.cdp.detach().catch(() => undefined)
     stopChrome(ext.chrome)
@@ -1005,6 +1030,7 @@ export class BrowserController {
     ext.url = target.url
     ext.title = target.title
     await previousCdp.detach().catch(() => undefined)
+    await this.enableExternalBoundary(cdp)
     await this.setupExternalDownloads(cdp)
     await this.syncExternalTabs()
     await this.syncExternalHistory()
@@ -1046,6 +1072,7 @@ export class BrowserController {
     const ext = this.external
     if (!ext) return
     ext.loading = true
+    this.externalPendingUrl = url
     this.updateState()
     try {
       await ext.cdp.send('Page.navigate', { url })
@@ -1057,6 +1084,61 @@ export class BrowserController {
         this.updateState()
       }
     }
+  }
+
+  private async enableExternalBoundary(cdp: RawCdp): Promise<void> {
+    if (this.externalBoundaryCdp === cdp) return
+    this.externalBoundaryCdp = cdp
+    cdp.on('Fetch.requestPaused', (params) => {
+      void this.handleExternalRequest(cdp, params)
+    })
+    try {
+      await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
+    } catch (error) {
+      this.pushError(`外部 Chrome 的网络边界未能启用：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private async handleExternalRequest(cdp: RawCdp, params: Record<string, unknown>): Promise<void> {
+    const requestId = String(params.requestId ?? '')
+    if (!requestId) return
+    const request = (params.request ?? {}) as { url?: unknown }
+    const url = String(request.url ?? '')
+    const resourceType = String(params.resourceType ?? '')
+    const pageUrl = this.external?.url ?? ''
+    const decision = decideExternalRequest({
+      url,
+      resourceType,
+      pageUrl,
+      requestedByUs: Boolean(this.externalPendingUrl) && this.externalPendingUrl === url
+    })
+    let blocked = decision === 'block-private'
+    if (decision === 'check-dns') {
+      try {
+        blocked = await this.privateDns.resolves(new URL(url).hostname)
+      } catch {
+        blocked = false
+      }
+    }
+    try {
+      if (blocked) {
+        await cdp.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' })
+        try {
+          this.recordBlockedRequest(new URL(url).hostname, 'private-host', pageUrl)
+        } catch {
+        }
+        return
+      }
+      await cdp.send('Fetch.continueRequest', { requestId })
+    } catch {
+    }
+  }
+
+  private async profileSyncReport(profileDir: string): Promise<ChromeSyncReport | undefined> {
+    if (existsSync(join(profileDir, 'Local State'))) return undefined
+    const approved = await this.approveProfileSync().catch(() => false)
+    if (!approved) return undefined
+    return syncLocalChromeData(profileDir)
   }
 
   private async externalHistory(delta: 1 | -1): Promise<BrowserActionResult> {
@@ -1080,6 +1162,7 @@ export class BrowserController {
   }
 
   setViewVisible(visible: boolean): void {
+    this.viewVisibleRequested = visible
     if (!visible) {
       this.hideOwnedViews()
       return
@@ -1280,24 +1363,11 @@ export class BrowserController {
     if (this.blockedRequests.length > 20) {
       this.blockedRequests.splice(0, this.blockedRequests.length - 20)
     }
-    this.updateState()
+    this.stateFlush.schedule()
   }
 
-  private async resolvesToPrivateTarget(hostname: string): Promise<boolean> {
-    const key = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
-    const cached = this.privateDnsCache.get(key)
-    if (cached && cached.expiresAt > Date.now()) return cached.private
-    const privateTarget = await resolvesToPrivateAddress(key)
-    const now = Date.now()
-    if (this.privateDnsCache.size >= PRIVATE_DNS_CACHE_LIMIT) {
-      for (const [host, entry] of this.privateDnsCache) if (entry.expiresAt <= now) this.privateDnsCache.delete(host)
-      for (const host of this.privateDnsCache.keys()) {
-        if (this.privateDnsCache.size < PRIVATE_DNS_CACHE_LIMIT) break
-        this.privateDnsCache.delete(host)
-      }
-    }
-    this.privateDnsCache.set(key, { private: privateTarget, expiresAt: now + 2000 })
-    return privateTarget
+  private resolvesToPrivateTarget(hostname: string): Promise<boolean> {
+    return this.privateDns.resolves(hostname)
   }
 
   private actionError(error: unknown): BrowserActionResult {

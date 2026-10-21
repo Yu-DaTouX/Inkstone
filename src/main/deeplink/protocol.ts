@@ -43,8 +43,6 @@ export interface DeepLinkPair {
   code: string
 }
 
-export type DeepLinkAction = DeepLink['action']
-
 export type DeepLink = DeepLinkSession | DeepLinkNewSession | DeepLinkSettings | DeepLinkPair
 
 export type DeepLinkRejectReason =
@@ -64,6 +62,7 @@ export type DeepLinkRejectReason =
 export type DeepLinkParseResult = { ok: true; link: DeepLink } | { ok: false; reason: DeepLinkRejectReason }
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
+const TEXT_CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/
 
 function validateId(value: string): string | null {
@@ -136,7 +135,7 @@ export function parseDeepLink(raw: unknown): DeepLinkParseResult {
       const text = url.searchParams.get('text')
       if (text !== null) {
         if (text.length > MAX_DEEPLINK_TEXT_LENGTH) return fail('text')
-        if (text.includes('\u0000')) return fail('text')
+        if (TEXT_CONTROL_CHARS.test(text)) return fail('text')
         if (text.length > 0) link.text = text
       }
       return { ok: true, link }
@@ -179,13 +178,4 @@ export function firstDeepLinkArg(argv: readonly string[]): string | null {
     if (value.toLowerCase().startsWith(`${DEEPLINK_SCHEME}:`)) return value
   }
   return null
-}
-
-export function parseDeepLinkFromArgv(argv: readonly string[]): DeepLinkParseResult | null {
-  const arg = firstDeepLinkArg(argv)
-  return arg === null ? null : parseDeepLink(arg)
-}
-
-export function parseDeepLinkFromOpenUrl(url: string): DeepLinkParseResult {
-  return parseDeepLink(url)
 }
