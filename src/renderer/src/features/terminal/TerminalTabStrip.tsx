@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { Plus, X } from 'lucide-react'
 import { IconButton, Menu, MenuItem, Popover } from '../../ui'
-import { nextTerminalTabIndex } from './terminal-tabs'
+import { isTerminalTabCloseKey, nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
 
 export interface TerminalTabItem {
@@ -59,8 +59,7 @@ export function TerminalTabStrip({
   const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, key: string): void => {
     const index = tabs.findIndex((tab) => tab.key === key)
     if (index < 0) return
-    if (event.key === 'Delete' || event.key === 'Backspace') {
-      if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (isTerminalTabCloseKey({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey })) {
       event.preventDefault()
       onClose(key)
       return

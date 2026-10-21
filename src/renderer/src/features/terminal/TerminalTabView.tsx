@@ -268,9 +268,11 @@ export const TerminalTabView = forwardRef<TerminalTabHandle, TerminalTabViewProp
       const observer = new ResizeObserver(() => scheduleFit())
       observer.observe(host)
 
-      const releaseEnv = observeTerminalEnvironment(() => {
-        term.options.theme = readTerminalTheme()
-        term.options.fontFamily = terminalFontFamily()
+      const releaseEnv = observeTerminalEnvironment((change) => {
+        if (change !== 'resize') {
+          term.options.theme = readTerminalTheme()
+          term.options.fontFamily = terminalFontFamily()
+        }
         scheduleFit()
       })
 

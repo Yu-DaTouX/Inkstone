@@ -23,6 +23,7 @@ export interface SidebarText {
   contentArchived: string
   search: string
   searchHint: string
+  pin: string
   filterSessions: string
   localUser: string
   connectionSettings: string
@@ -53,6 +54,7 @@ const zh: SidebarText = {
   contentArchived: '已归档',
   search: '搜索',
   searchHint: '搜索与命令（Ctrl+K）',
+  pin: '固定会话列表',
   filterSessions: '筛选会话',
   localUser: '本机',
   connectionSettings: '连接设置'
@@ -83,6 +85,7 @@ const en: SidebarText = {
   contentArchived: 'Archived',
   search: 'Search',
   searchHint: 'Search and commands (Ctrl+K)',
+  pin: 'Pin session list',
   filterSessions: 'Filter chats',
   localUser: 'This computer',
   connectionSettings: 'Connection settings'

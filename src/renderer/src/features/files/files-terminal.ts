@@ -1,5 +1,6 @@
 import { useUiV3 } from '../../state/ui-v3'
-import { terminalCdCommand } from './files-menu'
+import { activateTerminal } from '../terminal/terminal-activate'
+import { cdCommandFor } from './files-menu'
 
 const POLL_MS = 150
 const POLL_LIMIT = 40
@@ -15,6 +16,8 @@ export function canOpenTerminal(): boolean {
 export async function openFolderInTerminal(ownerKey: string, abs: string): Promise<boolean> {
   const terminal = window.yan?.terminal
   if (!terminal) return false
+  const command = cdCommandFor(abs)
+  if (!command) return false
   const ui = useUiV3.getState()
   ui.setWorkspaceTab('terminal')
   ui.setWorkspaceOpen(true)
@@ -22,7 +25,10 @@ export async function openFolderInTerminal(ownerKey: string, abs: string): Promi
     const list = await terminal.list().catch(() => [])
     const owned = list.filter((item) => item.owner === ownerKey && item.alive)
     const target = owned[owned.length - 1]
-    if (target) return terminal.write(target.id, terminalCdCommand(abs))
+    if (target) {
+      activateTerminal(ownerKey, target.id)
+      return terminal.write(target.id, command)
+    }
     await wait(POLL_MS)
   }
   return false

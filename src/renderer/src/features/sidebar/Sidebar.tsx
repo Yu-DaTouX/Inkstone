@@ -9,7 +9,7 @@ import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, latestRunForSession, type SidebarGroup } from './sidebar-model'
+import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, indexRuns, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { useSplitView } from '../../state/split-view'
@@ -72,7 +72,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const newSession = useStore((s) => s.newSession)
   const switchSession = useStore((s) => s.switchSession)
   const refreshSessions = useStore((s) => s.refreshSessions)
-  const messageCount = useStore((s) => s.messages.length)
+  const running = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming))
   const currentSessionFile = useStore((s) => s.session?.sessionFile)
   const route = useUiV3((s) => s.route.name)
   const split = useSplitView((s) => s.split)
@@ -80,9 +80,10 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const paneSessions = useMemo(() => (route === 'chat' ? visiblePaneSessions(split, narrowPanes) : []), [route, split, narrowPanes])
 
   useEffect(() => {
+    if (running) return undefined
     const id = window.setTimeout(() => void refreshSessions(), 800)
     return () => window.clearTimeout(id)
-  }, [messageCount, currentSessionFile, refreshSessions])
+  }, [running, currentSessionFile, refreshSessions])
 
   const activeRunner = runners.find((r) => r.id === activeRunnerId || r.runId === activeRunnerId)
   const currentProjectId = activeRunner?.projectId
@@ -121,6 +122,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     [settings?.projects, sessions]
   )
   const projectRecords = settings?.projects ?? []
+  const runIndex = useMemo(() => indexRuns(runs), [runs])
 
   const total = groups.reduce((sum, group) => sum + group.list.length, 0)
 
@@ -264,7 +266,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           </IconTip>
           {onClose ? (
             <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={preview ? (lang === 'en-US' ? 'Pin session list' : '固定会话列表') : text.toggleSidebar} onPress={preview ? onPin : onClose} data-testid="v3-side-close">
+              <IconButton aria-label={preview ? own.pin : text.toggleSidebar} onPress={preview ? onPin : onClose} data-testid="v3-side-close">
                 <PanelLeftClose size={16} />
               </IconButton>
             </IconTip>
@@ -337,7 +339,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                 {rows.map((item) => {
                   const isCurrent = isCurrentItem(item)
                   const title = manualTitles[item.id] ?? titles[item.id] ?? item.title
-                  const run = latestRunForSession(runs, { id: item.id, path: item.path })
+                  const run = runIndex.latest({ id: item.id, path: item.path })
                   const paneSelected = isCurrent || paneShowsSession(paneSessions, item)
                   const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
                   const status = sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt })

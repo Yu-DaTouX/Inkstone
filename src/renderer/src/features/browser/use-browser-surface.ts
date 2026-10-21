@@ -44,18 +44,37 @@ export function useBrowserBoundsSync(
     let frame = 0
     let disposed = false
 
-    const tick = (): void => {
+    const measure = (): void => {
       if (disposed) return
       const bounds = sync.sync(rectOf(el), clip ? rectOf(clip) : null)
       const visible = bounds ? bounds.width > 0 && bounds.height > 0 : false
       setInView((prev) => (prev === visible ? prev : visible))
-      frame = requestAnimationFrame(tick)
     }
-    frame = requestAnimationFrame(tick)
+    const schedule = (): void => {
+      if (disposed || frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        measure()
+      })
+    }
+
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(el)
+    if (clip) observer?.observe(clip)
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
+    window.addEventListener('transitionend', schedule, true)
+    window.addEventListener('animationend', schedule, true)
 
     return () => {
       disposed = true
-      cancelAnimationFrame(frame)
+      if (frame) cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
+      window.removeEventListener('transitionend', schedule, true)
+      window.removeEventListener('animationend', schedule, true)
       sync.reset()
     }
   }, [active, viewportRef])

@@ -87,7 +87,10 @@ export function useFilesSearch(
           }
           const result = await window.yan.searchFileNames({ ...context, requestId, query, limit: NAME_LIMIT })
           if (sequenceRef.current !== sequence) return
-          if (result.error?.code === 'superseded') return
+          if (result.error?.code === 'superseded') {
+            setState((prev) => ({ ...prev, mode, phase: 'done' }))
+            return
+          }
           const failed = nameSearchFailed(result)
           const rows = query.endsWith('/') ? nameSearchRows(result) : nameSearchRows(result).filter((row) => !row.dir)
           setState({

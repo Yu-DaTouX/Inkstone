@@ -7,9 +7,7 @@ import { foldLines } from './fold'
 import {
   byteLength,
   DIFF_LIMITS,
-  formatBytes,
-  patchExceedsHardLimit,
-  patchExceedsLimit
+  formatBytes
 } from './limits'
 import { parsePatch } from './parse'
 import { hunkSeparators, unifiedLineNumber } from './separators'
@@ -37,7 +35,7 @@ type RenderRow =
   | { kind: 'file'; key: string; file: DiffFile }
   | { kind: 'hunk'; key: string; text: string; title: string; separator: 'lines' | 'metadata'; first: boolean; last: boolean }
   | { kind: 'line'; key: string; line: DiffLine }
-  | { kind: 'gap'; key: string; gapId: string; count: number; first: boolean; last: boolean }
+  | { kind: 'gap'; key: string; gapId: string; count: number; first: boolean; last?: boolean }
   | { kind: 'split'; key: string; row: DiffSideRow }
   | { kind: 'note'; key: string; text: string }
 
@@ -71,8 +69,8 @@ export function DiffView({
 
   const parsed = useMemo(() => parsePatch(patch), [patch])
   const bytes = useMemo(() => byteLength(patch), [patch])
-  const tooLarge = patchExceedsLimit(patch, maxBytes)
-  const exceedHard = patchExceedsHardLimit(patch)
+  const tooLarge = bytes > maxBytes
+  const exceedHard = bytes > DIFF_LIMITS.hardMaxBytes
 
   const rows = useMemo(() => buildRows(parsed.files, mode, expanded, context, showFileHeader, text), [parsed, mode, expanded, context, showFileHeader, text])
   const hunkRows = useMemo(() => {
@@ -252,11 +250,12 @@ function buildRows(
           key: key('g'),
           gapId,
           count: folded.count,
-          first: rows.length === bodyStart,
-          last: false
+          first: rows.length === bodyStart
         })
       })
       flush()
+      const tail = rows[rows.length - 1]
+      if (tail?.kind === 'gap') tail.last = true
     })
   })
   return rows
@@ -316,7 +315,7 @@ function renderRow(
               {row.line.kind === 'add' ? '+' : row.line.kind === 'del' ? '−' : ' '}
             </span>
             {row.line.text === '' ? '\u00a0' : row.line.text}
-            {row.line.noNewline ? <span className="diff-view__noeol">\ No newline at end of file</span> : null}
+            {row.line.noNewline ? <span className="diff-view__noeol">{text.noNewline}</span> : null}
           </span>
           {lineSlot ? lineSlot(row.line, row.line.kind === 'del' ? 'old' : 'new') : null}
         </div>
