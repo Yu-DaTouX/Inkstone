@@ -1,28 +1,11 @@
 import { net } from 'electron'
-import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { YAN_DIR } from './paths'
 import { readAuthEntry } from './credentials'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
-import {
-  chatGptIdentity,
-  claudeUsageWindows,
-  geminiQuotaWindows,
-  mergeDuplicateCards,
-  normalizeAccountLabel,
-  normalizeAccountQuotaPrefs,
-  type AccountQuotaCard,
-  type AccountQuotaCliSource,
-  type AccountQuotaPrefs,
-  type AccountQuotaReport
-} from '../shared/account-quota'
+import { claudeUsageWindows, mergeDuplicateCards, type AccountQuotaCard, type AccountQuotaReport } from '../shared/account-quota'
 
-const PREFS_FILE = join(YAN_DIR, 'account-quota.json')
 const TIMEOUT_MS = 12_000
 const http = net.fetch.bind(net)
 
@@ -31,59 +14,6 @@ const KEY_PROVIDERS: Array<{ id: string; name: string }> = [
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'openrouter', name: 'OpenRouter' }
 ]
-
-let prefsChain: Promise<unknown> = Promise.resolve()
-
-export async function readAccountQuotaPrefs(): Promise<AccountQuotaPrefs> {
-  try {
-    return normalizeAccountQuotaPrefs(JSON.parse(await readFile(PREFS_FILE, 'utf8')))
-  } catch {
-    return normalizeAccountQuotaPrefs(undefined)
-  }
-}
-
-function updatePrefs(fn: (prefs: AccountQuotaPrefs) => void): Promise<AccountQuotaPrefs> {
-  const next = prefsChain.then(async () => {
-    const prefs = await readAccountQuotaPrefs()
-    fn(prefs)
-    await mkdir(YAN_DIR, { recursive: true })
-    const temp = `${PREFS_FILE}.${process.pid}.${randomUUID()}.tmp`
-    try {
-      await writeFile(temp, JSON.stringify(prefs, null, 2) + '\n', { encoding: 'utf8', flag: 'wx' })
-      await rename(temp, PREFS_FILE)
-    } catch (error) {
-      await unlink(temp).catch(() => undefined)
-      throw error
-    }
-    return prefs
-  })
-  prefsChain = next.catch(() => undefined)
-  return next
-}
-
-export function setAccountQuotaSource(source: AccountQuotaCliSource, enabled: boolean): Promise<AccountQuotaPrefs> {
-  return updatePrefs((prefs) => {
-    if (source in prefs.sources) prefs.sources[source] = !!enabled
-  })
-}
-
-export function setAccountLabel(key: string, label: string): Promise<AccountQuotaPrefs> {
-  return updatePrefs((prefs) => {
-    const value = normalizeAccountLabel(label)
-    if (!key) return
-    if (value) prefs.labels[key] = value
-    else delete prefs.labels[key]
-  })
-}
-
-async function readJson(file: string): Promise<Record<string, unknown> | null> {
-  try {
-    const v = JSON.parse(await readFile(file, 'utf8')) as unknown
-    return v && typeof v === 'object' ? (v as Record<string, unknown>) : null
-  } catch {
-    return null
-  }
-}
 
 async function getJson(url: string, init: RequestInit): Promise<unknown> {
   const res = await http(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) })
@@ -153,76 +83,6 @@ function claudeUsage(accessToken: string): Promise<unknown> {
   })
 }
 
-async function codexCliCard(): Promise<AccountQuotaCard | null> {
-  const home = process.env.CODEX_HOME || join(homedir(), '.codex')
-  const tokens = (await readJson(join(home, 'auth.json')))?.tokens as { access_token?: unknown; id_token?: unknown; account_id?: unknown } | undefined
-  if (typeof tokens?.access_token !== 'string') return null
-  const access = tokens.access_token
-  const id = chatGptIdentity(access, tokens.id_token, typeof tokens.account_id === 'string' ? tokens.account_id : undefined)
-  return settle({ key: id.key ?? 'codex-cli', source: 'codex-cli', provider: 'openai-codex', name: 'ChatGPT', email: id.email, plan: id.plan }, async () => {
-    if (id.expiresAt && id.expiresAt <= Date.now()) return { status: 'expired', hint: 'Codex CLI 的登录令牌已过期：在 Codex 里用一次就会刷新。' }
-    if (!id.accountId) return { status: 'error', error: '登录文件里没有 ChatGPT 账号 id' }
-    const usage = await fetchCodexUsage(access, id.accountId)
-    return { plan: usage.plan ?? id.plan, windows: usage.windows, status: usage.limited ? 'limited' : 'ok' }
-  })
-}
-
-async function claudeCodeCard(): Promise<AccountQuotaCard | null> {
-  const dir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
-  const cred = (await readJson(join(dir, '.credentials.json')))?.claudeAiOauth as
-    | { accessToken?: unknown; expiresAt?: unknown; subscriptionType?: unknown; rateLimitTier?: unknown }
-    | undefined
-  if (typeof cred?.accessToken !== 'string') return null
-  const access = cred.accessToken
-  const profile = (await readJson(join(homedir(), '.claude.json')))?.oauthAccount as { emailAddress?: unknown; accountUuid?: unknown } | undefined
-  const tier = typeof cred.rateLimitTier === 'string' ? cred.rateLimitTier.match(/max_(\d+x)/)?.[1] : undefined
-  const plan = [typeof cred.subscriptionType === 'string' ? cred.subscriptionType : '', tier].filter(Boolean).join(' ') || undefined
-  const base: CardBase = {
-    key: `claude-code:${typeof profile?.accountUuid === 'string' ? profile.accountUuid : 'default'}`,
-    source: 'claude-code',
-    provider: 'anthropic',
-    name: 'Claude',
-    email: typeof profile?.emailAddress === 'string' ? profile.emailAddress : undefined,
-    plan
-  }
-  return settle(base, async () => {
-    if (Number(cred.expiresAt) <= Date.now()) return { status: 'expired', hint: 'Claude Code 的登录令牌已过期：在终端运行一次 claude 并发一句话就会刷新。' }
-    const windows = claudeUsageWindows(await claudeUsage(access))
-    return { windows, status: limitedIf(windows) }
-  })
-}
-
-const CODE_ASSIST = 'https://cloudcode-pa.googleapis.com/v1internal'
-
-async function geminiCliCard(): Promise<AccountQuotaCard | null> {
-  const dir = join(homedir(), '.gemini')
-  const cred = await readJson(join(dir, 'oauth_creds.json'))
-  if (typeof cred?.access_token !== 'string') return null
-  const access = cred.access_token
-  const active = (await readJson(join(dir, 'google_accounts.json')))?.active
-  const email = typeof active === 'string' ? active : undefined
-  return settle({ key: `gemini-cli:${email ?? 'default'}`, source: 'gemini-cli', provider: 'gemini', name: 'Gemini', email }, async () => {
-    if (Number(cred.expiry_date) <= Date.now()) return { status: 'expired', hint: 'Gemini CLI 的登录令牌只有 1 小时有效期：运行一次 gemini 问一句就会刷新。' }
-    const headers = { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json', Accept: 'application/json' }
-    const metadata = { ideType: 'IDE_UNSPECIFIED', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' }
-    const loaded = (await getJson(`${CODE_ASSIST}:loadCodeAssist`, { method: 'POST', headers, body: JSON.stringify({ metadata }) })) as {
-      cloudaicompanionProject?: string | { id?: string }
-      currentTier?: { name?: string; id?: string }
-    }
-    const companion = loaded.cloudaicompanionProject
-    const project = typeof companion === 'string' ? companion : companion?.id
-    if (!project) return { status: 'error', error: '拿不到 Gemini Code Assist 的项目 ID' }
-    const windows = geminiQuotaWindows(await getJson(`${CODE_ASSIST}:retrieveUserQuota`, { method: 'POST', headers, body: JSON.stringify({ project }) }))
-    return { plan: loaded.currentTier?.name ?? loaded.currentTier?.id, windows, status: limitedIf(windows) }
-  })
-}
-
-const CLI_CARDS: Record<AccountQuotaCliSource, () => Promise<AccountQuotaCard | null>> = {
-  'codex-cli': codexCliCard,
-  'claude-code': claudeCodeCard,
-  'gemini-cli': geminiCliCard
-}
-
 let inflight: Promise<AccountQuotaReport> | null = null
 
 export function accountQuotaReport(): Promise<AccountQuotaReport> {
@@ -233,23 +93,13 @@ export function accountQuotaReport(): Promise<AccountQuotaReport> {
 }
 
 async function buildReport(): Promise<AccountQuotaReport> {
-  const prefs = await readAccountQuotaPrefs()
   const targets = await codexAccountTargets().catch(() => [] as CodexAccountTarget[])
   targets.sort((a, b) => Number(b.active) - Number(a.active))
-  const jobs: Array<Promise<AccountQuotaCard | null>> = [
-    ...targets.map(yanCodexCard),
-    yanClaudeCard(),
-    ...KEY_PROVIDERS.map(yanKeyCard),
-    ...(Object.keys(CLI_CARDS) as AccountQuotaCliSource[]).filter((s) => prefs.sources[s]).map((s) => CLI_CARDS[s]())
-  ]
+  const jobs: Array<Promise<AccountQuotaCard | null>> = [...targets.map(yanCodexCard), yanClaudeCard(), ...KEY_PROVIDERS.map(yanKeyCard)]
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
   const merged = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))
   const cards = await Promise.all(merged.map(withLastGood))
-  for (const card of cards) {
-    const label = prefs.labels[card.key]
-    if (label) card.label = label
-  }
-  return { cards, prefs, checkedAt: Date.now() }
+  return { cards, checkedAt: Date.now() }
 }
 
 const CARD_LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000

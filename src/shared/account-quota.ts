@@ -2,13 +2,6 @@ import type { QuotaWindow } from './ipc'
 import { WINDOW_DURATION } from './quota-forecast'
 
 export type AccountQuotaSource = 'yan' | 'codex-cli' | 'claude-code' | 'gemini-cli'
-export type AccountQuotaCliSource = Exclude<AccountQuotaSource, 'yan'>
-export const ACCOUNT_QUOTA_CLI_SOURCES: readonly AccountQuotaCliSource[] = ['codex-cli', 'claude-code', 'gemini-cli']
-
-export interface AccountQuotaPrefs {
-  sources: Record<AccountQuotaCliSource, boolean>
-  labels: Record<string, string>
-}
 
 export type AccountQuotaStatus = 'ok' | 'limited' | 'expired' | 'error'
 
@@ -34,7 +27,6 @@ export interface AccountQuotaCard {
 
 export interface AccountQuotaReport {
   cards: AccountQuotaCard[]
-  prefs: AccountQuotaPrefs
   checkedAt: number
 }
 
@@ -44,33 +36,6 @@ export interface CodexAccountView {
   plan?: string
   label?: string
   active: boolean
-}
-
-export const DEFAULT_ACCOUNT_QUOTA_PREFS: AccountQuotaPrefs = {
-  sources: { 'codex-cli': false, 'claude-code': false, 'gemini-cli': false },
-  labels: {}
-}
-
-export const ACCOUNT_LABEL_MAX = 40
-
-export function normalizeAccountLabel(raw: unknown): string {
-  return typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, ACCOUNT_LABEL_MAX) : ''
-}
-
-export function normalizeAccountQuotaPrefs(raw: unknown): AccountQuotaPrefs {
-  const src = (raw && typeof raw === 'object' ? raw : {}) as { sources?: unknown; labels?: unknown }
-  const sources = { ...DEFAULT_ACCOUNT_QUOTA_PREFS.sources }
-  if (src.sources && typeof src.sources === 'object') {
-    for (const id of ACCOUNT_QUOTA_CLI_SOURCES) sources[id] = (src.sources as Record<string, unknown>)[id] === true
-  }
-  const labels: Record<string, string> = {}
-  if (src.labels && typeof src.labels === 'object') {
-    for (const [key, value] of Object.entries(src.labels as Record<string, unknown>)) {
-      const label = normalizeAccountLabel(value)
-      if (key && label) labels[key] = label
-    }
-  }
-  return { sources, labels }
 }
 
 export function accountCardTitle(card: Pick<AccountQuotaCard, 'label' | 'email' | 'name'>): string {
