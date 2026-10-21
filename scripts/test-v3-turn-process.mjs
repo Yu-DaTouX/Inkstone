@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processTools, processNotes, mergeQuietSegments, runningTool, narrationLine, failedCount, pickLiveSegments, segmentSteps } = mod
+const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -95,21 +95,7 @@ group('只有工具（运行中）：全部进过程行，没有回复')
   ])
   ok(out.reply === null, '没有回复', out.reply)
   ok(out.process.length === 2, '工具段全部进过程行', out.process.length)
-  ok(processTools(out.process).length === 3, '过程里共 3 个工具', processTools(out.process).length)
-  ok(runningTool(processTools(out.process))?.id === 't3', '当前运行工具取最后一个未完成的', runningTool(processTools(out.process))?.id)
-}
-
-group('多段旁白：按原顺序保留，最新一句用于运行中标签')
-{
-  const out = splitTurnProcess([
-    seg('s0', { commentary: [text('c0', '第一句')], tools: [tool('t1', 'bash')] }),
-    seg('s1', { commentary: [text('c1', '第二句')], tools: [tool('t2', 'bash')] }),
-    seg('s2', { commentary: [text('c2', '第三句')] }),
-    seg('s3', { response: text('r1', '收尾') })
-  ])
-  ok(processNotes(out.process).join('|') === '第一句|第二句|第三句', '旁白顺序保留', processNotes(out.process))
-  ok(narrationLine('## 标题行\n\n第二行') === '标题行', '旁白取第一行非空并去掉标题标记', narrationLine('## 标题行\n\n第二行'))
-  ok(narrationLine('  - **加粗** `代码`  ') === '加粗 代码', '旁白去掉列表与强调符号', narrationLine('  - **加粗** `代码`  '))
+  ok(out.process[1].tools.map((call) => call.id).join() === 't2,t3', '过程段保留工具顺序', out.process[1].tools.map((call) => call.id))
 }
 
 group('回复段自身带的解说与工具：归入过程行，回复段只留正文')
@@ -134,10 +120,8 @@ group('回复之后仍有的段：原样留在 tail，不进过程行')
   ok(out.tail.length === 1 && out.tail[0].id === 's2', '回复之后的工具留在 tail', out.tail.map((s) => s.id))
 }
 
-group('失败数、正文断组与空过程（汇总文案移到 tool-run-model，见 test-tool-run-model）')
+group('正文断组与空过程（汇总文案移到 tool-run-model，见 test-tool-run-model）')
 {
-  const tools = [tool('a', 'bash'), tool('b', 'bash', 'error'), tool('c', 'read', 'error', { cancelled: true }), tool('d', 'read')]
-  ok(failedCount(tools) === 1, '失败数不计已取消的', failedCount(tools))
   const merged = mergeQuietSegments([
     seg('q0', { commentary: [text('k0', '先看')], tools: [tool('a', 'read')] }),
     seg('q1', { tools: [tool('b', 'bash')] }),

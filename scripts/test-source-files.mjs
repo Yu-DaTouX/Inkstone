@@ -15,7 +15,8 @@ export async function runSourceFilesTests(ok) {
     logLevel: 'silent'
   })
   const mod = await import(pathToFileURL(outfile).href)
-  const { addSourceFiles, listSourceFiles, removeSourceFile, readSourceFiles } = mod
+  const { addSourceFiles, readSourceFiles } = mod
+  const listSourceFiles = (sessionId) => readSourceFiles().filter((record) => record.sessionId === sessionId)
   const savedLocalStorage = globalThis.localStorage
   const store = new Map()
   globalThis.localStorage = {
@@ -41,19 +42,10 @@ export async function runSourceFilesTests(ok) {
   ok(a.filter((record) => record.path.endsWith('a1.md')).length === 1, '同一路径只有一条登记')
   ok(a.every((record) => record.sessionId === 'sess-A'), '每条记录都带会话 id（读侧才过滤得动）')
 
-  removeSourceFile('sess-A', 'C:\\work\\a1.md')
-  ok(listSourceFiles('sess-A').length === 2, '删掉 A 的一条后剩 2 条')
-  ok(!listSourceFiles('sess-A').some((record) => record.path.endsWith('a1.md')), '被删的那条不在了')
-  ok(listSourceFiles('sess-B').length === 1, '删 A 的记录不影响 B')
-  addSourceFiles('sess-A', ['C:\\work\\b1.md'])
-  removeSourceFile('sess-A', 'C:\\work\\b1.md')
-  ok(listSourceFiles('sess-B').length === 1, '删除按 (会话, 路径) 而非只按路径')
-  ok(listSourceFiles('sess-A').length === 2, 'A 里那条重名的也被删掉了')
-
   ok(listSourceFiles('').length === 0, '空会话 id 不返回任何记录')
   ok(listSourceFiles('sess-none').length === 0, '没登记过的会话返回空')
   addSourceFiles('', ['C:\\work\\x.md'])
-  ok(readSourceFiles().length === 3, '空会话 id 不写入（否则记录永远归不到任何会话）')
+  ok(readSourceFiles().length === 4, '空会话 id 不写入（否则记录永远归不到任何会话）', String(readSourceFiles().length))
 
   store.set('yan.source-files.v1', '{ 这不是 JSON')
   ok(readSourceFiles().length === 0, '坏 JSON 当空数组，不抛错')

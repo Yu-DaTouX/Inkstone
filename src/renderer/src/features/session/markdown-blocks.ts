@@ -1,4 +1,4 @@
-export interface MarkdownBlock {
+interface MarkdownBlock {
   text: string
   offset: number
 }

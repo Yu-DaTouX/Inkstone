@@ -44,7 +44,6 @@ const {
   applyPaneDrop,
   withHiddenTiles,
   sessionTiles,
-  subagentTileRef,
   toolTabOf,
   toolTileIndex,
   toolTileRef,
@@ -69,7 +68,7 @@ const B = { sessionId: 'sb', path: 'C:/p/b.jsonl', uid: 'tb' }
 const C = { sessionId: 'sc', path: 'C:/p/c.jsonl', uid: 'tc' }
 const TERM = { ...toolTileRef('terminal'), uid: 'tt' }
 const FILES = { ...toolTileRef('files'), uid: 'tf' }
-const SUB = { ...subagentTileRef('r1'), uid: 'tr' }
+const SUB = { sessionId: 'subagent:r1', uid: 'tr' }
 const order = (split) => split?.tiles.map((t) => toolTabOf(t) ?? t.sessionId).join(',')
 
 group('工具磁贴身份')

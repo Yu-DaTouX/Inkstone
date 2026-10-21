@@ -35,7 +35,7 @@ const image = (data) => ({ data, mimeType: 'image/png' })
 
 {
   const plan = await load('../src/renderer/src/features/composer/queue-plan.ts')
-  const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, planQueueClear, droppedQueueText } = plan
+  const { locateQueueItem, planQueueMove, planQueueEdit, planQueueRemove, planQueueClear } = plan
 
   const base = {
     steering: [item('s1', '插话一')],
@@ -79,13 +79,19 @@ const image = (data) => ({ data, mimeType: 'image/png' })
   ok(planQueueClear({ steering: [], followUp: [] }) === null, '空队列全部清除返回 null')
   ok(planQueueClear({ steering: [], followUp: [item('f1', '甲')] })?.steering.length === 0, '只有一类时也清空')
 
-  process.stdout.write('\n▌ queue-plan：失败回填文本\n')
-  const dropped = droppedQueueText({
-    steering: [item('s1', '甲'), item('s2', '')],
-    followUp: [item('f1', '乙')]
-  })
-  ok(dropped === '甲\n乙', '按 steering → followUp 顺序拼接，跳过空文本')
-  ok(droppedQueueText({ steering: [], followUp: [] }) === '', '空队列返回空串')
+  process.stdout.write('\n▌ queue-plan：按 id 的单条操作（A11-01 / T5-01 渲染端）\n')
+  const { planQueueOp } = plan
+  ok(planQueueOp(base, { op: 'move', id: 'f1', direction: 'down' })?.followUp.map((i) => i.id).join(',') === 'f2,f1,f3', 'move 操作等价于按 id 重排')
+  ok(planQueueOp(base, { op: 'edit', id: 'f2', text: ' 改过 ' })?.followUp[1].text === '改过', 'edit 操作等价于按 id 编辑')
+  ok(planQueueOp(base, { op: 'remove', id: 'f2' })?.followUp.map((i) => i.id).join(',') === 'f1,f3', 'remove 操作等价于按 id 删除')
+  ok(planQueueOp(base, { op: 'clear' })?.followUp.length === 0, 'clear 操作等价于清空')
+  ok(planQueueOp(base, { op: 'remove', id: 'ghost' }) === null, '单条操作命中未知 id 时不做整体重建')
+
+  const live = { steering: [], followUp: [item('f1', '排队一'), item('f2', '排队二'), item('f9', '快照之后新追加')] }
+  const afterRemove = planQueueOp(live, { op: 'remove', id: 'f2' })
+  ok(afterRemove?.followUp.map((i) => i.id).join(',') === 'f1,f9', '按当前队列执行删除，渲染快照之后追加的条目不被顺手删掉')
+  const afterMove = planQueueOp(live, { op: 'move', id: 'f1', direction: 'down' })
+  ok(afterMove?.followUp.map((i) => i.id).join(',') === 'f2,f1,f9', '按当前队列执行重排，快照之后追加的条目留在原位')
 }
 
 function makePort({ clearResults, refillFailsAt = -1 }) {
@@ -116,7 +122,7 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
 
 {
   const mod = await load('../src/main/queue-edit.ts')
-  const { applyQueueRewrite, cloneQueue } = mod
+  const { applyQueueRewrite, cloneQueue, planQueueRewrite } = mod
 
   const original = {
     steering: [item('s1', '插话', [image('img')])],
@@ -183,6 +189,49 @@ function makePort({ clearResults, refillFailsAt = -1 }) {
     ok(/恢复失败/.test(result.error ?? '') && /gone/.test(result.error ?? ''), '错误同时带上原生原因')
     ok(result.dropped?.length === 3, '恢复失败时目标内容交给渲染端回填，不丢')
     ok(result.dropped?.[0].text === '插话改', 'dropped 用目标文本（用户最后看到的）')
+  }
+
+  process.stdout.write('\n▌ queue-edit：过期快照（T5-01 重复执行）\n')
+  {
+    const live = { steering: [], followUp: [item('f2', '二')] }
+    const stale = { steering: [], followUp: [item('f1', '一'), item('f2', '二')] }
+    const { port, calls } = makePort({ clearResults: [{ success: true, steering: [], followUp: ['二'] }] })
+    const result = await applyQueueRewrite(port, live, stale)
+    ok(result.ok === true, '过期快照提交仍返回 ok（已没有可改的内容）')
+    ok(calls.clear === 0, '目标与当前队列一致时不清空 pi 队列')
+    ok(calls.refill.length === 0, '已执行的条目不再回灌（不会执行第二次）')
+    ok(calls.publish.length === 1 && calls.publish[0].followUp.map((i) => i.id).join(',') === 'f2', '只把当前队列重新发一遍，让界面追上实况')
+  }
+  {
+    const live = { steering: [], followUp: [item('f2', '二')] }
+    const stale = { steering: [], followUp: [item('f1', '一', [image('img')])] }
+    const { port, calls } = makePort({ clearResults: [{ success: true, steering: [], followUp: ['二'] }] })
+    const result = await applyQueueRewrite(port, live, stale)
+    ok(result.ok === true, '只含过期条目的删除意图照常完成')
+    ok(calls.clear === 1 && calls.refill.length === 1, '确实清空并按增量重建一次')
+    const json = JSON.stringify({ publish: calls.publish, refill: calls.refill })
+    ok(!json.includes('f1') && !json.includes('"一"'), '已执行的条目不出现在发布与重建里')
+    ok(calls.refill[0].followUp.length === 0, '当前队列被清空')
+  }
+  {
+    const notice =
+      '<subagent-notification id="s-1" status="done">\n子代理 s-1（只读）已完成：查日志\n完整过程：yan subagent get --id s-1\n这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。\n</subagent-notification>'
+    const live = { steering: [], followUp: [item('f1', '一'), item('n1', notice)] }
+    const next = { steering: [], followUp: [item('f1', '一改')] }
+    const { port, calls } = makePort({ clearResults: [{ success: true, steering: [], followUp: ['一'] }] })
+    const result = await applyQueueRewrite(port, live, next)
+    ok(result.ok === true, '编辑照常完成')
+    ok(calls.refill[0].followUp.map((i) => i.id).join(',') === 'f1,n1', '渲染端看不到的子代理通知不会被编辑顺手删掉')
+  }
+
+  process.stdout.write('\n▌ queue-edit：按 id 增量规划\n')
+  {
+    const live = { steering: [item('s1', '插话')], followUp: [item('f1', '一')] }
+    const planned = planQueueRewrite(live, { steering: [], followUp: [item('ghost', '旧'), item('f1', '一改')] })
+    ok(planned.steering.length === 0 && planned.followUp.map((i) => i.id).join(',') === 'f1', '未知 id 忽略，已知 id 沿用快照内容')
+    ok(planned.followUp[0].text === '一改', '文本编辑生效')
+    const duplicate = planQueueRewrite(live, { steering: [], followUp: [item('f1', '甲'), item('f1', '乙')] })
+    ok(duplicate.followUp.length === 1 && duplicate.followUp[0].text === '甲', '重复 id 只取第一次')
   }
 
   process.stdout.write('\n▌ queue-edit：克隆隔离\n')

@@ -15,8 +15,6 @@ export interface TodoTileModel {
   activeIndex: number
 }
 
-export type TodoTileFolds = Readonly<Record<string, boolean>>
-
 export function hasTodoTileContent(todos: readonly SessionTodo[]): boolean {
   return todos.length > 0
 }
@@ -49,11 +47,3 @@ export function buildTodoTileModel(todos: readonly SessionTodo[], agentRunning: 
   return { total: todos.length, done: todos.filter(isDone).length, rows, activeIndex }
 }
 
-export function isTodoTileFolded(folds: TodoTileFolds, sessionId: string): boolean {
-  return sessionId.length > 0 && folds[sessionId] === true
-}
-
-export function toggleTodoTileFold(folds: TodoTileFolds, sessionId: string): TodoTileFolds {
-  if (!sessionId) return folds
-  return { ...folds, [sessionId]: folds[sessionId] !== true }
-}

@@ -41,6 +41,7 @@ export default defineConfig({
           sessions: resolve('src/main/sessions.ts'),
           'office-worker': resolve('src/main/office/worker.ts'),
           'file-name-search-worker': resolve('src/main/file-name-search-worker.ts'),
+          'file-content-search-worker': resolve('src/main/file-content-search-worker.ts'),
           'zoom-math': resolve('src/main/zoom-math.ts')
         }
       }
@@ -67,7 +68,6 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html'),
-          'auxwin/mini': resolve('src/renderer/auxwin/mini.html'),
           'auxwin/pane': resolve('src/renderer/auxwin/pane.html')
         }
       }

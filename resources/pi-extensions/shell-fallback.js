@@ -20,7 +20,7 @@ function toolName(entry) {
   return ''
 }
 
-export const COMMAND_DESCRIPTION = 'What this command is for, in a few words of the user\'s language (shown to the user as the step title instead of the raw command), e.g. "查看构建日志" or "Run the unit tests".'
+const COMMAND_DESCRIPTION = 'What this command is for, in a few words of the user\'s language (shown to the user as the step title instead of the raw command), e.g. "查看构建日志" or "Run the unit tests".'
 
 export function withDescriptionParameter(parameters) {
   const plain = JSON.parse(JSON.stringify(parameters ?? { type: 'object', properties: {} }))

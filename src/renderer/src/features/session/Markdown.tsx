@@ -354,7 +354,7 @@ function hasUnclosedFence(text: string): boolean {
 const FENCE_LINE = /^\s*(```|~~~)/m
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
-function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
+const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
   const plugins = pluginsFor(highlight, math)
   const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
   return (
@@ -362,7 +362,7 @@ function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: stri
       <MarkdownBody remark={plugins.remark} rehype={rehype} text={text} />
     </MarkdownOffset.Provider>
   )
-}
+})
 
 function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[] }): JSX.Element {
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
@@ -494,12 +494,3 @@ export const Markdown = memo(function Markdown({
     </WidgetIdentityContext.Provider>
   )
 })
-
-export function PlainText({ text }: { text: string }): JSX.Element {
-  const parts = useMemo(() => text.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean), [text])
-  return (
-    <div className="v3-prose">
-      {parts.map((p, i) => <p key={i}>{p}</p>)}
-    </div>
-  )
-}

@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import zhCN from './zh-CN.json'
 import enUS from './en-US.json'
+import { readStoredLang, rememberLang, writeStoredLang, type Lang } from './lang'
 
-export const LANGS = ['zh-CN', 'en-US'] as const
-export type Lang = (typeof LANGS)[number]
+export { LANGS, currentLang, type Lang } from './lang'
 
 export type MessageKey = keyof typeof zhCN
 
@@ -38,26 +38,13 @@ interface I18nValue {
 
 const I18nContext = createContext<I18nValue | null>(null)
 
-const STORAGE_KEY = 'yan.lang'
-
-function readStoredLang(): Lang | null {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    return v && (LANGS as readonly string[]).includes(v) ? (v as Lang) : null
-  } catch {
-    return null
-  }
-}
-
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => readStoredLang() ?? 'zh-CN')
 
   useEffect(() => {
+    rememberLang(lang)
     document.documentElement.lang = lang
-    try {
-      localStorage.setItem(STORAGE_KEY, lang)
-    } catch {
-    }
+    writeStoredLang(lang)
   }, [lang])
 
   const t = useCallback<TFunc>((key, vars) => translate(lang, key, vars), [lang])

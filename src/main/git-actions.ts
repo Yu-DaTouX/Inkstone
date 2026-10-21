@@ -55,10 +55,6 @@ function withRepoLock<T>(repoId: string, fn: () => Promise<T>): Promise<T> {
   return next
 }
 
-export function clearWriteQueues(): void {
-  queues.clear()
-}
-
 export { readExpected } from './git-service'
 
 type GuardLevel = "none" | "head" | "full"
@@ -96,9 +92,10 @@ async function finish(
   repo: RepoIdentity,
   headBefore: string | null,
   summary: string,
-  extra: Partial<GitActionResult> = {}
+  extra: Partial<GitActionResult> = {},
+  withRefs = true
 ): Promise<GitActionResult> {
-  const state: GitRepoState | null = await readRepoState(repo.root).catch(() => null)
+  const state: GitRepoState | null = await readRepoState(repo.root, withRefs ? {} : { withRefs: false }).catch(() => null)
   return {
     ok: true,
     summary,
@@ -170,7 +167,7 @@ async function stageOrUnstage(
 
   return withRepoLock(repo.repoId, async () => {
 
-    const state = await readRepoState(repo.root)
+    const state = await readRepoState(repo.root, { withRefs: false })
     const headBefore = state?.head ?? null
     const hasHead = !!state?.hasCommit
     const args = request.kind === 'stage' ? buildStageArgs(paths) : buildUnstageArgs(paths, hasHead)
@@ -178,7 +175,7 @@ async function stageOrUnstage(
     if (!res.ok) return { ok: false, failure: res.failure, headBefore, headAfter: headBefore }
 
     const verb = request.kind === 'stage' ? '已暂存' : '已取消暂存'
-    return finish(repo, headBefore, summarizeFiles(verb, paths))
+    return finish(repo, headBefore, summarizeFiles(verb, paths), {}, false)
   })
 }
 
@@ -191,14 +188,14 @@ async function stageOrUnstageAll(
 
   return withRepoLock(repo.repoId, async () => {
 
-    const state = await readRepoState(repo.root)
+    const state = await readRepoState(repo.root, { withRefs: false })
     const headBefore = state?.head ?? null
     const hasHead = !!state?.hasCommit
     const args = request.kind === 'stage-all' ? buildStageAllArgs() : buildUnstageAllArgs(hasHead)
     const res = await runWrite(repo.root, args, { timeout: 60_000 })
     if (!res.ok) return { ok: false, failure: res.failure, headBefore, headAfter: headBefore }
 
-    return finish(repo, headBefore, request.kind === 'stage-all' ? '已暂存全部变更' : '已取消暂存全部变更')
+    return finish(repo, headBefore, request.kind === 'stage-all' ? '已暂存全部变更' : '已取消暂存全部变更', {}, false)
   })
 }
 
@@ -300,10 +297,17 @@ function runningFailure(kind: 'switch' | 'create'): GitFailure {
 
 async function switchDirtyFailure(root: string, branch: string): Promise<GitFailure | null> {
   const status = await readStatus(root).catch(() => null)
-  const entries = status?.entries.filter((entry) => !entry.ignored) ?? []
+  if (!status) {
+    return {
+      code: 'unknown',
+      message: '读不到仓库状态（Git 无响应或被锁），暂时不能切换分支',
+      retrySafe: true
+    }
+  }
+  const entries = status.entries.filter((entry) => !entry.ignored)
   const dirty = entries.flatMap((entry) => (entry.origPath ? [entry.path, entry.origPath] : [entry.path]))
   let targetChanged: string[] | null = null
-  if (status && dirty.length > 0) {
+  if (dirty.length > 0) {
     const target = await gitRun(root, ['rev-parse', '--verify', '--quiet', `${branch}^{commit}`], { allowFailure: true, timeout: 8000 })
     const sha = target.ok ? target.stdout.trim() : ''
     const diff = /^[0-9a-f]{40,64}$/.test(sha)
@@ -312,7 +316,7 @@ async function switchDirtyFailure(root: string, branch: string): Promise<GitFail
     targetChanged = diff?.ok ? diff.stdout.split('\0').filter(Boolean) : null
   }
   const check = checkSwitch({
-    unmerged: !status || entries.some((entry) => entry.unmerged),
+    unmerged: entries.some((entry) => entry.unmerged),
     dirty,
     targetChanged,
     caseInsensitive: process.platform === 'win32' || process.platform === 'darwin'

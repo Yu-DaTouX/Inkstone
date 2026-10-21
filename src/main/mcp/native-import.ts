@@ -205,6 +205,12 @@ export async function prepareNativeMcpImport(input: {
   if (config.id === WINDOWS_MCP_SERVER_ID) {
     throw new NativeMcpImportError('windows_mcp_preserved', 'windows-mcp 保留在砚的连接里，不导入 pi 原生')
   }
+  if (config.ownedBy === 'inkstone') {
+    throw new NativeMcpImportError(
+      'inkstone_managed',
+      `服务 ${id} 由砚托管，请改用「切换」流程；直接导入会让砚宿主与 pi 原生同时建立连接`
+    )
+  }
   if (config.enabled === false) {
     throw new NativeMcpImportError('server_disabled', `服务 ${id} 在旧配置里是停用状态，不导入 pi 原生；先启用或确认是否仍需要它`)
   }

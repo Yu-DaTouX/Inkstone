@@ -65,11 +65,11 @@ const ctx = (overrides = {}) => ({ serverFingerprint: FP_A, grants: [grant()], n
 
 const allowAsk = (tracker) => () => {
   if (tracker) tracker.calls += 1
-  return Promise.resolve('once')
+  return Promise.resolve({ choice: 'once' })
 }
 const denyAsk = (tracker) => () => {
   if (tracker) tracker.calls += 1
-  return Promise.resolve('deny')
+  return Promise.resolve({ choice: 'deny' })
 }
 const nullAsk = (tracker) => () => {
   if (tracker) tracker.calls += 1
@@ -113,7 +113,7 @@ const throwingAsk = (tracker) => () => {
   const trackerA = { calls: 0 }
   const remembered = await approveAppViewCall({ ...baseCall, annotations: safeAnnotations }, () => {
     trackerA.calls += 1
-    return Promise.resolve('remember')
+    return Promise.resolve({ choice: 'remember' })
   }, { serverFingerprint: FP_A, now: NOW })
   ok(remembered.allowed && remembered.asked, '无 grant 只读：remember 也只对本次生效')
   ok(remembered.audit.persistentGrant === false, 'remember 不写持久授权')

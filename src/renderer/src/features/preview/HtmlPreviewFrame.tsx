@@ -55,7 +55,8 @@ export function HtmlPreviewFrame({
     if (state.status !== 'loading' || !state.url) return undefined
     const current = state.url
     const timer = window.setTimeout(() => {
-      setState((value) => (value.url === current && value.status === 'loading' ? { ...value, status: 'error' } : value))
+      void window.yan.releaseHtmlArtifact(current)
+      setState((value) => (value.url === current && value.status === 'loading' ? { url: null, status: 'error' } : value))
     }, HTML_PREVIEW_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
   }, [state.status, state.url])

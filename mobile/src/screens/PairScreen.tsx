@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { KeyboardAvoidingView, Linking, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { normalizeBaseUrl, pair, pairViaRelay, RemoteHttpError, type Connection } from '../api/client'
+import { pair, pairViaRelay, RemoteHttpError, type Connection } from '../api/client'
+import { normalizeBaseUrl } from '../api/base-url'
 import type { RelayPairing } from '../api/relay'
 import { parsePairingLink, type PairingPrefill } from '../pairLink'
 import { font, icon, mono, radius, space, touch, usePalette, weight } from '../theme'

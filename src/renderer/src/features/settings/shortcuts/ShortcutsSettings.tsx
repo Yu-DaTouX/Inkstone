@@ -9,7 +9,6 @@ import {
   type ShortcutId,
   type ShortcutOverrides
 } from '../../../app/shortcuts'
-import type { AppSettings } from '../../../../../shared/ipc'
 import { shortcutText } from '../../commands/shortcut-text'
 import { Button, IconButton, Kbd, SettingRow } from '../../../ui'
 import { SettingsGroup } from '../root/controls'
@@ -51,7 +50,7 @@ export function ShortcutsSettings(): ReactElement {
 
   const persist = useCallback(
     (next: ShortcutOverrides) => {
-      void patchSettings({ shortcutOverrides: next } as unknown as Partial<AppSettings>)
+      void patchSettings({ shortcutOverrides: next })
     },
     [patchSettings]
   )

@@ -153,6 +153,17 @@ export interface RepoIdentity {
 
 const repoCache = new Map<string, { at: number; value: RepoIdentity | null; gitDirMtime: number }>()
 const REPO_TTL = 30_000
+const REPO_CACHE_LIMIT = 64
+
+function cacheRepo(dir: string, value: RepoIdentity | null, gitDirMtime: number): void {
+  repoCache.delete(dir)
+  repoCache.set(dir, { at: Date.now(), value, gitDirMtime })
+  while (repoCache.size > REPO_CACHE_LIMIT) {
+    const oldest = repoCache.keys().next().value
+    if (oldest === undefined) break
+    repoCache.delete(oldest)
+  }
+}
 
 function hashId(input: string): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 16)
@@ -179,7 +190,7 @@ export async function resolveRepo(cwd: string): Promise<RepoIdentity | null> {
     { allowFailure: true, timeout: 8000 }
   )
   if (!res.ok) {
-    repoCache.set(dir, { at: Date.now(), value: null, gitDirMtime: -1 })
+    cacheRepo(dir, null, -1)
     return null
   }
   const lines = res.stdout.trim().split(/\r?\n/)
@@ -187,7 +198,7 @@ export async function resolveRepo(cwd: string): Promise<RepoIdentity | null> {
   const gitDirRaw = lines[1]
   const commonRaw = lines[2]
   if (!rootRaw || !gitDirRaw) {
-    repoCache.set(dir, { at: Date.now(), value: null, gitDirMtime: -1 })
+    cacheRepo(dir, null, -1)
     return null
   }
   const commonDir = resolve(dir, commonRaw && commonRaw !== '.git' ? commonRaw : gitDirRaw)
@@ -205,7 +216,7 @@ export async function resolveRepo(cwd: string): Promise<RepoIdentity | null> {
     (s) => s.mtimeMs,
     () => -1
   )
-  repoCache.set(dir, { at: Date.now(), value, gitDirMtime: mtime })
+  cacheRepo(dir, value, mtime)
   return value
 }
 

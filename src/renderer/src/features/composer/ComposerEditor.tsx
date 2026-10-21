@@ -58,7 +58,7 @@ export interface ComposerEditorHandle {
   caretRect: () => CaretRect | null
 }
 
-export interface ComposerEditorProps {
+interface ComposerEditorProps {
   value: string
   cursor: number | null
   placeholder: string

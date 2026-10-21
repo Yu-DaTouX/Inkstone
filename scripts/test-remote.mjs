@@ -1,5 +1,12 @@
 export async function runRemoteServerTests(ok, { RemoteServer }) {
   const calls = []
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const http = await import('node:http')
+  const scratch = await mkdtemp(join(tmpdir(), 'yan-remote-server-test-'))
+  const bigFile = join(scratch, 'big.bin')
+  await writeFile(bigFile, Buffer.alloc(8 * 1024 * 1024, 7))
   const server = new RemoteServer({
     host: '127.0.0.1',
     port: 0,
@@ -12,6 +19,9 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
         calls.push({ action: 'history', sessionId, limit })
         if (sessionId === 'missing') return { ok: false, status: 404, error: 'not found' }
         return { ok: true, data: { sessionId, limit, messages: [{ role: 'user', text: 'hello' }] } }
+      },
+      async image() {
+        return { path: bigFile, mediaType: 'application/octet-stream', bytes: 8 * 1024 * 1024, filename: 'big.bin' }
       },
       async command(command) {
         calls.push(command)
@@ -31,6 +41,18 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     })
     return { response, body: await response.json() }
   }
+
+  const openSlowBody = (url, authHeaders) =>
+    new Promise((resolve) => {
+      const request = http.request(url, {
+        method: 'POST',
+        headers: { ...authHeaders, 'content-type': 'application/json', 'content-length': '4000' }
+      })
+      request.on('error', () => resolve(null))
+      request.on('response', (response) => response.resume())
+      request.write('{"text":"')
+      setTimeout(() => resolve(request), 60)
+    })
 
   try {
     const health = await json('/remote/v1/health')
@@ -119,14 +141,75 @@ export async function runRemoteServerTests(ok, { RemoteServer }) {
     ok(pushed.includes('event: state') && pushed.includes('"sessionId":"s-1"'), 'SSE 转发受限主进程状态事件')
 
     server.publish({ ch: 'browser-state', payload: { url: 'https://example.invalid' } })
+    const pendingRead = reader.read()
     const ignored = await Promise.race([
-      reader.read().then((result) => ({ timedOut: false, result })),
+      pendingRead.then((result) => ({ timedOut: false, result })),
       new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), 40))
     ])
     ok(ignored.timedOut === true, 'SSE 不转发桌面专属 browser-state')
 
+    server.publish({ ch: 'turn-settled', payload: { sessionId: 's-1', outcome: 'failed', runtime: 'desktop-only' } })
+    const settledFrame = new TextDecoder().decode((await pendingRead).value)
+    ok(
+      settledFrame.includes('event: turn-settled') && settledFrame.includes('"outcome":"failed"') && settledFrame.includes('"sessionId":"s-1"'),
+      'SSE 把回合失败终态推给远程客户端'
+    )
+
+    server.publish({ ch: 'agent-error', payload: { message: '服务商拒绝了模型或请求配置', text: '400: invalid_request_error', source: 'stop-reason' } })
+    const errorFrame = new TextDecoder().decode((await reader.read()).value)
+    ok(
+      errorFrame.includes('event: agent-error') && errorFrame.includes('invalid_request_error'),
+      'SSE 把模型错误原文推给远程客户端'
+    )
+
     await reader.cancel()
+
+    const slowBody = await openSlowBody(`${base}/remote/v1/sessions/s-1/messages`, headers)
+    ok(slowBody !== null, '远程服务接受未发完的请求体（慢连接已建立）')
+
+    const download = await new Promise((resolve) => {
+      const request = http.get(`${base}/remote/v1/sessions/s-1/images/m-1/0`, { headers }, (response) => resolve({ request, response }))
+      request.on('error', () => resolve({ request, response: null }))
+    })
+    ok(download.response?.statusCode === 200, '远程图片按文件流返回')
+    download.response?.pause()
+    const stopStarted = Date.now()
+    await server.stop()
+    ok(Date.now() - stopStarted < 3000, '有未读完的下载流与未发完的请求体时 stop() 三秒内返回')
+    download.request.destroy()
+    slowBody?.destroy()
   } finally {
     await server.stop()
+  }
+
+  const relayServer = new RemoteServer({
+    host: '127.0.0.1',
+    port: 0,
+    relayToken: 'test-relay-token-1234567890',
+    handlers: {
+      async snapshot() {
+        return { sessions: [] }
+      },
+      async history() {
+        return { ok: true, data: { messages: [] } }
+      },
+      async command() {
+        return { ok: true, data: {} }
+      }
+    }
+  })
+  const relayInfo = await relayServer.start()
+  const relayBase = `http://127.0.0.1:${relayInfo.port}`
+  try {
+    const auth = { authorization: `Bearer ${relayInfo.token}` }
+    const withoutRelay = await fetch(`${relayBase}/remote/v1/status`, { headers: auth })
+    const wrongRelay = await fetch(`${relayBase}/remote/v1/status`, { headers: { ...auth, 'x-yan-relay': 'wrong-token-0000000000' } })
+    const withRelay = await fetch(`${relayBase}/remote/v1/status`, { headers: { ...auth, 'x-yan-relay': 'test-relay-token-1234567890' } })
+    ok(withoutRelay.status === 403, '中继服务拒绝没经过隧道的请求')
+    ok(wrongRelay.status === 403, '中继服务拒绝中继令牌不对的请求')
+    ok(withRelay.status === 200, '中继服务接受隧道带上的中继令牌')
+  } finally {
+    await relayServer.stop()
+    await rm(scratch, { recursive: true, force: true })
   }
 }

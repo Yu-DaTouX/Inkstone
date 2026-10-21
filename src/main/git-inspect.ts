@@ -39,7 +39,9 @@ const MAX_UNTRACKED_BYTES = 1_000_000
 const BINARY_SNIFF_BYTES = 8000
 const DIFF_TIMEOUT_MS = 15_000
 const QUERY_DEADLINE_MS = 20_000
-const MAX_UNTRACKED_LINE_COUNTS = 200
+const MAX_UNTRACKED_LINE_COUNTS = 32
+const MAX_PREFILL_LINES = 2000
+const PREFILL_PATHSPEC_CHARS = 8000
 
 const READ_ENV: Record<string, string> = {
   GIT_OPTIONAL_LOCKS: '0',
@@ -312,13 +314,26 @@ async function prefillPatches(
   deadline: GitDeadline
 ): Promise<Pick<GitChangesResult, 'patches' | 'patchBudget'>> {
   const byHeader = new Map<string, string>()
+  const rootRels: string[] = []
+  let pathspecBudget = PREFILL_PATHSPEC_CHARS
   for (const file of files) {
     if (file.untracked) continue
-    byHeader.set(patchHeader(normSlashes(relative(scope.root, resolve(scope.scopeAbs, file.path)))), file.path)
+    if (rootRels.length >= PATCH_PREFILL_FILES) break
+    if ((file.added ?? 0) + (file.removed ?? 0) > MAX_PREFILL_LINES) continue
+    const rootRel = normSlashes(relative(scope.root, resolve(scope.scopeAbs, file.path)))
+    const origRel = file.origPath ? normSlashes(relative(scope.root, resolve(scope.scopeAbs, file.origPath))) : undefined
+    pathspecBudget -= rootRel.length + (origRel?.length ?? 0) + 2
+    if (pathspecBudget < 0) break
+    byHeader.set(patchHeader(rootRel), file.path)
+    rootRels.push(rootRel)
+    if (origRel) {
+      byHeader.set(patchHeader(origRel), file.path)
+      rootRels.push(origRel)
+    }
   }
   const available = new Map<string, string>()
-  if (byHeader.size > 0) {
-    const res = await gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, ...baseArgs, ...scopePathspec(scope)], readOpts(deadline))
+  if (rootRels.length > 0) {
+    const res = await gitRun(scope.root, [...READ_GLOBALS, ...safety, ...DIFF_FLAGS, ...baseArgs, '--', ...rootRels], readOpts(deadline))
     if (res.ok) {
       for (const chunk of splitPatch(res.stdout)) {
         const path = byHeader.get(chunk.slice(0, chunk.indexOf('\n')))
@@ -443,7 +458,7 @@ async function readLineTotals(
   for (const file of files) {
     const abs = resolve(scope.scopeAbs, file.path)
     if (file.untracked) {
-      if (untrackedCounted >= MAX_UNTRACKED_LINE_COUNTS) continue
+      if (untrackedCounted >= MAX_UNTRACKED_LINE_COUNTS || deadline.expired()) continue
       untrackedCounted += 1
       const lines = await countUntrackedLines(abs)
       file.added = lines

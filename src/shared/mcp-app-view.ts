@@ -52,7 +52,7 @@ export interface McpAppViewRefreshResult {
 export interface McpAppViewApi {
   prepare(callId: string): Promise<McpAppViewDescriptor>
   dispatch(instanceId: string, message: unknown): Promise<unknown>
-  release(instanceId: string): Promise<void>
+  release(instanceId: string): Promise<{ ok: boolean }>
   audit(callId: string): Promise<McpAppViewAuditEntry[]>
   snapshot(): Promise<McpAppViewSnapshot>
   refresh(): Promise<McpAppViewRefreshResult>

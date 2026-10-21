@@ -507,7 +507,7 @@ if (argv.includes('--procs')) {
   const messages = await evaluate('window.__yanStore.getState().messages.length').catch(() => null)
   const sessions = await evaluate('window.__yanStore.getState().sessions.length').catch(() => null)
   const views = await evaluate(
-    `(() => { const s = window.__yanStore.getState(); return JSON.stringify({ browserOpen: !!s.browserState?.open, terminals: (s.terminals ?? []).length, fileTabs: Object.keys(s.filePreviews ?? {}).length, subagents: (s.subagents ?? []).length }) })()`
+    `(() => { const s = window.__yanStore.getState(); return JSON.stringify({ browserOpen: !!s.browserState?.open, terminals: (s.terminals ?? []).length, subagents: (s.subagents ?? []).length }) })()`
   ).catch(() => null)
   console.error('=== 渲染端内部 ===')
   console.error(`  V8 堆 ${((heap.usedSize ?? 0) / 1048576).toFixed(1)} MiB，DOM ${dom.nodes ?? '?'} 节点，监听器 ${dom.jsEventListeners ?? '?'}`)
@@ -546,22 +546,18 @@ if (argv.includes('--verify')) {
         'scripts/test-live.mjs', 'src/main/index.ts', 'src/main/agent.ts',
         'src/shared/ipc.ts', 'src/preload/index.ts', 'src/renderer/src/state/store.ts'
       ]
-  const count = () => evaluate('Object.keys(window.__yanStore.getState().filePreviews).length')
   const before = await snapshot('before-open')
-  const opened = await count()
   for (const file of files) {
     await evaluate(`window.__yanStore.getState().previewFile(${JSON.stringify(file)}, null, ${JSON.stringify(root)}, null)`)
   }
   const after = await snapshot('after-open')
-  const afterCount = await count()
   const current = await evaluate('window.__yanStore.getState().filePreview?.path ?? null')
-  console.error(`filePreviews: 打开前 ${opened} → 打开 ${files.length} 个后 ${afterCount}（当前预览 ${current}）`)
+  console.error(`预览：依次打开 ${files.length} 个文件（当前预览 ${current}）`)
   console.error(
     `渲染端增量：堆 ${(after.heapUsedMiB - before.heapUsedMiB).toFixed(1)} MiB，` +
     `DOM ${after.domNodes - before.domNodes} 节点，监听器 ${after.jsEventListeners - before.jsEventListeners}，` +
     `树工作集 ${(after.treeWorkingSetMiB - before.treeWorkingSetMiB).toFixed(1)} MiB`
   )
-  console.error(afterCount <= Math.max(12, opened) ? '✓ 上限生效' : '✗ 上限未生效')
   const runId = 'probe-subagent-delta'
   const fullRun = {
     id: runId, task: 'probe', model: 'probe/model', status: 'running', startedAt: 1,

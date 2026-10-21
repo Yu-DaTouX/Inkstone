@@ -113,7 +113,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   let lastDraw = Number.NEGATIVE_INFINITY
   let elapsed = 0
   let closing = false
-  let exitElapsed = 0
+  let hostRect = host.getBoundingClientRect()
   let painted: Int32Array | null = null
   let paintedKey = ''
 
@@ -127,6 +127,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   const resize = (): void => {
     width = Math.max(1, host.clientWidth)
     height = Math.max(1, host.clientHeight)
+    hostRect = host.getBoundingClientRect()
     dpr = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1))
     cellPx = Math.max(1, Math.round(CELL_SIZE * dpr))
     const bw = Math.round(width * dpr)
@@ -180,7 +181,6 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   }
 
   const enterProgress = (): number => (reduced ? 1 : Math.min(1, elapsed / ENTER_MS))
-  const exitProgress = (): number => (reduced || !closing ? 0 : Math.min(1, exitElapsed / EXIT_MS))
 
   const draw = (): void => {
     if (closing) return
@@ -197,8 +197,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       mouse,
       pulses: pulses.map((p) => ({ x: p.x, y: p.y, age: (elapsed - p.at) / 1000 })),
       anchor,
-      enter: enterProgress(),
-      exit: exitProgress()
+      enter: enterProgress()
     }, frame)
     pulses = pulses.filter((p) => elapsed - p.at < 2400)
     const { alpha, glyph, accent, cols } = frame
@@ -299,19 +298,20 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     focused = false
     applyPolicy()
   }
+  const localPoint = (event: PointerEvent): MousePoint => ({ x: event.clientX - hostRect.left, y: event.clientY - hostRect.top })
   const onPointerMove = (event: PointerEvent): void => {
-    const rect = host.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
-    mouse = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height ? { x, y } : null
+    const point = localPoint(event)
+    mouse =
+      point.x >= 0 && point.y >= 0 && point.x <= hostRect.width && point.y <= hostRect.height ? point : null
   }
   const onPointerDown = (event: PointerEvent): void => {
     if (reduced || closing) return
-    const rect = host.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return
-    pulses = [...pulses.slice(-3), { x, y, at: elapsed }]
+    const point = localPoint(event)
+    if (point.x < 0 || point.y < 0 || point.x > hostRect.width || point.y > hostRect.height) return
+    pulses = [...pulses.slice(-3), { x: point.x, y: point.y, at: elapsed }]
+  }
+  const onScroll = (): void => {
+    hostRect = host.getBoundingClientRect()
   }
   const onPointerLeave = (): void => {
     mouse = null
@@ -342,6 +342,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   buildAtlas()
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   window.addEventListener('pointerdown', onPointerDown, { passive: true })
+  window.addEventListener('scroll', onScroll, { passive: true, capture: true })
   document.documentElement.addEventListener('pointerleave', onPointerLeave)
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('focus', onFocus)
@@ -361,7 +362,6 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     setClosing: (next) => {
       if (next === closing) return
       closing = next
-      exitElapsed = 0
       if (next) stop()
       else applyPolicy()
     },
@@ -375,6 +375,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('scroll', onScroll, { capture: true })
       document.documentElement.removeEventListener('pointerleave', onPointerLeave)
       unsubscribeReduced()
       darkMedia.removeEventListener('change', onTheme)

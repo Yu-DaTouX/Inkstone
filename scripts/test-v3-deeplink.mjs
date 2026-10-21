@@ -31,9 +31,7 @@ const {
   MAX_DEEPLINK_TEXT_LENGTH,
   MAX_DEEPLINK_URL_LENGTH,
   firstDeepLinkArg,
-  parseDeepLink,
-  parseDeepLinkFromArgv,
-  parseDeepLinkFromOpenUrl
+  parseDeepLink
 } = D
 
 assert.equal(DEEPLINK_SCHEME, 'inkstone')
@@ -141,10 +139,13 @@ assert.equal(firstDeepLinkArg(['--flag', 'E:\\app.exe', 'inkstone://new']), 'ink
 assert.equal(firstDeepLinkArg(['  inkstone://new  ', 'inkstone://settings']), 'inkstone://new', '去空白，取第一条')
 assert.equal(firstDeepLinkArg(['--yan-control=abc', 'file:///x']), null, '没有候选参数返回 null')
 
-assert.equal(parseDeepLinkFromArgv([]), null, '没有深链接参数返回 null，与解析失败区分')
-assert.equal(parseDeepLinkFromArgv(['inkstone://pair?x=1']).ok, false, '候选非法时如实报告解析失败')
-assert.equal(parseDeepLinkFromArgv(['--x', 'inkstone://session/s1']).link.sessionId, 's1')
-assert.equal(parseDeepLinkFromOpenUrl('inkstone://new').link.action, 'new-session', 'open-url 单串走同一解析')
+assert.equal(parseDeepLink('inkstone://new?text=a%1B%5B31m').ok, false, '解码后的控制字符不得进入预填文本')
+assert.equal(parseDeepLink('inkstone://new?text=a%1B%5B31m').reason, 'text')
+assert.equal(parseDeepLink('inkstone://new?text=a%7Fb').ok, false, 'DEL 也算控制字符')
+assert.deepEqual(parseDeepLink('inkstone://new?text=a%0Ab%09c').link, {
+  action: 'new-session',
+  text: 'a\nb\tc'
+}, '换行与制表符仍然放行')
 
 const { registerDeepLinkProtocol } = R
 const calls = []
@@ -208,20 +209,82 @@ assert.deepEqual(sent.at(-1), { action: 'settings', section: 'usage' })
 assert.equal(router.pending(), null)
 assert.equal(router.flush(), false, '没有缓存时 flush 返回 false')
 
+let loading = true
+const windowSent = []
+let stopLoadingHandlers = []
+const fakeWindow = {
+  isDestroyed: () => false,
+  webContents: {
+    isLoading: () => loading,
+    once: (event, handler) => {
+      assert.equal(event, 'did-stop-loading', '只在加载真正停下来时重投')
+      stopLoadingHandlers.push(handler)
+    },
+    send: (_channel, link) => windowSent.push(link)
+  }
+}
+const windowRouter = windowDeepLinkRouter(() => fakeWindow, () => {})
+assert.equal(windowRouter.handleOpenUrl('inkstone://session/warm'), false, '窗口还在加载时不算投递成功')
+assert.deepEqual(windowRouter.pending(), { action: 'session', sessionId: 'warm' })
+assert.equal(windowSent.length, 0, '加载中不往渲染端发')
+assert.equal(stopLoadingHandlers.length, 1, '投递失败时挂一次 did-stop-loading，加载完成后自动重投')
+assert.equal(windowRouter.flush(), false, '页面还没加载完时再 flush 仍然失败')
+assert.equal(stopLoadingHandlers.length, 1, '同一段等待里不重复挂监听')
+loading = false
+stopLoadingHandlers.shift()()
+assert.deepEqual(windowSent, [{ action: 'session', sessionId: 'warm' }], 'did-stop-loading 之后那条链接自动送到渲染端')
+assert.equal(windowRouter.pending(), null)
+assert.equal(stopLoadingHandlers.length, 0, '重投成功后不再挂着监听')
+
+loading = true
+assert.equal(windowRouter.handleOpenUrl('inkstone://settings/models'), false)
+stopLoadingHandlers.shift()()
+assert.equal(stopLoadingHandlers.length, 1, 'did-stop-loading 时页面还在加载，继续等下一轮')
+loading = false
+stopLoadingHandlers.shift()()
+assert.deepEqual(windowSent.at(-1), { action: 'settings', section: 'models' })
+assert.equal(windowRouter.pending(), null)
+
 const noWindow = windowDeepLinkRouter(() => undefined, () => {
   throw new Error('不应聚焦')
 })
 assert.equal(noWindow.handleArgv(['inkstone://new']), false)
 assert.deepEqual(noWindow.pending(), { action: 'new-session' })
+let present = false
+const lateSent = []
+const readyWindow = {
+  isDestroyed: () => false,
+  webContents: {
+    isLoading: () => false,
+    once: () => assert.fail('窗口就绪时不应再挂监听'),
+    send: (_channel, link) => lateSent.push(link)
+  }
+}
+const lateRouter = windowDeepLinkRouter(() => (present ? readyWindow : undefined), () => {})
+assert.equal(lateRouter.handleArgv(['inkstone://new']), false)
+assert.deepEqual(lateRouter.pending(), { action: 'new-session' }, '没有窗口时先留着')
+present = true
+assert.equal(lateRouter.flush(), true, '窗口就绪后再 flush 能投递')
+assert.deepEqual(lateSent, [{ action: 'new-session' }])
+assert.equal(lateRouter.pending(), null)
+
 const destroyed = windowDeepLinkRouter(
   () => ({ isDestroyed: () => true, webContents: { send: () => assert.fail('已销毁窗口不应投递') } }),
   () => {}
 )
 assert.equal(destroyed.handleArgv(['inkstone://new']), false)
+assert.deepEqual(destroyed.pending(), { action: 'new-session' }, '窗口已销毁时不会丢链接')
+assert.equal(destroyed.flush(), false)
 
 const delivered = []
 const live = windowDeepLinkRouter(
-  () => ({ isDestroyed: () => false, webContents: { send: (channel, link) => delivered.push([channel, link]) } }),
+  () => ({
+    isDestroyed: () => false,
+    webContents: {
+      isLoading: () => false,
+      send: (channel, link) => delivered.push([channel, link])
+    }
+  }),
   () => {}
 )
 assert.equal(live.handleArgv(['inkstone://new?text=hi']), true)

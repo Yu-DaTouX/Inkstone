@@ -87,11 +87,6 @@ async function main() {
     const render = (element) => renderToStaticMarkup(element)
 
     assert.deepEqual(
-      [...Model.GENERAL_SECTION_ORDER],
-      ['session', 'notifications', 'security', 'devices', 'data', 'about'],
-      '通用分区顺序按 02 §10.6'
-    )
-    assert.deepEqual(
       Model.GENERAL_LEGACY_MAP,
       { workspace: 'session', devices: 'devices', remote: 'devices', peer: 'devices', about: 'about', status: 'about' },
       '旧 openSettings 页名映射到通用分区'

@@ -5,7 +5,7 @@ import { gitRun, resolveRepo } from './git-service'
 import { createWorktree } from './git-worktree'
 import { YAN_DIR } from './paths'
 
-export const AUTO_ISOLATION_FILE_NAME = 'auto-isolation.json'
+const AUTO_ISOLATION_FILE_NAME = 'auto-isolation.json'
 const MAX_RECORDS = 500
 const MAX_TEXT = 4096
 const GIT_WRITE_TIMEOUT = 120_000
@@ -69,7 +69,7 @@ export function sanitizeAutoIsolationDocument(raw: unknown): { version: 1; recor
   return { version: 1, records: records.slice(-MAX_RECORDS) }
 }
 
-export function autoIsolationDocumentPath(root: string = YAN_DIR): string {
+function autoIsolationDocumentPath(root: string = YAN_DIR): string {
   return join(root, AUTO_ISOLATION_FILE_NAME)
 }
 
@@ -118,7 +118,7 @@ export class AutoIsolationStore {
     if (!id) return null
     await this.load()
     for (let i = this.records.length - 1; i >= 0; i -= 1) {
-      if (this.records[i].sessionId === id && existsSync(this.records[i].worktree)) return this.records[i]
+      if (this.records[i].sessionId === id) return this.records[i]
     }
     return null
   }
@@ -279,6 +279,13 @@ export async function syncIsolationBack(record: AutoIsolationRecord): Promise<Sy
       ok: false,
       action: 'blocked',
       detail: `主工作目录当前在 ${mainHead || 'detached HEAD'}，与隔离分支不构成可合并的一对`
+    }
+  }
+  if (record.baseBranch && mainHead !== record.baseBranch) {
+    return {
+      ok: false,
+      action: 'blocked',
+      detail: `主工作目录现在在 ${mainHead}，隔离基线是 ${record.baseBranch}；切回基线分支后会自动接着合回`
     }
   }
 

@@ -30,7 +30,7 @@ export function createOperationTracker(): OperationTracker {
   }
 }
 
-export interface GuardedOperationOptions<T> {
+interface GuardedOperationOptions<T> {
   tracker: OperationTracker
   isMounted: () => boolean
   setBusy: (busy: boolean) => void
@@ -56,14 +56,14 @@ export async function runGuardedOperation<T>(options: GuardedOperationOptions<T>
   }
 }
 
-export interface ConfirmedOperationOptions {
+interface ConfirmedOperationOptions {
   captureScope: () => string
   confirm: () => Promise<boolean>
   isMounted: () => boolean
   run: () => Promise<void>
 }
 
-export type ConfirmedOperationOutcome =
+type ConfirmedOperationOutcome =
   | { phase: 'cancelled' }
   | { phase: 'scope-changed' }
   | { phase: 'done' }

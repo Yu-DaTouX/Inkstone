@@ -1,6 +1,7 @@
-import { uiText } from '../../i18n/ui-text'
+import type { TFunc } from '../../i18n'
 import {
   MAX_PROMPT_LENGTH,
+  MIN_INTERVAL_MINUTES,
   normalizeTrigger,
   type ScheduledTask,
   type ScheduleTrigger
@@ -74,16 +75,24 @@ export interface ScheduleInput {
 
 export type DraftCheck = { ok: true; input: ScheduleInput } | { ok: false; code: DraftErrorCode; message: string }
 
-export function checkDraft(draft: TaskDraft): DraftCheck {
+export function checkDraft(draft: TaskDraft, t: TFunc): DraftCheck {
   const prompt = draft.prompt.trim()
-  if (!prompt) return { ok: false, code: 'needPrompt', message: 'needPrompt' }
-  if (prompt.length > MAX_PROMPT_LENGTH) return { ok: false, code: 'invalidTrigger', message: uiText('sched.promptTooLong', { max: MAX_PROMPT_LENGTH }) }
+  if (!prompt) return { ok: false, code: 'needPrompt', message: t('sched.needPrompt') }
+  if (prompt.length > MAX_PROMPT_LENGTH) return { ok: false, code: 'invalidTrigger', message: t('sched.promptTooLong', { max: MAX_PROMPT_LENGTH }) }
   if (draft.kind === 'once') {
     const at = new Date(draft.at).getTime()
-    if (!draft.at || !Number.isFinite(at) || at <= 0) return { ok: false, code: 'needAt', message: 'needAt' }
+    if (!draft.at || !Number.isFinite(at) || at <= 0) return { ok: false, code: 'needAt', message: t('sched.needAt') }
   }
   const normalized = normalizeTrigger(triggerFromDraft(draft))
-  if (!normalized.ok) return { ok: false, code: 'invalidTrigger', message: normalized.error }
+  if (!normalized.ok) {
+    const message =
+      draft.kind === 'weekly' && !draft.days.length
+        ? t('sched.needDays')
+        : draft.kind === 'interval' && draft.minutes < MIN_INTERVAL_MINUTES
+          ? t('sched.minInterval', { min: MIN_INTERVAL_MINUTES })
+          : t('sched.invalidTrigger')
+    return { ok: false, code: 'invalidTrigger', message }
+  }
   const name = draft.name.trim()
   const cwd = draft.cwd.trim()
   const model = draft.model.trim()

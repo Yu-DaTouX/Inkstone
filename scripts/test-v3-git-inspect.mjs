@@ -538,6 +538,39 @@ if (symlinkOk) {
   delete process.env.YAN_CONV_SENTINEL
 }
 
+{
+  const wide = join(workdir, 'wide')
+  mkdirSync(wide, { recursive: true })
+  git(wide, ['init', '-q', '-b', 'main'])
+  git(wide, ['config', 'user.name', 'yan-test'])
+  git(wide, ['config', 'user.email', 'yan-test@example.com'])
+  git(wide, ['config', 'core.autocrlf', 'false'])
+  writeFileSync(join(wide, 'huge.txt'), 'base\n')
+  writeFileSync(join(wide, 'small.txt'), 'a\n')
+  git(wide, ['add', '-A'])
+  git(wide, ['commit', '-q', '-m', 'init'])
+  writeFileSync(join(wide, 'huge.txt'), Array.from({ length: 4000 }, (_, index) => `line ${index}`).join('\n') + '\n')
+  writeFileSync(join(wide, 'small.txt'), 'a\nb\n')
+  for (let index = 0; index < 40; index += 1) {
+    writeFileSync(join(wide, `untracked-${String(index).padStart(2, '0')}.txt`), 'x\ny\n')
+  }
+  const wideReg = register(makeAuthorize([wide]))
+  const wideChanges = await wideReg.invoke('yan:git:changes', wide, { patches: true })
+  check('未跟踪文件行数只统计前 32 个', () => {
+    assert.equal(wideChanges.ok, true, wideChanges.error)
+    const untracked = wideChanges.files.filter((file) => file.untracked)
+    assert.equal(untracked.length, 40)
+    assert.equal(untracked.filter((file) => typeof file.added === 'number').length, 32)
+    assert.equal(untracked.filter((file) => file.added === 2).length, 32)
+  })
+  check('改动过大的文件不预取补丁，其余照常内联', () => {
+    assert.equal(wideChanges.patches['huge.txt'].state, 'deferred')
+    assert.equal(wideChanges.patches['small.txt'].state, 'inline')
+    assert.ok(wideChanges.patchBudget.deferred >= 1)
+    assert.ok(wideChanges.patchBudget.inlined >= 1)
+  })
+}
+
 check('normalizeRelPath', () => {
   assert.equal(normalizeRelPath('a/b.txt'), 'a/b.txt')
   assert.equal(normalizeRelPath('中文 及空格.txt'), '中文 及空格.txt')

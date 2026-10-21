@@ -246,6 +246,23 @@ export function runCompactionStatusTests(ok, mod, view) {
     '进行中：拿不到原因时退回短文案，不编原因'
   )
 
+  ok(
+    view.compactionElapsedText(t, { status: 'running', reason: 'threshold', startedAt: 1_000 }, 43_000) === 'ctx.compactingElapsed(42)',
+    '耗时：进行中按 startedAt 给出已用整秒'
+  )
+  ok(
+    view.compactionElapsedText(t, { status: 'running', startedAt: 1_000 }, 1_400) === null,
+    '耗时：不足 1 秒不显示，避免一闪而过的 0 秒'
+  )
+  ok(
+    view.compactionElapsedText(t, { status: 'completed', startedAt: 1_000 }, 42_900) === null,
+    '耗时：已结束不再显示（结束时改看回收结果）'
+  )
+  ok(
+    view.compactionElapsedText(t, { status: 'running' }, 42_900) === null,
+    '耗时：上游没给 startedAt 时不编耗时'
+  )
+
   ok(view.compactionTokensText({ status: 'completed', beforeTokens: 1596, afterTokens: 160, afterMeasured: true }) === '1.6k → 160', 'token 段：1.6k → 160')
   ok(view.compactionTokensText({ status: 'completed', beforeTokens: 160000, afterTokens: 20000, afterMeasured: true }) === '160k → 20k', 'token 段：大于 10k 不再保留一位小数')
   ok(view.compactionTokensText({ status: 'completed', beforeTokens: 800, afterTokens: 300, afterMeasured: true }) === '800 → 300', 'token 段：小于 1000 用原数')

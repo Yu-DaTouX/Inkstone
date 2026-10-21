@@ -69,6 +69,12 @@
   log('=== yan mcp describe / call（宿主链路 + 真 MCP 服务，cost 0）===')
 
   try {
+    const previousMode = store.getState().settings?.permissionMode
+    if (previousMode !== 'all') await store.getState().patchSettings({ permissionMode: 'all' })
+    const mode = store.getState().settings?.permissionMode
+    log(`  权限档：${previousMode} → ${mode}（本场景只验 CLI 契约，审批卡由 capmcp / permissions 验收）`)
+    if (!ok(mode === 'all', '已切到「不受限制」档，yan mcp call 不再弹审批卡', String(mode))) return out.join('\n')
+
     let ready = false
     for (let i = 0; i < 60; i++) {
       if (store.getState().conn === 'ready') {

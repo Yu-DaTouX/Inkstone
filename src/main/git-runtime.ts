@@ -92,22 +92,35 @@ function stripApplied(): void {
   applied = []
 }
 
-export async function refreshManagedGit(root = MANAGED_GIT_ROOT): Promise<{ git: boolean; bash: boolean }> {
-  if (process.platform !== 'win32') return { git: true, bash: true }
-  stripApplied()
-  const paths = managedGitPaths(root)
-  const systemGit = !!findSystemGit()
-  const systemBash = !!(await findSystemBash())
-  if (paths) {
-    const dirs: string[] = []
-    if (!systemGit) dirs.push(paths.cmdDir)
-    if (!systemBash && !hasNonAscii(paths.binDir)) dirs.push(paths.binDir)
-    if (dirs.length) {
-      writePath([...dirs, ...pathEntries()])
-      applied = dirs
+let pathQueue: Promise<unknown> = Promise.resolve()
+
+function withPathLock<T>(run: () => Promise<T>): Promise<T> {
+  const next = pathQueue.then(run, run)
+  pathQueue = next.then(
+    () => undefined,
+    () => undefined
+  )
+  return next
+}
+
+export function refreshManagedGit(root = MANAGED_GIT_ROOT): Promise<{ git: boolean; bash: boolean }> {
+  return withPathLock(async () => {
+    if (process.platform !== 'win32') return { git: true, bash: true }
+    stripApplied()
+    const paths = managedGitPaths(root)
+    const systemGit = !!findSystemGit()
+    const systemBash = !!(await findSystemBash())
+    if (paths) {
+      const dirs: string[] = []
+      if (!systemGit) dirs.push(paths.cmdDir)
+      if (!systemBash && !hasNonAscii(paths.binDir)) dirs.push(paths.binDir)
+      if (dirs.length) {
+        writePath([...dirs, ...pathEntries()])
+        applied = dirs
+      }
     }
-  }
-  return { git: systemGit || (!!paths && applied.includes(paths.cmdDir)), bash: systemBash || (!!paths && applied.includes(paths.binDir)) }
+    return { git: systemGit || (!!paths && applied.includes(paths.cmdDir)), bash: systemBash || (!!paths && applied.includes(paths.binDir)) }
+  })
 }
 
 export async function hasBash(): Promise<boolean> {
@@ -115,33 +128,35 @@ export async function hasBash(): Promise<boolean> {
   return !!(await findSystemBash()) || applied.some((dir) => existsSync(join(dir, 'bash.exe')))
 }
 
-export async function gitRuntimeStatus(): Promise<GitRuntimeStatus> {
-  const supported = process.platform === 'win32'
-  const keep = applied
-  if (supported) stripApplied()
-  const systemGit = supported ? !!findSystemGit() : true
-  const systemBash = supported ? !!(await findSystemBash()) : true
-  if (supported && keep.length) {
-    writePath([...keep, ...pathEntries()])
-    applied = keep
-  }
-  const installed = managedGitPaths() !== null
-  let managedVersion: string | undefined
-  if (installed) {
-    try {
-      managedVersion = JSON.parse(await readFile(join(MANAGED_GIT_ROOT, 'install.json'), 'utf8')).version
-    } catch {
+export function gitRuntimeStatus(): Promise<GitRuntimeStatus> {
+  return withPathLock(async () => {
+    const supported = process.platform === 'win32'
+    const keep = applied
+    if (supported) stripApplied()
+    const systemGit = supported ? !!findSystemGit() : true
+    const systemBash = supported ? !!(await findSystemBash()) : true
+    if (supported && keep.length) {
+      writePath([...keep, ...pathEntries()])
+      applied = keep
     }
-  }
-  return {
-    supported,
-    systemGit,
-    systemBash,
-    managedInstalled: installed,
-    ...(managedVersion ? { managedVersion } : {}),
-    installing: installing !== null,
-    downloadSize: GIT_RUNTIME_PIN.size
-  }
+    const installed = managedGitPaths() !== null
+    let managedVersion: string | undefined
+    if (installed) {
+      try {
+        managedVersion = JSON.parse(await readFile(join(MANAGED_GIT_ROOT, 'install.json'), 'utf8')).version
+      } catch {
+      }
+    }
+    return {
+      supported,
+      systemGit,
+      systemBash,
+      managedInstalled: installed,
+      ...(managedVersion ? { managedVersion } : {}),
+      installing: installing !== null,
+      downloadSize: GIT_RUNTIME_PIN.size
+    }
+  })
 }
 
 export interface InstallOptions {

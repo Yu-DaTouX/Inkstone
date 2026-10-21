@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { FileText, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -84,7 +84,7 @@ export function ImageRefWarning({ text }: { text: string }) {
   const t = useT()
   const { lang } = useI18n()
   const imageCount = useStore((s) => s.attachments.filter((a) => a.kind !== 'file').length)
-  const { missing, removed } = brokenImageRefs(text, imageCount)
+  const { missing, removed } = useMemo(() => brokenImageRefs(text, imageCount), [text, imageCount])
   if (missing.length === 0 && removed === 0) return null
   const prefix = imageRefPrefix(lang)
   const labels = [...missing.map((n) => `@${imageRefLabel(prefix, n)}`), ...(removed ? [`@${prefix}?`] : [])]

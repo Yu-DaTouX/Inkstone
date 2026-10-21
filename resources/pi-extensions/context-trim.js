@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 export const DEFAULT_TRIM_TOKENS = 80_000
@@ -14,18 +14,29 @@ const MIN_BATCH_CONTEXT_RATIO = 0.2
 const CAPACITY_PRESSURE_RATIO = 0.8
 const MIN_PRESSURE_THRESHOLD_RATIO = 0.1
 const MIN_PRESSURE_CONTEXT_RATIO = 0.05
-export const CACHE_COLD_MS = 5 * 60 * 1000
+const CACHE_COLD_MS = 5 * 60 * 1000
+const COMPACT_WATCHDOG_MS = 180_000
 const RETRY_GROWTH = 1.2
 const KEEP_TURNS = 3
 const KEEP_TOOL_GROUPS = 3
 const KEEP_RECENT_TOOL_RESULTS = 8
 const KEEP_RECENT_TOOL_TOKENS = 20_000
+const SPILL_KEEP_MS = 7 * 24 * 60 * 60 * 1000
 const MIN_TRIM_CHARS = 1_500
 const MIN_INPUT_TRIM_CHARS = 1_000
 const INPUT_TRIM_TOOLS = new Set(['write', 'edit'])
 const IMAGE_TOKENS = 2_800
 
-export function piCompactionEnabled() {
+function compactWatchdogMs() {
+  const raw = Number(process.env.YAN_COMPACT_WATCHDOG_MS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : COMPACT_WATCHDOG_MS
+}
+
+function yanDataDir() {
+  return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
+}
+
+function piCompactionEnabled() {
   try {
     const dir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
     return JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))?.compaction?.enabled !== false
@@ -37,8 +48,7 @@ export function piCompactionEnabled() {
 export function readContextSettings() {
   const compact = piCompactionEnabled()
   try {
-    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
-    const s = JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))
+    const s = JSON.parse(readFileSync(join(yanDataDir(), 'desktop.json'), 'utf8'))
     const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : d)
     return {
       trim: s?.contextTrim !== false,
@@ -93,16 +103,42 @@ function isSkillRead(call) {
   return call?.name === 'read' && /(^|[\\/])SKILL\.md$/i.test(path)
 }
 
-export function stubText(call, size, path) {
+function stubText(call, size, path) {
   const head = `[Earlier tool output trimmed to save context: ${describeCall(call)}`
   if (size.images) return `${head}, ${size.images} image${size.images > 1 ? 's' : ''}. Re-read the source if you need it again.]`
   if (path) return `${head}, ~${size.tokens} tokens. Full output: ${path} (read it with offset/limit instead of re-running the call).]`
   return `${head}, ~${size.tokens} tokens. Re-run the call or read the source if you need it again.]`
 }
 
-export function spillDir(sessionId) {
+function spillRoot() {
+  return join(yanDataDir(), 'trimmed')
+}
+
+function spillKey(sessionId) {
   const key = String(sessionId ?? '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
-  return join(tmpdir(), 'inkstone-trimmed', key === '.' || key === '..' ? 'session' : key)
+  return key === '.' || key === '..' ? 'session' : key
+}
+
+export function spillDir(sessionId) {
+  return join(spillRoot(), spillKey(sessionId))
+}
+
+function sweepSpills(ownName) {
+  let entries
+  try {
+    entries = readdirSync(spillRoot())
+  } catch {
+    return
+  }
+  const now = Date.now()
+  for (const name of entries) {
+    if (!name || name === ownName) continue
+    const path = join(spillRoot(), name)
+    try {
+      if (now - statSync(path).mtimeMs > SPILL_KEEP_MS) rmSync(path, { recursive: true, force: true })
+    } catch {
+    }
+  }
 }
 
 export function spillText(message) {
@@ -120,7 +156,7 @@ export function createSpiller(dirFor) {
     try {
       if (!existsSync(path)) {
         mkdirSync(dirname(path), { recursive: true })
-        writeFileSync(path, spillText(message), 'utf8')
+        writeFileSync(path, spillText(message), { encoding: 'utf8', mode: 0o600 })
       }
       paths.set(id, path)
       return path
@@ -136,7 +172,7 @@ export function createSpiller(dirFor) {
 const inputKey = (id) => `input:${id}`
 const baseId = (key) => (String(key).startsWith('input:') ? String(key).slice(6) : key)
 
-export function trimmedInput(call) {
+function trimmedInput(call) {
   const args = call?.arguments ?? {}
   const path = args.path ?? args.file_path
   const what = call?.name === 'write'
@@ -170,13 +206,25 @@ function toolGroups(messages) {
   const groups = new Map()
   const results = new Set(messages.filter(m => m?.role === 'toolResult').map(m => m.toolCallId))
   let turn = []
-  const protect = () => { for (const group of turn.slice(-KEEP_TOOL_GROUPS)) group.recent = true }
+  const protect = () => {
+    let budget = KEEP_RECENT_TOOL_TOKENS
+    for (let i = turn.length - 1, kept = 0; i >= 0 && kept < KEEP_TOOL_GROUPS; i--, kept += 1) {
+      const group = turn[i]
+      if (kept > 0 && budget <= 0) break
+      group.recent = true
+      for (const result of group.results) budget -= outputSize(result).tokens
+    }
+  }
   for (const message of messages) {
     if (message?.role === 'user') { protect(); turn = [] }
+    if (message?.role === 'toolResult') {
+      groups.get(message.toolCallId)?.results.push(message)
+      continue
+    }
     if (message?.role !== 'assistant') continue
     const calls = (message.content ?? []).filter(part => part?.type === 'toolCall')
     if (!calls.length) continue
-    const group = { complete: calls.every(call => results.has(call.id)), recent: false }
+    const group = { complete: calls.every(call => results.has(call.id)), recent: false, results: [] }
     turn.push(group)
     for (const call of calls) groups.set(call.id, group)
   }
@@ -315,6 +363,8 @@ export default function contextTrimExtension(pi) {
   const resetTrim = () => {
     trimmed.clear()
     spill.reset()
+    if (sessionId) rmSync(spillDir(sessionId), { recursive: true, force: true })
+    sweepSpills(sessionId ? spillKey(sessionId) : undefined)
     lastResponse = undefined
     requestSavings = 0
     projectionBoundary = undefined
@@ -375,13 +425,17 @@ export default function contextTrimExtension(pi) {
     if (holdUntil !== undefined && usage.tokens < holdUntil) return
     compacting = true
     const tokens = usage.tokens
+    const watchdog = setTimeout(() => { compacting = false }, compactWatchdogMs())
+    watchdog.unref?.()
     const done = () => {
+      clearTimeout(watchdog)
       compacting = false
       holdUntil = undefined
       justCompacted = true
       resetTrim()
     }
     const failed = () => {
+      clearTimeout(watchdog)
       compacting = false
       holdUntil = tokens * RETRY_GROWTH
     }

@@ -73,7 +73,7 @@ function revealWithin(container: HTMLElement | null, index: number, center: bool
   }
 }
 
-export interface OutlineRailProps {
+interface OutlineRailProps {
   messages: UIMessage[]
   streamingId?: string
   onJump: (index: number) => void

@@ -1,4 +1,4 @@
-import { execFileSync, fork, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, fork, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -101,14 +101,56 @@ function alive(child: ChildProcess | null): child is ChildProcess {
   return !!child && child.exitCode === null && child.signalCode === null
 }
 
-function killTree(child: ChildProcess): void {
-  if (!child.pid) return
-  try {
-    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-    else process.kill(-child.pid, 'SIGTERM')
-  } catch {
-    child.kill()
+function killTree(child: ChildProcess): Promise<void> {
+  if (!child.pid) return Promise.resolve()
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {
+        if (alive(child)) {
+          try {
+            child.kill()
+          } catch {
+          }
+        }
+        resolve()
+      })
+    })
   }
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch {
+    try {
+      child.kill()
+    } catch {
+    }
+  }
+  return Promise.resolve()
+}
+
+const PET_ENV_KEYS = [
+  'PATH',
+  'PATHEXT',
+  'SystemRoot',
+  'windir',
+  'ComSpec',
+  'TEMP',
+  'TMP',
+  'USERPROFILE',
+  'HOME',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'LANG',
+  'LC_ALL'
+] as const
+
+export function desktopPetEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const key of PET_ENV_KEYS) {
+    const value = source[key]
+    if (typeof value === 'string' && value) env[key] = value
+  }
+  return env
 }
 
 export async function desktopPetStatus(): Promise<DesktopPetStatus> {
@@ -242,16 +284,13 @@ async function launch(): Promise<DesktopPetResult> {
   const state = await readState()
   await mkdir(HOME, { recursive: true })
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...desktopPetEnv(process.env),
     ELECTRON_RUN_AS_NODE: '1',
     YAN_PET_ENTRY: ENTRY,
     DSH_HOME: HOME,
     YAN_PET_MODEL: state.model ? '1' : '0',
     YAN_PET_MODEL_LABEL: state.model ?? ''
   }
-  delete env.YAN_REMOTE_TOKEN
-  delete env.ELECTRON_NO_ATTACH_CONSOLE
-  delete env.ELECTRON_FORCE_IS_PACKAGED
   const child = fork(runnerPath, [], {
     execPath: process.execPath,
     cwd: YAN_DIR,
@@ -266,8 +305,9 @@ async function launch(): Promise<DesktopPetResult> {
   child.stderr?.on('data', (chunk: string) => logLine(chunk))
   child.on('message', (raw: unknown) => {
     const message = (raw && typeof raw === 'object' ? raw : {}) as RunnerMessage
-    if (message.type === 'llm') void answerReply(child, message)
-    else if (message.type === 'llm-cancel') {
+    if (message.type === 'llm') {
+      void answerReply(child, message).catch((error) => logLine(`[inkstone] 桌宠回复失败：${error instanceof Error ? error.message : String(error)}`))
+    } else if (message.type === 'llm-cancel') {
       const rpc = replies.get(Number(message.id))
       if (rpc) void rpc.close()
     } else if (message.type === 'open-app') deps?.showMainWindow()
@@ -284,7 +324,7 @@ async function launch(): Promise<DesktopPetResult> {
       clearTimeout(timer)
       child.off('message', onMessage)
       child.off('exit', onExit)
-      if (!ok && alive(child)) killTree(child)
+      if (!ok && alive(child)) void killTree(child)
       void result(ok, error).then(resolve)
     }
     const onMessage = (raw: unknown): void => {
@@ -330,8 +370,7 @@ export async function stopDesktopPet(): Promise<DesktopPetResult> {
   if (!alive(child)) return result(true)
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      killTree(child)
-      resolve()
+      void killTree(child).then(resolve)
     }, STOP_TIMEOUT_MS)
     child.once('exit', () => {
       clearTimeout(timer)
@@ -341,8 +380,7 @@ export async function stopDesktopPet(): Promise<DesktopPetResult> {
       child.send({ type: 'stop' })
     } catch {
       clearTimeout(timer)
-      killTree(child)
-      resolve()
+      void killTree(child).then(resolve)
     }
   })
   runner = null
@@ -355,7 +393,7 @@ export function stopDesktopPetSync(): void {
   runner = null
   for (const rpc of replies.values()) void rpc.close()
   replies.clear()
-  if (alive(child)) killTree(child)
+  if (alive(child)) void killTree(child)
 }
 
 function runNpmInstall(npm: string): Promise<{ ok: boolean; output: string }> {
@@ -385,7 +423,7 @@ function runNpmInstall(npm: string): Promise<{ ok: boolean; output: string }> {
       return
     }
     const timer = setTimeout(() => {
-      killTree(child)
+      void killTree(child)
       output += '\n安装超时'
     }, INSTALL_TIMEOUT_MS)
     child.stdout?.on('data', keep)

@@ -3,7 +3,7 @@ import type { AppSettings } from '../../shared/ipc'
 import type { AgentController } from '../agent'
 import type { RunnerRegistry, McpHolderSnapshot } from '../runners'
 import { PI_AGENT_DIR } from '../paths'
-import { loadMcpServers, mcpServersForProject } from '../mcp/config'
+import { loadMcpServersCached, mcpServersForProject } from '../mcp/config'
 import { mcpAppHost } from '../mcp/app-host'
 import { createNativeMcpPresenceVerifier } from '../mcp/native-verify'
 import {
@@ -18,8 +18,10 @@ import {
   sameNativeMcpImportRuntime,
   type NativeMcpImportRuntimeIdentity
 } from '../mcp/native-import'
-import { mayHoldMcpApp, mayHoldMcpAppWithLegacy } from '../mcp/app-runtime-ownership'
+import { mayHoldMcpApp, mayHoldMcpAppWithLegacy, mcpAppHolderNames, witnessProvesAbsent } from '../mcp/app-runtime-ownership'
+import { verifyNativeStartupWitness } from '../mcp/app-native-witness'
 import type { McpAppSwitchHolder } from '../../shared/mcp-app-switch'
+import type { McpAppServerConfig } from '../mcp/app-spec'
 
 export { mayHoldMcpApp, mayHoldMcpAppWithLegacy }
 
@@ -66,13 +68,24 @@ export async function mcpAppHoldersFor(
   } catch {
     throw new McpAppSwitchError('holders_unavailable', '读取运行实例快照失败，无法确认持有情况')
   }
-  return snapshots
-    .filter((snapshot) => mayHoldMcpAppWithLegacy(snapshot, server))
-    .map((snapshot) => ({
-      runnerId: snapshot.runnerId,
-      generation: snapshot.generation,
-      busy: snapshot.busy
-    }))
+  let config: McpAppServerConfig | undefined
+  try {
+    config = loadMcpServersCached().servers.find((entry) => entry.id === server.serverId)
+  } catch {
+    config = undefined
+  }
+  const names = mcpAppHolderNames(server.serverId, config)
+  const holders: McpAppSwitchHolder[] = []
+  for (const snapshot of snapshots) {
+    if (!mayHoldMcpAppWithLegacy(snapshot, server)) continue
+    const witness = snapshot.nativeWitness ?? null
+    if (witness && witnessProvesAbsent({ witness, snapshot, names }).proven) {
+      const verified = await verifyNativeStartupWitness(witness).catch(() => ({ ok: false }))
+      if (verified.ok) continue
+    }
+    holders.push({ runnerId: snapshot.runnerId, generation: snapshot.generation, busy: snapshot.busy })
+  }
+  return holders
 }
 
 function makeHoldersProvider(deps: McpAppIpcDeps): McpAppSwitchHolderProvider {
@@ -115,7 +128,7 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
   const { currentAgent, registry, settings } = deps
 
   handle('yan:mcpApp:ownership', async () => {
-    const loaded = loadMcpServers()
+    const loaded = loadMcpServersCached()
     if (loaded.error) return { servers: [], error: `砚的 MCP 配置存在解析问题：${loaded.error}` }
     const agent = currentAgent()
     const projectId = agent?.capabilityProjectId ?? undefined
@@ -153,7 +166,7 @@ export function registerMcpAppIpc(ipc: IpcRegistrar, deps: McpAppIpcDeps): void 
     const runner = registryNow?.activeRunner()
     const runtime = runner ? registryNow?.runtimeOf(runner.id) : null
     if (!runner || !runtime) return { ok: false, code: 'no_runner', error: '当前没有可用的运行实例' }
-    const loaded = loadMcpServers()
+    const loaded = loadMcpServersCached()
     if (loaded.error) return { ok: false, code: 'host_config_invalid', error: `砚的 MCP 配置存在解析问题：${loaded.error}` }
     const agent = currentAgent()
     if (!agent) return { ok: false, code: 'no_runner', error: '当前没有可用的运行实例' }

@@ -5,7 +5,7 @@ function messageText(content) {
   return content.filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n')
 }
 
-export function labelImageContent(content) {
+function labelImageContent(content) {
   if (!Array.isArray(content)) return null
   const imageCount = content.filter((part) => part?.type === 'image').length
   if (imageCount === 0) return null
@@ -24,7 +24,7 @@ export function labelImageContent(content) {
   return labeled
 }
 
-export function labelImageMessages(messages) {
+function labelImageMessages(messages) {
   if (!Array.isArray(messages)) return null
   let changed = false
   const next = messages.map((message) => {

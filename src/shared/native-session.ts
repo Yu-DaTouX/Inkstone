@@ -1,5 +1,4 @@
-export const NATIVE_SESSION_MODES = ['tree', 'scoped-models', 'trust'] as const
-export type NativeSessionMode = (typeof NATIVE_SESSION_MODES)[number]
+export type NativeSessionMode = 'tree' | 'scoped-models' | 'trust'
 
 export const NATIVE_TREE_MAX_DEPTH = 64
 export const NATIVE_TREE_MAX_ROWS = 2000
@@ -298,14 +297,6 @@ export function buildTreeView(
   return { rows, activePath, leafId, stats }
 }
 
-export function moveTreeSelection(rows: readonly NativeTreeRow[], selectedId: string | null, delta: number): string | null {
-  if (!rows.length) return null
-  const index = rows.findIndex((row) => row.entryId === selectedId)
-  if (index < 0) return delta >= 0 ? rows[0].entryId : rows[rows.length - 1].entryId
-  const next = Math.max(0, Math.min(rows.length - 1, index + delta))
-  return rows[next].entryId
-}
-
 export interface NativeScopedModel {
   provider: string
   id: string
@@ -316,63 +307,9 @@ export interface NativeScopedModel {
   current: boolean
 }
 
-export interface NativeScopedModelsState {
-  models: NativeScopedModel[]
-  scopeIsAll: boolean
-}
-
 export function nativeModelKey(model: Pick<NativeScopedModel, 'provider' | 'id'>): string {
   return `${model.provider}/${model.id}`
 }
-
-export function parseNativeModelKey(key: string): { provider: string; id: string } | null {
-  const at = key.indexOf('/')
-  if (at <= 0 || at === key.length - 1) return null
-  return { provider: key.slice(0, at), id: key.slice(at + 1) }
-}
-
-export function scopeSelection(models: NativeScopedModel[]): string[] {
-  return models.filter((model) => model.inScope).map(nativeModelKey)
-}
-
-export function toggleScopeModel(models: NativeScopedModel[], key: string): NativeScopedModel[] {
-  return models.map((model) => (nativeModelKey(model) === key ? { ...model, inScope: !model.inScope } : model))
-}
-
-export interface NativeTreeLoad {
-  ok: true
-  mode: 'tree'
-  tree: NativeTreeNode[]
-  leafId: string | null
-}
-
-export interface NativeScopedModelsLoad {
-  ok: true
-  mode: 'scoped-models'
-  models: NativeScopedModel[]
-  scopeIsAll: boolean
-}
-
-export interface NativeTrustLoad {
-  ok: true
-  mode: 'trust'
-  cwd: string
-  trusted: boolean
-  entry: string | null
-  requiresTrust: boolean
-}
-
-export interface NativeLoadFailure {
-  ok: false
-  mode: NativeSessionMode
-  error: string
-}
-
-export type NativeSessionLoadResult =
-  | NativeTreeLoad
-  | NativeScopedModelsLoad
-  | NativeTrustLoad
-  | NativeLoadFailure
 
 export type NativeSessionActionName = 'navigate' | 'set-scoped-models' | 'set-trust'
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -61,6 +61,19 @@ export async function runRepeatGuardTests(ok) {
     ok(typeof blocked.reason === 'string' && blocked.reason.includes('repeat guard'), '拦下带 reason（模型要能看懂为什么）')
     ok((await readCounter())?.blocks === 1, '拦下时累计计数 +1（宿主读这个文件）')
     ok((await readCounter())?.tool === 'bash', '计数文件里带上工具名（排障用）')
+    ok(typeof handlers.session_start === 'function', '会话开始时要清理本会话的拦截计数')
+    handlers.session_start({})
+    ok((await readCounter()) === null, '新会话开始只删本会话自己的计数文件')
+    const counterDir = join(root, 'repeat-guard')
+    const oldOther = join(counterDir, 'old-session.json')
+    const freshOther = join(counterDir, 'other-session.json')
+    await writeFile(oldOther, '{"blocks":3}')
+    await writeFile(freshOther, '{"blocks":1}')
+    const longAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000)
+    await utimes(oldOther, longAgo, longAgo)
+    handlers.session_start({})
+    ok(!(await readFile(oldOther, 'utf8').then(() => true, () => false)), '超过一周的其它会话计数文件会被清掉，不让目录无界累积')
+    ok((await readFile(freshOther, 'utf8')).includes('blocks'), '还在有效期内的其它会话计数文件不动')
 
     await rm(counterFile, { force: true })
     await rm(logFile, { force: true })

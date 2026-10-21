@@ -428,6 +428,12 @@ export interface QueueState {
   followUp: QueueItem[]
 }
 
+export type QueueEditOp =
+  | { op: 'move'; id: string; direction: 'up' | 'down' }
+  | { op: 'edit'; id: string; text: string }
+  | { op: 'remove'; id: string }
+  | { op: 'clear' }
+
 export interface QueueSnapshot {
   steering: string[]
   followUp: string[]
@@ -482,7 +488,6 @@ export interface SessionSummary {
   messageCount: number
   model?: string
   projectId?: string
-  spaceId?: string
   scope?: SessionScope
   lastOpenedAt?: number
   archivedAt?: number
@@ -506,7 +511,6 @@ export interface SessionLayoutEntry {
   cwd: string
   scope: SessionScope
   projectId?: string
-  spaceId?: string
   projectCandidates?: string[]
   createdAt: number
   updatedAt: number
@@ -858,7 +862,6 @@ export interface BrowserState {
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   permissions?: BrowserPermissionRecord[]
   blockedRequests?: BrowserBlockedRequest[]
-  nativeBounds?: BrowserBounds
   mode?: 'embedded' | 'external'
   loadError?: BrowserLoadFailure
   external?: BrowserExternalState
@@ -924,7 +927,6 @@ export interface BrowserObservation {
     frameUrl?: string
   }>
   accessibilityNodeCount: number
-  domSnapshotCaptured: boolean
   frameCount?: number
   observedFrameCount?: number
 }
@@ -1012,6 +1014,13 @@ export type SubagentEndReason = 'completed' | 'timeout' | 'budget' | 'model-erro
 export type { SubagentBrief, SubagentResult } from './subagent-brief'
 import type { SubagentBrief, SubagentResult } from './subagent-brief'
 
+export interface SubagentStopResult {
+  ok: boolean
+  error?: string
+  noop?: boolean
+  before?: SubagentRun['status']
+}
+
 export interface SubagentRun {
   id: string
   task: string
@@ -1070,7 +1079,7 @@ export interface SubagentBridge {
     isolation?: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     expectedRuntime?: ExpectedRuntimeOwner
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }>
-  stop(id: string): Promise<{ ok: boolean; error?: string }>
+  stop(id: string): Promise<SubagentStopResult>
   send(id: string, message: string): Promise<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>
   dismiss(id: string): Promise<{ ok: boolean; error?: string }>
   stopAll(): Promise<void>
@@ -1081,13 +1090,20 @@ export interface SubagentBridge {
 
 export type BrowserSiteAddResult = 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'
 
+export interface SessionSyncDelta {
+  anchorId: string
+  anchorIndex: number
+  anchorSignature: string
+  messages: UIMessage[]
+}
+
 export type MainPushBody =
   | { ch: 'browser-site-ask'; payload: { id: string; origin: string; url: string } }
   | { ch: 'sync'; payload: UIMessage[] }
+  | { ch: 'sync-delta'; payload: SessionSyncDelta }
   | { ch: 'msg-add'; payload: UIMessage }
   | { ch: 'msg-update'; payload: { id: string; patch: MessagePatch } }
   | { ch: 'artifact'; payload: { messageId: string; artifact: AssistantArtifact } }
-  | { ch: 'msg-remove'; payload: string }
   | { ch: 'tool'; payload: ToolPatch }
   | { ch: 'subagent'; payload: SubagentRun }
   | { ch: 'subagent-patch'; payload: { id: string; run: SubagentRun; transcriptFrom: number } }
@@ -1108,6 +1124,7 @@ export type MainPushBody =
   | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
   | { ch: 'notify'; payload: ExtensionUiRequest }
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
+  | { ch: 'quota-wait'; payload: { provider?: string } }
   | { ch: 'turn-settled'; payload: { sessionId?: string; outcome: TurnOutcome } }
   | { ch: 'status'; payload: { key: string; text?: string } }
   | { ch: 'title'; payload: string }
@@ -1123,7 +1140,6 @@ export type MainPushBody =
   | { ch: 'log'; payload: { text: string; level?: 'info' | 'error' } }
   | { ch: 'search-api-hint'; payload: Record<string, never> }
   | { ch: 'runners'; payload: RunnerStatus[] }
-  | { ch: 'files-changed'; payload: { watchId: string; dir: string } }
   | { ch: 'runs'; payload: { revision: number; upsert: import('./runs').RunSnapshot[]; remove: string[] } }
   | { ch: 'tray-new-session'; payload: null }
   | { ch: 'peer-request'; payload: import('./peer-protocol').PeerApprovalRequest }
@@ -1495,7 +1511,7 @@ export interface YanBridge {
   followUp(text: string): Promise<{ ok: boolean; error?: string }>
   steerQueued(queueId: string): Promise<{ ok: boolean; error?: string }>
   removeQueued(queueId: string): Promise<{ ok: boolean; text?: string; images?: QueueItem['images']; error?: string }>
-  queueEdit(next: QueueState): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
+  queueEdit(arg: QueueState | QueueEditOp): Promise<{ ok: boolean; error?: string; dropped?: QueueItem[] }>
   abort(expectedRuntime?: ExpectedRuntimeOwner): Promise<QueueSnapshot & { error?: string }>
   newSession(target?: { cwd?: string; projectId?: string; scope?: SessionScope }): Promise<{
     ok: boolean
@@ -1768,10 +1784,7 @@ export interface YanBridge {
     abort(peerId: string, runId: string): Promise<PeerResult<unknown>>
     importSession(peerId: string, sessionId: string): Promise<PeerResult<import('./peer-protocol').PeerImportView>>
   }
-  consent: {
-    list(): Promise<import('./tool-consent').ConsentEntryView[]>
-    change(key: string, action: 'always-ask' | 'allow-auto' | 'forget'): Promise<import('./tool-consent').ConsentEntryView[]>
-  }
+
   voice: {
     prepare(): Promise<{ ok: boolean; error?: string }>
     status(): Promise<import('./voice-input').VoiceInputStatus>

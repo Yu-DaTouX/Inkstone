@@ -1,7 +1,8 @@
 import type { JSX } from 'react'
+import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
+import { compactionElapsedText, compactionRunningText, compactionSummary, compactionTokensText, compactionTone } from '../../state/compaction-view'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { compactionLineModel } from './turn-lines'
@@ -14,8 +15,17 @@ export function CompactionMarker(): JSX.Element | null {
   const running = useStore((s) => s.session?.compaction)
   const last = useStore((s) => s.session?.lastCompaction)
   const model = compactionLineModel(running, last)
+  const live = model?.running === true
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!live) return undefined
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [live])
   if (!model) return null
   const tokens = compactionTokensText(model.run)
+  const elapsed = model.running ? compactionElapsedText(t, model.run, now) : null
   return (
     <div
       className="v3-compaction"
@@ -26,6 +36,7 @@ export function CompactionMarker(): JSX.Element | null {
       <Icon name="layers" size={13} />
       {model.running ? null : <span className="v3-compaction-title">{tt('compactionTitle')}</span>}
       <span className="v3-compaction-text">{model.running ? compactionRunningText(t, model.run) : compactionSummary(t, model.run)}</span>
+      {elapsed ? <span className="v3-compaction-elapsed" data-testid="v3-compaction-elapsed">{elapsed}</span> : null}
       {tokens ? <span className="v3-compaction-tokens">{tokens}</span> : null}
       {!model.running && model.run.status === 'failed' && model.run.error ? (
         <span className="v3-compaction-error" title={model.run.error} data-testid="v3-compaction-error" role="alert">{model.run.error}</span>

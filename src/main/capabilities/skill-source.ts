@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { normalizeSkillFilePath, type SkillFileInput } from './skill-files'
+import { normalizeSkillFilePath, type SkillFileInput } from './acquired-skills'
 
 export const SKILL_SOURCE_LIMITS = {
   files: 32,

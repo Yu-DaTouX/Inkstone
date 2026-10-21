@@ -10,7 +10,12 @@ const {
   draftOf,
   trimDraftAttachments,
   DRAFT_LIMIT,
-  DRAFT_ATTACHMENT_BUDGET
+  DRAFT_ATTACHMENT_BUDGET,
+  DRAFT_STORAGE_KEY,
+  readDrafts,
+  writeDrafts,
+  saveDraft,
+  loadDraft
 } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
 const image = (id, size = 8) => ({
@@ -81,4 +86,23 @@ const guarded = putDraft(
 assert.ok(draftOf(guarded, 'a') === undefined, '总量超预算时淘汰其它草稿')
 assert.ok(draftOf(guarded, 'b'), '刚保存的草稿保留')
 
-console.log('输入框草稿持久化：解析、附件预算、上限淘汰、清空与总量控制检查通过')
+const storage = new Map()
+globalThis.localStorage = {
+  getItem: (key) => (storage.has(String(key)) ? storage.get(String(key)) : null),
+  setItem: (key, value) => storage.set(String(key), String(value)),
+  removeItem: (key) => storage.delete(String(key))
+}
+
+saveDraft('session:c1', { text: '甲', attachments: [] }, 10)
+assert.equal(loadDraft('session:c1')?.text, '甲', '保存后能读回草稿')
+const before = readDrafts()
+storage.set(DRAFT_STORAGE_KEY, JSON.stringify({ 'session:c1': { text: '乙', attachments: [], at: 20 } }))
+assert.equal(readDrafts(), before, '重复读取直接复用缓存对象，不再逐次解析整份草稿表')
+assert.equal(loadDraft('session:c1')?.text, '甲', '缓存命中时不回读 localStorage')
+saveDraft('session:c2', { text: '丙', attachments: [] }, 30)
+assert.deepEqual(Object.keys(JSON.parse(storage.get(DRAFT_STORAGE_KEY))).sort(), ['session:c1', 'session:c2'], '缓存与落盘保持一致')
+writeDrafts({})
+assert.equal(loadDraft('session:c1'), undefined, '写入空表后清空内存缓存与 localStorage')
+assert.equal(storage.has(DRAFT_STORAGE_KEY), false, '空草稿表删除存储键')
+
+console.log('输入框草稿持久化：解析、附件预算、上限淘汰、清空、缓存复用与总量控制检查通过')

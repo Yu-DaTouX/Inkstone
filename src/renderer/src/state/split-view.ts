@@ -73,14 +73,6 @@ export function splitColumns(tiles: readonly SplitSessionRef[]): number[][] {
   return columns
 }
 
-export function splitColumnCount(tiles: readonly SplitSessionRef[]): number {
-  return splitColumns(tiles).length
-}
-
-export function columnOfTile(tiles: readonly SplitSessionRef[], index: number): number {
-  return splitColumns(tiles).findIndex((column) => column.includes(index))
-}
-
 function removeTileAt(tiles: SplitSessionRef[], index: number): void {
   const partner = tiles[index + 1]
   if (!tiles[index]?.below && partner?.below) tiles[index + 1] = stackedBelow(partner, false)
@@ -116,10 +108,6 @@ export function reconcileSplit(split: SplitLayout, displayed: SplitSessionRef | 
   const previous = tiles[split.live]
   tiles[split.live] = stackedBelow(withUid(stackedBelow(displayed, false), previous.uid), !!previous.below)
   return { tiles, live: split.live }
-}
-
-export function neighborOf(split: SplitLayout, index: number): number {
-  return index + 1 < split.tiles.length ? index + 1 : index - 1
 }
 
 function columnSafeSlot(tiles: readonly SplitSessionRef[], slot: number): number {

@@ -22,6 +22,9 @@ type PageFrameTree = { frame: PageFrame; childFrames?: PageFrameTree[] }
 type LiveState = { kind?: string; value?: string; label?: string; checked?: boolean; selected?: boolean }
 
 const LIVE_VALUE_LIMIT = 200
+const ELEMENT_LIMIT = 80
+const MEASURE_BATCH = 8
+const MAX_MEASURE_FACTOR = 3
 const LIVE_TAGS = ['input', 'textarea', 'select', 'option']
 const LIVE_ROLES = ['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton']
 
@@ -152,10 +155,9 @@ export class Observer {
 
   async capture(url: string, title: string): Promise<BrowserObservation> {
     await this.enableFrameSessions()
-    const [documentResult, axResult, snapshotResult, pageResult] = await Promise.all([
+    const [documentResult, axResult, pageResult] = await Promise.all([
       this.cdp.send<{ root: DOMNode }>('DOM.getDocument', { depth: -1, pierce: true }),
       this.cdp.send<{ nodes?: Array<Record<string, unknown>> }>('Accessibility.getFullAXTree', { maxDepth: 12 }),
-      this.cdp.send('DOMSnapshot.captureSnapshot', { computedStyles: [], includePaintOrder: false, includeDOMRects: true }).catch(() => null),
       this.cdp.send<{ result: { value?: { text?: string; url?: string; title?: string } } }>('Runtime.evaluate', {
         expression: '({text:(document.body?.innerText||"").slice(0,30000),url:location.href,title:document.title})',
         returnByValue: true,
@@ -210,6 +212,13 @@ export class Observer {
       ...flatten(documentResult.root, rootFrameId).map(({ node, frameId }) => ({ node, frameId, sessionId: frameSessions.get(frameId) })),
       ...frameDocuments.flatMap((doc) => flatten(doc.root, doc.frameId).map(({ node, frameId }) => ({ node, frameId, sessionId: doc.sessionId })))
     ]
+    const interactive: Array<{
+      node: DOMNode
+      frameId: string
+      sessionId: string | undefined
+      backendNodeId: number
+      attributes: Record<string, string>
+    }> = []
     for (const { node, frameId, sessionId } of docs) {
       const backendNodeId = Number(node.backendNodeId)
       const key = `${sessionId ?? 'root'}:${backendNodeId}`
@@ -217,30 +226,41 @@ export class Observer {
       visited.add(key)
       const attributes = attrs(node)
       if (!Number.isFinite(backendNodeId) || !isInteractive(node, attributes)) continue
-      const box = await elementBox(this.cdp, backendNodeId, sessionId)
-      if (!box || box[2] < 1 || box[3] < 1) continue
-      const live = wantsLiveState(node, attributes)
-        ? await this.liveState(backendNodeId, sessionId)
-        : null
-      const ax = perSessionAx.get(sessionId ?? 'root')?.get(backendNodeId)
-      const axRole = (ax?.role as { value?: string } | undefined)?.value
-      const axName = (ax?.name as { value?: string } | undefined)?.value
-      const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
-      const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || textOf(node)
-      const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
-      candidates.push({
-        backendNodeId,
-        sessionId,
-        frameOffset: [offsetX, offsetY],
-        role,
-        name: name || role,
-        box: [box[0] + offsetX, box[1] + offsetY, box[2], box[3]],
-        frameId,
-        frameUrl: frameUrls.get(frameId),
-        disabled: attributes.disabled !== undefined || attributes['aria-disabled'] === 'true',
-        value: liveValue(live, attributes.value)
-      })
-      if (candidates.length >= 80) break
+      interactive.push({ node, frameId, sessionId, backendNodeId, attributes })
+      if (interactive.length >= ELEMENT_LIMIT * MAX_MEASURE_FACTOR) break
+    }
+    for (let start = 0; start < interactive.length && candidates.length < ELEMENT_LIMIT; start += MEASURE_BATCH) {
+      const batch = interactive.slice(start, start + MEASURE_BATCH)
+      const measured = await Promise.all(
+        batch.map(async ({ node, frameId, sessionId, backendNodeId, attributes }) => {
+          const box = await elementBox(this.cdp, backendNodeId, sessionId)
+          if (!box || box[2] < 1 || box[3] < 1) return null
+          const live = wantsLiveState(node, attributes) ? await this.liveState(backendNodeId, sessionId) : null
+          return { node, frameId, sessionId, backendNodeId, attributes, box, live }
+        })
+      )
+      for (const item of measured) {
+        if (!item || candidates.length >= ELEMENT_LIMIT) continue
+        const { node, frameId, sessionId, backendNodeId, attributes, box, live } = item
+        const ax = perSessionAx.get(sessionId ?? 'root')?.get(backendNodeId)
+        const axRole = (ax?.role as { value?: string } | undefined)?.value
+        const axName = (ax?.name as { value?: string } | undefined)?.value
+        const role = axRole || attributes.role || String(node.localName || node.nodeName || 'element').toLowerCase()
+        const name = axName || attributes['aria-label'] || attributes.title || attributes.placeholder || textOf(node)
+        const [offsetX, offsetY]: [number, number] = sessionId ? frameOffsets.get(frameId) ?? [0, 0] : [0, 0]
+        candidates.push({
+          backendNodeId,
+          sessionId,
+          frameOffset: [offsetX, offsetY],
+          role,
+          name: name || role,
+          box: [box[0] + offsetX, box[1] + offsetY, box[2], box[3]],
+          frameId,
+          frameUrl: frameUrls.get(frameId),
+          disabled: attributes.disabled !== undefined || attributes['aria-disabled'] === 'true',
+          value: liveValue(live, attributes.value)
+        })
+      }
     }
     const generationId = this.registry.refresh(candidates)
     const refreshed = candidates.map((_, index) => this.registry.resolve(`${generationId}:e${index + 1}`))
@@ -251,7 +271,6 @@ export class Observer {
       text: pageResult.result.value?.text || '',
       elements: refreshed.map(({ backendNodeId: _backend, sessionId: _session, frameOffset: _offset, ...element }) => element),
       accessibilityNodeCount: axResult.nodes?.length ?? 0,
-      domSnapshotCaptured: snapshotResult !== null,
       frameCount: frames.length,
       observedFrameCount: new Set(candidates.map((candidate) => candidate.frameId).filter(Boolean)).size
     }
@@ -291,7 +310,7 @@ export class Observer {
   }
 
   private async prepareFrameSession(sessionId: string): Promise<void> {
-    const domains = ['Page.enable', 'DOM.enable', 'DOMSnapshot.enable', 'Accessibility.enable', 'Runtime.enable', 'Network.enable']
+    const domains = ['Page.enable', 'DOM.enable', 'Accessibility.enable', 'Runtime.enable', 'Network.enable']
     await Promise.all(domains.map((method) => this.cdp.send(method, {}, sessionId).catch(() => undefined)))
     await this.cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => undefined)
     const tree = await this.cdp.send<{ frameTree?: PageFrameTree }>('Page.getFrameTree', {}, sessionId).catch(() => null)

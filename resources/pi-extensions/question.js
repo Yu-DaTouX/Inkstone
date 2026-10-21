@@ -17,7 +17,7 @@ export const CLI_GUIDANCE = [
 
 const FIELD_KINDS = ['choice', 'multi', 'text', 'date', 'number', 'range']
 
-export const QUESTION_TOOL = {
+const QUESTION_TOOL = {
   name: 'question',
   label: 'Question',
   description: 'Ask the user and wait. options: up to 3 choices; fields: a short form (1-5) instead of options; neither: free text.',

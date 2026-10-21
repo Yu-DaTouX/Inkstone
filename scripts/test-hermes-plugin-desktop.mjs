@@ -95,6 +95,7 @@ export default function(pi) {
     const child = spawn(process.env.YAN_TEST_PYTHON || 'python', ['scripts/probe/hermes-plugin-desktop.py'], { cwd: root, env: pythonEnv, windowsHide: true, stdio: 'inherit' })
     child.once('error', reject); child.once('exit', resolveExit)
   })
+  await mkdir(join(root, '.local-docs/evidence'), { recursive: true })
   await writeFile(join(root, `.local-docs/evidence/hermes-plugin-${phoneMode ? 'phone' : 'desktop'}-${Date.now()}-app.log`), log.replaceAll(token, '[redacted]'))
   if (result !== 0) {
     console.error('Fixture hook:', await readFile(approvalResult + '.debug', 'utf8').catch(() => 'not loaded'))

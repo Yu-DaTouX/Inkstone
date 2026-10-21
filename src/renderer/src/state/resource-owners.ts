@@ -9,14 +9,26 @@ function load(): Record<string, string> {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
     cache = raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(([, v]) => typeof v === 'string')) as Record<string, string> : {}
   } catch {
+    try {
+      const broken = localStorage.getItem(STORAGE_KEY)
+      if (broken) localStorage.setItem(`${STORAGE_KEY}.broken.${Date.now()}`, broken)
+    } catch {
+    }
     cache = {}
   }
   return cache
 }
 
+const sameRecord = (a: Record<string, string>, b: Record<string, string>): boolean => {
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((key) => b[key] === a[key])
+}
+
 function save(map: Record<string, string>): void {
   const entries = Object.entries(map)
   const kept = entries.length > LIMIT ? Object.fromEntries(entries.slice(entries.length - LIMIT)) : map
+  if (cache && sameRecord(cache, kept)) return
   cache = kept
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(kept)) } catch { }
 }
@@ -38,12 +50,6 @@ export function claimResource(resource: string, owner: string): string {
   if (current) return current
   save({ ...map, [resource]: owner })
   return owner
-}
-
-export function reassignOwner(from: string, to: string): void {
-  const map = load()
-  if (from === to || !Object.values(map).includes(from)) return
-  save(Object.fromEntries(Object.entries(map).map(([resource, owner]) => [resource, owner === from ? to : owner])))
 }
 
 export function releaseResource(resource: string): void {

@@ -109,6 +109,16 @@ try {
     assert.equal(definition.parameters.type, 'object')
   }
 
+  const payloadFor = (text = '继续') => ({ messages: [{ role: 'user', content: text }] })
+  hooks.tool_call({ toolName: 'todos', input: { action: 'set', items: [{ text: 'a' }] } })
+  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
+  assert.equal(hooks.before_provider_request({ payload: payloadFor() }), undefined, '写过计划后长回合不再提醒写计划')
+  hooks.message_end({ message: { role: 'user' } })
+  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
+  const reminded = hooks.before_provider_request({ payload: payloadFor() })
+  assert.ok(reminded, '用户提出新要求后计划标记归零，长回合又会提醒写计划')
+  assert.match(JSON.stringify(reminded.messages.at(-1)), /many tool calls without a to-do list/)
+
   const sizes = registered.map((definition) => JSON.stringify({ name: definition.name, description: definition.description, parameters: definition.parameters }).length)
   const removed = guide.CAPABILITY_GUIDE.length - withTools.length + (question.CLI_GUIDANCE.length - question.TOOL_GUIDANCE.length)
   console.log(`host tools ok (tool definitions ${sizes.join(' + ')} chars ≈ ${Math.round(sizes.reduce((a, b) => a + b, 0) / 4)} tokens; guide text change ${-removed} chars)`)

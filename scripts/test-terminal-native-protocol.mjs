@@ -102,9 +102,7 @@ export async function runNativeProtocolTests() {
       TerminalStatusScanner,
       TerminalProgramStatusTracker,
       parseTerminalStatusReport,
-      PI_PROGRAM_STATUS_QUERY,
-      PROGRAM_STATUS_REPLY,
-      PROGRAM_STATUS_QUERY
+      PROGRAM_STATUS_REPLY
     } = mod
 
     const environment = await loadTerminalEnvironment()
@@ -124,17 +122,16 @@ export async function runNativeProtocolTests() {
     eq(typeof pi.isProgramStatusReply, 'function', 'isProgramStatusReply 已抽出')
     eq(typeof pi.formatProgramStatus, 'function', 'formatProgramStatus 已抽出')
     eq(typeof pi.truncateUtf8, 'function', 'truncateUtf8 已抽出')
-    eq(PI_PROGRAM_STATUS_QUERY, pi.PROGRAM_STATUS_QUERY, '本模块识别的查询帧与 pi 源码同值')
 
     ok(pi.isProgramStatusReply(PROGRAM_STATUS_REPLY), '本模块 7501;?1 回复被 pi isProgramStatusReply 接受')
-    ok(pi.isProgramStatusReply(PROGRAM_STATUS_QUERY + ''), '写回帧本身被 pi 接受')
+    ok(pi.isProgramStatusReply(PROGRAM_STATUS_REPLY + ''), '写回帧本身被 pi 接受')
     ok(pi.isProgramStatusReply('\x1b]7501;?\x07'), '空 payload + BEL 也被 pi 接受')
     ok(!pi.isProgramStatusReply('\x1b]7501;state=working\x1b\\'), '状态上报不是能力回复')
     {
       const tracker = new TerminalProgramStatusTracker()
       eq(tracker.consume(PROGRAM_STATUS_REPLY).queries, 0, '回复回显不触发查询')
       eq(tracker.consume(PROGRAM_STATUS_REPLY).queries, 0, '重复回显仍不触发查询')
-      eq(tracker.consume(PI_PROGRAM_STATUS_QUERY).queries, 1, 'pi 精确查询触发一次回复')
+      eq(tracker.consume(pi.PROGRAM_STATUS_QUERY).queries, 1, 'pi 精确查询触发一次回复')
     }
     eq(new TerminalStatusScanner().write(pi.PROGRAM_STATUS_QUERY), [{ kind: 'query' }], '真实查询帧被识别')
 

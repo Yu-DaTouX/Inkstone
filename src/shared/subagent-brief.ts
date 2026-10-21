@@ -98,14 +98,6 @@ export function briefPrompt(brief: SubagentBrief, task: string): string {
   return lines.join('\n')
 }
 
-export function briefLine(brief: SubagentBrief): string {
-  const parts: string[] = []
-  if (brief.deliverables.length > 0) parts.push(`要交回：${brief.deliverables.join('、')}`)
-  if (brief.sources.length > 0) parts.push(`依据：${brief.sources.join('、')}`)
-  if (brief.boundary) parts.push(`边界：${brief.boundary}`)
-  return parts.join(' · ')
-}
-
 export interface SubagentResult {
   summary: string
   summaryTruncated: boolean
@@ -123,7 +115,7 @@ const ARTIFACT_MAX = 20
 const SOURCE_TOOLS = new Set(['read', 'grep', 'find', 'ls', 'glob', 'web_search', 'fetch', 'browser'])
 const SOURCE_KEYS = ['path', 'file', 'filePath', 'filepath', 'dir', 'cwd', 'url']
 
-export interface SubagentTranscriptLike {
+interface SubagentTranscriptLike {
   role: string
   text: string
   toolCalls?: { name: string; args?: unknown }[]
@@ -193,8 +185,4 @@ export function summarizeSubagentRun(
     openQuestions: [],
     at: now
   }
-}
-
-export function resultHasContent(result: SubagentResult): boolean {
-  return !!result.summary || result.sources.length > 0 || result.artifacts.length > 0
 }

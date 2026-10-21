@@ -34,7 +34,8 @@ export async function runCredentialsTests(ok) {
         'openai-codex': { type: 'oauth', access: 'a', refresh: 'r', expires: Date.now() + 3.6e6, accountId: 'acc' },
         commandcode: { type: 'api_key', key: 'user_x' },
         deepseek: { type: 'api_key', key: 'sk-x' },
-        'my-custom-provider': { type: 'api_key', key: 'k' }
+        'my-custom-provider': { type: 'api_key', key: 'k' },
+        'string-key-provider': 'sk-literal'
       },
       null,
       2
@@ -81,6 +82,7 @@ export async function runCredentialsTests(ok) {
   )
   let calls = asked()
   ok(calls.length === 0, '浅查不起 pi 进程（0 次调用）', `实际 ${calls.length} 次`)
+  ok(sh('string-key-provider')?.status === 'ready' && sh('string-key-provider')?.source === 'auth.json', '浅查：auth.json 里直接写字符串的条目也算已配置')
 
   const deep = await listAuthProviders(pi, true)
   const dp = (id) => deep.find((x) => x.id === id)

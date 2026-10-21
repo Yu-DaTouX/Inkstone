@@ -20,6 +20,26 @@ const ok = (condition, message, detail) => {
   console.log(`✓ ${message}`)
 }
 
+const electronStub = {
+  name: 'electron-stub',
+  setup(build) {
+    build.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'electron-stub' }))
+    build.onLoad({ filter: /.*/, namespace: 'electron-stub' }, () => ({
+      contents: [
+        'const shell = { openExternal: async () => undefined, openPath: async () => "" }',
+        'const app = { getPath: () => "", getName: () => "inkstone", getVersion: () => "0.0.0-test", isPackaged: false, on: () => undefined }',
+        'const dialog = { showMessageBox: async () => ({ response: 0 }), showErrorBox: () => undefined }',
+        'const ipcMain = { handle: () => undefined, on: () => undefined }',
+        'const protocol = { registerSchemesAsPrivileged: () => undefined, handle: () => undefined }',
+        'const nativeImage = { createFromBuffer: () => ({ resize: () => ({ toDataURL: () => "" }), toDataURL: () => "" }) }',
+        'export { shell, app, dialog, ipcMain, protocol, nativeImage }',
+        'export default { shell, app, dialog, ipcMain, protocol, nativeImage }'
+      ].join('\n'),
+      loader: 'js'
+    }))
+  }
+}
+
 const outfile = join(root, 'native-verify.mjs')
 await build({
   stdin: {
@@ -34,6 +54,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
+  plugins: [electronStub],
   logLevel: 'silent'
 })
 const m = await import(pathToFileURL(outfile).href)
@@ -130,20 +151,32 @@ try {
   await writeFile(
     fakePi,
     [
-      "const mode = process.env.YAN_FAKE_MCP_MODE",
-      "const name = process.env.YAN_FAKE_MCP_NAME ?? 'fixture-svc'",
+      "import { readFileSync } from 'node:fs'",
+      "import { join } from 'node:path'",
+      "const LEAK_KEYS = ['YAN_FAKE_MCP_MODE','YAN_PI_DIR','YAN_DATA_DIR','YAN_MCP_SERVERS_FILE','YAN_CLI_TOKEN','YAN_SESSION_ID','YAN_PROJECT_ID']",
+      "const leaked = LEAK_KEYS.filter((key) => key in process.env)",
+      "let mode = ''",
+      "let name = 'fixture-svc'",
+      "try {",
+      "  const doc = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR ?? '.', 'mcp.json'), 'utf8'))",
+      "  const entry = Object.values(doc.mcpServers ?? {})[0]",
+      "  const args = Array.isArray(entry?.args) ? entry.args : []",
+      "  mode = String(args[1] ?? '')",
+      "  if (args[2]) name = String(args[2])",
+      "} catch {}",
       "if (mode === 'hang') { setTimeout(() => {}, 60000); process.stdin.resume() }",
       "else if (mode === 'invalid') process.stdout.write('not json')",
       "else if (mode === 'connected') process.stdout.write(JSON.stringify({ servers: [{ name, state: 'connected', tools: ['a','b','c'] }] }))",
       "else if (mode === 'needs-auth') process.stdout.write(JSON.stringify({ servers: [{ name, state: 'needs-auth', tools: [] }] }))",
       "else if (mode === 'connected-exit1') { process.stdout.write(JSON.stringify({ servers: [{ name, state: 'connected', tools: [] }] })); process.exitCode = 1 }",
+      "else if (mode === 'env') process.stdout.write(JSON.stringify({ servers: [{ name, state: 'connected', tools: leaked }] }))",
       ''
     ].join('\n')
   )
 
   const targetPath = join(root, 'pi-agent', 'mcp.json')
-  const writeTarget = (name) =>
-    writeJson(targetPath, { mcpServers: { [name]: { command: process.execPath, args: ['fixture.js'] } } })
+  const writeTarget = (name, mode = 'connected') =>
+    writeJson(targetPath, { mcpServers: { [name]: { command: process.execPath, args: ['fixture.js', mode, name] } } })
   const verifier = (extra = {}) =>
     m.createNativeMcpVerifier({ piBin: fakePi, runnerCwd: projectCwd, timeoutMs: 10_000, ...extra })
   const verifyTarget = async (v, extraInput = {}) =>
@@ -156,35 +189,40 @@ try {
       ...extraInput
     })
 
-  await writeTarget('fixture-svc')
-  process.env.YAN_FAKE_MCP_MODE = 'connected'
+  await writeTarget('fixture-svc', 'connected')
   const fakeConnected = await verifyTarget(verifier())
   ok(fakeConnected.ok && fakeConnected.toolCount === 3, '假 CLI：connected 时通过并给出工具数', String(fakeConnected.toolCount))
 
-  process.env.YAN_FAKE_MCP_MODE = 'needs-auth'
+  await writeTarget('fixture-svc', 'env')
+  const fakeEnv = await verifyTarget(verifier())
+  ok(fakeEnv.ok && fakeEnv.toolCount === 0, '假 CLI：校验子进程拿不到 YAN_* 环境变量', String(fakeEnv.toolCount))
+
+  await writeTarget('fixture-svc', 'needs-auth')
   const fakeAuth = await verifyTarget(verifier())
   ok(!fakeAuth.ok && fakeAuth.detail.includes('重新登录'), '假 CLI：needs-auth 判未通过并提示重新登录')
 
-  process.env.YAN_FAKE_MCP_MODE = 'connected'
-  process.env.YAN_FAKE_MCP_NAME = 'other'
+  await writeTarget('other', 'connected')
+  await writeTarget('fixture-svc', 'connected')
+  const fakeWrongNameTarget = await writeJson(targetPath, {
+    mcpServers: { 'fixture-svc': { command: process.execPath, args: ['fixture.js', 'connected', 'other'] } }
+  })
+  void fakeWrongNameTarget
   const fakeWrongName = await verifyTarget(verifier())
   ok(!fakeWrongName.ok, '假 CLI：返回的服务名不符时不通过')
-  delete process.env.YAN_FAKE_MCP_NAME
 
-  process.env.YAN_FAKE_MCP_MODE = 'invalid'
+  await writeTarget('fixture-svc', 'invalid')
   const fakeInvalid = await verifyTarget(verifier())
   ok(!fakeInvalid.ok, '假 CLI：非法 JSON 不通过')
 
-  process.env.YAN_FAKE_MCP_MODE = 'connected-exit1'
+  await writeTarget('fixture-svc', 'connected-exit1')
   const fakeExit = await verifyTarget(verifier())
   ok(!fakeExit.ok, '假 CLI：connected 但退出码非零不通过')
 
-  process.env.YAN_FAKE_MCP_MODE = 'hang'
+  await writeTarget('fixture-svc', 'hang')
   const started = Date.now()
   const fakeTimeout = await verifyTarget(verifier({ timeoutMs: 1200 }))
   ok(!fakeTimeout.ok && fakeTimeout.detail.includes('超时'), '假 CLI：超时判未通过')
   ok(Date.now() - started < 9000, '假 CLI：超时后杀掉本次子进程而非一直等', `${Date.now() - started}ms`)
-  delete process.env.YAN_FAKE_MCP_MODE
 
   const spyPi = join(root, 'spy-pi.mjs')
   const spyMarker = join(root, 'spy-marker.txt')
@@ -325,7 +363,7 @@ try {
 
   await writeJson(hostConfigFile, {
     servers: [
-      { id: 'svc-global', transport: 'stdio', command: 'node', args: ['x'] },
+      { id: 'svc-global', transport: 'stdio', command: process.execPath, args: ['fixture.js', 'connected', 'svc-global'] },
       { id: 'svc-proj', transport: 'stdio', command: 'node', projectScope: 'p-other' }
     ]
   })
@@ -408,8 +446,6 @@ try {
   ok(raced.ok === false && raced.code === 'runner_changed', 'IPC race：settings await 后实例变化，提交前重核并拒绝', raced.code)
   settingsImpl = async () => ({ projects: [{ id: 'p-main', cwd: projectCwd }], piBin: fakePi })
 
-  process.env.YAN_FAKE_MCP_MODE = 'connected'
-  process.env.YAN_FAKE_MCP_NAME = 'svc-global'
   currentAgentObj = makeAgent(null)
   activeRunner = { id: 'runner-1', cwd: projectCwd }
   runtimeGeneration = 1
@@ -435,8 +471,6 @@ try {
     'IPC reload：警告说明旧连接刷新失败且不自动重启'
   )
   ok(reloadThrew === true, 'IPC reload：确实调用了 reloadMcpServers 并捕获其异常')
-  delete process.env.YAN_FAKE_MCP_MODE
-  delete process.env.YAN_FAKE_MCP_NAME
 
   const verifySource = await readFile(join(process.cwd(), 'src/main/mcp/native-verify.ts'), 'utf8')
   const sourceFile = ts.createSourceFile('native-verify.ts', verifySource, ts.ScriptTarget.Latest, true)
@@ -467,6 +501,9 @@ try {
   }
   const graceText = extractVariable('RUN_PI_LIST_TIMEOUT_GRACE_MS')
   ok(typeof graceText === 'string' && graceText.includes('RUN_PI_LIST_TIMEOUT_GRACE_MS'), 'B：提取到生产超时宽限常量')
+  const envKeysText = extractVariable('PI_CHILD_ENV_KEYS')
+  const piChildEnvText = extractFunction('piChildEnv')
+  ok(typeof piChildEnvText === 'string' && typeof envKeysText === 'string', 'B：提取到生产子进程环境白名单')
 
   const deps = {
     spawnImpl: () => {
@@ -482,6 +519,8 @@ try {
     'const killProcessTree = (child) => __deps.killTree(child)',
     'function messageOf(error) { return error instanceof Error ? error.message : String(error) }',
     graceText,
+    envKeysText,
+    piChildEnvText,
     runPiListText,
     'export { runPiList }'
   ].join('\n')

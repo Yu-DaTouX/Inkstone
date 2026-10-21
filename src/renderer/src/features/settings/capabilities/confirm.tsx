@@ -11,7 +11,7 @@ import { Button, Dialog, Modal, ModalOverlay, Notice } from '../../../ui'
 import { useT } from '../../../i18n'
 import { runConfirmAction } from './confirm-action'
 
-export interface ConfirmOptions {
+interface ConfirmOptions {
   title: string
   body?: string
   detail?: string
@@ -102,7 +102,6 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
                   variant={pending.tone === 'danger' ? 'danger' : 'primary'}
                   isPending={busy}
                   aria-busy={busy || undefined}
-                  className="caps-confirm-accept"
                   data-testid="caps-confirm-accept"
                   onPress={() => void accept()}
                 >

@@ -1,10 +1,7 @@
+import { currentLang } from './lang'
 import { translate } from './index'
-import type { Lang, MessageKey, TVars } from './index'
-
-function documentLang(): Lang {
-  return typeof document !== 'undefined' && document.documentElement?.lang === 'en-US' ? 'en-US' : 'zh-CN'
-}
+import type { MessageKey, TVars } from './index'
 
 export function uiText(key: MessageKey, vars?: TVars): string {
-  return translate(documentLang(), key, vars)
+  return translate(currentLang(), key, vars)
 }

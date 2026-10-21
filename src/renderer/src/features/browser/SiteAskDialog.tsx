@@ -15,12 +15,14 @@ export function BrowserSiteAskDialog(): ReactElement | null {
   const { lang } = useI18n()
   const text = browserText(lang)
   const acquireOverlayBlocker = useStore((s) => s.acquireOverlayBlocker)
-  const [ask, setAsk] = useState<SiteAsk | null>(null)
+  const [asks, setAsks] = useState<SiteAsk[]>([])
+  const ask = asks[0] ?? null
 
   useEffect(
     () =>
       window.yan.onPush((msg) => {
-        if (msg.ch === 'browser-site-ask') setAsk(msg.payload)
+        if (msg.ch !== 'browser-site-ask') return
+        setAsks((prev) => (prev.some((item) => item.id === msg.payload.id) ? prev : [...prev, msg.payload]))
       }),
     []
   )
@@ -34,7 +36,7 @@ export function BrowserSiteAskDialog(): ReactElement | null {
 
   const decide = (allowed: boolean): void => {
     void window.yan.browser.siteAskAnswer(ask.id, allowed).catch(() => undefined)
-    setAsk(null)
+    setAsks((prev) => prev.filter((item) => item.id !== ask.id))
   }
 
   return (

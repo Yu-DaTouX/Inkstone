@@ -8,7 +8,6 @@ import {
   mcpAppResponseHeaders,
   MCP_APP_SCHEME,
   resolveDomainList,
-  type McpAppDomainDecision,
   type McpAppResolveHost
 } from '../../shared/mcp-app-preview'
 
@@ -34,29 +33,16 @@ export interface McpAppLoaderOptions {
   resolvePrivateHost?: McpAppResolveHost
 }
 
-export interface McpAppCspDerivation {
-  csp: string
-  resource: McpAppDomainDecision[]
-  connect: McpAppDomainDecision[]
-  frame: McpAppDomainDecision[]
-  baseUri: McpAppDomainDecision[]
-  networkRejected: boolean
-}
-
 export async function deriveMcpAppCsp(
   uiCsp: McpAppCsp | null | undefined,
   options: McpAppLoaderOptions = {}
-): Promise<McpAppCspDerivation> {
+): Promise<string> {
   const resource = await resolveDomainList(uiCsp?.resourceDomains, 'network', options.resolvePrivateHost)
   const connect = await resolveDomainList(uiCsp?.connectDomains, 'network', options.resolvePrivateHost)
-  const frame = await resolveDomainList(uiCsp?.frameDomains, 'forbidden', undefined)
-  const baseUri = await resolveDomainList(uiCsp?.baseUriDomains, 'forbidden', undefined)
-  const csp = buildMcpAppCsp({
+  return buildMcpAppCsp({
     resource: resource.filter((item) => item.allowed).map((item) => item.value),
     connect: connect.filter((item) => item.allowed).map((item) => item.value)
   })
-  const networkRejected = [...resource, ...connect].some((item) => !item.allowed)
-  return { csp, resource, connect, frame, baseUri, networkRejected }
 }
 
 export function createMcpAppResourceLoader(host: McpAppResourceReader, options: McpAppLoaderOptions = {}): McpAppResourceFetch {
@@ -66,7 +52,7 @@ export function createMcpAppResourceLoader(host: McpAppResourceReader, options: 
       ...(projectId ? { projectId } : {})
     })
     const derivation = await deriveMcpAppCsp(resource.uiCsp, options)
-    return { html: resource.text, mimeType: resource.mimeType, bytes: resource.bytes, csp: derivation.csp }
+    return { html: resource.text, mimeType: resource.mimeType, bytes: resource.bytes, csp: derivation }
   }
 }
 

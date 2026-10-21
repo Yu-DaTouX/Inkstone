@@ -52,6 +52,20 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(shared.isSearchProviderId('context7') && !shared.isSearchProviderId('google'), '服务名白名单')
     await config.clearSearchKey('firecrawl')
     await config.clearSearchKey('context7')
+
+    const both = await Promise.all([config.setSearchKey('brave', 'brave-1'), config.setSearchKey('tavily', 'tavily-1')])
+    ok(both.every((r) => r.ok), '并发写两个 key 都成功')
+    ok((await config.resolveSearchKey('brave')) === 'brave-1' && (await config.resolveSearchKey('tavily')) === 'tavily-1', '并发写不会丢更新')
+
+    const halfJson = '{"braveKey":'
+    writeFileSync(join(dataDir, 'search-config.json'), halfJson)
+    const refused = await config.setSearchKey('tavily', 'tvly-should-not-land')
+    ok(refused.ok === false && !!refused.error, '配置文件是半截 JSON 时写入报错，不默默重置')
+    ok(readFileSync(join(dataDir, 'search-config.json'), 'utf8') === halfJson, '写入失败时原文件一字不动')
+    let readFailure = null
+    try { await config.searchApiConfig() } catch (error) { readFailure = error }
+    ok(!!readFailure, '配置文件损坏时设置页拿到真实错误（而不是全部显示未配置）')
+    writeFileSync(join(dataDir, 'search-config.json'), JSON.stringify({ hintDismissed: true }))
   }
 
   {

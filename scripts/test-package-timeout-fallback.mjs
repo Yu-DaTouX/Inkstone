@@ -16,7 +16,7 @@ const context = {
  spawn: (_file, args) => { assert.equal(args.includes('/T'), true); return killer },
  execFile: (_file, _args, _options, callback) => {
   finish = callback
-  return { pid: 42, kill: () => { killed = true; finish(new Error('fixture timeout'), '', ''); return true } }
+  return { pid: 42, kill: () => { killed = true; finish(new Error('fixture timeout'), 'partial stdout', ''); return true } }
  }
 }
 runInNewContext(code, context)
@@ -28,5 +28,7 @@ assert.equal(killed, true)
 const reply = await result
 assert.equal(reply.ok, false)
 assert.match(reply.output, /操作超时/)
+assert.match(reply.output, /partial stdout\n操作超时/)
+assert.equal(reply.output.includes('\\n'), false)
 assert.match(reply.output, /仍可能有未能结束/)
-console.log('package-timeout-fallback: 6 assertions passed')
+console.log('package-timeout-fallback: 8 assertions passed')

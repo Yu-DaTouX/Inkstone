@@ -25,7 +25,6 @@ async function run() {
     const mail = { ...calendar, capability: 'mail', action: 'send' }
     const mailAllowed = { ...allowed, key: consent.consentKeyOf(mail), parts: mail }
     assert.equal(consent.consentVerdict(mailAllowed, mail, now).mode, 'ask', 'danger categories always ask')
-    assert.equal(consent.consentVerdict({ ...allowed, override: 'always-ask' }, calendar, now).mode, 'ask')
 
     assert.equal(approval.normalizeApprovalFeedback('  路径写错了  '), '路径写错了')
     assert.equal(approval.normalizeApprovalFeedback('   '), undefined)

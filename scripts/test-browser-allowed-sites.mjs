@@ -38,9 +38,6 @@ async function run() {
     assert.deepEqual(site.allowedSiteList(undefined), [])
     const many = Array.from({ length: site.MAX_ALLOWED_SITES + 20 }, (_, index) => `https://s${index}.test`)
     assert.equal(site.allowedSiteList(many).length, site.MAX_ALLOWED_SITES)
-    assert.equal(site.siteLabel('https://example.com:8443'), 'example.com:8443')
-    assert.equal(site.siteAllowsUrl(['https://example.com'], 'https://www.example.com/x'), true)
-    assert.equal(site.siteAllowsUrl(['https://example.com'], 'http://example.com/x'), false)
 
     assert.deepEqual(site.addAllowedSite([], 'example.com'), { result: 'ok', list: ['https://example.com'], origin: 'https://example.com' })
     assert.equal(site.addAllowedSite([], 'http://localhost:3000/dev').origin, 'http://localhost:3000')
@@ -97,6 +94,14 @@ async function run() {
     await failing.ready()
     assert.deepEqual(failing.sites(), [])
     assert.equal(failing.record('s1', 'https://example.com', true), 'allow')
+
+    const cappedMemory = memoryStore(['https://full0.test', 'https://full1.test'])
+    const capped = new site.PreviewSiteAccess(cappedMemory.store, 2)
+    await capped.ready()
+    assert.equal(capped.record('s1', 'https://extra.test/', true), 'deny')
+    assert.deepEqual(capped.sites(), ['https://full0.test', 'https://full1.test'])
+    assert.deepEqual(cappedMemory.saved, ['https://full0.test', 'https://full1.test'])
+    assert.equal(capped.record('s1', 'https://full0.test/page', true), 'allow')
 
     const { createPreviewSiteGate } = await compile('src/main/preview-site-gate.ts', join(dir, 'gate.mjs'))
     const asks = []

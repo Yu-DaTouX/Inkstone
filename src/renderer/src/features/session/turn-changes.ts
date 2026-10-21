@@ -40,12 +40,13 @@ function settled(call: UIToolCall): boolean {
 function normalizeParts(path: string): { root: string; parts: string[] } {
   const slashed = path.replace(/\\/g, '/')
   const drive = /^[a-zA-Z]:/.exec(slashed)
+  const folds = !slashed.startsWith('/')
   const root = drive ? drive[0].toLowerCase() : slashed.startsWith('/') ? '/' : ''
   const parts: string[] = []
   for (const part of slashed.slice(drive ? 2 : 0).split('/')) {
     if (!part || part === '.') continue
     if (part === '..') parts.pop()
-    else parts.push(part.toLowerCase())
+    else parts.push(folds ? part.toLowerCase() : part)
   }
   return { root, parts }
 }

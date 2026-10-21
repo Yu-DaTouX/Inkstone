@@ -393,19 +393,6 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('yan-v3-focus-search', openSearch)
   }, [])
 
-  const toggleWorkspace = (): void => {
-    const ui = useUiV3.getState()
-    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
-      ui.setWorkspaceOpen(false)
-      return
-    }
-    if (isSubagentPaneId(ui.workspaceTab)) {
-      ui.setWorkspaceOpen(true)
-      return
-    }
-    void openWorkspaceTab(ui.workspaceTab === 'overview' ? 'changes' : ui.workspaceTab)
-  }
-
   const toggleSessionBar = (): void => {
     void useStore.getState().patchSettings({ workspaceTiles: !sessionBarOn }).catch(() => undefined)
   }
@@ -440,7 +427,7 @@ export default function ShellV3(): ReactElement {
     useStore.getState().closeNativeSessionPanel()
   }, [nativeSessionPanel])
 
-  const openWorkspaceTab = (tab: WorkbenchTabId): Promise<boolean> => {
+  const openWorkspaceTab = useCallback((tab: WorkbenchTabId): Promise<boolean> => {
     useUiV3.getState().navigate({ name: 'chat' })
     if (revealToolTile(tab)) return Promise.resolve(true)
     useUiV3.getState().setWorkspaceTab(tab)
@@ -452,7 +439,20 @@ export default function ShellV3(): ReactElement {
       if (ok) useUiV3.getState().setWorkspaceOpen(true)
       return ok
     })
-  }
+  }, [])
+
+  const toggleWorkspace = useCallback((): void => {
+    const ui = useUiV3.getState()
+    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
+      ui.setWorkspaceOpen(false)
+      return
+    }
+    if (isSubagentPaneId(ui.workspaceTab)) {
+      ui.setWorkspaceOpen(true)
+      return
+    }
+    void openWorkspaceTab(ui.workspaceTab === 'overview' ? 'changes' : ui.workspaceTab)
+  }, [openWorkspaceTab])
 
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {

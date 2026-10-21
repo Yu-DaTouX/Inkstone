@@ -116,6 +116,7 @@ async function main() {
     const { createElement } = React
     const t = (lang) => (key, vars) => i18n.translate(lang, key, vars)
     const zh = t('zh-CN')
+    const en = t('en-US')
     const render = (element) => renderToStaticMarkup(element)
 
     const onceAt = new Date(2026, 0, 2, 9, 30, 0, 0).getTime()
@@ -138,28 +139,32 @@ async function main() {
     ok(Draft.blankDraft('C:/work').cwd === 'C:/work', '新建草稿带上默认工作目录')
     ok(Draft.WEEK_ORDER.join(',') === '1,2,3,4,5,6,0', '星期顺序为周一到周日')
 
-    const empty = Draft.checkDraft({ ...Draft.blankDraft(), prompt: '   ' })
-    ok(!empty.ok && empty.code === 'needPrompt', '空指令被拒（needPrompt）')
-    const noAt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'once', at: '' })
-    ok(!noAt.ok && noAt.code === 'needAt', '单次触发缺时间被拒（needAt）')
-    const tooOften = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'interval', minutes: 1 })
+    const empty = Draft.checkDraft({ ...Draft.blankDraft(), prompt: '   ' }, zh)
+    ok(!empty.ok && empty.code === 'needPrompt' && empty.message === zh('sched.needPrompt'), '空指令被拒（needPrompt，文案走 i18n）')
+    const noAt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'once', at: '' }, zh)
+    ok(!noAt.ok && noAt.code === 'needAt' && noAt.message === zh('sched.needAt'), '单次触发缺时间被拒（needAt）')
+    const tooOften = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'interval', minutes: 1 }, zh)
     ok(!tooOften.ok && tooOften.code === 'invalidTrigger' && tooOften.message.includes('5 分钟'), '间隔小于 5 分钟被 shared 规则拒绝')
-    const noDay = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'weekly', days: [], time: '09:00' })
-    ok(!noDay.ok && noDay.code === 'invalidTrigger', '每周不选任何一天被 shared 规则拒绝')
-    const badTime = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'daily', time: '25:00' })
+    const noDay = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'weekly', days: [], time: '09:00' }, zh)
+    ok(!noDay.ok && noDay.code === 'invalidTrigger' && noDay.message === zh('sched.needDays'), '每周不选任何一天被 shared 规则拒绝')
+    const badTime = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'daily', time: '25:00' }, zh)
     ok(!badTime.ok && badTime.code === 'invalidTrigger', '非法 HH:MM 被 shared 规则拒绝')
+    const enLong = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x'.repeat(12001) }, en)
+    ok(!enLong.ok && enLong.message === en('sched.promptTooLong', { max: 12000 }), '英文字面量报错不出现中文')
+    const enTooOften = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x', kind: 'interval', minutes: 1 }, en)
+    ok(!enTooOften.ok && !/[\u4e00-\u9fff]/.test(enTooOften.message), '英文界面下间隔报错不含中文')
 
-    const valid = Draft.checkDraft({ name: '  简报  ', prompt: '  总结  ', cwd: '  ', model: '', kind: 'daily', time: '9:05', days: [1], minutes: 60, at: '' })
+    const valid = Draft.checkDraft({ name: '  简报  ', prompt: '  总结  ', cwd: '  ', model: '', kind: 'daily', time: '9:05', days: [1], minutes: 60, at: '' }, zh)
     ok(valid.ok, '合法草稿通过校验')
     ok(valid.ok && valid.input.name === '简报', '名称去掉首尾空白')
     ok(valid.ok && valid.input.prompt === '总结', '指令去掉首尾空白')
     ok(valid.ok && valid.input.cwd === undefined && valid.input.model === undefined, '空工作目录 / 模型不下发覆盖值')
     ok(valid.ok && valid.input.trigger.kind === 'daily' && valid.input.trigger.time === '09:05', '触发时间经 shared 规整为 HH:MM')
 
-    const longPrompt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x'.repeat(12001) })
+    const longPrompt = Draft.checkDraft({ ...Draft.blankDraft(), prompt: 'x'.repeat(12001) }, zh)
     ok(!longPrompt.ok, '超长指令被拒')
 
-    const input = Draft.checkDraft({ ...Draft.blankDraft(), name: 'n', prompt: 'p' }).input
+    const input = Draft.checkDraft({ ...Draft.blankDraft(), name: 'n', prompt: 'p' }, zh).input
     const bridge = mockBridge({
       list: [task()],
       create: { ok: true, task: task() },
@@ -181,12 +186,13 @@ async function main() {
     await Client.runTaskNow(bridge, 't1')
     ok(bridge.calls[5].name === 'runNow' && bridge.calls[5].args[0] === 't1', 'runTaskNow 调用 runNow(id)')
 
-    const card = (over) =>
+    const card = (over, lang = 'zh-CN') =>
       render(
         createElement(Page.ScheduleTaskCard, {
           task: task(over),
           busy: false,
-          t: zh,
+          lang,
+          t: lang === 'en-US' ? en : zh,
           onToggle: () => {},
           onRunNow: () => {},
           onEdit: () => {},
@@ -207,7 +213,17 @@ async function main() {
     ok(pausedCard.includes('data-state="off"') && pausedCard.includes(zh('sched.paused')), '暂停任务渲染为 off 状态并带已暂停标签')
     ok(pausedCard.includes('目标会话已变化'), '上次运行错误显示在卡片上')
 
-    ok(Page.formatWhen(undefined) === '—', '缺失时间显示破折号，不猜值')
+    ok(Page.formatWhen(undefined, 'zh-CN') === '—', '缺失时间显示破折号，不猜值')
+
+    ok(Page.describeTriggerText({ kind: 'weekly', days: [1, 3], time: '21:00' }, zh, 'zh-CN') === '每周一、三 21:00', '中文每周描述列出星期')
+    ok(Page.describeTriggerText({ kind: 'weekly', days: [1, 3], time: '21:00' }, en, 'en-US') === 'Mon, Wed at 21:00', '英文每周描述列出星期')
+    ok(Page.describeTriggerText({ kind: 'weekly', days: [1, 2, 3, 4, 5], time: '08:00' }, en, 'en-US') === 'Weekdays at 08:00', '英文工作日描述')
+    ok(Page.describeTriggerText({ kind: 'weekly', days: [0, 6], time: '10:00' }, en, 'en-US') === 'Weekends at 10:00', '英文周末描述')
+    ok(Page.describeTriggerText({ kind: 'interval', minutes: 120 }, en, 'en-US') === 'Every 2 hours', '英文整小时间隔描述')
+    ok(Page.describeTriggerText({ kind: 'interval', minutes: 90 }, zh, 'zh-CN') === '每 90 分钟', '中文非整小时间隔描述')
+    ok(!/[\u4e00-\u9fff]/.test(Page.describeTriggerText({ kind: 'once', at: Date.UTC(2026, 0, 2, 9, 30) }, en, 'en-US')), '英文单次描述不含中文')
+    const enCard = card({ name: 'Brief', prompt: 'summarize today', trigger: { kind: 'weekly', days: [1, 3], time: '21:00' } }, 'en-US')
+    ok(enCard.includes('Mon, Wed at 21:00') && !/[\u4e00-\u9fff]/.test(enCard), '英文卡片副标题不再出中文')
 
     const pageClient = mockBridge({ list: [] })
     const pageHtml = render(createElement(i18n.I18nProvider, null, createElement(Page.ScheduleTasksPage, { client: pageClient })))

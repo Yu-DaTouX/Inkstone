@@ -57,19 +57,3 @@ export function accumulateUsage(snapshots: UsageSnapshots): SubagentUsageTotals 
   }
   return { input, output, cacheRead, cacheWrite, totalTokens, cost, reportedMessages: entries.length }
 }
-
-export function normalizeSubagentUsage(value: unknown): SubagentUsageTotals | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const input = value as Partial<SubagentUsageTotals>
-  if (typeof input.reportedMessages !== 'number' || input.reportedMessages <= 0) return undefined
-  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  return {
-    input: num(input.input),
-    output: num(input.output),
-    cacheRead: num(input.cacheRead),
-    cacheWrite: num(input.cacheWrite),
-    totalTokens: num(input.totalTokens),
-    cost: num(input.cost),
-    reportedMessages: input.reportedMessages
-  }
-}

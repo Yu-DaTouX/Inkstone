@@ -120,15 +120,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
 }
 
 {
-  const rows = ['r', 'a', 'b'].map((id) => ({ entryId: id }))
-  ok(native.moveTreeSelection(rows, 'a', 1) === 'b', 'move：向下')
-  ok(native.moveTreeSelection(rows, 'a', -1) === 'r', 'move：向上')
-  ok(native.moveTreeSelection(rows, 'r', -1) === 'r', 'move：到顶不回绕')
-  ok(native.moveTreeSelection(rows, 'b', 1) === 'b', 'move：到底不回绕')
-  ok(native.moveTreeSelection(rows, null, 1) === 'r', 'move：没有选中时从头开始')
-  ok(native.moveTreeSelection(rows, 'missing', -1) === 'b', 'move：失效 id 退回端点')
-  ok(native.moveTreeSelection([], 'r', 1) === null, 'move：空列表返回 null')
-
   const tree = [node('root', null, [node('a', 'root', [userMsg('b', 'a', 'x')])])]
   ok(native.pathToEntry(tree, 'b').join(',') === 'root,a,b', 'path：leaf → 根')
   ok(native.pathToEntry(tree, 'nope').length === 0, 'path：找不到返回空')
@@ -141,11 +132,6 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
     { provider: 'openai', id: 'gpt', name: 'GPT', inScope: false, current: false }
   ]
   ok(native.nativeModelKey(models[0]) === 'anthropic/sonnet', 'model：稳定键是 provider/id')
-  ok(native.parseNativeModelKey('anthropic/sonnet')?.id === 'sonnet', 'model：解析键')
-  ok(native.parseNativeModelKey('noslash') === null, 'model：非法键不解析')
-  ok(native.scopeSelection(models).join(',') === 'anthropic/sonnet', 'model：取当前范围')
-  const toggled = native.toggleScopeModel(models, 'openai/gpt')
-  ok(toggled[1].inScope === true && models[1].inScope === false, 'model：切换返回新数组，不改入参')
 }
 
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')

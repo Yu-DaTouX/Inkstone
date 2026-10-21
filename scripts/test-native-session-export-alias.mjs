@@ -13,7 +13,7 @@ const verify = (value, label) => { assert.ok(value, label); checks++ }
 try {
   const output = join(work, 'io.mjs')
   await build({ entryPoints: ['src/main/native-session-io.ts'], outfile: output, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{ name: 'isolated-paths', setup(b) { b.onResolve({ filter: /^\.\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' })); b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `export const PI_AGENT_DIR = ${JSON.stringify(work)}`, loader: 'js' })) } }] })
-  const { exportSessionJsonl } = await import(pathToFileURL(output).href)
+  const { exportSessionJsonl, importSessionJsonl } = await import(pathToFileURL(output).href)
   const dir = join(work, 'source')
   await mkdir(dir)
   const source = join(dir, 'session.jsonl')
@@ -62,6 +62,35 @@ try {
   try { rejectAlias(race, 'post-check alias race') }
   finally { fs.openSync = open; syncBuiltinESMExports() }
   verify(fs.readFileSync(source, 'utf8') === original, 'all original branches retained')
+
+  const missingLeaf = join(work, 'missing-leaf.jsonl')
+  const missing = exportSessionJsonl({ sourcePath: source, outputPath: missingLeaf, leafId: 'nope' })
+  verify(!missing.ok && missing.code === 'invalid_path', 'unknown leaf rejected')
+  verify(!String(missing.error ?? '').includes('写入导出文件失败'), 'unknown leaf reports the leaf, not a write failure')
+  verify(!fs.existsSync(missingLeaf), 'unknown leaf writes no file')
+  verify(exportSessionJsonl({ sourcePath: source, outputPath: join(work, 'count.jsonl') }).entryCount === 2, 'entryCount matches the exported branch')
+
+  const importDir = join(work, 'imports')
+  const stored = importSessionJsonl({ sourcePath: source, sessionDir: importDir })
+  verify(stored.ok, 'import stores the session file')
+  const occupant = join(importDir, 'session-1.jsonl')
+  fs.writeFileSync(occupant, 'occupied\n')
+  const exists = fs.existsSync
+  let hidden = 0
+  fs.existsSync = (file) => {
+    if (hidden < 1 && String(file) === occupant) {
+      hidden++
+      return false
+    }
+    return exists(file)
+  }
+  syncBuiltinESMExports()
+  let racedImport
+  try { racedImport = importSessionJsonl({ sourcePath: source, sessionDir: importDir }) }
+  finally { fs.existsSync = exists; syncBuiltinESMExports() }
+  verify(racedImport.ok, 'import retries when the target name is taken between check and write')
+  verify(racedImport.destinationPath !== occupant, 'import does not overwrite the raced file')
+  verify(fs.readFileSync(occupant, 'utf8') === 'occupied\n', 'raced file keeps its contents')
   console.log(`Session export aliases: ${checks} passed`)
 } finally {
   await rm(work, { recursive: true, force: true })

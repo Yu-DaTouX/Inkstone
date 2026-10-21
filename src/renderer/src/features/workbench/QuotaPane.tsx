@@ -77,6 +77,8 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
       if (!alive.current) return
       setNotice(result.ok ? t('acct.switched', { name: accountCardTitle(card) }) : t('acct.failed', { msg: result.error ?? '' }))
       if (result.ok) await load()
+    } catch (cause) {
+      if (alive.current) setNotice(t('acct.failed', { msg: cause instanceof Error ? cause.message : String(cause) }))
     } finally {
       if (alive.current) setBusyKey(null)
     }

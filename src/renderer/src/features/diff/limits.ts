@@ -11,14 +11,6 @@ export function byteLength(text: string): number {
   return new TextEncoder().encode(text).length
 }
 
-export function patchExceedsLimit(patch: string, maxBytes: number = DIFF_LIMITS.maxBytes): boolean {
-  return byteLength(patch) > maxBytes
-}
-
-export function patchExceedsHardLimit(patch: string, maxBytes: number = DIFF_LIMITS.hardMaxBytes): boolean {
-  return byteLength(patch) > maxBytes
-}
-
 const BINARY_RE = /(^|\n)(Binary files .+? differ|GIT binary patch)\s*(\n|$)/
 
 export function isBinaryPatch(patch: string): boolean {

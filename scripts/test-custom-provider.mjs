@@ -119,6 +119,14 @@ export async function runCustomProviderTests(ok, mod) {
   ok(demo.apiKey === 'sk-super-secret', '没重新输入密钥时沿用磁盘上的旧 key')
   ok(demo.myCustomField === 'keep-me', '条目里的未知字段也保留')
 
+  const modelFieldsDisk = { providers: { 'yan-demo': { api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: [{ id: 'demo-1', name: 'Demo', myModelField: 'keep-me' }] } } }
+  const modelFieldsKept = mergeCustomProviders(modelFieldsDisk, [
+    { id: 'yan-demo', api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: [{ id: 'demo-1', name: 'Demo 改名' }] }
+  ])
+  const keptModel = (modelFieldsKept.next.providers)['yan-demo'].models[0]
+  ok(keptModel.myModelField === 'keep-me', '同名模型里的未知字段在保存后仍保留')
+  ok(keptModel.name === 'Demo 改名', '模型里改过的字段覆盖旧值')
+
   const withNewKey = mergeCustomProviders(disk, [
     { id: 'yan-demo', api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: [{ id: 'demo-1' }], apiKey: 'sk-new' }
   ])

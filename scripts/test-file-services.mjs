@@ -146,6 +146,28 @@ async function run() {
     assert.equal(registry.report(1, []), 0)
     assert.equal(registry.report(3, 'nope'), 0)
 
+    const homeDir = join(dir, 'fake-home')
+    const homeSibling = join(dir, 'fake-home-dev')
+    await mkdir(join(homeDir, 'inner'), { recursive: true })
+    await mkdir(homeSibling, { recursive: true })
+    const savedHome = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME }
+    try {
+      process.env.USERPROFILE = homeDir
+      process.env.HOME = homeDir
+      const homeFiles = await compile('src/main/files.ts', join(dir, 'files-home.mjs'))
+      const inside = await homeFiles.listDir(join(homeDir, 'inner'), '', false)
+      assert.equal(inside.abs, `~/inner`)
+      const root = await homeFiles.listDir(homeDir, '', false)
+      assert.equal(root.abs, '~')
+      const sibling = await homeFiles.listDir(homeSibling, '', false)
+      assert.equal(sibling.abs, homeSibling.replace(/\\/g, '/'), '同名前缀的兄弟目录不能显示成 ~ 路径')
+    } finally {
+      for (const [key, value] of Object.entries(savedHome)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+
     console.log(`test-file-services: 全部通过${linked && externalLinked && loopLinked ? '' : '（部分符号链接用例因系统限制跳过）'}`)
   } finally {
     await rm(dir, { recursive: true, force: true })

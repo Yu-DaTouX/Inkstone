@@ -116,6 +116,81 @@ check('按缩进推导折叠区间，折叠后可见行与跳转展开', () => {
   assert.deepEqual([...lines.unfoldToReveal(regions, new Set([3]), 1)], [3])
 })
 
+check('文本预览按 20000 行封顶，正好等于上限时不截断', () => {
+  const long = Array.from({ length: 25_000 }, (_, i) => `line ${i}`).join('\n')
+  const capped = lines.capCodeText(long)
+  assert.equal(capped.capped, true)
+  assert.equal(capped.text.split('\n').length, lines.CODE_LINE_LIMIT)
+  assert.equal(capped.text.split('\n').at(-1), 'line 19999')
+  const exact = Array.from({ length: lines.CODE_LINE_LIMIT }, (_, i) => `line ${i}`).join('\n')
+  assert.deepEqual(lines.capCodeText(exact), { text: exact, capped: false })
+  assert.deepEqual(lines.capCodeText('a\nb'), { text: 'a\nb', capped: false })
+  assert.deepEqual(lines.capCodeText('a\nb', 2), { text: 'a\nb', capped: false })
+  assert.deepEqual(lines.capCodeText('a\nb\nc', 2), { text: 'a\nb', capped: true })
+})
+
+check('缩进列与折叠区间：与大输入下的朴素实现逐行一致', () => {
+  const lead = (text) => {
+    let columns = 0
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text.charCodeAt(i)
+      if (ch === 32) columns += 1
+      else if (ch === 9) columns += 4 - (columns % 4)
+      else return columns
+    }
+    return null
+  }
+  const naiveIndent = (texts) => {
+    const raw = texts.map(lead)
+    return raw.map((value, i) => {
+      if (value !== null) return value
+      let previous = 0
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (raw[j] !== null) {
+          previous = raw[j]
+          break
+        }
+      }
+      let next = 0
+      for (let j = i + 1; j < raw.length; j += 1) {
+        if (raw[j] !== null) {
+          next = raw[j]
+          break
+        }
+      }
+      return Math.min(previous, next)
+    })
+  }
+  const naiveFold = (texts) => {
+    const raw = texts.map(lead)
+    const regions = new Map()
+    for (let i = 0; i < raw.length; i += 1) {
+      const indent = raw[i]
+      if (indent === null) continue
+      let end = -1
+      for (let j = i + 1; j < raw.length; j += 1) {
+        const value = raw[j]
+        if (value === null) continue
+        if (value <= indent) break
+        end = j
+      }
+      if (end > i) regions.set(i, end)
+    }
+    return regions
+  }
+  const shapes = [
+    Array.from({ length: 300 }, (_, i) => ' '.repeat(i % 7 === 0 ? 0 : (i % 3) * 2) + (i % 5 === 0 ? '' : `x${i}`)),
+    Array.from({ length: 400 }, (_, i) => (i % 11 === 0 ? '' : '  '.repeat(Math.min(i, 40)) + 'y')),
+    Array.from({ length: 200 }, (_, i) => (i % 3 === 0 ? '' : '    z')),
+    []
+  ]
+  for (const texts of shapes) {
+    assert.deepEqual(lines.indentColumns(texts, 4), naiveIndent(texts))
+    assert.deepEqual([...lines.foldRegions(texts, 4).entries()].sort((a, b) => a[0] - b[0]), [...naiveFold(texts).entries()].sort((a, b) => a[0] - b[0]))
+  }
+  assert.deepEqual(lines.foldRegions(['a', '', ''], 4).size, 0)
+})
+
 check('视图设置：默认值、非法值回落、写入与 storage 事件同步', () => {
   const store = new Map()
   const storage = { getItem: (key) => (store.has(key) ? store.get(key) : null), setItem: (key, value) => store.set(key, value) }

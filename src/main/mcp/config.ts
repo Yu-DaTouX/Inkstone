@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpServerConfig } from '../../shared/mcp'
 import {
@@ -157,6 +157,27 @@ export function loadMcpServers(env: NodeJS.ProcessEnv = process.env): McpConfigL
     return { servers: [], file, error: `无法读取 MCP 配置（${file}）：${error instanceof Error ? error.message : String(error)}` }
   }
   return parseMcpServersDocument(text, file)
+}
+
+let cachedLoad: { file: string; mtimeMs: number; size: number; result: McpConfigLoadResult } | null = null
+
+export function loadMcpServersCached(env: NodeJS.ProcessEnv = process.env): McpConfigLoadResult {
+  const file = mcpServersFile(env)
+  let mtimeMs: number
+  let size: number
+  try {
+    const info = statSync(file)
+    mtimeMs = info.mtimeMs
+    size = info.size
+  } catch {
+    return { servers: [], file }
+  }
+  if (cachedLoad && cachedLoad.file === file && cachedLoad.mtimeMs === mtimeMs && cachedLoad.size === size) {
+    return cachedLoad.result
+  }
+  const result = loadMcpServers(env)
+  cachedLoad = { file, mtimeMs, size, result }
+  return result
 }
 
 export function parseMcpServersDocument(text: string, file: string): McpConfigLoadResult {

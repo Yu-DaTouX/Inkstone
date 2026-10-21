@@ -11,6 +11,8 @@ import { RemoteDeviceStore } from './remote-devices'
 import { randomBytes } from 'node:crypto'
 import { RelayBridge } from './relay-bridge'
 import { RemoteServer, type PeerHostHandlers, type RemoteServerHandlers } from './remote-server'
+import { RemotePushCoalescer } from './remote-push-coalesce'
+import { remotePushPayload } from './remote-host'
 import type { PeerGrantRegistry } from './peer-grants'
 
 type AddressKind = RemoteAccessStatus['addresses'][number]['kind']
@@ -79,6 +81,7 @@ export class RemoteAccess {
   private relayServer: RemoteServer | null = null
   private relayToken = ''
   private relayPairing: { kind: 'phone' | 'agent'; link: string; expiresAt: number } | null = null
+  private readonly outgoing: RemotePushCoalescer
 
   constructor(
     dataDir: string,
@@ -87,6 +90,7 @@ export class RemoteAccess {
     private readonly peers?: { grants: PeerGrantRegistry; handlers: PeerHostHandlers }
   ) {
     this.devices = new RemoteDeviceStore(dataDir)
+    this.outgoing = new RemotePushCoalescer((message) => this.deliver(message))
     this.relay = new RelayBridge(dataDir, {
       target: () => (this.relayServer?.running ? { host: '127.0.0.1', port: this.relayServer.info.port, relayToken: this.relayToken } : null),
       startYanPairing: () => this.devices.startPairing(),
@@ -198,9 +202,11 @@ export class RemoteAccess {
 
   disconnectConnection(connectionId: string): void {
     this.server?.disconnectConnection(connectionId)
+    this.relayServer?.disconnectConnection(connectionId)
   }
 
   async stop(): Promise<void> {
+    this.outgoing.dispose()
     this.relay.stop()
     const relayServer = this.relayServer
     this.relayServer = null
@@ -209,6 +215,13 @@ export class RemoteAccess {
   }
 
   publish(message: MainPush): void {
+    if (!this.server && !this.relayServer) return
+    const projected = { ...message, payload: remotePushPayload(message.ch, message.payload) } as MainPush
+    this.outgoing.push(projected)
+  }
+
+  private deliver(message: MainPush): void {
+    if (!this.server && !this.relayServer) return
     this.server?.publish(message)
     this.relayServer?.publish(message)
   }

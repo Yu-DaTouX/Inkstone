@@ -8,7 +8,7 @@ async function load(entry, out) {
 
 export async function runSplitViewTests(ok) {
   const split = await load('src/renderer/src/state/split-view.ts', 'out/test/split-view.mjs')
-  const { reconcileSplit, sameSplitSession, displayedSessionOf, useSplitView, placeInSplit, removeSplitTile, neighborOf, MAX_SPLIT_TILES } = split
+  const { reconcileSplit, sameSplitSession, displayedSessionOf, useSplitView, placeInSplit, removeSplitTile, MAX_SPLIT_TILES } = split
 
   const mk = (id) => ({ sessionId: id, path: `C:/s/${id}.jsonl` })
   const [a, b, c, d, e, f] = ['a', 'b', 'c', 'd', 'e', 'f'].map(mk)
@@ -78,7 +78,6 @@ export async function runSplitViewTests(ok) {
   ok(ids(removeSplitTile({ tiles: [a, b, c], live: 2 }, 0)) === 'bc' && removeSplitTile({ tiles: [a, b, c], live: 2 }, 0).live === 1, '去掉焦点左边的块：焦点下标跟着前移')
   ok(removeSplitTile({ tiles: [a, b, c], live: 0 }, 2).live === 0, '去掉焦点右边的块：焦点不动')
   ok(removeSplitTile({ tiles: [a, b], live: 0 }, 1) === null, '只剩一块：退出分屏')
-  ok(neighborOf({ tiles: [a, b, c], live: 0 }, 0) === 1 && neighborOf({ tiles: [a, b, c], live: 2 }, 2) === 1, '关焦点块：优先去右邻，没有就去左邻')
 
   const store = useSplitView
   store.getState().close()
@@ -121,18 +120,15 @@ export async function runSplitViewTests(ok) {
   const swapped = reconcileSplit(withUidSplit, c)
   ok(swapped.tiles[0].uid === withUidSplit.tiles[0].uid && swapped.tiles[0].sessionId === 'c', '焦点那一块换了会话：列的编号沿用')
   const wk = await load('src/renderer/src/state/workspace-key.ts', 'out/test/workspace-key.mjs')
-  ok(wk.workspaceKeyFor({ sessionId: 'z', path: 'C:/s/z.jsonl' }) === 'C:/s/z.jsonl', '没见过的会话：按路径取键')
-  wk.rememberConversationKey({ sessionId: 'z', sessionFile: 'C:/s/z.jsonl', conversationId: 'orig', conversationFile: 'C:/s/orig.jsonl' })
-  ok(wk.workspaceKeyFor({ sessionId: 'z' }) === 'C:/s/orig.jsonl' && wk.workspaceKeyFor({ path: 'C:\\S\\z.jsonl' }) === 'C:/s/orig.jsonl', '成为活动会话后：磁贴取到与单会话相同的对话键（id 或路径都能查到）')
+  ok(wk.workspaceKeyFor({ sessionId: 'z', path: 'C:/s/z.jsonl' }) === 'C:/s/z.jsonl', '会话键优先用文件路径')
+  ok(wk.workspaceKeyFor({ sessionId: 'z' }) === 'z' && wk.workspaceKeyFor({}) === 'pending', '没有文件时退回 id，都没有时用 pending')
+  ok(wk.workspaceKeyFor({ path: 'C:\\S\\z.jsonl' }) === 'C:\\S\\z.jsonl', '路径原样作为键，不做归一化')
   useSplitView.getState().close()
   ok(Object.keys(useSplitView.getState().weights).length === 0, '回到单会话：份额清空')
   const lsData = new Map()
   globalThis.localStorage = { getItem: (k) => lsData.get(k) ?? null, setItem: (k, v) => void lsData.set(k, String(v)) }
   const owners = await load('src/renderer/src/state/resource-owners.ts', 'out/test/resource-owners.mjs')
   ok(owners.claimResource('terminal:1', 'X') === 'X' && owners.claimResource('terminal:1', 'Y') === 'X', '资源归第一个认领的会话，不被后来者改走')
-  owners.claimResource('file:f', 'pending')
-  owners.reassignOwner('pending', 'S')
-  ok(owners.resourceOwner('file:f') === 'S' && owners.resourceOwner('terminal:1') === 'X', '占位键换成真键：它名下的资源跟过去，别人的不动')
   owners.releaseResource('terminal:1')
   ok(owners.resourceOwner('terminal:1') === undefined, '释放后不再有主人')
   owners.claimResource('browser', 'X')
@@ -140,6 +136,15 @@ export async function runSplitViewTests(ok) {
   ok(owners.resourceOwner('browser') === 'X', '浏览器绑定原会话，另一列取得焦点不抢占')
   owners.releaseResource('browser')
   ok(owners.claimResource('browser', 'Y') === 'Y', '关闭浏览器释放归属，下次打开绑定新会话')
+  const brokenKey = 'inkstone.workspace.owners.v1.broken.'
+  ok(![...lsData.keys()].some((k) => k.startsWith(brokenKey)), '存储正常时不留损坏备份')
+  const brokenOwners = await load('src/renderer/src/state/resource-owners.ts', 'out/test/resource-owners-broken.mjs')
+  lsData.set('inkstone.workspace.owners.v1', '{oops')
+  ok(brokenOwners.claimResource('file:x', 'S') === 'S', '存储损坏时仍可重新登记')
+  const backupKey = [...lsData.keys()].find((k) => k.startsWith(brokenKey))
+  ok(!!backupKey && lsData.get(backupKey) === '{oops', '损坏的原始内容另存一份，不被覆盖')
+  ok(JSON.parse(lsData.get('inkstone.workspace.owners.v1'))['file:x'] === 'S', '重写后只含新内容')
+  ok(brokenOwners.resourceOwner('file:x') === 'S', '重新登记后读得回来')
   ok(snaps.newestMessages([msg('x')], [msg('y', 1)]) !== undefined && snaps.latestTimestamp([msg('a', 5), msg('b')]) === 5, '没有时间的消息不算，往前找带时间的')
 }
 

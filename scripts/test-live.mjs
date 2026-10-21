@@ -1,5 +1,5 @@
 import './lib/stdio-guard.mjs'
-import { defaultLiveCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
+import { defaultLiveCases, localProviderCases, validateSyntheticSelection, syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import vm from 'node:vm'
 import {
@@ -36,8 +36,13 @@ const TEST_VISION_MODEL =
   process.env.YAN_TEST_VISION_MODEL || 'commandcode/deepseek/deepseek-v4.1-flash'
 
 const FOLLOWUP_DEBUG_PORT = process.env.YAN_PROBE_DEBUG_PORT || '9397'
+const LANG_EXT_LOG = join(tmpdir(), `lang-ext-${process.pid}-${Date.now()}.log`)
 
 const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
+const DELAY_SCALE = Number(process.env.YAN_TEST_DELAY_SCALE ?? '1') || 1
+function scaledDelay(ms) {
+  return ms === undefined ? ms : Math.round(ms * DELAY_SCALE)
+}
 function freeLocalPort() {
   return new Promise((done, fail) => {
     const server = createServer()
@@ -181,7 +186,8 @@ const CASES = {
     budget: 300000,
     cost: 1,
     model: 'commandcode/deepseek/deepseek-v4.1-flash',
-    env: { YAN_LANG_EXT_LOG: join(tmpdir(), 'lang-ext.log') }
+    env: { YAN_LANG_EXT_LOG: LANG_EXT_LOG },
+    afterExit: 'languageInjection'
   },
   sound: { probe: 'scripts/probe/sound.js', delay: 9000, cost: 0 },
   working: { probe: 'scripts/probe/working.js', delay: 9000, cost: 0 },
@@ -1584,7 +1590,8 @@ const AFTER_EXIT = {
   taskPlanMultiStep: checkTaskPlanMultiStep,
   turnTimingIsolation: checkTurnTimingIsolation,
   turnTimingInterrupted: checkTurnTimingInterrupted,
-  turnTimingHardKill: checkTurnTimingHardKill
+  turnTimingHardKill: checkTurnTimingHardKill,
+  languageInjection: checkLanguageInjection
 }
 
 let taskFixtureBaseline = null
@@ -1730,6 +1737,71 @@ async function checkTurnTimingIsolation(sandboxRoot, _tempBefore, probeText = ''
   return { ok, lines }
 }
 
+async function checkLanguageInjection() {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  let records = []
+  try {
+    records = readFileSync(LANG_EXT_LOG, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line)]
+        } catch {
+          return []
+        }
+      })
+  } catch {
+    return { ok: false, lines: [`✗ 没有扩展注入日志（${LANG_EXT_LOG}）—— 语言规则没有经扩展注入`] }
+  }
+  const starts = records.filter((record) => record.hook === 'start')
+  const langs = starts.map((record) => record.lang)
+  say(starts.length >= 3, `每轮都经过 before_agent_start 注入（${starts.length} 次）`)
+  say(
+    langs.every((lang) => lang === 'zh-CN' || lang === 'en-US'),
+    `每轮读到具体语言（${[...new Set(langs)].join(', ') || '无'}）`
+  )
+  say(starts.every((record) => record.injected === true), '每轮真的注入了语言提示（injected=true）')
+  say(starts.every((record) => Number(record.baseLen) > 0), '注入时带着 pi 的原始系统提示（baseLen > 0）')
+  const firstEnglish = langs.indexOf('en-US')
+  say(firstEnglish > 0, `切英文界面后下一轮就注入 en-US（第 ${firstEnglish + 1} 次起）`)
+  say(firstEnglish > 0 && langs.slice(firstEnglish).includes('zh-CN'), '切回中文后下一轮注入又变回 zh-CN')
+  lines.push(`  记录顺序：${langs.join(' → ') || '无'}`)
+  lines.push('  （模型是否真按注入的语言回复属模型行为，不在本检查里判；探针只打印观察值）')
+  return { ok, lines }
+}
+
+async function loadTurnTimingStore() {
+  const file = join(root, 'out/test/turn-timing-store.mjs')
+  if (!existsSync(file)) {
+    try {
+      await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+        build({
+          entryPoints: ['src/main/turn-timing-store.ts'],
+          outfile: 'out/test/turn-timing-store.mjs',
+          bundle: true,
+          format: 'esm',
+          platform: 'node',
+          logLevel: 'silent'
+        })
+      )
+    } catch {
+      return null
+    }
+  }
+  try {
+    const { pathToFileURL } = await import('node:url')
+    return await import(pathToFileURL(file).href)
+  } catch {
+    return null
+  }
+}
+
 async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = '') {
   const lines = []
   let ok = true
@@ -1766,8 +1838,7 @@ async function checkTurnTimingInterrupted(sandboxRoot, _tempBefore, probeText = 
   )
   say(last?.final === false, `盘上最后一条是中途快照（final=${String(last?.final)}）`)
 
-  const { pathToFileURL } = await import('node:url')
-  const store = await import(pathToFileURL(join(root, 'out/test/turn-timing-store.mjs')).href)
+  const store = await loadTurnTimingStore()
   say(
     store.effectiveTerminalReason(last) === 'interrupted',
     `中途快照被归一为「中断」（${store.effectiveTerminalReason(last)}）`
@@ -2000,7 +2071,7 @@ function orphanPiProcesses() {
 
 const BOUNDARY_PORT = 39873
 const BOUNDARY_ORIGIN = `http://127.0.0.1:${BOUNDARY_PORT}`
-const REMOTE_ROUTE_API_PORT = 37893
+let REMOTE_ROUTE_API_PORT = Number(process.env.YAN_TEST_REMOTE_PORT ?? 37893)
 const REMOTE_ROUTE_TOKEN = 'yan-remote-route-probe-token-2026'
 let remoteRouteProbeState = null
 let handoffFailureState = null
@@ -2842,11 +2913,13 @@ function runProbe(
   driverContext
 ) {
   return new Promise((resolvePromise) => {
+    const probeDelay = scaledDelay(delay)
+    const probeKeysDelay = scaledDelay(keysDelay)
     let probeEnv = {
       ...env,
       ...(caseEnv ?? {}),
       YAN_PROBE: probe,
-      YAN_PROBE_DELAY: String(delay),
+      YAN_PROBE_DELAY: String(probeDelay),
       ...(process.env.YAN_SHOW_WINDOW || visible ? {} : { YAN_PROBE_HIDDEN: '1' }),
       ...(process.env.YAN_PROBE_SHOT
         ? {
@@ -2855,7 +2928,7 @@ function runProbe(
           }
         : {}),
       ...(keys ? { YAN_PROBE_KEYS: keys } : {}),
-      ...(keys && keysDelay ? { YAN_PROBE_KEYS_DELAY: String(keysDelay) } : {})
+      ...(keys && probeKeysDelay ? { YAN_PROBE_KEYS_DELAY: String(probeKeysDelay) } : {})
     }
     if (SYNTHETIC_ONLY) probeEnv = syntheticEnvironment(probeEnv)
     for (const k of [
@@ -2894,9 +2967,9 @@ function runProbe(
       buf += d
     })
 
-    const keyCost = keys ? (keysDelay ?? 0) + keys.split(',').length * 1500 : 0
+    const keyCost = keys ? (probeKeysDelay ?? 0) + keys.split(',').length * 1500 : 0
     const killChild = () => killTree(child)
-    const kill = setTimeout(killChild, delay + keyCost + (budget ?? 90_000))
+    const kill = setTimeout(killChild, probeDelay + keyCost + (budget ?? 90_000))
     let intermediateSnapshot = null
     const snapshotPoll = hardKillAfterIntermediateTiming
       ? setInterval(() => {
@@ -2961,7 +3034,7 @@ function runProbe(
           text: [buf.slice(-3000), driven?.text].filter(Boolean).join('\n'),
           hint: hadOutput
             ? '没抓到 PROBE 输出（但有其它输出）—— 应用可能启动失败，先跑 `npm run probe-pi`。'
-            : `一句输出都没有 —— 进程在探针打印前就被结束了。先看场景预算够不够：delay ${delay}ms + budget ${budget ?? 90_000}ms`
+            : `一句输出都没有 —— 进程在探针打印前就被结束了。先看场景预算够不够：delay ${probeDelay}ms + budget ${budget ?? 90_000}ms。机器忙时可以用 YAN_TEST_DELAY_SCALE=2 把固定等待拉长。`
         })
         return
       }
@@ -3038,19 +3111,29 @@ async function main() {
       console.log(`  本地 fixture 服务：${BOUNDARY_ORIGIN}（下载 / Cookie 哨兵 / 内网目标）`)
     } catch (error) {
       console.error(`✗ 端口 ${BOUNDARY_PORT} 起不了本地服务：${error?.message ?? error}`)
-      console.error('  该端口被别的程序占着？先关掉它再跑（不自动换端口，否则探针会连到别人身上）')
+      console.error('  可能是另一个 test:live 正在跑，或者别的程序占着这个端口。探针把该端口写在源码里，所以不自动换端口；先关掉占用方再跑。')
       process.exit(2)
     }
   }
   if (names.includes('remoteroutes')) {
+    const preferredPort = REMOTE_ROUTE_API_PORT
     try {
-      await assertPortAvailable(REMOTE_ROUTE_API_PORT)
-      console.log(`  远程 API 测试端口：${REMOTE_ROUTE_API_PORT}（仅 127.0.0.1）`)
+      await assertPortAvailable(preferredPort)
     } catch (error) {
-      console.error(`✗ 远程 API 测试端口 ${REMOTE_ROUTE_API_PORT} 不可用：${error?.message ?? error}`)
-      console.error('  为避免探针误连到其它服务，本场景不自动换端口。')
-      process.exit(2)
+      if (process.env.YAN_TEST_REMOTE_PORT) {
+        console.error(`✗ 远程 API 测试端口 ${preferredPort} 不可用：${error?.message ?? error}`)
+        console.error('  指定了 YAN_TEST_REMOTE_PORT，本场景不自动换端口。')
+        process.exit(2)
+      }
+      const picked = await freeLocalPort().catch(() => null)
+      if (!picked) {
+        console.error(`✗ 远程 API 测试端口 ${preferredPort} 不可用：${error?.message ?? error}`)
+        process.exit(2)
+      }
+      REMOTE_ROUTE_API_PORT = picked
+      console.log(`  端口 ${preferredPort} 被占用（可能是另一个 test:live 在跑），远程 API 改用 ${picked}`)
     }
+    console.log(`  远程 API 测试端口：${REMOTE_ROUTE_API_PORT}（仅 127.0.0.1）`)
   }
   let remoteRouteProvider = null
   let handoffFailureProvider = null
@@ -3196,14 +3279,9 @@ async function main() {
       }
     }
 
-    const localProviderNames = names.filter(
-      (name) =>
-        name === 'subagentlocal' ||
-        name === 'turntimingisolation' ||
-        name === 'turntimingkill'
-    )
+    const localProviderNames = localProviderCases(names, CASES)
     if (localProviderNames.length > 1) {
-      console.error('✗ 本机 provider fixture 场景请分开运行，避免共享请求统计混淆')
+      console.error(`✗ 本机 provider fixture 场景请分开运行，避免共享请求统计混淆：${localProviderNames.join(', ')}`)
       process.exit(2)
     }
     if (localProviderNames.length === 1) {
@@ -3356,9 +3434,9 @@ async function main() {
     CASES.mcpcli.env = { YAN_MCP_SERVERS_FILE: mcpServersFile }
 
     if (names.some((n) => CASES[n].usesMcpRegisterFixture)) {
-      const MCP_REG_FIXTURE_PORT = 39341
-      const MCP_REG_CATALOG_PORT = 39342
-      const mcpRegCatalogOrigin = `http://127.0.0.1:${MCP_REG_CATALOG_PORT}`
+      const mcpRegFixturePort = await freeLocalPort()
+      const mcpRegCatalogPort = await freeLocalPort()
+      const mcpRegCatalogOrigin = `http://127.0.0.1:${mcpRegCatalogPort}`
       const mcpRegCatalog = createServer((req, res) => {
         const url = new URL(req.url ?? '/', mcpRegCatalogOrigin)
         res.setHeader('content-type', 'application/json; charset=utf-8')
@@ -3375,7 +3453,7 @@ async function main() {
                   title: '砚远程登记夹具服务',
                   description: '仅用于验证「目录候选 → 授权 → 端点核验 → 登记 → 可用」闭环的远程 MCP 服务。',
                   version: '1.0.0',
-                  remotes: [{ type: 'streamable-http', url: `http://127.0.0.1:${MCP_REG_FIXTURE_PORT}/mcp` }]
+                  remotes: [{ type: 'streamable-http', url: `http://127.0.0.1:${mcpRegFixturePort}/mcp` }]
                 }
               }
             ]
@@ -3383,13 +3461,13 @@ async function main() {
         )
       })
       const mcpRegHttpFixture = spawn(process.execPath, [join(root, 'scripts', 'lib', 'mcp-http-fixture.mjs')], {
-        env: { ...process.env, YAN_MCP_HTTP_PORT: String(MCP_REG_FIXTURE_PORT) },
+        env: { ...process.env, YAN_MCP_HTTP_PORT: String(mcpRegFixturePort) },
         stdio: ['ignore', 'ignore', 'pipe']
       })
       try {
         await new Promise((resolvePromise, rejectPromise) => {
           mcpRegCatalog.once('error', rejectPromise)
-          mcpRegCatalog.listen(MCP_REG_CATALOG_PORT, '127.0.0.1', resolvePromise)
+          mcpRegCatalog.listen(mcpRegCatalogPort, '127.0.0.1', resolvePromise)
         })
         await new Promise((resolvePromise, rejectPromise) => {
           let settled = false
@@ -3417,12 +3495,11 @@ async function main() {
         console.error(`✗ mcpregister 的本地 fixture 起不了：${error?.message ?? error}`)
         process.exit(2)
       }
-      console.log(`  本地 fixture 服务：目录 ${mcpRegCatalogOrigin} + MCP HTTP 127.0.0.1:${MCP_REG_FIXTURE_PORT}/mcp`)
+      console.log(`  本地 fixture 服务：目录 ${mcpRegCatalogOrigin} + MCP HTTP 127.0.0.1:${mcpRegFixturePort}/mcp`)
       CASES.mcpregister.env = {
         YAN_MCP_REGISTRY_URL: `${mcpRegCatalogOrigin}/v0/servers`,
         YAN_NPM_SEARCH_URL: `${mcpRegCatalogOrigin}/npm`,
-        YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json'),
-        YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP: '1'
+        YAN_MCP_SERVERS_FILE: join(sandboxRoot, 'mcp-servers-register.json')
       }
       process.on('exit', () => {
         try {

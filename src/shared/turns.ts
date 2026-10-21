@@ -22,7 +22,7 @@ export interface TurnThinking {
   at: number
 }
 
-export interface TurnText {
+interface TurnText {
   id: string
   text: string
   sourceCwd?: string
@@ -183,6 +183,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     usage?: Usage
     usagePartial: boolean
     last: UIMessage | undefined
+    error?: string
+    errorMsgId?: string
     model?: string
     timestamp?: number
     timing?: TurnTimingMeta
@@ -274,8 +276,8 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         : {}),
       model: cur.model,
       responseDetail: cur.responseDetail,
-      error: cur.last?.error,
-      errorMsgId: cur.last?.error ? cur.last.id : undefined,
+      error: cur.error,
+      errorMsgId: cur.errorMsgId,
       sourceIds: cur.sourceIds
     })
     cur = null
@@ -392,22 +394,16 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (hasUsageNumbers(m.usage)) cur.usage = addUsage(cur.usage, m.usage)
     else cur.usagePartial = true
     if (m.model) cur.model = m.model
-    if (m.error) cur.last = m
+    if (m.error && !cur.errorMsgId) {
+      cur.error = m.error
+      cur.errorMsgId = m.id
+    }
     if (!cur.last) cur.last = m
     if (m.elapsedMs !== undefined || m.speed !== undefined) cur.last = m
   }
 
   flush()
   return turns
-}
-
-export function currentTurnMessages(messages: UIMessage[]): UIMessage[] {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === 'user' && isSubagentNotice(messages[i].text)) continue
-    const role = messages[i].role
-    if (role === 'user' || role === 'bash') return messages.slice(i + 1)
-  }
-  return messages
 }
 
 export interface WaitSpan {
@@ -461,21 +457,6 @@ export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | un
     totalTokens: a.totalTokens + b.totalTokens,
     cost: a.cost + b.cost
   }
-}
-
-export function turnUsageOf(messages: readonly UIMessage[]): { usage?: Usage; partial: boolean } {
-  let usage: Usage | undefined
-  let missing = false
-  for (const m of messages) {
-    if (m.role !== 'assistant') continue
-    if (hasUsageNumbers(m.usage)) usage = addUsage(usage, m.usage)
-    else missing = true
-  }
-  return { usage, partial: missing && usage !== undefined }
-}
-
-export function turnUsage(turn: AssistantTurn): Usage | undefined {
-  return turn.usage
 }
 
 export function cacheHitRate(u?: Usage): number | null {

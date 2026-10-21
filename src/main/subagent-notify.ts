@@ -2,7 +2,7 @@ import type { SubagentRun } from '../shared/ipc'
 import { buildSubagentNotice } from '../shared/subagent-notice'
 
 export const NOTICE_COALESCE_WINDOW_MS = 3_000
-export const NOTICE_BATCH_MIN_WAIT_MS = 2 * 60_000
+export const NOTICE_BATCH_MIN_WAIT_MS = 60_000
 export const NOTICE_BATCH_MAX_WAIT_MS = 10 * 60_000
 export const NOTICE_SIBLINGS_POLL_MS = 15_000
 const MAX_DELIVERY_ATTEMPTS = 5

@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto'
 import { dirname, join, resolve, sep } from 'node:path'
 import { CapabilityCommandError, type CapabilityCommandResult } from '../capability-server'
 import { YAN_DIR } from '../paths'
-import { loadMcpServers } from './config'
+import { loadMcpServersCached } from './config'
+import { truncateUtf8 } from '../../shared/mcp'
 import { isInkstoneManaged, type McpAppCsp, type McpAppServerConfig } from './app-spec'
 import {
   McpAppUnmanagedError,
@@ -13,18 +14,18 @@ import {
   type McpAppToolDescriptor
 } from './app-host'
 
-export const MCP_APP_PROXY_TOOLS_ENV = 'YAN_MCP_APP_TOOLS'
+const MCP_APP_PROXY_TOOLS_ENV = 'YAN_MCP_APP_TOOLS'
 export const MCP_APP_PROXY_PROJECT_ENV = 'YAN_MCP_APP_PROJECT_ID'
-export const MCP_APP_PROXY_DIRNAME = 'mcp-app'
-export const MCP_APP_PROXY_SNAPSHOT_FILE = 'tools.json'
-export const MCP_APP_PROXY_TEXT_MAX_BYTES = 32 * 1024
-export const MCP_APP_PROXY_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const MCP_APP_PROXY_DIRNAME = 'mcp-app'
+const MCP_APP_PROXY_SNAPSHOT_FILE = 'tools.json'
+const MCP_APP_PROXY_TEXT_MAX_BYTES = 32 * 1024
+const MCP_APP_PROXY_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 export const MCP_APP_PROXY_COLLISION = 'tool_name_collision'
 export const MCP_APP_PROXY_NO_TARGETS = 'no_targets'
 const SNAPSHOT_VERSION = 1
 const SNAPSHOT_SOURCE = 'inkstone-mcp-app-proxy'
 
-export function normalizeMcpAppToolName(serverId: string, toolName: string): string {
+function normalizeMcpAppToolName(serverId: string, toolName: string): string {
   return `mcp__${normalizeSegment(serverId)}__${normalizeSegment(toolName)}`
 }
 
@@ -32,7 +33,7 @@ function normalizeSegment(value: string): string {
   return String(value).replace(/-/g, '_')
 }
 
-export interface McpAppProxyTool {
+interface McpAppProxyTool {
   name: string
   serverId: string
   toolName: string
@@ -42,7 +43,7 @@ export interface McpAppProxyTool {
   annotations?: unknown
 }
 
-export interface McpAppProxySnapshotServer {
+interface McpAppProxySnapshotServer {
   id: string
   title?: string
   toolCount: number
@@ -50,13 +51,13 @@ export interface McpAppProxySnapshotServer {
   error?: string
 }
 
-export interface McpAppProxySnapshotExcluded {
+interface McpAppProxySnapshotExcluded {
   serverId: string
   toolName: string
   reason: 'not-model-visible'
 }
 
-export interface McpAppProxySnapshot {
+interface McpAppProxySnapshot {
   version: number
   generatedAt: string
   source: string
@@ -65,7 +66,7 @@ export interface McpAppProxySnapshot {
   excluded: McpAppProxySnapshotExcluded[]
 }
 
-export interface McpAppProxyRefreshResult {
+interface McpAppProxyRefreshResult {
   ok: boolean
   path: string
   written: boolean
@@ -79,7 +80,7 @@ export interface McpAppProxyRefreshResult {
   error?: string
 }
 
-export interface McpAppProxySnapshotStatus {
+interface McpAppProxySnapshotStatus {
   path: string
   present: boolean
   generatedAt: string | null
@@ -88,14 +89,14 @@ export interface McpAppProxySnapshotStatus {
   needsRefresh: boolean
 }
 
-export interface McpAppProxyOwner {
+interface McpAppProxyOwner {
   sessionId: string
   projectId: string
   runnerId?: string
   epoch?: number
 }
 
-export interface McpAppProxyCallRecord {
+interface McpAppProxyCallRecord {
   callId: string
   owner: McpAppProxyOwner
   serverId: string
@@ -115,7 +116,7 @@ export interface McpAppProxyCallRecord {
   code?: string
 }
 
-export class McpAppProxyError extends Error {
+class McpAppProxyError extends Error {
   constructor(
     readonly code: string,
     message: string
@@ -125,7 +126,7 @@ export class McpAppProxyError extends Error {
   }
 }
 
-export interface McpAppProxyHostLike {
+interface McpAppProxyHostLike {
   listManagedServers(): McpAppServerConfig[]
   listToolsWithMeta(
     serverId: string,
@@ -140,7 +141,7 @@ export interface McpAppProxyHostLike {
   statusOf(serverId: string): { status: string; error?: string }
 }
 
-export interface McpAppProxyServiceOptions {
+interface McpAppProxyServiceOptions {
   host?: McpAppProxyHostLike
   env?: NodeJS.ProcessEnv
   dir?: string
@@ -162,7 +163,7 @@ function isSafeOwner(owner: unknown): owner is McpAppProxyOwner {
   )
 }
 
-export function isSafeMcpAppCallId(callId: unknown): callId is string {
+function isSafeMcpAppCallId(callId: unknown): callId is string {
   return typeof callId === 'string' && /^[A-Za-z0-9._:/-]{1,200}$/.test(callId) && !callId.includes('..')
 }
 
@@ -173,14 +174,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-export function truncateUtf8(text: string, maxBytes: number): { text: string; bytes: number; truncated: boolean } {
-  const buffer = Buffer.from(text, 'utf8')
-  if (buffer.length <= maxBytes) return { text, bytes: buffer.length, truncated: false }
-  let end = maxBytes
-  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1
-  return { text: buffer.subarray(0, end).toString('utf8'), bytes: buffer.length, truncated: true }
 }
 
 async function writeAtomicText(path: string, text: string): Promise<void> {
@@ -204,14 +197,13 @@ function cloneForRead<T>(value: T): T {
 }
 
 export class McpAppProxyService {
-  private readonly host: McpAppProxyHostLike
-  private readonly env: NodeJS.ProcessEnv
+  private host: McpAppProxyHostLike
+  private env: NodeJS.ProcessEnv
   private readonly dir: string
   private readonly maxTextBytes: number
   private readonly snapshotMaxAgeMs: number
   private readonly maxRecords: number
   private readonly records = new Map<string, McpAppProxyCallRecord>()
-  private readonly listeners = new Set<(record: McpAppProxyCallRecord) => void>()
 
   constructor(options: McpAppProxyServiceOptions = {}) {
     this.host = options.host ?? mcpAppHost()
@@ -220,6 +212,11 @@ export class McpAppProxyService {
     this.maxTextBytes = options.maxTextBytes ?? MCP_APP_PROXY_TEXT_MAX_BYTES
     this.snapshotMaxAgeMs = options.snapshotMaxAgeMs ?? MCP_APP_PROXY_SNAPSHOT_MAX_AGE_MS
     this.maxRecords = options.maxRecords ?? 200
+  }
+
+  adopt(options: McpAppProxyServiceOptions): void {
+    if (options.env) this.env = options.env
+    if (options.host) this.host = options.host
   }
 
   snapshotPath(): string {
@@ -403,7 +400,7 @@ export class McpAppProxyService {
   }
 
   managedConfigOrNull(serverId: string): McpAppServerConfig | null {
-    const config = loadMcpServers(this.env).servers.find((server) => server.id === serverId)
+    const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
     if (!config || !isInkstoneManaged(config)) return null
     return config
   }
@@ -493,14 +490,8 @@ export class McpAppProxyService {
     return record ? cloneForRead(record) : null
   }
 
-  onCallResult(listener: (record: McpAppProxyCallRecord) => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
-
   async close(): Promise<void> {
     this.records.clear()
-    this.listeners.clear()
   }
 
   private recordKey(owner: McpAppProxyOwner, callId: string): string {
@@ -513,12 +504,6 @@ export class McpAppProxyService {
       const oldest = this.records.keys().next().value
       if (oldest === undefined) break
       this.records.delete(oldest)
-    }
-    for (const listener of this.listeners) {
-      try {
-        listener(cloneForRead(record))
-      } catch {
-      }
     }
   }
 
@@ -553,7 +538,7 @@ function isAbortError(error: unknown): boolean {
   return name === 'AbortError' || code === 'ABORT_ERR' || code === '20'
 }
 
-export interface McpAppProxyCommandInput {
+interface McpAppProxyCommandInput {
   command: string
   params: Record<string, unknown>
   owner: McpAppProxyOwner
@@ -621,7 +606,11 @@ export function assertLegacyMcpAccessBlocked(input: {
 let sharedService: McpAppProxyService | undefined
 
 export function mcpAppProxyService(options: McpAppProxyServiceOptions = {}): McpAppProxyService {
-  if (!sharedService) sharedService = new McpAppProxyService(options)
+  if (!sharedService) {
+    sharedService = new McpAppProxyService(options)
+    return sharedService
+  }
+  sharedService.adopt(options)
   return sharedService
 }
 
@@ -629,20 +618,6 @@ export async function closeMcpAppProxyService(): Promise<void> {
   const service = sharedService
   sharedService = undefined
   await service?.close()
-}
-
-export async function refreshMcpAppTools(options: {
-  env?: NodeJS.ProcessEnv
-  host?: McpAppProxyHostLike
-  serverIds?: string[]
-  callerProjectId?: string
-  signal?: AbortSignal
-} = {}): Promise<McpAppProxyRefreshResult> {
-  return mcpAppProxyService({ env: options.env, host: options.host }).refresh({
-    ...(options.serverIds ? { serverIds: options.serverIds } : {}),
-    ...(options.callerProjectId ? { callerProjectId: options.callerProjectId } : {}),
-    ...(options.signal ? { signal: options.signal } : {})
-  })
 }
 
 export function mcpAppProxyToolsEnv(env: NodeJS.ProcessEnv = process.env): { [MCP_APP_PROXY_TOOLS_ENV]?: string } {

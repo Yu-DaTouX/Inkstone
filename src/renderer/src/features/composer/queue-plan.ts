@@ -1,9 +1,9 @@
 import type { QueueItem, QueueState } from '../../../../shared/ipc'
 
-export type QueueKind = 'steering' | 'followUp'
-export type QueueMove = 'up' | 'down'
+type QueueKind = 'steering' | 'followUp'
+type QueueMove = 'up' | 'down'
 
-export interface QueueLocation {
+interface QueueLocation {
   kind: QueueKind
   index: number
   item: QueueItem
@@ -59,9 +59,21 @@ export function planQueueClear(state: QueueState): QueueState | null {
   return { steering: [], followUp: [] }
 }
 
-export function droppedQueueText(state: QueueState): string {
-  return [...state.steering, ...state.followUp]
-    .map((item) => item.text)
-    .filter((text) => !!text)
-    .join('\n')
+export type QueueOp =
+  | { op: 'move'; id: string; direction: QueueMove }
+  | { op: 'edit'; id: string; text: string }
+  | { op: 'remove'; id: string }
+  | { op: 'clear' }
+
+export function planQueueOp(state: QueueState, op: QueueOp): QueueState | null {
+  switch (op.op) {
+    case 'move':
+      return planQueueMove(state, op.id, op.direction)
+    case 'edit':
+      return planQueueEdit(state, op.id, op.text)
+    case 'remove':
+      return planQueueRemove(state, op.id)
+    case 'clear':
+      return planQueueClear(state)
+  }
 }

@@ -102,12 +102,9 @@ export interface SettingsText {
   contextUnknown: string
 
 
-  missingTitle: string
-  missingBody: string
-  unmigratedTitle: string
-  unmigratedBody: string
   unknownTitle: string
   unknownBody: string
+  revealFolded: string
   backToAppearance: string
   backToChat: string
 
@@ -242,12 +239,9 @@ const ZH: SettingsText = {
   contextUnknown: '未知',
 
 
-  missingTitle: '这一页暂不可用',
-  missingBody: '这一页在当前版本里暂不可用。',
-  unmigratedTitle: '这一页暂未提供',
-  unmigratedBody: '“{view}”暂未在当前界面提供。',
   unknownTitle: '没有这个设置页',
   unknownBody: '“{view}”不是已知的设置页，可以返回外观。',
+  revealFolded: '这一项在折叠区里，先打开高亮的开关。',
   backToAppearance: '返回外观',
   backToChat: '返回会话',
 
@@ -382,12 +376,9 @@ const EN: SettingsText = {
   contextUnknown: 'unknown',
 
 
-  missingTitle: 'This page is not available yet',
-  missingBody: 'This page is not available in the current version.',
-  unmigratedTitle: 'This page is not available yet',
-  unmigratedBody: '“{view}” is not available in the current interface yet.',
   unknownTitle: 'No such settings page',
   unknownBody: '“{view}” is not a known settings page. You can return to Appearance.',
+  revealFolded: 'This option sits in a collapsed group — turn on the highlighted switch first.',
   backToAppearance: 'Back to Appearance',
   backToChat: 'Back to chat',
 

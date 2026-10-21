@@ -22,7 +22,7 @@ export function consentFeedbackSummary(decision: ConsentDecision, feedback: unkn
   return { feedback: reason, message: denyFeedbackNote(reason) }
 }
 
-export interface ConsentRecord {
+interface ConsentRecord {
   decision: ConsentDecision
   at: number
 }
@@ -31,7 +31,6 @@ export interface ConsentEntry {
   key: string
   parts: ConsentKeyParts
   records: ConsentRecord[]
-  override?: 'always-ask'
   lastAutoAt?: number
 }
 
@@ -40,7 +39,7 @@ export interface ConsentLedger {
   entries: ConsentEntry[]
 }
 
-export const CONSENT_POLICY = {
+const CONSENT_POLICY = {
   minRecords: 5,
   minEffective: 4,
   halfLifeDays: 30,
@@ -92,7 +91,7 @@ export interface ConsentStats {
   lowerBound: number | null
 }
 
-export function consentStats(records: readonly ConsentRecord[], now: number): ConsentStats {
+function consentStats(records: readonly ConsentRecord[], now: number): ConsentStats {
   let allowWeight = 0
   let denyWeight = 0
   for (const record of records) {
@@ -135,7 +134,6 @@ export function consentVerdict(entry: ConsentEntry | undefined, parts: ConsentKe
   const ask = (reason: string): ConsentVerdict => ({ mode: 'ask', reason, danger, stats })
   if (danger) return ask(`属于危险类别「${danger}」，每次都要询问`)
   if (parts.scene === 'remote') return ask('远程场景按连接所有者的授权处理，不使用本机同意记录')
-  if (entry?.override === 'always-ask') return ask('你已将这一类设为始终询问')
   if (stats.total < CONSENT_POLICY.minRecords) return ask(`同类答复只有 ${stats.total} 次，至少 ${CONSENT_POLICY.minRecords} 次才考虑自动`)
   const recent = records.slice(-CONSENT_POLICY.recentWindow)
   if (recent.some((r) => r.decision === 'deny')) return ask(`最近 ${CONSENT_POLICY.recentWindow} 次里有拒绝`)
@@ -176,7 +174,6 @@ export function parseConsentLedger(value: unknown): ConsentLedger {
       key: item.key,
       parts: item.parts,
       records: records.slice(-CONSENT_POLICY.keep),
-      ...(item.override === 'always-ask' ? { override: 'always-ask' as const } : {}),
       ...(typeof item.lastAutoAt === 'number' ? { lastAutoAt: item.lastAutoAt } : {})
     })
   }
@@ -187,7 +184,6 @@ export interface ConsentEntryView {
   key: string
   parts: ConsentKeyParts
   verdict: ConsentVerdict
-  override?: 'always-ask'
   lastAutoAt?: number
   lastAnswerAt?: number
 }

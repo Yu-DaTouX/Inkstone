@@ -10,8 +10,7 @@ export const STATUS_TEXT = {
   wait: '等你回答',
   connecting: '连接中',
   open: '已连接',
-  reconnecting: '重新连接中',
-  closed: '已断开'
+  reconnecting: '重新连接中'
 } as const
 
 export function IconButton({ name, label, onPress, disabled, busy, primary = false, back = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; back?: boolean }) {

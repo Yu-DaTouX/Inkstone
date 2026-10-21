@@ -75,8 +75,7 @@ export function commandTokens(query: string): string[] {
 export function commandMatchScore(item: CommandItem, tokens: readonly string[]): number | null {
   if (!tokens.length) return 0
   const label = item.label.toLowerCase()
-  const haystack = `${item.label}\n${item.keywords}`.toLowerCase()
-  if (!tokens.every((token) => haystack.includes(token))) return null
+  if (!tokens.every((token) => label.includes(token) || item.keywords.includes(token))) return null
   if (label.startsWith(tokens[0])) return 0
   if (label.includes(tokens[0])) return 1
   return 2

@@ -7,13 +7,14 @@ import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../ti
 import { getSettings } from '../settings'
 import { compactionInfo } from '../compaction'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
-import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
+import { listSessions, deleteSession, readTitleSamples, restoreSession, isSessionFileInSessionsDir, sessionsToDelete } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
-import { archiveSessionsBatch, moveSessionLayout, setSessionFlags } from '../session-layout'
-import { selectAutoArchive } from '../../shared/session-archive'
+import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
+import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
 import { readUsageStats } from '../usage-stats'
+import { closeTerminalsForOwner } from '../terminal'
 
 export interface SelectedSessionTarget {
   sessionFile: string
@@ -80,10 +81,13 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       const chain = host.sessionChains.chainOf(path)
       const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
       const current = host.ac()?.getState()?.sessionFile
-      for (const target of targets) await host.runners()?.stopBySessionFile(target)
+      const affected = new Set<string>(targets.map((target) => resolve(target)))
+      for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
+      for (const target of affected) await host.runners()?.stopBySessionFile(target)
       const tokens: string[] = []
       for (const target of targets) {
         tokens.push(await deleteSession(target, current))
+        closeTerminalsForOwner(target)
       }
       await host.sessionChains.forget(path).catch(() => false)
       host.pushRunners()
@@ -111,14 +115,10 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
       return { ok: false, error: '目标项目不存在或已被移除' }
     }
-    const summaries = await listSessions(500, settings.projects)
-    const summary = summaries.find((item) => item.id === sessionId)
-    if (!summary) return { ok: false, error: '找不到要移动的会话' }
+    const target = await locateSession(sessionId)
+    if (!target) return { ok: false, error: '找不到要移动的会话' }
     try {
-      const entry = await moveSessionLayout(
-        { sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd },
-        projectId
-      )
+      const entry = await moveSessionLayout({ sessionId, sessionFile: target.path, cwd: target.cwd }, projectId)
       return { ok: true, entry }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -207,14 +207,14 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const live = host.runners()?.agentForSession(sid)
     if (live) return live.regenerateTitle()
 
-    const settings = await getSettings()
-    const session = (await listSessions(500, settings.projects)).find((item) => item.id === sid)
+    const session = await locateSession(sid)
     if (!session) return { ok: false, error: '找不到目标会话，可能已被删除' }
 
     const samples = await readTitleSamples(session.path)
     if (!samples.length) return { ok: false, error: '该会话没有可用的用户文字，已保留原标题' }
 
     const manual = (await manualTitles())[sid]
+    const settings = await getSettings()
     const result = await generateTitle({
       sessionId: sid,
       samples,
@@ -236,31 +236,43 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const settings = await getSettings()
     const requested = Number(process.env.YAN_TEST_SESSION_LIST_LIMIT)
     const limit = Number.isInteger(requested) && requested > 200 && requested <= 1000 ? requested : 200
-    const list = await filterChainRepresentatives(await listSessions(limit, settings.projects))
-    return sweepAutoArchive(list, settings.autoArchiveDays)
+    return filterChainRepresentatives(await listSessions(limit, settings.projects))
   })
 
-  async function sweepAutoArchive<T extends Parameters<typeof selectAutoArchive>[0][number]>(list: T[], days: unknown): Promise<T[]> {
-    const busyFiles = (host.runners()?.statuses() ?? []).map((r) => r.sessionFile)
-    const ids = selectAutoArchive(list, { days: Number(days), now: Date.now(), busyFiles })
-    if (!ids.length) return list
-    try {
-      await archiveSessionsBatch(ids)
-    } catch {
-      return list
-    }
-    const at = Date.now()
-    const done = new Set(ids)
-    return list.map((s) => (done.has(s.id) ? { ...s, archivedAt: at } : s))
+  async function locateSession(sessionId: string): Promise<{ path: string; cwd: string } | undefined> {
+    const layout = await getSessionLayout()
+    const entry = layout.entries.find((item) => item.sessionId === sessionId)
+    if (entry?.sessionFile && existsSync(entry.sessionFile)) return { path: entry.sessionFile, cwd: entry.cwd }
+    const settings = await getSettings()
+    const summary = (await listSessions(500, settings.projects)).find((item) => item.id === sessionId)
+    return summary ? { path: summary.path, cwd: summary.cwd } : undefined
   }
 
+  function scheduleAutoArchiveSweep(): void {
+    const sweep = async (): Promise<void> => {
+      try {
+        const settings = await getSettings()
+        await runAutoArchiveSweep({
+          sessions: await filterChainRepresentatives(await listSessions(200, settings.projects)),
+          days: settings.autoArchiveDays,
+          busyFiles: (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile),
+          archive: (ids) => archiveSessionsBatch(ids)
+        })
+      } catch {
+        return
+      }
+    }
+    void sweep()
+    const timer = setInterval(() => void sweep(), AUTO_ARCHIVE_SWEEP_INTERVAL_MS)
+    timer.unref?.()
+  }
+  scheduleAutoArchiveSweep()
+
   async function setFlags(sessionId: string, flags: { archived?: boolean; pinned?: boolean }): Promise<{ ok: boolean; error?: string }> {
-    const settings = await getSettings()
-    const summaries = await listSessions(500, settings.projects)
-    const summary = summaries.find((item) => item.id === sessionId)
-    if (!summary) return { ok: false, error: '找不到这条会话' }
+    const target = await locateSession(sessionId)
+    if (!target) return { ok: false, error: '找不到这条会话' }
     try {
-      await setSessionFlags({ sessionId: summary.id, sessionFile: summary.path, cwd: summary.cwd }, flags)
+      await setSessionFlags({ sessionId, sessionFile: target.path, cwd: target.cwd }, flags)
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -271,6 +283,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
 
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
+    if (!(await isSessionFileInSessionsDir(path))) return null
     return host.readHistoryWithArtifacts(path)
   })
 }

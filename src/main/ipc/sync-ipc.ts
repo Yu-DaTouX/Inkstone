@@ -20,6 +20,7 @@ import {
 export interface SyncServiceLike {
   sync(): Promise<SyncReport>
   listConflicts(): Promise<ConflictRecord[]>
+  countConflicts(): Promise<number>
   resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }>
 }
 
@@ -144,7 +145,7 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
       }
       if (current.syncRoot) {
         try {
-          status.conflictCount = (await deps.makeService(current.syncRoot).listConflicts()).length
+          status.conflictCount = await deps.makeService(current.syncRoot).countConflicts()
         } catch (error) {
           status.error = describe(error)
         }
@@ -225,9 +226,11 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
     if (!conflictId) return { ok: false, error: '缺少冲突编号' }
     if (!isResolution(resolution)) return { ok: false, error: '未知的处理方式' }
     try {
-      const service = await configuredService()
-      if (!service) return { ok: false, error: '还没有配置同步文件夹' }
-      return await service.resolveConflict(conflictId, resolution)
+      return await exclusive(async () => {
+        const service = await configuredService()
+        if (!service) return { ok: false, error: '还没有配置同步文件夹' }
+        return service.resolveConflict(conflictId, resolution)
+      })
     } catch (error) {
       return { ok: false, error: describe(error) }
     }

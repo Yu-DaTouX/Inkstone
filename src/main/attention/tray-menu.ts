@@ -3,6 +3,7 @@ import type { AttentionSummary } from './summary'
 
 export interface TraySessionStatus {
   id: string
+  title?: string
   sessionFile?: string
   sessionId?: string
   projectId?: string
@@ -45,7 +46,7 @@ function liveItems(zh: boolean, statuses: TraySessionStatus[], callbacks: Attent
     return [{ type: 'item', label: zh ? '暂无运行中的会话' : 'No running sessions', enabled: false }]
   }
   return live.map((status) => {
-    const name = status.sessionFile ? basename(status.sessionFile) : status.sessionId || status.id
+    const name = status.title?.trim() || (status.sessionFile ? basename(status.sessionFile) : '') || status.sessionId || status.id
     const state = status.waiting
       ? (zh ? '等待回答' : 'Waiting')
       : status.running

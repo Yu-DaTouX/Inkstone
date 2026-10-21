@@ -109,12 +109,4 @@ export function runDangerGuardTests(ok, mod) {
   ok(outside('powershell', { command: 'Get-ChildItem D:/other' }).length === 0, 'PowerShell 读取不问')
   ok(outside('bash', { command: 'echo hi > ~/notes.txt' }, 'C:/proj').length === 1, '写家目录要问')
   ok(outside('bash', { command: 'echo hi > /tmp/x.txt' }).length === 0, '写临时目录不问')
-
-  const { hasDelete, shellDeleteTargets, isTempPath, trashHint } = mod
-  ok(hasDelete('ls && rm a.txt') && !hasDelete('grep rm a.txt'), '删除只认命令位')
-  ok(shellDeleteTargets('rm -rf build dist', 'C:/proj').join('|') === 'c:/proj/build|c:/proj/dist', '删除目标按会话目录解析')
-  ok(shellDeleteTargets('Remove-Item -Path D:/x/a.txt -Force', 'C:/proj').join('|') === 'd:/x/a.txt', 'PowerShell -Path 取路径参数')
-  ok(isTempPath(`${process.env.TEMP ?? '/tmp'}/junk`) && !isTempPath('C:/proj/a.txt'), '临时目录判定')
-  ok(!isTempPath(process.env.TEMP ?? '/tmp'), '临时目录本身不算「里面」')
-  ok(/yan file trash/.test(trashHint(['c:/proj/a.txt'])) && /c:\/proj\/a\.txt/.test(trashHint(['c:/proj/a.txt'])), '拦下说明给出回收站命令与目标')
 }

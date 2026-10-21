@@ -6,7 +6,7 @@ import { Icon } from './Icon'
 import type { BranchPagerModel } from './branch-pager-model'
 import './branch-pager.css'
 
-export interface BranchPagerText {
+interface BranchPagerText {
   group: string
   prev: string
   next: string
@@ -42,7 +42,7 @@ export interface BranchPagerBinding {
   onNavigate: (targetId: string) => void
 }
 
-export interface BranchPagerProps {
+interface BranchPagerProps {
   model: BranchPagerModel
   disabled?: boolean
   pending?: boolean

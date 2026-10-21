@@ -6,7 +6,7 @@ import { DiffView } from '../diff'
 import { loadSubagentPatch, subagentReviewGate, type SubagentPatch } from './subagent-review'
 import './subagent-review.css'
 
-export interface SubagentReviewProps {
+interface SubagentReviewProps {
   run: SubagentRun
   onMerge: (id: string) => Promise<void>
   onDiscard: (id: string) => Promise<void>

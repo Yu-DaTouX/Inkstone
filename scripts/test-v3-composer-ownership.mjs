@@ -192,7 +192,8 @@ export function ListBox(){ return null }
 export function Separator(){ return null }
 export function Skeleton(){ return null }
 export function Toast(){ return null }`,
-  i18n: `export function useT(){ return (k) => String(k) }
+  i18n: `export const currentLang = 'zh-CN'
+export function useT(){ return (k) => String(k) }
 export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }
 export function translate(_lang, k){ return String(k) }`,
   attachmentFiles: `export async function readFiles(){ return [] }`,
@@ -406,7 +407,6 @@ function enterEvent() {
 }
 
 function resetStore(store, activation, overrides = {}) {
-  activation?.resetSessionActivationForTest?.()
   store.setState({
     sessions: SESSIONS,
     settings: { cwd: 'C:/proj', projects: [] },

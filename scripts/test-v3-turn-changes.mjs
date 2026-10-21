@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -13,7 +14,7 @@ const ok = (condition, label, detail) => {
   console.log(`✓ ${label}`)
 }
 
-const dir = await mkdtemp(join(ROOT, '.tmp', 'v3-turn-changes-'))
+const dir = await mkdtemp(join(tmpdir(), 'v3-turn-changes-'))
 try {
   const out = join(dir, 'turn-changes.mjs')
   await build({
@@ -48,6 +49,9 @@ try {
   ok(!isInsideCwd('C:\\Users\\me\\AppData\\Local\\Temp\\yan-news\\na.json', 'E:\\proj') && !isInsideCwd('/tmp/yan-news/na.json', '/proj'), '系统临时目录等 cwd 之外的路径不算')
   ok(!isInsideCwd('E:\\proj-other\\a.ts', 'E:\\proj') && !isInsideCwd('../x.ts', '/proj/sub') && !isInsideCwd('src/../../x.ts', '/proj'), '同前缀兄弟目录与 .. 逃逸不算')
   ok(isInsideCwd('/anywhere/a.ts', undefined) && isInsideCwd('/anywhere/a.ts', ''), '拿不到 cwd 时不过滤')
+  ok(isInsideCwd('E:\\Proj\\Src\\a.ts', 'e:\\proj\\src'), 'Windows 盘符路径折叠大小写')
+  ok(isInsideCwd('/proj/src/a.ts', '/proj/src'), 'POSIX 路径同大小写算 cwd 内')
+  ok(!isInsideCwd('/proj/Src/a.ts', '/proj/src'), 'POSIX 路径大小写敏感，不同大小写不算同一目录')
 
   const scoped = collectTurnChanges([call('a', diff('E:\\proj\\src\\a.ts', 1, 0)), call('b', diff('C:\\Temp\\yan-news\\na.json', 1, 2)), call('c', diff('rel/b.ts', 2, 0, 'created'))], 'E:\\proj')
   ok(scoped?.files.length === 2 && scoped.files.every((f) => !f.path.includes('yan-news')), '统计只含工作目录内的文件', scoped?.files)

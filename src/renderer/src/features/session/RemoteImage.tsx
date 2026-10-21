@@ -9,8 +9,19 @@ import type { RemoteImageResult } from '../../../../shared/ipc'
 type RemoteState = { phase: 'checking' } | { phase: 'idle' } | { phase: 'loading' } | { phase: 'ready'; dataUrl: string } | { phase: 'failed'; code: string }
 
 const loaded = new Map<string, string>()
+const LOADED_LIMIT = 32
 
-export function remoteImageHost(url: string): string {
+function rememberLoaded(src: string, dataUrl: string): void {
+  loaded.delete(src)
+  loaded.set(src, dataUrl)
+  while (loaded.size > LOADED_LIMIT) {
+    const oldest = loaded.keys().next().value
+    if (oldest === undefined) break
+    loaded.delete(oldest)
+  }
+}
+
+function remoteImageHost(url: string): string {
   try {
     return new URL(url).host
   } catch {
@@ -18,7 +29,7 @@ export function remoteImageHost(url: string): string {
   }
 }
 
-export function remoteImageState(result: RemoteImageResult, prompted: boolean): RemoteState {
+function remoteImageState(result: RemoteImageResult, prompted: boolean): RemoteState {
   if (result.ok) return { phase: 'ready', dataUrl: result.dataUrl }
   if (result.code === 'needs-consent' && !prompted) return { phase: 'idle' }
   return { phase: 'failed', code: result.code }
@@ -38,7 +49,7 @@ export function RemoteImage({ src, alt, className }: { src: string; alt?: string
     }
     if (prompt) setState({ phase: 'loading' })
     const result = await bridge.remoteImage(sessionId, src, prompt).catch((): RemoteImageResult => ({ ok: false, code: 'network' }))
-    if (result.ok) loaded.set(src, result.dataUrl)
+    if (result.ok) rememberLoaded(src, result.dataUrl)
     setState(remoteImageState(result, prompt))
   }
 

@@ -139,23 +139,6 @@ export function extractModelsJsonQuotaKey(
   return resolved && resolved.trim() ? resolved : undefined
 }
 
-export async function readModelsJsonQuotaKey(
-  provider: string,
-  options: { agentDir?: string; env?: EnvLike } = {}
-): Promise<string | undefined> {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(await readFile(join(options.agentDir ?? PI_AGENT_DIR, 'models.json'), 'utf8'))
-  } catch {
-    return undefined
-  }
-  if (!plainObject(parsed)) return undefined
-  const providers = parsed.providers
-  if (!plainObject(providers)) return undefined
-  const id = provider.trim().toLowerCase()
-  return extractModelsJsonQuotaKey(id, providers[id], options.env ?? process.env)
-}
-
 type ModelsEntryLookup =
   | { kind: 'absent' }
   | { kind: 'invalid' }

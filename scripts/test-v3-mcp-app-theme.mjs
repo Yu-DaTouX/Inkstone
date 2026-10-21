@@ -38,7 +38,6 @@ const {
   resolveMcpAppThemeValue,
   resolveMcpAppThemeVariables,
   buildMcpAppHostContext,
-  isMcpAppTheme,
   MCP_APP_DEFAULT_THEME
 } = mod
 ok(typeof McpAppViewService === 'function', '加载 McpAppViewService')
@@ -123,7 +122,7 @@ ok(!('css' in (built.styles ?? {})), '不透传 provider 的 styles.css（不放
 
 const defaults = buildMcpAppHostContext({ theme: 'dark' })
 ok(defaults.platform === 'desktop' && defaults.displayMode === 'inline', 'provider 缺省时补桌面默认值')
-ok(Array.isArray(defaults.availableDisplayModes) && defaults.availableDisplayModes.includes('fullscreen'), '补上 availableDisplayModes')
+ok(Array.isArray(defaults.availableDisplayModes) && defaults.availableDisplayModes.join(',') === 'inline', '只声明 inline 显示模式')
 
 const badProvider = {
   platform: 'mobile',
@@ -140,7 +139,7 @@ const badProvider = {
   }
 }
 const sanitized = buildMcpAppHostContext({ theme: 'dark', provider: badProvider })
-ok(sanitized.theme === 'dark' && isMcpAppTheme(sanitized.theme), 'provider 的 theme 不能顶掉宿主明确主题')
+ok(sanitized.theme === 'dark', 'provider 的 theme 不能顶掉宿主明确主题')
 ok(sanitized.styles.variables['--ok'] === 'value', '合法自定义变量保留')
 ok(
   !('color' in sanitized.styles.variables) &&

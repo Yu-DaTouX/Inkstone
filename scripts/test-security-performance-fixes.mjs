@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { build, transform } from 'esbuild'
-import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
-import { statSync, existsSync } from 'node:fs'
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import vm from 'node:vm'
 import { tmpdir } from 'node:os'
@@ -61,6 +61,41 @@ try {
   assert.equal(extractOffice(zip([['word/document.xml', 'x'.repeat(9 * 1024 * 1024)]]), 'docx').ok, false)
   console.log('✓ Office response character budget and oversized XML rejection')
 
+  const docWithImage = extractOffice(
+    zip([
+      [
+        'word/document.xml',
+        '<w:body><w:p><w:r><w:t>图一</w:t></w:r><w:r><w:drawing><wp:inline /></w:drawing></w:r></w:p><w:p><w:r><w:t>正文</w:t></w:r></w:p></w:body>'
+      ]
+    ]),
+    'docx'
+  )
+  assert.equal(docWithImage.ok, true)
+  assert.deepEqual(docWithImage.sections[0].lines, ['图一 [图片]', '正文'], 'docx 的图片位置给占位，正文顺序不变')
+
+  const sheetWithChart = extractOffice(
+    zip([
+      ['xl/workbook.xml', '<workbook xmlns:r="r"><sheets><sheet name="对比总表" sheetId="1" r:id="rId1" /></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml" /></Relationships>'],
+      ['xl/worksheets/sheet1.xml', '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Qdrant</t></is></c></row></sheetData></worksheet>'],
+      [
+        'xl/charts/chart1.xml',
+        '<c:chartSpace><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>Star 对比</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:f>对比总表!$B$2</c:f><c:strCache><c:pt><c:v>Star</c:v></c:pt></c:strCache></c:strRef></c:tx><c:val><c:numRef><c:f>对比总表!$B$3:$B$6</c:f></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>'
+      ]
+    ]),
+    'xlsx'
+  )
+  assert.equal(sheetWithChart.ok, true)
+  const chartSection = sheetWithChart.sections.find((section) => section.title.startsWith('图表'))
+  assert.ok(chartSection, 'xlsx 应给出图表一节')
+  assert.equal(chartSection.title, '图表：Star 对比')
+  assert.ok(
+    chartSection.lines.some((line) => line.includes('Star') && line.includes('$B$3:$B$6')),
+    '图表一节含系列名与数据范围',
+    chartSection.lines
+  )
+  console.log('✓ Office extract keeps docx drawings and xlsx chart series/ranges')
+
   const doc = join(temp, 'sample.pptx'); await writeFile(doc, long)
   let ticks = 0
   const timer = setInterval(() => ticks++, 1)
@@ -107,7 +142,7 @@ try {
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: historyDir, YAN_DIR: temp, statSync, existsSync, ...attachments,
+    PI_AGENT_DIR: historyDir, YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments,
     referencedAttachmentNames: async files => {
       const refs = await attachments.referencedAttachmentNames(files)
       if (mutate) await writeFile(sessionFile, validImageRow + '\n{}')
@@ -133,7 +168,7 @@ try {
     handle: (_channel, callback) => { missing = callback },
     deps: { isSessionBusy: () => false },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, statSync, existsSync, ...attachments
+    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments
   })
   const skipped = await missing()
   assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)

@@ -107,18 +107,6 @@ async function run() {
     }
 
     {
-      const host = await hostMod.createRunsHost({ root: join(dir, 'backfilled-parent'), push: () => {}, now: () => 1_000 })
-      const backfilled = await host.backfillSessionCodes([{ scopeId: 's-old', createdAt: 100 }])
-      assert.equal(backfilled.assigned, 1)
-      host.observeSubagentEvent({ id: 'sub-old', parentSessionId: 's-old', task: '旧会话的子代理' }, messageEvent('thinking_delta'))
-      await waitFor(() => host.snapshot().runs.some((r) => r.kind === 'subagent'))
-      const child = host.snapshot().runs.find((r) => r.kind === 'subagent')
-      assert.equal(child.code, 'S1·1', '补号后的父会话仍是 S1')
-      assert.equal(child.parentRunId, undefined, '父运行未登记时只靠父会话编号，不编造父运行')
-      await host.dispose()
-    }
-
-    {
       const { SessionCodeStore } = runsMod
 
       const store = new SessionCodeStore({ root: join(dir, 'codes-a') })
@@ -165,29 +153,7 @@ async function run() {
       assert.equal(kinds.codeFor('task'), 'T01')
     }
 
-    {
-      const host = await hostMod.createRunsHost({ root: join(dir, 'host-backfill'), push: () => {}, now: () => 1_000 })
-      const first = await host.backfillSessionCodes([
-        { scopeId: 's10', createdAt: 100 },
-        { scopeId: 's10', createdAt: 50 },
-        { scopeId: 's11', createdAt: 200 }
-      ])
-      assert.equal(first.assigned, 2)
-      const observe = host.observerFor()
-      observe({ sessionId: 's10' }, { type: 'agent-start' })
-      await waitFor(() => host.snapshot().runs.some((r) => r.sessionId === 's10'))
-      const codes = host.snapshot().runs.map((r) => r.code).sort()
-      assert.deepEqual(codes, ['S1'])
-      const second = await host.backfillSessionCodes([
-        { scopeId: 's10', createdAt: 100 },
-        { scopeId: 's11', createdAt: 200 }
-      ])
-      assert.equal(second.assigned, 0, '重复补号不再动已存在的会话')
-      assert.deepEqual(host.snapshot().runs.map((r) => r.code), ['S1'])
-      await host.dispose()
-    }
-
-    console.log('v3 子 Agent 归约与旧会话补号：S{n}·{k} 稳定 / agent_settled 终态 / 补号确定且幂等 全部通过')
+    console.log('v3 子 Agent 归约：S{n}·{k} 稳定 / agent_settled 终态 / 补号确定且幂等 全部通过')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

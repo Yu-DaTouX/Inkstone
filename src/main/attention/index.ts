@@ -5,8 +5,6 @@ export type {
   AttentionTrayPort,
   AttentionWindowPort
 } from './attention-service'
-export { summarizeAttention } from './summary'
-export type { AttentionSummary } from './summary'
 export { buildAttentionMenu } from './tray-menu'
 export type {
   AttentionMenuCallbacks,

@@ -31,17 +31,6 @@ export function idempotencyKey(): string {
   return `m-${Date.now().toString(36)}-${random}`
 }
 
-export function normalizeBaseUrl(input: string): string {
-  const trimmed = input.trim()
-  if (!trimmed) return ''
-  const match = /^(?:(https?):\/\/)?(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d{1,5}))?\/?$/i.exec(trimmed)
-  if (!match) return ''
-  const scheme = (match[1] ?? 'http').toLowerCase()
-  const port = match[3] ? Number(match[3]) : scheme === 'http' ? 37892 : 443
-  if (port < 1 || port > 65535) return ''
-  return `${scheme}://${match[2]}:${port}`
-}
-
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
     return (await response.json()) as Record<string, unknown>
@@ -330,7 +319,7 @@ export class RemoteClient {
   }
 }
 
-export type StreamState = 'connecting' | 'open' | 'reconnecting' | 'closed'
+export type StreamState = 'connecting' | 'open' | 'reconnecting'
 
 export interface EventStreamHandlers {
   onEvent(event: RemoteEventEnvelope): void
@@ -364,7 +353,6 @@ export class RemoteEventStream {
     this.xhr = null
     this.cancelRelay?.()
     this.cancelRelay = null
-    this.handlers.onState('closed')
   }
 
   private rotating = false

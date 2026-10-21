@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { atomicWriteFile } from './atomic'
 
 export const SESSION_BUNDLE_KIND = 'inkstone-session'
 export const SESSION_BUNDLE_VERSION = 1
+export const SESSION_TRANSFER_MAX_BYTES = 64 * 1024 * 1024
 
 export interface SessionBundle {
   v: 1
@@ -42,6 +43,9 @@ export async function exportSession(
   } catch (error) {
     return { ok: false, error: `读取会话失败：${describe(error)}` }
   }
+  if (Buffer.byteLength(content, 'utf8') > SESSION_TRANSFER_MAX_BYTES) {
+    return { ok: false, error: '会话过大，超过单次导出上限 64MB' }
+  }
   const sourceSessionId = readSessionId(content)
   const bundle: SessionBundle = {
     v: SESSION_BUNDLE_VERSION,
@@ -67,6 +71,11 @@ export async function importSession(
 ): Promise<ImportSessionResult> {
   if (!bundlePath || !existsSync(bundlePath)) return { ok: false, error: `会话包不存在：${bundlePath}` }
   if (!sessionsDir) return { ok: false, error: '缺少会话目录' }
+  const size = await stat(bundlePath).then(
+    (info) => info.size,
+    () => 0
+  )
+  if (size > SESSION_TRANSFER_MAX_BYTES) return { ok: false, error: '会话包过大，超过导入上限 64MB' }
   let bundle: SessionBundle
   try {
     bundle = JSON.parse(await readFile(bundlePath, 'utf8')) as SessionBundle

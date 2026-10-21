@@ -45,10 +45,14 @@ try {
   const guide = await import('../out/test/mcp-image-guide.mjs')
 
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
-  const fakeManager = (result) => ({
-    listTools: async () => ['Screenshot', 'Snapshot'].map((name) => ({ name, inputSchema: { type: 'object', properties: {} } })),
-    callTool: async () => result
-  })
+  const fakeManager = (result) => {
+    const tools = ['Screenshot', 'Snapshot'].map((name) => ({ name, inputSchema: { type: 'object', properties: {} } }))
+    return {
+      listTools: async () => tools,
+      listToolsCached: async () => tools,
+      callTool: async () => result
+    }
+  }
 
   console.log('toolResultText 兼容')
   const plain = { content: [{ type: 'text', text: 'a' }, { type: 'image', mimeType: 'image/png', data: png.toString('base64') }] }

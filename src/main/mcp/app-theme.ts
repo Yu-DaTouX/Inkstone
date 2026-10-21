@@ -7,10 +7,6 @@ export type McpAppTheme = 'light' | 'dark'
 
 export const MCP_APP_DEFAULT_THEME: McpAppTheme = 'dark'
 
-export function isMcpAppTheme(value: unknown): value is McpAppTheme {
-  return value === 'light' || value === 'dark'
-}
-
 export function resolveMcpAppThemePreference(
   preference: unknown,
   systemPrefersDark: boolean
@@ -100,7 +96,7 @@ function sanitizeVariables(value: unknown): Record<string, string> {
 const HOST_CONTEXT_DEFAULTS: Readonly<Record<string, unknown>> = {
   platform: 'desktop',
   displayMode: 'inline',
-  availableDisplayModes: ['inline', 'fullscreen', 'pip']
+  availableDisplayModes: ['inline']
 }
 
 export interface McpAppHostContextInput {

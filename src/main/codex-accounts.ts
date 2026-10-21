@@ -1,3 +1,4 @@
+import { constants as fsConstants } from 'node:fs'
 import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -50,6 +51,10 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
   return next
 }
 
+async function backupCorruptStore(): Promise<void> {
+  await copyFile(STORE_FILE, `${STORE_FILE}.corrupt.bak`, fsConstants.COPYFILE_EXCL).catch(() => undefined)
+}
+
 async function readStore(): Promise<Store> {
   let text: string
   try {
@@ -62,11 +67,11 @@ async function readStore(): Promise<Store> {
   try {
     raw = JSON.parse(text) as Partial<Store>
   } catch (error) {
-    await copyFile(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}.bak`).catch(() => undefined)
+    await backupCorruptStore()
     throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
   }
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.accounts)) {
-    await copyFile(STORE_FILE, `${STORE_FILE}.corrupt-${Date.now()}.bak`).catch(() => undefined)
+    await backupCorruptStore()
     throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
   }
   const accounts = raw.accounts.filter((a): a is StoredAccount => !!a && typeof a.key === 'string' && isCodexCredential(a.credential))
@@ -80,16 +85,19 @@ async function writeStore(store: Store): Promise<void> {
   await rename(tmp, STORE_FILE)
 }
 
-function upsert(store: Store, credential: CodexOAuthCredential): string | undefined {
+function upsert(store: Store, credential: CodexOAuthCredential): { key?: string; changed: boolean } {
   const id = identityOf(credential)
-  if (!id.key) return undefined
+  if (!id.key) return { changed: false }
   const existing = store.accounts.find((a) => a.key === id.key)
   if (!existing) {
     store.accounts.push({ key: id.key, email: id.email, plan: id.plan, credential, savedAt: Date.now() })
-  } else if (existing.credential.access !== credential.access && Number(credential.expires) >= Number(existing.credential.expires)) {
-    Object.assign(existing, { email: id.email ?? existing.email, plan: id.plan ?? existing.plan, credential, savedAt: Date.now() })
+    return { key: id.key, changed: true }
   }
-  return id.key
+  if (existing.credential.access !== credential.access && Number(credential.expires) >= Number(existing.credential.expires)) {
+    Object.assign(existing, { email: id.email ?? existing.email, plan: id.plan ?? existing.plan, credential, savedAt: Date.now() })
+    return { key: id.key, changed: true }
+  }
+  return { key: id.key, changed: false }
 }
 
 async function activeCredential(): Promise<CodexOAuthCredential | undefined> {
@@ -102,10 +110,9 @@ export function captureActiveCodexAccount(): Promise<string | undefined> {
     const current = await activeCredential()
     if (!current) return undefined
     const store = await readStore()
-    const before = JSON.stringify(store)
-    const key = upsert(store, current)
-    if (JSON.stringify(store) !== before) await writeStore(store)
-    return key
+    const saved = upsert(store, current)
+    if (saved.changed) await writeStore(store)
+    return saved.key
   })
 }
 
@@ -117,14 +124,13 @@ export async function listCodexAccounts(labels: Record<string, string> = {}): Pr
 
 export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: string }> {
   return serial(async () => {
-    const store = await readStore()
-    if (!store.accounts.some((a) => a.key === key)) return { ok: false, error: '没有找到这个账号，可能已被移除' }
     try {
+      const store = await readStore()
+      if (!store.accounts.some((a) => a.key === key)) return { ok: false, error: '没有找到这个账号，可能已被移除' }
       await updateAuthFile(async (auth) => {
         const current = auth[PROVIDER]
         if (isCodexCredential(current)) {
-          upsert(store, current)
-          await writeStore(store)
+          if (upsert(store, current).changed) await writeStore(store)
         }
         const target = store.accounts.find((a) => a.key === key)!
         auth[PROVIDER] = target.credential
@@ -161,8 +167,9 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
   return serial(async () => {
     const current = await activeCredential()
     const store = await readStore()
-    const before = JSON.stringify(store)
-    const activeKey = current ? upsert(store, current) : undefined
+    const saved = current ? upsert(store, current) : undefined
+    let changed = saved?.changed ?? false
+    const activeKey = saved?.key
     const targets: CodexAccountTarget[] = []
     for (const account of store.accounts) {
       const active = account.key === activeKey
@@ -178,13 +185,13 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
       try {
         account.credential = await refreshCodexCredential(account.credential.refresh, account.credential.accountId)
         account.savedAt = Date.now()
-        await writeStore(store)
+        changed = true
         targets.push({ ...base, credential: account.credential })
       } catch (e) {
         targets.push({ ...base, problem: e instanceof Error ? e.message : String(e) })
       }
     }
-    if (JSON.stringify(store) !== before) await writeStore(store)
+    if (changed) await writeStore(store)
     return targets
   })
 }

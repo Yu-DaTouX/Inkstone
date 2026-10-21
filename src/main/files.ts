@@ -1,6 +1,6 @@
 import { readdir, readlink, realpath, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
-import { join, resolve, basename } from 'node:path'
+import { join, resolve, basename, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { isWithin, lexicalJoin, pathKey } from './file-path-gate'
 import type {
@@ -62,7 +62,8 @@ async function describeLink(rootReal: string, dirReal: string, name: string): Pr
 const HOME = homedir()
 
 function displayPath(abs: string): string {
-  if (abs.startsWith(HOME)) return '~' + abs.slice(HOME.length).replace(/\\/g, '/')
+  if (abs === HOME) return '~'
+  if (abs.startsWith(HOME + sep)) return '~' + abs.slice(HOME.length).replace(/\\/g, '/')
   return abs.replace(/\\/g, '/')
 }
 
