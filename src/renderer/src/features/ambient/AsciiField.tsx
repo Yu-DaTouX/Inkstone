@@ -293,9 +293,11 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   }
   const onFocus = (): void => {
     focused = true
+    applyPolicy()
   }
   const onBlur = (): void => {
     focused = false
+    applyPolicy()
   }
   const onPointerMove = (event: PointerEvent): void => {
     const rect = host.getBoundingClientRect()

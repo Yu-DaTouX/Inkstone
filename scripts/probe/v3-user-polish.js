@@ -55,7 +55,8 @@
     CanvasRenderingContext2D.prototype.clearRect = originalClear
     samples.sort((a,b)=>a-b); costs.sort((a,b)=>a-b)
     results.push(`  Chromium rAF 间隔 p50=${samples[Math.floor(samples.length*.5)].toFixed(2)}ms p95=${samples[Math.floor(samples.length*.95)].toFixed(2)}ms；实际绘制 ${draws} 帧，画布回调 p95=${(costs[Math.floor(costs.length*.95)] ?? 0).toFixed(2)}ms；rAF >50ms=${samples.filter((x)=>x>50).length}；窗口焦点=${document.hasFocus()}`)
-    check(costs.length > 0 && costs[Math.floor(costs.length*.95)] < 16.7, '背景画布回调 p95 小于 16.7ms')
+    if (document.hasFocus()) check(costs.length > 0 && costs[Math.floor(costs.length*.95)] < 16.7, '背景画布回调 p95 小于 16.7ms')
+    else check(draws === 0, '窗口失焦时背景画布暂停绘制')
     await wait(2200)
     document.querySelector('.start-details-link')?.click()
     await wait(600)

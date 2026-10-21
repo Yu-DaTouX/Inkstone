@@ -34,7 +34,9 @@
     await until(()=>docked()&&Math.abs(sb().getBoundingClientRect().width-width)<1)
     check(Math.abs(sb().getBoundingClientRect().width-width)<1,'再次展开沿用拖宽结果')
     const cursor=document.querySelector('.v3-hello-cursor')
-    check(cursor&&getComputedStyle(cursor).animationIterationCount==='infinite','HELLO WORLD 末尾光标持续闪烁')
+    const blinkStates=new Set()
+    for(let i=0;i<8&&cursor;i++){blinkStates.add(cursor.dataset.blink);await new Promise((r)=>setTimeout(r,200))}
+    check(cursor&&blinkStates.has('on')&&blinkStates.has('off'),'HELLO WORLD 末尾光标持续闪烁')
     check(document.querySelectorAll('.start-usage [role="tablist"]').length===0,'首页用量精简为摘要，分析控件进入详情')
     const cells=[...document.querySelectorAll('.start-heat .start-cell')].slice(0,30).map((el)=>el.getBoundingClientRect())
     check(cells.length>0&&cells.every((r)=>Math.abs(r.width-r.height)<.1&&Math.abs(r.width-cells[0].width)<.1),'Token格子为等宽正方形')

@@ -6,6 +6,7 @@ import type { RunSnapshot } from '../../../../shared/runs'
 import { v3Text } from '../../app/v3-text'
 import { UsagePattern } from '../../patterns/UsagePattern'
 import { UsageStrip } from '../../patterns/UsageStrip'
+import { BlinkCursor } from './BlinkCursor'
 import './v3-empty-state.css'
 
 export interface V3EmptyStateProps {
@@ -61,7 +62,7 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
         <div className="v3-empty-main">
           <div className="v3-empty-greet">
             <span className="v3-empty-prompt" aria-hidden>&gt;</span>
-            <span>HELLO WORLD<span className="v3-hello-cursor" aria-hidden>_</span></span>
+            <span>HELLO WORLD<BlinkCursor className="v3-hello-cursor" /></span>
           </div>
           {awaiting.length > 0 ? (
             <section className="v3-empty-waiting" aria-label={waiting.waiting} data-testid="v3-empty-waiting">

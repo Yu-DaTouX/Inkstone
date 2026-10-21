@@ -4,7 +4,7 @@ import { Button, EmptyState } from '../../ui'
 import { filePreviewUrl } from '../../lib/file-preview-url'
 import type { PreviewFormat } from './preview-format'
 import type { PreviewText } from './preview-text'
-import { PdfView } from './PdfView'
+import { PdfView } from './LazyPdfView'
 
 type MediaFormat = Extract<PreviewFormat, 'image' | 'audio' | 'video' | 'pdf'>
 

@@ -90,6 +90,8 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
 
   const [active, setActive] = useState(-1)
   const [open, setOpen] = useState(false)
+  const [listMounted, setListMounted] = useState(false)
+  if (open && !listMounted) setListMounted(true)
   const [focusIndex, setFocusIndex] = useState(-1)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const trackRef = useRef<HTMLElement | null>(null)
@@ -258,7 +260,7 @@ function OutlineRailView({ messages, streamingId, onJump, className }: OutlineRa
           <span className="v3-rail-card-count">{turns.length}</span>
         </div>
         <ol ref={listRef} className="v3-rail-list">
-          {turns.map((turn, index) => (
+          {(listMounted || open) && turns.map((turn, index) => (
             <li key={turn.msgId}>
               <button
                 type="button"
