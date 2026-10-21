@@ -3,13 +3,50 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
 import { readSessionMessages } from './session-reader'
+import { normalizeSubagentId } from '../shared/subagent-id'
 
 export interface SubagentHistoryRecord {
   run: SubagentRun
   rootCwd: string
 }
 
-const validId = (id: unknown): id is string => typeof id === 'string' && /^sub-[a-zA-Z0-9-]+$/.test(id)
+const validId = (id: unknown): id is string => normalizeSubagentId(id) !== null
+
+const RUN_FIELDS: readonly (keyof SubagentRun)[] = [
+  'parentSessionId',
+  'parentRunId',
+  'parentGeneration',
+  'parentMessageId',
+  'projectId',
+  'fork',
+  'resultPath',
+  'thinkingLevel',
+  'contextUsage',
+  'latestActivity',
+  'progressWarning',
+  'endedAt',
+  'diff',
+  'error',
+  'endReason',
+  'launchFailed',
+  'dismissedAt',
+  'wrapUp',
+  'recovery',
+  'usage',
+  'brief',
+  'result'
+]
+
+function storedRunFields(data: Record<string, unknown>): Partial<SubagentRun> {
+  const picked: Record<string, unknown> = {}
+  for (const field of RUN_FIELDS) {
+    const value = data[field]
+    if (value === undefined || value === null) continue
+    picked[field] = value
+  }
+  return picked as Partial<SubagentRun>
+}
+
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024
 const MAX_TRANSCRIPT = 200
 
@@ -66,10 +103,14 @@ export class SubagentHistory {
           if (nativeTranscript.length) transcript = nativeTranscript
         }
         const run: SubagentRun = {
-          ...data,
+          ...storedRunFields(data as Record<string, unknown>),
+          id: data.id,
+          task: data.task,
           cwd: typeof data.cwd === 'string' ? data.cwd : sourceCwd ?? data.rootCwd,
           model: typeof data.model === 'string' ? data.model : [...transcript].reverse().find(m => m.role === 'assistant' && m.model)?.model,
           isolation: ['controlled-cwd', 'shared-cwd', 'worktree'].includes(data.isolation) ? data.isolation : 'shared-cwd',
+          status: data.status,
+          startedAt: data.startedAt,
           transcript,
           toolCalls: !interrupted && Number.isFinite(data.toolCalls) ? data.toolCalls : transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
           review: data.review ?? 'none',

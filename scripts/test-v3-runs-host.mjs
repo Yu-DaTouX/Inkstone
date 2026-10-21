@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -125,6 +125,22 @@ async function run() {
 
     const historyFiles = await readdir(join(root, 'runs'))
     assert.ok(historyFiles.some((name) => name.endsWith('.jsonl')), '运行历史写盘完成（dispose 已等待）')
+
+    {
+      const retryRoot = join(dir, 'retry-code')
+      const retryPushes = []
+      const retryHost = await hostMod.createRunsHost({ root: retryRoot, push: (msg) => retryPushes.push(msg), now: () => 1_000, newRunId: () => 'run-retry' })
+      const blocked = join(retryRoot, 'session-codes.json')
+      await mkdir(blocked, { recursive: true })
+      retryHost.observerFor()({ sessionId: 's-retry' }, { type: 'agent-start' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(retryHost.snapshot().runs.length, 0, '编号分配失败时运行先排队，不丢 agent_start')
+      await rm(blocked, { recursive: true, force: true })
+      await waitFor(() => retryHost.snapshot().runs.some((r) => r.sessionId === 's-retry'))
+      assert.equal(retryHost.snapshot().runs.find((r) => r.sessionId === 's-retry').phase.kind, 'running', '编号分配重试成功后补登记排队中的信号')
+      assert.equal(retryPushes.filter((msg) => msg.ch === 'notify').length, 0, '单次失败只重试，不打扰用户')
+      await retryHost.dispose()
+    }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

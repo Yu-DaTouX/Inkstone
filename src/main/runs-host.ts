@@ -8,7 +8,6 @@ import {
   type ScheduledContextSeed,
   type ScheduledOrigin
 } from './runs/scheduled-origin'
-import type { CodeKind } from './runs/session-codes'
 import { isTerminalPhase, type RunSignal, type RunModel, type RunSnapshot } from '../shared/runs'
 import type { MainPush } from '../shared/ipc'
 import type { ApprovalRequest } from '../shared/approval'
@@ -45,8 +44,6 @@ export interface RunsHost {
   cancelScheduled(handle: ScheduledRunHandle): void
   observeSubagentEvent(run: SubagentRunIdentity, evt: Record<string, unknown>): void
   settleSubagent(run: SubagentRunIdentity, outcome: 'done' | 'failed' | 'stopped', message?: string): void
-  backfillSessionCodes(items: { scopeId: string; kind?: CodeKind; createdAt: number }[]): Promise<{ assigned: number }>
-  assignCode(scopeId: string, kind?: CodeKind): Promise<string>
   snapshot(): RunsSnapshot
   markSeen(runId: string): { ok: boolean }
   observeApproval(request: ApprovalRequest): void
@@ -62,6 +59,10 @@ export interface RunsHostOptions {
 }
 
 const MAX_PENDING_SIGNALS = 2_000
+const CODE_RETRY_DELAYS_MS = [1_000, 5_000, 30_000]
+const TERMINAL_SIGNALS: ReadonlySet<RunSignal['type']> = new Set<RunSignal['type']>(['agent-settled', 'stopped', 'host-fail', 'pi-exit'])
+
+type CodeState = { state: 'pending' | 'ready' | 'failed'; attempts: number; timer?: NodeJS.Timeout }
 
 function isUsableSessionId(sessionId: string): boolean {
   return sessionId.length > 0 && !sessionId.startsWith('pending:')
@@ -98,7 +99,7 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     onError: (error: RunError) => log(`${error.code}：${error.message}`)
   })
 
-  const codeState = new Map<string, 'pending' | 'ready' | 'failed'>()
+  const codeState = new Map<string, CodeState>()
   const buffered = new Map<string, { ctx: RunContext; signal: RunSignal }[]>()
   const pendingApprovals = new Map<string, RunContext>()
   const openedSubagents = new Map<string, number>()
@@ -132,18 +133,43 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     }
   }
 
-  const ensureCode = (sessionId: string): void => {
-    codeState.set(sessionId, 'pending')
+  const ensureCode = (sessionId: string, attempt = 0): void => {
+    if (codeState.get(sessionId)?.state === 'pending') return
+    codeState.set(sessionId, { state: 'pending', attempts: attempt })
     void pipeline.codes.assign(sessionId, 'session').then(
       () => {
         if (disposed) return
-        codeState.set(sessionId, 'ready')
+        codeState.set(sessionId, { state: 'ready', attempts: attempt })
         drain(sessionId)
       },
       (error: unknown) => {
-        codeState.set(sessionId, 'failed')
+        if (disposed) return
+        const attempts = attempt + 1
+        const delay = CODE_RETRY_DELAYS_MS[attempt]
+        const reason = error instanceof Error ? error.message : String(error)
+        if (delay !== undefined) {
+          const timer = setTimeout(() => {
+            if (codeState.get(sessionId)?.timer !== timer) return
+            codeState.delete(sessionId)
+            ensureCode(sessionId, attempts)
+          }, delay)
+          timer.unref?.()
+          codeState.set(sessionId, { state: 'pending', attempts, timer })
+          log(`会话编号分配失败，${Math.round(delay / 1000)} 秒后重试：${sessionId}（${reason}）`)
+          return
+        }
+        codeState.set(sessionId, { state: 'failed', attempts })
         buffered.delete(sessionId)
-        log(`会话编号分配失败，运行不会登记：${sessionId}（${error instanceof Error ? error.message : String(error)}）`)
+        log(`会话编号分配连续失败，运行不会登记：${sessionId}（${reason}）`)
+        options.push({
+          ch: 'notify',
+          payload: {
+            id: `runs-code-${sessionId}-${clock()}`,
+            method: 'notify',
+            notifyType: 'warning',
+            message: '会话编号连续分配失败，运行状态不会显示；重新打开该会话后会再试'
+          }
+        })
       }
     )
   }
@@ -276,19 +302,19 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     }
     const key = codeKeyOf(ctx)
     if (!key) return
-    const state = codeState.get(key)
-    if (state === 'ready') {
+    const entry = codeState.get(key)
+    if (entry?.state === 'ready') {
       observe(ctx, signal)
       return
     }
-    if (state === 'failed') return
-    if (!state) ensureCode(key)
+    if (entry?.state === 'failed') return
+    if (!entry) ensureCode(key)
     const queue = buffered.get(key)
     if (!queue) {
       buffered.set(key, [{ ctx, signal }])
       return
     }
-    if (queue.length >= MAX_PENDING_SIGNALS) return
+    if (queue.length >= MAX_PENDING_SIGNALS && !TERMINAL_SIGNALS.has(signal.type)) return
     queue.push({ ctx, signal })
   }
 
@@ -322,12 +348,8 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     if (snapshot && isTerminalPhase(snapshot.phase)) finalizeScheduled(entry)
   }
 
-  const activeParentRunId = (parentSessionId: string): string | undefined => {
-    for (const run of pipeline.registry.list()) {
-      if (run.kind !== 'subagent' && run.sessionId === parentSessionId && !isTerminalPhase(run.phase)) return run.runId
-    }
-    return undefined
-  }
+  const activeParentRunId = (parentSessionId: string): string | undefined =>
+    pipeline.registry.activeRunIdFor(parentSessionId)
 
   return {
     observerFor(observerOptions = {}) {
@@ -357,21 +379,6 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
             ? { type: 'stopped', by: 'user' }
             : { type: 'host-fail', message: message ?? '\u5b50 Agent \u8fd0\u884c\u5931\u8d25' }
       feed(ctx, signal)
-    },
-    async backfillSessionCodes(items) {
-      if (disposed) return { assigned: 0 }
-      const normalized = items
-        .filter((item) => item && typeof item.scopeId === 'string' && item.scopeId.trim().length > 0)
-        .map((item) => ({
-          scopeId: item.scopeId.trim(),
-          kind: (item.kind ?? 'session') as CodeKind,
-          createdAt: Number.isFinite(item.createdAt) ? item.createdAt : Date.now()
-        }))
-      const assigned = await pipeline.codes.backfill(normalized)
-      return { assigned }
-    },
-    assignCode(scopeId, kind) {
-      return pipeline.codes.assign(scopeId, kind ?? 'session')
     },
     snapshot() {
       pipeline.publisher?.flush()
@@ -432,6 +439,7 @@ export async function createRunsHost(options: RunsHostOptions): Promise<RunsHost
     async dispose() {
       if (disposed) return
       disposed = true
+      for (const entry of codeState.values()) if (entry.timer) clearTimeout(entry.timer)
       codeState.clear()
       buffered.clear()
       pendingApprovals.clear()

@@ -5,6 +5,7 @@ import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
 import { forkContextError, type SubagentForkSource } from './subagent-fork'
+import { normalizeSubagentId } from '../shared/subagent-id'
 
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
@@ -173,8 +174,8 @@ export class SubagentService {
       }
     }
 
-    const id = typeof params.id === 'string' ? params.id.trim() : ''
-    if (!/^sub-[0-9a-f]+$/.test(id)) {
+    const id = normalizeSubagentId(params.id)
+    if (!id) {
       throw new CapabilityCommandError(
         'subagent_id_required',
         '该子代理动作需要合法的 id（例如 sub-a1b2c3d4）'

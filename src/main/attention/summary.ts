@@ -71,7 +71,7 @@ export function summarizeAttention(runs: readonly RunSnapshot[]): AttentionSumma
     active,
     waiting: needsYou.length > 0,
     busy: active.length > 0,
-    attentionCount: needsYou.length + failed.length + doneUnread.length,
+    attentionCount: needsYou.length + stalled.length + failed.length + doneUnread.length,
     total: runs.length
   }
 }
