@@ -271,7 +271,6 @@ export class Observer {
       text: pageResult.result.value?.text || '',
       elements: refreshed.map(({ backendNodeId: _backend, sessionId: _session, frameOffset: _offset, ...element }) => element),
       accessibilityNodeCount: axResult.nodes?.length ?? 0,
-      domSnapshotCaptured: false,
       frameCount: frames.length,
       observedFrameCount: new Set(candidates.map((candidate) => candidate.frameId).filter(Boolean)).size
     }

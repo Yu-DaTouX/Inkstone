@@ -857,7 +857,6 @@ export interface BrowserState {
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   permissions?: BrowserPermissionRecord[]
   blockedRequests?: BrowserBlockedRequest[]
-  nativeBounds?: BrowserBounds
   mode?: 'embedded' | 'external'
   loadError?: BrowserLoadFailure
   external?: BrowserExternalState
@@ -923,7 +922,6 @@ export interface BrowserObservation {
     frameUrl?: string
   }>
   accessibilityNodeCount: number
-  domSnapshotCaptured: boolean
   frameCount?: number
   observedFrameCount?: number
 }
@@ -1107,6 +1105,7 @@ export type MainPushBody =
   | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
   | { ch: 'notify'; payload: ExtensionUiRequest }
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
+  | { ch: 'quota-wait'; payload: { provider?: string } }
   | { ch: 'turn-settled'; payload: { sessionId?: string; outcome: TurnOutcome } }
   | { ch: 'status'; payload: { key: string; text?: string } }
   | { ch: 'title'; payload: string }

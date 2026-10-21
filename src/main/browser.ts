@@ -168,7 +168,6 @@ export class BrowserController {
   private readonly ownedDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
   setAutomationOwner(owner?: string): void { this.automationOwner = owner }
   getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
-  private nativeBounds: BrowserBounds | undefined
   private downloadSessionAttached = false
   private permissionHandlersAttached = false
   private requestBoundaryAttached = false
@@ -230,7 +229,6 @@ export class BrowserController {
       loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
       blockedRequests: this.blockedRequests,
-      nativeBounds: this.nativeBounds,
       mode: activeIsExternal ? 'external' : 'embedded',
       external: ext
         ? {
@@ -665,7 +663,6 @@ export class BrowserController {
     for (const id of ids) await this.closeTab(id, { silent: true })
     await this.closeExternalChrome()
     this.userControl = false
-    this.nativeBounds = undefined
     this.viewVisibleRequested = false
     this.stateFlush.cancel()
     this.updateState()
@@ -1185,7 +1182,6 @@ export class BrowserController {
       width: Math.max(1, Math.round(bounds.width * zoom)),
       height: Math.max(1, Math.round(bounds.height * zoom))
     }
-    this.nativeBounds = clean
     tab.view.setBounds(clean)
   }
 
