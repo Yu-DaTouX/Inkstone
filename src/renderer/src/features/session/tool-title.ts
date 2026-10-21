@@ -2,9 +2,9 @@ import type { UIToolCall } from '../../../../shared/ipc'
 import { isDangerDenial } from '../../../../shared/danger-block'
 import type { SessionTextKey } from './text'
 
-export type StepCategory = 'read' | 'bash' | 'edit' | 'write' | 'grep' | 'ls' | 'web' | 'other'
+type StepCategory = 'read' | 'bash' | 'edit' | 'write' | 'grep' | 'ls' | 'web' | 'other'
 
-export type StepTextKey = (key: SessionTextKey, vars?: Record<string, string | number>) => string
+type StepTextKey = (key: SessionTextKey, vars?: Record<string, string | number>) => string
 
 const CATEGORY_NAMES: Record<string, StepCategory> = {
   read: 'read', view: 'read', cat: 'read', open: 'read', read_file: 'read',

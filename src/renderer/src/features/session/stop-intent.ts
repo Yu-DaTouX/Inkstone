@@ -1,4 +1,4 @@
-export interface StopIntent {
+interface StopIntent {
   sessionId: string
   at: number
 }

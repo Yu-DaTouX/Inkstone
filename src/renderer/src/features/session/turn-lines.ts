@@ -8,7 +8,7 @@ import type { SessionTextKey } from './text'
 
 export type ErrorCardAction = 'retry' | 'model' | 'compact'
 
-export interface ErrorCardModel {
+interface ErrorCardModel {
   kind: ModelErrorKind
   quotaScope?: ModelErrorQuotaScope
   actions: ErrorCardAction[]
@@ -86,7 +86,7 @@ export function promptForTurn(
   return null
 }
 
-export interface CompactionLineModel {
+interface CompactionLineModel {
   run: CompactionRun
   running: boolean
 }
@@ -148,7 +148,7 @@ export function messageEntrySignature(messages: readonly UIMessage[]): string {
   return signature
 }
 
-export interface ViewEdge {
+interface ViewEdge {
   first: boolean
   last: boolean
 }
@@ -191,7 +191,7 @@ export type SubagentRecoveryNote =
   | { key: 'subagentResumed' | 'subagentNotRetried' }
   | { key: 'subagentRetried'; n: number }
 
-export function subagentRecoveryNote(run: Pick<SubagentRun, 'endReason' | 'recovery'>): SubagentRecoveryNote | null {
+function subagentRecoveryNote(run: Pick<SubagentRun, 'endReason' | 'recovery'>): SubagentRecoveryNote | null {
   if (run.endReason !== 'model-error') return null
   if (run.recovery?.resumed) return { key: 'subagentResumed' }
   if (run.recovery?.piRetries) return { key: 'subagentRetried', n: run.recovery.piRetries }

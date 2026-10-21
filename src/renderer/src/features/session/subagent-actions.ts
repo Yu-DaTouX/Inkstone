@@ -8,7 +8,7 @@ import type { TileLayout, TileNode } from '../workbench/tile-tree'
 import { buildSubagentTaskRow, isLiveSubagentRun, type SubagentRowLang, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
 import type { SubagentRun } from '../../../../shared/ipc'
 
-export type SubagentStopOutcome = 'sent' | 'gone'
+type SubagentStopOutcome = 'sent' | 'gone'
 
 export function openSubagentPane(runId: string): void {
   const ui = useUiV3.getState()
@@ -39,10 +39,6 @@ export function switchSubagentPane(fromRunId: string, toRunId: string): void {
   const next = useUiV3.getState()
   next.setWorkspaceLayout(swapLayoutTiles(next.workspaceLayout, from, to))
   useUiV3.getState().closeWorkspacePane(from)
-}
-
-export function closeSubagentPane(runId: string): void {
-  useUiV3.getState().closeWorkspacePane(subagentPaneId(runId))
 }
 
 async function freshRun(runId: string): Promise<SubagentRun | undefined> {

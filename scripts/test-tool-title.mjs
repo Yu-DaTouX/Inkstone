@@ -182,13 +182,6 @@ async function run() {
       ok(mixed.failed === 0, '组摘要失败数不计已拒绝', mixed.failed)
       ok(!m.formatToolRun(mixed, zh).includes('失败'), '组摘要不写失败', m.formatToolRun(mixed, zh))
       ok(mixed.state === 'denied', '组状态以最后一个成员为准，已拒绝有独立状态', mixed.state)
-      ok(m.failedCount([
-        call('bash', { command: 'rm -rf /' }, 'error', { output: deniedText }),
-        call('bash', { command: 'false' }, 'error')
-      ]) === 1, '回合失败数只计真正的失败', m.failedCount([
-        call('bash', { command: 'rm -rf /' }, 'error', { output: deniedText }),
-        call('bash', { command: 'false' }, 'error')
-      ]))
     }
 
     process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

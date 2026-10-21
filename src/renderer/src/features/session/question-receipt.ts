@@ -1,11 +1,11 @@
-export type QuestionReceiptState = 'pending' | 'answered' | 'skipped' | 'failed'
+type QuestionReceiptState = 'pending' | 'answered' | 'skipped' | 'failed'
 
-export interface QuestionReceiptPair {
+interface QuestionReceiptPair {
   label: string
   value: string
 }
 
-export interface QuestionReceiptModel {
+interface QuestionReceiptModel {
   state: QuestionReceiptState
   question: string
   answer: string | null
