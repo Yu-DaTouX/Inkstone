@@ -59,6 +59,7 @@ for (const script of [
   'test-composer-draft-store',
   'test-composer-text',
   'test-composer-edit',
+  'test-transcript-view',
   'test-composer-menu-layout',
   'test-tile-fit',
   'test-tile-layouts',

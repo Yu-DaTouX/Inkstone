@@ -60,7 +60,8 @@ const ZH: ShortcutText = {
     cycleModel: '下一个模型',
     cycleModelBack: '上一个模型',
     cycleThinking: '切换思考档位',
-    quickAsk: '快速提问'
+    quickAsk: '快速提问',
+    cycleTranscriptView: '切换对话显示方式（简洁 / 思考 / 详细）'
   },
   approval: {
     allow: '允许一次',
@@ -110,7 +111,8 @@ const EN: ShortcutText = {
     cycleModel: 'Next model',
     cycleModelBack: 'Previous model',
     cycleThinking: 'Cycle thinking level',
-    quickAsk: 'Quick ask'
+    quickAsk: 'Quick ask',
+    cycleTranscriptView: 'Cycle conversation display (Concise / Thinking / Verbose)'
   },
   approval: {
     allow: 'Allow once',

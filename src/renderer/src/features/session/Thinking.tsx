@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { ShimmerText } from '../../ui'
 import { Icon } from './Icon'
+import { opensEverything } from './transcript-view-model'
+import { useTranscriptViewScope } from './use-tool-run'
 
 function peekText(text: string): string {
   const lines = text.trimEnd().split('\n')
@@ -14,7 +16,8 @@ function peekText(text: string): string {
 
 export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: string; ms?: number; live?: boolean; defaultOpen?: boolean }): JSX.Element | null {
   const t = useT()
-  const [open, setOpen] = useState(defaultOpen || !!live)
+  const verbose = opensEverything(useTranscriptViewScope())
+  const [open, setOpen] = useState(defaultOpen || verbose || !!live)
   const touchedRef = useRef(false)
   const followRef = useRef(true)
   const wasLiveRef = useRef(!!live)
@@ -24,10 +27,14 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: st
   useEffect(() => {
     if (!touchedRef.current) {
       if (live && !wasLiveRef.current) setOpen(true)
-      if (!live && wasLiveRef.current) setOpen(false)
+      if (!live && wasLiveRef.current && !verbose) setOpen(false)
     }
     wasLiveRef.current = !!live
-  }, [live])
+  }, [live, verbose])
+
+  useEffect(() => {
+    if (!touchedRef.current) setOpen(defaultOpen || verbose || !!wasLiveRef.current)
+  }, [defaultOpen, verbose])
 
   useLayoutEffect(() => {
     const el = bodyRef.current

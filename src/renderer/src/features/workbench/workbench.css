@@ -180,6 +180,32 @@
     padding: var(--s-8);
   }
 
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > .wb-pane-tile[data-tile-id='chat'] + .wb-pane-sep + :is(.wb-pane-tile, .wb-pane-stack) {
+    padding-left: 0;
+  }
+
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > :is(.wb-pane-tile, .wb-pane-stack):has(+ .wb-pane-sep + .wb-pane-tile[data-tile-id='chat']) {
+    padding-right: 0;
+  }
+
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > .wb-pane-tile[data-tile-id='chat'] + .wb-pane-sep {
+    z-index: 2;
+    justify-content: flex-end;
+  }
+
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > .wb-pane-tile[data-tile-id='chat'] + .wb-pane-sep > .wb-pane-sep-bar {
+    margin-right: -2px;
+  }
+
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > .wb-pane-sep:has(+ .wb-pane-tile[data-tile-id='chat']) {
+    z-index: 2;
+    justify-content: flex-start;
+  }
+
+  .wb-body[data-chat='1'] > .wb-panes > .wb-pane-stack[data-root='1'][data-direction='row'] > .wb-pane-sep:has(+ .wb-pane-tile[data-tile-id='chat']) > .wb-pane-sep-bar {
+    margin-left: -2px;
+  }
+
   .wb-drop-indicator {
     position: absolute;
     z-index: 2;

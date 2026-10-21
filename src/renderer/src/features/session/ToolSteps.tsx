@@ -13,7 +13,8 @@ import { QuestionCard } from './QuestionCard'
 import { QuestionReceipt } from './QuestionReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
-import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
+import { useHeldRunLabel, useToolExpansion, useTranscriptViewScope } from './use-tool-run'
+import { opensEverything } from './transcript-view-model'
 import { Icon } from './Icon'
 import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
@@ -73,7 +74,8 @@ function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(row.id)
-  const open = stored ?? false
+  const verbose = opensEverything(useTranscriptViewScope())
+  const open = stored ?? verbose
   const { summary } = row
   const label = formatToolRun(summary, tt)
   const parts = toolRunParts(summary, tt)
@@ -113,7 +115,8 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const call = node.call
   const running = isRunning(call)
   const denied = isDeniedCall(call)
-  const open = stored ?? false
+  const verbose = opensEverything(useTranscriptViewScope())
+  const open = stored ?? verbose
   const title = toolStepTitle(call, tt)
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || t('tool2.noTarget')
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children

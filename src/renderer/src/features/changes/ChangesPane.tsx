@@ -720,7 +720,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                   aria-valuenow={0}
                   onClick={fileList.show}
                   onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowRight') return
+                    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowLeft') return
                     event.preventDefault()
                     fileList.show()
                   }}

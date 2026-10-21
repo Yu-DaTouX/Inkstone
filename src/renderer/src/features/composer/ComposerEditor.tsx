@@ -144,6 +144,15 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     if (host) host.dataset.empty = currentText() ? 'false' : 'true'
   }, [currentText])
 
+  const refreshStructure = useCallback((): void => {
+    const view = viewRef.current
+    if (!view) return
+    const tr = structureTransaction(view.state, documentOptions())
+    if (!tr) return
+    tr.setMeta('addToHistory', false)
+    view.dispatch(tr)
+  }, [documentOptions])
+
   const applyDocumentText = useCallback(
     (nextText: string, cursor: number, keepHistory: boolean): void => {
       const view = viewRef.current
@@ -154,18 +163,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       const at = positionForTextOffset(tr.doc, Math.max(0, Math.min(cursor, nextText.length)))
       tr.setSelection(PmTextSelection.create(tr.doc, at)).scrollIntoView()
       view.dispatch(tr)
+      refreshStructure()
     },
-    [documentOptions]
+    [documentOptions, refreshStructure]
   )
-
-  const refreshStructure = useCallback((): void => {
-    const view = viewRef.current
-    if (!view) return
-    const tr = structureTransaction(view.state, documentOptions())
-    if (!tr) return
-    tr.setMeta('addToHistory', false)
-    view.dispatch(tr)
-  }, [documentOptions])
 
   useLayoutEffect(() => {
     const host = hostRef.current

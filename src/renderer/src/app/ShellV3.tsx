@@ -1,6 +1,8 @@
 import '../design/index.css'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
-import { Splitter } from '../ui'
+import { showToast, Splitter } from '../ui'
+import { useTranscriptViews } from '../state/transcript-view'
+import { transcriptViewText } from '../features/session/transcript-view-text'
 import { translate, useI18n, type Lang, type MessageKey } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
@@ -530,6 +532,15 @@ export default function ShellV3(): ReactElement {
             event.preventDefault()
             void openWorkspaceTab('terminal')
             return
+          case 'cycleTranscriptView': {
+            if (ui.route.name !== 'chat') return
+            event.preventDefault()
+            const s = useStore.getState()
+            const view = sessionViewIdentity({ peekedSessionId: s.peekedSessionId, peekedPath: s.peekedPath, session: s.session })
+            const text = transcriptViewText(lang)
+            showToast(text.switched(text.views[useTranscriptViews.getState().cycle(view.sessionId)]), { timeout: 1800 })
+            return
+          }
           case 'workspaceTab1':
           case 'workspaceTab2':
           case 'workspaceTab3':
@@ -573,7 +584,7 @@ export default function ShellV3(): ReactElement {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab])
+  }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab, lang])
 
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },

@@ -27,6 +27,7 @@ export type ShortcutId =
   | 'splitFocusRight'
   | 'splitFocusUp'
   | 'splitFocusDown'
+  | 'cycleTranscriptView'
   | 'cycleModel'
   | 'cycleModelBack'
   | 'cycleThinking'
@@ -79,6 +80,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'splitFocusRight', keys: ['Ctrl', 'Alt', '→'], purposeKey: 'splitFocusRight', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusUp', keys: ['Ctrl', 'Alt', '↑'], purposeKey: 'splitFocusUp', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'splitFocusDown', keys: ['Ctrl', 'Alt', '↓'], purposeKey: 'splitFocusDown', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'cycleTranscriptView', keys: ['Ctrl', 'O'], purposeKey: 'cycleTranscriptView', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'cycleModel', keys: ['Ctrl', 'P'], purposeKey: 'cycleModel', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },
   { id: 'cycleModelBack', keys: ['Ctrl', 'Shift', 'P'], purposeKey: 'cycleModelBack', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },
   { id: 'cycleThinking', keys: ['Shift', 'Tab'], purposeKey: 'cycleThinking', rebindable: false, scope: 'global', terminalsYield: false, registeredBy: 'host' },

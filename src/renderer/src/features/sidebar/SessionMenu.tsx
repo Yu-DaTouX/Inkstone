@@ -1,5 +1,5 @@
 import { useState, type JSX, type RefObject } from 'react'
-import { Columns2, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { Columns2, Eye, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { indexOfSession, useSplitView } from '../../state/split-view'
@@ -10,6 +10,9 @@ import type { SessionSummary } from '../../../../shared/ipc'
 
 import { closeSplitPane, openSessionInSplit as openInSplit } from '../split/split-actions'
 import { splitText } from '../split/split-text'
+import { useTranscriptViews } from '../../state/transcript-view'
+import { effectiveView, TRANSCRIPT_VIEWS, type TranscriptView } from '../session/transcript-view-model'
+import { transcriptViewText } from '../session/transcript-view-text'
 
 export function openSessionInSplit(item: { id: string; path: string }): void {
   openInSplit(item)
@@ -36,6 +39,9 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
   const split = splitText(lang)
   const splitIndex = useSplitView((s) => (s.split ? indexOfSession(s.split.tiles, { sessionId: item.id, path: item.path }) : -1))
+  const viewText = transcriptViewText(lang)
+  const currentView = useTranscriptViews((s) => effectiveView(s, item.id))
+  const defaultView = useTranscriptViews((s) => s.defaultView)
 
   const run = (key: MenuKey): void => {
     const store = useStore.getState()
@@ -121,6 +127,38 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
                   <FolderOpen size={14} aria-hidden />
                   {t('rail.reveal')}
                 </MenuItem>
+              </Menu>
+            </Popover>
+          </SubmenuTrigger>
+          <SubmenuTrigger>
+            <MenuItem id="transcript-view" textValue={viewText.menu} data-testid="v3-session-transcript-view">
+              <Eye size={14} aria-hidden />
+              {viewText.menu} · {viewText.views[currentView]}
+            </MenuItem>
+            <Popover placement="end top" offset={2}>
+              <Menu
+                aria-label={viewText.menu}
+                selectionMode="single"
+                disallowEmptySelection
+                selectedKeys={[currentView]}
+                onAction={(key) => {
+                  onOpenChange(false)
+                  const store = useTranscriptViews.getState()
+                  if (key === 'make-default') store.setDefaultView(currentView)
+                  else store.setSessionView(item.id, key as TranscriptView)
+                }}
+                data-testid="v3-session-transcript-view-menu"
+              >
+                {TRANSCRIPT_VIEWS.map((view) => (
+                  <MenuItem key={view} id={view} textValue={viewText.views[view]}>
+                    {viewText.views[view]}
+                  </MenuItem>
+                ))}
+                {currentView !== defaultView ? (
+                  <MenuItem id="make-default" textValue={viewText.makeDefault(viewText.views[currentView])}>
+                    {viewText.makeDefault(viewText.views[currentView])}
+                  </MenuItem>
+                ) : null}
               </Menu>
             </Popover>
           </SubmenuTrigger>

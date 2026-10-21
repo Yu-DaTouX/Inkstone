@@ -11,6 +11,9 @@ import { settingsText } from '../settings-text'
 import { generalText } from '../general/general-text'
 import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { codeFontChoice } from '../../../lib/appearance-v3'
+import { useTranscriptViews } from '../../../state/transcript-view'
+import { TRANSCRIPT_VIEWS } from '../../session/transcript-view-model'
+import { transcriptViewText } from '../../session/transcript-view-text'
 
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
 type SendKeyChoice = 'enter' | 'ctrlEnter'
@@ -150,6 +153,8 @@ export function AppearanceSettings(): ReactElement {
   const files = filesText(lang)
   const hiddenStore = filesHiddenStore()
   const showHidden = useSyncExternalStore(hiddenStore.subscribe, hiddenStore.getSnapshot, hiddenStore.getSnapshot)
+  const viewText = transcriptViewText(lang)
+  const transcriptView = useTranscriptViews((s) => s.defaultView)
 
   return (
     <section className="settings-section" aria-label={text.sectionAppearance}>
@@ -175,6 +180,15 @@ export function AppearanceSettings(): ReactElement {
               { value: 'comfortable', label: text.densityComfortable, testId: 'v3-density-comfortable' }
             ]}
             onChange={(value) => void patchSettings({ density: value, fontSizeUi: FONT_UI_DEFAULT })}
+          />
+        </SettingsRow>
+
+        <SettingsRow settingId="appearance-transcript-view" label={viewText.label} description={viewText.description}>
+          <Segmented
+            label={viewText.label}
+            value={transcriptView}
+            options={TRANSCRIPT_VIEWS.map((view) => ({ value: view, label: viewText.views[view], testId: `v3-transcript-view-${view}` }))}
+            onChange={(value) => useTranscriptViews.getState().setDefaultView(value)}
           />
         </SettingsRow>
 
