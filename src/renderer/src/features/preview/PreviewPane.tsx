@@ -6,11 +6,11 @@ import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '..
 import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
-import { CodeEditor } from '../editor/CodeEditor'
+import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
 import { PaneTitle, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
-import { editorIsEditableKind } from '../editor/editor-language'
-import { usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
+import { editorIsEditableKind } from '../editor/editable-kind'
+import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
@@ -241,8 +241,9 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const openArtifact = useCallback(
     (artifactPath: string): void => {
       setSelections((prev) => recordPreviewSelection(prev, scopeKey, artifactPath, externalPath))
+      showPreview(owner.key, artifactPath, { preview: true })
     },
-    [scopeKey, externalPath]
+    [scopeKey, externalPath, owner.key]
   )
 
   const reveal = useCallback((): void => {

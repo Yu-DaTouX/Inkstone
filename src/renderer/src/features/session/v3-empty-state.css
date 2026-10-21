@@ -90,9 +90,7 @@
     display: inline-block;
     animation: none;
   }
-  .v3-hello-cursor { animation: v3-hello-blink 1200ms step-end infinite; }
-  @keyframes v3-hello-blink { 50% { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .v3-hello-cursor { animation: none; } }
+  .v3-hello-cursor[data-blink='off'] { opacity: 0; }
 
   .v3-empty-greet {
     font-family: var(--font-mono);

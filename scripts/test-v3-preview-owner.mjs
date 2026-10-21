@@ -112,6 +112,8 @@ function installWindow(yan) {
     removeEventListener: () => {},
     setInterval: () => 0,
     clearInterval: () => {},
+    setTimeout: () => 0,
+    clearTimeout: () => {},
     location: { href: 'http://localhost/' }
   }
   globalThis.document = globalThis.document ?? {
@@ -139,6 +141,8 @@ export function createContext(value) { return { __isContext: true, __value: valu
 export function createElement(type, props, ...children) { const out = props ? { ...props } : {}; if (children.length) out.children = children.length === 1 ? children[0] : children; return { type, props: out, key: out.key === undefined ? null : out.key } }
 export function forwardRef(fn) { return fn }
 export function memo(fn) { return fn }
+export function useReducer(reducer, init) { const u = rt().useState(init); return [u[0], (a) => u[1](reducer(u[0], a))] }
+export function useImperativeHandle() {}
 export function isValidElement(el) { return !!el && typeof el === 'object' && 'type' in el && 'props' in el }
 export default { Fragment, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, useSyncExternalStore, useDebugValue, useId, useContext, createContext, createElement, forwardRef, memo, isValidElement }
 `
@@ -150,36 +154,14 @@ export const jsxs = jsx
 export const jsxDEV = jsx
 `
 
-const LUCIDE_STUB = `function icon(){ return null }
-export const Archive = icon
-export const Code = icon
-export const Globe = icon
-export const Presentation = icon
-export const Scroll = icon
-export const Sheet = icon
-export const StickyNote = icon
-export const Folder = icon
-export const ListTree = icon
-export const Copy = icon
-export const FileText = icon
-export const FolderOpen = icon
-export const Image = icon
-export const ExternalLink = icon
-export const RefreshCw = icon
-export const TriangleAlert = icon
-export const Pencil = icon
-export const X = icon
-export const BookOpen = icon
-export const Code2 = icon
-export const Database = icon
-export const File = icon
-export const FileArchive = icon
-export const FileAudio = icon
-export const FileCode = icon
-export const FileImage = icon
-export const FileJson = icon
-export const FileSpreadsheet = icon
-export const FileVideo = icon
+const REACT_DOM_STUB = `export function createPortal(){ return null }
+export function flushSync(fn){ return fn && fn() }
+`
+
+const PDFJS_STUB = `export const GlobalWorkerOptions = { workerSrc: '' }
+export class TextLayer {}
+export function getDocument() { return { promise: new Promise(() => {}), destroy: () => Promise.resolve() } }
+export default {}
 `
 
 const UI_STUB = `export function IconButton(props){ return { type: 'button', props: { ...props, 'data-testid': 'icon:' + String(props['aria-label']) } } }
@@ -189,6 +171,18 @@ export function Notice(props){ return { type: 'div', props: { ...props, role: pr
 export function EmptyState(props){ return { type: 'div', props: { ...props, children: [props.title, props.description, props.action] } } }
 export function PaneHeader(props){ return { type: 'div', props: { ...props, children: [props.title, props.actions] } } }
 export function cx(...a){ return a.filter(Boolean).join(' ') }
+function stub(){ return null }
+export const Input = stub
+export const TextArea = stub
+export const TextField = stub
+export const SearchField = stub
+export const Menu = stub
+export const MenuItem = stub
+export const MenuSection = stub
+export const Popover = stub
+export const Separator = stub
+export const SubmenuTrigger = stub
+export const Spinner = stub
 `
 
 const I18N_STUB = `export function useI18n(){ return { lang: 'zh-CN', t: (k) => String(k) } }
@@ -207,7 +201,8 @@ function makeStubMap() {
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
-      'src/renderer/src/features/editor/CodeEditor.tsx': 'export function CodeEditor(){ return null }',
+      'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
+      'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
       'src/renderer/src/features/preview/HighlightedCode.tsx': 'export function HighlightedCode(p){ return { type: "code", props: { children: p.code } } }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
@@ -224,6 +219,7 @@ async function buildBundle(outdir) {
     entry,
     `export { PreviewPane } from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/PreviewPane'))}'
 export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/preview-selection'))}'
+export * as tiles from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/tool-tiles'))}'
 `
   )
 
@@ -240,8 +236,10 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
         if (args.path === 'react') return { path: reactShim }
         if (args.path === 'react/jsx-runtime') return { path: jsxShim }
         if (args.path === 'react/jsx-dev-runtime') return { path: jsxShim }
-        if (args.path === 'lucide-react') return { path: 'v3stub:lucide', namespace: 'v3stub' }
         if (args.path === 'react-dom') return { path: 'v3stub:react-dom', namespace: 'v3stub' }
+        if (args.path.startsWith('pdfjs-dist') && args.path.includes('?url'))
+          return { path: 'v3stub:pdfjs-worker', namespace: 'v3stub' }
+        if (args.path === 'pdfjs-dist' || args.path.startsWith('pdfjs-dist/')) return { path: 'v3stub:pdfjs', namespace: 'v3stub' }
         if (!args.importer || !args.resolveDir) return undefined
         const base = resolve(args.resolveDir, args.path)
         for (const e of ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']) {
@@ -251,8 +249,9 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
         return undefined
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
-        if (args.path === 'v3stub:lucide') return { contents: LUCIDE_STUB, loader: 'js' }
-        if (args.path === 'v3stub:react-dom') return { contents: 'export function createPortal(){ return null }', loader: 'js' }
+        if (args.path === 'v3stub:react-dom') return { contents: REACT_DOM_STUB, loader: 'js' }
+        if (args.path === 'v3stub:pdfjs') return { contents: PDFJS_STUB, loader: 'js' }
+        if (args.path === 'v3stub:pdfjs-worker') return { contents: "export default 'file:///pdf.worker.mjs'", loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
         return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
       })
@@ -269,6 +268,7 @@ export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/p
     logLevel: 'silent',
     jsx: 'automatic',
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
+    mainFields: ['module', 'main'],
     loader: { '.css': 'empty' },
     define: {
       ...define,
@@ -413,12 +413,13 @@ async function main() {
     await rm(outdir, { recursive: true, force: true })
     process.exit(1)
   }
-  const { PreviewPane, sel } = mod
+  const { PreviewPane, sel, tiles } = mod
 
   let rt = null
   const newRuntime = () => {
     rt = makeHookRuntime()
     globalThis.__V3_HOOKS = rt
+    tiles.usePreviewBindings.setState({ bindings: new Map() })
   }
   const render = (props) => expand(rt.render(PreviewPane, props))
   const settle = async (props) => {
@@ -631,6 +632,34 @@ async function main() {
     tree = await settle({ owner: OWNER_B, path: undefined })
     ok(!treeText(tree).includes('office:doc.docx'), '切 B 后不显示 A 的 office 结果')
     ok(!treeText(tree).includes('C:/abs/doc.docx'), '切 B 后不显示 A 的 office abs')
+  }
+
+  group('成果清单点开的文件进入预览标签（绑定与关闭都生效）')
+  {
+    newRuntime()
+    setStore({ sessionId: 'sess-a', messages: [{ id: 'm-a', artifacts: [ARTIFACT_A] }] })
+    calls.readPreview.length = 0
+    let tree = await settle({ owner: OWNER_A, path: undefined })
+    ok(!!firstButton(tree), 'A 显示成果 manifest')
+    tree = await clickAndSettle(tree, { owner: OWNER_A, path: undefined })
+    ok(treeText(tree).includes('content:C:/proj/a/a.md'), 'A 点选后显示 A 的内容')
+    const opened = tiles.usePreviewBindings.getState().bindings.get(OWNER_A.key)
+    ok(!!opened && opened.tabs.includes('C:/proj/a/a.md'), '清单点开的文件写入预览标签绑定', opened)
+    ok(opened?.preview === 'C:/proj/a/a.md', '清单点开的文件是预览标签（可被「保持打开」）', opened)
+
+    tiles.usePreviewBindings.getState().keep(OWNER_A.key, 'C:/proj/a/a.md')
+    const kept = tiles.usePreviewBindings.getState().bindings.get(OWNER_A.key)
+    ok(!!kept && !kept.preview, '清单点开的标签能「保持打开」', kept)
+
+    tiles.usePreviewBindings.getState().bind(OWNER_A.key, 'C:/proj/a/b.md')
+    tree = await settle({ owner: OWNER_A, path: 'C:/proj/a/b.md' })
+    ok(
+      treeText(tree).includes('v3-preview-tab-a.md') && treeText(tree).includes('v3-preview-tab-b.md'),
+      '清单文件与文件树文件各有自己的标签',
+      treeText(tree).slice(0, 200)
+    )
+    const listed = tiles.usePreviewBindings.getState().bindings.get(OWNER_A.key)
+    ok(!!listed && listed.tabs.length === 2 && listed.active === 'C:/proj/a/b.md', '标签条与绑定一致（不是单个无绑定标签）', listed)
   }
 
   await rm(outdir, { recursive: true, force: true })

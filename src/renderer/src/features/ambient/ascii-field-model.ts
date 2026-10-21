@@ -14,7 +14,6 @@ export const INK_CORE = 0.48
 export const INK_FULL = 0.86
 export const TARGET_FPS = 30
 const TICK_RATE = 60
-export const BLURRED_FPS = 8
 export const FRAME_SLACK_MS = 4
 export const FIELD_SEED = 1337
 export const ENTER_MS = 480
@@ -505,7 +504,8 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
 export function animationPolicy(input: MotionInput): MotionPolicy {
   if (input.reducedMotion) return { active: false, fps: 0 }
   if (!input.visible) return { active: false, fps: 0 }
-  return { active: true, fps: input.focused ? TARGET_FPS : BLURRED_FPS }
+  if (!input.focused) return { active: false, fps: 0 }
+  return { active: true, fps: TARGET_FPS }
 }
 
 export function frameInterval(fps: number): number {

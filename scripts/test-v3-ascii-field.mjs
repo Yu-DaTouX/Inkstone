@@ -303,7 +303,7 @@ const H = 720
 
 {
   assert.deepEqual(model.animationPolicy({ visible: true, focused: true, reducedMotion: false }), { active: true, fps: model.TARGET_FPS })
-  assert.deepEqual(model.animationPolicy({ visible: true, focused: false, reducedMotion: false }), { active: true, fps: model.BLURRED_FPS })
+  assert.deepEqual(model.animationPolicy({ visible: true, focused: false, reducedMotion: false }), { active: false, fps: 0 })
   assert.deepEqual(model.animationPolicy({ visible: false, focused: true, reducedMotion: false }), { active: false, fps: 0 })
   assert.deepEqual(model.animationPolicy({ visible: true, focused: true, reducedMotion: true }), { active: false, fps: 0 })
   assert.equal(model.TARGET_FPS, 30, '聚焦目标 30fps')
