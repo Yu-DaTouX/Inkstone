@@ -1,4 +1,5 @@
 import type { Attachment } from '../../../shared/ipc'
+import { uiText } from '../i18n/ui-text'
 
 export interface QueueImageRef {
   data: string
@@ -48,7 +49,7 @@ export function queueImagesToAttachments(
     const mimeType = image.mimeType || 'image/png'
     out.push({
       id: `${idPrefix}-${(++imageSequence).toString(36)}`,
-      name: '排队图片',
+      name: uiText('state.queue.imageName'),
       mimeType,
       size: decodedBytes(base64),
       data: base64,
