@@ -102,3 +102,9 @@ resources/pi-runtime/
 # Python 字节码（Hermes 插件本地运行产生）
 __pycache__/
 *.pyc
+
+# 本机个人文件（不属于项目）
+/.claude/
+/ai-quota/
+/scratchpad_*.mjs
+/*.lnk
