@@ -171,7 +171,8 @@ async function main() {
     r = failPort('/trust', 'trust', 'pi trust.json 写入失败')
     eq(await S.submitComposerInput(r.port), 'handled', '/trust 失败仍被消费')
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'error' && c[2] === 'pi trust.json 写入失败'), '/trust 失败报告原文')
-    ok(!r.calls.some((c) => c[0] === 'clearAll'), '/trust 失败不清空草稿')
+    ok(r.calls.some((c) => c[0] === 'restoreText' && c[1] === '/trust'), '/trust 失败把命令放回输入框')
+    ok(r.calls.some((c) => c[0] === 'restoreAttachments'), '/trust 失败把附件放回')
     ok(r.calls.some((c) => c[0] === 'focusComposer'), '/trust 失败把焦点还给输入框')
 
     r = recordingPort({
@@ -181,18 +182,19 @@ async function main() {
     })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'error' && c[2] === '上下文不可压缩'), '/compact 失败报告原文')
-    ok(!r.calls.some((c) => c[0] === 'clearAll'), '/compact 失败保留草稿')
-    ok(r.calls.findIndex((c) => c[0] === 'clearText') < r.calls.findIndex((c) => c[0] === 'notify'), '/compact 提交时先清空输入框')
+    ok(r.calls.findIndex((c) => c[0] === 'clearAll') < r.calls.findIndex((c) => c[0] === 'notify'), '/compact 提交时先清空输入框')
     ok(r.calls.some((c) => c[0] === 'restoreText' && c[1] === '/compact'), '/compact 失败把命令放回输入框')
 
     let finishCompact
     r = recordingPort({ text: '/compact', commands, actions: { compact: () => new Promise((resolve) => { finishCompact = resolve }) } })
     const pendingCompact = S.submitComposerInput(r.port)
     await Promise.resolve()
-    ok(r.calls.some((c) => c[0] === 'clearText'), '/compact 压缩进行中输入框已清空')
+    ok(r.calls.some((c) => c[0] === 'clearAll'), '/compact 压缩进行中输入框已清空')
+    const callsBeforeFinish = r.calls.length
     finishCompact({ ok: true })
     await pendingCompact
     ok(!r.calls.some((c) => c[0] === 'restoreText'), '/compact 成功不还原命令')
+    ok(!r.calls.slice(callsBeforeFinish).some((c) => c[0] === 'clearAll' || c[0] === 'clearText'), '/compact 结束时不再清空压缩期间新写的草稿')
 
     r = recordingPort({
       text: '/export',
@@ -201,7 +203,7 @@ async function main() {
     })
     await S.submitComposerInput(r.port)
     ok(r.calls.some((c) => c[0] === 'notify' && c[1] === 'error' && c[2] === '没有可导出的会话'), '/export 失败报告原文')
-    ok(!r.calls.some((c) => c[0] === 'clearAll'), '/export 失败保留草稿')
+    ok(r.calls.some((c) => c[0] === 'restoreText' && c[1] === '/export'), '/export 失败把命令放回输入框')
 
     for (const text of ['/import a.jsonl', '/reload']) {
       const run = recordingPort({ text, commands, roundRunning: true })

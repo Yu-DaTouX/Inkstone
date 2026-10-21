@@ -233,7 +233,8 @@ async function runResultCommand(
   name: string
 ): Promise<ComposerSubmitOutcome> {
   const raw = port.text.trim()
-  port.clearText()
+  const attachments = port.readAttachments()
+  port.clearAll()
   let result: ComposerCommandResult
   try {
     result = await run()
@@ -242,11 +243,11 @@ async function runResultCommand(
   }
   if (isCommandFailure(result)) {
     port.restoreText(raw)
+    if (attachments.length) port.restoreAttachments(attachments)
     port.actions.notify('error', result.error || port.t('composer.cmdFailed', { name }))
     port.focusComposer()
     return 'handled'
   }
-  port.clearAll()
   return 'handled'
 }
 

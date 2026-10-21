@@ -48,6 +48,8 @@
   }
 
   .ui-stat__num {
+    flex: none;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     font: var(--t-title) / var(--t-title-lh) var(--font-ui);
@@ -57,7 +59,9 @@
   }
 
   .ui-stat__unit {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg3);
   }
