@@ -67,7 +67,9 @@
     out.push(`  fork 重新读 same.ts 次数：${reads.length}`)
     out.push(`  fork 用量：${JSON.stringify(forkRun?.usage ?? null)}`)
     out.push(`  FORK_ID=${forkRun?.id ?? ''}`)
-    out.push('  模型最终回答: ' + JSON.stringify(lastAnswer().slice(0, 300)))
+    const final = lastAnswer()
+    out.push('  模型最终回答: ' + JSON.stringify(final.slice(0, 300)))
+    ok(/one/.test(final) && /two/.test(final) && !/等宿主通知|不轮询/.test(final), '父会话收到完成通知后给出了总结（不是停在「已派出」）')
   } catch (error) {
     out.push('  探针出错: ' + (error?.message ?? String(error)))
   }
