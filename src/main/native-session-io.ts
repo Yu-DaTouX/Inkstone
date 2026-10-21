@@ -464,23 +464,32 @@ export function exportSessionJsonl(
     return fail('exists', `导出目标已存在：${outputPath}（pi 原生会覆盖，这里要求显式确认）`)
   }
   const scope: ExportScope = request.scope === 'full' ? 'full' : 'branch'
+  const leafId = request.leafId === undefined ? read.value.leafId : request.leafId
+  let entryCount = read.value.entries.length
   try {
     mkdirSync(dirname(outputPath), { recursive: true })
     if (scope === 'full') {
       const raw = readFileSync(sourcePath, 'utf8')
       writeSessionExport(sourcePath, outputPath, raw.endsWith('\n') ? raw : `${raw}\n`, request.overwrite === true)
     } else {
-      const { header, entries, leafId } = read.value
+      const { header, entries } = read.value
+      let branch: LiteSessionEntry[]
+      try {
+        branch = buildActiveBranch(entries, leafId)
+      } catch {
+        return fail('invalid_path', '导出分支的叶子不在当前会话条目中（未写入任何文件）')
+      }
       const text = serializeSessionBranch({
         sessionId: header.id,
         cwd: typeof header.cwd === 'string' ? header.cwd : '',
         entries,
-        leafId: request.leafId === undefined ? leafId : request.leafId,
+        leafId,
         ...(request.forShare ? { forShare: true } : {}),
         ...(request.systemPrompt !== undefined ? { systemPrompt: request.systemPrompt } : {}),
         ...(request.tools !== undefined ? { tools: request.tools } : {})
       })
       writeSessionExport(sourcePath, outputPath, text, request.overwrite === true)
+      entryCount = branch.length
     }
   } catch (error) {
     return fail(
@@ -488,10 +497,6 @@ export function exportSessionJsonl(
       `写入导出文件失败：${error instanceof Error ? error.message : String(error)}`
     )
   }
-  const entryCount =
-    scope === 'full'
-      ? read.value.entries.length
-      : buildActiveBranch(read.value.entries, request.leafId === undefined ? read.value.leafId : request.leafId).length
   return { ok: true, outputPath, scope, entryCount }
 }
 
@@ -551,20 +556,28 @@ export function importSessionJsonl(
     while (existsSync(destinationPath)) {
       destinationPath = join(sessionDir, `${name}-${suffix++}${ext}`)
     }
-  }
-  if (!alreadyStored) {
-    try {
-      if (request.freshSessionId) {
-        const text = [{ ...read.value.header, id: importedId }, ...read.value.entries].map(entry => JSON.stringify(entry)).join('\n') + '\n'
-        writeFileSync(destinationPath, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
-      } else {
-        copyFileSync(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL)
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        if (request.freshSessionId) {
+          const text = [{ ...read.value.header, id: importedId }, ...read.value.entries].map(entry => JSON.stringify(entry)).join('\n') + '\n'
+          writeFileSync(destinationPath, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+        } else {
+          copyFileSync(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL)
+        }
+        break
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code === 'EEXIST' && attempt < 2) {
+          while (existsSync(destinationPath)) {
+            destinationPath = join(sessionDir, `${name}-${suffix++}${ext}`)
+          }
+          continue
+        }
+        return fail(
+          'exists',
+          `复制会话失败（不覆盖已有文件）：${error instanceof Error ? error.message : String(error)}`
+        )
       }
-    } catch (error) {
-      return fail(
-        'exists',
-        `复制会话失败（不覆盖已有文件）：${error instanceof Error ? error.message : String(error)}`
-      )
     }
   }
   return {

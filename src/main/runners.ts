@@ -144,9 +144,10 @@ export class RunnerRegistry {
   confirmExecute(id: string, token: number): boolean {
     const runner = this.runners.get(id)
     if (!runner) return false
+    this.pruneAdmissions()
     const claim = this.admissions.get(canonicalCwd(runner.cwd))
-    if (claim && claim.token === token && admissionClaimedBy(claim, id, runner.generation)) return true
-    return this.busy(runner) && this.hasBusyCwd(runner.cwd, id) === false
+    if (claim) return claim.token === token && admissionClaimedBy(claim, id, runner.generation)
+    return this.busy(runner) && !this.hasBusyCwd(runner.cwd, id)
   }
 
   releaseExecute(id: string, token: number): void {
@@ -526,7 +527,11 @@ export class RunnerRegistry {
         this.notifyRunnerOrigin(idle, undefined, { sessionId: idle.agent.getState()?.sessionId })
         const currentFile = idle.agent.getState()?.sessionFile
         if (oldSessionFile && currentFile !== oldSessionFile) {
-          try { await idle.agent.switchSession(oldSessionFile) } catch { }
+          try {
+            await idle.agent.switchSession(oldSessionFile)
+          } catch (error) {
+            console.warn('[runners] 回滚到原会话失败，请重新选择会话', error)
+          }
         }
         if ((oldQueue.steering.length || oldQueue.followUp.length) && typeof idle.agent.restoreQueueSnapshot === 'function') {
           try { await idle.agent.restoreQueueSnapshot(oldQueue) } catch { }

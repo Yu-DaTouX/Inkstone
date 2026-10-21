@@ -16,6 +16,11 @@ export async function runModelErrorTests(ok) {
     ['上下文超过上限', 'context'],
     ['Request aborted', 'aborted'],
     ['已取消', 'aborted'],
+    ['aborted by user', 'aborted'],
+    ['RequestAbortedError: AbortError', 'aborted'],
+    ['upstream request cancelled', 'retryable'],
+    ['ECONNRESET', 'retryable'],
+    ['insufficient credit balance', 'quota'],
     [
       'Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://platform.openai.com/settings/organization/status-and-access before retrying.',
       'refused'
@@ -76,6 +81,9 @@ export async function runModelErrorTests(ok) {
   ok(shared.classifyModelError('You have hit your ChatGPT usage limit').kind === 'quota', 'ChatGPT 套餐上限识别为额度错误')
   ok(shared.classifyModelError('400 unsupported parameter').kind === 'request', '参数错误不当成网络错误反复重试')
   ok(shared.classifyModelError('403 insufficient permissions').kind === 'auth', '权限不足不误判成额度不足')
+  ok(shared.isTransientModelError('ECONNRESET'), 'ECONNRESET 是可重试的临时错误')
+  ok(!shared.isTransientModelError('upstream request cancelled'), '上游取消不当作临时错误自动重试')
+  ok(shared.modelErrorNotice('upstream request cancelled').includes('upstream request cancelled'), '取消类原文仍保留在错误内容里')
   ok(/quota/.test(shared.modelErrorNotice({ error: { code: 'insufficient_quota', message: 'quota exhausted' } })), '嵌套服务商错误字段可读取')
   ok(!shared.modelErrorNotice('fetch failed Authorization=abc123 Bearer secret-token api_key=private-key sk-secret123').includes('secret-token'), '错误原文中的 Bearer 凭证脱敏')
   ok(!/abc123|private-key|sk-secret123/.test(shared.modelErrorNotice('fetch failed Authorization=abc123 api_key=private-key sk-secret123')), '常见密钥字段脱敏')

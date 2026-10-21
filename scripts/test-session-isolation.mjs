@@ -133,6 +133,20 @@ export async function runSessionIsolationTests(ok) {
     const second = await syncIsolationBack(record)
     ok(second.ok === true && second.action === 'nothing', '没有新改动时是 nothing（不是错误）', JSON.stringify(second))
 
+    git(repo, ['checkout', '-q', '-b', 'other-base'])
+    await writeFile(join(record.worktree, 'c.txt'), 'base guard\n')
+    const wrongBase = await syncIsolationBack(record)
+    ok(wrongBase.ok === false && wrongBase.action === 'blocked', '主工作区不在隔离基线分支时不合回', JSON.stringify(wrongBase))
+    ok(
+      wrongBase.ok === false && wrongBase.detail.includes('other-base') && wrongBase.detail.includes('main'),
+      '拦住时说明当前分支与基线分支',
+      wrongBase.ok === false ? wrongBase.detail : ''
+    )
+    ok(!existsSync(join(repo, 'c.txt')), '不在基线分支时没有把改动合进来')
+    git(repo, ['checkout', '-q', 'main'])
+    const backOnBase = await syncIsolationBack(record)
+    ok(backOnBase.ok === true && backOnBase.action === 'merged', '切回基线分支后自动接着合回', JSON.stringify(backOnBase))
+
     await writeFile(join(record.worktree, 'a.txt'), 'alpha\nFROM-WT\ngamma\n')
     const third = await syncIsolationBack(record)
     ok(third.ok === true && third.action === 'merged', '二次改动同样合回', JSON.stringify(third))

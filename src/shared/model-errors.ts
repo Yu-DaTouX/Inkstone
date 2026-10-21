@@ -18,11 +18,6 @@ export interface ModelErrorInfo {
 
 const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
-    kind: 'aborted',
-    label: '本轮被取消',
-    re: /\b(abort(ed)?|cancel(led|ed)?)\b|取消|已中止/i
-  },
-  {
     kind: 'refused',
     label: '服务商安全审核拦截',
     re: /\bflagged\b|content[ _-]?(policy|filter|management)|usage polic(y|ies)|(blocked|filtered).{0,40}\bsafety\b|\bsafety (filter|system|polic)|prohibited[ _]content|content exists risk|considered (a )?high risk|inappropriate content|data_inspection_failed|内容安全|(不安全|敏感)(或敏感)?内容|违反.{0,8}(政策|规定|策略|规范)/i
@@ -46,6 +41,11 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
     kind: 'request',
     label: '模型或请求配置不受支持',
     re: /model.{0,50}(not found|does not exist|not available|unsupported)|unknown model|model_not_found|invalid_request_error|invalid (request|parameter|argument)|unsupported (parameter|value|model|tool)|tool.{0,40}(schema|invalid|mismatch)|\b(?:400|404|422)\b|模型.{0,8}(不存在|不支持)|参数.{0,8}(错误|无效)/i
+  },
+  {
+    kind: 'aborted',
+    label: '本轮被取消',
+    re: /\b(aborted by user|request aborted|operation aborted)\b|AbortError|用户取消|主动取消|已取消|已中止|本轮被取消/i
   }
 ]
 
