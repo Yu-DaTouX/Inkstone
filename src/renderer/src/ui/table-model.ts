@@ -5,22 +5,6 @@ export interface TableSortDescriptor {
   direction: SortDirection
 }
 
-export interface TableWindowInput {
-  rowCount: number
-  rowHeight: number
-  viewportHeight: number
-  scrollTop?: number
-  overscan?: number
-}
-
-export interface TableWindow {
-  startIndex: number
-  endIndex: number
-  offsetY: number
-  totalHeight: number
-  renderedCount: number
-}
-
 export function compareTableValues(a: unknown, b: unknown): number {
   const aEmpty = a == null || a === ''
   const bEmpty = b == null || b === ''
@@ -44,26 +28,4 @@ export function sortRows<T>(
     return left.index - right.index
   })
   return decorated.map((entry) => entry.row)
-}
-
-export function computeTableWindow(input: TableWindowInput): TableWindow {
-  const rowCount = Math.max(0, Math.floor(input.rowCount))
-  const rowHeight = Math.max(1, input.rowHeight)
-  const overscan = Math.max(0, Math.floor(input.overscan ?? 0))
-  if (rowCount === 0) {
-    return { startIndex: 0, endIndex: -1, offsetY: 0, totalHeight: 0, renderedCount: 0 }
-  }
-  const viewportHeight = Math.max(0, input.viewportHeight)
-  const scrollTop = Math.max(0, input.scrollTop ?? 0)
-  const firstVisible = Math.min(rowCount - 1, Math.floor(scrollTop / rowHeight))
-  const visibleCount = Math.max(1, Math.ceil(viewportHeight / rowHeight))
-  const startIndex = Math.max(0, firstVisible - overscan)
-  const endIndex = Math.min(rowCount - 1, firstVisible + visibleCount - 1 + overscan)
-  return {
-    startIndex,
-    endIndex,
-    offsetY: startIndex * rowHeight,
-    totalHeight: rowCount * rowHeight,
-    renderedCount: endIndex - startIndex + 1
-  }
 }

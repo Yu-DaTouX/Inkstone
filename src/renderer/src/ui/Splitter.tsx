@@ -121,24 +121,6 @@ export function ownsSplitDrag(
   return !!session && session.pointerId === event.pointerId
 }
 
-export function moveSplitDrag(
-  session: SplitDragSession | null,
-  event: SplitPointerLike,
-  options: { orientation: SplitterOrientation; min: number; max: number }
-): number | null {
-  if (!session || !ownsSplitDrag(session, event)) return null
-  return splitValueFromPointer({
-    orientation: options.orientation,
-    startValue: session.startValue,
-    startX: session.startX,
-    startY: session.startY,
-    clientX: event.clientX,
-    clientY: event.clientY,
-    min: options.min,
-    max: options.max
-  })
-}
-
 export interface SplitKeyInput {
   key: string
   value: number
