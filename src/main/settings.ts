@@ -177,7 +177,6 @@ async function defaultWorkFolder(): Promise<string> {
 
 function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   const settings = { ...DEFAULTS, ...parsed } as AppSettings
-  if (!LANGS.includes(settings.lang as (typeof LANGS)[number])) settings.lang = detectLang()
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
   if (!Array.isArray(settings.recentCwds)) settings.recentCwds = []
   if (!settings.projectNames || typeof settings.projectNames !== 'object' || Array.isArray(settings.projectNames)) settings.projectNames = {}

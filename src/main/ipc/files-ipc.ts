@@ -1,6 +1,7 @@
 import type { IpcRegistrar } from './registrar'
 import { join } from 'node:path'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { getSettings } from '../settings'
 import { completePath } from '../credentials'
 import { listDir, searchFiles } from '../files'
@@ -50,6 +51,33 @@ function contentSearchOptions(value: Record<string, unknown> | undefined): Pick<
 
 const watchIdsBySender = new Map<number, Set<string>>()
 const unsavedSenders = new Set<number>()
+const searchControllers = new Map<string, AbortController>()
+const searchSenderIds = new Set<number>()
+const PRUNE_FINGERPRINT_BATCH = 32
+
+function searchAbortController(sender: Electron.WebContents, scope: string): AbortController {
+  const key = `${sender.id}:${scope}`
+  searchControllers.get(key)?.abort('superseded')
+  const controller = new AbortController()
+  searchControllers.set(key, controller)
+  if (!searchSenderIds.has(sender.id)) {
+    searchSenderIds.add(sender.id)
+    sender.once('destroyed', () => {
+      searchSenderIds.delete(sender.id)
+      for (const [key, ctl] of searchControllers) {
+        if (!key.startsWith(`${sender.id}:`)) continue
+        searchControllers.delete(key)
+        ctl.abort('disposed')
+      }
+    })
+  }
+  return controller
+}
+
+function releaseSearchController(sender: Electron.WebContents, scope: string, controller: AbortController): void {
+  const key = `${sender.id}:${scope}`
+  if (searchControllers.get(key) === controller) searchControllers.delete(key)
+}
 
 function watchIdsFor(sender: Electron.WebContents): Set<string> {
   const existing = watchIdsBySender.get(sender.id)
@@ -139,7 +167,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     return listDir(resolved.context.cwd, typeof rel === 'string' ? rel : '', showHidden === true, resolved.context)
   })
 
-  rawHandle('yan:searchFiles', async (_e, rawRequest: unknown) => {
+  rawHandle('yan:searchFiles', async (event, rawRequest: unknown) => {
     const s = await getSettings()
     const request = isObject(rawRequest) ? rawRequest : undefined
     const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
@@ -148,7 +176,12 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     if (!resolved.ok || !isSearchRequest(request)) {
       return { request: finalRequest, entries: [], status: 'invalid' as const, truncated: false, scannedDirs: 0, skippedDirs: 0 }
     }
-    return searchFiles(finalRequest)
+    const controller = searchAbortController(event.sender, 'names')
+    try {
+      return await searchFiles(finalRequest, controller.signal)
+    } finally {
+      releaseSearchController(event.sender, 'names', controller)
+    }
   })
 
   rawHandle('yan:files:searchNames', async (event, rawRequest: unknown) => {
@@ -164,7 +197,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     return searchFileNames(`${event.sender.id}:${scope}`, finalRequest)
   })
 
-  rawHandle('yan:searchFileContents',async (_e, rawRequest: unknown) => {
+  rawHandle('yan:searchFileContents',async (event, rawRequest: unknown) => {
     const s = await getSettings()
     const request = isObject(rawRequest) ? rawRequest : undefined
     const requestedCwd = request && typeof request.cwd === 'string' ? request.cwd : s.cwd
@@ -173,7 +206,12 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     if (!resolved.ok || !isSearchRequest(request)) {
       return { request: finalRequest, hits: [], status: 'invalid' as const, truncated: false, scannedFiles: 0, skippedFiles: 0 }
     }
-    return searchFileContents(finalRequest)
+    const controller = searchAbortController(event.sender, 'content')
+    try {
+      return await searchFileContents(finalRequest, { signal: controller.signal })
+    } finally {
+      releaseSearchController(event.sender, 'content', controller)
+    }
   })
 
   handle('yan:readEditableFile', async (p: unknown, requestedCwd?: unknown) => {
@@ -237,18 +275,31 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     const before = Date.now()
     const sessionsDir = join(PI_AGENT_DIR, 'sessions')
     if (!existsSync(sessionsDir)) return { removed: 0, bytes: 0, kept: 0 }
-    const fingerprint = (): string => JSON.stringify(listSessionFiles(sessionsDir).sort().flatMap((path) => {
-      try {
-        const st = statSync(path)
-        return [[path, st.size, st.mtimeMs, st.ctimeMs]]
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-        throw error
+    const fingerprint = async (): Promise<string> => {
+      const files = listSessionFiles(sessionsDir).sort()
+      const rows: Array<[string, number, number, number]> = []
+      for (let start = 0; start < files.length; start += PRUNE_FINGERPRINT_BATCH) {
+        const batch = files.slice(start, start + PRUNE_FINGERPRINT_BATCH)
+        const stats = await Promise.all(
+          batch.map((file) =>
+            stat(file).then(
+              (st) => st,
+              (error: NodeJS.ErrnoException) => {
+                if (error.code === 'ENOENT') return null
+                throw error
+              }
+            )
+          )
+        )
+        stats.forEach((st, index) => {
+          if (st) rows.push([batch[index], st.size, st.mtimeMs, st.ctimeMs])
+        })
       }
-    }))
-    const initial = fingerprint()
+      return JSON.stringify(rows)
+    }
+    const initial = await fingerprint()
     const referenced = await referencedAttachmentNames(listSessionFiles(sessionsDir))
-    if (deps.isSessionBusy() || initial !== fingerprint()) throw new Error('会话在扫描期间发生变化，已停止附件清理，请稍后重试')
+    if (deps.isSessionBusy() || initial !== (await fingerprint())) throw new Error('会话在扫描期间发生变化，已停止附件清理，请稍后重试')
     return pruneAttachments(join(YAN_DIR, 'attachments'), referenced, { before })
   })
 }

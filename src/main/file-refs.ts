@@ -139,10 +139,6 @@ export async function grantFiles(inputs: unknown): Promise<FileRefInfo[]> {
   return out
 }
 
-export function isGranted(real: string): boolean {
-  return granted.has(real)
-}
-
 export async function readGrantedText(input: string): Promise<FileTextResult> {
   if (typeof input !== 'string' || !isAbsolute(input)) return { ok: false, error: '路径非法' }
   let real: string
@@ -153,6 +149,10 @@ export async function readGrantedText(input: string): Promise<FileTextResult> {
   }
   const meta = granted.get(real)
   if (!meta) return { ok: false, error: '这个文件没有加入上下文，不能在预览里读取' }
+  const now = await stat(real).catch(() => null)
+  if (!now || now.size !== meta.size || now.mtimeMs > meta.at) {
+    return { ok: false, error: '文件已变化，请重新添加到上下文' }
+  }
   if (meta.kind === 'pdf') {
     return { ok: false, error: 'PDF 暂不支持文本预览，可以先用外部程序打开', size: meta.size }
   }
