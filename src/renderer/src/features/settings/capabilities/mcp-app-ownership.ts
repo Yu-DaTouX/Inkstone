@@ -6,7 +6,7 @@ import type {
   McpAppSwitchPreview
 } from '../../../../../shared/mcp-app-switch'
 
-export interface McpAppSwitchLabels {
+interface McpAppSwitchLabels {
   groupTitle: string
   groupDesc: string
   note: string
@@ -154,7 +154,7 @@ export function mcpAppSwitchLabels(lang: string): McpAppSwitchLabels {
   return lang === 'en-US' ? EN : ZH
 }
 
-export type McpAppOwnershipParseResult =
+type McpAppOwnershipParseResult =
   | { ok: true; views: McpAppOwnershipView[] }
   | { ok: false; code: 'ownership_response_invalid' | 'backend_error'; error: string }
 
@@ -189,7 +189,7 @@ export function parseMcpAppOwnershipResponse(raw: unknown): McpAppOwnershipParse
   return { ok: true, views }
 }
 
-export function mcpAppDirectionLabel(direction: McpAppSwitchDirection, labels: McpAppSwitchLabels): string {
+function mcpAppDirectionLabel(direction: McpAppSwitchDirection, labels: McpAppSwitchLabels): string {
   return direction === 'to-inkstone' ? labels.directionToInkstone : labels.directionToPi
 }
 

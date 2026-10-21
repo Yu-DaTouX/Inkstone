@@ -12,5 +12,3 @@ export const MCP_APP_METHODS = {
   toolsCall: 'tools/call',
   resourcesRead: 'resources/read'
 } as const
-
-export type McpAppMethodName = (typeof MCP_APP_METHODS)[keyof typeof MCP_APP_METHODS]

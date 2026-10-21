@@ -22,7 +22,7 @@ export function consentFeedbackSummary(decision: ConsentDecision, feedback: unkn
   return { feedback: reason, message: denyFeedbackNote(reason) }
 }
 
-export interface ConsentRecord {
+interface ConsentRecord {
   decision: ConsentDecision
   at: number
 }
@@ -40,7 +40,7 @@ export interface ConsentLedger {
   entries: ConsentEntry[]
 }
 
-export const CONSENT_POLICY = {
+const CONSENT_POLICY = {
   minRecords: 5,
   minEffective: 4,
   halfLifeDays: 30,
@@ -92,7 +92,7 @@ export interface ConsentStats {
   lowerBound: number | null
 }
 
-export function consentStats(records: readonly ConsentRecord[], now: number): ConsentStats {
+function consentStats(records: readonly ConsentRecord[], now: number): ConsentStats {
   let allowWeight = 0
   let denyWeight = 0
   for (const record of records) {
