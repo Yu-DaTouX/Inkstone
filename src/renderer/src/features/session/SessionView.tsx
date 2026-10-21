@@ -47,6 +47,7 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
 
 const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
+const SCROLL_SNAPSHOT_LIMIT = 32
 
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
@@ -253,7 +254,14 @@ export function SessionView(): JSX.Element {
 
   const record = useCallback((top: number, bottom: boolean, anchor: ReadingAnchor | null) => {
     if (!identity) return
-    scrollsRef.current.set(identity, { top, bottom, anchor: bottom ? null : anchor })
+    const map = scrollsRef.current
+    map.delete(identity)
+    map.set(identity, { top, bottom, anchor: bottom ? null : anchor })
+    while (map.size > SCROLL_SNAPSHOT_LIMIT) {
+      const oldest = map.keys().next().value
+      if (oldest === undefined) break
+      map.delete(oldest)
+    }
   }, [identity])
 
   const widthRef = useRef(0)
@@ -266,17 +274,24 @@ export function SessionView(): JSX.Element {
     setShowJump(decision.showJump)
   }, [setStickNow])
 
+  const scrollFrameRef = useRef(0)
   const onScroll = useCallback(() => {
-    const el = streamRef.current
-    if (!el || settlingRef.current) return
-    const metrics = domMetrics(el)
-    const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
-    applyFollow(decision)
-    if (decision.repin) el.scrollTop = el.scrollHeight
-    metricsRef.current = decision.repin ? domMetrics(el) : metrics
-    readingRef.current = decision.stick ? null : rowAnchor(el)
-    record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+    if (scrollFrameRef.current) return
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = 0
+      const el = streamRef.current
+      if (!el || settlingRef.current) return
+      const metrics = domMetrics(el)
+      const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
+      applyFollow(decision)
+      if (decision.repin) el.scrollTop = el.scrollHeight
+      metricsRef.current = decision.repin ? domMetrics(el) : metrics
+      readingRef.current = decision.stick ? null : rowAnchor(el)
+      record(el.scrollTop, decision.stick, decision.stick ? null : domAnchor(el))
+    })
   }, [record, applyFollow])
+
+  useEffect(() => () => cancelAnimationFrame(scrollFrameRef.current), [])
 
   const onVirtualScroll = useCallback(() => {
     const h = vlistRef.current

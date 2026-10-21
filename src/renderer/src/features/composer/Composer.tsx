@@ -32,6 +32,7 @@ import { QuotaResumeBar } from './QuotaResumeBar'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
+  composerLocalCommand,
   composerMode,
   composerPlaceholderKey,
   composerPrompt,
@@ -230,10 +231,6 @@ export function Composer({ className }: { className?: string } = {}) {
     composing
   })
 
-  useEffect(() => {
-    editorRef.current?.refreshStructure()
-  }, [chipContext])
-
   const clearAll = useCallback((): void => {
     setValue('')
     clearAttachments()
@@ -244,14 +241,6 @@ export function Composer({ className }: { className?: string } = {}) {
       attachments: [...saved, ...state.attachments.filter((item) => !saved.some((kept) => kept.id === item.id))]
     }))
   }, [])
-
-  const isLocalCommand = (raw: string): boolean => {
-    if (value.startsWith('!')) return true
-    if (raw === '/login' || raw.startsWith('/login ')) return true
-    const name = /^\/([^\s]+)/.exec(raw)?.[1]?.toLowerCase()
-    if (!name) return false
-    return commands.some((c) => (c.source === 'yan' || c.source === 'compatibility') && c.name.toLowerCase() === name)
-  }
 
   const runCommandPath = useCallback(async (): Promise<void> => {
     await submitComposerInput({
@@ -298,30 +287,33 @@ export function Composer({ className }: { className?: string } = {}) {
       if (submittingRef.current) return
       submittingRef.current = true
       try {
-      if (isLocalCommand(raw)) {
-        await runLocalCommandGuarded({
-          raw: value,
-          ensureActivated: () => useStore.getState().ensureActivated(),
-          run: runCommandPath,
-          notifyBlocked: () =>
-            notify('error', t('composer.localCommandBlocked'))
-        })
-        return
-      }
-      const sentIds = attachments.map((a) => a.id)
-      const images = attachments
-        .filter((a) => a.kind !== 'file')
-        .map((a) => ({ data: a.data, mimeType: a.mimeType }))
-      const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
-      const body = withImageLegend(raw, images.length, imageRefPrefix(lang))
-      const outgoing = fileRefs.length
-        ? `${body ? `${body}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
-        : body
-      const ok = roundRunning ? await send(outgoing, images.length ? images : undefined, mode) : await send(outgoing, images.length ? images : undefined)
-      if (ok) {
-        setValue((draft) => (draft === value ? '' : draft))
-        useStore.setState((state) => ({ attachments: attachmentsAfterSubmit(state.attachments, sentIds) }))
-      }
+        if (composerLocalCommand(value, commands)) {
+          await runLocalCommandGuarded({
+            raw: value,
+            ensureActivated: () => useStore.getState().ensureActivated(),
+            run: runCommandPath,
+            notifyBlocked: () => notify('error', t('composer.localCommandBlocked'))
+          })
+          return
+        }
+        const sentIds = attachments.map((a) => a.id)
+        const images = attachments
+          .filter((a) => a.kind !== 'file')
+          .map((a) => ({ data: a.data, mimeType: a.mimeType }))
+        const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
+        const body = withImageLegend(raw, images.length, imageRefPrefix(lang))
+        const outgoing = fileRefs.length
+          ? `${body ? `${body}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
+          : body
+        const ok = roundRunning
+          ? await send(outgoing, images.length ? images : undefined, mode)
+          : await send(outgoing, images.length ? images : undefined)
+        if (ok) {
+          setValue((draft) => (draft === value ? '' : draft))
+          useStore.setState((state) => ({ attachments: attachmentsAfterSubmit(state.attachments, sentIds) }))
+        }
+      } catch (error) {
+        notify('error', error instanceof Error && error.message ? error.message : t('state.error.sendFailed'))
       } finally {
         submittingRef.current = false
       }

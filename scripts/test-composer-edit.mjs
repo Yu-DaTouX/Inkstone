@@ -62,6 +62,31 @@ const {
   assert.equal(lib.afterFencePosition(moved), null, '移动光标后退出')
 }
 
+{
+  const value = 'hello\n```js\nx\n```'
+  const doc = textToDoc(value)
+  const at = lib.positionForTextOffset(doc, value.length)
+  const reloaded = EditorState.create({ doc, selection: TextSelection.create(doc, at), plugins: [lib.afterFencePlugin()] })
+  assert.equal(lib.afterFencePosition(reloaded), null, '重载的草稿没有收尾围栏标记')
+  assert.equal(lib.fenceEndPosition(reloaded), doc.content.size, '末尾代码块之后能直接认出落点')
+  const enter = reloaded.apply(lib.afterFenceInsertTransaction(reloaded, ''))
+  assert.equal(docToText(enter.doc), `${value}\n`, '回车把新行加到代码块之后，不塞进块内')
+  assert.equal(caretInCode(enter), false, '回车后光标不在代码块里')
+  const typed = reloaded.apply(lib.afterFenceInsertTransaction(reloaded, 'a'))
+  assert.equal(docToText(typed.doc), `${value}\na`, '继续打字落在代码块之后的新段落')
+  const insideAt = doc.child(0).nodeSize + 1
+  const inside = EditorState.create({ doc, selection: TextSelection.create(doc, insideAt), plugins: [lib.afterFencePlugin()] })
+  assert.equal(lib.fenceEndPosition(inside), null, '光标在代码块中间时不进入此状态')
+  const around = '```js\nx\n```\ntail'
+  const aroundDoc = textToDoc(around)
+  const aroundEnd = EditorState.create({
+    doc: aroundDoc,
+    selection: TextSelection.create(aroundDoc, aroundDoc.child(0).nodeSize - 1),
+    plugins: [lib.afterFencePlugin()]
+  })
+  assert.equal(lib.fenceEndPosition(aroundEnd), null, '代码块后面还有内容时不进入此状态')
+}
+
 const stateOf = (value, options = {}) =>
   EditorState.create({ doc: textToDoc(value, options), selection: TextSelection.atStart(textToDoc(value, options)) })
 

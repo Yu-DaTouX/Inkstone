@@ -1,4 +1,5 @@
 import { useMemo, useState, type JSX } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { ChevronDown, ChevronUp, FilePen, Undo2 } from 'lucide-react'
 import { Button } from '../../ui'
 import { useI18n, type Lang } from '../../i18n'
@@ -64,17 +65,20 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const cwd = turn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => collectTurnChanges(turn.tools, cwd), [turn.tools, cwd])
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
-  const checkpointId = useStore((s) => {
-    if (!wantsCheckpoint) return null
-    const owned = s.checkpoints.filter((r) => r.sessionKey === rewindOwner)
-    if (!owned.length) return null
-    const found = promptBefore(s.messages, turn.sourceIds)
-    return found ? matchCheckpoint(owned, found.text, found.timestamp)?.id ?? null : null
-  })
+  const checkpoints = useStore((s) => s.checkpoints)
+  const owned = useMemo(
+    () => (wantsCheckpoint ? checkpoints.filter((record) => record.sessionKey === rewindOwner) : []),
+    [checkpoints, rewindOwner, wantsCheckpoint]
+  )
+  const anchor = useStore(useShallow((s) => (owned.length ? promptBefore(s.messages, turn.sourceIds) : null)))
+  const checkpointId = useMemo(() => {
+    if (!owned.length || !anchor) return null
+    return matchCheckpoint(owned, anchor.text, anchor.timestamp)?.id ?? null
+  }, [anchor, owned])
   if (!changes) return null
 
   const text = changesText(lang)
-  const prompt = checkpointId ? promptBefore(useStore.getState().messages, turn.sourceIds) : null
+  const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
   const shown = expanded ? changes.files : changes.files.slice(0, VISIBLE_FILES)
   const hidden = changes.files.length - VISIBLE_FILES
