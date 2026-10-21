@@ -285,6 +285,18 @@
   .v3-sa-time { font-variant-numeric: tabular-nums; }
   .v3-sa-row[data-state='failed'] .v3-sa-usage { color: var(--fail-t); }
   .v3-sa-row .v3-chev { color: var(--fg3); }
+  .v3-sa-row:is([data-state='running'], [data-state='starting']) .ui-status__dot[data-kind='running'] {
+    opacity: 0.35;
+    animation: v3-sa-wave calc(var(--dur-breathe) * 0.75) ease-in-out infinite;
+    animation-delay: calc(var(--sa-index, 0) * var(--dur-base));
+  }
+  @keyframes v3-sa-wave {
+    0%, 30%, 100% { opacity: 0.35; transform: scale(0.85); }
+    12% { opacity: 1; transform: scale(1.15); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .v3-sa-row .ui-status__dot[data-kind='running'] { animation: none; opacity: 1; }
+  }
 
   .v3-errorcard {
     padding: var(--s-8) var(--s-10);

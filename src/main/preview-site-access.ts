@@ -123,6 +123,7 @@ export interface SiteAccessStore {
 export class PreviewSiteAccess {
   private allowed: string[]
   private loaded: boolean
+  private loading: Promise<void> | null = null
   private readonly declined = new Map<string, Set<string>>()
 
   constructor(
@@ -135,12 +136,16 @@ export class PreviewSiteAccess {
 
   async ready(): Promise<void> {
     if (this.loaded || !this.store) return
-    this.loaded = true
-    try {
-      this.allowed = allowedSiteList(await this.store.load()).slice(0, this.limit)
-    } catch {
-      this.allowed = []
-    }
+    const store = this.store
+    this.loading ??= (async () => {
+      try {
+        this.allowed = allowedSiteList(await store.load()).slice(0, this.limit)
+      } catch {
+        this.allowed = []
+      }
+      this.loaded = true
+    })()
+    return this.loading
   }
 
   sites(): string[] {

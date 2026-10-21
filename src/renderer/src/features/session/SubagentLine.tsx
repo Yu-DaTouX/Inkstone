@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type JSX, type KeyboardEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -29,6 +29,7 @@ import {
 import { useToolExpansion } from './use-tool-run'
 import { turnModelLabel } from './turn-model-label'
 import { Button, Card, ProgressBar, ShimmerText } from '../../ui'
+import { ContextGauge } from '../../patterns/ContextGauge'
 
 const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
   starting: 'sa.state.starting',
@@ -114,6 +115,15 @@ export function subagentRowUsage(
     return subagentSummaryLine({ toolCalls: row.toolCalls, tokens: row.tokens, durationMs: null }, rowLang(lang))
   }
   return [row.state === 'starting' ? null : row.latestActivity, row.toolCalls > 0 ? tt('subagentCalls', { n: row.toolCalls }) : null].filter(Boolean).join(' · ')
+}
+
+export function subagentContextUsage(
+  usage: SubagentRun['contextUsage']
+): { tokens: number; windowSize: number; percent: number; tone: 'ok' | 'ask' | 'fail' } | null {
+  if (!usage || typeof usage.tokens !== 'number' || !(usage.contextWindow > 0)) return null
+  const percent = Math.max(0, Math.min(100, (usage.tokens / usage.contextWindow) * 100))
+  const tone = percent >= 95 ? 'fail' : percent >= 80 ? 'ask' : 'ok'
+  return { tokens: usage.tokens, windowSize: usage.contextWindow, percent, tone }
 }
 
 function focusRow(list: HTMLElement, index: number): void {
@@ -202,8 +212,8 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
       {open ? (
         <Card padding="none" className="v3-sa-card">
           <div className="v3-sa-list" role="group" aria-label={tt('subagentListLabel')} onKeyDown={onKeyDown} data-testid="v3-subagent-list">
-            {shown.map((run) => (
-              <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} />
+            {shown.map((run, index) => (
+              <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
             ))}
             {canFold ? (
               <Button
@@ -223,7 +233,7 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
   )
 }
 
-function SubagentRow({ run, snapshot }: { run: SubagentRun; snapshot?: RunSnapshot }): JSX.Element {
+function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?: RunSnapshot; index?: number }): JSX.Element {
   const tt = useSessionText()
   const t = useT()
   const { lang } = useI18n()
@@ -232,10 +242,11 @@ function SubagentRow({ run, snapshot }: { run: SubagentRun; snapshot?: RunSnapsh
   const selected = useSubagentPaneOpen(run.id)
   const models = useStore((s) => s.models)
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
-  const label = compactTaskPaths(row.label)
-  const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
-  const usage = subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
   const live = row.state === 'starting' || row.state === 'running'
+  const label = compactTaskPaths(live && row.description ? row.description : row.label)
+  const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
+  const usage = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
+  const context = live ? subagentContextUsage(run.contextUsage) : null
 
   return (
     <button
@@ -247,6 +258,7 @@ function SubagentRow({ run, snapshot }: { run: SubagentRun; snapshot?: RunSnapsh
       data-selected={selected ? '' : undefined}
       aria-current={selected ? 'true' : undefined}
       title={`${model.task}\n${tt('subagentOpenPane')}`}
+      style={{ '--sa-index': index } as CSSProperties}
       onClick={() => openSubagentPane(run.id)}
     >
       <span className="v3-sa-bot" aria-hidden="true">
@@ -259,6 +271,7 @@ function SubagentRow({ run, snapshot }: { run: SubagentRun; snapshot?: RunSnapsh
         {live ? <ShimmerText>{label}</ShimmerText> : label}
       </span>
       {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{modelName}</span> : null}
+      {context ? <ContextGauge usage={context} className="v3-sa-usage" data-testid="v3-subagent-context" /> : null}
       {usage ? (
         <span className="v3-sa-usage" data-testid="v3-subagent-usage" title={row.state === 'failed' ? model.error ?? undefined : undefined}>{usage}</span>
       ) : null}

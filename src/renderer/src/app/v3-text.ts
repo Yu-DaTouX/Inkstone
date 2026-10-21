@@ -58,7 +58,7 @@ const ZH: V3Text = {
   sidebarLabel: '侧栏',
   loading: '正在启动…',
   searchShortcut: '搜索会话（Ctrl+K）',
-  newChatShortcut: '新会话（Ctrl+N）',
+  newChatShortcut: '新会话（{keys}）',
   newSessionTitle: '新建会话',
   toggleSidebar: '展开或收起侧栏（Ctrl+B）',
   focusSearch: '查看会话',
@@ -102,7 +102,7 @@ const EN: V3Text = {
   sidebarLabel: 'Sidebar',
   loading: 'Starting…',
   searchShortcut: 'Search chats (Ctrl+K)',
-  newChatShortcut: 'New chat (Ctrl+N)',
+  newChatShortcut: 'New chat ({keys})',
   newSessionTitle: 'New session',
   toggleSidebar: 'Show or hide the sidebar (Ctrl+B)',
   focusSearch: 'View chats',
@@ -130,6 +130,10 @@ const EN: V3Text = {
   usageStripSessions: '{n} sessions',
   usageStripDays: '{n} active days',
   usageStripRecent: 'Daily tokens, last 14 days'
+}
+
+export function withShortcutKeys(label: string, keys: string): string {
+  return keys ? label.replace('{keys}', keys) : label.replace(/\s*[（(]\{keys\}[）)]/, '')
 }
 
 export function v3Text(lang: Lang): V3Text {

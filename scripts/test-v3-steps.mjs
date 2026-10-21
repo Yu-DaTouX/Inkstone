@@ -114,7 +114,7 @@ async function buildSteps(outdir) {
   await writeFile(reactShim, REACT_SHIM)
   await writeFile(jsxShim, JSX_SHIM)
   const entry = join(outdir, 'steps-entry.ts')
-  await writeFile(entry, `export { ToolSteps, detailKind } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
+  await writeFile(entry, `export { ToolSteps, detailKind, visibleNestedNodes } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
   const out = join(outdir, 'steps-bundle.mjs')
   await build({
     entryPoints: [entry],
@@ -490,6 +490,21 @@ async function main() {
     ok(childEl.length === 1 && childEl[0].props.depth === 1, '子调用缩进一级', childEl.map((el) => el.props.depth))
     const child = renderComponent(makeHookRuntime(), childEl[0].type, childEl[0].props)
     ok(collect(child, (el) => el.props && el.props['data-depth'] === 1).length === 1, '子步骤根节点标记 depth=1')
+  }
+
+  group('嵌套调用：超过 3 条时只显示最后 3 条，前面折叠')
+  {
+    const kids = Array.from({ length: 7 }, (_, i) => tool({ id: 'kid-' + i, name: 'bash', args: { command: 'echo ' + i }, parentToolCallId: 'parent' }))
+    const { tree } = renderStepsOpen([tool({ id: 'parent', name: 'codemode', args: { code: 'x' } }), ...kids])
+    const parent = renderStepNode(tree, 'parent')
+    const shown = byTypeName(parent.tree, 'StepNode')
+    ok(shown.length === 3 && shown[0].props.node.call.id === 'kid-4', '只渲染最后 3 个子调用', shown.map((el) => el.props.node.call.id))
+    const earlier = byTestId(parent.tree, 'v3-step-earlier')
+    ok(earlier && textOf(earlier).includes('4'), '折叠按钮写出前面隐藏的数量', earlier && textOf(earlier))
+    earlier.props.onPress()
+    const again = renderComponent(parent.rt, parent.el.type, parent.el.props)
+    ok(byTypeName(again, 'StepNode').length === 7, '点开后显示全部子调用', byTypeName(again, 'StepNode').length)
+    ok(bundle.visibleNestedNodes([1, 2, 3], false).earlier === 0, '不超过 3 条时不折叠')
   }
 
   process.stdout.write(`\n${report.fail === 0 ? '全部通过' : '有失败项'}：${report.pass} 通过 / ${report.fail} 失败\n`)

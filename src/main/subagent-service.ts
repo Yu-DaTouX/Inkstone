@@ -1,6 +1,6 @@
-import { SubagentController, type SubagentApprovalOrigin } from './subagents'
+import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer } from './subagents'
 import { getSettings } from './settings'
-import { CapabilityCommandError } from './capability-server'
+import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
@@ -19,9 +19,11 @@ export interface SubagentServiceDeps {
   providerExtensions?(): string[]
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
+  readOnlyExtension?(): string | undefined
+  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>
-  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean>
+  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean | SubagentDangerAnswer>
   onChange(run: SubagentRun): void
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
   onRemove(id: string): void
@@ -52,6 +54,7 @@ export class SubagentService {
       cwd: s.cwd,
       piBin: s.piBin,
       extensions: [this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
+      ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),

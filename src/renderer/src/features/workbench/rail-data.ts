@@ -45,7 +45,35 @@ export function sessionOutputs(messages: readonly UIMessage[]): TurnFileChange[]
     calls.push(...message.toolCalls)
   }
   if (calls.length === 0) return []
-  return collectTurnChanges(calls)?.files ?? []
+  const requests = requestFilesOf(calls)
+  const files = collectTurnChanges(calls)?.files ?? []
+  return requests.length ? files.filter((file) => !requests.some((request) => samePathTail(file.path, request))) : files
+}
+
+const REQUEST_FILE = /--request-file[=\s]+("[^"]+"|'[^']+'|[^\s;&|]+)/g
+
+function commandText(call: UIToolCall): string {
+  const args = call.args as Record<string, unknown> | undefined
+  if (!args || typeof args !== 'object') return ''
+  return ['command', 'cmd', 'script', 'code'].map((key) => args[key]).filter((value): value is string => typeof value === 'string').join('\n')
+}
+
+export function requestFilesOf(calls: readonly UIToolCall[]): string[] {
+  const found: string[] = []
+  for (const call of calls) {
+    for (const match of commandText(call).matchAll(REQUEST_FILE)) found.push(match[1].replace(/^["']|["']$/g, ''))
+  }
+  return found
+}
+
+function normalizedTail(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/').toLowerCase()
+}
+
+function samePathTail(path: string, request: string): boolean {
+  const a = normalizedTail(path)
+  const b = normalizedTail(request)
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`)
 }
 
 export function outputName(path: string): string {

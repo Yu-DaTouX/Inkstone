@@ -139,6 +139,7 @@ async function run() {
     git(repo, ['config', 'core.autocrlf', 'false'])
     writeFileSync(join(repo, 'a.txt'), 'one\n')
     writeFileSync(join(repo, 'c.txt'), 'c\n')
+    writeFileSync(join(repo, '中文 文件.txt'), '第一行\n')
     writeFileSync(join(repo, 'logo.png'), PNG_A)
     git(repo, ['add', '-A'])
     git(repo, ['commit', '-q', '-m', 'base'])
@@ -149,24 +150,32 @@ async function run() {
     const featureSha = git(repo, ['rev-parse', 'HEAD']).trim()
     writeFileSync(join(repo, 'new.txt'), 'fresh\n')
     writeFileSync(join(repo, 'c.txt'), 'c\nc2\n')
+    writeFileSync(join(repo, '中文 文件.txt'), '第一行\n改过的第二行\n')
 
     const realRepo = realpathSync(repo)
     const authorize = async (cwd) => ({ ok: true, cwd })
     const working = await inspect.readChanges(repo, authorize, { patches: true })
     assert.equal(working.ok, true)
     assert.equal(working.scopeKind, 'working')
-    assert.deepEqual(working.files.map((file) => file.path).sort(), ['c.txt', 'new.txt'])
+    assert.deepEqual(working.files.map((file) => file.path).sort(), ['c.txt', 'new.txt', '中文 文件.txt'])
     assert.equal(working.patches['c.txt'].state, 'inline')
     assert.match(working.patches['c.txt'].patch, /\+c2/)
     assert.equal(working.patches['new.txt'].state, 'inline')
+    assert.equal(
+      working.patches['中文 文件.txt'].state,
+      'inline',
+      `中文+空格路径必须拿到内联补丁（实际 ${JSON.stringify(working.patches['中文 文件.txt'])}）`
+    )
+    assert.match(working.patches['中文 文件.txt'].patch, /\+改过的第二行/)
 
     const branch = await inspect.readChanges(repo, authorize, { scope: { kind: 'branch', base: 'main' }, patches: true })
     assert.equal(branch.ok, true, branch.error)
     assert.equal(branch.scopeKind, 'branch')
     assert.equal(branch.baseRef, 'main')
-    assert.deepEqual(branch.files.map((file) => file.path).sort(), ['a.txt', 'c.txt', 'logo.png', 'new.txt'])
+    assert.deepEqual(branch.files.map((file) => file.path).sort(), ['a.txt', 'c.txt', 'logo.png', 'new.txt', '中文 文件.txt'])
     assert.equal(branch.patches['logo.png'].state, 'binary')
     assert.match(branch.patches['a.txt'].patch, /\+two/)
+    assert.equal(branch.patches['中文 文件.txt'].state, 'inline')
     assert.equal(branch.added >= 3, true)
 
     const autoBase = await inspect.readChanges(repo, authorize, { scope: { kind: 'branch' } })
@@ -179,7 +188,7 @@ async function run() {
 
     const root = await inspect.readChanges(repo, authorize, { scope: { kind: 'commit', sha: git(repo, ['rev-parse', 'main']).trim() } })
     assert.equal(root.baseSha, null)
-    assert.deepEqual(root.files.map((file) => file.path).sort(), ['a.txt', 'c.txt', 'logo.png'])
+    assert.deepEqual(root.files.map((file) => file.path).sort(), ['a.txt', 'c.txt', 'logo.png', '中文 文件.txt'])
 
     const badScope = await inspect.readChanges(repo, authorize, { scope: { kind: 'commit', sha: 'zzz' } })
     assert.equal(badScope.ok, false)
@@ -210,6 +219,25 @@ async function run() {
     assert.equal((await identity.readRemoteIdentity(realRepo, { refresh: true })).name, 'other')
 
     const expected = await service.readExpected(realRepo)
+
+    const digestBefore = await service.readExpected(realRepo)
+    const snapshot = await service.readRepoSnapshot(await service.resolveRepo(realRepo))
+    assert.equal(
+      snapshot.expected.statusDigest,
+      digestBefore.statusDigest,
+      '合并读取与单独读取的 statusDigest 必须一致（否则 commit 的「工作区状态」守卫失效）'
+    )
+    assert.notEqual(digestBefore.statusDigest, '0000000000000000')
+    writeFileSync(join(repo, 'digest-probe.txt'), 'probe\n')
+    const digestAfter = await service.readExpected(realRepo)
+    assert.notEqual(
+      digestBefore.statusDigest,
+      digestAfter.statusDigest,
+      '工作区多了一个未跟踪文件，statusDigest 必须变（否则 commit 的「工作区状态」守卫恒等）'
+    )
+    assert.equal(digestBefore.indexDigest, digestAfter.indexDigest, '只多未跟踪文件时暂存区摘要不变')
+    rmSync(join(repo, 'digest-probe.txt'), { force: true })
+
     const blocked = await actions.runGitAction({ requestId: 'r1', cwd: repo, kind: 'switch-branch', branch: 'main', expected })
     assert.equal(blocked.ok, true, JSON.stringify(blocked.failure))
     git(repo, ['switch', '-q', 'feature'])

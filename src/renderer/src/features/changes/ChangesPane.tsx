@@ -403,6 +403,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             : await git.action({ requestId, cwd, expected, kind: 'stage-all' })
         if (!res.ok) {
           setActionError(text.commitFailed(res.failure?.message ?? ''))
+          if (res.failure?.code === 'stale') setTick((n) => n + 1)
           return
         }
         if (kind === 'commit') {

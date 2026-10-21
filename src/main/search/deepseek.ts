@@ -38,6 +38,11 @@ function failure(res: Extract<ApiResult, { ok: false }>, action: 'search' | 'fet
 
 const rerankOf = (row: Record<string, unknown>): number => (typeof row.rerank_score === 'number' && Number.isFinite(row.rerank_score) ? row.rerank_score : -1)
 
+function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
+  if (!signal) return fetchImpl
+  return (input, init) => fetchImpl(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal })
+}
+
 export function deepseekSearchBody(query: string, opts: SourceRequest, now = Date.now()): Record<string, unknown> {
   const operators = [siteOperator(opts.sites), opts.recent ? `after:${isoDay(recencySince(opts.recent, now))}` : '']
   const question = opts.question ? Array.from(opts.question.trim()).slice(0, QUERY_MAX_CHARS).join('') : ''
@@ -68,8 +73,9 @@ export async function runDeepseekSearch(
       body: JSON.stringify(deepseekSearchBody(query, opts))
     },
     opts.timeoutMs,
-    fetchImpl
+    withCallerAbort(fetchImpl, opts.signal)
   )
+  if (opts.signal?.aborted) return { source: 'deepseek', rows: null, skipped: true, elapsedMs: elapsed() }
   if (!res.ok) return { source: 'deepseek', rows: null, error: failure(res, 'search'), ...(res.timedOut ? { timedOut: true } : {}), elapsedMs: elapsed() }
   const body = parseJson<SearchBody>(res.text)
   if (!body || !Array.isArray(body.results)) {

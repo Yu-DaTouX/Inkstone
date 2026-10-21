@@ -16,8 +16,9 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   const { authorizeReadCwd } = deps
   handle('yan:git:state', async (cwd: string) => {
     try {
-      const dir = String(cwd ?? '')
-      const repo = await resolveRepo(dir)
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { repo: null, error: auth.error }
+      const repo = await resolveRepo(auth.cwd)
       if (!repo) return { repo: null }
       return await readRepoSnapshot(repo)
     } catch (error) {
@@ -26,7 +27,9 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   })
   handle('yan:git:refs', async (cwd: string) => {
     try {
-      const repo = await readRepoState(String(cwd ?? ''), { withRefs: false })
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, refs: [], busyBranches: [], error: auth.error }
+      const repo = await readRepoState(auth.cwd, { withRefs: false })
       if (!repo) return { ok: false, refs: [], busyBranches: [], error: '这个目录不在 Git 仓库里' }
       const listing = await listRefs(repo.root)
       return { ok: true, refs: listing.refs, busyBranches: listing.busyBranches }
@@ -86,7 +89,15 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
 
   handle('yan:git:action', async (req: unknown) => {
     const raw = (req ?? {}) as Record<string, unknown>
-    const cwd = String(raw.cwd ?? '')
+    const requestedCwd = String(raw.cwd ?? '')
+    const auth = await authorizeReadCwd(requestedCwd).catch((error: unknown) => ({
+      ok: false as const,
+      error: error instanceof Error ? error.message : String(error)
+    }))
+    if (!auth.ok) {
+      return { ok: false, failure: { code: 'invalid-input', message: auth.error, retrySafe: true } }
+    }
+    const cwd = auth.cwd
     const expected = (raw.expected ?? {}) as Record<string, unknown>
     const base = {
       requestId: String(raw.requestId ?? ''),
@@ -154,10 +165,16 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       }
     }
   })
-  handle('yan:git:untracked', async (cwd: string) => listUntracked(String(cwd ?? '')))
+  handle('yan:git:untracked', async (cwd: string) => {
+    const auth = await authorizeReadCwd(String(cwd ?? ''))
+    if (!auth.ok) return []
+    return listUntracked(auth.cwd)
+  })
   handle('yan:git:worktrees', async (cwd: string) => {
     try {
-      return await listWorktrees(String(cwd ?? ''))
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ok: false, repoRoot: '', worktrees: [], error: auth.error }
+      return await listWorktrees(auth.cwd)
     } catch (error) {
       return {
         ok: false,
@@ -169,14 +186,18 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   })
   handle('yan:git:identity', async (cwd: string, refresh?: unknown) => {
     try {
-      return await readRemoteIdentity(String(cwd ?? ''), { refresh: refresh === true })
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return null
+      return await readRemoteIdentity(auth.cwd, { refresh: refresh === true })
     } catch {
       return null
     }
   })
   handle('yan:git:remotes', async (cwd: string) => {
     try {
-      const repo = await resolveRepo(String(cwd ?? ''))
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return []
+      const repo = await resolveRepo(auth.cwd)
       return repo ? await listRemotes(repo.root) : []
     } catch {
       return []

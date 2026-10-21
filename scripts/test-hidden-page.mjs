@@ -16,7 +16,8 @@ export class BrowserWindow {
   destroy() { this.destroyed = true }
 }
 export const session = {
-  fromPartition() {
+  fromPartition(name) {
+    globalThis.__hiddenPartitions = [...(globalThis.__hiddenPartitions ?? []), name]
     return { webRequest: { onBeforeRequest(callback) { globalThis.__hiddenBeforeRequest = callback } } }
   }
 }
@@ -114,14 +115,41 @@ export async function runHiddenPageTests(ok) {
         if (!callback) return resolve(null)
         callback({ url }, (result) => resolve(result.cancel === true))
       })
-    ok(typeof globalThis.__hiddenBeforeRequest === 'function', '隐藏页面注册了 webRequest 拦截')
-    ok((await decide('https://example.com/article')) === false, '解析到公网的域名放行')
-    ok((await decide('http://127.0.0.1:8080/x')) === true, '字面回环地址直接拦')
-    ok((await decide('http://169.254.169.254/latest/meta-data/')) === true, '云 metadata 地址拦')
-    ok((await decide('about:blank')) === false, 'about: 不当网络请求判')
+    await hidden.withHiddenPage(5_000, async () => {
+      ok(typeof globalThis.__hiddenBeforeRequest === 'function', '隐藏页面注册了 webRequest 拦截')
+      ok((await decide('https://example.com/article')) === false, '解析到公网的域名放行')
+      ok((await decide('http://127.0.0.1:8080/x')) === true, '字面回环地址直接拦')
+      ok((await decide('http://169.254.169.254/latest/meta-data/')) === true, '云 metadata 地址拦')
+      ok((await decide('about:blank')) === false, 'about: 不当网络请求判')
+    })
+    ok(globalThis.__hiddenBeforeRequest === null, '隐藏页结束后注销 webRequest 监听（不累积）')
+  }
+
+  {
+    globalThis.__hiddenPartitions = []
+    await hidden.withHiddenPage(5_000, async () => 'a')
+    await hidden.withHiddenPage(5_000, async () => 'b')
+    const partitions = globalThis.__hiddenPartitions ?? []
+    ok(partitions.length > 0 && new Set(partitions).size === 1, '多次隐藏页搜索复用同一个 in-memory session（不按次新建 partition）', partitions.join(','))
+  }
+
+  {
+    globalThis.__hiddenBeforeRequest = null
+    let installedWhileSecondRunning = false
+    const first = hidden.withHiddenPage(5_000, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+    const second = hidden.withHiddenPage(5_000, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      installedWhileSecondRunning = typeof globalThis.__hiddenBeforeRequest === 'function'
+    })
+    await Promise.all([first, second])
+    ok(installedWhileSecondRunning, '并发隐藏页共用 session 时，先结束的那个不会注销别人的拦截')
+    ok(globalThis.__hiddenBeforeRequest === null, '并发隐藏页全部结束后才注销拦截')
   }
 
   delete globalThis.__hiddenResult
   delete globalThis.__hiddenJsCalls
   delete globalThis.__hiddenBeforeRequest
+  delete globalThis.__hiddenPartitions
 }

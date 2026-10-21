@@ -134,6 +134,8 @@ import type {
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(ch, ...args) as Promise<T>
 
+let rendererReadySent = false
+
 type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
@@ -604,7 +606,10 @@ const api: YanBridge = {
     const listener = (_e: Electron.IpcRendererEvent, msg: MainPush): void => cb(msg)
     ipcRenderer.on('yan:push', listener)
 
-    ipcRenderer.send('yan:renderer-ready')
+    if (!rendererReadySent) {
+      rendererReadySent = true
+      ipcRenderer.send('yan:renderer-ready')
+    }
 
     return () => {
       ipcRenderer.removeListener('yan:push', listener)

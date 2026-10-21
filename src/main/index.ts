@@ -93,6 +93,7 @@ import { sameRuntimeEnvelope } from '../core/run-state'
 import { registerPeerHostIpc } from './ipc/peer-host-ipc'
 import { registerConsentIpc } from './ipc/consent-ipc'
 import { SubagentService } from './subagent-service'
+import { LookupCommands } from './lookup-commands'
 import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
@@ -346,11 +347,14 @@ const notifySubagentFinished = createSubagentNotifier({
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
+const subagentSearch = new LookupCommands({ capabilityOpts: () => undefined, cwd: () => process.cwd() })
 const subagentService: SubagentService = new SubagentService({
   codemodeExtension: codemodeExtensionPath,
   providerExtensions: providerExtensionPaths,
   guardExtension: dangerGuardExtensionPath,
   shellExtension: shellFallbackExtensionPath,
+  readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
+  runReadOnlyCommand: (command, params) => subagentSearch.runSearchCommand(command.slice('search.'.length), params),
   resolveModelApi: async (label, origin) => {
     const parent = (origin.runId ? runners?.agentOf(origin.runId) : null) ??
       (origin.sessionId ? runners?.agentForSession(origin.sessionId) : null) ?? null
@@ -385,7 +389,9 @@ const subagentService: SubagentService = new SubagentService({
       reasons: Array.isArray(params.reasons) ? params.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6).map(item => item.slice(0, 200)) : [],
       cwd, canRemember: false
     })
-    return answer?.choice === 'once'
+    if (answer?.choice === 'once') return { decision: 'allow' as const }
+    if (answer?.choice === 'deny') return { decision: 'deny' as const, ...(answer.feedback ? { feedback: answer.feedback } : {}) }
+    return { decision: 'no-answer' as const }
   },
   onChange: (run) => {
     if (run.status !== 'starting' && run.status !== 'running') {

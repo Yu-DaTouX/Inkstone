@@ -277,6 +277,47 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(params.get('freshness') === 'pd' && params.get('q') === 'q site:a.com', 'Brave 用 freshness，站点写进查询')
     await config.clearSearchKey('brave')
 
+    const abortable = (record) => (_url, init) =>
+      new Promise((_resolve, reject) => {
+        record.signal = init?.signal
+        if (!record.signal) {
+          reject(new Error('请求没有 signal'))
+          return
+        }
+        record.signal.addEventListener('abort', () => reject(new Error('aborted')))
+      })
+    const abortedRun = async (start) => {
+      const controller = new AbortController()
+      const record = {}
+      const began = Date.now()
+      const pending = start(controller.signal, abortable(record))
+      setTimeout(() => controller.abort(), 10)
+      const run = await pending
+      return { run, record, took: Date.now() - began }
+    }
+
+    await config.setSearchKey('brave', 'brave-test')
+    const braveAbort = await abortedRun((signal, fetchImpl) => brave.runBraveSearch('q', { limit: 5, timeoutMs: 600, signal }, fetchImpl))
+    ok(braveAbort.run.skipped === true && !braveAbort.run.timedOut, 'Brave 被外部取消 → skipped，不跑满自己的超时')
+    ok(braveAbort.record.signal?.aborted === true, 'Brave 的请求真的被中断（调用方 signal 合并进来了）')
+    ok(braveAbort.took < 400, 'Brave 被外部取消后立即返回', `${braveAbort.took}ms`)
+    await config.clearSearchKey('brave')
+
+    await config.setSearchKey('tavily', 'tvly-test')
+    const tavilyAbort = await abortedRun((signal, fetchImpl) => tavily.runTavilySearch('q', { limit: 5, timeoutMs: 600, signal }, fetchImpl))
+    ok(tavilyAbort.run.skipped === true && !tavilyAbort.run.timedOut, 'Tavily 被外部取消 → skipped，不跑满自己的超时')
+    ok(tavilyAbort.record.signal?.aborted === true, 'Tavily 的请求真的被中断（callApi 的超时 signal 之外还合并了调用方 signal）')
+    ok(tavilyAbort.took < 400, 'Tavily 被外部取消后立即返回', `${tavilyAbort.took}ms`)
+    await config.clearSearchKey('tavily')
+
+    const deepseekKey = async () => 'sk-ds-test'
+    const deepseekAbort = await abortedRun((signal, fetchImpl) =>
+      deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 600, signal }, fetchImpl, deepseekKey)
+    )
+    ok(deepseekAbort.run.skipped === true && !deepseekAbort.run.timedOut, 'DeepSeek 被外部取消 → skipped，不跑满自己的超时')
+    ok(deepseekAbort.record.signal?.aborted === true, 'DeepSeek 的请求真的被中断（调用方 signal 合并进来了）')
+    ok(deepseekAbort.took < 400, 'DeepSeek 被外部取消后立即返回', `${deepseekAbort.took}ms`)
+
     let t = 0
     const cache = new plan.TtlCache(100, 2, () => t)
     cache.set('a', 1)

@@ -17,7 +17,9 @@ const {
   findStatusText,
   clampActiveIndex,
   centeringOffset,
+  findStepQuery,
   sessionFindAction,
+  sessionFindAllowed,
   FIND_INCLUDED,
   FIND_OMITTED,
   FIND_GUTTER
@@ -176,6 +178,28 @@ check('快捷键映射：关闭时步进键不生效，组合键与输入法期�
   assert.equal(sessionFindAction({ ...base, key: 'f', ctrl: true, alt: true, open: true }, false), null)
   assert.equal(sessionFindAction({ ...base, key: 'g', ctrl: true, alt: true, open: true }, false), null)
   assert.equal(sessionFindAction({ ...base, key: 'f', ctrl: true, open: true }, true), null)
+})
+
+check('去抖未完成时回车用输入框当前值步进', () => {
+  assert.equal(findStepQuery('abc', ''), 'abc', '旧词为空时按新输入搜索')
+  assert.equal(findStepQuery('abc', 'old'), 'abc', '旧词非空时同样按新输入')
+  assert.equal(findStepQuery('', 'old'), '', '清空输入后步进会清空搜索')
+  assert.equal(findStepQuery(undefined, 'old'), 'old', '输入框不在时退回已搜索词')
+})
+
+check('焦点在会话区外（输入框）也能 Ctrl+F 打开，模态层打开时不抢键', () => {
+  const base = { own: false, inConversation: false, inComposer: false, idle: false, open: false, modalOpen: false }
+  assert.equal(sessionFindAllowed('open', base), false, '预览/终端等外部区域不抢键')
+  assert.equal(sessionFindAllowed('open', { ...base, idle: true }), true, '无焦点时打开')
+  assert.equal(sessionFindAllowed('open', { ...base, inComposer: true }), true, '焦点在输入框时打开')
+  assert.equal(sessionFindAllowed('open', { ...base, inConversation: true }), true, '焦点在会话区内时打开')
+  assert.equal(sessionFindAllowed('open', { ...base, inComposer: true, modalOpen: true }), false, '模态层下不打开')
+  assert.equal(sessionFindAllowed('open', { ...base, own: true, modalOpen: true }), false, '模态层下不抓回焦点')
+  assert.equal(sessionFindAllowed('next', base), false, '关闭时步进键不生效')
+  assert.equal(sessionFindAllowed('next', { ...base, open: true }), true, '查找条开着即可步进')
+  assert.equal(sessionFindAllowed('prev', { ...base, inComposer: true }), true, '焦点在输入框可步进')
+  assert.equal(sessionFindAllowed('close', { ...base, open: true, modalOpen: true }), true, '模态层下仍可关闭')
+  assert.equal(sessionFindAllowed(null, base), false)
 })
 
 process.stdout.write(`\n${pass} passed\n`)

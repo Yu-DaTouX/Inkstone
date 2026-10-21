@@ -148,13 +148,6 @@ function markWrap(marks: readonly Mark[], text: string): { value: string; pre: n
     pre += 2
     post += 2
   }
-  const link = marks.find((mark) => mark.type.name === 'link')
-  const href = link ? String(link.attrs.href ?? '') : ''
-  if (href && href !== text) {
-    inner = `[${inner}](${href})`
-    pre += 1
-    post += href.length + 2
-  }
   return { value: inner, pre, post }
 }
 

@@ -25,6 +25,15 @@ export function runAtQueryTests(ok, atQuery) {
   const chinese = findAtQuery(chineseText, chineseText.length)
   ok(chinese?.query === '我的 文件(1).md', '路径补全支持中文、空格和括号')
 
+  const prose = '@src/a.ts 请看一下这个实现\n下一行'
+  ok(findAtQuery(prose, prose.length) === null, '引用后面换行后不再把正文当成路径查询')
+
+  const secondLine = '@src/a.ts 请看一下\n下一行 @src/b'
+  ok(findAtQuery(secondLine, secondLine.length)?.query === 'src/b', '只在光标所在行内解析 @ 查询')
+
+  const quotedLines = '@"src/a\nb"'
+  ok(findAtQuery(quotedLines, quotedLines.length) === null, '引号路径不跨行')
+
   const quotedText = '请看 @"src/我的 文件(1).md"'
   const quoted = findAtQuery(quotedText, quotedText.length)
   ok(quoted?.query === 'src/我的 文件(1).md' && quoted.quoted, '带引号的路径会去除包裹引号')

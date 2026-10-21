@@ -127,8 +127,27 @@ async function run() {
     assert.equal(opened.length, openedBefore + 3)
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     assert.equal((await otherKind)?.choice, 'deny')
+    const dangerA = { ...base, runId: 'r4', owner: a, kind: 'danger', reasons: ['danger-A'] }
+    const dangerGrant = broker.ask(dangerA)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await dangerGrant
+    const dangerOpened = opened.length
+    assert.equal((await broker.ask(dangerA))?.choice, 'once')
+    assert.equal(opened.length, dangerOpened)
+    const dangerB = broker.ask({ ...dangerA, reasons: ['danger-B'] })
+    assert.equal(opened.length, dangerOpened + 1, 'session grant for one danger reason must not cover another')
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal((await dangerB)?.choice, 'deny')
+    const consentA = { ...base, runId: 'r4', owner: a, kind: 'consent', tool: 'mail', title: 'mail send' }
+    const consentGrant = broker.ask(consentA)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await consentGrant
+    const consentOther = broker.ask({ ...consentA, title: 'mail delete' })
+    assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
+    assert.equal((await consentOther)?.choice, 'deny')
+    const runOpened = opened.length
     const otherRun = broker.ask({ ...base, runId: 'r5' })
-    assert.equal(opened.length, openedBefore + 4)
+    assert.equal(opened.length, runOpened + 1)
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     assert.equal((await otherRun)?.choice, 'deny')
 

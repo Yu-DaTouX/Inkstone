@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../../i18n'
+import { isModalOpen } from '../../lib/modalLayer'
 import { Icon } from './Icon'
 import { IconButton } from '../../ui'
 import { stepFindIndex } from '../preview/code-find'
@@ -12,8 +13,10 @@ import {
   clampActiveIndex,
   centeringOffset,
   findStatusText,
+  findStepQuery,
   matchFind,
   sessionFindAction,
+  sessionFindAllowed,
   type FindRange
 } from './session-find'
 import './session-find.css'
@@ -182,7 +185,7 @@ export function SessionFindBar({
   const step = useCallback(
     (forward: boolean): void => {
       cancelDebounce()
-      runRef.current(found.current.query, 'step', forward)
+      runRef.current(findStepQuery(inputRef.current?.value, found.current.query), 'step', forward)
     },
     []
   )
@@ -205,6 +208,7 @@ export function SessionFindBar({
       const root = scope?.closest('.v3-session') ?? scope
       const active = document.activeElement as HTMLElement | null
       const inConversation = !!active && !!root && root.contains(active)
+      const inComposer = !!active?.closest('.v3-composer')
       const idle = !active || active === document.body
       const action = sessionFindAction(
         {
@@ -220,7 +224,7 @@ export function SessionFindBar({
         MAC
       )
       if (!action) return
-      const allowed = own || inConversation || (action === 'close' && open) || (action === 'open' && idle)
+      const allowed = sessionFindAllowed(action, { own, inConversation, inComposer, idle, open, modalOpen: isModalOpen() })
       if (!allowed) return
       event.preventDefault()
       event.stopPropagation()
