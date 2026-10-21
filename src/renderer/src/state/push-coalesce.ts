@@ -9,14 +9,25 @@ export function mergeMessagePatch(previous: MessagePatch | undefined, next: Mess
   if (!previous) return next
   const { textDelta: previousText, thinkingDelta: previousThinking, ...previousFields } = previous
   const { textDelta: nextText, thinkingDelta: nextThinking, ...nextFields } = next
-  const textDelta = (previousText ?? '') + (nextText ?? '')
-  const thinkingDelta = (previousThinking ?? '') + (nextThinking ?? '')
-  return {
-    ...previousFields,
-    ...nextFields,
-    ...(previousText === undefined && nextText === undefined ? {} : { textDelta }),
-    ...(previousThinking === undefined && nextThinking === undefined ? {} : { thinkingDelta })
+  const merged: MessagePatch = { ...previousFields, ...nextFields }
+  const fold = (
+    field: 'text' | 'thinking',
+    deltaKey: 'textDelta' | 'thinkingDelta',
+    previousDelta: string | undefined,
+    nextDelta: string | undefined
+  ): void => {
+    if (nextFields[field] !== undefined) return
+    const base = previousFields[field]
+    if (base !== undefined) {
+      if (nextDelta) merged[field] = base + nextDelta
+      return
+    }
+    if (previousDelta === undefined && nextDelta === undefined) return
+    merged[deltaKey] = (previousDelta ?? '') + (nextDelta ?? '')
   }
+  fold('text', 'textDelta', previousText, nextText)
+  fold('thinking', 'thinkingDelta', previousThinking, nextThinking)
+  return merged
 }
 
 export class MessagePatchBatch {
