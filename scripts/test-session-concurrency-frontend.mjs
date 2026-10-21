@@ -733,8 +733,15 @@ export async function runSessionConcurrencyFrontendTests(ok) {
         JSON.stringify(view.sessionRuntimes['sess-a']?.queue)
       )
       ok(
-        (view.sessionRuntimes['sess-a']?.draft ?? '').includes('排队的话'),
-        '收回的文本进入该会话草稿'
+        !(view.sessionRuntimes['sess-a']?.draft ?? '').includes('排队的话'),
+        '后台会话收回的文本先暂存，不直接写进它的草稿（避免与恢复队列重复）'
+      )
+      useStore.setState({ session: { ...view.session, sessionId: 'sess-a', sessionFile: 'A' } })
+      const back = useStore.getState()
+      ok(
+        (back.queueRestore ?? '').includes('排队的话'),
+        '切到该会话时，暂存的文本回填进输入框',
+        String(back.queueRestore)
       )
       ok(view.queue === EMPTY_QUEUE || view.queue.steering.length === 0, '当前视图不是该会话时不误改它的队列')
     }
