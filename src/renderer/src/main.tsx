@@ -9,6 +9,7 @@ import { installAudioUnlock } from './lib/sound'
 import { installMotionPreferenceReporter } from './lib/motionPreference'
 import { installFocusModality } from './lib/focusModality'
 import { installDeepLinkNavigation } from './features/deeplink/navigation'
+import { installBrowserPreloadRecovery } from './lib/preload-recovery'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('找不到 #root')
@@ -30,6 +31,8 @@ if (probeMode) {
 }
 
 installAudioUnlock()
+
+installBrowserPreloadRecovery()
 
 installMotionPreferenceReporter()
 
