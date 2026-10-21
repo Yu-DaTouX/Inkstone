@@ -2257,6 +2257,8 @@
   "state.error.steerFailed": "Failed to insert",
   "state.error.removeQueuedFailed": "Failed to withdraw",
   "state.error.queueEditFailed": "Failed to edit the queue",
+  "state.error.settingsSaveFailed": "Could not save the setting — try again.",
+  "state.error.pickFailed": "Could not pick files.",
   "state.error.sessionSwitchedCommandSkipped": "Session changed; command not run",
   "state.error.commandFailed": "Command failed",
   "state.error.newSessionFailed": "Failed to create",
