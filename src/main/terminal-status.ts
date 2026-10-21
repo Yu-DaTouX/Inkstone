@@ -6,11 +6,7 @@ import type {
 
 const PROGRAM_STATUS_QUERY_BODY = '7501;?'
 
-export const PI_PROGRAM_STATUS_QUERY = '\x1b]7501;?\x1b\\'
-
-export const PROGRAM_STATUS_QUERY = '\x1b]7501;?1\x1b\\'
-
-export const PROGRAM_STATUS_REPLY = PROGRAM_STATUS_QUERY
+export const PROGRAM_STATUS_REPLY = '\x1b]7501;?1\x1b\\'
 
 export const MAX_SEQUENCE_BYTES = 4096
 

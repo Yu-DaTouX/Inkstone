@@ -243,10 +243,16 @@ export class TerminalSession {
 
   async retry(): Promise<void> {
     if (!this.owner?.active || !this.visible) return
+    const id = this.terminalId
     this.epoch += 1
     this.detachLocal()
-    this.publishCleared({ phase: 'connecting', notice: '', error: '' })
-    await this.ensure()
+    if (id) {
+      this.deps.release('terminal:' + id)
+      void this.deps.bridge.kill(id)
+    }
+    this.started = true
+    this.publishCleared({ phase: 'starting', notice: '', error: '' })
+    await this.createTerminal(this.epoch)
   }
 
   async clear(): Promise<void> {

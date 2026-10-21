@@ -116,7 +116,8 @@ function harness(options = {}) {
     release: (resource) => {
       calls.release.push(resource)
       owners.delete(resource)
-    }
+    },
+    ...(options.adopt ? { adopt: options.adopt } : {})
   })
   const writes = []
   controller.setSink({ reset: () => writes.push('<reset>'), write: (data) => writes.push(data) })
@@ -410,6 +411,44 @@ function harness(options = {}) {
   assert.equal(h.calls.write.length, 1, '未激活输入被丢弃')
   assert.equal(h.calls.resize.length, resizes, '未激活不 resize')
   console.log('  lifecycle：隐藏 / 未激活输入与 resize 阻断 ✓')
+}
+
+{
+  const h = harness({ adopt: { id: 'owned-A' } })
+  h.seed('owned-A', 'key-A', { alive: false, exitCode: 2 })
+  h.controller.setOwner(owner(), true)
+  await until(() => h.calls.attach.length === 1)
+  h.resolveAttach('owned-A', snapshot('owned-A', { alive: false, exitCode: 2 }))
+  await until(() => h.controller.getState().phase === 'exited')
+
+  const retried = h.controller.retry()
+  await until(() => h.calls.start.length === 1)
+  assert.deepEqual(h.calls.kill, ['owned-A'], '重试先结束已退出的终端')
+  assert.deepEqual(h.calls.release, ['terminal:owned-A'], '重试释放旧终端归属')
+  h.resolveStart(0, snapshot('fresh-A'))
+  await until(() => h.calls.attach.length === 2)
+  assert.deepEqual(h.calls.attach, ['owned-A', 'fresh-A'], '重试新建 PTY 而不是再 attach 已退出的终端')
+  h.resolveAttach('fresh-A', snapshot('fresh-A'))
+  await retried
+  await until(() => h.controller.getState().phase === 'ready')
+  assert.equal(h.controller.getState().terminalId, 'fresh-A', '重试后连到新终端')
+
+  const failed = harness({ adopt: { id: 'gone-B' } })
+  failed.controller.setOwner(owner({ key: 'key-B' }), true)
+  await until(() => failed.calls.start.length === 1)
+  failed.resolveStart(0, snapshot('gone-B'))
+  await until(() => failed.calls.attach.length === 1)
+  failed.resolveAttach('gone-B', null)
+  await until(() => failed.controller.getState().phase === 'error')
+  const again = failed.controller.retry()
+  await until(() => failed.calls.start.length === 2)
+  failed.resolveStart(1, snapshot('recovered-B'))
+  await until(() => failed.calls.attach.length === 2)
+  failed.resolveAttach('recovered-B', snapshot('recovered-B'))
+  await again
+  await until(() => failed.controller.getState().phase === 'ready')
+  assert.equal(failed.controller.getState().terminalId, 'recovered-B', '连接失败后重试重新建 PTY')
+  console.log('  lifecycle：重试新建 PTY（不重新 attach 已退出 / 丢失的终端）✓')
 }
 
 console.log('v3 终端生命周期：隐藏不新建 / 迟到 PTY 清理 / 残留 view 清空检查通过')
