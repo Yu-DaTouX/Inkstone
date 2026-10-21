@@ -58,6 +58,7 @@ export function windowDeepLinkRouter(getWindow: () => BrowserWindow | undefined,
     send: (link) => {
       const win = getWindow()
       if (!win || win.isDestroyed()) return false
+      if (win.webContents.isLoading()) return false
       win.webContents.send(DEEPLINK_CHANNEL, link)
       return true
     },

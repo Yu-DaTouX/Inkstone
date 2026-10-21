@@ -31,6 +31,46 @@ export async function resolvesToPrivateAddress(hostname: string): Promise<boolea
   }
 }
 
+export class PrivateDnsGuard {
+  private readonly cache = new Map<string, { private: boolean; expiresAt: number }>()
+  private readonly pending = new Map<string, Promise<boolean>>()
+
+  constructor(
+    private readonly resolve: (hostname: string) => Promise<boolean> = resolvesToPrivateAddress,
+    private readonly ttlMs = 10_000,
+    private readonly limit = 200
+  ) {}
+
+  resolves(hostname: string): Promise<boolean> {
+    const key = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    const cached = this.cache.get(key)
+    if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.private)
+    const inFlight = this.pending.get(key)
+    if (inFlight) return inFlight
+    const lookupOnce = this.resolve(key)
+      .catch(() => false)
+      .then((isPrivate) => {
+        this.remember(key, isPrivate)
+        return isPrivate
+      })
+      .finally(() => this.pending.delete(key))
+    this.pending.set(key, lookupOnce)
+    return lookupOnce
+  }
+
+  private remember(key: string, isPrivate: boolean): void {
+    const now = Date.now()
+    if (this.cache.size >= this.limit) {
+      for (const [host, entry] of this.cache) if (entry.expiresAt <= now) this.cache.delete(host)
+      for (const host of this.cache.keys()) {
+        if (this.cache.size < this.limit) break
+        this.cache.delete(host)
+      }
+    }
+    this.cache.set(key, { private: isPrivate, expiresAt: now + this.ttlMs })
+  }
+}
+
 function isPrivateIpv4(address: string): boolean {
   const octets = address.split('.').map((part) => Number(part))
   if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false

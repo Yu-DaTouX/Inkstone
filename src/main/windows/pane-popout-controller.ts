@@ -119,6 +119,10 @@ export function createPanePopoutController(
     session.window.send(PANE_POPOUT_CHANNELS.push, buildState(session))
   }
 
+  const pushBrowserState = (session: BrowserSession): void => {
+    session.window.send(PANE_POPOUT_CHANNELS.push, buildBrowserState(session))
+  }
+
   const closeBrowserSession = (session: BrowserSession, returnView: boolean): void => {
     browserSessions.delete('browser')
     if (returnView && browserTransfer) {
@@ -180,7 +184,14 @@ export function createPanePopoutController(
       tabId,
       ownerKey: request.owner.key,
       generation: request.owner.generation ?? 0,
-      target
+      target,
+      onInvalidate: (_lease, reason) => {
+        if (browserSessions.get('browser') !== session) return
+        session.invalidated = true
+        if (reason === 'tab-closed') session.invalidReason = '该页签已关闭'
+        else delete session.invalidReason
+        pushBrowserState(session)
+      }
     })
     if (!begin.ok) {
       win.destroy()
@@ -315,6 +326,7 @@ export function createPanePopoutController(
         browser.invalidated = true
         if (reason) browser.invalidReason = reason
         else delete browser.invalidReason
+        pushBrowserState(browser)
         browserTransfer?.invalidateOwner(ownerKey, 'owner-stale')
       }
       terminalTransfer?.invalidate?.(ownerKey, 'owner-stale')
