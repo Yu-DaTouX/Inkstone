@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId, type WorkbenchView, type WorkspacePaneId, type WorkspaceView } from '../features/workbench/types'
 import { chatFlexOf, chatOnlyLayout, columnLayout, flexChanges, hasTile, layoutWithChat, openPane, orderedTileIds, panesLayoutOf, removeTile, CHAT_TILE_ID, type TileLayout } from '../features/workbench/tile-tree'
-import { isSubagentPaneId, isWorkspacePaneId } from '../features/workbench/subagent-panes'
+import { isSubagentPaneId } from '../features/workbench/subagent-panes'
 import {
   HOME_LAYOUT_KEY,
   collapseLayoutEntry,
@@ -83,23 +83,8 @@ export function workspaceLayoutFor(layout: TileLayout | null, panes: readonly Wo
   return next && hasTile(next, CHAT_TILE_ID) ? next : layoutWithChat(next, chatFlexOf(layout))
 }
 
-export function restorableWorkspacePanes(value: unknown, fallback: WorkbenchView): WorkspacePaneId[] {
-  const out: WorkspacePaneId[] = []
-  const list = Array.isArray(value) ? value : fallback === 'overview' ? [] : [fallback]
-  for (const raw of list) {
-    const item = raw === 'preview' ? 'files' : raw
-    if (!isWorkspacePaneId(item) || WORKBENCH_ACTIVE_TABS.has(item) || out.includes(item)) continue
-    out.push(item)
-  }
-  return out
-}
-
 export function withWorkspacePane(panes: readonly WorkspacePaneId[], tab: WorkspacePaneId): WorkspacePaneId[] {
   return panes.includes(tab) ? [...panes] : [...panes, tab]
-}
-
-export function withoutWorkspacePane(panes: readonly WorkspacePaneId[], tab: WorkspacePaneId): WorkspacePaneId[] {
-  return panes.filter((item) => item !== tab)
 }
 
 function writeFocusPrefs(view: WorkspaceView): void {
@@ -342,10 +327,6 @@ export const useUiV3 = create<UiV3State>((set, get) => {
   }
   }
 })
-
-export function readUiPrefsForTest(): V3UiPrefs {
-  return readUiPrefs()
-}
 
 export function routeFromHash(hash: string): V3Route {
   const name = hash.replace(/^#\/?/, '')

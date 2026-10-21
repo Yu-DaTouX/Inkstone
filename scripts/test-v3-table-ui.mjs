@@ -125,7 +125,7 @@ async function loadSsrModule() {
 
 try {
   const model = await loadPureModel()
-  const { sortRows, computeTableWindow, compareTableValues } = model
+  const { sortRows, compareTableValues } = model
 
   const rows = [
     { id: 'a', group: 2, name: 'b' },
@@ -171,61 +171,6 @@ try {
   assert.equal(compareTableValues(null, 5), 1)
   assert.equal(compareTableValues(undefined, null), 0)
   assert.equal(compareTableValues('', 'a'), 1)
-
-  assert.deepEqual(computeTableWindow({ rowCount: 0, rowHeight: 32, viewportHeight: 200 }), {
-    startIndex: 0,
-    endIndex: -1,
-    offsetY: 0,
-    totalHeight: 0,
-    renderedCount: 0
-  })
-  assert.deepEqual(computeTableWindow({ rowCount: 100, rowHeight: 32, viewportHeight: 320 }), {
-    startIndex: 0,
-    endIndex: 9,
-    offsetY: 0,
-    totalHeight: 3200,
-    renderedCount: 10
-  })
-  assert.deepEqual(computeTableWindow({ rowCount: 100, rowHeight: 32, viewportHeight: 320, scrollTop: 1000 }), {
-    startIndex: 31,
-    endIndex: 40,
-    offsetY: 992,
-    totalHeight: 3200,
-    renderedCount: 10
-  })
-  assert.deepEqual(
-    computeTableWindow({ rowCount: 100, rowHeight: 32, viewportHeight: 320, scrollTop: 1000, overscan: 3 }),
-    { startIndex: 28, endIndex: 43, offsetY: 896, totalHeight: 3200, renderedCount: 16 },
-    'overscan 向两侧扩展窗口但夹在总行数内'
-  )
-  assert.deepEqual(computeTableWindow({ rowCount: 10, rowHeight: 32, viewportHeight: 320, scrollTop: 99999 }), {
-    startIndex: 9,
-    endIndex: 9,
-    offsetY: 288,
-    totalHeight: 320,
-    renderedCount: 1
-  })
-  assert.deepEqual(computeTableWindow({ rowCount: 5, rowHeight: 32, viewportHeight: 0 }), {
-    startIndex: 0,
-    endIndex: 0,
-    offsetY: 0,
-    totalHeight: 160,
-    renderedCount: 1
-  })
-  assert.deepEqual(computeTableWindow({ rowCount: 5, rowHeight: 32, viewportHeight: 32, scrollTop: -100 }), {
-    startIndex: 0,
-    endIndex: 0,
-    offsetY: 0,
-    totalHeight: 160,
-    renderedCount: 1
-  })
-  assert.deepEqual(computeTableWindow({ rowCount: 3, rowHeight: 0, viewportHeight: 2 }), {
-    startIndex: 0,
-    endIndex: 1,
-    offsetY: 0,
-    totalHeight: 3,
-    renderedCount: 2
-  })
 
   const ssr = await loadSsrModule()
 

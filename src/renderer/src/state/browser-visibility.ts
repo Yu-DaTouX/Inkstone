@@ -30,8 +30,4 @@ export class OverlayBlockers {
   get size(): number {
     return this.counts.size
   }
-
-  clear(): void {
-    this.counts.clear()
-  }
 }

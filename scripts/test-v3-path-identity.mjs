@@ -75,7 +75,7 @@ async function buildPure(outdir) {
   const entry = join(outdir, 'pure-entry.ts')
   await writeFile(
     entry,
-    `export { viewIdentityOf, viewKeyRef, viewingSessionIdOf, incomingProvesPath, pushBelongsToView } from '${posix(resolve(ROOT, 'src/renderer/src/state/view-identity'))}'
+    `export { viewIdentityOf, viewKeyRef, incomingProvesPath, pushBelongsToView } from '${posix(resolve(ROOT, 'src/renderer/src/state/view-identity'))}'
 export { deriveWorkspaceOwner, viewIdentity } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/ownership'))}'
 export { browserControlAllowed } from '${posix(resolve(ROOT, 'src/renderer/src/features/browser/ownership'))}'
 export { workspaceKeyFor } from '${posix(resolve(ROOT, 'src/renderer/src/state/workspace-key'))}'
@@ -226,7 +226,7 @@ async function main() {
     process.exit(1)
   }
 
-  const { viewIdentityOf, viewKeyRef, viewingSessionIdOf, incomingProvesPath, pushBelongsToView, deriveWorkspaceOwner, viewIdentity, browserControlAllowed, workspaceKeyFor } = pure
+  const { viewIdentityOf, viewKeyRef, incomingProvesPath, pushBelongsToView, deriveWorkspaceOwner, viewIdentity, browserControlAllowed, workspaceKeyFor } = pure
   const { useStore, viewingSubmitSessionId } = storeMod
 
   const keyA = workspaceKeyFor({ sessionId: 'sess-a', path: A })
@@ -238,7 +238,6 @@ async function main() {
     const pathOnly = viewIdentityOf({ peekedSessionId: null, peekedPath: B, session: SESSION_A })
     ok(pathOnly.peeked === true && pathOnly.sessionId === null && pathOnly.sessionFile === B, 'path-only B：id 留空、路径只取 B，不补 A 的 id', pathOnly)
     ok(JSON.stringify(viewKeyRef({ peekedSessionId: null, peekedPath: B, session: SESSION_A })) === JSON.stringify({ sessionId: undefined, path: B }), 'workspace 键输入只含 B 路径')
-    ok(viewingSessionIdOf({ peekedSessionId: null, peekedPath: B, session: SESSION_A }) === undefined, 'path-only 的视图 id 为 undefined，不回落旧会话')
 
     const idOnly = viewIdentityOf({ peekedSessionId: 'sess-b', peekedPath: null, session: SESSION_A })
     ok(idOnly.sessionId === 'sess-b' && idOnly.sessionFile === null, 'id-only peek：文件留空，不补 A 的文件', idOnly)
