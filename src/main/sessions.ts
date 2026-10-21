@@ -258,6 +258,39 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
   }
 }
 
+const LIST_READ_CONCURRENCY = 8
+
+async function readSessionSummary(f: { path: string; mtimeMs: number; size: number }): Promise<SessionSummary | undefined> {
+  try {
+    const head = await readHead(f.path)
+    const dirName = f.path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
+    const named = !!head.name
+    const activity = await readLastActivity(f.path, f.size)
+    const summary: SessionSummary = {
+      id: head.id ?? f.path,
+      path: f.path,
+      cwd: head.cwd ?? decodeDirName(dirName) ?? '',
+      title: head.name ?? head.title ?? '(无标题)',
+      named,
+      parentSession: head.parentSession,
+      lastActivityAt:
+        activity.at ?? (head.createdAt || Math.round(f.mtimeMs)),
+      lastReply: activity.reply,
+      createdAt: head.createdAt || Math.round(f.mtimeMs),
+      updatedAt: Math.round(f.mtimeMs),
+      messageCount: await countSessionMessages(f.path),
+      model: undefined
+    }
+    if (head.parentSession) {
+      summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)
+    }
+    cache.set(f.path, { mtimeMs: f.mtimeMs, summary })
+    return summary
+  } catch {
+    return undefined
+  }
+}
+
 export async function listSessions(limit = 200, projects?: ProjectRecord[]): Promise<SessionSummary[]> {
   if (!existsSync(SESSIONS_DIR)) return []
 
@@ -294,44 +327,26 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const picked = files.slice(0, limit)
 
-  const out: SessionSummary[] = []
-  for (const f of picked) {
-    const hit = cache.get(f.path)
-    if (hit && hit.mtimeMs === f.mtimeMs) {
-      out.push(hit.summary)
-      continue
-    }
-
-    try {
-      const head = await readHead(f.path)
-      const dirName = f.path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
-      const named = !!head.name
-      const activity = await readLastActivity(f.path, f.size)
-      const summary: SessionSummary = {
-        id: head.id ?? f.path,
-        path: f.path,
-        cwd: head.cwd ?? decodeDirName(dirName) ?? '',
-        title: head.name ?? head.title ?? '(无标题)',
-        named,
-        parentSession: head.parentSession,
-        lastActivityAt:
-          activity.at ?? (head.createdAt || Math.round(f.mtimeMs)),
-        lastReply: activity.reply,
-        createdAt: head.createdAt || Math.round(f.mtimeMs),
-        updatedAt: Math.round(f.mtimeMs),
-        messageCount: await countSessionMessages(f.path),
-        model: undefined
+  const out: Array<SessionSummary | undefined> = new Array(picked.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < picked.length) {
+      const index = cursor++
+      const f = picked[index]
+      const hit = cache.get(f.path)
+      if (hit && hit.mtimeMs === f.mtimeMs) {
+        out[index] = hit.summary
+        continue
       }
-      if (head.parentSession) {
-        summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)
-      }
-      cache.set(f.path, { mtimeMs: f.mtimeMs, summary })
-      out.push(summary)
-    } catch {
+      out[index] = await readSessionSummary(f)
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(LIST_READ_CONCURRENCY, picked.length) }, () => worker())
+  )
 
-  return projects ? decorateSessions(out, projects) : out
+  const summaries = out.filter((item): item is SessionSummary => item !== undefined)
+  return projects ? decorateSessions(summaries, projects) : summaries
 }
 
 const TRASH_DIR = join(YAN_DIR, 'trash', 'sessions')
