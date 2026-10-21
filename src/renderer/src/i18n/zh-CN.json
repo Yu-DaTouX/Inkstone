@@ -466,6 +466,7 @@
   "cap.nativeDisabled": "已停用",
   "cap.nativeCommandArgs": "{command} · {count} 个参数",
   "ctx.compactingReason": "压缩中 · {reason}",
+  "ctx.compactingElapsed": "已用 {seconds} 秒",
   "ctx.growthAfter": "此后新增 {tokens}",
   "ctx.reasonEmergency": "物理兜底",
   "ctx.reasonManual": "手动",
