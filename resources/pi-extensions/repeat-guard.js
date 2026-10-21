@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { appendReminder } from './request-reminder.js'
 
 function envInt(name, fallback) {
   const raw = Number(process.env[name])
@@ -136,38 +137,14 @@ export default function repeatGuard(pi) {
     return undefined
   })
 
-  pi.on('before_provider_request', (event, ctx) => {
+  pi.on('before_provider_request', (event) => {
     if (run < WARN_AT || warned) return undefined
-    const payload = event?.payload
-    const messages = payload?.messages
-    if (!payload || !Array.isArray(messages) || messages.length === 0) return undefined
-    let at = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i]?.role === 'user') {
-        at = i
-        break
-      }
-    }
-    if (at < 0) return undefined
-    warned = true
     const toolName = String(lastKey ?? '').split('\n')[0] || 'the same tool'
+    const next = appendReminder(event?.payload, `<system-reminder>${remindText(toolName, run)}</system-reminder>`)
+    if (!next) return undefined
+    warned = true
     note('repeat_warn', { tool: toolName, run })
-    const text = remindText(toolName, run)
-    const already = messages.find((m) => m?.role === 'system' || m?.role === 'developer')?.role
-    const role = already === 'system' || already === 'developer' ? already : 'system'
-    if (ctx?.model?.provider === 'local') {
-      const current = messages[at]
-      const suffix = `\n\n${text}`
-      const content = current?.content
-      const nextContent = typeof content === 'string'
-        ? `${content}${suffix}`
-        : Array.isArray(content)
-          ? [...content, { type: 'text', text: suffix }]
-          : `${String(content ?? '')}${suffix}`
-      return { ...payload, messages: messages.map((message, index) => index === at ? { ...message, content: nextContent } : message) }
-    }
-    const next = [...messages.slice(0, at), { role, content: text }, ...messages.slice(at)]
-    return { ...payload, messages: next }
+    return next
   })
 
   pi.on('message_end', (event) => {

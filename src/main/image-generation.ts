@@ -373,6 +373,13 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
   let revisedPrompt: string | undefined
   let failure: string | undefined
   let partials = 0
+  let replyText = ''
+  const seenTypes = new Set<string>()
+  const takeImage = (item: { type?: string; result?: string; revised_prompt?: string } | undefined): void => {
+    if (item?.type !== 'image_generation_call' || !item.result) return
+    finalB64 = item.result
+    revisedPrompt = item.revised_prompt
+  }
   const consume = (raw: string): void => {
     for (const line of raw.split(/\r?\n/)) {
       if (!line.startsWith('data:')) continue
@@ -382,15 +389,17 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
         const event = JSON.parse(text) as {
           type?: string
           item?: { type?: string; result?: string; revised_prompt?: string }
-          response?: { error?: { message?: string } }
+          response?: { error?: { message?: string }; output?: Array<{ type?: string; result?: string; revised_prompt?: string }> }
           error?: { message?: string }
           message?: string
+          delta?: string
         }
-        const item = event.item
-        if (item?.type === 'image_generation_call' && item.result) {
-          finalB64 = item.result
-          revisedPrompt = item.revised_prompt
-        } else if (event.type === 'response.image_generation_call.partial_image') {
+        if (event.type) seenTypes.add(event.type)
+        takeImage(event.item)
+        if (!finalB64 && event.type === 'response.completed') for (const output of event.response?.output ?? []) takeImage(output)
+        if (event.type === 'response.output_text.delta' && typeof event.delta === 'string' && replyText.length < 400) replyText += event.delta
+        if (finalB64) continue
+        if (event.type === 'response.image_generation_call.partial_image') {
           partials += 1
           report?.('generating', `已收到第 ${partials} 张预览`)
         } else if (event.type === 'response.failed' || event.type === 'error') {
@@ -409,7 +418,9 @@ async function codexImage(req: ImageGenerationRequest, sources: SourceImage[], c
     if (next.done) break
   }
   consume(buffer)
-  if (!finalB64) throw new ImageProviderError(failure ? 'codex_response_failed' : 'codex_image_result_missing', failure?.slice(0, 200))
+  if (!finalB64 && failure) throw new ImageProviderError('codex_response_failed', failure.slice(0, 200))
+  if (!finalB64 && replyText.trim()) throw new ImageProviderError('codex_image_tool_not_called', replyText.trim().slice(0, 200))
+  if (!finalB64) throw new ImageProviderError('codex_image_result_missing', `事件：${[...seenTypes].slice(0, 12).join(', ') || '无'}；预览图 ${partials} 张`)
   return { bytes: Buffer.from(finalB64, 'base64'), model: imageModel, revisedPrompt }
 }
 

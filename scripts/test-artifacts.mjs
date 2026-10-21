@@ -128,6 +128,16 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
     'codex_response_failed',
     'Codex failure events should surface as codex_response_failed'
   ))
+  await withFetch([['/codex/responses', async () => sse([{ type: 'response.output_text.delta', delta: 'I cannot edit this image.' }, { type: 'response.completed', response: { output: [] } }])]], () => expectCode(
+    () => generateImage({ prompt: 'x', provider: 'codex' }, ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })),
+    'codex_image_tool_not_called',
+    'a text-only Codex reply should say the image tool was not called'
+  ))
+  const completedOnly = await withFetch([['/codex/responses', async () => sse([{ type: 'response.completed', response: { output: [{ type: 'image_generation_call', result: PNG.toString('base64') }] } }])]], () => generateImage(
+    { prompt: '印章', provider: 'codex' },
+    ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })
+  ))
+  assert(completedOnly.result.model === 'gpt-image-2.5-flare', 'an image carried only in response.completed output should still be used')
   await withFetch([['/codex/responses', async () => new Response('{"error":{"message":"expired"}}', { status: 401 })]], () => expectCode(
     () => generateImage({ prompt: 'x', provider: 'codex' }, ctx({ credentials: credentials({}, codexAuth), availability: { ...NO_PROVIDERS, codex: true } })),
     'codex_auth_rejected',

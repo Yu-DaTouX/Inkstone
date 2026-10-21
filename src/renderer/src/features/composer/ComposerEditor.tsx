@@ -5,6 +5,7 @@ import { keymap } from 'prosemirror-keymap'
 import { EditorState, Plugin, TextSelection as PmTextSelection } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import type { ComposerKeyEvent, ComposerPasteEvent } from './composer-keys'
+import { afterFenceInsertTransaction, afterFencePlugin } from './after-fence'
 import {
   atomInsertTransaction,
   caretInCode,
@@ -176,6 +177,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       keymap({ 'Mod-z': undo, 'Shift-Mod-z': redo, 'Mod-y': redo }),
       keymap({ Backspace: selectAtomBefore }),
       keymap(baseKeymap),
+      afterFencePlugin(),
       new Plugin({
         appendTransaction(transactions, _previous, state) {
           if (!transactions.some((transaction) => transaction.docChanged)) return null
@@ -208,6 +210,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       },
       handleTextInput(current, from, to, text) {
         if (current.composing || composingRef.current) return false
+        const afterFence = from === to ? afterFenceInsertTransaction(current.state, text) : null
+        if (afterFence) {
+          current.dispatch(afterFence)
+          return true
+        }
         const tr = inputRuleTransaction(current.state, from, to, text)
         if (!tr) return false
         current.dispatch(tr)
@@ -220,6 +227,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           if (event.defaultPrevented) return true
           if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey) return false
           event.preventDefault()
+          const afterFence = afterFenceInsertTransaction(current.state, '')
+          if (afterFence) {
+            current.dispatch(afterFence)
+            return true
+          }
           const codeBlock = codeBlockEnterTransaction(current.state)
           if (codeBlock) {
             current.dispatch(codeBlock)

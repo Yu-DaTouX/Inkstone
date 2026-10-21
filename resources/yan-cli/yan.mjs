@@ -63,7 +63,8 @@ const GROUP_USAGE = {
   capabilities: `yan capabilities <动作> [选项]
 
 动作：
-  search  列出 / 检索**已装**能力（砚内置命令 + pi 已加载技能），返回候选与来源。两种写法：
+  search  列出 / 检索**已装**能力（砚内置命令 + pi 已加载技能 + 已登记 MCP 服务的工具），返回候选与来源；
+          MCP 工具查到后用 yan mcp describe 看参数、yan mcp call 调用。两种写法：
             yan capabilities search --query-text "压缩上下文"
             yan capabilities search --query-file query.json
           query.json: {"queryText":"…","limit":12}
@@ -280,7 +281,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  start --task <任务> [--title <短标题>] [--model <模型>] [--read-only] [--isolation worktree]
+  start --task <任务> [--title <短标题>] [--model <模型>] [--read-only] [--isolation worktree] [--fork]
        或 --request-file subagent.json
        请求文件示例：{"task":"检查当前项目的测试入口","title":"查测试入口","readOnly":true}
        带上任务输入（并行的子任务建议都带，免得跑偏）：
@@ -305,6 +306,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
   · start 默认在当前目录执行，可能直接改文件；未指定 --model 时跟随当前会话模型；
     readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
+  · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；
+    任务依赖对话里已有的讨论或读过的文件时用 fork，能几句话讲清时用普通子代理；fork 只在当前目录运行，
+    不能与 --read-only、--isolation worktree 或其他 --model 同用，当前上下文已用超过 60% 时会被拒绝；
   · 任务要窄（一个文件或一个问题，结论几行说完）；
   · 任务输入里的 goal 决定它做什么，deliverables / sources / boundary 决定它交回什么与不碰什么；
     工具调用次数由执行模型自主决定，旧 maxToolCalls 参数不再生效；全应用最多同时24个子代理。

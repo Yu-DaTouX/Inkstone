@@ -352,6 +352,23 @@
     margin: 0;
   }
 
+  .composer-text[data-after-fence] {
+    caret-color: transparent;
+  }
+
+  .composer-fence-caret {
+    height: var(--t-prose-lh);
+  }
+
+  .composer-fence-caret::before {
+    content: '';
+    display: inline-block;
+    width: 1px;
+    height: 1.1em;
+    vertical-align: text-bottom;
+    background: var(--fg);
+  }
+
   .composer-text pre.composer-code {
     margin: 0;
     padding: var(--s-2) var(--s-4);

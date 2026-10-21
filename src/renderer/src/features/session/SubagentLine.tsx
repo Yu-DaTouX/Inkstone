@@ -270,7 +270,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       <span className="v3-sa-title" data-testid="v3-subagent-task">
         {live ? <ShimmerText>{label}</ShimmerText> : label}
       </span>
-      {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{modelName}</span> : null}
+      {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{run.fork ? `${modelName} · fork` : modelName}</span> : null}
       {context ? <ContextGauge usage={context} className="v3-sa-usage" data-testid="v3-subagent-context" /> : null}
       {usage ? (
         <span className="v3-sa-usage" data-testid="v3-subagent-usage" title={row.state === 'failed' ? model.error ?? undefined : undefined}>{usage}</span>

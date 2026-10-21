@@ -135,7 +135,9 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const [gone, setGone] = useState(false)
 
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
-  const role = model.isolation === 'controlled-cwd'
+  const role = run.fork
+    ? tt('subagentScopeFork')
+    : model.isolation === 'controlled-cwd'
     ? tt('subagentScopeReadOnly')
     : model.isolation === 'shared-cwd'
       ? tt('subagentScopeShared')

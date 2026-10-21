@@ -100,11 +100,13 @@
       return current.url.includes('/dynamic_loading/1') && current.elements.length ? current : null
     })
     const start = page?.elements.find((element) => /start/i.test(element.name))
+    out.push(`    诊断：点击前 text.len=${page?.text?.length ?? -1} elements=${JSON.stringify(page?.elements.map((element) => [element.role, element.name, element.box]) ?? [])}`)
     const clicked = start && safeRef(start) ? await action(`yan browser click --ref ${start.ref}`) : { run: {}, data: null }
     ok(clicked.run.receipt?.ok === true, 'click 启动延迟内容', JSON.stringify(clicked.run.receipt ?? null).slice(0, 180))
     const waited = await action('yan browser wait --text "Hello World!" --timeout 15000')
     ok(waited.run.exitCode === 0 && waited.run.receipt?.ok === true, 'wait 在超时内命中动态文本', JSON.stringify(waited.run.receipt ?? null).slice(0, 180))
     const waitedPage = waited.data?.text ? waited.data : await observe()
+    out.push(`    诊断：click 后 text.len=${clicked.data?.text?.length ?? -1} 等待后 text.len=${waitedPage?.text?.length ?? -1} text=${JSON.stringify((waitedPage?.text ?? '').slice(0, 200))} native=${store.getState().browserNativeVisible}`)
     ok(waitedPage?.text.includes('Hello World!'), 'wait 返回的新观察包含 Hello World!')
     const screenshot = await action('yan browser screenshot')
     ok(screenshot.run.exitCode === 0 && screenshot.run.receipt?.ok === true, '真实页面截图动作成功', JSON.stringify(screenshot.run.receipt ?? null).slice(0, 180))

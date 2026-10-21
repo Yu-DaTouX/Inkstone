@@ -11,7 +11,7 @@ description: 任务需要你现在可能没有的能力（连数据库、转写�
 
 ## 1. 顺序
 
-1. **先查已有的**：`yan capabilities search --query-text "<要做的事>"`。已经有相关能力就直接用，并告诉用户「你已经有这个能力」。
+1. **先查已有的**：`yan capabilities search --query-text "<要做的事>"`。它也覆盖已登记 MCP 服务的工具，查到就 `yan mcp describe` 看参数、`yan mcp call` 调用。已经有相关能力就直接用，并告诉用户「你已经有这个能力」。
 2. **本地没有再联网找**：`yan capabilities discover --query-text "<英文关键词>"`。技能主要来自 GitHub 技能仓库（默认 anthropics/skills，格式与 Claude Code 的技能相同），描述是英文，检索词用英文短词（如 `pdf form`、`spreadsheet`）。用户点名某个仓库时加 `--repo owner/name`，会列出该仓库全部技能。源不可用时如实说「暂时无法搜索」。
 3. **选一个最合适的技能接入**：`yan capabilities acquire --candidate <候选ID>`。命令会等用户在面板上选择：
    - 「仅本次会话使用」：只对这个会话生效（默认推荐）；
@@ -23,7 +23,7 @@ description: 任务需要你现在可能没有的能力（连数据库、转写�
    - `state=blocked` / `failed`：说明原因，换候选或走退路，不要绕过审查。
 5. 都不行时说明缺什么，并给出不装东西的退路。
 
-一次任务最多申请接入一两个技能，不要为了「可能有用」去装。MCP 服务目前不由这里接入：需要时告诉用户在设置 → 能力 → MCP 里管理（pi 原生，也可用 `/mcp`）。参数细节见 `yan capabilities --help`。
+一次任务最多申请接入一两个技能，不要为了「可能有用」去装。MCP 服务的接入不走 acquire：需要新服务时告诉用户在设置 → 能力 → MCP 里管理（pi 原生，也可用 `/mcp`）；已登记的 MCP 工具照常先用 search 查找。参数细节见 `yan capabilities --help`。
 
 ## 2. 常见缺口
 

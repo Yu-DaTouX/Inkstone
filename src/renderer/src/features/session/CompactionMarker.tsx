@@ -33,3 +33,18 @@ export function CompactionMarker(): JSX.Element | null {
     </div>
   )
 }
+
+export function CompactCommandEcho(): JSX.Element | null {
+  const running = useStore((s) => s.session?.compaction)
+  const last = useStore((s) => s.session?.lastCompaction)
+  const command = useStore((s) => s.compactCommand?.sessionId === s.session?.sessionId ? s.compactCommand?.text : undefined)
+  const model = compactionLineModel(running, last)
+  if (model?.run.reason !== 'manual') return null
+  return (
+    <div className="v3-msg user" data-testid="v3-compact-command">
+      <div className="v3-user-body">
+        <div className="v3-bubble">{command ?? '/compact'}</div>
+      </div>
+    </div>
+  )
+}

@@ -205,7 +205,7 @@ async function buildBundle(outdir) {
     `export { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'`,
     `export { columnLayout, orderedTileIds } from '${posix(abs('src/renderer/src/features/workbench/tile-tree.ts'))}'`,
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
-    `export { CompactionMarker } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
+    `export { CompactionMarker, CompactCommandEcho } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
     `export { BranchSummary } from '${posix(abs('src/renderer/src/features/session/BranchSummary.tsx'))}'`,
     `export { modelErrorNotice } from '${posix(abs('src/shared/model-errors.ts'))}'`,
     `export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'`,
@@ -336,6 +336,16 @@ async function main() {
     const b = lib.compactionLineModel(undefined, last)
     ok(b && b.running === false && b.run === last, '没有进行中就显示最近一次')
     ok(lib.compactionLineModel(undefined, undefined) === null, '没有记录就不显示（历史缺记录不写未发生过）')
+    const msgs = [
+      { id: 'u1', role: 'user', text: 'a', timestamp: 100 },
+      { id: 'a1', role: 'assistant', text: 'b', timestamp: 110 },
+      { id: 'u2', role: 'user', text: 'c', timestamp: 300 },
+      { id: 'a2', role: 'assistant', text: 'd', timestamp: 310 }
+    ]
+    ok(lib.compactionAnchorId(msgs, { status: 'completed', startedAt: 200, endedAt: 250 }) === 'a1', '压缩标记锚定在压缩发生时的回合，不跟随后续新回合')
+    ok(lib.compactionAnchorId(msgs, { status: 'completed', startedAt: 400 }) === 'a2', '刚压缩完时显示在最新回合')
+    ok(lib.compactionAnchorId(msgs, { status: 'completed', startedAt: 50 }) === null, '早于所有回复的压缩不挂到任何回合')
+    ok(lib.compactionAnchorId(msgs, undefined) === null, '没有压缩记录不显示')
   }
 
   group('分支摘要：按视图身份取分叉来源')
@@ -675,6 +685,11 @@ async function main() {
     store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', compaction: { status: 'running', reason: 'overflow' } } })
     const running = rt.render(bundle.CompactionMarker, {})
     ok(running.props['data-running'] === '1', '进行中的压缩优先显示')
+    ok(rt.render(bundle.CompactCommandEcho, {}) === null, '自动压缩不显示命令气泡')
+    store({ compactCommand: { sessionId: 'sess-a', text: '/compact 只留代码' }, session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', compaction: { status: 'running', reason: 'manual' } } })
+    ok(flattenText(rt.render(bundle.CompactCommandEcho, {})).includes('/compact 只留代码'), '手动压缩把发出的命令显示为用户气泡')
+    store({ compactCommand: null, session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A', lastCompaction: { status: 'completed', reason: 'manual' } } })
+    ok(flattenText(rt.render(bundle.CompactCommandEcho, {})).includes('/compact'), '重载后手动压缩仍显示 /compact')
     ok(!flattenText(running).includes('compactionTitle'), '进行中不写「已压缩」', flattenText(running))
 
     store({ session: { sessionId: 'sess-a', conversationId: 'sess-a', sessionFile: 'A' } })

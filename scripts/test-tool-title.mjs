@@ -70,6 +70,11 @@ async function run() {
         ok(m.toolStepTitle(base, en).label === en(done), `${name} 英文完成时动词`, m.toolStepTitle(base, en).label)
         ok(m.toolStepTitle({ ...base, status: 'running' }, en).label === en(running), `${name} 英文进行时动词`, m.toolStepTitle({ ...base, status: 'running' }, en).label)
       }
+      const described = m.toolStepTitle(call('bash', { command: 'sed -n 1,20p a.ts', description: '查看构建日志' }), zh)
+      ok(described.label === '查看构建日志' && described.meta === '' && described.code === false, '命令带说明时标题只显示说明，不显示原始命令', described)
+      const blank = m.toolStepTitle(call('bash', { command: 'ls', description: '  ' }), zh)
+      ok(blank.meta === 'ls' && blank.code === true, '说明为空时回退到命令', blank)
+      ok(m.stepDescription(call('bash', { command: 'ls', description: 'x'.repeat(300) })).length === 120, '说明过长时截断')
       ok(en('stepRead') === 'Read' && en('stepReadRunning') === 'Reading' && en('stepReadFailed') === 'Failed to read', '英文动词照参考的时态写法', [en('stepRead'), en('stepReadRunning'), en('stepReadFailed')])
       ok(en('stepRan') === 'Ran' && en('stepEdited') === 'Edited' && en('stepListed') === 'Listed', '命令/编辑/列目录的完成时', [en('stepRan'), en('stepEdited'), en('stepListed')])
     }

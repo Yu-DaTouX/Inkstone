@@ -21,6 +21,7 @@ import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shar
 import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { confirmRegisteredModel } from './subagents/registered-model'
+import { forkPiArgs, forkPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
 import {
   applyPatch,
   cleanupWorkspace,
@@ -150,6 +151,7 @@ interface Run extends SubagentRun {
   contextRefresh?: Promise<void>
   brief: SubagentBrief
   stderrTail: string[]
+  forkSource?: SubagentForkSource
   exitInfo?: { code: number | null; signal: string | null; spawnError?: string }
 }
 
@@ -251,6 +253,7 @@ export class SubagentController {
       parentMessageId: run.parentMessageId,
       projectId: run.projectId,
       isolation: run.isolation,
+      ...(run.fork ? { fork: true } : {}),
       resultPath: run.resultPath,
       model: run.model,
       thinkingLevel: run.thinkingLevel,
@@ -422,8 +425,10 @@ export class SubagentController {
     task: string,
     model?: string,
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd' = 'shared-cwd',
-    briefInput?: unknown
+    briefInput?: unknown,
+    fork?: SubagentForkSource
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
+    if (fork && isolation !== 'shared-cwd') return { ok: false, error: 'fork 子代理只能在当前目录运行' }
     if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
     const text = task.trim()
     if (!text) return { ok: false, error: '任务描述为空' }
@@ -448,7 +453,7 @@ export class SubagentController {
     const pendingLaunch = new Promise<void>((resolve) => { settleLaunch = () => resolve() })
     this.pendingLaunches.add(pendingLaunch)
     try {
-      return await this.launch(ctx, text, model, isolation, parsed.brief, releasePreparing, generation)
+      return await this.launch(ctx, text, fork?.model ?? model, isolation, parsed.brief, releasePreparing, generation, fork)
     } finally {
       releasePreparing()
       this.pendingLaunches.delete(pendingLaunch)
@@ -463,7 +468,8 @@ export class SubagentController {
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     brief: SubagentBrief,
     releasePreparing: () => void,
-    generation: number
+    generation: number,
+    fork?: SubagentForkSource
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     const id = `sub-${randomBytes(4).toString('hex')}`
     const invalidated = (): boolean => generation !== this.launchGeneration
@@ -481,7 +487,7 @@ export class SubagentController {
 
     let rpc: SubagentRpc
     try {
-      rpc = await this.createRpc(ctx, workspace.cwd, model, isolation, id)
+      rpc = await this.createRpc(ctx, workspace.cwd, model, isolation, id, undefined, fork)
     } catch (error) {
       await cleanupWorkspace(workspace)
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -502,6 +508,7 @@ export class SubagentController {
       parentMessageId: ctx.parentMessageId,
       projectId: ctx.projectId,
       isolation: workspace.isolation,
+      ...(fork ? { fork: true, forkSource: fork } : {}),
       model,
       status: 'starting',
       startedAt: Date.now(),
@@ -564,7 +571,7 @@ export class SubagentController {
       if (run.status !== 'running') return this.startupAbort(run)
       this.emit(run)
 
-      const res = await rpc.command('prompt', { message: briefPrompt(brief, text) })
+      const res = await rpc.command('prompt', { message: fork ? forkPrompt(briefPrompt(brief, text)) : briefPrompt(brief, text) })
       if (!res.success) {
         await this.fail(id, res.error ?? '启动任务失败')
         return { ok: false, error: res.error ?? '启动任务失败' }
@@ -611,13 +618,36 @@ export class SubagentController {
     model: string | undefined,
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd',
     id: string,
-    sessionFile?: string
+    sessionFile?: string,
+    fork?: SubagentForkSource
   ): Promise<SubagentRpc> {
+    if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
     const readOnlyHost = isolation === 'controlled-cwd' && ctx.readOnlyExtension ? ctx.runReadOnlyCommand : undefined
+    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }, readOnlyHost)
+  }
+
+  private async createForkRpc(ctx: SubagentOptions, id: string, fork: SubagentForkSource, sessionFile?: string): Promise<SubagentRpc> {
+    const sessionDir = join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id)
+    const file = sessionFile ?? (await writeForkSession(fork.sessionFile, sessionDir)).file
+    const args = forkPiArgs(fork.args, { sessionDir, sessionFile: file, model: fork.model, thinkingLevel: fork.thinkingLevel })
+    const piBin = fork.piBin ?? ctx.piBin
+    if (ctx.createRpc) return ctx.createRpc({ cwd: fork.cwd, piBin, args })
+    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id })
+  }
+
+  private async spawnWithApproval(
+    ctx: SubagentOptions,
+    id: string,
+    cwd: string,
+    piBin: string | undefined,
+    args: string[],
+    env: Record<string, string | undefined>,
+    readOnlyHost?: SubagentOptions['runReadOnlyCommand']
+  ): Promise<SubagentRpc> {
     const approval = new CapabilityServer({
       opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
       onlyCommands: readOnlyHost ? ['danger.confirm', ...READ_ONLY_HOST_COMMANDS] : ['danger.confirm'],
@@ -630,8 +660,8 @@ export class SubagentController {
     try {
       const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })
       const rpc = new PiRpc({
-        cwd, piBin: ctx.piBin, args,
-        env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR,
+        cwd, piBin, args,
+        env: { ...env,
           YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token,
           YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id }
       })
@@ -723,6 +753,8 @@ export class SubagentController {
         return { ok: false, error: 'worktree 子代理结束后不能续接：请先审阅它的改动；需要继续时重新派一个，并在任务里附上它的结论' }
       }
       if (snapshot.launchFailed) return { ok: false, error: '这个子代理没有成功启动过，不能续接，请重新派一个' }
+      const forkSource = previous?.forkSource
+      if (snapshot.fork && !forkSource) return { ok: false, error: 'fork 子代理在砚重启后不能续接；需要继续时重新派一个' }
       const sessionFile = await latestSessionFile(this.sessionDir(id))
       if (abandoned()) return abandonedError()
       if (!sessionFile) return { ok: false, error: '找不到它的会话记录，不能续接；需要继续时重新派一个，并在任务里附上它的结论' }
@@ -734,7 +766,7 @@ export class SubagentController {
       let rpc: SubagentRpc
       try {
         brief = previous?.brief ?? resumeBrief(snapshot)
-        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile)
+        rpc = await this.createRpc(ctx, workspace.cwd, snapshot.model, workspace.isolation, id, sessionFile, forkSource)
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }

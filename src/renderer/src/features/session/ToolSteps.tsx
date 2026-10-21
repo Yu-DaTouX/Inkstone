@@ -5,8 +5,8 @@ import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-cal
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
-import { isDeniedCall, shellTitle, toolStepTitle } from './tool-title'
-import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, toolRunParts, type ToolRow } from './tool-run-model'
+import { isDeniedCall, shellTitle, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
+import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, summarizeToolRun, toolRunParts, type ToolRow } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -124,10 +124,12 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const denied = isDeniedCall(call)
   const verbose = opensEverything(useTranscriptViewScope())
   const open = stored ?? verbose
-  const title = toolStepTitle(call, tt)
-  const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || t('tool2.noTarget')
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
-  const nested = visibleNestedNodes(children, nestAll === true || verbose)
+  const nestedTitle = nestedStepTitle(call, node.children, tt)
+  const title = nestedTitle ?? toolStepTitle(call, tt)
+  const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
+  const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
+  const nested = collapsedNest(visibleNestedNodes(children, nestAll === true || verbose), children, open, running)
 
   return (
     <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
@@ -137,16 +139,18 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
           <ShimmerText active={running && !blocked}>{title.label}</ShimmerText>
         </span>
         {denied ? <Icon name="deny" size={13} className="v3-step-deny" /> : null}
-        <span className="v3-step-target" data-code={title.code || undefined}>
-          <ShimmerText active={running && !blocked}>{meta}</ShimmerText>
-        </span>
+        {meta ? (
+          <span className="v3-step-target" data-code={title.code || undefined}>
+            <ShimmerText active={running && !blocked}>{meta}</ShimmerText>
+          </span>
+        ) : null}
         {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
         {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
       {asking ? <ApprovalCard inline /> : null}
       {open ? <StepDetail call={call} /> : null}
-      {children.length ? (
+      {nested.shown.length ? (
         <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
           {nested.earlier ? (
             <Button variant="ghost" size="sm" className="v3-step-earlier" onPress={() => setNestAll(true)} data-testid="v3-step-earlier">
@@ -158,6 +162,18 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
       ) : null}
     </div>
   )
+}
+
+export function collapsedNest<T>(nested: { shown: readonly T[]; earlier: number }, children: readonly T[], open: boolean, running: boolean): { shown: readonly T[]; earlier: number } {
+  if (open) return nested
+  if (running && children.length) return { shown: children.slice(-1), earlier: 0 }
+  return { shown: [], earlier: 0 }
+}
+
+function nestedStepTitle(call: UIToolCall, children: readonly ToolCallNode[], tt: ReturnType<typeof useSessionText>): ToolStepTitle | null {
+  if (!children.length || stepDescription(call)) return null
+  const label = formatToolRun(summarizeToolRun(flattenToolNodes([...children]).map((child) => child.call)), tt)
+  return label ? { label, meta: '', code: false } : null
 }
 
 function commandOf(call: UIToolCall): string {
@@ -177,7 +193,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const diff = readFileDiff(call.details)
   const args = call.args as Record<string, unknown> | undefined
   const command = kind === 'command' ? commandOf(call) : ''
-  const onlyCommand = !!command && Object.keys(args ?? {}).every((k) => k === 'command' || k === 'timeout')
+  const onlyCommand = !!command && Object.keys(args ?? {}).every((k) => k === 'command' || k === 'timeout' || k === 'description')
   const argsText = onlyCommand ? '' : call.args && Object.keys(call.args as object).length ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? ''
   const copyText = [command ? `$ ${command}` : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
   const failed = call.status === 'error' && !call.cancelled && !isDeniedCall(call)

@@ -11,6 +11,7 @@ const bundled = await build({
     contents: `export * from ${JSON.stringify(edit.replace(/\\/g, '/'))}
 export * from ${JSON.stringify(text.replace(/\\/g, '/'))}
 export { EditorState, TextSelection, NodeSelection } from 'prosemirror-state'
+export * from ${JSON.stringify(fileURLToPath(new URL('../src/renderer/src/features/composer/after-fence.ts', import.meta.url)).replace(/\\/g, '/'))}
 `,
     resolveDir: root,
     loader: 'ts'
@@ -40,6 +41,26 @@ const {
   TextSelection,
   NodeSelection
 } = lib
+
+{
+  const doc = composerSchema.node('doc', null, [composerSchema.node('paragraph', null, inlineNodesForText('```js\nx\n```'))])
+  const start = EditorState.create({ doc, selection: TextSelection.create(doc, doc.content.size - 1), plugins: [lib.afterFencePlugin()] })
+  const fenced = start.apply(fenceTransaction(start, {}))
+  assert.equal(docToText(fenced.doc), '```js\nx\n```', '收尾围栏不改文本')
+  assert.ok(lib.afterFencePosition(fenced) !== null, '收尾后光标逻辑上在代码块之后')
+  const enter = fenced.apply(lib.afterFenceInsertTransaction(fenced, ''))
+  assert.equal(docToText(enter.doc), '```js\nx\n```\n', '回车在代码块后开新行，不塞进块内')
+  assert.equal(caretInCode(enter), false)
+  assert.equal(lib.afterFencePosition(enter), null)
+  const typed = fenced.apply(lib.afterFenceInsertTransaction(fenced, 'a'))
+  assert.equal(docToText(typed.doc), '```js\nx\n```\na', '继续打字落在代码块下一行')
+  const middle = composerSchema.node('doc', null, [composerSchema.node('paragraph', null, inlineNodesForText('```js\nx\n```\nb'))])
+  const midState = EditorState.create({ doc: middle, selection: TextSelection.create(middle, 2), plugins: [lib.afterFencePlugin()] })
+  const midFenced = midState.apply(fenceTransaction(midState, {}))
+  assert.equal(lib.afterFencePosition(midFenced), null, '光标不在收尾围栏时不进入此状态')
+  const moved = fenced.apply(fenced.tr.setSelection(TextSelection.create(fenced.doc, 2)))
+  assert.equal(lib.afterFencePosition(moved), null, '移动光标后退出')
+}
 
 const stateOf = (value, options = {}) =>
   EditorState.create({ doc: textToDoc(value, options), selection: TextSelection.atStart(textToDoc(value, options)) })

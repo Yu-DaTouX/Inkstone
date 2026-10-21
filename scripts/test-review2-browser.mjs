@@ -44,6 +44,27 @@ await assert.rejects(input.press('F5'), /不支持的按键/)
 await input.press('/')
 assert(calls.some((call) => call.method === 'Input.dispatchKeyEvent' && call.params.code === 'Slash'))
 
+for (const visibility of ['visible', 'hidden']) {
+  const clickCalls = []
+  const clicker = new InputController({
+    async send(method, params) {
+      clickCalls.push({ method, params })
+      if (method === 'Runtime.evaluate') return { result: { value: visibility } }
+      if (method === 'DOM.resolveNode') return { object: { objectId: 'btn' } }
+      if (method === 'DOM.getBoxModel') return { model: { content: [0, 0, 10, 0, 10, 10, 0, 10] } }
+      return {}
+    }
+  })
+  await clicker.click({ backendNodeId: 7, ref: 'r', box: [0, 0, 10, 10] })
+  const mouse = clickCalls.filter((call) => call.method === 'Input.dispatchMouseEvent').length
+  const domClick = clickCalls.some((call) => call.method === 'Runtime.callFunctionOn' && call.params.objectId === 'btn')
+  if (visibility === 'visible') assert(mouse === 3 && !domClick, '页面可见时用真实鼠标事件点击')
+  else {
+    assert(mouse === 0 && domClick, '页面隐藏时鼠标事件不生效，改在 DOM 上点击')
+    assert(clickCalls.some((call) => call.method === 'Runtime.releaseObject' && call.params.objectId === 'btn'), 'DOM 点击后释放对象')
+  }
+}
+
 const { NetworkTracker } = await import('../out/test/review2-network.mjs')
 const networkHandlers = new Map()
 const network = new NetworkTracker({ on(method, callback) { networkHandlers.set(method, callback); return () => {} }, async send() {} })

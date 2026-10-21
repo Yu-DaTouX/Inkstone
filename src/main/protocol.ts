@@ -240,6 +240,10 @@ export class PiRpc extends EventEmitter {
     this.probe = opts.runtime ? runtimeProbe(opts.runtime) : resolvePi({ override: opts.piBin })
   }
 
+  get launchOptions(): Readonly<PiRpcOptions> {
+    return this.opts
+  }
+
   get running(): boolean {
     return this.child !== null && !this.closed
   }

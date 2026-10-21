@@ -128,10 +128,10 @@ export interface ConsentVerdict {
   stats: ConsentStats
 }
 
-export function consentVerdict(entry: ConsentEntry | undefined, parts: ConsentKeyParts, now: number, declaredDanger = false): ConsentVerdict {
+export function consentVerdict(entry: ConsentEntry | undefined, parts: ConsentKeyParts, now: number): ConsentVerdict {
   const records = entry?.records ?? []
   const stats = consentStats(records, now)
-  const danger = dangerCategoryOf(parts) ?? (declaredDanger ? '调用方声明为危险操作' : null)
+  const danger = dangerCategoryOf(parts)
   const ask = (reason: string): ConsentVerdict => ({ mode: 'ask', reason, danger, stats })
   if (danger) return ask(`属于危险类别「${danger}」，每次都要询问`)
   if (parts.scene === 'remote') return ask('远程场景按连接所有者的授权处理，不使用本机同意记录')

@@ -19,6 +19,50 @@ type DOMNode = {
 type PageFrame = { id: string; parentId?: string; url?: string }
 type PageFrameTree = { frame: PageFrame; childFrames?: PageFrameTree[] }
 
+type LiveState = { kind?: string; value?: string; label?: string; checked?: boolean; selected?: boolean }
+
+const LIVE_VALUE_LIMIT = 200
+const LIVE_TAGS = ['input', 'textarea', 'select', 'option']
+const LIVE_ROLES = ['textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton']
+
+export const LIVE_STATE_FN = `function () {
+  const el = this
+  const tag = String(el.tagName || '').toLowerCase()
+  const text = (value) => String(value === undefined || value === null ? '' : value).replace(/\\s+/g, ' ').trim()
+  if (tag === 'select') {
+    const options = Array.from(el.options || [])
+    const index = typeof el.selectedIndex === 'number' ? el.selectedIndex : -1
+    const chosen = options[index] || options.find((option) => option.selected) || null
+    return { kind: 'select', value: text(el.value), label: chosen ? text(chosen.label || chosen.text) : '' }
+  }
+  if (tag === 'input') {
+    const type = String(el.type || '').toLowerCase()
+    if (type === 'checkbox' || type === 'radio') return { kind: 'checked', checked: Boolean(el.checked) }
+    if (type === 'password') return { kind: 'value', value: el.value ? '\u2022\u2022\u2022\u2022' : '' }
+    return { kind: 'value', value: text(el.value) }
+  }
+  if (tag === 'textarea') return { kind: 'value', value: text(el.value) }
+  if (tag === 'option') return { kind: 'option', value: text(el.value), selected: Boolean(el.selected) }
+  if (el.isContentEditable) return { kind: 'value', value: text(el.innerText) }
+  if (typeof el.checked === 'boolean') return { kind: 'checked', checked: el.checked }
+  if (el.value !== undefined && el.value !== null && typeof el.value !== 'object') return { kind: 'value', value: text(el.value) }
+  return null
+}`
+
+function wantsLiveState(node: DOMNode, attributes: Record<string, string>): boolean {
+  const name = String(node.localName || node.nodeName || '').toLowerCase()
+  if (LIVE_TAGS.includes(name)) return true
+  if (attributes.contenteditable === 'true') return true
+  return LIVE_ROLES.includes(String(attributes.role ?? '').toLowerCase())
+}
+
+function liveValue(live: LiveState | null | undefined, fallback: string | undefined): string | undefined {
+  if (!live) return fallback
+  if (live.kind === 'checked') return live.checked ? 'checked' : 'unchecked'
+  if (live.kind === 'option') return `${live.value ?? ''}${live.selected ? ' selected' : ''}`.trim().slice(0, LIVE_VALUE_LIMIT)
+  return (live.value ?? '').slice(0, LIVE_VALUE_LIMIT)
+}
+
 function frameList(root: PageFrameTree, out: PageFrame[] = []): PageFrame[] {
   out.push(root.frame)
   for (const child of root.childFrames ?? []) frameList(child, out)
@@ -175,6 +219,9 @@ export class Observer {
       if (!Number.isFinite(backendNodeId) || !isInteractive(node, attributes)) continue
       const box = await elementBox(this.cdp, backendNodeId, sessionId)
       if (!box || box[2] < 1 || box[3] < 1) continue
+      const live = wantsLiveState(node, attributes)
+        ? await this.liveState(backendNodeId, sessionId)
+        : null
       const ax = perSessionAx.get(sessionId ?? 'root')?.get(backendNodeId)
       const axRole = (ax?.role as { value?: string } | undefined)?.value
       const axName = (ax?.name as { value?: string } | undefined)?.value
@@ -191,7 +238,7 @@ export class Observer {
         frameId,
         frameUrl: frameUrls.get(frameId),
         disabled: attributes.disabled !== undefined || attributes['aria-disabled'] === 'true',
-        value: attributes.value
+        value: liveValue(live, attributes.value)
       })
       if (candidates.length >= 80) break
     }
@@ -207,6 +254,29 @@ export class Observer {
       domSnapshotCaptured: snapshotResult !== null,
       frameCount: frames.length,
       observedFrameCount: new Set(candidates.map((candidate) => candidate.frameId).filter(Boolean)).size
+    }
+  }
+
+  private async liveState(backendNodeId: number, sessionId: string | undefined): Promise<LiveState | null> {
+    let objectId: string | undefined
+    try {
+      const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', { backendNodeId }, sessionId)
+      objectId = resolved?.object?.objectId
+    } catch {
+      return null
+    }
+    if (!objectId) return null
+    try {
+      const call = await this.cdp.send<{ result?: { value?: LiveState | null } }>('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: LIVE_STATE_FN,
+        returnByValue: true
+      }, sessionId)
+      return call?.result?.value ?? null
+    } catch {
+      return null
+    } finally {
+      await this.cdp.send('Runtime.releaseObject', { objectId }, sessionId).catch(() => undefined)
     }
   }
 

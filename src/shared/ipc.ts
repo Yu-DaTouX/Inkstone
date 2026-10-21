@@ -1021,6 +1021,7 @@ export interface SubagentRun {
   parentMessageId?: string
   projectId?: string
   isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd'
+  fork?: boolean
   resultPath?: string
   model?: string
   thinkingLevel?: string
@@ -1723,6 +1724,7 @@ export interface YanBridge {
     close(): Promise<BrowserState>
     navigate(url: string): Promise<{ ok: boolean; error?: string }>
     siteAccess(sessionId: string, url: string): Promise<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>
+    remoteImage(sessionId: string, url: string, prompt: boolean): Promise<RemoteImageResult>
     allowedSites(): Promise<string[]>
     addAllowedSite(value: string): Promise<{ result: BrowserSiteAddResult; list: string[]; origin?: string }>
     removeAllowedSite(value: string): Promise<{ removed: boolean; list: string[] }>
@@ -1998,6 +2000,10 @@ export interface FilePreview {
   encoding?: FilePreviewEncoding
   outsideRoot?: boolean
 }
+
+export type RemoteImageResult =
+  | { ok: true; dataUrl: string; bytes: number }
+  | { ok: false; code: 'needs-consent' | 'denied' | 'bad-url' | 'private-host' | 'not-image' | 'too-large' | 'http' | 'timeout' | 'network'; error?: string }
 
 export interface PreviewBytes {
   ok: boolean

@@ -31,6 +31,7 @@ import {
   consentFeedbackSummary,
   consentKeyOf,
   consentVerdict,
+  dangerCategoryOf,
   normalizeConsentParts,
   type ConsentAnswer,
   type ConsentDecision,
@@ -150,6 +151,7 @@ import type {
   Usage
 } from '../shared/ipc'
 import { hasUsageNumbers } from '../shared/turns'
+import type { SubagentForkSource } from './subagent-fork'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
 import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
@@ -291,6 +293,7 @@ function imageFailureDetail(error: unknown): string {
     codex_auth_rejected: 'ChatGPT 登录被拒绝，请在设置里重新登录',
     codex_rate_limited: 'ChatGPT 额度已用尽或请求过于频繁',
     codex_image_result_missing: '图像服务没有返回图片数据',
+    codex_image_tool_not_called: '图像服务只回了文字，没有调用出图工具',
     codex_response_failed: 'ChatGPT 生图失败',
     image_api_result_missing: '图像 API 没有返回图片数据',
     image_api_auth_rejected: '图像 API 拒绝了凭证',
@@ -1238,11 +1241,11 @@ export class AgentController extends EventEmitter {
     const parts = normalized.parts
     const purpose = typeof params.purpose === 'string' ? params.purpose.trim().slice(0, 500) : ''
     const declaredDanger = params.dangerous === true || params.dangerous === 'true'
-    if (!declaredDanger || (await this.getPermissionMode?.()) === 'all') {
+    if ((!declaredDanger && !dangerCategoryOf(parts)) || (await this.getPermissionMode?.()) === 'all') {
       return { summary: { kind: 'consent', allowed: true, decision: 'auto', reason: 'permission-mode' } }
     }
     const ledger = await readConsentLedger()
-    const verdict = consentVerdict(ledger.entries.find((entry) => entry.key === consentKeyOf(parts)), parts, Date.now(), declaredDanger)
+    const verdict = consentVerdict(ledger.entries.find((entry) => entry.key === consentKeyOf(parts)), parts, Date.now())
     const summary = (decision: 'auto' | ConsentDecision | 'no-answer') => ({
       kind: 'consent',
       capability: parts.capability,
@@ -4307,6 +4310,27 @@ export class AgentController extends EventEmitter {
 
   getState(): SessionState | null {
     return this.state
+  }
+
+  forkSource(): SubagentForkSource | string {
+    const rpc = this.rpc
+    if (!rpc?.running) return '来源会话没有在运行，不能派 fork 子代理'
+    const state = this.state
+    if (!state?.sessionFile) return '来源会话还没有保存，不能派 fork 子代理'
+    if (!state.model) return '来源会话没有选定模型，不能派 fork 子代理'
+    const usage = [...this.messages].reverse().find((msg) => msg.role === 'assistant' && hasUsageNumbers(msg.usage))?.usage
+    const options = rpc.launchOptions
+    return {
+      cwd: options.cwd,
+      piBin: options.piBin,
+      args: [...(options.args ?? [])],
+      env: { ...(options.env ?? {}) },
+      sessionFile: state.sessionFile,
+      model: `${state.model.provider}/${state.model.id}`,
+      thinkingLevel: state.thinkingLevel || undefined,
+      contextTokens: usage ? usage.input + usage.cacheRead + usage.cacheWrite : undefined,
+      contextWindow: state.model.contextWindow || undefined
+    }
   }
 
   captureSessionMoveContinuation(): (afterHostStop?: boolean) => boolean {

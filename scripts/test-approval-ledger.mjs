@@ -145,6 +145,14 @@ async function run() {
     const consentOther = broker.ask({ ...consentA, title: 'mail delete' })
     assert.equal(broker.answer(opened.at(-1).id, 'deny'), true)
     assert.equal((await consentOther)?.choice, 'deny')
+    const appAsk = { ...base, runId: 'r4', owner: a, kind: 'danger', tool: 'mcp__srv__read', reasons: ['app-view'] }
+    const appGrant = broker.ask(appAsk)
+    assert.equal(broker.answer(opened.at(-1).id, 'session'), true)
+    await appGrant
+    const appOpened = opened.length
+    assert.equal((await broker.ask(appAsk))?.choice, 'once')
+    assert.equal((await broker.ask(dangerA))?.choice, 'once', 'app-view session grant keeps the agent grants of the same run')
+    assert.equal(opened.length, appOpened)
     const runOpened = opened.length
     const otherRun = broker.ask({ ...base, runId: 'r5' })
     assert.equal(opened.length, runOpened + 1)

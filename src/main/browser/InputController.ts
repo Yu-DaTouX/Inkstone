@@ -79,6 +79,17 @@ export interface SelectOutcome {
   label: string
 }
 
+const DOM_CLICK_FN = `function () {
+  const init = { bubbles: true, cancelable: true, composed: true, view: window, button: 0 }
+  if (typeof this.focus === 'function') this.focus({ preventScroll: true })
+  this.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerType: 'mouse', isPrimary: true }))
+  this.dispatchEvent(new MouseEvent('mousedown', init))
+  this.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerType: 'mouse', isPrimary: true }))
+  this.dispatchEvent(new MouseEvent('mouseup', init))
+  this.click()
+  return true
+}`
+
 export class InputController {
   constructor(private readonly cdp: CdpChannel) {}
 
@@ -121,6 +132,10 @@ export class InputController {
 
   async click(element: RegisteredElement): Promise<void> {
     const point = await this.bringIntoView(element)
+    if (await this.pageHidden(element.sessionId)) {
+      await this.domClick(element)
+      return
+    }
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, element.sessionId)
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, element.sessionId)
@@ -163,6 +178,37 @@ export class InputController {
       deltaX: Number.isFinite(deltaX) ? deltaX : 0,
       deltaY: Number.isFinite(deltaY) ? deltaY : 0
     })
+  }
+
+  private async pageHidden(sessionId?: string): Promise<boolean> {
+    const state = await this.cdp
+      .send<{ result?: { value?: unknown } }>('Runtime.evaluate', { expression: 'document.visibilityState', returnByValue: true }, sessionId)
+      .catch(() => null)
+    return state?.result?.value === 'hidden'
+  }
+
+  private async domClick(element: RegisteredElement): Promise<void> {
+    let objectId: string | undefined
+    try {
+      const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', {
+        backendNodeId: element.backendNodeId
+      }, element.sessionId)
+      objectId = resolved?.object?.objectId
+    } catch (error) {
+      throw staleFromCdp(error, element.ref) ?? error
+    }
+    if (!objectId) throw new StaleElementError(element.ref)
+    try {
+      await this.cdp.send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: DOM_CLICK_FN,
+        returnByValue: true
+      }, element.sessionId)
+    } catch (error) {
+      throw staleFromCdp(error, element.ref) ?? error
+    } finally {
+      await this.cdp.send('Runtime.releaseObject', { objectId }, element.sessionId).catch(() => undefined)
+    }
   }
 
   private async bringIntoView(element: RegisteredElement): Promise<{ x: number; y: number }> {

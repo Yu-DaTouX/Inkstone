@@ -9,6 +9,7 @@ import { isVisualBlockLang } from '../../../../shared/visual-blocks'
 import { highlightOptions, rehypeHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { MessageImage } from './Image'
+import { RemoteImage } from './RemoteImage'
 import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
@@ -182,7 +183,7 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }): JSX.Elemen
   if (target.kind === 'invalid') return alt ? <span className="v3-md-image-alt">{alt}</span> : null
   if (target.kind === 'url') {
     if (!/^https?:/i.test(target.url)) return null
-    return <MessageImage src={target.url} alt={alt} className="v3-md-image" />
+    return <RemoteImage src={target.url} alt={alt} className="v3-md-image" />
   }
   const abs = /^[a-zA-Z]:[\\/]|^\//.test(target.path) || !sourceCwd
     ? target.path

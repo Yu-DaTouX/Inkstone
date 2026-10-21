@@ -232,8 +232,16 @@ async function runResultCommand(
   run: () => ComposerCommandResult | Promise<ComposerCommandResult>,
   name: string
 ): Promise<ComposerSubmitOutcome> {
-  const result = await run()
+  const raw = port.text.trim()
+  port.clearText()
+  let result: ComposerCommandResult
+  try {
+    result = await run()
+  } catch (error) {
+    result = { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
   if (isCommandFailure(result)) {
+    port.restoreText(raw)
     port.actions.notify('error', result.error || port.t('composer.cmdFailed', { name }))
     port.focusComposer()
     return 'handled'

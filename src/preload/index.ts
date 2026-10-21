@@ -95,7 +95,8 @@ import type {
   CustomProviderTestResult,
   LocalModelServer,
   PiRuntimePrefs,
-  PiNativeSettingsResult
+  PiNativeSettingsResult,
+  RemoteImageResult
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../shared/opencode-proxy'
@@ -496,6 +497,7 @@ const api: YanBridge = {
     close: () => invoke<BrowserState>('yan:browser:close'),
     navigate: (url) => invoke<Ok>('yan:browser:navigate', url),
     siteAccess: (sessionId, url) => invoke<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>('yan:browser:siteAccess', sessionId, url),
+    remoteImage: (sessionId, url, prompt) => invoke<RemoteImageResult>('yan:browser:remoteImage', sessionId, url, prompt),
     allowedSites: () => invoke<string[]>('yan:browser:allowedSites'),
     addAllowedSite: (value) =>
       invoke<{ result: 'ok' | 'invalid' | 'exists' | 'blocked' | 'unavailable'; list: string[]; origin?: string }>(

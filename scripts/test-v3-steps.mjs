@@ -114,7 +114,7 @@ async function buildSteps(outdir) {
   await writeFile(reactShim, REACT_SHIM)
   await writeFile(jsxShim, JSX_SHIM)
   const entry = join(outdir, 'steps-entry.ts')
-  await writeFile(entry, `export { ToolSteps, detailKind, visibleNestedNodes } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
+  await writeFile(entry, `export { ToolSteps, detailKind, visibleNestedNodes, collapsedNest } from '${posix(abs('src/renderer/src/features/session/ToolSteps.tsx'))}'\nexport { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'\n`)
   const out = join(outdir, 'steps-bundle.mjs')
   await build({
     entryPoints: [entry],
@@ -483,9 +483,12 @@ async function main() {
       tool({ id: 'parent', name: 'codemode', args: { code: 'x' } }),
       tool({ id: 'child', name: 'read', parentToolCallId: 'parent' })
     ])
-    const parent = renderStepNode(tree, 'parent')
+    const collapsed = renderStepNode(tree, 'parent')
+    ok(byTypeName(collapsed.tree, 'StepNode').length === 0, '收起且已结束的父步骤不列子调用（标题已汇总）')
+    byTestId(collapsed.tree, 'v3-step').props.onClick()
+    const parent = { ...collapsed, tree: renderComponent(collapsed.rt, collapsed.el.type, collapsed.el.props) }
     const nest = collect(parent.tree, (el) => el.props && String(el.props.className || '').includes('v3-step-nest'))
-    ok(nest.length === 1, '父步骤下有嵌套容器')
+    ok(nest.length === 1, '展开后父步骤下有嵌套容器')
     const childEl = byTypeName(parent.tree, 'StepNode')
     ok(childEl.length === 1 && childEl[0].props.depth === 1, '子调用缩进一级', childEl.map((el) => el.props.depth))
     const child = renderComponent(makeHookRuntime(), childEl[0].type, childEl[0].props)
@@ -494,9 +497,11 @@ async function main() {
 
   group('嵌套调用：超过 3 条时只显示最后 3 条，前面折叠')
   {
-    const kids = Array.from({ length: 7 }, (_, i) => tool({ id: 'kid-' + i, name: 'bash', args: { command: 'echo ' + i }, parentToolCallId: 'parent' }))
-    const { tree } = renderStepsOpen([tool({ id: 'parent', name: 'codemode', args: { code: 'x' } }), ...kids])
-    const parent = renderStepNode(tree, 'parent')
+    const kids = Array.from({ length: 7 }, (_, i) => tool({ id: 'kid-' + i, name: 'bash', args: { command: 'echo ' + i }, parentToolCallId: 'parent-many' }))
+    const { tree } = renderStepsOpen([tool({ id: 'parent-many', name: 'codemode', args: { code: 'x' } }), ...kids])
+    const collapsed = renderStepNode(tree, 'parent-many')
+    byTestId(collapsed.tree, 'v3-step').props.onClick()
+    const parent = { ...collapsed, tree: renderComponent(collapsed.rt, collapsed.el.type, collapsed.el.props) }
     const shown = byTypeName(parent.tree, 'StepNode')
     ok(shown.length === 3 && shown[0].props.node.call.id === 'kid-4', '只渲染最后 3 个子调用', shown.map((el) => el.props.node.call.id))
     const earlier = byTestId(parent.tree, 'v3-step-earlier')
@@ -505,6 +510,10 @@ async function main() {
     const again = renderComponent(parent.rt, parent.el.type, parent.el.props)
     ok(byTypeName(again, 'StepNode').length === 7, '点开后显示全部子调用', byTypeName(again, 'StepNode').length)
     ok(bundle.visibleNestedNodes([1, 2, 3], false).earlier === 0, '不超过 3 条时不折叠')
+    const all = bundle.visibleNestedNodes([1, 2, 3, 4], false)
+    ok(bundle.collapsedNest(all, [1, 2, 3, 4], false, true).shown.join() === '4', '收起但仍在运行时只显示正在执行的那条')
+    ok(bundle.collapsedNest(all, [1, 2, 3, 4], false, false).shown.length === 0, '收起且已结束时不显示子调用')
+    ok(bundle.collapsedNest(all, [1, 2, 3, 4], true, false).shown.join() === '2,3,4', '展开后按原折叠规则显示')
   }
 
   process.stdout.write(`\n${report.fail === 0 ? '全部通过' : '有失败项'}：${report.pass} 通过 / ${report.fail} 失败\n`)

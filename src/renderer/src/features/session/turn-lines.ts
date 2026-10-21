@@ -100,6 +100,30 @@ export function compactionLineModel(
   return null
 }
 
+const compactionAnchors = new WeakMap<readonly UIMessage[], { run: CompactionRun; id: string | null }>()
+
+export function compactionAnchorId(messages: readonly UIMessage[], run: CompactionRun | undefined): string | null {
+  if (!run) return null
+  const cached = compactionAnchors.get(messages)
+  if (cached && cached.run === run) return cached.id
+  const at = run.startedAt ?? run.endedAt
+  let id: string | null = null
+  if (at === undefined) {
+    id = messages[messages.length - 1]?.id ?? null
+  } else {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i]
+      if (message.role === 'user' || message.timestamp === undefined) continue
+      if (message.timestamp <= at) {
+        id = message.id
+        break
+      }
+    }
+  }
+  compactionAnchors.set(messages, { run, id })
+  return id
+}
+
 export function branchOriginOf(
   sessions: readonly SessionSummary[],
   view: { sessionId: string | null; sessionFile: string | null }

@@ -38,6 +38,17 @@ const TEST_VISION_MODEL =
 const FOLLOWUP_DEBUG_PORT = process.env.YAN_PROBE_DEBUG_PORT || '9397'
 
 const USE_LOCAL_TEST_MODEL = TEST_MODEL.startsWith('local/')
+function freeLocalPort() {
+  return new Promise((done, fail) => {
+    const server = createServer()
+    server.once('error', fail)
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address()
+      server.close(() => done(port))
+    })
+  })
+}
+
 function modelForCase(fallback) {
   if (USE_LOCAL_TEST_MODEL && fallback && !/nonexistent|route-probe/i.test(fallback)) return TEST_MODEL
   return fallback ?? TEST_MODEL
@@ -100,7 +111,7 @@ const CASES = {
     afterExit: 'taskFixtureReadonly', readonlySession: 'yan-todo-fixture'
   },
   'v3-composer': { probe: 'scripts/probe/v3-composer.js', delay: 9000, cost: 0, budget: 90000 },
-  'v3-devices-bind': { probe: 'scripts/probe/v3-devices-bind.js', delay: 9000, cost: 0, budget: 90000 },
+  'v3-devices-bind': { probe: 'scripts/probe/v3-devices-bind.js', delay: 9000, cost: 0, budget: 90000, freeRemotePort: true },
   'v3-collab-invite': {
     probe: 'scripts/probe/v3-collab-invite.js', delay: 9000, cost: 0, budget: 60000,
     args: ['inkstone://pair?address=http%3A%2F%2F100.64.0.7%3A37892&code=246810']
@@ -151,7 +162,7 @@ const CASES = {
     budget: 90000
   },
   searchopen: { probe: 'scripts/probe/search-open.js', delay: 12000, cost: 0, budget: 180000 },
-  browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000 },
+  browserreal: { probe: 'scripts/probe/browser-real-sites.js', delay: 9000, cost: 0, budget: 240000, visible: true },
   composersize: { probe: 'scripts/probe/composer-size.js', delay: 9000, cost: 0, wins: ['1440x900', '1100x700', '940x640', '900x520'] },
   questionshot: { probe: 'scripts/probe/question-shot.js', delay: 9000, cost: 0 },
   restartempty: { probe: 'scripts/probe/restart-empty.js', delay: 9000, cost: 0 },
@@ -164,6 +175,7 @@ const CASES = {
   },
   language: {
     probe: 'scripts/probe/language.js',
+    fixture: true,
     delay: 14000,
     budget: 300000,
     cost: 1,
@@ -193,6 +205,7 @@ const CASES = {
     afterExit: 'knowledgeCli'
   },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+  subagentfork: { probe: 'scripts/probe/subagent-fork.js', fixture: true, delay: 12000, cost: 1, budget: 600000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'subagentForkCache' },
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1, budget: 150000 },
   queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
   browserclimodel: {
@@ -1037,6 +1050,35 @@ async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
+function checkSubagentForkCache(sandboxRoot, _tempBefore, probeText) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) return { ok: true, lines: ['  （非隔离运行，跳过）'] }
+  const note = join(sandboxRoot, 'fixture-project', 'dup', 'one', 'fork-note.txt')
+  const text = existsSync(note) ? readFileSync(note, 'utf8') : ''
+  say(/\bone\b/.test(text) && /\btwo\b/.test(text), `fork 写出的 fork-note.txt 含两个常量名（${JSON.stringify(text.trim().slice(0, 80))}）`)
+  const id = /FORK_ID=(sub-[0-9a-f]+)/.exec(probeText ?? '')?.[1]
+  const dir = id ? join(sandboxRoot, 'data', 'subagents', 'sessions', id) : ''
+  const file = dir && existsSync(dir) ? readdirSync(dir).find((name) => name.endsWith('.jsonl')) : undefined
+  say(!!file, `找到 fork 子会话文件（${id ?? '无 id'}）`)
+  if (!file) return { ok, lines }
+  const entries = readFileSync(join(dir, file), 'utf8').split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line) } catch { return null } }).filter(Boolean)
+  const directiveAt = entries.findIndex((entry) => entry.type === 'message' && entry.message?.role === 'user' && JSON.stringify(entry.message.content).includes('fork-directive'))
+  say(directiveAt > 0, 'fork 子会话在继承的历史之后接上 fork 指令')
+  const inherited = entries.slice(0, Math.max(0, directiveAt)).filter((entry) => entry.type === 'message' && entry.message?.role === 'assistant').length
+  say(inherited > 0, `继承了父会话 ${inherited} 条助手消息`)
+  const parentLast = entries.slice(0, Math.max(0, directiveAt)).filter((entry) => entry.message?.role === 'assistant' && entry.message.usage).at(-1)?.message.usage
+  const first = entries.slice(directiveAt + 1).find((entry) => entry.message?.role === 'assistant' && entry.message.usage)?.message.usage
+  const prompt = (u) => (u ? (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) : 0)
+  lines.push(`  父会话最后一次请求 prompt=${prompt(parentLast)}；fork 首个请求 prompt=${prompt(first)} cacheRead=${first?.cacheRead ?? 0}`)
+  say(!!first && (first.cacheRead ?? 0) >= prompt(parentLast) * 0.5, 'fork 首个请求复用了父会话的提示缓存（cacheRead ≥ 父会话 prompt 的一半）')
+  return { ok, lines }
+}
+
 function checkSubagentArchive(sandboxRoot, tempBefore) {
   const lines = []
   let ok = true
@@ -1527,6 +1569,7 @@ const AFTER_EXIT = {
   remoteRoutes: checkRemoteRoutes,
   subagentFail: checkSubagentFail,
   subagentArchive: checkSubagentArchive,
+  subagentForkCache: checkSubagentForkCache,
   knowledgeCli: checkKnowledgeCli,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
@@ -3486,6 +3529,9 @@ async function main() {
         const desktop = c.freshDesktop ? { lang: 'zh-CN' } : { cwd: caseCwd, lang: 'zh-CN' }
         if (process.env.YAN_TEST_DESKTOP_THEME === 'light' || process.env.YAN_TEST_DESKTOP_THEME === 'dark') {
           desktop.theme = process.env.YAN_TEST_DESKTOP_THEME
+        }
+        if (c.freeRemotePort) {
+          desktop.remoteAccess = { enabled: false, bind: 'tailscale', port: await freeLocalPort() }
         }
         if (c.knowledgeSeed) {
           desktop.projects = [

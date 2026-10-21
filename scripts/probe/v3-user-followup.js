@@ -18,6 +18,7 @@
     check(Number(localStorage.getItem('inkstone.v3.sidebarWidth'))>dragFrom+20,'拖宽结果已持久化')
     const sb=()=>q('v3-sidebar'), width=sb().getBoundingClientRect().width
     const until=async(fn,ms=2000)=>{const end=Date.now()+ms;while(Date.now()<end){if(fn())return true;await wait(50)}return fn()}
+    const untilAsync=async(fn,ms=2000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await fn())return true;await wait(50)}return await fn()}
     const hidden=()=>{const s=getComputedStyle(sb());return s.display==='none'||s.visibility==='hidden'}
     const docked=()=>!hidden()&&sb().getBoundingClientRect().width>1&&getComputedStyle(sb()).position!=='absolute'
     q('v3-side-close').click()
@@ -64,11 +65,12 @@
     check(aligned,'定时任务标题与说明对齐')
     if(!aligned)out.push(`    诊断：head=${head?.getBoundingClientRect().left} notice=${notice?.getBoundingClientRect().left} hash=${location.hash} page=${!!q('v3-schedule-page')}`)
     await stage('schedule')
-    const pin=q('v3-always-on-top'),wasTop=store.getState().alwaysOnTop
-    pin.click();await wait(150)
-    check(store.getState().alwaysOnTop!==wasTop,'窗口置顶入口调用正式动作')
-    pin.click();await wait(150)
-    check(store.getState().alwaysOnTop===wasTop,'窗口置顶可恢复原状态')
+    const pin=q('v3-always-on-top'),wasTop=(await window.yan.getSettings()).alwaysOnTop===true
+    pin.click()
+    const toggled=await untilAsync(async()=>((await window.yan.getSettings()).alwaysOnTop===true)!==wasTop,3000)
+    check(toggled,'窗口置顶入口调用正式动作')
+    await window.yan.win.setAlwaysOnTop(wasTop)
+    check(await untilAsync(async()=>((await window.yan.getSettings()).alwaysOnTop===true)===wasTop,3000),'窗口置顶可恢复原状态')
     await stage('pin')
     await stage('narrow')
     check(document.documentElement.scrollWidth<=innerWidth+1,'800px窄屏没有整页横向溢出')
