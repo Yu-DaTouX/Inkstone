@@ -109,7 +109,7 @@ import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { AccountQuotaReport } from '../shared/account-quota'
-import type { AuxPush, MiniItem, QuickAskSubmit } from '../main/windows/aux-types'
+import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
 import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
 import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
 import type { PaneBrowserStateView } from '../shared/pane-popout'
@@ -151,7 +151,7 @@ const api: YanBridge = {
   isProbe: !!process.env.YAN_PROBE,
 
   start: () =>
-    invoke<{ ok: boolean; error?: string; state?: SessionState; settings?: AppSettings }>('yan:start'),
+    invoke<{ ok: boolean; error?: string; state?: SessionState }>('yan:start'),
   send: (text, images, mode, expectedRuntime) => invoke<Ok>('yan:send', text, images, mode, expectedRuntime),
   steer: (text, expectedRuntime) => invoke<Ok>('yan:steer', text, expectedRuntime),
   followUp: (text) => invoke<Ok>('yan:followUp', text),
@@ -665,12 +665,6 @@ const auxApi = {
     state: (): Promise<unknown> => invoke('yan:aux:quick-ask:state'),
     submit: (payload: QuickAskSubmit): Promise<unknown> => invoke('yan:aux:quick-ask:submit', payload),
     close: (): void => ipcRenderer.send('yan:aux:quick-ask:close')
-  },
-  mini: {
-    state: (): Promise<unknown> => invoke('yan:aux:mini:state'),
-    open: (item: MiniItem): void => ipcRenderer.send('yan:aux:mini:open', item),
-    close: (): void => ipcRenderer.send('yan:aux:mini:close'),
-    setEnabled: (enabled: boolean): void => ipcRenderer.send('yan:aux:mini:set-enabled', Boolean(enabled))
   },
   onPush: (cb: (msg: AuxPush) => void): (() => void) => {
     const listener = (_e: Electron.IpcRendererEvent, msg: AuxPush): void => cb(msg)

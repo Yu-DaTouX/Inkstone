@@ -7,13 +7,14 @@ import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../ti
 import { getSettings } from '../settings'
 import { compactionInfo } from '../compaction'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
-import { listSessions, deleteSession, readTitleSamples, restoreSession } from '../sessions'
+import { listSessions, deleteSession, readTitleSamples, restoreSession, isSessionFileInSessionsDir, sessionsToDelete } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
 import { readUsageStats } from '../usage-stats'
+import { closeTerminalsForOwner } from '../terminal'
 
 export interface SelectedSessionTarget {
   sessionFile: string
@@ -80,10 +81,13 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       const chain = host.sessionChains.chainOf(path)
       const targets = chain && chain.segments.length > 1 ? planHistoryRead(chain) : [path]
       const current = host.ac()?.getState()?.sessionFile
-      for (const target of targets) await host.runners()?.stopBySessionFile(target)
+      const affected = new Set<string>(targets.map((target) => resolve(target)))
+      for (const item of await sessionsToDelete(resolve(path)).catch(() => [])) affected.add(item.path)
+      for (const target of affected) await host.runners()?.stopBySessionFile(target)
       const tokens: string[] = []
       for (const target of targets) {
         tokens.push(await deleteSession(target, current))
+        closeTerminalsForOwner(target)
       }
       await host.sessionChains.forget(path).catch(() => false)
       host.pushRunners()
@@ -279,6 +283,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
 
   handle('yan:peekSession', async (path: string) => {
     if (typeof path !== 'string' || !path) return null
+    if (!(await isSessionFileInSessionsDir(path))) return null
     return host.readHistoryWithArtifacts(path)
   })
 }

@@ -4,6 +4,7 @@ import { app, shell, BrowserWindow, clipboard, ClipboardItem, ipcMain, dialog, s
 import { openBlockedByExtension } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
+import { disposeContentSearch } from './file-content-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
 import { constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { access, appendFile, readFile, stat, writeFile } from 'node:fs/promises'
@@ -17,7 +18,7 @@ import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-stor
 import { RunnerRegistry } from './runners'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
-import { createAttentionService, createTrayAssetStore, summarizeAttention, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
+import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
 import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
 import { registerDeepLinkProtocol, windowDeepLinkRouter } from './deeplink'
 import { RunnerVisibility } from './runner-reclaim'
@@ -36,7 +37,7 @@ import './mcp/app-protocol'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
 import { configurePackageContext, installManagedPiPackage, listPackages } from './packages'
-import { AcquisitionService } from './capabilities/acquisition-service'
+import { acquisitionServiceFor } from './capabilities/acquisition-service'
 import { PackageAuthorizationService } from './capabilities/package-authorization-service'
 import { createPiPackageActivationHostPorts } from './capabilities/pi-package-activation-host'
 import { PiPackageActivationScheduler } from './capabilities/pi-package-scheduler'
@@ -64,7 +65,7 @@ import { McpAppViewService, createMcpAppViewRuntime, type McpAppViewRunnerFacts 
 import { McpAppViewAuditStore } from './mcp/app-view-audit'
 import { createMcpAppResourceLoader, registerMcpAppProtocol } from './mcp/app-protocol'
 import { mcpAppHost, closeMcpAppHost, configureMcpAppHostOwnership } from './mcp/app-host'
-import { loadMcpServers } from './mcp/config'
+import { loadMcpServersCached } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
 import { registerPackagesIpc } from './ipc/packages-ipc'
@@ -149,10 +150,16 @@ function reportMainError(kind: string, error: unknown): void {
   }
 }
 
-process.on('uncaughtException', (error) => reportMainError('uncaughtException', error))
+process.on('uncaughtException', (error) => {
+  reportMainError('uncaughtException', error)
+  setImmediate(() => app.exit(1))
+})
 process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
 
 const IMAGE_DATA_URL = /^data:image\/([a-z0-9.+-]+);base64,/i
+const PICK_IMAGES_TOTAL_BYTES = 24 * 1024 * 1024
+const PICK_IMAGES_PREVIEW_WIDTH = 160
+const PICK_IMAGES_PREVIEW_MIN_BYTES = 256 * 1024
 const IMAGE_EXTENSIONS: Record<string, string> = { png: 'png', jpeg: 'jpg', jpg: 'jpg', gif: 'gif', webp: 'webp', bmp: 'bmp' }
 
 function imageSaveBytes(dataUrl: unknown): { data: Buffer; ext: string } | null {
@@ -274,19 +281,9 @@ let syncController: ReturnType<typeof registerSyncIpc> | null = null
 const runnerVisibility = new RunnerVisibility()
 let piPackageActivationScheduler: PiPackageActivationScheduler | null = null
 let piPackageActivationTimer: ReturnType<typeof setTimeout> | null = null
-let piPackageActivationRetryTimer: ReturnType<typeof setTimeout> | null = null
 let piPackageActivationInFlight = false
 let piPackageActivationAgain = false
 const piPackageActivationDeferred = new Map<string, string>()
-
-function schedulePiPackageActivationRetry(): void {
-  if (piPackageActivationRetryTimer) return
-  piPackageActivationRetryTimer = setTimeout(() => {
-    piPackageActivationRetryTimer = null
-    requestPiPackageActivationTick()
-  }, 2_500)
-  piPackageActivationRetryTimer.unref?.()
-}
 let browser: BrowserController | null = null
 const scheduleService = new ScheduleService({
   file: join(YAN_DIR, 'schedules.json'),
@@ -587,7 +584,6 @@ function push(msg: MainPush): void {
   remoteAccess?.publish(msg)
   if (msg.ch === 'runs') feedDesktopPetRuns(msg.payload)
   if (msg.ch === 'runs') attention?.refreshTaskbar()
-  if (msg.ch === 'runs') auxWindows?.notifyRuns()
   if (!win || win.isDestroyed()) return
   win.webContents.send('yan:push', msg)
 }
@@ -656,6 +652,20 @@ const approvals = new ApprovalBroker({
   },
   publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot })
 })
+
+async function askProfileSyncApproval(): Promise<boolean> {
+  const settings = await getSettings()
+  const answer = await approvals.ask({
+    kind: 'permission',
+    tool: 'chrome-profile-sync',
+    title: '把本机 Chrome 的资料复制到砚的浏览器目录？',
+    detail: '连接本机 Chrome 需要一份独立的浏览器资料，同意后会从本机 Chrome 复制一份。',
+    reasons: ['复制会把本机 Chrome 的登录状态带进砚的浏览器资料目录'],
+    cwd: settings.cwd,
+    canRemember: false
+  })
+  return answer?.choice === 'once' || answer?.choice === 'remember'
+}
 
 attention = createAttentionService({
   platform: process.platform,
@@ -922,11 +932,6 @@ function requestPiPackageActivationTick(): void {
           })
         }
       }
-      if (results.some((result) =>
-        result.state === 'deferred' && result.detail.includes('等待薄层一次性续接消费证据')
-      )) {
-        schedulePiPackageActivationRetry()
-      }
     }).catch((error) => {
       reportMainError('pi-package-activation', error)
     }).finally(() => {
@@ -1133,6 +1138,9 @@ let releaseDesktopDataRoot: (() => Promise<void>) | undefined
 async function shutdown(): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
+  syncController?.stop()
+  if (agentRestartTimer) clearTimeout(agentRestartTimer)
+  agentRestartTimer = null
   scheduleService.stop()
   disposeKeepAwake()
   stopOpenCodeProxySync()
@@ -1158,6 +1166,7 @@ async function shutdown(): Promise<void> {
       { name: 'browser', run: () => browser?.dispose() },
       { name: 'terminals', run: () => disposeTerminals() },
       { name: 'file-name-search', run: () => disposeFileNameSearch() },
+      { name: 'content-search', run: () => disposeContentSearch() },
       { name: 'data-root-unlock', run: () => releaseDesktopDataRoot?.() }
     ],
     (outcome) => reportMainError(`shutdown-${outcome.name}`, outcome.timedOut ? new Error('退出步骤超时') : outcome.error)
@@ -1767,21 +1776,6 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         confirmCapabilityAuthorization: async (
           request: CapabilityAuthorizationPrompt
         ): Promise<CapabilityAuthorizationChoice> => {
-          const endpointUrl = request.endpoint ? new URL(request.endpoint) : null
-          const loopback =
-            endpointUrl &&
-            (endpointUrl.hostname === 'localhost' ||
-              endpointUrl.hostname === '127.0.0.1' ||
-              endpointUrl.hostname === '[::1]')
-          if (
-            process.env.YAN_PROBE_HIDDEN === '1' &&
-            process.env.YAN_PROBE_AUTO_AUTHORIZE_LOOPBACK_MCP === '1' &&
-            request.kind === 'remote-mcp' &&
-            request.source === 'mcp-registry:yan/fixture-remote@1.0.0' &&
-            loopback
-          ) {
-            return 'allow'
-          }
           if (!win || win.isDestroyed()) return 'deny'
           const isRemote = request.kind === 'remote-mcp'
           const trust = isRemote ? null : await trustStatus(request.cwd)
@@ -1922,7 +1916,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             reasons: [
               ...(request.purpose ? [`用途：${request.purpose}`] : []),
               verdict.reason,
-              verdict.danger ? '危险类别不会因为同意次数多而自动放行。' : '同类操作多次同意后会自动放行；可在「设置 → 能力」里改为始终询问或清空记录。'
+              verdict.danger ? '危险类别不会因为同意次数多而自动放行。' : '同类操作多次同意后会自动放行。'
             ],
             cwd: request.cwd,
             canRemember: false,
@@ -1952,7 +1946,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     hasRunningTask: (projectCwd) => runners?.hasBusyCwd(projectCwd) === true,
     isProjectTrusted: async (projectCwd) => (await trustStatus(projectCwd)).trusted
   })
-  const acquisitions = new AcquisitionService({ root: YAN_DIR })
+  const acquisitions = acquisitionServiceFor(YAN_DIR)
   const packageAuthorizations = new PackageAuthorizationService(YAN_DIR)
   piPackageActivationScheduler = new PiPackageActivationScheduler(
     acquisitions,
@@ -1998,9 +1992,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
 let agentRestarting = false
 let agentRestartQueued: string | null = null
+let agentRestartTimer: ReturnType<typeof setTimeout> | null = null
 
 let hotkeyGuardPaused = false
 async function restartAgent(reason: string, retries = 150): Promise<void> {
+  if (shuttingDown) return
   if (agentRestarting) {
     agentRestartQueued = reason
     return
@@ -2013,7 +2009,11 @@ async function restartAgent(reason: string, retries = 150): Promise<void> {
       reportMainError('刷新运行实例', new Error(`${reason}：等待空闲超时，配置已保存但未刷新运行实例，请稍后重试`))
       return
     }
-    setTimeout(() => void restartAgent(reason, retries - 1).catch((error) => reportMainError('刷新运行实例', error)), 2000)
+    agentRestartTimer = setTimeout(() => {
+      agentRestartTimer = null
+      void restartAgent(reason, retries - 1).catch((error) => reportMainError('刷新运行实例', error))
+    }, 2000)
+    agentRestartTimer.unref?.()
     return
   }
   agentRestarting = true
@@ -2053,11 +2053,10 @@ function registerIpc(): void {
   const { handle, rawHandle } = ipc
 
   handle('yan:start', async () => {
-    const settings = await getSettings()
     const active = runners?.active()
     const crashedFile = active && !active.running ? active.getState()?.sessionFile : undefined
     const res = await startAgent(crashedFile ? { sessionFile: crashedFile } : undefined)
-    return { ...res, state: ac()?.getState() ?? undefined, settings }
+    return { ...res, state: ac()?.getState() ?? undefined }
   })
 
   handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedInput?: unknown) => {
@@ -2303,7 +2302,15 @@ function registerIpc(): void {
   syncController = registerSyncIpc(ipc, {
     dataDir: YAN_DIR,
     sessionsDir: SESSIONS_DIR,
-    makeService: (root) => new SyncService({ dataDir: YAN_DIR, syncRoot: root, piAgentDir: PI_AGENT_DIR }),
+    makeService: (root) =>
+      new SyncService({
+        dataDir: YAN_DIR,
+        syncRoot: root,
+        piAgentDir: PI_AGENT_DIR,
+        settingsApplier: async (patch) => {
+          await patchSettings(patch)
+        }
+      }),
     pickSyncFolder: async () => {
       if (!win) return null
       const r = await dialog.showOpenDialog(win, {
@@ -2396,7 +2403,7 @@ function registerIpc(): void {
       })
     } catch (e) {
       reportMainError('设置', e)
-      return await getSettings()
+      throw e
     }
     if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
       trayLanguage = next.lang
@@ -2471,6 +2478,7 @@ function registerIpc(): void {
   })
   ipcMain.on('yan:renderer-ready', (event) => {
     if (!isTrustedIpc(event)) return
+    mcpAppViewService?.resetForReload()
     hotkeyGuardPaused = false
     const rid = runners?.activeRunnerId
     const c = ac()?.getConn()
@@ -2564,24 +2572,49 @@ function registerIpc(): void {
     if (r.canceled) return []
 
     const out: Attachment[] = []
+    let total = 0
+    let skippedForSize = false
     for (const file of r.filePaths) {
       try {
         const buf = await readFile(file)
-        if (buf.byteLength > 12 * 1024 * 1024) continue
+        if (buf.byteLength > 12 * 1024 * 1024) {
+          skippedForSize = true
+          continue
+        }
+        if (total + buf.byteLength > PICK_IMAGES_TOTAL_BYTES) {
+          skippedForSize = true
+          break
+        }
+        total += buf.byteLength
         const ext = extname(file).slice(1).toLowerCase()
         const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext || 'png'}`
         const data = buf.toString('base64')
+        const thumb = buf.byteLength > PICK_IMAGES_PREVIEW_MIN_BYTES
+          ? nativeImage.createFromBuffer(buf).resize({ width: PICK_IMAGES_PREVIEW_WIDTH }).toDataURL().replace(/^data:[^;]+;base64,/, '')
+          : ''
+        const preview = thumb || data
         out.push({
           id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           name: basename(file),
           mimeType,
           size: buf.byteLength,
           data,
-          preview: data
+          preview
         })
       } catch (e) {
         console.error('[yan] 读图失败：', file, e)
       }
+    }
+    if (skippedForSize) {
+      push({
+        ch: 'notify',
+        payload: {
+          id: `pick-images-${Date.now()}`,
+          method: 'notify',
+          notifyType: 'warning',
+          message: `有图片没能加入：单张超过 12 MB 或合计超过 ${Math.round(PICK_IMAGES_TOTAL_BYTES / (1024 * 1024))} MB。`
+        }
+      })
     }
     return out
   })
@@ -2820,6 +2853,11 @@ function createWindow(): void {
   screen.on('display-metrics-changed', reapply)
   screen.on('display-added', reapply)
   screen.on('display-removed', reapply)
+  win.once('closed', () => {
+    screen.removeListener('display-metrics-changed', reapply)
+    screen.removeListener('display-added', reapply)
+    screen.removeListener('display-removed', reapply)
+  })
 
   win.once('ready-to-show', () => {
     if (process.env.YAN_PROBE) {
@@ -3106,7 +3144,7 @@ app.whenReady().then(async () => {
   registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
-  browser = new BrowserController(() => win, push, () => browserSiteGate)
+  browser = new BrowserController(() => win, push, () => browserSiteGate, askProfileSyncApproval)
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)
@@ -3145,8 +3183,8 @@ app.whenReady().then(async () => {
 
   auxWindows = createAuxWindows({
     preloadPath: () => join(__dirname_, '../preload/index.cjs'),
-    loadEntry: (target, entry) => {
-      const page = entry === 'quick-ask' ? 'quick-ask' : 'mini'
+    loadEntry: (target) => {
+      const page = 'quick-ask'
       if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/${page}.html`)
       else void target.loadFile(join(__dirname_, `../renderer/auxwin/${page}.html`))
     },
@@ -3173,7 +3211,6 @@ app.whenReady().then(async () => {
         cwd: status.cwd
       }
     },
-    attentionSummary: () => attention?.summary() ?? summarizeAttention([]),
     submitQuickAsk: (payload) =>
       submitQuickAsk(
         {
@@ -3223,12 +3260,10 @@ app.whenReady().then(async () => {
       })
     },
     showMainWindow,
-    shortcut: () => 'Alt+Shift+Space',
-    miniEnabled: () => process.env.YAN_AUX_MINI === '1'
+    shortcut: () => 'Alt+Shift+Space'
   })
   registerAuxIpc(auxWindows)
   auxWindows.registerShortcut()
-  if (process.env.YAN_AUX_MINI === '1') auxWindows.showMini()
 
   const browserTransfer = createPaneBrowserTransfer({
     beginHostTransfer: (request) =>
@@ -3340,7 +3375,7 @@ app.whenReady().then(async () => {
         return approvals.ask(owner ? { ...request, owner } : request)
       },
       audit: new McpAppViewAuditStore(),
-      serverConfigOf: (serverId) => loadMcpServers().servers.find((server) => server.id === serverId) ?? null,
+      serverConfigOf: (serverId) => loadMcpServersCached().servers.find((server) => server.id === serverId) ?? null,
       permissionMode: async () => (await getSettings()).permissionMode ?? 'danger',
       theme: async () => (await getSettings()).theme,
       systemPrefersDark: () => nativeTheme.shouldUseDarkColors,
@@ -3380,6 +3415,10 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else if (!ac()?.running) void startAgent()
   })
+}).catch((error) => {
+  reportMainError('whenReady', error)
+  dialog.showErrorBox('砚无法启动', error instanceof Error ? error.message : String(error))
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {
