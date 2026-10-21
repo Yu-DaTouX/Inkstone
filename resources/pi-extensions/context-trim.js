@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -14,7 +14,8 @@ const MIN_BATCH_CONTEXT_RATIO = 0.2
 const CAPACITY_PRESSURE_RATIO = 0.8
 const MIN_PRESSURE_THRESHOLD_RATIO = 0.1
 const MIN_PRESSURE_CONTEXT_RATIO = 0.05
-export const CACHE_COLD_MS = 5 * 60 * 1000
+const CACHE_COLD_MS = 5 * 60 * 1000
+const COMPACT_WATCHDOG_MS = 180_000
 const RETRY_GROWTH = 1.2
 const KEEP_TURNS = 3
 const KEEP_TOOL_GROUPS = 3
@@ -25,7 +26,12 @@ const MIN_INPUT_TRIM_CHARS = 1_000
 const INPUT_TRIM_TOOLS = new Set(['write', 'edit'])
 const IMAGE_TOKENS = 2_800
 
-export function piCompactionEnabled() {
+function compactWatchdogMs() {
+  const raw = Number(process.env.YAN_COMPACT_WATCHDOG_MS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : COMPACT_WATCHDOG_MS
+}
+
+function piCompactionEnabled() {
   try {
     const dir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), '.pi', 'agent')
     return JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))?.compaction?.enabled !== false
@@ -93,7 +99,7 @@ function isSkillRead(call) {
   return call?.name === 'read' && /(^|[\\/])SKILL\.md$/i.test(path)
 }
 
-export function stubText(call, size, path) {
+function stubText(call, size, path) {
   const head = `[Earlier tool output trimmed to save context: ${describeCall(call)}`
   if (size.images) return `${head}, ${size.images} image${size.images > 1 ? 's' : ''}. Re-read the source if you need it again.]`
   if (path) return `${head}, ~${size.tokens} tokens. Full output: ${path} (read it with offset/limit instead of re-running the call).]`
@@ -120,7 +126,7 @@ export function createSpiller(dirFor) {
     try {
       if (!existsSync(path)) {
         mkdirSync(dirname(path), { recursive: true })
-        writeFileSync(path, spillText(message), 'utf8')
+        writeFileSync(path, spillText(message), { encoding: 'utf8', mode: 0o600 })
       }
       paths.set(id, path)
       return path
@@ -136,7 +142,7 @@ export function createSpiller(dirFor) {
 const inputKey = (id) => `input:${id}`
 const baseId = (key) => (String(key).startsWith('input:') ? String(key).slice(6) : key)
 
-export function trimmedInput(call) {
+function trimmedInput(call) {
   const args = call?.arguments ?? {}
   const path = args.path ?? args.file_path
   const what = call?.name === 'write'
@@ -315,6 +321,7 @@ export default function contextTrimExtension(pi) {
   const resetTrim = () => {
     trimmed.clear()
     spill.reset()
+    if (sessionId) rmSync(spillDir(sessionId), { recursive: true, force: true })
     lastResponse = undefined
     requestSavings = 0
     projectionBoundary = undefined
@@ -375,13 +382,17 @@ export default function contextTrimExtension(pi) {
     if (holdUntil !== undefined && usage.tokens < holdUntil) return
     compacting = true
     const tokens = usage.tokens
+    const watchdog = setTimeout(() => { compacting = false }, compactWatchdogMs())
+    watchdog.unref?.()
     const done = () => {
+      clearTimeout(watchdog)
       compacting = false
       holdUntil = undefined
       justCompacted = true
       resetTrim()
     }
     const failed = () => {
+      clearTimeout(watchdog)
       compacting = false
       holdUntil = tokens * RETRY_GROWTH
     }

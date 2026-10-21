@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { appendReminder } from './request-reminder.js'
@@ -10,18 +10,38 @@ function envInt(name, fallback) {
 
 const WARN_AT = Math.max(2, envInt('YAN_REPEAT_WARN_AT', 3))
 const BLOCK_AT = Math.max(WARN_AT + 1, envInt('YAN_REPEAT_BLOCK_AT', 5))
+const COUNTER_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 function dataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 }
 
-export function safeKey() {
+function safeKey() {
   const key = process.env.YAN_SESSION_ID?.trim() || 'session'
   return key.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120) || 'session'
 }
 
 function counterFile() {
   return join(dataDir(), 'repeat-guard', `${safeKey()}.json`)
+}
+
+function pruneOldCounters() {
+  const dir = dirname(counterFile())
+  let names
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - COUNTER_TTL_MS
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    const file = join(dir, name)
+    try {
+      if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true })
+    } catch {
+    }
+  }
 }
 
 function note(hook, payload) {
@@ -101,6 +121,14 @@ export default function repeatGuard(pi) {
     }
     return blocks
   }
+
+  pi.on('session_start', () => {
+    try {
+      rmSync(counterFile(), { force: true })
+    } catch {
+    }
+    pruneOldCounters()
+  })
 
   pi.on('tool_call', (event) => {
     const toolName = String(event?.toolName ?? '')

@@ -32,7 +32,7 @@ const REMINDERS = {
   'zh-CN': '<system-reminder>思考过程改回简体中文（用户设定的语言），代码、命令和标识符保持原样。</system-reminder>',
   'en-US': '<system-reminder>Keep the thinking process in English (the user\'s language setting); code, commands and identifiers stay as they are.</system-reminder>'
 }
-export const DRIFT_MIN_LETTERS = 200
+const DRIFT_MIN_LETTERS = 200
 export const DRIFT_COOLDOWN = 4
 
 export function languageReminder(lang) {
@@ -87,8 +87,9 @@ function trace(hook, extra) {
 export default function languageExtension(pi) {
   registerDriftReminder(pi)
   pi.on('before_agent_start', (event) => {
-    const text = languageSystemPrompt(language())
-    trace('start', { lang: language(), injected: !!text, baseLen: String(event?.systemPrompt ?? '').length })
+    const lang = language()
+    const text = languageSystemPrompt(lang)
+    trace('start', { lang, injected: !!text, baseLen: String(event?.systemPrompt ?? '').length })
     if (!text) return
     const base = String(event?.systemPrompt ?? '')
     const sections = event?.systemPromptOptions?.sections

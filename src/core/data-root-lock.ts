@@ -1,6 +1,17 @@
-import { mkdir, open, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+
+const ABANDONED_LOCK_MS = 5 * 60 * 1000
+
+async function abandonedLock(lock: string): Promise<boolean> {
+  try {
+    const info = await stat(lock)
+    return Date.now() - info.mtimeMs > ABANDONED_LOCK_MS
+  } catch {
+    return false
+  }
+}
 
 export async function lockDataRoot(root: string): Promise<() => Promise<void>> {
   await mkdir(resolve(root), { recursive: true })
@@ -24,7 +35,11 @@ export async function lockDataRoot(root: string): Promise<() => Promise<void>> {
     try { await mkdir(lock); break } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       let owner: { pid: number; nonce: string }
-      try { owner = JSON.parse(await readFile(join(lock, 'owner.json'), 'utf8')) } catch { throw new Error('数据目录存在未知写入者，拒绝启动；请核实 .runtime-writer') }
+      try { owner = JSON.parse(await readFile(join(lock, 'owner.json'), 'utf8')) } catch {
+        if (attempt !== 0 || !(await abandonedLock(lock))) throw new Error('数据目录存在未知写入者，拒绝启动；请核实 .runtime-writer')
+        await rm(lock, { recursive: true, force: true })
+        continue
+      }
       if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) throw new Error('数据目录写入锁无效，拒绝启动')
       try { process.kill(owner.pid, 0); throw new Error(`数据目录正由进程 ${owner.pid} 使用`) } catch (probeError) {
         if ((probeError as NodeJS.ErrnoException).code !== 'ESRCH') throw probeError

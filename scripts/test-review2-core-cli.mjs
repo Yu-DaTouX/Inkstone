@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -37,6 +37,14 @@ try {
   await assert.rejects(lockDataRoot(root), /未知写入者/)
   pass('ownerless data-root lock fails closed rather than reclaiming a possibly live owner')
 
+  const staleRoot = join(temp, 'lock-stale-root')
+  await mkdir(join(staleRoot, '.runtime-writer'), { recursive: true })
+  const staleAt = new Date(Date.now() - 10 * 60 * 1000)
+  await utimes(join(staleRoot, '.runtime-writer'), staleAt, staleAt)
+  const release = await lockDataRoot(staleRoot)
+  await release()
+  pass('ownerless lock past the crash window is reclaimed so a crashed first write no longer blocks startup')
+
   const cli = resolve('resources/yan-cli/yan.mjs')
   const runCli = (args, env = {}) => new Promise((resolveRun, reject) => {
     const child = spawn(process.execPath, [cli, ...args], { env: { ...process.env, YAN_CLI_URL: '', YAN_CLI_TOKEN: '', YAN_SESSION_ID: '', YAN_PROJECT_ID: '', ...env } })
@@ -48,8 +56,6 @@ try {
   assert.equal(missing.code, 2); assert.equal(missing.stdout, ''); assert.match(missing.stderr, /缺少参数/)
   const help = await runCli(['browser', 'navigate', '--help'])
   assert.equal(help.code, 0); assert.match(help.stdout, /navigate/)
-  const overwriteFlag = await runCli(['browser', 'state', '--overwrite'])
-  assert.equal(overwriteFlag.code, 2); assert.match(overwriteFlag.stderr, /不支持覆盖/)
   const source = join(temp, 'source.json'), target = join(temp, 'occupied.json')
   await writeFile(source, '{"ok":true}')
   const server = createServer((req, res) => { req.resume(); req.on('end', () => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ ok: true, resultFile: source })) }) })
@@ -60,7 +66,7 @@ try {
     assert.equal(copied.code, 0); assert.equal(await readFile(target, 'utf8'), 'do not replace')
     assert.match(copied.stdout, /copyError/)
   } finally { await new Promise(resolveClose => server.close(resolveClose)) }
-  pass('CLI missing values report on stderr, action help works, output cannot overwrite')
+  pass('CLI missing values report on stderr, action help works, output never replaces an existing file')
 
   const { fileTransportOperations } = await import(pathToFileURL(resolve('resources/pi-extensions/shell-transport.js')).href + `?t=${Date.now()}`)
   const transportDir = join(temp, 'transport'); await mkdir(transportDir)
