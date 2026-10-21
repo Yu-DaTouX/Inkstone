@@ -49,6 +49,7 @@ import type { PreviewSiteGate } from './preview-site-gate'
 import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
+import { decideNavigationGuard } from './browser/navigation-guard'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -95,6 +96,7 @@ interface BrowserTab {
   committedUrl: string
   pendingMainFrameUrl: string | null
   openerUrl: string
+  agentLoading: boolean
   borrowedBy?: string
 }
 
@@ -285,7 +287,8 @@ export class BrowserController {
       state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
       committedUrl: '',
       pendingMainFrameUrl: null,
-      openerUrl: ''
+      openerUrl: '',
+      agentLoading: false
     }
     void tab.network.start()
     view.webContents.on('did-start-loading', () => {
@@ -296,7 +299,8 @@ export class BrowserController {
     view.webContents.on('did-stop-loading', () => {
       tab.state.loading = false
       tab.pendingMainFrameUrl = null
-      this.syncTabNavigation(tab)
+      tab.agentLoading = false
+      this.syncTabProgress(tab)
       tab.registry.clear()
       this.updateState()
     })
@@ -308,6 +312,7 @@ export class BrowserController {
       tab.committedUrl = url
       tab.state.loadError = undefined
       tab.pendingMainFrameUrl = null
+      tab.agentLoading = false
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -328,12 +333,14 @@ export class BrowserController {
     })
     view.webContents.on('render-process-gone', () => {
       tab.state.loading = false
+      tab.agentLoading = false
       tab.registry.clear()
       this.updateState()
     })
     view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       tab.pendingMainFrameUrl = null
       tab.state.loading = false
+      tab.agentLoading = false
       if (shouldSurfaceLoadError(errorCode, isMainFrame !== false)) {
         tab.state.loadError = {
           code: errorCode,
@@ -449,6 +456,10 @@ export class BrowserController {
 
   private syncTabNavigation(tab: BrowserTab): void {
     tab.state.url = tab.view.webContents.getURL()
+    this.syncTabProgress(tab)
+  }
+
+  private syncTabProgress(tab: BrowserTab): void {
     tab.state.canGoBack = tab.view.webContents.canGoBack()
     tab.state.canGoForward = tab.view.webContents.canGoForward()
   }
@@ -486,8 +497,9 @@ export class BrowserController {
       tab.state.title = ''
       tab.state.loading = true
       tab.pendingMainFrameUrl = next
+      tab.agentLoading = true
       this.updateState()
-        await tab.view.webContents.loadURL(next).catch(() => undefined)
+      await tab.view.webContents.loadURL(next).catch(() => undefined)
     }
     if (tab.view.webContents.isDestroyed()) return this.getState()
     this.syncTabNavigation(tab)
@@ -502,12 +514,10 @@ export class BrowserController {
       return
     }
     const gate = this.siteGate()
-    if (!gate) return
-    const verdict = gate.peek(tab.id, url)
-    if (verdict === 'allow') return
+    const outcome = decideNavigationGuard(tab.agentLoading, () => (gate ? gate.peek(tab.id, url) : 'allow'))
+    if (outcome === 'pass') return
     event.preventDefault()
-    if (verdict !== 'ask') return
-    void this.navigateAfterApproval(tab, url)
+    if (outcome === 'ask') void this.navigateAfterApproval(tab, url)
   }
 
   private async navigateAfterApproval(tab: BrowserTab, url: string): Promise<void> {
@@ -520,6 +530,7 @@ export class BrowserController {
     tab.state.title = ''
     tab.state.loading = true
     tab.pendingMainFrameUrl = url
+    tab.agentLoading = true
     this.updateState()
     await tab.view.webContents.loadURL(url).catch(() => undefined)
     if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
@@ -731,6 +742,7 @@ export class BrowserController {
       tab.state.title = ''
       tab.state.loading = true
       tab.pendingMainFrameUrl = url
+      tab.agentLoading = true
       this.updateState()
       await tab.view.webContents.loadURL(url).catch(() => undefined)
     }

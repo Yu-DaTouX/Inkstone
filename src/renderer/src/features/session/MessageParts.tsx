@@ -217,6 +217,12 @@ function ArtifactCard({
         <pre className="v3-artifact-code">
           <code>{unavailable ? artifact.error || t('artifact.noPreview') : readError ? t('artifact.htmlRead') : text ?? t('artifact.reading')}</code>
         </pre>
+      ) : artifact.previewable && !unavailable ? (
+        <div className="v3-artifact-card-open">
+          <Button size="sm" variant="ghost" onPress={() => void previewFile(artifact.path)} data-testid="v3-artifact-preview">
+            {t('artifact.previewHint')}
+          </Button>
+        </div>
       ) : (
         <Notice tone={unavailable ? 'fail' : 'info'} compact>{unavailable ? artifact.error || t('artifact.unavailable') : t('artifact.binary')}</Notice>
       )}

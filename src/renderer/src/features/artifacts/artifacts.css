@@ -880,6 +880,12 @@
     padding: var(--s-8);
   }
 
+  .v3-artifact-card-open {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--s-6) var(--s-8);
+  }
+
   .v3-artifact-image img {
     max-width: 100%;
     max-height: 360px;

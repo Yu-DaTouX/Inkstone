@@ -18,6 +18,7 @@ import {
   STRAY_ENTER_MS,
   isComposingKey,
   planComposerKey,
+  roundRunningOf,
   swallowStrayEnter,
   type ComposerKeyEvent,
   type ComposerPasteEvent
@@ -77,8 +78,12 @@ export function Composer({ className }: { className?: string } = {}) {
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const sessionId = session?.sessionId
 
-  const roundRunning = useStore(
-    (s) => !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running || !!s.session?.isCompacting
+  const roundRunning = useStore((s) =>
+    roundRunningOf({
+      runnerRunning: !!s.runners.find((r) => (r.runId ?? r.id) === s.activeRunnerId)?.running,
+      isStreaming: s.session?.isStreaming,
+      isCompacting: s.session?.isCompacting
+    })
   )
   const compacting = useStore((s) => !!s.session?.isCompacting)
 
