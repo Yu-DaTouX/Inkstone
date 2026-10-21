@@ -220,9 +220,6 @@ export function reduceSessionRuntime(
     case 'artifact':
       next = { ...next, messages: patchArtifact(next.messages, message.payload.messageId, message.payload.artifact) }
       break
-    case 'msg-remove':
-      next = { ...next, messages: next.messages.filter((item) => item.id !== message.payload) }
-      break
     case 'tool':
       next = {
         ...next,

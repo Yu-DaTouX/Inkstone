@@ -217,10 +217,7 @@ export function consumeSubagentPush(m: MainPush, s: Store, ctx: PushContext): bo
       break
     }
     case 'subagent-remove':
-      set({
-        subagents: s.subagents.filter((r) => r.id !== m.payload),
-        subagentPreviewId: s.subagentPreviewId === m.payload ? null : s.subagentPreviewId
-      })
+      set({ subagents: s.subagents.filter((r) => r.id !== m.payload) })
       break
     default:
       return false

@@ -253,7 +253,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     watchIdsFor(sender).add(watchId)
     return filesWatcher.set(watchId, resolved.context.cwd, dirs, (dir) => {
       if (sender.isDestroyed()) return
-      sender.send('yan:push', { ch: 'files-changed', payload: { watchId, dir } })
+      sender.send('yan:files-changed', { watchId, dir })
     })
   })
 

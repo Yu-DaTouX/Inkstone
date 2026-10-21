@@ -113,9 +113,12 @@ function harness(overrides = {}) {
 export async function runV3AttentionTests() {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-v3-attention-'))
   const outfile = join(dir, 'attention.mjs')
+  const summaryFile = join(dir, 'attention-summary.mjs')
   try {
     await compile('src/main/attention/index.ts', outfile)
-    const mod = await import(pathToFileURL(outfile).href)
+    await compile('src/main/attention/summary.ts', summaryFile)
+    const summaryMod = await import(pathToFileURL(summaryFile).href)
+    const mod = { ...(await import(pathToFileURL(outfile).href)), summarizeAttention: summaryMod.summarizeAttention }
     runSummaryTests(mod)
     runTaskbarTests(mod)
     runTrayTests(mod)

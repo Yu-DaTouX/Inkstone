@@ -66,6 +66,7 @@ function harness(options = {}) {
   const startGates = []
   const attachGates = new Map()
   const pushRef = { cb: null }
+  const leaseRef = { cb: null }
   let availability = options.availability ?? { available: true }
 
   const bridge = {
@@ -108,6 +109,12 @@ function harness(options = {}) {
         pushRef.cb = null
       }
     },
+    onLease: (cb) => {
+      leaseRef.cb = cb
+      return () => {
+        leaseRef.cb = null
+      }
+    },
     ownerOf: (resource) => owners.get(resource),
     claim: (resource, key) => {
       calls.claim.push([resource, key])
@@ -145,7 +152,8 @@ function harness(options = {}) {
     setAvailability: (value) => {
       availability = value
     },
-    push: (payload) => pushRef.cb?.({ ch: 'terminal', payload })
+    push: (payload) => pushRef.cb?.({ ch: 'terminal', payload }),
+    lease: (event) => leaseRef.cb?.(event)
   }
 }
 
@@ -451,4 +459,33 @@ function harness(options = {}) {
   console.log('  lifecycle：重试新建 PTY（不重新 attach 已退出 / 丢失的终端）✓')
 }
 
-console.log('v3 终端生命周期：隐藏不新建 / 迟到 PTY 清理 / 残留 view 清空检查通过')
+{
+  const h = harness()
+  h.seed('owned-A', 'key-A')
+  h.controller.setOwner(owner(), true)
+  await until(() => h.calls.attach.length === 1)
+  h.resolveAttach('owned-A', snapshot('owned-A', { buffer: 'B0', seq: 1 }))
+  await until(() => h.controller.getState().phase === 'ready')
+  h.lease({ kind: 'attached', terminalId: 'owned-A', ownerKey: 'key-A', leaseId: 'L1', epoch: 1 })
+  await flush()
+  assert.equal(h.calls.attach.length, 1, '弹出窗接管终端时不重连')
+  h.lease({ kind: 'detached', terminalId: 'owned-A', ownerKey: 'key-A', leaseId: 'L1', epoch: 1 })
+  await until(() => h.calls.attach.length === 2)
+  assert.deepEqual(h.calls.attach, ['owned-A', 'owned-A'], '弹出窗关闭后重新 attach 同一个终端')
+  h.resolveAttach('owned-A', snapshot('owned-A', { buffer: 'B0+during', seq: 3 }))
+  await until(() => h.controller.getState().phase === 'ready')
+  assert.ok(h.writes.includes('B0+during'), '重连时用 buffer 补上弹窗期间漏掉的输出')
+  h.lease({ kind: 'invalidated', terminalId: 'other', ownerKey: 'key-A', leaseId: 'L2', epoch: 2 })
+  await flush()
+  assert.equal(h.calls.attach.length, 2, '别的终端的租约事件不影响本会话')
+  const hidden = harness()
+  hidden.seed('owned-C', 'key-A')
+  hidden.controller.setOwner(owner(), false)
+  await flush()
+  hidden.lease({ kind: 'detached', terminalId: 'owned-C', ownerKey: 'key-A', leaseId: 'L3', epoch: 3 })
+  await flush()
+  assert.equal(hidden.calls.attach.length, 0, '不可见时收到租约事件不发起 attach')
+  console.log('  lifecycle：弹出窗接管 / 关闭后重新 attach 并重放 buffer ✓')
+}
+
+console.log('v3 终端生命周期：隐藏不新建 / 迟到 PTY 清理 / 残留 view 清空 / 租约重连检查通过')

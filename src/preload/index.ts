@@ -87,6 +87,7 @@ import type {
   SessionSummary,
   SessionTodo,
   SubagentRun,
+  SubagentStopResult,
   SlashCommand,
   UIMessage,
   ApprovalRequest,
@@ -105,7 +106,6 @@ import type { RunSnapshot } from '../shared/runs'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from '../shared/checkpoints'
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
-import type { ConsentEntryView } from '../shared/tool-consent'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { AccountQuotaReport } from '../shared/account-quota'
@@ -127,6 +127,7 @@ import type {
 import { PANE_TERMINAL_CHANNELS } from '../shared/pane-terminal'
 import type {
   PaneTerminalBridge,
+  PaneTerminalLeaseEvent,
   PaneTerminalLeaseView,
   PaneTerminalOpenRequest,
   PaneTerminalOpenResult,
@@ -341,7 +342,7 @@ const api: YanBridge = {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
     start: (task, model, isolation, expectedRuntime) =>
       invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation, expectedRuntime),
-    stop: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:stop', id),
+    stop: (id) => invoke<SubagentStopResult>('yan:subagents:stop', id),
     send: (id, message) => invoke<{ ok: boolean; error?: string; delivery?: 'queued' | 'started' | 'resumed' }>('yan:subagents:send', id, message),
     dismiss: (id) => invoke<{ ok: boolean; error?: string }>('yan:subagents:dismiss', id),
     stopAll: () => invoke<void>('yan:subagents:stopAll'),
@@ -416,7 +417,7 @@ const api: YanBridge = {
     prepare: (callId: string) => invoke<McpAppViewDescriptor>(MCP_APP_VIEW_CHANNELS.prepare, callId),
     dispatch: (instanceId: string, message: unknown) =>
       invoke<unknown>(MCP_APP_VIEW_CHANNELS.dispatch, instanceId, message),
-    release: (instanceId: string) => invoke<void>(MCP_APP_VIEW_CHANNELS.release, instanceId),
+    release: (instanceId: string) => invoke<{ ok: boolean }>(MCP_APP_VIEW_CHANNELS.release, instanceId),
     audit: (callId: string) => invoke<McpAppViewAuditEntry[]>(MCP_APP_VIEW_CHANNELS.audit, callId),
     snapshot: () => invoke<McpAppViewSnapshot>(MCP_APP_VIEW_CHANNELS.snapshot),
     refresh: () => invoke<McpAppViewRefreshResult>(MCP_APP_VIEW_CHANNELS.refresh),
@@ -556,11 +557,6 @@ const api: YanBridge = {
     continueFrom: (localProjectId, ref, importId) => invoke('yan:collab:continueFrom', localProjectId, ref, importId)
   } as YanBridge['collab'],
 
-  consent: {
-    list: () => invoke<ConsentEntryView[]>('yan:consent:list'),
-    change: (key, action) => invoke<ConsentEntryView[]>('yan:consent:change', key, action)
-  },
-
   voice: {
     prepare: () => invoke('yan:voice:prepare'),
     status: () => invoke<VoiceInputStatus>('yan:voice:status'),
@@ -619,12 +615,12 @@ const api: YanBridge = {
   },
 
   onFilesChanged: (cb: (payload: { watchId: string; dir: string }) => void): (() => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, msg: MainPush): void => {
-      if (msg?.ch === 'files-changed') cb(msg.payload)
+    const listener = (_e: Electron.IpcRendererEvent, payload: { watchId: string; dir: string }): void => {
+      if (payload) cb(payload)
     }
-    ipcRenderer.on('yan:push', listener)
+    ipcRenderer.on('yan:files-changed', listener)
     return () => {
-      ipcRenderer.removeListener('yan:push', listener)
+      ipcRenderer.removeListener('yan:files-changed', listener)
     }
   },
 
@@ -728,6 +724,13 @@ const paneTerminalApi: PaneTerminalBridge = {
     ipcRenderer.on(PANE_TERMINAL_CHANNELS.push, listener)
     return () => {
       ipcRenderer.removeListener(PANE_TERMINAL_CHANNELS.push, listener)
+    }
+  },
+  onLease: (cb: (event: PaneTerminalLeaseEvent) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, event: PaneTerminalLeaseEvent): void => cb(event)
+    ipcRenderer.on(PANE_TERMINAL_CHANNELS.lease, listener)
+    return () => {
+      ipcRenderer.removeListener(PANE_TERMINAL_CHANNELS.lease, listener)
     }
   }
 }

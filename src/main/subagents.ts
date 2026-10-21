@@ -5,7 +5,7 @@ import { SubagentHistory } from './subagent-history'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import type { SubagentEndReason, SubagentRecovery, SubagentRun, UIMessage } from '../shared/ipc'
+import type { SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
 import {
@@ -882,12 +882,12 @@ export class SubagentController {
     }
   }
 
-  async stop(id: string): Promise<{ ok: boolean; error?: string }> {
+  async stop(id: string): Promise<SubagentStopResult> {
     const ticket = this.resuming.get(id)
     if (ticket) ticket.cancelled = true
     const run = this.runs.get(id)
     if (!run) return ticket || this.history.get(id) ? { ok: true } : { ok: false, error: '找不到这个子代理' }
-    if (run.status !== 'running' && run.status !== 'starting') return { ok: true }
+    if (run.status !== 'running' && run.status !== 'starting') return { ok: true, noop: true, before: run.status }
     await this.stopRun(run, false)
     return { ok: true }
   }

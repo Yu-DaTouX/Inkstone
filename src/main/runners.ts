@@ -443,8 +443,17 @@ export class RunnerRegistry {
       }
     }
 
+    this.pruneAdmissions()
     const idle = [...this.runners.values()]
-      .filter((runner) => !target.hidden && !runner.hidden && !this.busy(runner) && !this.awaitingSubagents(runner) && (target.activate !== false || runner.id !== this.activeId))
+      .filter(
+        (runner) =>
+          !target.hidden &&
+          !runner.hidden &&
+          !this.busy(runner) &&
+          !this.admissions.has(canonicalCwd(runner.cwd)) &&
+          !this.awaitingSubagents(runner) &&
+          (target.activate !== false || runner.id !== this.activeId)
+      )
       .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
 
     if (idle) {

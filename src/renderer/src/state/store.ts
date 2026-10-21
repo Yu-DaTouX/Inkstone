@@ -50,6 +50,7 @@ import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
 import { markStopRequested } from '../features/session/stop-intent'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
+import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
   composerDraftForView,
@@ -186,9 +187,7 @@ export interface Store {
   browserNativeVisible: boolean
   terminals: TerminalSessionInfo[]
   filePreview: FilePreviewState | null
-  filePreviews: Record<string, FilePreviewState>
   subagents: SubagentRun[]
-  subagentPreviewId: string | null
   zoom: ZoomState | null
   piInfo: PiInfo | null
   widgets: Record<string, string[]>
@@ -815,7 +814,13 @@ function browserVisibilityFor(state: Store): boolean {
   })
 }
 
+let teardown = false
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => { teardown = true })
+}
+
 function applyBrowserVisibility(get: () => Store): void {
+  if (teardown) return
   const desired = browserVisibilityFor(get())
   if (get().browserNativeVisible !== desired) useStore.setState({ browserNativeVisible: desired })
   void window.yan.browser.setVisible(desired)
@@ -830,6 +835,7 @@ let sessionSwitchGate = 0
 let sessionSwitchInFlight: { gate: number; done: Promise<void> } | null = null
 
 function beginSessionSwitch(gate: number): () => void {
+  discardPendingMessagePatches()
   let resolve!: () => void
   const done = new Promise<void>((r) => { resolve = r })
   sessionSwitchInFlight = { gate, done }
@@ -892,27 +898,30 @@ async function persistSettingsPatch(patch: Partial<AppSettings>): Promise<AppSet
   return operation
 }
 
-const FILE_TAB_LIMIT = 12
-const withFileTab = (
-  current: Record<string, FilePreviewState>,
-  key: string,
-  value: FilePreviewState
-): Record<string, FilePreviewState> => {
-  const all: Record<string, FilePreviewState> = { ...current, [key]: value }
-  for (const stale of Object.keys(all)) {
-    if (Object.keys(all).length <= FILE_TAB_LIMIT) break
-    if (stale === key) continue
-    delete all[stale]
-    releaseResource('file:' + stale)
-  }
-  return all
-}
-
 type QueueEditArg = QueueState | QueueOp
 type QueueEditResult = { ok: boolean; error?: string; dropped?: QueueItem[] }
 
 function queueEditRequest(arg: QueueEditArg): Promise<QueueEditResult> {
   return (window.yan.queueEdit as unknown as (arg: QueueEditArg) => Promise<QueueEditResult>)(arg)
+}
+
+const pendingMessagePatches = new MessagePatchBatch()
+const messagePatchFlush = createFrameFlush(() => flushPendingMessagePatches())
+
+function flushPendingMessagePatches(): void {
+  messagePatchFlush.cancel()
+  const drained = pendingMessagePatches.drain()
+  if (drained.length === 0) return
+  useStore.setState((state) => {
+    let messages = state.messages
+    for (const item of drained) messages = patchMessage(messages, item.id, item.patch) as typeof state.messages
+    return { messages }
+  })
+}
+
+function discardPendingMessagePatches(): void {
+  pendingMessagePatches.drain()
+  messagePatchFlush.cancel()
 }
 
 export const useStore = create<Store>((rawSet, get) => {
@@ -1039,9 +1048,7 @@ export const useStore = create<Store>((rawSet, get) => {
   browserNativeVisible: false,
   terminals: [],
   filePreview: null,
-  filePreviews: {},
   subagents: [],
-  subagentPreviewId: null,
   zoom: null,
   uiRequests: [],
   questionLog: [],
@@ -1073,7 +1080,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { } })
     const api = window.yan
     performance.mark('yan:bootstrap-start')
-    const [loadedSettings, sessions, session, messages, stats, todos, titles, manualTitles, pi, browserState] =
+    const [loadedSettings, sessions, session, messages, stats, todos, titles, manualTitles, browserState] =
       await Promise.all([
         timedBoot('settings', api.getSettings()),
         timedBoot('listSessions', api.listSessions()),
@@ -1083,7 +1090,6 @@ export const useStore = create<Store>((rawSet, get) => {
         timedBoot('todos', api.refreshTodos().catch(() => [] as SessionTodo[])),
         timedBoot('titles', api.cachedTitles().catch(() => ({}) as Record<string, string>)),
         timedBoot('manualTitles', api.manualTitles().catch(() => ({}) as Record<string, string>)),
-        timedBoot('piInfo', api.piInfo().catch(() => null)),
         api.browser.getState().catch(() => ({ open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false } as BrowserState))
       ])
 
@@ -1099,12 +1105,14 @@ export const useStore = create<Store>((rawSet, get) => {
       todos,
       titles,
       manualTitles,
-      piInfo: pi,
       browserState
     })
     if (!browserState.open) releaseResource('browser')
 
     performance.mark('yan:bootstrap-set')
+    void timedBoot('piInfo', api.piInfo().catch(() => null)).then((info) => {
+      if (info) set({ piInfo: info })
+    })
     void get().reloadModels()
     void window.yan.pendingApprovals().then((approvals) => {
       if (bootstrapApprovals !== approvalBootstrapSeq) return
@@ -1183,6 +1191,8 @@ export const useStore = create<Store>((rawSet, get) => {
       }
       return
     }
+
+    if (m.ch !== 'msg-update') flushPendingMessagePatches()
 
     const s = get()
 
@@ -1322,13 +1332,11 @@ export const useStore = create<Store>((rawSet, get) => {
         set({ titles: { ...s.titles, [m.payload.sessionId]: m.payload.title } })
         break
       case 'msg-update':
-        set({ messages: patchMessage(s.messages, m.payload.id, m.payload.patch) })
+        pendingMessagePatches.add(m.payload.id, m.payload.patch)
+        messagePatchFlush.schedule()
         break
       case 'artifact':
         set({ messages: patchArtifact(s.messages, m.payload.messageId, m.payload.artifact) })
-        break
-      case 'msg-remove':
-        set({ messages: s.messages.filter((x) => x.id !== m.payload) })
         break
       case 'tool': {
         const { msgId, call, outputDelta } = m.payload
@@ -1768,6 +1776,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   newSession: async (target) => {
+    discardPendingMessagePatches()
     const gate = ++sessionSwitchGate
     if (get().switchLoading) set({ switchLoading: false })
     const res = await piCall(() => window.yan.newSession(target))
@@ -2321,9 +2330,7 @@ export const useStore = create<Store>((rawSet, get) => {
       const cur = get().filePreview
       if (cur?.path === path && cur.cwd === cwd && cur.line === line && cur.lineEnd === lineEnd) {
         const failed = { ...cur, loading: false, data: null }
-        const filePreviews = { ...get().filePreviews }
-        if (cur.key) filePreviews[cur.key] = failed
-        set({ filePreview: failed, filePreviews, notices: pushNotice(get().notices, 'error', uiText('state.error.previewFailed', { error: String(error) })) })
+        set({ filePreview: failed, notices: pushNotice(get().notices, 'error', uiText('state.error.previewFailed', { error: String(error) })) })
       }
       return
     }
@@ -2348,10 +2355,7 @@ export const useStore = create<Store>((rawSet, get) => {
       data,
       ...(key ? { key } : {})
     }
-    set({
-      filePreview: next,
-      filePreviews: key ? withFileTab(get().filePreviews, key, next) : get().filePreviews
-    })
+    set({ filePreview: next })
   },
 
   loadSubagents: async () => {

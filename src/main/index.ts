@@ -125,7 +125,8 @@ import { ApprovalBroker } from './approval-broker'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
-import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
+import { cachedTitlesSync, primeCachedTitles } from './title'
+import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
@@ -433,14 +434,17 @@ const subagentService: SubagentService = new SubagentService({
       approvals.cancel((pending) => pending.subagentId === run.id)
       approvals.forgetSubagent(run.id)
     }
-    push({ ch: 'subagent', payload: run })
+    queueSubagentRun(run)
     refreshTaskbar()
   },
   onPatch: ({ id, run, transcriptFrom }) => {
+    flushSubagentRuns()
     push({ ch: 'subagent-patch', payload: { id, run, transcriptFrom } })
     refreshTaskbar()
   },
   onRemove: (id) => {
+    pendingSubagentRuns.delete(id)
+    flushSubagentRuns()
     push({ ch: 'subagent-remove', payload: id })
     refreshTaskbar()
   },
@@ -726,7 +730,12 @@ attention = createAttentionService({
     }
   },
   language: () => trayLanguage,
-  statuses: () => runners?.statuses() ?? [],
+  statuses: () => {
+    const titles = cachedTitlesSync()
+    return (runners?.statuses() ?? []).map((status) =>
+      status.sessionId && titles[status.sessionId] ? { ...status, title: titles[status.sessionId] } : status
+    )
+  },
   showMainWindow,
   newSession: () => push({ ch: 'tray-new-session', payload: null }),
   selectSession: (target: TraySelectTarget) => {
@@ -1749,6 +1758,31 @@ function flushRestoreNotice(): void {
   push({ ch: 'notify', payload: { id: `session-restore-${Date.now()}`, method: 'notify', notifyType: 'info', message } })
 }
 
+const pendingSubagentRuns = new Map<string, Extract<MainPush, { ch: 'subagent' }>['payload']>()
+let subagentFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+function flushSubagentRuns(): void {
+  if (subagentFlushTimer) {
+    clearTimeout(subagentFlushTimer)
+    subagentFlushTimer = null
+  }
+  if (pendingSubagentRuns.size === 0) return
+  const runs = [...pendingSubagentRuns.values()]
+  pendingSubagentRuns.clear()
+  for (const run of runs) push({ ch: 'subagent', payload: run })
+}
+
+function queueSubagentRun(run: Extract<MainPush, { ch: 'subagent' }>['payload']): void {
+  pendingSubagentRuns.set(run.id, run)
+  if (run.status !== 'starting' && run.status !== 'running') {
+    flushSubagentRuns()
+    return
+  }
+  if (subagentFlushTimer) return
+  subagentFlushTimer = setTimeout(flushSubagentRuns, 150)
+  subagentFlushTimer.unref?.()
+}
+
 async function reclaimQueuedMessages(): Promise<void> {
   const pending = await readdir(QUEUE_RECOVERY_DIR).catch(() => [] as string[])
   if (!pending.some((name) => name.endsWith('.json'))) return
@@ -1829,6 +1863,15 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       if (!outcome.ok) return { reason: outcome.reason }
       await autoIsolations.add(outcome.record).catch(() => undefined)
       setIsolationView(outcome.record.worktree, { state: 'waiting', branch: outcome.record.branch })
+      push({
+        ch: 'notify',
+        payload: {
+          id: `iso-created-${Date.now()}`,
+          method: 'notify',
+          notifyType: 'info',
+          message: `同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}），结束后会自动合回主干。`
+        }
+      })
       return { cwd: outcome.record.worktree }
     },
     createAgent: (id, cwd, generation) =>
@@ -2216,7 +2259,11 @@ function registerIpc(): void {
   handle('yan:followUp', async (text: string) => ac()?.followUp(text) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:steerQueued', async (queueId: string) => ac()?.steerQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:removeQueued', async (queueId: string) => ac()?.removeQueued(queueId) ?? { ok: false, error: 'pi 未运行' })
-  handle('yan:queueEdit', async (next: QueueState) => ac()?.rewriteQueue(next) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:queueEdit', async (arg: QueueState | QueueEditOp) => {
+    const agent = ac()
+    if (!agent) return { ok: false, error: 'pi 未运行' }
+    return 'op' in arg ? agent.editQueue(arg) : agent.rewriteQueue(arg)
+  })
   handle('yan:abort', async (expectedInput?: unknown) => {
     const expected = normalizeExpectedRuntime(expectedInput)
     if (expected === 'invalid') return { steering: [], followUp: [], error: '停止目标身份无效' }
@@ -3272,6 +3319,7 @@ app.whenReady().then(async () => {
     })
   })
   registerIpc()
+  void primeCachedTitles().catch(() => undefined)
   void autoStartOpenCodeProxy().catch((error) => reportMainError('opencode-proxy-autostart', error))
   configureDesktopPet({
     runnerPath: () =>

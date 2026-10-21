@@ -111,6 +111,7 @@ import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
+import type { QueueEditOp } from '../shared/ipc'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
 import { comfyStatus, ComfyLaunchError, ensureComfyRunning, stopManagedComfy } from './comfy-launcher'
@@ -360,12 +361,6 @@ async function projectPiPackageArgs(cwd: string): Promise<string[]> {
 }
 
 const EXECUTION_ADMISSION_GRACE_MS = 10_000
-
-export type QueueEditOp =
-  | { op: 'move'; id: string; direction: 'up' | 'down' }
-  | { op: 'edit'; id: string; text: string }
-  | { op: 'remove'; id: string }
-  | { op: 'clear' }
 
 function planQueueEditOp(state: QueueState, op: QueueEditOp): { next: QueueState } | { error: string } {
   if (op.op === 'clear') return { next: { steering: [], followUp: [] } }
