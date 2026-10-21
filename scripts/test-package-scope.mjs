@@ -26,7 +26,8 @@ const { configurePackageContext, listPackages, runPackageAction } = await import
 configurePackageContext({
   bin: () => join(selectedPiRuntime(resolve('resources/pi-runtime')), 'dist', 'bundle', 'cli.js'),
   agentDir: () => agent,
-  hasRunningTask: () => false
+  hasRunningTask: () => false,
+  isProjectTrusted: () => true
 })
 const userBefore = readFileSync(userSettings)
 const projectBefore = readFileSync(projectSettings)

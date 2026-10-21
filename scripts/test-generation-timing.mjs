@@ -48,6 +48,7 @@ try {
             contents: `
               export class BrowserWindow { constructor() { throw new Error('Native browser requires an Electron integration test') } }
               export const session = { fromPartition() { throw new Error('Native session requires an Electron integration test') } }
+              export const app = { getLocale: () => 'en-US', getPath: () => process.cwd() }
             `,
             loader: 'js'
           }))
@@ -454,6 +455,16 @@ try {
 
     const raw = await readFile(join(dataDir, 'turn-timing', 'tracker.jsonl'), 'utf8')
     check(raw.includes('"generationTimings"'), '生成计时确实写进了 turn-timing 日志')
+
+    const trackerTokens = new TurnTimingTracker()
+    trackerTokens.elapsedMs = 3000
+    trackerTokens.runId = 'run-1'
+    trackerTokens.terminal = 'completed'
+    trackerTokens.messageIds = ['m1']
+    trackerTokens.outputTokens = 1234
+    await trackerTokens.persist(true, 'tracker-tokens.jsonl', [user('m0'), asst('m1', g1)])
+    const [tokenRec] = await store.readTurnTimings(dataDir, 'tracker-tokens')
+    check(tokenRec?.outputTokens === 1234, '收尾记录带上输出 token（不再先清空再读）', String(tokenRec?.outputTokens))
 
     const tracker3 = new TurnTimingTracker()
     tracker3.elapsedMs = 900
