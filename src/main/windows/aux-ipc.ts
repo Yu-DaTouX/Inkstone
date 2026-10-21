@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { AuxWindows } from './aux-controller'
-import type { MiniItem, QuickAskSubmit } from './aux-types'
+import type { QuickAskSubmit } from './aux-types'
 
 function isQuickAskSubmit(value: unknown): value is QuickAskSubmit {
   if (!value || typeof value !== 'object') return false
@@ -22,16 +22,5 @@ export function registerAuxIpc(aux: AuxWindows): void {
   )
   ipcMain.on('yan:aux:quick-ask:close', (event) => {
     if (aux.owns(event.sender)) aux.hideQuickAsk()
-  })
-
-  ipcMain.handle('yan:aux:mini:state', (event) => guard(event.sender, () => aux.miniState()))
-  ipcMain.on('yan:aux:mini:open', (event, item: unknown) => {
-    if (aux.owns(event.sender) && item && typeof item === 'object') aux.openMiniItem(item as MiniItem)
-  })
-  ipcMain.on('yan:aux:mini:close', (event) => {
-    if (aux.owns(event.sender)) aux.hideMini()
-  })
-  ipcMain.on('yan:aux:mini:set-enabled', (event, enabled: unknown) => {
-    if (aux.owns(event.sender)) aux.setMiniEnabled(!!enabled)
   })
 }

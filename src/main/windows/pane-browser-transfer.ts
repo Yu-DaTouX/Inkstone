@@ -1,9 +1,3 @@
-import {
-  PANE_NATIVE_TRANSFER_FOLLOW_UP,
-  type PaneNativeTransferAdapter,
-  type PaneNativeTransferRequest,
-  type PaneTransferResult
-} from '../../shared/pane-popout'
 import type { Rect } from './geometry'
 
 export interface BrowserTransferContentView {
@@ -458,68 +452,6 @@ export function createPaneBrowserTransfer(host: BrowserHostTransferBridge): Pane
       if (disposed) return
       for (const record of [...byTab.values()]) release(record, 'disposed', true)
       disposed = true
-    }
-  }
-}
-
-export interface PaneBrowserTransferAdapterOptions {
-  host: BrowserHostTransferBridge
-  resolveTarget(request: PaneNativeTransferRequest): BrowserTransferWindow | undefined
-  onInvalidate?(request: PaneNativeTransferRequest, lease: BrowserPaneLease, reason: BrowserLeaseInvalidReason): void
-}
-
-export interface PaneBrowserTransferAdapter extends PaneNativeTransferAdapter {
-  readonly kind: 'native-view'
-  readonly port: PaneBrowserTransfer
-}
-
-export function createPaneBrowserTransferAdapter(
-  options: PaneBrowserTransferAdapterOptions
-): PaneBrowserTransferAdapter {
-  const port = createPaneBrowserTransfer(options.host)
-  return {
-    kind: 'native-view',
-    port,
-    canTransfer(request) {
-      if (!request || request.tab !== 'browser' || !request.viewId) return false
-      return Boolean(options.resolveTarget(request))
-    },
-    transfer(request): PaneTransferResult {
-      if (!request || request.tab !== 'browser') {
-        return {
-          ok: false,
-          code: 'unsupported',
-          message: '该适配器只处理 browser 页签',
-          followUp: PANE_NATIVE_TRANSFER_FOLLOW_UP
-        }
-      }
-      const tabId = request.viewId
-      if (!tabId) {
-        return { ok: false, code: 'rejected', message: '缺少浏览器页签 id', followUp: PANE_NATIVE_TRANSFER_FOLLOW_UP }
-      }
-      const target = options.resolveTarget(request)
-      if (!target) {
-        return {
-          ok: false,
-          code: 'unsupported',
-          message: '找不到承载原生视图的目标窗口',
-          followUp: PANE_NATIVE_TRANSFER_FOLLOW_UP
-        }
-      }
-      const result = port.begin({
-        tabId,
-        ownerKey: request.owner.key,
-        generation: request.owner.generation ?? 0,
-        target,
-        onInvalidate: (lease, reason) => options.onInvalidate?.(request, lease, reason)
-      })
-      if (result.ok) return { ok: true }
-      return {
-        ok: false,
-        code: result.code === 'owner-conflict' ? 'rejected' : 'unsupported',
-        message: result.message ?? '原生视图改挂失败',
-        followUp: PANE_NATIVE_TRANSFER_FOLLOW_UP
-      }
     }
   }
 }

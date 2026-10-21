@@ -526,43 +526,6 @@ try {
     })
   }
 
-  console.log('共享契约桥')
-  resetCounters()
-  {
-    const host = new FakeHost()
-    const source = new FakeWindow(990)
-    const target = new FakeWindow(991)
-    host.addTab('tab-shared', 700, source)
-    const owner = { key: 'sess-a', sessionId: 'a', cwd: '/proj', active: true, generation: 2 }
-    const adapter = transferMod.createPaneBrowserTransferAdapter({
-      host,
-      resolveTarget: (request) => (request.tab === 'browser' && request.viewId === 'tab-shared' ? target : undefined)
-    })
-    check('kind 与 canTransfer：只有可解析目标的 browser 页签为真', () => {
-      assert.equal(adapter.kind, 'native-view')
-      assert.equal(adapter.canTransfer({ tab: 'browser', owner, viewId: 'tab-shared' }), true)
-      assert.equal(adapter.canTransfer({ tab: 'browser', owner, viewId: 'tab-x' }), false)
-      assert.equal(adapter.canTransfer({ tab: 'terminal', owner, terminalId: 't1' }), false)
-    })
-    check('transfer 通过共享契约借出原生视图', () => {
-      const result = adapter.transfer({ tab: 'browser', owner, viewId: 'tab-shared' })
-      assert.equal(result.ok, true)
-      assert.equal(adapter.port.isLeased('tab-shared'), true)
-      assert.equal(target.contentView.children.includes(host.tabs.get('tab-shared').view), true)
-    })
-    check('无法解析目标窗口时如实拒绝，不建 iframe/假视图', () => {
-      const result = adapter.transfer({ tab: 'browser', owner, viewId: 'tab-missing' })
-      assert.equal(result.ok, false)
-      assert.equal(result.code, 'unsupported')
-      assert.ok(result.followUp.length >= 3)
-    })
-    check('非 browser 页签走 shared 契约也为 unsupported', () => {
-      const result = adapter.transfer({ tab: 'preview', owner })
-      assert.equal(result.ok, false)
-      assert.equal(result.code, 'unsupported')
-    })
-  }
-
   console.log('浏览器控制器：借出守卫')
   resetCounters()
   {

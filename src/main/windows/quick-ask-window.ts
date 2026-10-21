@@ -14,7 +14,6 @@ export interface QuickAskWindow {
   show(): void
   hide(): void
   isVisible(): boolean
-  browserWindow(): BrowserWindow | null
   webContents(): Electron.WebContents | null
   send(channel: string, payload: unknown): void
   destroy(): void
@@ -80,7 +79,6 @@ export function createQuickAskWindow(deps: QuickAskWindowDeps): QuickAskWindow {
       if (!destroyed && win.isVisible()) win.hide()
     },
     isVisible: () => !destroyed && win.isVisible(),
-    browserWindow: () => (destroyed ? null : win),
     webContents: () => (destroyed ? null : win.webContents),
     send(channel, payload) {
       if (!destroyed && !win.webContents.isDestroyed()) win.webContents.send(channel, payload)

@@ -1,18 +1,6 @@
-export {
-  DEEPLINK_PREFIX,
-  DEEPLINK_SCHEME,
-  DEEPLINK_SETTINGS_SECTIONS,
-  MAX_DEEPLINK_ID_LENGTH,
-  MAX_DEEPLINK_TEXT_LENGTH,
-  MAX_DEEPLINK_URL_LENGTH,
-  firstDeepLinkArg,
-  parseDeepLink,
-  parseDeepLinkFromArgv,
-  parseDeepLinkFromOpenUrl
-} from './protocol'
+export { firstDeepLinkArg, parseDeepLink } from './protocol'
 export type {
   DeepLink,
-  DeepLinkAction,
   DeepLinkNewSession,
   DeepLinkParseResult,
   DeepLinkRejectReason,
