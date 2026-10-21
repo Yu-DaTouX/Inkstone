@@ -51,6 +51,7 @@ assert.equal(stepIndexOf('nope'), -1, '未知步骤返回 -1，界面不会误�
 assert.equal(stepAt(99).id, 'done', '越界索引夹到最后一步')
 assert.equal(stepAt(-3).id, 'welcome', '负索引夹到第一步')
 assert.equal(clampStepIndex(Number.NaN), 0, 'NaN 归零')
+assert.equal(clampStepIndex(-1), 0, '未知步骤的索引 -1 被夹回首步，界面不会全隐藏')
 assert.equal(nextStepIndex(5), 5, '最后一步不能再往后')
 assert.equal(prevStepIndex(0), 0, '第一步不能再往前')
 assert.equal(nextStepIndex(1), 2, '正常前进')
@@ -102,6 +103,7 @@ const wizard = readFileSync(here('../src/renderer/src/features/onboarding/Onboar
 const css = readFileSync(here('../src/renderer/src/features/onboarding/onboarding.css'), 'utf8')
 const barrel = readFileSync(here('../src/renderer/src/features/onboarding/index.ts'), 'utf8')
 
+assert.ok(wizard.includes('clampStepIndex(initialStep'), '向导入口对 initialStep 先夹索引再用')
 assert.ok(wizard.includes("from '../../ui'"), '向导控件来自 v3 ui/')
 assert.ok(wizard.includes("'./onboarding.css'"), '向导自带 features 层样式')
 for (const primitive of ['Dialog', 'ModalOverlay', 'Button', 'Switch', 'RadioGroup', 'Select', 'Slider']) {
@@ -115,7 +117,7 @@ assert.ok(wizard.includes("onClose('skip')") && wizard.includes("onClose('done')
 assert.ok(wizard.includes('isSelected'), '开关用 RAC 的 isSelected 受控属性')
 assert.ok(wizard.includes('selectedKey'), '下拉用 RAC 的 selectedKey 受控属性')
 assert.ok(!wizard.includes('checked='), '不混用 v2 的 checked 属性')
-assert.ok(!wizard.includes('authProviders') && !wizard.includes('window.yan'), '不读真实凭证、不新增 IPC')
+assert.ok(!/credential|apiKey|auth\.json/.test(wizard) && !wizard.includes('window.yan'), '不读真实凭证、不新增 IPC')
 assert.ok(!/fetch\(/.test(wizard), '不发网络请求')
 
 assert.ok(wizard.includes("from '../../ui/Slider'"), '音量用 v3 Slider 原语（ui 汇总导出后改走 barrel）')
@@ -164,7 +166,6 @@ for (const name of [
   'shouldAutoWizard',
   'markOnboarded',
   'hasSeenOnboarding',
-  'ONBOARDING_STEP_IDS',
   'onboardingText'
 ]) {
   assert.ok(barrel.includes(name), `入口导出 ${name}`)

@@ -6,14 +6,13 @@ import { Button } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { Segmented, SettingsGroup } from '../root/controls'
 import {
-  compactNumber,
   dailyEntries,
-  shareText,
   usageBars,
   USAGE_DIMENSIONS,
   type UsageBar,
   type UsageDimension
 } from './usage-model'
+import { compactNumber, shareText } from '../../usage/usage-format'
 import { UsageStatsGrid } from './UsageStatsGrid'
 import { UsageCurrency } from './UsageCurrency'
 import { useMoney } from '../../usage/UsageOverview'

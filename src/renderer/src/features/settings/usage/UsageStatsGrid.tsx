@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react'
 import type { UsageStatsResult } from '../../../../../shared/ipc'
 import type { SettingsText } from '../settings-text'
-import { compactNumber, peakHourText } from './usage-model'
+import { compactNumber } from '../../usage/usage-format'
+import { peakHourText } from './usage-model'
 import { formatMoney } from '../../../../../shared/currency'
 import { useTweenedNumber } from '../root/use-tweened-number'
 
