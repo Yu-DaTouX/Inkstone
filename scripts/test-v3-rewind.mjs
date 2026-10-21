@@ -457,6 +457,10 @@ async function main() {
     await flush()
     tree = renderDialog('A', true)
     ok(buttonByTestId(tree, 'rewind-undo').length === 0, '撤销后不再显示撤销按钮')
+    const done = buttonByTestId(tree, 'rewind-done')
+    ok(done.length === 1, '完成态有稳定的收尾按钮（testid 可点）')
+    done[0].props.onPress()
+    ok(rewindStore.getState().rewind === null, '点收尾按钮关闭对话框')
     pending.preview = null
     pending.restore = null
     pending.undo = null

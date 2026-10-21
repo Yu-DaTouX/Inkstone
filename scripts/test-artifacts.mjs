@@ -368,6 +368,19 @@ export async function runArtifactTests(modules = {}) {
     assert(attached.path !== attached.sourcePath, 'preview should still read the controlled copy, not the source file')
     const generated = await store.save({ sessionFile, messageId: 'assistant-generated', filename: 'shot.png', bytes: PNG })
     assert(generated.sourcePath === undefined, 'generated artifacts have no source file to open')
+    assert(generated.previewable === true && generated.kind === 'image', 'PNG 产物仍按图片可预览')
+
+    const officeDoc = await store.save({ sessionFile, messageId: 'assistant-office', filename: '报告.docx', bytes: Buffer.from('fake-docx-body') })
+    assert(
+      officeDoc.mediaType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Word 产物应带 docx 的 MIME 而不是 application/octet-stream',
+      officeDoc.mediaType
+    )
+    assert(officeDoc.kind === 'document' && officeDoc.previewable === true, 'Word 产物应可预览（走自带 office 预览）', officeDoc)
+    const officeSheet = await store.save({ sessionFile, messageId: 'assistant-office', filename: '对比.xlsx', bytes: Buffer.from('fake-xlsx-body') })
+    assert(officeSheet.kind === 'document' && officeSheet.previewable === true, 'Excel 产物应可预览', officeSheet)
+    const zipThatIsNotOffice = await store.save({ sessionFile, messageId: 'assistant-zip', filename: 'bundle.zip', bytes: Buffer.from('fake-zip') })
+    assert(zipThatIsNotOffice.previewable === false && zipThatIsNotOffice.kind === 'binary', '普通压缩包不应被当成可预览文档')
 
     const bulk = await Promise.all(
       Array.from({ length: 8 }, (_, i) =>

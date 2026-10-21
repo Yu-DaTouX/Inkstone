@@ -13,7 +13,8 @@ try {
     stdin: {
       contents: [
         "export { ownedViewVisible, createStateFlush } from './src/main/browser/host-state'",
-        "export { decideExternalRequest } from './src/main/browser/external-boundary'"
+        "export { decideExternalRequest } from './src/main/browser/external-boundary'",
+        "export { decideNavigationGuard } from './src/main/browser/navigation-guard'"
       ].join('\n'),
       resolveDir: process.cwd(),
       loader: 'ts'
@@ -24,7 +25,21 @@ try {
     platform: 'node',
     logLevel: 'silent'
   })
-  const { ownedViewVisible, createStateFlush, decideExternalRequest } = await import(pathToFileURL(outfile).href)
+  const { ownedViewVisible, createStateFlush, decideExternalRequest, decideNavigationGuard } = await import(pathToFileURL(outfile).href)
+
+  assert.equal(decideNavigationGuard(false, () => 'ask'), 'ask', '页面自己发起的跳转仍要问')
+  assert.equal(decideNavigationGuard(false, () => 'deny'), 'block', '页面自己发起的跳转被拒时拦下')
+  assert.equal(decideNavigationGuard(false, () => 'forbidden'), 'block', '不允许的地址直接拦下')
+  assert.equal(decideNavigationGuard(false, () => 'allow'), 'pass', '已放行的站点直接过')
+  let consulted = 0
+  const counted = () => {
+    consulted += 1
+    return 'ask'
+  }
+  assert.equal(decideNavigationGuard(true, counted), 'pass', 'agent 发起的导航及其重定向不再过闸门')
+  assert.equal(consulted, 0, 'agent 导航进行中不查闸门')
+  assert.equal(decideNavigationGuard(false, counted), 'ask', '非 agent 导航仍查闸门')
+  assert.equal(consulted, 1, '非 agent 导航查一次闸门')
 
   assert.equal(ownedViewVisible('tab-a', 'tab-a', true), true, '渲染端要求可见时只显示当前页签')
   assert.equal(ownedViewVisible('tab-a', 'tab-b', true), false, '非当前页签不显示')
