@@ -2288,7 +2288,7 @@
   "state.error.savePanelVisibilityFailed": "保存工作区显示失败：{error}",
   "state.recover.attachmentsDropped": "有 {count} 个附件没能放回输入框（超过附件上限）",
   "state.recover.imagesDropped": "有 {count} 张排队时的图片没能放回输入框（已切换到其他会话或超过附件上限）",
-  "state.queue.reclaimed": "检测到模型输出重复，已把 {count} 条排队内容放回输入框",
+  "state.queue.reclaimed": "{count} 条排队消息没有发出，已放回输入框",
   "state.queue.withdrawn": "已撤回排队内容，并放回输入草稿",
   "state.queue.editFailedRestored": "队列编辑失败，内容已放回输入框",
   "state.queue.restored": "已把 {count} 条排队内容放回输入框",

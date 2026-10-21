@@ -693,6 +693,34 @@ function applyQueueRecovery(
   return patch
 }
 
+interface QueueReclaim {
+  text: string
+  images: QueueImageRef[]
+  idPrefix: string
+  notice: string
+}
+
+const heldQueueReclaims = new Map<string, QueueReclaim>()
+
+function holdQueueReclaim(sessionId: string, recovery: QueueReclaim): void {
+  const held = heldQueueReclaims.get(sessionId)
+  heldQueueReclaims.set(
+    sessionId,
+    held
+      ? { ...recovery, text: [held.text, recovery.text].filter(Boolean).join('\n'), images: [...held.images, ...recovery.images] }
+      : recovery
+  )
+}
+
+function takeHeldQueueReclaim(state: Store): Partial<Store> | null {
+  const viewing = viewingSessionId(state)
+  if (!viewing) return null
+  const held = heldQueueReclaims.get(viewing)
+  if (!held) return null
+  heldQueueReclaims.delete(viewing)
+  return applyQueueRecovery(state, { ...held, sessionId: viewing, sameSession: true, notice: undefined })
+}
+
 async function imageFingerprint(base64: string): Promise<string | null> {
   try {
     const at = globalThis.atob
@@ -1173,20 +1201,24 @@ export const useStore = create<Store>((rawSet, get) => {
       const texts = [...m.payload.steering, ...m.payload.followUp].filter((text) => text)
       const reclaimedCount = Math.max(texts.length, items.length)
       if (reclaimedCount > 0) {
-        const patch = applyQueueRecovery(current, {
-          sessionId: m.payload.sessionId,
+        const sessionId = m.payload.sessionId
+        const recovery: QueueReclaim = {
           text: texts.join('\n'),
           images: items.flatMap((item) => item.images ?? []),
           idPrefix: 'queue-image',
           notice: uiText('state.queue.reclaimed', { count: reclaimedCount })
-        })
-        const sessionId = m.payload.sessionId
+        }
+        const sameView = !!sessionId && viewingSessionId(current) === sessionId
+        const patch: Partial<Store> = sameView
+          ? applyQueueRecovery(current, { sessionId, ...recovery, sameSession: true })
+          : { notices: pushNotice(current.notices, 'info', recovery.notice) }
+        if (sessionId && !sameView) holdQueueReclaim(sessionId, recovery)
         if (sessionId) {
           const cache = patch.sessionRuntimes ?? current.sessionRuntimes
           const cached = cache[sessionId]
           if (cached) patch.sessionRuntimes = { ...cache, [sessionId]: { ...cached, queue: EMPTY_QUEUE } }
+          if (sameView) patch.queue = EMPTY_QUEUE
         }
-        if (sessionId && current.session?.sessionId === sessionId) patch.queue = EMPTY_QUEUE
         set(patch)
       }
       return
@@ -2782,4 +2814,11 @@ export const useStore = create<Store>((rawSet, get) => {
   },
   log: (line) => set({ logs: [...get().logs, line].slice(-200) })
   }
+})
+
+useStore.subscribe((state, previous) => {
+  if (heldQueueReclaims.size === 0) return
+  if (viewingSessionId(state) === viewingSessionId(previous)) return
+  const patch = takeHeldQueueReclaim(state)
+  if (patch) useStore.setState(patch)
 })

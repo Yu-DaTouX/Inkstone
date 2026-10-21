@@ -2288,7 +2288,7 @@
   "state.error.savePanelVisibilityFailed": "Failed to save panel visibility: {error}",
   "state.recover.attachmentsDropped": "{count} attachment(s) could not be restored to the input box (attachment limit reached)",
   "state.recover.imagesDropped": "{count} queued image(s) could not be restored to the input box (switched sessions or attachment limit reached)",
-  "state.queue.reclaimed": "Duplicate model output detected; restored {count} queued item(s) to the input box",
+  "state.queue.reclaimed": "{count} queued message(s) weren't sent and are back in the input box",
   "state.queue.withdrawn": "Withdrew the queued item and restored it to the draft",
   "state.queue.editFailedRestored": "Queue edit failed; the content was restored to the input box",
   "state.queue.restored": "Restored {count} queued item(s) to the input box",

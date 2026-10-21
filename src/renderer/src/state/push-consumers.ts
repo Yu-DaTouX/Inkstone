@@ -13,6 +13,12 @@ export interface PushContext {
   t(key: MessageKey, vars?: TVars): string
 }
 
+const RESTORE_NOTICE_PREFIX = 'session-restore'
+
+function isRestoreNoticeId(id?: string): boolean {
+  return !!id && id.startsWith(RESTORE_NOTICE_PREFIX)
+}
+
 export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boolean {
   const { set } = ctx
   switch (m.ch) {
@@ -155,7 +161,7 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
         break
       }
 
-      if (s.startupPhase && (m.payload.notifyType ?? 'info') !== 'error') {
+      if (s.startupPhase && !isRestoreNoticeId(m.payload.id) && (m.payload.notifyType ?? 'info') !== 'error') {
         set({ logs: [...s.logs, ctx.t('state.log.extension', { text })].slice(-200) })
         break
       }
