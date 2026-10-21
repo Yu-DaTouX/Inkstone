@@ -340,7 +340,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     const rejected = results.filter((r) => !r.ok)
     ok(accepted.length === 24, '并发启动时24个通过（槽位在准备隔离区前就占住）', `通过=${accepted.length}`)
     ok(rejected.length === 1, '第25个并发请求被拒绝', `拒绝=${rejected.length}`)
-    ok(/最多 24 个/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限', JSON.stringify(rejected[0]?.error))
+    ok(/最多运行 24 个子代理（当前 24 个）/.test(rejected[0]?.error ?? ''), '拒绝理由说明并发上限和当前占用的名额', JSON.stringify(rejected[0]?.error))
     await ctrl.stop(accepted[0].run.id)
     ok((await ctrl.start('释放后补位')).ok && ctrl.runningCount === 24, '停止后可补回一个名额')
     await ctrl.stopAll()
@@ -1005,6 +1005,79 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       ok(!!loaded && loaded.status === 'done', '历史记录可读回')
       ok(!('limits' in loaded) && !('patchPath' in loaded) && !('schemaVersion' in loaded), '读回的历史不带写入专用字段', Object.keys(loaded).join(','))
     } finally {
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-drain-'))
+    const factory = makeRpcFactory()
+    const abortMs = 60
+    let live = 0
+    let peak = 0
+    const createRpc = (opts) => {
+      const rpc = factory.createRpc(opts)
+      rpc.command = async (type) => {
+        if (type !== 'abort') return { success: true }
+        live += 1
+        peak = Math.max(peak, live)
+        await new Promise((resolve) => setTimeout(resolve, abortMs))
+        live -= 1
+        return { success: true }
+      }
+      return rpc
+    }
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc, onChange: () => {} })
+    try {
+      const ids = []
+      for (let i = 0; i < 8; i += 1) {
+        const res = await ctrl.start(`并排启动 ${i}`, undefined, 'controlled-cwd')
+        ok(res.ok, `第 ${i + 1} 个子代理启动成功`, res.error)
+        ids.push(res.run.id)
+      }
+      const serialMs = ids.length * abortMs
+      const startedAt = Date.now()
+      await ctrl.stopAll()
+      const elapsed = Date.now() - startedAt
+      ok(peak >= 2, '停止全部时多路 abort 同时在飞', `峰值 ${peak}`)
+      ok(peak <= 4, '同时在飞的 abort 不超过有界并发上限', `峰值 ${peak}`)
+      ok(elapsed < serialMs, '停止全部比逐个串行更快', `${elapsed}ms < ${serialMs}ms`)
+      ok(ids.every((id) => ctrl.get(id)?.status === 'cancelled'), '有界并发停止后每个都收尾为已停止', ids.map((id) => ctrl.get(id)?.status).join(','))
+      ok(factory.created.every((rpc) => rpc.closed), '每个子代理进程都关掉')
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-drain-fail-'))
+    const factory = makeRpcFactory()
+    let brokenClose = 0
+    const createRpc = (opts) => {
+      const rpc = factory.createRpc(opts)
+      if (factory.created.length === 2) {
+        rpc.close = async () => {
+          brokenClose += 1
+          throw new Error('关闭失败')
+        }
+      }
+      return rpc
+    }
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare, createRpc, onChange: () => {} })
+    try {
+      const ids = []
+      for (let i = 0; i < 4; i += 1) {
+        const res = await ctrl.start(`一起收尾 ${i}`, undefined, 'controlled-cwd')
+        ids.push(res.run.id)
+      }
+      let rejected = false
+      await ctrl.stopAll().catch(() => { rejected = true })
+      ok(rejected, '某个子代理关不掉时停止全部会报错', String(brokenClose))
+      ok(ids.every((id) => ctrl.get(id)?.status === 'cancelled'), '一个失败不影响其余全部收尾', ids.map((id) => ctrl.get(id)?.status).join(','))
+      ok(factory.created.filter((rpc) => rpc.closed).length === 3, '其余子代理进程都已关闭', String(factory.created.filter((rpc) => rpc.closed).length))
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
       await rm(archive, { recursive: true, force: true })
     }
   }

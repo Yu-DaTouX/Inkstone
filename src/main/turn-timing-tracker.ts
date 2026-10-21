@@ -20,6 +20,7 @@ export class TurnTimingTracker {
   async persist(final: boolean, sessionFile: string | undefined, messages: UIMessage[]): Promise<void> {
     const bucket = timingKey(sessionFile)
     const elapsedMs = this.elapsedMs
+    const outputTokens = this.outputTokens
     const sourceIds = [...this.messageIds]
     const terminalReason = this.terminal
     if (final) {
@@ -61,7 +62,7 @@ export class TurnTimingTracker {
       sourceIds,
       ...(waitSpans.length ? { waitSpans } : {}),
       ...(generationTimings.some(Boolean) ? { generationTimings, generationStamps } : {}),
-      ...(this.outputTokens ? { outputTokens: this.outputTokens } : {}),
+      ...(outputTokens ? { outputTokens } : {}),
       monotonicMs: elapsedMs
     }
     const write = this.writeTail.then(() => appendTurnTiming(YAN_DIR, bucket, record))

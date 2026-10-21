@@ -61,6 +61,7 @@ function wrapUpMessage(text: string): string {
 }
 const MAX_TRANSCRIPT = 200
 const ABORT_TIMEOUT_MS = 5_000
+const DRAIN_CONCURRENCY = 4
 
 const MAX_STDERR_LINES = 20
 const MAX_STDERR_LINE_CHARS = 400
@@ -460,7 +461,7 @@ export class SubagentController {
     const modelError = subagentModelError(model ?? process.env.YAN_TEST_MODEL, isolation === 'controlled-cwd')
     if (modelError) return { ok: false, error: modelError }
     if (this.runningCount >= MAX_CONCURRENT) {
-      return { ok: false, error: `同时最多 ${MAX_CONCURRENT} 个子代理，先等一个结束或停掉它` }
+      return { ok: false, error: `同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它` }
     }
     const parsed = parseSubagentBrief(briefInput, text)
     if (!parsed.ok) return { ok: false, error: parsed.error }
@@ -744,7 +745,7 @@ export class SubagentController {
 
   private async resume(id: string, text: string, from: SubagentSendFrom): Promise<SubagentSendResult> {
     if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
-    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: `同时最多 ${MAX_CONCURRENT} 个子代理，先等一个结束或停掉它` }
+    if (this.runningCount >= MAX_CONCURRENT) return { ok: false, error: `同时最多运行 ${MAX_CONCURRENT} 个子代理（当前 ${this.runningCount} 个），先等一个结束或停掉它` }
     const ticket = { cancelled: false }
     const generation = this.launchGeneration
     this.resuming.set(id, ticket)
@@ -925,17 +926,30 @@ export class SubagentController {
 
   private async drainAll(): Promise<void> {
     const pending = [...this.pendingLaunches]
+    const runs = [...this.runs.values()]
+    let next = 0
     let failure: unknown
-    for (const run of [...this.runs.values()]) {
-      try {
-        if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true)
-        else {
-          if (run.settling) await run.settling
-          else await run.rpc.close()
-          await this.finalize(run, true)
-        }
-      } catch (error) { failure ??= error }
+    const settleRun = async (run: Run): Promise<void> => {
+      if (run.status === 'running' || run.status === 'starting') await this.stopRun(run, true)
+      else {
+        if (run.settling) await run.settling
+        else await run.rpc.close()
+        await this.finalize(run, true)
+      }
     }
+    const worker = async (): Promise<void> => {
+      while (next < runs.length) {
+        const run = runs[next]
+        next += 1
+        try {
+          await settleRun(run)
+        } catch (error) {
+          failure ??= error
+        }
+      }
+    }
+    const width = Math.min(DRAIN_CONCURRENCY, runs.length)
+    await Promise.all(Array.from({ length: width }, worker))
     await Promise.all(pending)
     if (failure) throw failure
   }

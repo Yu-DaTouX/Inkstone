@@ -182,7 +182,7 @@ async function oversizedInWorktree(cwd: string, dir: string, sha: string): Promi
   return (await measureFiles(cwd, listed.stdout.split('\0').filter(Boolean))).oversized
 }
 
-async function snapshotTree(cwd: string, dir: string): Promise<string | null> {
+async function snapshotTree(cwd: string, dir: string): Promise<{ tree: string; oversized: string[] } | null> {
   const estimate = await shadowGit(cwd, dir, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { allowFailure: true })
   if (!estimate.ok) return null
   const listed = [...new Set(estimate.stdout.split('\0').filter(Boolean))]
@@ -204,7 +204,7 @@ async function snapshotTree(cwd: string, dir: string): Promise<string | null> {
   if (count.ok && count.stdout.split('\0').length > MAX_FILES) return null
   const tree = await shadowGit(cwd, dir, ['write-tree'], { allowFailure: true })
   const sha = tree.stdout.trim()
-  return tree.ok && /^[0-9a-f]{40}$/.test(sha) ? sha : null
+  return tree.ok && /^[0-9a-f]{40}$/.test(sha) ? { tree: sha, oversized } : null
 }
 
 async function commitTree(cwd: string, dir: string, tree: string, message: string): Promise<string | null> {
@@ -227,8 +227,9 @@ export function captureCheckpoint(cwd: string, sessionKey: string, text: string,
 async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], expired: () => boolean = () => false): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
   if (!(await ensureRepo(cwd, dir))) return null
-  const tree = await snapshotTree(cwd, dir)
-  if (!tree || expired()) return null
+  const snapshot = await snapshotTree(cwd, dir)
+  if (!snapshot || expired()) return null
+  const tree = snapshot.tree
   const index = await readIndex(dir, cwd)
   let sha = index.lastTree === tree ? index.lastSha : undefined
   if (!sha) {
@@ -288,12 +289,11 @@ export function previewCheckpoint(cwd: string, recordId: string): Promise<Checkp
     const index = await readIndex(dir, cwd)
     const sha = shaOf(index.records.find((r) => r.id === recordId))
     if (!sha) return { ok: false, error: '找不到这个检查点（可能已过期被清理）', changes: [], total: 0 }
-    if (!(await snapshotTree(cwd, dir))) return { ok: false, error: '没能读取项目文件当前的状态', changes: [], total: 0 }
-    const kept = await oversizedInWorktree(cwd, dir, sha)
-    if (!kept) return { ok: false, error: '比较失败', changes: [], total: 0 }
+    const snapshot = await snapshotTree(cwd, dir)
+    if (!snapshot) return { ok: false, error: '没能读取项目文件当前的状态', changes: [], total: 0 }
     const diff = await shadowGit(cwd, dir, ['diff-index', '--cached', '--name-status', '--no-renames', sha], { allowFailure: true })
     if (!diff.ok) return { ok: false, error: diff.error ?? '比较失败', changes: [], total: 0 }
-    const skip = new Set(kept)
+    const skip = new Set(snapshot.oversized)
     const lines = diff.stdout.split('\n').filter((line) => !skip.has(line.replace(/^[A-Z]\t/, '').trim()))
     return { ok: true, ...parseChanges(lines.join('\n')) }
   })
