@@ -147,6 +147,8 @@ export interface RemoteHumanApproval {
 
 export interface RemoteArtifact {
   id: string
+  sourceId?: string
+  version?: number
   filename: string
   mediaType: string
   kind: 'image' | 'svg' | 'code' | 'document' | 'binary'

@@ -72,8 +72,12 @@ async function run() {
       host.observeSubagentEvent({ id: 'sub-a', parentSessionId: 's1' }, { type: 'agent_end', willRetry: false })
       assert.equal(host.snapshot().runs.find((r) => r.runId === childRunId).phase.kind, 'running', 'agent_end 不是终态')
 
-      host.observeSubagentEvent({ id: 'sub-b', parentSessionId: 's1', task: '子任务 B' }, messageEvent('text_delta'))
+      host.observeSubagentEvent(
+        { id: 'sub-b', parentSessionId: 's1', task: `只读调研任务\n${'很长的任务说明'.repeat(80)}`, brief: { title: '画布预览调研' } },
+        messageEvent('text_delta')
+      )
       await waitFor(() => host.snapshot().runs.filter((r) => r.kind === 'subagent').length === 2)
+      assert.equal(host.snapshot().runs.find((r) => r.code === 'S1·2').title, '画布预览调研', '子 Agent 运行标题用短标题，不用任务全文')
       assert.deepEqual(
         host.snapshot().runs.filter((r) => r.kind === 'subagent').map((r) => r.code).sort(),
         ['S1·1', 'S1·2']

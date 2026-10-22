@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, IconButton, Notice } from '../../ui'
-import { HTML_ARTIFACT_SANDBOX, isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
+import { isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
 import { filePreviewUrl } from '../../lib/file-preview-url'
-import { ArtifactFrame } from '../artifacts/ArtifactFrame'
+import { HtmlArtifactThumb } from '../artifacts/HtmlArtifactThumb'
 import { deriveArtifactIdentityKey, useNearViewport, usePreviewSnapshot } from '../artifacts/widget-lifecycle'
-import type { ArtifactForm } from '../artifacts/model'
+import { artifactVersions } from '../artifacts/model'
 import type { AssistantArtifact } from '../../../../shared/ipc'
 import { Icon } from './Icon'
 
@@ -65,8 +65,45 @@ function ArtifactCard({
   messageId: string | null
 }): JSX.Element {
   const t = useT()
+  const messages = useStore((s) => s.messages)
+  const versions = useMemo(
+    () => artifactVersions(messages.flatMap((message) => message.artifacts ?? []), artifact),
+    [messages, artifact]
+  )
+  const [pickedId, setPickedId] = useState(artifact.id)
+  const index = Math.max(0, versions.findIndex((item) => item.id === pickedId))
+  const shown = versions[index] ?? artifact
+  const versionBar = versions.length > 1 ? (
+    <span className="v3-artifact-versions" role="group" aria-label={t('artifact.versions')} data-testid="v3-artifact-versions">
+      <IconButton size="sm" aria-label={t('artifact.prevVersion')} isDisabled={index === 0} onPress={() => setPickedId(versions[index - 1].id)}>
+        <Icon name="chevron-left" size={12} />
+      </IconButton>
+      <span className="v3-artifact-card-meta">
+        {t('artifact.versionOf', { n: String(shown.version ?? 1), total: String(versions[versions.length - 1].version ?? versions.length) })}
+      </span>
+      <IconButton size="sm" aria-label={t('artifact.nextVersion')} isDisabled={index === versions.length - 1} onPress={() => setPickedId(versions[index + 1].id)}>
+        <Icon name="chevron-right" size={12} />
+      </IconButton>
+    </span>
+  ) : (shown.version ?? 1) > 1 ? (
+    <span className="v3-artifact-card-meta">v{shown.version}</span>
+  ) : null
+  return <ArtifactCardView key={shown.id} artifact={shown} sessionId={sessionId} messageId={messageId} versionBar={versionBar} />
+}
+
+function ArtifactCardView({
+  artifact,
+  sessionId,
+  messageId,
+  versionBar
+}: {
+  artifact: AssistantArtifact
+  sessionId: string | null
+  messageId: string | null
+  versionBar: JSX.Element | null
+}): JSX.Element {
+  const t = useT()
   const previewFile = useStore((s) => s.previewFile)
-  const [form, setForm] = useState<ArtifactForm>('inline')
   const [showSource, setShowSource] = useState(false)
   const [text, setText] = useState<string | null>(null)
   const [readError, setReadError] = useState(false)
@@ -133,6 +170,7 @@ function ArtifactCard({
           {artifact.filename}
         </strong>
         <span className="v3-artifact-card-meta">{formatBytes(artifact.bytes)}</span>
+        {versionBar}
         {artifact.provider ? (
           <Badge tone="neutral">
             {artifact.provider}
@@ -187,15 +225,7 @@ function ArtifactCard({
             <code>{readError ? t('artifact.htmlRead') : text ?? t('artifact.reading')}</code>
           </pre>
         ) : snapshot.url ? (
-          <ArtifactFrame
-            identity={{ sessionId, messageId: identityKey, partIndex: 0 }}
-            title={artifact.filename}
-            src={snapshot.url}
-            form={form}
-            near={near}
-            sandbox={HTML_ARTIFACT_SANDBOX}
-            onDisplayModeRequest={setForm}
-          />
+          <HtmlArtifactThumb url={snapshot.url} title={artifact.filename} openLabel={t('artifact.previewHint')} onOpen={() => void previewFile(artifact.path)} />
         ) : snapshot.status === 'paused' ? (
           <Notice
             compact

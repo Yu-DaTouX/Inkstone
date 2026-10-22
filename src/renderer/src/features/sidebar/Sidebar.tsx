@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Archive, CirclePlus, Clock, PanelLeftClose, Search, Settings, SquarePen, Unplug, Users } from 'lucide-react'
+import { Archive, CirclePlus, Clock, Layers, PanelLeftClose, Search, Settings, SquarePen, Unplug, Users } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
@@ -37,11 +37,12 @@ interface Props {
   onClose?: () => void
   onSchedule?: () => void
   onCollab?: () => void
+  onArtifacts?: () => void
   onSettings?: () => void
   onSearch?: () => void
 }
 
-export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, onSettings, onSearch, preview, onPin }: Props): ReactElement {
+export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, onArtifacts, onSettings, onSearch, preview, onPin }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -309,6 +310,12 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           <button type="button" className="ui-row" onClick={onCollab} aria-current={route === 'collab' ? 'page' : undefined} data-testid="v3-collab-entry">
             <span className="ui-row__lead"><Users size={16} aria-hidden /></span>
             <span className="ui-row__label">{collabText(lang).nav}</span>
+          </button>
+        ) : null}
+        {onArtifacts ? (
+          <button type="button" className="ui-row" onClick={onArtifacts} aria-current={route === 'artifacts' ? 'page' : undefined} data-testid="v3-artifacts-entry">
+            <span className="ui-row__lead"><Layers size={16} aria-hidden /></span>
+            <span className="ui-row__label">{t('artifactLibrary.title')}</span>
           </button>
         ) : null}
       </div>

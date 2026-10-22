@@ -3,6 +3,7 @@ import type { GitRemoteIdentity } from '../shared/git'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
+import type { ArtifactLibraryResult, SaveInlineArtifactResult } from '../shared/artifact-library'
 import type {
   NativeMcpImportCommitResponse,
   NativeMcpImportPrepareResponse,
@@ -212,6 +213,8 @@ const api: YanBridge = {
   exportHtml: (outputPath) => invoke<{ ok: boolean; path?: string; error?: string }>('yan:exportHtml', outputPath),
   deleteSession: (path) => invoke<{ ok: boolean; undoToken?: string; error?: string }>('yan:deleteSession', path),
   restoreSession: (undoToken) => invoke<Ok>('yan:restoreSession', undoToken),
+  listArtifactLibrary: () => invoke<ArtifactLibraryResult>('yan:listArtifactLibrary'),
+  saveInlineArtifact: (input) => invoke<SaveInlineArtifactResult>('yan:saveInlineArtifact', input),
 
   runBash: (command, options, expectedRuntime) => invoke<Ok>('yan:runBash', command, options, expectedRuntime),
   abortBash: () => invoke<void>('yan:abortBash'),

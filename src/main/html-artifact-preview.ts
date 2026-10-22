@@ -2,7 +2,7 @@ import { protocol, session, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
-import { HTML_ARTIFACT_CSP, HTML_ARTIFACT_SCHEME } from '../shared/html-artifact-preview'
+import { HTML_ARTIFACT_CSP, HTML_ARTIFACT_SCHEME, withPreviewRuntime } from '../shared/html-artifact-preview'
 import { parseMcpAppUrl } from '../shared/mcp-app-preview'
 
 protocol.registerSchemesAsPrivileged([
@@ -15,7 +15,7 @@ const isPreviewUrl = (url: string): boolean => url.startsWith(`${HTML_ARTIFACT_S
 export function registerHtmlArtifactProtocol(): void {
   protocol.handle(HTML_ARTIFACT_SCHEME, (request) => {
     const html = request.method === 'GET' ? htmlArtifactPreviews.read(request.url) : null
-    return new Response(html ?? 'Preview unavailable', {
+    return new Response(html === null ? 'Preview unavailable' : withPreviewRuntime(html), {
       status: html === null ? 404 : 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',

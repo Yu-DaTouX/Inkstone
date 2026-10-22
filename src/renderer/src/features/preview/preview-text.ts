@@ -71,6 +71,20 @@ export interface PreviewText {
   pdfTooLarge: string
   pdfTooLargeHint: string
   htmlLoading: string
+  liveGenerating: string
+  canvasMode: string
+  singleMode: string
+  canvasHint: string
+  canvasZoomIn: string
+  canvasZoomOut: string
+  canvasZoomReset: string
+  canvasFit: string
+  canvasOpen: string
+  canvasRun: string
+  canvasStop: string
+  canvasDesktop: string
+  canvasPhone: string
+  canvasAgentEditing: string
   csvEmpty: string
   csvFailed: string
   csvFailedHint: string
@@ -199,6 +213,20 @@ const ZH: PreviewText = {
   pdfTooLarge: '这个 PDF 太大',
   pdfTooLargeHint: '超过 64 MB 的 PDF 不在这里渲染，可以用系统程序打开。',
   htmlLoading: '正在加载预览…',
+  liveGenerating: '正在生成…',
+  canvasMode: '画布视图',
+  singleMode: '单页视图',
+  canvasHint: '画布：拖动平移，Ctrl+滚轮缩放，双击卡片进入交互，按 0 适配',
+  canvasZoomIn: '放大',
+  canvasZoomOut: '缩小',
+  canvasZoomReset: '缩放到 100%',
+  canvasFit: '适配画布',
+  canvasOpen: '用默认程序打开',
+  canvasRun: '运行（可交互）',
+  canvasStop: '停止交互',
+  canvasDesktop: '桌面',
+  canvasPhone: '手机',
+  canvasAgentEditing: 'Agent 正在编辑',
   csvEmpty: '这个文件是空的',
   csvFailed: '无法把这个文件解析成表格',
   csvFailedHint: '切换到源码可以看原始文本。',
@@ -327,6 +355,20 @@ const EN: PreviewText = {
   pdfTooLarge: 'This PDF is too large',
   pdfTooLargeHint: 'PDFs over 64 MB are not rendered here; open it with a system app.',
   htmlLoading: 'Loading preview…',
+  liveGenerating: 'Generating…',
+  canvasMode: 'Canvas view',
+  singleMode: 'Single page view',
+  canvasHint: 'Canvas: drag to pan, Ctrl+wheel to zoom, double-click a frame to interact, 0 to fit',
+  canvasZoomIn: 'Zoom in',
+  canvasZoomOut: 'Zoom out',
+  canvasZoomReset: 'Zoom to 100%',
+  canvasFit: 'Fit canvas',
+  canvasOpen: 'Open with default app',
+  canvasRun: 'Run (interactive)',
+  canvasStop: 'Stop interacting',
+  canvasDesktop: 'Desktop',
+  canvasPhone: 'Phone',
+  canvasAgentEditing: 'Agent is editing',
   csvEmpty: 'This file is empty',
   csvFailed: 'Couldn’t parse this file as a table',
   csvFailedHint: 'Switch to the source to see the raw text.',

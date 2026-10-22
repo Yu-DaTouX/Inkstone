@@ -324,3 +324,30 @@ export function previewKindOf(nameOrPath: string): PreviewKind {
 export function previewNeedsOfficeIpc(kind: PreviewKind): boolean {
   return kind === 'office'
 }
+
+export interface VersionedArtifact {
+  readonly id: string
+  readonly sourceId: string
+  readonly version?: number
+}
+
+export function artifactVersions<T extends VersionedArtifact>(all: readonly T[], current: T): T[] {
+  const byVersion = new Map<number, T>()
+  for (const item of all) {
+    if (item.sourceId !== current.sourceId) continue
+    const version = item.version ?? 1
+    if (!byVersion.has(version)) byVersion.set(version, item)
+  }
+  const currentVersion = current.version ?? 1
+  if (!byVersion.has(currentVersion) || byVersion.get(currentVersion)?.id !== current.id) byVersion.set(currentVersion, current)
+  return [...byVersion.entries()].sort((a, b) => a[0] - b[0]).map(([, item]) => item)
+}
+
+export function latestArtifactVersions<T extends VersionedArtifact>(all: readonly T[]): T[] {
+  const latest = new Map<string, T>()
+  for (const item of all) {
+    const prev = latest.get(item.sourceId)
+    if (!prev || (item.version ?? 1) >= (prev.version ?? 1)) latest.set(item.sourceId, item)
+  }
+  return all.filter((item) => latest.get(item.sourceId) === item)
+}

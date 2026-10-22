@@ -300,6 +300,51 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   console.log('artifact: image adapters (Google, Doubao, Codex, edit sources, SD WebUI, ComfyUI workflows incl. subgraphs) passed')
 }
 
+async function runVersionAndPortabilityTests(ArtifactStore, project) {
+  const { mkdir, readdir, rename } = await import('node:fs/promises')
+  const base = await mkdtemp(join(tmpdir(), 'yan-artifact-versions-'))
+  try {
+    const root = join(base, 'artifacts')
+    const session = join(base, 'sessions', 'a.jsonl')
+    await mkdir(join(base, 'sessions'), { recursive: true })
+    const legacyStore = new ArtifactStore(root)
+    const legacy = await legacyStore.save({ sessionFile: session, messageId: 'm-legacy', filename: 'old.txt', bytes: Buffer.from('legacy') })
+    await writeFile(session, `${JSON.stringify({ type: 'session', version: 3, id: 'sess-0001-abcd', cwd: project })}\n`)
+
+    const store = new ArtifactStore(root)
+    const adopted = await store.list(session)
+    assert(adopted.some((item) => item.artifact.id === legacy.id), 'legacy path-hash artifacts should be adopted into the session-id directory')
+    assert((await readdir(root)).includes('s-sess-0001-abcd'), 'artifacts should be keyed by the session header id')
+    assert(!(await readdir(root)).some((name) => /^[0-9a-f]{32}$/.test(name)), 'the legacy directory should be gone after adoption')
+
+    const page = join(project, 'report.html')
+    await writeFile(page, '<h1>v1</h1>')
+    const v1 = await store.attach({ sessionFile: session, messageId: 'm1', cwd: project, sourcePath: 'report.html' })
+    const same = await store.attach({ sessionFile: session, messageId: 'm2', cwd: project, sourcePath: 'report.html' })
+    await writeFile(page, '<h1>v2</h1>')
+    const v2 = await store.attach({ sessionFile: session, messageId: 'm3', cwd: project, sourcePath: 'report.html' })
+    assert(v1.version === 1 && same.version === 1 && v2.version === 2, `same path re-attach should version by content (${v1.version},${same.version},${v2.version})`)
+    assert(v1.sourceId === v2.sourceId && v1.sourceId.startsWith('file:'), 'versions share a path-based sourceId')
+    assert(same.path === v1.path && v2.path !== v1.path, 'identical content should reuse the stored file')
+    const repeat = await store.attach({ sessionFile: session, messageId: 'm3', cwd: project, sourcePath: 'report.html' })
+    assert(repeat.id === v2.id, 'repeating an unchanged attach on the same message should return the existing record')
+    assert((await store.list(session)).filter((item) => item.messageId === 'm3').length === 1, 'repeating an unchanged attach should not add a manifest record')
+
+    const many = await Promise.all(Array.from({ length: 205 }, (_, i) => store.save({ sessionFile: session, messageId: `many-${i}`, filename: `n-${i}.txt`, bytes: Buffer.from(`n${i}`) })))
+    const all = await store.list(session)
+    assert(all.some((item) => item.artifact.id === legacy.id) && all.some((item) => item.artifact.id === many[204].id), 'the manifest must not drop old records past 200 items')
+
+    const moved = join(base, 'moved-artifacts')
+    await rename(root, moved)
+    const relocated = await new ArtifactStore(moved).hydrateMessages(session, [{ id: 'm3', role: 'assistant', text: '' }])
+    const restored = relocated[0].artifacts?.find((item) => item.id === v2.id)
+    assert(restored && !restored.unavailable && restored.path.startsWith(moved), 'artifacts should survive moving the data directory')
+    console.log('artifact: session-id keying, legacy adoption, path versions, content dedupe, no manifest cap, relocation passed')
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+}
+
 export async function runArtifactTests(modules = {}) {
   const { ArtifactStore } = modules.artifacts ?? await import('../out/test/artifacts.mjs')
   const { generateImage, resolveImageProvider, seedreamSize, nearestAspectRatio } = modules.images ?? await import('../out/test/image-generation.mjs')
@@ -399,6 +444,8 @@ export async function runArtifactTests(modules = {}) {
       manifest.filter((item) => item.messageId.startsWith('bulk-')).length === 8,
       'concurrent saves must not overwrite each other in the manifest'
     )
+
+    await runVersionAndPortabilityTests(ArtifactStore, project)
 
     delete process.env.YAN_IMAGE_PROVIDER
     assert(resolveImageProvider('auto', { ...NO_PROVIDERS, codex: true, google: true }) === 'codex', 'auto should prefer Codex auth')

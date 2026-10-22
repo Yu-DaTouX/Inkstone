@@ -85,6 +85,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
     if (route === 'usage') return t('usage.title')
     if (route === 'schedule') return t('sched.title')
     if (route === 'collab') return collabText(lang).nav
+    if (route === 'artifacts') return t('artifactLibrary.title')
     const id = peekedSessionId ?? session?.conversationId ?? session?.sessionId
     if (id && manualTitles[id]) return manualTitles[id]
     if (id && titles[id]) return titles[id]

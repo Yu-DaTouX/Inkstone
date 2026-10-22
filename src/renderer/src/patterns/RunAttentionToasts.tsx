@@ -6,6 +6,7 @@ import { useStore } from '../state/store'
 import { attentionPills, phaseDetail, phaseWord, runUiText, useRunsV3 } from '../state/runs-v3'
 
 const DETAIL_MAX = 140
+const TITLE_MAX = 60
 const toasted = new Set<string>()
 
 function phaseSignature(run: RunSnapshot): string {
@@ -26,10 +27,10 @@ function toneOf(phase: RunPhase): ToastTone {
   return phase.kind === 'failed' ? 'danger' : 'warning'
 }
 
-function clip(text: string | null): string | undefined {
+function clip(text: string | null | undefined, max = DETAIL_MAX): string | undefined {
   const flat = text?.replace(/\s+/g, ' ').trim()
   if (!flat) return undefined
-  return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX)}…` : flat
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
 }
 
 export function RunAttentionToasts({ onOpen }: { onOpen: (run: RunSnapshot) => void }): null {
@@ -56,7 +57,7 @@ export function RunAttentionToasts({ onOpen }: { onOpen: (run: RunSnapshot) => v
     for (const [signature, run] of current) {
       if (toasted.has(signature)) continue
       toasted.add(signature)
-      const key = showToast(`${run.code} ${run.title || text.untitled} · ${phaseWord(lang, run.phase)}`, {
+      const key = showToast(`${run.code} ${clip(run.title, TITLE_MAX) || text.untitled} · ${phaseWord(lang, run.phase)}`, {
         tone: toneOf(run.phase),
         description: clip(phaseDetail(lang, run.phase)),
         action: { label: text.openSession, onAction: () => onOpenRef.current(run) },

@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { Notice } from '../../ui'
 import { VISUAL_MERMAID_MAX_CHARS } from '../../../../shared/visual-blocks'
 import { MERMAID_THEME_TOKEN_NAMES, mermaidThemeVariables, type MermaidTokenSet } from './mermaid-theme'
+import { SaveAsArtifactButton, shortHash } from './SaveAsArtifact'
 import './artifacts.css'
 
 type MermaidApi = typeof import('mermaid').default
@@ -133,6 +134,13 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
   return (
     <figure className="v3-visual v3-visual-mermaid" data-testid="v3-visual-mermaid">
       <div className="v3-mermaid-svg" dangerouslySetInnerHTML={{ __html: state.svg }} />
+      <div className="v3-visual-actions">
+        <SaveAsArtifactButton
+          filename={`diagram-${shortHash(source)}.svg`}
+          sourceKey={`mermaid:${shortHash(source)}`}
+          content={() => state.svg ?? ''}
+        />
+      </div>
     </figure>
   )
 }

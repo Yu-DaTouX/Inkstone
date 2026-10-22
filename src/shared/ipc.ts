@@ -1,6 +1,7 @@
 import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
+import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
 import type {
   NativeMcpImportCommitResponse,
   NativeMcpImportPrepareResponse,
@@ -174,6 +175,8 @@ export interface ImageGenerationProgress {
 export interface AssistantArtifact {
   id: string
   sourceId: string
+  version?: number
+  sha256?: string
   filename: string
   path: string
   sourcePath?: string
@@ -1541,6 +1544,8 @@ export interface YanBridge {
   exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }>
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
+  listArtifactLibrary(): Promise<ArtifactLibraryResult>
+  saveInlineArtifact(input: SaveInlineArtifactInput): Promise<SaveInlineArtifactResult>
 
   runBash(command: string, options?: { excludeFromContext?: boolean }, expectedRuntime?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   abortBash(): Promise<void>

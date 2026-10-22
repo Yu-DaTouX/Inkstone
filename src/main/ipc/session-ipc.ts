@@ -2,7 +2,10 @@ import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import { shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { YAN_DIR } from '../paths'
+import { listArtifactLibrary } from '../artifact-library'
+import { INLINE_ARTIFACT_MAX_BYTES, inlineArtifactFilename, type SaveInlineArtifactInput } from '../../shared/artifact-library'
 import { cachedTitles, generateTitle, manualTitles, setManualTitle } from '../title'
 import { getSettings } from '../settings'
 import { compactionInfo } from '../compaction'
@@ -74,6 +77,31 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const res = await agent.exportHtml(path)
     if (res.ok && res.path) await shell.openPath(res.path)
     return res
+  })
+  handle('yan:listArtifactLibrary', async () => {
+    const settings = await getSettings()
+    return { items: await listArtifactLibrary(join(YAN_DIR, 'artifacts'), await listSessions(Number.MAX_SAFE_INTEGER, settings.projects)) }
+  })
+  handle('yan:saveInlineArtifact', async (raw: SaveInlineArtifactInput) => {
+    const input = raw && typeof raw === 'object' ? raw : ({} as SaveInlineArtifactInput)
+    const filename = typeof input.filename === 'string' ? inlineArtifactFilename(input.filename) : null
+    if (!filename) return { ok: false as const, error: 'filename' }
+    if (typeof input.content !== 'string' || !input.content || Buffer.byteLength(input.content, 'utf8') > INLINE_ARTIFACT_MAX_BYTES) return { ok: false as const, error: 'size' }
+    if (typeof input.sessionId !== 'string' || typeof input.messageId !== 'string' || typeof input.sourceKey !== 'string') return { ok: false as const, error: 'identity' }
+    const agent = host.ac()
+    if (!agent) return { ok: false as const, error: 'session_mismatch' }
+    try {
+      const artifact = await agent.saveInlineArtifact({
+        sessionId: input.sessionId,
+        messageId: input.messageId,
+        filename,
+        content: input.content,
+        sourceId: `inline:${input.messageId.split('#')[0]}:${input.sourceKey.slice(0, 120)}`
+      })
+      return { ok: true as const, artifact }
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) }
+    }
   })
   handle('yan:deleteSession', async (path: string) => {
     try {

@@ -1,5 +1,6 @@
 @layer features {
   .v3-preview {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -154,6 +155,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .v3-preview-manifest-version {
+    flex: none;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
   }
 
   .v3-preview-tabs {
@@ -631,6 +638,34 @@
     min-height: 0;
     border: 0;
     background: var(--surface);
+  }
+
+  .v3-preview-frame-doc[data-pending] {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .v3-preview-live {
+    position: absolute;
+    left: 50%;
+    bottom: var(--s-16);
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .v3-preview-live {
+    border-radius: var(--r-full);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-pop);
+  }
+
+  .v3-preview-live .ui-badge {
+    gap: var(--s-6);
+    padding: var(--s-4) var(--s-10);
   }
 
   .v3-preview-frame-cover {

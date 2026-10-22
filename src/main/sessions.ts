@@ -8,6 +8,7 @@ import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { decorateSessions } from './session-layout'
 import { countSessionMessages, forgetSessionMessageCounts } from './session-message-count'
 import { parseSubagentNotice } from '../shared/subagent-notice'
+import { ArtifactStore, readSessionId } from './artifacts'
 import { sessionSkillsDir } from './capabilities/acquired-skills'
 import { dropSession } from './sources'
 import { plainTitleText } from '../shared/title-text'
@@ -355,6 +356,11 @@ const TRASH_PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const DELETED_MAX_TOKENS = 50
 const deleted = new Map<string, Array<{ from: string; to: string }>>()
 let trashPrunedAt = 0
+let sessionPurged: ((sessionId: string) => Promise<void>) | null = null
+
+export function onSessionPurged(handler: (sessionId: string) => Promise<void>): void {
+  sessionPurged = handler
+}
 
 function comparablePath(value: string): string {
   const normalized = process.platform === 'win32' ? value.toLowerCase() : value
@@ -391,7 +397,10 @@ async function pruneTrash(): Promise<void> {
     const target = join(TRASH_DIR, entry.name)
     try {
       const info = await stat(target)
-      if (now - info.mtimeMs > TRASH_MAX_AGE_MS) await rm(target, { recursive: true, force: true })
+      if (now - info.mtimeMs <= TRASH_MAX_AGE_MS) continue
+      const sessionId = entry.isFile() && entry.name.endsWith('.jsonl') ? await readSessionId(target) : null
+      await rm(target, { recursive: true, force: true })
+      if (sessionId) await sessionPurged?.(sessionId).catch(() => undefined)
     } catch {
     }
   }
@@ -440,6 +449,8 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
   await pruneTrash()
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const entries: Array<{ from: string; to: string }> = []
+  const artifacts = new ArtifactStore(join(YAN_DIR, 'artifacts'))
+  for (const source of paths) await artifacts.sessionDir(source).catch(() => undefined)
   try {
     for (const [index, source] of paths.entries()) {
       const destination = join(TRASH_DIR, `${token}-${index}-${source.split(/[\\/]/).pop()}`)

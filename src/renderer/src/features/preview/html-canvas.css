@@ -1,0 +1,127 @@
+@layer features {
+  .v3-canvas {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--surface-0);
+    background-image: radial-gradient(var(--line2) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .v3-canvas-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .v3-canvas-stage[data-dragging] {
+    cursor: grabbing;
+  }
+
+  .v3-canvas-stage:focus-visible {
+    outline: var(--ring-outline);
+    outline-offset: -2px;
+  }
+
+  .v3-canvas-board {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+  }
+
+  .v3-canvas-frame {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .v3-canvas-frame[data-running] {
+    box-shadow: 0 0 0 calc(2px / var(--canvas-zoom, 1)) var(--accent), var(--shadow-lg);
+  }
+
+  .v3-canvas-frame:not([data-running]) iframe {
+    pointer-events: none;
+  }
+
+  .v3-canvas-head {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    height: 32px;
+    min-width: 0;
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    cursor: default;
+  }
+
+  .v3-canvas-head-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .v3-canvas-agent {
+    position: absolute;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-2);
+    color: var(--accent);
+    z-index: 1;
+    pointer-events: none;
+    transform: scale(calc(1 / var(--canvas-zoom, 1)));
+    transform-origin: 0 0;
+    transition: left var(--dur-slow) var(--ease), top var(--dur-slow) var(--ease);
+  }
+
+  .v3-canvas-agent:not([data-placed]) {
+    animation: v3-canvas-agent-drift 2.4s ease-in-out infinite alternate;
+  }
+
+  .v3-canvas-agent .ui-badge {
+    margin-top: var(--s-8);
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+  }
+
+  @keyframes v3-canvas-agent-drift {
+    from { translate: 0 0; }
+    to { translate: 16px 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-canvas-agent {
+      animation: none;
+      transition: none;
+    }
+  }
+
+  .v3-canvas-toolbar {
+    position: absolute;
+    right: var(--s-12);
+    top: var(--s-12);
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-2);
+    border-radius: var(--r-md);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-pop);
+    font-variant-numeric: tabular-nums;
+  }
+}

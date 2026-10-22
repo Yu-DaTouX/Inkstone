@@ -20,7 +20,7 @@ import {
   type TileLayoutEntry
 } from './tile-layouts'
 
-export type V3RouteName = 'chat' | 'schedule' | 'collab' | 'usage'
+export type V3RouteName = 'chat' | 'schedule' | 'collab' | 'usage' | 'artifacts'
 
 export interface V3Route {
   name: V3RouteName
@@ -334,6 +334,7 @@ export function routeFromHash(hash: string): V3Route {
   if (name === 'schedule') return { name: 'schedule' }
   if (name === 'collab') return { name: 'collab' }
   if (name === 'usage') return { name: 'usage' }
+  if (name === 'artifacts') return { name: 'artifacts' }
   return { name: 'chat' }
 }
 

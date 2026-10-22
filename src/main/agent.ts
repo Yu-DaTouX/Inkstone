@@ -17,7 +17,7 @@ import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
 import { planSessionSync } from './session-sync-plan'
 import { clearQueueFile, loadQueue, saveQueue } from './queue-persistence'
-import { mergeToolDetails, type ToolResultPayload } from './session-items/tool-events'
+import { mergeToolDetails, streamsHtmlWriteArgs, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { settledTurnOutcome } from '../shared/turn-outcome'
@@ -161,6 +161,7 @@ import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
 
 const FLUSH_MS = 16
 const MAX_FLUSH_MS = 120
+const HTML_ARGS_PUSH_MS = 600
 
 const COMPACT_REQUEST_TIMEOUT_MS = 300_000
 const BASH_REQUEST_TIMEOUT_MS = 30 * 60_000
@@ -346,6 +347,7 @@ export interface CapabilityRunOptions {
   execution?: ExecuteAdmissionPort
   onBashSettled?: () => void
   trashItem?: (path: string) => Promise<void>
+  previewHtml?: (htmlPath: string, root: string) => Promise<unknown>
 }
 
 async function projectPiPackageArgs(cwd: string): Promise<string[]> {
@@ -535,6 +537,7 @@ export class AgentController extends EventEmitter {
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private dirtyTools = new Set<string>()
   private pushedOut = new Map<string, number>()
+  private htmlArgsPushedAt = new Map<string, number>()
 
   private state: SessionState | null = null
   private compactionState: CompactionState = EMPTY_COMPACTION_STATE
@@ -623,6 +626,7 @@ export class AgentController extends EventEmitter {
       devResourcesDir?: string
       onBashSettled?: () => void
       trashItem?: (path: string) => Promise<void>
+      previewHtml?: (htmlPath: string, root: string) => Promise<unknown>
     }
     observeRun?: RunObserver
   }) {
@@ -1167,6 +1171,7 @@ export class AgentController extends EventEmitter {
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
+    if (command === 'artifact.preview') return this.runArtifactPreviewCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'file.trash') return this.runFileTrashCommand(params)
@@ -1424,8 +1429,54 @@ export class AgentController extends EventEmitter {
     if (sessionFile && this.state?.sessionFile !== sessionFile) return
     const message = this.messages.find((item) => item.id === messageId)
     if (!message || !messageId) return
+    if (message.artifacts?.some((item) => item.id === artifact.id)) return
     message.artifacts = [...(message.artifacts ?? []), artifact]
     this.push({ ch: 'artifact', payload: { messageId, artifact } })
+  }
+
+  async saveInlineArtifact(input: { sessionId: string; messageId: string; filename: string; content: string; sourceId: string }): Promise<AssistantArtifact> {
+    const sessionFile = this.state?.sessionFile
+    if (!sessionFile || this.state?.sessionId !== input.sessionId) throw new Error('session_mismatch')
+    const messageId = input.messageId.split('#')[0]
+    if (!this.messages.some((item) => item.id === messageId)) throw new Error('message_not_found')
+    const artifact = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts')).save({
+      sessionFile,
+      messageId,
+      filename: input.filename,
+      bytes: Buffer.from(input.content, 'utf8'),
+      sourceId: input.sourceId
+    })
+    await this.attachArtifact(artifact, messageId, sessionFile)
+    return artifact
+  }
+
+  private async runArtifactPreviewCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const raw = typeof params.path === 'string' ? params.path.trim() : ''
+    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.preview 需要 path')
+    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_preview_type', 'artifact.preview 只支持 .html / .htm 文件')
+    const preview = this.capabilityOpts?.previewHtml
+    if (!preview) throw new CapabilityCommandError('artifact_preview_unavailable', '当前环境不能渲染预览截图')
+    const cwd = this.cwd
+    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
+    try {
+      const result = await preview(htmlPath, cwd) as { shots: Array<{ scheme: string; viewport: string; path: string; horizontalOverflow: boolean }>; consoleErrors: string[]; loadError?: string }
+      return {
+        data: result,
+        summary: {
+          shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}`),
+          horizontalOverflow: result.shots.filter((shot) => shot.horizontalOverflow).map((shot) => `${shot.scheme}-${shot.viewport}`),
+          consoleErrors: result.consoleErrors.length,
+          ...(result.loadError ? { loadError: result.loadError } : {}),
+          note: '用 read 打开截图检查深浅主题和窄屏；预览与砚内沙箱一致，外部 css/js/图片不会加载。'
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message === 'preview_outside') throw new CapabilityCommandError('artifact_path_outside', 'HTML 文件必须在当前项目目录内')
+      if (message === 'preview_size') throw new CapabilityCommandError('artifact_too_large', 'HTML 文件为空或超过 5MB')
+      if (message === 'preview_busy') throw new CapabilityCommandError('artifact_preview_busy', '预览数量已达上限，稍后再试')
+      throw new CapabilityCommandError('artifact_preview_failed', `预览失败：${message}`)
+    }
   }
 
   private async runArtifactAttachCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
@@ -2316,10 +2367,21 @@ export class AgentController extends EventEmitter {
           this.dirty = true
           this.flushNow()
           if (call) this.pushTool(call)
+        } else if (kind === 'toolcall_delta') {
+          if (call && streamsHtmlWriteArgs(call)) {
+            const now = Date.now()
+            if (now - (this.htmlArgsPushedAt.get(call.id) ?? 0) >= HTML_ARGS_PUSH_MS) {
+              this.htmlArgsPushedAt.set(call.id, now)
+              this.pushTool(call)
+            }
+          }
         } else if (kind === 'toolcall_end') {
           this.streaming.toolOpen = false
           this.flushNow()
-          if (call) this.pushTool(call)
+          if (call) {
+            this.htmlArgsPushedAt.delete(call.id)
+            this.pushTool(call)
+          }
         }
         break
       }
@@ -2333,6 +2395,7 @@ export class AgentController extends EventEmitter {
         const endedMono = performance.now()
         this.streaming = null
         this.streamLoopDetector = null
+        this.htmlArgsPushedAt.clear()
 
         const finalUsage = toUsage(m.usage, m.model ?? this.state?.model?.id) ?? s.usage
         if (typeof finalUsage?.output === 'number' && finalUsage.output > 0) {

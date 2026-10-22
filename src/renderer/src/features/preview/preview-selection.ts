@@ -59,6 +59,10 @@ export function previewViewKey(scopeKey: string, path: string | null, reload: nu
   return path ? [scopeKey, path, String(reload)].join('\u0000') : null
 }
 
+export function sameViewTarget(a: string, b: string): boolean {
+  return a.slice(0, a.lastIndexOf('\u0000')) === b.slice(0, b.lastIndexOf('\u0000'))
+}
+
 export function previewBaseName(path: string): string {
   return path.replace(/^.*[\\/]/, '')
 }
