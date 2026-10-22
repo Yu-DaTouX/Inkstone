@@ -54,8 +54,16 @@ export function HtmlPreviewFrame({
   onFocusRectRef.current = onFocusRect
   const focusText = focus ? focus.text ?? '' : null
 
+  const probedRef = useRef(false)
+  useEffect(() => {
+    if (focusText !== null || !probedRef.current || !state.shown) return
+    probedRef.current = false
+    framesRef.current.get(state.shown)?.contentWindow?.postMessage({ [HTML_PREVIEW_CHANNEL]: 'restore' }, '*')
+  }, [focusText, state.shown])
+
   useEffect(() => {
     if (focusText === null || !state.shown) return undefined
+    probedRef.current = true
     const frame = framesRef.current.get(state.shown)
     if (!frame) return undefined
     let attempts = 0

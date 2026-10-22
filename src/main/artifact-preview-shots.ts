@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, nativeImage, type NativeImage } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -11,6 +11,9 @@ export interface PreviewShot {
   height: number
   path: string
   horizontalOverflow: boolean
+  pageHeight: number
+  screens: number
+  truncated: boolean
 }
 
 export interface PreviewShotsResult {
@@ -20,9 +23,15 @@ export interface PreviewShotsResult {
 }
 
 const VIEWPORTS = [
-  { viewport: 'desktop', width: 1280, height: 800 },
-  { viewport: 'narrow', width: 390, height: 844 }
+  { viewport: 'desktop', width: 1280, height: 800, columns: 2 },
+  { viewport: 'narrow', width: 390, height: 844, columns: 4 }
 ] as const
+
+const MAX_SCREENS = 4
+const SHEET_GAP = 16
+const SHEET_BG = [0x80, 0x80, 0x80, 0xff] as const
+const SCROLL_SETTLE_MS = 180
+const SCREEN_SLACK = 48
 
 const SCHEMES = ['light', 'dark'] as const
 const SETTLE_MS = 600
@@ -44,6 +53,31 @@ async function within<T>(work: Promise<T>, label: string): Promise<T> {
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+function screenOffsets(pageHeight: number, viewportHeight: number): { offsets: number[]; truncated: boolean } {
+  const offsets: number[] = []
+  for (let y = 0; (y === 0 || y < pageHeight - SCREEN_SLACK) && offsets.length < MAX_SCREENS; y += viewportHeight) offsets.push(Math.min(y, Math.max(0, pageHeight - viewportHeight)))
+  const unique = offsets.filter((y, index) => index === 0 || y !== offsets[index - 1])
+  return { offsets: unique, truncated: pageHeight > viewportHeight * MAX_SCREENS + SCREEN_SLACK }
+}
+
+export function composeSheet(screens: NativeImage[], width: number, height: number, columns: number): NativeImage {
+  if (screens.length === 1) return screens[0]
+  const cols = Math.min(columns, screens.length)
+  const rows = Math.ceil(screens.length / cols)
+  const sheetWidth = cols * width + (cols - 1) * SHEET_GAP
+  const sheetHeight = rows * height + (rows - 1) * SHEET_GAP
+  const sheet = Buffer.alloc(sheetWidth * sheetHeight * 4)
+  for (let i = 0; i < sheet.length; i += 4) sheet.set(SHEET_BG, i)
+  screens.forEach((screen, index) => {
+    const sized = screen.getSize().width === width && screen.getSize().height === height ? screen : screen.resize({ width, height })
+    const bitmap = sized.toBitmap()
+    const left = (index % cols) * (width + SHEET_GAP)
+    const top = Math.floor(index / cols) * (height + SHEET_GAP)
+    for (let row = 0; row < height; row++) bitmap.copy(sheet, ((top + row) * sheetWidth + left) * 4, row * width * 4, (row + 1) * width * 4)
+  })
+  return nativeImage.createFromBitmap(sheet, { width: sheetWidth, height: sheetHeight })
 }
 
 export async function captureHtmlPreviewShots(input: {
@@ -90,11 +124,26 @@ export async function captureHtmlPreviewShots(input: {
             win.webContents.executeJavaScript('document.documentElement.scrollWidth > window.innerWidth + 1', true),
             'measure'
           ).catch(() => false)
-          const image = await within(win.webContents.capturePage(), 'capture')
-          if (image.isEmpty()) throw new Error('capture_empty')
+          const pageHeight = Number(
+            await within(
+              win.webContents.executeJavaScript('Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)', true),
+              'measure'
+            ).catch(() => view.height)
+          ) || view.height
+          const plan = screenOffsets(pageHeight, view.height)
+          const screens: NativeImage[] = []
+          for (const y of plan.offsets) {
+            await within(win.webContents.executeJavaScript(`window.scrollTo({ top: ${y}, left: 0, behavior: 'instant' }); true`, true), 'scroll').catch(() => false)
+            await delay(SCROLL_SETTLE_MS)
+            const image = await within(win.webContents.capturePage(), 'capture')
+            if (image.isEmpty()) throw new Error('capture_empty')
+            screens.push(image)
+          }
+          await within(win.webContents.executeJavaScript("window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); true", true), 'scroll').catch(() => false)
+          const sheet = composeSheet(screens, view.width, view.height, view.columns)
           const path = join(dir, `${scheme}-${view.viewport}.png`)
-          await writeFile(path, image.toPNG())
-          shots.push({ scheme, viewport: view.viewport, width: view.width, height: view.height, path, horizontalOverflow: Boolean(overflow) })
+          await writeFile(path, sheet.toPNG())
+          shots.push({ scheme, viewport: view.viewport, width: view.width, height: view.height, path, horizontalOverflow: Boolean(overflow), pageHeight, screens: screens.length, truncated: plan.truncated })
         }
       }
     } finally {

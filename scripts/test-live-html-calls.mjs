@@ -71,7 +71,20 @@ try {
   assert.equal(s.readProbeReply({ 'yan-preview': 'probe', id: 3, rect: { x: 'a' } }).rect, null, '\u4f2a\u9020\u7684\u5750\u6807\u88ab\u4e22\u5f03')
   assert.equal(s.readProbeReply({ id: 3 }), null)
 
-  console.log('live html calls: partial content / streaming path / draft / focus / runtime passed')
+  {
+  const page = '<!doctype html><html><head><style>body{margin:0}</style></head><body>' + '<p>段落</p>'.repeat(40)
+  assert.equal(m.htmlInText('先想一下 `<html>` 标签怎么用'), null, '短片段不算草稿')
+  const fenced = m.htmlInText('方向定了。\n```html\n' + page + '</body></html>\n```\n再检查一下')
+  assert.ok(fenced.startsWith('<!doctype html>') && fenced.endsWith('</html>'), '取到完整 HTML，不含围栏后的文字')
+  assert.ok(m.htmlInText('```html\n' + page).endsWith('<p>段落</p>'), '未写完的草稿取到当前末尾')
+  const second = m.htmlInText(page + '</html>\n改一版：\n' + page.replace('段落', '第二版'))
+  assert.ok(second.includes('第二版'), '多份草稿取最后一份')
+  const thinking = (calls) => [{ id: 'u', role: 'user', text: 'x' }, { id: 'a', role: 'assistant', text: '', thinking: page, toolCalls: calls }]
+  assert.ok(m.thinkingHtmlDraft(thinking([])), '思考里的 HTML 作为草稿')
+  assert.equal(m.thinkingHtmlDraft(thinking([{ id: 'w', name: 'write', args: {}, status: 'running' }])), null, '同一条消息已开始写文件时以工具参数为准')
+}
+
+console.log('live html calls: partial content / streaming path / draft / focus / runtime passed')
 } finally {
   await rm(dir, { recursive: true, force: true })
 }

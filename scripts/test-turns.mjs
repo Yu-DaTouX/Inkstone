@@ -367,6 +367,11 @@ export async function runTurnTests(ok) {
     ok(t[1].error === '模型不可用', '后段成功的消息不覆盖同回合的错误', String(t[1].error))
     ok(t[1].errorMsgId === 'a1', '错误归属到第一条出错消息', String(t[1].errorMsgId))
     ok(t[1].elapsedMs === 2000, '耗时仍取最后一条消息', String(t[1].elapsedMs))
+    ok(t[1].errorRecovered === true, '出错后又有正常输出时标记为已恢复', String(t[1].errorRecovered))
+    const failedAgain = groupIntoTurns([usr('u1', 'x'), asst('a1', '出错了', { error: '一' }), asst('a2', '继续'), asst('a3', '又错', { error: '二' })])
+    ok(failedAgain[1].errorRecovered !== true, '恢复后再次出错不算已恢复')
+    const onlyError = groupIntoTurns([usr('u1', 'x'), asst('a1', '', { error: '一' })])
+    ok(onlyError[1].errorRecovered === undefined, '只有报错时不写恢复字段')
 
     const two = groupIntoTurns([
       usr('u1', 'x'),

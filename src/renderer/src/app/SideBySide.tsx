@@ -331,7 +331,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
   const model = runtime?.session?.model?.name ?? ''
   const cwdBusy = useSameCwdBusy(target, runtime?.session?.cwd ?? summary?.cwd)
-  const streamingId = runtime?.session?.isStreaming && messages.length ? messages[messages.length - 1].id : undefined
+  const streamingId = running && messages.length ? messages[messages.length - 1].id : undefined
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const subagentScope = useMemo<TurnSubagentScope>(() => ({ sessionIds: target.sessionId ? [target.sessionId] : [] }), [target.sessionId])
   const turns = useMemo(() => projectTurns(messages, streamingId), [messages, streamingId, projectTurns])

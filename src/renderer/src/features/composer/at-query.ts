@@ -8,6 +8,7 @@ interface AtQueryRange {
 
 interface AtQueryOptions {
   inCode?: boolean
+  afterMention?: boolean
 }
 
 export function findAtQuery(
@@ -15,7 +16,7 @@ export function findAtQuery(
   cursor: number = value.length,
   options: AtQueryOptions = {}
 ): AtQueryRange | null {
-  if (options.inCode) return null
+  if (options.inCode || options.afterMention) return null
   const end = Math.max(0, Math.min(cursor, value.length))
   const isBoundary = (char: string | undefined): boolean =>
     !char || /[\s([{<'"：:;,，]/.test(char)

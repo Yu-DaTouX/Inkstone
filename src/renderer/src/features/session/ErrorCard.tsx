@@ -7,7 +7,7 @@ import { useSessionText } from './text'
 import { forgetToolExpansion } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
 
-export function ErrorCard({ sourceIds, error, readOnly = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean }): JSX.Element | null {
+export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const send = useStore((s) => s.send)
   const cycleModel = useStore((s) => s.cycleModel)
@@ -26,7 +26,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false }: { sourceIds: r
   const active = viewMatchesProjectedSession(view, session)
   const prompt = promptForTurn(sourceIds, messages)
 
-  const actions = active && !readOnly ? model.actions.filter((action) => action !== 'retry' || !!prompt) : []
+  const actions = active && !readOnly && !recovered ? model.actions.filter((action) => action !== 'retry' || !!prompt) : []
 
   const run = (action: ErrorCardAction): void => {
     if (action === 'retry') {
@@ -59,10 +59,10 @@ export function ErrorCard({ sourceIds, error, readOnly = false }: { sourceIds: r
   }
 
   return (
-    <div className="v3-errorcard" role="alert" data-testid="v3-error-card" data-kind={model.kind}>
+    <div className="v3-errorcard" role={recovered ? 'status' : 'alert'} data-testid="v3-error-card" data-kind={model.kind} data-recovered={recovered || undefined}>
       <div className="v3-errorcard-head">
         <Icon name="warn" size={14} />
-        <span className="v3-errorcard-title" data-testid="v3-error-title">{tt(errorTitleKey(model))}</span>
+        <span className="v3-errorcard-title" data-testid="v3-error-title">{recovered ? tt('errRecovered', { title: tt(errorTitleKey(model)) }) : tt(errorTitleKey(model))}</span>
         <span className="v3-code-sp" />
         <Button
           size="sm"

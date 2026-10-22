@@ -122,6 +122,30 @@ export function currentTurnHtmlCalls(messages: readonly UIMessage[]): HtmlToolCa
   return calls
 }
 
+const HTML_START = /<!doctype html|<html[\s>]/gi
+const THINKING_DRAFT_MIN = 300
+
+export function htmlInText(text: string): string | null {
+  let start = -1
+  for (const match of text.matchAll(HTML_START)) start = match.index ?? start
+  if (start < 0) return null
+  const doctype = /<!doctype html[^>]*>\s*$/i.exec(text.slice(0, start))
+  if (doctype) start = doctype.index
+  const rest = text.slice(start)
+  const close = rest.search(/<\/html\s*>/i)
+  const fence = rest.indexOf('```')
+  const ends = [close >= 0 ? rest.indexOf('>', close) + 1 : -1, fence].filter((value) => value > 0)
+  const html = ends.length ? rest.slice(0, Math.min(...ends)) : rest
+  return html.length >= THINKING_DRAFT_MIN ? html : null
+}
+
+export function thinkingHtmlDraft(messages: readonly UIMessage[]): string | null {
+  const last = messages[messages.length - 1]
+  if (!last || last.role !== 'assistant' || !last.thinking) return null
+  if ((last.toolCalls ?? []).some((call) => WRITE_TOOLS.has(call.name.toLowerCase()))) return null
+  return htmlInText(last.thinking)
+}
+
 export function resolveAgainst(cwd: string, path: string): string {
   if (/^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('/') || path.startsWith('\\\\')) return path
   const base = cwd.replace(/[\\/]+$/, '')

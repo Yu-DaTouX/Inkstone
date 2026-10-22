@@ -305,6 +305,13 @@
     background: var(--fail-bg);
   }
   .v3-errorcard-head { color: var(--fail-t); }
+  .v3-errorcard[data-recovered] {
+    padding: var(--s-4) var(--s-10);
+    border-color: var(--line);
+    background: transparent;
+  }
+  .v3-errorcard[data-recovered] .v3-errorcard-head { flex-wrap: wrap; min-width: 0; color: var(--fg3); }
+  .v3-errorcard[data-recovered] .v3-errorcard-title { color: var(--fg3); font-size: var(--t-footnote); font-weight: 400; }
   .v3-errorcard-title { color: var(--fg); font-size: var(--t-body); font-weight: 600; }
   .v3-errorcard-body { margin: 0; color: var(--fg2); font-size: var(--t-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-compaction { color: var(--fg3); font-size: var(--t-footnote); }

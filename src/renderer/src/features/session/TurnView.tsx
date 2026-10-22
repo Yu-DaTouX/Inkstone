@@ -235,7 +235,7 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
           {edge.first ? <BranchSummary /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
   
-          {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} /> : null}
+          {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} recovered={!!turn.errorRecovered} /> : null}
   
           {split ? (
             <>

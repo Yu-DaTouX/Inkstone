@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { useStore } from '../../state/store'
 import { showPreview } from '../workbench/tool-tiles'
-import { currentTurnHtmlCalls, resolveAgainst } from './live-html-calls'
+import { currentTurnHtmlCalls, resolveAgainst, thinkingHtmlDraft, type HtmlToolCall } from './live-html-calls'
 
 export interface LiveHtmlTarget {
   sessionId: string
@@ -31,6 +31,8 @@ export function prefersRenderedHtml(path: string | null | undefined): boolean {
 }
 
 const RECENT_RESULT_MS = 30 * 60_000
+const THINKING_DRAFT_MS = 600
+const THINKING_DRAFT_PATH = 'artifacts/draft.html'
 
 export const useLiveHtml = create<{ target: LiveHtmlTarget | null }>(() => ({ target: null }))
 
@@ -44,6 +46,8 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
     const finished = new Set<string>()
     let lastSession: string | null = null
     let returning = false
+    let thinkingDraft: string | null = null
+    let thinkingDraftAt = 0
     return useStore.subscribe((state) => {
       const sessionId = state.session?.sessionId ?? null
       const cwd = state.session?.cwd ?? ''
@@ -53,6 +57,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
         historical.clear()
         finished.clear()
         returning = true
+        thinkingDraft = null
         if (useLiveHtml.getState().target?.sessionId !== sessionId) useLiveHtml.setState({ target: null })
       }
       if (!sessionId || !cwd) return
@@ -82,7 +87,17 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
         return false
       })
       const current = useLiveHtml.getState().target
-      const latest = calls[calls.length - 1]
+      const fromThinking = running ? thinkingHtmlDraft(state.messages) : null
+      if (!fromThinking) thinkingDraft = null
+      else if (fromThinking !== thinkingDraft && Date.now() - thinkingDraftAt >= THINKING_DRAFT_MS) {
+        thinkingDraft = fromThinking
+        thinkingDraftAt = Date.now()
+      }
+      const lastCall = calls[calls.length - 1]
+      const latest: HtmlToolCall | undefined =
+        thinkingDraft !== null
+          ? { id: 'thinking', path: lastCall?.path ?? THINKING_DRAFT_PATH, done: false, draft: thinkingDraft, focusText: null }
+          : lastCall
       if (!latest) {
         if (current?.sessionId === sessionId && current.generating && !running) {
           useLiveHtml.setState({ target: { ...current, generating: false, drafting: false, revision: current.revision + 1 } })
@@ -92,6 +107,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
       const path = resolveAgainst(cwd, latest.path)
       let revision = current?.sessionId === sessionId && current.path === path ? current.revision : 0
       for (const call of calls) {
+        if (resolveAgainst(cwd, call.path) !== path) continue
         if (call.done && !finished.has(call.id)) {
           finished.add(call.id)
           revision++

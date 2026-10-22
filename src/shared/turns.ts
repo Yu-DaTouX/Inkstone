@@ -56,6 +56,7 @@ export interface AssistantTurn {
   responseDetail?: ResponseDetail
   error?: string
   errorMsgId?: string
+  errorRecovered?: boolean
   sourceIds: string[]
 }
 
@@ -185,6 +186,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     last: UIMessage | undefined
     error?: string
     errorMsgId?: string
+    errorRecovered?: boolean
     model?: string
     timestamp?: number
     timing?: TurnTimingMeta
@@ -278,6 +280,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       responseDetail: cur.responseDetail,
       error: cur.error,
       errorMsgId: cur.errorMsgId,
+      ...(cur.errorRecovered ? { errorRecovered: true } : {}),
       sourceIds: cur.sourceIds
     })
     cur = null
@@ -397,6 +400,10 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (m.error && !cur.errorMsgId) {
       cur.error = m.error
       cur.errorMsgId = m.id
+    } else if (m.error) {
+      cur.errorRecovered = false
+    } else if (cur.errorMsgId && (m.text?.trim() || m.toolCalls?.length)) {
+      cur.errorRecovered = true
     }
     if (!cur.last) cur.last = m
     if (m.elapsedMs !== undefined || m.speed !== undefined) cur.last = m
