@@ -215,10 +215,11 @@ export const useUiV3 = create<UiV3State>((set, get) => {
     set({ route, back: [...get().back, get().route].slice(-20) })
   },
   goBack: () => {
-    const back = get().back
-    const target = back.length ? back[back.length - 1] : ({ name: 'chat' } as V3Route)
-    if (target.name === get().route.name && !back.length) return
-    set({ route: target, back: back.slice(0, -1) })
+    // 定时任务 / 多人协作 / 用量是左栏的平级页面，不是聊天的子页。
+    // 历史栈回退会让“按返回”退到上一个平级页（或在 hash 同步后停在当前页），
+    // 看起来就是点了没反应，所以这里一律回聊天。
+    if (get().route.name === 'chat') return
+    set({ route: { name: 'chat' }, back: [] })
   },
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
