@@ -33,6 +33,8 @@ export interface CommandText {
   helpRows: Record<CommandPrefix, string>
   messageHint: string
   empty: string
+  sessionEmpty: string
+  messageEmpty: string
   failed: string
   switchFailed: string
   sideBySideNoPeer: string
@@ -78,6 +80,8 @@ const ZH: CommandText = {
   },
   messageHint: '输入关键词搜索当前会话的消息',
   empty: '没有匹配的命令',
+  sessionEmpty: '没有匹配的会话',
+  messageEmpty: '当前会话里没有匹配的消息',
   failed: '操作失败',
   switchFailed: '会话切换未生效',
   sideBySideNoPeer: '没有可以并排显示的其他会话',
@@ -123,6 +127,8 @@ const EN: CommandText = {
   },
   messageHint: 'Type keywords to search messages in this chat',
   empty: 'No matching commands',
+  sessionEmpty: 'No matching chats',
+  messageEmpty: 'No matching messages in this chat',
   failed: 'Action failed',
   switchFailed: 'Chat did not switch',
   sideBySideNoPeer: 'No other chat to show side by side',

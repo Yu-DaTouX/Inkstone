@@ -58,7 +58,7 @@
     </section>
   </div>
 <script>
-window.__timelines = window.__timelines || {}
+window.__timelines = window.__timelines || {};
 (() => {
   const stage = document.getElementById('stage')
   const total = Number(stage.dataset.duration)

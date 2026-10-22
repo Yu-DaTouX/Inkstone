@@ -168,7 +168,7 @@ try {
 
   const scoped = bridge.canvasBridgeRuntime(nonce)
   const scopedScript = scoped.slice(open.length, -'</script>'.length)
-  assert.ok(scopedScript.startsWith('(function(){var self=document.currentScript;if(self&&self.parentNode)self.parentNode.removeChild(self);'), '桥接脚本执行时先把自己从 DOM 移除，页面读不到 nonce')
+  assert.ok(scopedScript.startsWith('(function(){var parent=window.parent;var self=document.currentScript;if(self&&self.parentNode)self.parentNode.removeChild(self);'), '桥接脚本执行时先固定宿主窗口、把自己从 DOM 移除，页面替换 window.parent 或读 DOM 都拿不到 nonce')
   assert.ok(scopedScript.includes(`var ${bridge.HTML_CANVAS_BRIDGE_SCOPE}={nonce:"${nonce}"};`), '一次性 nonce 写进注入脚本的闭包作用域')
   assert.ok(!scopedScript.includes('window.__yanCanvasBridge'), '不再向页面暴露带 post 能力的桥接对象')
   assert.ok(!scopedScript.includes('window.nonce') && !scopedScript.includes('data-nonce'), 'nonce 不挂在 window 或 DOM 属性上')

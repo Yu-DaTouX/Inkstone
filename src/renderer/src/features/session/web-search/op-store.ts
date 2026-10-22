@@ -9,6 +9,7 @@ const CACHE_LIMIT = 48
 
 const states = new Map<string, SearchOpState>()
 const requested = new Set<string>()
+const inUse = new Map<string, number>()
 const listeners = new Set<() => void>()
 let version = 0
 
@@ -20,12 +21,24 @@ function emit(): void {
 function store(operationId: string, view: WebSearchOpView): void {
   states.delete(operationId)
   states.set(operationId, { status: 'ready', view })
-  while (states.size > CACHE_LIMIT) {
-    const oldest = states.keys().next().value
-    if (oldest === undefined) break
-    states.delete(oldest)
+  for (const id of [...states.keys()]) {
+    if (states.size <= CACHE_LIMIT) break
+    if (id === operationId || inUse.has(id)) continue
+    states.delete(id)
+    requested.delete(id)
   }
   emit()
+}
+
+function retainSearchOps(operationIds: readonly string[]): () => void {
+  for (const id of operationIds) inUse.set(id, (inUse.get(id) ?? 0) + 1)
+  return () => {
+    for (const id of operationIds) {
+      const left = (inUse.get(id) ?? 1) - 1
+      if (left > 0) inUse.set(id, left)
+      else inUse.delete(id)
+    }
+  }
 }
 
 export function searchOpState(operationId: string): SearchOpState {
@@ -60,7 +73,9 @@ export function searchOpsVersion(): number {
 export function useSearchOp(operationId: string | null): SearchOpState {
   const current = useSyncExternalStore(subscribeSearchOps, searchOpsVersion, searchOpsVersion)
   useEffect(() => {
-    if (operationId) requestSearchOp(operationId)
+    if (!operationId) return
+    requestSearchOp(operationId)
+    return retainSearchOps([operationId])
   }, [operationId])
   return useMemo(() => (operationId ? searchOpState(operationId) : LOADING), [operationId, current])
 }
@@ -69,7 +84,9 @@ export function useSearchOps(operationIds: readonly string[]): SearchOpState[] {
   const current = useSyncExternalStore(subscribeSearchOps, searchOpsVersion, searchOpsVersion)
   const key = operationIds.join(',')
   useEffect(() => {
-    for (const id of operationIds) requestSearchOp(id)
+    const ids = key ? key.split(',') : []
+    for (const id of ids) requestSearchOp(id)
+    return retainSearchOps(ids)
   }, [key])
   return useMemo(() => operationIds.map((id) => searchOpState(id)), [key, current])
 }

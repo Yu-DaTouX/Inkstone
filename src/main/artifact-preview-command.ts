@@ -76,7 +76,7 @@ export async function runArtifactPreview(
     return {
       data: result,
       summary: {
-        shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}${shot.screens && shot.screens > 1 ? `（整页 ${shot.pageHeight}px，${shot.screens} 屏拼版${shot.truncated ? '，只截了前几屏' : ''}）` : ''}`),
+        shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}${shot.screens && shot.screens > 1 ? `（整页 ${shot.pageHeight}px，${shot.screens} 屏拼版${shot.truncated ? '，中段省略，最后一格是页尾' : ''}）` : ''}`),
         horizontalOverflow: result.shots.filter((shot) => shot.horizontalOverflow).map((shot) => `${shot.scheme}-${shot.viewport}`),
         consoleErrors: result.consoleErrors.length,
         ...(result.loadError ? { loadError: result.loadError } : {}),

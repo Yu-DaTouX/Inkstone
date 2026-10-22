@@ -293,11 +293,12 @@ export class CapabilityServer {
     const command = typeof body.command === 'string' ? body.command : ''
     if (!this.allowCommands.has(command)) {
       const retirement = retiredCommandMessage(command)
-      if (retirement) {
+      if (retirement && this.allowCommands.has('subagent.start')) {
         reply(400, { ok: false, error: retirement, code: 'retired_command', detail: command })
         return
       }
-      reply(400, { ok: false, error: 'unknown_command', detail: command })
+      const limited = KNOWN_COMMANDS.has(command) || Boolean(retirement)
+      reply(400, { ok: false, error: 'unknown_command', detail: command, ...(limited ? { hint: `这个会话只开放：${[...this.allowCommands].join(', ')}` } : {}) })
       return
     }
 

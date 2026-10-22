@@ -49,7 +49,7 @@ export function SearchStepView({ call, step, children }: { call: UIToolCall; ste
   const fetching = step.command.action === 'fetch'
   const settled = !running && (fromDetails || !!step.fromTool || state.status === 'ready')
   const label = settled
-    ? fetching ? tt('fetched') : fromDetails || sources.length ? tt('searched', { n: sources.length }) : tt('searchedAny')
+    ? fetching ? tt('fetched') : sources.length ? tt('searched', { n: sources.length }) : tt('searchedAny')
     : fetching ? tt('fetching') : tt('searching')
 
   if (!running && !step.fromTool) {

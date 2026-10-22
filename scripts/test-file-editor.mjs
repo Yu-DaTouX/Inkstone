@@ -62,6 +62,15 @@ export async function runFileEditorTests(ok, { readEditableFile, writeEditableFi
     const reread = await readEditableFile(root, 'edit.txt')
     ok(reread.ok === true && reread.hash === first.hash, '写入返回的 hash 与再次读取一致')
 
+    const bomTarget = join(root, 'bom.html')
+    const bom = Buffer.from([0xef, 0xbb, 0xbf])
+    await writeFile(bomTarget, Buffer.concat([bom, Buffer.from('<p>a</p>\n')]))
+    const bomView = await readEditableFile(root, 'bom.html')
+    const bomSaved = await writeEditableFile(root, 'bom.html', bomView.text.replace('a', 'b'), bomView.hash)
+    const bomBytes = await readFile(bomTarget)
+    ok(bomSaved.status === 'saved' && bomBytes.subarray(0, 3).equals(bom) && bomBytes.subarray(3).toString('utf8') === '<p>b</p>\n', '改写带 BOM 的文件保留 BOM')
+    ok(bomSaved.hash === (await readEditableFile(root, 'bom.html')).hash, '保留 BOM 后返回的 hash 与再次读取一致')
+
     const beforeConflict = await readFile(target)
     const conflict = await writeEditableFile(root, 'edit.txt', 'v3\n', sha256('stale\n'))
     ok(conflict.status === 'conflict', 'expectedHash 不匹配返回 conflict')

@@ -8,8 +8,11 @@ export const SPARSE_EVERY = 10
 export const ULTRACODE_GATE_TYPE = 'yan-ultracode-gate'
 export const GATE_LIMIT = 2
 
-const EDIT_TOOLS = new Set(['edit', 'write'])
-const SUBAGENT_START = /\bsubagent\b["'\s,]+start\b/
+const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'apply_patch'])
+const SUBAGENT_START = /\bsubagent\b["'\s,]+start\b([^;&|\n]*)/g
+const CODEMODE_EDIT = /\btools\s*\.\s*(?:edit|write|multi_edit|apply_patch)\s*\(/g
+const HELP_FLAG = /(?:^|["'`\s,])(?:-h|--help)(?=$|["'`\s,=\\])/
+const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g
 const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 
 const KEYWORD = /^\s*\/ultracode(?=$|\s)/i
@@ -123,12 +126,60 @@ export function needsReviewGate(branch) {
       if (EDIT_TOOLS.has(call.name)) {
         edited = true
         reviewed = false
-      } else if (SUBAGENT_START.test(JSON.stringify(call.arguments ?? ''))) {
+        continue
+      }
+      const editAt = codemodeEditAt(call)
+      const startAt = subagentStartAt(call.arguments)
+      if (editAt >= 0) {
+        edited = true
+        reviewed = startAt > editAt
+      } else if (startAt >= 0) {
         reviewed = true
       }
     }
   }
   return { prompt, needed: edited && !reviewed && gates < GATE_LIMIT }
+}
+
+function codemodeEditAt(call) {
+  if (call.name !== 'codemode') return -1
+  let at = -1
+  for (const match of blankQuoted(String(call.arguments?.code ?? '')).matchAll(CODEMODE_EDIT)) at = match.index
+  return at
+}
+
+function argumentStrings(value, out = []) {
+  if (typeof value === 'string') out.push(value)
+  else if (Array.isArray(value)) {
+    if (value.every((item) => typeof item === 'string')) out.push(value.join(' '))
+    else for (const item of value) argumentStrings(item, out)
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) argumentStrings(item, out)
+  }
+  return out
+}
+
+function blankQuoted(text) {
+  return text.replace(QUOTED, (quoted) => ' '.repeat(quoted.length)).replace(/\\\r?\n/g, (joint) => ' '.repeat(joint.length))
+}
+
+function commandCandidates(text) {
+  const candidates = [{ text, offset: 0 }]
+  for (const match of text.matchAll(QUOTED)) candidates.push({ text: match[0].slice(1, -1), offset: match.index + 1 })
+  return candidates
+}
+
+function subagentStartAt(args) {
+  let at = -1
+  for (const raw of argumentStrings(args)) {
+    for (const { text, offset } of commandCandidates(raw)) {
+      for (const match of blankQuoted(text).matchAll(SUBAGENT_START)) {
+        const options = match[1].replace(/(?:^|\s)#.*$/, '')
+        if (!HELP_FLAG.test(options)) at = Math.max(at, offset + match.index)
+      }
+    }
+  }
+  return at
 }
 
 export default function ultracodeExtension(pi) {

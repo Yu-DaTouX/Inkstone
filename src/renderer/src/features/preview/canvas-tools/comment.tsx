@@ -318,11 +318,14 @@ function CommentOverlay({ frame, view, context }: CanvasToolOverlayProps): React
     store.resolve(matches.map((comment) => ({ id: comment.id, state: 'valid' as const, rect: hover.rect })))
   }, [hover, frameId, store])
 
+  const dockRef = useRef(context)
+  dockRef.current = context
   useEffect(() => {
-    if (!context.narrow || context.dockCollapsed || !selection) return
+    const latest = dockRef.current
+    if (!latest.narrow || latest.dockCollapsed || !selection) return
     if (selection.frameId !== frameId) return
-    context.toggleDock()
-  }, [context.narrow, context.dockCollapsed, selection, frameId])
+    latest.toggleDock()
+  }, [selection, frameId])
 
   return (
     <div className="v3-canvas-comment-layer" ref={layerRef} data-testid={`v3-canvas-comment-layer-${frameId}`}>
@@ -401,7 +404,11 @@ async function captureComment(
   )
   if (!region) return null
   const base = context.name.replace(/\.[^.]+$/, '') || 'canvas'
+  const chromeRoot = stage?.parentElement ?? stage
+  const chrome = chromeRoot ? Array.from(chromeRoot.querySelectorAll<HTMLElement>(CAPTURE_HIDDEN_CHROME)) : []
+  for (const node of chrome) hideForCapture(node)
   try {
+    await nextPaint()
     return await captureElementRegion(
       element,
       { x: region.x * scale, y: region.y * scale, w: region.w * scale, h: region.h * scale },
@@ -410,7 +417,43 @@ async function captureComment(
     )
   } catch {
     return null
+  } finally {
+    for (const node of chrome) restoreAfterCapture(node)
   }
+}
+
+const CAPTURE_HIDDEN_CHROME = '.v3-canvas-toolbar, .v3-canvas-agent, .v3-canvas-timeline, .v3-canvas-comment-layer, .v3-canvas-comment-panel'
+
+const captureHidden = new Map<HTMLElement, { depth: number; visibility: string }>()
+
+function hideForCapture(node: HTMLElement): void {
+  const held = captureHidden.get(node)
+  if (held) held.depth += 1
+  else captureHidden.set(node, { depth: 1, visibility: node.style.visibility })
+  node.style.visibility = 'hidden'
+}
+
+function restoreAfterCapture(node: HTMLElement): void {
+  const held = captureHidden.get(node)
+  if (!held) return
+  held.depth -= 1
+  if (held.depth > 0) return
+  captureHidden.delete(node)
+  node.style.visibility = held.visibility
+}
+
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    const fallback = window.setTimeout(resolve, 500)
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        window.setTimeout(() => {
+          window.clearTimeout(fallback)
+          resolve()
+        }, 60)
+      )
+    )
+  })
 }
 
 function CommentPanel({ context }: CanvasToolPanelProps): ReactElement {

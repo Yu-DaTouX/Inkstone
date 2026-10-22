@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events'
 import { getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { saveUserSkill } from './user-skills'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
@@ -172,6 +172,23 @@ const STOP_ABORT_BASH_TIMEOUT_MS = 2_000
 
 type Push = (msg: MainPush) => void
 type ExtUiPush = Extract<MainPush, { ch: 'status' | 'widget' }>
+
+async function realPathWithin(root: string, target: string): Promise<boolean> {
+  const rootReal = await realpath(root).catch(() => resolve(root))
+  let probe = target
+  let tail = ''
+  for (;;) {
+    try {
+      const rel = relative(rootReal, join(await realpath(probe), tail))
+      return Boolean(rel) && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+    } catch {
+      const parent = dirname(probe)
+      if (parent === probe) return false
+      tail = join(basename(probe), tail)
+      probe = parent
+    }
+  }
+}
 
 function extUiKey(msg: ExtUiPush): string {
   return `${msg.ch}:${msg.payload.key}`
@@ -1504,7 +1521,11 @@ export class AgentController extends EventEmitter {
     const outRaw = typeof params.out === 'string' ? params.out.trim() : typeof params.outPath === 'string' ? params.outPath.trim() : ''
     const cwd = this.cwd
     const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
-    const outPath = outRaw ? (isAbsolute(outRaw) ? outRaw : resolve(cwd, outRaw)) : undefined
+    const outResolved = outRaw ? (isAbsolute(outRaw) ? resolve(outRaw) : resolve(cwd, outRaw)) : undefined
+    const outPath = outResolved && extname(outResolved).toLowerCase() !== '.mp4' ? `${outResolved}.mp4` : outResolved
+    if (outPath && !(await realPathWithin(cwd, outPath))) {
+      throw new CapabilityCommandError('artifact_export_out', '--out 只能写到当前项目目录里')
+    }
     try {
       const result = (await exporter(htmlPath, cwd, {
         ...(fps !== undefined ? { fps } : {}),

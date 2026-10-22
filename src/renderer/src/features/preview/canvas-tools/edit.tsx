@@ -31,30 +31,13 @@ const STYLE_FIELDS: readonly StyleField[] = [
 
 const ALIGN_KEYS = ['left', 'center', 'right', 'justify'] as const
 
-const ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: '\u00a0',
-  mdash: '\u2014',
-  ndash: '\u2013',
-  hellip: '\u2026'
-}
+let attributeDecoder: HTMLTemplateElement | null = null
 
 function decodeEntities(value: string): string {
-  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, name: string) => {
-    if (name.startsWith('#x') || name.startsWith('#X')) {
-      const code = Number.parseInt(name.slice(2), 16)
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match
-    }
-    if (name.startsWith('#')) {
-      const code = Number.parseInt(name.slice(1), 10)
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match
-    }
-    return ENTITIES[name] ?? match
-  })
+  if (!value.includes('&')) return value
+  attributeDecoder ??= document.createElement('template')
+  attributeDecoder.innerHTML = `<i title="${value.replace(/"/g, '&quot;').replace(/\r/g, '&#13;')}"></i>`
+  return attributeDecoder.content.firstElementChild?.getAttribute('title') ?? value
 }
 
 function alignKeyOf(value: string): string | null {
@@ -302,7 +285,7 @@ function EditPanel({ context }: CanvasToolPanelProps): ReactElement {
     )
   }
 
-  const initialAttribute = (name: string): string => (tagText ? readHtmlTagAttribute(tagText, name) ?? '' : '')
+  const initialAttribute = (name: string): string => decodeEntities(tagText ? readHtmlTagAttribute(tagText, name) ?? '' : '')
   const hrefShown = info.tag === 'a' || info.tag === 'area' || initialAttribute('href') !== ''
   const imageShown = info.tag === 'img'
 

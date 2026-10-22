@@ -34,18 +34,31 @@ const REMINDERS = {
 }
 const DRIFT_MIN_LETTERS = 200
 export const DRIFT_COOLDOWN = 4
+const DRIFT_WINDOW_CHARS = 4000
 
 export function languageReminder(lang) {
   return REMINDERS[lang] ?? null
 }
 
-export function thinkingDrifted(lang, text) {
+function scriptCounts(text) {
   const source = String(text ?? '').replace(/```[\s\S]*?```|`[^`\n]*`/g, ' ')
-  const cjk = (source.match(/[㐀-鿿豈-﫿]/g) ?? []).length
-  const latin = (source.match(/[A-Za-z]/g) ?? []).length
-  if (lang === 'zh-CN') return latin >= DRIFT_MIN_LETTERS && cjk < latin * 0.05
-  if (lang === 'en-US') return cjk >= DRIFT_MIN_LETTERS / 2 && cjk > latin * 0.5
+  return {
+    cjk: (source.match(/[㐀-鿿豈-﫿]/g) ?? []).length,
+    latin: (source.match(/[A-Za-z]/g) ?? []).length
+  }
+}
+
+function leansAway(lang, { cjk, latin }) {
+  if (lang === 'zh-CN') return cjk < latin * 0.05
+  if (lang === 'en-US') return cjk > latin * 0.5
   return false
+}
+
+export function thinkingDrifted(lang, text) {
+  const counts = scriptCounts(text)
+  if (!leansAway(lang, counts)) return false
+  if (lang === 'zh-CN') return counts.latin >= DRIFT_MIN_LETTERS
+  return counts.cjk >= DRIFT_MIN_LETTERS / 2
 }
 
 export function thinkingText(message) {
@@ -56,12 +69,28 @@ export function thinkingText(message) {
 function registerDriftReminder(pi) {
   let pending = false
   let sinceReminder = DRIFT_COOLDOWN
+  let recentThinking = ''
+  const reset = () => {
+    pending = false
+    sinceReminder = DRIFT_COOLDOWN
+    recentThinking = ''
+  }
+  pi.on('session_start', reset)
+  pi.on('session_tree', reset)
   pi.on('message_end', (event) => {
     const message = event?.message
     if (String(message?.role ?? '') !== 'assistant') return
     sinceReminder += 1
+    const thinking = thinkingText(message)
+    if (!thinking) return
     const lang = language()
-    if (sinceReminder >= DRIFT_COOLDOWN && thinkingDrifted(lang, thinkingText(message))) pending = true
+    const counts = scriptCounts(thinking)
+    if (!counts.latin && !counts.cjk) return
+    recentThinking = leansAway(lang, counts) ? `${recentThinking}\n${thinking}`.slice(-DRIFT_WINDOW_CHARS) : ''
+    if (sinceReminder >= DRIFT_COOLDOWN && thinkingDrifted(lang, recentThinking)) {
+      pending = true
+      recentThinking = ''
+    }
   })
   pi.on('before_provider_request', (event) => {
     if (!pending) return undefined

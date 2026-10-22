@@ -16,6 +16,7 @@
   .artifact-library-desc { color: var(--fg2); }
   .artifact-library-actions { display: flex; align-items: center; gap: var(--s-4); }
   .artifact-library-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8); }
+  .artifact-library-tools .ui-search { width: min(100%, 15rem); }
   .artifact-library-name { display: inline-flex; align-items: center; gap: var(--s-4); }
   .artifact-library-pin { flex: none; color: var(--accent); }
   .artifact-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--s-16); margin: 0; padding: 0; list-style: none; }

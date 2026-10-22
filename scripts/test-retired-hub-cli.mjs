@@ -227,6 +227,24 @@ async function main() {
     } finally {
       server.stop()
     }
+
+    const limited = new CapabilityServer({
+      opsDir: join(tmpDir, 'ops-limited'),
+      onlyCommands: ['search.query'],
+      handlers: { async run() { return { data: {}, summary: { kind: 'probe' } } } }
+    })
+    const limitedEndpoint = await limited.start({ sessionId: 's', projectId: 'p' })
+    try {
+      const res = await fetch(limitedEndpoint.url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${limitedEndpoint.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 's', projectId: 'p', command: 'hub.start', params: {} })
+      })
+      const body = await res.json()
+      ok(body.ok === false && body.error === 'unknown_command' && String(body.hint).includes('search.query') && !String(body.hint).includes('subagent'), '不能派子代理的会话里，hub.* 只提示本会话开放的命令', JSON.stringify(body))
+    } finally {
+      limited.stop()
+    }
   } finally {
     trap.server.close()
     rmSync(tmpDir, { recursive: true, force: true })
