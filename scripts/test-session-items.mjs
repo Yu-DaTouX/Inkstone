@@ -193,6 +193,34 @@ try {
   const shape = (item) => ({ kind: item.kind, id: item.id, turnId: item.turnId, ...(item.kind === 'tool' ? { status: item.status, output: item.call.output } : { text: item.text }) })
   const liveCore = liveItems.filter((item) => item.kind !== 'compaction' && !['late', 'call_live/1'].includes(item.id)).map(shape)
   assert.deepEqual(replay.items().map(shape), liveCore, '直播与回放走同一个投影器，得到相同的 turn/item id 与内容')
+
+  {
+    const progressUser = { role: 'user', content: 'go', timestamp: 300 }
+    const progress = new m.SessionItemProjector()
+    progress.liveMessageStart(progressUser, 300)
+    progress.liveMessageStart({ role: 'assistant', model: 'claude-opus-5-5' }, 301)
+    progress.liveAssistantDelta({ type: 'thinking_start', contentIndex: 0 }, 301)
+    progress.liveAssistantDelta({ type: 'thinking_end', contentIndex: 0 }, 301)
+    progress.liveAssistantDelta({ type: 'thinking_start', contentIndex: 1 }, 301)
+    progress.liveAssistantDelta({ type: 'thinking_delta', contentIndex: 1, delta: 'Found it, checking config next.' }, 301)
+    progress.liveAssistantDelta({ type: 'thinking_end', contentIndex: 1 }, 301)
+    assert.equal(progress.streamingContent().thinking, 'Found it, checking config next.', '工具调用出现前仍按思考显示')
+    progress.liveAssistantDelta({ type: 'toolcall_start', contentIndex: 2, id: 'p1', toolName: 'read' }, 302)
+    assert.deepEqual(progress.streamingContent(), { id: progress.streamingContent().id, text: 'Found it, checking config next.', thinking: '', calls: progress.streamingContent().calls }, '紧贴工具调用前的思考块转为正文')
+    progress.liveAssistantDelta({ type: 'toolcall_end', contentIndex: 2, toolCall: { type: 'toolCall', id: 'p1', name: 'read', arguments: { path: 'a' } } }, 302)
+    progress.liveMessageEnd({ model: 'claude-opus-5-5' })
+    const progressBlocks = [{ type: 'thinking', thinking: '' }, { type: 'thinking', thinking: 'Found it, checking config next.' }, { type: 'toolCall', id: 'p1', name: 'read', arguments: { path: 'a' } }]
+    const progressReplay = new m.SessionItemProjector()
+    progressReplay.appendPersisted(progressUser)
+    progressReplay.appendPersisted({ role: 'assistant', model: 'claude-opus-5-5', content: progressBlocks, timestamp: 301 })
+    const kinds = (p) => p.items().filter((item) => item.kind !== 'user').map((item) => [item.kind, item.id, item.kind === 'tool' ? item.call.id : item.text])
+    assert.deepEqual(kinds(progressReplay), [['reasoning', 'm0:0:0', ''], ['assistant-text', 'm0:0:1', 'Found it, checking config next.'], ['tool', 'p1', 'p1']], '回放时进度更新为正文，空推理块保持推理')
+    assert.deepEqual(kinds(progress), kinds(progressReplay), '直播与回放一致')
+    const older = new m.SessionItemProjector()
+    older.appendPersisted(progressUser)
+    older.appendPersisted({ role: 'assistant', model: 'claude-opus-4-6', content: progressBlocks, timestamp: 301 })
+    assert.equal(older.items().find((item) => item.id === 'm0:0:1').kind, 'reasoning', '其他模型的交错思考不改')
+  }
   const pick = (msg) => ({ id: msg.id, role: msg.role, text: msg.text, thinking: msg.thinking, calls: (msg.toolCalls ?? []).map((call) => [call.id, call.status, call.output]) })
   assert.deepEqual(replay.uiMessages().map(pick), liveMessages.slice(0, 2).map(pick).map((msg) => ({ ...msg, calls: msg.calls.filter(([id]) => id === 'call_live') })), '映射回 UIMessage 后直播与回放结构一致')
 
@@ -410,6 +438,30 @@ try {
   const streamed = pushes.filter((msg) => msg.ch === 'msg-update' && msg.payload.id === 'm1').map((msg) => msg.payload.patch)
   assert.equal(streamed.map((patch) => patch.textDelta ?? '').join(''), 'Reading.', '流式正文增量拼接等于最终正文')
   assert.equal(streamed.map((patch) => patch.thinkingDelta ?? '').join(''), 'look ', '流式思考增量拼接等于最终思考')
+  {
+    const progressPushes = []
+    const progressCtl = new AgentController({ push: (msg) => progressPushes.push(msg), cwd: dir })
+    const progressUpdate = (assistantMessageEvent) => progressCtl.handleEvent({ type: 'message_update', assistantMessageEvent })
+    progressCtl.handleEvent({ type: 'message_start', message: { role: 'user', content: 'go' } })
+    progressCtl.handleEvent({ type: 'message_start', message: { role: 'assistant', model: 'claude-opus-5-5' } })
+    progressUpdate({ type: 'thinking_start', contentIndex: 0 })
+    progressUpdate({ type: 'thinking_delta', contentIndex: 0, delta: 'Found it.' })
+    progressUpdate({ type: 'thinking_end', contentIndex: 0 })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    progressUpdate({ type: 'toolcall_start', contentIndex: 1, id: 'p1', toolName: 'read' })
+    const view = { text: '', thinking: '' }
+    for (const msg of progressPushes) {
+      if (msg.ch !== 'msg-update') continue
+      const patch = msg.payload.patch
+      if (patch.thinking !== undefined) view.thinking = patch.thinking
+      if (patch.thinkingDelta) view.thinking += patch.thinkingDelta
+      if (patch.text !== undefined) view.text = patch.text
+      if (patch.textDelta) view.text += patch.textDelta
+    }
+    assert.ok(progressPushes.some((msg) => msg.ch === 'msg-update' && msg.payload.patch.thinkingDelta === 'Found it.'), '\u5de5\u5177\u8c03\u7528\u524d\u5148\u6309\u601d\u8003\u63a8\u9001')
+    assert.deepEqual(view, { text: 'Found it.', thinking: '' }, '\u8fdb\u5ea6\u66f4\u65b0\u8f6c\u6b63\u6587\u65f6\u63a8\u9001\u5b8c\u6574\u601d\u8003\uff0c\u6e32\u67d3\u7aef\u4e0d\u6b8b\u7559\u65e7\u601d\u8003')
+    await progressCtl.stop()
+  }
   await ctl.stop()
   assert.deepEqual(await ctl.getMessages(), [])
   console.log('session items ok')
