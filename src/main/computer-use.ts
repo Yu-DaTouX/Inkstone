@@ -9,6 +9,10 @@ import { INTERACTIVE_RESOURCE, sharedResources } from './interactive-resources'
 
 export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 
+// windows-mcp 0.8.6 起要求 Python >= 3.14；0.8.5 是 3.13 下最后一个可用版本。
+// 传具体版本号是为了让 uv 自动下载对应解释器，不依赖用户机器上已有的 Python。
+const WINDOWS_MCP_PYTHON = '3.14'
+
 export const COMPUTER_USE_TOOLS = [
   'Snapshot',
   'Screenshot',
@@ -164,7 +168,7 @@ function serverEntry(uvx: string): Record<string, unknown> {
     title: '电脑操作（Windows-MCP）',
     transport: 'stdio',
     command: uvx,
-    args: ['--python', '3.13', 'windows-mcp', 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')],
+    args: ['--python', WINDOWS_MCP_PYTHON, 'windows-mcp', 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')],
     env: { ANONYMIZED_TELEMETRY: 'false' },
     effect: 'external-action'
   }
@@ -174,7 +178,7 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   if (process.platform !== 'win32') return { ok: false, error: '电脑操作目前只支持 Windows' }
   const uvx = findUvx()
   if (!uvx) return { ok: false, error: '还没有安装 uv' }
-  const warm = await run(uvx, ['--python', '3.13', 'windows-mcp', '--help'], 10 * 60_000)
+  const warm = await run(uvx, ['--python', WINDOWS_MCP_PYTHON, 'windows-mcp', '--help'], 10 * 60_000)
   if (warm.code !== 0) return { ok: false, error: `下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, log: tail(warm.log) }
   try {
     await serializeServerWrite(async () => {
