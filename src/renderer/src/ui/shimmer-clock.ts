@@ -25,6 +25,14 @@ function onScreen(el: HTMLElement): boolean {
   return rect.width > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth
 }
 
+export function syncShimmerWidth(el: HTMLElement): void {
+  const base = el.querySelector<HTMLElement>('.ui-shimmer__base')
+  const hi = el.querySelector<HTMLElement>('.ui-shimmer__hi')
+  if (!base || !hi) return
+  const width = el.getBoundingClientRect().width
+  hi.style.width = base.getBoundingClientRect().width > width + 0.5 ? `${width}px` : 'max-content'
+}
+
 function sweep(el: HTMLElement, startTime: CSSNumberish | null): Animation[] {
   for (const animation of el.getAnimations({ subtree: true })) animation.cancel()
   const base = el.querySelector<HTMLElement>('.ui-shimmer__base')
@@ -33,7 +41,7 @@ function sweep(el: HTMLElement, startTime: CSSNumberish | null): Animation[] {
   if (!base || !win || !hi) return []
   const width = Math.ceil(Math.min(el.clientWidth, base.offsetWidth))
   if (!width) return []
-  hi.style.width = `${el.clientWidth}px`
+  syncShimmerWidth(el)
   const timing = { duration: SWEEP_MS, easing: EASING }
   const animations = [
     win.animate([{ transform: `translateX(${-SHIMMER_WINDOW_PX}px)` }, { transform: `translateX(${width}px)` }], timing),
