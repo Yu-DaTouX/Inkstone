@@ -22,25 +22,6 @@
       }
     },
     {
-      "id": "codegraph",
-      "kind": "mcp",
-      "name": "CodeGraph",
-      "version": "MCP",
-      "url": "https://github.com/colbymchenry/codegraph",
-      "text": {
-        "zh-CN": {
-          "desc": "本地代码知识图谱：预先索引符号、调用与依赖，让模型少读文件就能定位代码。",
-          "target": "需先安装 CLI：npm i -g @colbymchenry/codegraph；加入后由 pi 原生 MCP 启动 codegraph serve --mcp。",
-          "hint": "在每个项目目录运行一次 codegraph init 建索引，之后自动增量同步。"
-        },
-        "en-US": {
-          "desc": "Local code knowledge graph: pre-indexed symbols, calls and dependencies so the model finds code without reading many files.",
-          "target": "Install the CLI first: npm i -g @colbymchenry/codegraph. Once added, pi's native MCP runs codegraph serve --mcp.",
-          "hint": "Run codegraph init once in each project to build the index; it syncs incrementally after that."
-        }
-      }
-    },
-    {
       "id": "desktop-pet",
       "kind": "pet",
       "name": "dsh 桌宠",
