@@ -1,0 +1,133 @@
+@layer features {
+  .v3-canvas-draw-layer {
+    position: absolute;
+    z-index: 2;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .v3-canvas-draw-layer[data-pen='text'] {
+    cursor: text;
+  }
+
+  .v3-canvas-draw-layer[data-pan] {
+    cursor: grab;
+  }
+
+  .v3-canvas-draw-layer[data-hidden] {
+    visibility: hidden;
+  }
+
+  .v3-canvas-draw-svg {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .v3-canvas-draw-svg text {
+    user-select: none;
+  }
+
+  .v3-canvas-draw-label {
+    position: absolute;
+    z-index: 1;
+    width: 220px;
+    max-width: 60vw;
+  }
+
+  .v3-canvas-draw-label .ui-field {
+    gap: 0;
+  }
+
+  .v3-canvas-draw-input {
+    height: 26px;
+    padding: 0 var(--s-6);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-md);
+  }
+
+  .v3-canvas-draw-panel {
+    width: 244px;
+    overflow: hidden;
+  }
+
+  .v3-canvas-draw-panel[data-hidden] {
+    visibility: hidden;
+  }
+
+  .v3-canvas-draw-body {
+    gap: var(--s-8);
+  }
+
+  .v3-canvas-draw-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .v3-canvas-draw-caption {
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas-draw-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .v3-canvas-draw-swatch {
+    padding: 0;
+  }
+
+  .v3-canvas-draw-dot {
+    display: block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--line2);
+  }
+
+  .v3-canvas-draw-swatch[aria-pressed='true'] .v3-canvas-draw-dot {
+    outline: 2px solid var(--fg2);
+    outline-offset: 1px;
+  }
+
+  .v3-canvas-draw-frames {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .v3-canvas-draw-hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    text-wrap: pretty;
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-draw-panel {
+    left: var(--s-8);
+    right: var(--s-8);
+    top: auto;
+    bottom: calc(var(--s-12) + var(--canvas-toolbar-h, 28px) + var(--s-8));
+    width: auto;
+    max-height: 50%;
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-draw-body {
+    gap: var(--s-6);
+  }
+}

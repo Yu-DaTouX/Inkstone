@@ -86,7 +86,7 @@
   .mtp-pop {
     width: min(420px, calc(100vw - 16px));
     overflow: clip;
-    height: min(460px, calc(100dvh - 24px));
+    height: min(540px, calc(100dvh - 24px));
     max-height: calc(100dvh - 24px);
     box-sizing: border-box;
   }
@@ -511,7 +511,7 @@
     padding: 0 var(--s-4);
     flex-wrap: wrap;
   }
-  .mtp-search, .mtp-provider, .mtp-thinking, .mtp-footer, .mtp-sep { flex-shrink: 0; min-width: 0; }
+  .mtp-search, .mtp-provider, .mtp-thinking, .uc-card, .mtp-footer, .mtp-sep { flex-shrink: 0; min-width: 0; }
   .mtp-pop .ui-input, .mtp-pop .ui-select { min-width: 0; max-width: 100%; }
 
   .mtp-footer > :first-child:not(:last-child) {

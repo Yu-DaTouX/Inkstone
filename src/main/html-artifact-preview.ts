@@ -31,7 +31,7 @@ export function registerHtmlArtifactProtocol(): void {
         : new Response('Not found', { status: 404, headers: ASSET_HEADERS })
     }
     const html = request.method === 'GET' ? htmlArtifactPreviews.read(request.url) : null
-    return new Response(html === null ? 'Preview unavailable' : withPreviewRuntime(html), {
+    return new Response(html === null ? 'Preview unavailable' : withPreviewRuntime(html, htmlArtifactPreviews.readNonce(request.url) ?? ''), {
       status: html === null ? 404 : 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',

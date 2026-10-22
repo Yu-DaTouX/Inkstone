@@ -22,8 +22,10 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
    - **风格怎么定，按用户说了多少**（用户说的永远优先，牌只补用户没说的部分）：
      - 用户给了具体要求（品牌色、指定颜色、深色 / 浅色、字体、logo、参考图或参考网站、已有项目的设计规范）：照用户的来；其余没说的维度再抽牌补齐，用户要深色就加 `--theme dark`。牌和用户要求冲突的地方，以用户为准。
      - 用户点名了风格名（「瑞士风」「包豪斯」「国潮」「赛博朋克」「像素风」等）：先运行 `yan artifact style --list`，有同名或相近的牌就用 `yan artifact style --id <id 或中文名>` 取那一张；没有对应的牌时看 `guides/styles.md`；那里也没有，就按用户的描述和对这个风格的公认特征自己定配色、字体、母题，仍然只用系统字体。
+     - 用户点名某个具体设计系统或品牌（「按 Linear / Stripe 的样子」「用编辑部风设计系统」），或随包风格牌和 `guides/styles.md` 都对不上时：`yan artifact style --remote list --query <英文关键词>` 找 id，关键词只匹配英文的名称、分类和描述，搜不到就换风格词（editorial、minimal、brutalism、japanese 等）或不带 `--query` 看全表。再 `yan artifact style --remote <id>` 拉到本机，读返回的 `design`（DESIGN.md）照做，`tokens` 指向的 tokens.css 的 `:root` 变量抄进成果，其中 `--font-*` 等网络字体同样换成系统字体；只适用于拉丁字母的规则（大小写等）在中文里忽略。只在这时才拉，不要为了抽牌去联网。
+     - 项目里有 `DESIGN.md`（当前目录或用 `--cwd` 指定）时，`yan artifact style` 会直接返回它的路径：优先照项目的设计规范做，不抽牌也不拉远端；它没写的部分才补风格牌，确实要换成随包牌时加 `--ignore-project`。
      - 用户只给了气质词（「高级一点」「可爱」「科技感」「简约」「复古」）：抽牌后选最贴的一张；三张都不贴就用 `--list` 挑。
-     - 用户什么都没说：运行 `yan artifact style --kind <类型>`（poster / dashboard / game / explainer / tool / landing / slides），从抽到的 3 张里选最贴合主题和受众的一张。
+     - 用户什么都没说：运行 `yan artifact style --kind <类型>`（poster / dashboard / game / explainer / tool / landing / slides / video），从抽到的 3 张里选最贴合主题和受众的一张。
      - 修改已有成果：沿用它现有的风格，不抽牌；用户说「换个风格」才再抽，或按用户说的方向换。
      - 选定的牌：配色、字体、字号、形状、版式、母题都照牌来，`avoid` 里的不做；官方资料里的具体配色、字体建议和牌冲突时以牌为准。不要因为「更稳妥」换回自己习惯的那套。
    - 用户要商务主题或「给几套主题选」时，可从 `official/theme-factory/themes/` 挑，只取配色，字体字段忽略。
@@ -41,6 +43,9 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 | 计算器、换算、生成器、格式化等小工具 | `guides/tool.md` |
 | 官网、落地页、个人主页、App 页面原型 | `guides/landing.md` |
 | 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` |
+| 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` |
+
+视频类型也写成单文件 HTML，但按 hyperframes 的合成格式约定写：根元素带 `data-composition-id` / `data-width` / `data-height` / `data-duration`，片段带 `data-start` / `data-duration` / `data-track-index`。画布会识别根元素上的 `data-composition-id`，动画统一挂在 `window.__timelines[<composition-id>]` 的控制器上（接口见 `guides/video.md`），预览后可以按时间点检查画面。
 
 指南和本文冲突时，以本文的沙箱限制为准。
 
@@ -65,7 +70,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 2. **准备数据**：需要事实数据时，有搜索能力就先查官方或一手来源（`yan search`），记下来源与时间；查不到就用你确知的数并在页面上标「约」与数据时间。不编造精确到个位的数字。
 3. **一次写完第一版**：思考里只定方向和结构（几行要点），**不要在思考里先把 HTML 打一遍草稿**，直接在 write 工具里写，用户才能在右侧看着页面一点点长出来。用 write 工具把完整文件写到项目里的 `artifacts/<英文短名>.html`（用户指定路径时用用户的）。写的时候右侧会自动打开实时预览，所以第一版就要完整可看，不要先写骨架再一点点补。
 4. **自检**：有交互的成果（工具、游戏、讲解、落地页、仪表盘），先用 read 打开 `official/vercel-web-interface-guidelines/AGENTS.md`（Vercel 官方界面规范），对照 Keyboard、Targets & Input、Animation、Layout、Content & Accessibility、Dark Mode & Theming、Design 几节，把不满足的 MUST 一并改掉；纯海报和静态画面跳过这一步。`yan artifact preview --path <文件>`，看返回的控制台错误、横向溢出，再用 read 打开 `light-desktop` 和 `light-narrow` 两张截图（写了深色版时把桌面那张换成 `dark-desktop`）。每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏），首屏以下的表格、图表、页脚也要看；结果里写着「只截了前几屏」时，说明页面超过 4 屏，后面的部分要靠代码确认。只修硬伤：报错、横向溢出、内容被裁掉或互相遮挡、文字看不清。有硬伤就改**同一个文件**，把这一轮发现的问题一次改完，再预览确认；确认后还有硬伤可以再改一轮，然后就结束；配色、间距这类审美微调留给用户提。**`yan artifact preview` 一共最多运行三次。** 不要另开浏览器、起本地服务器或自己截图裁图，这个命令已经按砚的真实沙箱渲染。
-5. **挂到回复**：`yan artifact attach --path <文件> --description "<一句话说明>"`。
+5. **挂到回复**：`yan artifact attach --path <文件> --description "<一句话说明>"`。子 Agent 不能 attach，在结果里写明文件路径，由主会话挂载。
 6. **回复要短**：做了什么（三四条，含用了哪张风格牌）、数据来源与局限、可以怎么继续改。不要贴 HTML 源码。
 
 ## 修改已有成果

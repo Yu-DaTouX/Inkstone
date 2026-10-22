@@ -3,7 +3,7 @@
     "id": "swiss",
     "name": "瑞士国际主义",
     "mood": "冷静自信的平面秩序，所有东西对齐到同一条左边缘",
-    "kinds": ["dashboard", "slides", "landing", "explainer"],
+    "kinds": ["dashboard", "slides", "landing", "explainer", "video"],
     "theme": "light",
     "colors": {
       "bg": "#FFFFFF",
@@ -29,7 +29,7 @@
     "id": "bauhaus",
     "name": "包豪斯色块",
     "mood": "红黄蓝三原色的几何拼贴，快乐而克制",
-    "kinds": ["poster", "slides", "landing", "explainer"],
+    "kinds": ["poster", "slides", "landing", "explainer", "video"],
     "theme": "light",
     "colors": {
       "bg": "#F6F0E4",
@@ -81,7 +81,7 @@
     "id": "editorial",
     "name": "杂志编辑",
     "mood": "纸感衬线大标题与多栏正文，像认真排过的一本刊物",
-    "kinds": ["explainer", "slides", "landing", "dashboard"],
+    "kinds": ["explainer", "slides", "landing", "dashboard", "video"],
     "theme": "light",
     "colors": {
       "bg": "#F7F3EA",
@@ -107,7 +107,7 @@
     "id": "memphis",
     "name": "孟菲斯",
     "mood": "粉彩撞色与歪斜几何，轻松得像九十年代的玩具包装",
-    "kinds": ["poster", "slides", "landing", "game"],
+    "kinds": ["poster", "slides", "landing", "game", "video"],
     "theme": "light",
     "colors": {
       "bg": "#FFDFEC",
@@ -185,7 +185,7 @@
     "id": "guochao",
     "name": "国潮",
     "mood": "中国红底配描金，节庆气场浓",
-    "kinds": ["poster", "landing", "explainer", "slides"],
+    "kinds": ["poster", "landing", "explainer", "slides", "video"],
     "theme": "dark",
     "colors": {
       "bg": "#7A0A16",
@@ -211,7 +211,7 @@
     "id": "ink",
     "name": "水墨留白",
     "mood": "大面积白与一抹朱红，安静克制",
-    "kinds": ["poster", "explainer", "slides", "landing"],
+    "kinds": ["poster", "explainer", "slides", "landing", "video"],
     "theme": "light",
     "colors": {
       "bg": "#FFFFFF",
@@ -289,7 +289,7 @@
     "id": "hyperpop",
     "name": "高饱和撞色",
     "mood": "电光蓝底白字加橙点缀，音量拉到最大",
-    "kinds": ["poster", "landing", "game", "slides"],
+    "kinds": ["poster", "landing", "game", "slides", "video"],
     "theme": "dark",
     "colors": {
       "bg": "#1616E0",
@@ -315,7 +315,7 @@
     "id": "retro70",
     "name": "七十年代复古",
     "mood": "芥末黄配棕橙，圆胖字形与同心圆，暖到发黏",
-    "kinds": ["poster", "landing", "slides", "game"],
+    "kinds": ["poster", "landing", "slides", "game", "video"],
     "theme": "light",
     "colors": {
       "bg": "#E9A23B",
@@ -419,7 +419,7 @@
     "id": "contrast-poster",
     "name": "黑白高反差海报",
     "mood": "巨字被画幅裁切，纯黑纯白，一抹红就够",
-    "kinds": ["poster", "slides", "landing"],
+    "kinds": ["poster", "slides", "landing", "video"],
     "theme": "dark",
     "colors": {
       "bg": "#000000",

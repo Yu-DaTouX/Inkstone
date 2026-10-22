@@ -7,6 +7,7 @@ import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:pa
 import { saveUserSkill } from './user-skills'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
+import { runArtifactPreview } from './artifact-preview-command'
 import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
@@ -155,6 +156,7 @@ import type {
 } from '../shared/ipc'
 import { hasUsageNumbers } from '../shared/turns'
 import type { SubagentForkSource } from './subagent-fork'
+import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
 import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
@@ -347,7 +349,12 @@ export interface CapabilityRunOptions {
   execution?: ExecuteAdmissionPort
   onBashSettled?: () => void
   trashItem?: (path: string) => Promise<void>
-  previewHtml?: (htmlPath: string, root: string) => Promise<unknown>
+  previewHtml?: (htmlPath: string, root: string, options?: { at?: number[] }) => Promise<unknown>
+  exportVideo?: (
+    htmlPath: string,
+    root: string,
+    request: { fps?: number; scale?: number; outPath?: string }
+  ) => Promise<unknown>
 }
 
 async function projectPiPackageArgs(cwd: string): Promise<string[]> {
@@ -401,6 +408,7 @@ export class AgentController extends EventEmitter {
   private responseDetailExtension?: string
   private preambleExtension?: string
   private languageExtension?: string
+  private ultracodeExtension?: string
   private capabilityGuideExtension?: string
   private mcpAppProxyExtension?: string
   private mcpAppToolsSnapshot?: string
@@ -587,6 +595,7 @@ export class AgentController extends EventEmitter {
     responseDetailExtension?: string
     preambleExtension?: string
     languageExtension?: string
+    ultracodeExtension?: string
     capabilityGuideExtension?: string
     mcpAppProxyExtension?: string
     mcpAppToolsSnapshot?: string
@@ -626,7 +635,12 @@ export class AgentController extends EventEmitter {
       devResourcesDir?: string
       onBashSettled?: () => void
       trashItem?: (path: string) => Promise<void>
-      previewHtml?: (htmlPath: string, root: string) => Promise<unknown>
+      previewHtml?: (htmlPath: string, root: string, options?: { at?: number[] }) => Promise<unknown>
+      exportVideo?: (
+        htmlPath: string,
+        root: string,
+        request: { fps?: number; scale?: number; outPath?: string }
+      ) => Promise<unknown>
     }
     observeRun?: RunObserver
   }) {
@@ -651,6 +665,7 @@ export class AgentController extends EventEmitter {
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
     this.languageExtension = opts.languageExtension
+    this.ultracodeExtension = opts.ultracodeExtension
     this.capabilityGuideExtension = opts.capabilityGuideExtension
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
@@ -807,6 +822,7 @@ export class AgentController extends EventEmitter {
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),
         ...(this.languageExtension ? ['--extension', this.languageExtension] : []),
+        ...(this.ultracodeExtension ? ['--extension', this.ultracodeExtension] : []),
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
@@ -1172,6 +1188,7 @@ export class AgentController extends EventEmitter {
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'artifact.preview') return this.runArtifactPreviewCommand(params)
+    if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
     if (command === 'file.trash') return this.runFileTrashCommand(params)
@@ -1451,32 +1468,7 @@ export class AgentController extends EventEmitter {
   }
 
   private async runArtifactPreviewCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
-    const raw = typeof params.path === 'string' ? params.path.trim() : ''
-    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.preview 需要 path')
-    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_preview_type', 'artifact.preview 只支持 .html / .htm 文件')
-    const preview = this.capabilityOpts?.previewHtml
-    if (!preview) throw new CapabilityCommandError('artifact_preview_unavailable', '当前环境不能渲染预览截图')
-    const cwd = this.cwd
-    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
-    try {
-      const result = await preview(htmlPath, cwd) as { shots: Array<{ scheme: string; viewport: string; path: string; horizontalOverflow: boolean; pageHeight?: number; screens?: number; truncated?: boolean }>; consoleErrors: string[]; loadError?: string }
-      return {
-        data: result,
-        summary: {
-          shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}${shot.screens && shot.screens > 1 ? `（整页 ${shot.pageHeight}px，${shot.screens} 屏拼版${shot.truncated ? '，只截了前几屏' : ''}）` : ''}`),
-          horizontalOverflow: result.shots.filter((shot) => shot.horizontalOverflow).map((shot) => `${shot.scheme}-${shot.viewport}`),
-          consoleErrors: result.consoleErrors.length,
-          ...(result.loadError ? { loadError: result.loadError } : {}),
-          note: '每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏，灰色间隔分屏）；用 read 打开检查桌面和窄屏下的整页内容（页面只有一套配色时浅色、深色两组截图相同）；预览与砚内沙箱一致：同一文件夹里的相对路径 css/js/图片/字体能加载，网络资源和 fetch 都会被拦截。'
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (message === 'preview_outside') throw new CapabilityCommandError('artifact_path_outside', 'HTML 文件必须在当前项目目录内')
-      if (message === 'preview_size') throw new CapabilityCommandError('artifact_too_large', 'HTML 文件为空或超过 5MB')
-      if (message === 'preview_busy') throw new CapabilityCommandError('artifact_preview_busy', '预览数量已达上限，稍后再试')
-      throw new CapabilityCommandError('artifact_preview_failed', `预览失败：${message}`)
-    }
+    return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
   }
 
   private async runArtifactAttachCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
@@ -1496,6 +1488,63 @@ export class AgentController extends EventEmitter {
     return {
       data: { artifact },
       summary: { artifactId: artifact.id, filename: artifact.filename, kind: artifact.kind, bytes: artifact.bytes }
+    }
+  }
+
+  private async runArtifactExportVideoCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const raw = typeof params.path === 'string' ? params.path.trim() : ''
+    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.exportVideo 需要 path')
+    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_export_type', 'artifact.exportVideo 只支持 .html / .htm 文件')
+    const exporter = this.capabilityOpts?.exportVideo
+    if (!exporter) throw new CapabilityCommandError('artifact_export_unavailable', '当前环境不能导出视频')
+    const fps = params.fps === undefined || params.fps === true ? undefined : Number(params.fps)
+    if (fps !== undefined && (!Number.isFinite(fps) || fps <= 0)) throw new CapabilityCommandError('artifact_export_fps', '--fps 需要大于 0 的数字')
+    const scale = params.scale === undefined || params.scale === true ? undefined : Number(params.scale)
+    if (scale !== undefined && (!Number.isFinite(scale) || scale <= 0)) throw new CapabilityCommandError('artifact_export_scale', '--scale 需要大于 0 的数字')
+    const outRaw = typeof params.out === 'string' ? params.out.trim() : typeof params.outPath === 'string' ? params.outPath.trim() : ''
+    const cwd = this.cwd
+    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
+    const outPath = outRaw ? (isAbsolute(outRaw) ? outRaw : resolve(cwd, outRaw)) : undefined
+    try {
+      const result = (await exporter(htmlPath, cwd, {
+        ...(fps !== undefined ? { fps } : {}),
+        ...(scale !== undefined ? { scale } : {}),
+        ...(outPath ? { outPath } : {})
+      })) as {
+        path: string
+        frames: number
+        fps: number
+        width: number
+        height: number
+        duration: number
+        bytes: number
+        elapsedMs: number
+        consoleErrors?: string[]
+      }
+      return {
+        data: result,
+        summary: {
+          path: result.path,
+          frames: result.frames,
+          fps: result.fps,
+          size: `${result.width}x${result.height}`,
+          durationSeconds: result.duration,
+          bytes: result.bytes,
+          elapsedMs: result.elapsedMs,
+          ...(result.consoleErrors?.length ? { consoleErrors: result.consoleErrors.length } : {}),
+          note: 'MP4 只包含画面：合成里的 <audio>/<video> 本次不混音；输出是 H.264（yuv420p，CRF 18），可直接在系统播放器里打开。'
+        }
+      }
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code
+      const message = error instanceof Error ? error.message : String(error)
+      if (code === 'ffmpeg-missing') throw new CapabilityCommandError('artifact_export_ffmpeg_missing', message)
+      if (code === 'export-busy') throw new CapabilityCommandError('artifact_export_busy', message)
+      if (code === 'no-timeline') throw new CapabilityCommandError('artifact_export_no_timeline', message)
+      if (code === 'too-long') throw new CapabilityCommandError('artifact_export_too_long', message)
+      if (code === 'bad-request') throw new CapabilityCommandError('artifact_path_outside', message)
+      if (code === 'cancelled') throw new CapabilityCommandError('artifact_export_cancelled', message)
+      throw new CapabilityCommandError('artifact_export_failed', `导出失败：${message}`)
     }
   }
 
@@ -2202,6 +2251,7 @@ export class AgentController extends EventEmitter {
       sessionName: data.sessionName ? String(data.sessionName) : undefined,
       model: model ?? undefined,
       thinkingLevel: String(data.thinkingLevel ?? 'off'),
+      ultracode: isUltracodeOn(String(data.sessionId ?? '')),
       availableThinkingLevels,
       thinkingLevelsStatus: levels.status,
       capabilities: capabilitySnapshot(model, availableThinkingLevels, levels.status),
@@ -4251,6 +4301,21 @@ export class AgentController extends EventEmitter {
       if (res.success) await this.refreshState()
       return res.success ? { ok: true } : { ok: false, error: res.error }
     })
+  }
+
+  async setUltracode(on: boolean): Promise<{ ok: boolean; error?: string }> {
+    const sessionId = this.state?.sessionId
+    if (!sessionId) return { ok: false, error: 'pi 尚未就绪' }
+    try {
+      setUltracodeOn(sessionId, on)
+    } catch (error) {
+      return { ok: false, error: String(error) }
+    }
+    if (this.state?.sessionId === sessionId) {
+      this.state = { ...this.state, ultracode: on }
+      this.push({ ch: 'state', payload: this.state })
+    }
+    return { ok: true }
   }
 
   async listThinkingLevels(): Promise<string[]> {

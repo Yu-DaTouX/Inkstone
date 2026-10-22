@@ -62,8 +62,8 @@ try {
   const page = '<!DOCTYPE html>\n<html><body>x</body></html>'
   const served = s.withPreviewRuntime(page)
   assert.ok(served.startsWith('<!DOCTYPE html><style data-yan-preview>'), '\u8fd0\u884c\u65f6\u63d2\u5728 doctype \u4e4b\u540e\uff0c\u4e0d\u89e6\u53d1\u602a\u5f02\u6a21\u5f0f')
-  assert.ok(served.endsWith('\n<html><body>x</body></html>'))
-  assert.ok(!/<\/script>[\s\S]*<\/script>[\s\S]*data-yan/.test(served) && (served.match(/<\/script>/g) || []).length === 1, '\u8fd0\u884c\u65f6\u811a\u672c\u53ea\u6709\u4e00\u4e2a\u95ed\u5408\u6807\u7b7e')
+  assert.ok(served.endsWith('\n<html data-yan-src="16"><body data-yan-src="22">x</body></html>'), '原文保留在运行时之后，元素带源码偏移供微调写回')
+  assert.ok((served.match(/<\/script>/g) || []).length === 2 && served.lastIndexOf('</script>') < served.indexOf('<html'), '预览运行时与画布桥接各一个脚本，都在页面原文之前')
   assert.ok(s.withPreviewRuntime('<p>a</p>').startsWith('<style data-yan-preview>'), '\u6ca1\u6709 doctype \u65f6\u653e\u5728\u6700\u524d')
   const script = served.slice(served.indexOf('<script data-yan-preview>') + 25, served.indexOf('</script>'))
   assert.doesNotThrow(() => new Function(script), '\u8fd0\u884c\u65f6\u811a\u672c\u8bed\u6cd5\u6b63\u786e')

@@ -121,7 +121,12 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
   const localMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(raw)
   const localName = localMatch?.[1]?.toLowerCase()
   const localArgs = localMatch?.[2]?.trim() ?? ''
-  const localCommand = localName
+  if (localName === 'ultracode' && !localArgs && port.attachments.length === 0) {
+    port.actions.notify('info', port.t('composer.ultracodeUsage'))
+    port.focusComposer()
+    return 'handled'
+  }
+  const localCommand = localName && localName !== 'ultracode'
     ? port.commands.find((command) => command.source === 'yan' && command.name.toLowerCase() === localName)
     : undefined
   const compatibilityCommand = localName

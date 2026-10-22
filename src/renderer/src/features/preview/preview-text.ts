@@ -1,6 +1,7 @@
 import type { Lang } from '../../i18n'
 
 export interface PreviewText {
+  lang: Lang
   title: string
   empty: string
   emptyHint: string
@@ -85,6 +86,48 @@ export interface PreviewText {
   canvasDesktop: string
   canvasPhone: string
   canvasAgentEditing: string
+  canvasTools: string
+  canvasToolHand: string
+  canvasToolInteract: string
+  canvasToolInspect: string
+  canvasDevices: string
+  canvasDeviceDesktop: string
+  canvasDeviceLaptop: string
+  canvasDeviceTablet: string
+  canvasDevicePhone: string
+  canvasDeviceCustom: string
+  canvasCustomWidth: string
+  canvasReload: string
+  canvasFocusFrame: string
+  canvasInspectTitle: string
+  canvasInspectPanel: string
+  canvasInspectEmpty: string
+  canvasInspectCopySelector: string
+  canvasInspectCopied: string
+  canvasInspectSize: string
+  canvasInspectFrameSize: string
+  canvasInspectBox: string
+  canvasInspectColors: string
+  canvasInspectColor: string
+  canvasInspectBackground: string
+  canvasInspectTypography: string
+  canvasInspectFont: string
+  canvasInspectFontSize: string
+  canvasInspectLineHeight: string
+  canvasInspectWeight: string
+  canvasInspectLetterSpacing: string
+  canvasInspectAlign: string
+  canvasInspectSpacing: string
+  canvasInspectPadding: string
+  canvasInspectMargin: string
+  canvasInspectRadius: string
+  canvasInspectLayout: string
+  canvasInspectDisplay: string
+  canvasInspectSource: string
+  canvasInspectOffset: string
+  canvasDockExpand: string
+  canvasDockCollapse: string
+  canvasDockPickElement: string
   csvEmpty: string
   csvFailed: string
   csvFailedHint: string
@@ -143,6 +186,7 @@ export interface PreviewText {
 }
 
 const ZH: PreviewText = {
+  lang: 'zh-CN',
   title: '预览',
   empty: '没有打开的预览',
   emptyHint: '在文件面板点一个文件，或从成果卡片打开。',
@@ -216,7 +260,7 @@ const ZH: PreviewText = {
   liveGenerating: '正在生成…',
   canvasMode: '画布视图',
   singleMode: '单页视图',
-  canvasHint: '画布：拖动平移，Ctrl+滚轮缩放，双击卡片进入交互，按 0 适配',
+  canvasHint: '画布：拖动平移，Ctrl+滚轮缩放，双击画框标题缩放到该画框，按 0 适配',
   canvasZoomIn: '放大',
   canvasZoomOut: '缩小',
   canvasZoomReset: '缩放到 100%',
@@ -227,6 +271,48 @@ const ZH: PreviewText = {
   canvasDesktop: '桌面',
   canvasPhone: '手机',
   canvasAgentEditing: 'Agent 正在编辑',
+  canvasTools: '画布工具',
+  canvasToolHand: '移动画布',
+  canvasToolInteract: '操作页面',
+  canvasToolInspect: '检查元素',
+  canvasDevices: '画框设备',
+  canvasDeviceDesktop: '桌面',
+  canvasDeviceLaptop: '笔记本',
+  canvasDeviceTablet: '平板',
+  canvasDevicePhone: '手机',
+  canvasDeviceCustom: '自定义宽度',
+  canvasCustomWidth: '宽度（px）',
+  canvasReload: '刷新画框',
+  canvasFocusFrame: '双击缩放到这个画框',
+  canvasInspectTitle: '检查',
+  canvasInspectPanel: '元素属性',
+  canvasInspectEmpty: '把指针移到画框里的元素上，点击即可查看属性。',
+  canvasInspectCopySelector: '复制选择器',
+  canvasInspectCopied: '已复制',
+  canvasInspectSize: '尺寸',
+  canvasInspectFrameSize: '外框',
+  canvasInspectBox: '盒子（宽 / 高）',
+  canvasInspectColors: '颜色',
+  canvasInspectColor: '文字',
+  canvasInspectBackground: '背景',
+  canvasInspectTypography: '字体',
+  canvasInspectFont: '字体族',
+  canvasInspectFontSize: '字号',
+  canvasInspectLineHeight: '行高',
+  canvasInspectWeight: '字重',
+  canvasInspectLetterSpacing: '字距',
+  canvasInspectAlign: '对齐',
+  canvasInspectSpacing: '间距',
+  canvasInspectPadding: '内边距',
+  canvasInspectMargin: '外边距',
+  canvasInspectRadius: '圆角',
+  canvasInspectLayout: '布局',
+  canvasInspectDisplay: '显示',
+  canvasInspectSource: '源码',
+  canvasInspectOffset: '偏移',
+  canvasDockExpand: '展开面板',
+  canvasDockCollapse: '收起面板',
+  canvasDockPickElement: '点选画框里的元素',
   csvEmpty: '这个文件是空的',
   csvFailed: '无法把这个文件解析成表格',
   csvFailedHint: '切换到源码可以看原始文本。',
@@ -285,6 +371,7 @@ const ZH: PreviewText = {
 }
 
 const EN: PreviewText = {
+  lang: 'en-US',
   title: 'Preview',
   empty: 'Nothing to preview',
   emptyHint: 'Pick a file in the Files panel, or open one from an artifact card.',
@@ -358,7 +445,7 @@ const EN: PreviewText = {
   liveGenerating: 'Generating…',
   canvasMode: 'Canvas view',
   singleMode: 'Single page view',
-  canvasHint: 'Canvas: drag to pan, Ctrl+wheel to zoom, double-click a frame to interact, 0 to fit',
+  canvasHint: 'Canvas: drag to pan, Ctrl+wheel to zoom, double-click a frame title to zoom into it, 0 to fit',
   canvasZoomIn: 'Zoom in',
   canvasZoomOut: 'Zoom out',
   canvasZoomReset: 'Zoom to 100%',
@@ -369,6 +456,48 @@ const EN: PreviewText = {
   canvasDesktop: 'Desktop',
   canvasPhone: 'Phone',
   canvasAgentEditing: 'Agent is editing',
+  canvasTools: 'Canvas tools',
+  canvasToolHand: 'Pan canvas',
+  canvasToolInteract: 'Interact with page',
+  canvasToolInspect: 'Inspect element',
+  canvasDevices: 'Frame devices',
+  canvasDeviceDesktop: 'Desktop',
+  canvasDeviceLaptop: 'Laptop',
+  canvasDeviceTablet: 'Tablet',
+  canvasDevicePhone: 'Phone',
+  canvasDeviceCustom: 'Custom width',
+  canvasCustomWidth: 'Width (px)',
+  canvasReload: 'Reload frame',
+  canvasFocusFrame: 'Double-click to zoom to this frame',
+  canvasInspectTitle: 'Inspect',
+  canvasInspectPanel: 'Element properties',
+  canvasInspectEmpty: 'Hover an element inside a frame and click to inspect it.',
+  canvasInspectCopySelector: 'Copy selector',
+  canvasInspectCopied: 'Copied',
+  canvasInspectSize: 'Size',
+  canvasInspectFrameSize: 'Frame',
+  canvasInspectBox: 'Box (width / height)',
+  canvasInspectColors: 'Colors',
+  canvasInspectColor: 'Text',
+  canvasInspectBackground: 'Background',
+  canvasInspectTypography: 'Typography',
+  canvasInspectFont: 'Font',
+  canvasInspectFontSize: 'Font size',
+  canvasInspectLineHeight: 'Line height',
+  canvasInspectWeight: 'Weight',
+  canvasInspectLetterSpacing: 'Letter spacing',
+  canvasInspectAlign: 'Align',
+  canvasInspectSpacing: 'Spacing',
+  canvasInspectPadding: 'Padding',
+  canvasInspectMargin: 'Margin',
+  canvasInspectRadius: 'Radius',
+  canvasInspectLayout: 'Layout',
+  canvasInspectDisplay: 'Display',
+  canvasInspectSource: 'Source',
+  canvasInspectOffset: 'Offset',
+  canvasDockExpand: 'Expand panel',
+  canvasDockCollapse: 'Collapse panel',
+  canvasDockPickElement: 'Pick an element in a frame',
   csvEmpty: 'This file is empty',
   csvFailed: 'Couldn’t parse this file as a table',
   csvFailedHint: 'Switch to the source to see the raw text.',

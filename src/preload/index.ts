@@ -2,6 +2,15 @@ import type { FileNameSearchResult } from '../shared/file-name-search'
 import type { GitRemoteIdentity } from '../shared/git'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { MCP_APP_VIEW_CHANNELS } from '../shared/mcp-app-view'
+import {
+  CANVAS_CAPTURE_CHANNEL,
+  HTML_EDIT_APPLY_CHANNEL,
+  HTML_EDIT_UNDO_CHANNEL,
+  SEARCH_OPS_READ_CHANNEL,
+  VIDEO_EXPORT_CANCEL_CHANNEL,
+  VIDEO_EXPORT_PROGRESS_CHANNEL,
+  VIDEO_EXPORT_START_CHANNEL
+} from '../shared/ipc'
 import type { HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 import type { ArtifactLibraryResult, SaveInlineArtifactResult } from '../shared/artifact-library'
 import type {
@@ -38,6 +47,7 @@ import type {
   PackageListingView,
   SourceRefView,
   SourceLinkView,
+  WebSearchOpView,
   Attachment,
   AttentionNotify,
   BrowserBounds,
@@ -98,7 +108,8 @@ import type {
   LocalModelServer,
   PiRuntimePrefs,
   PiNativeSettingsResult,
-  RemoteImageResult
+  RemoteImageResult,
+  VideoExportProgress
 } from '../shared/ipc'
 import type { DeepLinkIntent } from '../shared/ipc'
 import type { ApiKeyPools } from '../shared/api-keys'
@@ -222,6 +233,7 @@ const api: YanBridge = {
   listModels: () => invoke<ModelInfo[]>('yan:listModels'),
   setModel: (provider, modelId) => invoke<Ok>('yan:setModel', provider, modelId),
   setThinking: (level) => invoke<Ok>('yan:setThinking', level),
+  setUltracode: (on) => invoke<Ok>('yan:setUltracode', on),
   listThinkingLevels: () => invoke<string[]>('yan:listThinkingLevels'),
   listCommands: () => invoke<SlashCommand[]>('yan:listCommands'),
 
@@ -323,6 +335,29 @@ const api: YanBridge = {
   pickImages: () => invoke<Attachment[]>('yan:pickImages'),
   pickFilePaths: () => invoke<string[]>('yan:pickFiles'),
 
+  canvas: {
+    capture: (rect, scope) => invoke<Awaited<ReturnType<YanBridge['canvas']['capture']>>>(CANVAS_CAPTURE_CHANNEL, rect, scope)
+  },
+
+  htmlEdit: {
+    apply: (request) => invoke<Awaited<ReturnType<YanBridge['htmlEdit']['apply']>>>(HTML_EDIT_APPLY_CHANNEL, request),
+    undo: (request) => invoke<Awaited<ReturnType<YanBridge['htmlEdit']['undo']>>>(HTML_EDIT_UNDO_CHANNEL, request)
+  },
+
+  videoExport: {
+    start: (request) => invoke<Awaited<ReturnType<YanBridge['videoExport']['start']>>>(VIDEO_EXPORT_START_CHANNEL, request),
+    cancel: (id) => invoke<boolean>(VIDEO_EXPORT_CANCEL_CHANNEL, id),
+    onProgress: (cb): (() => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, payload: VideoExportProgress): void => {
+        if (payload) cb(payload)
+      }
+      ipcRenderer.on(VIDEO_EXPORT_PROGRESS_CHANNEL, listener)
+      return () => {
+        ipcRenderer.removeListener(VIDEO_EXPORT_PROGRESS_CHANNEL, listener)
+      }
+    }
+  },
+
   pathForFile: (file) => webUtils.getPathForFile(file),
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
@@ -366,6 +401,9 @@ const api: YanBridge = {
     verifyFiles: (req) => invoke<SourceRefView[]>('yan:sources:verifyFiles', req),
     link: (req) => invoke('yan:sources:link', req),
     removeImage: (req) => invoke('yan:sources:removeImage', req)
+  },
+  searchOps: {
+    read: (operationId) => invoke<WebSearchOpView>(SEARCH_OPS_READ_CHANNEL, operationId)
   },
   packages: {
     search: (query, offset) => invoke('yan:packages:search', query, offset),

@@ -18,11 +18,12 @@ import {
   utimesSync
 } from 'node:fs'
 import { createRequire } from 'node:module'
+import { writeUltracodeFixture, writeYanSnapshot, ULTRACODE_HIDDEN_CHECKS } from './helpers/ultracode-fixture.mjs'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { deflateSync } from 'node:zlib'
 import { dirname, join, resolve, basename, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir, homedir } from 'node:os'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -213,6 +214,8 @@ const CASES = {
   },
   compactdraft: { probe: 'scripts/probe/compact-draft.js', fixture: true, piSettings: { compaction: { enabled: false, reserveTokens: 4096, keepRecentTokens: 200 } }, delay: 12000, cost: 1, budget: 300000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
   imgedit: { probe: 'scripts/probe/image-edit.js', delay: 12000, cost: 1, fixture: true, budget: 420000, model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+  ultracodereview: { probe: 'scripts/probe/ultracode-review.js', fixture: true, delay: 12000, cost: 3, budget: 3900000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'ultracodeReviewOutcome' },
+  ultracode: { probe: 'scripts/probe/ultracode.js', fixture: true, delay: 12000, cost: 3, budget: 2700000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'ultracodeOutcome' },
   subagentfork: { probe: 'scripts/probe/subagent-fork.js', fixture: true, delay: 12000, cost: 1, budget: 600000, model: 'commandcode/deepseek/deepseek-v4.1-flash', afterExit: 'subagentForkCache' },
   queue: { probe: 'scripts/probe/queue.js', delay: 9000, cost: 1, budget: 150000 },
   queuebusy: { probe: 'scripts/probe/queue-busy.js', delay: 9000, cost: 1 },
@@ -385,6 +388,7 @@ function buildFixtureProject(base) {
   }
   mk('uni', '中文 目录')
   put(join('uni', '中文 目录', '文件 名.ts'), 'export const 中文 = 1\n')
+  writeUltracodeFixture(dir)
   put('notadir.txt', 'not a directory\n')
 
   mk('compact', '.pi')
@@ -1058,6 +1062,79 @@ async function checkKnowledgeCli(sandboxRoot, _tempBefore, probeText) {
   return { ok, lines }
 }
 
+function checkUltracodeOutcome(sandboxRoot, _tempBefore, probeText, { review = false } = {}) {
+  const lines = []
+  let ok = true
+  const say = (good, text) => {
+    lines.push((good ? '  ✓ ' : '  ✗ ') + text)
+    if (!good) ok = false
+  }
+  if (!sandboxRoot) return { ok: true, lines: ['  （非隔离运行，跳过）'] }
+  const ultra = join(sandboxRoot, 'fixture-project', 'ultra')
+  if (review) {
+    const snap = join(sandboxRoot, 'fixture-project', 'yan-snapshot')
+    let changed = ''
+    try { changed = execFileSync('git', ['-C', snap, 'status', '--porcelain'], { encoding: 'utf8' }).trim() } catch (error) { changed = 'git status 失败：' + String(error?.message ?? error) }
+    say(!changed, `审查没有改动源码快照（${changed ? changed.split('\n').slice(0, 5).join(' | ') : '干净'}）`)
+  }
+  let testOut = ''
+  if (!review) try {
+    testOut = execFileSync(process.execPath, [join(ultra, 'test.mjs')], { cwd: ultra, encoding: 'utf8', timeout: 30_000 })
+  } catch (error) {
+    testOut = String(error?.stdout ?? '') + String(error?.stderr ?? error?.message ?? '')
+  }
+  if (!review) say(/\bok\b/.test(testOut), `node ultra/test.mjs 通过（${JSON.stringify(testOut.trim().slice(0, 160))}）`)
+  const checkFile = join(sandboxRoot, 'ultracode-hidden-checks.mjs')
+  writeFileSync(checkFile, ULTRACODE_HIDDEN_CHECKS, 'utf8')
+  let hidden = {}
+  if (!review) try {
+    hidden = JSON.parse(execFileSync(process.execPath, [checkFile, pathToFileURL(ultra + '/').href], { encoding: 'utf8', timeout: 30_000 }).trim().split('\n').at(-1))
+  } catch (error) {
+    lines.push('  隐藏检查运行失败：' + String(error?.message ?? error).slice(0, 200))
+  }
+  if (!review) for (const [name, result] of Object.entries(hidden)) lines.push(`  ${result === true ? '◆' : '◇'} 测试未覆盖的 bug：${name}${result === true ? ' 已修' : ' 未修（' + result + '）'}`)
+  const sessionId = /SESSION_ID=(\S+)/.exec(probeText ?? '')?.[1]
+  const sessionsDir = join(sandboxRoot, 'sessions')
+  const files = []
+  const walk = (dir, depth = 0) => {
+    if (depth > 3 || !existsSync(dir)) return
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) walk(p, depth + 1)
+      else if (e.name.endsWith('.jsonl') && (!sessionId || e.name.includes(sessionId))) files.push(p)
+    }
+  }
+  walk(sessionsDir)
+  say(files.length > 0, `找到主会话文件（${sessionId ?? '无 id'}）`)
+  if (!files.length) return { ok, lines }
+  const entries = readFileSync(files[0], 'utf8').split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line) } catch { return null } }).filter(Boolean)
+  const reminders = entries.filter((e) => e.type === 'custom_message' && e.customType === 'yan-ultracode').map((e) => e.details?.mode)
+  const gates = entries.filter((e) => e.type === 'custom_message' && e.customType === 'yan-ultracode-gate').length
+  say(reminders.includes('on'), `注入了深度模式提醒（${reminders.join(',') || '无'}）`)
+  lines.push(`  复核闸门触发 ${gates} 次`)
+  const calls = entries.filter((e) => e.type === 'message' && e.message?.role === 'assistant').flatMap((e) => (e.message.content ?? []).filter((c) => c.type === 'toolCall'))
+  const tally = {}
+  for (const call of calls) tally[call.name] = (tally[call.name] ?? 0) + 1
+  lines.push(`  主会话工具调用：${JSON.stringify(tally)}`)
+  const skillRead = calls.some((c) => (c.name === 'read' || c.name === 'bash') && /subagent[\\/]+SKILL\.md|skills[\\/]+subagent[\s\S]*SKILL\.md/i.test(JSON.stringify(c.arguments ?? {})))
+  lines.push(`  读了 subagent 技能：${skillRead ? '是' : '否'}`)
+  const usage = entries.filter((e) => e.message?.role === 'assistant' && e.message.usage).reduce((sum, e) => { const u = e.message.usage; return { input: sum.input + (u.input ?? 0), output: sum.output + (u.output ?? 0), cacheRead: sum.cacheRead + (u.cacheRead ?? 0) } }, { input: 0, output: 0, cacheRead: 0 })
+  lines.push(`  主会话用量：${JSON.stringify(usage)}`)
+  const evidence = join(dirname(fileURLToPath(import.meta.url)), '..', '.local-docs', 'evidence', '2026-10-22-深度模式', 'live')
+  try {
+    mkdirSync(evidence, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    copyFileSync(files[0], join(evidence, `main-${stamp}.jsonl`))
+    const subDir = join(sandboxRoot, 'data', 'subagents', 'sessions')
+    if (existsSync(subDir)) for (const id of readdirSync(subDir)) for (const name of readdirSync(join(subDir, id)).filter((n) => n.endsWith('.jsonl'))) copyFileSync(join(subDir, id, name), join(evidence, `sub-${stamp}-${id}.jsonl`))
+    for (const name of readdirSync(ultra)) copyFileSync(join(ultra, name), join(evidence, `ultra-${stamp}-${name}`))
+    lines.push(`  过程记录已存：${evidence}`)
+  } catch (error) {
+    lines.push('  存证据失败：' + String(error?.message ?? error))
+  }
+  return { ok, lines }
+}
+
 function checkSubagentForkCache(sandboxRoot, _tempBefore, probeText) {
   const lines = []
   let ok = true
@@ -1578,6 +1655,8 @@ const AFTER_EXIT = {
   subagentFail: checkSubagentFail,
   subagentArchive: checkSubagentArchive,
   subagentForkCache: checkSubagentForkCache,
+  ultracodeOutcome: checkUltracodeOutcome,
+  ultracodeReviewOutcome: (sandboxRoot, tempBefore, probeText) => checkUltracodeOutcome(sandboxRoot, tempBefore, probeText, { review: true }),
   knowledgeCli: checkKnowledgeCli,
   sessionabArchive: checkSessionabArchive,
   atrefsendArchive: checkAtRefSend,
@@ -3103,6 +3182,7 @@ async function main() {
 
   const fixtureBase = sandboxRoot ?? mkdtempSync(join(tmpdir(), 'yan-fixture-'))
   const fixtureProject = buildFixtureProject(fixtureBase)
+  if (names.includes('ultracodereview')) writeYanSnapshot(fixtureProject, root, execFileSync)
 
   let boundaryServer = null
   if (names.some((n) => CASES[n].usesBoundaryServer)) {

@@ -42,9 +42,15 @@ export interface SubagentServiceDeps {
   shellExtension?(): string | undefined
   readOnlyExtension?(): string | undefined
   runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult>
+  previewHtml?(htmlPath: string, root: string, options?: { at?: number[] }): Promise<unknown>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>
-  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean | SubagentDangerAnswer>
+  confirmDanger?(
+    params: Record<string, unknown>,
+    cwd: string,
+    origin?: SubagentApprovalOrigin,
+    signal?: AbortSignal
+  ): Promise<boolean | SubagentDangerAnswer>
   forkSource?(context: SubagentCommandContext): SubagentForkSource | string
   onChange(run: SubagentRun): void
   onPatch?(payload: { id: string; run: SubagentRun; transcriptFrom: number }): void
@@ -77,8 +83,9 @@ export class SubagentService {
       piBin: s.piBin,
       extensions: [this.deps.preambleExtension?.(), this.deps.codemodeExtension?.(), this.deps.shellExtension?.(), this.deps.guardExtension?.(), ...(this.deps.providerExtensions?.() ?? [])].filter((path): path is string => !!path),
       ...(this.deps.readOnlyExtension?.() && this.deps.runReadOnlyCommand ? { readOnlyExtension: this.deps.readOnlyExtension(), runReadOnlyCommand: this.deps.runReadOnlyCommand } : {}),
+      ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
-      confirmDanger: (params, cwd, origin) => this.deps.confirmDanger?.(params, cwd, origin) ?? Promise.resolve(false),
+      confirmDanger: (params, cwd, origin, signal) => this.deps.confirmDanger?.(params, cwd, origin, signal) ?? Promise.resolve(false),
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       onChange: (run) => this.deps.onChange(run),
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),
@@ -112,7 +119,7 @@ export class SubagentService {
     }
     const tooLarge = forkContextError(source)
     if (tooLarge) throw new CapabilityCommandError('subagent_fork_context', tooLarge)
-    const result = await ctrl.start(task, source.model, 'shared-cwd', briefInput, source)
+    const result = await ctrl.start(task, source.model, 'shared-cwd', briefInput, source, context)
     if (!result.ok || !result.run) throw new CapabilityCommandError('subagent_start_failed', result.error ?? '子代理启动失败')
     return startSummary(result.run)
   }
@@ -150,7 +157,7 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput)
+      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, context)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',

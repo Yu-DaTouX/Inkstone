@@ -24,7 +24,9 @@ const usage = (input, output) => ({ input, output, cacheRead: 0, cacheWrite: 0, 
 const tool = (id, name, startedAt, endedAt) => ({ id, name, args: {}, status: 'ok', startedAt, endedAt })
 
 try {
-  const outfile = join(process.cwd(), 'out', 'test', 'subagent-notice-timing.mjs')
+  const outDir = join(process.cwd(), '.tmp', 'subagent-notice-timing')
+  await mkdir(outDir, { recursive: true })
+  const outfile = join(outDir, 'subagent-notice-timing.mjs')
   await build({
     stdin: {
       contents: `
@@ -34,7 +36,7 @@ try {
         export { buildSubagentNotice, isSubagentNotice, parseSubagentNotice } from './src/shared/subagent-notice'
         export * as store from './src/main/turn-timing-store'
         export { TurnTimingTracker } from './src/main/turn-timing-tracker'
-        export { createSubagentNotifier, findNoticeTarget, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS } from './src/main/subagent-notify'
+        export { createSubagentNotifier, findNoticeTarget, NOTICE_COALESCE_WINDOW_MS, NOTICE_BATCH_MIN_WAIT_MS, NOTICE_BATCH_MAX_WAIT_MS, NOTICE_SIBLINGS_POLL_MS, NOTICE_MAX_UNDELIVERED_RUNS } from './src/main/subagent-notify'
       `,
       resolveDir: process.cwd(),
       loader: 'ts'
@@ -62,7 +64,8 @@ try {
     NOTICE_COALESCE_WINDOW_MS,
     NOTICE_BATCH_MIN_WAIT_MS,
     NOTICE_BATCH_MAX_WAIT_MS,
-    NOTICE_SIBLINGS_POLL_MS
+    NOTICE_SIBLINGS_POLL_MS,
+    NOTICE_MAX_UNDELIVERED_RUNS
   } = mod
 
   const notice = (id, status = 'done', task = '检查登录流程') =>
@@ -341,7 +344,7 @@ try {
         .replaceAll("from './ipc'", "from '../../src/shared/ipc'")
         .replaceAll("from './subagent-notice'", "from '../../src/shared/subagent-notice'")
       await writeFile(join(dir, 'old-turns.ts'), patched, 'utf8')
-      const oldOut = join(process.cwd(), 'out', 'test', 'subagent-notice-old.mjs')
+      const oldOut = join(dir, 'old-turns.mjs')
       await build({
         stdin: {
           contents: `export { groupIntoTurns } from './.tmp/subagent-notice-timing/old-turns.ts'`,
@@ -672,6 +675,77 @@ try {
         check(clock.pending().length === 0, '关闭开关：不入队，不挂窗口定时器')
         await clock.advance(NOTICE_BATCH_MIN_WAIT_MS)
         check(sent.length === 0, '关闭开关：不投递')
+      }
+
+      console.log('\n--- 11. 未投递上限、放弃投递日志与退出 flush ---')
+      const warns = []
+      const realWarn = console.warn
+      console.warn = (...parts) => { warns.push(parts.join(' ')) }
+      try {
+        {
+          const clk = makeClock()
+          clock = clk
+          const sent = []
+          let target = null
+          const notify = createSubagentNotifier({
+            enabled: () => true,
+            now: () => clk.now,
+            runningSiblings: () => 0,
+            find: () => target
+          })
+          const total = NOTICE_MAX_UNDELIVERED_RUNS + 5
+          for (let i = 0; i < total; i++) {
+            notify(finish(`sub-cap-${String(i).padStart(2, '0')}`, 'sess-cap', { endedAt: 1000 + i }))
+            await settle()
+            await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+          }
+          check(warns.some((w) => w.includes('上限')), '未投递上限：超过上限时写日志', JSON.stringify(warns))
+
+          target = { send: async (text) => { sent.push(text); return { ok: true } } }
+          notify.retry()
+          await settle()
+          check(sent.length === 1, '未投递上限：父会话恢复后补投一次', String(sent.length))
+          const text = sent[0] ?? ''
+          const oldest = '任务 sub-cap-00'
+          const newest = `任务 sub-cap-${String(total - 1).padStart(2, '0')}`
+          const boundary = `任务 sub-cap-${String(total - NOTICE_MAX_UNDELIVERED_RUNS).padStart(2, '0')}`
+          check(!text.includes(oldest), '未投递上限：最旧的被丢弃，不再投出')
+          check(text.includes(boundary) && text.includes(newest), '未投递上限：保留最新的上限数量（含边界与最后一条）')
+        }
+
+        {
+          const clk = makeClock()
+          clock = clk
+          const sent = []
+          let ok = false
+          const notify = createSubagentNotifier({
+            enabled: () => true,
+            now: () => clk.now,
+            runningSiblings: () => 0,
+            find: () => ({ send: async (text) => { sent.push(text); return { ok } } })
+          })
+          notify(finish('sub-give-up', 'sess-give-up'))
+          await settle()
+          await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+          for (let i = 0; i < 3; i++) {
+            notify.retry()
+            await settle()
+          }
+          check(!warns.some((w) => w.includes('放弃')), '放弃投递：未到 5 次前不写放弃日志', JSON.stringify(warns))
+          check(sent.length === 4, '放弃投递：前 4 次都真的尝试投递', String(sent.length))
+          notify.retry()
+          await settle()
+          check(sent.length === 5, '放弃投递：第 5 次仍尝试', String(sent.length))
+          const gaveUp = warns.filter((w) => w.includes('放弃'))
+          check(gaveUp.length === 1 && gaveUp[0].includes('sub-give-up') && gaveUp[0].includes('5 次'), '放弃投递：连续 5 次失败时写日志而不是静默丢弃', JSON.stringify(gaveUp))
+          ok = true
+          notify.retry()
+          await settle()
+          check(sent.length === 5, '放弃投递：放弃后不再补投', String(sent.length))
+        }
+
+      } finally {
+        console.warn = realWarn
       }
     } finally {
       globalThis.setTimeout = realSetTimeout

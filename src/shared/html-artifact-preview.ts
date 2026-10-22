@@ -1,3 +1,6 @@
+import { canvasBridgeRuntime } from './html-canvas-bridge'
+import { markHtmlSourceOffsets } from './html-source-map'
+
 export const HTML_ARTIFACT_SCHEME = 'inkstone-html'
 export const HTML_ARTIFACT_MAX_BYTES = 5 * 1024 * 1024
 export const HTML_ARTIFACT_SANDBOX = 'allow-scripts'
@@ -5,7 +8,7 @@ export const HTML_INLINE_MAX_BYTES = 1024 * 1024
 
 export type HtmlArtifactPreviewError = 'outside' | 'type' | 'size' | 'read' | 'busy'
 export type HtmlArtifactPreviewResult =
-  | { ok: true; url: string }
+  | { ok: true; url: string; nonce: string; hash: string }
   | { ok: false; error: HtmlArtifactPreviewError }
 
 export function isHtmlArtifact(artifact: { filename: string; mediaType?: string }): boolean {
@@ -68,10 +71,11 @@ addEventListener('message',function(e){if(e.source!==parent)return;var d=e.data;
 
 const PREVIEW_RUNTIME = `<style data-yan-preview>${PREVIEW_RUNTIME_STYLE}</style><script data-yan-preview>${PREVIEW_RUNTIME_SCRIPT}</script>`
 
-export function withPreviewRuntime(html: string): string {
-  const doctype = /^\uFEFF?\s*<!doctype[^>]*>/i.exec(html)
+export function withPreviewRuntime(html: string, nonce?: string): string {
+  const marked = markHtmlSourceOffsets(html)
+  const doctype = /^\uFEFF?\s*<!doctype[^>]*>/i.exec(marked)
   const at = doctype ? doctype[0].length : 0
-  return html.slice(0, at) + PREVIEW_RUNTIME + html.slice(at)
+  return marked.slice(0, at) + PREVIEW_RUNTIME + canvasBridgeRuntime(nonce) + marked.slice(at)
 }
 
 export function readProbeReply(data: unknown): HtmlPreviewProbeReply | null {

@@ -455,7 +455,7 @@ async function main() {
     ok(stateIcon?.props.state === 'done', '状态用小图标表示', stateIcon?.props.state)
     const task = textOf(byTestId(row, 'v3-subagent-task')[0])
     ok(task.includes('PKCE') && task !== subagentRun().task, '标题是任务行带时态的状态文字', task)
-    ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '4 个工具 · 12k tokens', '完成后用量列是「N 个工具 · tokens」', textOf(byTestId(row, 'v3-subagent-usage')[0]))
+    ok(textOf(byTestId(row, 'v3-subagent-usage')[0]) === '4 个工具 · 12k tokens', '上下文未知时，完成后用量列是「N 个工具 · tokens」', textOf(byTestId(row, 'v3-subagent-usage')[0]))
     ok(textOf(byTestId(row, 'v3-subagent-time')[0]) === '4s', '用时单独一列', textOf(byTestId(row, 'v3-subagent-time')[0]))
     const bots = collect(row, kind('SubagentBot'))
     ok(bots.length === 1 && bots[0].props.size === 20, '行首 Bot 为 20px', bots.map((el) => el.props.size))
@@ -490,7 +490,8 @@ async function main() {
     const { line, row } = renderRow()
     ok(byTestId(line, 'v3-subagents-live').length === 0, '不再单独写「N 个任务正在运行」')
     const name = byTestId(row, 'v3-subagent-model')[0]
-    ok(textOf(name) === 'DeepSeek V4.1 Flash · state.think.medium', '模型用菜单名，后接推理档位', name && textOf(name))
+    ok(flattenText(name) === 'DeepSeek V4.1 Flash · state.think.medium', '模型用菜单名，后接推理档位', name && flattenText(name))
+    ok(collect(name, (el) => el?.props?.className === 'v3-sa-model-tail').length === 1, '推理档位单独一段，模型名过长时只截模型名')
     ok(name?.props.title === flash, '悬停保留完整模型身份', name?.props.title)
     const stateIcon = collect(row, kind('SubagentStateIcon'))[0]
     ok(stateIcon?.props.state === 'running', '运行中的状态图标', stateIcon?.props.state)
@@ -504,8 +505,14 @@ async function main() {
 
     store({ subagents: [subagentRun({ model: flash })], models: [] })
     const bare = renderRow().row
-    ok(textOf(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', textOf(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
+    ok(flattenText(byTestId(bare, 'v3-subagent-model')[0]) === 'deepseek/deepseek-v4.1-flash', '目录查不到时退回模型 id', flattenText(byTestId(bare, 'v3-subagent-model')[0] ?? {}))
     ok(byTestId(bare, 'v3-subagent-usage').length === 0 && collect(bare, kind('ContextGauge')).length === 0, '上下文未知时不画圆环与空的用量列')
+
+    store({ subagents: [subagentRun({ status: 'done', endedAt: 5_000, toolCalls: 4, usage: { input: 9_000, output: 3_000 }, contextUsage: { tokens: 20_000, contextWindow: 200_000, percent: 10 } })], models: [] })
+    const finished = renderRow().row
+    const doneGauge = collect(finished, kind('ContextGauge'))[0]
+    ok(doneGauge?.props.usage.percent === 10 && byTestId(finished, 'v3-subagent-usage').length === 0, '完成后与运行中同样显示上下文圆环', doneGauge?.props.usage)
+    ok(String(finished.props.title).includes('4 个工具 · 12k tokens'), '完成后的工具数与 tokens 放进行的悬停说明', finished.props.title)
 
     store({ subagents: [subagentRun({ status: 'error', endedAt: 4_000, error: '模型请求超时\n详细堆栈', toolCalls: 2 })], models: [] })
     const failed = renderRow().row

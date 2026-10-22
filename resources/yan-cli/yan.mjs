@@ -27,8 +27,11 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan mcp call --request-file request.json
   yan tasks apply --request-file task-update.json     兼容入口：会话里有 todos 工具时优先用工具
   yan artifact attach --path <项目内文件> [--description <说明>]
-  yan artifact preview --path <项目内 HTML>
+  yan artifact preview --path <项目内 HTML> [--at 1.5,4]   截图自查（视频合成逐时间点截总览图）
+  yan artifact export-video --path <项目内 HTML> [--fps 30] [--out <文件.mp4>]   导出 MP4（需要系统 FFmpeg）
   yan artifact style --kind <成果类型>                随机抽风格牌，用户没点名风格时开工前用
+  yan artifact style --remote list [--query <词>]       远端设计系统清单（按需下载，不随包）
+  yan artifact style --remote <id>                      拉取一套设计系统到本机后照它做
   yan image generate --request-file image.json
   yan question ask --request-file question.json      兼容入口：会话里有 question 工具时优先用工具
   yan office read --path <文件.docx|xlsx|pptx|pdf>
@@ -211,14 +214,34 @@ task-update.json：
           用法：yan artifact attach --path <文件> --description "可选说明"
           同一文件改完再 attach 就是这份成果的新版本（v2、v3…），用户能切换对比；
           修改已有成果时改原文件，不要另起文件名。内容没变的重复 attach 不会新增版本。
-  preview 把项目内的 HTML 按砚的沙箱渲染成浅色/深色 × 桌面/窄屏四张截图，
-          返回截图路径、控制台错误和横向溢出；不挂到消息。交付 HTML 前先用它自查，
-          用法：yan artifact preview --path <文件.html>
+  preview 把项目内的 HTML 按砚的沙箱渲染成截图，返回截图路径、控制台错误和溢出；不挂到消息。
+          交付 HTML 前先用它自查。普通网页是浅色/深色 × 桌面/窄屏四张整页拼版；
+          视频合成（带 data-composition-id 与 window.__timelines 控制器）改成按合成画幅、
+          在每个片段中点和结尾帧逐时间点 seek 后截图，拼成一张带 t=秒 标注的总览图，
+          并列出每个时间点超出画框的可见元素。
+          用法：yan artifact preview --path <文件.html> [--at 1.5,4]
+          --at 用逗号分隔的秒数覆盖默认取样时间点（每片段中点 + 结尾帧，最多 8 个，等分会删减）。
           预览会加载 HTML 同文件夹里相对路径的 .css / .js / 图片 / 字体，网络资源和 fetch 会被拦截；
           attach 只复制 HTML 本身，所以要挂到回复的成果页仍把样式、脚本和图片内联进 HTML。
+  export-video
+          把 hyperframes 合成（带 data-composition-id 与 window.__timelines 控制器的 HTML）
+          逐帧 seek 后录成 MP4，默认输出到 HTML 同目录的同名 .mp4，已存在时加序号，不覆盖。
+          用法：yan artifact export-video --path <文件.html> [--fps 30] [--scale 1] [--out <文件.mp4>]
+          需要系统里已经装好 FFmpeg（PATH 里的 ffmpeg，或用环境变量 YAN_FFMPEG 指定路径）；
+          只录画面，合成里的 <audio>/<video> 不混音；时长上限 10 分钟、帧数上限 18000。
   style   随机抽几张风格牌（配色、字体、版式、母题），用户没点名风格时开工前用，
           用法：yan artifact style --kind <poster|dashboard|game|explainer|tool|landing|slides> [--count 3] [--theme light|dark]
           最近抽过的牌会尽量避开；取某一张：yan artifact style --id <牌 id 或中文名>；列出全部牌：yan artifact style --list
+          当前目录（或用 --cwd <目录> 指定）有 DESIGN.md 时，优先按项目的 DESIGN.md 做、不抽牌；
+          确实要换成随包风格牌时加 --ignore-project。
+  style --remote list [--query <词>]
+          列出远端设计系统（open-design，Apache-2.0，固定提交，不随包分发）：id、名称、类别、一句描述。
+          清单缓存在数据目录，不重复联网；--query 按英文关键词过滤。
+  style --remote <id>
+          按需下载一套设计系统（DESIGN.md 与 tokens.css，附 NOTICE.txt 写明来源与许可）到数据目录，
+          返回文件路径；之后读 DESIGN.md 并把 tokens.css 的 :root 变量写进成果。已下载过就直接用。
+          用户点名某个设计系统 / 品牌风格、随包风格牌不够用时才用；id 只接受小写字母、数字和连字符。
+          砚的预览离线，DESIGN.md 里引用的网络字体和外部链接不会生效，字体换系统字体栈。
 `,
   image: `yan image generate [选项]
 yan image local status | start | stop
@@ -455,8 +478,8 @@ const GROUP_SPECS = {
     }
   },
   artifact: {
-    actions: ['attach', 'preview', 'style'],
-    required: { attach: ['path'], preview: ['path'] }
+    actions: ['attach', 'preview', 'export-video', 'style'],
+    required: { attach: ['path'], preview: ['path'], 'export-video': ['path'] }
   },
   image: {
     actions: ['generate', 'local'],
@@ -604,6 +627,7 @@ if (positional[0] === 'image' && positional[1] === 'local') {
 } else {
   command = `${positional[0]}.${positional[1]}`
 }
+if (command === 'artifact.export-video') command = 'artifact.exportVideo'
 
 const flagParams = {}
 for (const [k, v] of Object.entries(flags)) {
@@ -634,7 +658,12 @@ if (groupSpec?.required?.[positional[1]]) {
 
 if (command === 'artifact.style') {
   const { runArtifactStyle } = await import('./artifact-style.mjs')
-  const result = runArtifactStyle(flags)
+  let result
+  try {
+    result = await runArtifactStyle(flags)
+  } catch (err) {
+    result = { ok: false, error: err?.code ?? 'style_failed', message: String(err?.message ?? err) }
+  }
   process.stdout.write(JSON.stringify(result) + '\n')
   process.exit(result.ok ? EXIT.ok : EXIT.failed)
 }

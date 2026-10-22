@@ -36,7 +36,9 @@ import {
 import type { ModelChoice } from '../../../shared/model-selection'
 import type { ModelInfo } from '../../../shared/ipc'
 import { levelLabel, ThinkingBadge } from './ThinkingBadge'
+import { UltracodeConfirmDialog } from './UltracodeConfirmDialog'
 import './model-thinking-picker.css'
+import './ultracode.css'
 
 export function thinkColor(level: string): string {
   return `var(--think-${level}, var(--fg3))`
@@ -56,13 +58,18 @@ const keyOf = (m: Pick<ModelInfo, 'provider' | 'id'>): string => `${m.provider}/
 
 const EMPTY: never[] = []
 
+const ULTRACODE_OVERDRAG_PX = 28
+
 export function ThinkingSection({
   levels,
   level,
   busy,
   onCommit,
   fallback,
-  fallbackShort
+  fallbackShort,
+  ultracode = false,
+  onUltracodeRequest,
+  onUltracodeOff
 }: {
   levels: readonly string[]
   level: string
@@ -70,6 +77,9 @@ export function ThinkingSection({
   onCommit: (level: string) => void
   fallback?: string
   fallbackShort?: string
+  ultracode?: boolean
+  onUltracodeRequest?: () => void
+  onUltracodeOff?: () => void
 }) {
   const t = useT()
   const hasLevels = levels.length > 1
@@ -83,6 +93,44 @@ export function ThinkingSection({
   const probeRef = useRef<HTMLSpanElement>(null)
   const fieldRef = useRef<PulseField | null>(null)
   const palette = levels.join('|')
+  const last = levels.length - 1
+  const [overdrag, setOverdrag] = useState(false)
+  const headIndexRef = useRef(headIndex)
+  headIndexRef.current = headIndex
+  const canUltracode = hasLevels && !!onUltracodeRequest && !ultracode && !busy
+
+  const beginOverdrag = (): void => {
+    if (!canUltracode) return
+    let over = false
+    const move = (event: PointerEvent): void => {
+      const rect = trackRef.current?.getBoundingClientRect()
+      over = !!rect && headIndexRef.current === last && event.clientX > rect.right + ULTRACODE_OVERDRAG_PX
+      setOverdrag(over)
+    }
+    const end = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      setOverdrag(false)
+      if (over) onUltracodeRequest?.()
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input || !canUltracode) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (headIndexRef.current !== last) return
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowUp' && event.key !== 'End' && event.key !== 'PageUp') return
+      event.preventDefault()
+      onUltracodeRequest?.()
+    }
+    input.addEventListener('keydown', onKey)
+    return () => input.removeEventListener('keydown', onKey)
+  }, [canUltracode, last, onUltracodeRequest])
 
   useEffect(() => {
     if (preview && preview === level) setPreview(null)
@@ -136,7 +184,13 @@ export function ThinkingSection({
           {t('picker.think')}
         </span>
         <span className="mtp-thinking-fill" />
-        {hasLevels ? (
+        {hasLevels && (ultracode || overdrag) ? (
+          <span className="mtp-head-level uc-head" data-pending={overdrag && !ultracode} data-testid="thinking-current" title={t('picker.deepDesc')}>
+            <span key={ultracode ? 'on' : 'pending'} className="mtp-step-value">
+              {ultracode ? 'Ultracode' : t('picker.deepRelease')}
+            </span>
+          </span>
+        ) : hasLevels ? (
           <span className="mtp-head-level" data-level={headLevel} data-testid="thinking-current" title={t('picker.thinkDesc')}>
             <span key={headLevel} className="mtp-step-value">
               {levelLabel(t, headLevel)}
@@ -149,7 +203,7 @@ export function ThinkingSection({
         )}
       </div>
       {hasLevels ? (
-        <div className="mtp-step" data-level={headLevel}>
+        <div className="mtp-step" data-level={headLevel} data-ultracode={ultracode || overdrag} onPointerDownCapture={beginOverdrag}>
           <Slider
             className="mtp-slider"
             style={{ '--mtp-pct': `${at(headIndex)}%` } as CSSProperties}
@@ -163,6 +217,7 @@ export function ThinkingSection({
               if (action.kind === 'preview') setPreview(action.level)
             }}
             onChangeEnd={(next) => {
+              if (ultracode && (next as number) < last) onUltracodeOff?.()
               const action = thinkingCommitAction(levels, next as number, level)
               if (action.kind === 'commit') onCommit(action.level)
             }}
@@ -197,6 +252,7 @@ export function ThinkingSection({
                 data-testid={`thinking-${l}`}
                 disabled={busy}
                 onClick={() => {
+                  if (ultracode) onUltracodeOff?.()
                   const action = thinkingCommitAction(levels, i, level)
                   if (action.kind === 'commit') onCommit(action.level)
                 }}
@@ -220,6 +276,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const levels = useStore((s) => s.thinkingLevels)
   const setModel = useStore((s) => s.setModel)
   const setThinking = useStore((s) => s.setThinking)
+  const setUltracode = useStore((s) => s.setUltracode)
   const patchSettings = useStore((s) => s.patchSettings)
   const authProviders = useStore((s) => s.authProviders)
   const loadAuthProviders = useStore((s) => s.loadAuthProviders)
@@ -227,6 +284,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const openSettings = useStore((s) => s.openSettings)
 
   const [open, setOpen] = useState(false)
+  const [confirmDeep, setConfirmDeep] = useState(false)
   useEffect(() => {
     if (open && !useStore.getState().models.length) void useStore.getState().reloadModels()
   }, [open])
@@ -245,6 +303,11 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const cur =
     session?.model && session.model.id !== 'unknown' && session.model.name !== 'unknown' ? session.model : undefined
   const level = session?.thinkingLevel ?? 'off'
+  const deep = !!session?.ultracode
+  const requestUltracode = (): void => {
+    setOpen(false)
+    setConfirmDeep(true)
+  }
   const hasLevels = levels.length > 1
   const busy = !!session?.isStreaming || !!session?.isCompacting
   const thinkingStatus = session?.thinkingLevelsStatus ?? (levels.length ? 'known' : 'unknown')
@@ -349,6 +412,12 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
               <ThinkingBadge level={level} data-testid="thinking-badge" />
             </>
           ) : null}
+          {deep ? (
+            <>
+              <span className="mtp-trigger-sep" aria-hidden>·</span>
+              <span className="uc-badge" data-testid="ultracode-badge" title={t('picker.deepDesc')}>Ultracode</span>
+            </>
+          ) : null}
           <ChevronDown className="mtp-chev" size={12} aria-hidden />
         </Button>
       </span>
@@ -441,6 +510,9 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 onCommit={(next) => void setThinking(next)}
                 fallback={capabilityNote}
                 fallbackShort={capabilityShort}
+                ultracode={deep}
+                onUltracodeRequest={session?.sessionId ? requestUltracode : undefined}
+                onUltracodeOff={() => void setUltracode(false)}
               />
               {!hasLevels ? (
                 <div className="mtp-capability-note" data-testid="thinking-capability-status">
@@ -491,6 +563,14 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           </div>
         </Dialog>
       </Popover>
+      <UltracodeConfirmDialog
+        isOpen={confirmDeep}
+        onCancel={() => setConfirmDeep(false)}
+        onConfirm={() => {
+          setConfirmDeep(false)
+          void setUltracode(true)
+        }}
+      />
     </div>
   )
 }

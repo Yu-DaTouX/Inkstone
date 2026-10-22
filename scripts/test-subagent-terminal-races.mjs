@@ -84,7 +84,7 @@ async function compileController() {
   process.env.YAN_DATA_DIR = join(outDir, 'yan')
   process.env.YAN_USER_DATA = join(outDir, 'electron')
   const mod = await import(pathToFileURL(outfile).href)
-  return { SubagentController: mod.SubagentController, outDir }
+  return { SubagentController: mod.SubagentController, awaitApprovalAnswer: mod.awaitApprovalAnswer, outDir }
 }
 
 async function testF05(SubagentController) {
@@ -260,13 +260,15 @@ async function testF06(SubagentController) {
       rpc.close = async () => { await closeGate; rpc.running = false }
       try {
         const failing = ctrl.fail(run.id, '迟到的控制失败')
+        ok(run.status === 'error' && run.error === '迟到的控制失败', '失败终态在 close 返回前就落定')
         rpc.emit('event', { type: 'agent_settled' })
-        ok(run.status === 'done', 'close 挂起期间收到权威完成')
+        ok(run.status === 'error', 'close 挂起期间的 settled 不改写失败终态')
         releaseClose()
         await failing
         await run.settling
-        ok(run.status === 'done', 'close 返回后不把权威 done 翻回 error')
-        ok(run.error === undefined && run.endReason === 'completed', '保留权威完成原因，不写入迟到控制错误')
+        ok(run.status === 'error' && run.endReason === 'failed', 'close 返回后仍是失败终态')
+        ok(run.error === '迟到的控制失败', '失败原因没有被迟到的完成事件抹掉')
+        ok(run.reviewDecided === true, '失败运行照常完成差异结算')
       } finally {
         releaseClose()
         await ctrl.stopAll()
@@ -368,11 +370,140 @@ async function testF07(SubagentController) {
   }
 }
 
-const { SubagentController, outDir } = await compileController()
+async function testF08(SubagentController) {
+  console.log('F08 失败终态先行 × 停止不覆盖 settling')
+  {
+    const factory = makeRpcFactory()
+    const pushes = []
+    const ctrl = new SubagentController({
+      cwd: 'C:/f08',
+      prepare: fakePrepare,
+      createRpc: factory.createRpc,
+      onChange: (run) => pushes.push(JSON.parse(JSON.stringify(run)))
+    })
+    const started = await ctrl.start('F08 失败推送', undefined, 'controlled-cwd')
+    const run = ctrl.runs.get(started.run.id)
+    const rpc = factory.created[0]
+    let releaseClose
+    const closeGate = new Promise((resolve) => { releaseClose = resolve })
+    const innerClose = rpc.close.bind(rpc)
+    rpc.close = async () => {
+      await closeGate
+      return innerClose()
+    }
+    try {
+      const failing = ctrl.fail(run.id, 'F08 控制失败', 'startup')
+      const pushed = pushes.at(-1)
+      ok(pushed?.status === 'error' && pushed?.error === 'F08 控制失败', 'close 未返回前 UI 已收到失败快照')
+      ok(pushed?.endReason === 'startup' && pushed?.endedAt > 0, '失败快照带结束原因与结束时间')
+      const settlingHandle = run.settling
+      const stopped = await ctrl.stop(run.id)
+      ok(stopped.ok === true && run.settling === settlingHandle, '失败收尾期间点停止不覆盖 settling 句柄')
+      rpc.emit('event', { type: 'agent_settled' })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '迟到的结论' }], stopReason: 'stop' } })
+      releaseClose()
+      await failing
+      await run.settling
+      ok(run.status === 'error' && run.endReason === 'startup' && run.error === 'F08 控制失败', '迟到完成事件不改写失败终态')
+      ok(run.reviewDecided === true, '失败运行仍完成差异结算')
+    } finally {
+      releaseClose()
+      await ctrl.stopAll()
+    }
+  }
+
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/f08b', prepare: fakePrepare, createRpc: factory.createRpc, onChange: () => {} })
+    const started = await ctrl.start('F08b 重复停止', undefined, 'controlled-cwd')
+    const run = ctrl.runs.get(started.run.id)
+    const rpc = factory.created[0]
+    let closes = 0
+    let aborts = 0
+    let releaseClose
+    const closeGate = new Promise((resolve) => { releaseClose = resolve })
+    const innerClose = rpc.close.bind(rpc)
+    rpc.close = async () => {
+      closes += 1
+      await closeGate
+      return innerClose()
+    }
+    const innerCommand = rpc.command.bind(rpc)
+    rpc.command = async (type, payload, options) => {
+      if (type === 'abort') aborts += 1
+      return innerCommand(type, payload, options)
+    }
+    try {
+      const first = ctrl.stopRun(run, false)
+      const handle = run.settling
+      const second = ctrl.stopRun(run, false)
+      ok(run.settling === handle, '第二次停止不覆盖已有的 settling 句柄')
+      releaseClose()
+      await Promise.all([first, second])
+      ok(closes === 1 && aborts === 1, '重复停止只发一次 abort、只关一次 RPC', `close=${closes} abort=${aborts}`)
+      ok(run.status === 'cancelled' && run.endedAt > 0, '停止终态只收口一次')
+    } finally {
+      releaseClose()
+      await ctrl.stopAll()
+    }
+  }
+}
+
+async function testF09(awaitApprovalAnswer) {
+  console.log('F09 审批挂起 × 断开或停止时取消')
+  {
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const pending = gate.then(() => ({ decision: 'allow' }))
+    const client = new AbortController()
+    const stop = new AbortController()
+    const answer = awaitApprovalAnswer(pending, [client.signal, stop.signal])
+    client.abort()
+    const settled = await answer
+    ok(settled.decision === 'no-answer', '请求断开时挂起的审批按未答复收口')
+    release()
+  }
+  {
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const pending = gate.then(() => ({ decision: 'allow' }))
+    const stop = new AbortController()
+    const answer = awaitApprovalAnswer(pending, [undefined, stop.signal])
+    stop.abort()
+    const settled = await answer
+    ok(settled.decision === 'no-answer', '子代理停止或退出时挂起的审批按未答复收口')
+    release()
+  }
+  {
+    const aborted = new AbortController()
+    aborted.abort()
+    const settled = await awaitApprovalAnswer(new Promise(() => {}), [aborted.signal])
+    ok(settled.decision === 'no-answer', '已中止的信号不等待审批')
+  }
+  {
+    const answer = await awaitApprovalAnswer(Promise.resolve(true), [new AbortController().signal])
+    ok(answer === true, '没有中止时原样返回审批结果')
+    const denied = await awaitApprovalAnswer(Promise.resolve({ decision: 'deny', feedback: '不要删' }), [])
+    ok(denied.decision === 'deny' && denied.feedback === '不要删', '无信号时直通审批结果与反馈')
+  }
+  {
+    let failed = false
+    try {
+      await awaitApprovalAnswer(Promise.reject(new Error('approval_down')), [new AbortController().signal])
+    } catch (error) {
+      failed = error.message === 'approval_down'
+    }
+    ok(failed, '审批本身失败时仍抛错，不伪装成未答复')
+  }
+}
+
+const { SubagentController, awaitApprovalAnswer, outDir } = await compileController()
 try {
   await testF05(SubagentController)
   await testF06(SubagentController)
   await testF07(SubagentController)
+  await testF08(SubagentController)
+  await testF09(awaitApprovalAnswer)
   console.log(`subagent-terminal-races: ${checks} assertions passed（现场编译、假 RPC、临时目录真 Git、不调用模型）`)
 } finally {
   await rm(outDir, { recursive: true, force: true })

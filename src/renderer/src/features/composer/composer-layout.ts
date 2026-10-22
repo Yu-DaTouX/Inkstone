@@ -22,6 +22,7 @@ export function composerLocalCommand(value: string, commands: readonly { source:
   if (value === '/login' || value.startsWith('/login ')) return true
   const name = /^\/([^\s]+)/.exec(value)?.[1]?.toLowerCase()
   if (!name) return false
+  if (name === 'ultracode') return value.trim().toLowerCase() === '/ultracode'
   return commands.some(
     (command) => (command.source === 'yan' || command.source === 'compatibility') && command.name.toLowerCase() === name
   )

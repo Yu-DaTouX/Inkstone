@@ -31,6 +31,7 @@ import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { TurnChanges } from './TurnChanges'
+import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, UserTurn } from '../../../../shared/turns'
@@ -231,6 +232,7 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
   return (
     <TranscriptViewScope.Provider value={view}>
       <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view}>
+        <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
           {edge.first ? <BranchSummary /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
@@ -315,6 +317,7 @@ function AssistantTurnView({ turn: sourceTurn, streaming, readOnly, sessionId, r
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
+        </WebSearchTurnProvider>
       </article>
     </TranscriptViewScope.Provider>
   )

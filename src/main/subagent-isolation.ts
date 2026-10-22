@@ -16,6 +16,12 @@ export interface PreparedWorkspace {
   repoRoot?: string
   worktreePath?: string
   containerPath?: string
+  baselineCommit?: string
+}
+
+export interface WorkspaceCleanupResult {
+  ok: boolean
+  errors: string[]
 }
 
 export interface SubagentDiffSummary {
@@ -41,6 +47,28 @@ async function git(cwd: string, args: string[], timeout = 30_000): Promise<GitOu
   return runGit(cwd, args, timeout)
 }
 
+function gitErrorDetail(error: unknown): string {
+  const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown }
+  const parts = [e.stderr, e.stdout, e.message].map((part) => (Buffer.isBuffer(part) ? part.toString('utf8') : String(part ?? '')))
+  const detail = parts.map((part) => part.trim()).find((part) => part.length > 0)
+  return detail ?? 'git 命令失败'
+}
+
+async function runGitBytes(cwd: string, args: string[], timeout = 30_000): Promise<Buffer> {
+  try {
+    const result = await execFileAsync('git', args, {
+      cwd,
+      windowsHide: true,
+      timeout,
+      maxBuffer: GIT_MAX_BUFFER,
+      encoding: 'buffer'
+    })
+    return Buffer.from((result as { stdout?: unknown }).stdout as Buffer)
+  } catch (error) {
+    throw new Error(gitErrorDetail(error))
+  }
+}
+
 async function runGit(cwd: string, args: string[], timeout = 30_000, input?: string): Promise<GitOutput> {
   try {
     const options = { cwd, windowsHide: true, timeout, maxBuffer: GIT_MAX_BUFFER, encoding: 'utf8' as const }
@@ -64,9 +92,7 @@ async function runGit(cwd: string, args: string[], timeout = 30_000, input?: str
       stderr: String((result as { stderr?: unknown }).stderr ?? '')
     }
   } catch (error) {
-    const e = error as { stdout?: unknown; stderr?: unknown; message?: unknown }
-    const detail = String(e.stderr ?? e.stdout ?? e.message ?? error).trim()
-    throw new Error(detail || 'git 命令失败')
+    throw new Error(gitErrorDetail(error))
   }
 }
 
@@ -122,14 +148,15 @@ export async function prepareWorkspace(
   const containerPath = await mkdtemp(join(tmpdir(), `yan-subagent-${id}-`))
   const worktreePath = join(containerPath, 'worktree')
   try {
+    const baselineCommit = (await git(repoRoot, ['rev-parse', 'HEAD'], 10_000)).stdout.trim()
     try {
-      await git(repoRoot, ['worktree', 'add', '--detach', worktreePath, 'HEAD'], 60_000)
+      await git(repoRoot, ['worktree', 'add', '--detach', worktreePath, baselineCommit], 60_000)
     } catch (error) {
       if (!/invalid path/i.test(String(error))) throw error
-      await git(repoRoot, ['worktree', 'add', '--detach', '--no-checkout', worktreePath, 'HEAD'], 60_000)
+      await git(repoRoot, ['worktree', 'add', '--detach', '--no-checkout', worktreePath, baselineCommit], 60_000)
       await checkoutWindowsSafeTree(worktreePath)
     }
-    return { isolation, rootCwd: root, cwd: worktreePath, repoRoot, worktreePath, containerPath }
+    return { isolation, rootCwd: root, cwd: worktreePath, repoRoot, worktreePath, containerPath, baselineCommit }
   } catch (error) {
     await rm(containerPath, { recursive: true, force: true }).catch(() => {})
     throw error
@@ -184,18 +211,19 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
   }
 
   await mkdir(archiveDir, { recursive: true })
+  const base = workspace.baselineCommit ?? 'HEAD'
   await git(workspace.cwd, ['add', '-A', '--', '.'])
   const [nameStatus, numstat, patch] = await Promise.all([
-    git(workspace.cwd, ['diff', '--cached', '--name-status', '--no-renames']).then((r) => r.stdout),
-    git(workspace.cwd, ['diff', '--cached', '--numstat']).then((r) => r.stdout),
-    git(workspace.cwd, ['diff', '--cached', '--binary', '--no-ext-diff']).then((r) => r.stdout)
+    git(workspace.cwd, ['diff', '--cached', '--name-status', '--no-renames', base]).then((r) => r.stdout),
+    git(workspace.cwd, ['diff', '--cached', '--numstat', base]).then((r) => r.stdout),
+    runGitBytes(workspace.cwd, ['diff', '--cached', '--binary', '--no-ext-diff', base])
   ])
 
   const summary = summarizeGitDiff(nameStatus, numstat)
-  if (!patch.trim()) return { summary }
+  if (patch.length === 0) return { summary }
 
   const patchPath = join(archiveDir, `${id}.patch`)
-  await writeFile(patchPath, patch, 'utf8')
+  await writeFile(patchPath, patch)
   return { summary: { ...summary, patchPath }, patchPath }
 }
 
@@ -215,11 +243,21 @@ export async function applyPatch(rootCwd: string, patchPath: string): Promise<{ 
   }
 }
 
-export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<void> {
+export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<WorkspaceCleanupResult> {
+  const errors: string[] = []
   if (workspace.worktreePath && workspace.repoRoot) {
-    await git(workspace.repoRoot, ['worktree', 'remove', '--force', workspace.worktreePath], 30_000).catch(() => {})
+    try {
+      await git(workspace.repoRoot, ['worktree', 'remove', '--force', workspace.worktreePath], 30_000)
+    } catch (error) {
+      errors.push(`移除 worktree 失败（${workspace.worktreePath}）：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   if (workspace.containerPath) {
-    await rm(workspace.containerPath, { recursive: true, force: true }).catch(() => {})
+    try {
+      await rm(workspace.containerPath, { recursive: true, force: true })
+    } catch (error) {
+      errors.push(`删除临时目录失败（${workspace.containerPath}）：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
+  return { ok: errors.length === 0, errors }
 }
