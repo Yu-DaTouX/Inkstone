@@ -31,7 +31,7 @@ export interface PluginCatalogView {
 
 const CODE_BACKED: Record<Exclude<PluginCatalogKind, 'link'>, readonly string[]> = {
   export: ['hermes-inkstone'],
-  mcp: ['codegraph'],
+  mcp: [],
   pet: ['desktop-pet']
 }
 const KINDS: readonly PluginCatalogKind[] = ['export', 'mcp', 'pet', 'link']
