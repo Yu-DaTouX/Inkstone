@@ -742,8 +742,7 @@ export class SubagentController {
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
     const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
-    const readOnlyHost = isolation === 'controlled-cwd' && ctx.readOnlyExtension ? ctx.runReadOnlyCommand : undefined
-    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }, readOnlyHost)
+    return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }, ctx.runReadOnlyCommand)
   }
 
   private async createForkRpc(ctx: SubagentOptions, id: string, fork: SubagentForkSource, sessionFile?: string): Promise<SubagentRpc> {
@@ -752,7 +751,7 @@ export class SubagentController {
     const args = forkPiArgs(fork.args, { sessionDir, sessionFile: file, model: fork.model, thinkingLevel: fork.thinkingLevel })
     const piBin = fork.piBin ?? ctx.piBin
     if (ctx.createRpc) return ctx.createRpc({ cwd: fork.cwd, piBin, args })
-    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id })
+    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id }, ctx.runReadOnlyCommand)
   }
 
   private async spawnWithApproval(

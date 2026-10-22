@@ -42,5 +42,7 @@ export function readYanCliGroups(root = process.cwd()) {
 
 export function commandsOf(group, action) {
   if (group === 'image' && action === 'local') return ['image.local.status', 'image.local.start', 'image.local.stop']
+  if (group === 'artifact' && action === 'style') return []
+  if (group === 'artifact' && action === 'export-video') return ['artifact.exportVideo']
   return [`${group}.${action}`]
 }

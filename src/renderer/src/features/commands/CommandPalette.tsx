@@ -23,7 +23,8 @@ import {
   parsePaletteQuery,
   rankCommands,
   shouldExecuteOnEnter,
-  type CommandItem
+  type CommandItem,
+  type PaletteMode
 } from './command-items'
 import { commandText } from './command-text'
 import './command-palette.css'
@@ -523,7 +524,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
 
           <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
             {options.length === 0 ? (
-              <EmptyState size="sm" title={parsed.mode === 'message' && !trimmedTerm ? text.messageHint : text.empty} />
+              <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text)} />
             ) : (
               groups.map((section) => (
                 <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
@@ -583,6 +584,12 @@ function roleLabel(role: string, text: ReturnType<typeof commandText>): string {
   if (role === 'assistant') return text.roleAssistant
   if (role === 'bash') return text.roleBash
   return text.roleUser
+}
+
+function emptyTitle(mode: PaletteMode, term: string, text: ReturnType<typeof commandText>): string {
+  if (mode === 'message') return term ? text.messageEmpty : text.messageHint
+  if (mode === 'session') return text.sessionEmpty
+  return text.empty
 }
 
 function groupLabel(group: CommandItem['group'], text: ReturnType<typeof commandText>): string {

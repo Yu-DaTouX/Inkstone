@@ -43,6 +43,8 @@ const COMPACT_HEAD = 132
 const KEY_PAN = 48
 const AGENT_GAP = 6
 const AGENT_TIP = 24
+const CANVAS_CHROME_SELECTOR = '.v3-canvas-panel, .v3-canvas-comment-panel, .v3-canvas-comment-composer, .v3-canvas-edit-panel, .v3-canvas-timeline, .v3-canvas-toolbar, .v3-canvas-agent'
+const OVERLAY_TARGET = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
 const NARROW_CANVAS = 520
 const DOCK_TOOLS: readonly CanvasToolId[] = ['inspect', 'comment', 'draw', 'edit']
 const EDITABLE_TARGET = 'input, textarea, select, [role="textbox"], [contenteditable="true"]'
@@ -229,6 +231,10 @@ export function HtmlCanvas({
     const stage = stageRef.current
     if (!stage) return undefined
     const onWheel = (event: WheelEvent): void => {
+      if (event.target instanceof Element && event.target.closest(CANVAS_CHROME_SELECTOR)) {
+        if (event.ctrlKey || event.metaKey) event.preventDefault()
+        return
+      }
       event.preventDefault()
       touched.current = true
       const rect = stage.getBoundingClientRect()
@@ -250,6 +256,7 @@ export function HtmlCanvas({
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target && (target.isContentEditable || target.closest(EDITABLE_TARGET))) return
+      if (target?.closest(OVERLAY_TARGET)) return
       if (event.key === 'Escape') {
         if (selectionRef.current) {
           setSelection(null)

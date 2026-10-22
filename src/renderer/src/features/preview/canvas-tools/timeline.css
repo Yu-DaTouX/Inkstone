@@ -64,9 +64,9 @@
 
   .v3-canvas-timeline-scroll {
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
+    max-height: 180px;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .v3-canvas-timeline-grid {
@@ -74,6 +74,7 @@
     flex-direction: column;
     gap: 2px;
     min-width: 100%;
+    padding-bottom: var(--s-2);
   }
 
   .v3-canvas-timeline-row {
@@ -208,6 +209,11 @@
     font-size: var(--t-caption);
   }
 
+  .v3-canvas-timeline-count {
+    flex: none;
+    white-space: nowrap;
+  }
+
   .v3-canvas-timeline-keys {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -238,7 +244,7 @@
   .v3-canvas[data-narrow] .v3-canvas-timeline {
     left: var(--s-6);
     right: var(--s-6);
-    bottom: var(--s-6);
+    bottom: calc(var(--s-12) + var(--canvas-toolbar-h, 28px) + var(--s-6));
     padding: var(--s-6);
   }
 

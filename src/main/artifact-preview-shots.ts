@@ -116,8 +116,10 @@ async function within<T>(work: Promise<T>, label: string): Promise<T> {
 function screenOffsets(pageHeight: number, viewportHeight: number): { offsets: number[]; truncated: boolean } {
   const offsets: number[] = []
   for (let y = 0; (y === 0 || y < pageHeight - SCREEN_SLACK) && offsets.length < MAX_SCREENS; y += viewportHeight) offsets.push(Math.min(y, Math.max(0, pageHeight - viewportHeight)))
+  const truncated = pageHeight > viewportHeight * MAX_SCREENS + SCREEN_SLACK
+  if (truncated) offsets[offsets.length - 1] = Math.max(0, pageHeight - viewportHeight)
   const unique = offsets.filter((y, index) => index === 0 || y !== offsets[index - 1])
-  return { offsets: unique, truncated: pageHeight > viewportHeight * MAX_SCREENS + SCREEN_SLACK }
+  return { offsets: unique, truncated }
 }
 
 export function composeSheet(screens: NativeImage[], width: number, height: number, columns: number): NativeImage {

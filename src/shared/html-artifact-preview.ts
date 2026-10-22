@@ -54,6 +54,7 @@ const PREVIEW_RUNTIME_STYLE = [
 ].join('')
 
 const PREVIEW_RUNTIME_SCRIPT = `(function(){
+var parent=window.parent;
 var K=${JSON.stringify(HTML_PREVIEW_CHANNEL)};
 function shown(r){return r&&r.width>0&&r.height>0?r:null}
 var undo=[];
@@ -72,7 +73,7 @@ addEventListener('message',function(e){if(e.source!==parent)return;var d=e.data;
 const PREVIEW_RUNTIME = `<style data-yan-preview>${PREVIEW_RUNTIME_STYLE}</style><script data-yan-preview>${PREVIEW_RUNTIME_SCRIPT}</script>`
 
 export function withPreviewRuntime(html: string, nonce?: string): string {
-  const marked = markHtmlSourceOffsets(html)
+  const marked = markHtmlSourceOffsets(html.replace(/^\uFEFF/, ''))
   const doctype = /^\uFEFF?\s*<!doctype[^>]*>/i.exec(marked)
   const at = doctype ? doctype[0].length : 0
   return marked.slice(0, at) + PREVIEW_RUNTIME + canvasBridgeRuntime(nonce) + marked.slice(at)

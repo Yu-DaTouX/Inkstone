@@ -778,7 +778,7 @@ export function registerCanvasBridgePart(part: string): void {
 export function canvasBridgeRuntime(nonce?: string): string {
   const value = typeof nonce === 'string' ? nonce : ''
   const scope = `var ${HTML_CANVAS_BRIDGE_SCOPE}={nonce:${JSON.stringify(value)}};`
-  const detach = 'var self=document.currentScript;if(self&&self.parentNode)self.parentNode.removeChild(self);'
+  const detach = 'var parent=window.parent;var self=document.currentScript;if(self&&self.parentNode)self.parentNode.removeChild(self);'
   return `<script ${HTML_CANVAS_BRIDGE_MARKER}>(function(){${detach}${scope}${CANVAS_BRIDGE_PARTS.join('\n')}})();</script>`
 }
 

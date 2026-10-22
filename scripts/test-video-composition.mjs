@@ -96,6 +96,26 @@ const guide = readFileSync(GUIDE, 'utf8')
 const blocks = [...guide.matchAll(/```html\n([\s\S]*?)```/g)].map((match) => match[1])
 ok(blocks.length >= 1, '指南里有 html 模板代码块')
 for (const [index, block] of blocks.entries()) checkComposition(block, `指南模板 ${index + 1}`)
+for (const [index, block] of blocks.entries()) {
+  const inlineScripts = [...block.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)].filter((match) => !/\bsrc\s*=/.test(match[1]))
+  ok(inlineScripts.length > 0, `指南模板 ${index + 1} 有可执行的内联脚本`)
+  for (const [, , source] of inlineScripts) {
+    const anything = () => new Proxy(function () {}, {
+      get: (_target, key) => (key === Symbol.toPrimitive ? () => 1 : key === Symbol.iterator ? function* () {} : key === 'length' ? 0 : anything()),
+      apply: () => anything()
+    })
+    const run = new Function('window', 'document', source)
+    const fakeWindow = {}
+    let thrown = null
+    try {
+      run(fakeWindow, anything())
+    } catch (error) {
+      thrown = error
+    }
+    ok(thrown === null, `指南模板 ${index + 1} 的脚本能直接执行：${thrown ? thrown.message : 'ok'}`)
+    ok(fakeWindow.__timelines && Object.keys(fakeWindow.__timelines).length > 0, `指南模板 ${index + 1} 注册了 window.__timelines`)
+  }
+}
 
 for (const phrase of ['data-composition-id', 'data-track-index', '__timelines', '8MB', 'HTML_ASSET_TYPES', 'autoplay', 'GSAP', 'data-volume']) {
   ok(guide.includes(phrase), `指南写到了 ${phrase}`)

@@ -112,9 +112,9 @@ const known = new Set(['C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\other\\ffmpeg.exe'])
 const fromEnv = mod.findFfmpeg({ env: { YAN_FFMPEG: 'C:\\ffmpeg\\bin\\ffmpeg.exe', PATH: '' }, platform: 'win32', exists: (p) => known.has(p) })
 assert.equal(fromEnv, 'C:\\ffmpeg\\bin\\ffmpeg.exe', 'YAN_FFMPEG 优先')
 const fromPath = mod.findFfmpeg({
-  env: { PATH: '"C:\\tools;x";C:\\other;' },
+  env: { PATH: '"C:\\other";C:\\nowhere;' },
   platform: 'win32',
-  exists: (p) => known.has(p.replace(';C:\\other;', ''))
+  exists: (p) => known.has(p)
 })
 assert.equal(fromPath, 'C:\\other\\ffmpeg.exe', 'PATH 里找到 ffmpeg.exe（带引号的目录也能剥离）')
 const posixBinary = join('/usr/local/bin', 'ffmpeg')

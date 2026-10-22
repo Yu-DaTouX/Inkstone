@@ -84,6 +84,66 @@ export async function runLanguageExtensionTests(ok, mod) {
     ok(drift.cooling === undefined, `纠正后 ${mod.DRIFT_COOLDOWN} 条回复内不重复纠正`)
   }
 
+  {
+    const payload = { messages: [{ role: 'user', content: 'go' }] }
+    const fresh = {}
+    extension({ on: (name, fn) => (fresh[name] = fn) })
+    const shortEnglish = { role: 'assistant', content: [{ type: 'thinking', thinking: 'Let me check the parser output before editing the file.' }] }
+    const shortChinese = { role: 'assistant', content: [{ type: 'thinking', thinking: '先看一下 parser 的输出，再决定怎么改这个文件。' }] }
+    ok(mod.thinkingDrifted('zh-CN', mod.thinkingText(shortEnglish)) === false, '单条短英文思考不足以判定漂移')
+    const result = withSettings('zh-CN', () => {
+      const steps = []
+      for (let i = 0; i < 8; i += 1) {
+        fresh.message_end({ message: shortChinese })
+        steps.push(fresh.before_provider_request({ payload }))
+      }
+      const chineseQuiet = steps.every((value) => value === undefined)
+      let triggeredAt = -1
+      for (let i = 0; i < 8; i += 1) {
+        fresh.message_end({ message: shortEnglish })
+        if (fresh.before_provider_request({ payload }) !== undefined && triggeredAt < 0) triggeredAt = i
+      }
+      return { chineseQuiet, triggeredAt }
+    })
+    ok(result.chineseQuiet, '中文短思考累计多条也不触发纠正')
+    ok(result.triggeredAt > 0, '多条短英文思考累计后触发纠正', String(result.triggeredAt))
+    const interrupted = withSettings('zh-CN', () => {
+      const other = {}
+      extension({ on: (name, fn) => (other[name] = fn) })
+      let fired = false
+      for (let i = 0; i < 12; i += 1) {
+        other.message_end({ message: i % 3 === 2 ? shortChinese : shortEnglish })
+        if (other.before_provider_request({ payload }) !== undefined) fired = true
+      }
+      return fired
+    })
+    ok(interrupted === false, '英文短思考之间夹着中文思考时重新计数，不误报')
+    const neutral = { role: 'assistant', content: [{ type: 'thinking', thinking: '```\nconst a = 1\n```\n42' }] }
+    const throughNeutral = withSettings('zh-CN', () => {
+      const other = {}
+      extension({ on: (name, fn) => (other[name] = fn) })
+      let fired = false
+      for (let i = 0; i < 9; i += 1) {
+        other.message_end({ message: i % 3 === 2 ? neutral : shortEnglish })
+        if (other.before_provider_request({ payload }) !== undefined) fired = true
+      }
+      return fired
+    })
+    ok(throughNeutral, '只有代码或数字的思考不算回到中文，不清空累计')
+    const acrossSessions = withSettings('zh-CN', () => {
+      const other = {}
+      extension({ on: (name, fn) => (other[name] = fn) })
+      let fired = false
+      for (let i = 0; i < 8; i += 1) {
+        if (i === 4) other.session_start?.({ type: 'session_start' }, {})
+        other.message_end({ message: shortEnglish })
+        if (other.before_provider_request({ payload }) !== undefined) fired = true
+      }
+      return fired
+    })
+    ok(acrossSessions === false, '切换会话后重新累计，不把上个会话的思考算进来')
+  }
+
   const { readFileSync } = await import('node:fs')
   const mainSrc = readFileSync('src/main/index.ts', 'utf8')
   ok(

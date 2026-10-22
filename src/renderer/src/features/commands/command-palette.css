@@ -144,7 +144,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 40%;
+    max-width: 18em;
   }
 
   .cmd-option__keys {

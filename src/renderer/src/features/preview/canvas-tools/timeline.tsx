@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactElement } from 'react'
 import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
 import { Button, IconButton, Slider } from '../../../ui'
 import type { CanvasTool, CanvasToolPanelProps } from './types'
@@ -33,53 +33,75 @@ function fileNameOf(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+const IDLE_EXPORT: VideoExportPhase = { kind: 'idle' }
+const exportPhases = new Map<string, VideoExportPhase>()
+const exportListeners = new Set<() => void>()
+let exportProgressBound = false
+
+function setExportPhase(abs: string, phase: VideoExportPhase): void {
+  if (phase.kind === 'idle') exportPhases.delete(abs)
+  else exportPhases.set(abs, phase)
+  for (const listener of exportListeners) listener()
+}
+
+function bindExportProgress(): void {
+  if (exportProgressBound) return
+  exportProgressBound = true
+  window.yan.videoExport.onProgress((progress) => {
+    for (const [abs, phase] of exportPhases) {
+      if (phase.kind === 'running' && phase.id === progress.id) {
+        setExportPhase(abs, { kind: 'running', id: progress.id, frame: progress.frame, total: progress.total })
+      }
+    }
+  })
+}
+
+function runningExportId(abs: string): string | null {
+  const phase = exportPhases.get(abs)
+  return phase?.kind === 'running' ? phase.id : null
+}
+
 function useVideoExport(abs: string, cwd: string): {
   phase: VideoExportPhase
   start: () => void
   cancel: () => void
   reset: () => void
 } {
-  const [phase, setPhase] = useState<VideoExportPhase>({ kind: 'idle' })
-  const idRef = useRef<string | null>(null)
-
-  useEffect(
-    () =>
-      window.yan.videoExport.onProgress((progress) => {
-        if (progress.id !== idRef.current) return
-        setPhase({ kind: 'running', id: progress.id, frame: progress.frame, total: progress.total })
-      }),
-    []
-  )
+  const subscribe = useCallback((listener: () => void) => {
+    bindExportProgress()
+    exportListeners.add(listener)
+    return () => {
+      exportListeners.delete(listener)
+    }
+  }, [])
+  const phase = useSyncExternalStore(subscribe, () => exportPhases.get(abs) ?? IDLE_EXPORT)
 
   const start = useCallback(() => {
+    if (runningExportId(abs)) return
     const id = newExportId()
-    idRef.current = id
-    setPhase({ kind: 'running', id, frame: 0, total: 0 })
+    setExportPhase(abs, { kind: 'running', id, frame: 0, total: 0 })
     window.yan.videoExport
       .start({ id, path: abs, cwd })
       .then((result) => {
-        if (idRef.current !== id) return
-        idRef.current = null
-        if (result.ok) setPhase({ kind: 'done', path: result.path })
-        else if (result.error === 'cancelled') setPhase({ kind: 'idle' })
-        else setPhase({ kind: 'failed', error: result.error, detail: result.detail })
+        if (runningExportId(abs) !== id) return
+        if (result.ok) setExportPhase(abs, { kind: 'done', path: result.path })
+        else if (result.error === 'cancelled') setExportPhase(abs, IDLE_EXPORT)
+        else setExportPhase(abs, { kind: 'failed', error: result.error, detail: result.detail })
       })
       .catch((error: unknown) => {
-        if (idRef.current !== id) return
-        idRef.current = null
-        setPhase({ kind: 'failed', error: 'failed', detail: error instanceof Error ? error.message : String(error) })
+        if (runningExportId(abs) !== id) return
+        setExportPhase(abs, { kind: 'failed', error: 'failed', detail: error instanceof Error ? error.message : String(error) })
       })
   }, [abs, cwd])
 
   const cancel = useCallback(() => {
-    const id = idRef.current
+    const id = runningExportId(abs)
     if (id) void window.yan.videoExport.cancel(id)
-  }, [])
+  }, [abs])
 
   const reset = useCallback(() => {
-    idRef.current = null
-    setPhase({ kind: 'idle' })
-  }, [])
+    if (!runningExportId(abs)) setExportPhase(abs, IDLE_EXPORT)
+  }, [abs])
 
   return { phase, start, cancel, reset }
 }

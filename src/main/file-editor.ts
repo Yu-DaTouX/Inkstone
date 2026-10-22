@@ -8,6 +8,7 @@ import { isStrictlyWithin, isWithin, pathKey, realRoot } from './file-path-gate'
 
 const MAX_BYTES = 1024 * 1024
 const HASH_PATTERN = /^[0-9a-f]{64}$/
+const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf])
 const writeChains = new Map<string, Promise<void>>()
 
 function statusForError(error: unknown): EditableFileError {
@@ -158,6 +159,7 @@ export async function writeEditableFile(
 
     let mode: number
     let preserveMode = false
+    let keepBom = false
     if (info) {
       let current: Buffer
       try {
@@ -167,6 +169,7 @@ export async function writeEditableFile(
       }
       const currentHash = sha256(current)
       if (expectedHash === null || currentHash !== expectedHash) return { status: 'conflict' as const, currentHash }
+      keepBom = current.subarray(0, 3).equals(UTF8_BOM) && !text.startsWith('\uFEFF')
       mode = info.mode & 0o777
       preserveMode = true
     } else {
@@ -182,7 +185,8 @@ export async function writeEditableFile(
       mode = 0o666
     }
 
-    const bytes = Buffer.from(text, 'utf8')
+    const bytes = keepBom ? Buffer.concat([UTF8_BOM, Buffer.from(text, 'utf8')]) : Buffer.from(text, 'utf8')
+    if (bytes.length > MAX_BYTES) return { status: 'denied' as const }
     const hash = sha256(bytes)
     const temp = join(dir, `.${name}.yan-${randomBytes(6).toString('hex')}.tmp`)
     let handle: FileHandle | null = null

@@ -227,10 +227,11 @@ task-update.json：
           把 hyperframes 合成（带 data-composition-id 与 window.__timelines 控制器的 HTML）
           逐帧 seek 后录成 MP4，默认输出到 HTML 同目录的同名 .mp4，已存在时加序号，不覆盖。
           用法：yan artifact export-video --path <文件.html> [--fps 30] [--scale 1] [--out <文件.mp4>]
+          --out 只能写到当前项目目录里（相对路径按项目目录算），没写 .mp4 后缀时自动补上。
           需要系统里已经装好 FFmpeg（PATH 里的 ffmpeg，或用环境变量 YAN_FFMPEG 指定路径）；
           只录画面，合成里的 <audio>/<video> 不混音；时长上限 10 分钟、帧数上限 18000。
   style   随机抽几张风格牌（配色、字体、版式、母题），用户没点名风格时开工前用，
-          用法：yan artifact style --kind <poster|dashboard|game|explainer|tool|landing|slides> [--count 3] [--theme light|dark]
+          用法：yan artifact style --kind <poster|dashboard|game|explainer|tool|landing|slides|video> [--count 3] [--theme light|dark]
           最近抽过的牌会尽量避开；取某一张：yan artifact style --id <牌 id 或中文名>；列出全部牌：yan artifact style --list
           当前目录（或用 --cwd <目录> 指定）有 DESIGN.md 时，优先按项目的 DESIGN.md 做、不抽牌；
           确实要换成随包风格牌时加 --ignore-project。
