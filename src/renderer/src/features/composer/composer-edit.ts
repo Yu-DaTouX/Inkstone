@@ -65,6 +65,21 @@ export function caretInCode(state: EditorState): boolean {
   return (state.storedMarks ?? $from.marks()).some((mark) => mark.type.spec.code === true)
 }
 
+export function caretAfterMention(state: EditorState): boolean {
+  const { $from } = state.selection
+  const parent = $from.parent
+  let mentionAfterLastAt = false
+  parent.forEach((child, offset) => {
+    if (offset >= $from.parentOffset) return
+    if (child.type.name === 'mention') mentionAfterLastAt = true
+    else if (child.isText) {
+      const visible = (child.text ?? '').slice(0, Math.max(0, $from.parentOffset - offset))
+      if (visible.includes('@')) mentionAfterLastAt = false
+    }
+  })
+  return mentionAfterLastAt
+}
+
 function codeMarkInRange(state: EditorState, from: number, to: number): boolean {
   return from < to && state.doc.rangeHasMark(from, to, composerSchema.marks.code)
 }

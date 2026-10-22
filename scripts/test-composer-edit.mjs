@@ -385,3 +385,15 @@ const editedLink = linkedState.tr.insertText('bc', linkFrom + linkedText.length 
 assert.equal(docToText(editedLink.doc), '看 https://example.com/bc ', '改过的链接文字原样发出，不改写成 [文本](旧链接)')
 
 console.log('输入框文档层 · 含括号 URL 自动链接与代码内判据检查通过')
+
+{
+  const mention = composerSchema.nodes.mention.create({ raw: '@图2', path: '图2', label: '图2', kind: 'image' })
+  const doc = composerSchema.node('doc', null, [composerSchema.node('paragraph', null, [mention, composerSchema.text(' 还有图片会被带到')])])
+  const end = EditorState.create({ doc, selection: TextSelection.create(doc, doc.content.size - 1) })
+  assert.equal(lib.caretAfterMention(end), true, '已完成的提及标签后继续打字，不再当作 @ 查询')
+  const typedAt = composerSchema.node('doc', null, [composerSchema.node('paragraph', null, [mention, composerSchema.text(' 再看 @src')])])
+  const typedState = EditorState.create({ doc: typedAt, selection: TextSelection.create(typedAt, typedAt.content.size - 1) })
+  assert.equal(lib.caretAfterMention(typedState), false, '标签后面手打的 @ 仍然触发补全')
+  const plain = textToDoc('看 @src')
+  assert.equal(lib.caretAfterMention(EditorState.create({ doc: plain, selection: TextSelection.create(plain, plain.content.size - 1) })), false, '没有标签时照常')
+}

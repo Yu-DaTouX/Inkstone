@@ -1459,15 +1459,15 @@ export class AgentController extends EventEmitter {
     const cwd = this.cwd
     const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
     try {
-      const result = await preview(htmlPath, cwd) as { shots: Array<{ scheme: string; viewport: string; path: string; horizontalOverflow: boolean }>; consoleErrors: string[]; loadError?: string }
+      const result = await preview(htmlPath, cwd) as { shots: Array<{ scheme: string; viewport: string; path: string; horizontalOverflow: boolean; pageHeight?: number; screens?: number; truncated?: boolean }>; consoleErrors: string[]; loadError?: string }
       return {
         data: result,
         summary: {
-          shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}`),
+          shots: result.shots.map((shot) => `${shot.scheme}-${shot.viewport}: ${shot.path}${shot.screens && shot.screens > 1 ? `（整页 ${shot.pageHeight}px，${shot.screens} 屏拼版${shot.truncated ? '，只截了前几屏' : ''}）` : ''}`),
           horizontalOverflow: result.shots.filter((shot) => shot.horizontalOverflow).map((shot) => `${shot.scheme}-${shot.viewport}`),
           consoleErrors: result.consoleErrors.length,
           ...(result.loadError ? { loadError: result.loadError } : {}),
-          note: '用 read 打开截图检查深浅主题和窄屏；预览与砚内沙箱一致，外部 css/js/图片不会加载。'
+          note: '每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏，灰色间隔分屏）；用 read 打开检查桌面和窄屏下的整页内容（页面只有一套配色时浅色、深色两组截图相同）；预览与砚内沙箱一致：同一文件夹里的相对路径 css/js/图片/字体能加载，网络资源和 fetch 都会被拦截。'
         }
       }
     } catch (error) {

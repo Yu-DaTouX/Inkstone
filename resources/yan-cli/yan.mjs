@@ -28,6 +28,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan tasks apply --request-file task-update.json     兼容入口：会话里有 todos 工具时优先用工具
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan artifact preview --path <项目内 HTML>
+  yan artifact style --kind <成果类型>                随机抽风格牌，用户没点名风格时开工前用
   yan image generate --request-file image.json
   yan question ask --request-file question.json      兼容入口：会话里有 question 工具时优先用工具
   yan office read --path <文件.docx|xlsx|pptx|pdf>
@@ -213,8 +214,11 @@ task-update.json：
   preview 把项目内的 HTML 按砚的沙箱渲染成浅色/深色 × 桌面/窄屏四张截图，
           返回截图路径、控制台错误和横向溢出；不挂到消息。交付 HTML 前先用它自查，
           用法：yan artifact preview --path <文件.html>
-          HTML 在砚内以单文件沙箱预览：只用文件里内联的样式、脚本和 data: 图片，
-          同目录引用的 .css / .js / 图片和网络资源都不会加载；要预览好看就把样式内联进 HTML。
+          预览会加载 HTML 同文件夹里相对路径的 .css / .js / 图片 / 字体，网络资源和 fetch 会被拦截；
+          attach 只复制 HTML 本身，所以要挂到回复的成果页仍把样式、脚本和图片内联进 HTML。
+  style   随机抽几张风格牌（配色、字体、版式、母题），用户没点名风格时开工前用，
+          用法：yan artifact style --kind <poster|dashboard|game|explainer|tool|landing|slides> [--count 3] [--theme light|dark]
+          最近抽过的牌会尽量避开；取某一张：yan artifact style --id <牌 id 或中文名>；列出全部牌：yan artifact style --list
 `,
   image: `yan image generate [选项]
 yan image local status | start | stop
@@ -451,7 +455,7 @@ const GROUP_SPECS = {
     }
   },
   artifact: {
-    actions: ['attach', 'preview'],
+    actions: ['attach', 'preview', 'style'],
     required: { attach: ['path'], preview: ['path'] }
   },
   image: {
@@ -626,6 +630,13 @@ if (groupSpec?.required?.[positional[1]]) {
       { detail: `用 yan ${positional[0]} --help 看用法` }
     )
   }
+}
+
+if (command === 'artifact.style') {
+  const { runArtifactStyle } = await import('./artifact-style.mjs')
+  const result = runArtifactStyle(flags)
+  process.stdout.write(JSON.stringify(result) + '\n')
+  process.exit(result.ok ? EXIT.ok : EXIT.failed)
 }
 
 const url = process.env.YAN_CLI_URL

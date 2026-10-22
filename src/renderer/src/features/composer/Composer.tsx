@@ -49,6 +49,7 @@ import {
 import './composer.css'
 
 let consumedComposerFocus = 0
+let attachmentsConversation: string | null = null
 
 export function Composer({ className }: { className?: string } = {}) {
   const t = useT()
@@ -160,14 +161,19 @@ export function Composer({ className }: { className?: string } = {}) {
   const hydratedKey = useRef<string | null>(null)
   const skipPersist = useRef(false)
   useEffect(() => {
+    const leavingConversation = !!attachmentsConversation && attachmentsConversation !== (conversationKey || null)
+    attachmentsConversation = conversationKey || null
     hydratedKey.current = conversationKey || null
     skipPersist.current = true
     const persisted = runtimeKey ? loadDraft(runtimeKey) : undefined
     const restored = runtimeKey ? cachedDraft || persisted?.text || '' : ''
     setValue(restored)
     setCursor(runtimeKey ? restored.length : null)
-    if (persisted?.attachments.length && useStore.getState().attachments.length === 0) {
-      useStore.setState({ attachments: persisted.attachments })
+    const state = useStore.getState()
+    const cachedAttachments = runtimeKey ? state.sessionRuntimes[runtimeKey]?.draftAttachments ?? [] : []
+    const ownAttachments = cachedAttachments.length ? cachedAttachments : persisted?.attachments ?? []
+    if (leavingConversation || ownAttachments.length) {
+      if (ownAttachments !== state.attachments && (ownAttachments.length || state.attachments.length)) useStore.setState({ attachments: ownAttachments })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationKey])
@@ -223,6 +229,7 @@ export function Composer({ className }: { className?: string } = {}) {
   )
 
   const caretInCode = useCallback(() => editorRef.current?.caretInCode() ?? false, [])
+  const caretAfterMention = useCallback(() => editorRef.current?.caretAfterMention() ?? false, [])
   const isComposing = useCallback(() => editorRef.current?.isComposing() ?? false, [])
   const menuAnchor = useCallback(() => editorRef.current?.caretRect() ?? null, [])
   const completion = useCompletion({
@@ -232,6 +239,7 @@ export function Composer({ className }: { className?: string } = {}) {
     placeCursor,
     insertAtom,
     caretInCode,
+    caretAfterMention,
     isComposing,
     composing
   })

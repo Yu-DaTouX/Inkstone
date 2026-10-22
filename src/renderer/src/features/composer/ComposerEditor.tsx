@@ -8,6 +8,7 @@ import type { ComposerKeyEvent, ComposerPasteEvent } from './composer-keys'
 import { afterFenceInsertTransaction, afterFencePlugin } from './after-fence'
 import {
   atomInsertTransaction,
+  caretAfterMention,
   caretInCode,
   codeBlockEnterTransaction,
   fenceTransaction,
@@ -55,6 +56,7 @@ export interface ComposerEditorHandle {
   isComposing: () => boolean
   isEmpty: () => boolean
   caretInCode: () => boolean
+  caretAfterMention: () => boolean
   caretRect: () => CaretRect | null
 }
 
@@ -388,6 +390,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       caretInCode: () => {
         const view = viewRef.current
         return view ? caretInCode(view.state) : false
+      },
+      caretAfterMention: () => {
+        const view = viewRef.current
+        return view ? caretAfterMention(view.state) : false
       },
       caretRect: () => {
         const view = viewRef.current

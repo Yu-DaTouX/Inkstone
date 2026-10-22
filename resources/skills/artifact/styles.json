@@ -1,0 +1,470 @@
+[
+  {
+    "id": "swiss",
+    "name": "瑞士国际主义",
+    "mood": "冷静自信的平面秩序，所有东西对齐到同一条左边缘",
+    "kinds": ["dashboard", "slides", "landing", "explainer"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFFFFF",
+      "surface": "#F2F2F2",
+      "ink": "#141414",
+      "muted": "#595959",
+      "accent": "#C1121F",
+      "accent2": "#0B4FD9",
+      "series": ["#C1121F", "#0B4FD9", "#B38600", "#0F7B3F", "#595959"]
+    },
+    "fonts": {
+      "display": "\"Arial Black\", \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Arial, \"Segoe UI\", sans-serif"
+    },
+    "type": "标题 56–88px、900 字重、行高 0.95、字距 -0.02em；正文 16px/1.6；数字与正文同字重。",
+    "shape": "圆角 0；不用 1px 细线，结构靠整块色带与通栏粗规线；无阴影、无渐变；accent 的字用 #FFFFFF。",
+    "layout": "12 栏栅格贴左对齐，标题占 6–8 栏，内容压在同一条基线上，留白由色块切分。",
+    "motifs": "满幅红色色带做章节分隔、超大数字当页码、方形色块代替图标，全站共用一条左边缘。",
+    "avoid": "不要用细线框、圆角卡片、阴影和柔和渐变，也不要给色块加装饰边框。"
+  },
+  {
+    "id": "bauhaus",
+    "name": "包豪斯色块",
+    "mood": "红黄蓝三原色的几何拼贴，快乐而克制",
+    "kinds": ["poster", "slides", "landing", "explainer"],
+    "theme": "light",
+    "colors": {
+      "bg": "#F6F0E4",
+      "surface": "#FFFFFF",
+      "ink": "#16161A",
+      "muted": "#55524C",
+      "accent": "#CC2A1B",
+      "accent2": "#12489E",
+      "series": ["#CC2A1B", "#12489E", "#9A7C00", "#2F6B3C", "#B4560F"]
+    },
+    "fonts": {
+      "display": "\"Trebuchet MS\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Trebuchet MS\", Verdana, sans-serif"
+    },
+    "type": "标题 40–72px、700 字重、中文与全大写西文混排；正文 17px/1.7；数字放大到 96px 当主角。",
+    "shape": "圆角 0 或 50% 圆形；色块边缘干净无描边；无阴影；accent 的字用 #FFFFFF。",
+    "layout": "非对称拼版：左三分之一整块着色，其余白底黑字，图形与文字按 1:3 大小对比。",
+    "motifs": "纯 CSS 圆、半圆与 clip-path 三角，三原色粗条相互叠压，不用纹理与照片。",
+    "avoid": "不要用灰色过渡色、渐变、圆角卡片和细线分隔。"
+  },
+  {
+    "id": "brutal",
+    "name": "新粗野主义",
+    "mood": "荧光黄底配黑粗边，声音大、姿态硬",
+    "kinds": ["landing", "tool", "dashboard", "game", "poster"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFE94A",
+      "surface": "#FFFFFF",
+      "ink": "#121212",
+      "muted": "#4D4B1A",
+      "accent": "#2B2BFF",
+      "accent2": "#E0115F",
+      "series": ["#121212", "#2B2BFF", "#E0115F", "#0F7A3D", "#7A4B00"]
+    },
+    "fonts": {
+      "display": "Impact, \"Arial Black\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Courier New\", ui-monospace, monospace"
+    },
+    "type": "标题 48–96px、Impact 单字重、字距 0、可加描边；正文 16px 粗体；数字用等宽放大。",
+    "shape": "圆角 0；3px 黑边；6px 硬投影（无模糊无扩散）；accent 的字用 #FFFFFF。",
+    "layout": "块块相撞的网格：卡片错位 4–12px，外距统一 20px，标题压住色块边缘。",
+    "motifs": "黑描边方框、旋转 -2deg 的贴纸标签、8px 网点底纹（radial-gradient）与下划线粗条。",
+    "avoid": "不要用柔和阴影、圆角、渐变和细线，也不要让版面显得整洁对齐。"
+  },
+  {
+    "id": "editorial",
+    "name": "杂志编辑",
+    "mood": "纸感衬线大标题与多栏正文，像认真排过的一本刊物",
+    "kinds": ["explainer", "slides", "landing", "dashboard"],
+    "theme": "light",
+    "colors": {
+      "bg": "#F7F3EA",
+      "surface": "#FFFFFF",
+      "ink": "#1B1917",
+      "muted": "#5F594F",
+      "accent": "#8E1B10",
+      "accent2": "#1F3A5F",
+      "series": ["#8E1B10", "#1F3A5F", "#6B5B3E", "#3F6B4A", "#8A6A1F"]
+    },
+    "fonts": {
+      "display": "Georgia, \"Songti SC\", \"SimSun\", serif",
+      "body": "\"Times New Roman\", \"Songti SC\", \"SimSun\", serif",
+      "numeric": "Georgia, \"Times New Roman\", serif"
+    },
+    "type": "标题 48–72px、Georgia 与宋体混排、字重 700、字距 -0.01em；正文 17px/1.75。",
+    "shape": "圆角 0；栏间 1px 细线与上下短规线；无阴影；accent 的字用 #F7F3EA。",
+    "layout": "通栏大标题下接三栏正文，首字下沉 3 行，图注靠栏底右对齐，页边距 64px。",
+    "motifs": "首字下沉、竖排小标签、3px 左粗线引文、栏间细线，背景不铺任何图案。",
+    "avoid": "不要用圆角卡片、彩色底块、阴影和无衬线大标题。"
+  },
+  {
+    "id": "memphis",
+    "name": "孟菲斯",
+    "mood": "粉彩撞色与歪斜几何，轻松得像九十年代的玩具包装",
+    "kinds": ["poster", "slides", "landing", "game"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFDFEC",
+      "surface": "#FFFFFF",
+      "ink": "#221226",
+      "muted": "#5E4763",
+      "accent": "#D1005F",
+      "accent2": "#0B6F63",
+      "series": ["#D1005F", "#0B6F63", "#B35400", "#3A2E8C", "#7A2E6B"]
+    },
+    "fonts": {
+      "display": "Verdana, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "Verdana, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Verdana, Tahoma, sans-serif"
+    },
+    "type": "标题 32–56px、700 字重、可加 2px 错位描边；正文 15px/1.7；数字 900 字重放大。",
+    "shape": "圆角 999px 药丸按钮与 50% 圆形；2px 黑边可选；4px 偏移硬投影；accent 的字用 #FFFFFF。",
+    "layout": "自由网格：卡片旋转 -3deg 到 3deg，间距 24px，区块之间用大块空白和斜线断开。",
+    "motifs": "SVG 波浪线、radial-gradient 圆点阵、三角与锯齿条，装饰刻意超出容器边界。",
+    "avoid": "不要用严肃灰度、严格栅格和极细线，也不要让装饰被内容框裁住。"
+  },
+  {
+    "id": "aurora",
+    "name": "极光玻璃",
+    "mood": "深海军蓝上浮着模糊光斑与毛玻璃面板，安静又发光",
+    "kinds": ["dashboard", "landing", "slides", "tool"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#0A1330",
+      "surface": "#131F45",
+      "ink": "#F2F6FF",
+      "muted": "#A3B3D9",
+      "accent": "#6FE7F9",
+      "accent2": "#A78BFA",
+      "series": ["#6FE7F9", "#A78BFA", "#FF9A8B", "#7DE2A8", "#F5D06F"]
+    },
+    "fonts": {
+      "display": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Tahoma, \"Segoe UI\", sans-serif"
+    },
+    "type": "标题 44–64px、600 字重、字距 0；正文 16px/1.7；大数字 300 字重放到 56px。",
+    "shape": "圆角 24px；面板 1px 半透明白边加 backdrop-filter blur(20px)；大范围柔光晕；accent 的字用 #061024。",
+    "layout": "两列玻璃面板浮在满屏极光之上，面板内距 28px，行距松，信息密度低。",
+    "motifs": "三个 radial-gradient 光斑做极光、filter:blur 的模糊圆、面板顶边一条高光渐变。",
+    "avoid": "不要用实心大色块、硬边阴影和纯黑底，光斑不得压过正文。"
+  },
+  {
+    "id": "phosphor",
+    "name": "磷光终端",
+    "mood": "黑底琥珀等宽字，像一台还没关掉的旧机器",
+    "kinds": ["tool", "dashboard", "game", "explainer"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#060807",
+      "surface": "#0E1211",
+      "ink": "#FFD9A0",
+      "muted": "#A79A7E",
+      "accent": "#FFB000",
+      "accent2": "#4FE3A1",
+      "series": ["#FFB000", "#4FE3A1", "#6FA8FF", "#FF7A6B", "#C08BFF"]
+    },
+    "fonts": {
+      "display": "\"Courier New\", ui-monospace, Consolas, monospace",
+      "body": "ui-monospace, Consolas, \"Courier New\", monospace",
+      "numeric": "ui-monospace, Consolas, monospace"
+    },
+    "type": "全站等宽：标题 24–32px 粗体、正文 14px/1.55，字号阶梯只有三级。",
+    "shape": "圆角 0；不用描边，分段靠反白色块与下划线光标；无阴影；accent 的字用 #060807。",
+    "layout": "单列全宽命令行式排布，左对齐、行距紧，每段之前一个短提示符。",
+    "motifs": "闪烁光标、反白的当前行、ASCII 进度条、重复字符做分隔，全是文本不用图。",
+    "avoid": "不要用圆角、阴影、大图与多色装饰，也别用大于 32px 的字。"
+  },
+  {
+    "id": "guochao",
+    "name": "国潮",
+    "mood": "中国红底配描金，节庆气场浓",
+    "kinds": ["poster", "landing", "explainer", "slides"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#7A0A16",
+      "surface": "#98102A",
+      "ink": "#FFF4E2",
+      "muted": "#F0C9A6",
+      "accent": "#F2C14E",
+      "accent2": "#3FA98A",
+      "series": ["#F2C14E", "#3FA98A", "#F5E9C8", "#D98F5A", "#9CC7F5"]
+    },
+    "fonts": {
+      "display": "\"Songti SC\", \"SimSun\", Georgia, serif",
+      "body": "\"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Georgia, \"Songti SC\", serif"
+    },
+    "type": "标题 40–64px、宋体 700 字重、字距 0.08em，可竖排；正文 16px/1.8。",
+    "shape": "圆角 2px；金色 1.5px 内外双描边（border 加 box-shadow）；弱金色外发光；accent 的字用 #7A0A16。",
+    "layout": "中轴对称：居中标题配两侧对称小字，内容区用金色圆环框住，四角留装饰位。",
+    "motifs": "SVG 回纹与云纹描边、金色圆环、菱形角花，纹样只描边不填色。",
+    "avoid": "不要用西式栅格、极简留白、蓝色系和西文衬线标题。"
+  },
+  {
+    "id": "ink",
+    "name": "水墨留白",
+    "mood": "大面积白与一抹朱红，安静克制",
+    "kinds": ["poster", "explainer", "slides", "landing"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFFFFF",
+      "surface": "#F5F5F2",
+      "ink": "#1A1714",
+      "muted": "#5C5751",
+      "accent": "#A3352A",
+      "accent2": "#3C4A52",
+      "series": ["#A3352A", "#3C4A52", "#6B6B5A", "#7A6A4F", "#48604F"]
+    },
+    "fonts": {
+      "display": "\"Songti SC\", \"SimSun\", Georgia, serif",
+      "body": "\"Songti SC\", \"SimSun\", \"Times New Roman\", serif",
+      "numeric": "Georgia, \"Songti SC\", serif"
+    },
+    "type": "标题 36–56px、宋体 400 字重靠字号撑气势、字距 0.12em；正文 16px/1.9。",
+    "shape": "圆角 0；无边框，分隔只靠留白；仅纸片淡投影一层；accent 的字用 #FFFFFF。",
+    "layout": "单栏 620px 窄版心居中，标题右对齐缩进，图文之间留 96px 空白。",
+    "motifs": "feGaussianBlur 淡墨晕染圆、一处朱红圆点当焦点、竖排小字标签。",
+    "avoid": "不要用色块分栏、粗边框、彩色图表与密集信息，图表只留线不加底色。"
+  },
+  {
+    "id": "apple",
+    "name": "苹果式产品页",
+    "mood": "纯白大留白与超大圆角卡片，一屏只讲一件事",
+    "kinds": ["landing", "slides", "dashboard", "tool"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFFFFF",
+      "surface": "#F5F5F7",
+      "ink": "#1D1D1F",
+      "muted": "#6C6C70",
+      "accent": "#0066CC",
+      "accent2": "#0F7A5A",
+      "series": ["#0066CC", "#0F7A5A", "#B25000", "#6E56CF", "#4A4A4F"]
+    },
+    "fonts": {
+      "display": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Segoe UI\", Tahoma, sans-serif"
+    },
+    "type": "标题 48–80px、600 字重、字距 -0.03em；正文 17px/1.6；数字 600 字重且不加表格数字。",
+    "shape": "圆角 24–32px；无边框；柔和大阴影 0 20px 60px rgba(0,0,0,.08)；accent 的字用 #FFFFFF。",
+    "layout": "居中单列，每屏一块卡片，卡片之间 80px，窄屏降为单列满宽。",
+    "motifs": "浅灰渐变铺底、CSS 几何图形当图标、圆角面板内放内容截图式区块。",
+    "avoid": "不要用描边、硬阴影、密集栅格与花哨装饰，一屏不要塞两件事。"
+  },
+  {
+    "id": "terminal-finance",
+    "name": "金融终端",
+    "mood": "纯黑屏上橙光跳动，密度极高，像交易员的工作台",
+    "kinds": ["dashboard", "tool", "explainer"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#000000",
+      "surface": "#141414",
+      "ink": "#F0F0F0",
+      "muted": "#A0A0A0",
+      "accent": "#FF7A1A",
+      "accent2": "#22D19A",
+      "series": ["#FF7A1A", "#22D19A", "#5B9BFF", "#FF5C5C", "#E0C060"]
+    },
+    "fonts": {
+      "display": "\"Segoe UI\", Tahoma, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Consolas, ui-monospace, \"Courier New\", monospace"
+    },
+    "type": "标题 20–28px、700 字重、字距 0；正文 13px/1.4；数字 12–13px 表格数字，小字高密度。",
+    "shape": "圆角 0；不用细线，行分隔靠交替底色与 4px 橙色竖条；无阴影；accent 的字用 #000000。",
+    "layout": "三栏并排面板（列表 320px、主图、侧栏报价），行高 28px，从左上角铺满。",
+    "motifs": "状态小方块、ASCII 进度条、SVG polyline 迷你走势，橙色只给关键数字。",
+    "avoid": "不要用大留白、圆角卡片、柔和配色和渐变，整页不超过两张图。"
+  },
+  {
+    "id": "hyperpop",
+    "name": "高饱和撞色",
+    "mood": "电光蓝底白字加橙点缀，音量拉到最大",
+    "kinds": ["poster", "landing", "game", "slides"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#1616E0",
+      "surface": "#1F1FEA",
+      "ink": "#FFFFFF",
+      "muted": "#D6D6FF",
+      "accent": "#FF6A13",
+      "accent2": "#7CFFCB",
+      "series": ["#FFE94A", "#7CFFCB", "#FFC1E3", "#B8C4FF", "#FFFFFF"]
+    },
+    "fonts": {
+      "display": "Impact, \"Arial Black\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Arial Black\", Impact, sans-serif"
+    },
+    "type": "标题 64–120px、Impact 全大写、字距 -0.02em；正文 18px 粗体；数字直接当图形。",
+    "shape": "圆角 0；无边框，靠满色块拼接；无阴影；accent 的字用 #000000。",
+    "layout": "满幅色块切成 3–4 条横向带，文字压在色带交界处，四边出血。",
+    "motifs": "repeating-linear-gradient 扫描线、圆形放大镜遮罩、错位双色描字。",
+    "avoid": "不要用白底、灰色、细线和小字距标签，也不要留安静的大空区。"
+  },
+  {
+    "id": "retro70",
+    "name": "七十年代复古",
+    "mood": "芥末黄配棕橙，圆胖字形与同心圆，暖到发黏",
+    "kinds": ["poster", "landing", "slides", "game"],
+    "theme": "light",
+    "colors": {
+      "bg": "#E9A23B",
+      "surface": "#F2BE6B",
+      "ink": "#2A1A0C",
+      "muted": "#553512",
+      "accent": "#8C2318",
+      "accent2": "#2F5A3C",
+      "series": ["#8C2318", "#2F5A3C", "#4A2E1A", "#7A3B10", "#553512"]
+    },
+    "fonts": {
+      "display": "\"Trebuchet MS\", \"Kaiti SC\", \"KaiTi\", serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Trebuchet MS\", Verdana, sans-serif"
+    },
+    "type": "标题 40–72px、700 字重、字距 0.02em、字形圆胖；正文 16px；数字做成 64px 徽章。",
+    "shape": "圆角 12–24px 与药丸形；2px 棕色实线边；无模糊阴影，用 3px 棕色偏移；accent 的字用 #FFF2DC。",
+    "layout": "居中对称 960px 宽版心，标题上下各一条粗波浪线，内容三列等宽。",
+    "motifs": "repeating-radial-gradient 同心圆、粗波浪线页头、胶囊标签、棕色斜纹带。",
+    "avoid": "不要用冷色、极细无衬线字、锐角与极简留白。"
+  },
+  {
+    "id": "blueprint",
+    "name": "工程蓝图",
+    "mood": "蓝底白线的技术图纸，标注比说明更重要",
+    "kinds": ["tool", "explainer", "dashboard", "game"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#0E3A63",
+      "surface": "#17456F",
+      "ink": "#EAF4FF",
+      "muted": "#A8C6E0",
+      "accent": "#FFD166",
+      "accent2": "#7FD1C1",
+      "series": ["#FFD166", "#7FD1C1", "#FF9E7A", "#C9D8FF", "#EAF4FF"]
+    },
+    "fonts": {
+      "display": "\"Courier New\", ui-monospace, monospace",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "ui-monospace, Consolas, monospace"
+    },
+    "type": "标题 28–40px、等宽字体、字距 0.04em；正文 14px/1.6；数字全部带引线标注。",
+    "shape": "圆角 0；1px 半透明白描边与虚线；无阴影；accent 的字用 #0E3A63。",
+    "layout": "A3 图纸感：四周 24px 图框加右下标题栏，内容按 8px 网格排，每块带编号。",
+    "motifs": "虚线圆与十字中心线、尺寸引线箭头、45 度斜纹剖面填充、图框角标。",
+    "avoid": "不要用暖色、实心色块、圆角卡片和照片式留白。"
+  },
+  {
+    "id": "kids",
+    "name": "粉彩童趣",
+    "mood": "淡紫底、圆胖按钮、处处可点，像给小朋友的玩具",
+    "kinds": ["game", "landing", "tool", "slides"],
+    "theme": "light",
+    "colors": {
+      "bg": "#E9DDFF",
+      "surface": "#FFFFFF",
+      "ink": "#2C1E4A",
+      "muted": "#5A4A7A",
+      "accent": "#6A32E0",
+      "accent2": "#D63A5A",
+      "series": ["#6A32E0", "#D63A5A", "#1E7A6B", "#B75300", "#2F5BC4"]
+    },
+    "fonts": {
+      "display": "\"Comic Sans MS\", \"PingFang SC\", \"Microsoft YaHei\", cursive",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Verdana, \"Segoe UI\", sans-serif"
+    },
+    "type": "标题 36–56px、手写体、700 字重、行高 1.1；正文 18px/1.7，不用小于 16px 的字。",
+    "shape": "圆角 20–28px；无边框；按钮带 4px 下沿深色 inset 阴影；accent 的字用 #FFFFFF。",
+    "layout": "单列居中，块间距 32px，每块一个可玩元素，按钮至少 56px 高。",
+    "motifs": "border-radius 拼出的云朵与星星、蜡笔斜线底纹、会弹动的位置标记。",
+    "avoid": "不要用灰色、细线、密集表格和高冷留白，也不要把交互藏进小图标。"
+  },
+  {
+    "id": "academic",
+    "name": "学术报告",
+    "mood": "纯白页上一条条细排正文与图注编号，克制到只剩证据",
+    "kinds": ["explainer", "slides", "dashboard", "tool"],
+    "theme": "light",
+    "colors": {
+      "bg": "#FFFFFF",
+      "surface": "#F7F7F5",
+      "ink": "#111111",
+      "muted": "#565656",
+      "accent": "#1A3E6F",
+      "accent2": "#7A2E2E",
+      "series": ["#1A3E6F", "#7A2E2E", "#2F6B4A", "#8A6A1F", "#4A4A6E"]
+    },
+    "fonts": {
+      "display": "\"Times New Roman\", \"Songti SC\", \"SimSun\", serif",
+      "body": "\"Times New Roman\", \"Songti SC\", \"SimSun\", serif",
+      "numeric": "\"Times New Roman\", Georgia, serif"
+    },
+    "type": "标题 22–28px 粗体、正文 16px/1.75 两端对齐、图注 13px，字体阶梯只有四级。",
+    "shape": "圆角 0；无边框无阴影，分隔只用表头粗线、缩进和留白；accent 的字用 #FFFFFF。",
+    "layout": "单栏 720px，宽图通栏、图注编号落在图下，脚注落页底，左右留 32px。",
+    "motifs": "「图 1」「表 2」编号、上标脚注、短横线小节标题、2em 缩进引文。",
+    "avoid": "不要用彩色底块、大字标题、图标与装饰图，颜色只出现在图表里。"
+  },
+  {
+    "id": "contrast-poster",
+    "name": "黑白高反差海报",
+    "mood": "巨字被画幅裁切，纯黑纯白，一抹红就够",
+    "kinds": ["poster", "slides", "landing"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#000000",
+      "surface": "#111111",
+      "ink": "#FFFFFF",
+      "muted": "#B8B8B8",
+      "accent": "#FF2D1F",
+      "accent2": "#8C8C8C",
+      "series": ["#FF2D1F", "#F2F2F2", "#C7C7C7", "#8C8C8C", "#FF8A00"]
+    },
+    "fonts": {
+      "display": "Bahnschrift, \"Arial Black\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "Bahnschrift, Impact, sans-serif"
+    },
+    "type": "标题 120–200px、窄体全大写、字距 -0.01em、允许出血裁切；正文 15px 只有两行。",
+    "shape": "圆角 0；无边框无阴影，区块只靠黑白色差分开；accent 的字用 #000000。",
+    "layout": "满幅海报：标题占 60% 高度并上下裁切，其余信息挤在底边与右边缘。",
+    "motifs": "超大字母溢出裁切、反白横条、3px 网点半调、红色只出现在一个元素上。",
+    "avoid": "不要用第三色、圆角、阴影和对称居中，红色不得重复出现。"
+  },
+  {
+    "id": "organic",
+    "name": "自然有机",
+    "mood": "深森林绿配柠檬黄，形状圆润像一片苔原",
+    "kinds": ["landing", "poster", "explainer", "game"],
+    "theme": "dark",
+    "colors": {
+      "bg": "#12301F",
+      "surface": "#1B4230",
+      "ink": "#F1F7E8",
+      "muted": "#B9CFA8",
+      "accent": "#E4F04A",
+      "accent2": "#7FD9A8",
+      "series": ["#E4F04A", "#7FD9A8", "#F2A65A", "#9FC9F2", "#F1F7E8"]
+    },
+    "fonts": {
+      "display": "\"Trebuchet MS\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "body": "\"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "numeric": "\"Trebuchet MS\", Verdana, sans-serif"
+    },
+    "type": "标题 36–56px、700 字重、字距 0；正文 17px/1.8；关键数字 600 字重配柠檬黄。",
+    "shape": "圆角 40px 与 50% 椭圆；无边框；极柔的深绿外阴影；accent 的字用 #0B2317。",
+    "layout": "两栏有机网格，左图右文，模块左右交替圆弧边，不做直角切分。",
+    "motifs": "SVG blob 路径形状、大块渐变水流、叶脉细曲线，柠檬黄大圆当焦点。",
+    "avoid": "不要用直角网格、纯黑底、锐利线与密集数据表。"
+  }
+]

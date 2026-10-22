@@ -45,6 +45,7 @@ interface Options {
   placeCursor: (cursor: number) => void
   insertAtom?: (range: TextSelection, spec: ComposerAtomSpec, trailing?: string) => boolean
   caretInCode?: () => boolean
+  caretAfterMention?: () => boolean
   isComposing?: () => boolean
   composing?: boolean
 }
@@ -82,6 +83,7 @@ export function useCompletion({
   placeCursor,
   insertAtom,
   caretInCode,
+  caretAfterMention,
   isComposing,
   composing = false
 }: Options): CompletionState {
@@ -121,11 +123,12 @@ export function useCompletion({
   const [slashStatus, setSlashStatus] = useState<SlashLoadStatus>('idle')
 
   const inCode = caretInCode?.() ?? false
+  const afterMention = caretAfterMention?.() ?? false
   const slashRange = useMemo(
     () => findSlashQuery(value, cursor ?? value.length, { inCode }),
     [cursor, inCode, value]
   )
-  const atRange = useMemo(() => findAtQuery(value, cursor ?? value.length, { inCode }), [cursor, inCode, value])
+  const atRange = useMemo(() => findAtQuery(value, cursor ?? value.length, { inCode, afterMention }), [afterMention, cursor, inCode, value])
   const frozen = useRef<{ slash: string | null; at: string | null }>({ slash: null, at: null })
   if (!typedComposing) frozen.current = { slash: slashRange?.query ?? null, at: atRange?.query ?? null }
   const slashQuery = typedComposing ? frozen.current.slash : slashRange?.query ?? null

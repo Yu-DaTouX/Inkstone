@@ -115,6 +115,7 @@ export type SessionTextKey =
   | 'stepListDenied'
   | 'stepWebSearchDenied'
   | 'errViewDetails'
+  | 'errRecovered'
   | 'errCopyDetails'
   | 'workStopping'
   | 'workWaiting'
@@ -272,6 +273,7 @@ const ZH: Record<SessionTextKey, string> = {
   stepListDenied: '已拒绝列出',
   stepWebSearchDenied: '已拒绝联网搜索',
   errViewDetails: '查看详情',
+  errRecovered: '{title}，已自动恢复',
   errCopyDetails: '复制详情',
   workStopping: '正在停止…',
   workWaiting: '等你处理',
@@ -430,6 +432,7 @@ const EN: Record<SessionTextKey, string> = {
   stepListDenied: 'Denied',
   stepWebSearchDenied: 'Denied',
   errViewDetails: 'View details',
+  errRecovered: '{title}, recovered automatically',
   errCopyDetails: 'Copy details',
   workStopping: 'Stopping…',
   workWaiting: 'Needs your input',
