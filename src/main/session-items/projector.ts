@@ -3,6 +3,7 @@ import {
   PRELUDE_TURN_ID,
   assistantBlockId,
   groupTurns,
+  type AssistantTextItem,
   statusItemId,
   toolItemKind,
   toolItemStatus,
@@ -17,12 +18,27 @@ import { appendToolCallArgs, endToolExecution, finishToolCallArgs, startToolExec
 
 export type LocalizeImage = (mimeType: string, data: string) => string
 
+const PROGRESS_UPDATE_MODEL = /claude-(?:(?:opus|sonnet)-5[-.]5|(?:fable|mythos)-5[-.]1|fable-5(?![-.][0-9]{1,2}(?![0-9])))/i
+
+export function writesProgressUpdates(model: unknown): boolean {
+  return typeof model === 'string' && PROGRESS_UPDATE_MODEL.test(model)
+}
+
+function promoteProgressUpdate(item: SessionItem | undefined): void {
+  if (item?.kind !== 'reasoning' || !item.text.trim()) return
+  const promoted = item as SessionItem as AssistantTextItem & Partial<Pick<ReasoningItem, 'live' | 'durationMs'>>
+  promoted.kind = 'assistant-text'
+  delete promoted.live
+  delete promoted.durationMs
+}
+
 interface MessageSlot {
   header: UIMessage
   turnId: string
   step: number
   items: SessionItem[]
   toolBlocks?: Map<number, ToolItem>
+  progressUpdates?: boolean
 }
 
 interface CallEntry {
@@ -198,6 +214,7 @@ export class SessionItemProjector {
     const header: UIMessage = { id: `m${this.slots.length}`, role: 'assistant', text: '', timestamp: now }
     this.seq = this.slots.length + 1
     this.streaming = this.addSlot(header)
+    if (writesProgressUpdates(m.model)) this.streaming.progressUpdates = true
     return { ...header }
   }
 
@@ -235,6 +252,10 @@ export class SessionItemProjector {
       return null
     }
     if (kind === 'toolcall_start') {
+      if (slot.progressUpdates && typeof ev.contentIndex === 'number') {
+        const previousId = assistantBlockId(slot.turnId, slot.step, ev.contentIndex - 1)
+        promoteProgressUpdate(slot.items.find((item) => item.id === previousId))
+      }
       const call = streamingToolCall(ev, slot.items.filter((item) => item.kind === 'tool').length, now)
       const item = this.attachCall(slot, call)
       if (typeof ev.contentIndex === 'number') (slot.toolBlocks ??= new Map()).set(ev.contentIndex, item)
@@ -393,8 +414,10 @@ export class SessionItemProjector {
     const used = new Set<string>()
     const blocks = raw?.role === 'assistant' && Array.isArray(raw.content) ? raw.content : null
     if (blocks) {
+      const progressUpdates = writesProgressUpdates(raw?.model)
       blocks.forEach((block, index) => {
-        if (block.type === 'thinking') slot.items.push({ kind: 'reasoning', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking ?? '' })
+        if (block.type === 'thinking' && progressUpdates && blocks[index + 1]?.type === 'toolCall' && block.thinking?.trim()) slot.items.push({ kind: 'assistant-text', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking })
+        else if (block.type === 'thinking') slot.items.push({ kind: 'reasoning', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.thinking ?? '' })
         else if (block.type === 'text') slot.items.push({ kind: 'assistant-text', id: assistantBlockId(slot.turnId, slot.step, index), ...base, step: slot.step, block: index, text: block.text ?? '' })
         else if (block.type === 'toolCall' && block.id && calls.has(block.id) && !used.has(block.id)) {
           used.add(block.id)

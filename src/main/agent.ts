@@ -2313,6 +2313,7 @@ export class AgentController extends EventEmitter {
           this.markDirty()
         } else if (kind === 'toolcall_start') {
           this.streaming.toolOpen = true
+          this.dirty = true
           this.flushNow()
           if (call) this.pushTool(call)
         } else if (kind === 'toolcall_end') {
@@ -2776,6 +2777,7 @@ export class AgentController extends EventEmitter {
     const textDelta = text.length > s.pushedText ? text.slice(s.pushedText) : ''
     const thinkingDelta =
       thinking.length > s.pushedThinking ? thinking.slice(s.pushedThinking) : ''
+    const thinkingShrank = thinking.length < s.pushedThinking
     s.pushedText = text.length
     s.pushedThinking = thinking.length
 
@@ -2788,6 +2790,7 @@ export class AgentController extends EventEmitter {
         patch: {
           ...(textDelta ? { textDelta } : null),
           ...(thinkingDelta ? { thinkingDelta } : null),
+          ...(thinkingShrank ? { thinking } : null),
           thinkingMs: s.thinkingMs,
           thinkingLive: s.thinkingLive,
           usage: s.usage,

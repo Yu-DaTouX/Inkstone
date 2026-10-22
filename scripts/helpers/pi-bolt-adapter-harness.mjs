@@ -107,6 +107,7 @@ export const THIN_EXTENSION_FILES = [
   'danger-guard.js',
   'commandcode.js',
   'provider-diagnostics.js',
+  'anthropic-progress-updates.js',
   'mcp-app-proxy.js'
 ]
 

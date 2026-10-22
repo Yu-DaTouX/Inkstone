@@ -598,7 +598,7 @@ function dangerGuardExtensionPath(): string | undefined {
   return yanThinResourcePath('danger-guard.js')
 }
 function providerExtensionPaths(): string[] {
-  return [yanThinResourcePath('commandcode.js'), yanThinResourcePath('provider-diagnostics.js')].filter((p): p is string => !!p)
+  return [yanThinResourcePath('commandcode.js'), yanThinResourcePath('provider-diagnostics.js'), yanThinResourcePath('anthropic-progress-updates.js')].filter((p): p is string => !!p)
 }
 function yanThinExtensionPaths(): string[] {
   return [
