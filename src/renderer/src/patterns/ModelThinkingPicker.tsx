@@ -227,6 +227,9 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const openSettings = useStore((s) => s.openSettings)
 
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (open && !useStore.getState().models.length) void useStore.getState().reloadModels()
+  }, [open])
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState('')
   const [recent, setRecent] = useState<ModelChoice[]>(() => {
