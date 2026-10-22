@@ -1,0 +1,71 @@
+@layer features {
+  .v3-canvas-dock-toggle {
+    flex: 0 0 auto;
+    align-self: center;
+    margin-left: auto;
+  }
+
+  .v3-canvas-dock-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .v3-canvas-dock-group {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .v3-canvas-dock-sep {
+    flex: 0 0 auto;
+    width: 1px;
+    height: 16px;
+    background: var(--line);
+  }
+
+  .v3-canvas-dock-line {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg2);
+    font-family: var(--font-mono);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas-dock-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-panel.v3-canvas-dock-bar,
+  .v3-canvas[data-narrow] .v3-canvas-comment-panel.v3-canvas-dock-bar,
+  .v3-canvas[data-narrow] .v3-canvas-edit-panel.v3-canvas-dock-bar {
+    left: var(--s-8);
+    right: var(--s-8);
+    top: auto;
+    bottom: calc(var(--s-12) + var(--canvas-toolbar-h, 28px) + var(--s-8));
+    z-index: 3;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--s-6);
+    width: auto;
+    max-height: none;
+    padding: var(--s-4) var(--s-4) var(--s-4) var(--s-8);
+    overflow: hidden;
+  }
+}

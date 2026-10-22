@@ -1,5 +1,6 @@
 import { build } from 'esbuild'
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -26,6 +27,11 @@ export async function runHtmlArtifactPreviewTests() {
     ok(first.ok, 'managed HTML creates a preview')
     ok(first.ok && store.read(first.url).includes('window.marker=1'), 'snapshot keeps inline scripts for isolated execution')
     ok(first.ok && shared.htmlArtifactToken(first.url)?.length === 32, 'URL carries an opaque random token, not a file path')
+    ok(first.ok && /^[0-9a-f]{32}$/.test(first.nonce), 'snapshot carries a one-shot bridge nonce')
+    ok(first.ok && first.hash === createHash('sha256').update(await readFile(file)).digest('hex'), 'snapshot records the sha256 of the disk source')
+    ok(first.ok && store.readNonce(first.url) === first.nonce, 'protocol handler can read the nonce for injection')
+    ok(first.ok && shared.withPreviewRuntime('<p>x</p>', first.nonce).includes(`{nonce:"${first.nonce}"}`), 'nonce is injected into the closed bridge scope')
+    ok(!shared.withPreviewRuntime('<p>x</p>', first.ok ? first.nonce : '').includes('window.__yanCanvasBridge'), 'page scripts get no bridge object on window')
     ok(first.ok && store.read(first.url + '#focus') !== null, 'document fragment retains snapshot identity')
     ok(first.ok && store.read(first.url + '?path=other') === null, 'query cannot redirect the snapshot')
     ok(shared.htmlArtifactToken('inkstone-html://bad/index.html') === null, 'invalid token is rejected')
@@ -35,9 +41,11 @@ export async function runHtmlArtifactPreviewTests() {
     ok(first.ok && !store.read(first.url).includes('changed'), 'disk edits do not change an active preview')
     const second = await store.prepare(file)
     ok(second.ok && second.url !== first.url, 'each mounted preview gets its own token')
+    ok(second.ok && first.ok && second.nonce !== first.nonce, 'every snapshot gets a fresh nonce')
     ok((await store.prepare(file)).error === 'busy', 'active preview count is bounded')
     store.release(first.url)
     ok(store.read(first.url) === null, 'unmounted preview token no longer works')
+    ok(store.readNonce(first.url) === null, 'unmounted preview stops exposing its nonce')
     store.release(second.url)
     ok((await store.prepare('relative.html')).error === 'outside', 'relative paths are not accepted')
     await writeFile(join(outside, 'private.html'), '<p>private</p>')
@@ -83,6 +91,7 @@ export async function runHtmlArtifactPreviewTests() {
     ok((await store.readAsset(base + '/link/leak.css')) === null, 'junction inside the page folder cannot escape the root')
     ok((await store.readAsset('inkstone-html://' + 'b'.repeat(32) + '/css/app.css')) === null, 'unknown token serves nothing')
     const inline = store.prepareInline('<link rel="stylesheet" href="app.css">')
+    ok(inline.ok && inline.hash === '' && /^[0-9a-f]{32}$/.test(inline.nonce), 'inline drafts carry no disk hash but still carry a nonce')
     ok(inline.ok && (await store.readAsset(inline.url.replace('/index.html', '/app.css'))) === null, 'inline drafts have no file folder to read from')
     if (page.ok) store.release(page.url)
     if (inline.ok) store.release(inline.url)

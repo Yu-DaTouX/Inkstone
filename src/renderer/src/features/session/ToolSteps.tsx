@@ -18,6 +18,8 @@ import { opensEverything } from './transcript-view-model'
 import { Icon } from './Icon'
 import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
+import { SearchStepView } from './web-search/SearchStep'
+import { searchStepOf } from './web-search/model'
 
 const OUTPUT_PREVIEW_LINES = 16
 const NEST_VISIBLE = 3
@@ -130,9 +132,10 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
   const nested = collapsedNest(visibleNestedNodes(children, nestAll === true || verbose), children, open, running)
+  const search = nestedTitle || blocked || asking ? null : searchStepOf(call)
 
-  return (
-    <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
+  const step = (
+    <>
       <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={`${title.label} ${meta}`.trim()} data-testid="v3-step">
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
         <span className="v3-step-label">
@@ -160,6 +163,12 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
           {nested.shown.map((child) => <StepNode key={child.call.id} node={child} depth={depth + 1} />)}
         </div>
       ) : null}
+    </>
+  )
+
+  return (
+    <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
+      {search ? <SearchStepView call={call} step={search}>{step}</SearchStepView> : step}
     </div>
   )
 }

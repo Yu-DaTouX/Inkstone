@@ -1,10 +1,11 @@
 import { randomInt } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { RemoteError, designRoot, listRemoteSystems, pullRemoteSystem } from './design-remote.mjs'
 
-export const ARTIFACT_KINDS = ['poster', 'dashboard', 'game', 'explainer', 'tool', 'landing', 'slides']
+export const ARTIFACT_KINDS = ['poster', 'dashboard', 'game', 'explainer', 'tool', 'landing', 'slides', 'video']
 const RECENT_LIMIT = 8
 
 export function deckCandidates(cliDir) {
@@ -63,16 +64,69 @@ export function rememberStyles(file, ids, previous) {
   return next
 }
 
-export function runArtifactStyle(flags) {
+const PROJECT_DESIGN_NOTE = '项目里有 DESIGN.md：先按它的配色、字体、版式、组件与禁止项做，不要再抽牌，也不用去拉远端设计系统。它没覆盖到的地方才参考随包风格牌；确实要换成随包风格牌时加 --ignore-project 重跑。'
+
+const REMOTE_NOTE = '用 --remote list 看远端设计系统清单（可加 --query 缩小范围），--remote <id> 拉取一套到本机后照它做。'
+
+function projectDesignFile(flags, deps) {
+  if (flags['ignore-project'] || flags.ignoreProject) return null
+  const base = typeof flags.cwd === 'string' && flags.cwd.trim() ? resolve(flags.cwd.trim()) : deps.cwd ?? process.cwd()
+  const file = join(base, 'DESIGN.md')
+  return existsSync(file) ? file : null
+}
+
+function remoteDeps(deps) {
+  return {
+    requestImpl: deps.fetch,
+    timeoutMs: deps.timeoutMs,
+    root: deps.root ?? designRoot(deps.env ?? process.env)
+  }
+}
+
+async function runRemoteStyle(flags, deps) {
+  const remote = flags.remote
+  if (remote === true || (typeof remote === 'string' && !remote.trim())) {
+    return {
+      ok: false,
+      error: 'remote_id_required',
+      message: '--remote 缺少参数：写 list 看清单，或写设计系统 id（如 brutalism）',
+      detail: 'yan artifact style --remote list [--query <词>] / yan artifact style --remote <id>'
+    }
+  }
+  const options = { ...remoteDeps(deps), ...(typeof flags.query === 'string' ? { query: flags.query } : {}) }
+  if (remote === 'list') return listRemoteSystems(options)
+  try {
+    return await pullRemoteSystem({ ...options, id: String(remote) })
+  } catch (err) {
+    if (err instanceof RemoteError) return { ok: false, error: err.code, message: err.message, ...(err.detail ? { detail: err.detail } : {}) }
+    throw err
+  }
+}
+
+export async function runArtifactStyle(flags, deps = {}) {
   const deck = loadDeck()
   if (!deck?.length) return { ok: false, error: 'style_deck_missing', message: '找不到风格牌（resources/skills/artifact/styles.json）' }
+  if (flags.remote !== undefined) return runRemoteStyle(flags, deps)
+  const projectDesign = projectDesignFile(flags, deps)
   if (flags.list) {
-    return { ok: true, styles: deck.map(({ id, name, mood, theme, kinds }) => ({ id, name, mood, theme, kinds })), note: '用户点名的风格和哪张牌同名或相近，就用 --id 取那张；都不像时按 guides/styles.md 或用户的描述自己定。' }
+    return {
+      ok: true,
+      ...(projectDesign ? { projectDesign } : {}),
+      styles: deck.map(({ id, name, mood, theme, kinds }) => ({ id, name, mood, theme, kinds })),
+      note: projectDesign
+        ? PROJECT_DESIGN_NOTE
+        : `用户点名的风格和哪张牌同名或相近，就用 --id 取那张；都不像时按 guides/styles.md 或用户的描述自己定。${REMOTE_NOTE}`
+    }
   }
+  if (projectDesign) return { ok: true, projectDesign, note: PROJECT_DESIGN_NOTE }
+  return drawStyle(deck, flags)
+}
+
+function drawStyle(deck, flags) {
   if (typeof flags.id === 'string') {
     const wanted = flags.id.trim()
     const card = deck.find((item) => item.id === wanted || item.name === wanted)
-    return card ? { ok: true, styles: [card] } : { ok: false, error: 'unknown_style', message: `没有这张风格牌：${flags.id}`, ids: deck.map((item) => item.id) }
+    return card ? { ok: true, styles: [card] } : { ok: false, error: 'unknown_style', message: `没有这张风格牌：${flags.id}`, ids: deck.map((item) => item.id), remote: REMOTE_NOTE }
   }
   const kind = typeof flags.kind === 'string' && ARTIFACT_KINDS.includes(flags.kind) ? flags.kind : undefined
   const count = Math.min(5, Math.max(1, Number.parseInt(String(flags.count ?? 3), 10) || 3))
@@ -86,6 +140,6 @@ export function runArtifactStyle(flags) {
     kind: kind ?? 'any',
     ...(theme ? { theme } : {}),
     styles,
-    note: '从这几张里选最贴合主题与受众的一张，照它的 colors、fonts、type、shape、layout、motifs 写，并遵守 avoid；颜色和字体先写成 :root 里的 CSS 变量。都不合适就再运行一次。回复里用一句话说明用了哪张牌。'
+    note: '从这几张里选最贴合主题与受众的一张，照它的 colors、fonts、type、shape、layout、motifs 写，并遵守 avoid；颜色和字体先写成 :root 里的 CSS 变量。都不合适就再运行一次。回复里用一句话说明用了哪张牌。用户点名了某个具体设计系统或品牌风格、随包风格牌不够用时，走 --remote。'
   }
 }

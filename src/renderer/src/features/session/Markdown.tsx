@@ -21,6 +21,7 @@ import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type
 import { fadeSpans, rehypeRevealFade, spansForBlock, trackReveal, type FadeSpan, type FadeTrack } from './reveal-fade'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
 import { useSessionText } from './text'
+import { CitationLink, useCitation } from './web-search/citations'
 import '../../patterns/highlighted-code.css'
 
 type PluginList = NonNullable<Options['rehypePlugins']>
@@ -118,10 +119,12 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   const t = useT()
   const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
+  const citation = useCitation(href)
   const ariaLabel = typeof rest['aria-label'] === 'string' ? rest['aria-label'] : undefined
   const sourceCwd = useContext(MessageSourceCwd)
   const target = classifyLink(href)
   const onContextMenu = useLinkMenu(target, sourceCwd)
+  if (citation) return <CitationLink citation={citation} />
   if (typeof href === 'string' && href.startsWith('#')) {
     const anchorId = typeof rest['id'] === 'string' ? rest['id'] : undefined
     const describedBy = typeof rest['aria-describedby'] === 'string' ? rest['aria-describedby'] : undefined

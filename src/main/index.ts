@@ -32,10 +32,12 @@ import { getSessionLayout, moveSessionLayout, rememberSession } from './session-
 import { samePath } from '../shared/session-path'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
+import { resolveSessionOpenTarget } from './session-open-target'
 import { readChainMessages } from './session-history'
 import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
+import { exportVideo } from './video-export'
 import './mcp/app-protocol'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
@@ -61,6 +63,7 @@ import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerSourcesIpc } from './ipc/sources-ipc'
+import { registerSearchOpsIpc } from './ipc/search-ops-ipc'
 import { registerCapabilitiesIpc } from './ipc/capabilities-ipc'
 import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
@@ -86,6 +89,9 @@ import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
 import { registerSyncIpc } from './ipc/sync-ipc'
 import { registerCheckpointIpc } from './ipc/checkpoint-ipc'
+import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
+import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
+import { registerVideoExportIpc } from './ipc/video-export-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
@@ -389,6 +395,7 @@ const subagentService: SubagentService = new SubagentService({
   shellExtension: shellFallbackExtensionPath,
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
   runReadOnlyCommand: (command, params) => subagentSearch.runSearchCommand(command.slice('search.'.length), params),
+  previewHtml: (htmlPath, root, options) => captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
   resolveModelApi: async (label, origin) => {
     const parent = (origin.runId ? runners?.agentOf(origin.runId) : null) ??
       (origin.sessionId ? runners?.agentForSession(origin.sessionId) : null) ?? null
@@ -609,6 +616,7 @@ function yanThinExtensionPaths(): string[] {
     responseDetailExtensionPath(),
     preambleExtensionPath(),
     languageExtensionPath(),
+    yanThinResourcePath('ultracode.js'),
     capabilityGuideExtensionPath(),
     mcpAppProxyExtensionPath(),
     contextTrimExtensionPath(),
@@ -1185,8 +1193,18 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
 
 let shuttingDown = false
 let releaseDesktopDataRoot: (() => Promise<void>) | undefined
-async function shutdown(): Promise<void> {
-  if (shuttingDown) return
+let shutdownTask: Promise<void> | null = null
+let shutdownFinished = false
+function shutdown(): Promise<void> {
+  shutdownTask ??= runShutdown().catch((error) => {
+    console.error('[shutdown] 退出清理失败', error)
+  }).finally(() => {
+    shutdownFinished = true
+  })
+  return shutdownTask
+}
+
+async function runShutdown(): Promise<void> {
   shuttingDown = true
   syncController?.stop()
   if (agentRestartTimer) clearTimeout(agentRestartTimer)
@@ -1899,6 +1917,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         scheduleHost: scheduleService,
         preambleExtension: preambleExtensionPath(),
         languageExtension: languageExtensionPath(),
+        ultracodeExtension: yanThinResourcePath('ultracode.js'),
         capabilityGuideExtension: capabilityGuideExtensionPath(),
         contextTrimExtension: contextTrimExtensionPath(),
         imageLabelsExtension: imageLabelsExtensionPath(),
@@ -1930,8 +1949,10 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             : {}),
           onBashSettled: () => requestPiPackageActivationTick(),
           trashItem: (path: string) => shell.trashItem(path),
-          previewHtml: (htmlPath: string, root: string) =>
-            captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews') })
+          previewHtml: (htmlPath: string, root: string, options?: { at?: number[] }) =>
+            captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
+          exportVideo: (htmlPath: string, root: string, request: { fps?: number; scale?: number; outPath?: string }) =>
+            exportVideo({ htmlPath, root, ...request })
         },
         confirmCapabilityAuthorization: async (
           request: CapabilityAuthorizationPrompt
@@ -2136,12 +2157,17 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     })
   )
 
-  const projectId = projectIdForCwd(settings, settings.cwd)
-  const res = await runners.startPrimary(settings.cwd, restore?.sessionFile, projectId)
+  const openTarget = await resolveSessionOpenTarget({
+    ...(restore?.sessionFile ? { sessionFile: restore.sessionFile } : {}),
+    fallbackCwd: settings.cwd,
+    usable: (cwd) => validateCwd(cwd),
+    projectIdForCwd: (cwd) => projectIdForCwd(settings, cwd)
+  })
+  const res = await runners.startPrimary(openTarget.cwd, restore?.sessionFile, openTarget.projectId)
   await rememberRunnerSession(res, {
-    cwd: settings.cwd,
-    projectId,
-    scope: 'project',
+    cwd: openTarget.cwd,
+    projectId: openTarget.projectId,
+    scope: openTarget.scope,
     ...(restore?.sessionFile ? { sessionFile: restore.sessionFile } : {})
   })
   pushRunners()
@@ -2381,6 +2407,7 @@ function registerIpc(): void {
   )
   handle('yan:setThinking', async (level: string) => ac()?.setThinking(level) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
+  handle('yan:setUltracode', async (on: boolean) => ac()?.setUltracode(!!on) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
 
   handle(
@@ -2868,7 +2895,11 @@ function registerIpc(): void {
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
   registerDesktopPetIpc(ipc)
+  registerCanvasCaptureIpc(ipc)
+  registerHtmlEditIpc(ipc, { resolveFileContext })
+  registerVideoExportIpc(ipc, { resolveFileContext })
   registerSourcesIpc(ipc)
+  registerSearchOpsIpc(ipc, { opsDir: join(YAN_DIR, 'ops') })
 
   registerCapabilitiesIpc(ipc, {
     currentAgent: () => ac() ?? undefined,
@@ -3605,8 +3636,9 @@ app.on('before-quit', (e) => {
   }
   isQuitting = true
   exitReason = exitReason ?? 'app-quit'
-  if (shuttingDown) return
+  if (shutdownFinished) return
   e.preventDefault()
+  if (shuttingDown) return
   void shutdown().then(() => app.quit())
 })
 

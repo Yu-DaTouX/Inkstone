@@ -6,6 +6,7 @@ export const NOTICE_BATCH_MIN_WAIT_MS = 60_000
 export const NOTICE_BATCH_MAX_WAIT_MS = 10 * 60_000
 export const NOTICE_SIBLINGS_POLL_MS = 15_000
 const MAX_DELIVERY_ATTEMPTS = 5
+export const NOTICE_MAX_UNDELIVERED_RUNS = 20
 
 export interface NoticeTarget {
   send(text: string, images: undefined, mode: 'followUp'): Promise<{ ok: boolean; error?: string }>
@@ -100,14 +101,44 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     }
   }
 
+  const runStamp = (run: SubagentRun): number =>
+    typeof run.endedAt === 'number' && Number.isFinite(run.endedAt)
+      ? run.endedAt
+      : Number.isFinite(run.startedAt)
+        ? run.startedAt
+        : 0
+
+  const runIds = (runs: SubagentRun[]): string => runs.map((run) => run.id).join(',')
+
+  const trimUndelivered = (): void => {
+    const all: SubagentRun[] = []
+    for (const runs of undelivered.values()) all.push(...runs)
+    const excess = all.length - NOTICE_MAX_UNDELIVERED_RUNS
+    if (excess <= 0) return
+    const dropped = new Set([...all].sort((a, b) => runStamp(a) - runStamp(b)).slice(0, excess))
+    for (const [key, runs] of [...undelivered]) {
+      const kept = runs.filter((run) => !dropped.has(run))
+      if (kept.length > 0) undelivered.set(key, kept)
+      else {
+        undelivered.delete(key)
+        failedAttempts.delete(key)
+      }
+    }
+    console.warn(
+      `[subagent-notify] 未投递通知超过 ${NOTICE_MAX_UNDELIVERED_RUNS} 条上限，丢弃最旧的 ${dropped.size} 条：${runIds([...dropped])}`
+    )
+  }
+
   const keepUndelivered = (key: string, runs: SubagentRun[]): void => {
     const attempts = (failedAttempts.get(key) ?? 0) + 1
     if (attempts >= MAX_DELIVERY_ATTEMPTS) {
       failedAttempts.delete(key)
+      console.warn(`[subagent-notify] 连续投递失败 ${attempts} 次，放弃 ${runs.length} 条通知（父会话 ${key}）：${runIds(runs)}`)
       return
     }
     failedAttempts.set(key, attempts)
     undelivered.set(key, [...runs, ...(undelivered.get(key) ?? [])])
+    trimUndelivered()
   }
 
   const flush = (key: string): void => {
@@ -123,6 +154,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       const target = deps.find(runs[runs.length - 1])
       if (!target) {
         undelivered.set(key, runs)
+        trimUndelivered()
         return
       }
       if (await deliver(target, runs)) failedAttempts.delete(key)

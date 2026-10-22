@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { SubagentHistory } from './subagent-history'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
@@ -22,9 +22,10 @@ import { redactDiagnosticText } from '../shared/redact-diagnostic'
 import { subagentModelError, subagentPiArgs } from '../shared/subagent-pi-launch'
 import { confirmRegisteredModel } from './subagents/registered-model'
 import { forkPiArgs, forkPrompt, writeForkSession, type SubagentForkSource } from './subagent-fork'
+import { runArtifactPreview, type PreviewHtml } from './artifact-preview-command'
 import {
   applyPatch,
-  cleanupWorkspace,
+  cleanupWorkspace as removeWorkspace,
   collectDiff,
   prepareWorkspace,
   type PreparedWorkspace
@@ -61,6 +62,11 @@ function wrapUpMessage(text: string): string {
 }
 const MAX_TRANSCRIPT = 200
 const ABORT_TIMEOUT_MS = 5_000
+
+async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<void> {
+  const result = await removeWorkspace(workspace)
+  for (const error of result.errors) console.warn(`[subagent] ${error}`)
+}
 const DRAIN_CONCURRENCY = 4
 
 const MAX_STDERR_LINES = 20
@@ -163,9 +169,54 @@ const READ_ONLY_HOST_COMMANDS = ['search.query', 'search.fetch']
 
 export interface SubagentDangerAnswer { decision: 'allow' | 'deny' | 'no-answer'; feedback?: string }
 
+const NO_APPROVAL_ANSWER: SubagentDangerAnswer = { decision: 'no-answer' }
+
 export function dangerConfirmSummary(answer: boolean | SubagentDangerAnswer | undefined): { allowed: boolean; decision: SubagentDangerAnswer['decision']; feedback?: string } {
   if (answer === undefined || typeof answer === 'boolean') return { allowed: answer === true, decision: answer === true ? 'allow' : answer === false ? 'deny' : 'no-answer' }
   return { allowed: answer.decision === 'allow', decision: answer.decision, ...(answer.decision === 'deny' && answer.feedback ? { feedback: answer.feedback } : {}) }
+}
+
+export function awaitApprovalAnswer(
+  pending: Promise<boolean | SubagentDangerAnswer>,
+  signals: readonly (AbortSignal | undefined)[]
+): Promise<boolean | SubagentDangerAnswer> {
+  const live = signals.filter((signal): signal is AbortSignal => !!signal)
+  if (!live.length) return pending
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      for (const signal of live) signal.removeEventListener('abort', onAbort)
+    }
+    const onAbort = (): void => {
+      cleanup()
+      resolve(NO_APPROVAL_ANSWER)
+    }
+    for (const signal of live) {
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
+    }
+    for (const signal of live) signal.addEventListener('abort', onAbort, { once: true })
+    pending.then(
+      (answer) => {
+        cleanup()
+        resolve(answer)
+      },
+      (error) => {
+        cleanup()
+        reject(error)
+      }
+    )
+  })
+}
+
+export interface SubagentContext {
+  cwd: string
+  parentSessionId?: string
+  parentRunId?: string
+  parentGeneration?: number
+  parentMessageId?: string
+  projectId?: string
 }
 
 export type SubagentSendMode = 'steer' | 'followUp'
@@ -181,7 +232,13 @@ export interface SubagentOptions {
   parentMessageId?: string
   projectId?: string
   archiveDir?: string
-  confirmDanger?(params: Record<string, unknown>, cwd: string, origin?: SubagentApprovalOrigin): Promise<boolean | SubagentDangerAnswer>
+  previewHtml?: PreviewHtml
+  confirmDanger?(
+    params: Record<string, unknown>,
+    cwd: string,
+    origin?: SubagentApprovalOrigin,
+    signal?: AbortSignal
+  ): Promise<boolean | SubagentDangerAnswer>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   extensions?: string[]
   readOnlyExtension?: string
@@ -194,6 +251,26 @@ export interface SubagentOptions {
   onEvent?: (runId: string, evt: Record<string, unknown>, run: SubagentRun) => void
   createRpc?: (opts: { cwd: string; piBin?: string; args: string[] }) => SubagentRpc
   prepare?: (rootCwd: string, id: string, isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd') => Promise<PreparedWorkspace>
+}
+
+export interface SubagentHostCommands {
+  onlyCommands: string[]
+  handle(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult | undefined>
+}
+
+export function subagentHostCommands(opts: {
+  readOnlyHost?: SubagentOptions['runReadOnlyCommand']
+  previewHtml?: PreviewHtml
+}): SubagentHostCommands {
+  const onlyCommands = ['danger.confirm', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
+  return {
+    onlyCommands,
+    handle: async (command, params, cwd) => {
+      if (opts.readOnlyHost && READ_ONLY_HOST_COMMANDS.includes(command)) return opts.readOnlyHost(command, params, cwd)
+      if (command === 'artifact.preview') return runArtifactPreview(opts.previewHtml, params.path, cwd, params.at)
+      return undefined
+    }
+  }
 }
 
 export class SubagentController {
@@ -217,7 +294,7 @@ export class SubagentController {
     await this.history.load()
   }
 
-  setContext(context: { cwd: string; parentSessionId?: string; parentRunId?: string; parentGeneration?: number; parentMessageId?: string; projectId?: string }): void {
+  setContext(context: SubagentContext): void {
     const { cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId } = context
     this.opts = { ...this.opts, cwd, parentSessionId, parentRunId, parentGeneration, parentMessageId, projectId }
   }
@@ -338,21 +415,27 @@ export class SubagentController {
   private emitDelta(run: Run): void {
     const previous = this.pushedTranscript.get(run.id)
     const transcript = run.transcript
+    const onPatch = this.opts.onPatch
     const sameBase =
       previous !== undefined &&
       previous.length > 0 &&
       previous.length <= transcript.length &&
       transcript[0]?.id === previous.firstId &&
       transcript[previous.length - 1]?.id === previous.lastId
-    if (!sameBase || !this.opts.onPatch) {
+    if (!sameBase || !onPatch) {
       this.emit(run)
       return
     }
     clearTimeout(run.pushTimer)
     run.pushTimer = undefined
     const transcriptFrom = previous.length - 1
+    try {
+      onPatch({ id: run.id, run: { ...this.snapshot(run), transcript: transcript.slice(transcriptFrom) }, transcriptFrom })
+    } catch (error) {
+      console.warn('[subagent] 推送子代理增量失败', error)
+      return
+    }
     this.rememberPushedTranscript(run)
-    this.opts.onPatch({ id: run.id, run: { ...this.snapshot(run), transcript: transcript.slice(transcriptFrom) }, transcriptFrom })
   }
 
   private emitStream(run: Run): void {
@@ -407,7 +490,13 @@ export class SubagentController {
       const live = this.runs.get(run.id)
       if (live && !live.reviewDecided) continue
       const rootCwd = live?.workspace.rootCwd ?? this.history.get(run.id)?.rootCwd ?? run.cwd
+      const activation = live?.activation
       await this.history.hide(run, rootCwd)
+      const current = this.runs.get(run.id)
+      if (current !== live || this.resuming.has(run.id) || (live && (live.status === 'running' || live.status === 'starting' || live.activation !== activation))) {
+        await this.history.unhide(current ? this.snapshot(current) : run, rootCwd).catch((error: unknown) => console.warn('[subagent] 恢复子代理记录失败', error))
+        continue
+      }
       clearTimeout(live?.pushTimer)
       this.runs.delete(run.id)
       this.pushedTranscript.delete(run.id)
@@ -452,7 +541,8 @@ export class SubagentController {
     model?: string,
     isolation: 'worktree' | 'controlled-cwd' | 'shared-cwd' = 'shared-cwd',
     briefInput?: unknown,
-    fork?: SubagentForkSource
+    fork?: SubagentForkSource,
+    context?: SubagentContext
   ): Promise<{ ok: boolean; error?: string; run?: SubagentRun }> {
     if (fork && isolation !== 'shared-cwd') return { ok: false, error: 'fork 子代理只能在当前目录运行' }
     if (this.stoppingAll) return { ok: false, error: '子代理正在停止清理，请稍后重试' }
@@ -466,7 +556,7 @@ export class SubagentController {
     const parsed = parseSubagentBrief(briefInput, text)
     if (!parsed.ok) return { ok: false, error: parsed.error }
 
-    const ctx = this.opts
+    const ctx: SubagentOptions = context ? { ...this.opts, ...context } : this.opts
     const generation = this.launchGeneration
     this.preparing += 1
     let reserved = true
@@ -674,33 +764,46 @@ export class SubagentController {
     env: Record<string, string | undefined>,
     readOnlyHost?: SubagentOptions['runReadOnlyCommand']
   ): Promise<SubagentRpc> {
+    const stopApprovals = new AbortController()
+    const host = subagentHostCommands({ readOnlyHost, previewHtml: ctx.previewHtml })
     const approval = new CapabilityServer({
       opsDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'approvals', id),
-      onlyCommands: readOnlyHost ? ['danger.confirm', ...READ_ONLY_HOST_COMMANDS] : ['danger.confirm'],
-      handlers: { run: async (command, params) => {
-        if (readOnlyHost && READ_ONLY_HOST_COMMANDS.includes(command)) return readOnlyHost(command, params, cwd)
-        const answer = await ctx.confirmDanger?.(params, cwd, { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id })
-        return { summary: { kind: 'danger-confirm', ...dangerConfirmSummary(answer) } }
-      } }
+      onlyCommands: host.onlyCommands,
+      handlers: {
+        run: async (command, params, _context, signal) => {
+          const handled = await host.handle(command, params, cwd)
+          if (handled) return handled
+          const origin = { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }
+          const answer = ctx.confirmDanger && !signal?.aborted && !stopApprovals.signal.aborted
+            ? await awaitApprovalAnswer(ctx.confirmDanger(params, cwd, origin, signal), [signal, stopApprovals.signal])
+            : undefined
+          return { summary: { kind: 'danger-confirm', ...dangerConfirmSummary(answer) } }
+        }
+      }
     })
+    const halt = (): void => {
+      if (!stopApprovals.signal.aborted) stopApprovals.abort()
+      approval.stop()
+    }
     try {
       const endpoint = await approval.start({ sessionId: id, projectId: ctx.projectId ?? id })
       const rpc = new PiRpc({
         cwd, piBin, args,
         env: { ...env,
+          PATH: `${join(YAN_DIR, 'bin')}${delimiter}${env.PATH ?? process.env.PATH ?? ''}`,
           YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token,
           YAN_SESSION_ID: id, YAN_PROJECT_ID: ctx.projectId ?? id }
       })
-      rpc.on('exit', () => approval.stop())
+      rpc.on('exit', () => halt())
       rpc.on('ui', (req: Record<string, unknown>) => {
         const requestId = typeof req.id === 'string' ? req.id : ''
         if (requestId && DIALOG_UI_METHODS.has(String(req.method ?? ''))) rpc.respondUi({ id: requestId, cancelled: true })
       })
       const close = rpc.close.bind(rpc)
-      rpc.close = async () => { approval.stop(); await close() }
+      rpc.close = async () => { halt(); await close() }
       return rpc
     } catch (error) {
-      approval.stop()
+      halt()
       throw error
     }
   }
@@ -893,6 +996,13 @@ export class SubagentController {
   }
 
   private async stopRun(run: Run, cleanupReview: boolean): Promise<void> {
+    if (run.settling) {
+      try { await run.settling } catch { }
+      if (run.status !== 'running' && run.status !== 'starting') {
+        if (cleanupReview) await this.finalize(run, true)
+        return
+      }
+    }
     run.status = 'cancelled'
     run.endReason = 'stopped'
     run.error = undefined
@@ -977,23 +1087,26 @@ export class SubagentController {
     if (run.status === 'done' || run.status === 'error' || run.settling) return
     clearTimeout(run.timer)
     if (run.status === 'starting' && !run.resumed) run.launchFailed = true
+    const cancelled = run.status === 'cancelled'
+    run.status = cancelled ? 'cancelled' : 'error'
+    run.endReason = cancelled ? 'stopped' : reason
+    run.wrapUp = undefined
+    run.progressWarning = undefined
+    if (cancelled) {
+      run.error = undefined
+      run.latestActivity = '已停止'
+    } else {
+      run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
+      run.latestActivity = message
+    }
+    run.endedAt = Date.now()
+    this.emit(run)
     const settling = (async () => {
-      await run.rpc.close()
-      if (run.settled || run.status === 'done' || run.status === 'error') return
-      const cancelled = run.status === 'cancelled'
-      run.status = cancelled ? 'cancelled' : 'error'
-      run.endReason = cancelled ? 'stopped' : reason
-      run.wrapUp = undefined
-      run.progressWarning = undefined
-      if (cancelled) {
-        run.error = undefined
-        run.latestActivity = '已停止'
-      } else {
-        run.error = reason === 'startup' && run.stderrTail.length ? `${message}；stderr：${run.stderrTail.join(' | ')}` : message
-        run.latestActivity = message
+      try {
+        await run.rpc.close()
+      } catch (error) {
+        console.warn('[subagent] 关闭子代理进程失败', error)
       }
-      run.endedAt = Date.now()
-      this.emit(run)
       await this.finalize(run, false)
     })()
     if (!run.settling) run.settling = settling
@@ -1288,6 +1401,7 @@ export class SubagentController {
         if (result && call) {
           call.status = result.status
           call.output = result.output
+          call.details = result.details
           if (result.cancelled) call.cancelled = true
           run.latestActivity = `${call.name}${result.status === 'error' ? ' 失败' : ' 完成'}`
           this.emit(run)

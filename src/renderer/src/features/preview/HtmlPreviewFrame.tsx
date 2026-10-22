@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Button, EmptyState, Spinner } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX, HTML_PREVIEW_CHANNEL, readProbeReply, type HtmlPreviewRect } from '../../../../shared/html-artifact-preview'
+import { canvasToolMessage } from '../../../../shared/html-canvas-bridge'
 import type { PreviewText } from './preview-text'
 
 export const HTML_PREVIEW_TIMEOUT_MS = 20000
@@ -22,6 +23,11 @@ interface FrameState {
   status: 'loading' | 'ready' | 'error'
 }
 
+export interface HtmlFrameMeta {
+  hash: string
+  nonce: string
+}
+
 export function HtmlPreviewFrame({
   abs,
   name,
@@ -31,6 +37,11 @@ export function HtmlPreviewFrame({
   draft = null,
   focus = null,
   follow = false,
+  frameId = '',
+  bridgeTool = null,
+  onBridgeMessage,
+  onFrameElement,
+  onFrameMeta,
   onFocusRect,
   onViewSource
 }: {
@@ -42,17 +53,59 @@ export function HtmlPreviewFrame({
   draft?: string | null
   focus?: PreviewFocus | null
   follow?: boolean
+  frameId?: string
+  bridgeTool?: string | null
+  onBridgeMessage?: (frameId: string, data: unknown, nonce: string) => void
+  onFrameElement?: (element: HTMLIFrameElement | null) => void
+  onFrameMeta?: (meta: HtmlFrameMeta | null) => void
   onFocusRect?: (rect: HtmlPreviewRect | null) => void
   onViewSource: () => void
 }): ReactElement {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<FrameState>({ shown: null, pending: null, status: 'loading' })
   const urlsRef = useRef(new Set<string>())
+  const metaRef = useRef(new Map<string, HtmlFrameMeta>())
   const framesRef = useRef(new Map<string, HTMLIFrameElement>())
   const probeRef = useRef(0)
   const onFocusRectRef = useRef(onFocusRect)
   onFocusRectRef.current = onFocusRect
+  const onBridgeMessageRef = useRef(onBridgeMessage)
+  onBridgeMessageRef.current = onBridgeMessage
+  const onFrameElementRef = useRef(onFrameElement)
+  onFrameElementRef.current = onFrameElement
+  const onFrameMetaRef = useRef(onFrameMeta)
+  onFrameMetaRef.current = onFrameMeta
   const focusText = focus ? focus.text ?? '' : null
+
+  useEffect(() => {
+    const element = state.shown ? framesRef.current.get(state.shown) ?? null : null
+    onFrameElementRef.current?.(element)
+    return () => onFrameElementRef.current?.(null)
+  }, [state.shown])
+
+  useEffect(() => {
+    const meta = state.shown ? metaRef.current.get(state.shown) ?? null : null
+    onFrameMetaRef.current?.(meta)
+    return () => onFrameMetaRef.current?.(null)
+  }, [state.shown])
+
+  useEffect(() => {
+    if (!state.shown) return
+    framesRef.current.get(state.shown)?.contentWindow?.postMessage(canvasToolMessage(bridgeTool), '*')
+  }, [bridgeTool, state.shown])
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent): void => {
+      if (!event.source || ![...framesRef.current.values()].some((frame) => frame.contentWindow === event.source)) return
+      for (const [url, frame] of framesRef.current) {
+        if (frame.contentWindow !== event.source) continue
+        onBridgeMessageRef.current?.(frameId, event.data, metaRef.current.get(url)?.nonce ?? '')
+        return
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [frameId])
 
   const probedRef = useRef(false)
   useEffect(() => {
@@ -94,6 +147,7 @@ export function HtmlPreviewFrame({
 
   const release = (url: string | null): void => {
     if (!url || !urlsRef.current.delete(url)) return
+    metaRef.current.delete(url)
     void window.yan.releaseHtmlArtifact(url)
   }
 
@@ -129,6 +183,7 @@ export function HtmlPreviewFrame({
           return
         }
         urlsRef.current.add(result.url)
+        metaRef.current.set(result.url, { hash: result.hash, nonce: result.nonce })
         setState((value) => {
           release(value.pending)
           return { ...value, pending: result.url }

@@ -13,6 +13,7 @@ import { DEFAULT_AUTO_COMPACT_TOKENS } from '../../shared/context-limits'
 import { listSessions, deleteSession, readTitleSamples, restoreSession, isSessionFileInSessionsDir, sessionsToDelete } from '../sessions'
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
+import { resolveSessionOpenTarget } from '../session-open-target'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
@@ -198,14 +199,20 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const registry = host.runners()
     if (!registry) return { ok: false, error: 'pi 未运行' }
     const settings = await getSettings()
-    const cwdResult = await host.validateCwd(settings.cwd)
-    if (!cwdResult.ok) return cwdResult
-    const res = await registry.select({ sessionFile: path, cwd: cwdResult.cwd })
+    const fallback = await host.validateCwd(settings.cwd)
+    if (!fallback.ok) return fallback
+    const target = await resolveSessionOpenTarget({
+      sessionFile: path,
+      fallbackCwd: fallback.cwd,
+      usable: (cwd) => host.validateCwd(cwd),
+      projectIdForCwd: (cwd) => host.projectIdForCwd(settings, cwd)
+    })
+    const res = await registry.select({ sessionFile: path, cwd: target.cwd, ...(target.projectId ? { projectId: target.projectId } : {}), scope: target.scope })
     await host.rememberRunnerSession(res, {
       sessionFile: path,
-      cwd: cwdResult.cwd,
-      projectId: host.projectIdForCwd(settings, cwdResult.cwd),
-      scope: 'project'
+      cwd: target.cwd,
+      projectId: target.projectId,
+      scope: target.scope
     })
     if (res.ok && res.id) void host.pushRunnerSnapshot(res.id)
     host.pushRunners()

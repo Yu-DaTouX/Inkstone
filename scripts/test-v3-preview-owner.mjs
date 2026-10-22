@@ -172,6 +172,7 @@ export default {}
 
 const UI_STUB = `export function IconButton(props){ return { type: 'button', props: { ...props, 'data-testid': 'icon:' + String(props['aria-label']) } } }
 export function Skeleton(){ return null }
+export function Badge(){ return null }
 export function Button(){ return null }
 export function Notice(props){ return { type: 'div', props: { ...props, role: props.tone === 'fail' ? 'alert' : 'status' } } }
 export function EmptyState(props){ return { type: 'div', props: { ...props, children: [props.title, props.description, props.action] } } }
@@ -208,7 +209,8 @@ function makeStubMap() {
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
       'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
-      'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }'
+      'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
+      'src/renderer/src/features/preview/HtmlCanvas.tsx': 'export function HtmlCanvas(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }

@@ -60,12 +60,14 @@ const spawnedScripts = [
   'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-composer', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-user-text', 'test-session-find', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-history', 'test-v3-runs-subagent',
   'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
-  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-remote-image', 'test-preload-renderer-ready', 'test-browser-observe-live', 'test-browser-screenshot-timeout', 'test-subagent-fork', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-changes-pane-actions', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf', 'test-html-canvas-model', 'test-live-html-calls', 'test-artifact-style',
+  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-remote-image', 'test-preload-renderer-ready', 'test-browser-observe-live', 'test-browser-screenshot-timeout', 'test-subagent-fork', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-changes-pane-actions', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf', 'test-html-canvas-model', 'test-html-canvas-bridge', 'test-html-source-map', 'test-canvas-share', 'test-canvas-comments', 'test-canvas-draw', 'test-canvas-timeline', 'test-canvas-dock', 'test-live-html-calls', 'test-artifact-style', 'test-video-composition', 'test-video-export', 'test-artifact-preview-video',
   'test-session-reattach',
+  'test-session-reopen-ownership',
   'test-composer-draft-store',
   'test-composer-text',
   'test-composer-edit',
   'test-transcript-view',
+  'test-web-search-view',
   'test-composer-menu-layout',
   'test-tile-fit',
   'test-tile-layouts',
@@ -1737,6 +1739,10 @@ await runRemoteDeviceTests(ok, peerDeps)
 const languageExtension = await import('../resources/pi-extensions/language.js')
 const { runLanguageExtensionTests } = await import('./test-language-extension.mjs')
 await runLanguageExtensionTests(ok, languageExtension)
+
+const ultracodeExtension = await import('../resources/pi-extensions/ultracode.js')
+const { runUltracodeExtensionTests } = await import('./test-ultracode-extension.mjs')
+await runUltracodeExtensionTests(ok, ultracodeExtension)
 
 const preambleExtension = await import('../resources/pi-extensions/preamble.js')
 const { runPreambleExtensionTests } = await import('./test-preamble-extension.mjs')

@@ -24,6 +24,7 @@ import {
   type ComposerPasteEvent
 } from './composer-keys'
 import { appendBlock, hasComposerText, prependBlock, type ComposerAtomSpec, type TextSelection } from './composer-text'
+import { CANVAS_SEND_TO_CHAT_EVENT, type CanvasSendToChatDetail } from '../preview/canvas-share'
 import { ComposerMenu } from './ComposerMenu'
 import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
@@ -55,6 +56,8 @@ export function Composer({ className }: { className?: string } = {}) {
   const t = useT()
   const { lang } = useI18n()
   const [value, setValue] = useState('')
+  const valueRef = useRef(value)
+  valueRef.current = value
   const [dragging, setDragging] = useState(false)
   const editorRef = useRef<ComposerEditorHandle>(null)
   const [cursor, setCursor] = useState<number | null>(null)
@@ -203,6 +206,20 @@ export function Composer({ className }: { className?: string } = {}) {
   const insertAtCursor = useCallback((text: string): void => {
     editorRef.current?.insertText(text)
   }, [])
+
+  useEffect(() => {
+    const onSendToChat = (event: Event): void => {
+      const detail = (event as CustomEvent<CanvasSendToChatDetail>).detail
+      const editor = editorRef.current
+      const node = document.querySelector('[data-testid="composer-input"]')
+      if (!detail || !editor || !node || node.getClientRects().length === 0) return
+      if (detail.text) insertAtCursor(valueRef.current.trim() ? `\n\n${detail.text}` : detail.text)
+      editor.focus({ preventScroll: true })
+      detail.handled = true
+    }
+    window.addEventListener(CANVAS_SEND_TO_CHAT_EVENT, onSendToChat)
+    return () => window.removeEventListener(CANVAS_SEND_TO_CHAT_EVENT, onSendToChat)
+  }, [insertAtCursor])
 
   const placeCursor = useCallback((pos: number): void => {
     setCursor(pos)

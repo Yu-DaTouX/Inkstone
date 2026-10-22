@@ -245,12 +245,14 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
   const modelName = run.model ? turnModelLabel(run.model, models).label : null
   const thinking = run.thinkingLevel && run.thinkingLevel !== 'off' ? run.thinkingLevel : null
   const thinkText = thinking ? (THINK_LABEL[thinking] ? t(THINK_LABEL[thinking]) : thinking) : null
-  const modelText = modelName ? [modelName, thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ') : null
+  const modelTail = [thinkText, run.fork ? 'fork' : null].filter(Boolean).join(' · ')
   const live = row.state === 'starting' || row.state === 'running'
   const label = compactTaskPaths(live && row.description ? row.description : row.label)
   const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
-  const usage = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
-  const context = live ? subagentContextUsage(run.contextUsage) : null
+  const summary = live ? '' : subagentRowUsage(row, model.error, t(OUTCOME_KEY[model.outcomeKey]), tt, lang)
+  const context = row.state === 'failed' ? null : subagentContextUsage(run.contextUsage)
+  const usage = context ? '' : summary
+  const rowTitle = [model.task, context && summary ? summary : null, tt('subagentOpenPane')].filter(Boolean).join('\n')
 
   return (
     <button
@@ -261,7 +263,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       data-state={row.state}
       data-selected={selected ? '' : undefined}
       aria-current={selected ? 'true' : undefined}
-      title={`${model.task}\n${tt('subagentOpenPane')}`}
+      title={rowTitle}
       style={{ '--sa-index': index } as CSSProperties}
       onClick={() => openSubagentPane(run.id)}
     >
@@ -274,7 +276,12 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
       <span className="v3-sa-title" data-testid="v3-subagent-task">
         {live ? <ShimmerText>{label}</ShimmerText> : label}
       </span>
-      {modelName ? <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>{modelText}</span> : null}
+      {modelName ? (
+        <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>
+          <span className="v3-sa-model-name">{modelName}</span>
+          {modelTail ? <span className="v3-sa-model-tail">{` · ${modelTail}`}</span> : null}
+        </span>
+      ) : null}
       {context ? <ContextGauge usage={context} className="v3-sa-usage" data-testid="v3-subagent-context" /> : null}
       {usage ? (
         <span className="v3-sa-usage" data-testid="v3-subagent-usage" title={row.state === 'failed' ? model.error ?? undefined : undefined}>{usage}</span>

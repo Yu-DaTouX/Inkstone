@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -1079,6 +1080,218 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     } finally {
       await ctrl.stopAll().catch(() => undefined)
       await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-clear-race-'))
+    const factory = makeRpcFactory()
+    const removed = []
+    const ctrl = new SubagentController({ cwd: archive, archiveDir: archive, prepare: fakePrepare,
+      createRpc: factory.createRpc, onChange: () => {}, onRemove: (id) => removed.push(id) })
+    try {
+      const started = await ctrl.start('清理写盘窗口内续接', undefined, 'controlled-cwd')
+      const id = started.run.id
+      factory.created[0].emit('event', { type: 'agent_settled', aborted: false })
+      ok(await waitFor(() => ctrl.runs.get(id)?.reviewDecided === true), '基线运行结束并完成结算')
+      await mkdir(join(archive, 'sessions', id), { recursive: true })
+      await writeFile(join(archive, 'sessions', id, 'a.jsonl'), '{}\n')
+
+      const save = ctrl.history.save.bind(ctrl.history)
+      let releaseHide = () => {}
+      const hideGate = new Promise((resolve) => { releaseHide = resolve })
+      let hideStarted = false
+      ctrl.history.save = async (...args) => {
+        if (!hideStarted) {
+          hideStarted = true
+          await hideGate
+        }
+        return save(...args)
+      }
+      const clearing = ctrl.clearFinished()
+      ok(await waitFor(() => hideStarted), '清理已进入历史隐藏的写盘等待')
+      const resumed = await ctrl.send(id, '窗口内续接', 'steer', { from: 'user' })
+      ok(resumed.ok === true && resumed.delivery === 'resumed', '隐藏写盘期间可以续接', JSON.stringify(resumed))
+      const liveAfterResume = ctrl.runs.get(id)
+      ok(!!liveAfterResume && liveAfterResume.status === 'running', '续接后是运行中的活运行')
+      releaseHide()
+      await clearing
+      ok(ctrl.runs.get(id) === liveAfterResume, '清理返回后不删除窗口内续接的运行')
+      ok(ctrl.get(id)?.status === 'running', '续接的运行没被隐藏写盘连带清掉')
+      ok(removed.length === 0, '不触发 onRemove')
+      await ctrl.stopAll()
+      ok(ctrl.get(id)?.status === 'cancelled', '续接后的运行仍被停止全部收口（不是孤儿）')
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/ctx-a', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const dispatchA = { cwd: 'C:/ctx-a', parentSessionId: 'sess-a', parentRunId: 'r-a', parentGeneration: 1, parentMessageId: 'm-a', projectId: 'proj-a' }
+    let releaseModel = () => {}
+    const modelGate = new Promise((resolve) => { releaseModel = resolve })
+    try {
+      ctrl.setContext(dispatchA)
+      const pendingA = (async () => {
+        await modelGate
+        return ctrl.start('A 的派发', undefined, 'shared-cwd', undefined, undefined, dispatchA)
+      })()
+      ctrl.setContext({ cwd: 'C:/ctx-b', parentSessionId: 'sess-b', parentRunId: 'r-b', parentGeneration: 2, projectId: 'proj-b' })
+      releaseModel()
+      const a = await pendingA
+      ok(a.ok === true, 'A 派发成功', a.error ?? '')
+      ok(a.run?.cwd === 'C:/ctx-a' && factory.created[0]?.cwd === 'C:/ctx-a', 'await 之后的派发仍用调用时的 cwd', a.run?.cwd)
+      ok(a.run?.parentSessionId === 'sess-a' && a.run?.parentRunId === 'r-a' && a.run?.parentGeneration === 1, '归属到调用时的父会话与父实例')
+      ok(a.run?.parentMessageId === 'm-a' && a.run?.projectId === 'proj-a', '消息与项目归属也来自调用时的快照')
+      const b = await ctrl.start('B 的派发', undefined, 'shared-cwd')
+      ok(b.run?.cwd === 'C:/ctx-b' && b.run?.parentSessionId === 'sess-b' && b.run?.projectId === 'proj-b', '不带快照的派发仍用当前上下文')
+      await ctrl.stopAll()
+    } finally {
+      releaseModel()
+      await ctrl.stopAll().catch(() => undefined)
+    }
+  }
+
+  {
+    const archive = await mkdtemp(join(tmpdir(), 'inkstone-subagent-patch-throw-'))
+    const factory = makeRpcFactory()
+    const patches = []
+    let throwNext = true
+    const ctrl = new SubagentController({ cwd: 'C:/patch-throw', archiveDir: archive, prepare: fakePrepare,
+      createRpc: factory.createRpc, onChange: () => {}, onPatch: (payload) => {
+        patches.push(payload)
+        if (throwNext) {
+          throwNext = false
+          throw new Error('窗口已销毁')
+        }
+      } })
+    try {
+      const started = await ctrl.start('增量推送回调抛错', undefined, 'controlled-cwd')
+      const rpc = factory.created[0]
+      const id = started.run.id
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第一段' }] } })
+      rpc.emit('event', { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '第二段' }] } })
+      ok(ctrl.get(id).transcript.length === 2, '基线两条消息')
+      rpc.emit('event', { type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: '第三段' }] } })
+      ok(await waitFor(() => patches.length === 1), '增量推送被调用（回调抛错未终止进程）')
+      const base = patches[0].transcriptFrom
+      ok(base === 1, '首帧从第二条消息开始', String(base))
+      rpc.emit('event', { type: 'message_update', message: { role: 'assistant', content: [{ type: 'text', text: '第三段继续' }] } })
+      ok(await waitFor(() => patches.length === 2), '抛错后仍能继续推送增量')
+      ok(patches[1].transcriptFrom === base, '抛错的那帧没有推进推送基线', `${patches[1].transcriptFrom} vs ${base}`)
+      ok(patches[1].run.transcript.length === 2 && patches[1].run.transcript.at(-1).text === '第三段继续', '下一帧补齐同一段完整正文')
+      await ctrl.stopAll()
+    } finally {
+      await ctrl.stopAll().catch(() => undefined)
+      await rm(archive, { recursive: true, force: true })
+    }
+  }
+
+  {
+    const repoRoot = new URL('..', import.meta.url)
+    const outDir = fileURLToPath(new URL('.tmp/w4-preview-allow/', repoRoot))
+    const { build } = await import('../node_modules/esbuild/lib/main.js')
+    await mkdir(outDir, { recursive: true })
+    await build({
+      entryPoints: [fileURLToPath(new URL('src/main/subagents.ts', repoRoot)), fileURLToPath(new URL('src/main/capability-server.ts', repoRoot)), fileURLToPath(new URL('src/main/artifact-preview-command.ts', repoRoot))],
+      outdir: outDir,
+      bundle: true,
+      format: 'esm',
+      platform: 'node',
+      logLevel: 'silent',
+      outExtension: { '.js': '.mjs' }
+    })
+    const mod = await import(pathToFileURL(join(outDir, 'subagents.mjs')).href)
+    const { CapabilityServer, CAPABILITY_API_VERSION } = await import(pathToFileURL(join(outDir, 'capability-server.mjs')).href)
+    const { subagentHostCommands } = mod
+    ok(typeof subagentHostCommands === 'function', '子代理宿主命令工厂可用')
+
+    const plain = subagentHostCommands({})
+    ok(plain.onlyCommands.join(',') === 'danger.confirm', '没有 previewHtml 时仍只给 danger.confirm', plain.onlyCommands.join(','))
+
+    const readOnlyHost = async () => ({ summary: { kind: 'search' } })
+    const readOnly = subagentHostCommands({ readOnlyHost })
+    ok(readOnly.onlyCommands.includes('search.query') && readOnly.onlyCommands.includes('search.fetch'), '只读子代理保留查询命令', readOnly.onlyCommands.join(','))
+    ok(!readOnly.onlyCommands.includes('artifact.preview'), '只读子代理没有 previewHtml 时不开产物预览', readOnly.onlyCommands.join(','))
+
+    const subagentCwd = join(tmpdir(), 'inkstone-subagent-worktree')
+    const previewCalls = []
+    const previewHtml = async (htmlPath, root) => {
+      previewCalls.push({ htmlPath, root })
+      return { shots: [{ scheme: 'light', viewport: 'desktop', path: '/shots/light-desktop.png', horizontalOverflow: false }], consoleErrors: ['boom'] }
+    }
+    const withPreview = subagentHostCommands({ previewHtml })
+    ok(withPreview.onlyCommands.includes('artifact.preview'), '有 previewHtml 时白名单含 artifact.preview', withPreview.onlyCommands.join(','))
+    ok(!withPreview.onlyCommands.includes('artifact.attach'), 'artifact.attach 仍不给子代理', withPreview.onlyCommands.join(','))
+    const both = subagentHostCommands({ previewHtml, readOnlyHost })
+    ok(both.onlyCommands.includes('artifact.preview') && both.onlyCommands.includes('search.query'), '只读子代理有 previewHtml 时也含 artifact.preview', both.onlyCommands.join(','))
+
+    const summary = await withPreview.handle('artifact.preview', { path: 'artifacts/page.html' }, subagentCwd)
+    ok(previewCalls.length === 1, 'artifact.preview 交给 previewHtml 渲染')
+    ok(previewCalls[0]?.root === subagentCwd, 'previewHtml 拿到的 root 是子 Agent 自己的工作目录', `${previewCalls[0]?.root} vs ${subagentCwd}`)
+    ok(previewCalls[0]?.htmlPath === resolvePath(subagentCwd, 'artifacts/page.html'), '相对路径按子 Agent 工作目录解析', String(previewCalls[0]?.htmlPath))
+    ok(summary?.summary?.consoleErrors === 1 && Array.isArray(summary?.summary?.shots), '预览结果整理成 summary', JSON.stringify(summary?.summary))
+    ok((await withPreview.handle('danger.confirm', {}, subagentCwd)) === undefined, '非宿主命令留给宿主审批分支')
+    const noPreview = await plain.handle('artifact.preview', { path: 'a.html' }, subagentCwd).catch((error) => error)
+    ok(noPreview?.code === 'artifact_preview_unavailable', '没有 previewHtml 时拒绝预览', String(noPreview?.code))
+
+    const { runArtifactPreview } = await import(pathToFileURL(join(outDir, 'artifact-preview-command.mjs')).href)
+    const previewError = async (rawPath, preview) => runArtifactPreview(preview, rawPath, subagentCwd).catch((error) => error)
+    ok((await previewError('', previewHtml))?.code === 'artifact_path_missing', '预览：缺 path 报 artifact_path_missing')
+    ok((await previewError('page.txt', previewHtml))?.code === 'artifact_preview_type', '预览：非 HTML 报 artifact_preview_type')
+    ok((await previewError('page.html', undefined))?.code === 'artifact_preview_unavailable', '预览：没渲染器报 artifact_preview_unavailable')
+    const failing = (message) => async () => { throw new Error(message) }
+    ok((await previewError('page.html', failing('preview_outside')))?.code === 'artifact_path_outside', '预览：越界报 artifact_path_outside')
+    ok((await previewError('page.html', failing('preview_size')))?.code === 'artifact_too_large', '预览：尺寸报 artifact_too_large')
+    ok((await previewError('page.html', failing('preview_busy')))?.code === 'artifact_preview_busy', '预览：并发上限报 artifact_preview_busy')
+    ok((await previewError('page.html', failing('socket hang up')))?.code === 'artifact_preview_failed', '预览：其他失败报 artifact_preview_failed')
+    const absoluteShot = []
+    const absolutePath = join(subagentCwd, 'artifacts/abs.html')
+    await runArtifactPreview(async (htmlPath, root) => { absoluteShot.push({ htmlPath, root }); return { shots: [], consoleErrors: [] } }, absolutePath, subagentCwd)
+    ok(absoluteShot[0]?.htmlPath === absolutePath, '预览：绝对路径原样交给渲染器', String(absoluteShot[0]?.htmlPath))
+
+    const opsDir = await mkdtemp(join(tmpdir(), 'inkstone-subagent-preview-ops-'))
+    const server = new CapabilityServer({
+      opsDir,
+      onlyCommands: withPreview.onlyCommands,
+      handlers: {
+        run: async (command, params) => (await withPreview.handle(command, params, subagentCwd)) ?? { summary: { kind: 'danger-confirm' } }
+      }
+    })
+    const endpoint = await server.start({ sessionId: 'sub-preview', projectId: 'proj-preview' })
+    const call = async (command, params = {}) => {
+      const res = await fetch(endpoint.url + '/rpc', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + endpoint.token, 'content-type': 'application/json' },
+        body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 'sub-preview', projectId: 'proj-preview', command, params })
+      })
+      return { status: res.status, body: await res.json() }
+    }
+    try {
+      const preview = await call('artifact.preview', { path: 'artifacts/page.html' })
+      ok(preview.status === 200 && preview.body.ok === true, '子代理经宿主能力服务能跑 artifact.preview', JSON.stringify(preview.body).slice(0, 200))
+      const attach = await call('artifact.attach', { path: 'artifacts/page.html' })
+      ok(attach.status === 400 && attach.body?.error === 'unknown_command', 'artifact.attach 在子代理侧仍被拒', JSON.stringify(attach.body))
+
+      const locked = new CapabilityServer({ opsDir: join(opsDir, 'locked'), onlyCommands: plain.onlyCommands, handlers: { run: async () => ({ summary: {} }) } })
+      const lockedEndpoint = await locked.start({ sessionId: 'sub-plain', projectId: 'proj-preview' })
+      try {
+        const res = await fetch(lockedEndpoint.url + '/rpc', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + lockedEndpoint.token, 'content-type': 'application/json' },
+          body: JSON.stringify({ apiVersion: CAPABILITY_API_VERSION, sessionId: 'sub-plain', projectId: 'proj-preview', command: 'artifact.preview', params: { path: 'a.html' } })
+        })
+        const body = await res.json()
+        ok(res.status === 400 && body?.error === 'unknown_command', '没有 previewHtml 的子代理服务端也拒 artifact.preview', JSON.stringify(body))
+      } finally {
+        locked.stop()
+      }
+    } finally {
+      server.stop()
+      await rm(opsDir, { recursive: true, force: true })
     }
   }
 }

@@ -1,6 +1,7 @@
 import type { ApiKeyPools } from './api-keys'
 import type { FileNameSearchRequest, FileNameSearchResult } from './file-name-search'
 import type { HtmlArtifactPreviewResult } from './html-artifact-preview'
+import type { HtmlEditPatch } from './html-edit-patch'
 import type { ArtifactLibraryResult, SaveInlineArtifactInput, SaveInlineArtifactResult } from './artifact-library'
 import type {
   NativeMcpImportCommitResponse,
@@ -247,6 +248,7 @@ export interface SessionState {
   sessionName?: string
   model?: ModelInfo
   thinkingLevel: string
+  ultracode?: boolean
   availableThinkingLevels: string[]
   thinkingLevelsStatus?: CapabilityStatus
   capabilities?: ModelCapabilitySnapshot
@@ -337,6 +339,111 @@ export interface Attachment {
   kind?: 'image' | 'file'
   path?: string
 }
+
+export const CANVAS_CAPTURE_CHANNEL = 'yan:canvas:capture'
+
+export interface CanvasCaptureRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type CanvasCaptureResult =
+  | { ok: true; data: string; width: number; height: number; scaleFactor: number }
+  | { ok: false; error: string }
+
+export const VIDEO_EXPORT_START_CHANNEL = 'yan:videoExport:start'
+export const VIDEO_EXPORT_CANCEL_CHANNEL = 'yan:videoExport:cancel'
+export const VIDEO_EXPORT_PROGRESS_CHANNEL = 'yan:videoExport:progress'
+
+export interface VideoExportRequest {
+  id: string
+  path: string
+  cwd?: string
+  fps?: number
+  scale?: number
+}
+
+export type VideoExportErrorCode =
+  | 'export-busy'
+  | 'bad-request'
+  | 'ffmpeg-missing'
+  | 'load-failed'
+  | 'no-timeline'
+  | 'too-long'
+  | 'capture-failed'
+  | 'encode-failed'
+  | 'output-failed'
+  | 'cancelled'
+  | 'failed'
+
+export interface VideoExportProgress {
+  id: string
+  frame: number
+  total: number
+}
+
+export type VideoExportResult =
+  | {
+      ok: true
+      id: string
+      path: string
+      frames: number
+      fps: number
+      width: number
+      height: number
+      duration: number
+      bytes: number
+      elapsedMs: number
+    }
+  | { ok: false; id: string; error: VideoExportErrorCode; detail?: string }
+
+interface VideoExportBridge {
+  start(request: VideoExportRequest): Promise<VideoExportResult>
+  cancel(id: string): Promise<boolean>
+  onProgress(cb: (payload: VideoExportProgress) => void): () => void
+}
+
+export const HTML_EDIT_APPLY_CHANNEL = 'yan:htmlEdit:apply'
+export const HTML_EDIT_UNDO_CHANNEL = 'yan:htmlEdit:undo'
+
+export type HtmlEditError =
+  | 'not-html'
+  | 'denied'
+  | 'missing'
+  | 'too-large'
+  | 'encoding'
+  | 'conflict'
+  | 'draft'
+  | 'offset'
+  | 'styles'
+  | 'attributes'
+  | 'text'
+  | 'text-children'
+  | 'empty'
+  | 'undo'
+  | 'failed'
+
+export interface HtmlEditRequest {
+  path: string
+  cwd?: string
+  sha256: string
+  frameHash: string
+  sourceOffset: number
+  tag: string
+  patch: HtmlEditPatch
+}
+
+export interface HtmlEditUndoRequest {
+  path: string
+  cwd?: string
+  sha256: string
+}
+
+export type HtmlEditResult =
+  | { ok: true; sha256: string }
+  | { ok: false; error: HtmlEditError; detail?: string }
 
 export interface ModelInfo {
   id: string
@@ -1392,6 +1499,32 @@ export interface SourcesBridge {
   removeImage(req: { sessionId: string; sourceId: string }): Promise<{ ok: boolean; error?: string }>
 }
 
+export interface WebSearchSourceView {
+  title: string
+  url: string
+  domain: string
+  snippet: string
+  source: string
+}
+
+export interface WebSearchPageView {
+  title: string
+  url: string
+  domain: string
+  excerpt: string
+}
+
+export type WebSearchOpView =
+  | { ok: true; kind: 'search'; sources: WebSearchSourceView[] }
+  | { ok: true; kind: 'fetch'; page: WebSearchPageView }
+  | { ok: false; error: string }
+
+export const SEARCH_OPS_READ_CHANNEL = 'yan:searchOps:read'
+
+export interface SearchOpsBridge {
+  read(operationId: string): Promise<WebSearchOpView>
+}
+
 export interface AttachmentUsage {
   files: number
   bytes: number
@@ -1553,6 +1686,7 @@ export interface YanBridge {
   listModels(): Promise<ModelInfo[]>
   setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }>
   setThinking(level: string): Promise<{ ok: boolean; error?: string }>
+  setUltracode(on: boolean): Promise<{ ok: boolean; error?: string }>
   listThinkingLevels(): Promise<string[]>
 
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
@@ -1715,10 +1849,22 @@ export interface YanBridge {
     prune(): Promise<AttachmentPruneResult>
   }
 
+  canvas: {
+    capture(rect: CanvasCaptureRect, scope?: CanvasCaptureRect): Promise<CanvasCaptureResult>
+  }
+
+  htmlEdit: {
+    apply(request: HtmlEditRequest): Promise<HtmlEditResult>
+    undo(request: HtmlEditUndoRequest): Promise<HtmlEditResult>
+  }
+
+  videoExport: VideoExportBridge
+
   subagents: SubagentBridge
   schedule: ScheduleBridge
 
   sources: SourcesBridge
+  searchOps: SearchOpsBridge
   packages: PackagesBridge
   builtinCapabilities: BuiltinCapabilitiesBridge
   search: {

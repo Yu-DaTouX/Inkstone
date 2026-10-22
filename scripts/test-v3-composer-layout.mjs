@@ -284,6 +284,8 @@ async function main() {
     ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
     ok(layout.composerPrompt('!ls') === '$' && layout.composerPrompt('普通') === '›', '提示符：直执行 $、普通 ›')
     ok(layout.composerLocalCommand('!ls', []) === true, '! 前缀是本地命令')
+    ok(layout.composerLocalCommand('/ultracode', [{ source: 'yan', name: 'ultracode' }]) === true, '单独的 /ultracode 走本地提示用法')
+    ok(layout.composerLocalCommand('/ultracode 审一遍接口', [{ source: 'yan', name: 'ultracode' }]) === false, '/ultracode 带任务按普通消息发送')
     ok(layout.composerLocalCommand('/login', []) === true, '/login 是本地命令')
     ok(layout.composerLocalCommand('/login extra', []) === true, '/login 带参数也是本地命令')
     ok(

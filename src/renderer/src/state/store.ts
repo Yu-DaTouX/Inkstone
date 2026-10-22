@@ -290,6 +290,7 @@ export interface Store {
 
   setModel: (provider: string, id: string, quiet?: boolean) => Promise<{ ok: boolean; error?: string }>
   setThinking: (level: string) => Promise<void>
+  setUltracode: (on: boolean) => Promise<void>
   setAutoCompaction: (on: boolean) => Promise<void>
   setAutoRetry: (on: boolean) => Promise<void>
   setSteeringMode: (mode: QueueMode) => Promise<void>
@@ -2228,6 +2229,13 @@ export const useStore = create<Store>((rawSet, get) => {
       await window.yan.setThinking(level)
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotSwitchThinking')) })
+    }
+  },
+
+  setUltracode: async (on) => {
+    const res = await piCall(() => window.yan.setUltracode(on))
+    if (!res.ok) {
+      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     }
   },
 

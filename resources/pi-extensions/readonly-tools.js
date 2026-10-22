@@ -8,6 +8,9 @@ const OUTPUT_MAX_CHARS = 60_000
 const ARGS_MAX = 40
 const ARG_MAX_CHARS = 500
 const HOST_TIMEOUT_MS = 90_000
+const DETAIL_TITLE_MAX = 200
+const DETAIL_SNIPPET_MAX = 240
+const DETAIL_ITEMS_MAX = 12
 const FORBIDDEN_GIT_ARG = /^(--output|--ext-diff|--textconv|--exec|--upload-pack|--receive-pack|--open-files-in-pager|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--paginate|-p$|-o|-O)/
 const GIT_GLOBALS = ['-c', 'core.quotepath=false', '-c', 'core.pager=cat', '-c', 'core.fsmonitor=false', '-c', 'diff.external=', '--no-pager', '--no-optional-locks']
 const NO_DRIVERS = { diff: ['--no-ext-diff', '--no-textconv'], show: ['--no-ext-diff', '--no-textconv'], log: ['--no-ext-diff', '--no-textconv'], status: [], blame: [] }
@@ -90,6 +93,42 @@ function pageText(data) {
   return `${page?.title ? `# ${page.title}\n` : ''}${page?.url ? `${page.url}\n\n` : ''}${body}`
 }
 
+function detailText(value, max) {
+  if (typeof value !== 'string') return ''
+  const text = value.replace(/\s+/g, ' ').trim()
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 1).trimEnd()}…`
+}
+
+function searchDetailItems(data) {
+  const outcome = data?.data ?? data
+  const lists = []
+  if (Array.isArray(outcome?.items)) lists.push(outcome.items)
+  for (const query of Array.isArray(outcome?.queries) ? outcome.queries : []) {
+    if (Array.isArray(query?.items)) lists.push(query.items)
+  }
+  const items = []
+  const seen = new Set()
+  for (const list of lists) {
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue
+      const url = typeof entry.url === 'string' ? entry.url.trim() : ''
+      if (!/^https?:\/\//i.test(url) || seen.has(url)) continue
+      seen.add(url)
+      items.push({ title: detailText(entry.title, DETAIL_TITLE_MAX), url, snippet: detailText(entry.snippet, DETAIL_SNIPPET_MAX) })
+      if (items.length >= DETAIL_ITEMS_MAX) return items
+    }
+  }
+  return items
+}
+
+function fetchSearchDetail(data, fallbackUrl) {
+  const page = data?.data ?? data
+  const candidates = [page?.finalUrl, page?.url, fallbackUrl]
+  const url = candidates.find((value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim()))
+  return { action: 'fetch', url: typeof url === 'string' ? url.trim() : fallbackUrl, title: detailText(page?.title, DETAIL_TITLE_MAX) }
+}
+
 export const GIT_INSPECT_TOOL = {
   name: 'git_inspect',
   label: 'Git (read-only)',
@@ -131,7 +170,7 @@ export const WEB_SEARCH_TOOL = {
     if (!query) return text('query is required', {}, true)
     const result = await callHost('search.query', { queryText: query, ...(params.recent ? { recent: params.recent } : {}), ...(params.site ? { site: params.site } : {}) }, signal)
     if (!result.ok) return text(`web_search failed: ${result.error}`, {}, true)
-    return text(clip(searchText(result.data)), { summary: result.summary })
+    return text(clip(searchText(result.data)), { summary: result.summary, search: { action: 'query', query, items: searchDetailItems(result.data) } })
   }
 }
 
@@ -152,7 +191,7 @@ export const WEB_FETCH_TOOL = {
     if (!/^https?:\/\//i.test(url)) return text('url must start with http:// or https://', {}, true)
     const result = await callHost('search.fetch', { url, ...(typeof params.maxChars === 'number' ? { maxChars: params.maxChars } : {}) }, signal)
     if (!result.ok) return text(`web_fetch failed: ${result.error}`, {}, true)
-    return text(clip(pageText(result.data)), { summary: result.summary })
+    return text(clip(pageText(result.data)), { summary: result.summary, search: fetchSearchDetail(result.data, url) })
   }
 }
 

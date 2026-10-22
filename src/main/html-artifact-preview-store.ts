@@ -1,10 +1,12 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { HTML_ARTIFACT_MAX_BYTES, HTML_ARTIFACT_SCHEME, HTML_ASSET_MAX_BYTES, HTML_INLINE_MAX_BYTES, htmlArtifactAsset, htmlArtifactToken, type HtmlArtifactPreviewResult } from '../shared/html-artifact-preview'
 
 interface Snapshot {
   html: string
+  nonce: string
+  hash: string
   dir?: string
   root?: string
 }
@@ -31,7 +33,7 @@ export class HtmlArtifactPreviewStore {
       const [rootReal, target] = await Promise.all([realpath(root), realpath(path)])
       if (!inside(rootReal, target)) return { ok: false, error: 'outside' }
       const handle = await open(target, 'r')
-      let html: string
+      let source: Buffer
       try {
         const stat = await handle.stat()
         if (!stat.isFile()) return { ok: false, error: 'type' }
@@ -44,14 +46,16 @@ export class HtmlArtifactPreviewStore {
           length += bytesRead
         }
         if (!length || length > HTML_ARTIFACT_MAX_BYTES) return { ok: false, error: 'size' }
-        html = buffer.subarray(0, length).toString('utf8')
+        source = buffer.subarray(0, length)
       } finally {
         await handle.close()
       }
       if (epoch !== this.epoch) return { ok: false, error: 'read' }
       const token = randomBytes(16).toString('hex')
-      this.snapshots.set(token, { html, dir: dirname(target), root: rootReal })
-      return { ok: true, url: `${HTML_ARTIFACT_SCHEME}://${token}/index.html` }
+      const nonce = randomBytes(16).toString('hex')
+      const hash = createHash('sha256').update(source).digest('hex')
+      this.snapshots.set(token, { html: source.toString('utf8'), nonce, hash, dir: dirname(target), root: rootReal })
+      return { ok: true, url: `${HTML_ARTIFACT_SCHEME}://${token}/index.html`, nonce, hash }
     } catch {
       return { ok: false, error: 'read' }
     } finally {
@@ -64,8 +68,9 @@ export class HtmlArtifactPreviewStore {
     if (Buffer.byteLength(html, 'utf8') > HTML_INLINE_MAX_BYTES) return { ok: false, error: 'size' }
     if (this.snapshots.size + this.pending >= this.limit) return { ok: false, error: 'busy' }
     const token = randomBytes(16).toString('hex')
-    this.snapshots.set(token, { html })
-    return { ok: true, url: `${HTML_ARTIFACT_SCHEME}://${token}/index.html` }
+    const nonce = randomBytes(16).toString('hex')
+    this.snapshots.set(token, { html, nonce, hash: '' })
+    return { ok: true, url: `${HTML_ARTIFACT_SCHEME}://${token}/index.html`, nonce, hash: '' }
   }
 
   clear(): void {
@@ -76,6 +81,11 @@ export class HtmlArtifactPreviewStore {
   read(url: string): string | null {
     const token = htmlArtifactToken(url)
     return token ? this.snapshots.get(token)?.html ?? null : null
+  }
+
+  readNonce(url: string): string | null {
+    const token = htmlArtifactToken(url)
+    return token ? this.snapshots.get(token)?.nonce ?? null : null
   }
 
   async readAsset(url: string): Promise<{ body: Buffer; type: string } | null> {

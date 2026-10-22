@@ -1,0 +1,206 @@
+@layer features {
+  .v3-canvas-edit-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .v3-canvas-edit-mark {
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+    border-radius: 2px;
+  }
+
+  .v3-canvas-edit-mark[data-kind='hover'] {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
+    background: color-mix(in oklab, var(--accent) 8%, transparent);
+  }
+
+  .v3-canvas-edit-mark[data-kind='selection'] {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .v3-canvas-edit-mark-tag {
+    position: absolute;
+    left: -2px;
+    top: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--s-6);
+    border-radius: var(--r-xs);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--font-mono);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    white-space: nowrap;
+  }
+
+  .v3-canvas-edit-mark-tag[data-above] {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: var(--s-4);
+  }
+
+  .v3-canvas-edit-panel {
+    position: absolute;
+    right: var(--s-12);
+    top: var(--s-12);
+    bottom: 64px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    width: 288px;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-pop);
+    color: var(--fg2);
+    cursor: default;
+  }
+
+  .v3-canvas-edit-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    padding: var(--s-6) var(--s-12);
+    border-bottom: 1px solid var(--line);
+    min-width: 0;
+  }
+
+  .v3-canvas-edit-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg);
+    font-size: var(--t-footnote);
+    font-weight: var(--w-medium);
+  }
+
+  .v3-canvas-edit-taglet {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas-edit-empty {
+    margin: 0;
+    padding: var(--s-12);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .v3-canvas-edit-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-10);
+    padding: var(--s-10) var(--s-12) var(--s-12);
+    overflow: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .v3-canvas-edit-hint {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas-edit-note {
+    margin: 0;
+    padding: var(--s-6) var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--sunken);
+    color: var(--fg2);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-canvas-edit-problem {
+    margin: 0;
+    padding: var(--s-6) var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--fail-bg);
+    color: var(--fail-t);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    overflow-wrap: anywhere;
+  }
+
+  .v3-canvas-edit-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .v3-canvas-edit-group-title {
+    margin: 0;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    font-weight: var(--w-regular);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-canvas-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-6) var(--s-8);
+    min-width: 0;
+  }
+
+  .v3-canvas-edit-wide {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .v3-canvas-edit-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .v3-canvas-edit-swatch {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: var(--r-xs);
+    box-shadow: inset 0 0 0 1px var(--line2);
+  }
+
+  .v3-canvas-edit-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+    padding: var(--s-8) var(--s-12);
+    border-top: 1px solid var(--line);
+    background: var(--surface-1);
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-edit-panel {
+    left: var(--s-8);
+    right: var(--s-8);
+    top: auto;
+    bottom: calc(var(--s-12) + var(--canvas-toolbar-h, 28px) + var(--s-8));
+    width: auto;
+    max-height: 50%;
+  }
+
+  .v3-canvas[data-narrow] .v3-canvas-edit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

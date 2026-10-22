@@ -54,6 +54,7 @@
 | 组件 | 许可 | 说明 |
 | --- | --- | --- |
 | [Git for Windows](https://gitforwindows.org/)（PortableGit） | GPL-2.0 及其所含组件各自的许可 | **不随安装包分发**。用户在设置或引导里确认后才从官方发布页（或 npmmirror 镜像）下载，校验 SHA-256 后解压到数据目录，仅在没有系统 Git 时使用；源码与许可见官方发布页与包内 `LICENSE.txt` |
+| [open-design](https://github.com/nexu-io/open-design)（设计系统目录 `design-systems/<id>/`） | Apache-2.0 | **不随安装包分发**。用户点名某个设计系统或随包风格牌不够时，`yan artifact style --remote <id>` 才从该仓库固定提交 `61ab0f2a` 按需下载该系统的 `DESIGN.md` 与 `tokens.css` 到砚数据目录 `design-systems/<提交前 12 位>/<id>/`，同目录写入 `NOTICE.txt` 记录来源仓库、提交与许可；内容只作设计参考读取，不执行 |
 
 ## Android 应用
 

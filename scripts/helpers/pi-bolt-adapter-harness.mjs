@@ -100,6 +100,7 @@ export const THIN_EXTENSION_FILES = [
   'response-detail.js',
   'preamble.js',
   'language.js',
+  'ultracode.js',
   'capability-guide.js',
   'context-trim.js',
   'image-labels.js',

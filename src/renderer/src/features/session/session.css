@@ -132,7 +132,9 @@
   .v3-sa-title { grid-column: title; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-sa-title .ui-shimmer { vertical-align: top; }
   .v3-sa-model, .v3-sa-usage { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .v3-sa-model { grid-column: model; max-width: 9em; }
+  .v3-sa-model { grid-column: model; display: inline-flex; max-width: 18em; }
+  .v3-sa-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .v3-sa-model-tail { flex: none; }
   .v3-sa-usage { grid-column: usage; max-width: 13em; }
   .v3-sa-time { grid-column: time; justify-self: end; white-space: nowrap; }
   .v3-sa-row .v3-chev { grid-column: chev; }

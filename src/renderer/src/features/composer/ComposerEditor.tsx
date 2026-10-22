@@ -6,6 +6,7 @@ import { EditorState, Plugin, TextSelection as PmTextSelection } from 'prosemirr
 import { EditorView } from 'prosemirror-view'
 import type { ComposerKeyEvent, ComposerPasteEvent } from './composer-keys'
 import { afterFenceInsertTransaction, afterFencePlugin } from './after-fence'
+import { ultracodeKeywordPlugin } from './ultracode-keyword'
 import {
   atomInsertTransaction,
   caretAfterMention,
@@ -180,6 +181,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       keymap({ Backspace: selectAtomBefore }),
       keymap(baseKeymap),
       afterFencePlugin(),
+      ultracodeKeywordPlugin(),
       new Plugin({
         appendTransaction(transactions, _previous, state) {
           if (!transactions.some((transaction) => transaction.docChanged)) return null

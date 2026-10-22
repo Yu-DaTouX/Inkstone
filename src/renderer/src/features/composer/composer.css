@@ -356,6 +356,11 @@
     caret-color: transparent;
   }
 
+  .composer-ultracode {
+    color: var(--accent-t);
+    font-family: var(--font-mono);
+  }
+
   .composer-fence-caret {
     height: var(--t-prose-lh);
   }

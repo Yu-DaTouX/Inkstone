@@ -48,6 +48,7 @@ const LOCAL_COMMANDS: readonly CommandDescriptor[] = [
     usage: '/browser [url]'
   },
   { name: 'settings', description: '打开设置', source: 'yan', executable: true, usage: '/settings' },
+  { name: 'ultracode', description: '本条消息用 Ultracode：分阶段并行派子 Agent 并复核（耗额度、耗时）', source: 'yan', executable: true, usage: '/ultracode <任务>' },
   {
     name: 'thinking',
     description: '查看或设置思考档位',

@@ -147,4 +147,9 @@ export class SubagentHistory {
     try { await this.save(run, rootCwd) } catch (error) { this.hidden.delete(run.id); throw error }
     this.records.delete(run.id)
   }
+
+  async unhide(run: SubagentRun, rootCwd: string): Promise<void> {
+    this.hidden.delete(run.id)
+    await this.save(run, rootCwd)
+  }
 }
