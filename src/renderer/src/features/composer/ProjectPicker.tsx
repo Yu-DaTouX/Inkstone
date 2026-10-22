@@ -4,7 +4,7 @@ import { Button, Popover } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import type { ProjectRecord } from '../../../../shared/ipc'
-import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
+import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 
 const RECENT_LIMIT = 8
 
@@ -18,7 +18,6 @@ export function ProjectPicker() {
   const projects = useStore((s) => s.settings?.projects)
   const currentProjectId = useStore((s) => s.runners.find((r) => r.id === s.activeRunnerId)?.projectId)
   const newSession = useStore((s) => s.newSession)
-  const notify = useStore((s) => s.notify)
 
   const listed = (projects ?? []).filter((p) => !p.archived).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT_LIMIT)
   const current = (projects ?? []).find((p) => p.id === currentProjectId)
@@ -31,18 +30,7 @@ export function ProjectPicker() {
   }
 
   const pickFolder = async (): Promise<void> => {
-    const selected = await window.yan.pickCwd().catch(() => null)
-    if (!selected) return
-    const result = await window.yan.setCwd(selected)
-    if (!result.ok) {
-      notify('error', result.error ?? selected)
-      return
-    }
-    warnIfWorkspaceUnfit(result.cwd ?? selected, t)
-    const settings = await window.yan.getSettings()
-    useStore.setState({ settings })
-    const project = settings.projects.find((p) => p.cwd === settings.cwd)
-    await newSession({ cwd: settings.cwd, projectId: project?.id, scope: 'project' })
+    await newSessionInPickedFolder(t)
   }
 
   return (
