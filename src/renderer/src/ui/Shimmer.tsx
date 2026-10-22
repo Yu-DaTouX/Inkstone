@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { cx } from './cx'
-import { joinShimmer, sweepOnce } from './shimmer-clock'
+import { joinShimmer, sweepOnce, syncShimmerWidth } from './shimmer-clock'
 import './Shimmer.css'
 
 export interface ShimmerTextProps {
@@ -17,6 +17,9 @@ export function ShimmerText({ children, active = true, lead, className }: Shimme
     if (!active || !el) return undefined
     return joinShimmer(el)
   }, [active])
+  useLayoutEffect(() => {
+    if (active && ref.current) syncShimmerWidth(ref.current)
+  }, [active, children, lead])
   return (
     <span ref={ref} className={cx('ui-shimmer', className)} data-active={active || undefined}>
       <span className="ui-shimmer__base">{lead}{children}</span>
