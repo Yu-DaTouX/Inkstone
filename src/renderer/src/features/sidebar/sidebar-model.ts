@@ -176,7 +176,7 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
 }
 
-export const GROUP_PAGE_SIZE = 20
+export const GROUP_PAGE_SIZE = 10
 
 export interface SidebarGroupPage {
   rows: SessionSummary[]

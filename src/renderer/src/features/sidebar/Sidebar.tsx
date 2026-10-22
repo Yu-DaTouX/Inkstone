@@ -1,9 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Archive, CirclePlus, Clock, Layers, PanelLeftClose, Search, Settings, SquarePen, Unplug, Users } from 'lucide-react'
+import { Archive, CirclePlus, Clock, Layers, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplug, Users } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { Avatar, Button, EmptyState, IconButton, SearchField, StatusDot, type StatusDotKind } from '../../ui'
+import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
@@ -219,6 +220,11 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     void newSession({ scope: 'global' })
   }
 
+  const createInFolder = (): void => {
+    useUiV3.getState().navigate({ name: 'chat' })
+    void newSessionInPickedFolder(t)
+  }
+
   const createInProject = (group: SidebarGroup, projectId: string): void => {
     useUiV3.getState().navigate({ name: 'chat' })
     void newSession({ cwd: group.cwd, projectId, scope: 'project' })
@@ -299,6 +305,10 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         <button type="button" className="ui-row" onClick={createGlobal} data-testid="v3-nav-new-chat">
           <span className="ui-row__lead"><CirclePlus size={16} aria-hidden /></span>
           <span className="ui-row__label">{own.newChat}</span>
+        </button>
+        <button type="button" className="ui-row" onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
+          <span className="ui-row__lead"><FolderPlus size={16} aria-hidden /></span>
+          <span className="ui-row__label">{own.newChatInFolder}</span>
         </button>
         {onSchedule ? (
           <button type="button" className="ui-row" onClick={onSchedule} aria-current={route === 'schedule' ? 'page' : undefined} data-testid="v3-schedule-entry">
