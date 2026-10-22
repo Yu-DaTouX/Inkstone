@@ -27,6 +27,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan mcp call --request-file request.json
   yan tasks apply --request-file task-update.json     兼容入口：会话里有 todos 工具时优先用工具
   yan artifact attach --path <项目内文件> [--description <说明>]
+  yan artifact preview --path <项目内 HTML>
   yan image generate --request-file image.json
   yan question ask --request-file question.json      兼容入口：会话里有 question 工具时优先用工具
   yan office read --path <文件.docx|xlsx|pptx|pdf>
@@ -207,6 +208,11 @@ task-update.json：
 动作：
   attach  将当前项目内已经生成的文件复制进受控 artifact 目录并挂到本轮消息，
           用法：yan artifact attach --path <文件> --description "可选说明"
+          同一文件改完再 attach 就是这份成果的新版本（v2、v3…），用户能切换对比；
+          修改已有成果时改原文件，不要另起文件名。内容没变的重复 attach 不会新增版本。
+  preview 把项目内的 HTML 按砚的沙箱渲染成浅色/深色 × 桌面/窄屏四张截图，
+          返回截图路径、控制台错误和横向溢出；不挂到消息。交付 HTML 前先用它自查，
+          用法：yan artifact preview --path <文件.html>
           HTML 在砚内以单文件沙箱预览：只用文件里内联的样式、脚本和 data: 图片，
           同目录引用的 .css / .js / 图片和网络资源都不会加载；要预览好看就把样式内联进 HTML。
 `,
@@ -445,8 +451,8 @@ const GROUP_SPECS = {
     }
   },
   artifact: {
-    actions: ['attach'],
-    required: { attach: ['path'] }
+    actions: ['attach', 'preview'],
+    required: { attach: ['path'], preview: ['path'] }
   },
   image: {
     actions: ['generate', 'local'],

@@ -28,6 +28,7 @@ const GUIDE_LINES = [
   ...CLI_ONLY_GROUPS,
   '- subagent: only for independent parallel work, noisy exploration, or a model the user names; read skill subagent first; do not sleep-poll, the host notifies you',
   '- image: generate images; artifact: attach an existing file to this reply',
+  '- Something the user will open and look at or use (a table or report page, dashboard, web page, small tool or game, interactive explainer, poster or other single-page design), even when asked casually like "make an X table" or "design a poster"; read it before asking the user anything: skill artifact',
   '- file: recoverable delete (recycle bin); session: ask to move the session when the task belongs to another folder',
   '- operations: look up an operation\'s result',
   '- Word / Excel / PowerPoint / PDF: skill office; saved procedures and templates: skill playbook',

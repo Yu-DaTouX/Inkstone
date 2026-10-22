@@ -76,6 +76,7 @@ export const KNOWN_COMMANDS = new Set([
   'mcp.app.call',
   'tasks.apply',
   'artifact.attach',
+  'artifact.preview',
   'image.generate',
   'image.local.status',
   'image.local.start',

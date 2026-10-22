@@ -45,6 +45,7 @@ import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
 import { closeToolTile, isToolTiled, revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
 import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
+import { useLiveHtmlFollow } from '../features/preview/live-html'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
 import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
@@ -76,6 +77,7 @@ const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
 const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
 const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
 const ScheduleTasksPage = lazy(() => import('../features/schedule').then((m) => ({ default: m.ScheduleTasksPage })))
+const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
 function contextSegments(
   slices: readonly ContextSlice[],
@@ -222,6 +224,7 @@ export default function ShellV3(): ReactElement {
 
   const owner = useWorkspaceOwner()
   useChatFilePreview(owner.key)
+  useLiveHtmlFollow(owner.key)
   const panelMode: 'docked' | 'full' =
     bodyWidth > 0 && bodyWidth < CHAT_MIN_WIDTH_PX + TILE_MIN_WIDTH_PX + TILE_GAP ? 'full' : 'docked'
 
@@ -593,6 +596,7 @@ export default function ShellV3(): ReactElement {
     onPin: () => useUiV3.getState().setSidebarOpen(true),
     onSchedule: () => useUiV3.getState().navigate({ name: 'schedule' }),
     onCollab: () => useUiV3.getState().navigate({ name: 'collab' }),
+    onArtifacts: () => useUiV3.getState().navigate({ name: 'artifacts' }),
     onSettings: () => openSettingsDialog(),
     onSearch: () => setPaletteOpen(true)
   }), [])
@@ -649,6 +653,10 @@ export default function ShellV3(): ReactElement {
             ) : route.name === 'usage' ? (
               <Suspense fallback={null}>
                 <UsagePage />
+              </Suspense>
+            ) : route.name === 'artifacts' ? (
+              <Suspense fallback={null}>
+                <ArtifactLibraryPage />
               </Suspense>
             ) : null}
             <WorkbenchPanel

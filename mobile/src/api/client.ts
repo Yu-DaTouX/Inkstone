@@ -157,7 +157,7 @@ export interface HistoryMessage {
   error?: string
   images?: Array<{ mimeType: string }>
   toolCalls?: Array<{ id: string; name: string; status?: string; denied?: boolean }>
-  artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; unavailable?: boolean }>
+  artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; version?: number; unavailable?: boolean }>
 }
 
 export interface HistoryPage {

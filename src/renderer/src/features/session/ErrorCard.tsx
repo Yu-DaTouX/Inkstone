@@ -7,7 +7,7 @@ import { useSessionText } from './text'
 import { forgetToolExpansion } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
 
-export function ErrorCard({ sourceIds, error }: { sourceIds: readonly string[]; error: string }): JSX.Element | null {
+export function ErrorCard({ sourceIds, error, readOnly = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const send = useStore((s) => s.send)
   const cycleModel = useStore((s) => s.cycleModel)
@@ -26,7 +26,7 @@ export function ErrorCard({ sourceIds, error }: { sourceIds: readonly string[]; 
   const active = viewMatchesProjectedSession(view, session)
   const prompt = promptForTurn(sourceIds, messages)
 
-  const actions = active ? model.actions.filter((action) => action !== 'retry' || !!prompt) : []
+  const actions = active && !readOnly ? model.actions.filter((action) => action !== 'retry' || !!prompt) : []
 
   const run = (action: ErrorCardAction): void => {
     if (action === 'retry') {

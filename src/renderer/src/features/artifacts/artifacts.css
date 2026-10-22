@@ -786,6 +786,11 @@
     flex: 1 1 auto;
   }
 
+  .v3-visual-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
   .v3-visual-ask {
     display: flex;
     align-items: center;
@@ -867,11 +872,60 @@
     flex: 1 1 auto;
   }
 
+  .v3-artifact-versions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-variant-numeric: tabular-nums;
+  }
+
   .v3-artifact-card-desc {
     margin: 0;
     padding: var(--s-6) var(--s-8) 0;
     color: var(--fg2);
     font-size: var(--t-footnote);
+  }
+
+  .v3-artifact-thumb {
+    position: relative;
+    overflow: hidden;
+    min-height: 120px;
+    margin: 0 var(--s-8) var(--s-8);
+    border-radius: var(--r-sm);
+    background: var(--surface-0);
+    cursor: zoom-in;
+  }
+
+  .v3-artifact-thumb:focus-visible {
+    outline: var(--ring-outline);
+    outline-offset: 2px;
+  }
+
+  .v3-artifact-thumb iframe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border: 0;
+    transform-origin: 0 0;
+    pointer-events: none;
+  }
+
+  .v3-artifact-thumb-open {
+    position: absolute;
+    right: var(--s-8);
+    bottom: var(--s-8);
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+
+  .v3-artifact-thumb:hover .v3-artifact-thumb-open,
+  .v3-artifact-thumb:focus-visible .v3-artifact-thumb-open {
+    opacity: 1;
+  }
+
+  .v3-artifact-thumb-open .ui-badge {
+    gap: var(--s-4);
+    box-shadow: var(--shadow-md);
   }
 
   .v3-artifact-image {

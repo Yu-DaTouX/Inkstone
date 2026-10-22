@@ -6,6 +6,7 @@ import { Button, Notice } from '../../ui'
 import { HTML_ARTIFACT_SANDBOX } from '../../../../shared/html-artifact-preview'
 import { VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-blocks'
 import { ArtifactFrame } from './ArtifactFrame'
+import { SaveAsArtifactButton, shortHash } from './SaveAsArtifact'
 import { deriveWidgetIdentityKey, useNearViewport, usePreviewSnapshot, useWidgetIdentity } from './widget-lifecycle'
 import type { ArtifactForm } from './model'
 
@@ -70,6 +71,14 @@ function buildDocument(html: string, generation: number): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="${dark ? 'dark' : 'light'}">
 <style>:root{${inline};--radius:6px;color-scheme:${dark ? 'dark' : 'light'}}${BASE_STYLE}</style>
 <script>${bridgeScript(generation)}</script></head><body>${html}</body></html>`
+}
+
+function standaloneDocument(html: string): string {
+  const { vars, dark } = themeVars()
+  const inline = Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(';')
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>:root{${inline};--radius:6px;color-scheme:${dark ? 'dark' : 'light'}}${BASE_STYLE}body{padding:16px}</style>
+<script>window.askInkstone=window.sendPrompt=window.inkstoneSaveState=function(){}</script></head><body>${html}</body></html>`
 }
 
 const savedWidgetState = new Map<string, string>()
@@ -168,6 +177,11 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
         </span>
         <span className="v3-visual-widget-sp" />
         <span className="v3-visual-source">{t('vb.widgetNote')}</span>
+        <SaveAsArtifactButton
+          filename={`widget-${shortHash(html)}.html`}
+          sourceKey={`widget:${blockId ?? shortHash(html)}`}
+          content={() => standaloneDocument(html)}
+        />
       </figcaption>
       {snapshot.url && build ? (
         <ArtifactFrame

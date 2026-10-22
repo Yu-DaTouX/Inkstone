@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton } from '../../ui'
+import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
 import { OFFICE_MAX_LINES, type OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
-import { ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
+import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
 import { PaneTitle, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
@@ -14,6 +14,7 @@ import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/to
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { usePreviewFreshness } from './use-preview-freshness'
+import { prefersRenderedHtml, useLiveHtml } from './live-html'
 import { CodeView, type CodeComment, type CodeViewTarget, type CodeViewText } from './CodeView'
 import { PreviewTabs } from './PreviewTabs'
 import { useFileViewSettings } from './use-file-view-settings'
@@ -27,7 +28,8 @@ import {
   type PreviewFormat
 } from './preview-format'
 import { CsvTableView } from './CsvTableView'
-import { HtmlPreviewFrame } from './HtmlPreviewFrame'
+import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'
+import { HtmlCanvas } from './HtmlCanvas'
 import { MediaView } from './MediaView'
 import { SvgView } from './SvgView'
 import { reportUnsavedEditor } from '../editor/unsaved-registry'
@@ -38,6 +40,7 @@ import {
   previewBaseName,
   previewScopeKey,
   previewViewKey,
+  sameViewTarget,
   recordPreviewSelection,
   resolvePreviewPath,
   type PreviewSelectionEntry
@@ -107,9 +110,16 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const messages = useStore((store) => store.messages)
   const ownsCurrent = ownerOwnsSession(owner, storeSessionId ?? null)
   const artifacts = useMemo<AssistantArtifact[]>(
-    () => (ownsCurrent ? messages.flatMap((message) => message.artifacts ?? []) : []),
+    () => (ownsCurrent ? latestArtifactVersions(messages.flatMap((message) => message.artifacts ?? [])) : []),
     [ownsCurrent, messages]
   )
+  const liveTarget = useLiveHtml((state) => state.target)
+  const liveMatch = !!liveTarget && ownsCurrent && liveTarget.sessionId === storeSessionId && !!activePath && samePath(liveTarget.path, activePath)
+  const liveGenerating = liveMatch && liveTarget.generating
+  const liveRevision = liveMatch ? liveTarget.revision : 0
+  useEffect(() => {
+    if (liveRevision > 0) setReload((value) => value + 1)
+  }, [liveRevision])
 
   useEffect(() => {
     if (!activePath || !viewKey) {
@@ -217,7 +227,9 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const view: PreviewView =
     viewKey && viewSlot && viewSlot.key === viewKey
       ? viewSlot.view
-      : activePath
+      : viewKey && viewSlot && sameViewTarget(viewSlot.key, viewKey) && viewSlot.view.kind !== 'loading'
+        ? viewSlot.view
+        : activePath
         ? { kind: 'loading', name: previewBaseName(activePath) }
         : { kind: 'empty' }
   const activeAbs = 'abs' in view ? view.abs : ''
@@ -235,14 +247,25 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const tabTarget = previewTabs?.target
   const codeTarget: CodeViewTarget | null =
     tabTarget && activePath && samePath(tabTarget.path, activePath) ? { line: tabTarget.line, lineEnd: tabTarget.lineEnd, nonce: tabTarget.nonce } : null
-  const sourceMode = sourceChoice ?? ((view.kind === 'text' && previewFormatOpensAsSource(view.format)) || !!codeTarget)
+  const liveRender = (liveMatch || prefersRenderedHtml(activeAbs || activePath)) && view.kind === 'text' && view.format === 'html'
+  const sourceMode = sourceChoice ?? (!liveRender && ((view.kind === 'text' && previewFormatOpensAsSource(view.format)) || !!codeTarget))
   const reading = textPreview && !sourceMode && !editing
+  const [canvasChoice, setCanvasChoice] = useState<boolean | null>(readCanvasChoice)
+  const fileHtml = view.kind === 'text' && view.format === 'html'
+  const liveDraft =
+    liveMatch && liveTarget?.draft != null && (liveTarget.drafting || !fileHtml) && !editing && sourceChoice !== true ? liveTarget.draft : null
+  const htmlReading = (reading && fileHtml) || liveDraft !== null
+  const canvas = htmlReading && (canvasChoice ?? liveMatch)
+  const chooseCanvas = (next: boolean): void => {
+    setCanvasChoice(next)
+    writeCanvasChoice(next)
+  }
 
   const freshnessTarget =
     viewKey && diskStat && diskStat.key === viewKey
       ? { abs: diskStat.abs, cwd: owner.cwd, mtimeMs: diskStat.mtimeMs, size: diskStat.size }
       : null
-  usePreviewFreshness(ownsCurrent, freshnessTarget, () => setReload((value) => value + 1))
+  usePreviewFreshness(ownsCurrent, freshnessTarget, () => setReload((value) => value + 1), liveGenerating ? 1000 : undefined)
   useEffect(() => setSourceChoice(null), [activePath])
 
   const openArtifact = useCallback(
@@ -394,6 +417,18 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           onPress={() => setSourceChoice(!sourceMode)}
         >
           {sourceMode ? <BookOpen size={14} /> : <Code2 size={14} />}
+        </IconButton>
+      ) : null}
+      {htmlReading ? (
+        <IconButton
+          size="sm"
+          aria-label={canvas ? text.singleMode : text.canvasMode}
+          title={canvas ? text.singleMode : text.canvasMode}
+          aria-pressed={canvas}
+          data-testid="v3-preview-canvas-toggle"
+          onPress={() => chooseCanvas(!canvas)}
+        >
+          <LayoutGrid size={14} />
         </IconButton>
       ) : null}
       {editable ? (
@@ -567,6 +602,12 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           hasTabs={tabList.length > 0}
           treeShown={treeShown}
           cwd={owner.cwd}
+          revision={reload}
+          canvas={canvas}
+          generating={liveGenerating}
+          draft={liveDraft}
+          draftAbs={activeAbs || activePath || ''}
+          focus={liveGenerating ? liveTarget?.focus ?? null : null}
           onOpenArtifact={openArtifact}
           onComment={addComment}
           onReveal={reveal}
@@ -574,6 +615,14 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           onViewSource={() => setSourceChoice(true)}
         />
       )}
+      {liveGenerating && !canvas ? (
+        <div className="v3-preview-live" role="status" data-testid="v3-preview-live">
+          <Badge tone="run">
+            <Spinner size={12} />
+            {text.liveGenerating}
+          </Badge>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -589,6 +638,12 @@ function PreviewBody({
   hasTabs,
   treeShown,
   cwd,
+  revision,
+  canvas,
+  generating,
+  draft,
+  draftAbs,
+  focus,
   onOpenArtifact,
   onComment,
   onReveal,
@@ -605,6 +660,12 @@ function PreviewBody({
   hasTabs: boolean
   treeShown: boolean
   cwd: string
+  revision: number
+  canvas: boolean
+  generating: boolean
+  draft: string | null
+  draftAbs: string
+  focus: PreviewFocus | null
   onOpenArtifact: (path: string) => void
   onComment: (comment: CodeComment) => void
   onReveal: () => void
@@ -613,6 +674,20 @@ function PreviewBody({
 }): ReactElement {
   const emptyTitle = hasTabs ? text.noSelection : text.emptyTitle
   const emptyHint = hasTabs ? text.noSelectionHint : treeShown ? text.emptyTree : text.emptyNoTree
+  const htmlView = (abs: string, name: string): ReactElement =>
+    canvas ? (
+      <HtmlCanvas abs={abs} name={name} cwd={cwd} labels={text} revision={revision} generating={generating} draft={draft} focus={focus} onOpen={onOpen} onViewSource={onViewSource} />
+    ) : (
+      <HtmlPreviewFrame abs={abs} name={name} cwd={cwd} labels={text} revision={revision} draft={draft} focus={focus} follow onViewSource={onViewSource} />
+    )
+  if (draft !== null) {
+    return (
+      <>
+        <PreviewNotes notes={[]} text={text} />
+        {htmlView(draftAbs, previewBaseName(draftAbs))}
+      </>
+    )
+  }
   switch (view.kind) {
     case 'empty':
       return ownsCurrent && artifacts.length ? (
@@ -630,6 +705,7 @@ function PreviewBody({
                     <span className="v3-preview-manifest-name" title={artifact.path}>
                       {artifact.filename}
                     </span>
+                    {(artifact.version ?? 1) > 1 ? <span className="v3-preview-manifest-version">v{artifact.version}</span> : null}
                   </button>
                 </li>
               ))}
@@ -670,7 +746,7 @@ function PreviewBody({
           ) : reading && view.format === 'csv' ? (
             <CsvTableView text={view.text} name={view.name} delimiter={csvDelimiterOf(view.name)} truncated={view.truncated} labels={text} />
           ) : reading && view.format === 'html' ? (
-            <HtmlPreviewFrame abs={view.abs} name={view.name} cwd={cwd} labels={text} onViewSource={onViewSource} />
+            htmlView(view.abs, view.name)
           ) : reading && view.format === 'svg' ? (
             <SvgView text={view.text} name={view.name} labels={text} onViewSource={onViewSource} />
           ) : (
@@ -765,6 +841,25 @@ function TextView({
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>
   )
+}
+
+const CANVAS_CHOICE_KEY = 'yan.preview.htmlCanvas'
+
+function readCanvasChoice(): boolean | null {
+  try {
+    const value = localStorage.getItem(CANVAS_CHOICE_KEY)
+    return value === '1' ? true : value === '0' ? false : null
+  } catch {
+    return null
+  }
+}
+
+function writeCanvasChoice(value: boolean): void {
+  try {
+    localStorage.setItem(CANVAS_CHOICE_KEY, value ? '1' : '0')
+  } catch {
+    return
+  }
 }
 
 function samePath(a: string, b: string): boolean {

@@ -1,10 +1,13 @@
 import type { RunModel } from '../../shared/runs'
+import type { SubagentBrief } from '../../shared/subagent-brief'
+import { describeSubagentRun } from '../../shared/subagent-task-rows'
 import type { RunContext } from './registry'
 
 export interface SubagentRunIdentity {
   id: string
   parentSessionId?: string
   task?: string
+  brief?: SubagentBrief
   model?: string
   thinkingLevel?: string
   activeSince?: number
@@ -26,11 +29,12 @@ export function subagentModel(run: Pick<SubagentRunIdentity, 'model' | 'thinking
 export function subagentRunContext(run: SubagentRunIdentity, extra: Partial<RunContext> = {}): RunContext | null {
   if (!run.id || !run.parentSessionId) return null
   const model = subagentModel(run)
+  const title = describeSubagentRun({ task: run.task ?? '', brief: run.brief })
   return {
     sessionId: subagentScopeId(run.id),
     kind: 'subagent',
     parentSessionId: run.parentSessionId,
-    ...(run.task ? { title: run.task } : {}),
+    ...(title ? { title } : {}),
     ...(model ? { model } : {}),
     ...extra
   }

@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { build } from 'esbuild'
+
+const dir = await mkdtemp(join(tmpdir(), 'yan-live-html-calls-'))
+try {
+  const outfile = join(dir, 'calls.mjs')
+  await build({ entryPoints: ['src/renderer/src/features/preview/live-html-calls.ts'], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const m = await import(pathToFileURL(outfile).href)
+
+  const html = '<!doctype html>\n<p class="a">中文 \\ "引号"</p>\t<script>x()</script>'
+  const full = JSON.stringify({ path: 'artifacts/poster.html', content: html })
+  assert.equal(m.partialJsonContent(full), html, '完整参数还原内容')
+  for (let cut = 0; cut <= full.length; cut++) {
+    const part = m.partialJsonContent(full.slice(0, cut))
+    if (part === null) continue
+    assert.ok(html.startsWith(part), `截断在 ${cut} 时得到内容前缀`)
+  }
+  assert.equal(m.partialJsonContent('{"path":"a.html","content":"\\u4e2'), '', '不完整的 \\u 转义不输出半个字符')
+  assert.equal(m.partialJsonContent('{"path":"a.html"'), null, '还没开始写内容')
+
+  const user = { id: 'm0', role: 'user', text: 'hi' }
+  const streaming = {
+    id: 'm1',
+    role: 'assistant',
+    text: '',
+    toolCalls: [{ id: 't1', name: 'write', args: undefined, argsRaw: full.slice(0, 60), status: 'running' }]
+  }
+  const calls = m.currentTurnHtmlCalls([user, streaming])
+  assert.equal(calls.length, 1, '流式中只靠 argsRaw 也能识别 HTML 写入')
+  assert.equal(calls[0].path, 'artifacts/poster.html')
+  assert.equal(calls[0].done, false)
+  assert.ok(html.startsWith(calls[0].draft), '草稿是内容前缀')
+
+  const finished = { ...streaming, toolCalls: [{ id: 't1', name: 'write', args: { path: 'artifacts/poster.html', content: html }, argsRaw: full, status: 'ok' }] }
+  const done = m.currentTurnHtmlCalls([user, finished])
+  assert.equal(done[0].done, true)
+  assert.equal(done[0].draft, html)
+
+  const edit = { ...streaming, toolCalls: [{ id: 't2', name: 'edit', args: { path: 'a.html', oldText: 'x', newText: 'y' }, status: 'running' }] }
+  assert.equal(m.currentTurnHtmlCalls([user, edit])[0].draft, null, 'edit 不产生草稿')
+  const css = { ...streaming, toolCalls: [{ id: 't3', name: 'write', argsRaw: '{"path":"a.css","content":"b', status: 'running' }] }
+  assert.equal(m.currentTurnHtmlCalls([user, css]).length, 0, '非 HTML 不跟随')
+
+  assert.equal(m.visibleSnippet('<h2 class="t">\u5c55\u671f &amp; \u5730\u70b9</h2>'), '\u5c55\u671f & \u5730\u70b9', '\u53d6\u6807\u7b7e\u95f4\u53ef\u89c1\u6587\u5b57\u5e76\u89e3\u7801\u5b9e\u4f53')
+  assert.equal(m.visibleSnippet('.poster{width:100%}'), null, 'CSS \u7247\u6bb5\u6ca1\u6709\u7126\u70b9')
+  assert.equal(m.visibleSnippet('\u57ce\u5e02\u7f8e\u672f\u9986'), '\u57ce\u5e02\u7f8e\u672f\u9986', '\u7eaf\u6587\u5b57\u66ff\u6362')
+  assert.equal(m.visibleSnippet('="x">\u6807\u9898\u6587\u5b57</span><b'), '\u6807\u9898\u6587\u5b57', '\u5207\u6389\u534a\u4e2a\u6807\u7b7e')
+  assert.equal(m.visibleSnippet('<style>.a{}</style><p>12</p><p>\u65b0\u7684\u4e3b\u9898\u8bed</p>'), '\u65b0\u7684\u4e3b\u9898\u8bed', '\u8df3\u8fc7\u6837\u5f0f\u548c\u7eaf\u6570\u5b57')
+  const editFocus = { ...streaming, toolCalls: [{ id: 't4', name: 'edit', args: { path: 'a.html', edits: [{ oldText: 'a', newText: '.x{color:red}' }, { oldText: 'b', newText: '<p>\u6539\u8fc7\u7684\u6587\u6848</p>' }] }, status: 'ok', endedAt: 5 }] }
+  const focusCall = m.currentTurnHtmlCalls([user, editFocus])[0]
+  assert.equal(focusCall.focusText, '\u6539\u8fc7\u7684\u6587\u6848', 'edits \u6570\u7ec4\u91cc\u53d6\u7b2c\u4e00\u5904\u53ef\u89c1\u6587\u5b57')
+  assert.equal(focusCall.endedAt, 5)
+  assert.equal(calls[0].focusText, null, 'write \u6ca1\u6709\u6587\u5b57\u7126\u70b9')
+
+  const sharedOut = join(dir, 'shared.mjs')
+  await build({ entryPoints: ['src/shared/html-artifact-preview.ts'], outfile: sharedOut, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const s = await import(pathToFileURL(sharedOut).href)
+  const page = '<!DOCTYPE html>\n<html><body>x</body></html>'
+  const served = s.withPreviewRuntime(page)
+  assert.ok(served.startsWith('<!DOCTYPE html><style data-yan-preview>'), '\u8fd0\u884c\u65f6\u63d2\u5728 doctype \u4e4b\u540e\uff0c\u4e0d\u89e6\u53d1\u602a\u5f02\u6a21\u5f0f')
+  assert.ok(served.endsWith('\n<html><body>x</body></html>'))
+  assert.ok(!/<\/script>[\s\S]*<\/script>[\s\S]*data-yan/.test(served) && (served.match(/<\/script>/g) || []).length === 1, '\u8fd0\u884c\u65f6\u811a\u672c\u53ea\u6709\u4e00\u4e2a\u95ed\u5408\u6807\u7b7e')
+  assert.ok(s.withPreviewRuntime('<p>a</p>').startsWith('<style data-yan-preview>'), '\u6ca1\u6709 doctype \u65f6\u653e\u5728\u6700\u524d')
+  const script = served.slice(served.indexOf('<script data-yan-preview>') + 25, served.indexOf('</script>'))
+  assert.doesNotThrow(() => new Function(script), '\u8fd0\u884c\u65f6\u811a\u672c\u8bed\u6cd5\u6b63\u786e')
+  assert.deepEqual(s.readProbeReply({ 'yan-preview': 'probe', id: 3, rect: { x: 1, y: 2, w: 3, h: 4 }, docHeight: 900 }), { id: 3, rect: { x: 1, y: 2, w: 3, h: 4 }, docHeight: 900 })
+  assert.equal(s.readProbeReply({ 'yan-preview': 'probe', id: 3, rect: { x: 'a' } }).rect, null, '\u4f2a\u9020\u7684\u5750\u6807\u88ab\u4e22\u5f03')
+  assert.equal(s.readProbeReply({ id: 3 }), null)
+
+  console.log('live html calls: partial content / streaming path / draft / focus / runtime passed')
+} finally {
+  await rm(dir, { recursive: true, force: true })
+}

@@ -431,6 +431,8 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
 export function remoteArtifactOf(artifact: AssistantArtifact): RemoteArtifact {
   return {
     id: artifact.id,
+    sourceId: artifact.sourceId,
+    ...(artifact.version ? { version: artifact.version } : {}),
     filename: artifact.filename,
     mediaType: artifact.mediaType,
     kind: artifact.kind,

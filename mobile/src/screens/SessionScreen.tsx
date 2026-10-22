@@ -354,7 +354,7 @@ export function SessionScreen({
                   onPress={() => onOpenArtifact(artifact)}
                   style={[styles.artifact, { borderColor: p.border, opacity: artifact.unavailable ? 0.5 : 1 }]}
                 >
-                  <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm }}>{artifact.filename}</Text>
+                  <Text numberOfLines={1} style={{ color: p.fg, fontSize: font.sm }}>{artifact.version && artifact.version > 1 ? `${artifact.filename} · v${artifact.version}` : artifact.filename}</Text>
                   <Meta>{artifact.unavailable ? '文件已不可用' : `${Math.max(1, Math.round(artifact.bytes / 1024))} KB`}</Meta>
                 </Pressable>
               ))}

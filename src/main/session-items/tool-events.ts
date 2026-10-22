@@ -31,6 +31,12 @@ export function streamingToolCall(ev: Record<string, unknown>, ordinal: number, 
   }
 }
 
+const HTML_WRITE_PATH = /"(?:path|file_path)"\s*:\s*"[^"]*\.html?"/i
+
+export function streamsHtmlWriteArgs(call: UIToolCall): boolean {
+  return call.name.toLowerCase() === 'write' && HTML_WRITE_PATH.test(call.argsRaw?.slice(0, 600) ?? '')
+}
+
 export function appendToolCallArgs(call: UIToolCall, delta: unknown): void {
   call.argsRaw = (call.argsRaw ?? '') + String(delta ?? '')
   try {

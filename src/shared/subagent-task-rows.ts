@@ -54,7 +54,7 @@ export function subagentRunTokens(run: Pick<SubagentRun, 'usage'>): number | nul
 
 const DESCRIPTION_MAX = 80
 
-function describeSubagentRun(run: Pick<SubagentRun, 'task' | 'brief'>): string {
+export function describeSubagentRun(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   const raw = run.brief?.title?.trim() || run.brief?.goal?.trim() || run.task
   const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? ''
   const chars = [...firstLine]

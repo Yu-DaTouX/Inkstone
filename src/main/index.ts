@@ -33,8 +33,9 @@ import { samePath } from '../shared/session-path'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { readChainMessages } from './session-history'
-import { ArtifactStore } from './artifacts'
-import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames } from './html-artifact-preview'
+import { ArtifactStore, sessionArtifactDir } from './artifacts'
+import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
+import { captureHtmlPreviewShots } from './artifact-preview-shots'
 import './mcp/app-protocol'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
@@ -79,7 +80,7 @@ import { registerSubagentsIpc, type SubagentParentContext } from './ipc/subagent
 import { registerScheduleIpc } from './ipc/schedule-ipc'
 import { ScheduleService } from './schedule-service'
 import { SyncService } from './sync'
-import { isSessionFileInSessionsDir, SESSIONS_DIR } from './sessions'
+import { isSessionFileInSessionsDir, onSessionPurged, SESSIONS_DIR } from './sessions'
 import { registerSessionIpc } from './ipc/session-ipc'
 import { registerNativeSessionIpc } from './ipc/native-session-ipc'
 import { registerRunsIpc } from './ipc/runs-ipc'
@@ -806,6 +807,11 @@ function notifyBlockedTerminal(id: string, status?: TerminalProgramStatus): void
 const sessionChains = new SessionChainStore()
 
 const artifactStore = new ArtifactStore(join(YAN_DIR, 'artifacts'))
+
+onSessionPurged(async (sessionId) => {
+  const dir = sessionArtifactDir(join(YAN_DIR, 'artifacts'), sessionId)
+  if (dir && existsSync(dir)) await shell.trashItem(dir)
+})
 
 function readHistoryWithArtifacts(sessionFile: string) {
   return readChainMessages(sessionFile, sessionChains, (file, messages) =>
@@ -1923,7 +1929,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
               }
             : {}),
           onBashSettled: () => requestPiPackageActivationTick(),
-          trashItem: (path: string) => shell.trashItem(path)
+          trashItem: (path: string) => shell.trashItem(path),
+          previewHtml: (htmlPath: string, root: string) =>
+            captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews') })
         },
         confirmCapabilityAuthorization: async (
           request: CapabilityAuthorizationPrompt

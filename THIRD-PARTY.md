@@ -24,6 +24,14 @@
 | [Lobe Icons](https://github.com/lobehub/lobe-icons)（npm 包 `@lobehub/icons-static-png@1.97.0`） | MIT | 模型 logo 源图在 [`assets/lobe-icons/`](assets/lobe-icons/)（附原许可 `LICENSE`），由 `scripts/gen-bot-forms.mjs` 预先算出外沿、色场与小图，写入 `src/renderer/src/patterns/model-bot/bot-forms.json`；通知用的 `resources/bot-icons/` 由 `scripts/gen-bot-icons.mjs` 按同一套形体渲染；各 logo 的商标归其厂商所有 |
 | [agent-hud-open](https://github.com/jazzenchen/agent-hud-open) | Apache-2.0 | Bot 形体与动作算法及各品牌参数移植自其 `Sources/AgentHUDDesktop/Bots/`（`BotForm`、`BotRenderer`、`BotFins`、`BotState` 等），许可原文见 [`src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open`](src/renderer/src/patterns/model-bot/LICENSE-agent-hud-open)；未使用其 Clawd 像素精灵 |
 
+## 随包技能
+
+| 组件 | 许可 | 说明 |
+| --- | --- | --- |
+| [Anthropic Agent Skills](https://github.com/anthropics/skills)（提交 `dbd4588`）：`frontend-design`、`theme-factory`、`canvas-design`、`algorithmic-art` | Apache-2.0 | 原样收录在 `resources/skills/artifact/official/`，各目录附原许可 `LICENSE.txt`；未收录 `theme-showcase.pdf` 与 `canvas-fonts/`。在砚里的用法差异写在 `resources/skills/artifact/SKILL.md`，官方文件本身未修改 |
+| [OpenAI Codex](https://github.com/openai/codex)（提交 `c2d5ea52`）系统提示中的「Frontend tasks」段落 | Apache-2.0 | 原文摘录在 `resources/skills/artifact/official/openai-codex-frontend/`，附原许可 |
+| [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)（提交 `434b7f91`） | MIT | 原文 `AGENTS.md` 在 `resources/skills/artifact/official/vercel-web-interface-guidelines/`，附原许可 |
+
 ## 其它运行时组件
 
 | 组件 | 许可 |
