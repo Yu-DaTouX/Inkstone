@@ -457,6 +457,11 @@ export class SubagentController {
     return run ? this.snapshot(run) : this.history.get(id)?.run
   }
 
+  async getFull(id: string): Promise<SubagentRun | undefined> {
+    const run = this.runs.get(id)
+    return run ? this.snapshot(run) : (await this.history.full(id))?.run
+  }
+
   hasParentRun(sessionId: string | undefined, runId: string): boolean {
     const matches = (run: { parentSessionId?: string; parentRunId?: string }): boolean =>
       (!!sessionId && run.parentSessionId === sessionId) || run.parentRunId === runId
@@ -871,7 +876,8 @@ export class SubagentController {
       if (previous?.settling) await previous.settling.catch(() => undefined)
       if (previous?.finalizing) await previous.finalizing.catch(() => undefined)
       if (abandoned()) return abandonedError()
-      const record = this.history.get(id)
+      const record = previous ? this.history.get(id) : await this.history.full(id)
+      if (abandoned()) return abandonedError()
       const snapshot = previous ? this.snapshot(previous) : record?.run
       if (!snapshot) return { ok: false, error: '找不到这个子代理' }
       if (snapshot.status === 'running' || snapshot.status === 'starting') {

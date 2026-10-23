@@ -47,6 +47,10 @@ function storedRunFields(data: Record<string, unknown>): Partial<SubagentRun> {
   return picked as Partial<SubagentRun>
 }
 
+function withoutTranscript(run: SubagentRun): SubagentRun {
+  return run.transcript.length ? { ...run, transcript: [], transcriptOmitted: true } : run
+}
+
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024
 const MAX_TRANSCRIPT = 200
 
@@ -70,57 +74,76 @@ export class SubagentHistory {
     return this.hidden.has(id) ? undefined : this.records.get(id)
   }
 
+  async full(id: string): Promise<SubagentHistoryRecord | undefined> {
+    await this.writes.get(id)?.catch(() => {})
+    const lite = this.get(id)
+    if (!lite || !lite.run.transcriptOmitted) return lite
+    const parsed = await this.readRecord(`${id}.json`).catch(() => null)
+    return parsed && parsed !== 'hidden' ? parsed : lite
+  }
+
   private async readHistory(): Promise<void> {
     const files = await readdir(this.dir, { withFileTypes: true }).catch(() => [])
     for (const file of files) {
       if (!file.isFile() || !file.name.endsWith('.json') || !validId(file.name.slice(0, -5))) continue
       try {
-        const path = join(this.dir, file.name)
-        if ((await stat(path)).size > MAX_HISTORY_BYTES) continue
-        const data = JSON.parse(await readFile(path, 'utf8'))
-        if (!data || data.id !== file.name.slice(0, -5) || typeof data.task !== 'string' ||
-          !Number.isFinite(data.startedAt) || typeof data.rootCwd !== 'string' ||
-          !['starting', 'running', 'done', 'error', 'cancelled'].includes(data.status)) continue
-        if (data.hidden === true) { this.hidden.add(data.id); continue }
-        let transcript: UIMessage[] = Array.isArray(data.transcript)
-          ? data.transcript.filter((m: UIMessage) => m && typeof m.id === 'string' && typeof m.text === 'string' && ['user', 'assistant', 'tool'].includes(m.role)).slice(-MAX_TRANSCRIPT)
-          : []
-        let sourceCwd: string | undefined
-        const interrupted = data.status === 'starting' || data.status === 'running'
-        if (!Array.isArray(data.transcript) || interrupted) {
-          let nativeTranscript: UIMessage[] = []
-          const sessionDir = join(this.dir, 'sessions', data.id)
-          const sessions = await readdir(sessionDir, { withFileTypes: true }).catch(() => [])
-          for (const session of sessions.filter(f => f.isFile() && f.name.endsWith('.jsonl')).sort((a, b) => a.name.localeCompare(b.name))) {
-            const path = join(sessionDir, session.name)
-            if ((await stat(path)).size > MAX_HISTORY_BYTES) continue
-            const history = await readSessionMessages(path)
-            if (history) {
-              nativeTranscript = [...nativeTranscript, ...history.messages].slice(-MAX_TRANSCRIPT)
-              sourceCwd = history.sourceCwd ?? sourceCwd
-            }
-          }
-          if (nativeTranscript.length) transcript = nativeTranscript
-        }
-        const run: SubagentRun = {
-          ...storedRunFields(data as Record<string, unknown>),
-          id: data.id,
-          task: data.task,
-          cwd: typeof data.cwd === 'string' ? data.cwd : sourceCwd ?? data.rootCwd,
-          model: typeof data.model === 'string' ? data.model : [...transcript].reverse().find(m => m.role === 'assistant' && m.model)?.model,
-          isolation: ['controlled-cwd', 'shared-cwd', 'worktree'].includes(data.isolation) ? data.isolation : 'shared-cwd',
-          status: data.status,
-          startedAt: data.startedAt,
-          transcript,
-          toolCalls: !interrupted && Number.isFinite(data.toolCalls) ? data.toolCalls : transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
-          review: data.review ?? 'none',
-          ...(interrupted ? { status: 'error', endReason: 'exited', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
-            error: '应用退出时子代理未完成，未自动恢复执行', latestActivity: '运行已中断' } : {})
-        }
-        this.records.set(run.id, { run, rootCwd: data.rootCwd })
+        const record = await this.readRecord(file.name)
+        if (record === 'hidden') { this.hidden.add(file.name.slice(0, -5)); continue }
+        if (record) this.records.set(record.run.id, { run: withoutTranscript(record.run), rootCwd: record.rootCwd })
       } catch {
       }
     }
+  }
+
+  private async readRecord(name: string, includeHidden = false): Promise<SubagentHistoryRecord | 'hidden' | null> {
+    const path = join(this.dir, name)
+    if ((await stat(path)).size > MAX_HISTORY_BYTES) return null
+    const data = JSON.parse(await readFile(path, 'utf8'))
+    if (!data || data.id !== name.slice(0, -5) || typeof data.task !== 'string' ||
+      !Number.isFinite(data.startedAt) || typeof data.rootCwd !== 'string' ||
+      !['starting', 'running', 'done', 'error', 'cancelled'].includes(data.status)) return null
+    if (data.hidden === true && !includeHidden) return 'hidden'
+    let transcript: UIMessage[] = Array.isArray(data.transcript)
+      ? data.transcript.filter((m: UIMessage) => m && typeof m.id === 'string' && typeof m.text === 'string' && ['user', 'assistant', 'tool'].includes(m.role)).slice(-MAX_TRANSCRIPT)
+      : []
+    let sourceCwd: string | undefined
+    const interrupted = data.status === 'starting' || data.status === 'running'
+    if (!Array.isArray(data.transcript) || interrupted) {
+      let nativeTranscript: UIMessage[] = []
+      const sessionDir = join(this.dir, 'sessions', data.id)
+      const sessions = await readdir(sessionDir, { withFileTypes: true }).catch(() => [])
+      for (const session of sessions.filter(f => f.isFile() && f.name.endsWith('.jsonl')).sort((a, b) => a.name.localeCompare(b.name))) {
+        const sessionPath = join(sessionDir, session.name)
+        if ((await stat(sessionPath)).size > MAX_HISTORY_BYTES) continue
+        const history = await readSessionMessages(sessionPath)
+        if (history) {
+          nativeTranscript = [...nativeTranscript, ...history.messages].slice(-MAX_TRANSCRIPT)
+          sourceCwd = history.sourceCwd ?? sourceCwd
+        }
+      }
+      if (nativeTranscript.length) transcript = nativeTranscript
+    }
+    const run: SubagentRun = {
+      ...storedRunFields(data as Record<string, unknown>),
+      id: data.id,
+      task: data.task,
+      cwd: typeof data.cwd === 'string' ? data.cwd : sourceCwd ?? data.rootCwd,
+      model: typeof data.model === 'string' ? data.model : [...transcript].reverse().find(m => m.role === 'assistant' && m.model)?.model,
+      isolation: ['controlled-cwd', 'shared-cwd', 'worktree'].includes(data.isolation) ? data.isolation : 'shared-cwd',
+      status: data.status,
+      startedAt: data.startedAt,
+      transcript,
+      toolCalls: !interrupted && Number.isFinite(data.toolCalls) ? data.toolCalls : transcript.reduce((n, m) => n + (m.toolCalls?.length ?? 0), 0),
+      review: data.review ?? 'none',
+      ...(interrupted ? { status: 'error', endReason: 'exited', endedAt: data.endedAt ?? (await stat(path)).mtimeMs,
+        error: '应用退出时子代理未完成，未自动恢复执行', latestActivity: '运行已中断' } : {})
+    }
+    return { run, rootCwd: data.rootCwd }
+  }
+
+  private async storedTranscript(id: string): Promise<UIMessage[]> {
+    const record = await this.readRecord(`${id}.json`, true).catch(() => null)
+    return record && record !== 'hidden' ? record.run.transcript : []
   }
 
   async save(run: SubagentRun, rootCwd: string, extra: Record<string, unknown> = {}): Promise<void> {
@@ -128,6 +151,10 @@ export class SubagentHistory {
     const snapshot = JSON.parse(JSON.stringify(run)) as SubagentRun
     const previous = this.writes.get(run.id) ?? Promise.resolve()
     const next = previous.catch(() => {}).then(async () => {
+      if (snapshot.transcriptOmitted) {
+        snapshot.transcript = await this.storedTranscript(run.id)
+        delete snapshot.transcriptOmitted
+      }
       await mkdir(this.dir, { recursive: true })
       const temp = join(this.dir, `${run.id}.${randomBytes(6).toString('hex')}.tmp`)
       const dismissedAt = this.records.get(run.id)?.run.dismissedAt
@@ -136,7 +163,7 @@ export class SubagentHistory {
         : snapshot
       await writeFile(temp, JSON.stringify({ ...extra, ...saved, rootCwd, schemaVersion: 1, hidden: this.hidden.has(run.id) }, null, 2), 'utf8')
       await rename(temp, join(this.dir, `${run.id}.json`))
-      this.records.set(run.id, { run: saved, rootCwd })
+      this.records.set(run.id, { run: withoutTranscript(saved), rootCwd })
     })
     this.writes.set(run.id, next)
     try { await next } finally { if (this.writes.get(run.id) === next) this.writes.delete(run.id) }

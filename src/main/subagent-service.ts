@@ -191,7 +191,7 @@ export class SubagentService {
     }
 
     if (command === 'subagent.get') {
-      const run = ctrl.get(id)
+      const run = await ctrl.getFull(id)
       if (!run) {
         throw new CapabilityCommandError(
           'subagent_not_found',

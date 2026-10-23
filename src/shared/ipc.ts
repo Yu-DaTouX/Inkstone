@@ -1154,6 +1154,7 @@ export interface SubagentRun {
   latestActivity?: string
   progressWarning?: string
   transcript: UIMessage[]
+  transcriptOmitted?: boolean
   diff?: SubagentDiffSummary
   review: SubagentReviewState
   error?: string
@@ -1185,6 +1186,7 @@ export interface ScheduleBridge {
 
 export interface SubagentBridge {
   list(): Promise<SubagentRun[]>
+  get(id: string): Promise<SubagentRun | null>
   start(
     task: string,
     model?: string,

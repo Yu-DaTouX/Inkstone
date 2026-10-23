@@ -82,7 +82,8 @@ try {
   await reload.loadHistory()
   const restored = reload.get(run.id)
   ok(restored?.dismissedAt === dismissed.dismissedAt && restored.status === 'error', 'restart and late stale saves retain acknowledgment')
-  ok(restored?.error === originalError && JSON.stringify(restored.transcript) === originalTranscript, 'restart retains evidence')
+  const restoredFull = await reload.getFull(run.id)
+  ok(restored?.error === originalError && JSON.stringify(restoredFull?.transcript) === originalTranscript, 'restart retains evidence')
 
   const pending = await fail('pending review fixture')
   pending.review = 'pending'
