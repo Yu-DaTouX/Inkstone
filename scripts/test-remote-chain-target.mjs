@@ -150,6 +150,7 @@ const runners = {
     return { ok: true, id: 'run-rep', sessionId: target.sessionId ?? 'sess', runId: 'r1', generation: 1 }
   },
   hasBusyCwd: () => false,
+  blocksConcurrentRun: () => false,
   runtimeOf: () => ({ generation: 1, sessionId: 's-new' }),
   admitExecute: () => ({ ok: true, token: 1 }),
   releaseExecute: () => {},

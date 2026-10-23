@@ -332,7 +332,7 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
   if (!selected.ok || !selected.id) {
     return { ok: false, status: 409, error: selected.error ?? '无法为目标会话准备后台运行实例' }
   }
-  if (registry.hasBusyCwd(cwdResult.cwd, selected.id)) {
+  if (registry.blocksConcurrentRun(cwdResult.cwd, selected.id)) {
     return { ok: false, status: 409, error: '同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入' }
   }
   const agent = registry.agentOf(selected.id)

@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { isolationCwdKey, type AutoIsolationRecord } from './session-isolation'
+import { isolatedSessionCwd, isolationCwdKey, type AutoIsolationRecord } from './session-isolation'
 
 export const UNUSED_ISOLATION_GRACE_MS = 60_000
 
@@ -44,7 +44,7 @@ export async function discardIdleEmptyIsolations(port: IsolationCleanupPort): Pr
   const discarded: AutoIsolationRecord[] = []
   for (const record of await port.records()) {
     if (now - record.createdAt < UNUSED_ISOLATION_GRACE_MS) continue
-    const key = isolationCwdKey(record.worktree)
+    const key = isolationCwdKey(isolatedSessionCwd(record))
     const holders = port.runners().filter((runner) => isolationCwdKey(runner.cwd) === key)
     if (holders.some((runner) => runner.isActive || runner.busy || runner.messageCount > 0)) continue
     if (await port.hasSavedSession(record)) continue

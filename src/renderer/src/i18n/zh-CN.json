@@ -2407,5 +2407,14 @@
   "state.error.sessionTreeFailed": "会话树读取失败",
   "state.error.branchStale": "目标分支已失效，请重试",
   "state.error.nativeBridgeMissing": "宿主尚未提供原生会话桥",
-  "state.error.branchSwitchFailed": "分支切换失败"
+  "state.error.branchSwitchFailed": "分支切换失败",
+  "isolation.merge.title": "隔离分支有改动，等你确认合入",
+  "isolation.merge.blockedTitle": "隔离分支没能合入",
+  "isolation.merge.branch": "分支 {branch}",
+  "isolation.merge.hint": "合入会把改动压成一个提交合进主工作目录；不合入时改动留在隔离分支。",
+  "isolation.merge.blockedHint": "改动仍在隔离分支里，没有丢。处理完主工作目录后可以重试。",
+  "isolation.merge.action": "合入主干",
+  "isolation.merge.retry": "重试合入",
+  "isolation.merge.merging": "正在合入…",
+  "isolation.merge.failed": "合入失败，改动仍在隔离分支里"
 }

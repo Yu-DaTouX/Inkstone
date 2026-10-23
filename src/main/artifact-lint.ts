@@ -68,6 +68,9 @@ const styleBlocks = (html: string): string[] =>
 
 const withoutRootRules = (text: string): string => text.replace(/[^{}]*:root[^{}]*\{[^{}]*\}/gi, '')
 
+const rootTokenHexes = (css: string[]): Set<string> =>
+  new Set(css.flatMap((block) => (block.match(/[^{}]*:root[^{}]*\{[^{}]*\}/gi) ?? []).flatMap((rule) => rule.match(/#[0-9a-f]{3,8}\b/gi) ?? [])).map((hex) => hex.toLowerCase()))
+
 function capsTrackingAdequate(declarations: string): boolean {
   const fontSize = /font-size\s*:\s*([^;]+)/i.exec(declarations)?.[1]?.trim() ?? ''
   if (/clamp\(|vw|vmin|vmax/i.test(fontSize)) return true
@@ -86,11 +89,14 @@ function capsTrackingAdequate(declarations: string): boolean {
 export function lintArtifactHtml(rawHtml: string): ArtifactLintFinding[] {
   const findings: ArtifactLintFinding[] = []
   if (!rawHtml) return findings
-  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '')
+  const html = rawHtml.replace(/<!--[\s\S]*?-->/g, '').replace(/data:[^"')\s>]+/gi, 'data:')
   const css = styleBlocks(html)
+  const markup = html.replace(/<style[\s\S]*?<\/style>/gi, '')
   const gradients = [...html.matchAll(GRADIENT_RE)].map((match) => match[0])
 
-  const purpleGradient = gradients.find((gradient) => hasHex(gradient, PURPLE_HEXES) || /\b(purple|violet)\b/i.test(gradient))
+  const tokenHexes = rootTokenHexes(css)
+  const offTokenPurples = PURPLE_HEXES.filter((hex) => !tokenHexes.has(hex))
+  const purpleGradient = gradients.find((gradient) => hasHex(gradient, offTokenPurples) || /\b(purple|violet)\b/i.test(gradient))
   if (purpleGradient) {
     findings.push({
       level: 'must',
@@ -109,7 +115,7 @@ export function lintArtifactHtml(rawHtml: string): ArtifactLintFinding[] {
         snippet: clip(trustGradient)
       })
     }
-    const indigo = hasHex(withoutRootRules(html), AI_DEFAULT_INDIGO)
+    const indigo = hasHex([markup, ...css.map(withoutRootRules)].join('\n'), AI_DEFAULT_INDIGO)
     if (indigo) {
       findings.push({
         level: 'must',
@@ -184,7 +190,7 @@ export function lintArtifactHtml(rawHtml: string): ArtifactLintFinding[] {
     .find((match) => !capsTrackingAdequate(match[2] ?? ''))
   const capsInline = capsRule
     ? undefined
-    : [...html.matchAll(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/gi)]
+    : [...markup.matchAll(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/gi)]
         .find((match) => /text-transform\s*:\s*uppercase/i.test(match[2] ?? '') && !capsTrackingAdequate(match[2] ?? ''))
   if (capsRule || capsInline) {
     findings.push({
@@ -205,7 +211,7 @@ export function lintArtifactHtml(rawHtml: string): ArtifactLintFinding[] {
     })
   }
 
-  const inlineAccentUses = (html.replace(/<style[\s\S]*?<\/style>/gi, '').match(/var\(--accent\)/g) ?? []).length
+  const inlineAccentUses = (markup.match(/var\(--accent\)/g) ?? []).length
   if (inlineAccentUses > MAX_INLINE_ACCENT_USES) {
     findings.push({
       level: 'should',
