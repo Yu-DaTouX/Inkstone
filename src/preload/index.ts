@@ -391,6 +391,7 @@ const api: YanBridge = {
 
   subagents: {
     list: () => invoke<SubagentRun[]>('yan:subagents:list'),
+    get: (id) => invoke<SubagentRun | null>('yan:subagents:get', id),
     start: (task, model, isolation, expectedRuntime) =>
       invoke<{ ok: boolean; error?: string; run?: SubagentRun }>('yan:subagents:start', task, model, isolation, expectedRuntime),
     stop: (id) => invoke<SubagentStopResult>('yan:subagents:stop', id),

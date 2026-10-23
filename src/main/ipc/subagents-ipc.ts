@@ -22,6 +22,7 @@ export function registerSubagentsIpc(ipc: IpcRegistrar, deps: SubagentsIpcDeps):
   const { handle } = ipc
   const { service, parentContext } = deps
   handle('yan:subagents:list', async () => (await service.get()).list())
+  handle('yan:subagents:get', async (id: unknown) => (typeof id === 'string' ? (await (await service.get()).getFull(id)) ?? null : null))
   handle('yan:subagents:start', async (task: string, model?: string, isolation?: string, expectedRuntime?: unknown) => {
     const contextResult = parentContext(expectedRuntime as ExpectedRuntimeOwner | undefined).then(
       (value) => ({ ok: true as const, value }),

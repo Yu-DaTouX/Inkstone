@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { RotateCcw, Square } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
@@ -43,6 +43,17 @@ function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' | 'tran
       .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== task))
       .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
   )
+}
+
+function useFullTranscript(run: SubagentRun): SubagentRun {
+  const [loaded, setLoaded] = useState<SubagentRun['transcript'] | null>(null)
+  useEffect(() => {
+    if (!run.transcriptOmitted) return
+    let alive = true
+    window.yan.subagents.get(run.id).then((full) => { if (alive && full) setLoaded(full.transcript) }, () => undefined)
+    return () => { alive = false }
+  }, [run.id, run.transcriptOmitted])
+  return useMemo(() => (run.transcriptOmitted && loaded ? { ...run, transcript: loaded } : run), [run, loaded])
 }
 
 export function subagentPaneName(run: Pick<SubagentRun, 'task' | 'brief'>): string {
@@ -145,7 +156,8 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const statusWord = subagentRowLabel(row.state, '', rowLang(lang))
   const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId
   const brief = subagentBriefText(run)
-  const turns = useMemo(() => subagentTranscriptTurns(run), [run])
+  const shown = useFullTranscript(run)
+  const turns = useMemo(() => subagentTranscriptTurns(shown), [shown])
   const scope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [run.id] }), [run.id])
 
   const scrollRef = useRef<HTMLDivElement>(null)
