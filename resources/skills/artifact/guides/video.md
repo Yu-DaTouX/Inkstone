@@ -145,6 +145,119 @@ window.__timelines = window.__timelines || {};
 
 GSAP 只在用户明确要求时用，且必须是项目本地文件：把 `node_modules/gsap/dist/gsap.min.js` 复制到成果同目录，用 `<script src="gsap.min.js"></script>` 引入，许可证由用户自行确认。
 
+## 三维画面（three.js）
+
+要 3D 镜头（立体物体、立体字、镜头推拉环绕、材质光照）时用砚随包的 three.js。在 `<head>` 里写一行占位标签，不写 `src`、不用 `import`：
+
+```html
+<script data-yan-lib="three"></script>
+```
+
+- 预览、画布、`yan artifact preview` 与导出 MP4 时，砚把它替换成内置库；挂到回复时存下来的副本会直接内联，单独打开也能播。不要自己复制、粘贴库代码，也不要引用 CDN。
+- 全局对象是 `THREE`（three.js 0.186，经典脚本，不是 ES 模块）。除核心外只多带三件：`THREE.TextGeometry`、`THREE.FontLoader`（含 `THREE.Font`）、`THREE.RoomEnvironment`，以及一款内置字体 `THREE.fonts.helvetikerBold`。`OrbitControls`、`GLTFLoader`、后期处理等附加模块都没有；外部模型、贴图、HDR 也加载不了（`fetch` 被拦）。
+- 立体字：`const font = new THREE.FontLoader().parse(THREE.fonts.helvetikerBold)`，再 `new THREE.TextGeometry('TEXT', { font, size, depth, bevelEnabled: true, ... })`。这款字体只有拉丁字母、数字和常用标点，中文立体字做不出来：中文标题放在 HTML 叠层里（照常是 `.clip` 片段），或者用 `<canvas>` 以系统字体画字后做成 `THREE.CanvasTexture` 贴到平面上。
+- 光照：`scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture`，金属、高光材质（`MeshStandardMaterial` / `MeshPhysicalMaterial`）就有反射；再按需加一两盏 `DirectionalLight`。
+
+画面只能由 `t` 决定，规则比 DOM 动画更严：
+
+- 渲染器必须 `new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })`，像素比 `Math.min(devicePixelRatio, 2)`。少了 `preserveDrawingBuffer`，导出逐帧截图可能拿到空白。
+- `seek(t)` 里同步完成一整帧：按 t 算出所有物体、相机、材质参数，然后立刻 `renderer.render(scene, camera)`。不要在 `seek` 外面维持一个 `requestAnimationFrame` 渲染循环；`play()` 才起循环，循环里只做 `seek(当前播放秒)`。
+- 不用 `THREE.Clock`、`getDelta()`、累加的 `rotation.y += 0.01`；角度、位置都写成 t 的函数。用 `AnimationMixer` 时调 `mixer.setTime(t)`，不要 `update(delta)`。随机数用种子伪随机。
+- 尺寸跟舞台走：每次 `seek` 先 `renderer.setSize(stage.clientWidth, stage.clientHeight, false)` 并更新 `camera.aspect`，`<canvas>` 用 CSS 铺满根元素。
+- 文字说明、字幕仍写成 HTML 片段叠在 `<canvas>` 上，它们的显隐照常由 `data-start` / `data-duration` 管；3D 物体的显隐在 `seek` 里按同样的秒数设 `visible`。
+- 控制几何复杂度：每帧都要完整渲染一次，`TextGeometry` 的 `curveSegments` 6–10 足够，粒子不超过几万个，否则导出很慢。
+
+最小 3D 合成（照它改：一镜一件事，镜头切换时同步切 3D 物体和 HTML 片段）：
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>三维小片</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #f4f1ea; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .clip { position: absolute; left: 6%; bottom: 10%; opacity: 0; }
+  .clip h2 { margin: 0; font-size: 56px; font-weight: 700; }
+</style>
+<script data-yan-lib="three"></script>
+</head>
+<body>
+  <div id="stage" data-composition-id="demo3d" data-width="1920" data-height="1080" data-duration="6">
+    <canvas id="gl"></canvas>
+    <section class="clip" data-start="0" data-duration="3" data-track-index="1"><h2>第一镜：立方体入场</h2></section>
+    <section class="clip" data-start="3" data-duration="3" data-track-index="1"><h2>第二镜：立体字</h2></section>
+  </div>
+<script>
+window.__timelines = window.__timelines || {};
+(() => {
+  const stage = document.getElementById('stage')
+  const total = Number(stage.dataset.duration)
+  const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true, preserveDrawingBuffer: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x0b0d12)
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture
+  const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 100)
+
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xff5a36, metalness: 0.3, roughness: 0.35 }))
+  scene.add(cube)
+  const font = new THREE.FontLoader().parse(THREE.fonts.helvetikerBold)
+  const textGeometry = new THREE.TextGeometry('HELLO 3D', { font, size: 0.7, depth: 0.25, curveSegments: 8, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.02, bevelSegments: 3 })
+  textGeometry.center()
+  const word = new THREE.Mesh(textGeometry, new THREE.MeshStandardMaterial({ color: 0xdfe6f0, metalness: 1, roughness: 0.18 }))
+  scene.add(word)
+
+  const clips = [...stage.querySelectorAll('[data-start]')].map((el) => ({ el, start: Number(el.dataset.start), end: Number(el.dataset.start) + Number(el.dataset.duration) }))
+  const ease = (x) => 1 - Math.pow(1 - Math.min(Math.max(x, 0), 1), 3)
+
+  let now = 0
+  const seek = (t) => {
+    now = Math.min(Math.max(Number(t) || 0, 0), total - 0.001)
+    renderer.setSize(stage.clientWidth, stage.clientHeight, false)
+    camera.aspect = stage.clientWidth / stage.clientHeight
+    camera.updateProjectionMatrix()
+    clips.forEach((c) => { c.el.style.opacity = now >= c.start && now < c.end ? 1 : 0 })
+    cube.visible = now < 3
+    cube.position.y = (1 - ease(now / 1.2)) * -3
+    cube.rotation.set(now * 0.6, now * 1.1, 0)
+    word.visible = now >= 3
+    const b = ease((now - 3) / 1.4)
+    word.position.z = (1 - b) * -8
+    word.rotation.y = (1 - b) * Math.PI * 0.8 + Math.sin(now * 1.2) * 0.12
+    camera.position.set(Math.sin(now * 0.3) * 1.2, 0.6, 6.5 - now * 0.2)
+    camera.lookAt(0, 0, 0)
+    renderer.render(scene, camera)
+  }
+
+  let raf = 0, playing = false, origin = 0
+  const tick = (ms) => {
+    if (!playing) return
+    const t = (ms - origin) / 1000
+    if (t >= total) { playing = false; seek(total); return }
+    seek(t)
+    raf = requestAnimationFrame(tick)
+  }
+  window.__timelines['demo3d'] = {
+    duration: () => total,
+    seek,
+    play: () => { if (playing) return; playing = true; origin = performance.now() - now * 1000; raf = requestAnimationFrame(tick) },
+    pause: () => { playing = false; cancelAnimationFrame(raf) },
+    paused: () => !playing
+  }
+  window.addEventListener('resize', () => seek(now))
+  seek(0)
+})()
+</script>
+</body>
+</html>
+```
+
 ## 镜头与节奏
 
 - 一镜一个画面事件：这一镜只让一件事发生（出现一个词、推进一个图形、翻一次数字）。两件事挤在一镜里，两件都看不清。
@@ -158,6 +271,7 @@ GSAP 只在用户明确要求时用，且必须是项目本地文件：把 `node
 
 - `seek(0)`、`seek(总时长 / 2)`、`seek(总时长)` 三个时刻画面都正确：不空白、不重叠、文字没被裁掉；结尾那一帧不能是黑屏，控制器的 clamp 到位才成立。
 - 没有 `http://`、`https://` 外链，没有网络字体，没有 `@import`。
+- 用了 3D 的：`<head>` 里有 `<script data-yan-lib="three"></script>`，渲染器带 `preserveDrawingBuffer: true`，总览图里每一格 3D 画面都不是空白或纯色；往回 seek 同一秒画面相同。
 - 每个片段的 `data-start + data-duration` 都 ≤ 根 `data-duration`，最后一镜正好结束在总时长。
 - 页面加载后不自播放：第一帧静止，没有播放按钮。
 - `yan artifact preview --path <文件>` 是主要自检：视频合成会按合成画幅、在「每个片段的中点 + 结尾帧（总时长 - 0.001 秒）」逐时间点 seek 后截图，拼成一张带 `t=秒` 标注的总览图（从左到右、从上到下按时间先后）。用 read 打开总览图逐格看：不空白、不重叠、文字没被裁掉、结尾那一帧不是黑屏；每个片段都该分到一格，缺了说明取样或控制器有问题。

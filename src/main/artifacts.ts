@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile, copyFile, unlink } from 'node:fs/promises'
 import { extname, join, relative, resolve, sep } from 'node:path'
 import type { AssistantArtifact, UIMessage } from '../shared/ipc'
+import { withBundledLibs } from './artifact-libs'
+import { usesArtifactLibs } from '../shared/html-artifact-libs'
 
 const MAX_ARTIFACT_BYTES = 50 * 1024 * 1024
 const SESSION_HEADER_BYTES = 8192
@@ -321,7 +323,8 @@ export class ArtifactStore {
     if (info.size === 0) throw new Error('artifact_empty')
     if (info.size > MAX_ARTIFACT_BYTES) throw new Error('artifact_too_large')
     const filename = safeFilename(source.slice(source.lastIndexOf(sep) + 1))
-    const bytes = await readFile(source)
+    const raw = await readFile(source)
+    const bytes = /\.html?$/i.test(filename) && usesArtifactLibs(raw.toString('utf8')) ? Buffer.from(withBundledLibs(raw.toString('utf8')), 'utf8') : raw
     return this.save({
       sessionFile: input.sessionFile,
       messageId: input.messageId,

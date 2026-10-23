@@ -4,6 +4,7 @@ import { YAN_DIR } from './paths'
 import { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
 import { HTML_ARTIFACT_CSP, HTML_ARTIFACT_SCHEME, htmlArtifactAsset, htmlArtifactToken, withPreviewRuntime } from '../shared/html-artifact-preview'
 import { parseMcpAppUrl } from '../shared/mcp-app-preview'
+import { withBundledLibs } from './artifact-libs'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: HTML_ARTIFACT_SCHEME, privileges: { standard: true, secure: true, corsEnabled: true } }
@@ -31,7 +32,7 @@ export function registerHtmlArtifactProtocol(): void {
         : new Response('Not found', { status: 404, headers: ASSET_HEADERS })
     }
     const html = request.method === 'GET' ? htmlArtifactPreviews.read(request.url) : null
-    return new Response(html === null ? 'Preview unavailable' : withPreviewRuntime(html, htmlArtifactPreviews.readNonce(request.url) ?? ''), {
+    return new Response(html === null ? 'Preview unavailable' : withBundledLibs(withPreviewRuntime(html, htmlArtifactPreviews.readNonce(request.url) ?? '')), {
       status: html === null ? 404 : 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
