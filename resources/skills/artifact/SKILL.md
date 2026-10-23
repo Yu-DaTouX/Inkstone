@@ -19,6 +19,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 
 1. **视觉方向，用大厂官方设计资料**（`official/` 下原样收录，见下一节的砚内差异）：
    - 每次都读 `official/frontend-design/SKILL.md`（Anthropic）和 `official/openai-codex-frontend/frontend-tasks.md`（OpenAI，十来行），学它们的方法和品质要求，对照两份里列的「AI 默认长相」检查。两份说法不一致时（如动效多少），以 Anthropic 那份为准。
+   - 每次也读 `official/open-design-craft/anti-ai-slop.md`（open-design 整理的「AI 套路」清单，规则具体到色值和字距），再按下面指南表「加读 craft」一列读对应的一两份同目录文件。craft 只管字距、层级、对比度、状态、动效时长这类通用手艺，配色和字体仍按风格牌。
    - **风格怎么定，按用户说了多少**（用户说的永远优先，牌只补用户没说的部分）：
      - 用户给了具体要求（品牌色、指定颜色、深色 / 浅色、字体、logo、参考图或参考网站、已有项目的设计规范）：照用户的来；其余没说的维度再抽牌补齐，用户要深色就加 `--theme dark`。牌和用户要求冲突的地方，以用户为准。
      - 用户点名了风格名（「瑞士风」「包豪斯」「国潮」「赛博朋克」「像素风」等）：先运行 `yan artifact style --list`，有同名或相近的牌就用 `yan artifact style --id <id 或中文名>` 取那一张；没有对应的牌时看 `guides/styles.md`；那里也没有，就按用户的描述和对这个风格的公认特征自己定配色、字体、母题，仍然只用系统字体。
@@ -34,16 +35,18 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
    - `guides/styles.md` 只在用户点名的风格没有对应风格牌时用。
 2. **结构与砚里的技术写法**：同目录 `guides/` 按成果类型分了指南，挑一份最贴近的读。指南只管结构、画幅和沙箱写法；其中的版式、配色建议和官方技能冲突时，以风格牌和官方技能为准。
 
-| 用户要的 | 读 |
-| --- | --- |
-| 海报、邀请函、名片、证书、封面、社交配图 | `guides/poster.md` |
-| 数据表、仪表盘、报告、对比、排行 | `guides/dashboard.md` |
-| 小游戏 | `guides/game.md` |
-| 讲解概念、演示原理、教学可视化 | `guides/explainer.md` |
-| 计算器、换算、生成器、格式化等小工具 | `guides/tool.md` |
-| 官网、落地页、个人主页、App 页面原型 | `guides/landing.md` |
-| 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` |
-| 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` |
+| 用户要的 | 读 | 加读 craft（`official/open-design-craft/`） |
+| --- | --- | --- |
+| 海报、邀请函、名片、证书、封面、社交配图 | `guides/poster.md` | `typography.md`、`color.md` |
+| 数据表、仪表盘、报告、对比、排行 | `guides/dashboard.md` | `typography-hierarchy.md`、`state-coverage.md` |
+| 小游戏 | `guides/game.md` | `animation-discipline.md` |
+| 讲解概念、演示原理、教学可视化 | `guides/explainer.md` | `typography-hierarchy.md`、`animation-discipline.md` |
+| 计算器、换算、生成器、格式化等小工具 | `guides/tool.md` | `form-validation.md`、`state-coverage.md` |
+| 官网、落地页、个人主页、App 页面原型 | `guides/landing.md` | `typography-hierarchy.md`、`laws-of-ux.md` |
+| 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` | `typography-hierarchy.md`、`color.md` |
+| 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` | `animation-discipline.md`、`typography.md` |
+
+风格牌是杂志编辑、学术报告这类长文阅读风格时，把 `typography-hierarchy.md` 换成 `typography-hierarchy-editorial.md`；页面里有表单或强交互时加读 `accessibility-baseline.md`。
 
 视频类型也写成单文件 HTML，但按 hyperframes 的合成格式约定写：根元素带 `data-composition-id` / `data-width` / `data-height` / `data-duration`，片段带 `data-start` / `data-duration` / `data-track-index`。画布会识别根元素上的 `data-composition-id`，动画统一挂在 `window.__timelines[<composition-id>]` 的控制器上（接口见 `guides/video.md`），预览后可以按时间点检查画面。要 3D 画面时用 `<script data-yan-lib="three"></script>` 引入砚随包的 three.js，写法见 `guides/video.md` 的「三维画面」。
 
@@ -51,7 +54,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 
 ## 官方设计技能在砚里的差异
 
-`official/` 下是大厂官方原文：Anthropic 的四个技能（Apache-2.0，github.com/anthropics/skills）、OpenAI Codex 的前端段落（Apache-2.0）、Vercel 的界面规范（MIT），来源写在各目录的 `SOURCE.md` 或 `LICENSE`。它们写给别的环境，在砚里按下面改用，其余照原文执行：
+`official/` 下是大厂官方原文：Anthropic 的四个技能（Apache-2.0，github.com/anthropics/skills）、OpenAI Codex 的前端段落（Apache-2.0）、Vercel 的界面规范（MIT）、open-design 的 craft 规则（Apache-2.0，部分改编自 MIT 的 refero_skill），来源写在各目录的 `SOURCE.md` 或 `LICENSE`。它们写给别的环境，在砚里按下面改用，其余照原文执行：
 
 - **用用户的语言**：这些资料是英文，但回复、页面文案、占位文字都用用户提问的语言，用户说中文就全用中文。
 
@@ -59,6 +62,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 - **只交一个 HTML**：原文要求输出 `.png`、`.pdf`、`.md`、`.js` 的地方，一律改为一个单文件 HTML 成果页（图形用内联 SVG 或 `<canvas>`）。canvas-design 的美学宣言不另存文件，取一个名字、写一两句放进回复。
 - **字体只能用系统字体**：不能下载或引用网络字体，原文点名的字体（含 theme-factory 的 DejaVu、FreeSans）换成气质相近的系统字体。中文：黑体 `"PingFang SC", "Microsoft YaHei", sans-serif`、宋体 `"Songti SC", "SimSun", serif`、楷体 `"Kaiti SC", "KaiTi", serif`；西文还可用 `Georgia`、`"Times New Roman"`、`"Segoe UI"`、`Bahnschrift`（窄体）、`Impact`、`"Courier New"`、`ui-monospace, Consolas`。Bahnschrift、等宽字体只在风格牌指定时用。
 - **没有 p5.js**：algorithmic-art 原文用 CDN 上的 p5.js，在砚里会被拦截。改用原生 Canvas 2D 自己写：种子随机数（如 mulberry32）、值噪声或 Perlin 噪声、`requestAnimationFrame` 循环。`templates/viewer.html` 只参考它的版面（左侧参数面板、种子切换、重新生成），不要照抄其中的 `<script src>`。
+- **open-design craft 的砚内对应**：文中的「active `DESIGN.md`」指你选定的风格牌（或项目 `DESIGN.md`、远端设计系统）；`--accent` 等令牌按风格牌写进 `:root`。显示字体要用衬线的说法不适用，字体按风格牌。`.ph-img`、`data-od-id`、`data-screen-label`、seed 模板、daemon 注入都是 open-design 自己的机制，跳过。文中说「the linter / lint-artifact 会查」的规则，在砚里由 `yan artifact preview` 结果的 `lint` 字段报告。全大写字距这类只对拉丁字母有意义的规则，中文里忽略。
 - **Vercel 规范里用不上的条目跳过**：URL 同步状态与深链、离开前提示未保存、hydration、密码管理器、网络请求、`localStorage` 等依赖浏览器环境或服务端的条目，在单文件沙箱里不适用。
 - **OpenAI 段落里的「avoid default stacks (… system)」**：砚只能用系统字体，字体按风格牌来，不算违反。
 - **自检按本文**：原文的「截图自查」「Take a second pass」「FINAL STEP」都用本文第 4 步的 `yan artifact preview` 完成，总共最多三次，不另开浏览器。
@@ -69,7 +73,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
    同时**定风格**：按上面「风格怎么定」的顺序，先看用户说了什么，没点名风格就运行 `yan artifact style --kind <类型>` 选一张牌；这一步不能跳过，不要自己凭印象起风格名。
 2. **准备数据**：需要事实数据时，有搜索能力就先查官方或一手来源（`yan search`），记下来源与时间；查不到就用你确知的数并在页面上标「约」与数据时间。不编造精确到个位的数字。
 3. **一次写完第一版**：思考里只定方向和结构（几行要点），**不要在思考里先把 HTML 打一遍草稿**，直接在 write 工具里写，用户才能在右侧看着页面一点点长出来。用 write 工具把完整文件写到项目里的 `artifacts/<英文短名>.html`（用户指定路径时用用户的）。写的时候右侧会自动打开实时预览，所以第一版就要完整可看，不要先写骨架再一点点补。
-4. **自检**：有交互的成果（工具、游戏、讲解、落地页、仪表盘），先用 read 打开 `official/vercel-web-interface-guidelines/AGENTS.md`（Vercel 官方界面规范），对照 Keyboard、Targets & Input、Animation、Layout、Content & Accessibility、Dark Mode & Theming、Design 几节，把不满足的 MUST 一并改掉；纯海报和静态画面跳过这一步。`yan artifact preview --path <文件>`，看返回的控制台错误、横向溢出，再用 read 打开 `light-desktop` 和 `light-narrow` 两张截图（写了深色版时把桌面那张换成 `dark-desktop`）。每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏），首屏以下的表格、图表、页脚也要看；结果里写着「中段省略，最后一格是页尾」时，说明页面超过 4 屏：前 3 格是开头三屏，最后一格是页尾，中间部分要靠代码确认。只修硬伤：报错、横向溢出、内容被裁掉或互相遮挡、文字看不清。有硬伤就改**同一个文件**，把这一轮发现的问题一次改完，再预览确认；确认后还有硬伤可以再改一轮，然后就结束；配色、间距这类审美微调留给用户提。**`yan artifact preview` 一共最多运行三次。** 不要另开浏览器、起本地服务器或自己截图裁图，这个命令已经按砚的真实沙箱渲染。
+4. **自检**：有交互的成果（工具、游戏、讲解、落地页、仪表盘），先用 read 打开 `official/vercel-web-interface-guidelines/AGENTS.md`（Vercel 官方界面规范），对照 Keyboard、Targets & Input、Animation、Layout、Content & Accessibility、Dark Mode & Theming、Design 几节，把不满足的 MUST 一并改掉；纯海报和静态画面跳过这一步。`yan artifact preview --path <文件>`，看返回的控制台错误、横向溢出和 `lint`（按 open-design 反 AI 套路规则查源码：`[必须改]` 的和报错同等对待，`[建议改]` 能顺手改就改），再用 read 打开 `light-desktop` 和 `light-narrow` 两张截图（写了深色版时把桌面那张换成 `dark-desktop`）。每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏），首屏以下的表格、图表、页脚也要看；结果里写着「中段省略，最后一格是页尾」时，说明页面超过 4 屏：前 3 格是开头三屏，最后一格是页尾，中间部分要靠代码确认。只修硬伤：报错、横向溢出、`lint` 里的 `[必须改]`、内容被裁掉或互相遮挡、文字看不清。有硬伤就改**同一个文件**，把这一轮发现的问题一次改完，再预览确认；确认后还有硬伤可以再改一轮，然后就结束；配色、间距这类审美微调留给用户提。**`yan artifact preview` 一共最多运行三次。** 不要另开浏览器、起本地服务器或自己截图裁图，这个命令已经按砚的真实沙箱渲染。
 5. **挂到回复**：`yan artifact attach --path <文件> --description "<一句话说明>"`。子 Agent 不能 attach，在结果里写明文件路径，由主会话挂载。
 6. **回复要短**：做了什么（三四条，含用了哪张风格牌）、数据来源与局限、可以怎么继续改。不要贴 HTML 源码。
 
