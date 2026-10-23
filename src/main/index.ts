@@ -2015,8 +2015,8 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
               ...(request.endpoint ? [`远程端点：${request.endpoint}`, '该服务会收到本任务发送给它的请求内容。'] : []),
               ...(!isRemote
                 ? [
-                    '本地包会在安装后的预检（smoke）及 pi 重载时以当前 Windows 用户权限运行，可能访问此用户的本机文件；staging 与离线环境不是操作系统沙箱。',
-                    '禁用 lifecycle scripts 只影响安装脚本，不会隔离包的运行时代码。',
+                    '安装前的临时环境加载验证（smoke）会实际加载候选扩展并执行代码，pi 重载时也会运行扩展。代码以当前桌面用户权限执行，可读写该用户的文件并联网；临时目录和清空继承环境不是操作系统沙箱。',
+                    '禁用 npm lifecycle scripts 只关闭安装生命周期脚本，不会阻止扩展代码运行，也不会隔离其运行时权限。',
                     ...(trust?.trusted
                       ? ['此项目已经在 trust.json 中显式信任；本次不会改写信任设置。']
                       : [
