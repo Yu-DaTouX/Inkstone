@@ -1,0 +1,42 @@
+@layer features {
+  .v3-wrapup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    margin-top: var(--s-8);
+    min-width: 0;
+  }
+
+  .v3-wrapup-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--s-8);
+  }
+
+  .v3-wrapup-recap,
+  .v3-wrapup-question {
+    margin: 0;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .v3-wrapup-ask {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .v3-wrapup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .v3-wrapup-actions > * {
+    max-width: 100%;
+  }
+}

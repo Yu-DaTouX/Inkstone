@@ -1,4 +1,4 @@
-import type { ContextFrom, SessionState, UIMessage } from '../../../shared/ipc'
+import type { ContextFrom, SessionState, UIMessage, UIToolCall } from '../../../shared/ipc'
 
 export type ContextCategory = 'system' | 'user' | 'assistant' | 'thinking' | 'tools'
 export interface ContextSlice { id: ContextCategory; tokens: number }
@@ -18,7 +18,7 @@ export function contextFromOf(session: Pick<SessionState, 'contextFrom' | 'lastC
 function cutEstimate(m: UIMessage): number {
   let chars = (m.text?.length ?? 0) + (m.thinking?.length ?? 0) + (m.bash?.command.length ?? 0)
   let images = m.images?.length ?? 0
-  for (const call of m.toolCalls ?? []) {
+  for (const call of modelVisibleToolCalls(m)) {
     chars += call.name.length + (call.argsRaw ?? argsText(call.args)).length + (call.output?.length ?? 0)
     images += call.images?.length ?? 0
   }
@@ -57,6 +57,21 @@ function argsText(args: unknown): string {
   try { return JSON.stringify(args) ?? '' } catch { return '' }
 }
 
+export function modelVisibleToolCalls(m: Pick<UIMessage, 'toolCalls'>): UIToolCall[] {
+  const calls = m.toolCalls ?? []
+  if (!calls.some((call) => call.parentToolCallId)) return calls
+  const ids = new Set(calls.map((call) => call.id))
+  return calls.filter((call) => !call.parentToolCallId || !ids.has(call.parentToolCallId))
+}
+
+export function toolCallTokens(call: Pick<UIToolCall, 'args' | 'argsRaw' | 'output' | 'images'>): number {
+  return estimateTokens(call.argsRaw ?? argsText(call.args)) + estimateTokens(call.output) + (call.images?.length ?? 0) * IMAGE_TOKENS
+}
+
+export function bashMessageTokens(m: Pick<UIMessage, 'bash' | 'text'>): number {
+  return estimateTokens(m.bash?.command) + estimateTokens(m.text)
+}
+
 type MessageSums = Record<Exclude<ContextCategory, 'system'>, number>
 
 const messageSums = new WeakMap<UIMessage, MessageSums>()
@@ -66,13 +81,11 @@ function sumsOf(m: UIMessage): MessageSums {
   if (hit) return hit
   const sums: MessageSums = { user: 0, assistant: 0, thinking: 0, tools: 0 }
   if (m.role === 'user' || m.role === 'note') sums.user += estimateTokens(m.text) + (m.images?.length ?? 0) * IMAGE_TOKENS
-  else if (m.role === 'bash') sums.tools += estimateTokens(m.bash?.command) + estimateTokens(m.text)
+  else if (m.role === 'bash') sums.tools += bashMessageTokens(m)
   else {
     sums.assistant += estimateTokens(m.text)
     sums.thinking += estimateTokens(m.thinking)
-    for (const call of m.toolCalls ?? []) {
-      sums.tools += estimateTokens(call.argsRaw ?? argsText(call.args)) + estimateTokens(call.output) + (call.images?.length ?? 0) * IMAGE_TOKENS
-    }
+    for (const call of modelVisibleToolCalls(m)) sums.tools += toolCallTokens(call)
   }
   messageSums.set(m, sums)
   return sums

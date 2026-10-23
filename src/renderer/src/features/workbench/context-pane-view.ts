@@ -1,8 +1,17 @@
 import type { SessionStats, SessionState, UIMessage } from '../../../../shared/ipc'
 import { DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../../../../shared/context-limits'
-import { contextBreakdown, contextFromOf, inContextMessages, type ContextSlice } from '../../state/context-breakdown'
+import {
+  bashMessageTokens,
+  contextBreakdown,
+  contextFromOf,
+  inContextMessages,
+  modelVisibleToolCalls,
+  toolCallTokens,
+  type ContextSlice
+} from '../../state/context-breakdown'
+import { redactCommandSecrets, toolTarget } from '../session/tool-title'
 
-const IMAGE_TOKENS = 1200
+const TOP_TOOL_CALLS = 8
 
 export interface ContextUsageSummary {
   known: boolean
@@ -17,17 +26,30 @@ export interface ContextUsageSummary {
   cappedByLimit: boolean
 }
 
-export interface ContextOccupancyRow {
-  id: 'tools' | 'files'
+export interface ContextToolCall {
+  id: string
+  anchorId: string
+  name: string
+  target: string
   tokens: number
-  count: number
+}
+
+export interface AutoCompactDistance {
+  kind: 'off' | 'window' | 'limit' | 'reached'
+  remaining: number
 }
 
 export interface ContextPaneData {
   usage: ContextUsageSummary
   slices: ContextSlice[]
-  occupancy: ContextOccupancyRow[]
   compacted: boolean
+}
+
+interface ContextPaneInput {
+  session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom' | 'isStreaming' | 'isAgentRunning'> | null
+  stats: Pick<SessionStats, 'contextUsage'> | null
+  messages: readonly UIMessage[]
+  autoCompactLimit?: number
 }
 
 export function autoCompactLimitOf(
@@ -77,21 +99,15 @@ export function shortTokens(n: number): string {
   return String(n)
 }
 
-export function contextOccupancy(
-  messages: readonly UIMessage[],
-  slices: readonly ContextSlice[]
-): ContextOccupancyRow[] {
-  let toolCount = 0
-  let fileCount = 0
-  for (const m of messages) {
-    if (m.role === 'user') fileCount += m.images?.length ?? 0
-    toolCount += m.toolCalls?.length ?? 0
-  }
-  const tools = slices.find((s) => s.id === 'tools')?.tokens ?? 0
-  return [
-    { id: 'tools', tokens: tools, count: toolCount },
-    { id: 'files', tokens: fileCount * IMAGE_TOKENS, count: fileCount }
-  ]
+export function autoCompactDistance(
+  usage: ContextUsageSummary,
+  autoCompactionEnabled: boolean | undefined
+): AutoCompactDistance | null {
+  if (!usage.known || autoCompactionEnabled === undefined) return null
+  if (!autoCompactionEnabled) return { kind: 'off', remaining: Math.max(0, usage.modelWindow - usage.tokens) }
+  const remaining = Math.max(0, usage.windowSize - usage.tokens)
+  if (!usage.cappedByLimit) return { kind: 'window', remaining }
+  return { kind: remaining > 0 ? 'limit' : 'reached', remaining }
 }
 
 function settledMessages(
@@ -102,17 +118,63 @@ function settledMessages(
   return running && messages[messages.length - 1]?.role === 'assistant' ? messages.slice(0, -1) : messages
 }
 
-export function contextPaneData(input: {
-  session: Pick<SessionState, 'model' | 'lastCompaction' | 'contextFrom' | 'isStreaming' | 'isAgentRunning'> | null
-  stats: Pick<SessionStats, 'contextUsage'> | null
-  messages: readonly UIMessage[]
-  autoCompactLimit?: number
-}): ContextPaneData {
+export function turnAnchorIds(messages: readonly UIMessage[]): Map<string, string> {
+  const anchors = new Map<string, string>()
+  let turnStart: string | null = null
+  for (const m of messages) {
+    if (m.role === 'assistant') {
+      turnStart ??= m.id
+      anchors.set(m.id, turnStart)
+    } else {
+      turnStart = null
+      anchors.set(m.id, m.id)
+    }
+  }
+  return anchors
+}
+
+function firstLine(text: string): string {
+  return text.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+}
+
+export function largestToolCalls(
+  messages: readonly UIMessage[],
+  inContext: readonly UIMessage[],
+  limit = TOP_TOOL_CALLS
+): ContextToolCall[] {
+  const anchors = turnAnchorIds(messages)
+  const rows: ContextToolCall[] = []
+  for (const m of inContext) {
+    const anchorId = anchors.get(m.id) ?? m.id
+    if (m.role === 'bash') {
+      const tokens = bashMessageTokens(m)
+      if (tokens > 0) rows.push({ id: m.id, anchorId, name: 'bash', target: firstLine(redactCommandSecrets(m.bash?.command ?? '')), tokens })
+      continue
+    }
+    if (m.role !== 'assistant') continue
+    for (const call of modelVisibleToolCalls(m)) {
+      const tokens = toolCallTokens(call)
+      if (tokens > 0) rows.push({ id: call.id, anchorId, name: call.name, target: firstLine(toolTarget(call)), tokens })
+    }
+  }
+  return rows.sort((a, b) => b.tokens - a.tokens).slice(0, Math.max(0, limit))
+}
+
+function contextRange(input: ContextPaneInput, usage: ContextUsageSummary): { settled: readonly UIMessage[]; inContext: readonly UIMessage[] } | null {
+  if (!usage.known) return null
+  const settled = settledMessages(input.session, input.messages)
+  return { settled, inContext: inContextMessages(settled, contextFromOf(input.session)) }
+}
+
+export function contextPaneData(input: ContextPaneInput): ContextPaneData {
   const usage = contextUsageSummary(input.session, input.stats, input.autoCompactLimit)
-  const from = contextFromOf(input.session)
-  const compacted = !!from
-  if (!usage.known) return { usage, slices: [], occupancy: [], compacted }
-  const messages = inContextMessages(settledMessages(input.session, input.messages), from)
-  const slices = contextBreakdown(messages, usage.tokens)
-  return { usage, slices, occupancy: contextOccupancy(messages, slices), compacted }
+  const compacted = !!contextFromOf(input.session)
+  const range = contextRange(input, usage)
+  if (!range) return { usage, slices: [], compacted }
+  return { usage, slices: contextBreakdown(range.inContext, usage.tokens), compacted }
+}
+
+export function contextPaneToolCalls(input: ContextPaneInput, limit = TOP_TOOL_CALLS): ContextToolCall[] {
+  const range = contextRange(input, contextUsageSummary(input.session, input.stats, input.autoCompactLimit))
+  return range ? largestToolCalls(range.settled, range.inContext, limit) : []
 }

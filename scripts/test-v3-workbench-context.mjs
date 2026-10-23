@@ -23,8 +23,9 @@ function ok(cond, label, detail) {
 
 const entry = `
 export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/types'))}'
-export { autoCompactLimitOf, contextUsageSummary, contextOccupancy, contextPaneData, shortTokens } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
-export { contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
+export { autoCompactDistance, autoCompactLimitOf, contextUsageSummary, contextPaneData, contextPaneToolCalls, largestToolCalls, shortTokens, turnAnchorIds } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
+export { compactionHistory, compactionReclaim, loadCompactionHistory } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-compactions'))}'
+export { contextBreakdown, contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
 export { restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
 `
 
@@ -50,8 +51,15 @@ async function main() {
     contextUsageSummary,
     contextFromOf,
     inContextMessages,
-    contextOccupancy,
+    contextBreakdown,
     contextPaneData,
+    contextPaneToolCalls,
+    largestToolCalls,
+    turnAnchorIds,
+    autoCompactDistance,
+    compactionHistory,
+    compactionReclaim,
+    loadCompactionHistory,
     shortTokens,
     restorableWorkbenchTab
   } = mod
@@ -144,7 +152,93 @@ async function main() {
     ok(autoCompactLimitOf({ autoCompactionEnabled: false }, { autoCompactTokens: 300_000 }) === undefined, '自动压缩关闭无上限')
   }
 
-  group('上下文页签数据：构成、文件与工具结果明细、压缩过滤')
+  group('离自动压缩还有多远')
+  {
+    const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 500_000 }
+    const stats = { contextUsage: { tokens: 74_800, contextWindow: 500_000, modelKey: 'anthropic/claude-x' } }
+    const capped = contextUsageSummary({ model, lastCompaction: null }, stats, 400_000)
+    const near = autoCompactDistance(capped, true)
+    ok(near.kind === 'limit' && near.remaining === 325_200, '上限 400k、已用 74.8k → 再用 325.2k 触发', near)
+    ok(shortTokens(near.remaining) === '325.2k', '剩余量按短写法显示')
+    const full = contextUsageSummary({ model, lastCompaction: null }, { contextUsage: { ...stats.contextUsage, tokens: 410_000 } }, 400_000)
+    ok(autoCompactDistance(full, true).kind === 'reached', '超过上限记为已到上限')
+    const off = autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, stats), false)
+    ok(off.kind === 'off' && off.remaining === 425_200, '自动压缩关闭时按模型窗口算剩余', off)
+    const open = autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, stats, 600_000), true)
+    ok(open.kind === 'window', '上限不小于窗口时由模型窗口决定', open)
+    ok(autoCompactDistance(contextUsageSummary({ model, lastCompaction: null }, null, 400_000), true) === null, '没有可信总量时不写剩余')
+    ok(autoCompactDistance(capped, undefined) === null, '不知道开关状态时不写剩余')
+  }
+
+  group('占用最多的工具结果')
+  {
+    const big = 'x'.repeat(4000)
+    const msgs = [
+      { id: 'u1', role: 'user', text: 'go' },
+      { id: 'a1', role: 'assistant', text: '', toolCalls: [
+        { id: 'r1', name: 'read', args: { path: 'src/deep/ContextPane.tsx' }, output: big, status: 'ok' },
+        { id: 'g1', name: 'grep', args: { pattern: 'foo' }, output: 'hit', status: 'ok' }
+      ] },
+      { id: 'a2', role: 'assistant', text: '', toolCalls: [
+        { id: 'c1', name: 'codemode', args: { code: '\n  const a = await read("x")\nreturn a' }, output: 'y'.repeat(800), status: 'ok' },
+        { id: 'c1/1', parentToolCallId: 'c1', name: 'read', args: { path: 'huge.txt' }, output: 'z'.repeat(40_000), status: 'ok' }
+      ] },
+      { id: 'b1', role: 'bash', text: 'out'.repeat(100), bash: { command: 'npm test\n--watch' } },
+      { id: 'a3', role: 'assistant', text: 'done', toolCalls: [
+        { id: 'w1', name: 'web_fetch', args: { url: 'https://example.com' }, output: 'w'.repeat(2000), images: [{ mimeType: 'image/png', data: 'x' }], status: 'ok' }
+      ] }
+    ]
+    const anchors = turnAnchorIds(msgs)
+    ok(anchors.get('a2') === 'a1' && anchors.get('a1') === 'a1', '同一轮的助手消息都锚到这一轮的首条（TurnView 的 data-turn-id）', [...anchors])
+    ok(anchors.get('a3') === 'a3' && anchors.get('b1') === 'b1', '用户 / bash 消息切开新的一轮')
+    const top = largestToolCalls(msgs, msgs)
+    ok(top.map((r) => r.id).join() === 'w1,r1,c1,b1,g1', '按估算 token 从大到小排列', top.map((r) => `${r.id}:${r.tokens}`))
+    ok(!top.some((r) => r.id === 'c1/1'), 'codemode 子调用不单列（模型只收到父调用的结果）')
+    ok(top.find((r) => r.id === 'c1').target === 'const a = await read("x")', '脚本取首个非空行作目标', top.find((r) => r.id === 'c1'))
+    ok(top.find((r) => r.id === 'r1').target === 'ContextPane.tsx' && top.find((r) => r.id === 'r1').anchorId === 'a1', '文件工具显示文件名并锚到所属轮次')
+    ok(top.find((r) => r.id === 'b1').target === 'npm test' && top.find((r) => r.id === 'b1').anchorId === 'b1', '用户 bash 取命令首行，锚到自身')
+    ok(top.find((r) => r.id === 'w1').tokens === 500 + 1200 + Math.ceil(JSON.stringify({ url: 'https://example.com' }).length / 4), '图片按 1200 计入，口径与构成一致', top.find((r) => r.id === 'w1'))
+    ok(largestToolCalls(msgs, msgs, 2).length === 2, '条数有上限')
+    const sliced = largestToolCalls(msgs, msgs.slice(2))
+    ok(!sliced.some((r) => r.id === 'r1') && sliced.find((r) => r.id === 'c1')?.anchorId === 'a1', '只取上下文内的消息，锚点仍按完整会话计算', sliced)
+    const tools = contextBreakdown(msgs, 1_000_000).find((s) => s.id === 'tools').tokens
+    const listed = largestToolCalls(msgs, msgs, 99).reduce((n, r) => n + r.tokens, 0)
+    ok(tools === listed, '构成里的工具一栏与列表合计口径相同（子调用不重复计）', [tools, listed])
+    const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 200_000 }
+    const stats = { contextUsage: { tokens: 20_000, contextWindow: 200_000, modelKey: 'anthropic/claude-x' } }
+    ok(contextPaneToolCalls({ session: { model, lastCompaction: null }, stats, messages: msgs }).length === 5, '面板数据给出列表')
+    ok(contextPaneToolCalls({ session: { model, lastCompaction: null }, stats: null, messages: msgs }).length === 0, '没有可信总量时不列')
+    const live = contextPaneToolCalls({ session: { model, lastCompaction: null, isStreaming: true }, stats, messages: msgs })
+    ok(!live.some((r) => r.id === 'w1'), '输出中的末尾助手消息不计入（与构成同一范围）')
+  }
+
+  group('压缩记录：从会话条目读出')
+  {
+    const entries = [
+      { type: 'message', id: 'm1', parentId: null, message: { role: 'user', content: 'hi' } },
+      { type: 'compaction', id: 'k1', parentId: 'm1', timestamp: '2026-10-20T10:00:00.000Z', summary: 's'.repeat(400), firstKeptEntryId: 'm1', tokensBefore: 300_000 },
+      { type: 'message', id: 'm2', parentId: 'k1', message: { role: 'assistant', stopReason: 'error', usage: { input: 9, cacheRead: 0, cacheWrite: 0 } } },
+      { type: 'message', id: 'm3', parentId: 'm2', message: { role: 'assistant', usage: { input: 1000, cacheRead: 39_000, cacheWrite: 0, output: 50 } } },
+      { type: 'compaction', id: 'k2', parentId: 'm3', timestamp: '2026-10-21T10:00:00.000Z', summary: 'short', tokensBefore: 380_000 },
+      { type: 'compaction', id: 'kx', parentId: 'm1', timestamp: '2026-10-22T10:00:00.000Z', summary: 'other branch', tokensBefore: 1 },
+      { type: 'message', id: 'm4', parentId: 'k2', message: { role: 'user', content: 'next' } }
+    ]
+    const items = compactionHistory(entries, 'm4')
+    ok(items.map((i) => i.id).join() === 'k2,k1', '只取当前分支上的压缩，最新在上', items)
+    ok(items[1].tokensBefore === 300_000 && items[1].tokensAfter === 40_000, '压缩后取下一条正常助手回复的输入量（跳过报错回复）', items[1])
+    ok(items[0].tokensAfter === undefined && items[0].tokensBefore === 380_000, '还没有后续回复时只有压缩前', items[0])
+    ok(items[1].at === Date.parse('2026-10-20T10:00:00.000Z') && items[1].summaryTokens === 100, '时间与摘要大小', items[1])
+    ok(compactionReclaim(items[1]) === 87 && compactionReclaim(items[0]) === null, '回收比例')
+    ok(compactionHistory(entries, 'missing').length === 3, '叶子缺失时退回全部压缩条目')
+    ok(compactionHistory([], null).length === 0 && compactionHistory([null, 3, 'x'], null).length === 0, '空或异常条目不报错')
+    const asked = []
+    const loaded = await loadCompactionHistory(async (req) => { asked.push(req); return { ok: true, entries, leafId: 'm4' } }, 'sid')
+    ok(loaded.ok && loaded.items.length === 2 && asked[0].action === 'entries' && asked[0].expectedSessionId === 'sid', '读取带上会话归属', asked)
+    const failed = await loadCompactionHistory(async () => { throw new Error('boom') }, 'sid')
+    ok(!failed.ok && failed.error === 'boom', '读取失败返回错误供界面回退')
+  }
+
+  group('上下文页签数据：构成、压缩过滤')
   {
     const model = { provider: 'anthropic', id: 'claude-x', contextWindow: 10_000 }
     const session = { model, lastCompaction: null }
@@ -171,22 +265,13 @@ async function main() {
     ok(data.slices.length === 5, '构成分五类（系统 / 用户 / 助手 / 思考 / 工具）', data.slices)
     const sumParts = data.slices.reduce((n, s) => n + s.tokens, 0)
     ok(Math.abs(sumParts - 1000) <= 4, '分类估算合计贴近 agent 总量（去掉四舍五入误差）', sumParts)
-    const tools = data.occupancy.find((r) => r.id === 'tools')
-    const files = data.occupancy.find((r) => r.id === 'files')
-    ok(tools && tools.count === 1, '工具结果按 toolCalls 计数', tools)
-    ok(files && files.count === 1 && files.tokens === 1200, '文件 / 图片按附件数估算（单图 1200）', files)
 
     const unknown = contextPaneData({
       session,
       stats: { contextUsage: { tokens: null, contextWindow: 10_000, percent: null, modelKey: 'anthropic/claude-x' } },
       messages
     })
-    ok(unknown.slices.length === 0 && unknown.occupancy.length === 0, '没有可信总量时不画构成与明细')
-
-    const filtered = contextOccupancy([messages[1]], [{ id: 'tools', tokens: 5 }])
-    ok(filtered.find((r) => r.id === 'files').count === 0, '不在上下文里的附件不计入')
-    ok(filtered.find((r) => r.id === 'tools').count === 1, '上下文里的工具结果仍计入')
-    ok(filtered.find((r) => r.id === 'tools').tokens === 5, '工具结果 token 用分类里的工具值')
+    ok(unknown.slices.length === 0, '没有可信总量时不画构成')
 
     const kept = [
       { id: 'u0', entryId: 'e0', role: 'user', text: 'old', timestamp: 10 },

@@ -1,0 +1,117 @@
+@layer features {
+  .wb-rail-stats {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-10);
+    min-width: 0;
+  }
+
+  .wb-rs-block {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-6);
+    min-width: 0;
+  }
+
+  .wb-rs-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .wb-rs-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-rs-total {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--s-4);
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .wb-rs-big {
+    font-size: var(--t-title);
+    line-height: var(--t-title-lh);
+    font-weight: var(--w-semibold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+
+  .wb-rs-unit {
+    font-size: var(--t-footnote);
+    font-weight: var(--w-regular);
+    color: var(--fg3);
+  }
+
+  .wb-rs-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--t-footnote);
+    color: var(--fg2);
+  }
+
+  .wb-rs-strong {
+    flex: none;
+    min-width: 7ch;
+    text-align: right;
+    white-space: nowrap;
+    font-size: var(--t-body);
+    font-weight: var(--w-semibold);
+    color: var(--fg);
+  }
+
+  .wb-rs-note {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    color: var(--fg3);
+  }
+
+  .wb-rs-line > .wb-rs-note {
+    flex: none;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .wb-rs-legend {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .wb-rs-legend > li {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) minmax(6ch, auto);
+    align-items: center;
+    gap: var(--s-8);
+    min-width: 0;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    color: var(--fg2);
+  }
+
+  .wb-rs-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-rs-val {
+    text-align: right;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+}

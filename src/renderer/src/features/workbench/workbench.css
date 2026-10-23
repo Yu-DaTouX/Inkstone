@@ -461,7 +461,7 @@
     height: 100%;
     min-height: 0;
     overflow-y: auto;
-    padding-right: var(--s-4);
+    padding: 0 var(--s-12) var(--s-12);
   }
 
   .wb-ctx-block {
@@ -560,6 +560,62 @@
 
   .wb-ctx-record {
     color: var(--fg2);
+  }
+
+  .wb-ctx-tools {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .wb-ctx-tool {
+    width: calc(100% + 2 * var(--s-4));
+    min-height: 24px;
+    justify-content: flex-start;
+    margin: 0 calc(-1 * var(--s-4));
+    padding: 0 var(--s-4);
+    font-size: var(--t-footnote);
+  }
+
+  .wb-ctx-tool > .ui-btn__label {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-8);
+  }
+
+  .wb-ctx-tool-target,
+  .wb-ctx-history-detail {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  .wb-ctx-tool-num {
+    text-align: right;
+  }
+
+  .wb-ctx-rows li > :first-child {
+    flex: none;
+  }
+
+  .wb-ctx-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-8);
+  }
+
+  .wb-ctx-more,
+  .wb-ctx-settings {
+    align-self: flex-start;
+    margin-left: calc(-1 * var(--s-6));
   }
 
   .wb-pane-block button {
@@ -760,13 +816,22 @@
 
   .wb-tile-summary {
     flex: 0 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
     min-width: 0;
     margin-left: auto;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--t-body);
     font-variant-numeric: tabular-nums;
+  }
+
+  .wb-rail-glance {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
   }
 
   .wb-tile-open {
@@ -778,22 +843,8 @@
     .wb-tile-head {
       position: relative;
     }
-    .wb-tile-open {
-      position: absolute;
-      top: 50%;
-      right: 0;
-      opacity: 0;
-      transform: translateY(-50%);
-      transition: opacity var(--dur-fast) ease;
-    }
     .wb-tile-summary {
       transition: opacity var(--dur-fast) ease;
-    }
-    .wb-tile:is(:hover, :focus-within) .wb-tile-open {
-      opacity: 1;
-    }
-    .wb-tile:is(:hover, :focus-within):has(.wb-tile-open) .wb-tile-summary {
-      opacity: 0;
     }
     .wb-rail-grip {
       position: absolute;
@@ -839,45 +890,16 @@
     list-style: none;
   }
 
-  .wb-ov-item {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    min-width: 0;
-    min-height: 24px;
+  .wb-rail-more {
+    align-self: flex-start;
+    margin-left: calc(-1 * var(--s-4));
+    padding: 0 var(--s-4);
   }
 
-  .wb-ov-item-icon {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-  }
-
-  .wb-ov-item-label {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .wb-ov-item-value {
-    flex: 1 1 0;
-    min-width: 0;
-    overflow: hidden;
-    text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .wb-ov-dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: var(--r-full);
+  @media (hover: hover) {
+    .ui-rail-row:not(:hover, :focus-within) .wb-rail-dismiss {
+      opacity: 0;
+    }
   }
 
   .wb-ov-note {
@@ -1104,37 +1126,6 @@
     cursor: grabbing;
   }
 
-  .wb-rail-row {
-    min-height: 0;
-  }
-
-  .wb-rail-row-btn {
-    flex: 1;
-    min-width: 0;
-    min-height: 24px;
-    justify-content: flex-start;
-    margin-left: calc(-1 * var(--s-4));
-    padding: 0 var(--s-4);
-  }
-
-  .wb-rail-row-btn > .ui-btn__label {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-  }
-
-  .wb-rail-delta {
-    display: inline-flex;
-    gap: var(--s-6);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .wb-rail-commit {
-    align-self: flex-start;
-  }
-
   .wb-rail-check {
     display: inline-flex;
     width: 14px;
@@ -1158,14 +1149,8 @@
   }
 
   .wb-tile-chevron,
-  .wb-ov-item-icon,
-  .wb-ov-item-value,
   .wb-ov-note {
     color: var(--fg3);
-  }
-
-  .wb-ov-item-icon {
-    color: var(--fg2);
   }
 
   .wb-tile-title {
@@ -1178,36 +1163,8 @@
     }
   }
 
-  .wb-tile[data-tone='ask'] .wb-tile-summary {
-    color: var(--ask-t);
-  }
-
-  .wb-tile[data-tone='fail'] .wb-tile-summary {
-    color: var(--fail-t);
-  }
-
   .wb-tile-summary {
     color: var(--fg2);
-  }
-
-  .wb-ov-dot {
-    background: var(--fg3);
-  }
-
-  .wb-ov-dot.is-run {
-    background: var(--run);
-  }
-
-  .wb-ov-dot.is-ok {
-    background: var(--add);
-  }
-
-  .wb-ov-dot.is-warn {
-    background: var(--stall);
-  }
-
-  .wb-ov-dot.is-err {
-    background: var(--fail);
   }
 
   .wb-bg-section-title,
@@ -1250,13 +1207,5 @@
 
   .wb-tile[data-dragging='1'] {
     box-shadow: var(--shadow-pop);
-  }
-
-  .wb-rail-added {
-    color: var(--add);
-  }
-
-  .wb-rail-removed {
-    color: var(--del);
   }
 }

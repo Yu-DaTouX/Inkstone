@@ -4,6 +4,7 @@ import { listRemotes, runGitAction } from '../git-actions'
 import { listUntracked, listWorktrees } from '../git-worktree'
 import { readChanges, readFileDiff } from '../git-inspect'
 import { readRemoteIdentity } from '../git-remote-identity'
+import { screenPaths } from '../git-path-screen'
 import type { AuthorizeReadCwd } from '../git-inspect'
 import type { GitChangesScope } from '../../shared/git'
 
@@ -191,6 +192,15 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       return await readRemoteIdentity(auth.cwd, { refresh: refresh === true })
     } catch {
       return null
+    }
+  })
+  handle('yan:git:screenPaths', async (cwd: string, paths?: unknown) => {
+    try {
+      const auth = await authorizeReadCwd(String(cwd ?? ''))
+      if (!auth.ok) return { ignored: [], missing: [] }
+      return await screenPaths(auth.cwd, Array.isArray(paths) ? paths : [])
+    } catch {
+      return { ignored: [], missing: [] }
     }
   })
   handle('yan:git:remotes', async (cwd: string) => {
