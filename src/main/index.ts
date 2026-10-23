@@ -2310,16 +2310,22 @@ function registerIpc(): void {
     if (!id || !registry || !agent) return { ok: false, error: 'pi 未运行' }
     let admissionToken: number | undefined
     let handedOff = false
+    const idleForTurn = (): boolean => {
+      const state = agent.getState()
+      return !!state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !state.pendingMessageCount && !agent.hasRunningBash()
+    }
+    if (!mode && text.trim() && idleForTurn()) {
+      const admission = registry.admitExecute(id)
+      if (!admission.ok) return admission
+      admissionToken = admission.token
+    }
     try {
-      if (!mode && text.trim() && (await getSettings()).checkpointsEnabled !== false) {
+      if (admissionToken !== undefined && (await getSettings()).checkpointsEnabled !== false) {
         if (sendOwnershipChanged(id) || runners !== registry) {
           return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
         }
         const state = agent.getState()
-        if (state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !state.pendingMessageCount && !agent.hasRunningBash()) {
-          const admission = registry.admitExecute(id)
-          if (!admission.ok) return admission
-          admissionToken = admission.token
+        if (state && idleForTurn()) {
           const release = reserveWorkspaceMutation(agent.workingDirectory)
           if (!release) return { ok: false, error: '项目正在保存或回退代码，请稍后发送；草稿已保留' }
           try {

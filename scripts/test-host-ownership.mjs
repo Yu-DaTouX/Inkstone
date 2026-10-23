@@ -175,6 +175,7 @@ export async function runHostOwnershipTests(ok) {
       startAgent: async () => ({ ok: true }),
       getSettings: () => gate.promise,
       captureCheckpoint: (...args) => { checkpoints.push(args) },
+      reserveWorkspaceMutation: () => () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)
@@ -224,46 +225,49 @@ export async function runHostOwnershipTests(ok) {
     env.gate.resolve({ checkpointsEnabled: true })
     const res = await sending
     const after = env.registry.runtimeOf(id)
-    ok(reused.via === 'reuse' && after.generation !== before.generation,
-      `[handler] ${label}复用前置：同 runId 换了代次`, JSON.stringify({ before, after, via: reused.via }))
-    ok(res.ok === false && env.deliveries.length === 0,
-      `[handler] runId-only + ${label}复用 → 零派发（拒绝）`, JSON.stringify({ res, deliveries: env.deliveries }))
-    ok(env.checkpoints.length === 0, `[handler] runId-only + ${label}复用 → 零检查点副作用`)
+    ok(reused.runId !== id && after.generation === before.generation,
+      `[handler] ${label}选择不会复用正在发送的实例`, JSON.stringify({ before, after, via: reused.via, runId: reused.runId }))
+    ok(res.ok === true && env.deliveries.length === 1 && env.deliveries[0].sessionId === 'sess-A',
+      `[handler] runId-only + 发送途中${label}选择 → 仍发给 A`, JSON.stringify({ res, deliveries: env.deliveries }))
+    ok(env.checkpoints.length === 1 && env.checkpoints[0][1] === 'sess-A', `[handler] runId-only + 发送途中${label}选择 → 检查点归 A`)
   }
 
-  for (const [label, reuse] of [['同 cwd', reuseSameCwd], ['跨 cwd', reuseCrossCwd]]) {
-    const env = makeSendEnv()
-    await seedSend(env.registry)
-    const sending = env.sendUser('A-msg', undefined, undefined, undefined)
-    await reuse(env.registry)
-    env.gate.resolve({ checkpointsEnabled: true })
-    const res = await sending
-    ok(res.ok === false && env.deliveries.length === 0,
-      `[handler] 缺省 expected + ${label}复用 → 零派发`, JSON.stringify({ res, deliveries: env.deliveries }))
-    ok(env.checkpoints.length === 0, `[handler] 缺省 expected + ${label}复用 → 零检查点副作用`)
-  }
-  for (const [label, reuse] of [['同 cwd', reuseSameCwd], ['跨 cwd', reuseCrossCwd]]) {
+  const stopDuringSend = async (expectedFor, label) => {
     const env = makeSendEnv()
     const id = await seedSend(env.registry)
-    const sending = env.sendUser('A-msg', undefined, undefined, { sessionId: `pending:${id}` })
-    await reuse(env.registry)
+    const runtime = env.registry.runtimeOf(id)
+    const sending = env.sendUser('A-msg', undefined, undefined, expectedFor(id, runtime))
+    await env.registry.stopOne(id)
+    await env.registry.select({ cwd: 'C:/other', sessionFile: 'C:/other/B.jsonl' })
     env.gate.resolve({ checkpointsEnabled: true })
     const res = await sending
     ok(res.ok === false && env.deliveries.length === 0,
-      `[handler] pending-only + ${label}复用 → 零派发`, JSON.stringify({ res, deliveries: env.deliveries }))
-    ok(env.checkpoints.length === 0, `[handler] pending-only + ${label}复用 → 零检查点副作用`)
+      `[handler] ${label} + 发送途中实例被停止 → 零派发`, JSON.stringify({ res, deliveries: env.deliveries }))
+    ok(env.checkpoints.length === 0, `[handler] ${label} + 发送途中实例被停止 → 零检查点副作用`)
+    ok(!env.registry.hasExecutionAdmission('C:/proj'), `[handler] ${label} + 发送途中实例被停止 → 不残留执行准入`)
   }
+  await stopDuringSend((id) => ({ runId: id }), 'runId-only')
+  await stopDuringSend(() => undefined, '缺省 expected')
+  await stopDuringSend((id) => ({ sessionId: `pending:${id}` }), 'pending-only')
+  await stopDuringSend((id, runtime) => ({ runId: id, generation: runtime.generation, sessionId: runtime.sessionId }), '完整 tuple')
 
   {
     const env = makeSendEnv()
     const id = await seedSend(env.registry)
-    const runtime = env.registry.runtimeOf(id)
-    const sending = env.sendUser('A-msg', undefined, undefined, { runId: id, generation: runtime.generation, sessionId: runtime.sessionId })
-    await reuseCrossCwd(env.registry)
+    const sending = env.sendUser('A-msg', undefined, undefined, { runId: id })
+    env.gate.resolve({ checkpointsEnabled: false })
+    const res = await sending
+    ok(res.ok === true && env.deliveries.length === 1 && env.checkpoints.length === 0,
+      '[handler] 关闭检查点时照常发送且不写检查点', JSON.stringify({ res, deliveries: env.deliveries }))
+  }
+  {
+    const env = makeSendEnv()
+    const id = await seedSend(env.registry)
+    env.registry.agentOf(id).send = async () => ({ ok: false, error: 'boom' })
+    const sending = env.sendUser('A-msg', undefined, undefined, { runId: id })
     env.gate.resolve({ checkpointsEnabled: true })
     const res = await sending
-    ok(res.ok === false && env.deliveries.length === 0,
-      '[handler] 完整 tuple + 复用 → 零派发（负对照保持）', JSON.stringify({ res, deliveries: env.deliveries }))
+    ok(res.ok === false && !env.registry.hasExecutionAdmission('C:/proj'), '[handler] 发送失败时释放执行准入', JSON.stringify(res))
   }
 
   {
@@ -274,6 +278,7 @@ export async function runHostOwnershipTests(ok) {
       startAgent: async () => ({ ok: true }),
       getSettings: () => Promise.resolve({ checkpointsEnabled: true }),
       captureCheckpoint: () => {},
+      reserveWorkspaceMutation: () => () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)
