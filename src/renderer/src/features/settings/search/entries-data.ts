@@ -42,6 +42,7 @@ export const DATA_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   { id: 'data-backup-create', section: 'data', zh: '创建备份', en: 'Create backup', keywords: ['备份', 'backup'] },
+  { id: 'data-backup-restore', section: 'data', zh: '恢复备份', en: 'Restore backup', keywords: ['恢复', '还原', 'restore', 'recovery'] },
   {
     id: 'data-location',
     section: 'data',
