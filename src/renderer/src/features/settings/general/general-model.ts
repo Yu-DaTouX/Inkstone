@@ -1,3 +1,4 @@
+import type { AppUpdateStatus } from '../../../../../shared/app-update'
 import type { SoundSettings } from '../../../../../shared/ipc'
 import type { PermissionMode } from '../../../../../shared/approval'
 
@@ -67,4 +68,20 @@ export function piSourceLabel(source: string | undefined): string {
     default:
       return '—'
   }
+}
+
+export function updatePercent(status: AppUpdateStatus | null): number | null {
+  if (status?.phase !== 'downloading') return null
+  const value = Number(status.percent)
+  return Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : 0
+}
+
+export function updateStatusDetail(status: AppUpdateStatus | null): string {
+  if (!status) return ''
+  const parts: string[] = []
+  if (status.latest && ['available', 'downloading', 'downloaded', 'manual'].includes(status.phase)) parts.push(status.latest)
+  const percent = updatePercent(status)
+  if (percent !== null) parts.push(`${percent}%`)
+  if (status.phase === 'error' && status.error) parts.push(status.error)
+  return parts.join(' · ')
 }

@@ -118,4 +118,9 @@
     width: 280px;
     max-width: 100%;
   }
+
+  .about-update-progress {
+    margin-top: var(--s-6);
+    max-width: 320px;
+  }
 }

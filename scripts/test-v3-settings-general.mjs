@@ -115,6 +115,16 @@ async function main() {
     assert.equal(Model.permissionNeedsConfirm('danger'), false)
     assert.equal(Model.piSourceLabel('bundled'), 'bundled')
     assert.equal(Model.piSourceLabel(undefined), '—')
+    const base = { current: '0.10.0', automatic: true, packaged: true, releaseUrl: '' }
+    assert.equal(Model.updatePercent({ ...base, phase: 'downloading', percent: 42.6 }), 43, '下载进度取整')
+    assert.equal(Model.updatePercent({ ...base, phase: 'downloading' }), 0, '刚开始下载时进度为 0')
+    assert.equal(Model.updatePercent({ ...base, phase: 'downloading', percent: 180 }), 100, '进度不超过 100')
+    assert.equal(Model.updatePercent({ ...base, phase: 'available', percent: 50 }), null, '不在下载时不显示进度')
+    assert.equal(Model.updatePercent(null), null)
+    assert.equal(Model.updateStatusDetail({ ...base, phase: 'downloading', latest: '0.11.0', percent: 42.6 }), '0.11.0 · 43%', '下载中显示目标版本与百分比')
+    assert.equal(Model.updateStatusDetail({ ...base, phase: 'available', latest: '0.11.0' }), '0.11.0', '有新版本时显示版本号')
+    assert.equal(Model.updateStatusDetail({ ...base, phase: 'error', error: 'GitHub HTTP 403' }), 'GitHub HTTP 403', '失败时显示原因')
+    assert.equal(Model.updateStatusDetail({ ...base, phase: 'current', latest: '0.10.0' }), '', '已是最新时不重复版本号')
     assert.equal(Model.GENERAL_LEGACY_MAP.workspace, 'session')
 
     const zh = General.generalText('zh-CN')
