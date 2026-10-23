@@ -1,6 +1,6 @@
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
-import { app, shell, BrowserWindow, clipboard, ClipboardItem, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
 import { openBlockedByExtension } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
@@ -143,6 +143,7 @@ import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
 let exitReason: string | undefined
+let exitSource: string | undefined
 
 function crashLogDir(): string {
   const dir = join(YAN_DIR, 'logs')
@@ -181,15 +182,18 @@ function reportMainError(kind: string, error: unknown): void {
 
 process.on('exit', (code) => {
   try {
-    writeFileSync(join(crashLogDir(), 'last-exit.json'), JSON.stringify({
+    const record = JSON.stringify({
       at: Date.now(),
       code,
       reason: exitReason ?? 'unspecified',
+      source: exitSource ?? null,
       shuttingDown,
       quitting: isQuitting,
       windows: BrowserWindow.getAllWindows().length,
       uptime: Math.round(process.uptime())
-    }), 'utf8')
+    })
+    writeFileSync(join(crashLogDir(), 'last-exit.json'), record, 'utf8')
+    appendFileSync(join(crashLogDir(), 'exit-history.jsonl'), `${record}\n`, 'utf8')
   } catch {
   }
 })
@@ -228,6 +232,11 @@ if (ELECTRON_USER_DATA_DIR) {
 }
 if (ELECTRON_CRASH_DUMPS_DIR) {
   app.setPath('crashDumps', ELECTRON_CRASH_DUMPS_DIR)
+}
+try {
+  crashReporter.start({ uploadToServer: false, compress: true })
+} catch (error) {
+  reportMainError('crash-reporter', error)
 }
 if (DOWNLOADS_DIR) {
   app.setPath('downloads', DOWNLOADS_DIR)
@@ -761,7 +770,7 @@ attention = createAttentionService({
     showMainWindow()
     push({ ch: 'tray-select-session', payload: target })
   },
-  quit: () => void requestExit(),
+  quit: () => void requestExit({ source: 'tray' }),
   onThemeChange: (listener) => {
     nativeTheme.on('updated', listener)
     return () => nativeTheme.removeListener('updated', listener)
@@ -1476,9 +1485,10 @@ async function dispatchControlCommand(command: ControlCommand): Promise<void> {
   }
 }
 
-function requestExit(options: { relaunch?: boolean } = {}): Promise<ExitResult> {
+function requestExit(options: { relaunch?: boolean; source?: string } = {}): Promise<ExitResult> {
   if (isQuitting) return Promise.resolve({ action: 'already-exiting' })
   if (exitRequestInFlight) return exitRequestInFlight
+  exitSource = options.source ?? 'unknown'
 
   const task: Promise<ExitResult> = (async (): Promise<ExitResult> => {
     const activity = quitActivity()
@@ -2816,7 +2826,7 @@ function registerIpc(): void {
   handle('yan:storage:schedule', async (target: string, relaunch?: boolean) => {
     const r = await scheduleStorageMove(String(target ?? ''))
     if (!r.ok || !relaunch) return r
-    const exit = await requestExit({ relaunch: true })
+    const exit = await requestExit({ relaunch: true, source: 'storage-relaunch' })
     if (exit.action === 'cancelled') {
       cancelStorageMove()
       return { ok: false, error: '仍有会话在运行，已取消迁移' }
@@ -2945,7 +2955,7 @@ function registerIpc(): void {
     win.isMaximized() ? win.unmaximize() : win.maximize()
   })
   ipcMain.on('win:close', (event) => { if (isTrustedIpc(event)) win?.close() })
-  rawHandle('win:requestExit', async () => requestExit())
+  rawHandle('win:requestExit', async () => requestExit({ source: 'ipc' }))
   rawHandle('win:lifecycle', () => ({
     tray: attention?.hasTray() ?? false,
     visible: !!win && !win.isDestroyed() && win.isVisible(),
@@ -3288,7 +3298,7 @@ function createWindow(): void {
     mcpAppViewService?.close()
     trayMotionAllowed = false
     refreshTaskbar()
-    console.error('[renderer gone]', details.reason)
+    reportMainError('render-process-gone', new Error(`${details.reason} code=${details.exitCode}`))
   })
   win.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace) return
@@ -3729,7 +3739,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (e) => {
   if (!shuttingDown && needsQuitConfirm({ quitting: isQuitting, reasons: quitReasons(quitActivity()), hasWindow: !!win && !win.isDestroyed() })) {
     e.preventDefault()
-    void requestExit()
+    void requestExit({ source: 'before-quit' })
     return
   }
   isQuitting = true
