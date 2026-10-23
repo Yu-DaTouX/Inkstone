@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
@@ -59,7 +59,41 @@ try {
   await real.close()
   assert.equal(real.running, false, '结束时进程已收尾')
 
+  const grandchildPidFile = resolve(dir, 'grandchild.pid')
+  const stubbornPath = resolve(dir, 'stubborn-pi.mjs')
+  const holderPath = resolve(dir, 'mcp-holder.mjs')
+  await writeFile(holderPath, `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(grandchildPidFile)}, String(process.pid))\nsetInterval(() => {}, 1000)\n`)
+  await writeFile(
+    stubbornPath,
+    [
+      "import { spawn } from 'node:child_process'",
+      process.platform === 'win32'
+        ? `spawn('cmd.exe', ['/d', '/s', '/c', ${JSON.stringify(`""${process.execPath}" "${holderPath}""`)}], { stdio: 'ignore', windowsVerbatimArguments: true, windowsHide: true })`
+        : `spawn(process.execPath, [${JSON.stringify(holderPath)}], { stdio: 'ignore' })`,
+      "process.stdin.resume()",
+      "setInterval(() => {}, 1000)"
+    ].join('\n')
+  )
+  const stubborn = new PiRpc({ cwd: dir, piBin: stubbornPath })
+  stubborn.spawn()
+  let grandchildPid = 0
+  for (let i = 0; i < 100 && !grandchildPid; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    grandchildPid = Number(await readFile(grandchildPidFile, 'utf8').catch(() => '0'))
+  }
+  if (!grandchildPid) await stubborn.close()
+  assert.ok(grandchildPid > 0, '模拟 pi 已启动自己的子进程')
+  await stubborn.close()
+  const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
+  let gone = false
+  for (let i = 0; i < 60 && !gone; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    gone = !alive(grandchildPid)
+  }
+  if (!gone) process.kill(grandchildPid)
+  assert.ok(gone, 'pi 不响应关闭时连同它启动的子进程一起结束')
+
   console.log('test-rpc-lifecycle: 全部通过')
 } finally {
-  await rm(dir, { recursive: true, force: true })
+  await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
 }

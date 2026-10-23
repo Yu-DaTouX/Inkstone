@@ -6,6 +6,7 @@ import { join, delimiter, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PiInfo, PiSource, PiProbe, RpcResponse } from '../shared/ipc'
 import { selectedPiRuntime } from './pi-runtime-location'
+import { killPidTree } from './git-service'
 import { ignoresElectronRunAsNode, runtimeProbe, type PiRpcRuntime } from './pi-runtime-launch'
 
 export type { PiRpcRuntime }
@@ -498,10 +499,12 @@ export class PiRpc extends EventEmitter {
       }
 
       timer = setTimeout(() => {
-        try {
-          child.kill()
-        } catch {
-        }
+        killPidTree(child.pid, () => {
+          try {
+            child.kill()
+          } catch {
+          }
+        })
         finish()
       }, 1500)
       timer.unref?.()
