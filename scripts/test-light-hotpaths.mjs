@@ -47,7 +47,7 @@ try {
 
   let sent, captured = 0, aborted = 0
   let busyElsewhere = false
-  const agent = { running: true, workingDirectory: temp, getState: () => ({ sessionId: 'session-a' }),
+  const agent = { running: true, workingDirectory: temp, getState: () => ({ sessionId: 'session-a' }), hasRunningBash: () => false,
     send: (...args) => { sent = args; return { ok: true } }, abort: async () => { aborted++; return { steering: ['queued'], followUp: [] } } }
   const runners = {
     activeRunnerId: 'a',
@@ -59,9 +59,11 @@ try {
         target ? { runnerId: id, cwd: target.workingDirectory, selfBusy: target.getState()?.isAgentRunning === true } : null,
         () => busyElsewhere
       )
-    }
+    },
+    admitExecute: () => ({ ok: true, token: 1 }),
+    releaseExecute: () => {}
   }
-  const ports = { runners,
+  const ports = { runners, reserveWorkspaceMutation: () => () => {},
     getSettings: async () => ({ checkpointsEnabled: true }), captureCheckpoint: async () => { captured++ }, ac: () => agent,
     startAgent: async () => { throw Error('unexpected restart') } }
   const send = await compileHandler('send', "  handle('yan:steer'", ports)
