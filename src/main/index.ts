@@ -93,6 +93,7 @@ import { registerCanvasCaptureIpc } from './ipc/canvas-capture-ipc'
 import { registerHtmlEditIpc } from './ipc/html-edit-ipc'
 import { registerVideoExportIpc } from './ipc/video-export-ipc'
 import { captureCheckpoint, pruneCheckpoints } from './checkpoints'
+import { reserveWorkspaceMutation } from './workspace-mutation'
 import type { SessionHost } from './session-host'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerWorkspaceIpc } from './ipc/workspace-ipc'
@@ -1901,9 +1902,11 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       })
       return { cwd: outcome.record.worktree }
     },
-    createAgent: (id, cwd, generation) =>
-      new AgentController({
-        push: (m) => pushFrom(id, m),
+    createAgent: (id, cwd, generation) => {
+      const agent: AgentController = new AgentController({
+        push: (m) => {
+          if (runners?.agentOf(id) === agent) pushFrom(id, m)
+        },
         observeRun: runsHost?.observerFor({ generation }) ?? undefined,
         cwd,
         piBin: settings.piBin,
@@ -2107,7 +2110,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           if (choice?.choice !== 'deny') return null
           return choice.feedback ? { decision: 'deny', feedback: choice.feedback } : { decision: 'deny' }
         }
-      }),
+      })
+      return agent
+    },
     onChanged: () => {
       pushRunners()
       scheduleEpochSnapshots()
@@ -2270,20 +2275,39 @@ function registerIpc(): void {
       const guard = runners?.guardExecute(id)
       if (guard && !guard.ok) return guard
     }
-    if (id && !mode && text.trim()) {
-      const agent = runners?.agentOf(id)
-      const state = typeof agent?.getState === 'function' ? agent.getState() : null
-      if (agent && state && !state.isAgentRunning && (await getSettings()).checkpointsEnabled !== false) {
-        if (sendOwnershipChanged(id)) {
+    const registry = runners
+    const agent = id ? registry?.agentOf(id) : null
+    if (!id || !registry || !agent) return { ok: false, error: 'pi 未运行' }
+    let admissionToken: number | undefined
+    let handedOff = false
+    try {
+      if (!mode && text.trim() && (await getSettings()).checkpointsEnabled !== false) {
+        if (sendOwnershipChanged(id) || runners !== registry) {
           return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
         }
-        void captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
+        const state = agent.getState()
+        if (state && !state.isAgentRunning && !state.isStreaming && !state.isCompacting && !state.pendingMessageCount && !agent.hasRunningBash()) {
+          const admission = registry.admitExecute(id)
+          if (!admission.ok) return admission
+          admissionToken = admission.token
+          const release = reserveWorkspaceMutation(agent.workingDirectory)
+          if (!release) return { ok: false, error: '项目正在保存或回退代码，请稍后发送；草稿已保留' }
+          try {
+            await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
+          } finally {
+            release()
+          }
+        }
       }
+      if (sendOwnershipChanged(id) || runners !== registry) {
+        return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
+      }
+      const result = await agent.send(text, images, mode, undefined, pin?.generation)
+      handedOff = result.ok
+      return result
+    } finally {
+      if (admissionToken !== undefined && !handedOff) registry.releaseExecute(id, admissionToken)
     }
-    if (sendOwnershipChanged(id)) {
-      return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
-    }
-    return (id ? runners?.agentOf(id)?.send(text, images, mode) : undefined) ?? { ok: false, error: 'pi 未运行' }
   })
 
   handle('yan:steer', async (text: string, expectedInput?: unknown) => {

@@ -541,6 +541,7 @@ export class AgentController extends EventEmitter {
     toolOpen?: boolean
   } | null = null
   private agentRunning = false
+  private pendingAborts = 0
   private streamLoopDetector: StreamLoopDetector | null = null
   private loopGuardTripped = false
   private loopGuardAbortSent = false
@@ -3000,17 +3001,19 @@ export class AgentController extends EventEmitter {
     if (!this.state) return
     this.state = { ...this.state, isAgentRunning: v }
     this.push({ ch: 'state', payload: this.state })
-    if (!v && this.state.isStreaming !== true && this.state.isCompacting !== true &&
+    if (!v && this.pendingAborts === 0 && this.state.isStreaming !== true && this.state.isCompacting !== true &&
       !this.queueState.steering.length && !this.queueState.followUp.length) {
       this.releaseExecutionAdmission()
     }
   }
 
   private executionActive(): boolean {
-    return this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null
+    return this.pendingAborts > 0 || this.agentRunning || this.state?.isStreaming === true || this.state?.isCompacting === true || this.bash != null
   }
 
   private claimExecutionAdmission(): { ok: true } | { ok: false; error: string } {
+    if (this.pendingAborts > 0) return { ok: false, error: '正在等待停止确认，请稍后执行' }
+    if (workspaceMutationInProgress(this.cwd)) return { ok: false, error: '项目正在保存或回退代码，请稍后执行' }
     const port = this.capabilityOpts?.execution
     if (!port) return { ok: true }
     if (this.executionAdmissionToken !== undefined) return { ok: true }
@@ -3028,6 +3031,7 @@ export class AgentController extends EventEmitter {
   }
 
   private releaseExecutionAdmission(): void {
+    if (this.pendingAborts > 0) return
     const token = this.executionAdmissionToken
     this.executionAdmissionToken = undefined
     if (this.executionAdmissionTimer) {
@@ -3501,9 +3505,10 @@ export class AgentController extends EventEmitter {
     text: string,
     images?: { data: string; mimeType: string }[],
     mode?: 'steer' | 'followUp',
-    autoContinue?: AutoContinueScope
+    autoContinue?: AutoContinueScope,
+    expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
-    return this.withOperation('send', undefined, () => this.sendClaimed(text, images, mode, autoContinue))
+    return this.withOperation('send', expectGeneration, () => this.sendClaimed(text, images, mode, autoContinue))
   }
 
   private async sendClaimed(
@@ -3751,6 +3756,16 @@ export class AgentController extends EventEmitter {
 
   async abort(expectGeneration?: number): Promise<QueueSnapshot & { error?: string }> {
     if (!generationMatches(expectGeneration, this.capabilityOpts?.runnerGeneration)) return { steering: [], followUp: [], error: GENERATION_MISMATCH_ERROR }
+    this.pendingAborts += 1
+    try {
+      return await this.abortCurrent()
+    } finally {
+      this.pendingAborts -= 1
+      this.settleExecutionAdmission()
+    }
+  }
+
+  private async abortCurrent(): Promise<QueueSnapshot & { error?: string }> {
     this.loopGuardContinuationVersion += 1
     if (this.loopGuardStopping || this.loopGuardAbortSent) {
       await this.loopGuardStopTask
@@ -3759,6 +3774,10 @@ export class AgentController extends EventEmitter {
     this.cancelImages()
     this.cancelApprovals?.()
     this.turn.terminal = 'stopped'
+    const rpc = this.rpc
+    const generation = this.capabilityOpts?.runnerGeneration
+    const sessionId = this.state?.sessionId
+    const current = () => this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId
     let cleared: QueueSnapshot = { steering: [], followUp: [] }
     try {
       await this.queueRun(async () => {
@@ -3772,6 +3791,22 @@ export class AgentController extends EventEmitter {
         return result
       })
     } catch {
+    }
+
+    if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
+    try {
+      if (this.bash && rpc) {
+        const result = await rpc.command('abort_bash')
+        if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
+        if (!result.success) return { ...cleared, error: result.error ?? '命令停止尚未确认' }
+      }
+      if (!this.loopGuardAbortSent && rpc) {
+        const result = await rpc.command('abort')
+        if (!current()) return { ...cleared, error: GENERATION_MISMATCH_ERROR }
+        if (!result.success) return { ...cleared, error: result.error ?? '会话停止尚未确认' }
+      }
+    } catch (error) {
+      return { ...cleared, error: error instanceof Error ? error.message : String(error) }
     }
 
     const stoppedAt = Date.now()
@@ -3834,12 +3869,10 @@ export class AgentController extends EventEmitter {
           }
         }
       })
-      await this.rpc?.command('abort_bash').catch(() => null)
     }
 
     this.markStreaming(false)
     this.setAgentRunning(false)
-    if (!this.loopGuardAbortSent) await this.rpc?.command('abort').catch(() => null)
     void this.refreshState()
 
     return cleared
@@ -4192,6 +4225,11 @@ export class AgentController extends EventEmitter {
     const payload: Record<string, unknown> = trimmed ? { customInstructions: trimmed } : {}
     const admission = this.operations.acquire('compact', this.capabilityOpts?.runnerGeneration)
     if (!admission.ok) return { ok: false, error: admission.error }
+    const execution = this.claimExecutionAdmission()
+    if (!execution.ok) {
+      this.operations.release(admission.lease)
+      return execution
+    }
     let res: Awaited<ReturnType<PiRpc['command']>>
     try {
       res = await this.requireRpc().command('compact', payload, { timeoutMs: COMPACT_REQUEST_TIMEOUT_MS })
@@ -4200,6 +4238,7 @@ export class AgentController extends EventEmitter {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     } finally {
       this.operations.release(admission.lease)
+      this.settleExecutionAdmission()
     }
     return res.success ? { ok: true } : { ok: false, error: res.error }
   }
@@ -4492,9 +4531,12 @@ export class AgentController extends EventEmitter {
   }
 
   async refreshState(): Promise<SessionState | null> {
+    const rpc = this.rpc
+    const generation = this.capabilityOpts?.runnerGeneration
+    const sessionId = this.state?.sessionId
     try {
-      const res = await this.rpc?.command('get_state')
-      if (res?.success) this.setStateFrom(res.data as Record<string, unknown>)
+      const res = await rpc?.command('get_state')
+      if (res?.success && this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId) this.setStateFrom(res.data as Record<string, unknown>)
     } catch {
     }
     return this.state

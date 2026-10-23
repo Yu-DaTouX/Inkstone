@@ -87,16 +87,49 @@ const { deleteSession, isSessionFileInSessionsDir, sessionsToDelete, restoreSess
 process.stdout.write('\n▌回收站按时间清理\n')
 await check('超过 7 天的回收站条目在删除时清掉，别的保留', async () => {
   await mkdir(trashDir, { recursive: true })
-  const stale = join(trashDir, 'stale-1-0-old.jsonl')
+  const stale = join(trashDir, `${Date.now() - 8 * DAY}-abc123-0-old.jsonl`)
   await writeFile(stale, '{}\n')
   const old = new Date(Date.now() - 8 * DAY)
   await utimes(stale, old, old)
+  const unknown = join(trashDir, 'legacy-without-deletion-time.jsonl')
+  await writeFile(unknown, '{}\n')
+  await utimes(unknown, old, old)
+  const legacy = join(trashDir, `${Date.now()}-abc123-0-legacy.jsonl`)
+  await writeFile(legacy, '{}\n')
+  await utimes(legacy, old, old)
   const fresh = join(trashDir, 'fresh-0-0-note.txt')
   await writeFile(fresh, 'x')
   const file = await writeSession('trash-1')
   await deleteSession(file)
   assert.equal(existsSync(stale), false, '过期条目应被删掉')
   assert.equal(existsSync(fresh), true, '未过期条目应保留')
+  assert.equal(existsSync(unknown), true, '无法确认删除时间的历史条目不得清理')
+  assert.equal(existsSync(legacy), true, '已有命名格式按删除时间而非 mtime 保留')
+})
+
+await check('十天旧会话删除后保留完整七天，仍可撤销', async () => {
+  const originalNow = Date.now
+  let now = originalNow() + 2 * DAY
+  Date.now = () => now
+  try {
+    const file = await writeSession('old-source')
+    const old = new Date(now - 10 * DAY)
+    await utimes(file, old, old)
+    const token = await deleteSession(file)
+    now += 61 * 60_000
+    await deleteSession(await writeSession('prune-hour'))
+    now += 6 * DAY
+    await deleteSession(await writeSession('prune-six-days'))
+    await restoreSession(token)
+    assert.equal(existsSync(file), true)
+    const expired = await writeSession('expire-after-week')
+    const expiredToken = await deleteSession(expired)
+    now += 7 * DAY + 61 * 60_000
+    await deleteSession(await writeSession('prune-week'))
+    await assert.rejects(restoreSession(expiredToken))
+  } finally {
+    Date.now = originalNow
+  }
 })
 
 process.stdout.write('\n▌删除会话同时清理来源副本与会话技能目录\n')

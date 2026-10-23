@@ -46,6 +46,14 @@ export class ScheduleService {
       const now = this.now()
       let changed = false
       for (const task of tasks) {
+        if (task.pendingRun) {
+          task.pendingRun.status = 'unknown'
+          task.enabled = false
+          delete task.nextRunAt
+          task.lastError = '上次触发结果未知，已暂停自动执行；请检查会话后手动运行或重新启用'
+          changed = true
+          continue
+        }
         if (!task.enabled || task.nextRunAt === undefined || task.nextRunAt > now - 60_000) continue
         if (now - task.nextRunAt <= CATCH_UP_MS) task.nextRunAt = now
         else this.advance(task, now)
@@ -110,6 +118,7 @@ export class ScheduleService {
         this.advance(task, this.now(), true)
         if (task.nextRunAt === undefined) return { result: { ok: false, error: '这个时间已经过去了，请先改时间' } }
         delete task.pendingApproval
+        if (task.pendingRun?.status === 'unknown') delete task.pendingRun
       } else delete task.nextRunAt
       return { result: { ok: true, task: structuredClone(task) }, changed: true }
     })
@@ -157,7 +166,7 @@ export class ScheduleService {
   private async tick(): Promise<void> {
     const now = this.now()
     for (const task of this.tasks) {
-      if (task.enabled && task.nextRunAt !== undefined && task.nextRunAt <= now && !this.running.has(task.id)) {
+      if (task.enabled && !task.pendingRun && task.nextRunAt !== undefined && task.nextRunAt <= now && !this.running.has(task.id)) {
         void this.fire(task, true).catch((error) => {
           this.stop()
           console.error('[schedule] 保存运行结果失败，调度已暂停', error)
@@ -169,10 +178,22 @@ export class ScheduleService {
   private async fire(task: ScheduledTask, scheduled: boolean): Promise<{ ok: boolean; error?: string; sessionId?: string }> {
     if (this.running.has(task.id)) return { ok: false, error: '这个任务正在触发中' }
     this.running.add(task.id)
-    const snapshot = structuredClone(task)
     const startedAt = this.now()
+    const claimId = randomUUID()
     let result: { ok: boolean; error?: string; sessionId?: string }
     try {
+      const snapshot = await this.mutate<ScheduledTask | undefined>((tasks) => {
+        const latest = tasks.find(item => item.id === task.id)
+        if (!latest || latest.pendingRun?.status === 'claimed' || (scheduled &&
+            (!latest.enabled || latest.pendingRun || latest.nextRunAt !== task.nextRunAt))) return { result: undefined }
+        const snapshot = structuredClone(latest)
+        latest.pendingRun = { id: claimId, startedAt, status: 'claimed', ...(scheduled ? { scheduledAt: latest.nextRunAt } : {}) }
+        latest.lastRunAt = startedAt
+        latest.lastError = '本次触发结果尚未确认；中断后不会自动重放'
+        if (scheduled) this.advance(latest, startedAt)
+        return { result: snapshot, changed: true }
+      })
+      if (!snapshot) return { ok: false, error: '任务已移除、变更或上次触发结果尚未确认' }
       try {
         const run = await this.opts.run(snapshot)
         result = { ok: true, sessionId: run.sessionId }
@@ -181,15 +202,12 @@ export class ScheduleService {
       }
       await this.mutate<void>((tasks) => {
         const latest = tasks.find(item => item.id === task.id)
-        if (!latest) return { result: undefined }
-        latest.lastRunAt = startedAt
+        if (!latest || latest.pendingRun?.id !== claimId) return { result: undefined }
+        delete latest.pendingRun
         if (result.ok) {
           latest.lastSessionId = result.sessionId ?? latest.lastSessionId
           delete latest.lastError
         } else latest.lastError = result.error
-        if (scheduled && latest.enabled && latest.nextRunAt === snapshot.nextRunAt && JSON.stringify(latest.trigger) === JSON.stringify(snapshot.trigger)) {
-          this.advance(latest, startedAt)
-        }
         return { result: undefined, changed: true }
       })
       return result
@@ -240,7 +258,10 @@ export class ScheduleService {
           typeof task.prompt !== 'string' || typeof task.enabled !== 'boolean' ||
           !Number.isFinite(task.createdAt) || !['user', 'model'].includes(task.createdBy) ||
           !normalizeTrigger(task.trigger).ok ||
-          (task.nextRunAt !== undefined && !Number.isFinite(task.nextRunAt))) {
+          (task.nextRunAt !== undefined && !Number.isFinite(task.nextRunAt)) ||
+          (task.pendingRun !== undefined && (!task.pendingRun || typeof task.pendingRun.id !== 'string' || !task.pendingRun.id ||
+            !Number.isFinite(task.pendingRun.startedAt) || !['claimed', 'unknown'].includes(task.pendingRun.status) ||
+            (task.pendingRun.scheduledAt !== undefined && !Number.isFinite(task.pendingRun.scheduledAt))))) {
         throw new Error('定时任务条目无效，已保留原文件')
       }
       ids.add(task.id)

@@ -215,18 +215,22 @@ async function commitTree(cwd: string, dir: string, tree: string, message: strin
   return sha
 }
 
-export function captureCheckpoint(cwd: string, sessionKey: string, text: string, budgetMs = 10_000): Promise<CheckpointRecord | null> {
-  if (!isCheckpointableDir(cwd) || !sessionKey) return Promise.resolve(null)
+export async function captureCheckpoint(cwd: string, sessionKey: string, text: string, budgetMs = 10_000): Promise<CheckpointRecord | null> {
+  if (!isCheckpointableDir(cwd) || !sessionKey) return null
   const key = normalizeCwd(cwd)
   let expired = false
-  const work = serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', () => expired)).catch(() => null)
-  const timeout = new Promise<null>((done) => setTimeout(() => { expired = true; done(null) }, budgetMs).unref?.())
-  return Promise.race([work, timeout])
+  const timer = setTimeout(() => { expired = true }, budgetMs)
+  timer.unref?.()
+  try {
+    return await serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', () => expired)).catch(() => null)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], expired: () => boolean = () => false): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
-  if (!(await ensureRepo(cwd, dir))) return null
+  if (expired() || !(await ensureRepo(cwd, dir)) || expired()) return null
   const snapshot = await snapshotTree(cwd, dir)
   if (!snapshot || expired()) return null
   const tree = snapshot.tree

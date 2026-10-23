@@ -344,6 +344,11 @@ export class RunnerRegistry {
     return runEnvelope(runner, runner.agent.getState())
   }
 
+  hasExecutionAdmission(cwd: string): boolean {
+    this.pruneAdmissions()
+    return this.admissions.has(canonicalCwd(cwd))
+  }
+
   private busy(runner: Runner): boolean {
     return executionBusy(
       runner.agent.getState(),

@@ -36,9 +36,9 @@ let host: RemoteHost
 const REMOTE_SESSIONS_TTL_MS = 2000
 let sessionsCache: { at: number; limit: number; list: SessionSummary[] } | null = null
 
-async function remoteSessions(limit: number): Promise<SessionSummary[]> {
+async function remoteSessions(limit: number, fresh = false): Promise<SessionSummary[]> {
   const now = Date.now()
-  if (sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) return sessionsCache.list
+  if (!fresh && sessionsCache && sessionsCache.limit === limit && now - sessionsCache.at < REMOTE_SESSIONS_TTL_MS) return sessionsCache.list
   const settings = await getSettings()
   const list = await listSessions(limit, settings.projects)
   sessionsCache = { at: now, limit, list }
@@ -209,7 +209,7 @@ function unsavedSessionSummary(sessionId: string): SessionSummary | null {
 async function resolveChainSession(sessionId: string, options: { allowUnsaved?: boolean } = {}): Promise<
   { ok: true; summary: SessionSummary } | { ok: false; status: number; error: string }
 > {
-  const list = await remoteSessions(500)
+  const list = await remoteSessions(500, true)
   const requested = list.find((item) => item.id === sessionId)
   if (!requested) {
     const unsaved = options.allowUnsaved ? unsavedSessionSummary(sessionId) : null
@@ -283,12 +283,6 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
     projectId,
     scope: summary.scope
   })
-  await host.rememberRunnerSession(result, {
-    ...(summary.path ? { sessionFile: summary.path } : {}),
-    cwd: cwdResult.cwd,
-    projectId,
-    scope: summary.scope
-  })
   if (result.ok && result.id) void host.pushRunnerSnapshot(result.id)
   host.pushRunners()
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
@@ -311,7 +305,7 @@ export async function remoteNewSession(): Promise<RemoteOperationResult> {
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
-export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary) => Promise<RemoteOperationResult>): Promise<RemoteOperationResult> {
+export async function withRemoteSession(sessionId: string, operation: (agent: AgentController, runId: string, summary: SessionSummary, generation: number, current: () => boolean) => Promise<RemoteOperationResult>, authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null>, reserve = false): Promise<RemoteOperationResult> {
   const resolved = await resolveChainSession(sessionId, { allowUnsaved: true })
   if (!resolved.ok) return resolved
   const summary = resolved.summary
@@ -326,7 +320,8 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
   const projectId = summary.scope === 'global'
     ? undefined
     : (summary.projectId ?? host.projectIdForCwd(settings, cwdResult.cwd))
-  const selected = await host.runners()!.select({
+  const registry = host.runners()!
+  const selected = await registry.select({
     ...(summary.path ? { sessionFile: summary.path } : {}),
     sessionId: summary.id,
     cwd: cwdResult.cwd,
@@ -337,19 +332,30 @@ export async function withRemoteSession(sessionId: string, operation: (agent: Ag
   if (!selected.ok || !selected.id) {
     return { ok: false, status: 409, error: selected.error ?? '无法为目标会话准备后台运行实例' }
   }
-  if (host.runners()!.hasBusyCwd(cwdResult.cwd, selected.id)) {
+  if (registry.hasBusyCwd(cwdResult.cwd, selected.id)) {
     return { ok: false, status: 409, error: '同一工作目录的另一个运行实例正在工作，暂不向目标会话发送以避免并发写入' }
   }
-  await host.rememberRunnerSession(selected, {
-    ...(summary.path ? { sessionFile: summary.path } : {}),
-    cwd: cwdResult.cwd,
-    projectId,
-    scope: summary.scope
-  })
-  const agent = host.runners()!.agentOf(selected.id)
-  if (!agent) return { ok: false, status: 503, error: '目标运行实例已退出' }
-  host.pushRunners()
-  return operation(agent, selected.runId!, summary)
+  const agent = registry.agentOf(selected.id)
+  const generation = selected.generation
+  const current = () => host.runners() === registry && registry.agentOf(selected.id!) === agent &&
+    generation !== undefined && registry.runtimeOf(selected.id!)?.generation === generation &&
+    agent?.getState()?.sessionId === summary.id && selected.sessionId === summary.id
+  const changed = { ok: false, status: 409, error: '目标会话运行实例已变化，请刷新后重试' }
+  if (!agent || !current() || generation === undefined) return changed
+  if (authorize) {
+    const denied = await authorize(summary.id)
+    if (denied) return denied
+    if (!current()) return changed
+  }
+  const admission = reserve ? registry.admitExecute(selected.id) : null
+  if (admission && !admission.ok) return { ok: false, status: 409, error: admission.error }
+  try {
+    host.pushRunners()
+    if (!current()) return changed
+    return await operation(agent, selected.runId ?? selected.id, summary, generation, current)
+  } finally {
+    if (admission?.ok) registry.releaseExecute(selected.id, admission.token)
+  }
 }
 
 export async function remoteModels(sessionId: string): Promise<RemoteOperationResult> {
@@ -372,37 +378,39 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
 
   if (command.action === 'send') {
     if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: '图片无法解码，请重新选择' }
-    return withRemoteSession(command.sessionId, async (agent, runId, summary) => {
+    return withRemoteSession(command.sessionId, async (agent, runId, summary, generation) => {
       const model = agent.getState()?.model
       if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
-      const result = await agent.send(command.text, command.images)
+      const result = await agent.send(command.text, command.images, undefined, undefined, generation)
       return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
-    })
+    }, command.authorize)
   }
   if (command.action === 'model') {
-    return withRemoteSession(command.sessionId, async (agent) => {
+    return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
       const state = agent.getState()
       if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
       const model = (await agent.listModels()).find((item) => item.provider === command.provider && item.id === command.modelId)
       if (!model) return { ok: false, status: 400, error: '模型不在电脑可用列表中' }
+      if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
       const latest = agent.getState()
       if (latest?.isAgentRunning || latest?.isStreaming || latest?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换模型' }
       const result = await agent.setModel(model.provider, model.id)
       host.pushRunners()
       return result.ok ? { ok: true, data: { current: { id: model.id, provider: model.provider, name: model.name, input: model.input } } } : { ok: false, status: 409, error: result.error }
-    })
+    }, undefined, true)
   }
 
   if (command.action === 'thinking') {
-    return withRemoteSession(command.sessionId, async (agent) => {
+    return withRemoteSession(command.sessionId, async (agent, _runId, _summary, _generation, current) => {
       const state = agent.getState()
       if (state?.isAgentRunning || state?.isStreaming || state?.isCompacting || agent.hasRunningBash()) return { ok: false, status: 409, error: '任务完成后可切换思考档位' }
       const levels = await agent.listThinkingLevels()
+      if (!current()) return { ok: false, status: 409, error: '目标会话运行实例已变化' }
       if (!levels.includes(command.level)) return { ok: false, status: 400, error: '当前模型不支持这个思考档位' }
       const result = await agent.setThinking(command.level)
       host.pushRunners()
       return result.ok ? { ok: true, data: { level: command.level, levels } } : { ok: false, status: 409, error: result.error }
-    })
+    }, undefined, true)
   }
 
   if (command.action === 'abort') {
@@ -563,7 +571,7 @@ export const peerGrants = new PeerGrantRegistry({
 })
 
 export async function peerSummaryOf(sessionId: string): Promise<SessionSummary | undefined> {
-  return (await remoteSessions(500)).find((item) => item.id === sessionId)
+  return (await remoteSessions(Number.MAX_SAFE_INTEGER, true)).find((item) => item.id === sessionId)
 }
 
 export function peerProjectName(project: { name?: string; cwd: string }, projectNames: Record<string, string> = {}): string {
@@ -578,7 +586,7 @@ export const peerHostHandlers: PeerHostHandlers = {
       .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames) }))
   },
   async sessions(projectIds) {
-    const list = (await remoteSessions(500))
+    const list = (await remoteSessions(500, true))
       .filter((summary) => !!summary.projectId && projectIds.includes(summary.projectId))
     return (await filterChainRepresentatives(list)).map(remoteSessionSummary)
   },
@@ -586,7 +594,8 @@ export const peerHostHandlers: PeerHostHandlers = {
     return (await peerSummaryOf(sessionId))?.projectId ?? null
   },
   async projectOfRun(runId) {
-    return host.runners()?.statuses().find((status) => status.runId === runId)?.projectId ?? null
+    const sessionId = host.runners()?.agentOf(runId)?.getState()?.sessionId
+    return sessionId ? (await peerSummaryOf(sessionId))?.projectId ?? null : null
   },
   async exportSession(sessionId) {
     const summary = await peerSummaryOf(sessionId)
@@ -635,13 +644,19 @@ export const peerHostHandlers: PeerHostHandlers = {
     }
     const cwdResult = await host.validateCwd(project.cwd)
     if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
-    const selected = await host.runners()!.select({ cwd: cwdResult.cwd, projectId: project.id, scope: 'project', activate: false })
+    const registry = host.runners()!
+    const selected = await registry.select({ cwd: cwdResult.cwd, projectId: project.id, scope: 'project', activate: false })
     if (!selected.ok || !selected.id) return { ok: false, status: 409, error: selected.error ?? '无法为新任务准备运行实例' }
-    const agent = host.runners()!.agentOf(selected.id)
-    if (!agent) return { ok: false, status: 503, error: '运行实例已退出' }
-    const sent = await agent.send(text)
-    const sessionId = agent.getState()?.sessionId ?? selected.sessionId
-    await host.rememberRunnerSession({ ...selected, sessionId }, { cwd: cwdResult.cwd, projectId: project.id, scope: 'project' })
+    const agent = registry.agentOf(selected.id)
+    const generation = selected.generation
+    const sessionId = selected.sessionId
+    const current = () => host.runners() === registry && registry.agentOf(selected.id!) === agent &&
+      generation !== undefined && registry.runtimeOf(selected.id!)?.generation === generation &&
+      agent?.getState()?.sessionId === sessionId
+    if (!agent || !sessionId || generation === undefined || !current()) return { ok: false, status: 409, error: '新任务运行实例已变化' }
+    await host.rememberRunnerSession(selected, { cwd: cwdResult.cwd, projectId: project.id, scope: 'project' })
+    if (!current()) return { ok: false, status: 409, error: '新任务运行实例已变化' }
+    const sent = await agent.send(text, undefined, undefined, undefined, generation)
     host.pushRunners()
     if (!sent.ok) return { ok: false, status: 409, error: sent.error ?? '新任务未能接收消息' }
     return { ok: true, data: { sessionId: sessionId ?? null, runId: selected.runId ?? selected.id, projectId: project.id } }

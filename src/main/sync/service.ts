@@ -83,7 +83,13 @@ export class SyncService {
     return this.folder.root
   }
 
-  async resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
+  resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
+    const run = this.chain.then(() => this.runResolveConflict(id, resolution))
+    this.chain = run.catch(() => undefined)
+    return run
+  }
+
+  private async runResolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
     const conflict = await this.folder.findConflict(id)
     if (!conflict) return { ok: false, error: '冲突不存在或已经处理' }
     try {
@@ -92,6 +98,37 @@ export class SyncService {
       const localHash =
         conflict.localHash ?? (conflict.localPayload !== undefined ? sha256Hex(conflict.localPayload) : undefined)
       const remoteHash = conflict.remoteHash
+      const [localRead, remoteRead] = await Promise.all([this.store.readAll(), this.folder.readRecords()])
+      if (localRead.skipped.length || remoteRead.skipped.length) {
+        return { ok: false, error: '无法完整重读两端版本，拒绝处理旧冲突；请检查同步文件后重试' }
+      }
+      const currentLocal = localRead.records.find((record) => record.key === conflict.key)
+      const currentRemote = remoteRead.records.get(conflict.key)
+      const currentLocalHash = currentLocal ? sha256Hex(currentLocal.payload) : undefined
+      if (
+        currentLocalHash !== localHash || currentRemote?.hash !== remoteHash ||
+        currentLocal?.kind !== conflict.kind || currentRemote?.kind !== conflict.kind
+      ) {
+        if (currentLocal && currentRemote && currentLocalHash && currentLocal.kind === currentRemote.kind) {
+          await this.folder.writeConflict({
+            ...conflict,
+            id: randomUUID(),
+            kind: currentLocal.kind,
+            detectedAt: now,
+            localPayload: currentLocal.payload,
+            localHash: currentLocalHash,
+            localModifiedAt: currentLocal.modifiedAt,
+            remotePayload: currentRemote.payload,
+            remoteHash: currentRemote.hash,
+            remoteModifiedAt: currentRemote.modifiedAt,
+            remoteDeviceId: currentRemote.deviceId,
+            remoteDeviceName: currentRemote.deviceName,
+            suffix: `来自 ${currentRemote.deviceName} · ${formatTime(now)}`
+          })
+          await this.folder.removeConflict(id)
+        }
+        return { ok: false, error: '冲突产生后两端版本已变化，旧决议已拒绝；请刷新冲突列表后重新选择' }
+      }
 
       if (resolution === 'remote') {
         await this.store.apply(this.remoteRecordOf(conflict))

@@ -63,9 +63,10 @@ function wrapUpMessage(text: string): string {
 const MAX_TRANSCRIPT = 200
 const ABORT_TIMEOUT_MS = 5_000
 
-async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<void> {
+async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<{ ok: boolean; errors: string[] }> {
   const result = await removeWorkspace(workspace)
   for (const error of result.errors) console.warn(`[subagent] ${error}`)
+  return result
 }
 const DRAIN_CONCURRENCY = 4
 
@@ -488,7 +489,7 @@ export class SubagentController {
       if (run.status === 'running' || run.status === 'starting' || this.resuming.has(run.id)) continue
       if (run.review === 'pending' || run.review === 'conflict') continue
       const live = this.runs.get(run.id)
-      if (live && !live.reviewDecided) continue
+      if (live && (!live.reviewDecided || !live.worktreeDone)) continue
       const rootCwd = live?.workspace.rootCwd ?? this.history.get(run.id)?.rootCwd ?? run.cwd
       const activation = live?.activation
       await this.history.hide(run, rootCwd)
@@ -1130,8 +1131,7 @@ export class SubagentController {
           if (!collected.patchPath) throw new Error('未能保存改动补丁，已保留工作区')
           run.review = 'archived'
           run.resultPath = collected.patchPath ?? run.workspace.worktreePath
-          await cleanupWorkspace(run.workspace)
-          run.worktreeDone = true
+          await this.cleanupRunWorkspace(run)
         } else {
           run.review = 'pending'
           run.resultPath = run.workspace.worktreePath
@@ -1139,8 +1139,7 @@ export class SubagentController {
       } else {
         run.review = 'none'
         run.resultPath = collected.patchPath
-        await cleanupWorkspace(run.workspace)
-        run.worktreeDone = true
+        await this.cleanupRunWorkspace(run)
       }
 
       await this.writeMetadata(run, collected.patchPath)
@@ -1159,6 +1158,12 @@ export class SubagentController {
       } catch {
       }
     }
+  }
+
+  private async cleanupRunWorkspace(run: Run): Promise<void> {
+    const result = await cleanupWorkspace(run.workspace)
+    run.worktreeDone = result.ok
+    if (!result.ok) run.error = [run.error, ...result.errors].filter(Boolean).join('\n')
   }
 
   private async archiveOnExit(run: Run): Promise<void> {
@@ -1180,8 +1185,8 @@ export class SubagentController {
       }
     }
 
-    await cleanupWorkspace(run.workspace)
-    run.worktreeDone = true
+    await this.cleanupRunWorkspace(run)
+    await this.writeMetadata(run)
     this.emit(run)
   }
 
@@ -1228,8 +1233,7 @@ export class SubagentController {
       run.review = 'merged'
       run.resultPath = patchPath
       run.error = undefined
-      await cleanupWorkspace(run.workspace)
-      run.worktreeDone = true
+      await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, patchPath)
       this.emit(run)
       return { ok: true }
@@ -1246,8 +1250,7 @@ export class SubagentController {
     try {
       run.review = 'discarded'
       run.resultPath = run.diff?.patchPath
-      await cleanupWorkspace(run.workspace)
-      run.worktreeDone = true
+      await this.cleanupRunWorkspace(run)
       await this.writeMetadata(run, run.diff?.patchPath)
       this.emit(run)
       return { ok: true }

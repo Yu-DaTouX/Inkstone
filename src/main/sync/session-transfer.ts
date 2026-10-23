@@ -93,16 +93,19 @@ export async function importSession(
   }
   const nextId = options.newId ?? (() => randomUUID())
   const originalId = readSessionId(bundle.content)
+  if (!originalId) return { ok: false, error: '会话包缺少唯一有效的 session 头' }
   let sessionId = ''
   let file = ''
   for (let attempt = 0; attempt < 5; attempt++) {
     sessionId = nextId()
+    if (sessionId === originalId) continue
     file = join(sessionsDir, `${sessionId}.jsonl`)
     if (!existsSync(file)) break
     file = ''
   }
   if (!file) return { ok: false, error: '生成新会话名失败（目标目录已有同名文件）' }
   const content = rewriteSessionId(bundle.content, sessionId)
+  if (readSessionId(content) !== sessionId) return { ok: false, error: '改写会话 session 头失败' }
   try {
     await mkdir(sessionsDir, { recursive: true })
     await atomicWriteFile(file, content)
@@ -113,22 +116,23 @@ export async function importSession(
 }
 
 export function readSessionId(content: string): string | undefined {
+  let id: string | undefined
   for (const line of content.split('\n')) {
-    if (!line.includes('"type":"session"')) continue
     try {
       const parsed = JSON.parse(line) as { type?: unknown; id?: unknown }
-      if (parsed?.type === 'session' && typeof parsed.id === 'string' && parsed.id) return parsed.id
+      if (parsed?.type !== 'session') continue
+      if (id !== undefined || typeof parsed.id !== 'string' || !parsed.id.trim()) return undefined
+      id = parsed.id
     } catch {
     }
   }
-  return undefined
+  return id
 }
 
 export function rewriteSessionId(content: string, newId: string): string {
   const lines = content.split('\n')
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]
-    if (!line.includes('"type":"session"')) continue
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>
       if (parsed?.type === 'session' && typeof parsed.id === 'string' && parsed.id) {

@@ -94,6 +94,54 @@ try {
   await completing
   verify(removed.list().length === 0, 'late completion does not resurrect removed task')
 
+  let dispatches = 0
+  const claimFile = join(work, 'claim.json')
+  const claimedService = make(claimFile, { run: async () => { dispatches++; return {} } })
+  const claimTask = await claimedService.create(input, 'user')
+  const claimDisk = await readFile(claimFile, 'utf8')
+  await rm(claimFile)
+  await mkdir(claimFile)
+  await assert.rejects(claimedService.runNow(claimTask.task.id)); checks++
+  verify(dispatches === 0 && !claimedService.list()[0].pendingRun, 'claim save failure never dispatches or publishes claim')
+  await rm(claimFile, { recursive: true })
+  await writeFile(claimFile, claimDisk)
+
+  const uncertainFile = join(work, 'uncertain.json')
+  let durableClaim
+  let claimNow = 100000
+  const uncertain = make(uncertainFile, { now: () => claimNow, run: async task => {
+    dispatches++
+    durableClaim = JSON.parse(await readFile(uncertainFile, 'utf8')).tasks[0]
+    verify(durableClaim.pendingRun?.id && durableClaim.pendingRun.status === 'claimed', 'claim ID persisted before dispatch')
+    verify(durableClaim.pendingRun.scheduledAt === task.nextRunAt && durableClaim.nextRunAt > task.nextRunAt, 'scheduled occurrence consumed before dispatch')
+    await rm(uncertainFile)
+    await mkdir(uncertainFile)
+    return { sessionId: 'possibly-sent' }
+  } })
+  const uncertainTask = await uncertain.create(input, 'user')
+  claimNow = uncertainTask.task.nextRunAt
+  await assert.rejects(uncertain.fire(uncertain.list()[0], true)); checks++
+  verify(uncertain.list()[0].pendingRun?.status === 'claimed', 'completion save failure retains claim')
+  verify(!(await uncertain.runNow(uncertainTask.task.id)).ok, 'unresolved claim is not dispatched again in same process')
+  await rm(uncertainFile, { recursive: true })
+  await writeFile(uncertainFile, JSON.stringify({ v: 1, tasks: [durableClaim] }))
+  const beforeRestart = dispatches
+  const restarted = make(uncertainFile, { now: () => 900000, run: async () => { dispatches++; return {} } })
+  await restarted.start()
+  await restarted.tick()
+  verify(dispatches === beforeRestart, 'restart and overdue tick never replay unresolved dispatch')
+  const unknown = restarted.list()[0]
+  verify(!unknown.enabled && unknown.nextRunAt === undefined && unknown.pendingRun.status === 'unknown' && /未知/.test(unknown.lastError), 'restart persists visible unknown result and pauses automatic execution')
+  verify(JSON.parse(await readFile(uncertainFile, 'utf8')).tasks[0].pendingRun.status === 'unknown', 'unknown recovery state persisted')
+  verify((await restarted.runNow(unknown.id)).ok && dispatches === beforeRestart + 1, 'explicit manual execution can acknowledge unknown result')
+
+  const crashFile = join(work, 'crash-before-send.json')
+  await writeFile(crashFile, JSON.stringify({ v: 1, tasks: [{ ...durableClaim, trigger: { kind: 'once', at: 100001 } }] }))
+  const crashed = make(crashFile, { now: () => 900000, run: async () => { dispatches++; return {} } })
+  const beforeCrash = dispatches
+  await crashed.start()
+  verify(dispatches === beforeCrash && !crashed.list()[0].enabled, 'crash between durable claim and dispatch is not auto-replayed, including once tasks')
+
   const { RunnerRegistry } = await bundle('src/main/runners.ts', 'runners')
   const { sameRuntimeEnvelope } = await bundle('src/core/run-state.ts', 'identity')
   const source = await readFile('src/main/index.ts', 'utf8')

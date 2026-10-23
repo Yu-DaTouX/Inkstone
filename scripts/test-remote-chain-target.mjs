@@ -147,9 +147,12 @@ const agent = {
 const runners = {
   select: async (target) => {
     selectCalls.push(target)
-    return { ok: true, id: 'run-rep', sessionId: target.sessionId ?? 'sess', runId: 'r1' }
+    return { ok: true, id: 'run-rep', sessionId: target.sessionId ?? 'sess', runId: 'r1', generation: 1 }
   },
   hasBusyCwd: () => false,
+  runtimeOf: () => ({ generation: 1, sessionId: 's-new' }),
+  admitExecute: () => ({ ok: true, token: 1 }),
+  releaseExecute: () => {},
   agentOf: () => agent,
   statuses: () => [{
     id: 'r1',

@@ -249,9 +249,18 @@ export async function cleanupWorkspace(workspace: PreparedWorkspace): Promise<Wo
     try {
       await git(workspace.repoRoot, ['worktree', 'remove', '--force', workspace.worktreePath], 30_000)
     } catch (error) {
-      errors.push(`移除 worktree 失败（${workspace.worktreePath}）：${error instanceof Error ? error.message : String(error)}`)
+      const registered = await git(workspace.repoRoot, ['worktree', 'list', '--porcelain', '-z'], 10_000)
+        .then(result => result.stdout.split('\0').some(line => {
+          if (!line.startsWith('worktree ')) return false
+          const path = resolve(line.slice(9))
+          const target = resolve(workspace.worktreePath!)
+          return process.platform === 'win32' ? path.toLowerCase() === target.toLowerCase() : path === target
+        }))
+        .catch(() => true)
+      if (registered) errors.push(`移除 worktree 失败（${workspace.worktreePath}）：${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  if (errors.length) return { ok: false, errors }
   if (workspace.containerPath) {
     try {
       await rm(workspace.containerPath, { recursive: true, force: true })
