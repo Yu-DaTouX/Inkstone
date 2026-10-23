@@ -110,7 +110,6 @@ const STUBS = {
   'src/renderer/src/features/composer/PlusMenu.tsx': 'export function PlusMenu(){ return null }',
   'src/renderer/src/features/composer/ProjectPicker.tsx': 'export function ProjectPicker(){ return null }',
   'src/renderer/src/features/composer/QueueEditor.tsx': 'export function QueueEditor(){ return null }',
-  'src/renderer/src/features/composer/QuotaResumeBar.tsx': 'export function QuotaResumeBar(){ return null }',
   'src/renderer/src/features/composer/VoiceButton.tsx': 'export function VoiceButton(){ return null }'
 }
 
@@ -157,7 +156,7 @@ async function buildComposer(outdir) {
           })
           b.onLoad({ filter: /.*/, namespace: 'a2' }, (args) => {
             if (args.path === 'a2:lucide') {
-              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}', loader: 'js' }
+              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}\nexport function GitMerge(){return null}', loader: 'js' }
             }
             return { contents: stubMap.get(args.path.slice('a2:'.length)) ?? 'export {}', loader: 'js' }
           })
@@ -321,8 +320,8 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'QuotaResumeBar')
-    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（额度等待条除外）')
+    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'IsolationMergeBar')
+    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（合入确认条除外）')
     ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟队列')
     ok(byClass(wrap, 'composer') === children(wrap)[children(wrap).length - 1], '输入框卡片在根末尾，下方不再有会话统计行（统计改到会话栏卡片）')
 

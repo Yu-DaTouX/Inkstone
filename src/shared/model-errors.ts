@@ -25,7 +25,7 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'quota',
     label: '额度或限流',
-    re: /\b(?:402|429)\b|rate[ _-]?limit|too many requests|quota|resource_exhausted|insufficient[ _](?:balance|funds|credit)|balance|credit|usage limit|used all|free requests?|requests for today|额度|配额|余额|限流/i
+    re: /\b(?:402|429)\b|rate[ _-]?limit|too many requests|quota|resource_exhausted|insufficient[ _](?:balance|funds|credit)|balance|credit|usage limit|extra usage|plan limits?|used all|free requests?|requests for today|额度|配额|余额|限流/i
   },
   {
     kind: 'auth',
@@ -49,9 +49,9 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   }
 ]
 
-const QUOTA_USAGE_RE = /usage limit|session limit|used all|free requests?|requests for today|weekly limit|hourly limit|5[ _-]?hour|five[ _-]?hour|resets?\s+(?:at|in)\b|额度|配额|余额|balance|credit|funds|套餐|用量上限/i
+const QUOTA_USAGE_RE = /usage limit|extra usage|plan limits?|session limit|used all|free requests?|requests for today|weekly limit|hourly limit|5[ _-]?hour|five[ _-]?hour|resets?\s+(?:at|in)\b|额度|配额|余额|balance|credit|funds|套餐|用量上限/i
 const QUOTA_RATE_RE = /rate[ _-]?limit|too many requests|resource_exhausted|requests?\s+per\s+(?:minute|second|hour)|concurren|限流|频率|并发/i
-const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credit|funds|余额|充值/i
+const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credit|funds|extra usage|余额|充值/i
 
 function quotaScopeOf(text: string): ModelErrorQuotaScope {
   if (QUOTA_USAGE_RE.test(text)) return 'usage'
@@ -127,7 +127,7 @@ export function modelErrorNotice(errorText: unknown): string {
     case 'refused': explanation = '服务商安全审核拦截了这轮请求。请检查请求内容与服务商政策；可换个模型继续，直接重发相同内容可能仍被拦截。'; break
     case 'quota': {
       if (info.quotaScope === 'rate') {
-        explanation = '服务商限制了请求频率。请稍候片刻重试，或降低并发；额度本身未用尽。'
+        explanation = '服务商返回限流。可能是请求太快，也可能是订阅额度窗口已满（部分服务商额度用尽时同样返回 429）。砚会核对用量窗口；窗口已满时可等恢复后自动续跑，否则稍候重试。'
       } else if (QUOTA_BALANCE_RE.test(info.text)) {
         explanation = '模型账户余额或额度不足。请充值或选择其他可用模型。'
       } else {

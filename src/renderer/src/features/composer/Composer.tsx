@@ -31,7 +31,6 @@ import { PermissionToggle } from './PermissionToggle'
 import { PlusMenu } from './PlusMenu'
 import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
-import { QuotaResumeBar } from './QuotaResumeBar'
 import { IsolationMergeBar } from './IsolationMergeBar'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
@@ -506,7 +505,6 @@ export function Composer({ className }: { className?: string } = {}) {
       }}
       onDrop={onDrop}
     >
-      <QuotaResumeBar />
       <IsolationMergeBar />
       <QueueEditor />
       <div className="composer">

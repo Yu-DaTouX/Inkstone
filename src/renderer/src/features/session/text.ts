@@ -42,6 +42,8 @@ export type SessionTextKey =
   | 'errorTitleRetryable'
   | 'errorTitleQuotaUsage'
   | 'errorTitleQuotaRate'
+  | 'errorWaitQuota'
+  | 'errorQuotaWindowFull'
   | 'errorTitleAuth'
   | 'errorTitleContext'
   | 'errorTitleAborted'
@@ -202,7 +204,9 @@ const ZH: Record<SessionTextKey, string> = {
   branchFrom: '从「{text}」分出去',
   errorTitleRetryable: '模型侧错误',
   errorTitleQuotaUsage: '额度已用完',
-  errorTitleQuotaRate: '请求过于频繁',
+  errorTitleQuotaRate: '请求被限流',
+  errorWaitQuota: '恢复后自动续跑',
+  errorQuotaWindowFull: '用量面板显示额度窗口已满，这次限流来自额度用尽，不是请求太快。',
   errorTitleAuth: '认证或权限失败',
   errorTitleContext: '上下文超限',
   errorTitleAborted: '本轮已取消',
@@ -365,6 +369,8 @@ const EN: Record<SessionTextKey, string> = {
   errorTitleRetryable: 'Model error',
   errorTitleQuotaUsage: 'Quota exhausted',
   errorTitleQuotaRate: 'Too many requests',
+  errorWaitQuota: 'Auto-resume when quota resets',
+  errorQuotaWindowFull: 'The usage panel shows a full quota window, so this limit comes from exhausted quota, not request speed.',
   errorTitleAuth: 'Authentication or permission failed',
   errorTitleContext: 'Context limit exceeded',
   errorTitleAborted: 'Turn cancelled',

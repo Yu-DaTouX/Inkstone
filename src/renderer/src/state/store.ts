@@ -63,7 +63,7 @@ import {
   type ComposerSubmitIdentity
 } from './composer-recovery'
 import type { QueueOp } from '../features/composer/queue-plan'
-import { decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
+import { blockedQuotaWindows, decideQuotaResume, QUOTA_RESUME_POLL_MS, QUOTA_RESUME_PROMPT } from '../../../shared/quota-resume'
 import { reuseIfSame } from './same-messages'
 import { keepRef } from './stable-ref'
 import {
@@ -261,7 +261,7 @@ export interface Store {
   }) => void
   applyQueueOrder: (next: QueueState) => Promise<void>
   applyQueueOp: (op: QueueOp) => Promise<void>
-  armQuotaResume: () => Promise<boolean>
+  armQuotaResume: (ifWindowFull?: boolean) => Promise<boolean>
   cancelQuotaResume: () => void
   abort: () => Promise<void>
   runBash: (command: string, options?: { excludeFromContext?: boolean }) => Promise<{ ok: boolean; error?: string }>
@@ -1247,7 +1247,7 @@ export const useStore = create<Store>((rawSet, get) => {
     }
 
     if (m.ch === 'quota-wait') {
-      void get().armQuotaResume()
+      void get().armQuotaResume((m.payload as { ifWindowFull?: boolean } | undefined)?.ifWindowFull === true)
       return
     }
 
@@ -1623,7 +1623,7 @@ export const useStore = create<Store>((rawSet, get) => {
     return true
   },
 
-  armQuotaResume: async () => {
+  armQuotaResume: async (ifWindowFull = false) => {
     const session = get().session
     const provider = session?.model?.provider
     if (!session || !provider) return false
@@ -1631,6 +1631,11 @@ export const useStore = create<Store>((rawSet, get) => {
     const snapshot = await window.yan
       .providerQuota(provider, get().settings?.providerBudgets?.[provider])
       .catch(() => null)
+    if (ifWindowFull) {
+      if (!snapshot?.windows?.length || snapshot.staleError || !blockedQuotaWindows(snapshot.windows).length) return false
+      if (get().quotaResume) return true
+      await get().abortRetry()
+    }
     if (!snapshot) {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.unknownError')) })
       return false

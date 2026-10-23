@@ -22,7 +22,7 @@ import { mergeToolDetails, streamsHtmlWriteArgs, type ToolResultPayload } from '
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { settledTurnOutcome } from '../shared/turn-outcome'
-import { isQuotaWaitError } from '../shared/quota-resume'
+import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
 import { mcpApprovalNeeded, mcpCallDanger } from '../shared/mcp-approval'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
@@ -2773,6 +2773,7 @@ export class AgentController extends EventEmitter {
           void this.abortRetry()
           break
         }
+        if (isRateLimitError(retryError)) this.push({ ch: 'quota-wait', payload: { ifWindowFull: true } } as unknown as MainPush)
         this.retrySeenThisRun = true
         if (this.pendingModelError) this.pendingModelError.retried = true
         this.setRetryRun({

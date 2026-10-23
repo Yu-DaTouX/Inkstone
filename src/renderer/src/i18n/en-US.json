@@ -818,6 +818,8 @@
   "quota.resume.leftHM": "{h} h {m} min",
   "quota.resume.leftM": "{m} min",
   "quota.resume.cancelAuto": "Cancel auto-resume",
+  "quota.resume.kicker": "Auto-resume",
+  "quota.resume.now": "Retry now",
   "quota.stale": "Query failed ({msg}) · showing the last successful data",
   "quota.unsupported": "This provider has no public quota API; no auto-refresh (manual refresh or a monthly budget still work)",
   "quota.usedInline": "{pct}% used",

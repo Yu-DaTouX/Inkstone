@@ -1,5 +1,7 @@
-import { useState, type JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import { useStore } from '../../state/store'
+import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
+import { blockedQuotaWindows } from '../../../../shared/quota-resume'
 import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
 import { Button } from '../../ui'
 import { Icon } from './Icon'
@@ -16,17 +18,29 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
+  const armQuotaResume = useStore((s) => s.armQuotaResume)
+  const quotaResume = useStore((s) => s.quotaResume)
+  const provider = session?.model?.provider
+  const liveQuota = useLiveQuota((s) => (provider ? s.entries[provider]?.snapshot : undefined))
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const model = errorCardModel(error)
-  if (!model) return null
+  const parsed = errorCardModel(error)
+  const rateLimited = parsed?.kind === 'quota' && parsed.quotaScope === 'rate' && !readOnly && !recovered
+  useEffect(() => {
+    if (rateLimited && provider) void refreshLiveQuota(provider, { force: true })
+  }, [rateLimited, provider])
+  if (!parsed) return null
+  const windowFull = parsed.kind === 'quota' && parsed.quotaScope === 'rate' && !!liveQuota?.windows?.length && !liveQuota.staleError && blockedQuotaWindows(liveQuota.windows).length > 0
+  const model = windowFull ? { ...parsed, quotaScope: 'usage' as const, actions: ['wait', 'model'] as ErrorCardAction[] } : parsed
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const active = viewMatchesProjectedSession(view, session)
   const prompt = promptForTurn(sourceIds, messages)
 
-  const actions = active && !readOnly && !recovered ? model.actions.filter((action) => action !== 'retry' || !!prompt) : []
+  const actions = active && !readOnly && !recovered
+    ? model.actions.filter((action) => (action !== 'retry' || !!prompt) && (action !== 'wait' || !quotaResume))
+    : []
 
   const run = (action: ErrorCardAction): void => {
     if (action === 'retry') {
@@ -37,6 +51,10 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     }
     if (action === 'model') {
       void cycleModel()
+      return
+    }
+    if (action === 'wait') {
+      void armQuotaResume()
       return
     }
     void compact()
@@ -55,7 +73,8 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   const LABEL: Record<ErrorCardAction, string> = {
     retry: tt('errorRetry'),
     model: tt('errorModel'),
-    compact: tt('errorCompact')
+    compact: tt('errorCompact'),
+    wait: tt('errorWaitQuota')
   }
 
   return (
@@ -77,6 +96,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
       </div>
       {detailsOpen ? (
         <div className="v3-errorcard-details" data-testid="v3-error-body">
+          {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
           <p className="v3-errorcard-body">{model.body}</p>
           <div className="v3-errorcard-detail-foot">
             <Button
@@ -100,7 +120,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
             <Button
               key={action}
               size="sm"
-              variant={action === 'retry' ? 'primary' : 'ghost'}
+              variant={action === 'retry' || action === 'wait' ? 'primary' : 'ghost'}
               data-testid={`v3-error-${action}`}
               onPress={() => run(action)}
             >

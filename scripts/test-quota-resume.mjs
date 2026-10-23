@@ -7,9 +7,13 @@ export async function runQuotaResumeTests(report) {
   ok('额度窗口用尽的报错值得等', m.isQuotaWaitError("Claude rate limit (five_hour) — resets 10:30 pm: You've hit your session limit"))
   ok('每日免费次数用尽值得等', m.isQuotaWaitError("You've used all 100 free requests for today"))
   ok('余额不足不挂续跑', !m.isQuotaWaitError('insufficient balance'))
+  ok('额外用量用尽不挂续跑', !m.isQuotaWaitError('400 Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going.'))
   ok('频率限流不挂续跑', !m.isQuotaWaitError('429 Too many requests, rate limit exceeded'))
   ok('鉴权错误不挂续跑', !m.isQuotaWaitError('401 Unauthorized'))
   ok('空错误不挂续跑', !m.isQuotaWaitError(''))
+  ok('Anthropic 429 rate_limit_error \u5f52\u4e3a\u9650\u6d41\uff0c\u5f85\u6838\u5bf9\u989d\u5ea6\u7a97\u53e3', m.isRateLimitError('429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account\'s rate limit. Please try again later."}}'))
+  ok('\u989d\u5ea6\u7528\u5c3d\u4e0d\u7b97\u9650\u6d41', !m.isRateLimitError("You've used all 100 free requests for today"))
+  ok('\u9274\u6743\u9519\u8bef\u4e0d\u7b97\u9650\u6d41', !m.isRateLimitError('401 Unauthorized'))
 
   ok('已用满的窗口算被卡住', m.blockedQuotaWindows([win('a', 100), win('b', 40)]).map((w) => w.id).join() === 'a')
   ok('exceeded 标记算被卡住', m.blockedQuotaWindows([win('a', 10, undefined, { exceeded: true })]).length === 1)

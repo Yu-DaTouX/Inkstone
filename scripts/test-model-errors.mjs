@@ -21,6 +21,7 @@ export async function runModelErrorTests(ok) {
     ['upstream request cancelled', 'retryable'],
     ['ECONNRESET', 'retryable'],
     ['insufficient credit balance', 'quota'],
+    ['400 {"type":"error","error":{"type":"invalid_request_error","message":"Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going."}}', 'quota'],
     [
       'Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://platform.openai.com/settings/organization/status-and-access before retrying.',
       'refused'
@@ -65,8 +66,8 @@ export async function runModelErrorTests(ok) {
     ['insufficient balance', /余额/],
     ['WebSocket closed 1012', /服务重启/],
     ['You have hit your ChatGPT usage limit (plus plan). Try again in ~76 min.', /套餐用量上限/],
-    ['429 Too Many Requests', /请求频率/],
-    ['Rate limit exceeded, please slow down', /请求频率/],
+    ['429 Too Many Requests', /限流.*用量窗口/],
+    ['Rate limit exceeded, please slow down', /限流.*用量窗口/],
     ['401 invalid api key', /重新登录/],
     ['context_length_exceeded: maximum context length', /压缩会话/],
     ['503 overloaded', /故障或过载/],

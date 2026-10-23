@@ -818,6 +818,8 @@
   "quota.resume.leftHM": "{h} 小时 {m} 分",
   "quota.resume.leftM": "{m} 分钟",
   "quota.resume.cancelAuto": "取消自动续跑",
+  "quota.resume.kicker": "自动续跑",
+  "quota.resume.now": "立即重试",
   "quota.stale": "查询失败（{msg}）· 下面显示的是上次成功的数据",
   "quota.unsupported": "此服务商未提供公开额度接口，不自动刷新（可手动刷新或设置月预算）",
   "quota.usedInline": "已用 {pct}%",

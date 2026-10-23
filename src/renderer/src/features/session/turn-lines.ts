@@ -6,7 +6,7 @@ import { classifyModelError, type ModelErrorKind, type ModelErrorQuotaScope } fr
 import { sameSessionFile } from '../../state/view-identity'
 import type { SessionTextKey } from './text'
 
-export type ErrorCardAction = 'retry' | 'model' | 'compact'
+export type ErrorCardAction = 'retry' | 'model' | 'compact' | 'wait'
 
 interface ErrorCardModel {
   kind: ModelErrorKind
