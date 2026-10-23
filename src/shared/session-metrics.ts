@@ -113,14 +113,7 @@ export function stepSpeeds(messages: readonly UIMessage[], limit: number): numbe
   return out.slice(Math.max(0, out.length - limit))
 }
 
-export function projectSessionMetrics(
-  messages: readonly UIMessage[],
-  stats: SessionStats | null | undefined,
-  options?: SessionMetricsOptions
-): SessionMetrics {
-  const msgs = effectiveMessages(messages)
-  const historyPartial = options?.historyPartial === true
-
+function turnCountsOf(msgs: readonly UIMessage[]): SessionTurnCounts {
   let turns = 0
   let steps = 0
   let pendingUser = false
@@ -136,6 +129,76 @@ export function projectSessionMetrics(
       pendingUser = false
     }
   }
+  return { turns, steps }
+}
+
+export interface SessionTurnCounts {
+  turns: number
+  steps: number
+}
+
+export function sessionTurnCounts(messages: readonly UIMessage[]): SessionTurnCounts {
+  return turnCountsOf(effectiveMessages(messages))
+}
+
+function isStepNoise(m: UIMessage): boolean {
+  return !!m.question || m.role === 'note' || (m.role === 'user' && isSubagentNotice(m.text))
+}
+
+export function liveStepId(messages: readonly UIMessage[], streaming: boolean): string | null {
+  if (!streaming) return null
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!m || isStepNoise(m)) continue
+    return m.role === 'assistant' && typeof m.id === 'string' ? m.id : null
+  }
+  return null
+}
+
+export interface LiveStepSplit {
+  settled: readonly UIMessage[]
+  live: UIMessage | null
+}
+
+export function splitLiveStep(messages: readonly UIMessage[], liveId: string | null): LiveStepSplit {
+  if (liveId === null) return { settled: messages, live: null }
+  let live: UIMessage | null = null
+  const settled = messages.filter((m) => {
+    if (m?.role !== 'assistant' || m.id !== liveId) return true
+    live = m
+    return false
+  })
+  return live ? { settled, live } : { settled: messages, live: null }
+}
+
+export function liveActivitySince(messages: readonly UIMessage[], live: UIMessage | null, running: boolean): number | null {
+  if (!running) return null
+  let since = live && isNonNegative(live.timestamp) ? live.timestamp : null
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!m) continue
+    if (m.role === 'user' && !isStepNoise(m)) break
+    for (const c of m.toolCalls ?? []) {
+      if (c?.status !== 'running' || !isNonNegative(c.startedAt) || isNonNegative(c.endedAt)) continue
+      since = since === null ? c.startedAt : Math.min(since, c.startedAt)
+    }
+  }
+  return since
+}
+
+export function stepSpeed(m: UIMessage | null | undefined): number | null {
+  const decode = m ? stepDecode(m) : null
+  return decode && decode.ms > 0 ? decode.tokens / (decode.ms / 1000) : null
+}
+
+export function projectSessionMetrics(
+  messages: readonly UIMessage[],
+  stats: SessionStats | null | undefined,
+  options?: SessionMetricsOptions
+): SessionMetrics {
+  const msgs = effectiveMessages(messages)
+  const historyPartial = options?.historyPartial === true
+  const { turns, steps } = turnCountsOf(msgs)
 
   const countedUntil = stats?.countedUntil
   let derived: Usage | undefined

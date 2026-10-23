@@ -45,21 +45,35 @@ export function Stat({ label, value, unit, span, aside, footer, className, style
 
 export interface MiniBarsProps {
   values: readonly number[]
+  pending?: number | null
+  slots?: number
+  stretch?: boolean
   className?: string
 }
 
-export function MiniBars({ values, className }: MiniBarsProps) {
-  const max = values.reduce((top, v) => (v > top ? v : top), 0)
+function barHeight(v: number, max: number): string {
+  return `${max > 0 ? Math.max(12, Math.round((v / max) * 100)) : 12}%`
+}
+
+export function MiniBars({ values, pending, slots, stretch, className }: MiniBarsProps) {
+  const live = pending !== undefined
+  const liveValue = typeof pending === 'number' && Number.isFinite(pending) && pending > 0 ? pending : 0
+  const max = values.reduce((top, v) => (v > top ? v : top), liveValue)
+  const filler = Math.max(0, (slots ?? 0) - values.length - (live ? 1 : 0))
   return (
-    <span className={cx('ui-minibars', className)} aria-hidden="true">
+    <span className={cx('ui-minibars', className)} data-stretch={stretch ? '1' : undefined} aria-hidden="true">
+      {Array.from({ length: filler }, (_, i) => (
+        <span key={`slot-${i}`} className="ui-minibars__bar" data-slot="1" />
+      ))}
       {values.map((v, i) => (
         <span
           key={i}
           className="ui-minibars__bar"
           data-last={i === values.length - 1 ? '1' : undefined}
-          style={{ height: `${max > 0 ? Math.max(12, Math.round((v / max) * 100)) : 12}%` }}
+          style={{ height: barHeight(v, max) }}
         />
       ))}
+      {live ? <span key="pending" className="ui-minibars__bar" data-pending="1" style={{ height: barHeight(liveValue, max) }} /> : null}
     </span>
   )
 }

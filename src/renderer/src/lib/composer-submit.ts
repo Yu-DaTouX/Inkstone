@@ -36,7 +36,7 @@ export type NativeSessionAction =
   | 'export-jsonl'
   | 'new-session'
 
-interface ComposerSendActions {
+export interface ComposerSendActions {
   runBash(command: string, options?: { excludeFromContext?: boolean }): ComposerCommandResult | Promise<ComposerCommandResult>
   openSettings(tab?: string): void
   newSession(): void | Promise<unknown>

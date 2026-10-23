@@ -22,9 +22,15 @@ export function useThrottledValue<T>(value: T, active: boolean, intervalMs = STR
   return active ? shown : value
 }
 
-export function useStreamingThrottledStore<T>(selector: (s: Store) => T, intervalMs = STREAMING_INTERVAL_MS): T {
+export function useStreamingThrottledStore<T>(
+  selector: (s: Store) => T,
+  intervalMs = STREAMING_INTERVAL_MS,
+  equals: (a: T, b: T) => boolean = Object.is
+): T {
   const selectorRef = useRef(selector)
   selectorRef.current = selector
+  const equalsRef = useRef(equals)
+  equalsRef.current = equals
   const [value, setValue] = useState(() => selector(useStore.getState()))
   const valueRef = useRef(value)
 
@@ -35,13 +41,13 @@ export function useStreamingThrottledStore<T>(selector: (s: Store) => T, interva
       timer = null
       lastAt = performance.now()
       const next = selectorRef.current(useStore.getState())
-      if (Object.is(next, valueRef.current)) return
+      if (equalsRef.current(next, valueRef.current)) return
       valueRef.current = next
       setValue(() => next)
     }
     publish()
     const unsubscribe = useStore.subscribe((s) => {
-      if (Object.is(selectorRef.current(s), valueRef.current)) return
+      if (equalsRef.current(selectorRef.current(s), valueRef.current)) return
       if (!streamingNow(s)) {
         if (timer) clearTimeout(timer)
         publish()

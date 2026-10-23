@@ -216,6 +216,11 @@ export interface GitChangesOptions {
   patches?: boolean
 }
 
+export interface GitPathScreen {
+  ignored: string[]
+  missing: string[]
+}
+
 export interface GitChangePatch {
   state: 'inline' | 'deferred' | 'binary' | 'too-large'
   patch?: string

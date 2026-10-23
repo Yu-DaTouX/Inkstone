@@ -7,6 +7,7 @@ import { useThrottledValue } from '../../state/streaming-throttle'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
 import { TurnView } from './TurnView'
+import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
 import { ToolExpansionScope } from './use-tool-run'
 import { PendingRunNotice } from './RunNotice'
 import { ApprovalCard } from './ApprovalCard'
@@ -221,7 +222,14 @@ export function SessionView(): JSX.Element {
     () => mergeQuestionLog(messages, questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
     [messages, questionLog, questionLogSession, view.sessionId]
   )
-  const turns = useMemo(() => projectTurns(effectiveMessages, streamingId), [effectiveMessages, streamingId, projectTurns])
+  const projectedMessages = useMemo(() => withoutWrapUpMessages(effectiveMessages), [effectiveMessages])
+  const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
+  const wrapUpBusy = !!(session?.isAgentRunning || session?.isStreaming || session?.isCompacting)
+  const wrapUpOn = settings?.wrapUpCard !== false
+  const wrapUp = useMemo(
+    () => sessionWrapUp({ enabled: wrapUpOn, active: viewActive, busy: wrapUpBusy, turns, messages: effectiveMessages }),
+    [wrapUpOn, viewActive, wrapUpBusy, turns, effectiveMessages]
+  )
 
   const awaitingReply = viewActive && turns.length > 0 && turns[turns.length - 1].kind !== 'assistant' && !!(session?.isAgentRunning || session?.isStreaming)
   const renderTurns = useMemo<RenderItem[]>(
@@ -477,7 +485,7 @@ export function SessionView(): JSX.Element {
           >
             {(item) => (
               <div key={`${identity}|${item.id}`} className="v3-stream-row">
-                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />}
+                {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} />}
               </div>
             )}
           </VList>
@@ -487,7 +495,7 @@ export function SessionView(): JSX.Element {
               {turns.length === 0 ? (switchLoading ? null : <V3EmptyState key={view.sessionId || identity} />) : renderTurns.map((item) =>
                 isPending(item)
                   ? <PendingRunNotice key={`${identity}|${item.id}`} />
-                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} />
+                  : <TurnView key={`${identity}|${item.id}`} turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} />
               )}
             </div>
           </div>

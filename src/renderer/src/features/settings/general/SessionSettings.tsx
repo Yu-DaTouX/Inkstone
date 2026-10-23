@@ -27,6 +27,7 @@ export function SessionSettings(): ReactElement {
   const checkpoints = settings?.checkpointsEnabled !== false
   const subagentNotify = settings?.subagentNotify !== false
   const loopAutoContinue = settings?.streamLoopAutoContinue !== false
+  const wrapUpCard = settings?.wrapUpCard !== false
   const models = useStore((s) => s.models)
   const subagentDefault = settings?.subagentDefaultModel
   const subagentModelKey = subagentDefault && subagentDefault !== 'follow' ? `${subagentDefault.provider}/${subagentDefault.id}` : FOLLOW_SESSION
@@ -71,6 +72,15 @@ export function SessionSettings(): ReactElement {
             isSelected={checkpoints}
             onChange={(on) => void patchSettings({ checkpointsEnabled: on })}
             data-testid="v3-session-checkpoints"
+          />
+        </SettingsRow>
+
+        <SettingsRow settingId="session-wrap-up-card" label={text.sessionWrapUpCard} description={text.sessionWrapUpCardDesc}>
+          <Switch
+            aria-label={text.sessionWrapUpCard}
+            isSelected={wrapUpCard}
+            onChange={(on) => void patchSettings({ wrapUpCard: on })}
+            data-testid="v3-session-wrap-up-card"
           />
         </SettingsRow>
 

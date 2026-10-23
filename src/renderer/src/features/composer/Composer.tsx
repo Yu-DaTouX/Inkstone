@@ -5,6 +5,7 @@ import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
 import { useStore, pendingSendsForView } from '../../state/store'
 import { submitComposerInput } from '../../lib/composer-submit'
+import { composerStoreActions } from '../../lib/composer-store-send'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
 import { readFiles } from './attachment-files'
 import { loadDraft, saveDraft } from './draft-store'
@@ -73,7 +74,6 @@ export function Composer({ className }: { className?: string } = {}) {
 
   const send = useStore((s) => s.send)
   const abort = useStore((s) => s.abort)
-  const runBash = useStore((s) => s.runBash)
   const notify = useStore((s) => s.notify)
   const commands = useStore((s) => s.commands)
   const models = useStore((s) => s.models)
@@ -283,21 +283,7 @@ export function Composer({ className }: { className?: string } = {}) {
       thinkingLevels,
       roundRunning,
       isCompacting: compacting,
-      actions: {
-        runBash,
-        openSettings: (tab) => useStore.getState().openSettings(tab),
-        newSession: () => useStore.getState().newSession({ scope: 'global' }),
-        compact: (custom) => useStore.getState().compact(custom),
-        openBrowser: (url) => useStore.getState().openBrowser(url),
-        setModel: (provider, id) => useStore.getState().setModel(provider, id),
-        exportHtml: (path) => useStore.getState().exportHtml(path),
-        copyLastReply: () => useStore.getState().copyLastReply(),
-        clone: () => useStore.getState().clone(),
-        setManualTitle: (id, title) => useStore.getState().setManualTitle(id, title),
-        setThinking: (level) => useStore.getState().setThinking(level),
-        nativeSession: (action, args) => useStore.getState().nativeSession(action, args),
-        notify
-      },
+      actions: composerStoreActions(),
       clearText: () => setValue(''),
       clearAll,
       restoreText: (raw) => setValue((draft) => (draft ? `${raw}\n${draft}` : raw)),
@@ -307,7 +293,7 @@ export function Composer({ className }: { className?: string } = {}) {
       holdSend: useStore.getState().holdSend,
       focusComposer: () => editorRef.current?.focus()
     })
-  }, [value, commands, models, t, session, thinkingLevels, roundRunning, compacting, runBash, notify, clearAll, restoreAttachments, send])
+  }, [value, commands, models, t, session, thinkingLevels, roundRunning, compacting, clearAll, restoreAttachments, send])
 
   const submitMessage = useCallback(
     async (mode: 'steer' | 'followUp'): Promise<void> => {

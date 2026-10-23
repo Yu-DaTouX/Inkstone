@@ -42,7 +42,7 @@ const zh: SidebarText = {
   restoreSession: '取消归档',
   projectSessionCount: '{n} 个会话',
   newChat: '新建会话',
-  newChatInFolder: '在文件夹中新建会话…',
+  newChatInFolder: '从文件夹新建…',
   showMore: '显示 {n} 条更多',
   showLess: '收起',
   showMoreLabel: '在 {group} 中再显示 {n} 个会话',

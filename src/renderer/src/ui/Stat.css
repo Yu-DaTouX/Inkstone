@@ -94,4 +94,29 @@
   .ui-minibars__bar[data-last='1'] {
     background: var(--fg2);
   }
+
+  .ui-minibars[data-stretch='1'] {
+    display: flex;
+    width: 100%;
+    height: var(--s-24);
+  }
+
+  .ui-minibars[data-stretch='1'] .ui-minibars__bar {
+    flex: 1 1 0;
+    min-width: 0;
+    border-radius: var(--r-xs) var(--r-xs) 0 0;
+    transition: height var(--dur-base) var(--ease);
+  }
+
+  .ui-minibars__bar[data-slot='1'] {
+    height: 1px;
+    background: var(--line);
+  }
+
+  .ui-minibars__bar[data-pending='1'] {
+    box-sizing: border-box;
+    border: 1px dashed var(--fg3);
+    border-bottom: 0;
+    background: transparent;
+  }
 }

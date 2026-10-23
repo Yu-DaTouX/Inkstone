@@ -561,6 +561,10 @@ function questionExtensionPath(): string | undefined {
   return yanThinResourcePath('question.js')
 }
 
+function wrapUpExtensionPath(): string | undefined {
+  return yanThinResourcePath('wrap-up.js')
+}
+
 function shellFallbackExtensionPath(): string | undefined {
   return yanThinResourcePath('shell-fallback.js')
 }
@@ -613,6 +617,7 @@ function yanThinExtensionPaths(): string[] {
   return [
     codemodeExtensionPath(),
     questionExtensionPath(),
+    wrapUpExtensionPath(),
     shellFallbackExtensionPath(),
     responseDetailExtensionPath(),
     preambleExtensionPath(),
@@ -1912,6 +1917,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         piBin: settings.piBin,
         codemodeExtension: codemodeExtensionPath(),
         questionExtension: questionExtensionPath(),
+        wrapUpExtension: wrapUpExtensionPath(),
         shellFallbackExtension: shellFallbackExtensionPath(),
         responseDetailExtension: responseDetailExtensionPath(),
         getResponseDetail: () => agentResponseDetail,

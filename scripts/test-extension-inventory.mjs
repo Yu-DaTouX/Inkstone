@@ -114,6 +114,7 @@ export async function runExtensionInventoryTests(ok) {
           file === 'mcp-app-proxy.js' && toolCalls === 1 && /\.registerTool\(definition\)/.test(source)
         const hostTool =
           (file === 'question.js' && toolCalls === 1 && /\.registerTool\(createQuestionTool\(\)\)/.test(source)) ||
+          (file === 'wrap-up.js' && toolCalls === 1 && /\.registerTool\(createWrapUpTool\(\)\)/.test(source)) ||
           (file === 'capability-guide.js' && toolCalls === 1 && /\.registerTool\(createTodosTool\(\)\)/.test(source))
         const readOnlyTools =
           file === 'readonly-tools.js' &&
@@ -156,7 +157,7 @@ export async function runExtensionInventoryTests(ok) {
     const offenders = scanThinLayerSources(sources)
     ok(
       offenders.length === 0,
-      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy / question / todos / 只读子代理工具），pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
+      `薄层只注册经批准的模型工具（shell-fallback / mcp-app-proxy / question / wrap_up / todos / 只读子代理工具），pi 命令只放行宿主专用那一个（扫了 ${files.length} 个文件）`,
       offenders.join('、')
     )
 

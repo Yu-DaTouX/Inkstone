@@ -80,8 +80,38 @@ async function run() {
       call('r2', 'read'),
       call('r3', 'read')
     ])
-    assert.deepEqual(nested.map((row) => row.kind), ['single', 'single', 'group'], '带子调用的父调用独立')
-    assert.equal(nested[1].node.children.length, 1)
+    assert.deepEqual(nested.map((row) => row.kind), ['group'], '带子调用的脚本与相邻工具合并成一组')
+    assert.deepEqual(nested[0].nodes.map((node) => node.call.id), ['r1', 'p1', 'r2', 'r3'])
+    assert.equal(nested[0].nodes[1].children.length, 1, '组内脚本保留自己的子调用')
+    assert.equal(m.formatToolRun(nested[0].summary, zh), '读取 4 个文件', '组的汇总按脚本内部调用计数，不把脚本本身算成命令')
+
+    const scripts = m.buildToolRows([
+      call('s1', 'codemode', { code: 'x' }),
+      call('s1/1', 'bash', { command: 'git status' }, { parentToolCallId: 's1' }),
+      call('s1/2', 'read', { path: 'a.ts' }, { parentToolCallId: 's1' }),
+      call('t1', 'todos'),
+      call('s2', 'codemode', { code: 'y' }),
+      call('s2/1', 'edit', { path: 'b.ts' }, { parentToolCallId: 's2', details: diff('b.ts', 5, 2) })
+    ])
+    assert.equal(scripts.length, 1, '连续的 codemode 脚本与中间的单个工具合并成一行')
+    assert.equal(m.formatToolRun(scripts[0].summary, zh), '运行 1 条命令，读取 1 个文件，更新待办，编辑 1 个文件')
+    assert.equal(scripts[0].summary.added, 5)
+    assert.equal(scripts[0].summary.removed, 2)
+
+    const liveScript = m.buildToolRows([
+      call('d1', 'read', { path: 'a.ts' }),
+      call('s3', 'codemode', { code: 'z' }, { status: 'running' }),
+      call('s3/1', 'read', { path: 'b.ts' }, { parentToolCallId: 's3' })
+    ])[0].summary
+    assert.equal(liveScript.state, 'running', '组内脚本仍在运行时整组显示运行中')
+    assert.equal(liveScript.running?.id, 's3')
+
+    const failedScript = m.buildToolRows([
+      call('d2', 'read', { path: 'a.ts' }),
+      call('s4', 'codemode', { code: 'w' }, { status: 'error' }),
+      call('s4/1', 'read', { path: 'b.ts' }, { parentToolCallId: 's4' })
+    ])[0].summary
+    assert.equal(failedScript.failed, 1, '脚本本身失败时计入组的失败数')
 
     const samePath = m.summarizeToolRun([
       call('r1', 'read', { path: 'src/style.css' }),
