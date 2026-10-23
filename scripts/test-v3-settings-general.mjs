@@ -178,6 +178,9 @@ async function main() {
     ok(dataHtml.includes('data-testid="v3-data-settings"'), '数据分区有稳定根 testid')
     ok(dataHtml.includes('data-testid="v3-data-location-loading"'), '首帧未读到时显示加载，不伪造路径')
     ok(dataHtml.includes('data-testid="v3-data-export"'), '会话导出按钮存在且接既有 sync.exportSession')
+    ok(dataHtml.includes('data-testid="v3-data-backup-create"') && dataHtml.includes('data-testid="v3-data-backup-verify"'), '备份保留创建与只读校验入口')
+    ok(dataHtml.includes('data-testid="v3-data-backup-restore"') && dataHtml.includes('独立目录') && dataHtml.includes('不覆盖当前数据'), '恢复入口明确独立目录与不覆盖语义')
+    ok(!dataHtml.includes('data-testid="v3-data-backup-open-restored"'), '恢复成功前不能打开未验证的数据目录')
 
     const aboutHtml = render(
       createElement(i18n.I18nProvider, null, createElement(General.AboutSettings))

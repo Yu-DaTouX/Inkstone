@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
 import type { StorageInfoView } from '../../../../../shared/ipc'
-import type { BackupSummary } from '../../../../../shared/data-backup'
+import type { BackupAction, BackupSummary } from '../../../../../shared/data-backup'
 import { useStore } from '../../../state/store'
 import { Button, Notice } from '../../../ui'
 import { generalText, type GeneralText } from './general-text'
@@ -56,7 +56,7 @@ export function StorageFacts({ info, text }: StorageFactsProps): ReactElement {
   )
 }
 
-type DataScope = 'storage' | 'backup' | 'verify' | 'session'
+type DataScope = 'storage' | 'backup' | 'verify' | 'restore' | 'session'
 
 interface DataMessage {
   scope: DataScope
@@ -89,7 +89,7 @@ export function DataSettings(): ReactElement {
   const [info, setInfo] = useState<StorageInfoView | null>(null)
   const [target, setTarget] = useState<string | null>(null)
   const [busy, setBusy] = useState<DataScope | 'import' | null>(null)
-  const [summary, setSummary] = useState<{ action: 'create' | 'verify'; value: BackupSummary } | null>(null)
+  const [summary, setSummary] = useState<{ action: 'create' | 'verify' | 'restore'; value: BackupSummary } | null>(null)
   const [message, setMessage] = useState<DataMessage | null>(null)
 
   useEffect(() => {
@@ -137,14 +137,15 @@ export function DataSettings(): ReactElement {
     }
   }
 
-  const backup = async (action: 'create' | 'verify'): Promise<void> => {
-    const scope: DataScope = action === 'create' ? 'backup' : 'verify'
+  const backup = async (action: BackupAction): Promise<void> => {
+    const summaryAction = action === 'open-restored' ? 'restore' : action
+    const scope: DataScope = summaryAction === 'create' ? 'backup' : summaryAction
     setBusy(scope)
     setMessage(null)
-    setSummary(null)
+    if (action !== 'open-restored') setSummary(null)
     try {
       const result = await window.yan.backup(action)
-      if (result.ok) setSummary({ action, value: result.summary })
+      if (result.ok) setSummary({ action: summaryAction, value: result.summary })
       else if (!result.cancelled) setMessage({ scope, tone: 'fail', text: result.error ?? text.dataBackup })
     } catch (cause) {
       setMessage({ scope, tone: 'fail', text: describe(cause) })
@@ -183,12 +184,12 @@ export function DataSettings(): ReactElement {
     }
   }
 
-  const summaryLine = (action: 'create' | 'verify'): ReactElement | null =>
+  const summaryLine = (action: 'create' | 'verify' | 'restore'): ReactElement | null =>
     summary?.action === action ? (
       <>
         <br />
         <span data-testid="v3-data-backup-summary" role="status">
-          {text.dataBackupChecked.replace('{files}', String(summary.value.files)).replace('{size}', bytesText(summary.value.bytes))}
+          {(action === 'restore' ? local.dataBackupRestored : text.dataBackupChecked).replace('{files}', String(summary.value.files)).replace('{size}', bytesText(summary.value.bytes))}
           {' · '}
           <span className="settings-path" title={summary.value.path}>
             {summary.value.path}
@@ -197,7 +198,7 @@ export function DataSettings(): ReactElement {
       </>
     ) : null
 
-  const openSummary = (action: 'create' | 'verify'): ReactElement | null =>
+  const openSummary = (action: 'create' | 'verify' | 'restore'): ReactElement | null =>
     summary?.action === action ? (
       <Button variant="secondary" onPress={() => void window.yan.revealPath(summary.value.path)}>
         {text.dataOpen}
@@ -236,11 +237,27 @@ export function DataSettings(): ReactElement {
           }
         >
           {openSummary('verify')}
-          <Button variant="secondary" isDisabled={busy !== null} onPress={() => void backup('verify')}>
+          <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-verify" onPress={() => void backup('verify')}>
             {busy === 'verify' ? text.dataBackupWorking : text.dataBackupVerify}
           </Button>
         </SettingsRow>
         <DataMessageLine message={message} scope="verify" />
+        <SettingsRow
+          settingId="data-backup-restore"
+          label={local.dataBackupRestore}
+          description={<>{local.dataBackupRestoreDesc}{summaryLine('restore')}</>}
+        >
+          {openSummary('restore')}
+          {summary?.action === 'restore' ? (
+            <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-open-restored" onPress={() => void backup('open-restored')}>
+              {local.dataBackupOpenRestored}
+            </Button>
+          ) : null}
+          <Button variant="secondary" isDisabled={busy !== null} data-testid="v3-data-backup-restore" onPress={() => void backup('restore')}>
+            {busy === 'restore' ? text.dataBackupWorking : local.dataBackupRestore}
+          </Button>
+        </SettingsRow>
+        <DataMessageLine message={message} scope="restore" />
       </SettingsGroup>
 
       <SettingsGroup title={labels.groupDataStorage}>

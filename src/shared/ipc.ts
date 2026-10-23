@@ -1802,7 +1802,7 @@ export interface YanBridge {
   revealPath(p: string): Promise<{ ok: boolean }>
   copyImage(dataUrl: string): Promise<{ ok: boolean; error?: string }>
   saveImage(dataUrl: string, suggestedName?: string): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
-  backup(action: 'create' | 'verify'): Promise<import('./data-backup').BackupResult>
+  backup(action: import('./data-backup').BackupAction): Promise<import('./data-backup').BackupResult>
   storage: {
     info(): Promise<StorageInfoView>
     pick(): Promise<string | null>

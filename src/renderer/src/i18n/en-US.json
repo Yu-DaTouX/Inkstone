@@ -56,7 +56,7 @@
   "native.trust.saved": "Project trust applied",
   "widget.saved": "Saved; restored on reload",
   "backup.title": "Local backup",
-  "backup.scope": "Conversations, desktop settings, bookmarks and widget state; excludes credential files, attachments and project files. Content may be sensitive. Back up while idle. Verification does not restore or overwrite data.",
+  "backup.scope": "Conversations, desktop settings, bookmarks, widget state, and attachments and artifacts stored in the data folder; excludes credentials and project files. Content may be sensitive. Back up while idle. Verification does not write data; restoration creates an independent folder without overwriting current data.",
   "backup.checked": "Verified: {files} files · {mb} MB",
   "backup.create": "Create backup",
   "backup.verify": "Verify backup",

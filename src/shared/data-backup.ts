@@ -1,3 +1,5 @@
+export type BackupAction = 'create' | 'verify' | 'restore' | 'open-restored'
+
 export interface BackupSummary {
   path: string
   createdAt: string
