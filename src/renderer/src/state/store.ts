@@ -275,7 +275,7 @@ export interface Store {
   switchSession: (path: string) => Promise<void>
   pickProjectSession: (cwd: string, projectId?: string) => string | undefined
   ensureActivated: (expected?: ComposerSubmitIdentity) => Promise<boolean>
-  moveSession: (sessionId: string, projectId: string | null) => Promise<boolean>
+  moveSession: (sessionId: string, projectId: string | null, cwd?: string) => Promise<boolean>
   setSessionArchived: (sessionId: string, archived: boolean) => Promise<boolean>
   setSessionPinned: (sessionId: string, pinned: boolean) => Promise<boolean>
   renameSession: (name: string) => Promise<void>
@@ -2041,13 +2041,17 @@ export const useStore = create<Store>((rawSet, get) => {
     return true
   },
 
-  moveSession: async (sessionId, projectId) => {
-    const res = await window.yan.moveSession(sessionId, projectId)
+  moveSession: async (sessionId, projectId, cwd) => {
+    const before = get()
+    const showing = before.session?.sessionId === sessionId
+    const showingPath = showing ? before.session?.sessionFile : undefined
+    const res = await window.yan.moveSession(sessionId, projectId, cwd)
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.moveFailed')) })
       return false
     }
     await get().refreshSessions()
+    if (res.cwdChanged && showingPath && get().session?.sessionId === sessionId) await get().switchSession(showingPath)
     return true
   },
 

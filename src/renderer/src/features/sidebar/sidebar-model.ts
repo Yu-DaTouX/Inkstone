@@ -156,7 +156,6 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
       (!currentProjectId && !!currentCwd && group.cwd.toLowerCase() === currentCwd.toLowerCase())
   }
   groups.sort((a, b) => {
-    if (a.current !== b.current) return a.current ? -1 : 1
     const at = a.list[0] ? activityOf(a.list[0]) : 0
     const bt = b.list[0] ? activityOf(b.list[0]) : 0
     return bt - at

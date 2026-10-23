@@ -232,8 +232,35 @@ export function trackPointerDrag(start: DragStart, begin: (point: DragPoint) => 
   cancelActive = () => finish(false)
 }
 
+export interface SessionFolderDrop {
+  item: SessionDragItem
+  projectId: string | null
+  cwd: string
+  label: string
+}
+
+export const SESSION_FOLDER_DROP_EVENT = 'yan-v3-session-folder-drop'
+
+function folderUnder(x: number, y: number, home: HTMLElement | null): HTMLElement | null {
+  if (x > sidebarEdge()) return null
+  for (const group of document.querySelectorAll<HTMLElement>('.v3-side .v3-group[data-move-cwd]')) {
+    if (group === home) continue
+    const rect = group.getBoundingClientRect()
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return group
+  }
+  return null
+}
+
 export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElement }, item: SessionDragItem, onDragged: () => void): void {
   const row = event.currentTarget.closest<HTMLElement>('.v3-srow') ?? event.currentTarget
+  const home = row.closest<HTMLElement>('.v3-group')
+  let folder: HTMLElement | null = null
+  const markFolder = (next: HTMLElement | null): void => {
+    if (next === folder) return
+    folder?.removeAttribute('data-drop-over')
+    next?.setAttribute('data-drop-over', '1')
+    folder = next
+  }
   const ref: SplitSessionRef = { sessionId: item.id, path: item.path }
   trackPointerDrag(
     event,
@@ -260,6 +287,8 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         ghost,
         blocksOverlay: !!ctx,
         hover: ({ x, y }) => {
+          markFolder(folderUnder(x, y, home))
+          if (folder) return { badge: null, over: false }
           if (!ctx || !geometry) return { badge: null, over: false }
           const next = x > edge ? sessionDropTarget(ctx, geometry, x, y) : null
           if (!sameDropTarget(next, target)) {
@@ -269,8 +298,19 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
           return { badge, over: target !== null }
         },
         drop: () => {
+          if (folder) {
+            const detail: SessionFolderDrop = {
+              item,
+              projectId: folder.dataset.moveProject || null,
+              cwd: folder.dataset.moveCwd ?? '',
+              label: folder.dataset.moveLabel ?? ''
+            }
+            window.dispatchEvent(new CustomEvent(SESSION_FOLDER_DROP_EVENT, { detail }))
+            return
+          }
           if (target) dropSessionInSplit(item, target)
-        }
+        },
+        end: () => markFolder(null)
       }
     },
     onDragged

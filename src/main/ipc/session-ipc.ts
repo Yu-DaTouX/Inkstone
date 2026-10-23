@@ -14,6 +14,7 @@ import { listSessions, deleteSession, readTitleSamples, restoreSession, isSessio
 import { searchSessionText, warmSessionSearch } from '../session-search'
 import { archiveSessionsBatch, getSessionLayout, moveSessionLayout, setSessionFlags } from '../session-layout'
 import { resolveSessionOpenTarget } from '../session-open-target'
+import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
@@ -139,7 +140,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     }
   })
 
-  handle('yan:moveSession', async (sessionId: string, projectId: string | null) => {
+  handle('yan:moveSession', async (sessionId: string, projectId: string | null, cwd?: string) => {
     const settings = await getSettings()
     if (projectId !== null && !settings.projects.some((project) => project.id === projectId)) {
       return { ok: false, error: '目标项目不存在或已被移除' }
@@ -147,8 +148,24 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     const target = await locateSession(sessionId)
     if (!target) return { ok: false, error: '找不到要移动的会话' }
     try {
-      const entry = await moveSessionLayout({ sessionId, sessionFile: target.path, cwd: target.cwd }, projectId)
-      return { ok: true, entry }
+      let nextCwd = target.cwd
+      let cwdChanged = false
+      if (typeof cwd === 'string' && cwd) {
+        const checked = await host.validateCwd(cwd)
+        if (!checked.ok) return checked
+        if (resolve(checked.cwd).toLowerCase() !== resolve(target.cwd || '.').toLowerCase()) {
+          const sessionFile = resolve(target.path).toLowerCase()
+          const live = host.runners()?.statuses().find((status) => !!status.sessionFile && resolve(status.sessionFile).toLowerCase() === sessionFile)
+          if (live && (live.running || live.waiting)) return { ok: false, error: '会话正在运行，等这一轮结束再移动工作目录' }
+          if (live) await host.runners()?.stopBySessionFile(target.path)
+          await rewriteSessionCwd(target.path, checked.cwd)
+          nextCwd = checked.cwd
+          cwdChanged = true
+        }
+      }
+      const entry = await moveSessionLayout({ sessionId, sessionFile: target.path, cwd: nextCwd }, projectId)
+      if (cwdChanged) host.pushRunners()
+      return { ok: true, entry, cwdChanged }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }

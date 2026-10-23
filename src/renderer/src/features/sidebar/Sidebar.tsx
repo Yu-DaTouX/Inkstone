@@ -3,7 +3,8 @@ import { Archive, CirclePlus, Clock, Layers, PanelLeftClose, Search, Settings, F
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Avatar, Button, EmptyState, IconButton, SearchField, StatusDot, type StatusDotKind } from '../../ui'
+import { Avatar, Button, Dialog, EmptyState, IconButton, Modal, ModalOverlay, SearchField, StatusDot, type StatusDotKind } from '../../ui'
+import { SESSION_FOLDER_DROP_EVENT, type SessionFolderDrop } from '../split/split-drag'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
@@ -59,6 +60,19 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const revealedRef = useRef('')
   const listRef = useRef<HTMLElement>(null)
   const pendingFocusRef = useRef('')
+  const [folderDrop, setFolderDrop] = useState<SessionFolderDrop | null>(null)
+
+  useEffect(() => {
+    const onFolderDrop = (event: Event): void => setFolderDrop((event as CustomEvent<SessionFolderDrop>).detail)
+    window.addEventListener(SESSION_FOLDER_DROP_EVENT, onFolderDrop)
+    return () => window.removeEventListener(SESSION_FOLDER_DROP_EVENT, onFolderDrop)
+  }, [])
+
+  const applyFolderDrop = (withCwd: boolean): void => {
+    const drop = folderDrop
+    setFolderDrop(null)
+    if (drop) void useStore.getState().moveSession(drop.item.id, drop.projectId, withCwd ? drop.cwd : undefined)
+  }
 
   const sessions = useStore((s) => s.sessions)
   const session = useStore((s) => s.session)
@@ -353,7 +367,14 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
             const page = pageOf(group)
             const rows = collapsed ? [] : page.rows
             return (
-              <div key={group.slot} className="v3-group" data-collapsed={collapsed ? '1' : undefined}>
+              <div
+                key={group.slot}
+                className="v3-group"
+                data-collapsed={collapsed ? '1' : undefined}
+                data-move-cwd={group.key !== 'pinned' && group.cwd ? group.cwd : undefined}
+                data-move-project={group.projectId}
+                data-move-label={group.label}
+              >
                 <ProjectHeader
                   group={group}
                   record={group.projectId ? projectRecords.find((project) => project.id === group.projectId) : undefined}
@@ -466,6 +487,29 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           </IconTip>
         ) : null}
       </div>
+
+      <ModalOverlay isDismissable isOpen={!!folderDrop} onOpenChange={(open) => { if (!open) setFolderDrop(null) }}>
+        <Modal>
+          <Dialog title={own.moveDropTitle.replace('{folder}', folderDrop?.label ?? '')} closeLabel={text.cancel} data-testid="v3-session-folder-drop">
+            <div className="v3-confirm">
+              <p className="v3-confirm-body">{own.moveDropBody.replace('{name}', folderDrop?.item.title ?? '')}</p>
+              {folderDrop?.projectId ? <p className="v3-confirm-body">{own.moveDropOwnerOnly} · {own.moveDropOwnerOnlyHint}</p> : null}
+              <p className="v3-confirm-body">{own.moveDropWithCwd} · {own.moveDropWithCwdHint.replace('{cwd}', folderDrop?.cwd ?? '')}</p>
+              <div className="v3-confirm-actions">
+                <Button variant="secondary" onPress={() => setFolderDrop(null)}>{text.cancel}</Button>
+                {folderDrop?.projectId ? (
+                  <Button variant="secondary" onPress={() => applyFolderDrop(false)} data-testid="v3-session-folder-drop-owner">
+                    {own.moveDropOwnerOnly}
+                  </Button>
+                ) : null}
+                <Button variant="primary" onPress={() => applyFolderDrop(true)} data-testid="v3-session-folder-drop-cwd">
+                  {own.moveDropWithCwd}
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
     </aside>
   )
 })

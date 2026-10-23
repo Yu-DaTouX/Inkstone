@@ -1,7 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunnerStatus } from '../shared/ipc'
-import { samePath } from '../shared/session-path'
 import { YAN_DIR } from './paths'
 
 export const EXIT_SNAPSHOT_FILE = join(YAN_DIR, 'exit-snapshot.json')
@@ -120,11 +119,8 @@ export async function clearExitSnapshot(): Promise<void> {
   await rm(EXIT_SNAPSHOT_FILE, { force: true })
 }
 
-export function pickRestoreRunner(
-  snapshot: ExitSnapshot,
-  cwd: string
-): ExitSnapshot['runners'][number] | undefined {
-  const usable = snapshot.runners.filter((runner) => runner.sessionFile && samePath(runner.cwd, cwd))
+export function pickRestoreRunner(snapshot: ExitSnapshot): ExitSnapshot['runners'][number] | undefined {
+  const usable = snapshot.runners.filter((runner) => runner.sessionFile)
   if (!usable.length) return undefined
   const interrupted = usable.filter((runner) => runner.running)
   if (interrupted.length) return interrupted.sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0]

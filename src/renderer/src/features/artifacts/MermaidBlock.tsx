@@ -23,17 +23,27 @@ function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+function colorToken(name: string): string {
+  const probe = document.createElement('span')
+  probe.style.display = 'none'
+  probe.style.color = `var(${name})`
+  document.documentElement.appendChild(probe)
+  const resolved = getComputedStyle(probe).color
+  probe.remove()
+  return resolved || token(name)
+}
+
 function readTokens(): MermaidTokenSet {
   return {
     dark: document.documentElement.getAttribute('data-theme') === 'dark',
-    bg: token(MERMAID_THEME_TOKEN_NAMES.bg),
-    surface: token(MERMAID_THEME_TOKEN_NAMES.surface),
-    surfaceAlt: token(MERMAID_THEME_TOKEN_NAMES.surfaceAlt),
-    sunken: token(MERMAID_THEME_TOKEN_NAMES.sunken),
-    fg: token(MERMAID_THEME_TOKEN_NAMES.fg),
-    fgMute: token(MERMAID_THEME_TOKEN_NAMES.fgMute),
-    line2: token(MERMAID_THEME_TOKEN_NAMES.line2),
-    accent: token(MERMAID_THEME_TOKEN_NAMES.accent),
+    bg: colorToken(MERMAID_THEME_TOKEN_NAMES.bg),
+    surface: colorToken(MERMAID_THEME_TOKEN_NAMES.surface),
+    surfaceAlt: colorToken(MERMAID_THEME_TOKEN_NAMES.surfaceAlt),
+    sunken: colorToken(MERMAID_THEME_TOKEN_NAMES.sunken),
+    fg: colorToken(MERMAID_THEME_TOKEN_NAMES.fg),
+    fgMute: colorToken(MERMAID_THEME_TOKEN_NAMES.fgMute),
+    line2: colorToken(MERMAID_THEME_TOKEN_NAMES.line2),
+    accent: colorToken(MERMAID_THEME_TOKEN_NAMES.accent),
     font: token(MERMAID_THEME_TOKEN_NAMES.font)
   }
 }

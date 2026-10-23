@@ -110,7 +110,7 @@ await check('优先恢复被中断（running）的实例，即使它更早活动
   const picked = pickRestoreRunner(snapshotOf([
     status({ id: 'r-idle', lastActiveAt: 900 }),
     status({ id: 'r-running', running: true, lastActiveAt: 100 })
-  ]), 'C:/work/project')
+  ]))
   assert.equal(picked.id, 'r-running')
 })
 
@@ -118,22 +118,24 @@ await check('都空闲时取最近活动的实例', () => {
   const picked = pickRestoreRunner(snapshotOf([
     status({ id: 'r-old', lastActiveAt: 100 }),
     status({ id: 'r-new', lastActiveAt: 900 })
-  ]), 'C:/work/project')
+  ]))
   assert.equal(picked.id, 'r-new')
 })
 
-await check('cwd 不一致时不恢复（大小写与斜杠两种写法视为同一路径）', () => {
-  assert.equal(pickRestoreRunner(snapshotOf([status()]), 'C:/work/other'), undefined)
-  const picked = pickRestoreRunner(snapshotOf([status()]), 'c:\\work\\project\\')
-  assert.equal(picked.id, 'r-1')
+await check('不按当前文件夹过滤，恢复退出前最近活动的会话', () => {
+  const picked = pickRestoreRunner(snapshotOf([
+    status({ id: 'r-other', cwd: 'E:/elsewhere', lastActiveAt: 900 }),
+    status({ id: 'r-1', lastActiveAt: 100 })
+  ]))
+  assert.equal(picked.id, 'r-other')
 })
 
 await check('没有 sessionFile 的实例不参与恢复', () => {
-  assert.equal(pickRestoreRunner(snapshotOf([status({ sessionFile: undefined })]), 'C:/work/project'), undefined)
+  assert.equal(pickRestoreRunner(snapshotOf([status({ sessionFile: undefined })])), undefined)
 })
 
 await check('空快照返回 undefined', () => {
-  assert.equal(pickRestoreRunner(snapshotOf([]), 'C:/work/project'), undefined)
+  assert.equal(pickRestoreRunner(snapshotOf([])), undefined)
 })
 
 process.stdout.write('\n▌快照只消费一次\n')

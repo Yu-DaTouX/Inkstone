@@ -28,6 +28,12 @@ export interface SidebarText {
   filterSessions: string
   localUser: string
   connectionSettings: string
+  moveDropTitle: string
+  moveDropBody: string
+  moveDropOwnerOnly: string
+  moveDropOwnerOnlyHint: string
+  moveDropWithCwd: string
+  moveDropWithCwdHint: string
 }
 
 const zh: SidebarText = {
@@ -59,7 +65,13 @@ const zh: SidebarText = {
   pin: '固定会话列表',
   filterSessions: '筛选会话',
   localUser: '本机',
-  connectionSettings: '连接设置'
+  connectionSettings: '连接设置',
+  moveDropTitle: '把会话移到「{folder}」',
+  moveDropBody: '「{name}」要怎么移动？',
+  moveDropOwnerOnly: '只改归属',
+  moveDropOwnerOnlyHint: '会话显示在新文件夹下，命令仍在原工作目录运行。',
+  moveDropWithCwd: '同时改工作目录',
+  moveDropWithCwdHint: '对话保留，之后的命令在 {cwd} 运行。会话正在运行时不能改。'
 }
 
 const en: SidebarText = {
@@ -91,7 +103,13 @@ const en: SidebarText = {
   pin: 'Pin session list',
   filterSessions: 'Filter chats',
   localUser: 'This computer',
-  connectionSettings: 'Connection settings'
+  connectionSettings: 'Connection settings',
+  moveDropTitle: 'Move chat to "{folder}"',
+  moveDropBody: 'How should "{name}" be moved?',
+  moveDropOwnerOnly: 'Change folder only',
+  moveDropOwnerOnlyHint: 'The chat is listed under the new folder; commands still run in its original working directory.',
+  moveDropWithCwd: 'Also change working directory',
+  moveDropWithCwdHint: 'The conversation is kept and later commands run in {cwd}. Not available while the chat is running.'
 }
 
 export function sidebarText(lang: string): SidebarText {

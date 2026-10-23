@@ -17,11 +17,18 @@ try {
  assert.equal(cleanModelChoice({provider:'x',id:'x',name:'x'.repeat(300)}).name.length,256)
  assert.equal(cleanModelFavorites(Array.from({length:300},(_,i)=>({provider:'x',id:String(i)}))).length,256)
  const {applyRememberedModel}=await load('src/main/model-default.ts','default')
- let calls=[];const api={listModels:async()=>{calls.push('list');return[a,b]},setModel:async(provider,id)=>{calls.push({provider,id});return{ok:true}}}
+ let current=null;let calls=[];const api={getState:()=>current,listModels:async()=>{calls.push('list');return[a,b]},setModel:async(provider,id)=>{calls.push({provider,id});return{ok:true}}}
  assert.deepEqual(await applyRememberedModel(api),{ok:true});assert.equal(calls.length,0,'No preference leaves native pi default untouched')
  assert.deepEqual(await applyRememberedModel(api,b),{ok:true});assert.deepEqual(calls,['list',{provider:'two',id:'same'}])
- calls=[];const missing=await applyRememberedModel(api,{provider:'missing',id:'same'})
+ calls=[];current={model:{...b,name:'Updated display name'}}
+ assert.deepEqual(await applyRememberedModel(api,b),{ok:true});assert.deepEqual(calls,['list'],'An already selected available model skips native set_model and its auth/state/stat refreshes')
+ calls=[];current={model:a}
+ assert.deepEqual(await applyRememberedModel(api,b),{ok:true});assert.deepEqual(calls,['list',{provider:'two',id:'same'}],'Same id from another provider still requires a model switch')
+ calls=[];current={model:{provider:'two',id:'different'}}
+ assert.deepEqual(await applyRememberedModel(api,b),{ok:true});assert.deepEqual(calls,['list',{provider:'two',id:'same'}],'A different id from the same provider still requires a model switch')
+ calls=[];current={model:{provider:'missing',id:'same'}};const missing=await applyRememberedModel(api,{provider:'missing',id:'same'})
  assert.equal(missing.ok,false);assert.deepEqual(calls,['list'],'Unavailable choice must not switch to another provider')
+ current={model:null}
  api.setModel=async()=>({ok:false,error:'provider unavailable'})
  assert.deepEqual(await applyRememberedModel(api,a),{ok:false,error:'provider unavailable'})
  const {RunnerRegistry}=await load('src/main/runners.ts','runners')

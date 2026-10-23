@@ -1664,10 +1664,11 @@ export interface YanBridge {
     generation?: number
   }>
   switchSession(path: string): Promise<{ ok: boolean; error?: string }>
-  moveSession(sessionId: string, projectId: string | null): Promise<{
+  moveSession(sessionId: string, projectId: string | null, cwd?: string): Promise<{
     ok: boolean
     error?: string
     entry?: SessionLayoutEntry
+    cwdChanged?: boolean
   }>
 
   setSessionArchived(sessionId: string, archived: boolean): Promise<{ ok: boolean; error?: string }>

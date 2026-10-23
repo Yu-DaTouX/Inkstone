@@ -190,8 +190,8 @@ const api: YanBridge = {
       'yan:selectSession',
       target
     ),
-  moveSession: (sessionId, projectId) =>
-    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry }>('yan:moveSession', sessionId, projectId),
+  moveSession: (sessionId, projectId, cwd) =>
+    invoke<{ ok: boolean; error?: string; entry?: SessionLayoutEntry; cwdChanged?: boolean }>('yan:moveSession', sessionId, projectId, cwd),
   setSessionArchived: (sessionId, archived) => invoke<{ ok: boolean; error?: string }>('yan:setSessionArchived', sessionId, archived),
   setSessionPinned: (sessionId, pinned) => invoke<{ ok: boolean; error?: string }>('yan:setSessionPinned', sessionId, pinned),
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),

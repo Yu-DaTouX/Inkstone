@@ -29,7 +29,6 @@ import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
 import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
 import { getSessionLayout, moveSessionLayout, rememberSession } from './session-layout'
-import { samePath } from '../shared/session-path'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { resolveSessionOpenTarget } from './session-open-target'
@@ -1826,8 +1825,7 @@ async function usableSessionFile(sessionFile: string | undefined): Promise<strin
 async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
   const snapshot = await readExitSnapshot().catch(() => null)
   if (!snapshot) return undefined
-  const settings = await getSettings()
-  const runner = pickRestoreRunner(snapshot, settings.cwd)
+  const runner = pickRestoreRunner(snapshot)
   await clearExitSnapshot().catch(() => undefined)
   const sessionFile = await usableSessionFile(runner?.sessionFile)
   if (!sessionFile) return undefined
@@ -1835,11 +1833,8 @@ async function restoreFromExitSnapshot(): Promise<SessionRestore | undefined> {
 }
 
 async function restoreLastSession(): Promise<SessionRestore | undefined> {
-  const settings = await getSettings()
   const layout = await getSessionLayout().catch(() => null)
-  const candidates = (layout?.entries ?? []).filter((entry) =>
-    !!entry.sessionFile && !entry.archivedAt && samePath(entry.cwd, settings.cwd)
-  )
+  const candidates = (layout?.entries ?? []).filter((entry) => !!entry.sessionFile && !entry.archivedAt)
   const pick = candidates.sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))[0]
   const sessionFile = await usableSessionFile(pick?.sessionFile)
   if (!sessionFile) return undefined

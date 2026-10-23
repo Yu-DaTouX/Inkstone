@@ -401,7 +401,8 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
           aria-expanded={open}
           isDisabled={busy}
           data-testid="model-picker"
-          onPress={() => setOpen((v) => !v)}
+          onPressStart={(e) => { if (e.pointerType === 'mouse') setOpen((v) => !v) }}
+          onPress={(e) => { if (e.pointerType !== 'mouse') setOpen((v) => !v) }}
         >
           <span className="mtp-model" data-testid="model-picker-name">
             {cur ? cur.name : t('picker.notReady')}
