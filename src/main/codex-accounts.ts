@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { YAN_DIR } from './paths'
 import { readAuthEntry, updateAuthFile } from './credentials'
 import { refreshCodexCredential, type CodexOAuthCredential } from './oauth'
-import { chatGptIdentity, type CodexAccountView } from '../shared/account-quota'
+import { chatGptIdentity, type ChatGptIdentity, type CodexAccountView } from '../shared/account-quota'
 
 const STORE_FILE = join(YAN_DIR, 'codex-accounts.json')
 const PROVIDER = 'openai-codex'
@@ -37,9 +37,17 @@ function isCodexCredential(v: unknown): v is CodexOAuthCredential {
   return !!c && c.type === 'oauth' && typeof c.access === 'string' && typeof c.refresh === 'string' && typeof c.accountId === 'string'
 }
 
-function identityOf(credential: CodexOAuthCredential): { key?: string; email?: string; plan?: string } {
-  const id = chatGptIdentity(credential.access, undefined, credential.accountId)
-  return { key: id.key, email: id.email, plan: id.plan }
+function identityOf(credential: CodexOAuthCredential): ChatGptIdentity {
+  return chatGptIdentity(credential.access, undefined, credential.accountId)
+}
+
+function sameAccount(account: StoredAccount, credential: CodexOAuthCredential): boolean {
+  const a = identityOf(account.credential)
+  const b = identityOf(credential)
+  if (!a.accountId || a.accountId !== b.accountId) return false
+  if (a.userId && b.userId) return a.userId === b.userId
+  const email = a.email ?? account.email
+  return !!email && !!b.email && email.toLowerCase() === b.email.toLowerCase()
 }
 
 const isExpired = (c: CodexOAuthCredential): boolean => !(Number(c.expires) > Date.now() + EXPIRY_MARGIN_MS)
@@ -74,8 +82,12 @@ async function readStore(): Promise<Store> {
     await backupCorruptStore()
     throw new Error(`账号凭证文件格式无效；为保护已有账号，已拒绝写入：${STORE_FILE}`)
   }
-  const accounts = raw.accounts.filter((a): a is StoredAccount => !!a && typeof a.key === 'string' && isCodexCredential(a.credential))
-  return { version: 1, accounts }
+  const store: Store = { version: 1, accounts: [] }
+  for (const account of raw.accounts) {
+    if (!account || typeof account.key !== 'string' || !isCodexCredential(account.credential)) continue
+    if (!upsert(store, account.credential, account).key) store.accounts.push(account)
+  }
+  return store
 }
 
 async function writeStore(store: Store): Promise<void> {
@@ -85,19 +97,23 @@ async function writeStore(store: Store): Promise<void> {
   await rename(tmp, STORE_FILE)
 }
 
-function upsert(store: Store, credential: CodexOAuthCredential): { key?: string; changed: boolean } {
+function upsert(store: Store, credential: CodexOAuthCredential, saved?: StoredAccount): { key?: string; changed: boolean } {
   const id = identityOf(credential)
   if (!id.key) return { changed: false }
-  const existing = store.accounts.find((a) => a.key === id.key)
+  const existing = store.accounts.find((a) => a.key === id.key || sameAccount(a, credential))
+  const savedAt = saved?.savedAt ?? Date.now()
   if (!existing) {
-    store.accounts.push({ key: id.key, email: id.email, plan: id.plan, credential, savedAt: Date.now() })
+    store.accounts.push({ key: id.key, email: id.email ?? saved?.email, plan: id.plan ?? saved?.plan, credential, savedAt })
     return { key: id.key, changed: true }
   }
-  if (existing.credential.access !== credential.access && Number(credential.expires) >= Number(existing.credential.expires)) {
-    Object.assign(existing, { email: id.email ?? existing.email, plan: id.plan ?? existing.plan, credential, savedAt: Date.now() })
-    return { key: id.key, changed: true }
+  let changed = false
+  if ((existing.credential.access !== credential.access || existing.credential.refresh !== credential.refresh) &&
+      (Number(credential.expires) > Number(existing.credential.expires) ||
+       (Number(credential.expires) === Number(existing.credential.expires) && savedAt >= existing.savedAt))) {
+    Object.assign(existing, { key: id.key, email: id.email ?? saved?.email ?? existing.email, plan: id.plan ?? saved?.plan ?? existing.plan, credential, savedAt })
+    changed = true
   }
-  return { key: id.key, changed: false }
+  return { key: existing.key, changed }
 }
 
 async function activeCredential(): Promise<CodexOAuthCredential | undefined> {
@@ -116,10 +132,14 @@ export function captureActiveCodexAccount(): Promise<string | undefined> {
   })
 }
 
-export async function listCodexAccounts(labels: Record<string, string> = {}): Promise<CodexAccountView[]> {
-  const activeKey = await captureActiveCodexAccount()
-  const store = await readStore()
-  return store.accounts.map((a) => ({ key: a.key, email: a.email, plan: a.plan, label: labels[a.key], active: a.key === activeKey }))
+export function listCodexAccounts(labels: Record<string, string> = {}): Promise<CodexAccountView[]> {
+  return serial(async () => {
+    const current = await activeCredential()
+    const store = await readStore()
+    const saved = current ? upsert(store, current) : undefined
+    if (saved?.changed) await writeStore(store)
+    return store.accounts.map((a) => ({ key: a.key, email: a.email, plan: a.plan, label: labels[a.key], active: a.key === saved?.key }))
+  })
 }
 
 export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: string }> {
@@ -145,21 +165,41 @@ export function switchCodexAccount(key: string): Promise<{ ok: boolean; error?: 
 
 export function removeCodexAccount(key: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }> {
   return serial(async () => {
-    const store = await readStore()
     let wasActive = false
     try {
-      await updateAuthFile((auth) => {
+      const store = await readStore()
+      await updateAuthFile(async (auth) => {
         const current = auth[PROVIDER]
-        wasActive = isCodexCredential(current) && identityOf(current).key === key
+        if (isCodexCredential(current)) upsert(store, current)
+        const target = store.accounts.find((a) => a.key === key)
+        if (!target) throw new Error('没有找到这个账号，可能已被移除')
+        wasActive = isCodexCredential(current) && (identityOf(current).key === key || sameAccount(target, current))
+        store.accounts = store.accounts.filter((a) => a.key !== key)
+        await writeStore(store)
         if (wasActive) delete auth[PROVIDER]
         return { write: wasActive, result: undefined }
       })
+      return { ok: true, wasActive }
     } catch (e) {
       return { ok: false, wasActive, error: e instanceof Error ? e.message : String(e) }
     }
-    store.accounts = store.accounts.filter((a) => a.key !== key)
-    await writeStore(store)
-    return { ok: true, wasActive }
+  })
+}
+
+export function clearCodexAccounts(): Promise<{ ok: boolean; error?: string }> {
+  return serial(async () => {
+    try {
+      await readStore()
+      await updateAuthFile(async (auth) => {
+        await writeStore({ version: 1, accounts: [] })
+        const hadCredential = PROVIDER in auth
+        delete auth[PROVIDER]
+        return { write: hadCredential, result: undefined }
+      })
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
   })
 }
 
@@ -184,9 +224,13 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
       }
       try {
         account.credential = await refreshCodexCredential(account.credential.refresh, account.credential.accountId)
+        const identity = identityOf(account.credential)
+        account.key = identity.key ?? account.key
+        account.email = identity.email ?? account.email
+        account.plan = identity.plan ?? account.plan
         account.savedAt = Date.now()
         changed = true
-        targets.push({ ...base, credential: account.credential })
+        targets.push({ ...base, key: account.key, email: account.email, plan: account.plan, credential: account.credential })
       } catch (e) {
         targets.push({ ...base, problem: e instanceof Error ? e.message : String(e) })
       }

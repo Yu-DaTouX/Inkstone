@@ -26,6 +26,9 @@ export type ModelsTextKey =
   | 'keyDeleteConfirm'
   | 'keySwitched'
   | 'removeBodyMany'
+  | 'addAccount'
+  | 'accountList'
+  | 'removeBodyAccounts'
 
 const ZH: Record<ModelsTextKey, string> = {
   title: '模型与服务',
@@ -54,7 +57,10 @@ const ZH: Record<ModelsTextKey, string> = {
   keyDelete: "删除",
   keyDeleteConfirm: "确认删除",
   keySwitched: "已切换到「{label}」，空闲后生效",
-  removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。"
+  removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。",
+  addAccount: '添加账号',
+  accountList: '已保存的 {provider} 账号',
+  removeBodyAccounts: '将移除本机保存的全部 {n} 个订阅账号和 {keys} 个 key；之后需重新登录或配置 key。'
 }
 
 const EN: Record<ModelsTextKey, string> = {
@@ -84,7 +90,10 @@ const EN: Record<ModelsTextKey, string> = {
   keyDelete: "Delete",
   keyDeleteConfirm: "Confirm delete",
   keySwitched: "Switched to “{label}”; applies once idle",
-  removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models."
+  removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models.",
+  addAccount: 'Add account',
+  accountList: 'Saved {provider} accounts',
+  removeBodyAccounts: 'Removes all {n} subscription accounts and {keys} keys saved locally; sign in or configure a key again.'
 }
 
 export function modelsText(lang: string, key: ModelsTextKey): string {

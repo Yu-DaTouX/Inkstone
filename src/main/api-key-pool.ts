@@ -68,10 +68,11 @@ async function currentKey(provider: string): Promise<string | undefined> {
   return apiKeyOf(await readAuthEntry(provider))
 }
 
-const OAUTH_IN_SLOT = '这个服务商当前用订阅账号登录，API key 会覆盖它；请先移除订阅登录再添加 API key'
+const OAUTH_IN_SLOT = '当前订阅登录尚未安全保存或已发生变化，已取消 key 操作；请重试，避免覆盖未保存的账号'
 
-function guardSlot(data: Record<string, unknown>, provider: string): void {
+function guardSlot(data: Record<string, unknown>, provider: string, preservedOAuth?: unknown): void {
   const e = data[provider] as { type?: string } | null | undefined
+  if (e?.type === 'oauth' && preservedOAuth && JSON.stringify(e) === JSON.stringify(preservedOAuth)) return
   if (e && typeof e === 'object' && e.type && e.type !== 'api_key') throw new Error(OAUTH_IN_SLOT)
 }
 
@@ -104,12 +105,23 @@ export async function listApiKeyPools(): Promise<ApiKeyPools> {
   return out
 }
 
-export function addApiKey(provider: string, key: string, label?: string): Promise<Result> {
+export function captureActiveApiKey(provider: string): Promise<Result> {
+  return run(async () => {
+    checkProvider(provider)
+    const current = await currentKey(provider)
+    if (!current) return
+    const store = await readStore()
+    store.providers[provider] = withCurrentKey(store.providers[provider] ?? [], current, randomUUID)
+    await writeStore(store)
+  }, '无法保存当前 API key')
+}
+
+export function addApiKey(provider: string, key: string, label?: string, preservedOAuth?: unknown): Promise<Result> {
   return run(async () => {
     checkProvider(provider)
     const value = String(key ?? '').trim()
     if (!value) throw new Error('API key 不能为空')
-    guardSlot(await readAuth(), provider)
+    guardSlot(await readAuth(), provider, preservedOAuth)
     const store = await readStore()
     const list = withCurrentKey(store.providers[provider] ?? [], await currentKey(provider), randomUUID)
     const existing = list.find((k) => k.key === value)
@@ -122,22 +134,26 @@ export function addApiKey(provider: string, key: string, label?: string): Promis
     store.providers[provider] = list
     await writeStore(store)
     await updateAuthFile((data) => {
-      guardSlot(data, provider)
+      guardSlot(data, provider, preservedOAuth)
       data[provider] = { type: 'api_key', key: value }
       return { write: true, result: undefined }
     })
   }, '保存失败')
 }
 
-export function switchApiKey(provider: string, id: string): Promise<Result> {
+export function switchApiKey(provider: string, id: string, preservedOAuth?: unknown): Promise<Result> {
   return run(async () => {
     checkProvider(provider)
     if (id === CURRENT_KEY_ID) return
-    const target = (await readStore()).providers[provider]?.find((k) => k.id === id)
+    const store = await readStore()
+    const target = store.providers[provider]?.find((k) => k.id === id)
     if (!target) throw new Error('找不到这个 key，可能已被删除')
-    await updateAuthFile((data) => {
-      guardSlot(data, provider)
-      if (apiKeyOf(data[provider]) === target.key) return { write: false, result: undefined }
+    await updateAuthFile(async (data) => {
+      guardSlot(data, provider, preservedOAuth)
+      const current = apiKeyOf(data[provider])
+      if (current === target.key) return { write: false, result: undefined }
+      store.providers[provider] = withCurrentKey(store.providers[provider] ?? [], current, randomUUID)
+      await writeStore(store)
       data[provider] = { type: 'api_key', key: target.key }
       return { write: true, result: undefined }
     })
@@ -164,18 +180,25 @@ export function renameApiKey(provider: string, id: string, label: string): Promi
   }, '保存失败')
 }
 
-export function removeApiKey(provider: string, id: string): Promise<Result> {
-  return run(async () => {
+export async function removeApiKey(provider: string, id: string): Promise<Result & { wasActive: boolean }> {
+  let wasActive = false
+  const result = await run(async () => {
     checkProvider(provider)
     const store = await readStore()
-    const list = store.providers[provider] ?? []
-    const target = list.find((k) => k.id === id)
-    if (!target) throw new Error('找不到这个 key，可能已被删除')
-    if (target.key === (await currentKey(provider))) throw new Error('正在使用的 key 不能删除，请先切换到其他 key')
-    store.providers[provider] = list.filter((k) => k.id !== id)
-    if (!store.providers[provider].length) delete store.providers[provider]
-    await writeStore(store)
+    await updateAuthFile(async (data) => {
+      const current = apiKeyOf(data[provider])
+      const list = withCurrentKey(store.providers[provider] ?? [], current, randomUUID)
+      const target = id === CURRENT_KEY_ID ? list.find((k) => k.key === current) : list.find((k) => k.id === id)
+      if (!target) throw new Error('找不到这个 key，可能已被删除')
+      wasActive = target.key === current
+      store.providers[provider] = list.filter((k) => k.id !== target.id)
+      if (!store.providers[provider].length) delete store.providers[provider]
+      await writeStore(store)
+      if (wasActive) delete data[provider]
+      return { write: wasActive, result: undefined }
+    })
   }, '删除失败')
+  return { ...result, wasActive }
 }
 
 export function clearApiKeys(provider: string): Promise<Result> {

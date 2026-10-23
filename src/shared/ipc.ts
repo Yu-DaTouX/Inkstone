@@ -45,7 +45,8 @@ import type { BrowserLoadFailure } from './browser-navigation'
 import type { UsageRange, UsageStatsView } from './usage-stats'
 export type UsageStatsResult = UsageStatsView & { userName: string }
 import type { SearchBackendStatus, SearchApiConfigView, SearchProviderId } from './search'
-import type { AccountQuotaReport } from './account-quota'
+import type { AccountQuotaReport, CodexAccountView } from './account-quota'
+import type { OAuthAccountPools } from './oauth-accounts'
 import type { QuotaForecast } from './quota-forecast'
 import type { TurnOutcome } from './turn-outcome'
 
@@ -1737,6 +1738,10 @@ export interface YanBridge {
   authProviders(deep?: boolean): Promise<AuthProviderInfo[]>
   codexLogin(): Promise<CodexLoginResult>
   codexLoginCancel(): Promise<void>
+  oauthAccounts(): Promise<OAuthAccountPools>
+  oauthAccountSwitch(provider: string, key: string): Promise<{ ok: boolean; error?: string }>
+  oauthAccountRemove(provider: string, key: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>
+  oauthAccountRename(provider: string, key: string, label: string): Promise<{ ok: boolean; error?: string }>
   oauthLogin(provider: string): Promise<OAuthLoginResult>
   oauthLoginAnswer(provider: string, promptId: number, value: string): Promise<boolean>
   oauthLoginCancel(provider: string): Promise<void>
@@ -1747,10 +1752,12 @@ export interface YanBridge {
   addApiKey(provider: string, key: string, label?: string): Promise<{ ok: boolean; error?: string }>
   switchApiKey(provider: string, id: string): Promise<{ ok: boolean; error?: string }>
   renameApiKey(provider: string, id: string, label: string): Promise<{ ok: boolean; error?: string }>
-  removeApiKey(provider: string, id: string): Promise<{ ok: boolean; error?: string }>
+  removeApiKey(provider: string, id: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>
   authFileInfo(): Promise<{ path: string; exists: boolean; count: number }>
   accountQuota(): Promise<AccountQuotaReport>
+  codexAccounts(): Promise<CodexAccountView[]>
   codexAccountSwitch(key: string): Promise<{ ok: boolean; error?: string }>
+  codexAccountRemove(key: string): Promise<{ ok: boolean; wasActive: boolean; error?: string }>
   toolchainStatus(): Promise<ToolchainStatus>
   gitRuntimeStatus(): Promise<GitRuntimeStatus>
   gitRuntimeInstall(): Promise<{ ok: boolean; error?: string }>

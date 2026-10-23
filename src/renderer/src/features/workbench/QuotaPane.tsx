@@ -26,6 +26,7 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = workbenchPaneText(lang)
   const provider = useStore((s) => s.session?.model?.provider ?? '')
+  const authProviders = useStore((s) => s.authProviders)
   const [report, setReport] = useState<AccountQuotaReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -33,25 +34,28 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const checkedAt = useRef(0)
   const alive = useRef(true)
+  const loadId = useRef(0)
   const [, setTick] = useState(0)
 
   const load = useCallback(async () => {
+    const requestId = ++loadId.current
     setLoading(true)
     try {
       const next = await window.yan.accountQuota()
-      if (!alive.current) return
+      if (!alive.current || requestId !== loadId.current) return
       setReport(next)
       setError('')
       checkedAt.current = next.checkedAt
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause))
+      if (alive.current && requestId === loadId.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (alive.current) setLoading(false)
+      if (alive.current && requestId === loadId.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     alive.current = true
+    setReport(null)
     void load()
     const tick = setInterval(() => setTick((value) => value + 1), 30_000)
     const poll = setInterval(() => {
@@ -63,17 +67,20 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
     window.addEventListener('focus', onFocus)
     return () => {
       alive.current = false
+      loadId.current += 1
       clearInterval(tick)
       clearInterval(poll)
       window.removeEventListener('focus', onFocus)
     }
-  }, [load])
+  }, [load, authProviders])
 
   const switchTo = async (card: AccountQuotaCard): Promise<void> => {
     setBusyKey(card.key)
     setNotice('')
     try {
-      const result = await window.yan.codexAccountSwitch(card.key)
+      const result = card.provider === 'openai-codex'
+        ? await window.yan.codexAccountSwitch(card.key)
+        : await window.yan.oauthAccountSwitch(card.provider, card.key)
       if (!alive.current) return
       setNotice(result.ok ? t('acct.switched', { name: accountCardTitle(card) }) : t('acct.failed', { msg: result.error ?? '' }))
       if (result.ok) await load()
