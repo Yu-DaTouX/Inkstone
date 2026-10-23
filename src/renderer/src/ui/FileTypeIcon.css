@@ -3,10 +3,10 @@
 @layer primitives {
   .ui-file-icon {
     --file-icon-size: 16px;
-    --fti-tone: light-dark(#9E9D98, #85847E);
+    --fti-tone: var(--file-default);
     --fti-soft: light-dark(color-mix(in srgb, var(--fti-tone) 50%, transparent), color-mix(in srgb, var(--fti-tone) 64%, transparent));
     --fti-tint: light-dark(color-mix(in srgb, var(--fti-tone) 20%, transparent), color-mix(in srgb, var(--fti-tone) 26%, transparent));
-    --fti-knock: light-dark(#FFFFFF, #1A1A19);
+    --fti-knock: var(--surface);
     flex: none;
     display: inline-grid;
     place-items: center;
@@ -16,39 +16,39 @@
   }
 
   .ui-file-icon[data-tone='green'] {
-    --fti-tone: light-dark(#4E9F64, #6DBB83);
+    --fti-tone: var(--file-green);
   }
 
   .ui-file-icon[data-tone='blue'] {
-    --fti-tone: light-dark(#3C82CF, #6EA5E6);
+    --fti-tone: var(--file-blue);
   }
 
   .ui-file-icon[data-tone='yellow'] {
-    --fti-tone: light-dark(#B98F10, #D8B54A);
+    --fti-tone: var(--file-yellow);
   }
 
   .ui-file-icon[data-tone='orange'] {
-    --fti-tone: light-dark(#DA7340, #E99466);
+    --fti-tone: var(--file-orange);
   }
 
   .ui-file-icon[data-tone='red'] {
-    --fti-tone: light-dark(#D04D50, #E57A7C);
+    --fti-tone: var(--file-red);
   }
 
   .ui-file-icon[data-tone='purple'] {
-    --fti-tone: light-dark(#8565C8, #AA92E6);
+    --fti-tone: var(--file-purple);
   }
 
   .ui-file-icon[data-tone='ink'] {
-    --fti-tone: light-dark(#5F5E5A, #C9C8C2);
+    --fti-tone: var(--file-ink);
   }
 
   .ui-file-icon[data-tone='pink'] {
-    --fti-tone: light-dark(#C35A8C, #E08AB3);
+    --fti-tone: var(--file-pink);
   }
 
   .ui-file-icon[data-tone='teal'] {
-    --fti-tone: light-dark(#2F968D, #58BDB3);
+    --fti-tone: var(--file-teal);
   }
 
   .ui-file-icon[data-size='14'] {

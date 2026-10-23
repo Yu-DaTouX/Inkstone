@@ -411,6 +411,7 @@ export function PdfView({
         }}>
           <TextField
             className="v3-code-bar-field"
+            size="sm"
             aria-label={labels.find}
             value={query}
             onChange={(value) => {

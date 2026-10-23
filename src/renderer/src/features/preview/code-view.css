@@ -18,7 +18,7 @@
     margin: 0;
     padding: var(--s-4) var(--s-12);
     color: var(--fg3);
-    font-family: var(--font-sans);
+    font-family: var(--font-ui);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     user-select: none;
@@ -41,17 +41,13 @@
     min-width: 0;
     padding: var(--s-4) var(--s-8);
     border-bottom: 1px solid var(--line);
-    background: var(--surface-1);
+    background: var(--bg);
   }
 
   .v3-code-bar-field {
     flex: 1 1 120px;
     min-width: 0;
     max-width: 320px;
-  }
-
-  .v3-code-bar-field .ui-input {
-    font-size: var(--t-footnote);
   }
 
   .v3-code-bar-options {
@@ -83,7 +79,7 @@
   }
 
   .v3-code-find {
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
     background: color-mix(in srgb, var(--ask) 26%, transparent);
     color: inherit;
   }
@@ -169,7 +165,7 @@
   .v3-code-number {
     box-sizing: content-box;
     min-width: var(--code-number-width, 3ch);
-    padding-left: calc(2ch + 5px);
+    padding-left: calc(2ch + var(--s-4));
     text-align: right;
     color: var(--fg3);
     font-variant-numeric: tabular-nums;
@@ -286,7 +282,7 @@
     padding: var(--s-6) var(--s-8);
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
-    background: var(--surface-2);
+    background: var(--surface);
     color: var(--fg);
     font-family: var(--font-ui);
     font-size: var(--t-footnote);
@@ -309,8 +305,6 @@
 
   .v3-code-comment-field .ui-textarea {
     min-height: 0;
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
   }
 
   .v3-code-comment-actions {

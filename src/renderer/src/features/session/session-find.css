@@ -47,12 +47,12 @@
   }
 
   ::highlight(session-find) {
-    background-color: rgb(255 213 0);
-    color: #000;
+    background-color: var(--find);
+    color: var(--on-find);
   }
 
   ::highlight(session-find-active) {
-    background-color: rgb(255 150 50);
-    color: #000;
+    background-color: var(--find-current);
+    color: var(--on-find);
   }
 }

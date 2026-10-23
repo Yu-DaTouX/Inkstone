@@ -16,7 +16,7 @@
     padding: var(--s-8) var(--s-12);
     border: 1px solid var(--line);
     border-radius: var(--r-md);
-    background: color-mix(in oklab, var(--surface-1) 94%, transparent);
+    background: color-mix(in oklab, var(--bg) 94%, transparent);
     box-shadow: var(--shadow-md);
     color: var(--fg);
     font-size: var(--t-footnote);
@@ -102,7 +102,7 @@
     height: 20px;
     min-width: 0;
     border-radius: var(--r-xs);
-    background: var(--surface-2);
+    background: var(--surface);
     cursor: pointer;
   }
 
@@ -147,7 +147,7 @@
     overflow: hidden;
     border: 1px solid color-mix(in oklab, var(--accent) 46%, transparent);
     border-radius: var(--r-xs);
-    background: color-mix(in oklab, var(--accent) 20%, var(--surface-1));
+    background: color-mix(in oklab, var(--accent) 20%, var(--bg));
     color: var(--fg);
     font: inherit;
     font-size: var(--t-caption);
@@ -157,7 +157,7 @@
   }
 
   .v3-canvas-timeline-clip:hover {
-    background: color-mix(in oklab, var(--accent) 32%, var(--surface-1));
+    background: color-mix(in oklab, var(--accent) 32%, var(--bg));
   }
 
   .v3-canvas-timeline-clip:focus-visible {

@@ -17,13 +17,17 @@ export function TooltipTrigger(props: TooltipTriggerComponentProps) {
   return <RACTooltipTrigger delay={TOOLTIP_OPEN_DELAY_MS} closeDelay={TOOLTIP_CLOSE_DELAY_MS} {...props} />
 }
 
-export const Tooltip = forwardRef<HTMLDivElement, RACTooltipProps>(function Tooltip({ className, offset = 6, ...props }, ref) {
+export interface TooltipVariantProps extends RACTooltipProps {
+  variant?: 'default' | 'card'
+}
+
+export const Tooltip = forwardRef<HTMLDivElement, TooltipVariantProps>(function Tooltip({ className, offset = 6, variant = 'default', ...props }, ref) {
   return (
     <RACTooltip
       {...props}
       ref={ref}
       offset={offset}
-      className={composeRenderProps(className, (cn) => cx('ui-tooltip', cn))}
+      className={composeRenderProps(className, (cn) => cx('ui-tooltip', variant === 'card' && 'ui-tooltip--card', cn))}
     />
   )
 })

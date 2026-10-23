@@ -22,7 +22,7 @@
     border-radius: var(--r-lg);
     background: color-mix(in srgb, var(--bg) 40%, transparent);
     backdrop-filter: blur(2px);
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: var(--ring-selected);
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
     font-weight: var(--w-medium);

@@ -2,8 +2,7 @@
   .artifact-library { overflow: auto; min-height: 0; padding: var(--s-32) var(--s-24); }
   .artifact-library > * { max-width: var(--size-col); margin-left: auto; margin-right: auto; }
   .artifact-library-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-12); padding: var(--s-16) 0 var(--s-24); }
-  .artifact-library-head .ui-page-head__title { font-size: var(--t-title); }
-  .artifact-library-head .ui-page-head__desc, .artifact-library-note { margin-top: 0; margin-bottom: 0; color: var(--fg3); font-size: var(--t-footnote); }
+  .artifact-library-note { margin-top: 0; margin-bottom: 0; color: var(--fg3); font-size: var(--t-footnote); }
   .artifact-library-list { display: grid; gap: 0; margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
   .artifact-library-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--s-12); padding: var(--s-12) var(--s-4); border-bottom: 1px solid var(--line); }
   .artifact-library-row[data-unavailable] { opacity: 0.6; }
@@ -20,7 +19,7 @@
   .artifact-library-name { display: inline-flex; align-items: center; gap: var(--s-4); }
   .artifact-library-pin { flex: none; color: var(--accent); }
   .artifact-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--s-16); margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; }
-  .artifact-library-card { display: grid; grid-template-rows: max-content max-content max-content; gap: var(--s-8); min-width: 0; padding: var(--s-8); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-1); }
+  .artifact-library-card { display: grid; grid-template-rows: max-content max-content max-content; gap: var(--s-8); min-width: 0; padding: var(--s-8); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
   .artifact-library-card[data-unavailable] { opacity: 0.6; }
   .artifact-library-card .artifact-library-main { padding: 0 var(--s-4); }
   .artifact-library-card .artifact-library-actions { justify-content: flex-end; }

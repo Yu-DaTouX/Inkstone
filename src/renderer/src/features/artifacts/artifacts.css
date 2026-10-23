@@ -314,7 +314,7 @@
     flex: 1 1 auto;
     max-width: 26px;
     min-height: 1px;
-    border-radius: 2px 2px 0 0;
+    border-radius: var(--r-2xs) var(--r-2xs) 0 0;
   }
 
   .v3-visual-col-label {
@@ -365,7 +365,7 @@
   .v3-visual-legend-item i {
     width: 10px;
     height: 10px;
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
   }
 
   .v3-visual-stats {
@@ -925,7 +925,6 @@
 
   .v3-artifact-thumb-open .ui-badge {
     gap: var(--s-4);
-    box-shadow: var(--shadow-md);
   }
 
   .v3-artifact-image {

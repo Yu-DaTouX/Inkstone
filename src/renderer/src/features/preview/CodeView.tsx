@@ -313,6 +313,7 @@ function LineCommentCard({
       <span className="v3-code-comment-label">{label}</span>
       <TextArea
         className="v3-code-comment-field"
+        size="sm"
         aria-label={label}
         placeholder={labels.commentPlaceholder}
         value={draft.body}
@@ -775,6 +776,7 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
         <div className="v3-code-bar" role="search" aria-label={labels.find} data-testid="v3-code-findbar" onKeyDown={onBarKeyDown}>
           <TextField
             className="v3-code-bar-field"
+            size="sm"
             aria-label={labels.find}
             value={findQuery}
             onChange={(value) => {
@@ -826,6 +828,7 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
         <div className="v3-code-bar" role="search" aria-label={labels.goToLine} data-testid="v3-code-gotobar" onKeyDown={onBarKeyDown}>
           <TextField
             className="v3-code-bar-field"
+            size="sm"
             aria-label={labels.goToLine}
             value={gotoQuery}
             isInvalid={gotoInvalid}

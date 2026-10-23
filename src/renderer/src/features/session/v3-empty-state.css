@@ -41,7 +41,7 @@
     flex-direction: column;
     gap: var(--s-2);
     margin-top: var(--s-16);
-    animation: v3-empty-rise 260ms var(--ease) both;
+    animation: v3-empty-rise var(--dur-base) var(--ease) both;
   }
 
   .v3-empty-waiting-head {
@@ -95,16 +95,16 @@
   .v3-empty-greet {
     font-family: var(--font-mono);
     letter-spacing: 0.06em;
-    animation: v3-empty-rise 160ms var(--ease) both;
+    animation: v3-empty-rise var(--dur-base) var(--ease) both;
   }
 
   .v3-empty-hint {
-    animation: v3-empty-rise 420ms var(--ease) 180ms both;
+    animation: v3-empty-rise var(--dur-slow) var(--ease) var(--dur-base) both;
   }
 
   .v3-empty-cols > .start-usage,
   .v3-empty-main > .start-strip {
-    animation: v3-empty-rise 160ms var(--ease) both;
+    animation: v3-empty-rise var(--dur-base) var(--ease) both;
   }
 
   @keyframes v3-empty-drop {

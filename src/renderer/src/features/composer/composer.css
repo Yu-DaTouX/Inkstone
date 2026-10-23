@@ -39,7 +39,7 @@
 
   .composer-wrap.is-dropping .composer {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--sel);
+    box-shadow: var(--ring-field);
   }
 
   .cborder {
@@ -227,7 +227,7 @@
   }
 
   .ca-ext {
-    font-size: 10px;
+    font-size: var(--t-caption);
     line-height: 1;
     text-transform: lowercase;
     color: var(--fg3);
@@ -282,7 +282,7 @@
     color: var(--fg2);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 120ms var(--ease);
+    transition: opacity var(--dur-snap) var(--ease);
     cursor: pointer;
   }
 

@@ -178,6 +178,11 @@
     flex: none;
     display: inline-flex;
   }
+  @media (hover: hover) {
+    .ui-rail-row[data-action-reveal='hover']:not(:hover, :focus-within) .ui-rail-row__action {
+      opacity: 0;
+    }
+  }
 
   .ui-btn.ui-rail-row__main[data-disabled] .ui-rail-row__label {
     color: var(--fg3);

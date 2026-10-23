@@ -5,17 +5,18 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
   as?: 'div' | 'section' | 'article' | 'li'
   padding?: 'none' | 'sm' | 'md'
   interactive?: boolean
+  quiet?: boolean
 }
 
 export const Card = forwardRef<HTMLElement, CardProps>(function Card(
-  { as: Tag = 'div', padding = 'md', interactive, className, ...rest },
+  { as: Tag = 'div', padding = 'md', interactive, quiet, className, ...rest },
   ref
 ) {
   return (
     <Tag
       {...rest}
       ref={ref as never}
-      className={cx('ui-card', `ui-card--pad-${padding}`, interactive && 'ui-card--interactive', className)}
+      className={cx('ui-card', `ui-card--pad-${padding}`, interactive && 'ui-card--interactive', quiet && 'ui-card--quiet', className)}
     />
   )
 })

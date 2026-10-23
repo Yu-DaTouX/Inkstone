@@ -71,7 +71,7 @@ export function CitationLink({ citation }: { citation: CitationRef }): JSX.Eleme
         <span className="ws-cite-n" aria-hidden>{citation.n}</span>
       </a>
       </Focusable>
-      <Tooltip className="ws-cite-tip" placement="top" offset={6}>
+      <Tooltip className="ws-cite-tip" variant="card" placement="top" offset={6}>
         <span className="ws-cite-card">
           <span className="ws-cite-card-title">{citation.title}</span>
           <span className="ws-cite-card-domain">{citation.domain}</span>

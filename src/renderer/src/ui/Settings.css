@@ -13,7 +13,7 @@
     min-height: 0;
     overflow: hidden;
     border-radius: var(--r-bubble);
-    background: var(--surface-2);
+    background: var(--surface);
     box-shadow: var(--shadow-lg);
     color: var(--fg);
     outline: none;
@@ -27,7 +27,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    z-index: 50;
+    z-index: 6;
     border-radius: inherit;
     background: var(--scrim);
     opacity: 0;
@@ -80,7 +80,7 @@
     width: 192px;
     min-height: 0;
     border-right: 1px solid var(--alpha-2);
-    background: var(--surface-1);
+    background: var(--bg);
   }
 
   .ui-settings-nav__search {
@@ -189,22 +189,22 @@
     padding: 0 var(--s-8);
     border-radius: var(--r-sm);
     background: var(--field);
-    box-shadow: inset 0 0 0 1px var(--line);
+    box-shadow: var(--ring-line);
     color: var(--fg3);
     cursor: text;
     transition: box-shadow var(--dur-fast) var(--ease);
   }
 
   .ui-settings-search:hover:not(:focus-within) {
-    box-shadow: inset 0 0 0 1px var(--line2);
+    box-shadow: var(--ring-line2);
   }
 
   .ui-settings-search:focus-within {
-    box-shadow: inset 0 0 0 1px var(--line-ctl);
+    box-shadow: var(--ring-ctl);
   }
 
   .ui-settings-search:has(.ui-settings-search__input:focus-visible) {
-    box-shadow: var(--ring-focus), inset 0 0 0 1px var(--line-ctl);
+    box-shadow: var(--ring-focus), var(--ring-ctl);
   }
 
   .ui-settings-search[data-disabled='1'] {
@@ -334,7 +334,7 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    background: var(--surface-2);
+    background: var(--surface);
   }
 
   .ui-settings__head {
@@ -361,7 +361,7 @@
     display: block;
     height: var(--s-8);
     margin: calc(-1 * var(--s-8)) calc(-1 * var(--s-24)) 0;
-    background: linear-gradient(to bottom, var(--surface-2), transparent);
+    background: linear-gradient(to bottom, var(--surface), transparent);
     pointer-events: none;
   }
 
@@ -372,7 +372,7 @@
     gap: var(--s-8);
     padding: var(--s-8) var(--s-8) var(--s-6);
     border-bottom: 1px solid var(--alpha-2);
-    background: var(--surface-1);
+    background: var(--bg);
   }
 
   .ui-settings-narrow__head {

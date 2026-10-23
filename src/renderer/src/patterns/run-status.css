@@ -35,7 +35,7 @@
 
   .run-dot[data-kind='failed'] {
     background: var(--fail);
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
   }
 
   .run-dot[data-kind='stopped'] {

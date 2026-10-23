@@ -108,7 +108,7 @@ export function SearchStepView({ call, step, children }: { call: UIToolCall; ste
               ))}
               {folded ? <MoreSourcesCard rest={sources.slice(SOURCE_PREVIEW)} onPress={() => setShowAll(true)} /> : null}
               {showAll && sources.length > SOURCE_PREVIEW + 1 ? (
-                <Button variant="ghost" size="sm" className="ws-less" onPress={() => setShowAll(false)}>
+                <Button variant="plain" size="sm" className="ws-less" onPress={() => setShowAll(false)}>
                   <Icon name="chevron-up" size={14} />
                   {tt('showLess')}
                 </Button>
@@ -129,7 +129,7 @@ function MoreSourcesCard({ rest, onPress }: { rest: WebSearchSourceView[]; onPre
   const tt = useWebSearchText()
   const sites = uniqueSites(rest).slice(0, 3)
   return (
-    <Card padding="sm" className="ws-source ws-more" interactive style={{ '--ws-i': SOURCE_PREVIEW } as CSSProperties}>
+    <Card padding="sm" className="ws-source ws-more" interactive quiet style={{ '--ws-i': SOURCE_PREVIEW } as CSSProperties}>
       <button type="button" className="ws-source-main" onClick={onPress} data-testid="ws-more">
         <span className="ws-cap-sites ws-more-sites" aria-hidden="true">
           {sites.map((site) => <Avatar key={site.site} name={site.site} className={`ws-site ws-tone-${siteTone(site.seed)}`} />)}

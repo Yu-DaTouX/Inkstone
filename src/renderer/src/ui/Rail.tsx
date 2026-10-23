@@ -117,6 +117,7 @@ export interface RailRowProps {
   onPress?: () => void
   isDisabled?: boolean
   action?: ReactNode
+  actionReveal?: 'always' | 'hover'
   buttonProps?: RailRowButtonProps
   className?: string
   'data-testid'?: string
@@ -133,6 +134,7 @@ export function RailRow({
   onPress,
   isDisabled,
   action,
+  actionReveal = 'always',
   buttonProps,
   className,
   children,
@@ -150,7 +152,7 @@ export function RailRow({
   )
   const { ref: buttonRef, ...buttonRest } = buttonProps ?? {}
   return (
-    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} title={tip}>
+    <li {...rest} className={cx('ui-rail-row', className)} data-error={error ? '1' : undefined} data-action-reveal={actionReveal === 'hover' ? 'hover' : undefined} title={tip}>
       {onPress ? (
         <Button
           {...buttonRest}

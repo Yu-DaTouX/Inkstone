@@ -100,13 +100,12 @@
   }
 
   .v3-canvas-agent:not([data-placed]) {
-    animation: v3-canvas-agent-drift 2.4s ease-in-out infinite alternate;
+    animation: v3-canvas-agent-drift var(--dur-breathe) ease-in-out infinite alternate;
   }
 
   .v3-canvas-agent .ui-badge {
     margin-top: var(--s-8);
     white-space: nowrap;
-    box-shadow: var(--shadow-md);
   }
 
   @keyframes v3-canvas-agent-drift {
@@ -135,7 +134,7 @@
     max-width: calc(100% - var(--s-32));
     padding: var(--s-2);
     border-radius: var(--r-md);
-    background: var(--surface-1);
+    background: var(--bg);
     box-shadow: var(--shadow-pop);
     font-variant-numeric: tabular-nums;
   }

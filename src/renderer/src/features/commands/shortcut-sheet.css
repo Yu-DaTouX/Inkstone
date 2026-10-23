@@ -23,11 +23,6 @@
 }
 
 @layer features {
-  .sheet-dialog .ui-dialog__body {
-    gap: 0;
-    overflow: hidden;
-  }
-
   .sheet-hint {
     margin: 0;
     padding: 0 var(--s-16) var(--s-8);

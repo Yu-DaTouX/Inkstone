@@ -481,6 +481,7 @@ function OutputRows({
             icon={<FileTypeIcon name={name} size={16} />}
             value={outputFolder(file.path) || undefined}
             onPress={() => onOpen(file.path)}
+            actionReveal="hover"
             action={
               <IconButton variant="plain" size="sm" aria-label={text.removeOutput(name)} className="wb-rail-dismiss" onPress={() => onDismiss(file.path)}>
                 <X size={12} aria-hidden />

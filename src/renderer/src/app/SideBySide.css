@@ -109,7 +109,7 @@
   }
 
   .v3-split-col[data-kind='tool'][data-flash='1'] {
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: var(--ring-selected);
   }
 
   .v3-tool-tile-body {

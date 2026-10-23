@@ -37,26 +37,6 @@
     font-size: var(--t-footnote);
   }
 
-  .quota-win[data-tone='ask'] {
-    --ui-meter-projection: var(--ask);
-  }
-
-  .quota-win[data-tone='ask'] .ui-progress__fill {
-    background: var(--ask);
-  }
-
-  .quota-win[data-tone='fail'] {
-    --ui-meter-projection: var(--fail);
-  }
-
-  .quota-win[data-tone='fail'] .ui-progress__fill {
-    background: var(--fail);
-  }
-
-  .quota-win[data-tone='stale'] .ui-progress__fill {
-    background: var(--fg3);
-  }
-
   .quota-win[data-tone='stale'] .quota-win-value {
     color: var(--fg3);
   }

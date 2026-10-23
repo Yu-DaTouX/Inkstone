@@ -85,7 +85,7 @@
     overflow: hidden;
   }
   .start-cell {
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
     aspect-ratio: 1;
     background: var(--cell-0);
   }

@@ -2,8 +2,7 @@
   .usage-page { overflow: auto; min-height: 0; padding: var(--s-32) var(--s-24); }
   .usage-page > * { max-width: var(--size-col); margin-left: auto; margin-right: auto; }
   .usage-page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-12); padding: var(--s-16) 0 var(--s-24); }
-  .usage-page-head .ui-page-head__title { font-size: var(--t-title); }
-  .usage-page-head .ui-page-head__desc, .usage-page-controls p, .usage-page-note { margin: 0; color: var(--fg3); font-size: var(--t-footnote); }
+  .usage-page-controls p, .usage-page-note { margin: 0; color: var(--fg3); font-size: var(--t-footnote); }
   .usage-page-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s-16); margin-top: 0; margin-bottom: 0; padding: var(--s-16) var(--s-20); border: 1px solid var(--line); border-radius: var(--r-md); }
   .usage-page-stats > div { min-width: 0; }
   .usage-page-stats dt { color: var(--fg3); font-size: var(--t-footnote); }

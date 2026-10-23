@@ -5,7 +5,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: color-mix(in srgb, var(--surface-0) 50%, var(--surface-1));
+    background: color-mix(in srgb, var(--surface-0) 50%, var(--bg));
     border-right: 0.5px solid var(--line);
     color: var(--fg);
   }
@@ -125,7 +125,7 @@
     gap: var(--s-4);
     min-height: calc(var(--s-12) + var(--d-row) - var(--s-8) + var(--s-4));
     padding: var(--s-12) 1px var(--s-4) var(--s-10);
-    color: var(--fg-muted);
+    color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--s-16);
   }

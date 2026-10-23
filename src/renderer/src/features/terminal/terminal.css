@@ -166,7 +166,7 @@
     place-items: center;
     width: 18px;
     height: 18px;
-    margin: 0 3px 0 0;
+    margin: 0 var(--s-2) 0 0;
     padding: 0;
     border: 0;
     border-radius: var(--r-sm);
@@ -242,7 +242,7 @@
   .term-pane-host .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
     width: 6px !important;
     left: 6px !important;
-    border-radius: 3px;
+    border-radius: var(--r-2xs);
     background: var(--alpha-4);
   }
 
@@ -266,7 +266,7 @@
     padding: var(--s-4) var(--s-6);
     border: 0.5px solid var(--line2);
     border-radius: var(--r-md);
-    background: var(--surface-2);
+    background: var(--surface);
     box-shadow: var(--shadow-lg);
     color: var(--fg);
   }
@@ -335,7 +335,7 @@
     z-index: 3;
     padding: var(--s-4) var(--s-8);
     border-radius: var(--r-sm);
-    background: var(--surface-2);
+    background: var(--surface);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
   }

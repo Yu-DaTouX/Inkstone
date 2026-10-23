@@ -621,7 +621,7 @@ export function HtmlCanvas({
               style={{ left: agentLeft, top: agentTop }}
             >
               <MousePointer2 size={16} aria-hidden />
-              <Badge tone="accent">{labels.canvasAgentEditing}</Badge>
+              <Badge tone="accent" overlay>{labels.canvasAgentEditing}</Badge>
             </div>
           ) : null}
         </div>

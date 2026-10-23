@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Badge, Meter } from '../ui'
+import { Badge, Meter, type ProgressTone } from '../ui'
 import { useT, type TFunc } from '../i18n'
 import type { QuotaWindow } from '../../../shared/ipc'
 import { quotaTone } from '../../../shared/quota-tone'
@@ -15,6 +15,8 @@ import './quota-window.css'
 export type QuotaWindowTone = 'ok' | 'ask' | 'fail' | 'stale'
 
 const READ_NOW_MS = 60_000
+
+const METER_TONE: Record<QuotaWindowTone, ProgressTone> = { ok: 'ink', ask: 'ask', fail: 'fail', stale: 'muted' }
 
 export function quotaCountdown(t: TFunc, ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -100,10 +102,11 @@ export function QuotaWindowRow({
   const forecast = greyed ? null : quotaForecastLine(t, window, now)
   const subText = [!awaiting ? reset.text : '', forecast?.text ?? ''].filter(Boolean)
   const showSub = subText.length > 0 && (!compact || forecast?.kind === 'exhaust')
+  const tone = quotaWindowTone(window, stale, now)
   return (
     <div
       className="quota-win"
-      data-tone={quotaWindowTone(window, stale, now)}
+      data-tone={tone}
       data-forecast={forecast?.kind || undefined}
       data-compact={compact ? '1' : undefined}
       data-testid={testId}
@@ -126,6 +129,7 @@ export function QuotaWindowRow({
         minValue={0}
         maxValue={100}
         projectedPercent={greyed ? null : forecastProjectionPct(window.forecast)}
+        tone={METER_TONE[tone]}
       />
       {showSub ? (
         <div className="quota-win-sub">

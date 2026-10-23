@@ -6,7 +6,7 @@
     align-items: center;
     gap: var(--s-2);
     opacity: 0;
-    transition: opacity 120ms var(--ease);
+    transition: opacity var(--dur-snap) var(--ease);
   }
 
   .cq-row:hover > .cq-actions,

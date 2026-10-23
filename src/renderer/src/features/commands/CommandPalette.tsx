@@ -483,7 +483,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
   return (
     <ModalOverlay className="cmd-overlay" isOpen onOpenChange={onOpenChange} isDismissable>
       <Modal className="cmd-modal">
-        <Dialog className="cmd-dialog" aria-label={text.paletteLabel} showClose={false}>
+        <Dialog className="cmd-dialog" body="flush" aria-label={text.paletteLabel} showClose={false}>
           <div className="cmd-search">
             <Search className="cmd-search__icon" size={16} aria-hidden="true" />
             <input

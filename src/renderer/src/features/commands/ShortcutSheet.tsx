@@ -53,7 +53,7 @@ export function ShortcutSheet({ isOpen, onOpenChange }: ShortcutSheetProps): Rea
   return (
     <ModalOverlay className="sheet-overlay" isOpen onOpenChange={onOpenChange} isDismissable>
       <Modal className="sheet-modal">
-        <Dialog className="sheet-dialog" title={text.title} closeLabel={text.close}>
+        <Dialog className="sheet-dialog" body="flush" title={text.title} closeLabel={text.close}>
           <p className="sheet-hint">{text.hint}</p>
 
           <section className="sheet-group" aria-label={text.groups.global}>

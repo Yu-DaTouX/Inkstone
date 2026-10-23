@@ -1,6 +1,6 @@
 @layer patterns {
   .v3-files {
-    background: var(--surface-2);
+    background: var(--surface);
     color: var(--fg);
   }
 
@@ -116,7 +116,7 @@
   }
 
   .v3-files-result-snippet mark {
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
     background: var(--sel);
     color: var(--fg);
   }
@@ -232,7 +232,7 @@
   .v3-files-divider-bar {
     width: 2px;
     height: 32px;
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
     transition: background-color var(--dur-fast) var(--ease);
   }
 
@@ -272,7 +272,7 @@
   }
 
   .v3-files-filter[data-content='1'] .v3-files-filter-field .ui-input {
-    padding-right: calc(var(--s-4) + 3 * 20px + 2 * 2px + var(--s-4) + 18px + var(--s-4));
+    padding-right: calc(var(--s-4) + 3 * var(--size-btn-sm) + 2 * var(--s-2) + var(--s-4) + 18px + var(--s-4));
   }
 
   .v3-files-filter-tail {
@@ -314,7 +314,7 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 5px var(--s-4);
+    padding: var(--s-4) var(--s-4);
   }
 
   .v3-files-pad {
@@ -420,7 +420,7 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 5px var(--s-4);
+    padding: var(--s-4) var(--s-4);
     scrollbar-gutter: stable both-edges;
   }
 
@@ -465,7 +465,7 @@
   }
 
   .v3-files-result--line {
-    padding-left: 28px;
+    padding-left: calc(var(--s-8) + 16px + var(--s-4));
   }
 
   .v3-files-result-line {
@@ -526,7 +526,7 @@
     height: var(--size-btn);
     display: flex;
     align-items: center;
-    padding-left: calc(28px + 2.5ch + var(--s-4));
+    padding-left: calc(var(--s-8) + 16px + var(--s-4) + 2.5ch + var(--s-4));
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     user-select: none;

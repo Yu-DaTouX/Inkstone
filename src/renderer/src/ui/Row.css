@@ -103,6 +103,7 @@
   }
   .ui-status__dot:is([data-kind='awaiting'], [data-kind='pending']) {
     background: var(--ask);
+    box-shadow: inset 0 0 0 1px var(--ask-edge);
   }
   .ui-status__dot[data-kind='pending'] {
     animation: ui-status-pulse var(--dur-breathe) ease-in-out infinite;

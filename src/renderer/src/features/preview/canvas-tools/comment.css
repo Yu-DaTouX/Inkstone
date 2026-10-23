@@ -34,17 +34,17 @@
     font-weight: var(--w-medium);
     line-height: 1;
     font-variant-numeric: tabular-nums;
-    box-shadow: 0 0 0 1px var(--surface-1), var(--shadow-sm);
+    box-shadow: 0 0 0 1px var(--bg), var(--shadow-sm);
     cursor: pointer;
   }
 
   .v3-canvas-comment-pin[data-sent] {
-    background: var(--surface-2);
+    background: var(--surface);
     color: var(--ok-t);
   }
 
   .v3-canvas-comment-pin[data-invalid] {
-    background: var(--surface-2);
+    background: var(--surface);
     color: var(--fg3);
     outline: 1px dashed var(--line2);
     outline-offset: -1px;
@@ -70,7 +70,7 @@
     box-sizing: border-box;
     padding: var(--s-10);
     border-radius: var(--r-md);
-    background: var(--surface-1);
+    background: var(--bg);
     box-shadow: var(--shadow-pop);
     color: var(--fg2);
     pointer-events: auto;
@@ -130,7 +130,7 @@
     min-width: 0;
     overflow: hidden;
     border-radius: var(--r-md);
-    background: var(--surface-1);
+    background: var(--bg);
     box-shadow: var(--shadow-pop);
     color: var(--fg2);
     cursor: default;
@@ -208,12 +208,12 @@
     gap: var(--s-4);
     padding: var(--s-6) var(--s-8);
     border-radius: var(--r-sm);
-    background: var(--surface-2);
-    box-shadow: inset 0 0 0 1px var(--line);
+    background: var(--surface);
+    box-shadow: var(--ring-line);
   }
 
   .v3-canvas-comment-row[data-active] {
-    box-shadow: inset 0 0 0 1px var(--accent);
+    box-shadow: var(--ring-accent);
   }
 
   .v3-canvas-comment-row[data-invalid] {

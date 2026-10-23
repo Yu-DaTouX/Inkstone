@@ -55,7 +55,7 @@ export function HtmlArtifactThumb({ url, title, openLabel, onOpen }: { url: stri
         />
       ) : null}
       <span className="v3-artifact-thumb-open">
-        <Badge tone="neutral">
+        <Badge tone="neutral" overlay>
           <Maximize2 size={12} aria-hidden />
           {openLabel}
         </Badge>

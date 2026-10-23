@@ -40,14 +40,15 @@ export interface TextFieldProps extends RACTextFieldProps {
   errorMessage?: FieldErrorContent
   placeholder?: string
   inputClassName?: string
+  size?: 'md' | 'sm'
 }
 
 export const TextField = forwardRef<HTMLDivElement, TextFieldProps>(function TextField(
-  { label, description, errorMessage, placeholder, className, inputClassName, children, ...props },
+  { label, description, errorMessage, placeholder, className, inputClassName, size = 'md', children, ...props },
   ref
 ) {
   return (
-    <RACTextField {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-field', cn))}>
+    <RACTextField {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-field', size === 'sm' && 'ui-field--sm', cn))}>
       {children ?? (
         <>
           <FieldHead label={label} />
@@ -66,14 +67,15 @@ export interface TextAreaProps extends RACTextFieldProps {
   placeholder?: string
   textAreaClassName?: string
   rows?: number
+  size?: 'md' | 'sm'
 }
 
 export const TextArea = forwardRef<HTMLDivElement, TextAreaProps>(function TextArea(
-  { label, description, errorMessage, placeholder, className, textAreaClassName, children, rows = 3, ...props },
+  { label, description, errorMessage, placeholder, className, textAreaClassName, children, rows = 3, size = 'md', ...props },
   ref
 ) {
   return (
-    <RACTextField {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-field', cn))}>
+    <RACTextField {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-field', size === 'sm' && 'ui-field--sm', cn))}>
       {children ?? (
         <>
           <FieldHead label={label} />

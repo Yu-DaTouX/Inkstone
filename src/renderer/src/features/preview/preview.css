@@ -238,7 +238,7 @@
     width: 2px;
     align-self: stretch;
     margin: 2px 0;
-    border-radius: 1px;
+    border-radius: var(--r-2xs);
     background: var(--accent);
   }
 
@@ -542,7 +542,7 @@
   }
 
   .v3-pdf-scroller:focus-visible {
-    box-shadow: inset 0 0 0 1px var(--accent);
+    box-shadow: var(--ring-accent);
   }
 
   .v3-pdf-loading {
@@ -564,7 +564,7 @@
     position: relative;
     flex: none;
     background: var(--surface);
-    box-shadow: var(--shadow-thumb);
+    box-shadow: var(--shadow-sm);
   }
 
   .v3-pdf-page-placeholder {
@@ -603,7 +603,7 @@
   }
 
   .v3-pdf-text [data-pdf-hit] {
-    border-radius: 2px;
+    border-radius: var(--r-2xs);
     background: color-mix(in srgb, var(--ask) 55%, transparent);
   }
 
@@ -659,7 +659,7 @@
 
   .v3-preview-live {
     border-radius: var(--r-full);
-    background: var(--surface-1);
+    background: var(--bg);
     box-shadow: var(--shadow-pop);
   }
 

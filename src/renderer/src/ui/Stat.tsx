@@ -11,6 +11,7 @@ export function StatGrid({ columns = 2, className, style, ...rest }: StatGridPro
     <dl
       {...rest}
       className={cx('ui-stat-grid', className)}
+      data-cols={columns}
       style={{ ...style, '--ui-stat-cols': columns } as CSSProperties}
     />
   )

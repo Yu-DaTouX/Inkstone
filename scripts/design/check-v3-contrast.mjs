@@ -111,7 +111,13 @@ for (const dot of ['ok', 'run', 'ask', 'stall', 'fail']) {
   checks.push({ fg: dot, bg: 'side', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
   checks.push({ fg: dot, bg: 'surface', min: 3, required: false, waived: true, note: `状态点 ${dot}`, kind: 'nontext' })
 }
+add('ask-edge', STATUS_BASES, 3, true, '待确认状态点描边', 'nontext')
 add('line-ctl', ['surface', 'bg', 'side', 'sunken'], 3, true, '控件描边', 'nontext')
+add('on-accent', ['accent'], 4.5, true, '强调色底文字')
+add('on-find', ['find', 'find-current'], 4.5, true, '查找高亮文字')
+for (const tone of ['default', 'green', 'blue', 'yellow', 'orange', 'red', 'purple', 'ink', 'pink', 'teal']) {
+  add(`file-${tone}`, ['surface', 'bg', 'side'], 3, true, `文件图标 ${tone}`, 'nontext')
+}
 
 const results = []
 for (const mode of MODES) {

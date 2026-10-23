@@ -17,7 +17,7 @@
   .v3-todo-row {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--s-6);
     padding: 2px 6px;
     border-radius: var(--r-xs);
     font-size: var(--t-footnote);

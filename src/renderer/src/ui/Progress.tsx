@@ -8,14 +8,17 @@ import {
 } from 'react-aria-components'
 import { cx } from './cx'
 
+export type ProgressTone = 'ink' | 'run' | 'ask' | 'fail' | 'muted'
+
 export interface ProgressBarProps extends Omit<RACProgressBarProps, 'children'> {
   label?: ReactNode
   showValue?: boolean
+  tone?: ProgressTone
 }
 
-export function ProgressBar({ label, showValue = false, className, ...props }: ProgressBarProps) {
+export function ProgressBar({ label, showValue = false, tone = 'ink', className, ...props }: ProgressBarProps) {
   return (
-    <RACProgressBar {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', cn))}>
+    <RACProgressBar {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', `ui-progress--${tone}`, cn))}>
       {(renderProps) => (
         <>
           {label != null || showValue ? (
@@ -42,11 +45,12 @@ export interface MeterProps extends Omit<RACMeterProps, 'children'> {
   label?: ReactNode
   showValue?: boolean
   projectedPercent?: number | null
+  tone?: ProgressTone
 }
 
-export function Meter({ label, showValue = false, projectedPercent, className, ...props }: MeterProps) {
+export function Meter({ label, showValue = false, projectedPercent, tone = 'ink', className, ...props }: MeterProps) {
   return (
-    <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', 'ui-meter', cn))}>
+    <RACMeter {...props} className={composeRenderProps(className, (cn) => cx('ui-progress', 'ui-meter', `ui-progress--${tone}`, cn))}>
       {(renderProps) => (
         <>
           {label != null || showValue ? (

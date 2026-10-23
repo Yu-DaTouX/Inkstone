@@ -48,6 +48,7 @@ export function UsagePage() {
     <div className="usage-page" data-testid="usage-details" aria-busy={!stats}>
       <PageHeader
         className="usage-page-head"
+        size="sm"
         title={t('usage.title')}
         description={text.usageNote}
         actions={renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: 'all', label: t('usage.all') }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: '7d', label: t('usage.days', { n: 7 }) }], onChange: (value) => setRange(value as UsageRange) })}

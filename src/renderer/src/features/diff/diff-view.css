@@ -175,7 +175,7 @@
   .diff-view__num {
     box-sizing: content-box;
     min-width: 3ch;
-    padding-left: calc(2ch + 5px);
+    padding-left: calc(2ch + var(--s-4));
     padding-right: 1ch;
     text-align: right;
     color: var(--fg3);

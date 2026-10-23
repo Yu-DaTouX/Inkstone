@@ -58,10 +58,6 @@
     color: var(--fg3);
   }
 
-  .branch-node--active .ui-tree__label {
-    color: var(--fg);
-  }
-
   .branch-node--leaf .branch-kind {
     color: var(--accent-t);
   }
