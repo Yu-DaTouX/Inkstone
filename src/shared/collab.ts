@@ -57,6 +57,8 @@ export interface CollabMergeRequest {
   direction: CollabRequestDirection
   peerName: string
   peerId?: string
+  peerDeviceId?: string
+  remoteProjectId?: string
   localProjectId: string
   projectName: string
   branch: string
@@ -65,6 +67,14 @@ export interface CollabMergeRequest {
   title: string
   note: string
   createdAt: number
+  status: CollabRequestStatus
+}
+
+export interface CollabRequestState {
+  requestId: string
+  projectId: string
+  branch: string
+  oid: string
   status: CollabRequestStatus
 }
 

@@ -1,5 +1,7 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { YAN_DIR } from '../paths'
 import type { IncomingMessage } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import {
@@ -67,6 +69,7 @@ export interface CollabHostDeps {
   exportSession(sessionId: string): Promise<RemoteOperationResult>
   onIncomingRequest(request: CollabMergeRequest): Promise<void> | void
   tempDir: string
+  stateFile?: string
 }
 
 const JSON_LIMIT = 256 * 1024
@@ -244,6 +247,7 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
       id: `mr-${randomUUID()}`,
       direction: 'incoming',
       peerName: device.name,
+      peerDeviceId: device.id,
       localProjectId: projectId,
       projectName: found.project.name,
       branch,
@@ -261,6 +265,25 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
   return {
     async handle(req, parts, ctx) {
       const url = new URL(req.url ?? '/', 'http://localhost')
+      if (req.method === 'GET' && parts[0] === 'projects' && parts.length === 4 && parts[2] === 'requests') {
+        const projectId = decodeURIComponent(parts[1])
+        const denied = ctx.allow(['push'], projectId)
+        if (denied) return json(denied)
+        let requests: CollabMergeRequest[]
+        try {
+          const state = JSON.parse(await readFile(deps.stateFile ?? join(YAN_DIR, 'collab.json'), 'utf8'))
+          if (state?.version !== 1 || !Array.isArray(state.requests)) return fail(503, '合并请求状态暂时不可读取')
+          requests = state.requests
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fail(404, '找不到这条合并请求')
+          return fail(503, '合并请求状态暂时不可读取')
+        }
+        const request = requests.find((item) => item.id === decodeURIComponent(parts[3]) && item.direction === 'incoming' && item.localProjectId === projectId && item.peerDeviceId === ctx.device.id)
+        if (!request) return fail(404, '找不到这条合并请求')
+        const revoked = ctx.allow(['push'], projectId)
+        if (revoked) return json(revoked)
+        return json({ ok: true, data: { requestId: request.id, projectId, branch: request.branch, oid: request.oid, status: request.status } })
+      }
       if (parts[0] === 'projects' && parts.length === 3) {
         const projectId = decodeURIComponent(parts[1])
         const action = parts[2]
