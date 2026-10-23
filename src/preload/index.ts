@@ -121,7 +121,8 @@ import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
-import type { AccountQuotaReport } from '../shared/account-quota'
+import type { AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
+import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
 import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
 import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
@@ -280,6 +281,10 @@ const api: YanBridge = {
   authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
   codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),
   codexLoginCancel: () => invoke<void>('yan:codexLoginCancel'),
+  oauthAccounts: () => invoke<OAuthAccountPools>('yan:oauthAccounts'),
+  oauthAccountSwitch: (provider, key) => invoke<Ok>('yan:oauthAccountSwitch', provider, key),
+  oauthAccountRemove: (provider, key) => invoke<Ok & { wasActive: boolean }>('yan:oauthAccountRemove', provider, key),
+  oauthAccountRename: (provider, key, label) => invoke<Ok>('yan:oauthAccountRename', provider, key, label),
   oauthLogin: (provider) => invoke<OAuthLoginResult>('yan:oauthLogin', provider),
   oauthLoginAnswer: (provider, promptId, value) => invoke<boolean>('yan:oauthLoginAnswer', provider, promptId, value),
   oauthLoginCancel: (provider) => invoke<void>('yan:oauthLoginCancel', provider),
@@ -296,10 +301,12 @@ const api: YanBridge = {
   addApiKey: (provider, key, label) => invoke<Ok>('yan:addApiKey', provider, key, label),
   switchApiKey: (provider, id) => invoke<Ok>('yan:switchApiKey', provider, id),
   renameApiKey: (provider, id, label) => invoke<Ok>('yan:renameApiKey', provider, id, label),
-  removeApiKey: (provider, id) => invoke<Ok>('yan:removeApiKey', provider, id),
+  removeApiKey: (provider, id) => invoke<Ok & { wasActive: boolean }>('yan:removeApiKey', provider, id),
   authFileInfo: () => invoke<{ path: string; exists: boolean; count: number }>('yan:authFileInfo'),
   accountQuota: () => invoke<AccountQuotaReport>('yan:accountQuota'),
+  codexAccounts: () => invoke<CodexAccountView[]>('yan:codexAccounts'),
   codexAccountSwitch: (key) => invoke<Ok>('yan:codexAccountSwitch', key),
+  codexAccountRemove: (key) => invoke<Ok & { wasActive: boolean }>('yan:codexAccountRemove', key),
   toolchainStatus: () => invoke<ToolchainStatus>('yan:toolchainStatus'),
   gitRuntimeStatus: () => invoke<GitRuntimeStatus>('yan:gitRuntimeStatus'),
   gitRuntimeInstall: () => invoke<{ ok: boolean; error?: string }>('yan:gitRuntimeInstall'),

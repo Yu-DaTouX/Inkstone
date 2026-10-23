@@ -39,7 +39,7 @@ export async function runApiKeyPoolTests(ok) {
     const old = pools.deepseek.find((k) => k.label === 'Key 1')
     ok(pools.deepseek.filter((k) => k.active).length === 1 && !old.active, '同一时间只有一个当前项')
 
-    ok(!(await pool.removeApiKey('deepseek', pools.deepseek.find((k) => k.active).id)).ok, '正在使用的 key 不能删除')
+    ok(!(await pool.removeApiKey('deepseek', 'missing')).ok, '不能误删不存在的 key')
 
     ok((await pool.switchApiKey('deepseek', old.id)).ok, '切换回旧 key')
     ok((await auth()).deepseek.key === 'sk-old-1111', '切换后 auth.json 写入旧 key')
@@ -67,6 +67,32 @@ export async function runApiKeyPoolTests(ok) {
     ok(!blocked.ok && /订阅/.test(blocked.error ?? ''), '同一 ID 下已有订阅登录时拒绝添加 API key', blocked.error)
     ok((await auth()).xai.type === 'oauth', '订阅登录凭证没有被覆盖')
     ok(!(await pool.switchApiKey('xai', (await store()).providers.xai[0].id)).ok && (await auth()).xai.type === 'oauth', '已有订阅登录时也拒绝切换')
+
+    const preservedOAuth = (await auth()).xai
+    ok((await pool.switchApiKey('xai', (await store()).providers.xai[0].id, preservedOAuth)).ok, '订阅凭证已安全保存后，允许显式切换回 API key')
+    await writeFile(authPath, JSON.stringify({ xai: { ...preservedOAuth, refresh: 'new-refresh' } }))
+    ok(!(await pool.addApiKey('xai', 'key-stale', undefined, preservedOAuth)).ok, '备份后订阅令牌发生变化时拒绝覆盖，避免并发丢失登录')
+    ok((await pool.addApiKey('xai', 'key-next', 'API', (await auth()).xai)).ok, '安全备份当前订阅后允许添加 API key')
+
+    await writeFile(authPath, JSON.stringify({ openai: { type: 'api_key', key: 'external-first' } }))
+    ok((await pool.captureActiveApiKey('openai')).ok && (await store()).providers.openai[0].key === 'external-first', '开始订阅登录前可持久化外部配置的当前 key')
+    await pool.addApiKey('openai', 'saved-second')
+    await writeFile(authPath, JSON.stringify({ openai: { type: 'api_key', key: 'external-third' } }))
+    await pool.switchApiKey('openai', (await store()).providers.openai[0].id)
+    ok((await store()).providers.openai.some((k) => k.key === 'external-third'), '切换到已保存的 key 前保留后来外部配置的新 key')
+    pools = await pool.listApiKeyPools()
+    const deletedActive = await pool.removeApiKey('openai', pools.openai.find((k) => k.active).id)
+    ok(deletedActive.ok && deletedActive.wasActive && !(await auth()).openai, '允许删除当前 key，同时只清理它自己的登录槽')
+    ok((await pool.listApiKeyPools()).openai.length === 2, '删除当前 key 不会删除其他已保存的 key')
+    await writeFile(authPath, JSON.stringify({ google: { type: 'api_key', key: 'single-external-key' } }))
+    const deletedVirtual = await pool.removeApiKey('google', 'current')
+    ok(deletedVirtual.ok && deletedVirtual.wasActive && !(await auth()).google, '只有一个外部 key、尚未入库时也支持单独删除')
+
+    for (const provider of ['anthropic', 'google', 'groq', 'mistral', 'together', 'fireworks', 'nvidia', 'openrouter', 'commandcode', 'kimi-coding', 'minimax-cn', 'qwen-token-plan-cn', 'volcengine-ark', 'zai-coding-cn']) {
+      ok((await pool.addApiKey(provider, `${provider}-key-a`)).ok && (await pool.addApiKey(provider, `${provider}-key-b`)).ok, `${provider} 支持保存多个 key`)
+      const rows = (await pool.listApiKeyPools())[provider]
+      ok(rows.length >= 2 && rows.filter((k) => k.active).length === 1, `${provider} 的 key 独立列出且只有一个当前项`)
+    }
 
     ok((await pool.clearApiKeys('deepseek')).ok && !(await store()).providers.deepseek, '移除供应商时清空它的 key 列表')
 

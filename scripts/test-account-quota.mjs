@@ -16,6 +16,114 @@ function credential({ account, user, email, plan = 'plus', expires = Date.now() 
   return { type: 'oauth', access, refresh: `refresh-${account}-${tag}`, expires, accountId: account }
 }
 
+async function runCodexAuthIpcTests(ok, build) {
+  const names = [
+    'getSettings', 'resolvePi', 'discoverCustomProviderModels', 'listCustomProviders', 'removeCustomProvider',
+    'saveCustomProvider', 'testCustomProviderBillable', 'testCustomProviderEndpoint', 'authFileInfo', 'clearAuth',
+    'listAuthProviders', 'setApiKey', 'addApiKey', 'clearApiKeys', 'listApiKeyPools', 'removeApiKey', 'renameApiKey',
+    'switchApiKey', 'detectToolchain', 'detectLocalModelServers', 'cancelCodexLogin', 'startCodexLogin',
+    'answerOAuthPrompt', 'cancelOAuthLogin', 'startOAuthLogin', 'accountQuotaReport', 'invalidateAccountQuotaReport',
+    'captureActiveCodexAccount', 'clearCodexAccounts', 'listCodexAccounts', 'removeCodexAccount', 'switchCodexAccount',
+    'captureActiveApiKey', 'captureActiveOAuthAccount', 'clearOAuthAccounts', 'listOAuthAccounts', 'removeOAuthAccount',
+    'renameOAuthAccount', 'switchOAuthAccount'
+  ]
+  await build({
+    entryPoints: ['src/main/ipc/auth-ipc.ts'], outfile: 'out/test/codex-auth-ipc.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
+    plugins: [{ name: 'auth-deps-stub', setup(b) {
+      b.onResolve({ filter: /^\.\.\// }, (args) => args.importer.replaceAll('\\', '/').endsWith('/ipc/auth-ipc.ts') && !args.path.endsWith('/shared/oauth-accounts') ? { path: 'deps', namespace: 'stub' } : undefined)
+      b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: names.map((name) => `export const ${name} = (...args) => {
+        const state = globalThis.__codexIpcTest;
+        state.calls.push([${JSON.stringify(name)}, ...args]);
+        const result = state.results[${JSON.stringify(name)}];
+        return typeof result === 'function' ? result(...args) : result ?? { ok: true };
+      };`).join('\n') }))
+    } }]
+  })
+  const { registerAuthIpc } = await import(pathToFileURL(join(process.cwd(), 'out/test/codex-auth-ipc.mjs')).href + `?t=${Date.now()}`)
+  const handlers = new Map()
+  const state = { calls: [], results: {} }
+  const previous = globalThis.__codexIpcTest
+  globalThis.__codexIpcTest = state
+  const reset = (results = {}) => { state.calls = []; state.results = { getSettings: {}, resolvePi: { args: ['fixture.js'] }, ...results } }
+  const called = (name) => state.calls.filter((entry) => entry[0] === name)
+  registerAuthIpc({ handle: (name, fn) => handlers.set(name, fn) }, {
+    restartAgent: async (reason) => { state.calls.push(['restartAgent', reason]) }, sendOAuthEvent: () => {}
+  })
+  try {
+    const views = [{ key: 'chatgpt:a:u', email: 'a@example.com', active: true }]
+    reset({ listCodexAccounts: views })
+    ok(await handlers.get('yan:codexAccounts')() === views, 'IPC：账号管理读取安全账号列表')
+
+    reset()
+    let r = await handlers.get('yan:clearAuth')('openai-codex')
+    ok(r.ok && called('clearCodexAccounts').length === 1 && called('clearAuth').length === 0, 'IPC：移除 ChatGPT 服务走账号池清理，不只删除当前登录')
+    ok(called('invalidateAccountQuotaReport').length === 1 && called('restartAgent').length === 1, 'IPC：移除登录后失效额度查询并刷新运行实例')
+    reset({ clearCodexAccounts: { ok: false, error: 'blocked' } })
+    r = await handlers.get('yan:clearAuth')('openai-codex')
+    ok(!r.ok && called('restartAgent').length === 0, 'IPC：清理失败不假报成功、不刷新运行实例')
+    reset()
+    await handlers.get('yan:clearAuth')('deepseek')
+    ok(called('clearAuth')[0]?.[1] === 'deepseek' && called('clearApiKeys')[0]?.[1] === 'deepseek', 'IPC：其他服务的原有移除流程不变')
+
+    reset()
+    r = await handlers.get('yan:codexAccountSwitch')('chatgpt:a:u')
+    ok(r.ok && called('switchCodexAccount')[0]?.[1] === 'chatgpt:a:u' && called('restartAgent').length === 1 && called('invalidateAccountQuotaReport').length === 1, 'IPC：切换账号后刷新凭证与额度，不只改磁盘文件')
+    reset({ switchCodexAccount: { ok: false, error: 'missing' } })
+    await handlers.get('yan:codexAccountSwitch')('missing')
+    ok(called('restartAgent').length === 0 && called('invalidateAccountQuotaReport').length === 0, 'IPC：切换失败不影响当前运行实例')
+
+    reset({ removeCodexAccount: { ok: true, wasActive: false } })
+    await handlers.get('yan:codexAccountRemove')('old')
+    ok(called('invalidateAccountQuotaReport').length === 1 && called('restartAgent').length === 0, 'IPC：删除旧账号只刷新额度，不打扰当前登录')
+    reset({ removeCodexAccount: { ok: true, wasActive: true } })
+    await handlers.get('yan:codexAccountRemove')('current')
+    ok(called('restartAgent').length === 1, 'IPC：删除当前账号后刷新凭证')
+
+    reset({ captureActiveCodexAccount: () => { throw new Error('store broken') } })
+    r = await handlers.get('yan:codexLogin')()
+    ok(!r.ok && called('startCodexLogin').length === 0, 'IPC：无法保留旧账号时拒绝开始新登录')
+    reset()
+    r = await handlers.get('yan:codexLogin')()
+    ok(r.ok && called('captureActiveCodexAccount').length === 2 && called('restartAgent').length === 1, 'IPC：添加账号前后都保存登录，成功后刷新凭证')
+    let captures = 0
+    reset({ captureActiveCodexAccount: () => { if (++captures === 2) throw new Error('write blocked') } })
+    r = await handlers.get('yan:codexLogin')()
+    ok(!r.ok && /已登录.*保存账号列表失败/.test(r.error), 'IPC：登录后保存列表失败会明确提示，不静默吞掉')
+
+    for (const provider of ['anthropic', 'github-copilot', 'xai', 'openrouter']) {
+      reset()
+      r = await handlers.get('yan:oauthLogin')(provider)
+      ok(r.ok && called('captureActiveApiKey').length === 1 && called('captureActiveOAuthAccount').length === 2, `IPC：${provider} 添加登录前保留现有 key 和订阅账号，登录后再入库`)
+      reset({ captureActiveApiKey: { ok: false, error: 'key store broken' } })
+      r = await handlers.get('yan:oauthLogin')(provider)
+      ok(!r.ok && called('startOAuthLogin').length === 0, `IPC：${provider} 无法保留旧 key 时不覆盖它`)
+      reset()
+      r = await handlers.get('yan:oauthAccountSwitch')(provider, 'backup')
+      ok(r.ok && called('captureActiveApiKey').length === 1 && called('switchOAuthAccount')[0]?.[2] === 'backup', `IPC：${provider} 换号前也保留当前 API key`)
+      reset()
+      await handlers.get('yan:clearAuth')(provider)
+      ok(called('clearOAuthAccounts').length === 1 && called('clearApiKeys').length === 1, `IPC：${provider} 整体移除会清理两个保存池`)
+    }
+    const protectedCredential = { type: 'oauth', access: 'protected', refresh: 'r', expires: 1 }
+    reset({ captureActiveOAuthAccount: { key: 'saved', credential: protectedCredential } })
+    await handlers.get('yan:addApiKey')('anthropic', 'new-key', 'API')
+    ok(called('addApiKey')[0]?.[4] === protectedCredential, 'IPC：添加 key 的覆盖许可只绑定已保存的那份 OAuth 凭证')
+    reset({ captureActiveOAuthAccount: () => { throw new Error('broken') } })
+    let blocked = false
+    try { await handlers.get('yan:switchApiKey')('anthropic', 'key') } catch { blocked = true }
+    ok(blocked && called('switchApiKey').length === 0, 'IPC：无法安全保存 OAuth 时不执行 key 切换')
+    reset({ clearApiKeys: { ok: false, error: 'cannot clear saved keys' } })
+    r = await handlers.get('yan:clearAuth')('xai')
+    ok(!r.ok && called('restartAgent').length === 1, 'IPC：登录槽已清理但 key 池清理失败时如实报错，并刷新已变化的运行状态')
+    reset({ removeApiKey: { ok: true, wasActive: true } })
+    await handlers.get('yan:removeApiKey')('openai', 'key')
+    ok(called('restartAgent').length === 1 && called('invalidateAccountQuotaReport').length === 1, 'IPC：删除当前 API key 后刷新运行实例与额度')
+  } finally {
+    if (previous === undefined) delete globalThis.__codexIpcTest
+    else globalThis.__codexIpcTest = previous
+  }
+}
+
 export async function runAccountQuotaTests(ok) {
   const { build } = await import('esbuild')
 
@@ -98,6 +206,36 @@ export async function runAccountQuotaTests(ok) {
     await writeAuth({ 'openai-codex': A1, deepseek: { type: 'api_key', key: 'sk-test' } })
     let list = await m.listCodexAccounts({ 'chatgpt:acct-a:user-a': '主号' })
     ok(list.length === 1 && list[0].active && list[0].email === 'a@example.com' && list[0].label === '主号', '副本：当前账号被收进列表并带上备注')
+    ok(!JSON.stringify(list).includes(A1.access) && !JSON.stringify(list).includes(A1.refresh), '列表：只向界面返回账号信息，不返回令牌')
+    ok((await m.listCodexAccounts()).length === 1, '重复登录：同一账号不会新增条目')
+
+    const initialStore = JSON.parse(await readFile(storeFile, 'utf8'))
+    initialStore.accounts.push({ ...initialStore.accounts[0], key: 'chatgpt:acct-a:legacy-user' })
+    const sparse = {
+      ...A1,
+      access: jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-a' }, 'https://api.openai.com/profile': { email: 'A@EXAMPLE.COM' } }),
+      expires: A1.expires - 1000,
+      refresh: 'old-sparse-refresh'
+    }
+    initialStore.accounts.push({ key: 'chatgpt:acct-a:A@EXAMPLE.COM', email: 'A@EXAMPLE.COM', credential: sparse, savedAt: 0 })
+    await writeFile(storeFile, JSON.stringify(initialStore))
+    list = await m.listCodexAccounts()
+    ok(list.length === 1 && list[0].key === 'chatgpt:acct-a:user-a' && list[0].active, '迁移：旧 key、缺用户 ID 和邮箱大小写差异不会把同一账号显示多次')
+    ok((await m.codexAccountTargets()).length === 1, '额度：旧账号重复记录也只生成一个查询目标')
+
+    const freshSparse = { ...sparse, expires: A1.expires + 5000, refresh: 'new-sparse-refresh' }
+    await writeAuth({ 'openai-codex': freshSparse, deepseek: { type: 'api_key', key: 'sk-test' } })
+    const sparseList = await m.listCodexAccounts()
+    list = await m.listCodexAccounts()
+    ok(list.length === 1 && list[0].active && list[0].key === sparseList[0].key, '兼容：新令牌暂缺用户 ID 时，列表 key 不会在两次读取之间跳变')
+    await writeFile(storeFile, JSON.stringify(initialStore))
+
+    const rotated = { ...A1, refresh: 'refresh-a-rotated' }
+    await writeAuth({ 'openai-codex': rotated, deepseek: { type: 'api_key', key: 'sk-test' } })
+    await m.captureActiveCodexAccount()
+    ok(JSON.parse(await readFile(storeFile, 'utf8')).accounts[0].credential.refresh === rotated.refresh, '轮换：access 不变但 refresh 改变时也保存新令牌')
+    await writeAuth({ 'openai-codex': A1, deepseek: { type: 'api_key', key: 'sk-test' } })
+    await m.captureActiveCodexAccount()
 
     const B1 = credential({ account: 'acct-b', user: 'user-b', email: 'b@example.com' })
     await writeAuth({ 'openai-codex': B1, deepseek: { type: 'api_key', key: 'sk-test' } })
@@ -151,6 +289,42 @@ export async function runAccountQuotaTests(ok) {
     ok(r.ok && r.wasActive && !('openai-codex' in auth) && auth.deepseek?.key === 'sk-test', '移除：当前账号从 auth.json 退出，其它服务保留')
     list = await m.listCodexAccounts()
     ok(list.length === 1 && list[0].email === 'b@example.com' && !list[0].active, '移除：列表只剩另一个账号，且不是当前账号')
+    ok(!(await m.removeCodexAccount('chatgpt:missing:x')).ok && (await m.listCodexAccounts()).length === 1, '移除：过时或不存在的账号请求报错，不影响其他账号')
+    r = await m.removeCodexAccount('chatgpt:acct-b:user-b')
+    ok(r.ok && !r.wasActive && (await m.listCodexAccounts()).length === 0, '移除：可以单独删除未激活的旧账号')
+
+    await writeAuth({ 'openai-codex': A1, deepseek: { type: 'api_key', key: 'sk-test' } })
+    await m.captureActiveCodexAccount()
+    await writeAuth({ 'openai-codex': B1, deepseek: { type: 'api_key', key: 'sk-test' } })
+    await m.captureActiveCodexAccount()
+    r = await m.clearCodexAccounts()
+    auth = await readAuth()
+    ok(r.ok && !auth['openai-codex'] && auth.deepseek?.key === 'sk-test', '服务移除：退出 ChatGPT，不动其他服务凭证')
+    ok((await m.listCodexAccounts()).length === 0 && (await m.codexAccountTargets()).length === 0, '服务移除：同时清空账号列表和额度查询目标，不会重新出现残留账号')
+    await writeAuth({ 'openai-codex': A1, deepseek: { type: 'api_key', key: 'sk-test' } })
+    list = await m.listCodexAccounts()
+    ok(list.length === 1 && list[0].active, '重新登录：移除全部后再登录一次，只显示一个账号')
+
+    const teammate = credential({ account: 'acct-a', user: 'other-user', email: 'other@example.com' })
+    await writeAuth({ 'openai-codex': teammate, deepseek: { type: 'api_key', key: 'sk-test' } })
+    list = await m.listCodexAccounts()
+    ok(list.length === 2 && list.filter((x) => x.active).length === 1, '去重边界：同工作区不同用户仍是两个账号')
+    ok((await m.removeCodexAccount('chatgpt:acct-a:user-a')).ok && (await readAuth())['openai-codex'].access === teammate.access, '移除边界：删除同工作区另一用户不会退出当前用户')
+
+    await m.clearCodexAccounts()
+    await writeAuth({ 'openai-codex': A1, deepseek: { type: 'api_key', key: 'sk-test' } })
+    await m.captureActiveCodexAccount()
+    const refreshStore = JSON.parse(await readFile(storeFile, 'utf8'))
+    refreshStore.accounts.push({
+      key: 'chatgpt:acct-b:b@example.com', email: 'b@example.com', savedAt: 0,
+      credential: { ...B1, expires: 0, access: jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-b' }, 'https://api.openai.com/profile': { email: 'b@example.com' } }) }
+    })
+    await writeFile(storeFile, JSON.stringify(refreshStore))
+    const refreshedTargets = await m.codexAccountTargets()
+    const refreshedTarget = refreshedTargets.find((x) => !x.active)
+    ok(refreshedTarget?.key === 'chatgpt:acct-b:user-b', '令牌刷新：补齐用户 ID 后同步更新额度卡片的账号 key')
+    ok((await m.switchCodexAccount(refreshedTarget.key)).ok && (await readAuth())['openai-codex'].accountId === 'acct-b', '令牌刷新：额度卡片的新 key 可以直接用于切换账号')
+    await writeAuth({ 'openai-codex': teammate, deepseek: { type: 'api_key', key: 'sk-test' } })
 
     await writeFile(storeFile, '{ not json')
     let rejected = null
@@ -161,10 +335,13 @@ export async function runAccountQuotaTests(ok) {
     ok(backups.length === 1 && backups[0] === 'codex-accounts.json.corrupt.bak', '损坏：反复读取只留一份固定名的备份')
     const switched = await m.switchCodexAccount('chatgpt:acct-b:user-b')
     ok(switched.ok === false && typeof switched.error === 'string' && /格式无效/.test(switched.error), '损坏：切换账号返回 ok:false 而不是 reject')
+    ok(!(await m.removeCodexAccount('chatgpt:acct-a:other-user')).ok, '损坏：删除账号返回失败，不静默丢弃列表')
+    ok(!(await m.clearCodexAccounts()).ok && (await readAuth())['openai-codex'].access === teammate.access, '损坏：清除服务不会先退出当前账号再报列表错误')
   } finally {
     globalThis.fetch = realFetch
     await rm(root, { recursive: true, force: true })
   }
+  await runCodexAuthIpcTests(ok, build)
 }
 
 export default runAccountQuotaTests

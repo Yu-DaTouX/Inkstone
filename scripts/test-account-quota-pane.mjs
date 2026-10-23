@@ -38,14 +38,15 @@ const ccCard = (over = {}) => ({
 })
 
 const MAIN_STUBS = {
-  electron: `export const net = { fetch: async () => { throw new Error('test: no network') } }`,
+  electron: `export const net = { fetch: (...args) => globalThis.__acctScenario.fetch ? globalThis.__acctScenario.fetch(...args) : Promise.reject(new Error('test: no network')) }`,
   credentials: `
 export const readAuthEntry = async (p) => globalThis.__acctScenario?.authEntry?.[p]
 `,
   quota: `
-export const providerQuota = async (p, budget) => globalThis.__acctScenario.quota(p, budget)
+export const providerQuota = async (p, budget, secret) => globalThis.__acctScenario.quota(p, budget, secret)
 export const fetchCodexUsage = async () => { throw new Error('test: codex usage not stubbed') }
 `,
+  'oauth-accounts': `export const oauthAccountTargets = async (provider) => globalThis.__acctScenario?.oauthTargets?.[provider] ?? []`,
   'codex-accounts': `
 export const codexAccountTargets = async () => globalThis.__acctScenario?.codexTargets ?? []
 export const switchCodexAccount = async () => ({ ok: false, error: 'test: not stubbed' })
@@ -68,6 +69,7 @@ async function loadAccountQuotaMain() {
         b.onResolve({ filter: /^\.\/credentials$/ }, () => ({ path: 'credentials', namespace: 'acct-main-stub' }))
         b.onResolve({ filter: /^\.\/quota$/ }, () => ({ path: 'quota', namespace: 'acct-main-stub' }))
         b.onResolve({ filter: /^\.\/codex-accounts$/ }, () => ({ path: 'codex-accounts', namespace: 'acct-main-stub' }))
+        b.onResolve({ filter: /^\.\/oauth-accounts$/ }, () => ({ path: 'oauth-accounts', namespace: 'acct-main-stub' }))
         b.onLoad({ filter: /.*/, namespace: 'acct-main-stub' }, (args) => ({ contents: MAIN_STUBS[args.path], loader: 'js' }))
       }
     }]
@@ -102,6 +104,17 @@ async function runMainReportScenarios(check, main, piDir) {
     check(!!cc, '查询 reject → 卡片仍存在（不静默消失）')
     check(cc?.status === 'ok' && cc?.staleError === 'HTTP 429', '查询 reject 且有上次成功读数 → 保留旧读数并标出错误原因')
     check(cc?.windows.length === 3, '查询 reject 且有上次成功读数 → 沿用旧窗口')
+
+    setScenario({
+      authEntry: { commandcode: { type: 'api_key', key: 'different-account-key' } },
+      quota: async (_provider, _budget, secret) => {
+        check(secret === 'different-account-key', '换 key：查询绑定已解析的那份凭证，不二次读取其他账号的 key')
+        throw new Error('new account offline')
+      }
+    })
+    r = await main.accountQuotaReport()
+    cc = r.cards.find((c) => c.provider === 'commandcode')
+    check(cc?.status === 'error' && cc?.windows.length === 0 && !cc?.staleError, '换 key：不能把前一个账号的成功额度读数套给新账号')
 
     setScenario({
       authEntry: {
@@ -156,6 +169,61 @@ async function runMainReportScenarios(check, main, piDir) {
       else process.env.COMMANDCODE_API_KEY = priorKey
     }
     await rm(modelsFile, { force: true })
+
+    setScenario({
+      authEntry: {},
+      oauthTargets: { anthropic: [
+        { key: 'claude-a', email: 'a@example.com', active: true, credential: { access: 'a', expires: Date.now() + 10000 } },
+        { key: 'claude-b', email: 'b@example.com', active: false, credential: { access: 'b', expires: Date.now() + 10000 } }
+      ] },
+      fetch: async () => ({ ok: true, json: async () => ({ five_hour: { utilization: 20, resets_at: new Date(Date.now() + 10000).toISOString() } }) })
+    })
+    r = await main.accountQuotaReport()
+    check(r.cards.length === 2 && r.cards.every((c) => c.provider === 'anthropic' && c.switchable), 'Claude：每个已保存账号独立读取额度，允许切换')
+    check(r.cards.find((c) => c.key === 'claude-a')?.active && !r.cards.find((c) => c.key === 'claude-b')?.active, 'Claude：当前与备用账号状态不混淆')
+
+    setScenario({
+      authEntry: { openrouter: { type: 'oauth', access: 'or-oauth' } },
+      oauthTargets: { openrouter: [{ key: 'or-account', label: '个人', active: true, credential: { access: 'or-oauth' } }] },
+      fetch: async (_url, init) => {
+        check(init.headers.Authorization === 'Bearer or-oauth', 'OpenRouter：使用该账号自己的凭证查余额')
+        return { ok: true, json: async () => ({ data: { total_credits: 20, total_usage: 5 } }) }
+      },
+      quota: async () => { throw new Error('duplicate key query') }
+    })
+    r = await main.accountQuotaReport()
+    check(r.cards.length === 1 && r.cards[0].key === 'or-account' && r.cards[0].balance.amount === 15, 'OpenRouter：订阅登录与通用 key 卡片不会重复展示当前凭证')
+
+    const deferred = () => {
+      let resolve
+      const promise = new Promise((done) => { resolve = done })
+      return { promise, resolve }
+    }
+    const responses = [deferred(), deferred()]
+    const starts = [deferred(), deferred()]
+    let request = 0
+    setScenario({
+      authEntry: { commandcode: { type: 'api_key', key: 'user_test_key' } },
+      quota: (p) => {
+        if (p !== 'commandcode') return Promise.resolve({ provider: p, supported: false })
+        const index = request++
+        starts[index].resolve()
+        return responses[index].promise
+      }
+    })
+    const oldReport = main.accountQuotaReport()
+    await starts[0].promise
+    check(main.accountQuotaReport() === oldReport, '刷新：同一批额度查询复用进行中的请求')
+    main.invalidateAccountQuotaReport()
+    const newReport = main.accountQuotaReport()
+    await starts[1].promise
+    check(newReport !== oldReport, '刷新：账号变更后不复用变更前的额度查询')
+    responses[0].resolve(ccProviderQuota())
+    await oldReport
+    check(main.accountQuotaReport() === newReport, '刷新：旧查询结束不会清掉新账号正在进行的查询')
+    responses[1].resolve(ccProviderQuota({ windows: [{ id: 'fiveHour', label: '5 小时', used: 2, total: 14 }] }))
+    const updated = await newReport
+    check(updated.cards.find((c) => c.provider === 'commandcode')?.windows[0].used === 2, '刷新：账号变更后的请求返回新读数')
   } finally {
     delete globalThis.__acctScenario
   }

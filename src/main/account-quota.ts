@@ -1,9 +1,10 @@
 import { net } from 'electron'
-import { readAuthEntry } from './credentials'
+import { createHash } from 'node:crypto'
 import { resolveQuotaProviderSecret } from './quota-credentials'
 import { fetchCodexUsage, providerQuota } from './quota'
 import { quotaSamples } from './quota-samples'
 import { codexAccountTargets, type CodexAccountTarget } from './codex-accounts'
+import { oauthAccountTargets, type OAuthAccountTarget } from './oauth-accounts'
 import { claudeUsageWindows, mergeDuplicateCards, type AccountQuotaCard, type AccountQuotaReport } from '../shared/account-quota'
 
 const TIMEOUT_MS = 12_000
@@ -54,21 +55,29 @@ function yanCodexCard(t: CodexAccountTarget): Promise<AccountQuotaCard> {
   })
 }
 
-async function yanClaudeCard(): Promise<AccountQuotaCard | null> {
-  const entry = (await readAuthEntry('anthropic')) as { type?: string; access?: unknown; expires?: unknown } | undefined
-  if (entry?.type !== 'oauth' || typeof entry.access !== 'string') return null
-  const access = entry.access
-  return settle({ key: 'yan:anthropic', source: 'yan', provider: 'anthropic', name: 'Claude' }, async () => {
-    if (Number(entry.expires) <= Date.now()) return { status: 'expired', hint: '登录令牌已过期，下次用 Claude 模型对话时 pi 会自动刷新。' }
-    const windows = claudeUsageWindows(await claudeUsage(access))
+function yanClaudeCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
+  return settle({ key: account.key, source: 'yan', provider: 'anthropic', name: 'Claude', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
+    if (account.credential.expires <= Date.now()) return { status: 'expired', hint: '登录令牌已过期，切换后用 Claude 模型对话时 pi 会自动刷新。' }
+    const windows = claudeUsageWindows(await claudeUsage(account.credential.access))
     return { windows, status: limitedIf(windows) }
   })
 }
 
+function yanOpenRouterCard(account: OAuthAccountTarget): Promise<AccountQuotaCard> {
+  return settle({ key: account.key, source: 'yan', provider: 'openrouter', name: 'OpenRouter', email: account.email, label: account.label, active: account.active, switchable: true }, async () => {
+    const payload = await getJson('https://openrouter.ai/api/v1/credits', { headers: { Authorization: `Bearer ${account.credential.access}` } }) as { data?: { total_credits?: number; total_usage?: number } }
+    const amount = Number(payload.data?.total_credits) - Number(payload.data?.total_usage)
+    if (!Number.isFinite(amount)) throw new Error('服务未返回余额')
+    return { balance: { label: '余额', amount: Math.max(0, amount), currency: 'USD' } }
+  })
+}
+
 async function yanKeyCard(provider: { id: string; name: string }): Promise<AccountQuotaCard | null> {
-  if (!(await resolveQuotaProviderSecret(provider.id))) return null
-  return settle({ key: `yan:${provider.id}`, source: 'yan', provider: provider.id, name: provider.name }, async () => {
-    const q = await providerQuota(provider.id)
+  const secret = await resolveQuotaProviderSecret(provider.id)
+  if (!secret) return null
+  const identity = createHash('sha256').update(secret).digest('hex').slice(0, 24)
+  return settle({ key: `yan:${provider.id}:${identity}`, source: 'yan', provider: provider.id, name: provider.name }, async () => {
+    const q = await providerQuota(provider.id, undefined, secret)
     const windows = q.windows ?? []
     const hasData = windows.length > 0 || q.remaining !== undefined
     if (q.error && !hasData) return { status: 'error', error: q.error }
@@ -85,17 +94,29 @@ function claudeUsage(accessToken: string): Promise<unknown> {
 
 let inflight: Promise<AccountQuotaReport> | null = null
 
+export function invalidateAccountQuotaReport(): void {
+  inflight = null
+}
+
 export function accountQuotaReport(): Promise<AccountQuotaReport> {
-  inflight ??= buildReport().finally(() => {
-    inflight = null
-  })
+  if (!inflight) {
+    const pending = buildReport().finally(() => {
+      if (inflight === pending) inflight = null
+    })
+    inflight = pending
+  }
   return inflight
 }
 
 async function buildReport(): Promise<AccountQuotaReport> {
-  const targets = await codexAccountTargets().catch(() => [] as CodexAccountTarget[])
+  const [targets, claude, openrouter] = await Promise.all([
+    codexAccountTargets().catch(() => [] as CodexAccountTarget[]),
+    oauthAccountTargets('anthropic').catch(() => [] as OAuthAccountTarget[]),
+    oauthAccountTargets('openrouter').catch(() => [] as OAuthAccountTarget[])
+  ])
   targets.sort((a, b) => Number(b.active) - Number(a.active))
-  const jobs: Array<Promise<AccountQuotaCard | null>> = [...targets.map(yanCodexCard), yanClaudeCard(), ...KEY_PROVIDERS.map(yanKeyCard)]
+  const keyProviders = KEY_PROVIDERS.filter((p) => p.id !== 'openrouter' || !openrouter.some((a) => a.active))
+  const jobs: Array<Promise<AccountQuotaCard | null>> = [...targets.map(yanCodexCard), ...claude.map(yanClaudeCard), ...openrouter.map(yanOpenRouterCard), ...keyProviders.map(yanKeyCard)]
   const settled = await Promise.all(jobs.map((job) => job.catch(() => null)))
   const merged = mergeDuplicateCards(settled.filter((c): c is AccountQuotaCard => !!c))
   const cards = await Promise.all(merged.map(withLastGood))

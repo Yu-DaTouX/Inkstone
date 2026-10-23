@@ -81,7 +81,7 @@ export function ApiKeyList({ provider, keys, disabled, onDone }: ApiKeyListProps
                 <Button variant="ghost" size="sm" isDisabled={locked} onPress={() => { setDeleting(null); setRenaming({ id: k.id, draft: k.label }) }}>
                   {text('keyRename')}
                 </Button>
-                {k.active ? null : deleting === k.id ? (
+                {deleting === k.id ? (
                   <Button variant="danger" size="sm" isDisabled={locked} onPress={() => void act(() => window.yan.removeApiKey(provider, k.id))}>
                     {text('keyDeleteConfirm')}
                   </Button>

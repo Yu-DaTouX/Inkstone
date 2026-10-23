@@ -24,6 +24,9 @@ import { OpenCodeProxyRow } from '../capabilities/OpenCodeProxyRow'
 import { ConfirmProvider } from '../capabilities/confirm'
 import { ClaudeCodeBridgeRow } from './ClaudeCodeBridgeRow'
 import { ApiKeyList } from './ApiKeyList'
+import { SubscriptionAccountList } from './SubscriptionAccountList'
+import { supportsOAuthAccounts, type OAuthAccountPools, type OAuthAccountView } from '../../../../../shared/oauth-accounts'
+import type { CodexAccountView } from '../../../../../shared/account-quota'
 import type { ApiKeyPools, ApiKeyView } from '../../../../../shared/api-keys'
 import { CustomEndpointSettings } from './CustomEndpointSettings'
 import { useModelsText } from './models-text'
@@ -71,6 +74,8 @@ export function ModelsSettings(): ReactElement {
   const [draft, setDraft] = useState('')
   const [labelDraft, setLabelDraft] = useState('')
   const [pools, setPools] = useState<ApiKeyPools>({})
+  const [codexAccounts, setCodexAccounts] = useState<CodexAccountView[]>([])
+  const [oauthAccounts, setOAuthAccounts] = useState<OAuthAccountPools>({})
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'fail' | 'info'; text: string } | null>(null)
   const [oauth, setOauth] = useState<{ provider: string; events: OAuthLoginEvent[] } | null>(null)
@@ -83,9 +88,20 @@ export function ModelsSettings(): ReactElement {
     if (next) setPools(next)
   }
 
+  const loadAccounts = async (): Promise<void> => {
+    try {
+      const [codex, others] = await Promise.all([window.yan.codexAccounts(), window.yan.oauthAccounts()])
+      setCodexAccounts(codex)
+      setOAuthAccounts(others)
+    } catch (error) {
+      setMsg({ kind: 'fail', text: readable(error) })
+    }
+  }
+
   useEffect(() => {
     if (useStore.getState().authProviders.length === 0) void loadAuthProviders()
     void loadPools()
+    void loadAccounts()
     void window.yan
       .authFileInfo()
       .then(setFileInfo)
@@ -112,6 +128,7 @@ export function ModelsSettings(): ReactElement {
     await loadAuthProviders()
     await refreshFileInfo()
     await loadPools()
+    await loadAccounts()
   }
 
   const authIdOf = (p: AuthProviderInfo): string => p.authKey || p.id
@@ -123,6 +140,8 @@ export function ModelsSettings(): ReactElement {
       const list = await window.yan.authProviders(true)
       useStore.setState({ authProviders: Array.isArray(list) ? list : [] })
       await refreshFileInfo()
+      await loadAccounts()
+      await loadPools()
     } catch (error) {
       setMsg({ kind: 'fail', text: readable(error) })
     } finally {
@@ -161,11 +180,39 @@ export function ModelsSettings(): ReactElement {
     }
     if (switched) {
       setMsg({ kind: 'ok', text: text('keySwitched').replace('{label}', switched.label) })
-      refreshModelsAfterRestart()
     } else {
       setMsg(null)
     }
+    refreshModelsAfterRestart()
     await refreshAfterWrite()
+  }
+
+  const actOnAccount = async (provider: string, account: OAuthAccountView, action: 'switch' | 'remove' | 'rename', label?: string): Promise<void> => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      let r: { ok: boolean; error?: string }
+      if (action === 'rename') r = await window.yan.oauthAccountRename(provider, account.key, label ?? '')
+      else if (action === 'switch') r = provider === 'openai-codex'
+        ? await window.yan.codexAccountSwitch(account.key)
+        : await window.yan.oauthAccountSwitch(provider, account.key)
+      else r = provider === 'openai-codex'
+        ? await window.yan.codexAccountRemove(account.key)
+        : await window.yan.oauthAccountRemove(provider, account.key)
+      if (r.ok) {
+        setMsg({ kind: 'ok', text: action === 'switch'
+          ? text('keySwitched').replace('{label}', account.label || account.email || provider)
+          : t('auth.cleared') })
+        refreshModelsAfterRestart()
+        await refreshAfterWrite()
+      } else {
+        setMsg({ kind: 'fail', text: r.error ?? t('auth.saveFailed') })
+      }
+    } catch (error) {
+      setMsg({ kind: 'fail', text: readable(error) })
+    } finally {
+      setBusy(false)
+    }
   }
 
   const confirmRemove = async (info: AuthProviderInfo): Promise<void> => {
@@ -240,12 +287,20 @@ export function ModelsSettings(): ReactElement {
   const otherKeys = keys.filter((p) => p.status !== 'ready')
   const readyCount = authProviders.filter((p) => p.status === 'ready').length
 
+  const accountsOf = (p: AuthProviderInfo): OAuthAccountView[] => {
+    if (p.id === 'openai-codex') return codexAccounts
+    const provider = authIdOf(p)
+    return supportsOAuthAccounts(provider) ? oauthAccounts[provider] ?? [] : []
+  }
+
   const loginInProgress = (p: AuthProviderInfo): boolean =>
     p.id === 'openai-codex' ? codexLogging : oauth?.provider === p.id
 
   const serviceRow = (p: AuthProviderInfo): ReactElement => {
     const state = entryState(p)
     const isKey = p.kind !== 'subscription'
+    const acceptsKey = isKey || p.id === 'anthropic'
+    const accounts = accountsOf(p)
     const editingThis = editing === p.id
     const fromEnv = credentialFromEnv(p)
     const activeOauth = oauth?.provider === p.id
@@ -264,7 +319,7 @@ export function ModelsSettings(): ReactElement {
         <div className="ms-service-actions">
           {editingThis ? (
             <div className="ms-key-edit">
-              {state === 'ready' ? (
+              {acceptsKey ? (
                 <TextField
                   className="ms-key-edit-label"
                   aria-label={text('keyLabelPlaceholder')}
@@ -309,17 +364,17 @@ export function ModelsSettings(): ReactElement {
               {state === 'ready' && canRemoveCredential(p) ? (
                 <Button
                   variant="secondary"
-                  isDisabled={busy}
+                  isDisabled={busy || codexLogging || !!oauth}
                   data-testid={`ms-remove-${p.id}`}
                   onPress={() => setPendingRemove(p)}
                 >
                   {t('auth.signOut')}
                 </Button>
               ) : null}
-              {isKey && state !== 'unknown' ? (
+              {acceptsKey && state !== 'unknown' ? (
                 <Button
                   variant="secondary"
-                  isDisabled={busy}
+                  isDisabled={busy || codexLogging || !!oauth || fromEnv}
                   data-testid={`ms-set-${p.id}`}
                   onPress={() => {
                     setEditing(p.id)
@@ -331,7 +386,7 @@ export function ModelsSettings(): ReactElement {
                   {state === 'ready' ? text('addKey') : t('auth.setKey')}
                 </Button>
               ) : null}
-              {!isKey && state === 'loginable' ? (
+              {!isKey && (state === 'loginable' || (p.inAppLogin && state === 'ready')) ? (
                 loginInProgress(p) ? (
                   <Button
                     variant="secondary"
@@ -350,7 +405,7 @@ export function ModelsSettings(): ReactElement {
                     data-testid={`ms-login-${p.id}`}
                     onPress={() => void startLogin(p)}
                   >
-                    {t('auth.loginInApp')}
+                    {state === 'ready' || accounts.length > 0 ? text('addAccount') : t('auth.loginInApp')}
                   </Button>
                 )
               ) : null}
@@ -365,8 +420,19 @@ export function ModelsSettings(): ReactElement {
           )}
         </div>
 
-        {isKey && !fromEnv && (pools[authIdOf(p)]?.length ?? 0) >= 2 ? (
-          <ApiKeyList provider={authIdOf(p)} keys={pools[authIdOf(p)] ?? []} disabled={busy || editingThis} onDone={keyListDone} />
+        {!isKey && accounts.length > 0 ? (
+          <SubscriptionAccountList
+            provider={p.id === 'openai-codex' ? 'codex' : p.id}
+            name={providerName(p)}
+            accounts={accounts}
+            disabled={busy || codexLogging || !!oauth || !!pendingRemove}
+            onSwitch={(account) => void actOnAccount(p.id, account, 'switch')}
+            onRemove={(account) => void actOnAccount(p.id, account, 'remove')}
+            onRename={p.id === 'openai-codex' ? undefined : (account, label) => void actOnAccount(p.id, account, 'rename', label)}
+          />
+        ) : null}
+        {acceptsKey && (pools[authIdOf(p)]?.length ?? 0) > 0 ? (
+          <ApiKeyList provider={authIdOf(p)} keys={pools[authIdOf(p)] ?? []} disabled={busy || editingThis || fromEnv || codexLogging || !!oauth || !!pendingRemove} onDone={keyListDone} />
         ) : null}
         {activeOauth ? <OAuthPanel provider={p.id} events={oauth?.events ?? EMPTY} t={t} /> : null}
         {p.id === 'openai-codex' && codexLogging ? (
@@ -484,9 +550,11 @@ export function ModelsSettings(): ReactElement {
           <Modal className="ms-modal">
             <Dialog title={text('removeTitle')} closeLabel={t('ui.cancel')}>
               <p className="ms-confirm-body">
-                {(pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
-                  ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
-                  : text('removeBody')}
+                {accountsOf(pendingRemove).length > 0
+                  ? text('removeBodyAccounts').replace('{n}', String(accountsOf(pendingRemove).length)).replace('{keys}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
+                  : (pools[authIdOf(pendingRemove)]?.length ?? 0) >= 2
+                    ? text('removeBodyMany').replace('{n}', String(pools[authIdOf(pendingRemove)]?.length ?? 0))
+                    : text('removeBody')}
               </p>
               <p className="ms-confirm-target">{providerName(pendingRemove)}</p>
               <div className="ms-confirm-actions">

@@ -36,7 +36,7 @@ async function claudeSubscriptionQuota(
   }
 }
 
-export async function providerQuota(rawProvider: string, monthlyBudget?: number): Promise<ProviderQuota> {
+export async function providerQuota(rawProvider: string, monthlyBudget?: number, resolvedSecret?: string): Promise<ProviderQuota> {
   const provider = rawProvider.trim().toLowerCase()
   const checkedAt = Date.now()
   if (provider === 'claude-bridge') {
@@ -76,7 +76,7 @@ export async function providerQuota(rawProvider: string, monthlyBudget?: number)
   const isCodex = provider === 'openai-codex'
   const openai = provider === 'openai'
   const codexCredential = isCodex ? await hostImageCredentials.codex() : null
-  const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveQuotaProviderSecret(provider)) : await resolveQuotaProviderSecret(provider)
+  const key = isCodex ? codexCredential?.access : openai ? (process.env.OPENAI_ADMIN_KEY || await resolveQuotaProviderSecret(provider)) : (resolvedSecret ?? await resolveQuotaProviderSecret(provider))
   const known = provider === 'openrouter' || provider === 'deepseek' || provider === 'commandcode' || isCodex || openai
   if (!key) return { provider, supported: known, error: openai ? '请设置 OPENAI_ADMIN_KEY 以查询组织费用' : '未找到该供应商的 API Key', checkedAt }
   try {

@@ -66,6 +66,7 @@ export function decodeJwtClaims(token: unknown): Record<string, unknown> {
 export interface ChatGptIdentity {
   key?: string
   accountId?: string
+  userId?: string
   email?: string
   plan?: string
   expiresAt?: number
@@ -79,10 +80,11 @@ export function chatGptIdentity(accessToken: unknown, idToken?: unknown, fallbac
   const profile = obj(access['https://api.openai.com/profile']) ?? {}
   const accountId = str(authA.chatgpt_account_id) ?? str(authI.chatgpt_account_id) ?? fallbackAccountId
   const email = str(profile.email) ?? str(id.email)
-  const user = str(authA.chatgpt_user_id) ?? str(authI.chatgpt_user_id) ?? str(authA.user_id) ?? str(authI.user_id) ?? email ?? ''
+  const userId = str(authA.chatgpt_user_id) ?? str(authI.chatgpt_user_id) ?? str(authA.user_id) ?? str(authI.user_id)
   return {
-    key: accountId ? `chatgpt:${accountId}:${user}` : undefined,
+    key: accountId ? `chatgpt:${accountId}:${userId ?? email?.toLowerCase() ?? ''}` : undefined,
     accountId,
+    userId,
     email,
     plan: str(authA.chatgpt_plan_type) ?? str(authI.chatgpt_plan_type),
     expiresAt: typeof access.exp === 'number' ? access.exp * 1000 : undefined

@@ -151,6 +151,7 @@
 
   .ms-key {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s-12);
     min-height: 2.5rem;
@@ -180,6 +181,7 @@
 
   .ms-key-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s-4);
     margin-left: auto;

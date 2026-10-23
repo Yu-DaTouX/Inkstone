@@ -1704,6 +1704,8 @@ await runCredentialsTests(ok)
 
 const { runApiKeyPoolTests } = await import('./test-api-key-pool.mjs')
 await runApiKeyPoolTests(ok)
+const { runOAuthAccountTests } = await import('./test-oauth-accounts.mjs')
+await runOAuthAccountTests(ok)
 
 const { runSettingsStoreTests } = await import('./test-settings-store.mjs')
 await runSettingsStoreTests(ok)
