@@ -104,15 +104,23 @@ export async function runSubagentIsolationTests(ok, isolation) {
     await isolation.cleanupWorkspace(encoded)
 
     const missingWorktree = join(commitRepo, 'not-a-worktree')
-    const failedCleanup = await isolation.cleanupWorkspace({
+    const missingCleanup = await isolation.cleanupWorkspace({
       isolation: 'worktree',
       rootCwd: commitRepo,
       cwd: missingWorktree,
       repoRoot: commitRepo,
       worktreePath: missingWorktree
     })
+    ok(missingCleanup.ok === true && missingCleanup.errors.length === 0, '工作树已不存在时清理视为完成', JSON.stringify(missingCleanup))
+
+    const locked = await isolation.prepareWorkspace(commitRepo, 'locked', 'worktree')
+    await git(commitRepo, ['worktree', 'lock', locked.worktreePath])
+    const failedCleanup = await isolation.cleanupWorkspace(locked)
     ok(failedCleanup.ok === false, '清理失败不再静默', JSON.stringify(failedCleanup))
     ok(failedCleanup.errors.length > 0, '清理失败返回可见错误', JSON.stringify(failedCleanup.errors))
+    await git(commitRepo, ['worktree', 'unlock', locked.worktreePath])
+    const retriedCleanup = await isolation.cleanupWorkspace(locked)
+    ok(retriedCleanup.ok === true, '解锁后重试清理成功', JSON.stringify(retriedCleanup))
   } finally {
     await rm(root, { recursive: true, force: true })
     for (const dir of extraRoots) await rm(dir, { recursive: true, force: true })
