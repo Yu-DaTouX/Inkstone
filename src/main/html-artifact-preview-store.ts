@@ -23,6 +23,11 @@ export class HtmlArtifactPreviewStore {
 
   constructor(private readonly root: string, private readonly limit = 16) {}
 
+  async prepareForWorkspace(path: string, cwd: string): Promise<HtmlArtifactPreviewResult> {
+    const result = await this.prepare(path, cwd)
+    return result.ok || result.error !== 'outside' ? result : this.prepare(path)
+  }
+
   async prepare(path: string, root = this.root): Promise<HtmlArtifactPreviewResult> {
     if (typeof path !== 'string' || !isAbsolute(path)) return { ok: false, error: 'outside' }
     if (!['.html', '.htm'].includes(extname(path).toLowerCase())) return { ok: false, error: 'type' }
