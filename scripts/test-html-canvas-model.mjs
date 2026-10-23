@@ -22,11 +22,11 @@ try {
   assert.equal(m.viewportFor('custom', Number.NaN).width, m.CANVAS_CUSTOM_DEVICE.width, '非法宽度回到默认值')
 
   const state = m.parseCanvasFrameState(null)
-  assert.deepEqual(state, { devices: ['desktop', 'phone'], customWidth: m.CANVAS_CUSTOM_DEVICE.width }, '没有记录时用默认画框')
+  assert.deepEqual(state, { devices: ['desktop', 'phone'], customWidth: m.CANVAS_CUSTOM_DEVICE.width, customHeight: m.CANVAS_CUSTOM_DEVICE.height }, '没有记录时用默认画框')
   assert.deepEqual(m.visibleViewports(state).map((viewport) => viewport.id), ['desktop', 'phone'])
   assert.deepEqual(
     m.parseCanvasFrameState(JSON.stringify({ devices: ['phone', 'desktop', 'phone', 'nope'], customWidth: 5000 })),
-    { devices: ['desktop', 'phone'], customWidth: m.CANVAS_CUSTOM_DEVICE.maxWidth },
+    { devices: ['desktop', 'phone'], customWidth: m.CANVAS_CUSTOM_DEVICE.maxWidth, customHeight: m.CANVAS_CUSTOM_DEVICE.height },
     '记录去重、按固定顺序排列并夹紧宽度'
   )
   assert.deepEqual(m.parseCanvasFrameState('{oops'), m.parseCanvasFrameState(null), '坏记录回退到默认值')
@@ -41,6 +41,14 @@ try {
   assert.deepEqual(m.setCanvasDevices(onlyPhone, ['phone', 'laptop', 'desktop']).devices, ['desktop', 'laptop', 'phone'], '整组选择按固定顺序排列')
   assert.deepEqual(m.setCanvasDevices(onlyPhone, []), onlyPhone, '整组选择为空时不生效')
   assert.deepEqual(m.setCanvasCustomWidth(onlyPhone, 800).customWidth, 800)
+  assert.deepEqual(m.viewportFor('custom', 1080, 2400), { id: 'custom', width: 1080, height: 2400 }, '自定义高度按输入生效')
+  assert.equal(m.viewportFor('custom', 1080, 10).height, m.CANVAS_CUSTOM_DEVICE.minHeight, '自定义高度有下限')
+  assert.equal(m.viewportFor('custom', 1080, 99999).height, m.CANVAS_CUSTOM_DEVICE.maxHeight, '自定义高度有上限')
+  assert.equal(m.viewportFor('custom', 1080, Number.NaN).height, m.CANVAS_CUSTOM_DEVICE.height, '非法高度回到默认值')
+  const sized = m.setCanvasCustomHeight(m.setCanvasCustomWidth(m.setCanvasDevices(onlyPhone, ['custom']), 1080), 2400)
+  assert.deepEqual(m.visibleViewports(sized), [{ id: 'custom', width: 1080, height: 2400 }], '可见画框使用自定义宽高')
+  assert.deepEqual(m.parseCanvasFrameState(m.serializeCanvasFrameState(sized)), sized, '自定义宽高可序列化后原样读回')
+  assert.equal(m.parseCanvasFrameState(JSON.stringify({ devices: ['custom'], customWidth: 900 })).customHeight, m.CANVAS_CUSTOM_DEVICE.height, '旧记录没有高度时用默认值')
   const roundTrip = m.parseCanvasFrameState(m.serializeCanvasFrameState(withTablet))
   assert.deepEqual(roundTrip, withTablet, '选择可序列化后原样读回')
 

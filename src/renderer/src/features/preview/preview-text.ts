@@ -97,6 +97,7 @@ export interface PreviewText {
   canvasDevicePhone: string
   canvasDeviceCustom: string
   canvasCustomWidth: string
+  canvasCustomHeight: string
   canvasReload: string
   canvasFocusFrame: string
   canvasInspectTitle: string
@@ -280,8 +281,9 @@ const ZH: PreviewText = {
   canvasDeviceLaptop: '笔记本',
   canvasDeviceTablet: '平板',
   canvasDevicePhone: '手机',
-  canvasDeviceCustom: '自定义宽度',
+  canvasDeviceCustom: '自定义尺寸',
   canvasCustomWidth: '宽度（px）',
+  canvasCustomHeight: '高度（px）',
   canvasReload: '刷新画框',
   canvasFocusFrame: '双击缩放到这个画框',
   canvasInspectTitle: '检查',
@@ -465,8 +467,9 @@ const EN: PreviewText = {
   canvasDeviceLaptop: 'Laptop',
   canvasDeviceTablet: 'Tablet',
   canvasDevicePhone: 'Phone',
-  canvasDeviceCustom: 'Custom width',
+  canvasDeviceCustom: 'Custom size',
   canvasCustomWidth: 'Width (px)',
+  canvasCustomHeight: 'Height (px)',
   canvasReload: 'Reload frame',
   canvasFocusFrame: 'Double-click to zoom to this frame',
   canvasInspectTitle: 'Inspect',
