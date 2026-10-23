@@ -6,7 +6,7 @@ import type {
   McpAppOwnershipView,
   McpAppSwitchCommitResult
 } from '../../../../../shared/mcp-app-switch'
-import { Badge, Button } from '../../../ui'
+import { Button } from '../../../ui'
 import { useConfirm } from './confirm'
 import {
   formatMcpAppSwitchPreview,
@@ -14,7 +14,7 @@ import {
   mcpAppSwitchLabels,
   parseMcpAppOwnershipResponse
 } from './mcp-app-ownership'
-import { Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, StatusBadge, Warn } from './parts'
+import { Empty, Entry, Group, ListSkeleton, Meta, Note, Warn } from './parts'
 
 function bridge(): McpAppBridge | null {
   const yan = (window as unknown as { yan?: { mcpApp?: McpAppBridge } }).yan
@@ -201,19 +201,22 @@ function OwnershipRow({
   const disabled = busy || !view.canSwitch || busySession
   const reason = view.unsupportedReason ?? view.blockedReason
 
+  const metaParts = [
+    view.managed ? labels.managed : view.inkstoneConnection ? labels.inkstoneConnection : labels.piNative,
+    view.scope === 'project' ? labels.scopeProject : labels.scopeGlobal,
+    view.inkstoneConnection ? null : `${labels.nativeName}: ${view.nativeName}`,
+    view.holders.length > 0 ? labels.holders(view.holders.length) : null
+  ]
+
   return (
-    <Item testId="caps-mcp-app-owner">
-      <ItemHead>
-        <span className="caps-name" title={view.title}>
-          {view.title}
-        </span>
-        <StatusBadge tone={view.managed ? 'accent' : 'neutral'}>
-          {view.managed ? labels.managed : view.inkstoneConnection ? labels.inkstoneConnection : labels.piNative}
-        </StatusBadge>
-        <Badge>{view.scope === 'project' ? labels.scopeProject : labels.scopeGlobal}</Badge>
-        {view.inkstoneConnection ? null : <Badge>{`${labels.nativeName}: ${view.nativeName}`}</Badge>}
-        <span className="caps-spacer" />
-        {view.inkstoneOnly ? null : (
+    <Entry
+      testId="caps-mcp-app-owner"
+      name={view.title}
+      nameTitle={view.title}
+      meta={metaParts}
+      metaTitle={metaParts.filter(Boolean).join(' · ')}
+      actions={
+        view.inkstoneOnly ? null : (
           <Button
             variant="secondary"
             isDisabled={disabled}
@@ -223,12 +226,12 @@ function OwnershipRow({
           >
             {busy ? labels.previewing : view.managed ? labels.switchToPi : labels.switchToInkstone}
           </Button>
-        )}
-      </ItemHead>
-      {view.holders.length > 0 ? <Meta>{labels.holders(view.holders.length)}</Meta> : null}
+        )
+      }
+    >
       {reason ? (view.inkstoneOnly ? <Note>{reason}</Note> : <Warn>{reason}</Warn>) : null}
       <OwnershipOutcome outcome={outcome} labels={labels} />
-    </Item>
+    </Entry>
   )
 }
 

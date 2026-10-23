@@ -1344,6 +1344,14 @@
     gap: var(--s-8);
     margin-top: var(--s-6);
   }
+  .ui-empty[data-align='start'] {
+    align-items: flex-start;
+    padding-inline: 0;
+    text-align: start;
+  }
+  .ui-empty[data-align='start'] .ui-empty__action {
+    justify-content: flex-start;
+  }
 
   .ui-page-head {
     display: flex;

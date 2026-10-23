@@ -8,7 +8,7 @@ import {
 } from '../../../../../shared/plugin-catalog'
 import { Button } from '../../../ui'
 import { DesktopPetRow } from './DesktopPetRow'
-import { Actions, Group, Item, ItemHead, Meta } from './parts'
+import { Entry, Group } from './parts'
 
 function catalogDate(timestamp: number | null, lang: string): string {
   if (!timestamp) return ''
@@ -87,15 +87,16 @@ export function InkstonePluginGroup(): ReactElement {
         {catalog.plugins.map((entry) => {
           const copy = pluginText(entry, lang)
           if (entry.kind === 'pet') return <DesktopPetRow key={entry.id} entry={entry} copy={copy} />
+          const metaParts = [copy.desc, copy.target, copy.hint]
           return (
-            <Item key={entry.id} testId="caps-market-plugin">
-              <ItemHead>
-                <span className="caps-name">
-                  {copy.name ?? entry.name}
-                  {entry.version ? ` · ${entry.version}` : ''}
-                </span>
-                <span className="caps-spacer" />
-                <Actions>
+            <Entry
+              key={entry.id}
+              testId="caps-market-plugin"
+              name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
+              meta={metaParts}
+              metaTitle={metaParts.filter(Boolean).join(' · ')}
+              actions={
+                <>
                   {entry.kind === 'export' || entry.kind === 'mcp' ? (
                     <Button
                       variant="secondary"
@@ -109,12 +110,9 @@ export function InkstonePluginGroup(): ReactElement {
                   <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-market-source">
                     {t('market.source')}
                   </Button>
-                </Actions>
-              </ItemHead>
-              <Meta>{copy.desc}</Meta>
-              {copy.target ? <Meta>{copy.target}</Meta> : null}
-              {copy.hint ? <Meta>{copy.hint}</Meta> : null}
-            </Item>
+                </>
+              }
+            />
           )
         })}
       </div>

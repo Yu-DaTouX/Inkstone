@@ -7,8 +7,8 @@ import {
   type SearchProvider,
   type SearchProviderState
 } from '../../../../../shared/search'
-import { Badge, Button, TextField } from '../../../ui'
-import { Actions, Group, Item, ItemHead, Meta, Panel, Warn } from './parts'
+import { Button, TextField } from '../../../ui'
+import { Actions, Entry, Group, Meta, Panel, Warn } from './parts'
 
 const OPENCLI_RELEASES = 'https://www.npmjs.com/package/@jackwener/opencli?activeTab=versions'
 const OPENCLI_EXTENSION = 'https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk'
@@ -175,17 +175,16 @@ function SearchApiGroup(): ReactElement {
         }
       >
         <div className="caps-list">
-          <Item testId="cap-search-api-deepseek">
-            <ItemHead>
-              <span className="caps-name">{t('search.deepseekTitle')}</span>
-            </ItemHead>
-            <Meta>{t('search.role.deepseek')}</Meta>
-            <Meta>
-              <span data-testid="cap-search-api-status-deepseek">
+          <Entry
+            testId="cap-search-api-deepseek"
+            name={t('search.deepseekTitle')}
+            meta={[
+              <span key="status" data-testid="cap-search-api-status-deepseek">
                 {config?.deepseekModelKey ? t('search.deepseekReady') : t('search.deepseekMissing')}
-              </span>
-            </Meta>
-          </Item>
+              </span>,
+              t('search.role.deepseek')
+            ]}
+          />
           {SEARCH_PROVIDERS.map((provider) => (
             <SearchProviderItem key={provider.id} provider={provider} state={config?.providers[provider.id]} onChanged={load} />
           ))}
@@ -235,21 +234,33 @@ function SearchProviderItem({
   }
 
   return (
-    <Item testId={`cap-search-api-${provider.id}`}>
-      <ItemHead>
-        <span className="caps-name">{provider.label}</span>
-        {provider.keyOptional ? <Badge>{t('search.apiOptional')}</Badge> : null}
-      </ItemHead>
-      <Meta>{t(`search.role.${provider.id}` as MessageKey)}</Meta>
-      <Meta>
-        <span data-testid={`cap-search-api-status-${provider.id}`}>
+    <Entry
+      testId={`cap-search-api-${provider.id}`}
+      name={provider.label}
+      meta={[
+        <span key="status" data-testid={`cap-search-api-status-${provider.id}`}>
           {state?.configured
             ? state.source === 'env'
               ? t('search.apiReadyEnv', { env: provider.envName })
               : t('search.apiReady')
             : t('search.apiMissing')}
-        </span>
-      </Meta>
+        </span>,
+        provider.keyOptional ? t('search.apiOptional') : null,
+        t(`search.role.${provider.id}` as MessageKey)
+      ]}
+      actions={
+        <>
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
+            {t('search.apiGet')}
+          </Button>
+          {state?.source !== 'env' && state?.configured ? (
+            <Button variant="danger" onPress={() => void clear()}>
+              {t('search.apiClear')}
+            </Button>
+          ) : null}
+        </>
+      }
+    >
       {state?.source !== 'env' ? (
         <form className="caps-field" onSubmit={(event) => void save(event)}>
           <TextField
@@ -266,19 +277,9 @@ function SearchProviderItem({
           <Button variant="primary" type="submit" isDisabled={busy || !key.trim()}>
             {t('search.apiSave')}
           </Button>
-          {state?.configured ? (
-            <Button variant="danger" onPress={() => void clear()}>
-              {t('search.apiClear')}
-            </Button>
-          ) : null}
         </form>
       ) : null}
       {error ? <Warn>{error}</Warn> : null}
-      <Actions>
-        <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(provider.keyUrl)}>
-          {t('search.apiGet')}
-        </Button>
-      </Actions>
-    </Item>
+    </Entry>
   )
 }

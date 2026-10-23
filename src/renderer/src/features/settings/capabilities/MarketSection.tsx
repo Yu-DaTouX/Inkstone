@@ -1,11 +1,11 @@
 import { useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import type { MarketPackage, MarketSearchResult } from '../../../../../shared/plugin-market'
-import { Badge, Button, TextField } from '../../../ui'
+import { Button, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { PackagesPanel } from './PackagesPanel'
 import { InkstonePluginGroup } from './InkstonePluginGroup'
-import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Panel, Warn } from './parts'
+import { Empty, Entry, Group, Meta, Note, Panel, Warn } from './parts'
 import { MARKET_PAGE_SIZE, marketRange } from './model'
 
 export function MarketSection(): ReactElement {
@@ -101,34 +101,34 @@ export function MarketSection(): ReactElement {
 
         {catalog?.ok && catalog.entries.length ? (
           <div className="caps-list" data-testid="caps-market-results" aria-busy={loading}>
-            {catalog.entries.map((pkg: MarketPackage) => (
-              <Item key={pkg.name} testId="caps-market-result">
-                <ItemHead>
-                  <span className="caps-name" title={pkg.name}>
-                    {pkg.name}
-                  </span>
-                  <Badge>{pkg.version}</Badge>
-                  <span className="caps-spacer" />
-                  <Actions>
-                    <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
-                      {t('market.choose')}
-                    </Button>
-                  </Actions>
-                </ItemHead>
-                {pkg.description ? <Meta title={pkg.description}>{pkg.description}</Meta> : null}
-                {pkg.publisher ? <Meta>{pkg.publisher}</Meta> : null}
-                <Actions>
-                  <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
-                    npm
-                  </Button>
-                  {pkg.homepage ? (
-                    <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
-                      {t('market.source')}
-                    </Button>
-                  ) : null}
-                </Actions>
-              </Item>
-            ))}
+            {catalog.entries.map((pkg: MarketPackage) => {
+              const metaParts = [pkg.version, pkg.publisher, pkg.description]
+              return (
+                <Entry
+                  key={pkg.name}
+                  testId="caps-market-result"
+                  name={pkg.name}
+                  nameTitle={pkg.name}
+                  meta={metaParts}
+                  metaTitle={metaParts.filter(Boolean).join(' · ')}
+                  actions={
+                    <>
+                      <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">
+                        {t('market.choose')}
+                      </Button>
+                      <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.npmUrl)}>
+                        npm
+                      </Button>
+                      {pkg.homepage ? (
+                        <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(pkg.homepage!)}>
+                          {t('market.source')}
+                        </Button>
+                      ) : null}
+                    </>
+                  }
+                />
+              )
+            })}
           </div>
         ) : null}
 

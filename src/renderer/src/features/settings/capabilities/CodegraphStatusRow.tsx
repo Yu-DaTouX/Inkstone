@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type { CodegraphStatus } from '../../../../../shared/plugin-market'
 import { Button } from '../../../ui'
-import { Actions, Meta, StatusBadge, Warn } from './parts'
+import { Meta, Warn } from './parts'
 
-export function CodegraphStatusRow({ refreshKey }: { refreshKey: string }): ReactElement | null {
+export interface CodegraphStatusParts {
+  meta: string[]
+  metaTitle?: string
+  action: ReactNode
+  result: ReactNode
+}
+
+export function useCodegraphStatus(refreshKey: string): CodegraphStatusParts | null {
   const t = useT()
   const cwd = useStore((s) => s.session?.cwd ?? s.settings?.cwd ?? '')
   const [status, setStatus] = useState<CodegraphStatus | null>(null)
@@ -49,35 +56,31 @@ export function CodegraphStatusRow({ refreshKey }: { refreshKey: string }): Reac
   }
 
   if (!status) return null
-  return (
-    <div data-testid="caps-market-codegraph-status">
-      <Actions>
-        <StatusBadge tone={status.configured ? 'accent' : 'neutral'}>
-          {status.configured ? t('market.cgConfigured') : t('market.cgNotConfigured')}
-        </StatusBadge>
-        {!status.cliInstalled ? <StatusBadge tone="stall">{t('market.cgCliMissing')}</StatusBadge> : null}
-      </Actions>
-      {status.cwd ? (
-        <Meta title={status.cwd}>
-          {status.indexed ? t('market.cgProjectIndexed', { cwd: status.cwd }) : t('market.cgProjectMissing', { cwd: status.cwd })}
-        </Meta>
-      ) : (
-        <Meta>{t('market.cgNoProject')}</Meta>
-      )}
-      {status.cwd && !status.indexed && status.cliInstalled ? (
-        <Actions>
-          <Button
-            variant="secondary"
-            isDisabled={indexing}
-            isPending={indexing}
-            onPress={() => void index()}
-            data-testid="caps-market-codegraph-index"
-          >
-            {t('market.cgIndex')}
-          </Button>
-        </Actions>
-      ) : null}
-      {result ? (result.ok ? <Meta>{result.text}</Meta> : <Warn>{result.text}</Warn>) : null}
-    </div>
-  )
+  const project = status.cwd
+    ? status.indexed
+      ? t('market.cgProjectIndexed', { cwd: status.cwd })
+      : t('market.cgProjectMissing', { cwd: status.cwd })
+    : t('market.cgNoProject')
+  const meta = [
+    status.configured ? t('market.cgConfigured') : t('market.cgNotConfigured'),
+    ...(status.cliInstalled ? [] : [t('market.cgCliMissing')]),
+    project
+  ]
+  return {
+    meta,
+    metaTitle: status.cwd || undefined,
+    action:
+      status.cwd && !status.indexed && status.cliInstalled ? (
+        <Button
+          variant="secondary"
+          isDisabled={indexing}
+          isPending={indexing}
+          onPress={() => void index()}
+          data-testid="caps-market-codegraph-index"
+        >
+          {t('market.cgIndex')}
+        </Button>
+      ) : null,
+    result: result ? result.ok ? <Meta>{result.text}</Meta> : <Warn>{result.text}</Warn> : null
+  }
 }

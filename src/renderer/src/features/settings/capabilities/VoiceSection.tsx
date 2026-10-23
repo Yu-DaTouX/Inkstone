@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Badge, Button, Meter } from '../../../ui'
+import { Button, Meter } from '../../../ui'
 import {
   VOICE_LANGUAGES,
   type VoiceDownloadPlan,
@@ -12,7 +12,7 @@ import {
 } from '../../../../../shared/voice-input'
 import { Segmented, SettingsRow } from '../root/controls'
 import { useCapsText } from './text'
-import { Group, Item, ItemHead, Meta, Note, Panel, Warn, Actions } from './parts'
+import { Actions, Entry, Group, Meta, Note, Panel, Warn } from './parts'
 
 function fmtBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
@@ -137,40 +137,42 @@ export function VoiceStatusPanel({ voice }: { voice: VoiceSetup }): ReactElement
       <div className="caps-stack" data-testid="settings-voice" data-setting-id="caps-tools-voice">
         <Group title={t('voice.title')} desc={t('voice.desc')}>
           <div className="caps-list">
-            <Item>
-              <p className="caps-meta" data-testid="voice-state">
-                {status?.ready ? <Badge tone="ok">{t('voice.ready')}</Badge> : <Badge>{t('voice.notReady')}</Badge>}
-                {status?.model ? <span> {status.model.label}</span> : null}
-                {status?.backend && status.backend !== 'unknown' ? <Badge>{status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU'}</Badge> : null}
-              </p>
-              {status && !status.ready ? <Meta>{text('voiceSetupHint')}</Meta> : null}
-            </Item>
+            <Entry
+              name={status?.model?.label ?? t('voice.title')}
+              meta={[
+                <span key="state" data-testid="voice-state">
+                  {status?.ready ? t('voice.ready') : t('voice.notReady')}
+                </span>,
+                status?.backend && status.backend !== 'unknown' ? (status.backend === 'cuda' ? 'CUDA · GPU' : 'CPU') : null,
+                status && !status.ready ? text('voiceSetupHint') : null
+              ]}
+            />
 
             {download ? (
-              <Item testId="voice-download">
-                <ItemHead>
-                  <span className="caps-name">{download.label}</span>
-                </ItemHead>
-                <Meta>
-                  {download.state === 'running'
+              <Entry
+                testId="voice-download"
+                name={download.label}
+                meta={[
+                  download.state === 'running'
                     ? t('voice.progress', { got: fmtBytes(download.received), total: fmtBytes(download.total) })
                     : download.state === 'done'
                       ? t('voice.downloadDone')
                       : download.state === 'cancelled'
                         ? t('voice.downloadCancelled')
-                        : t('voice.downloadFailedMsg', { msg: download.error ?? '' })}
-                </Meta>
+                        : t('voice.downloadFailedMsg', { msg: download.error ?? '' })
+                ]}
+                actions={
+                  download.state === 'running' ? (
+                    <Button variant="secondary" onPress={() => void window.yan.voice.cancel().then(refresh)}>
+                      {t('voice.cancelDownload')}
+                    </Button>
+                  ) : null
+                }
+              >
                 {download.state === 'running' ? (
-                  <>
-                    <Meter aria-label={download.label} value={download.received} minValue={0} maxValue={download.total || 1} />
-                    <Actions>
-                      <Button variant="secondary" onPress={() => void window.yan.voice.cancel().then(refresh)}>
-                        {t('voice.cancelDownload')}
-                      </Button>
-                    </Actions>
-                  </>
+                  <Meter aria-label={download.label} value={download.received} minValue={0} maxValue={download.total || 1} />
                 ) : null}
-              </Item>
+              </Entry>
             ) : null}
 
             <div className="settings-rows">
@@ -205,29 +207,27 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
     <Panel label={text('voiceSetupTitle')}>
       <div className="caps-stack" data-testid="settings-voice-setup">
         <Group title={t('voice.engine')} desc={t('voice.engineDesc')}>
-          <Item testId="voice-binary">
-            <ItemHead>
-              {status?.binary ? (
-                <Badge tone="ok">{status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')}</Badge>
-              ) : (
-                <Badge>{t('voice.engineMissing')}</Badge>
-              )}
-            </ItemHead>
-            {status?.binary ? <Meta title={status.binary.path}>{status.binary.path}</Meta> : null}
-            <Actions>
-              <Button variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
-                {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
-              </Button>
-              <Button variant="secondary" onPress={() => void pick('binary')}>
-                {t('voice.pickEngine')}
-              </Button>
-              {saved?.binaryPath ? (
-                <Button variant="secondary" onPress={() => void save({ ...saved, binaryPath: undefined })}>
-                  {t('voice.clearEngine')}
+          <Entry
+            testId="voice-binary"
+            name={status?.binary ? (status.binary.source === 'custom' ? t('voice.engineCustom') : t('voice.engineManaged')) : t('voice.engineMissing')}
+            meta={[status?.binary?.path]}
+            metaTitle={status?.binary?.path}
+            actions={
+              <>
+                <Button variant="secondary" isDisabled={busy || downloading} onPress={() => void askPlan({ kind: 'binary' })}>
+                  {status?.binary?.source === 'managed' ? t('voice.engineUpdate') : t('voice.engineDownload')}
                 </Button>
-              ) : null}
-            </Actions>
-          </Item>
+                <Button variant="secondary" onPress={() => void pick('binary')}>
+                  {t('voice.pickEngine')}
+                </Button>
+                {saved?.binaryPath ? (
+                  <Button variant="secondary" onPress={() => void save({ ...saved, binaryPath: undefined })}>
+                    {t('voice.clearEngine')}
+                  </Button>
+                ) : null}
+              </>
+            }
+          />
         </Group>
 
         <div data-testid="voice-models">
@@ -237,22 +237,21 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                 {status.candidates.map((candidate) => {
                   const selected = status.model?.catalogId === candidate.spec.id
                   return (
-                    <Item key={candidate.spec.id} testId={`voice-model-${candidate.spec.id}`}>
-                      <ItemHead>
-                        <span className="caps-name">{tierLabel(candidate.spec.tier)}</span>
-                        {candidate.recommended ? <Badge tone="accent">{t('voice.recommended')}</Badge> : null}
-                        {selected ? <Badge tone="ok">{t('voice.inUse')}</Badge> : null}
-                      </ItemHead>
-                      <Meta>
-                        {t('voice.modelLine', {
+                    <Entry
+                      key={candidate.spec.id}
+                      testId={`voice-model-${candidate.spec.id}`}
+                      name={tierLabel(candidate.spec.tier)}
+                      meta={[
+                        selected ? t('voice.inUse') : null,
+                        candidate.recommended ? t('voice.recommended') : null,
+                        t('voice.modelLine', {
                           file: candidate.spec.file,
                           size: fmtBytes(candidate.spec.approxBytes),
                           mem: candidate.spec.approxMemoryMB
-                        })}
-                      </Meta>
-                      {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
-                      <Actions>
-                        {candidate.installed ? (
+                        })
+                      ]}
+                      actions={
+                        candidate.installed ? (
                           <Button
                             variant="secondary"
                             isDisabled={selected}
@@ -268,9 +267,11 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
                           >
                             {t('voice.download')}
                           </Button>
-                        )}
-                      </Actions>
-                    </Item>
+                        )
+                      }
+                    >
+                      {candidate.strain ? <Warn>{candidate.strain}</Warn> : null}
+                    </Entry>
                   )
                 })}
               </div>
@@ -285,24 +286,30 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
         </div>
 
         {plan ? (
-          <Item testId="voice-confirm">
-            <ItemHead>
-              <span className="caps-name">{t('voice.confirmTitle')}</span>
-            </ItemHead>
-            <Meta>
-              {t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` })}
-            </Meta>
-            <Meta>{t('voice.confirmWhere', { path: plan.destination })}</Meta>
-            <Meta title={plan.url}>{plan.url}</Meta>
-            <Actions>
-              <Button variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
-                {t('voice.confirmYes')}
-              </Button>
-              <Button variant="secondary" onPress={() => setPlan(null)}>
-                {t('voice.confirmNo')}
-              </Button>
-            </Actions>
-          </Item>
+          <Entry
+            testId="voice-confirm"
+            name={t('voice.confirmTitle')}
+            meta={[
+              t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` }),
+              t('voice.confirmWhere', { path: plan.destination }),
+              plan.url
+            ]}
+            metaTitle={[
+              t('voice.confirmLine', { label: plan.label, size: `${plan.sizeKnown ? '' : '≈'}${fmtBytes(plan.bytes)}` }),
+              t('voice.confirmWhere', { path: plan.destination }),
+              plan.url
+            ].join(' · ')}
+            actions={
+              <>
+                <Button variant="secondary" onPress={() => setPlan(null)}>
+                  {t('voice.confirmNo')}
+                </Button>
+                <Button variant="primary" onPress={() => void confirmDownload()} data-testid="voice-confirm-yes">
+                  {t('voice.confirmYes')}
+                </Button>
+              </>
+            }
+          />
         ) : null}
 
         {hw ? (

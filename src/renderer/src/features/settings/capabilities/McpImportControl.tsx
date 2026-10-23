@@ -10,7 +10,7 @@ import { Button } from '../../../ui'
 import { useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { formatImportPreviewDetail, type ImportPreviewLabels } from './native-preview'
-import { ItemHead, Meta, Warn } from './parts'
+import { Actions, Meta, Warn } from './parts'
 
 const MANUAL_CODES = new Set([
   'needs_reauth',
@@ -145,8 +145,9 @@ export function McpImportControl({
 
   return (
     <div className="caps-import" data-testid="caps-mcp-import">
-      <ItemHead>
-        <span className="caps-spacer" />
+      {blocked ? <Meta>{text('mcpRunningBlock')}</Meta> : null}
+      <McpImportOutcome outcome={outcome} />
+      <Actions>
         <Button
           variant="secondary"
           isDisabled={busy || blocked}
@@ -155,9 +156,7 @@ export function McpImportControl({
         >
           {busy ? t('cap.importing') : t('cap.importAction')}
         </Button>
-      </ItemHead>
-      {blocked ? <Meta>{text('mcpRunningBlock')}</Meta> : null}
-      <McpImportOutcome outcome={outcome} />
+      </Actions>
     </div>
   )
 }

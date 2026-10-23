@@ -4,9 +4,9 @@ import type { MessageKey } from '../../../i18n'
 import { DESKTOP_PET_VERSION, type DesktopPetResult, type DesktopPetStatus } from '../../../../../shared/desktop-pet'
 import type { PluginCatalogEntry, PluginCatalogText } from '../../../../../shared/plugin-catalog'
 import type { ModelInfo } from '../../../../../shared/ipc'
-import { Badge, Button, Checkbox, ListBoxItem, Notice, Select } from '../../../ui'
+import { Button, Checkbox, ListBoxItem, Notice, Select } from '../../../ui'
 import { useConfirm } from './confirm'
-import { Actions, Item, ItemHead, Meta, Warn } from './parts'
+import { Entry, Warn } from './parts'
 
 type RunKind = 'install' | 'start' | 'stop' | 'uninstall' | 'autoStart' | 'model'
 
@@ -16,12 +16,10 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function EdgeLine({ edges }: { edges: DesktopPetStatus['edges'] }): ReactElement | null {
-  const t = useT()
-  if (edges.state === 'running') return <Meta>{t('pet.edgesRunning', { done: edges.done, total: edges.total })}</Meta>
-  if (edges.state === 'done') return <Meta>{t('pet.edgesDone', { n: edges.total })}</Meta>
-  if (edges.state === 'skipped') return <Meta>{t('pet.edgesNoFfmpeg')}</Meta>
-  if (edges.state === 'failed') return <Warn>{t('pet.edgesFailed', { error: edges.message ?? '' })}</Warn>
+function edgeMeta(edges: DesktopPetStatus['edges'], t: ReturnType<typeof useT>): string | null {
+  if (edges.state === 'running') return t('pet.edgesRunning', { done: edges.done, total: edges.total })
+  if (edges.state === 'done') return t('pet.edgesDone', { n: edges.total })
+  if (edges.state === 'skipped') return t('pet.edgesNoFfmpeg')
   return null
 }
 
@@ -104,18 +102,26 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
 
   const installed = status?.installed === true
   const running = status?.running === true
-  const tone = running ? 'run' : installed ? 'stall' : 'neutral'
   const label = running ? t('ocp.statusRunning') : installed ? t('ocp.statusStopped') : t('ocp.statusMissing')
   const selectedModel = status?.model ?? MODEL_OFF
   const modelKnown = selectedModel === MODEL_OFF || models.some((model) => `${model.provider}/${model.id}` === selectedModel)
 
+  const metaParts = [
+    label,
+    copy.desc,
+    copy.target,
+    installed ? t('pet.firstRun') : null,
+    installed && status ? edgeMeta(status.edges, t) : null
+  ]
+
   return (
-    <Item testId="caps-market-desktop-pet">
-      <ItemHead>
-        <span className="caps-name">{copy.name ?? entry.name} · {status?.version || DESKTOP_PET_VERSION}</span>
-        <Badge tone={tone}>{label}</Badge>
-        <span className="caps-spacer" />
-        <Actions>
+    <Entry
+      testId="caps-market-desktop-pet"
+      name={`${copy.name ?? entry.name} · ${status?.version || DESKTOP_PET_VERSION}`}
+      meta={metaParts}
+      metaTitle={metaParts.filter(Boolean).join(' · ')}
+      actions={
+        <>
           {!installed ? (
             <Button variant="secondary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-install">
               {busy === 'install' ? t('pet.installing') : t('pet.install')}
@@ -137,20 +143,25 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
               <Button variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-update">
                 {busy === 'install' ? t('pet.installing') : t('pet.reinstall')}
               </Button>
-              <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-pet-uninstall">
-                {t('pet.uninstall')}
-              </Button>
             </>
           )}
+          {installed && status?.log.length ? (
+            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
+              {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
+            </Button>
+          ) : null}
           <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-pet-source">
             {t('market.source')}
           </Button>
-        </Actions>
-      </ItemHead>
-      <Meta>{copy.desc}</Meta>
-      {copy.target ? <Meta>{copy.target}</Meta> : null}
-      {installed ? <Meta>{t('pet.firstRun')}</Meta> : null}
-      {installed && status ? <EdgeLine edges={status.edges} /> : null}
+          {installed ? (
+            <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-pet-uninstall">
+              {t('pet.uninstall')}
+            </Button>
+          ) : null}
+        </>
+      }
+    >
+      {installed && status?.edges.state === 'failed' ? <Warn>{t('pet.edgesFailed', { error: status.edges.message ?? '' })}</Warn> : null}
       {installed ? (
         <div className="caps-field">
           <Select
@@ -188,11 +199,6 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
           >
             {t('ocp.autoStart')}
           </Checkbox>
-          {status?.log.length ? (
-            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
-              {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
-            </Button>
-          ) : null}
         </div>
       ) : null}
       {showLog && status?.log.length ? (
@@ -209,6 +215,6 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
           </Notice>
         )
       ) : null}
-    </Item>
+    </Entry>
   )
 }

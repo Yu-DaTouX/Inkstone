@@ -10,7 +10,7 @@ import { Badge, Button, Checkbox, Skeleton, TextField } from '../../../ui'
 import { useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { createOperationTracker, runGuardedOperation, type OperationTracker } from './operation-state'
-import { Actions, Empty, Group, Item, ItemHead, Meta, Note, Warn } from './parts'
+import { Empty, Entry, Group, Meta, Note, Warn } from './parts'
 
 type PackageActionKind = 'install' | 'remove' | 'update'
 
@@ -225,16 +225,17 @@ function PackageItem({
   const t = useT()
   const text = useCapsText()
   return (
-    <Item testId="caps-pkg-item">
-      <ItemHead>
-        <span className="caps-name" title={entry.name}>
-          {entry.name}
-        </span>
-        {entry.version ? <Badge>{entry.version}</Badge> : null}
-        <Badge tone="neutral">{entry.scope === 'project' ? t('pkg.scopeProject') : t('pkg.scopeUser')}</Badge>
-        {!entry.installed ? <Badge tone="fail">{t('pkg.missing')}</Badge> : null}
-        <span className="caps-spacer" />
-        <Actions>
+    <Entry
+      testId="caps-pkg-item"
+      name={entry.name}
+      nameTitle={entry.name}
+      meta={[
+        entry.scope === 'project' ? t('pkg.scopeProject') : t('pkg.scopeUser'),
+        entry.version,
+        entry.installed ? null : t('pkg.missing')
+      ]}
+      actions={
+        <>
           <Button variant="ghost" onPress={onToggle} data-testid="caps-pkg-detail">
             {open ? t('pkg.hideDetail') : t('pkg.detail')}
           </Button>
@@ -244,8 +245,9 @@ function PackageItem({
           <Button variant="danger" isDisabled={busy} onPress={() => onRun('remove')} data-testid="caps-pkg-remove">
             {t('pkg.remove')}
           </Button>
-        </Actions>
-      </ItemHead>
+        </>
+      }
+    >
       {open ? (
         <div className="caps-detail" data-testid="caps-pkg-detail-body">
           <Meta>{entry.description ?? t('pkg.noDesc')}</Meta>
@@ -256,6 +258,6 @@ function PackageItem({
           <Meta>{text('installedNotLoaded')}</Meta>
         </div>
       ) : null}
-    </Item>
+    </Entry>
   )
 }

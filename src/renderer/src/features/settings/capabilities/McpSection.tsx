@@ -11,13 +11,12 @@ import type { NativeMcpServerListView, NativeMcpServerView } from '../../../../.
 import { Badge, Button } from '../../../ui'
 import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
-import { Actions, Group, Item, ItemHead, ListSkeleton, Meta, Panel, StatusBadge, Warn } from './parts'
-import { WINDOWS_MCP_SERVER_ID, canImportMcp, mcpStatusTone, verificationTone } from './model'
+import { Entry, Group, ListSkeleton, Meta, Panel, StatusBadge, Warn } from './parts'
+import { WINDOWS_MCP_SERVER_ID, canImportMcp, verificationTone } from './model'
 import { McpAppOwnership } from './McpAppOwnership'
 import { McpAppRefresh } from './McpAppRefresh'
 import { McpImportControl } from './McpImportControl'
-import { NativeMcpItem, type NativeMcpAction } from './NativeMcpList'
-import { CodegraphStatusRow } from './CodegraphStatusRow'
+import { CodegraphMcpItem, NativeMcpItem, type NativeMcpAction } from './NativeMcpList'
 
 const CODEGRAPH_SERVER = 'codegraph'
 
@@ -142,42 +141,40 @@ export function McpSection(): ReactElement {
           <ListSkeleton rows={2} />
         ) : (
           <div className="caps-list" data-testid="caps-native-mcp-servers">
-            {nativeServers.map((server) => (
-              <NativeMcpItem
-                key={server.name}
-                server={server}
-                sessionActionable={commands.actionable}
-                sessionBusy={commands.running !== null}
-                manageBusy={managing !== null}
-                onSessionAction={commands.available ? (action, name) => void commands.runAction(action, name) : undefined}
-                onManage={(action, target) => void manage(action, target)}
-              >
-                {server.name === CODEGRAPH_SERVER ? (
-                  <div data-setting-id="caps-mcp-codegraph">
-                    <CodegraphStatusRow refreshKey={String(codegraphKey)} />
-                  </div>
-                ) : null}
-              </NativeMcpItem>
-            ))}
+            {nativeServers.map((server) => {
+              const itemProps = {
+                server,
+                sessionActionable: commands.actionable,
+                sessionBusy: commands.running !== null,
+                manageBusy: managing !== null,
+                onSessionAction: commands.available ? (action: NativeMcpAction, name: string) => void commands.runAction(action, name) : undefined,
+                onManage: (action: NativeMcpManageAction, target: NativeMcpServerView) => void manage(action, target)
+              }
+              return server.name === CODEGRAPH_SERVER ? (
+                <CodegraphMcpItem key={server.name} {...itemProps} settingId="caps-mcp-codegraph" refreshKey={String(codegraphKey)} />
+              ) : (
+                <NativeMcpItem key={server.name} {...itemProps} />
+              )
+            })}
             <McpServerRow server={directServer} direct onChanged={refresh} />
             {nativeList && !hasCodegraph ? (
-              <Item testId="caps-mcp-codegraph-guide" settingId="caps-mcp-codegraph">
-                <ItemHead>
-                  <span className="caps-name">{text('codegraphTitle')}</span>
-                  <span className="caps-spacer" />
-                  <Actions>
-                    <Button
-                      variant="secondary"
-                      isDisabled={managing !== null}
-                      onPress={() => void addCodegraph()}
-                      data-testid="caps-mcp-codegraph-add"
-                    >
-                      {t('market.addMcp')}
-                    </Button>
-                  </Actions>
-                </ItemHead>
-                <Meta>{text('codegraphGuide')}</Meta>
-              </Item>
+              <Entry
+                testId="caps-mcp-codegraph-guide"
+                settingId="caps-mcp-codegraph"
+                name={text('codegraphTitle')}
+                meta={[text('codegraphGuide')]}
+                metaTitle={text('codegraphGuide')}
+                actions={
+                  <Button
+                    variant="secondary"
+                    isDisabled={managing !== null}
+                    onPress={() => void addCodegraph()}
+                    data-testid="caps-mcp-codegraph-add"
+                  >
+                    {t('market.addMcp')}
+                  </Button>
+                }
+              />
             ) : null}
           </div>
         )}
@@ -274,51 +271,46 @@ function McpServerRow({
   const connecting = operation?.state === 'connecting'
   const imported = server?.migratedToNative
 
-  return (
-    <Item testId={direct ? 'caps-mcp-direct' : 'caps-mcp-server'} settingId={direct ? 'caps-mcp-computer-use' : undefined}>
-      <ItemHead>
-        <span className="caps-name" title={server?.title ?? WINDOWS_MCP_SERVER_ID}>
-          {direct ? `${t('cu.title')} · ${WINDOWS_MCP_SERVER_ID}` : server?.title}
-        </span>
-        {direct ? <Badge tone="accent">{text('mcpDirectBadge')}</Badge> : null}
-        {server ? <Badge>{server.transport}</Badge> : null}
-        {server ? (
-          <StatusBadge tone={mcpStatusTone(server.status)}>{t(`cap.status.${server.status}` as 'cap.status.ready')}</StatusBadge>
-        ) : (
-          <Badge>{text('mcpDirectOff')}</Badge>
-        )}
-        {server?.projectScoped ? <Badge>{t('cap.projectScoped')}</Badge> : null}
-        {server && !server.enabled ? <Badge>{t('cap.disabled')}</Badge> : null}
-        {imported ? <StatusBadge tone="accent">{t('cap.importMigratedBadge')}</StatusBadge> : null}
-        <span className="caps-spacer" />
-        {server ? (
-          <Actions>
-            {connecting && operation ? (
-              <Button variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
-                {t('cap.cancel')}
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                isDisabled={!server.enabled}
-                onPress={() => void verify()}
-                data-testid="caps-mcp-verify"
-              >
-                {t('cap.verify')}
-              </Button>
-            )}
-          </Actions>
-        ) : null}
-      </ItemHead>
-      {direct ? <Meta>{text('mcpDirectNote')}</Meta> : null}
-      {server ? (
-        <Meta>
-          {server.endpointOrigin ? `${server.endpointOrigin} · ` : ''}
-          {t(`cap.effect.${server.effect}` as 'cap.effect.unknown')}
-          {server.toolCount !== null ? ` · ${t('cap.toolCount', { count: server.toolCount })}` : ''}
-        </Meta>
-      ) : null}
+  const metaParts = [
+    direct ? text('mcpDirectBadge') : null,
+    server ? t(`cap.status.${server.status}` as 'cap.status.ready') : text('mcpDirectOff'),
+    server?.projectScoped ? t('cap.projectScoped') : null,
+    server && !server.enabled ? t('cap.disabled') : null,
+    imported ? t('cap.importMigratedBadge') : null,
+    server?.endpointOrigin,
+    server ? t(`cap.effect.${server.effect}` as 'cap.effect.unknown') : null,
+    server && server.toolCount !== null ? t('cap.toolCount', { count: server.toolCount }) : null,
+    direct ? text('mcpDirectNote') : null
+  ]
 
+  return (
+    <Entry
+      testId={direct ? 'caps-mcp-direct' : 'caps-mcp-server'}
+      settingId={direct ? 'caps-mcp-computer-use' : undefined}
+      name={direct ? `${t('cu.title')} · ${WINDOWS_MCP_SERVER_ID}` : server?.title}
+      nameTitle={server?.title ?? WINDOWS_MCP_SERVER_ID}
+      badge={server ? <Badge>{server.transport}</Badge> : null}
+      meta={metaParts}
+      metaTitle={metaParts.filter(Boolean).join(' · ')}
+      actions={
+        server ? (
+          connecting && operation ? (
+            <Button variant="secondary" onPress={() => void cancel(operation.operationId)} data-testid="caps-mcp-cancel">
+              {t('cap.cancel')}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              isDisabled={!server.enabled}
+              onPress={() => void verify()}
+              data-testid="caps-mcp-verify"
+            >
+              {t('cap.verify')}
+            </Button>
+          )
+        ) : null
+      }
+    >
       {verifyError ? <Warn>{verifyError}</Warn> : null}
       {operation && operation.state !== 'connecting' ? (
         <p className="caps-result" role="status" data-testid="caps-mcp-operation">
@@ -334,7 +326,7 @@ function McpServerRow({
       ) : server && !direct && canImportMcp(server) ? (
         <McpImportControl server={server} onChanged={onChanged} />
       ) : null}
-    </Item>
+    </Entry>
   )
 }
 

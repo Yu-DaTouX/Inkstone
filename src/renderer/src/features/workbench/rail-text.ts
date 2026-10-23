@@ -38,6 +38,7 @@ export interface RailText {
   removeOutput: (name: string) => string
   dirty: string
   cacheHit: string
+  hitShort: string
   linesChanged: (added: number, removed: number) => string
 }
 
@@ -89,6 +90,7 @@ const ZH: RailText = {
   removeOutput: (name) => `从列表移除「${name}」`,
   dirty: '工作区有未提交的改动',
   cacheHit: '缓存命中率',
+  hitShort: '命中',
   linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`
 }
 
@@ -140,6 +142,7 @@ const EN: RailText = {
   removeOutput: (name) => `Remove ${name} from the list`,
   dirty: 'Uncommitted changes in the working tree',
   cacheHit: 'Cache hit rate',
+  hitShort: 'Hit',
   linesChanged: (added, removed) => `${added} lines added, ${removed} lines removed`
 }
 

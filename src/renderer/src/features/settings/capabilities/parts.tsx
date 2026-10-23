@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { Fragment, type ReactElement, type ReactNode } from 'react'
 import { Badge, EmptyState, Notice, SettingSection, Skeleton, type BadgeTone } from '../../../ui'
 import { cx } from '../../../ui/cx'
 
@@ -34,7 +34,59 @@ export function Warn({ children }: { children: ReactNode }): ReactElement {
 }
 
 export function Empty({ children }: { children: ReactNode }): ReactElement {
-  return <EmptyState size="sm" title={children} />
+  return <EmptyState size="sm" align="start" title={children} />
+}
+
+export type EntryMetaPart = ReactNode | false | null | undefined
+
+export function Entry({
+  name,
+  nameTitle,
+  badge,
+  control,
+  meta,
+  metaTitle,
+  actions,
+  children,
+  testId,
+  settingId
+}: {
+  name: ReactNode
+  nameTitle?: string
+  badge?: ReactNode
+  control?: ReactNode
+  meta?: readonly EntryMetaPart[]
+  metaTitle?: string
+  actions?: ReactNode
+  children?: ReactNode
+  testId?: string
+  settingId?: string
+}): ReactElement {
+  const parts = (meta ?? []).filter((part) => part !== false && part !== null && part !== undefined && part !== '')
+  return (
+    <article className="caps-item" data-testid={testId} data-setting-id={settingId}>
+      <div className="caps-item-head">
+        <span className="caps-name" title={nameTitle}>
+          {name}
+        </span>
+        {badge}
+        <span className="caps-spacer" />
+        {control}
+      </div>
+      {parts.length > 0 ? (
+        <p className="caps-meta caps-meta--line" title={metaTitle}>
+          {parts.map((part, index) => (
+            <Fragment key={index}>
+              {index > 0 ? <span className="caps-meta-sep" aria-hidden="true"> · </span> : null}
+              {part}
+            </Fragment>
+          ))}
+        </p>
+      ) : null}
+      {children}
+      {actions ? <div className="caps-actions">{actions}</div> : null}
+    </article>
+  )
 }
 
 export function Group({

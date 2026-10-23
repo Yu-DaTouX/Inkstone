@@ -147,7 +147,10 @@ export function extractOperationId(output: string | undefined | null): string | 
     }
   }
   const fallback = /"operationId"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i.exec(output)
-  return fallback ? fallback[1].toLowerCase() : null
+  if (fallback) return fallback[1].toLowerCase()
+  const files = [...output.matchAll(/"resultFile"\s*:\s*"[^"]*?[\\/]ops[\\/]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json"/gi)]
+  const last = files.at(-1)
+  return last ? last[1].toLowerCase() : null
 }
 
 export function normalizeUrl(raw: string | undefined | null): string | null {

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import type { CapabilitySettingsSnapshot, CapabilitySkillSettingView, ManagedSkillAction } from '../../../../../shared/ipc'
-import { Badge, Button, Switch } from '../../../ui'
+import { Button, Switch } from '../../../ui'
 import { fillCapsText, useCapsText } from './text'
 import { useConfirm } from './confirm'
 import { runConfirmedOperation } from './operation-state'
-import { Actions, Empty, Group, Item, ItemHead, ListSkeleton, Meta, Note, Panel, StatusBadge, Warn } from './parts'
+import { Empty, Entry, Group, ListSkeleton, Note, Panel, Warn } from './parts'
 import { groupSkills } from './model'
 
 export function SkillsSection(): ReactElement {
@@ -148,78 +148,76 @@ export function SkillsSection(): ReactElement {
             <section className="caps-subgroup" key={group.origin} data-testid={`caps-skills-${group.origin}`}>
               <h4 className="caps-subgroup-title">{t(`cap.skillOrigin.${group.origin}` as 'cap.skillOrigin.other')}</h4>
               <div className="caps-list">
-                {group.skills.map((skill) => (
-                  <Item key={skill.id} testId="caps-skill">
-                    <ItemHead>
-                      <span className="caps-name" title={skill.title}>
-                        {skill.title}
-                      </span>
-                      {skill.origin === 'session' ? (
-                        <StatusBadge tone="accent">{t('cap.skillOrigin.session')}</StatusBadge>
-                      ) : null}
-                      {skill.acquired && group.origin === 'user' ? (
-                        <Badge>{t('cap.skillAcquired')}</Badge>
-                      ) : null}
-                      {skill.enabled === false && !skill.manage ? <StatusBadge tone="neutral">{text('skillDisabled')}</StatusBadge> : null}
-                      <span className="caps-spacer" />
-                      {group.origin === 'session' ? (
-                        <Actions>
-                          <Button
-                            variant="secondary"
+                {group.skills.map((skill) => {
+                  const metaParts = [
+                    skill.origin === 'session' ? t('cap.skillOrigin.session') : null,
+                    skill.acquired && group.origin === 'user' ? t('cap.skillAcquired') : null,
+                    skill.enabled === false && !skill.manage ? text('skillDisabled') : null,
+                    skill.sourceUrl ? skill.sourceUrl.replace(/^https?:\/\//, '') : null,
+                    skill.description
+                  ]
+                  return (
+                    <Entry
+                      key={skill.id}
+                      testId="caps-skill"
+                      name={skill.title}
+                      nameTitle={skill.title}
+                      control={
+                        skill.manage && group.origin !== 'session' ? (
+                          <Switch
+                            aria-label={fillCapsText(text('skillToggleLabel'), { name: skill.title })}
+                            isSelected={skill.enabled !== false}
                             isDisabled={busySkill === skill.id}
-                            onPress={() => void act('promote', skill)}
-                            data-testid="caps-skill-promote"
-                          >
-                            {t('cap.skillPromote')}
-                          </Button>
-                          <Button
-                            variant="danger"
-                            isDisabled={busySkill === skill.id}
-                            onPress={() => void act('remove', skill)}
-                            data-testid="caps-skill-remove"
-                          >
-                            {t('cap.skillRemove')}
-                          </Button>
-                        </Actions>
-                      ) : (
-                        <Actions>
-                          {skill.location ? (
-                            <Button variant="secondary" onPress={() => void reveal(skill)} data-testid="caps-skill-reveal">
-                              {text('skillReveal')}
+                            onChange={(next) => void manage(next ? 'enable' : 'disable', skill)}
+                            data-testid="caps-skill-toggle"
+                          />
+                        ) : null
+                      }
+                      meta={metaParts}
+                      metaTitle={[skill.description, skill.sourceUrl].filter(Boolean).join('\n') || undefined}
+                      actions={
+                        group.origin === 'session' ? (
+                          <>
+                            <Button
+                              variant="secondary"
+                              isDisabled={busySkill === skill.id}
+                              onPress={() => void act('promote', skill)}
+                              data-testid="caps-skill-promote"
+                            >
+                              {t('cap.skillPromote')}
                             </Button>
-                          ) : null}
-                          {skill.manage ? (
                             <Button
                               variant="danger"
                               isDisabled={busySkill === skill.id}
-                              onPress={() => void manage('trash', skill)}
-                              data-testid="caps-skill-trash"
+                              onPress={() => void act('remove', skill)}
+                              data-testid="caps-skill-remove"
                             >
-                              {text('skillTrash')}
+                              {t('cap.skillRemove')}
                             </Button>
-                          ) : null}
-                          {skill.manage ? (
-                            <Switch
-                              aria-label={fillCapsText(text('skillToggleLabel'), { name: skill.title })}
-                              isSelected={skill.enabled !== false}
-                              isDisabled={busySkill === skill.id}
-                              onChange={(next) => void manage(next ? 'enable' : 'disable', skill)}
-                              data-testid="caps-skill-toggle"
-                            />
-                          ) : null}
-                        </Actions>
-                      )}
-                    </ItemHead>
-                    {skill.description ? (
-                      <Meta title={skill.description} clamp>
-                        {skill.description}
-                      </Meta>
-                    ) : null}
-                    {skill.sourceUrl ? (
-                      <Meta title={skill.sourceUrl}>{skill.sourceUrl.replace(/^https?:\/\//, '')}</Meta>
-                    ) : null}
-                  </Item>
-                ))}
+                          </>
+                        ) : (
+                          <>
+                            {skill.location ? (
+                              <Button variant="secondary" onPress={() => void reveal(skill)} data-testid="caps-skill-reveal">
+                                {text('skillReveal')}
+                              </Button>
+                            ) : null}
+                            {skill.manage ? (
+                              <Button
+                                variant="danger"
+                                isDisabled={busySkill === skill.id}
+                                onPress={() => void manage('trash', skill)}
+                                data-testid="caps-skill-trash"
+                              >
+                                {text('skillTrash')}
+                              </Button>
+                            ) : null}
+                          </>
+                        )
+                      }
+                    />
+                  )
+                })}
               </div>
             </section>
           ))

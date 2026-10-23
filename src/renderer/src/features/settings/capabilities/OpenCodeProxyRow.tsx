@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { useT } from '../../../i18n'
 import type { MessageKey } from '../../../i18n'
 import type { OpenCodeProxyResult, OpenCodeProxyStatus } from '../../../../../shared/opencode-proxy'
-import { Badge, Button, Checkbox, Notice } from '../../../ui'
+import { Button, Checkbox, Notice } from '../../../ui'
 import { useConfirm } from './confirm'
-import { Actions, Item, ItemHead, Meta, Warn } from './parts'
+import { Entry, Warn } from './parts'
 
 type RunKind = 'install' | 'start' | 'stop' | 'refresh' | 'uninstall' | 'autoStart'
 
@@ -92,16 +92,30 @@ export function OpenCodeProxyRow(): ReactElement {
 
   const installed = status?.installed === true
   const running = status?.running === true
-  const tone = running ? 'run' : installed ? 'stall' : 'neutral'
   const label = running ? t('ocp.statusRunning') : installed ? t('ocp.statusStopped') : t('ocp.statusMissing')
+  const metaParts = [
+    label,
+    installed
+      ? t('ocp.runtime', {
+          version: status?.version ?? '',
+          port: status?.port ?? 0,
+          n: status?.models.length ?? 0
+        })
+      : null,
+    installed ? t('ocp.license') : null,
+    installed ? (status?.providerLinked ? t('ocp.providerLinked') : t('ocp.providerMissing')) : null,
+    t('market.opencodeDesc'),
+    t('market.opencodeTarget')
+  ]
 
   return (
-    <Item testId="caps-market-opencode">
-      <ItemHead>
-        <span className="caps-name">OpenCode 反代{status?.version ? ` · ${status.version}` : ''}</span>
-        <Badge tone={tone}>{label}</Badge>
-        <span className="caps-spacer" />
-        <Actions>
+    <Entry
+      testId="caps-market-opencode"
+      name={`OpenCode 反代${status?.version ? ` · ${status.version}` : ''}`}
+      meta={metaParts}
+      metaTitle={metaParts.filter(Boolean).join(' · ')}
+      actions={
+        <>
           {!installed ? (
             <Button variant="secondary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-install">
               {busy === 'install' ? t('ocp.installing') : t('ocp.install')}
@@ -131,11 +145,23 @@ export function OpenCodeProxyRow(): ReactElement {
               <Button variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-opencode-update">
                 {busy === 'install' ? t('ocp.installing') : t('ocp.update')}
               </Button>
-              <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-opencode-uninstall">
-                {t('ocp.uninstall')}
-              </Button>
             </>
           )}
+          {installed && running ? (
+            <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(status?.consoleUrl ?? '')} data-testid="caps-opencode-console">
+              {t('ocp.console')}
+            </Button>
+          ) : null}
+          {installed && running && status?.consolePassword ? (
+            <Button variant="ghost" onPress={copyPassword} data-testid="caps-opencode-password">
+              {copied ? t('ocp.copied') : t('ocp.copyPassword')}
+            </Button>
+          ) : null}
+          {installed && running && status?.log.length ? (
+            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-opencode-log-toggle">
+              {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             onPress={() => void window.yan.browser.openExternal('https://github.com/jasonxu114514/opencode2api')}
@@ -143,21 +169,14 @@ export function OpenCodeProxyRow(): ReactElement {
           >
             {t('market.source')}
           </Button>
-        </Actions>
-      </ItemHead>
-      <Meta>{t('market.opencodeDesc')}</Meta>
-      <Meta>{t('market.opencodeTarget')}</Meta>
-      {installed ? (
-        <Meta>
-          {t('ocp.runtime', {
-            version: status?.version ?? '',
-            port: status?.port ?? 0,
-            n: status?.models.length ?? 0
-          })}
-        </Meta>
-      ) : null}
-      {installed ? <Meta>{t('ocp.license')}</Meta> : null}
-      {installed ? <Meta>{status?.providerLinked ? t('ocp.providerLinked') : t('ocp.providerMissing')}</Meta> : null}
+          {installed ? (
+            <Button variant="danger" isDisabled={!!busy} onPress={() => void uninstall()} data-testid="caps-opencode-uninstall">
+              {t('ocp.uninstall')}
+            </Button>
+          ) : null}
+        </>
+      }
+    >
       {installed ? (
         <div className="caps-field">
           <Checkbox
@@ -168,21 +187,6 @@ export function OpenCodeProxyRow(): ReactElement {
           >
             {t('ocp.autoStart')}
           </Checkbox>
-          {running ? (
-            <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(status?.consoleUrl ?? '')} data-testid="caps-opencode-console">
-              {t('ocp.console')}
-            </Button>
-          ) : null}
-          {running && status?.consolePassword ? (
-            <Button variant="ghost" onPress={copyPassword} data-testid="caps-opencode-password">
-              {copied ? t('ocp.copied') : t('ocp.copyPassword')}
-            </Button>
-          ) : null}
-          {running && status?.log.length ? (
-            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-opencode-log-toggle">
-              {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
-            </Button>
-          ) : null}
         </div>
       ) : null}
       {showLog && status?.log.length ? (
@@ -199,6 +203,6 @@ export function OpenCodeProxyRow(): ReactElement {
           </Notice>
         )
       ) : null}
-    </Item>
+    </Entry>
   )
 }

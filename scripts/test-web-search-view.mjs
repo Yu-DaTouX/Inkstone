@@ -183,6 +183,9 @@ async function run() {
     const pretty = `{\n  "ok": true,\n  "operationId": "${OPERATION}",\n  "summary": {}\n}`
     ok(m.extractOperationId(pretty) === OPERATION, '多行 JSON 用兜底正则提取', m.extractOperationId(pretty))
 
+    const grepped = `"resultFile":"C:\\\\Users\\\\me\\\\.pi\\\\agent\\\\yan\\\\ops\\\\${OPERATION}.json"\n`
+    ok(m.extractOperationId(grepped) === OPERATION, '输出被 grep 只剩 resultFile 时从文件名提取', m.extractOperationId(grepped))
+
     ok(m.extractOperationId(JSON.stringify({ ok: false, operationId: OPERATION, error: 'boom' })) === null, '失败的调用不提取（退回普通步骤）')
     ok(m.extractOperationId('{"ok":true,"operationId":"not-a-uuid"}') === null, '非 UUID 不认')
     ok(m.extractOperationId('') === null, '空输出返回 null')

@@ -90,7 +90,7 @@ export function RailCard({
           </IconButton>
         </span>
         {onOpenView ? (
-          <IconButton variant="ghost" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
+          <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
             <ArrowUpRight size={13} aria-hidden />
           </IconButton>
         ) : null}

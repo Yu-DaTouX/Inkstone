@@ -524,7 +524,7 @@ function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText })
   return (
     <span className="wb-rail-glance" title={glance.title} data-testid="wb-rail-stats-glance">
       {glance.hit !== null ? (
-        <RailValue glyph={{ kind: 'ring', percent: glance.hit, label: text.cacheHit }} value={glance.hitText} digits={4} />
+        <RailValue aria-label={text.cacheHit} value={`${text.hitShort} ${glance.hitText}`} />
       ) : null}
       {metric.kind === 'speed' ? (
         <RailValue
@@ -664,8 +664,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const bindingPct = binding && !bindingAwaiting ? windowUsedPct(binding) : null
   const quotaSummary = binding ? (
     <RailValue
-      glyph={{ kind: 'ring', percent: bindingPct, label: rail.sections.usage }}
-      tone={glyphTone(bindingTone)}
+      glyph={bindingTone === 'fail' ? { kind: 'dot', status: 'fail' } : bindingTone === 'ask' ? { kind: 'dot', status: 'awaiting' } : undefined}
       value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : `${Math.round(bindingPct)}%`}`}
     />
   ) : quotaModel?.balance ? (
@@ -877,30 +876,32 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     <div className="wb-overview" ref={railRef} role="region" aria-label={rail.railLabel} aria-describedby="wb-rail-hint" data-testid="wb-overview">
       <span id="wb-rail-hint" className="wb-rail-sr" hidden>{rail.reorderHint}</span>
       <span className="wb-rail-sr" aria-live="polite">{reorder.announcement}</span>
-      {visible.map((id) => {
-        const section = sections[id]
-        if (!section) return null
-        return (
-          <RailCard
-            key={id}
-            id={id}
-            title={rail.sections[id]}
-            summary={section.summary}
-            open={isOpen(id)}
-            onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
-            onOpenView={section.onOpenView}
-            openLabel={`${text.openFull} ${rail.sections[id]}`}
-            grip={reorder.gripFor(id)}
-            dragging={reorder.dragging === id}
-            onHeaderMenu={(anchor) => {
-              menuAnchor.current = anchor
-              setMenuOpen(true)
-            }}
-          >
-            {section.body}
-          </RailCard>
-        )
-      })}
+      <div className="wb-rail-list">
+        {visible.map((id) => {
+          const section = sections[id]
+          if (!section) return null
+          return (
+            <RailCard
+              key={id}
+              id={id}
+              title={rail.sections[id]}
+              summary={section.summary}
+              open={isOpen(id)}
+              onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
+              onOpenView={section.onOpenView}
+              openLabel={`${text.openFull} ${rail.sections[id]}`}
+              grip={reorder.gripFor(id)}
+              dragging={reorder.dragging === id}
+              onHeaderMenu={(anchor) => {
+                menuAnchor.current = anchor
+                setMenuOpen(true)
+              }}
+            >
+              {section.body}
+            </RailCard>
+          )
+        })}
+      </div>
       <RailSectionsMenu anchor={menuAnchor} open={menuOpen} onOpenChange={setMenuOpen} text={rail} />
     </div>
   )

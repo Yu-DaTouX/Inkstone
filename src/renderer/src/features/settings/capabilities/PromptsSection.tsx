@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
 import { useStore } from '../../../state/store'
-import { Badge, Button } from '../../../ui'
+import { Button } from '../../../ui'
 import { useCapsText } from './text'
-import { Empty, Group, Item, ItemHead, Meta, Panel } from './parts'
+import { Empty, Entry, Group, Panel } from './parts'
 import { promptCommands } from './model'
 
 export function PromptsSection(): ReactElement {
@@ -35,19 +35,24 @@ export function PromptsSection(): ReactElement {
           <Empty>{text('promptsEmpty')}</Empty>
         ) : (
           <div className="caps-list" data-testid="caps-prompts-list">
-            {prompts.map((command) => (
-              <Item key={`${command.module ?? ''}:${command.name}`} testId="caps-prompt">
-                <ItemHead>
-                  <span className="caps-name">/{command.name}</span>
-                  {command.usage ? <Badge>{command.usage}</Badge> : null}
-                  {command.hiddenInMenu ? <Badge>{text('promptHiddenTag')}</Badge> : null}
-                  <span className="caps-spacer" />
-                </ItemHead>
-                {command.description ? <Meta>{command.description}</Meta> : null}
-                {command.location ? <Meta title={command.location}>{command.location}</Meta> : null}
-                {command.availability ? <Meta>{command.availability}</Meta> : null}
-              </Item>
-            ))}
+            {prompts.map((command) => {
+              const metaParts = [
+                command.hiddenInMenu ? text('promptHiddenTag') : null,
+                command.availability,
+                command.usage,
+                command.description,
+                command.location
+              ]
+              return (
+                <Entry
+                  key={`${command.module ?? ''}:${command.name}`}
+                  testId="caps-prompt"
+                  name={`/${command.name}`}
+                  meta={metaParts}
+                  metaTitle={metaParts.filter(Boolean).join(' · ')}
+                />
+              )
+            })}
           </div>
         )}
       </Group>

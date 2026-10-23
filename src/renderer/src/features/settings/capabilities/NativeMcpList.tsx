@@ -2,11 +2,26 @@ import type { ReactElement, ReactNode } from 'react'
 import { useT } from '../../../i18n'
 import type { NativeMcpServerView } from '../../../../../shared/mcp-native-import'
 import type { NativeMcpManageAction } from '../../../../../shared/ipc'
-import { Badge, Button, Switch } from '../../../ui'
+import { Button, Switch } from '../../../ui'
 import { fillCapsText, useCapsText } from './text'
-import { Actions, Item, ItemHead, Meta } from './parts'
+import { Entry } from './parts'
+import { useCodegraphStatus } from './CodegraphStatusRow'
 
 export type NativeMcpAction = 'login' | 'logout' | 'reconnect'
+
+interface NativeMcpItemProps {
+  server: NativeMcpServerView
+  sessionActionable: boolean
+  sessionBusy: boolean
+  manageBusy: boolean
+  onSessionAction?: (action: NativeMcpAction, server: string) => void
+  onManage: (action: NativeMcpManageAction, server: NativeMcpServerView) => void
+  settingId?: string
+  extraMeta?: readonly string[]
+  extraMetaTitle?: string
+  extraAction?: ReactNode
+  children?: ReactNode
+}
 
 export function NativeMcpItem({
   server,
@@ -15,31 +30,28 @@ export function NativeMcpItem({
   manageBusy,
   onSessionAction,
   onManage,
+  settingId,
+  extraMeta,
+  extraMetaTitle,
+  extraAction,
   children
-}: {
-  server: NativeMcpServerView
-  sessionActionable: boolean
-  sessionBusy: boolean
-  manageBusy: boolean
-  onSessionAction?: (action: NativeMcpAction, server: string) => void
-  onManage: (action: NativeMcpManageAction, server: NativeMcpServerView) => void
-  children?: ReactNode
-}): ReactElement {
+}: NativeMcpItemProps): ReactElement {
   const t = useT()
   const text = useCapsText()
   const sessionCommandsAllowed = !!onSessionAction && server.enabled && !/\s/.test(server.name)
   const sessionDisabled = !sessionActionable || sessionBusy
+  const command = server.command
+    ? server.argCount > 0
+      ? t('cap.nativeCommandArgs', { command: server.command, count: server.argCount })
+      : server.command
+    : server.endpointOrigin
   return (
-    <Item testId="caps-native-mcp-server">
-      <ItemHead>
-        <span className="caps-name" title={server.path}>
-          {server.name}
-        </span>
-        <Badge>{server.transport}</Badge>
-        <Badge>{server.scope === 'project' ? t('cap.nativeScopeProject') : t('cap.nativeScopeGlobal')}</Badge>
-        {server.exposure ? <Badge>{server.exposure}</Badge> : null}
-        {server.enabled ? null : <Badge tone="stall">{t('cap.nativeDisabled')}</Badge>}
-        <span className="caps-spacer" />
+    <Entry
+      testId="caps-native-mcp-server"
+      settingId={settingId}
+      name={server.name}
+      nameTitle={server.path}
+      control={
         <Switch
           aria-label={fillCapsText(text('mcpToggleLabel'), { name: server.name })}
           isSelected={server.enabled}
@@ -47,56 +59,71 @@ export function NativeMcpItem({
           onChange={(next) => onManage(next ? 'enable' : 'disable', server)}
           data-testid="caps-native-mcp-toggle"
         />
-      </ItemHead>
-      {server.command ? (
-        <Meta title={server.path}>
-          {server.argCount > 0 ? t('cap.nativeCommandArgs', { command: server.command, count: server.argCount }) : server.command}
-        </Meta>
-      ) : server.endpointOrigin ? (
-        <Meta title={server.path}>{server.endpointOrigin}</Meta>
-      ) : null}
-      <Actions>
-        {sessionCommandsAllowed && server.transport === 'http' ? (
-          <>
+      }
+      meta={[
+        server.transport,
+        server.scope === 'project' ? t('cap.nativeScopeProject') : t('cap.nativeScopeGlobal'),
+        server.exposure,
+        server.enabled ? null : t('cap.nativeDisabled'),
+        ...(extraMeta ?? []),
+        command
+      ]}
+      metaTitle={[extraMetaTitle, server.path].filter(Boolean).join('\n') || undefined}
+      actions={
+        <>
+          {extraAction}
+          {sessionCommandsAllowed && server.transport === 'http' ? (
+            <>
+              <Button
+                variant="secondary"
+                isDisabled={sessionDisabled}
+                title={t('cap.nativeMcpLoginHint')}
+                onPress={() => onSessionAction?.('login', server.name)}
+                data-testid="caps-native-mcp-login"
+              >
+                {t('cap.nativeMcpLogin')}
+              </Button>
+              <Button
+                variant="secondary"
+                isDisabled={sessionDisabled}
+                onPress={() => onSessionAction?.('logout', server.name)}
+                data-testid="caps-native-mcp-logout"
+              >
+                {t('cap.nativeMcpLogout')}
+              </Button>
+            </>
+          ) : null}
+          {sessionCommandsAllowed ? (
             <Button
               variant="secondary"
               isDisabled={sessionDisabled}
-              title={t('cap.nativeMcpLoginHint')}
-              onPress={() => onSessionAction?.('login', server.name)}
-              data-testid="caps-native-mcp-login"
+              onPress={() => onSessionAction?.('reconnect', server.name)}
+              data-testid="caps-native-mcp-reconnect"
             >
-              {t('cap.nativeMcpLogin')}
+              {t('cap.nativeMcpReconnect')}
             </Button>
-            <Button
-              variant="secondary"
-              isDisabled={sessionDisabled}
-              onPress={() => onSessionAction?.('logout', server.name)}
-              data-testid="caps-native-mcp-logout"
-            >
-              {t('cap.nativeMcpLogout')}
-            </Button>
-          </>
-        ) : null}
-        {sessionCommandsAllowed ? (
+          ) : null}
           <Button
-            variant="secondary"
-            isDisabled={sessionDisabled}
-            onPress={() => onSessionAction?.('reconnect', server.name)}
-            data-testid="caps-native-mcp-reconnect"
+            variant="danger"
+            isDisabled={manageBusy}
+            onPress={() => onManage('remove', server)}
+            data-testid="caps-native-mcp-remove"
           >
-            {t('cap.nativeMcpReconnect')}
+            {text('mcpRemove')}
           </Button>
-        ) : null}
-        <Button
-          variant="danger"
-          isDisabled={manageBusy}
-          onPress={() => onManage('remove', server)}
-          data-testid="caps-native-mcp-remove"
-        >
-          {text('mcpRemove')}
-        </Button>
-      </Actions>
+        </>
+      }
+    >
       {children}
-    </Item>
+    </Entry>
+  )
+}
+
+export function CodegraphMcpItem({ refreshKey, ...props }: Omit<NativeMcpItemProps, 'extraMeta' | 'extraMetaTitle' | 'extraAction' | 'children'> & { refreshKey: string }): ReactElement {
+  const status = useCodegraphStatus(refreshKey)
+  return (
+    <NativeMcpItem {...props} extraMeta={status?.meta} extraMetaTitle={status?.metaTitle} extraAction={status?.action}>
+      {status?.result}
+    </NativeMcpItem>
   )
 }
