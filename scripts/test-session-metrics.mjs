@@ -15,7 +15,14 @@ try {
     outfile: join(temp, 'session-metrics.mjs'),
     logLevel: 'silent'
   })
-  const { projectSessionMetrics } = await import(pathToFileURL(resolve(temp, 'session-metrics.mjs')).href)
+  const {
+    liveActivitySince,
+    liveStepId,
+    projectSessionMetrics,
+    sessionTurnCounts,
+    splitLiveStep,
+    stepSpeed
+  } = await import(pathToFileURL(resolve(temp, 'session-metrics.mjs')).href)
 
   let checks = 0
   const check = (condition, message) => {
@@ -563,6 +570,50 @@ try {
     const derived = projectSessionMetrics(msgs, null)
     eq(derived.hitRate, 1000 / 1450 * 100, '没有快照时按消息累加，本来就不含压缩')
     check(derived.overheadExcluded === false, '按消息累加时不标扣除')
+  }
+
+  {
+    const done = {
+      id: 'a1',
+      role: 'assistant',
+      text: 'one',
+      usage: usage({ input: 100, output: 50 }),
+      generationTiming: { durationMs: 2000, decodeMs: 1000, startEvent: 'turn_start', ttftMs: 300 },
+      toolCalls: [tool({ id: 't1', startedAt: 10_000, endedAt: 12_000 })]
+    }
+    const streaming = { id: 'a2', role: 'assistant', text: 'tw', timestamp: 20_000, generationTiming: { durationMs: 400 } }
+    const msgs = [{ id: 'u1', role: 'user', text: 'go' }, done, streaming]
+
+    eq(liveStepId(msgs, false), null, '未流式时没有进行中的一步')
+    eq(liveStepId(msgs, true), 'a2', '流式时末尾 assistant 是进行中的一步')
+    eq(liveStepId([...msgs, { id: 'n', role: 'user', text: NOTICE }], true), 'a2', '子代理通知不打断判断')
+    eq(liveStepId([...msgs, { id: 'u2', role: 'user', text: 'next' }], true), null, '末尾是用户消息时没有进行中的一步')
+
+    const split = splitLiveStep(msgs, 'a2')
+    eq(split.settled.map((m) => m.id), ['u1', 'a1'], '已结算范围去掉进行中的一步')
+    eq(split.live?.id, 'a2')
+    eq(splitLiveStep(msgs, null).settled, msgs, '无进行中时原样返回')
+    eq(splitLiveStep(msgs, 'zz').live, null)
+
+    const settled = projectSessionMetrics(split.settled, null)
+    const all = projectSessionMetrics(msgs, null)
+    check(all.partial === true, '把进行中这一步算进来会误报缺数据')
+    check(settled.partial === false, '只按已结算步骤计时不会闪出 ≥')
+    check(settled.modelPartial === false, '进行中的计时不拉低已结算用时')
+    eq(settled.total, 150)
+    eq(sessionTurnCounts(msgs), { turns: 1, steps: 2 }, '头部轮数与步数含进行中的一步')
+
+    eq(stepSpeed(done), 50, '已结算步骤速度')
+    eq(stepSpeed({ id: 'x', role: 'assistant', text: '' }), null)
+
+    eq(liveActivitySince(msgs, split.live, false), null, '未运行时不计进行中用时')
+    eq(liveActivitySince(msgs, split.live, true), 20_000, '进行中从这一步开始计')
+    const toolRunning = [
+      { id: 'u1', role: 'user', text: 'go' },
+      { ...done, toolCalls: [tool({ id: 't2', status: 'running', startedAt: 15_000 }), tool({ id: 't3', status: 'ok', startedAt: 14_000, endedAt: 14_500 })] }
+    ]
+    eq(liveActivitySince(toolRunning, null, true), 15_000, '工具执行中按最早未结束的工具计')
+    eq(liveActivitySince([{ ...done, toolCalls: [tool({ id: 't4', status: 'running', startedAt: 1 })] }, { id: 'u2', role: 'user', text: 'new' }], null, true), null, '只看最后一条用户消息之后')
   }
 
   console.log(`session-metrics: ${checks} checks passed`)

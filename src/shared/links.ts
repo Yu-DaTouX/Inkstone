@@ -73,6 +73,15 @@ function fileUrlToPath(raw: string): string {
   }
 }
 
+function decodeLocalPath(raw: string): string {
+  if (!raw.includes('%')) return raw
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 export function classifyLink(href: string | undefined | null): LinkTarget {
   const raw = (href ?? '').trim()
   if (!raw) return { kind: 'invalid', reason: 'empty' }
@@ -83,8 +92,11 @@ export function classifyLink(href: string | undefined | null): LinkTarget {
     if (parsed) return { kind: 'file', ...parsed }
   }
 
-  if (isWindowsAbs(raw) || isUncAbs(raw)) {
-    const { path, line } = splitLine(raw)
+  const local = decodeLocalPath(raw)
+  if (local.includes('\0')) return { kind: 'invalid', reason: 'protocol' }
+
+  if (isWindowsAbs(local) || isUncAbs(local)) {
+    const { path, line } = splitLine(local)
     return { kind: 'file', path, ...(line ? { line } : {}) }
   }
 
@@ -110,13 +122,13 @@ export function classifyLink(href: string | undefined | null): LinkTarget {
     return { kind: 'invalid', reason: 'protocol' }
   }
 
-  if (isUnixAbs(raw)) {
-    const { path, line } = splitLine(raw)
+  if (isUnixAbs(local)) {
+    const { path, line } = splitLine(local)
     return { kind: 'file', path, ...(line ? { line } : {}) }
   }
 
-  if (raw.includes('/') || raw.includes('\\') || /\.[a-zA-Z0-9]{1,8}$/.test(raw)) {
-    const { path, line } = splitLine(raw)
+  if (local.includes('/') || local.includes('\\') || /\.[a-zA-Z0-9]{1,8}$/.test(local)) {
+    const { path, line } = splitLine(local)
     return { kind: 'file', path, ...(line ? { line } : {}) }
   }
 

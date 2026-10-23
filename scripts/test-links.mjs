@@ -30,6 +30,15 @@ export async function runLinkTests(ok) {
   ok(classifyLink('docs/x.md:12').line === 12, '相对路径也支持行号')
   ok(kindOf('../../etc/passwd') === 'file', '带 .. 的路径仍归类为 file（越界由主进程判定）')
 
+  const encoded = '.local-docs/evidence/2026-10-23-%E5%90%8E%E7%AB%AF%E9%80%BB%E8%BE%91%E5%AE%A1%E6%9F%A5/%E5%AE%A1%E6%9F%A5%E7%BB%93%E6%9E%9C.md'
+  ok(classifyLink(encoded).path === '.local-docs/evidence/2026-10-23-后端逻辑审查/审查结果.md', 'Markdown 编码过的中文相对路径解码后再预览')
+  ok(classifyLink('E:%5Cpi-desktop%5Ca%20b.md').path === 'E:\\pi-desktop\\a b.md', '编码过的反斜杠 Windows 路径仍是文件，不被当成 e: 协议')
+  ok(classifyLink('E:/pi-desktop/%E5%AE%A1%E6%9F%A5.md:12').line === 12, '编码过的绝对路径仍解析行号')
+  ok(classifyLink('/home/x/%E6%96%87%E4%BB%B6.md').path === '/home/x/文件.md', '编码过的类 Unix 路径解码')
+  ok(classifyLink('docs/100%.md').path === 'docs/100%.md', '坏的 percent escape 保留原样，不抛错')
+  ok(kindOf('docs/a%00.md') === 'invalid', '解码出 NUL 的路径被拒绝')
+  ok(classifyLink('https://example.com/%E5%AE%A1').url === 'https://example.com/%E5%AE%A1', '网页链接保持编码原样')
+
   ok(parseFileLink('src/main/index.ts#L42')?.line === 42, '#L42 解析为首行')
   ok(parseFileLink('src/main/index.ts#L42-L60')?.line === 42, '#L42-L60 取首行')
   ok(parseFileLink('src/main/index.ts#L42-L60')?.lineEnd === 60, '#L42-L60 带出范围末行')

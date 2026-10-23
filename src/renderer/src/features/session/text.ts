@@ -157,6 +157,8 @@ export type SessionTextKey =
   | 'questionSkipped'
   | 'questionFailed'
   | 'questionAnswer'
+  | 'wrapUpLabel'
+  | 'wrapUpDismiss'
 
 const ZH: Record<SessionTextKey, string> = {
   visual: '结构化图块（{lang}）暂不支持在这里渲染。',
@@ -314,7 +316,9 @@ const ZH: Record<SessionTextKey, string> = {
   questionPending: '等待回答',
   questionSkipped: '未回答',
   questionFailed: '提问未完成',
-  questionAnswer: '回答'
+  questionAnswer: '回答',
+  wrapUpLabel: '下一步建议',
+  wrapUpDismiss: '关闭建议'
 }
 
 const EN: Record<SessionTextKey, string> = {
@@ -473,7 +477,9 @@ const EN: Record<SessionTextKey, string> = {
   questionPending: 'Waiting for an answer',
   questionSkipped: 'No answer',
   questionFailed: 'Question not completed',
-  questionAnswer: 'Answer'
+  questionAnswer: 'Answer',
+  wrapUpLabel: 'Next step',
+  wrapUpDismiss: 'Dismiss suggestion'
 }
 
 export function sessionText(lang: string, key: SessionTextKey, vars?: Record<string, string | number>): string {

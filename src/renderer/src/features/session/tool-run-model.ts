@@ -1,5 +1,5 @@
 import type { UIToolCall } from '../../../../shared/ipc'
-import { toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
+import { flattenToolNodes, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
 import { isDeniedCall } from './tool-title'
@@ -274,7 +274,15 @@ export function summarizeToolRun(
 }
 
 function isStandaloneNode(node: ToolCallNode): boolean {
-  return node.children.length > 0 || isStandaloneTool(node.call)
+  return isStandaloneTool(node.call)
+}
+
+function countedRunCalls(nodes: readonly ToolCallNode[]): UIToolCall[] {
+  return nodes.flatMap((node) => {
+    if (!node.children.length) return [node.call]
+    const own = isLive(node.call) || isFailure(node.call) ? [node.call] : []
+    return [...own, ...flattenToolNodes(node.children).map((child) => child.call)]
+  })
 }
 
 export function buildToolRows(
@@ -300,7 +308,7 @@ export function buildToolRows(
         id: `group:${first}`,
         firstId: first,
         nodes: run,
-        summary: summarizeToolRun(run.map((node) => node.call), approvalIds, options.cwd)
+        summary: summarizeToolRun(countedRunCalls(run), approvalIds, options.cwd)
       })
     } else {
       for (const node of run) rows.push(single(node, false))

@@ -26,7 +26,7 @@ import type {
   LocalModelServer
 } from './custom-provider'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from './checkpoints'
-import type { GitChangesOptions, GitChangesResult, GitDiffRequest, GitDiffResult, GitRefOption, GitRemoteIdentity, GitRepoState } from './git'
+import type { GitChangesOptions, GitChangesResult, GitDiffRequest, GitDiffResult, GitPathScreen, GitRefOption, GitRemoteIdentity, GitRepoState } from './git'
 export type {
   GitActionExpected,
   GitActionKind,
@@ -797,6 +797,7 @@ export interface AppSettings {
   profile: UserProfile
   subagentNotify?: boolean
   streamLoopAutoContinue?: boolean
+  wrapUpCard?: boolean
   workspaceTiles?: boolean
   smoothText?: boolean
   usageCurrency?: import('./currency').UsageCurrencySettings
@@ -1280,6 +1281,7 @@ export interface GitBridge {
   remotes(cwd: string): Promise<string[]>
   untracked(cwd: string): Promise<string[]>
   changes(cwd: string, options?: GitChangesOptions): Promise<GitChangesResult>
+  screenPaths(cwd: string, paths: string[]): Promise<GitPathScreen>
   diff(req: GitDiffRequest): Promise<GitDiffResult>
   identity(cwd: string, refresh?: boolean): Promise<GitRemoteIdentity | null>
   worktrees(cwd: string): Promise<WorktreeListing>

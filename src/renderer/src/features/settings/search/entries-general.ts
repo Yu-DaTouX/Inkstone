@@ -30,6 +30,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-subagent-model', section: 'session', zh: '子 Agent 默认模型', en: 'Default subagent model', keywords: ['子代理', '子 Agent', 'subagent', '模型', 'model'], more: true },
   { id: 'session-subagent-model-force', section: 'session', zh: '强制使用默认模型', en: 'Always use the default model', keywords: ['子代理', '子 Agent', 'subagent', '模型', 'model'], more: true },
   { id: 'session-subagent-notify', section: 'session', zh: '子 Agent 结束时通知发起会话', en: 'Notify the parent session when a subagent finishes', keywords: ['子代理', '子 Agent', 'subagent', '父会话'], more: true },
+  { id: 'session-wrap-up-card', section: 'session', zh: '回合结束时显示下一步建议', en: 'Show next-step suggestions at the end of a turn', keywords: ['下一步', '回顾', '建议', '收尾', 'next step', 'recap', 'wrap up'], more: true },
   { id: 'session-loop-auto-continue', section: 'session', zh: '循环停止后自动继续', en: 'Auto-continue after a loop stop', keywords: ['循环', '续跑', '自动继续', 'loop', 'continue'], more: true },
   { id: 'session-context-trim', section: 'session', zh: '裁剪较早的大段工具输出', en: 'Trim older large tool output', keywords: ['裁剪', '工具输出', 'trim', 'tool output'], more: true },
   { id: 'session-context-trim-at', section: 'session', zh: '裁剪起点', en: 'Trim threshold', keywords: ['裁剪阈值', 'trim threshold'], more: true },

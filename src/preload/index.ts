@@ -486,6 +486,7 @@ const api: YanBridge = {
     remotes: (cwd) => invoke<string[]>('yan:git:remotes', cwd),
     untracked: (cwd) => invoke<string[]>('yan:git:untracked', cwd),
     changes: (cwd, options) => invoke<GitChangesResult>('yan:git:changes', cwd, options),
+    screenPaths: (cwd, paths) => invoke<import('../shared/git').GitPathScreen>('yan:git:screenPaths', cwd, paths),
     identity: (cwd, refresh) => invoke<GitRemoteIdentity | null>('yan:git:identity', cwd, refresh === true),
     diff: (req) => invoke<GitDiffResult>('yan:git:diff', req),
     worktrees: (cwd) => invoke<WorktreeListing>('yan:git:worktrees', cwd)

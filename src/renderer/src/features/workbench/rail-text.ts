@@ -20,15 +20,24 @@ export interface RailText {
   copyPath: string
   openFiles: string
   copyBranch: string
-  switchBranch: string
+  openChanges: string
   resizeTiles: string
   progress: (done: number, total: number) => string
-  statsSummary: (turns: number, tokens: string | null) => string
   outputsEmpty: string
   outputCreated: string
   outputModified: string
   outputDeleted: string
-  commitChanges: string
+  connected: (ready: number, total: number) => string
+  outputFiles: (n: number) => string
+  changesNone: string
+  tasksRunning: (n: number) => string
+  tasksEnded: (n: number) => string
+  extensionsCount: (n: number) => string
+  more: (n: number) => string
+  showLess: string
+  removeOutput: (name: string) => string
+  dirty: string
+  cacheHit: string
   linesChanged: (added: number, removed: number) => string
 }
 
@@ -62,15 +71,24 @@ const ZH: RailText = {
   copyPath: '复制路径',
   openFiles: '在文件面板打开',
   copyBranch: '复制分支名',
-  switchBranch: '查看分支',
+  openChanges: '在变更面板打开',
   resizeTiles: '调整磁贴宽度',
   progress: (done, total) => `${done} / ${total}`,
-  statsSummary: (turns, tokens) => (tokens ? `${turns} 轮 · ${tokens}` : `${turns} 轮`),
   outputsEmpty: '本会话还没有写入文件',
   outputCreated: '新建',
   outputModified: '修改',
   outputDeleted: '删除',
-  commitChanges: '打开更改',
+  connected: (ready, total) => `${ready} / ${total} 已连接`,
+  outputFiles: (n) => `${n} 个文件`,
+  changesNone: '无更改',
+  tasksRunning: (n) => `${n} 运行中`,
+  tasksEnded: (n) => `${n} 已结束`,
+  extensionsCount: (n) => `${n} 项`,
+  more: (n) => `更多（${n}）`,
+  showLess: '收起',
+  removeOutput: (name) => `从列表移除「${name}」`,
+  dirty: '工作区有未提交的改动',
+  cacheHit: '缓存命中率',
   linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`
 }
 
@@ -104,15 +122,24 @@ const EN: RailText = {
   copyPath: 'Copy path',
   openFiles: 'Open in Files',
   copyBranch: 'Copy branch name',
-  switchBranch: 'View branches',
+  openChanges: 'Open in Changes',
   resizeTiles: 'Resize tiles',
-  progress: (done, total) => `${done} of ${total}`,
-  statsSummary: (turns, tokens) => (tokens ? `${turns} turns · ${tokens}` : `${turns} turns`),
+  progress: (done, total) => `${done} / ${total}`,
   outputsEmpty: 'No files written in this session yet',
   outputCreated: 'Created',
   outputModified: 'Modified',
   outputDeleted: 'Deleted',
-  commitChanges: 'Open changes',
+  connected: (ready, total) => `${ready} / ${total} connected`,
+  outputFiles: (n) => (n === 1 ? '1 file' : `${n} files`),
+  changesNone: 'No changes',
+  tasksRunning: (n) => `${n} running`,
+  tasksEnded: (n) => `${n} finished`,
+  extensionsCount: (n) => (n === 1 ? '1 item' : `${n} items`),
+  more: (n) => `${n} more`,
+  showLess: 'Show less',
+  removeOutput: (name) => `Remove ${name} from the list`,
+  dirty: 'Uncommitted changes in the working tree',
+  cacheHit: 'Cache hit rate',
   linesChanged: (added, removed) => `${added} lines added, ${removed} lines removed`
 }
 

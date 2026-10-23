@@ -421,6 +421,7 @@ export class AgentController extends EventEmitter {
   private piBin?: string
   private codemodeExtension?: string
   private questionExtension?: string
+  private wrapUpExtension?: string
   private shellFallbackExtension?: string
   private responseDetailExtension?: string
   private preambleExtension?: string
@@ -609,6 +610,7 @@ export class AgentController extends EventEmitter {
     piBin?: string
     codemodeExtension?: string
     questionExtension?: string
+    wrapUpExtension?: string
     shellFallbackExtension?: string
     responseDetailExtension?: string
     preambleExtension?: string
@@ -679,6 +681,7 @@ export class AgentController extends EventEmitter {
     this.piBin = opts.piBin
     this.codemodeExtension = opts.codemodeExtension
     this.questionExtension = opts.questionExtension
+    this.wrapUpExtension = opts.wrapUpExtension
     this.shellFallbackExtension = opts.shellFallbackExtension
     this.responseDetailExtension = opts.responseDetailExtension
     this.preambleExtension = opts.preambleExtension
@@ -836,6 +839,7 @@ export class AgentController extends EventEmitter {
         ...(this.nativeSessionExtension ? ['--extension', this.nativeSessionExtension] : []),
         ...(nativeTools && this.codemodeExtension ? ['--extension', this.codemodeExtension] : []),
         ...(this.questionExtension ? ['--extension', this.questionExtension] : []),
+        ...(this.wrapUpExtension ? ['--extension', this.wrapUpExtension] : []),
         ...(this.shellFallbackExtension ? ['--extension', this.shellFallbackExtension] : []),
         ...(this.responseDetailExtension ? ['--extension', this.responseDetailExtension] : []),
         ...(this.preambleExtension ? ['--extension', this.preambleExtension] : []),

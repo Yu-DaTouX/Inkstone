@@ -77,6 +77,8 @@ export { StatusDot, StatusSlot, type StatusDotKind, type StatusDotProps, type St
 export { Avatar, avatarInitial, type AvatarProps } from './Avatar'
 export { Meter, MeterRing, ProgressBar, Spinner, type MeterProps, type MeterRingProps, type ProgressBarProps, type SpinnerProps } from './Progress'
 export { MiniBars, Stat, StatGrid, type MiniBarsProps, type StatGridProps, type StatProps } from './Stat'
+export { SegmentBar, Swatch, type DataTone, type SegmentBarProps, type SegmentBarSegment, type SwatchProps } from './SegmentBar'
+export { RailRow, RailValue, type RailGlyph, type RailRowButtonProps, type RailRowProps, type RailTone, type RailValueProps } from './Rail'
 export { Skeleton, type SkeletonProps, type SkeletonShape } from './Skeleton'
 export { ShimmerText, CompletionSweep, type ShimmerTextProps, type CompletionSweepProps } from './Shimmer'
 export { Separator, type SeparatorProps } from './Separator'
