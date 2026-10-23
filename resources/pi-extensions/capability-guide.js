@@ -5,7 +5,7 @@ import { appendReminder } from './request-reminder.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with `yan tasks apply` before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
-const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
+const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change (at most 8 steps, each a short title of 32 characters or fewer; put details in your messages, not in the title), tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
 const CLI_ONLY_GROUPS = [
   '- question: ask the user when information or a decision is missing',
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
@@ -146,14 +146,15 @@ export function withTaskReminder(payload, tools = false) {
 const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
-  description: 'Update the user\'s to-do panel. set: whole list; add: append; complete/uncomplete/remove: 1-based index; clear.',
+  description: 'Update the user\'s to-do panel. set: whole list; add: append; complete/uncomplete/remove: 1-based index; clear. At most 8 items; each text is a short title of 32 characters or fewer.',
   parameters: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['set', 'add', 'complete', 'uncomplete', 'remove', 'clear'] },
       items: {
         type: 'array',
-        items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'] }
+        maxItems: 8,
+        items: { type: 'object', properties: { text: { type: 'string', maxLength: 32 }, done: { type: 'boolean' } }, required: ['text'] }
       },
       index: { type: 'integer', minimum: 1 }
     },
