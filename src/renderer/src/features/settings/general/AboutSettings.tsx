@@ -3,10 +3,10 @@ import { useI18n } from '../../../i18n'
 import { BUILD_INFO, formatBuildTime } from '../../../../../shared/build-info'
 import type { AppUpdateStatus } from '../../../../../shared/app-update'
 import { useStore } from '../../../state/store'
-import { Button, Dialog, Modal, ModalOverlay, Notice, Switch } from '../../../ui'
+import { Button, Dialog, Modal, ModalOverlay, Notice, ProgressBar, Switch } from '../../../ui'
 import { settingsText } from '../settings-text'
 import { generalText, type GeneralText } from './general-text'
-import { piSourceLabel } from './general-model'
+import { piSourceLabel, updatePercent, updateStatusDetail } from './general-model'
 import { SettingsGroup, SettingsRow } from '../root/controls'
 
 const PHASE_TEXT: Record<AppUpdateStatus['phase'], keyof GeneralText> = {
@@ -35,6 +35,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
   const [detecting, setDetecting] = useState(false)
   const [confirmInstall, setConfirmInstall] = useState(false)
   const [error, setError] = useState('')
+  const downloading = status?.phase === 'downloading'
   const alive = useRef(true)
 
   useEffect(() => {
@@ -51,12 +52,12 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
         })
     }
     refresh()
-    const id = window.setInterval(refresh, 5000)
+    const id = window.setInterval(refresh, downloading ? 1000 : 5000)
     return () => {
       alive.current = false
       window.clearInterval(id)
     }
-  }, [])
+  }, [downloading])
 
   const act = (action: 'check' | 'download'): void => {
     setError('')
@@ -92,6 +93,8 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
   }
 
   const phase = status ? text[PHASE_TEXT[status.phase]] : text.aboutPhaseIdle
+  const detail = updateStatusDetail(status)
+  const percent = updatePercent(status)
 
   return (
     <section className="settings-section" data-testid="v3-about-settings">
@@ -117,7 +120,14 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
         <SettingsRow
           settingId="about-update-check"
           label={text.aboutUpdates}
-          description={<span data-testid="v3-about-update-state">{phase}</span>}
+          description={
+            <>
+              <span data-testid="v3-about-update-state">{detail ? `${phase} · ${detail}` : phase}</span>
+              {percent !== null ? (
+                <ProgressBar aria-label={text.aboutPhaseDownloading} value={percent} className="about-update-progress" data-testid="v3-about-update-progress" />
+              ) : null}
+            </>
+          }
         >
           {status?.phase === 'manual' ? (
             <Button
