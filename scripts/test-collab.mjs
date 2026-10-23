@@ -179,9 +179,11 @@ const collabHost = createCollabHost({
       truncated: false
     }
   }),
-  onIncomingRequest: (request) => {
+  onIncomingRequest: async (request) => {
     incoming.push(request)
+    await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
   },
+  stateFile: join(root, 'host-state.json'),
   tempDir: hostTemp
 })
 
@@ -973,7 +975,7 @@ try {
   }
   const lastUpload = () => [...transportLog].reverse().find((entry) => entry.kind === 'upload')
   const readState = async () => JSON.parse(await readFile(svcState, 'utf8'))
-  const makeService = (stateFile) =>
+  const makeService = (stateFile, projects, overrides = {}) =>
     new CollabService({
       stateFile,
       tempDir: svcTemp,
@@ -984,7 +986,7 @@ try {
           : [],
         imports: []
       }),
-      localProjects: async () => [
+      localProjects: async () => projects ?? [
         { id: 'decoy', name: '无关项目', cwd: C },
         { id: 'local-a', name: 'A 仓库', cwd: SC }
       ],
@@ -1024,7 +1026,8 @@ try {
       },
       notifyIncoming: (request) => {
         notified.push(request)
-      }
+      },
+      ...overrides
     })
 
   await check('准备：服务专用仓库、授权连接、transport 与 CollabService', async () => {
@@ -1202,7 +1205,7 @@ try {
     assert.equal((await service.fileDiff('local-a', 'refs/heads/main', 'f.txt')).ok, false)
   })
 
-  await check('receiveRequest：同一分支的旧未处理请求被新请求替换，并通知本机界面', async () => {
+  await check('receiveRequest：同一分支的旧请求保留为 closed 以供离线对账，并通知本机界面', async () => {
     const make = (id, createdAt) => ({
       id,
       direction: 'incoming',
@@ -1222,7 +1225,8 @@ try {
     await service.receiveRequest(make('mr-manual-1', 2000))
     assert.deepEqual(notified.map((item) => item.id), ['mr-manual-0', 'mr-manual-1'])
     const requests = (await service.overview()).requests
-    assert.deepEqual(requests.map((item) => item.id), ['mr-manual-1'])
+    assert.deepEqual(requests.map((item) => item.id), ['mr-manual-1', 'mr-manual-0'])
+    assert.equal(requests.find((item) => item.id === 'mr-manual-0').status, 'closed')
   })
 
   await check('merge 带 requestId：合并成功后状态文件里该请求变 merged；没有 requestId 的合并不改请求', async () => {
@@ -1239,6 +1243,20 @@ try {
     assert.equal(again.merged, false)
     assert.equal((await readState()).requests.find((item) => item.id === 'mr-manual-1').status, 'merged')
     assert.equal((await service.merge('nope', svcTracking)).ok, false)
+  })
+
+  await check('合并请求不能借用其他项目、引用或更新后的提交；状态保存故障不冒充 Git 失败', async () => {
+    const path = join(svcDir, 'save-failure.json')
+    const isolated = makeService(path)
+    await isolated.receiveRequest({ id: 'mr-save-failure', direction: 'incoming', peerName: 'B', localProjectId: 'local-a', projectName: 'A', branch: 'feature', trackingRef: svcTracking, oid: svcFeatureOid, title: '保存故障', note: '', createdAt: 1, status: 'open' })
+    assert.equal((await isolated.merge('decoy', svcTracking, 'mr-save-failure')).ok, false)
+    assert.equal((await isolated.merge('local-a', 'refs/remotes/wrong/feature', 'mr-save-failure')).ok, false)
+    assert.equal((await isolated.merge('local-a', svcTracking, 'mr-nope')).ok, false)
+    await rm(path)
+    await mkdir(path)
+    const result = await isolated.merge('local-a', svcTracking, 'mr-save-failure')
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.match(result.message, /Git 合并已成功.*状态保存失败/)
   })
 
   await check('merge 冲突：返回 conflicts，请求保持 open，overview 显示合并进行中，abortMerge 后恢复', async () => {
@@ -1300,6 +1318,7 @@ try {
     const received = incoming.slice(hostBefore)
     assert.equal(received.length, 1)
     assert.equal(received[0].direction, 'incoming')
+    assert.equal(received[0].peerDeviceId, peerDeviceId)
     assert.equal(received[0].id, outgoingRequestId)
     assert.equal(received[0].localProjectId, 'p4')
     assert.equal(received[0].trackingRef, PUSHED_REF('service-topic'))
@@ -1308,6 +1327,7 @@ try {
     const outgoing = (await service.overview()).requests.find((item) => item.id === outgoingRequestId)
     assert.equal(outgoing.direction, 'outgoing')
     assert.equal(outgoing.peerId, PEER_ID)
+    assert.equal(outgoing.remoteProjectId, 'p4')
     assert.equal(outgoing.peerName, 'B 电脑')
     assert.equal(outgoing.localProjectId, 'local-a')
     assert.equal(outgoing.projectName, '服务项目')
@@ -1318,6 +1338,180 @@ try {
     assert.equal(outgoing.note, '请合并')
     assert.equal(outgoing.status, 'open')
     assert.deepEqual(existsSync(svcTemp) ? await readdir(svcTemp) : [], [])
+  })
+
+  await check('200 条 open 请求每批最多并发 4 条，刷新节流且轮转；跨 update 只更新匹配归属的快照', async () => {
+    const path = join(svcDir, 'bounded-reconcile.json')
+    const template = (await readState()).requests.find((item) => item.id === outgoingRequestId)
+    const requests = Array.from({ length: 200 }, (_, index) => ({ ...template, id: `bounded-${index}` }))
+    await writeFile(path, JSON.stringify({ version: 1, links: [], requests, fetched: [], sessionImports: [] }))
+    let clock = 100_000
+    let active = 0
+    let peak = 0
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const calls = []
+    const batched = makeService(path, [], {
+      now: () => clock,
+      transport: {
+        async call(peerId, url, init) {
+          const id = decodeURIComponent(url.split('/').at(-1))
+          calls.push(id)
+          active += 1
+          peak = Math.max(peak, active)
+          try {
+            assert.equal(peerId, PEER_ID)
+            assert.equal(init.timeoutMs, 3000)
+            await gate
+            return { ok: true, data: { requestId: id, projectId: 'p4', branch: template.branch, oid: template.oid, status: id === 'bounded-0' || id === 'bounded-1' || id === 'bounded-2' || id === 'bounded-3' ? 'merged' : 'open' } }
+          } finally {
+            active -= 1
+          }
+        }
+      }
+    })
+    const first = batched.overview()
+    const simultaneous = batched.overview()
+    try {
+      for (let tries = 0; tries < 100 && calls.length < 4; tries++) await wait(5)
+      assert.equal(calls.length, 4)
+      assert.equal(active, 4)
+      await batched.link(PEER_ID, 'p4', null)
+      await batched.update((draft) => {
+        draft.requests = draft.requests.map((item) => ({ ...item }))
+        draft.requests.find((item) => item.id === 'bounded-1').branch = 'changed-branch'
+        draft.requests.find((item) => item.id === 'bounded-1').remoteProjectId = 'other-project'
+        draft.requests.find((item) => item.id === 'bounded-2').peerId = 'other-peer'
+      })
+      assert.equal((await batched.closeRequest('bounded-3')).ok, true)
+    } finally {
+      release()
+      await Promise.all([first, simultaneous])
+    }
+    const view = await batched.overview()
+    assert.equal(view.requests.find((item) => item.id === 'bounded-0').status, 'merged')
+    assert.equal(view.requests.find((item) => item.id === 'bounded-1').status, 'open')
+    assert.equal(view.requests.find((item) => item.id === 'bounded-2').status, 'open')
+    assert.equal(view.requests.find((item) => item.id === 'bounded-3').status, 'closed')
+    assert.equal(calls.length, 4)
+    clock += 4999
+    await batched.overview()
+    assert.equal(calls.length, 4)
+    clock += 1
+    await batched.overview()
+    assert.deepEqual(calls, Array.from({ length: 8 }, (_, index) => `bounded-${index}`))
+    await batched.overview()
+    assert.equal(calls.length, 8)
+    assert.equal(peak, 4)
+  })
+
+  await check('少量 open 请求成功与失败均冷却 30 秒，冷却后可重试', async () => {
+    const path = join(svcDir, 'cooldown-reconcile.json')
+    const template = (await readState()).requests.find((item) => item.id === outgoingRequestId)
+    const requests = [template, { ...template, id: 'cooldown-error' }, { ...template, id: 'cooldown-throw' }]
+    await writeFile(path, JSON.stringify({ version: 1, links: [], requests, fetched: [], sessionImports: [] }))
+    let clock = 100_000
+    let calls = 0
+    const cooled = makeService(path, [], {
+      now: () => clock,
+      transport: {
+        async call(_peerId, url) {
+          calls += 1
+          if (url.endsWith('cooldown-error')) return { ok: false, error: 'HTTP 404' }
+          if (url.endsWith('cooldown-throw')) throw new Error('离线')
+          return { ok: true, data: { requestId: template.id, projectId: 'p4', branch: template.branch, oid: template.oid, status: 'open' } }
+        }
+      }
+    })
+    await cooled.overview()
+    assert.equal(calls, 3)
+    for (const advance of [0, 5000, 5000, 19_999]) {
+      clock += advance
+      await cooled.overview()
+      assert.equal(calls, 3)
+    }
+    clock += 1
+    await cooled.overview()
+    assert.equal(calls, 6)
+  })
+
+  await check('请求状态读取严格核对认证、授权、项目、设备、请求，拒绝远程改写', async () => {
+    const path = `projects/p4/requests/${outgoingRequestId}`
+    assert.equal((await collabCall(svcGrant.connectionId, path)).body.data.status, 'open')
+    assert.equal((await collabCall(svcGrant.connectionId, path, { token: '' })).status, 401)
+    assert.equal((await collabCall(null, path)).status, 401)
+    assert.equal((await collabCall(conn1.connectionId, path)).status, 403)
+    assert.equal((await collabCall(conn1.connectionId, `projects/p1/requests/${outgoingRequestId}`)).status, 404)
+    assert.equal((await collabCall(svcGrant.connectionId, path, { token: phoneToken })).status, 403)
+    assert.equal((await collabCall(svcGrant.connectionId, `projects/p4/requests/nope`)).status, 404)
+    assert.equal((await collabCall(svcGrant.connectionId, path, { method: 'POST', json: { status: 'merged' } })).status, 404)
+    const request = incoming.find((item) => item.id === outgoingRequestId)
+    const savedDevice = request.peerDeviceId
+    request.peerDeviceId = 'other-device'
+    await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
+    assert.equal((await collabCall(svcGrant.connectionId, path)).status, 404)
+    delete request.peerDeviceId
+    await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
+    assert.equal((await collabCall(svcGrant.connectionId, path)).status, 404)
+    request.peerDeviceId = savedDevice
+    await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
+    const pullOnly = await connectPeer(['pull'], ['p4'])
+    await activate(pullOnly)
+    assert.equal((await collabCall(pullOnly.connectionId, path)).status, 403)
+  })
+
+  await check('merged / closed 离线不丢失，重启后 overview 重新对账；旧对端与伪造响应不改状态', async () => {
+    const request = incoming.find((item) => item.id === outgoingRequestId)
+    const originalCall = transport.call
+    for (const terminal of ['merged', 'closed']) {
+      request.status = 'open'
+      await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
+      const recipient = makeService(join(root, 'host-state.json'), [{ id: 'p4', name: '服务项目', cwd: SH }])
+      const handled = terminal === 'merged' ? await recipient.merge('p4', request.trackingRef, request.id) : await recipient.closeRequest(request.id)
+      assert.equal(handled.ok, true, JSON.stringify(handled))
+      assert.equal(JSON.parse(await readFile(join(root, 'host-state.json'), 'utf8')).requests.find((item) => item.id === request.id).status, terminal)
+      const state = await readState()
+      state.requests.find((item) => item.id === outgoingRequestId).status = 'open'
+      await writeFile(svcState, JSON.stringify(state))
+      let clock = 100_000
+      let reloaded = makeService(svcState, undefined, { now: () => clock })
+      const refresh = () => {
+        clock += 30_000
+        return reloaded.overview()
+      }
+      const originalConnection = svcConnection
+      svcConnection = { state: 'idle' }
+      assert.equal((await refresh()).requests.find((item) => item.id === outgoingRequestId).status, 'open')
+      svcConnection = originalConnection
+      transport.call = async (...args) => args[1].includes('/requests/') ? { ok: false, error: '旧对端 HTTP 404' } : originalCall(...args)
+      assert.equal((await refresh()).requests.find((item) => item.id === outgoingRequestId).status, 'open')
+      transport.call = async (...args) => {
+        if (!args[1].includes('/requests/')) return originalCall(...args)
+        throw new Error('网络断开')
+      }
+      assert.equal((await refresh()).requests.find((item) => item.id === outgoingRequestId).status, 'open')
+      for (const mismatch of [{ projectId: 'wrong-project' }, { requestId: 'other-request' }, { branch: 'other-branch' }, { oid: '0'.repeat(40) }, { status: 'invalid' }]) {
+        transport.call = async (...args) => args[1].includes('/requests/') ? { ok: true, data: { requestId: outgoingRequestId, projectId: 'p4', branch: request.branch, oid: request.oid, status: terminal, ...mismatch } } : originalCall(...args)
+        assert.equal((await refresh()).requests.find((item) => item.id === outgoingRequestId).status, 'open')
+      }
+      transport.call = originalCall
+      reloaded = makeService(svcState)
+      assert.equal((await refresh()).requests.find((item) => item.id === outgoingRequestId).status, terminal)
+      assert.equal((await readState()).requests.find((item) => item.id === outgoingRequestId).status, terminal)
+    }
+    request.status = 'open'
+    await writeFile(join(root, 'host-state.json'), JSON.stringify({ version: 1, requests: incoming }))
+    const state = await readState()
+    state.requests.find((item) => item.id === outgoingRequestId).status = 'open'
+    await writeFile(svcState, JSON.stringify(state))
+    service = makeService(svcState)
+    const legacyPath = join(svcDir, 'legacy-state.json')
+    const legacy = structuredClone(state)
+    delete legacy.requests.find((item) => item.id === outgoingRequestId).remoteProjectId
+    await writeFile(legacyPath, JSON.stringify(legacy))
+    const before = transportLog.length
+    assert.equal((await makeService(legacyPath).overview()).requests.find((item) => item.id === outgoingRequestId).status, 'open')
+    assert.equal(transportLog.length, before)
   })
 
   await check('push 同一提交第二次：走 known=1（不上传包），成功且不带请求时 requestId 为 null', async () => {
