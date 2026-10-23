@@ -81,11 +81,19 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const narrowPanes = useNarrowLayout()
   const paneSessions = useMemo(() => (route === 'chat' ? visiblePaneSessions(split, narrowPanes) : []), [route, split, narrowPanes])
 
+  const currentListed = useStore((s) => !s.session?.sessionFile || s.sessions.some((entry) => entry.path === s.session?.sessionFile))
+
   useEffect(() => {
     if (running) return undefined
     const id = window.setTimeout(() => void refreshSessions(), 800)
     return () => window.clearTimeout(id)
   }, [running, currentSessionFile, refreshSessions])
+
+  useEffect(() => {
+    if (!running || currentListed) return undefined
+    const id = window.setInterval(() => void refreshSessions(), 2500)
+    return () => window.clearInterval(id)
+  }, [running, currentListed, refreshSessions])
 
   const activeRunner = runners.find((r) => r.id === activeRunnerId || r.runId === activeRunnerId)
   const currentProjectId = activeRunner?.projectId

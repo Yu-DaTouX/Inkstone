@@ -18,9 +18,6 @@ export const COMMAND_ACTION_IDS = {
   workspaceFiles: 'workspaceFiles',
   workspaceBrowser: 'workspaceBrowser',
   workspacePreview: 'workspacePreview',
-  settingsAppearance: 'settingsAppearance',
-  settingsModels: 'settingsModels',
-  settingsCapabilities: 'settingsCapabilities',
   settingsUsage: 'settingsUsage'
 } as const
 

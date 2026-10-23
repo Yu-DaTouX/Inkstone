@@ -51,7 +51,6 @@ export function StorageFacts({ info, text }: StorageFactsProps): ReactElement {
           {text.dataLastFailed.replace('{error}', last.error)}
         </span>
       ) : null}
-      {!info.movable ? <span className="settings-row__desc">{text.dataNotMovable}</span> : null}
     </div>
   )
 }
@@ -284,6 +283,7 @@ export function DataSettings(): ReactElement {
             <>
               {local.dataMoveDesc}
               {target ? <span className="settings-row__line">{text.dataTarget.replace('{path}', target)}</span> : null}
+              {info && !info.movable ? <span className="settings-row__line">{text.dataNotMovable}</span> : null}
             </>
           }
         >

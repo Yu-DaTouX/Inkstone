@@ -215,8 +215,11 @@ export function ArtifactLibraryPage(): JSX.Element {
     <div className="artifact-library" data-testid="v3-artifact-library" data-view={view}>
       <PageHeader
         className="artifact-library-head"
-        size="sm"
-        title={t('artifactLibrary.title')}
+        title={
+          <span className="artifact-library-title">
+            <Layers size={18} aria-hidden /> {t('artifactLibrary.title')}
+          </span>
+        }
         description={t('artifactLibrary.subtitle')}
         actions={
           <div className="artifact-library-tools">

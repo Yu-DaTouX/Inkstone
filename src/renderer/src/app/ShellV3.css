@@ -182,6 +182,12 @@
     text-overflow: ellipsis;
   }
 
+  .v3-head-title__text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .v3-head-actions {
     flex: none;
     display: flex;

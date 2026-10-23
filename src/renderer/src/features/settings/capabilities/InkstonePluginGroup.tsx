@@ -94,7 +94,6 @@ export function InkstonePluginGroup(): ReactElement {
               testId="caps-market-plugin"
               name={`${copy.name ?? entry.name}${entry.version ? ` · ${entry.version}` : ''}`}
               meta={metaParts}
-              metaTitle={metaParts.filter(Boolean).join(' · ')}
               actions={
                 <>
                   {entry.kind === 'export' || entry.kind === 'mcp' ? (

@@ -119,7 +119,6 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
       testId="caps-market-desktop-pet"
       name={`${copy.name ?? entry.name} · ${status?.version || DESKTOP_PET_VERSION}`}
       meta={metaParts}
-      metaTitle={metaParts.filter(Boolean).join(' · ')}
       actions={
         <>
           {!installed ? (

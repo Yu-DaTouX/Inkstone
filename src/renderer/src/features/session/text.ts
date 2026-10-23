@@ -109,6 +109,8 @@ export type SessionTextKey =
   | 'stepWebSearched'
   | 'stepWebSearching'
   | 'stepWebSearchFailed'
+  | 'stepTodo'
+  | 'stepTodoItems'
   | 'stepReadDenied'
   | 'stepRunDenied'
   | 'stepEditDenied'
@@ -272,6 +274,8 @@ const ZH: Record<SessionTextKey, string> = {
   stepWebSearched: '联网搜索',
   stepWebSearching: '正在联网搜索',
   stepWebSearchFailed: '联网搜索失败',
+  stepTodo: '更新待办',
+  stepTodoItems: '{n} 项',
   stepReadDenied: '已拒绝读取',
   stepRunDenied: '已拒绝运行',
   stepEditDenied: '已拒绝编辑',
@@ -436,6 +440,8 @@ const EN: Record<SessionTextKey, string> = {
   stepWebSearched: 'Searched the web',
   stepWebSearching: 'Searching the web',
   stepWebSearchFailed: 'Failed to search the web',
+  stepTodo: 'Updated to-dos',
+  stepTodoItems: '{n} items',
   stepReadDenied: 'Denied',
   stepRunDenied: 'Denied',
   stepEditDenied: 'Denied',

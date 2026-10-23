@@ -161,10 +161,19 @@ export interface ToolStepTitle {
   code: boolean
 }
 
+const TODO_NAMES = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
+
+function todoStepTitle(call: Pick<UIToolCall, 'args'>, tt: StepTextKey): ToolStepTitle {
+  const args = call.args as Record<string, unknown> | undefined
+  const items = args && typeof args === 'object' ? (Array.isArray(args.items) ? args.items : Array.isArray(args.todos) ? args.todos : null) : null
+  return { label: tt('stepTodo'), meta: items?.length ? tt('stepTodoItems', { n: items.length }) : '', code: false }
+}
+
 export function toolStepTitle(
   call: Pick<UIToolCall, 'name' | 'args' | 'status' | 'cancelled' | 'denied' | 'output'>,
   tt: StepTextKey
 ): ToolStepTitle {
+  if (TODO_NAMES.has(bareName(call.name))) return todoStepTitle(call, tt)
   const category = stepCategory(call.name)
   const verb = stepVerbKey(call, tt)
   const description = category === 'bash' ? stepDescription(call) : ''

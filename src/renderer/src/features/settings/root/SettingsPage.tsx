@@ -61,6 +61,7 @@ import {
   type SettingsSectionId
 } from '../types'
 import { getSettingsRequest, lastSettingsSection, rememberSettingsSection, subscribeSettingsRequest } from './deep-link'
+import { SECTION_LABEL, capabilitiesTabOfView, settingsNavLabel } from './nav-label'
 import { SETTINGS_SEARCH_ENTRIES } from '../search/entries'
 import {
   getSettingReveal,
@@ -93,27 +94,6 @@ const SECTION_ICON: Record<SettingsIconId, ReactElement> = {
   plug: <Plug size={ICON_SIZE} aria-hidden />,
   wrench: <Wrench size={ICON_SIZE} aria-hidden />,
   puzzle: <Puzzle size={ICON_SIZE} aria-hidden />
-}
-
-const SECTION_LABEL: Record<SettingsSectionId, keyof SettingsText> = {
-  appearance: 'sectionAppearance',
-  session: 'sectionSession',
-  notifications: 'sectionNotifications',
-  models: 'sectionModels',
-  capabilities: 'sectionCapabilities',
-  security: 'sectionSecurity',
-  devices: 'sectionDevices',
-  data: 'sectionData',
-  usage: 'sectionUsage',
-  shortcuts: 'sectionShortcuts',
-  about: 'sectionAbout'
-}
-
-const TAB_LABEL: Record<CapabilitiesTabId, keyof SettingsText> = {
-  skills: 'navSkills',
-  mcp: 'navMcp',
-  tools: 'navTools',
-  market: 'navMarket'
 }
 
 const GROUP_LABEL: Record<SettingsNavGroupId, keyof SettingsText> = {
@@ -256,10 +236,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
   const searchInput = useRef<HTMLInputElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const sectionLabel = useCallback((id: SettingsSectionId): string => text[SECTION_LABEL[id]], [text])
-  const navLabel = useCallback(
-    (entry: SettingsNavEntry): string => (entry.tab ? text[TAB_LABEL[entry.tab]] : text[SECTION_LABEL[entry.section]]),
-    [text]
-  )
+  const navLabel = useCallback((entry: SettingsNavEntry): string => settingsNavLabel(entry, text), [text])
   useRevealScroll(text.revealFolded)
 
   const search = useMemo(() => {
@@ -327,6 +304,13 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
 
   useEffect(() => {
     if (!request) return
+    const tab = capabilitiesTabOfView(request.view)
+    if (tab) {
+      setSection('capabilities')
+      setCapsTab(tab)
+      setLegacy(null)
+      return
+    }
     const resolved = resolveLegacyView(request.view)
     if (resolved.kind === 'section' && resolved.section === 'usage') {
       useStore.getState().closeSettings()

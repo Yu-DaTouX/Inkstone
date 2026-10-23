@@ -26,6 +26,7 @@ export interface ChangesSnapshot {
   targetSha: string | null
   added: number | null
   removed: number | null
+  pathScope?: string | null
   patches: Record<string, GitChangePatch>
 }
 

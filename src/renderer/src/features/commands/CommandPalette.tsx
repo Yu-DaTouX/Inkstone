@@ -27,6 +27,9 @@ import {
   type PaletteMode
 } from './command-items'
 import { commandText } from './command-text'
+import { settingsText } from '../settings/settings-text'
+import { settingsNavEntries } from '../settings/types'
+import { settingsNavLabel } from '../settings/root/nav-label'
 import './command-palette.css'
 
 const SESSION_LIMIT = 8
@@ -52,6 +55,9 @@ interface RunResult {
   keepOpen?: boolean
 }
 
+const SETTINGS_COMMAND_PREFIX = 'settings:'
+const SETTINGS_NAV = settingsNavEntries()
+
 function shortPath(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] || path
@@ -68,6 +74,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement | null 
 function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
   const { lang } = useI18n()
   const text = commandText(lang)
+  const settingsCopy = settingsText(lang)
 
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -189,24 +196,15 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         keywords: 'workspace preview html 工作区 预览',
         shortcut: shortcutKeys('workspaceTab5')
       },
-      {
-        id: COMMAND_ACTION_IDS.settingsAppearance,
-        group: 'action',
-        label: text.settingsAppearance,
-        keywords: 'settings appearance theme 设置 外观 主题'
-      },
-      {
-        id: COMMAND_ACTION_IDS.settingsModels,
-        group: 'action',
-        label: text.settingsModels,
-        keywords: 'settings models providers services 设置 模型 服务'
-      },
-      {
-        id: COMMAND_ACTION_IDS.settingsCapabilities,
-        group: 'action',
-        label: text.settingsCapabilities,
-        keywords: 'settings capabilities mcp skills 设置 能力'
-      },
+      ...SETTINGS_NAV.map((entry): CommandItem => {
+        const name = settingsNavLabel(entry, settingsCopy)
+        return {
+          id: `${SETTINGS_COMMAND_PREFIX}${entry.key}`,
+          group: 'action',
+          label: `${text.settingsPrefix} · ${name}`,
+          keywords: `settings 设置 ${entry.key.replace('-', ' ')} ${name}`
+        }
+      }),
       {
         id: COMMAND_ACTION_IDS.settingsUsage,
         group: 'action',
@@ -224,7 +222,7 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       })
     }
     return items
-  }, [text, theme, running])
+  }, [text, settingsCopy, theme, running])
 
   const sessionItems = useMemo<CommandItem[]>(
     () =>
@@ -358,6 +356,11 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
     const workspaceTab = WORKSPACE_ACTION_TABS[item.id]
     if (workspaceTab) return openWorkspaceTab(workspaceTab)
 
+    if (item.id.startsWith(SETTINGS_COMMAND_PREFIX)) {
+      openSettingsDialog(item.id.slice(SETTINGS_COMMAND_PREFIX.length))
+      return { ok: true }
+    }
+
     switch (item.id) {
       case COMMAND_ACTION_IDS.newSession: {
         onNavigate?.('chat')
@@ -396,15 +399,6 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         useSplitView.getState().open({ sessionId: candidate.id, path: candidate.path }, current)
         return { ok: true }
       }
-      case COMMAND_ACTION_IDS.settingsAppearance:
-        store.openSettings('appearance')
-        return { ok: true }
-      case COMMAND_ACTION_IDS.settingsModels:
-        store.openSettings('models')
-        return { ok: true }
-      case COMMAND_ACTION_IDS.settingsCapabilities:
-        store.openSettings('capabilities')
-        return { ok: true }
       case COMMAND_ACTION_IDS.settingsUsage:
         useUiV3.getState().navigate({ name: 'usage' })
         return { ok: true }

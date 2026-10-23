@@ -110,7 +110,6 @@ export function MarketSection(): ReactElement {
                   name={pkg.name}
                   nameTitle={pkg.name}
                   meta={metaParts}
-                  metaTitle={metaParts.filter(Boolean).join(' · ')}
                   actions={
                     <>
                       <Button variant="secondary" onPress={() => choose(pkg.source)} data-testid="caps-market-choose">

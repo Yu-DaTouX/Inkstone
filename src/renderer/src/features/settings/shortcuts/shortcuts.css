@@ -10,7 +10,7 @@
 
   .settings-shortcut > .ui-setting-row__ctl > .settings-shortcut-keys {
     min-height: var(--size-btn);
-    padding: 0 var(--s-12);
+    padding: 0 calc(var(--s-8) + 1px);
   }
 
   .settings-shortcut-status {

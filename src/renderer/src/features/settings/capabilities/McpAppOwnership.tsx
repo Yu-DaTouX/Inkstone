@@ -214,7 +214,6 @@ function OwnershipRow({
       name={view.title}
       nameTitle={view.title}
       meta={metaParts}
-      metaTitle={metaParts.filter(Boolean).join(' · ')}
       actions={
         view.inkstoneOnly ? null : (
           <Button

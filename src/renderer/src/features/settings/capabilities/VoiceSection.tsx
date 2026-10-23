@@ -138,7 +138,7 @@ export function VoiceStatusPanel({ voice }: { voice: VoiceSetup }): ReactElement
         <Group title={t('voice.title')} desc={t('voice.desc')}>
           <div className="caps-list">
             <Entry
-              name={status?.model?.label ?? t('voice.title')}
+              name={status?.model?.label ?? t('voice.status')}
               meta={[
                 <span key="state" data-testid="voice-state">
                   {status?.ready ? t('voice.ready') : t('voice.notReady')}
@@ -314,7 +314,7 @@ export function VoiceSetupPanel({ voice }: { voice: VoiceSetup }): ReactElement 
 
         {hw ? (
           <Meta>
-            {t('voice.hardware')}：
+            {t('voice.hardware')}
             {t('voice.hardwareLine', {
               cpu: hw.cpuModel || '—',
               threads: hw.threads,

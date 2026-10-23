@@ -291,7 +291,6 @@ function McpServerRow({
       nameTitle={server?.title ?? WINDOWS_MCP_SERVER_ID}
       badge={server ? <Badge>{server.transport}</Badge> : null}
       meta={metaParts}
-      metaTitle={metaParts.filter(Boolean).join(' · ')}
       actions={
         server ? (
           connecting && operation ? (

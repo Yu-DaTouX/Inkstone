@@ -185,7 +185,7 @@ export function AboutSettings({ onShowOnboarding }: AboutSettingsProps = {}): Re
           label={text.aboutPi}
           description={
             <>
-              {text.aboutPiDesc} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
+              {text.aboutPiDesc.replace(/[。.]$/, '')} · {piSourceLabel(piInfo?.source)} {piInfo?.version ?? '—'}
               {piInfo?.error ? ` · ${piInfo.error}` : ''}
             </>
           }

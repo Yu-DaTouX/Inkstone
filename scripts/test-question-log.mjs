@@ -32,6 +32,16 @@ export async function runQuestionLogTests(ok) {
   ok(grouped.filter((m) => m.question).length === 1, '同一轮里连续两条问答合成一条消息', String(grouped.length))
   ok(grouped[2].text === '一？\n\n1\n\n二？\n\n2', '合并后的正文按顺序列出两组问答', JSON.stringify(grouped[2].text))
 
+  const toolAsked = [
+    msg('u1', 'user', 1000, '问我'),
+    { ...msg('a1', 'assistant', 2000, ''), toolCalls: [{ id: 't1', name: 'question', args: { question: ' 选哪个？ ' }, status: 'ok' }] },
+    msg('a2', 'assistant', 5000, '收到')
+  ]
+  const deduped = mergeQuestionLog(toolAsked, [entry('q1', 3000, '选哪个？', '选 A'), entry('q2', 4000, '命令行问的？', '是')])
+  ok(!deduped.some((m) => m.id === 'qlog:q1'), 'question 工具已在对话里显示的问答不再合成用户消息', deduped.map((m) => m.id).join(','))
+  ok(deduped.some((m) => m.id === 'qlog:q2'), '命令行提问的记录照常合成', deduped.map((m) => m.id).join(','))
+  ok(mergeQuestionLog(toolAsked, [entry('q1', 3000, '选哪个？', '选 A')]) === toolAsked, '全部被工具显示过时原样返回')
+
   const noStamp = [msg('u1', 'user', undefined, '没有时间戳')]
   const tailed = mergeQuestionLog(noStamp, [entry('q1', 3000, '问？', '答')])
   ok(tailed[1]?.id === 'qlog:q1', '缺时间戳的历史不参与比较，问答落在末尾', tailed.map((m) => m.id).join(','))

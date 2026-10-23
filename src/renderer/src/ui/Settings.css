@@ -127,8 +127,8 @@
     align-items: center;
     gap: var(--s-8);
     width: 100%;
-    height: var(--size-btn);
-    padding: 0 var(--s-6);
+    min-height: var(--size-btn);
+    padding: var(--s-4) var(--s-6);
     border: 0;
     border-radius: var(--r-sm);
     background: transparent;
@@ -154,9 +154,7 @@
   .ui-settings-nav__label {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   .ui-settings-nav__item[data-active='1'] {

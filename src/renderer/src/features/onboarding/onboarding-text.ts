@@ -29,6 +29,7 @@ export interface OnboardingText {
   themeTitle: string
   themeDesc: string
   themeLabel: string
+  langLabel: string
   themeLight: string
   themeDark: string
   themeNote: string
@@ -82,14 +83,15 @@ const ZH: OnboardingText = {
 
   welcomeTitle: '先把这几件配置好',
   welcomeDesc: '下面几步里的每一项都可以跳过，之后在设置里随时再改。',
-  welcomeAppearance: '外观：主题与阅读偏好',
+  welcomeAppearance: '外观：语言、主题与阅读偏好',
   welcomeSound: '提醒：完成、提问与出错时的声音',
   welcomeAuth: '模型接入：在设置里登录或填写凭证',
   welcomeContext: '上下文：自动压缩的触发上限',
 
   themeTitle: '外观',
-  themeDesc: '先选一个看得舒服的主题，密度、字号与字体稍后可在设置 → 外观里细调。',
+  themeDesc: '先选界面语言和看得舒服的主题，密度、字号与字体稍后可在设置 → 外观里细调。',
   themeLabel: '主题',
+  langLabel: '语言',
   themeLight: '浅色',
   themeDark: '深色',
   themeNote: '切换立即生效。',
@@ -143,14 +145,15 @@ const EN: OnboardingText = {
 
   welcomeTitle: 'A few things to set up',
   welcomeDesc: 'Every step can be skipped and changed later in Settings.',
-  welcomeAppearance: 'Appearance: theme and reading preferences',
+  welcomeAppearance: 'Appearance: language, theme and reading preferences',
   welcomeSound: 'Alerts: sound for done, questions and errors',
   welcomeAuth: 'Model access: sign in or add credentials in Settings',
   welcomeContext: 'Context: the auto-compaction threshold',
 
   themeTitle: 'Appearance',
-  themeDesc: 'Pick a comfortable theme first. Density, font size and typefaces are in Settings → Appearance.',
+  themeDesc: 'Pick your language and a comfortable theme. Density, font size and typefaces are in Settings → Appearance.',
   themeLabel: 'Theme',
+  langLabel: 'Language',
   themeLight: 'Light',
   themeDark: 'Dark',
   themeNote: 'Applies immediately.',

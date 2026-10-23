@@ -39,6 +39,14 @@ export function Empty({ children }: { children: ReactNode }): ReactElement {
 
 export type EntryMetaPart = ReactNode | false | null | undefined
 
+function trimSentenceEnd(part: string): string {
+  return part.replace(/[。.]\s*$/, '')
+}
+
+function joinsWithoutSeparator(part: ReactNode): boolean {
+  return typeof part === 'string' && /^[（(]/.test(part)
+}
+
 export function Entry({
   name,
   nameTitle,
@@ -63,6 +71,9 @@ export function Entry({
   settingId?: string
 }): ReactElement {
   const parts = (meta ?? []).filter((part) => part !== false && part !== null && part !== undefined && part !== '')
+  const title = metaTitle ?? (parts.every((part) => typeof part === 'string')
+    ? parts.map((part, index) => (index < parts.length - 1 ? trimSentenceEnd(part as string) : part)).join(' · ')
+    : undefined)
   return (
     <article className="caps-item" data-testid={testId} data-setting-id={settingId}>
       <div className="caps-item-head">
@@ -74,11 +85,11 @@ export function Entry({
         {control}
       </div>
       {parts.length > 0 ? (
-        <p className="caps-meta caps-meta--line" title={metaTitle}>
+        <p className="caps-meta caps-meta--line" title={title}>
           {parts.map((part, index) => (
             <Fragment key={index}>
-              {index > 0 ? <span className="caps-meta-sep" aria-hidden="true"> · </span> : null}
-              {part}
+              {index > 0 && !joinsWithoutSeparator(part) ? <span className="caps-meta-sep" aria-hidden="true"> · </span> : null}
+              {index < parts.length - 1 && typeof part === 'string' ? trimSentenceEnd(part) : part}
             </Fragment>
           ))}
         </p>

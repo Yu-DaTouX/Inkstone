@@ -1137,7 +1137,7 @@
     border: none;
     background: var(--line);
   }
-  .ui-separator[aria-orientation='horizontal'] {
+  .ui-separator:not([aria-orientation='vertical']) {
     width: 100%;
     height: 1px;
     margin: 0;
@@ -1330,12 +1330,14 @@
     margin: 0;
     color: var(--fg2);
     font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    text-wrap: balance;
   }
   .ui-empty__desc {
     max-width: 48ch;
     margin: 0;
     color: var(--fg3);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+    text-wrap: balance;
   }
   .ui-empty__action {
     display: flex;

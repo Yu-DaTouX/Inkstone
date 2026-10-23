@@ -1,7 +1,7 @@
 @layer features {
 
   .v3-ob-modal {
-    width: min(640px, 100%);
+    width: min(720px, 100%);
   }
 
   .v3-ob-dialog {
@@ -205,8 +205,8 @@
     max-width: 220px;
   }
 
-  .v3-ob-slider[data-disabled] {
-    opacity: 0.5;
+  .v3-ob-row[data-disabled='1'] .v3-ob-row__label {
+    color: var(--fg3);
   }
 
   .v3-ob-select {
@@ -236,7 +236,7 @@
     color: var(--fg3);
   }
 
-  @media (max-width: 560px) {
+  @media (max-width: 760px) {
     .v3-ob-step__name,
     .v3-ob-optional {
       display: none;

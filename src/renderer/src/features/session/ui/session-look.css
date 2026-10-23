@@ -116,6 +116,8 @@
   .v3-act-text { min-width: 0; }
   .v3-act-glyph { color: currentColor; }
   .v3-act-time, .v3-act-model { color: var(--fg3); font-size: var(--t-footnote); font-variant-numeric: tabular-nums; }
+  .v3-msg-meta > * { flex-shrink: 0; white-space: nowrap; }
+  .v3-msg-meta > .v3-act-model { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .v3-caret { display: inline-block; color: var(--fg3); animation: v3-blink var(--dur-blink) steps(2) infinite; }
   @keyframes v3-blink { 50% { opacity: 0; } }
 

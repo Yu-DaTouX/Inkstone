@@ -23,9 +23,7 @@ export interface CommandText {
   workspaceFiles: string
   workspaceBrowser: string
   workspacePreview: string
-  settingsAppearance: string
-  settingsModels: string
-  settingsCapabilities: string
+  settingsPrefix: string
   settingsUsage: string
   roleUser: string
   roleAssistant: string
@@ -65,9 +63,7 @@ const ZH: CommandText = {
   workspaceFiles: '工作区 · 文件',
   workspaceBrowser: '工作区 · 浏览器',
   workspacePreview: '工作区 · 预览',
-  settingsAppearance: '设置 · 外观',
-  settingsModels: '设置 · 模型与服务',
-  settingsCapabilities: '设置 · 能力',
+  settingsPrefix: '设置',
   settingsUsage: '本机用量',
   roleUser: '你',
   roleAssistant: '助手',
@@ -112,9 +108,7 @@ const EN: CommandText = {
   workspaceFiles: 'Workspace · Files',
   workspaceBrowser: 'Workspace · Browser',
   workspacePreview: 'Workspace · Preview',
-  settingsAppearance: 'Settings · Appearance',
-  settingsModels: 'Settings · Models & services',
-  settingsCapabilities: 'Settings · Capabilities',
+  settingsPrefix: 'Settings',
   settingsUsage: 'Usage',
   roleUser: 'You',
   roleAssistant: 'Assistant',

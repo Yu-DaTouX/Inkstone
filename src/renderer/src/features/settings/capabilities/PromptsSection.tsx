@@ -49,7 +49,6 @@ export function PromptsSection(): ReactElement {
                   testId="caps-prompt"
                   name={`/${command.name}`}
                   meta={metaParts}
-                  metaTitle={metaParts.filter(Boolean).join(' · ')}
                 />
               )
             })}

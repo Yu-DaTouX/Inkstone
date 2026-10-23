@@ -75,6 +75,9 @@ async function run() {
       const blank = m.toolStepTitle(call('bash', { command: 'ls', description: '  ' }), zh)
       ok(blank.meta === 'ls' && blank.code === true, '说明为空时回退到命令', blank)
       ok(m.stepDescription(call('bash', { command: 'ls', description: 'x'.repeat(300) })).length === 120, '说明过长时截断')
+      const todo = m.toolStepTitle(call('todos', { action: 'set', items: [{}, {}, {}] }), zh)
+      ok(todo.label === '更新待办' && todo.meta === '3 项', '待办工具显示「更新待办 · N 项」，不露参数名', todo)
+      ok(m.toolStepTitle(call('todos', { action: 'clear' }), en).label === 'Updated to-dos' && m.toolStepTitle(call('todos', { action: 'clear' }), en).meta === '', '没有条目时只显示动作')
       ok(en('stepRead') === 'Read' && en('stepReadRunning') === 'Reading' && en('stepReadFailed') === 'Failed to read', '英文动词照参考的时态写法', [en('stepRead'), en('stepReadRunning'), en('stepReadFailed')])
       ok(en('stepRan') === 'Ran' && en('stepEdited') === 'Edited' && en('stepListed') === 'Listed', '命令/编辑/列目录的完成时', [en('stepRan'), en('stepEdited'), en('stepListed')])
     }

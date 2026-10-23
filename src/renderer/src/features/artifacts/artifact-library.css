@@ -1,7 +1,8 @@
 @layer features {
-  .artifact-library { overflow: auto; min-height: 0; padding: var(--s-32) var(--s-24); }
+  .artifact-library { overflow: auto; min-height: 0; padding: var(--s-20) var(--s-24) var(--s-32); }
   .artifact-library > * { max-width: var(--size-col); margin-left: auto; margin-right: auto; }
-  .artifact-library-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-12); padding: var(--s-16) 0 var(--s-24); }
+  .artifact-library-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-12); margin-bottom: var(--s-16); }
+  .artifact-library-title { display: inline-flex; align-items: center; gap: var(--s-8); }
   .artifact-library-note { margin-top: 0; margin-bottom: 0; color: var(--fg3); font-size: var(--t-footnote); }
   .artifact-library-list { display: grid; gap: 0; margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
   .artifact-library-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--s-12); padding: var(--s-12) var(--s-4); border-bottom: 1px solid var(--line); }

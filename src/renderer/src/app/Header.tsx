@@ -126,7 +126,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
           </IconTip>
         ) : null}
         <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={title}>
-          {title}
+          <span className="v3-head-title__text">{title}</span>
         </h1>
       </div>
 

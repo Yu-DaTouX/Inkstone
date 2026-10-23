@@ -94,6 +94,7 @@ function defaultGitSource(): ChangesGitSource {
         targetSha: res.targetSha ?? null,
         added: res.added ?? null,
         removed: res.removed ?? null,
+        pathScope: res.scope ?? null,
         patches: res.patches ?? {}
       }
     }
@@ -145,9 +146,10 @@ interface ListMeta {
   targetSha: string | null
   added: number | null
   removed: number | null
+  pathScope: string | null
 }
 
-const EMPTY_META: ListMeta = { baseRef: null, baseSha: null, targetSha: null, added: null, removed: null }
+const EMPTY_META: ListMeta = { baseRef: null, baseSha: null, targetSha: null, added: null, removed: null, pathScope: null }
 
 type ListOutcome =
   | { ok: true; items: ChangeItem[]; head: string | null; meta: ListMeta; patches: Record<string, GitChangePatch> }
@@ -237,7 +239,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               baseSha: snapshot.baseSha,
               targetSha: snapshot.targetSha,
               added: snapshot.added,
-              removed: snapshot.removed
+              removed: snapshot.removed,
+              pathScope: snapshot.pathScope ?? null
             },
             patches: snapshot.patches
           }
@@ -551,6 +554,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const compareWith = compareLabel(scope, meta)
   const needsSha = scope.kind === 'commit' && !request
   const showEmpty = items.length === 0
+  const subdir = scope.kind === 'working' && meta.pathScope && meta.pathScope !== '.' ? meta.pathScope : null
+  const elsewhere = repo?.changedCount ?? 0
 
   return (
     <section className={cx('changes-pane', className)} aria-label={text.title}>
@@ -630,9 +635,14 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
           ) : null}
           {!canDiff ? <p className="changes-pane__hint">{text.noDiffChannel}</p> : null}
           {needsSha ? <p className="changes-pane__hint">{text.shaNeeded}</p> : null}
+          {subdir && !listError && !loading ? (
+            <p className="changes-pane__hint" data-testid="changes-subdir-hint">
+              {showEmpty && elsewhere > 0 ? text.subdirClean(subdir, elsewhere) : text.subdirScope(subdir)}
+            </p>
+          ) : null}
           {showEmpty ? (
             scope.kind === 'working' ? (
-              !hasTracked && !listError ? <p className="changes-pane__hint">{text.clean}</p> : null
+              !hasTracked && !listError && !subdir ? <p className="changes-pane__hint">{text.clean}</p> : null
             ) : !loading && !listError && !needsSha ? (
               <p className="changes-pane__hint">{text.scopeEmpty}</p>
             ) : null

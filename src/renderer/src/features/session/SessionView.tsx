@@ -469,6 +469,15 @@ export function SessionView(): JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [setStickNow, virtual])
 
+  const userCount = useMemo(() => effectiveMessages.filter((message) => message.role === 'user').length, [effectiveMessages])
+  const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
+  useEffect(() => {
+    const prev = sentRef.current
+    sentRef.current = { identity: identity ?? null, count: userCount }
+    if (prev.identity !== (identity ?? null) || userCount <= prev.count) return
+    if (!stickRef.current) jumpToBottom()
+  }, [identity, userCount, jumpToBottom])
+
   return (
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'}>
       <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />

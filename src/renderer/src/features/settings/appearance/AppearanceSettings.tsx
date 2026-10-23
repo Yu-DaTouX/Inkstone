@@ -67,7 +67,7 @@ function FontRow({ kind }: { kind: 'ui' | 'code' }): ReactElement {
           { value: 'custom', label: text.fontCustom }
         ]
       : [
-          { value: 'mono', label: `${text.fontMono}（${text.fontDefault}）` },
+          { value: 'mono', label: lang === 'en-US' ? `${text.fontMono} (${text.fontDefault})` : `${text.fontMono}（${text.fontDefault}）` },
           { value: 'maple', label: text.fontMaple },
           { value: 'custom', label: text.fontCustom }
         ]

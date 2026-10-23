@@ -197,6 +197,7 @@ export function ShortcutsSettings(): ReactElement {
           <span className="settings-shortcut-fixed">{text.fixed}</span>
           <span className="settings-shortcut-keys">
             <Keys tokens={['Ctrl', 'Q']} />
+            <span className="settings-shortcut-fixed">{text.or}</span>
             <Keys tokens={['Alt', 'Enter']} />
           </span>
         </SettingRow>

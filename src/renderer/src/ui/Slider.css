@@ -64,6 +64,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .ui-slider[data-disabled] {
+    opacity: 0.4;
+  }
+  .ui-slider[data-disabled] .ui-slider__thumb {
+    cursor: default;
+  }
+
   .ui-slider--invalid .ui-slider__fill,
   .ui-slider--invalid .ui-slider__thumb {
     background: var(--fail);

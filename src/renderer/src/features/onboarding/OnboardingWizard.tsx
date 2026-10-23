@@ -12,6 +12,7 @@ import {
   Terminal
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import { isLang } from '../../i18n/lang'
 import { useStore } from '../../state/store'
 import { contextUsageSummary } from '../workbench/context-pane-view'
 import type { AppSettings } from '../../../../shared/ipc'
@@ -266,11 +267,31 @@ function SettingStep({ text, stepId, settings, patchSettings, onTouch }: Setting
 }
 
 function ThemeStep({ text, settings, patchSettings, onTouch }: StepProps): ReactElement {
+  const { lang, setLang } = useI18n()
   const theme = settings.theme === 'light' ? 'light' : 'dark'
   return (
     <div className="v3-ob-lead">
       <h2 className="v3-ob-lead-title">{text.themeTitle}</h2>
       <p className="v3-ob-lead-desc">{text.themeDesc}</p>
+      <RadioGroup
+        className="v3-ob-choice"
+        label={text.langLabel}
+        value={lang}
+        orientation="horizontal"
+        onChange={(value) => {
+          if (!isLang(value)) return
+          onTouch()
+          setLang(value)
+          void patchSettings({ lang: value })
+        }}
+      >
+        <Radio value="zh-CN" data-testid="v3-ob-lang-zh">
+          中文
+        </Radio>
+        <Radio value="en-US" data-testid="v3-ob-lang-en">
+          English
+        </Radio>
+      </RadioGroup>
       <RadioGroup
         className="v3-ob-choice"
         label={text.themeLabel}
@@ -322,7 +343,7 @@ function SoundStep({ text, settings, patchSettings, onTouch }: StepProps): React
           }}
         />
       </div>
-      <div className="v3-ob-row">
+      <div className="v3-ob-row" data-disabled={sound.enabled ? undefined : '1'}>
         <span className="v3-ob-row__text">
           <span className="v3-ob-row__label">{text.soundVolume}</span>
           <span className="v3-ob-row__desc">{Math.round(shown * 100)}%</span>
@@ -351,7 +372,7 @@ function ContextStep({ text, settings, patchSettings, onTouch }: StepProps): Rea
   const nowText =
     contextWindow > 0 && effective < limit
       ? text.contextClamped.replace('{n}', kTokens(limit)).replace('{e}', kTokens(effective))
-      : text.contextNow.replace('{n}', kTokens(limit))
+      : null
   return (
     <div className="v3-ob-lead">
       <h2 className="v3-ob-lead-title">{text.contextTitle}</h2>
@@ -372,9 +393,11 @@ function ContextStep({ text, settings, patchSettings, onTouch }: StepProps): Rea
           </ListBoxItem>
         ))}
       </Select>
-      <p className="v3-ob-hint" data-testid="v3-ob-ctx-now">
-        {nowText}
-      </p>
+      {nowText ? (
+        <p className="v3-ob-hint" data-testid="v3-ob-ctx-now">
+          {nowText}
+        </p>
+      ) : null}
       <p className="v3-ob-note" role="note">
         {text.contextNote}
       </p>

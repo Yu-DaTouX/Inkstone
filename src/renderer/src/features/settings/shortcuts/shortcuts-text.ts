@@ -9,6 +9,7 @@ export interface ShortcutsText {
   columnState: string
   columnActions: string
   fixed: string
+  or: string
   rebindable: string
   modified: string
   recording: string
@@ -30,6 +31,7 @@ const zh: ShortcutsText = {
   columnState: '改键',
   columnActions: '操作',
   fixed: '固定',
+  or: '或',
   rebindable: '可改',
   modified: '已改',
   recording: '按下新键位…',
@@ -51,6 +53,7 @@ const en: ShortcutsText = {
   columnState: 'Rebind',
   columnActions: 'Actions',
   fixed: 'Fixed',
+  or: 'or',
   rebindable: 'Editable',
   modified: 'Changed',
   recording: 'Press new keys…',

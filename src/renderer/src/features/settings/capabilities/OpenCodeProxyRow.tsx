@@ -113,7 +113,6 @@ export function OpenCodeProxyRow(): ReactElement {
       testId="caps-market-opencode"
       name={`OpenCode 反代${status?.version ? ` · ${status.version}` : ''}`}
       meta={metaParts}
-      metaTitle={metaParts.filter(Boolean).join(' · ')}
       actions={
         <>
           {!installed ? (

@@ -34,6 +34,8 @@ export interface ChangesText {
   shaInvalid: string
   shaNeeded: string
   scopeEmpty: string
+  subdirScope: (path: string) => string
+  subdirClean: (path: string, count: number) => string
   patchBinary: string
   patchTooLarge: string
   imageBefore: string
@@ -104,6 +106,8 @@ export function changesText(lang: string): ChangesText {
       shaInvalid: 'Enter 4–64 hexadecimal characters.',
       shaNeeded: 'Enter a commit sha to view its changes.',
       scopeEmpty: 'No changes in this scope.',
+      subdirScope: (path) => `Only changes under ${path} are listed; Stage all and Commit act on the whole repository.`,
+      subdirClean: (path, count) => `No changes under ${path}. The repository has ${count} other changed ${count === 1 ? 'file' : 'files'}; Stage all and Commit act on all of them.`,
       patchBinary: 'Binary file — no text diff.',
       patchTooLarge: 'This file is too large to show a diff.',
       imageBefore: 'Before',
@@ -172,6 +176,8 @@ export function changesText(lang: string): ChangesText {
     shaInvalid: '请输入 4–64 位十六进制字符。',
     shaNeeded: '输入提交 sha 查看该提交的更改。',
     scopeEmpty: '这个范围内没有更改。',
+    subdirScope: (path) => `只列出 ${path} 下的改动；「全部暂存」和「提交」作用于整个仓库。`,
+    subdirClean: (path, count) => `${path} 下没有改动。仓库其他位置还有 ${count} 处改动，「全部暂存」和「提交」会包含它们。`,
     patchBinary: '二进制文件，没有文本 diff。',
     patchTooLarge: '文件过大，不显示 diff。',
     imageBefore: '之前',

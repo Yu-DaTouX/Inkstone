@@ -464,7 +464,7 @@ export function ModelsSettings(): ReactElement {
                   <code className="ms-file-path" title={fileInfo.path}>{fileInfo.path}</code>
                   <span className="ms-file-count">
                     {' · '}
-                    {fileInfo.exists ? t('auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
+                    {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
                   </span>
                 </span>
               ) : null}

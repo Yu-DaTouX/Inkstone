@@ -125,6 +125,7 @@ export function PiRetryDetailRows({
 
 function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; text: PiNativeText }): ReactElement {
   const t = useT()
+  const { lang } = useI18n()
   const models = useStore((s) => s.models)
   const levels = useMemo(() => state.settings?.modelThinkingLevels ?? {}, [state.settings])
   const [model, setModel] = useState('')
@@ -140,7 +141,7 @@ function ModelThinkingLevels({ state, text }: { state: PiNativeSettingsState; te
   return (
     <SettingsGroup
       title={text.thinking}
-      description={entries.length ? text.thinkingDesc : `${text.thinkingDesc} ${text.thinkingEmpty}`}
+      description={entries.length ? text.thinkingDesc : `${text.thinkingDesc}${lang === 'en-US' ? ' ' : ''}${text.thinkingEmpty}`}
       settingId="models-thinking-levels"
     >
       {entries.map(([key, value]) => (
@@ -297,7 +298,7 @@ export function PiProjectTrustGroup({ title }: { title?: string }): ReactElement
   ]
   return (
     <SettingsGroup title={title ?? text.trust}>
-      <SettingsRow settingId="security-project-trust" label={text.trust} description={`${text.trustDesc} ${text.effectNote}`}>
+      <SettingsRow settingId="security-project-trust" label={text.trust} description={`${text.trustDesc}${lang === 'en-US' ? ' ' : ''}${text.effectNote}`}>
         <Segmented
           label={text.trust}
           value={state.settings.defaultProjectTrust}
@@ -322,7 +323,7 @@ export function PiShareDestinationGroup({ title }: { title?: string }): ReactEle
   ]
   return (
     <SettingsGroup title={title ?? text.share}>
-      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc} ${text.effectNote}`}>
+      <SettingsRow settingId="data-share-destination" label={text.share} description={`${text.shareDesc}${lang === 'en-US' ? ' ' : ''}${text.effectNote}`}>
         <Segmented
           label={text.share}
           value={state.settings.sessionShareDestination}

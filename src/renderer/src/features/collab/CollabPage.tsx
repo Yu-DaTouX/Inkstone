@@ -1456,7 +1456,7 @@ export function CollabPage(): ReactElement {
             {text.peerMissing}
           </Notice>
         ) : null}
-        {overview && peers.length === 0 ? <EmptyState size="sm" title={text.peersEmpty} /> : null}
+        {overview && peers.length === 0 ? <EmptyState size="sm" align="start" title={text.peersEmpty} /> : null}
         {peers.length ? (
           <ul className="collab-peer-list">
             {peers.map((peer) => (
@@ -1482,7 +1482,7 @@ export function CollabPage(): ReactElement {
           {text.projectsTitle}
         </h2>
         {connectedPeers.length === 0 ? (
-          <EmptyState size="sm" title={text.projectsEmpty} />
+          <EmptyState size="sm" align="start" title={text.projectsEmpty} />
         ) : (
           connectedPeers.map(({ peer, grant }) => (
             <div className="collab-remote" key={peer.id} data-testid={`v3-collab-remote-${peer.id}`}>

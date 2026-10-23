@@ -414,7 +414,7 @@
     align-items: center;
     gap: var(--s-2);
     flex: 1 1 0;
-    min-width: 0;
+    min-width: min-content;
     overflow: hidden;
     padding: var(--s-4);
     margin: calc(-1 * var(--s-4));
@@ -520,8 +520,7 @@
   }
 
   .composer-permission {
-    min-width: 0;
-    max-width: 100%;
+    flex: none;
   }
 
   .cp-label {
@@ -814,6 +813,17 @@
   @container (max-width: 620px) {
     .composer-bar .ctx-ring-text {
       display: none;
+    }
+  }
+
+  @container (max-width: 520px) {
+    .composer-permission .cp-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
   }
 
