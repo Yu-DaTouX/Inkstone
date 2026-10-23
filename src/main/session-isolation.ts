@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { gitRun, resolveRepo } from './git-service'
 import { createWorktree } from './git-worktree'
 import { YAN_DIR } from './paths'
@@ -29,12 +29,23 @@ export type SyncOutcome =
   | { ok: true; action: 'merged' | 'nothing'; detail?: string }
   | { ok: false; action: 'blocked'; detail: string }
 
+export type PendingChanges =
+  | { ok: true; files: number; commits: number }
+  | { ok: false; detail: string }
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.slice(0, MAX_TEXT) : ''
 }
 
 export function isolationCwdKey(value: string): string {
   return String(value ?? '').replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
+}
+
+export function isolatedSessionCwd(record: Pick<AutoIsolationRecord, 'worktree' | 'repoRoot' | 'mainCwd'>): string {
+  if (!record.repoRoot) return record.worktree
+  const sub = relative(resolve(record.repoRoot), resolve(record.mainCwd))
+  if (!sub || sub.startsWith('..') || isAbsolute(sub)) return record.worktree
+  return join(record.worktree, sub)
 }
 
 export function autoIsolationBranch(now: Date = new Date()): string {
@@ -110,7 +121,7 @@ export class AutoIsolationStore {
     const key = isolationCwdKey(cwd)
     if (!key) return null
     await this.load()
-    return this.records.find((r) => isolationCwdKey(r.worktree) === key) ?? null
+    return this.records.find((r) => isolationCwdKey(r.worktree) === key || isolationCwdKey(isolatedSessionCwd(r)) === key) ?? null
   }
 
   async bySession(sessionId: string): Promise<AutoIsolationRecord | null> {
@@ -215,18 +226,17 @@ export async function isolateCwdForConflict(
     return { ok: false, reason: created.failure?.message ?? '创建工作树失败' }
   }
 
-  return {
-    ok: true,
-    record: {
-      worktree: created.path,
-      repoRoot: repo.root,
-      mainCwd: dir,
-      branch,
-      baseBranch,
-      sessionId: text(options.sessionId),
-      createdAt: Date.now()
-    }
+  const record: AutoIsolationRecord = {
+    worktree: created.path,
+    repoRoot: repo.root,
+    mainCwd: dir,
+    branch,
+    baseBranch,
+    sessionId: text(options.sessionId),
+    createdAt: Date.now()
   }
+  await mkdir(isolatedSessionCwd(record), { recursive: true }).catch(() => undefined)
+  return { ok: true, record }
 }
 
 export async function discardUnusedIsolation(record: AutoIsolationRecord): Promise<boolean> {
@@ -245,39 +255,46 @@ export async function discardUnusedIsolation(record: AutoIsolationRecord): Promi
   return true
 }
 
-export async function syncIsolationBack(record: AutoIsolationRecord): Promise<SyncOutcome> {
-  if (!existsSync(record.worktree)) {
-    return { ok: false, action: 'blocked', detail: '隔离工作树已经不在磁盘上（可能已被移除）' }
-  }
-  const short = record.branch.replace(/^yan\/auto-/, '').slice(-6) || record.branch
+const GONE = '隔离工作树已经不在磁盘上（可能已被移除）'
 
+function shortName(record: AutoIsolationRecord): string {
+  return record.branch.replace(/^yan\/auto-/, '').slice(-6) || record.branch
+}
+
+export async function pendingIsolationChanges(record: AutoIsolationRecord): Promise<PendingChanges> {
+  if (!existsSync(record.worktree)) return { ok: false, detail: GONE }
   const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
-  if (!dirty.ok) {
-    return { ok: false, action: 'blocked', detail: dirty.error ?? '读不出隔离工作树的状态' }
+  if (!dirty.ok) return { ok: false, detail: dirty.error ?? '读不出隔离工作树的状态' }
+  const files = dirty.stdout.split(/\r?\n/).filter((line) => line.trim()).length
+  const base = record.baseBranch || 'HEAD'
+  const ahead = await gitRun(record.repoRoot || record.mainCwd, ['rev-list', '--count', `${base}..${record.branch}`], {
+    allowFailure: true,
+    timeout: 30_000
+  })
+  if (!ahead.ok) return { ok: false, detail: ahead.error ?? `找不到隔离分支 ${record.branch}` }
+  return { ok: true, files, commits: Number(ahead.stdout.trim() || '0') }
+}
+
+async function squashOntoBase(record: AutoIsolationRecord, mainHead: string): Promise<SyncOutcome | null> {
+  const base = await gitRun(record.worktree, ['merge-base', mainHead, 'HEAD'], { allowFailure: true, timeout: 30_000 })
+  if (!base.ok || !base.stdout.trim()) {
+    return { ok: false, action: 'blocked', detail: base.error ?? `隔离分支和 ${mainHead} 没有共同基线` }
   }
-  if (dirty.stdout.trim()) {
-    const add = await gitRun(record.worktree, ['add', '-A', '--', '.'], {
-      allowFailure: true,
-      timeout: GIT_WRITE_TIMEOUT
-    })
-    if (!add.ok) {
-      return { ok: false, action: 'blocked', detail: add.error ?? '隔离工作树暂存失败' }
-    }
-    const commit = await gitRun(
-      record.worktree,
-      [
-        ...(await identityArgs(record.worktree)),
-        'commit',
-        '--no-verify',
-        '-m',
-        `砚：隔离会话自动提交（${short}）`
-      ],
-      { allowFailure: true, timeout: GIT_WRITE_TIMEOUT }
-    )
-    if (!commit.ok) {
-      return { ok: false, action: 'blocked', detail: commit.error ?? '隔离工作树自动提交失败' }
-    }
-  }
+  const reset = await gitRun(record.worktree, ['reset', '--soft', base.stdout.trim()], { allowFailure: true, timeout: GIT_WRITE_TIMEOUT })
+  if (!reset.ok) return { ok: false, action: 'blocked', detail: reset.error ?? '整理隔离分支提交失败' }
+  const staged = await gitRun(record.worktree, ['diff', '--cached', '--quiet'], { allowFailure: true, timeout: 30_000 })
+  if (staged.ok) return { ok: true, action: 'nothing' }
+  const commit = await gitRun(
+    record.worktree,
+    [...(await identityArgs(record.worktree)), 'commit', '--no-verify', '-m', `砚：合入隔离会话改动（${shortName(record)}）`],
+    { allowFailure: true, timeout: GIT_WRITE_TIMEOUT }
+  )
+  if (!commit.ok) return { ok: false, action: 'blocked', detail: commit.error ?? '隔离工作树提交失败' }
+  return null
+}
+
+export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<SyncOutcome> {
+  if (!existsSync(record.worktree)) return { ok: false, action: 'blocked', detail: GONE }
 
   const mainUnmerged = await gitRun(record.mainCwd, ['diff', '--name-only', '--diff-filter=U'], {
     allowFailure: true,
@@ -286,18 +303,6 @@ export async function syncIsolationBack(record: AutoIsolationRecord): Promise<Sy
   if (mainUnmerged.stdout.trim()) {
     return { ok: false, action: 'blocked', detail: '主工作目录还有未解决的冲突，先处理它' }
   }
-
-  const ahead = await gitRun(record.mainCwd, ['rev-list', '--count', `HEAD..${record.branch}`], {
-    allowFailure: true,
-    timeout: 30_000
-  })
-  if (!ahead.ok) {
-    return { ok: false, action: 'blocked', detail: ahead.error ?? `找不到隔离分支 ${record.branch}` }
-  }
-  if (Number(ahead.stdout.trim() || '0') === 0) {
-    return { ok: true, action: 'nothing' }
-  }
-
   const mainHead = await currentBranch(record.mainCwd)
   if (!mainHead || mainHead === record.branch) {
     return {
@@ -310,9 +315,24 @@ export async function syncIsolationBack(record: AutoIsolationRecord): Promise<Sy
     return {
       ok: false,
       action: 'blocked',
-      detail: `主工作目录现在在 ${mainHead}，隔离基线是 ${record.baseBranch}；切回基线分支后会自动接着合回`
+      detail: `主工作目录现在在 ${mainHead}，隔离基线是 ${record.baseBranch}；切回基线分支后再合入`
     }
   }
+
+  const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
+  if (!dirty.ok) return { ok: false, action: 'blocked', detail: dirty.error ?? '读不出隔离工作树的状态' }
+  if (dirty.stdout.trim()) {
+    const add = await gitRun(record.worktree, ['add', '-A', '--', '.'], { allowFailure: true, timeout: GIT_WRITE_TIMEOUT })
+    if (!add.ok) return { ok: false, action: 'blocked', detail: add.error ?? '隔离工作树暂存失败' }
+  }
+  const squashed = await squashOntoBase(record, mainHead)
+  if (squashed) return squashed
+
+  const fastForward = await gitRun(record.mainCwd, ['merge', '--ff-only', record.branch], {
+    allowFailure: true,
+    timeout: GIT_WRITE_TIMEOUT
+  })
+  if (fastForward.ok) return { ok: true, action: 'merged' }
 
   const merge = await gitRun(
     record.mainCwd,

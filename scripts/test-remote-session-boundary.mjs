@@ -74,6 +74,7 @@ try {
     runtimeOf: () => ({ generation, sessionId }),
     statuses: () => [{ id: 'r1', runId: 'r1', sessionId, generation, projectId: 'P', cwd: '/fixture/P' }],
     hasBusyCwd: () => false,
+    blocksConcurrentRun: () => false,
     admitExecute: () => { reservations++; return { ok: true, token: 1 } },
     releaseExecute: () => { reservations-- }
   }

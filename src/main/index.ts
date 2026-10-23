@@ -119,7 +119,8 @@ import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
-import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
+import { allowsConcurrentSessions, SHARED_CWD_NOTICE } from './cwd-sharing'
+import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolatedSessionCwd, isolationCwdKey, mergeIsolationBack, pendingIsolationChanges } from './session-isolation'
 import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
@@ -848,13 +849,14 @@ let isolationSweepAt = 0
 const ISOLATION_SYNC_MIN_INTERVAL = 3000
 const isolationBlockedReason = new Map<string, string>()
 
-const isolationView = new Map<string, { state: 'waiting' | 'blocked'; branch: string }>()
+type IsolationViewState = NonNullable<RunnerStatus['isolation']>
+const isolationView = new Map<string, { state: IsolationViewState; branch: string }>()
 
-function isolationOf(cwd: string): { state: 'waiting' | 'blocked'; branch: string } | undefined {
+function isolationOf(cwd: string): { state: IsolationViewState; branch: string } | undefined {
   return isolationView.get(isolationCwdKey(cwd))
 }
 
-function setIsolationView(worktree: string, view: { state: 'waiting' | 'blocked'; branch: string } | null): void {
+function setIsolationView(worktree: string, view: { state: IsolationViewState; branch: string } | null): void {
   const key = isolationCwdKey(worktree)
   const before = isolationView.get(key)
   if (view === null) {
@@ -870,20 +872,32 @@ function setIsolationView(worktree: string, view: { state: 'waiting' | 'blocked'
 
 function pushIsolationStatus(): void {
   const items = [...isolationView.values()]
-  const waiting = items.filter((x) => x.state === 'waiting').length
+  const ready = items.filter((x) => x.state === 'ready').length
   const blocked = items.filter((x) => x.state === 'blocked').length
   const text =
-    items.length === 0
+    ready + blocked === 0
       ? undefined
       : blocked > 0
-        ? `隔离工作树：${blocked} 个合回被挡，${waiting} 个等主干空闲`
-        : `隔离工作树：${waiting} 个等主干空闲后自动合回`
+        ? `隔离工作树：${blocked} 个合入被挡，${ready} 个改动待确认合入`
+        : `隔离工作树：${ready} 个改动待确认合入`
   push({ ch: 'status', payload: { key: 'isolation', text } })
 }
 
 async function initializeIsolationView(): Promise<void> {
   const records = await autoIsolations.all().catch(() => [])
-  for (const record of records) setIsolationView(record.worktree, { state: 'waiting', branch: record.branch })
+  for (const record of records) setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
+  scheduleIsolationRefresh()
+}
+
+let isolationRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleIsolationRefresh(): void {
+  if (isolationRefreshTimer) return
+  const wait = Math.max(0, ISOLATION_SYNC_MIN_INTERVAL - (Date.now() - isolationSweepAt))
+  isolationRefreshTimer = setTimeout(() => {
+    isolationRefreshTimer = null
+    void refreshIsolationViews()
+  }, wait)
 }
 
 async function discardUnusedIsolations(): Promise<void> {
@@ -903,56 +917,77 @@ async function discardUnusedIsolations(): Promise<void> {
     discard: discardUnusedIsolation,
     forget: (record) => autoIsolations.remove(record.worktree)
   }).catch(() => [])
-  for (const record of discarded) setIsolationView(record.worktree, null)
+  for (const record of discarded) setIsolationView(isolatedSessionCwd(record), null)
   if (discarded.length) pushRunners()
 }
 
-async function syncPendingIsolations(): Promise<void> {
-  if (!runners || !win || win.isDestroyed()) return
-  if (Date.now() - isolationSweepAt < ISOLATION_SYNC_MIN_INTERVAL) return
+async function refreshIsolationViews(): Promise<void> {
   isolationSweepAt = Date.now()
+  if (!runners || !win) {
+    scheduleIsolationRefresh()
+    return
+  }
+  if (win.isDestroyed()) return
   await discardUnusedIsolations()
   const records = await autoIsolations.all().catch(() => [])
   for (const record of records) {
-    if (runners.hasBusyCwd(record.mainCwd)) {
-      setIsolationView(record.worktree, { state: 'waiting', branch: record.branch })
+    if (runners.hasBusyCwd(isolatedSessionCwd(record))) {
+      setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
       continue
     }
-    const result = await syncIsolationBack(record)
-    if (result.ok && result.action === 'merged') {
+    const changes = await pendingIsolationChanges(record)
+    const pending = changes.ok && changes.files + changes.commits > 0
+    if (!pending) {
       isolationBlockedReason.delete(record.worktree)
-      setIsolationView(record.worktree, null)
-      await autoIsolations.markSynced(record.worktree).catch(() => undefined)
-      push({
-        ch: 'notify',
-        payload: {
-          id: `iso-merged-${Date.now()}`,
-          method: 'notify',
-          notifyType: 'info',
-          message: `隔离工作树 ${record.branch} 的改动已自动合回主干。`
-        }
-      })
+      setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
       continue
     }
-    if (!result.ok && result.action === 'blocked') {
-      setIsolationView(record.worktree, { state: 'blocked', branch: record.branch })
-      if (isolationBlockedReason.get(record.worktree) === result.detail) continue
-      isolationBlockedReason.set(record.worktree, result.detail)
-      push({
-        ch: 'notify',
-        payload: {
-          id: `iso-blocked-${Date.now()}`,
-          method: 'notify',
-          notifyType: 'warning',
-          message: `自动合回暂缓（${record.branch}）：${result.detail}。改动仍在隔离工作树里，没有丢；在隔离工作树里并入主干、把冲突解掉后，后续轮次会自动接着合回。`
-        }
-      })
-    }
+    const state: IsolationViewState = isolationBlockedReason.has(record.worktree) ? 'blocked' : 'ready'
+    const wasPending = isolationOf(isolatedSessionCwd(record))?.state
+    setIsolationView(isolatedSessionCwd(record), { state, branch: record.branch })
+    if (wasPending === 'ready' || wasPending === 'blocked') continue
+    push({
+      ch: 'notify',
+      payload: {
+        id: `iso-ready-${Date.now()}`,
+        method: 'notify',
+        notifyType: 'info',
+        message: `隔离工作树 ${record.branch} 里有改动等你确认：打开那个会话，在输入框上方选「合入主干」。`
+      }
+    })
   }
-  const alive = new Set(records.map((record) => isolationCwdKey(record.worktree)))
+  const alive = new Set(records.map((record) => isolationCwdKey(isolatedSessionCwd(record))))
   for (const key of [...isolationView.keys()]) {
     if (!alive.has(key)) setIsolationView(key, null)
   }
+}
+
+const sharedCwdWarned = new Set<string>()
+
+function warnSharedCwdOnce(runnerId: string, cwd: string, registry: RunnerRegistry): void {
+  if (sharedCwdWarned.has(runnerId) || !registry.hasBusyCwd(cwd, runnerId) || !allowsConcurrentSessions(cwd)) return
+  sharedCwdWarned.add(runnerId)
+  push({
+    ch: 'notify',
+    payload: { id: `shared-cwd-${runnerId}`, method: 'notify', notifyType: 'warning', message: SHARED_CWD_NOTICE }
+  })
+}
+
+async function mergeIsolationForCwd(cwd: string): Promise<{ ok: boolean; error?: string }> {
+  const record = typeof cwd === 'string' ? await autoIsolations.byWorktree(cwd).catch(() => null) : null
+  if (!record) return { ok: false, error: '这个会话不在砚建的隔离工作树里' }
+  if (runners?.hasBusyCwd(isolatedSessionCwd(record))) return { ok: false, error: '这个会话还在运行，等它停下再合入' }
+  if (runners?.hasBusyCwd(record.mainCwd)) return { ok: false, error: '主工作目录里还有会话在运行，等它停下再合入' }
+  const result = await mergeIsolationBack(record)
+  if (!result.ok) {
+    isolationBlockedReason.set(record.worktree, result.detail)
+    setIsolationView(isolatedSessionCwd(record), { state: 'blocked', branch: record.branch })
+    return { ok: false, error: `${result.detail}。改动仍在隔离工作树里，没有丢。` }
+  }
+  isolationBlockedReason.delete(record.worktree)
+  setIsolationView(isolatedSessionCwd(record), { state: 'waiting', branch: record.branch })
+  if (result.action === 'merged') await autoIsolations.markSynced(record.worktree).catch(() => undefined)
+  return { ok: true }
 }
 
 function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnvelope | null): void {
@@ -970,7 +1005,7 @@ function pushFrom(runnerId: string, msg: MainPush, expectedRuntime?: RuntimeEnve
   })
   if (msg.ch === 'state' || msg.ch === 'proc') refreshTrayMenu()
   if (msg.ch === 'state' || msg.ch === 'proc') requestPiPackageActivationTick()
-  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) void syncPendingIsolations()
+  if (msg.ch === 'state' && (msg.payload as SessionState)?.isAgentRunning === false) scheduleIsolationRefresh()
   if (msg.ch === 'state') pushRunners()
   if (msg.ch === 'ui-request' || msg.ch === 'ui-resolved') pushRunners()
 }
@@ -1885,6 +1920,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
   agentResponseDetail = settings.responseDetail
 
   runners = new RunnerRegistry({
+    sharesCwd: allowsConcurrentSessions,
     isSessionVisible: (state) => runnerVisibility.includes(state),
     isParentProtected: (sessionId, runId) => subagentService.current()?.hasParentRun(sessionId, runId) ?? false,
     hasRunningSubagents: (sessionId) => (subagentService.current()?.runningSiblings({ parentSessionId: sessionId }) ?? 0) > 0,
@@ -1915,21 +1951,21 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       if (target.activate === false || target.hidden) return null
       if (runners && runners.size >= runners.limit) return null
       const existing = target.sessionId ? await autoIsolations.bySession(target.sessionId).catch(() => null) : null
-      if (existing) return { cwd: existing.worktree }
+      if (existing) return { cwd: isolatedSessionCwd(existing) }
       const outcome = await isolateCwdForConflict(target.cwd, { sessionId: target.sessionId })
       if (!outcome.ok) return { reason: outcome.reason }
       await autoIsolations.add(outcome.record).catch(() => undefined)
-      setIsolationView(outcome.record.worktree, { state: 'waiting', branch: outcome.record.branch })
+      setIsolationView(isolatedSessionCwd(outcome.record), { state: 'waiting', branch: outcome.record.branch })
       push({
         ch: 'notify',
         payload: {
           id: `iso-created-${Date.now()}`,
           method: 'notify',
           notifyType: 'info',
-          message: `同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}），结束后会自动合回主干。`
+          message: `同一目录已有会话在运行，本会话改用隔离工作树 ${outcome.record.worktree}（分支 ${outcome.record.branch}）。改动留在隔离分支，会话停下后由你确认再合入主干。`
         }
       })
-      return { cwd: outcome.record.worktree }
+      return { cwd: isolatedSessionCwd(outcome.record) }
     },
     createAgent: (id, cwd, generation) => {
       const agent: AgentController = new AgentController({
@@ -2318,6 +2354,7 @@ function registerIpc(): void {
       const admission = registry.admitExecute(id)
       if (!admission.ok) return admission
       admissionToken = admission.token
+      warnSharedCwdOnce(id, agent.workingDirectory, registry)
     }
     try {
       if (admissionToken !== undefined && (await getSettings()).checkpointsEnabled !== false) {
@@ -2386,6 +2423,7 @@ function registerIpc(): void {
     await ac()?.abortBash()
   })
 
+  handle('yan:mergeIsolation', (cwd: string) => mergeIsolationForCwd(cwd))
   handle('yan:setVisibleRunnerSessions', (sessions: unknown) => {
     runners?.noteVisibleActivity()
     return runnerVisibility.update(sessions)

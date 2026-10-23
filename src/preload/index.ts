@@ -197,6 +197,7 @@ const api: YanBridge = {
   setVisibleRunnerSessions: (sessions) => invoke<boolean>('yan:setVisibleRunnerSessions', sessions),
   nativeSession: (request) => invoke<Awaited<ReturnType<YanBridge['nativeSession']>>>('yan:nativeSession', request),
   runnerStatuses: () => invoke<RunnerStatus[]>('yan:runnerStatuses'),
+  mergeIsolation: (cwd) => invoke<Awaited<ReturnType<YanBridge['mergeIsolation']>>>('yan:mergeIsolation', cwd),
   stopRunner: (id) => invoke<boolean>('yan:stopRunner', id),
   runs: {
     snapshot: () => invoke<{ revision: number; runs: RunSnapshot[] }>('yan:runs:snapshot'),

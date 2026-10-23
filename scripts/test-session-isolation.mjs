@@ -38,8 +38,10 @@ export async function runSessionIsolationTests(ok) {
     sanitizeAutoIsolationDocument,
     AutoIsolationStore,
     isolateCwdForConflict,
-    syncIsolationBack,
-    isolationCwdKey
+    mergeIsolationBack,
+    pendingIsolationChanges,
+    isolationCwdKey,
+    isolatedSessionCwd
   } = await import('../out/test/session-isolation.mjs')
 
   const stamp = new Date(2026, 8, 25, 14, 30, 12, 7)
@@ -97,6 +99,21 @@ export async function runSessionIsolationTests(ok) {
     ok(existsSync(join(record.worktree, 'a.txt')), '隔离工作树里有 HEAD 的内容', record.worktree)
     ok(record.baseBranch === 'main', '记下主干分支', record.baseBranch)
     ok(record.mainCwd === repo && record.branch.startsWith('yan/auto-'), '记录含主干目录与自动分支名', record.branch)
+    ok(isolatedSessionCwd(record) === record.worktree, '在仓库根目录起的会话，隔离后就在工作树根')
+    const subdir = join(repo, 'docs', 'notes')
+    mkdirSync(subdir, { recursive: true })
+    const nested = await isolateCwdForConflict(subdir, { sessionId: 's-iso-sub' })
+    ok(nested.ok === true, '仓库子目录也能隔离', JSON.stringify(nested))
+    if (nested.ok) {
+      const nestedCwd = isolatedSessionCwd(nested.record)
+      ok(nestedCwd === join(nested.record.worktree, 'docs', 'notes'), '子目录会话映射到工作树里同一个子目录', nestedCwd)
+      ok(existsSync(nestedCwd), '工作树里没有的子目录会先建出来')
+      ok(nested.record.mainCwd === subdir, '记录仍指向原来的子目录', nested.record.mainCwd)
+      git(repo, ['worktree', 'remove', '--force', nested.record.worktree])
+      git(repo, ['branch', '-D', nested.record.branch])
+    }
+    ok(isolatedSessionCwd({ worktree: '/w', repoRoot: '', mainCwd: '/m' }) === '/w', '旧记录没有仓库根时退回工作树根')
+    ok(isolatedSessionCwd({ worktree: join(root, 'w'), repoRoot: repo, mainCwd: root }) === join(root, 'w'), '主目录不在仓库内时退回工作树根')
     const listed = gitOut(repo, ['worktree', 'list', '--porcelain'])
     ok(listed.includes(record.worktree.replace(/\\/g, '/')), 'git 认这个工作树', listed.split('\n')[0])
 
@@ -118,11 +135,25 @@ export async function runSessionIsolationTests(ok) {
     await reloaded.bindSession(record.worktree, 'pending:r7')
     ok((await reloaded.bySession('pending:r7')) === null && (await reloaded.bySession('s-iso-2')) !== null, 'pending 占位 id 不写进登记（不是稳定身份）')
 
+    const clean = await pendingIsolationChanges(record)
+    ok(clean.ok === true && clean.files === 0 && clean.commits === 0, '\u6ca1\u6539\u52a8\u65f6\u5f85\u5408\u5165\u4e3a 0', JSON.stringify(clean))
     await writeFile(join(record.worktree, 'b.txt'), 'from isolated\n')
-    const first = await syncIsolationBack(record)
-    ok(first.ok === true && first.action === 'merged', '隔离树的改动自动合回主干', JSON.stringify(first))
+    git(record.worktree, ['add', 'b.txt'])
+    gitc(record.worktree, ['commit', '-q', '-m', 'agent step 1', '--no-verify'])
+    await writeFile(join(record.worktree, 'b2.txt'), 'step 2\n')
+    gitc(record.worktree, ['add', 'b2.txt'])
+    gitc(record.worktree, ['commit', '-q', '-m', 'agent step 2', '--no-verify'])
+    await writeFile(join(record.worktree, 'b3.txt'), 'uncommitted\n')
+    const pending = await pendingIsolationChanges(record)
+    ok(pending.ok === true && pending.files === 1 && pending.commits === 2, '\u5f85\u5408\u5165\u7edf\u8ba1\u672a\u63d0\u4ea4\u6587\u4ef6\u4e0e\u9886\u5148\u63d0\u4ea4', JSON.stringify(pending))
+    ok(readFileSync(join(repo, 'a.txt'), 'utf8') && !existsSync(join(repo, 'b.txt')), '\u7edf\u8ba1\u5f85\u5408\u5165\u4e0d\u4f1a\u628a\u6539\u52a8\u5e26\u8fdb\u4e3b\u5e72')
+    const mainBefore = gitOut(repo, ['rev-parse', 'HEAD'])
+    const first = await mergeIsolationBack(record)
+    ok(gitOut(repo, ['rev-list', '--count', `${mainBefore}..HEAD`]) === '1', '\u591a\u6b65\u63d0\u4ea4\u4e0e\u672a\u63d0\u4ea4\u6539\u52a8\u538b\u6210\u4e00\u4e2a\u63d0\u4ea4\u5408\u5165', gitOut(repo, ['log', '--oneline', `${mainBefore}..HEAD`]))
+    ok(existsSync(join(repo, 'b2.txt')) && existsSync(join(repo, 'b3.txt')), '\u538b\u7f29\u540e\u5404\u6b65\u6539\u52a8\u90fd\u5728\u4e3b\u5e72')
+    ok(first.ok === true && first.action === 'merged', '确认后隔离树的改动合入主干', JSON.stringify(first))
     ok(readFileSync(join(repo, 'b.txt'), 'utf8') === 'from isolated\n', '主干上真的出现了隔离树新增的文件')
-    ok(gitOut(repo, ['log', '-1', '--pretty=%s']).includes('合回'), '合并留下了可追溯的合并提交', gitOut(repo, ['log', '-1', '--pretty=%s']))
+    ok(gitOut(repo, ['log', '-1', '--pretty=%s']).includes('合入隔离会话改动'), '合入压成一个可追溯的提交', gitOut(repo, ['log', '-1', '--pretty=%s']))
     ok(
       gitOut(repo, ['log', '-1', '--pretty=%an|%ae']) === 'Inkstone|yan@localhost',
       '仓库没配身份时自动提交/合并用砚的兜底身份（不报错、不写用户配置）',
@@ -130,12 +161,12 @@ export async function runSessionIsolationTests(ok) {
     )
     ok(gitOut(repo, ['status', '--porcelain', '--untracked-files=all']) === '', '合并后主工作区是干净的')
 
-    const second = await syncIsolationBack(record)
+    const second = await mergeIsolationBack(record)
     ok(second.ok === true && second.action === 'nothing', '没有新改动时是 nothing（不是错误）', JSON.stringify(second))
 
     git(repo, ['checkout', '-q', '-b', 'other-base'])
     await writeFile(join(record.worktree, 'c.txt'), 'base guard\n')
-    const wrongBase = await syncIsolationBack(record)
+    const wrongBase = await mergeIsolationBack(record)
     ok(wrongBase.ok === false && wrongBase.action === 'blocked', '主工作区不在隔离基线分支时不合回', JSON.stringify(wrongBase))
     ok(
       wrongBase.ok === false && wrongBase.detail.includes('other-base') && wrongBase.detail.includes('main'),
@@ -144,17 +175,17 @@ export async function runSessionIsolationTests(ok) {
     )
     ok(!existsSync(join(repo, 'c.txt')), '不在基线分支时没有把改动合进来')
     git(repo, ['checkout', '-q', 'main'])
-    const backOnBase = await syncIsolationBack(record)
-    ok(backOnBase.ok === true && backOnBase.action === 'merged', '切回基线分支后自动接着合回', JSON.stringify(backOnBase))
+    const backOnBase = await mergeIsolationBack(record)
+    ok(backOnBase.ok === true && backOnBase.action === 'merged', '切回基线分支后可以再合入', JSON.stringify(backOnBase))
 
     await writeFile(join(record.worktree, 'a.txt'), 'alpha\nFROM-WT\ngamma\n')
-    const third = await syncIsolationBack(record)
+    const third = await mergeIsolationBack(record)
     ok(third.ok === true && third.action === 'merged', '二次改动同样合回', JSON.stringify(third))
     ok(readFileSync(join(repo, 'a.txt'), 'utf8').includes('FROM-WT'), '二次改动落到主干')
 
     await writeFile(join(record.worktree, 'a.txt'), 'alpha\nFROM-WT-2\ngamma\n')
     await writeFile(join(repo, 'a.txt'), 'alpha\nLOCAL-EDIT\ngamma\n')
-    const blocked = await syncIsolationBack(record)
+    const blocked = await mergeIsolationBack(record)
     ok(blocked.ok === false && blocked.action === 'blocked', '主干有冲突改动时合并被拦下', JSON.stringify(blocked))
     ok(readFileSync(join(repo, 'a.txt'), 'utf8').includes('LOCAL-EDIT'), '拦下后主干的本地改动原样保留')
     ok(gitOut(repo, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']) === '', '拦下后没有留半个合并态（无 MERGE_HEAD）')
@@ -162,7 +193,7 @@ export async function runSessionIsolationTests(ok) {
 
     git(repo, ['add', 'a.txt'])
     gitc(repo, ['commit', '-q', '-m', 'main side', '--no-verify'])
-    const conflict = await syncIsolationBack(record)
+    const conflict = await mergeIsolationBack(record)
     ok(conflict.ok === false && conflict.action === 'blocked', '两边都提交时是真冲突，仍然拦住', JSON.stringify(conflict))
     ok(gitOut(repo, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']) === '', '真冲突后也 abort 干净')
     ok(gitOut(repo, ['status', '--porcelain', '--untracked-files=all']) === '', '冲突后主工作区没有残留条目')
@@ -172,8 +203,8 @@ export async function runSessionIsolationTests(ok) {
     await writeFile(join(record.worktree, 'a.txt'), 'alpha\nRESOLVED\ngamma\n')
     git(record.worktree, ['add', 'a.txt'])
     gitc(record.worktree, ['commit', '-q', '-m', 'resolve conflict', '--no-verify'])
-    const recovered = await syncIsolationBack(record)
-    ok(recovered.ok === true && recovered.action === 'merged', '冲突人工解决后，合回链继续走', JSON.stringify(recovered))
+    const recovered = await mergeIsolationBack(record)
+    ok(recovered.ok === true && recovered.action === 'merged', '冲突人工解决后可以继续合入', JSON.stringify(recovered))
     ok(readFileSync(join(repo, 'a.txt'), 'utf8').includes('RESOLVED'), '解完的版本落到主干')
 
     const doomed = await isolateCwdForConflict(repo)
