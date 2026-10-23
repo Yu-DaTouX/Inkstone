@@ -115,7 +115,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     const st = await getSettings()
     const resolved = await resolveFileContext(st, st.cwd, { cwd: requestedCwd })
     if (!resolved.ok) return { ok: false as const, error: 'read' as const }
-    return htmlArtifactPreviews.prepare(String(path ?? ''), resolved.context.cwd)
+    return htmlArtifactPreviews.prepareForWorkspace(String(path ?? ''), resolved.context.cwd)
   })
   handle('yan:prepareHtmlWidget', (html: unknown) => htmlArtifactPreviews.prepareInline(html))
   handle('yan:releaseHtmlArtifact', (url: string) => htmlArtifactPreviews.release(String(url ?? '')))
