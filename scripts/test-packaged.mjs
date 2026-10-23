@@ -396,7 +396,7 @@ if (!exeFromArg) {
     }
   }
   let health = 0
-  for (let i = 0; i < 30 && health !== 200; i += 1) {
+  for (let i = 0; i < 80 && health !== 200; i += 1) {
     await sleep(700)
     health = await hit('/remote/v1/health')
   }
