@@ -75,7 +75,10 @@ export function imagesOf(
   for (const c of content as PiContentBlock[]) {
     if (c?.type !== 'image') continue
     const mimeType = c.mimeType ?? 'image/png'
-    const url = localizeImage && c.data ? localizeImage(mimeType, c.data) : ''
+    let url = ''
+    if (localizeImage && c.data) {
+      try { url = localizeImage(mimeType, c.data) } catch { url = '' }
+    }
     out.push(url ? { mimeType, data: '', url } : { mimeType, data: c.data ?? '' })
   }
   return out.length ? out : undefined

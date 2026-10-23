@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { reviewSkillFiles, type SkillSecurityFinding, type SkillSecurityReview } from '../../shared/skill-security'
@@ -26,6 +26,20 @@ type SessionSkillIndex = { version: 1; sessionId: string; skills: SessionSkillEn
 
 export const SOURCE_META_FILE = '.inkstone-skill.json'
 const SESSION_ID_RE = /^[A-Za-z0-9._-]{1,200}$/
+const skillLocks = new Map<string, Promise<void>>()
+
+async function withSkillLock<T>(root: string, task: () => Promise<T>): Promise<T> {
+  const canonical = await realpath(root).catch(() => resolve(root))
+  const key = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+  const previous = skillLocks.get(key) ?? Promise.resolve()
+  const next = previous.then(task, task)
+  const settled = next.then(() => undefined, () => undefined)
+  skillLocks.set(key, settled)
+  void settled.then(() => {
+    if (skillLocks.get(key) === settled) skillLocks.delete(key)
+  })
+  return next
+}
 
 export class AcquiredSkillError extends Error {
   constructor(readonly code: string, message: string) {
@@ -187,7 +201,11 @@ async function readMeta(dir: string): Promise<Record<string, unknown> | null> {
   }
 }
 
-export async function installAcquiredSkill(input: {
+export function installAcquiredSkill(input: Parameters<typeof installAcquiredSkillUnlocked>[0]) {
+  return withSkillLock(input.root, () => installAcquiredSkillUnlocked(input))
+}
+
+async function installAcquiredSkillUnlocked(input: {
   root: string
   scope: AcquiredSkillScope
   sessionId?: string
@@ -235,11 +253,19 @@ export async function installAcquiredSkill(input: {
     fileCount: input.files.length
   }
   index.skills = [...index.skills.filter((skill) => skill.name !== name), entry]
-  await writeJsonAtomic(join(base, 'index.json'), index)
+  try {
+    await writeJsonAtomic(join(base, 'index.json'), index)
+  } catch (error) {
+    throw new AcquiredSkillError('index-write', `技能已写入 ${dir}，但会话索引保存失败：${error instanceof Error ? error.message : String(error)}`)
+  }
   return { scope: 'session', dir, skillFile: entry.skillFile, replaced }
 }
 
-export async function listSessionSkills(root: string, sessionId: string): Promise<SessionSkillEntry[]> {
+export function listSessionSkills(root: string, sessionId: string): Promise<SessionSkillEntry[]> {
+  return withSkillLock(root, () => listSessionSkillsUnlocked(root, sessionId))
+}
+
+async function listSessionSkillsUnlocked(root: string, sessionId: string): Promise<SessionSkillEntry[]> {
   let base: string
   try {
     base = sessionSkillsDir(root, sessionId)
@@ -256,7 +282,11 @@ export async function listSessionSkills(root: string, sessionId: string): Promis
   )
 }
 
-export async function removeSessionSkill(root: string, sessionId: string, name: string): Promise<boolean> {
+export function removeSessionSkill(root: string, sessionId: string, name: string): Promise<boolean> {
+  return withSkillLock(root, () => removeSessionSkillUnlocked(root, sessionId, name))
+}
+
+async function removeSessionSkillUnlocked(root: string, sessionId: string, name: string): Promise<boolean> {
   const base = sessionSkillsDir(root, sessionId)
   const index = await readIndex(root, sessionId)
   const found = index.skills.find((skill) => skill.name === name)
@@ -268,13 +298,22 @@ export async function removeSessionSkill(root: string, sessionId: string, name: 
   return true
 }
 
-export async function promoteSessionSkill(
+export function promoteSessionSkill(
   root: string,
   sessionId: string,
   name: string,
   reservedNames: readonly string[] = []
 ): Promise<{ dir: string }> {
-  const skill = (await listSessionSkills(root, sessionId)).find((entry) => entry.name === name)
+  return withSkillLock(root, () => promoteSessionSkillUnlocked(root, sessionId, name, reservedNames))
+}
+
+async function promoteSessionSkillUnlocked(
+  root: string,
+  sessionId: string,
+  name: string,
+  reservedNames: readonly string[]
+): Promise<{ dir: string }> {
+  const skill = (await listSessionSkillsUnlocked(root, sessionId)).find((entry) => entry.name === name)
   if (!skill) throw new AcquiredSkillError('not-found', `本次会话没有技能「${name}」`)
   const safe = acquiredSkillName(name)
   if (reservedNames.includes(safe)) throw new AcquiredSkillError('name-taken', `「${safe}」是砚随包技能的名字`)
@@ -292,7 +331,7 @@ export async function promoteSessionSkill(
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
     throw error
   }
-  await removeSessionSkill(root, sessionId, safe)
+  await removeSessionSkillUnlocked(root, sessionId, safe)
   return { dir: target }
 }
 

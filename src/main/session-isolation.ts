@@ -293,13 +293,35 @@ async function squashOntoBase(record: AutoIsolationRecord, mainHead: string): Pr
   return null
 }
 
+async function unfinishedGitOperation(cwd: string): Promise<string | null> {
+  const dir = await gitRun(cwd, ['rev-parse', '--absolute-git-dir'], { allowFailure: true, timeout: 30_000 })
+  if (!dir.ok || !dir.stdout.trim()) return dir.error ?? '读不出 Git 工作目录'
+  const marker = ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer']
+    .find((name) => existsSync(join(dir.stdout.trim(), name)))
+  return marker ? `还有未完成的 Git 操作（${marker}），先完成或中止它` : null
+}
+
 export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<SyncOutcome> {
   if (!existsSync(record.worktree)) return { ok: false, action: 'blocked', detail: GONE }
+
+  for (const [cwd, label] of [[record.mainCwd, '主工作目录'], [record.worktree, '隔离工作树']]) {
+    const operation = await unfinishedGitOperation(cwd)
+    if (operation) return { ok: false, action: 'blocked', detail: `${label}：${operation}` }
+  }
+  const isolatedBranch = await currentBranch(record.worktree)
+  if (isolatedBranch !== record.branch) {
+    return {
+      ok: false,
+      action: 'blocked',
+      detail: `隔离工作树当前在 ${isolatedBranch || 'detached HEAD'}，记录的隔离分支是 ${record.branch}；切回隔离分支后再合入`
+    }
+  }
 
   const mainUnmerged = await gitRun(record.mainCwd, ['diff', '--name-only', '--diff-filter=U'], {
     allowFailure: true,
     timeout: 30_000
   })
+  if (!mainUnmerged.ok) return { ok: false, action: 'blocked', detail: mainUnmerged.error ?? '读不出主工作目录的冲突状态' }
   if (mainUnmerged.stdout.trim()) {
     return { ok: false, action: 'blocked', detail: '主工作目录还有未解决的冲突，先处理它' }
   }
@@ -328,11 +350,16 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
   const squashed = await squashOntoBase(record, mainHead)
   if (squashed) return squashed
 
-  const fastForward = await gitRun(record.mainCwd, ['merge', '--ff-only', record.branch], {
+  const isolatedHead = await gitRun(record.worktree, ['rev-parse', 'HEAD'], { allowFailure: true, timeout: 30_000 })
+  if (!isolatedHead.ok || !isolatedHead.stdout.trim()) return { ok: false, action: 'blocked', detail: isolatedHead.error ?? '读不出隔离分支提交' }
+  const target = isolatedHead.stdout.trim()
+  const fastForward = await gitRun(record.mainCwd, ['merge', '--ff-only', target], {
     allowFailure: true,
     timeout: GIT_WRITE_TIMEOUT
   })
   if (fastForward.ok) return { ok: true, action: 'merged' }
+  const operation = await unfinishedGitOperation(record.mainCwd)
+  if (operation) return { ok: false, action: 'blocked', detail: `主工作目录：${operation}` }
 
   const merge = await gitRun(
     record.mainCwd,
@@ -344,12 +371,15 @@ export async function mergeIsolationBack(record: AutoIsolationRecord): Promise<S
       '--no-verify',
       '-m',
       `砚：把隔离工作树 ${record.branch} 合回 ${mainHead}`,
-      record.branch
+      target
     ],
     { allowFailure: true, timeout: GIT_WRITE_TIMEOUT }
   )
   if (!merge.ok) {
-    await gitRun(record.mainCwd, ['merge', '--abort'], { allowFailure: true, timeout: 60_000 })
+    const mergeHead = await gitRun(record.mainCwd, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { allowFailure: true, timeout: 30_000 })
+    if (mergeHead.ok && mergeHead.stdout.trim() === target) {
+      await gitRun(record.mainCwd, ['merge', '--abort'], { allowFailure: true, timeout: 60_000 })
+    }
     return {
       ok: false,
       action: 'blocked',

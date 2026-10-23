@@ -148,7 +148,11 @@ export class SubagentService {
         )
       }
       const requested = typeof params.model === 'string' && params.model.trim() && params.model.length <= 200 ? params.model.trim() : undefined
-      const readOnly = params.readOnly === true || params['read-only'] === true
+      const readOnlyArgs = [params.readOnly, params['read-only']].filter((value) => value !== undefined)
+      if (readOnlyArgs.some((value) => value !== true && value !== false && value !== 'true' && value !== 'false')) {
+        throw new CapabilityCommandError('subagent_read_only_invalid', 'read-only 只能是 true 或 false')
+      }
+      const readOnly = readOnlyArgs.some((value) => value === true || value === 'true')
       const title = typeof params.title === 'string' ? params.title : undefined
       const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
       if (params.fork === true) return this.startFork(ctrl, task, requested, readOnly, params.isolation, briefInput, context)
@@ -169,7 +173,7 @@ export class SubagentService {
     }
 
     if (command === 'subagent.list') {
-      const runs = ctrl.list()
+      const runs = ctrl.list().filter((run) => !!context.parentSessionId && run.parentSessionId === context.parentSessionId)
       const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
       return {
         data: runs,
@@ -191,9 +195,16 @@ export class SubagentService {
       )
     }
 
+    if (command === 'subagent.get' || command === 'subagent.stop') {
+      const run = ctrl.get(id)
+      if (!context.parentSessionId || !run || run.parentSessionId !== context.parentSessionId) {
+        throw new CapabilityCommandError('subagent_not_found', `找不到当前会话的子代理：${id}`)
+      }
+    }
+
     if (command === 'subagent.get') {
       const run = await ctrl.getFull(id)
-      if (!run) {
+      if (!run || run.parentSessionId !== context.parentSessionId) {
         throw new CapabilityCommandError(
           'subagent_not_found',
           `找不到子代理：${id}`

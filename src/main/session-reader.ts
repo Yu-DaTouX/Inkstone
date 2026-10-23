@@ -68,6 +68,70 @@ const inFlight = new Map<string, Promise<ReadResult | null>>()
 const localizers = new WeakMap<NonNullable<ReadOptions['localizeImage']>, number>()
 let localizerSeq = 0
 
+const MAX_SNAPSHOTS = 6
+const MAX_SNAPSHOT_BYTES = 48 * 1024 * 1024
+const DEFAULT_SNAPSHOT_TTL_MS = 30_000
+
+function snapshotTtlMs(): number {
+  const raw = process.env.YAN_HISTORY_CACHE_TTL_MS
+  const value = raw ? Number(raw) : NaN
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SNAPSHOT_TTL_MS
+}
+
+interface Snapshot {
+  path: string
+  localizer: number
+  result: ReadResult
+  at: number
+}
+
+const snapshots = new Map<string, Snapshot>()
+let snapshotBytes = 0
+
+function versionKey(path: string, version: BigIntStats, localizer: number): string {
+  return JSON.stringify([path, String(version.dev), String(version.ino), String(version.size),
+    String(version.mtimeNs), String(version.ctimeNs), localizer])
+}
+
+function dropSnapshot(key: string): void {
+  const snapshot = snapshots.get(key)
+  if (!snapshot) return
+  snapshots.delete(key)
+  snapshotBytes -= snapshot.result.bytes
+}
+
+function hitSnapshot(key: string): ReadResult | undefined {
+  const snapshot = snapshots.get(key)
+  if (!snapshot) return undefined
+  if (Date.now() - snapshot.at > snapshotTtlMs()) {
+    dropSnapshot(key)
+    return undefined
+  }
+  snapshots.delete(key)
+  snapshots.set(key, snapshot)
+  return snapshot.result
+}
+
+export function clearSessionReadCache(): void {
+  snapshots.clear()
+  snapshotBytes = 0
+}
+
+function keepSnapshot(key: string, path: string, localizer: number, result: ReadResult): void {
+  if (result.bytes > MAX_SNAPSHOT_BYTES) return
+  for (const [cachedKey, snapshot] of snapshots) {
+    if (snapshot.path === path && snapshot.localizer === localizer) dropSnapshot(cachedKey)
+  }
+  while (snapshots.size) {
+    if (snapshots.size < MAX_SNAPSHOTS && snapshotBytes + result.bytes <= MAX_SNAPSHOT_BYTES) break
+    const oldest = snapshots.keys().next()
+    if (oldest.done) break
+    dropSnapshot(oldest.value)
+  }
+  snapshots.set(key, { path, localizer, result, at: Date.now() })
+  snapshotBytes += result.bytes
+}
+
 function sameFile(a: BigIntStats, b: BigIntStats): boolean {
   return a.dev === b.dev && a.ino === b.ino
 }
@@ -91,18 +155,25 @@ export async function readSessionMessages(path: string, opts?: ReadOptions): Pro
       localizer = localizers.get(opts.localizeImage) ?? ++localizerSeq
       localizers.set(opts.localizeImage, localizer)
     }
-    const key = JSON.stringify([process.platform === 'win32' ? canonical.toLowerCase() : canonical,
-      String(version.dev), String(version.ino), String(version.size), String(version.mtimeNs), String(version.ctimeNs), localizer])
+    const identity = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+    const key = versionKey(identity, version, localizer)
+    const cached = hitSnapshot(key)
+    if (cached) return cached
     const existing = inFlight.get(key)
     if (existing) return existing
-    const task = readStable(path, opts).then(result => result ? freezeSnapshot(result) : null)
+    const task = readStable(path, opts).then(read => {
+      if (!read) return null
+      const result = freezeSnapshot(read.result)
+      keepSnapshot(versionKey(identity, read.version, localizer), identity, localizer, result)
+      return result
+    })
     inFlight.set(key, task)
     try { return await task }
     finally { if (inFlight.get(key) === task) inFlight.delete(key) }
   } catch { return null }
 }
 
-async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult | null> {
+async function readStable(path: string, opts?: ReadOptions): Promise<{ result: ReadResult; version: BigIntStats } | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     let fh
     try {
@@ -178,8 +249,8 @@ async function readStable(path: string, opts?: ReadOptions): Promise<ReadResult 
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
-      return { messages: projector.uiMessages(), total, truncated, bytes: size,
-        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) }
+      return { version: before, result: { messages: projector.uiMessages(), total, truncated, bytes: size,
+        ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) } }
     } catch { if (attempt === 0) continue; return null }
     finally { await fh?.close().catch(() => undefined) }
   }

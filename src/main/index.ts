@@ -33,6 +33,7 @@ import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awak
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import { resolveSessionOpenTarget } from './session-open-target'
 import { readChainMessages } from './session-history'
+import { localizeImage } from './image-store'
 import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
@@ -837,9 +838,12 @@ onSessionPurged(async (sessionId) => {
   if (dir && existsSync(dir)) await shell.trashItem(dir)
 })
 
+const localizeHistoryImage = (mimeType: string, data: string): string =>
+  localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
+
 function readHistoryWithArtifacts(sessionFile: string) {
   return readChainMessages(sessionFile, sessionChains, (file, messages) =>
-    artifactStore.hydrateMessages(file, messages)
+    artifactStore.hydrateMessages(file, messages), localizeHistoryImage
   ).then(async (result) => {
     if (!result) return result
     const bucket = timingKey(sessionFile)
@@ -2138,7 +2142,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
             cwd: request.cwd,
             ...(rememberDirs.length ? { rememberDirs } : {}),
             canRemember: rememberDirs.length > 0
-          })
+          }, request.signal)
           if (choice?.choice === 'remember') {
             if (rememberDirs.length) {
               const current = await getSettings()

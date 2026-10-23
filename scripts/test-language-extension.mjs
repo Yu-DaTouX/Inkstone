@@ -28,6 +28,8 @@ export async function runLanguageExtensionTests(ok, mod) {
   ok(typeof en === 'string' && /think/i.test(en), 'en-US 的句子明确要求推理也跟随', String(en))
   ok(zh.includes('AGENTS.md') && zh.includes('按项目指令'), 'zh-CN：项目指令规定沟通语言时按项目来', String(zh))
   ok(/AGENTS\.md/.test(en) && /follow the project instructions/.test(en), 'en-US：项目指令规定沟通语言时按项目来', String(en))
+  ok(mod.languageReminder('zh-CN').includes('优先按项目指令来') && mod.languageReminder('zh-CN').includes('否则思考过程'), '中文纠偏保留项目语言优先的条件')
+  ok(mod.languageReminder('en-US').includes('follow the project instructions instead; otherwise') && mod.languageReminder('en-US').includes('AGENTS.md'), '英文纠偏保留项目语言优先的条件')
   ok(languageSystemPrompt('ja-JP') === null, '不认识的语言不注入任何要求', String(languageSystemPrompt('ja-JP')))
   ok(languageSystemPrompt(undefined) === null, '语言缺失时也不注入', String(languageSystemPrompt(undefined)))
 

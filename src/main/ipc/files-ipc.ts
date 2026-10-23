@@ -13,6 +13,7 @@ import { unsavedFiles } from '../unsaved-files'
 import { searchFileNames } from '../file-name-search'
 import type { FileNameSearchRequest } from '../../shared/file-name-search'
 import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachmentNames } from '../attachments'
+import { clearSessionReadCache } from '../session-reader'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
 import type {
@@ -300,6 +301,8 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
     const initial = await fingerprint()
     const referenced = await referencedAttachmentNames(listSessionFiles(sessionsDir))
     if (deps.isSessionBusy() || initial !== (await fingerprint())) throw new Error('会话在扫描期间发生变化，已停止附件清理，请稍后重试')
-    return pruneAttachments(join(YAN_DIR, 'attachments'), referenced, { before })
+    const result = await pruneAttachments(join(YAN_DIR, 'attachments'), referenced, { before })
+    clearSessionReadCache()
+    return result
   })
 }

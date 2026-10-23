@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { saveUserSkill } from './user-skills'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
@@ -279,6 +279,7 @@ export interface DangerConfirmPrompt {
   outsideDirs?: string[]
   owner?: ApprovalOwner
   toolCallId?: string
+  signal?: AbortSignal
 }
 
 export interface ToolConsentPrompt {
@@ -1040,7 +1041,7 @@ export class AgentController extends EventEmitter {
       this.setContextFrom(compactionEntry ? contextFromEntry(compactionEntry) : undefined)
       const previousSegments = fromFile?.messages.filter(message => message.id.startsWith('history:')) ?? []
       this.messages = [...previousSegments, ...projectHistory(messageEntries.map(entry => entry.message),
-        (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data),
+        this.localizeHistoryImage,
         messageEntries.map(entry => typeof entry.id === 'string' ? entry.id : undefined))]
     } else if (fromFile?.messages.length) {
       this.messages = fromFile.messages
@@ -1049,7 +1050,7 @@ export class AgentController extends EventEmitter {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
       this.messages = Array.isArray(raw)
-        ? projectHistory(raw, (mimeType, data) => localizeImage(join(YAN_DIR, 'attachments'), mimeType, data))
+        ? projectHistory(raw, this.localizeHistoryImage)
         : []
     }
     if (sessionFile) {
@@ -1198,7 +1199,7 @@ export class AgentController extends EventEmitter {
       return this.runMcpAppCommand(command, params, signal)
     }
     if (command.startsWith('mcp.')) {
-      return this.runMcpCommand(command.slice('mcp.'.length), params)
+      return this.runMcpCommand(command.slice('mcp.'.length), params, signal)
     }
     if (command.startsWith('knowledge.')) {
       return this.lookup.runKnowledgeCommand(command.slice('knowledge.'.length), params)
@@ -1213,7 +1214,7 @@ export class AgentController extends EventEmitter {
     if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return this.runOfficeReadCommand(params)
-    if (command === 'file.trash') return this.runFileTrashCommand(params)
+    if (command === 'file.trash') return this.runFileTrashCommand(params, signal)
     if (command === 'consent.request') return this.runConsentRequestCommand(params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
     if (command === 'session.move') return this.runSessionMoveCommand(params)
@@ -1423,7 +1424,7 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runFileTrashCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
+  private async runFileTrashCommand(params: Record<string, unknown>, signal?: AbortSignal): Promise<CapabilityCommandResult> {
     const trash = this.capabilityOpts?.trashItem
     if (!trash) throw new CapabilityCommandError('trash_unavailable', '回收站当前不可用（宿主未注入）')
     const raw = [
@@ -1432,11 +1433,43 @@ export class AgentController extends EventEmitter {
     ].map((p) => p.trim()).filter(Boolean)
     if (!raw.length) throw new CapabilityCommandError('trash_path_required', '缺少 --path（或请求文件里的 paths）')
     if (raw.length > 200) throw new CapabilityCommandError('trash_too_many', '一次最多移动 200 个路径')
+    signal?.throwIfAborted()
+    const paths = raw.map((item) => isAbsolute(item) ? resolve(item) : resolve(this.cwd, item))
+    const settings = await getSettings()
+    if (settings.guardOutsideWrites && (await this.getPermissionMode?.()) !== 'all') {
+      const roots = await Promise.all([
+        this.cwd, tmpdir(), '/tmp', '/var/tmp', join(homedir(), '.pi'), PI_AGENT_DIR, YAN_DIR,
+        ...(settings.guardAllowRoots ?? [])
+      ].map((root) => realpath(root).catch(() => resolve(root))))
+      const outside: string[] = []
+      for (const path of paths) {
+        const actual = join(await realpath(dirname(path)).catch(() => dirname(path)), basename(path))
+        if (!roots.some((root) => {
+          const rel = relative(root, actual)
+          return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+        })) outside.push(path)
+      }
+      if (outside.length) {
+        const answer = this.confirmDanger ? await this.confirmDanger({
+          tool: 'yan file trash',
+          detail: outside.join('\n').slice(0, 20_000),
+          reasons: ['要移动当前项目和已允许目录之外的文件到回收站'],
+          cwd: this.cwd,
+          owner: this.approvalOwner(),
+          outsideDirs: outside,
+          signal
+        }) : null
+        if (answer?.decision !== 'allow') {
+          throw new CapabilityCommandError('trash_outside_denied', answer?.feedback ?? '没有得到目录外操作的确认，未移动到回收站')
+        }
+      }
+    }
+    signal?.throwIfAborted()
     const home = resolve(homedir()).toLowerCase()
     const trashed: string[] = []
     const failed: { path: string; error: string }[] = []
-    for (const item of raw) {
-      const abs = isAbsolute(item) ? resolve(item) : resolve(this.cwd, item)
+    for (const abs of paths) {
+      signal?.throwIfAborted()
       const key = abs.toLowerCase().replace(/[\\/]+$/, '')
       if (dirname(abs) === abs || key === home) {
         failed.push({ path: abs, error: '拒绝把盘符根目录或家目录整体移到回收站' })
@@ -1444,9 +1477,11 @@ export class AgentController extends EventEmitter {
       }
       try {
         await stat(abs)
+        signal?.throwIfAborted()
         await trash(abs)
         trashed.push(abs)
       } catch (error) {
+        if (signal?.aborted) throw error
         failed.push({ path: abs, error: error instanceof Error ? error.message : String(error) })
       }
     }
@@ -2022,13 +2057,14 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  private async runMcpList() {
+  private async runMcpList(signal?: AbortSignal) {
+    signal?.throwIfAborted()
     const manager = this.mcpConnectionManager()
     const usable = manager.list().filter((server) => server.enabled !== false && !server.migratedToNative)
     const servers = await Promise.all(
       usable.map(async (server) => {
         try {
-          const tools = await manager.listToolsCached(server.id)
+          const tools = await manager.listToolsCached(server.id, { signal })
           return {
             serverId: server.id,
             title: server.title ?? server.id,
@@ -2051,6 +2087,7 @@ export class AgentController extends EventEmitter {
         }
       })
     )
+    signal?.throwIfAborted()
     return {
       data: { servers },
       summary: {
@@ -2067,8 +2104,9 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runMcpCommand(action: string, params: Record<string, unknown>) {
-    if (action === 'list') return this.runMcpList()
+  private async runMcpCommand(action: string, params: Record<string, unknown>, signal?: AbortSignal) {
+    if (signal?.aborted) throw new CapabilityCommandError('mcp_cancelled', 'MCP 请求已取消')
+    if (action === 'list') return this.runMcpList(signal)
     if (action !== 'describe' && action !== 'call') {
       throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：mcp.${action}`)
     }
@@ -2094,7 +2132,7 @@ export class AgentController extends EventEmitter {
     }
     try {
       if (action === 'describe') {
-        const described = await describeMcpTool(manager, serverId, toolName)
+        const described = await describeMcpTool(manager, serverId, toolName, signal)
         return {
           data: described,
           summary: {
@@ -2109,7 +2147,7 @@ export class AgentController extends EventEmitter {
         }
       }
 
-      if (action === 'call') await this.confirmMcpCall(manager, serverId, toolName, params)
+      if (action === 'call') await this.confirmMcpCall(manager, serverId, toolName, params, signal)
 
       const rawArgs = params.arguments ?? params.args
       const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
@@ -2121,6 +2159,7 @@ export class AgentController extends EventEmitter {
       ])
       const outcome = await callMcpTool(manager, serverId, toolName, args, {
         resultsDir: join(YAN_DIR, 'mcp-results'),
+        signal,
         ...(expectedRevision ? { expectedRevision } : {})
       })
       return {
@@ -2138,6 +2177,7 @@ export class AgentController extends EventEmitter {
         }
       }
     } catch (error) {
+      if (signal?.aborted) throw new CapabilityCommandError('mcp_cancelled', 'MCP 请求已取消')
       if (error instanceof CapabilityCommandError) throw error
       if (error instanceof McpToolError) {
         throw new CapabilityCommandError(error.code, error.message, error.data)
@@ -2155,10 +2195,14 @@ export class AgentController extends EventEmitter {
     manager: McpConnectionManager,
     serverId: string,
     toolName: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    signal?: AbortSignal
   ): Promise<void> {
-    if ((await this.getPermissionMode?.()) === 'all') return
-    const described = await describeMcpTool(manager, serverId, toolName)
+    signal?.throwIfAborted()
+    const mode = await this.getPermissionMode?.()
+    signal?.throwIfAborted()
+    if (mode === 'all') return
+    const described = await describeMcpTool(manager, serverId, toolName, signal)
     if (!mcpApprovalNeeded(described.annotations)) return
     const detail = JSON.stringify(params.arguments ?? params.args ?? {})
     const answer = this.confirmDanger
@@ -2167,9 +2211,11 @@ export class AgentController extends EventEmitter {
           detail: `${serverId} / ${toolName}\n${detail.slice(0, 2000)}`,
           reasons: mcpCallDanger(`mcp__${serverId}__${toolName}`, described.annotations),
           cwd: this.cwd,
-          owner: this.approvalOwner()
+          owner: this.approvalOwner(),
+          signal
         })
       : null
+    signal?.throwIfAborted()
     if (answer?.decision !== 'allow') {
       throw new CapabilityCommandError(
         'mcp_call_denied',
@@ -2547,7 +2593,7 @@ export class AgentController extends EventEmitter {
           const path = writePathOf(call.args)
           if (path) snapshotBefore(call.id, path)
         } else if (isShellTool(call.name)) {
-          beginTreeSnapshot(call.id, this.cwd, this.state?.sessionId)
+          void beginTreeSnapshot(call.id, this.cwd, this.state?.sessionId)
         }
         this.pushTool(call)
         break
@@ -2570,11 +2616,9 @@ export class AgentController extends EventEmitter {
         if (isWriteTool(call.name)) {
           const diff = snapshotAfter(call.id)
           if (diff) mergeToolDetails(call, { fileDiff: diff })
-        } else if (isShellTool(call.name)) {
-          const changes = endTreeSnapshot(call.id)
-          if (changes && (changes.files.length > 0 || changes.unknown)) mergeToolDetails(call, { workspaceChanges: changes })
         }
         this.pushTool(call)
+        if (isShellTool(call.name)) this.attachWorkspaceChanges(call)
 
         if (call.name === 'panel_todos') {
           void this.refreshTodos()
@@ -2850,6 +2894,27 @@ export class AgentController extends EventEmitter {
     this.pushedOut.set(call.id, call.output?.length ?? 0)
     this.dirtyTools.delete(call.id)
     this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
+  }
+
+  private attachWorkspaceChanges(call: UIToolCall): void {
+    const msgId = this.ownerOf(call)
+    const rpc = this.rpc
+    const generation = this.capabilityOpts?.runnerGeneration
+    const sessionId = this.state?.sessionId
+    const ownsCall = (): boolean =>
+      !this.stopping && this.rpc === rpc && this.capabilityOpts?.runnerGeneration === generation && this.state?.sessionId === sessionId
+    void endTreeSnapshot(call.id)
+      .then((changes) => {
+        if (!changes || (!changes.files.length && !changes.unknown)) return
+        if (!ownsCall()) return
+        mergeToolDetails(call, { workspaceChanges: changes })
+        const owner = this.ownerOf(call) ?? msgId
+        if (!owner) return
+        this.pushedOut.set(call.id, call.output?.length ?? 0)
+        this.dirtyTools.delete(call.id)
+        this.push({ ch: 'tool', payload: { msgId: owner, call: { ...call } } })
+      })
+      .catch(() => null)
   }
 
   private markToolOutput(callId: string): void {
@@ -3854,7 +3919,7 @@ export class AgentController extends EventEmitter {
     if (this.bash) {
       const b = this.bash
       this.bash = null
-      endTreeSnapshot(b.msgId)
+      void endTreeSnapshot(b.msgId).catch(() => null)
       this.push({
         ch: 'msg-update',
         payload: {
@@ -3906,7 +3971,7 @@ export class AgentController extends EventEmitter {
     const reqId = `yan-bash-${randomUUID()}`
     const msgId = `bash-${reqId}`
     this.bash = { reqId, msgId, command: cmd, output: '' }
-    beginTreeSnapshot(msgId, this.cwd, this.state?.sessionId)
+    const snapshotReady = beginTreeSnapshot(msgId, this.cwd, this.state?.sessionId)
 
     const msg: UIMessage = {
       id: msgId,
@@ -3922,6 +3987,11 @@ export class AgentController extends EventEmitter {
     this.push({ ch: 'msg-add', payload: msg })
 
     try {
+      await snapshotReady
+      if (this.bash?.reqId !== reqId) {
+        await endTreeSnapshot(msgId)
+        return { ok: false, error: 'bash 请求已被停止或会话已切换' }
+      }
       const payload: Record<string, unknown> = { command: cmd }
       if (options?.excludeFromContext !== undefined) payload.excludeFromContext = options.excludeFromContext
       const res = await this.requireRpc().command<{
@@ -3935,33 +4005,33 @@ export class AgentController extends EventEmitter {
       const b = this.bash?.reqId === reqId ? this.bash : undefined
       if (b) this.bash = null
       if (!b) {
-        endTreeSnapshot(msgId)
+        await endTreeSnapshot(msgId)
         return { ok: false, error: 'bash 请求已被停止或会话已切换' }
       }
 
       if (!res.success) {
-        this.finishBash(msgId, cmd, b?.output ?? '', null, true, res.error)
+        await this.finishBash(msgId, cmd, b?.output ?? '', null, true, res.error)
         return { ok: false, error: res.error }
       }
 
       const d = res.data ?? {}
       const output = d.output && d.output.length > (b?.output.length ?? 0) ? d.output : (b?.output ?? '')
-      this.finishBash(msgId, cmd, output, d.exitCode ?? null, !!d.cancelled, undefined, d.truncated, d.fullOutputPath)
+      await this.finishBash(msgId, cmd, output, d.exitCode ?? null, !!d.cancelled, undefined, d.truncated, d.fullOutputPath)
       return { ok: true }
     } catch (e) {
       const b = this.bash?.reqId === reqId ? this.bash : undefined
       if (b) this.bash = null
       const err = e instanceof Error ? e.message : String(e)
       if (!b) {
-        endTreeSnapshot(msgId)
+        await endTreeSnapshot(msgId)
         return { ok: false, error: 'bash 请求已被停止或会话已切换' }
       }
-      this.finishBash(msgId, cmd, b.output, null, true, err)
+      await this.finishBash(msgId, cmd, b.output, null, true, err)
       return { ok: false, error: err }
     }
   }
 
-  private finishBash(
+  private async finishBash(
     msgId: string,
     command: string,
     output: string,
@@ -3970,9 +4040,9 @@ export class AgentController extends EventEmitter {
     error?: string,
     truncated?: boolean,
     fullOutputPath?: string
-  ): void {
+  ): Promise<void> {
     const failed = cancelled || exitCode === null || exitCode !== 0
-    const changes = endTreeSnapshot(msgId)
+    const changes = await endTreeSnapshot(msgId)
     const details: Record<string, unknown> = {}
     if (truncated) {
       details.truncated = truncated
@@ -4021,7 +4091,7 @@ export class AgentController extends EventEmitter {
   private resetSessionScope(): void {
     this.loopGuardContinuationVersion += 1
     this.loopGuardAutoContinueCount = 0
-    if (this.bash) endTreeSnapshot(this.bash.msgId)
+    if (this.bash) void endTreeSnapshot(this.bash.msgId).catch(() => null)
     this.bash = null
     this.streaming = null
     this.items.discardStreaming()

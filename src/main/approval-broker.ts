@@ -15,6 +15,8 @@ export const APPROVAL_TIMEOUT_MS = 4 * 60 * 1000
 interface Waiter {
   resolve: (answer: ApprovalAnswer | null) => void
   timer: ReturnType<typeof setTimeout>
+  signal?: AbortSignal
+  onAbort?: () => void
 }
 
 export interface ApprovalBrokerDeps {
@@ -38,15 +40,17 @@ export class ApprovalBroker {
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
-  ask(input: ApprovalAskInput): Promise<ApprovalAnswer | null> {
-    if (!this.deps.canAsk()) return Promise.resolve(null)
+  ask(input: ApprovalAskInput, signal?: AbortSignal): Promise<ApprovalAnswer | null> {
+    if (signal?.aborted || !this.deps.canAsk()) return Promise.resolve(null)
     const scope = scopeOf(input)
     if (this.ledger.isCurrent(scope, input.owner) && this.grants.allows(scope, input)) return Promise.resolve({ choice: 'once' })
     const request = this.ledger.add({ ...input, id: randomUUID(), createdAt: Date.now() }, scope)
     if (!request) return Promise.resolve(null)
     return new Promise((resolve) => {
       const timer = setTimeout(() => this.settle(request.id, null), APPROVAL_TIMEOUT_MS)
-      this.waiters.set(request.id, { resolve, timer })
+      const onAbort = signal ? () => { this.settle(request.id, null) } : undefined
+      this.waiters.set(request.id, { resolve, timer, signal, onAbort })
+      if (onAbort) signal?.addEventListener('abort', onAbort, { once: true })
       this.deps.open(request)
       this.publish()
     })
@@ -105,6 +109,7 @@ export class ApprovalBroker {
     if (!this.ledger.finish(id) || !waiter) return false
     this.waiters.delete(id)
     clearTimeout(waiter.timer)
+    if (waiter.onAbort) waiter.signal?.removeEventListener('abort', waiter.onAbort)
     this.deps.close(id)
     this.publish()
     waiter.resolve(answer)

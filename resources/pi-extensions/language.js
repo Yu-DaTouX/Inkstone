@@ -29,8 +29,8 @@ export function languageSystemPrompt(lang) {
 }
 
 const REMINDERS = {
-  'zh-CN': '<system-reminder>思考过程改回简体中文（用户设定的语言），代码、命令和标识符保持原样。</system-reminder>',
-  'en-US': '<system-reminder>Keep the thinking process in English (the user\'s language setting); code, commands and identifiers stay as they are.</system-reminder>'
+  'zh-CN': '<system-reminder>若工作目录的项目指令（如 AGENTS.md、CLAUDE.md）规定了沟通语言，优先按项目指令来；否则思考过程改回简体中文（界面语言设置）。代码、命令和标识符保持原样。</system-reminder>',
+  'en-US': '<system-reminder>If the project instructions in the working directory (such as AGENTS.md or CLAUDE.md) set a language for talking with the user, follow the project instructions instead; otherwise keep the thinking process in English (the interface language setting). Code, commands and identifiers stay as they are.</system-reminder>'
 }
 const DRIFT_MIN_LETTERS = 200
 export const DRIFT_COOLDOWN = 4

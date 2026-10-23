@@ -5,13 +5,16 @@ import type { UIMessage } from '../shared/ipc'
 
 export type HistorySegmentHydrator = (sessionFile: string, messages: UIMessage[]) => Promise<UIMessage[]>
 
+export type HistoryImageLocalizer = (mimeType: string, data: string) => string
+
 export async function readChainMessages(
   headFile: string,
   chains: SessionChainStore | null | undefined,
-  hydrate?: HistorySegmentHydrator
+  hydrate?: HistorySegmentHydrator,
+  localizeImage?: HistoryImageLocalizer
 ): Promise<ReadResult | null> {
   const readOne = async (file: string): Promise<ReadResult | null> => {
-    const result = await readSessionMessages(file).catch(() => null)
+    const result = await readSessionMessages(file, localizeImage ? { localizeImage } : undefined).catch(() => null)
     if (!result) return null
     const isolated = structuredClone(result.messages)
     let messages = hydrate

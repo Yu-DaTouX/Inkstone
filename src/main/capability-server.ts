@@ -191,7 +191,15 @@ export class CapabilityServer {
     this.pruneOps()
 
     this.server = createServer((req, res) => {
-      void this.handle(req, res)
+      void this.handle(req, res).catch(() => {
+        if (res.writableEnded || res.destroyed) return
+        if (res.headersSent) {
+          res.destroy()
+          return
+        }
+        res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ ok: false, error: 'internal_error' }))
+      })
     })
 
     await new Promise<void>((resolve, reject) => {
@@ -271,6 +279,14 @@ export class CapabilityServer {
       return
     }
 
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      reply(400, { ok: false, error: 'bad_request' })
+      return
+    }
+    if (body.params !== undefined && (!body.params || typeof body.params !== 'object' || Array.isArray(body.params))) {
+      reply(400, { ok: false, error: 'bad_params' })
+      return
+    }
     if (body.apiVersion !== CAPABILITY_API_VERSION) {
       reply(400, { ok: false, error: 'api_version_mismatch' })
       return

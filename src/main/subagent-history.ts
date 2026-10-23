@@ -3,7 +3,12 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promi
 import { join } from 'node:path'
 import type { SubagentRun, UIMessage } from '../shared/ipc'
 import { readSessionMessages } from './session-reader'
+import { localizeImage } from './image-store'
+import { YAN_DIR } from './paths'
 import { normalizeSubagentId } from '../shared/subagent-id'
+
+const localizeSubagentImage = (mimeType: string, data: string): string =>
+  localizeImage(join(YAN_DIR, 'attachments'), mimeType, data)
 
 export interface SubagentHistoryRecord {
   run: SubagentRun
@@ -115,7 +120,7 @@ export class SubagentHistory {
       for (const session of sessions.filter(f => f.isFile() && f.name.endsWith('.jsonl')).sort((a, b) => a.name.localeCompare(b.name))) {
         const sessionPath = join(sessionDir, session.name)
         if ((await stat(sessionPath)).size > MAX_HISTORY_BYTES) continue
-        const history = await readSessionMessages(sessionPath)
+        const history = await readSessionMessages(sessionPath, { localizeImage: localizeSubagentImage })
         if (history) {
           nativeTranscript = [...nativeTranscript, ...history.messages].slice(-MAX_TRANSCRIPT)
           sourceCwd = history.sourceCwd ?? sourceCwd

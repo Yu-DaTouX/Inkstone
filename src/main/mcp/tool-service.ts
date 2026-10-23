@@ -53,9 +53,12 @@ export function safeResultSlug(value: string): string {
 export async function describeMcpTool(
   manager: McpConnectionManager,
   serverId: string,
-  toolName: string
+  toolName: string,
+  signal?: AbortSignal
 ): Promise<McpToolDescription> {
-  const tools = await manager.listToolsCached(serverId)
+  signal?.throwIfAborted()
+  const tools = await manager.listToolsCached(serverId, { signal })
+  signal?.throwIfAborted()
   const tool = tools.find((t) => t.name === toolName)
   if (!tool) {
     throw new McpToolError('tool_not_found', `MCP 服务 ${serverId} 上没有这个工具：${toolName}`, {
@@ -78,6 +81,7 @@ export interface McpCallOptions {
   resultsDir: string
   maxInlineBytes?: number
   expectedRevision?: string
+  signal?: AbortSignal
 }
 
 async function pruneResultFiles(dir: string): Promise<void> {
@@ -160,7 +164,7 @@ export async function callMcpTool(
   args: Record<string, unknown>,
   options: McpCallOptions
 ): Promise<McpCallOutcome> {
-  const described = await describeMcpTool(manager, serverId, toolName)
+  const described = await describeMcpTool(manager, serverId, toolName, options.signal)
 
   if (options.expectedRevision && options.expectedRevision !== described.schemaRevision) {
     throw new McpToolError(
@@ -180,7 +184,8 @@ export async function callMcpTool(
     )
   }
 
-  const raw = await manager.callTool(serverId, toolName, args)
+  options.signal?.throwIfAborted()
+  const raw = await manager.callTool(serverId, toolName, args, { signal: options.signal })
   const saved = await saveResultImages(raw, serverId, toolName, options.resultsDir)
   const { toolError, text } = classifyMcpResult(raw, saved.options)
   const bytes = Buffer.byteLength(text, 'utf8')

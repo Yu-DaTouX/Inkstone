@@ -49,7 +49,7 @@ const inProcessScripts = [
 for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
 const spawnedScripts = [
-  'test-mcp-annotations-guard', 'test-terminal-status', 'test-taskbar-status',
+  'test-mcp-annotations-guard', 'test-backend-capability-boundaries', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
   'test-readonly-model-registration', 'test-mcp-image-results',
   'test-stream-loop-detector', 'test-stream-loop-settings', 'test-smooth-text-settings',
@@ -1462,6 +1462,8 @@ await runQueueImageTests(ok)
 await runSameMessagesTests(ok)
 await runAttachmentTests(ok)
 await runSessionImageTests(ok)
+const { runImageStoreTests } = await import('./test-image-store.mjs')
+await runImageStoreTests(ok)
 
 
 
@@ -1589,7 +1591,7 @@ const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').the
   }).then(() => import('../out/test/snapshots.mjs'))
 )
 const { runWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
-runWorkspaceChangesTests(ok, workspaceChanges)
+await runWorkspaceChangesTests(ok, workspaceChanges)
 
 {
   const { runRunnerTests } = await import('./test-runners.mjs')
@@ -2259,6 +2261,8 @@ await runGitRepoTests(ok)
   const searchText = await import('../out/test/session-search-text.mjs')
   const { runSessionSearchTests } = await import('./test-session-search.mjs')
   runSessionSearchTests(ok, searchText)
+  const { runSessionSearchCacheTests } = await import('./test-session-search-cache.mjs')
+  await runSessionSearchCacheTests(ok)
 }
 
 {

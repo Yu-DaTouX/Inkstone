@@ -97,6 +97,95 @@ export async function runSessionHistoryTests(ok, history, chainService) {
     const reopened = new chainService.SessionChainStore({ root: join(root, 'data') })
     await reopened.load()
     ok(reopened.chains().every((chain) => !chain.segments.some((seg) => seg.sessionFile.endsWith('e.jsonl'))), 'forget 结果已落盘')
+
+    console.log('\n--- 历史回看：跨段链式图片本地化（不把 base64 传进渲染进程） ---')
+
+    const imagePayloads = Array.from({ length: 8 }, (_, i) => `IMG${i}-${'A'.repeat(512 * 1024)}`)
+    const bigText = 'T'.repeat(96 * 1024)
+    const writeImageSession = async (name, id, payloads) => {
+      const path = join(sessions, name)
+      const content = [
+        { type: 'text', text: bigText },
+        ...payloads.map((data) => ({ type: 'image', mimeType: 'image/png', data }))
+      ]
+      const lines = [
+        JSON.stringify({ type: 'session', id, cwd: 'C:\\workspace\\images' }),
+        JSON.stringify({ type: 'message', message: { role: 'user', content } })
+      ]
+      await writeFile(path, lines.join('\n') + '\n', 'utf8')
+      return path
+    }
+
+    const imgA = await writeImageSession('img-a.jsonl', 's-img-a', imagePayloads.slice(0, 4))
+    const imgB = await writeImageSession('img-b.jsonl', 's-img-b', imagePayloads.slice(4))
+    await chains.link(imgA, imgB, 'h-img')
+
+    const seen = []
+    const localizer = (mimeType, data) => {
+      seen.push([mimeType, data.length])
+      return `file:///history/attachments/img-${seen.length}.png`
+    }
+
+    const localized = await history.readChainMessages(imgB, chains, undefined, localizer)
+    const localizedImages = localized?.messages.flatMap((m) => m.images ?? []) ?? []
+    ok(localized?.messages.length === 2, `带图的两段仍拼成 2 条（实际 ${localized?.messages.length}）`)
+    ok(localizedImages.length === 8, `跨段 8 张图片都还在（实际 ${localizedImages.length}）`)
+    ok(localizedImages.every((img) => !!img.url && img.data === ''), '图片被本地化成 url，消息里不再带 base64')
+    ok(
+      seen.length === 8 && seen.every(([mime, length]) => mime === 'image/png' && length === imagePayloads[0].length),
+      `localizer 拿到的 base64 与原始长度一致（实际 ${seen.length} 次，长度 ${seen[0]?.[1]}）`
+    )
+    ok(
+      localized.messages[0].images.every((img) => img.url.startsWith('file://')) &&
+        localized.messages[1].images.every((img) => img.url.startsWith('file://')),
+      '两段各自都改成 file:// 本地路径'
+    )
+    const localizedJson = JSON.stringify(localized)
+    ok(!localizedJson.includes(imagePayloads[0].slice(0, 128)), '返回的 JSON 不含图片 base64')
+    ok(
+      localizedJson.length < imagePayloads[0].length,
+      `返回的 JSON 比单张图片还小（实际 ${localizedJson.length} 字节）`
+    )
+    ok(
+      localized.messages[0].text.length < bigText.length && localized.messages[0].text.includes('已截断'),
+      '文本仍按 64KiB 截断'
+    )
+    ok(
+      (localized.messages[0].images ?? []).every((img) => img.data === '' && img.mimeType === 'image/png'),
+      '图片元数据保留、图片本身不被截断（完整本地化）'
+    )
+
+    const rawInline = await history.readChainMessages(imgB, chains)
+    const rawImages = rawInline?.messages.flatMap((m) => m.images ?? []) ?? []
+    ok(rawImages.length === 8, `未传 localizer 时仍读到 8 张图片（实际 ${rawImages.length}）`)
+    ok(
+      rawImages.every((img) => img.data.length === imagePayloads[0].length && !img.url),
+      '未传 localizer 时保持现状：仍内联 base64、无 url'
+    )
+    ok(
+      JSON.stringify(rawInline).length > imagePayloads[0].length * 2,
+      '未传 localizer 时返回值确实带大段 base64（对照）'
+    )
+
+    let hydrateCalls = 0
+    const hydratedInline = await history.readChainMessages(imgB, chains, async (_file, messages) => {
+      hydrateCalls += 1
+      return messages.map((message) => ({ ...message, text: `${message.text}（hydrated）` }))
+    }, localizer)
+    ok(hydrateCalls === 2 && hydratedInline?.messages.length === 2, `传 localizer 后 hydrate 仍逐段拿到消息（实际 ${hydrateCalls} 次）`)
+    ok(
+      hydratedInline.messages[0].text.includes('（hydrated）') && !!hydratedInline.messages[0].images?.[0]?.url,
+      'hydrate 之后图片本地化结果仍在（url 非空）'
+    )
+
+    const boom = () => { throw new Error('localize failed') }
+    const failedChain = await history.readChainMessages(imgB, chains, undefined, boom)
+    ok(!!failedChain && failedChain.messages.length === 2, 'localizer 抛错时历史仍然可读（不整段丢失）')
+    const fallbackImages = failedChain?.messages.flatMap((m) => m.images ?? []) ?? []
+    ok(fallbackImages.length === 8 && fallbackImages.every((img) => !img.url && !!img.data), '抛错时图片回退为内联 base64，不丢图')
+    ok(!!failedChain?.messages[0]?.text.includes('已截断'), '抛错时同段文本仍然按上限截断并返回')
+    const failedSingle = await history.readChainMessages(imgA, null, undefined, boom)
+    ok(!!failedSingle && failedSingle.messages.length === 1, '无链的单文件读取在 localizer 抛错时同样保留历史')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

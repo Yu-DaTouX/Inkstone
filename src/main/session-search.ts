@@ -46,12 +46,15 @@ export async function readSessionSearchText(path: string): Promise<string> {
 interface Entry {
   mtimeMs: number
   size: number
+  bytes: number
   text: string
 }
 
 const index = new Map<string, Entry>()
+let indexBytes = 0
 let building: Promise<void> | null = null
 let knownFiles: Array<{ path: string; mtimeMs: number; size: number }> = []
+let livePaths = new Set<string>()
 
 export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs: number; size: number }>> {
   const files: Array<{ path: string; mtimeMs: number; size: number }> = []
@@ -85,8 +88,51 @@ export async function listSessionFiles(): Promise<Array<{ path: string; mtimeMs:
 
 async function refreshIndex(): Promise<void> {
   knownFiles = await listSessionFiles()
-  const live = new Set(knownFiles.map((file) => file.path))
-  for (const path of index.keys()) if (!live.has(path)) index.delete(path)
+  livePaths = new Set(knownFiles.map((file) => file.path))
+  for (const path of index.keys()) if (!livePaths.has(path)) dropEntry(path)
+}
+
+function dropEntry(path: string): void {
+  const entry = index.get(path)
+  if (!entry) return
+  indexBytes -= entry.bytes
+  index.delete(path)
+}
+
+function touchEntry(path: string): void {
+  const entry = index.get(path)
+  if (!entry) return
+  index.delete(path)
+  index.set(path, entry)
+}
+
+function evictionCandidate(visited: Set<string>, keep: string): string | null {
+  let missing: string | null = null
+  for (const path of index.keys()) {
+    if (path === keep) continue
+    if (visited.has(path)) return path
+    if (!livePaths.has(path)) missing ??= path
+  }
+  return missing
+}
+
+function cacheText(path: string, file: { mtimeMs: number; size: number }, text: string, visited: Set<string>): Entry {
+  const entry: Entry = { mtimeMs: file.mtimeMs, size: file.size, bytes: Buffer.byteLength(text), text }
+  if (!livePaths.has(path)) return entry
+  if (entry.bytes <= MAX_INDEX_BYTES) {
+    const previous = index.get(path)?.bytes ?? 0
+    while (indexBytes - previous + entry.bytes > MAX_INDEX_BYTES) {
+      const victim = evictionCandidate(visited, path)
+      if (!victim) break
+      dropEntry(victim)
+    }
+  }
+  dropEntry(path)
+  if (indexBytes + entry.bytes <= MAX_INDEX_BYTES) {
+    index.set(path, entry)
+    indexBytes += entry.bytes
+  }
+  return entry
 }
 
 function ensureIndex(): Promise<void> {
@@ -105,27 +151,30 @@ export function warmSessionSearch(): void {
   setTimeout(() => void ensureIndex().catch(() => undefined), 4000).unref?.()
 }
 
-export async function searchSessionText(query: string, limit = 30): Promise<SessionSearchResult> {
+let scanning: Promise<unknown> = Promise.resolve()
+
+export function searchSessionText(query: string, limit = 30): Promise<SessionSearchResult> {
+  const run = scanning.then(() => searchNow(query, limit), () => searchNow(query, limit))
+  scanning = run.catch(() => undefined)
+  return run
+}
+
+async function searchNow(query: string, limit: number): Promise<SessionSearchResult> {
   const tokens = queryTokens(query)
   if (!tokens.length) return { hits: [], indexed: index.size, total: knownFiles.length }
   await ensureIndex()
   const hits: SessionSearchHit[] = []
+  const visited = new Set<string>()
   for (const file of knownFiles) {
     const path = file.path
+    visited.add(path)
     let entry = index.get(path)
-    if (!entry || entry.mtimeMs !== file.mtimeMs || entry.size !== file.size) {
+    if (entry && entry.mtimeMs === file.mtimeMs && entry.size === file.size) {
+      touchEntry(path)
+    } else {
       try {
-        entry = { ...file, text: await readSessionSearchText(path) }
-        index.set(path, entry)
-        let bytes = [...index.values()].reduce((sum, value) => sum + Buffer.byteLength(value.text), 0)
-        while (bytes > MAX_INDEX_BYTES && index.size > 1) {
-          const oldest = index.keys().next().value as string | undefined
-          if (!oldest) break
-          const removed = index.get(oldest)
-          index.delete(oldest)
-          bytes -= removed ? Buffer.byteLength(removed.text) : 0
-        }
-      } catch { index.delete(path); continue }
+        entry = cacheText(path, file, await readSessionSearchText(path), visited)
+      } catch { dropEntry(path); continue }
     }
     const hit = matchText(entry.text, tokens)
     if (hit) hits.push({ path, snippet: hit.snippet, matches: Math.min(hit.matches, 40), updatedAt: entry.mtimeMs })

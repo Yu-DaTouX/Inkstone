@@ -46,6 +46,10 @@ try {
   await put(join(yan, 'desktop.json'), { theme: 'dark', cwd: dirname(sourceSession), permissionMode: 'yolo', remoteAccess: { enabled: true }, projects: [{ id: 'p1', cwd: join(dir, 'project-not-backed-up') }] })
   await put(join(yan, 'session-chains.json'), { chains: [{ chainId: widgetSession, segments: [{ sessionFile: widgetSession, startedAt: 1, handoffId: null }], updatedAt: 1 }] })
   await put(join(yan, 'session-layout.json'), { version: 1, entries: [{ sessionFile: sourceSession, sessionId: 'session-restore-test', cwd: dir }] })
+  const manualTitles = { 'session-restore-test': '后台会话手工改名', 'session-legacy-restore': prose }
+  const cachedTitles = { 'session-restore-test': '原自动标题', 'session-legacy-restore': '另一自动标题' }
+  await put(join(yan, 'manual-titles.json'), manualTitles)
+  await put(join(yan, 'titles.json'), cachedTitles)
   await put(join(yan, 'interaction-state', digest(widgetSession) + '.json'), { version: 1, session: widgetSession, values: { 'bookmark:a': 'saved', 'widget:b': 'state' } })
   await put(join(yan, 'auth.json'), 'not-a-real-credential')
   await put(join(yan, 'pi-package-acquisition', 'package-authorizations.json'), 'must-not-restore-authorization')
@@ -61,6 +65,7 @@ try {
   const backup = await createDataBackup(backups, sessions, yan)
   const manifest = JSON.parse(await readFile(join(backup.path, 'manifest.json'), 'utf8'))
   check(manifest.version === 2 && manifest.sources.sessions, 'v2 备份保存路径迁移信息')
+  check(manifest.files.some((item) => item.path === 'yan/manual-titles.json') && manifest.files.some((item) => item.path === 'yan/titles.json'), '手工标题与自动标题缓存进入 v2 备份')
   check(manifest.files.some((item) => item.path === 'yan/attachments/image.png') && manifest.files.some((item) => item.path.endsWith('/scene.html')) && manifest.files.some((item) => item.path.endsWith('/clip.mp4')), '附件、HTML 成果与视频进入备份')
   check(manifest.files.every((item) => !/auth|linked/.test(item.path)), '不备份凭证、插件授权或外部链接目标')
   check((await verifyDataBackup(backup.path)).files === manifest.files.length, 'v2 备份逐文件校验通过')
@@ -72,6 +77,10 @@ try {
   const recoveredImage = join(pi, 'yan', 'attachments', 'image.png')
   const recoveredMessages = (await readFile(recoveredSession, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
   check(await readFile(recoveredImage, 'utf8') === 'fixture-image', '附件恢复到新目录')
+  const restoredManualTitles = JSON.parse(await readFile(join(pi, 'yan', 'manual-titles.json'), 'utf8'))
+  const restoredCachedTitles = JSON.parse(await readFile(join(pi, 'yan', 'titles.json'), 'utf8'))
+  check(JSON.stringify(restoredManualTitles) === JSON.stringify(manualTitles) && !recoveredMessages.some((row) => row.type === 'session_info'), '未写入会话文件的后台改名按稳定会话 ID 恢复，标题正文不改写')
+  check(JSON.stringify(restoredCachedTitles) === JSON.stringify(cachedTitles), '自动标题缓存恢复后保持原值')
   check(recoveredMessages[0].parentSession === recoveredSession && recoveredMessages[1].message.content[1].url === pathToFileURL(recoveredImage).href, '会话父链与图片 URL 指向恢复目录')
   check(recoveredMessages[1].message.content[0].text === prose, '恢复不改写消息正文中的路径文本')
   const chain = JSON.parse(await readFile(join(pi, 'yan', 'session-chains.json'), 'utf8'))
@@ -95,10 +104,12 @@ try {
   check(await readFile(sourceSession, 'utf8') === messages.map((item) => JSON.stringify(item)).join('\n') + '\n' && JSON.parse(await readFile(join(yan, 'desktop.json'), 'utf8')).remoteAccess.enabled === true, '恢复不修改源会话和现有设置')
   const restoredAgain = await restoreDataBackup(backup.path, destination)
   check(restoredAgain.path !== restored.path, '重复恢复始终创建新目录，不覆盖前次恢复')
-  const oversized = structuredClone(manifest)
-  oversized.files.find((entry) => entry.path === 'yan/desktop.json').size = 16 * 1024 * 1024 + 1
-  await put(join(backup.path, 'manifest.json'), oversized)
-  await rejects(() => restoreDataBackup(backup.path, destination), '在读取超大 JSON 元数据前拒绝恢复')
+  for (const name of ['desktop.json', 'manual-titles.json', 'titles.json']) {
+    const oversized = structuredClone(manifest)
+    oversized.files.find((entry) => entry.path === `yan/${name}`).size = 16 * 1024 * 1024 + 1
+    await put(join(backup.path, 'manifest.json'), oversized)
+    await rejects(() => restoreDataBackup(backup.path, destination), `在读取超大 ${name} 元数据前拒绝恢复`)
+  }
   const bad = structuredClone(manifest)
   bad.files[0].path = 'yan/artifacts/CON.html'
   await put(join(backup.path, 'manifest.json'), bad)

@@ -361,7 +361,8 @@ export class McpConnectionManager {
     }
   }
 
-  async listToolsCached(serverId: string, options: { ttlMs?: number; refresh?: boolean } = {}) {
+  async listToolsCached(serverId: string, options: McpRequestOptions & { ttlMs?: number; refresh?: boolean } = {}) {
+    this.assertRequestAllowed(options)
     const ttlMs = options.ttlMs ?? 60_000
     if (!options.refresh) {
       const cached = this.toolCache.get(serverId)
@@ -371,7 +372,7 @@ export class McpConnectionManager {
         return cached.tools
       }
     }
-    const tools = await this.listTools(serverId)
+    const tools = await this.listTools(serverId, options)
     this.toolCache.set(serverId, { tools, at: Date.now() })
     return tools
   }

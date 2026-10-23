@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { FileDiff, FileSnapshotSide, WorkspaceChangeFile, WorkspaceChanges } from '../shared/ipc'
@@ -115,7 +116,9 @@ export function writePathOf(args: unknown): string | undefined {
 
 export function clearSnapshots(): void {
   pending.clear()
+  for (const tree of activeTrees.values()) tree.cancelled = true
   activeTrees.clear()
+  evictedTrees.clear()
 }
 
 function lineCount(text?: string): number {
@@ -270,22 +273,37 @@ const TREE_MAX_FILES = 4000
 const TREE_MAX_DEPTH = 12
 const TREE_CONTENT_MAX_BYTES = 256 * 1024
 const TREE_CONTENT_BUDGET = 12 * 1024 * 1024
+const TREE_STAT_CONCURRENCY = 64
+const TREE_DIR_CONCURRENCY = 8
 const CHANGE_MAX_FILES = 40
 const MAX_ACTIVE_TREES = 32
 const MAX_EVICTED_TREES = 64
 
-export function captureTree(root: string, previous?: TreeSnapshot): TreeSnapshot {
-  const snap: TreeSnapshot = { root, files: new Map(), truncated: false, unreadable: false, unreadableDirs: 0, scanned: 0 }
-  let budget = TREE_CONTENT_BUDGET
+async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const at = next++
+      out[at] = await fn(items[at])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
 
-  const walk = (abs: string, rel: string, depth: number): void => {
-    if (snap.files.size >= TREE_MAX_FILES || depth > TREE_MAX_DEPTH) {
+export async function captureTree(root: string, previous?: TreeSnapshot): Promise<TreeSnapshot> {
+  const snap: TreeSnapshot = { root, files: new Map(), truncated: false, unreadable: false, unreadableDirs: 0, scanned: 0 }
+  const found: Array<{ key: string; abs: string; size: number; mtimeMs: number }> = []
+
+  const walk = async (abs: string, rel: string, depth: number): Promise<void> => {
+    if (depth > TREE_MAX_DEPTH) {
       snap.truncated = true
       return
     }
     let entries
     try {
-      entries = readdirSync(abs, { withFileTypes: true })
+      entries = await readdir(abs, { withFileTypes: true })
     } catch {
       snap.unreadableDirs++
       if (rel === '') {
@@ -294,47 +312,57 @@ export function captureTree(root: string, previous?: TreeSnapshot): TreeSnapshot
       }
       return
     }
-    for (const e of entries) {
-      if (snap.files.size >= TREE_MAX_FILES) {
-        snap.truncated = true
-        break
-      }
-      const key = rel ? `${rel}/${e.name}` : e.name
-      if (e.isDirectory()) {
-        if (SKIP_DIRS.has(e.name)) continue
-        walk(join(abs, e.name), key, depth + 1)
-        continue
-      }
-      if (!e.isFile()) continue
-      let st
+    const files = entries.filter((entry) => entry.isFile())
+    const dirs = entries.filter((entry) => entry.isDirectory() && !SKIP_DIRS.has(entry.name))
+    const stats = await mapLimited(files, TREE_STAT_CONCURRENCY, async (entry) => {
       try {
-        st = statSync(join(abs, e.name))
+        return await stat(join(abs, entry.name))
       } catch {
+        return null
+      }
+    })
+    for (let index = 0; index < files.length; index++) {
+      const info = stats[index]
+      if (!info) {
         snap.unreadableDirs++
         continue
       }
-      const entry: TreeEntry = { size: st.size, mtimeMs: st.mtimeMs }
-      const known = previous?.files.get(key)
-      if (known?.hash && known.size === st.size && known.mtimeMs === st.mtimeMs && st.size <= budget) {
-        entry.hash = known.hash
-        if (known.content !== undefined) entry.content = known.content
-        budget -= st.size
-      } else if (st.size <= TREE_CONTENT_MAX_BYTES && st.size <= budget) {
-        try {
-          const buf = readFileSync(join(abs, e.name))
-          entry.hash = createHash('sha256').update(buf).digest('hex').slice(0, 16)
-          const text = buf.toString('utf8')
-          if (!text.includes('\u0000')) entry.content = text
-          budget -= buf.byteLength
-        } catch {
-        }
-      }
-      snap.files.set(key, entry)
-      snap.scanned++
+      const key = rel ? rel + '/' + files[index].name : files[index].name
+      found.push({ key, abs: join(abs, files[index].name), size: info.size, mtimeMs: info.mtimeMs })
     }
+    await mapLimited(dirs, TREE_DIR_CONCURRENCY, (entry) =>
+      walk(join(abs, entry.name), rel ? rel + '/' + entry.name : entry.name, depth + 1)
+    )
   }
 
-  walk(root, '', 0)
+  await walk(root, '', 0)
+  found.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  if (found.length > TREE_MAX_FILES) {
+    snap.truncated = true
+    found.length = TREE_MAX_FILES
+  }
+
+  let budget = TREE_CONTENT_BUDGET
+  for (const file of found) {
+    const entry: TreeEntry = { size: file.size, mtimeMs: file.mtimeMs }
+    const known = previous?.files.get(file.key)
+    if (known?.hash && known.size === file.size && known.mtimeMs === file.mtimeMs && file.size <= budget) {
+      entry.hash = known.hash
+      if (known.content !== undefined) entry.content = known.content
+      budget -= file.size
+    } else if (file.size <= TREE_CONTENT_MAX_BYTES && file.size <= budget) {
+      try {
+        const buf = await readFile(file.abs)
+        entry.hash = createHash('sha256').update(buf).digest('hex').slice(0, 16)
+        const text = buf.toString('utf8')
+        if (!text.includes('\u0000')) entry.content = text
+        budget -= buf.byteLength
+      } catch {
+      }
+    }
+    snap.files.set(file.key, entry)
+    snap.scanned++
+  }
   return snap
 }
 
@@ -371,6 +399,10 @@ interface ActiveTree {
   rootKey: string
   snap: TreeSnapshot
   concurrent: boolean
+  cancelled: boolean
+  failed: boolean
+  readyAt: number
+  ready: Promise<void>
 }
 
 const activeTrees = new Map<string, ActiveTree>()
@@ -380,8 +412,13 @@ function treeKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
-export function beginTreeSnapshot(callId: string, root: string, sessionId?: string): void {
-  if (!callId || !root) return
+export function beginTreeSnapshot(callId: string, root: string, sessionId?: string): Promise<void> {
+  if (!callId || !root) return Promise.resolve()
+  const existing = activeTrees.get(callId)
+  if (existing) {
+    if (existing.root === root) return existing.ready
+    activeTrees.delete(callId)
+  }
   const key = treeKey(root)
   let concurrent = false
   for (const other of activeTrees.values()) {
@@ -390,20 +427,45 @@ export function beginTreeSnapshot(callId: string, root: string, sessionId?: stri
       other.concurrent = true
     }
   }
-  activeTrees.set(callId, { callId, sessionId, root, rootKey: key, snap: captureTree(root), concurrent })
+  const tree: ActiveTree = {
+    callId,
+    sessionId,
+    root,
+    rootKey: key,
+    concurrent,
+    cancelled: false,
+    failed: false,
+    readyAt: 0,
+    snap: { root, files: new Map(), truncated: false, unreadable: false, unreadableDirs: 0, scanned: 0 },
+    ready: Promise.resolve()
+  }
+  tree.ready = captureTree(root)
+    .then((snap) => {
+      if (!tree.cancelled) tree.snap = snap
+      tree.readyAt = Date.now()
+    })
+    .catch(() => {
+      tree.failed = true
+      tree.snap = { root, files: new Map(), truncated: true, unreadable: true, unreadableDirs: 1, scanned: 0 }
+      tree.readyAt = Date.now()
+    })
+  activeTrees.set(callId, tree)
   evictedTrees.delete(callId)
   while (activeTrees.size > MAX_ACTIVE_TREES) {
     const oldest = activeTrees.keys().next().value
     if (oldest === undefined) break
+    const evicted = activeTrees.get(oldest)
+    if (evicted) evicted.cancelled = true
     activeTrees.delete(oldest)
     evictedTrees.delete(oldest)
-    evictedTrees.set(oldest, root)
+    evictedTrees.set(oldest, evicted?.root ?? root)
     while (evictedTrees.size > MAX_EVICTED_TREES) {
       const stale = evictedTrees.keys().next().value
       if (stale === undefined) break
       evictedTrees.delete(stale)
     }
   }
+  return tree.ready
 }
 
 function toChangeFile(before: TreeSnapshot, after: TreeSnapshot, change: TreeChange): WorkspaceChangeFile {
@@ -439,7 +501,7 @@ function toChangeFile(before: TreeSnapshot, after: TreeSnapshot, change: TreeCha
   }
 }
 
-export function endTreeSnapshot(callId: string): WorkspaceChanges | null {
+export async function endTreeSnapshot(callId: string): Promise<WorkspaceChanges | null> {
   const active = activeTrees.get(callId)
   if (!active) {
     const evictedRoot = evictedTrees.get(callId)
@@ -447,14 +509,20 @@ export function endTreeSnapshot(callId: string): WorkspaceChanges | null {
     evictedTrees.delete(callId)
     return { root: evictedRoot, files: [], total: 0, scanned: 0, unknown: 'truncated' }
   }
+  const requestedAt = Date.now()
   activeTrees.delete(callId)
 
-  const after = captureTree(active.root, active.snap)
+  await active.ready
+  if (active.cancelled) return null
+  if (active.failed) {
+    return { root: active.root, files: [], total: 0, scanned: 0, unknown: 'unreadable' }
+  }
+  const after = await captureTree(active.root, active.snap)
   const changes = diffTrees(active.snap, after)
 
   let unknown: WorkspaceChanges['unknown']
   if (active.snap.unreadable && after.unreadable) unknown = 'unreadable'
-  else if (active.concurrent) unknown = 'concurrent'
+  else if (active.concurrent || !active.readyAt || active.readyAt > requestedAt) unknown = 'concurrent'
   else if (active.snap.truncated || after.truncated) unknown = 'truncated'
 
   const listed = changes.slice(0, CHANGE_MAX_FILES).map((c) => toChangeFile(active.snap, after, c))
