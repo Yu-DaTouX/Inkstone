@@ -139,7 +139,6 @@ export type SessionTextKey =
   | 'msgEditTip'
   | 'msgRewind'
   | 'msgFork'
-  | 'turnForkTip'
   | 'msgActions'
   | 'menuCode'
   | 'menuLink'
@@ -159,6 +158,8 @@ export type SessionTextKey =
   | 'questionAnswer'
   | 'wrapUpLabel'
   | 'wrapUpDismiss'
+  | 'wrapUpDone'
+  | 'wrapUpDecide'
 
 const ZH: Record<SessionTextKey, string> = {
   visual: '结构化图块（{lang}）暂不支持在这里渲染。',
@@ -299,7 +300,6 @@ const ZH: Record<SessionTextKey, string> = {
   msgEditTip: '把这条消息放回输入框修改后再发',
   msgRewind: '回退',
   msgFork: '分叉',
-  turnForkTip: '从这里分叉：新会话保留到这一轮为止的历史',
   msgActions: '消息操作',
   menuCode: '代码块',
   menuLink: '链接',
@@ -318,7 +318,9 @@ const ZH: Record<SessionTextKey, string> = {
   questionFailed: '提问未完成',
   questionAnswer: '回答',
   wrapUpLabel: '下一步建议',
-  wrapUpDismiss: '关闭建议'
+  wrapUpDismiss: '关闭建议',
+  wrapUpDone: '本轮小结',
+  wrapUpDecide: '等你决定'
 }
 
 const EN: Record<SessionTextKey, string> = {
@@ -460,7 +462,6 @@ const EN: Record<SessionTextKey, string> = {
   msgEditTip: 'Put this message back in the composer to edit and resend',
   msgRewind: 'Rewind',
   msgFork: 'Fork',
-  turnForkTip: 'Fork from here: a new session keeps the history up to this turn',
   msgActions: 'Message actions',
   menuCode: 'Code block',
   menuLink: 'Link',
@@ -479,7 +480,9 @@ const EN: Record<SessionTextKey, string> = {
   questionFailed: 'Question not completed',
   questionAnswer: 'Answer',
   wrapUpLabel: 'Next step',
-  wrapUpDismiss: 'Dismiss suggestion'
+  wrapUpDismiss: 'Dismiss suggestion',
+  wrapUpDone: 'Turn recap',
+  wrapUpDecide: 'Your call'
 }
 
 export function sessionText(lang: string, key: SessionTextKey, vars?: Record<string, string | number>): string {

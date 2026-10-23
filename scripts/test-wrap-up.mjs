@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -53,6 +54,8 @@ async function extensionTests(dataDir) {
     const sections = {}
     ok(on.handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } }) === undefined, 'sectioned prompt returns nothing')
     ok(/call `wrap_up` once at the end/.test(sections.inkstone_wrap_up ?? ''), 'guidance written into its own section')
+    ok(/same question in `ask`/.test(sections.inkstone_wrap_up) && /never leave it only in the reply text/.test(sections.inkstone_wrap_up), 'guidance requires a question asked in the reply to appear in ask')
+    ok(/Required whenever the final reply asks/.test(on.tools[0].parameters.properties.ask.description), 'ask description repeats the rule at the call site')
     const flat = on.handlers.before_agent_start({ systemPrompt: 'BASE' })
     ok(flat.systemPrompt.startsWith('BASE\n\n') && flat.systemPrompt.includes('wrap_up'), 'guidance appended without sections')
     ok(on.tools.length === 1, 'prompt hook does not register twice')
@@ -155,10 +158,55 @@ async function rendererTests(dir) {
   ok(m.withoutWrapUp(assistant) === assistant, 'turn without wrap_up keeps identity')
 }
 
+function installDomGlobals() {
+  function ElementShim() {}
+  ElementShim.prototype = { focus() {}, blur() {}, addEventListener() {}, removeEventListener() {} }
+  const noop = () => {}
+  globalThis.HTMLElement = ElementShim
+  globalThis.Element = ElementShim
+  globalThis.Node = ElementShim
+  globalThis.localStorage = { getItem: () => null, setItem: noop, removeItem: noop, clear: noop }
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' })
+  globalThis.window = {
+    yan: new Proxy({}, { get: () => async () => undefined }),
+    HTMLElement: ElementShim, Element: ElementShim, Node: ElementShim,
+    addEventListener: noop, removeEventListener: noop,
+    getComputedStyle: globalThis.getComputedStyle,
+    screen: { orientation: { angle: 0 } },
+    location: { href: 'http://localhost/' }
+  }
+  globalThis.document = { readyState: 'loading', addEventListener: noop, removeEventListener: noop, documentElement: {}, visibilityState: 'visible' }
+}
+
+async function cardMarkupTests(dir) {
+  installDomGlobals()
+  const contents = [
+    "import * as React from 'react'",
+    "import { renderToStaticMarkup } from 'react-dom/server'",
+    `import { WrapUpCard } from '${posix(join(ROOT, 'src/renderer/src/features/session/WrapUpCard.tsx'))}'`,
+    `import { I18nProvider } from '${posix(join(ROOT, 'src/renderer/src/i18n/index.tsx'))}'`,
+    'export { React, renderToStaticMarkup, WrapUpCard, I18nProvider }'
+  ].join('\n')
+  const outfile = join(dir, 'card.cjs')
+  await build({ stdin: { contents, resolveDir: ROOT, loader: 'tsx' }, outfile, bundle: true, platform: 'node', format: 'cjs', jsx: 'automatic', logLevel: 'silent', loader: { '.css': 'empty' } })
+  const { React, renderToStaticMarkup, WrapUpCard, I18nProvider } = createRequire(import.meta.url)(outfile)
+  const render = (card) => renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(WrapUpCard, { card: { callId: card.callId, recap: card.recap, ask: card.ask ?? null, actions: card.actions ?? [] }, dismissKey: card.callId })))
+
+  const recapOnly = render({ callId: 'm1', recap: 'Edited `wrap-up.js`; tests pass.' })
+  ok(recapOnly.includes('v3-wrapup-kicker') && !recapOnly.includes('data-pending') && !recapOnly.includes('v3-wrapup-ask'), 'recap-only card shows a recap heading and no decision area')
+  ok(recapOnly.includes('<code class="v3-wrapup-code">wrap-up.js</code>') && !recapOnly.includes('`'), 'backticks in recap render as inline code')
+
+  const pending = render({ callId: 'm2', recap: 'Done.', ask: 'Restart `yan`?', actions: [{ label: 'Restart', message: 'Restart it' }, { label: 'Later', message: 'Wait' }] })
+  ok(pending.includes('data-pending=""') && pending.includes('data-testid="v3-wrap-up-question"'), 'card with ask is marked pending and shows the question')
+  ok(pending.indexOf('v3-wrap-up-recap') < pending.indexOf('v3-wrap-up-question') && pending.indexOf('v3-wrap-up-question') < pending.indexOf('v3-wrap-up-action'), 'order: recap, question, then buttons')
+  ok((pending.match(/data-testid="v3-wrap-up-action"/g) ?? []).length === 2 && pending.includes('<code class="v3-wrapup-code">yan</code>'), 'two buttons and inline code in the question')
+}
+
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-wrap-up-'))
 try {
   await extensionTests(dir)
   await rendererTests(dir)
+  await cardMarkupTests(dir)
   console.log(`wrap-up: ${checks} checks passed`)
 } finally {
   await rm(dir, { recursive: true, force: true })

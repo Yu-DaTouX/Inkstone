@@ -1,9 +1,10 @@
-import { useSyncExternalStore, type JSX } from 'react'
+import { useMemo, useSyncExternalStore, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { Button, Card, IconButton } from '../../ui'
 import { sendAsComposerMessage } from '../../lib/composer-store-send'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
+import { parseUserInline } from './user-text'
 import type { WrapUpCardModel } from './wrap-up'
 import './wrap-up.css'
 
@@ -28,7 +29,13 @@ export function dismissWrapUp(key: string): void {
 }
 
 export function useWrapUpDismissed(key: string): boolean {
-  return useSyncExternalStore(subscribe, () => dismissed.has(key))
+  const isDismissed = (): boolean => dismissed.has(key)
+  return useSyncExternalStore(subscribe, isDismissed, isDismissed)
+}
+
+function WrapUpText({ text }: { text: string }): JSX.Element {
+  const runs = useMemo(() => parseUserInline(text), [text])
+  return <>{runs.map((run, index) => run.kind === 'code' ? <code key={index} className="v3-wrapup-code">{run.text}</code> : run.text)}</>
 }
 
 export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismissKey: string }): JSX.Element | null {
@@ -41,16 +48,20 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
     void sendAsComposerMessage(message, t)
   }
   return (
-    <Card as="section" padding="sm" className="v3-wrapup" aria-label={tt('wrapUpLabel')} data-testid="v3-wrap-up">
+    <Card as="section" padding="sm" className="v3-wrapup" data-pending={card.ask ? '' : undefined} aria-label={tt('wrapUpLabel')} data-testid="v3-wrap-up">
       <div className="v3-wrapup-head">
-        <p className="v3-wrapup-recap" data-testid="v3-wrap-up-recap">{card.recap}</p>
+        <span className="v3-wrapup-kicker">
+          <Icon name={card.ask ? 'help' : 'check'} size={13} />
+          {card.ask ? tt('wrapUpDecide') : tt('wrapUpDone')}
+        </span>
         <IconButton size="sm" aria-label={tt('wrapUpDismiss')} onPress={() => dismissWrapUp(dismissKey)} data-testid="v3-wrap-up-dismiss">
           <Icon name="close" size={14} />
         </IconButton>
       </div>
+      <p className="v3-wrapup-recap" data-testid="v3-wrap-up-recap"><WrapUpText text={card.recap} /></p>
       {card.ask ? (
         <div className="v3-wrapup-ask">
-          <p className="v3-wrapup-question"><strong>{card.ask}</strong></p>
+          <p className="v3-wrapup-question" data-testid="v3-wrap-up-question"><WrapUpText text={card.ask} /></p>
           {card.actions.length ? (
             <div className="v3-wrapup-actions">
               {card.actions.map((action, index) => (

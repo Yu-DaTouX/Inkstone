@@ -341,6 +341,28 @@ group('按会话切换（ui-v3 镜像）')
   ok(orderedTileIds(readTileLayoutEntry('s:A').tileLayout).join() === 'chat', '会话 A 的 entry 退回只有聊天')
 }
 
+group('工作区收起状态保持')
+{
+  reset()
+  const ui = mod.useUiV3
+  ui.getState().loadLayoutSession(null)
+  ui.getState().setWorkspaceTab('files')
+  ui.getState().setWorkspaceOpen(true)
+  ui.getState().loadLayoutSession('C')
+  ok(ui.getState().workspacePanes.join() === 'files', '新会话继承 home 的文件面板', ui.getState().workspacePanes)
+  ui.getState().closeWorkspacePane('files')
+  ok(ui.getState().workspacePanes.length === 0 && ui.getState().workspaceOpen === false, '在会话里关掉最后一个面板后工作区收起')
+  ok(panesOfEntry(readTileLayoutEntry(HOME_LAYOUT_KEY)).length === 0, '关掉的面板同时从 home 布局里去掉', panesOfEntry(readTileLayoutEntry(HOME_LAYOUT_KEY)))
+  ui.getState().loadLayoutSession(null)
+  ok(ui.getState().workspacePanes.length === 0, '新会话不再从 home 继承已关掉的文件面板', ui.getState().workspacePanes)
+  ui.getState().loadLayoutSession('C')
+  ui.getState().setWorkspaceTab('files')
+  ui.getState().setWorkspaceOpen(false)
+  ui.getState().loadLayoutSession('D')
+  ui.getState().loadLayoutSession('C')
+  ok(ui.getState().workspacePanes.join() === 'files' && ui.getState().workspaceOpen === false, '手动收起工作区后切回有面板的会话仍保持收起', { panes: ui.getState().workspacePanes, open: ui.getState().workspaceOpen })
+}
+
 await rm(outdir, { recursive: true, force: true })
 assert.ok(true)
 process.stdout.write(`\n全部通过：${report.pass}/${report.pass + report.fail}\n`)

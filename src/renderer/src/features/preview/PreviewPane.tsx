@@ -255,7 +255,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const liveDraft =
     liveMatch && liveTarget?.draft != null && (liveTarget.drafting || !fileHtml) && !editing && sourceChoice !== true ? liveTarget.draft : null
   const htmlReading = (reading && fileHtml) || liveDraft !== null
-  const canvas = htmlReading && (canvasChoice ?? liveMatch)
+  const canvas = htmlReading && (canvasChoice ?? (liveMatch || prefersRenderedHtml(activeAbs || activePath)))
   const chooseCanvas = (next: boolean): void => {
     setCanvasChoice(next)
     writeCanvasChoice(next)
