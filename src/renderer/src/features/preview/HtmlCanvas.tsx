@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from 'react'
 import { Check, ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from 'lucide-react'
-import { Badge, Button, IconButton, Input, Menu, MenuItem, MenuTrigger, Popover, TextField } from '../../ui'
+import { Badge, Button, IconButton, Input, Label, Menu, MenuItem, MenuTrigger, Popover, TextField } from '../../ui'
 import type { PreviewText } from './preview-text'
 import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'
 import type { HtmlPreviewRect } from '../../../../shared/html-artifact-preview'
@@ -10,6 +10,7 @@ import {
   CANVAS_DEVICE_ORDER,
   CANVAS_FRAME_STATE_KEY,
   CANVAS_HEAD_CHROME,
+  clampCustomHeight,
   clampCustomWidth,
   fitView,
   frameFocusView,
@@ -18,6 +19,7 @@ import {
   panBy,
   parseCanvasFrameState,
   serializeCanvasFrameState,
+  setCanvasCustomHeight,
   setCanvasCustomWidth,
   setCanvasDevices,
   viewportFor,
@@ -109,6 +111,7 @@ export function HtmlCanvas({
   const [dockInset, setDockInset] = useState(0)
   const [agentPoint, setAgentPoint] = useState<{ x: number; y: number } | null>(null)
   const [widthDraft, setWidthDraft] = useState(String(frameState.customWidth))
+  const [heightDraft, setHeightDraft] = useState(String(frameState.customHeight))
   const activeTool = canvasTool(tool)
   const bridgeTool = activeTool.frameInput === 'bridge' ? activeTool.id : null
   const bridgeRef = useRef<string | null>(bridgeTool)
@@ -474,7 +477,7 @@ export function HtmlCanvas({
       : `${frameName(viewport)} · ${viewport.width}×${viewport.height}`
 
   const deviceSize = (id: CanvasDeviceId): string => {
-    const viewport = viewportFor(id, frameState.customWidth)
+    const viewport = viewportFor(id, frameState.customWidth, frameState.customHeight)
     return `${viewport.width}×${viewport.height}`
   }
 
@@ -487,6 +490,12 @@ export function HtmlCanvas({
     const next = clampCustomWidth(Number(widthDraft.replace(/[^0-9.]/g, '')))
     setWidthDraft(String(next))
     setFrameState((state) => setCanvasCustomWidth(state, next))
+  }
+
+  const commitHeight = (): void => {
+    const next = clampCustomHeight(Number(heightDraft.replace(/[^0-9.]/g, '')))
+    setHeightDraft(String(next))
+    setFrameState((state) => setCanvasCustomHeight(state, next))
   }
 
   const totalDuration = activeComposition ? activeComposition.duration : 0
@@ -733,6 +742,7 @@ export function HtmlCanvas({
               </Menu>
               <div className="v3-canvas-device-width">
                 <TextField label={labels.canvasCustomWidth} value={widthDraft} onChange={setWidthDraft} isDisabled={!frameState.devices.includes('custom')}>
+                  <Label className="ui-field__label">{labels.canvasCustomWidth}</Label>
                   <Input
                     inputMode="numeric"
                     data-testid="v3-canvas-custom-width"
@@ -741,6 +751,19 @@ export function HtmlCanvas({
                       if (event.key !== 'Enter') return
                       event.preventDefault()
                       commitWidth()
+                    }}
+                  />
+                </TextField>
+                <TextField label={labels.canvasCustomHeight} value={heightDraft} onChange={setHeightDraft} isDisabled={!frameState.devices.includes('custom')}>
+                  <Label className="ui-field__label">{labels.canvasCustomHeight}</Label>
+                  <Input
+                    inputMode="numeric"
+                    data-testid="v3-canvas-custom-height"
+                    onBlur={commitHeight}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      event.preventDefault()
+                      commitHeight()
                     }}
                   />
                 </TextField>

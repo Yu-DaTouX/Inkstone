@@ -23,6 +23,7 @@ export interface CanvasFrameBox {
 export interface CanvasFrameState {
   devices: CanvasDeviceId[]
   customWidth: number
+  customHeight: number
 }
 
 export const CANVAS_DEVICE_ORDER: readonly CanvasDeviceId[] = ['desktop', 'laptop', 'tablet', 'phone', 'custom']
@@ -34,11 +35,11 @@ export const CANVAS_DEVICE_PRESETS: readonly CanvasViewport[] = [
   { id: 'phone', width: 390, height: 844 }
 ]
 
-export const CANVAS_CUSTOM_DEVICE = { width: 1024, minWidth: 320, maxWidth: 2560, height: 900 } as const
+export const CANVAS_CUSTOM_DEVICE = { width: 1024, minWidth: 320, maxWidth: 2560, height: 900, minHeight: 240, maxHeight: 4096 } as const
 
 export const CANVAS_FRAME_STATE_KEY = 'yan.preview.canvasFrames'
 
-export const CANVAS_DEFAULT_FRAME_STATE: CanvasFrameState = { devices: ['desktop', 'phone'], customWidth: CANVAS_CUSTOM_DEVICE.width }
+export const CANVAS_DEFAULT_FRAME_STATE: CanvasFrameState = { devices: ['desktop', 'phone'], customWidth: CANVAS_CUSTOM_DEVICE.width, customHeight: CANVAS_CUSTOM_DEVICE.height }
 
 export const CANVAS_MIN_ZOOM = 0.1
 export const CANVAS_MAX_ZOOM = 2
@@ -56,8 +57,13 @@ export function clampCustomWidth(width: number): number {
   return Math.round(Math.min(CANVAS_CUSTOM_DEVICE.maxWidth, Math.max(CANVAS_CUSTOM_DEVICE.minWidth, width)))
 }
 
-export function viewportFor(id: CanvasDeviceId, customWidth: number): CanvasViewport {
-  if (id === 'custom') return { id, width: clampCustomWidth(customWidth), height: CANVAS_CUSTOM_DEVICE.height }
+export function clampCustomHeight(height: number): number {
+  if (!Number.isFinite(height)) return CANVAS_CUSTOM_DEVICE.height
+  return Math.round(Math.min(CANVAS_CUSTOM_DEVICE.maxHeight, Math.max(CANVAS_CUSTOM_DEVICE.minHeight, height)))
+}
+
+export function viewportFor(id: CanvasDeviceId, customWidth: number, customHeight: number = CANVAS_CUSTOM_DEVICE.height): CanvasViewport {
+  if (id === 'custom') return { id, width: clampCustomWidth(customWidth), height: clampCustomHeight(customHeight) }
   const preset = CANVAS_DEVICE_PRESETS.find((candidate) => candidate.id === id) ?? CANVAS_DEVICE_PRESETS[0]
   return { id, width: preset.width, height: preset.height }
 }
@@ -92,7 +98,7 @@ export function visibleViewports(
   const viewport = compositionViewport(composition)
   if (viewport) return [viewport]
   const devices = state.devices.length ? state.devices : CANVAS_DEFAULT_FRAME_STATE.devices
-  return devices.map((id) => viewportFor(id, state.customWidth))
+  return devices.map((id) => viewportFor(id, state.customWidth, state.customHeight))
 }
 
 export function toggleCanvasDevice(state: CanvasFrameState, id: CanvasDeviceId): CanvasFrameState {
@@ -111,8 +117,12 @@ export function setCanvasCustomWidth(state: CanvasFrameState, width: number): Ca
   return { ...state, customWidth: clampCustomWidth(width) }
 }
 
+export function setCanvasCustomHeight(state: CanvasFrameState, height: number): CanvasFrameState {
+  return { ...state, customHeight: clampCustomHeight(height) }
+}
+
 export function parseCanvasFrameState(raw: string | null): CanvasFrameState {
-  if (!raw) return { devices: [...CANVAS_DEFAULT_FRAME_STATE.devices], customWidth: CANVAS_DEFAULT_FRAME_STATE.customWidth }
+  if (!raw) return { ...CANVAS_DEFAULT_FRAME_STATE, devices: [...CANVAS_DEFAULT_FRAME_STATE.devices] }
   try {
     const value = JSON.parse(raw) as unknown
     if (!value || typeof value !== 'object') throw new Error('not an object')
@@ -122,16 +132,18 @@ export function parseCanvasFrameState(raw: string | null): CanvasFrameState {
       : []
     const devices = CANVAS_DEVICE_ORDER.filter((id) => chosen.includes(id))
     const customWidth = typeof record.customWidth === 'number' ? clampCustomWidth(record.customWidth) : CANVAS_DEFAULT_FRAME_STATE.customWidth
-    return { devices: devices.length ? devices : [...CANVAS_DEFAULT_FRAME_STATE.devices], customWidth }
+    const customHeight = typeof record.customHeight === 'number' ? clampCustomHeight(record.customHeight) : CANVAS_DEFAULT_FRAME_STATE.customHeight
+    return { devices: devices.length ? devices : [...CANVAS_DEFAULT_FRAME_STATE.devices], customWidth, customHeight }
   } catch {
-    return { devices: [...CANVAS_DEFAULT_FRAME_STATE.devices], customWidth: CANVAS_DEFAULT_FRAME_STATE.customWidth }
+    return { ...CANVAS_DEFAULT_FRAME_STATE, devices: [...CANVAS_DEFAULT_FRAME_STATE.devices] }
   }
 }
 
 export function serializeCanvasFrameState(state: CanvasFrameState): string {
   return JSON.stringify({
     devices: CANVAS_DEVICE_ORDER.filter((id) => state.devices.includes(id)),
-    customWidth: clampCustomWidth(state.customWidth)
+    customWidth: clampCustomWidth(state.customWidth),
+    customHeight: clampCustomHeight(state.customHeight)
   })
 }
 
