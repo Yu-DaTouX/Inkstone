@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Folder } from 'lucide-react'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { Kbd, Skeleton } from '../../ui'
+import { InlineImage } from '../../ui/InlineImage'
 import { useT, type TFunc } from '../../i18n'
 import type { SlashCommand } from '../../../../shared/ipc'
 import { firstClause, toAbsoluteFilePath, type CompletionState } from './useCompletion'
@@ -245,7 +246,7 @@ export function ComposerMenu({
               onClick={() => completion.completeImage(option)}
             >
               <span className="cmp-name">
-                <img className="cmp-thumb" src={`data:${option.attachment.mimeType};base64,${option.attachment.preview}`} alt="" />
+                <InlineImage className="cmp-thumb" src={`data:${option.attachment.mimeType};base64,${option.attachment.preview}`} alt="" />
                 <Hit text={option.label} query={query} />
               </span>
               <span className="cmp-desc">{option.attachment.name}</span>

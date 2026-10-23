@@ -7,10 +7,14 @@ import { createServer, get as httpGet } from 'node:http'
 import { sampleProcessTree } from './lib/process-sample.mjs'
 import { syntheticEnvironment } from './lib/live-synthetic-isolation.mjs'
 import { evidenceDir } from './lib/evidence-dir.mjs'
+import { soakOptions, fixtureExpression, soakGrowth, summarizeMemoryDump } from './lib/memory-soak.mjs'
 
 const requireEsm = createRequire(import.meta.url)
 const root = process.cwd()
 const argv = process.argv.slice(2)
+const soak = soakOptions(argv)
+const syntheticOnly = soak.cycles > 0 || process.env.YAN_TEST_SYNTHETIC_ONLY === '1'
+if (soak.cycles && process.platform !== 'win32') throw new Error('Soak process-tree sampling currently requires Windows')
 const flag = (name, fallback) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : fallback
@@ -24,12 +28,21 @@ const injectMode = flag('inject', 'setstate')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const sandbox = mkdtempSync(join(tmpdir(), 'yan-mem-'))
+let child
+let ws
+let cleanupStarted = false
+const killTree = () => {
+  if (cleanupStarted || !child?.pid || child.exitCode !== null || child.signalCode !== null) return
+  cleanupStarted = true
+  spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 20_000 })
+}
+try {
 const userData = join(sandbox, 'userData')
 const sessions = join(sandbox, 'sessions')
 const data = join(sandbox, 'data')
 const piAgent = join(sandbox, 'pi-agent')
 for (const d of [userData, sessions, data, piAgent]) mkdirSync(d, { recursive: true })
-for (const f of (process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? [] : ['auth.json', 'models.json', 'models-store.json'])) {
+for (const f of (syntheticOnly ? [] : ['auth.json', 'models.json', 'models-store.json'])) {
   const src = join(process.env.YAN_PI_DIR?.trim() || join(homedir(), '.pi', 'agent'), f)
   if (existsSync(src)) copyFileSync(src, join(piAgent, f))
 }
@@ -64,7 +77,8 @@ const port = await freePort()
 
 const inspectPort = argv.includes('--main-heap') ? await freePort() : 0
 
-const env = process.env.YAN_TEST_SYNTHETIC_ONLY === '1' ? syntheticEnvironment(process.env) : { ...process.env }
+const env = syntheticOnly ? syntheticEnvironment(process.env) : { ...process.env }
+if (syntheticOnly) env.YAN_TEST_SYNTHETIC_ONLY = '1'
 for (const k of ['ELECTRON_RUN_AS_NODE', 'YAN_CLI_URL', 'YAN_CLI_TOKEN', 'YAN_SESSION_ID', 'YAN_PROJECT_ID']) delete env[k]
 Object.assign(env, {
   YAN_USER_DATA: userData,
@@ -81,17 +95,12 @@ mkdirSync(env.YAN_DOWNLOADS_DIR, { recursive: true })
 
 const electronBin = requireEsm('electron')
 const electronArgs = argv.includes('--main-heap') ? ['.', `--inspect=${inspectPort}`] : ['.']
-const child = spawn(electronBin, electronArgs, { cwd: root, env, windowsHide: true })
+child = spawn(electronBin, electronArgs, { cwd: root, env, windowsHide: true })
+let spawnError
+child.on('error', (error) => { spawnError = error })
 let log = ''
 child.stdout.on('data', (d) => (log += d))
 child.stderr.on('data', (d) => (log += d))
-
-const killTree = () => {
-  try {
-    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
-  } catch {
-  }
-}
 
 const httpJson = (path) =>
   new Promise((done, fail) => {
@@ -119,7 +128,8 @@ class Cdp {
     ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(ev.data)
       if (msg.method) {
-        if (!/heapprofiler|Profiler\.|Debugger\.scriptParsed/.test(msg.method)) {
+        this.onEvent?.(msg)
+        if (!/heapprofiler|Profiler\.|Debugger\.scriptParsed|Tracing\./.test(msg.method)) {
           console.error('  · event', msg.method, JSON.stringify(msg.params ?? {}).slice(0, 200))
         }
         return
@@ -158,6 +168,8 @@ if (argv.includes('--watch-targets')) {
 const target = await (async () => {
   await sleep(Number(flag('wait', '0')) * 1000)
   for (let i = 0; i < 90; i++) {
+    if (spawnError) throw spawnError
+    if (child.exitCode !== null) throw new Error(`Isolated Electron exited: ${child.exitCode}`)
     try {
       const list = await httpJson('/json/list')
       if (list.length) {
@@ -175,27 +187,34 @@ const target = await (async () => {
 })()
 
 if (!target) {
-  console.error('✗ 没能连上渲染进程调试口（应用没起来？）')
-  console.error(log.slice(-3000))
-  killTree()
-  rmSync(sandbox, { recursive: true, force: true })
-  process.exit(1)
+  throw new Error(`没能连上隔离渲染进程调试口\n${log.slice(-3000)}`)
 }
 
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise((done, fail) => {
-  ws.addEventListener('open', done, { once: true })
-  ws.addEventListener('error', fail, { once: true })
-})
+ws = new WebSocket(target.webSocketDebuggerUrl)
+let connectTimer
+try {
+  await new Promise((done, fail) => {
+    connectTimer = setTimeout(() => fail(new Error('CDP WebSocket connection timeout')), 15_000)
+    ws.addEventListener('open', done, { once: true })
+    ws.addEventListener('error', fail, { once: true })
+  })
+} finally {
+  clearTimeout(connectTimer)
+}
 ws.addEventListener('close', (ev) => console.error('⚠ CDP 连接关闭', ev.code, ev.reason))
 ws.addEventListener('error', (ev) => console.error('⚠ CDP 连接错误', ev?.message ?? ''))
-const cdp = new Cdp(ws)
+let cdp = new Cdp(ws)
 
-const withTimeout = (p, ms, label) =>
-  Promise.race([
-    p,
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`CDP 超时 ${ms}ms: ${label}`)), ms))
-  ])
+const withTimeout = async (p, ms, label) => {
+  let timer
+  try {
+    return await Promise.race([p, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`CDP 超时 ${ms}ms: ${label}`)), ms)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const evaluate = async (expression) => {
   const res = await withTimeout(
@@ -214,20 +233,23 @@ for (let i = 0; i < 120; i++) {
   await sleep(1000)
 }
 if (!ready) {
-  console.error('✗ 渲染端 store 一直没就绪')
-  console.error(log.slice(-3000))
-  killTree()
-  rmSync(sandbox, { recursive: true, force: true })
-  process.exit(1)
+  throw new Error(`隔离渲染端 store 一直没就绪\n${log.slice(-3000)}`)
 }
 
 const snapshot = async (label, extra = {}) => {
-  await withTimeout(cdp.send('HeapProfiler.enable'), 20_000, 'HeapProfiler.enable').catch(() => {})
-  await withTimeout(cdp.send('HeapProfiler.collectGarbage'), 20_000, 'collectGarbage').catch(() => {})
+  let gcError = null
+  try {
+    await withTimeout(cdp.send('HeapProfiler.enable'), 20_000, 'HeapProfiler.enable')
+    await withTimeout(cdp.send('HeapProfiler.collectGarbage'), 20_000, 'collectGarbage')
+  } catch (error) {
+    gcError = String(error)
+    if (soak.cycles) throw error
+  }
   await sleep(400)
   const heap = await withTimeout(cdp.send('Runtime.getHeapUsage'), 20_000, 'getHeapUsage')
   const dom = await withTimeout(cdp.send('Memory.getDOMCounters'), 20_000, 'getDOMCounters').catch(() => ({}))
-  const messages = await evaluate('window.__yanStore.getState().messages.length')
+  const messages = await evaluate('window.__yanStore?.getState().messages.length ?? null')
+  const objectUrls = await evaluate('window.__memorySoakUrlTracker ? { created: window.__memorySoakUrlTracker.created, revoked: window.__memorySoakUrlTracker.revoked, active: window.__memorySoakUrlTracker.active.size } : null')
   const proc = sampleProcessTree(child.pid)
   const byName = {}
   for (const p of proc.processSamples) {
@@ -238,9 +260,16 @@ const snapshot = async (label, extra = {}) => {
   }
   const row = {
     label,
+    at: new Date().toISOString(),
+    gcSucceeded: !gcError,
+    gcError,
+    processSamples: proc.processSamples,
     messages,
+    objectUrls,
     heapUsedMiB: +(heap.usedSize / 1048576).toFixed(1),
     heapTotalMiB: +(heap.totalSize / 1048576).toFixed(1),
+    backingStorageMiB: Number.isFinite(heap.backingStorageSize) ? +(heap.backingStorageSize / 1048576).toFixed(1) : null,
+    embedderHeapMiB: Number.isFinite(heap.embedderHeapUsedSize) ? +(heap.embedderHeapUsedSize / 1048576).toFixed(1) : null,
     domNodes: dom.nodes ?? null,
     jsEventListeners: dom.jsEventListeners ?? null,
     documents: dom.documents ?? null,
@@ -255,6 +284,52 @@ const snapshot = async (label, extra = {}) => {
   console.log(JSON.stringify(row))
   return row
 }
+
+const verifyImages = async (expected, openViewer = false) => evaluate(`(async () => {
+  const wait = async (test, label) => {
+    const until = performance.now() + 5000
+    while (!test()) {
+      if (performance.now() > until) throw new Error('Fixture image lifecycle timed out: ' + label)
+      await new Promise((done) => setTimeout(done, 20))
+    }
+  }
+  if (${Boolean(expected)}) await wait(() => document.querySelectorAll('img.v3-img-open, img.v3-md-image').length > 0, 'transcript image nodes')
+  const images = [...document.querySelectorAll('img.v3-img-open, img.v3-md-image')]
+  if (!${Boolean(expected)} && images.length) throw new Error('Unexpected fixture images')
+  await wait(() => images.every((image) => image.getAttribute('src')), 'owned display URLs')
+  await Promise.all(images.map(async (image) => {
+    image.loading = 'eager'
+    await image.decode()
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error('Fixture image has no decoded pixels')
+  }))
+  const sourceKinds = {}
+  for (const image of images) {
+    const scheme = image.getAttribute('src').split(':')[0]
+    sourceKinds[scheme] = (sourceKinds[scheme] ?? 0) + 1
+  }
+  let viewer = null
+  if (${Boolean(openViewer)}) {
+    const thumbnail = images.find((image) => image.classList.contains('v3-img-open'))
+    if (!thumbnail) throw new Error('Fixture thumbnail not found')
+    const thumbnailUrl = thumbnail.getAttribute('src')
+    thumbnail.click()
+    await wait(() => document.querySelector('.imgv-image')?.getAttribute('src'), 'viewer display URL')
+    const enlarged = document.querySelector('.imgv-image')
+    await enlarged.decode()
+    const viewerUrl = enlarged.getAttribute('src')
+    const width = enlarged.naturalWidth
+    const height = enlarged.naturalHeight
+    if (!width || !height) throw new Error('Viewer image did not decode')
+    const close = enlarged.closest('.ui-dialog')?.querySelector('.ui-dialog__close')
+    if (!close) throw new Error('Viewer close button not found')
+    close.click()
+    await wait(() => !document.querySelector('.imgv-image'), 'viewer close')
+    await wait(() => !window.__memorySoakUrlTracker.active.has(viewerUrl), 'viewer URL release')
+    if (!window.__memorySoakUrlTracker.active.has(thumbnailUrl)) throw new Error('Closing viewer revoked its thumbnail')
+    viewer = { decoded: true, width, height, revokedAfterClose: true, thumbnailStillActive: true }
+  }
+  return { images: images.length, decoded: images.length, sourceKinds, viewer }
+})()`)
 
 const buildFake = (from, to) => {
   const fake = []
@@ -278,6 +353,149 @@ const buildFake = (from, to) => {
   return fake
 }
 
+if (soak.cycles) {
+  const rows = []
+  const startedAt = new Date().toISOString()
+  const file = join(outDir, `memory-soak-${Date.now()}-${process.pid}.json`)
+  let failure = null
+  const coverage = {
+    synthetic: true, credentialsCopied: false, modelRequests: 0,
+    sessions: 'renderer-store fixtures; not end-to-end session activation or model execution',
+    canvas: 'store-only filePreview loading placeholder toggles; no HtmlCanvas mount or native WebContentsView lifecycle measured',
+    sampling: 'renderer heap after forced GC, DOM/listeners, Windows owned process tree; busy means fixture retained, not model activity',
+    interpretation: 'growth is descriptive, not a leak verdict; image raster/GPU memory is not renderer JS heap'
+  }
+  const nativeDumps = []
+  let pressure = null
+  let documentReset = null
+  let inspectorReconnect = null
+  let viewerVerified = false
+  const scenarios = soak.diagnose ? [
+    { name: 'messages-only', options: { ...soak, imagesPerSession: 0 }, render: true },
+    { name: 'generated-images-only', options: { ...soak, messagesPerSession: 12 }, render: false },
+    { name: 'visible-unique-images', options: { ...soak, messagesPerSession: 12 }, render: true },
+    { name: 'visible-reused-images', options: { ...soak, messagesPerSession: 12 }, render: true, seed: 2000 + soak.cycles },
+    { name: 'visible-blob-images', options: { ...soak, messagesPerSession: 12, blobImages: true }, render: true }
+  ] : [{ name: 'combined', options: soak, render: true }]
+  const growthByScenario = () => Object.fromEntries(scenarios.map(({ name }) => [name, soakGrowth(rows.filter((row) => row.scenario === name))]))
+  const save = () => {
+    mkdirSync(outDir, { recursive: true })
+    writeFileSync(file, JSON.stringify({ startedAt, updatedAt: new Date().toISOString(), options: soak, coverage, failure, rows, growth: soak.diagnose ? null : soakGrowth(rows), growthByScenario: growthByScenario(), nativeDumps, pressure, inspectorReconnect, documentReset }, null, 2), 'utf8')
+  }
+  const fixture = (action, cycle = 0, index = 0, options = soak) => evaluate(fixtureExpression(action, options, cycle, index, sandbox))
+  const nativeDump = async (label) => {
+    const events = []
+    let finish
+    const completed = new Promise((resolve) => { finish = resolve })
+    let tracing = false
+    cdp.onEvent = (event) => {
+      if (event.method === 'Tracing.dataCollected') events.push(...event.params.value)
+      if (event.method === 'Tracing.tracingComplete') finish()
+    }
+    try {
+      await withTimeout(cdp.send('Tracing.start', { traceConfig: { includedCategories: ['disabled-by-default-memory-infra'], memoryDumpConfig: { triggers: [] } }, transferMode: 'ReportEvents' }), 20_000, 'Tracing.start')
+      tracing = true
+      const request = await withTimeout(cdp.send('Tracing.requestMemoryDump', { levelOfDetail: 'detailed', deterministic: true }), 30_000, 'Tracing.requestMemoryDump')
+      await withTimeout(cdp.send('Tracing.end'), 20_000, 'Tracing.end')
+      await withTimeout(completed, 20_000, 'Tracing.tracingComplete')
+      tracing = false
+      nativeDumps.push({ label, request, processes: summarizeMemoryDump(events), dumpEvents: events.filter((event) => event.args?.dumps?.allocators).map((event) => ({ pid: event.pid, id: event.id, id2: event.id2, name: event.name, level: event.args.dumps.level_of_detail })) })
+    } catch (error) {
+      nativeDumps.push({ label, error: String(error) })
+    } finally {
+      if (tracing) await withTimeout(cdp.send('Tracing.end'), 5000, 'Tracing cleanup').catch(() => {})
+      cdp.onEvent = null
+    }
+  }
+  try {
+    await evaluate(`(() => {
+      const create = URL.createObjectURL.bind(URL)
+      const revoke = URL.revokeObjectURL.bind(URL)
+      const tracker = window.__memorySoakUrlTracker = { created: 0, revoked: 0, active: new Set() }
+      URL.createObjectURL = (blob) => { const url = create(blob); tracker.created++; tracker.active.add(url); return url }
+      URL.revokeObjectURL = (url) => { if (tracker.active.delete(url)) tracker.revoked++; return revoke(url) }
+    })()`)
+    for (const [scenarioIndex, scenario] of scenarios.entries()) {
+      const prefix = soak.diagnose ? `${scenario.name}-` : ''
+      await fixture('clear')
+      await sleep(soak.delayMs)
+      rows.push(await snapshot(`soak-${prefix}baseline`, { phase: 'baseline', cycle: 0, scenario: scenario.name }))
+      save()
+      for (let cycle = 1; cycle <= soak.cycles; cycle++) {
+        const seed = scenario.seed ?? scenarioIndex * 1000 + cycle
+        const prepared = await fixture('prepare', seed, 0, scenario.options)
+        const imageChecks = []
+        if (scenario.render) {
+          for (let index = 0; index < soak.sessions; index++) {
+            const observed = await fixture('switch', seed, index)
+            if (observed.messages !== scenario.options.messagesPerSession) throw new Error('Soak fixture message count mismatch')
+            await sleep(soak.delayMs)
+            const openViewer = !viewerVerified && scenario.options.imagesPerSession > 0 && !scenario.options.blobImages
+            imageChecks.push(await verifyImages(scenario.options.imagesPerSession > 0, openViewer))
+            if (openViewer) viewerVerified = true
+            await fixture('close-canvas')
+          }
+          await fixture('switch', seed, soak.sessions - 1)
+        }
+        await sleep(soak.delayMs)
+        rows.push(await snapshot(`soak-${prefix}${cycle}-busy`, { phase: 'busy', cycle, scenario: scenario.name, seed, imageStats: prepared.imageStats, imageChecks }))
+        await fixture('clear')
+        await sleep(soak.delayMs)
+        const cleared = await snapshot(`soak-${prefix}${cycle}-cleared`, { phase: 'cleared', cycle, scenario: scenario.name })
+        rows.push(cleared)
+        if (cleared.objectUrls?.active !== 0) throw new Error('Fixture left live object URLs after cleanup')
+        save()
+      }
+      if (soak.diagnose) await nativeDump(scenario.name)
+    }
+    if (soak.diagnose) {
+      await sleep(15_000)
+      rows.push(await snapshot('soak-idle', { phase: 'idle', cycle: soak.cycles }))
+      try {
+        await withTimeout(cdp.send('Memory.simulatePressureNotification', { level: 'critical' }), 20_000, 'Memory.simulatePressureNotification')
+        pressure = { level: 'critical', ok: true, scope: 'isolated browser instance only' }
+      } catch (error) {
+        pressure = { ok: false, error: String(error) }
+      }
+      await sleep(5000)
+      rows.push(await snapshot('soak-after-pressure', { phase: 'after-pressure', cycle: soak.cycles }))
+      await nativeDump('after-pressure')
+      ws.close()
+      await sleep(3000)
+      const detached = sampleProcessTree(child.pid)
+      const detachedRow = { label: 'soak-inspector-detached', phase: 'inspector-detached', cycle: soak.cycles, at: new Date().toISOString(), gcSucceeded: false, gcError: 'Inspector intentionally detached; no JS heap measurement', heapUsedMiB: null, processSamples: detached.processSamples, processes: detached.count, treeWorkingSetMiB: +detached.workingSetMiB.toFixed(1), treePrivateMiB: +detached.privateMiB.toFixed(1) }
+      rows.push(detachedRow)
+      console.log(JSON.stringify(detachedRow))
+      ws = new WebSocket(target.webSocketDebuggerUrl)
+      await withTimeout(new Promise((done, fail) => {
+        ws.addEventListener('open', done, { once: true })
+        ws.addEventListener('error', fail, { once: true })
+      }), 15_000, 'CDP reconnect')
+      cdp = new Cdp(ws)
+      inspectorReconnect = { ok: true, scope: 'same isolated renderer; no document navigation' }
+      await sleep(1000)
+      rows.push(await snapshot('soak-after-inspector-reconnect', { phase: 'after-inspector-reconnect', cycle: soak.cycles }))
+      await nativeDump('after-inspector-reconnect')
+      try {
+        await withTimeout(cdp.send('Page.navigate', { url: 'about:blank' }), 20_000, 'Page.navigate about:blank')
+        documentReset = { ok: true, method: 'Page.navigate about:blank', scope: 'isolated page only; destroys the fixture document' }
+      } catch (error) {
+        documentReset = { ok: false, error: String(error) }
+      }
+      await sleep(3000)
+      rows.push(await snapshot('soak-after-document-reset', { phase: 'after-document-reset', cycle: soak.cycles }))
+      await nativeDump('after-document-reset')
+    }
+  } catch (error) {
+    failure = error?.stack ?? String(error)
+    process.exitCode = 1
+    console.error(failure)
+  } finally {
+    await fixture('clear').catch(() => {})
+    save()
+    console.log(JSON.stringify({ report: file, growth: soak.diagnose ? growthByScenario() : soakGrowth(rows), pressure, inspectorReconnect, documentReset, failure }))
+  }
+} else {
 const idleSec = Number(flag('idle', '0'))
 if (idleSec > 0) {
   for (const domain of ['Runtime.enable', 'Page.enable', 'Inspector.enable', 'Log.enable']) {
@@ -617,4 +835,14 @@ try {
   killTree()
   await sleep(1500)
   rmSync(sandbox, { recursive: true, force: true })
+}
+}
+} finally {
+  try {
+    ws?.close()
+  } finally {
+    killTree()
+    await sleep(1500)
+    rmSync(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
+  }
 }

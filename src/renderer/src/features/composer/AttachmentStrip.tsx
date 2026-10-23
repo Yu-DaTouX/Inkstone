@@ -3,6 +3,7 @@ import { FileText, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge } from '../../ui'
+import { InlineImage } from '../../ui/InlineImage'
 import { fmtSize } from './attachment-files'
 import { brokenImageRefs, imageRefLabel, imageRefPrefix } from './image-refs'
 import { ImageViewer } from './image-viewer'
@@ -37,7 +38,7 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
               data-testid="attachment-open"
               onClick={() => setViewing(n)}
             >
-              <img className="ca-thumb" src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
+              <InlineImage className="ca-thumb" src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
             </button>
           )}
           {a.kind === 'file' ? <span className="ca-name">{a.name}</span> : null}

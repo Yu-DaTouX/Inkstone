@@ -3,6 +3,7 @@ import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
 import { ImageViewer } from '../composer/image-viewer'
+import { InlineImage } from '../../ui/InlineImage'
 
 const IMAGE_MIME: Record<string, string> = {
   png: 'image/png',
@@ -109,8 +110,16 @@ async function pngDataUrlFromBytes(bytes: Uint8Array, mime: string): Promise<str
     img.onload = () => resolve(true)
     img.onerror = () => resolve(false)
   })
-  img.src = `data:${mime};base64,${base64OfBytes(bytes)}`
-  return (await loaded) ? await pngDataUrl(img) : null
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mime }))
+  try {
+    img.src = url
+    return (await loaded) ? await pngDataUrl(img) : null
+  } finally {
+    img.onload = null
+    img.onerror = null
+    img.removeAttribute('src')
+    URL.revokeObjectURL(url)
+  }
 }
 
 export function MessageImage({
@@ -183,7 +192,7 @@ export function MessageImage({
 
   return (
     <>
-      <img
+      <InlineImage
         ref={imageRef}
         src={src}
         alt={alt || t('chat.imageOpen')}

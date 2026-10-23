@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { Dialog, Modal, ModalOverlay } from '../../ui'
 import { useT } from '../../i18n'
+import { InlineImage } from '../../ui/InlineImage'
 import './image-viewer.css'
 
 export function ImageViewer({
@@ -23,7 +24,7 @@ export function ImageViewer({
       <Modal className="imgv-modal">
         <Dialog className="imgv-dialog" title={alt || t('chat.imagePreview')} closeLabel={t('ui.close')}>
           <div className="imgv-body">
-            <img className="imgv-image" src={src} alt={alt ?? ''} />
+            <InlineImage className="imgv-image" src={src} alt={alt ?? ''} />
             {caption ? <p className="imgv-caption">{caption}</p> : null}
           </div>
         </Dialog>
