@@ -105,13 +105,13 @@ export class PiPackageActivationScheduler {
     if (tx.state === 'pending-boundary') {
       const staged = await this.ports.verifyStaged(tx)
       if (!staged.ok) return this.fail(tx, `staging 复核失败：${staged.problems.join('；')}`)
-      tx = await this.service.markAcquiring(operationId, '目标 runner 空闲，开始隔离验证与项目级安装')
+      tx = await this.service.markAcquiring(operationId, '目标 runner 空闲，开始临时环境加载验证（会执行扩展代码，非操作系统沙箱）与项目级安装')
     }
 
     if (tx.state === 'acquiring') {
       const smoke = await this.ports.smoke(tx)
-      if (!smoke.ok) return this.fail(tx, `隔离 smoke 未通过：${smoke.problems.join('；')}`)
-      tx = await this.service.markVerifying(operationId, '隔离 smoke 通过，复核后执行固定版本项目级安装')
+      if (!smoke.ok) return this.fail(tx, `临时环境加载验证（smoke）未通过：${smoke.problems.join('；')}`)
+      tx = await this.service.markVerifying(operationId, '临时环境加载验证（smoke）通过，复核后执行固定版本项目级安装')
     }
 
     if (tx.state === 'verifying') {

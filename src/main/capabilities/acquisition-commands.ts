@@ -360,7 +360,7 @@ export class CapabilityAcquisition {
           executable: false,
           state: 'needs-authorization',
           notice:
-            '本地包 / Skill 可能执行代码或改变模型后续行为。模型不能自行授权；用 `--authorize` 发起砚的确认对话框并由你选择后，才会保存精确候选 + 指纹 + 项目级授权。'
+            '本地包的临时环境加载验证（smoke）会在安装前执行候选扩展代码，以当前桌面用户权限读写文件并联网；临时目录 / 清空继承环境不是操作系统沙箱，禁用 npm lifecycle scripts 不会阻止扩展运行。模型不能自行授权；用 `--authorize` 发起砚的确认对话框并由你选择后，才会保存精确候选 + 指纹 + 项目级授权。'
         },
         summary: {
           kind: 'capabilities',
@@ -474,7 +474,7 @@ export class CapabilityAcquisition {
           ? `这个接入事务已失败：${tx.failure?.detail ?? '无更多错误细节'}。如尚有重试次数，可对同一计划使用 --retry。`
         : tx.state === 'pending-boundary'
           ? '事务正在等待安全边界；本次未执行安装、运行包代码或重启 runner。'
-          : `这个候选的 installKind 是 ${candidate.installKind}，对应下载 / 安装 / 隔离验证仍待实施。`
+          : `这个候选的 installKind 是 ${candidate.installKind}，对应下载 / 安装 / 临时环境加载验证仍待实施。`
     return {
       data: {
         plan,

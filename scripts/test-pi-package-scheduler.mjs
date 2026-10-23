@@ -85,12 +85,27 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
     {
       const service = new AcquisitionService({ root: join(root, 'success') })
       const tx = await makeTransaction(service)
-      const fake = makePorts()
+      const fake = makePorts({
+        async smoke() {
+          fake.calls.push('smoke')
+          const loading = await service.get(tx.operationId)
+          const detail = loading?.history.at(-1)?.detail
+          ok(detail?.includes('临时环境加载验证') && detail.includes('非操作系统沙箱'), '加载提示：执行扩展前不宣称沙箱隔离')
+          return { ok: true, problems: [] }
+        },
+        async install(_tx, grant) {
+          fake.calls.push(`install:scripts=${grant.allowLifecycleScripts}`)
+          const verifying = await service.get(tx.operationId)
+          ok(verifying?.history.at(-1)?.detail?.includes('临时环境加载验证（smoke）通过'), '加载提示：通过只表示临时环境加载验证通过')
+          fake.setInstalled(true)
+          return { ok: true }
+        }
+      })
       const scheduler = new PiPackageActivationScheduler(service, fake.ports)
       const [result] = await scheduler.tick()
       ok(result.state === 'resumed', '调度闭环：待边界事务经 smoke / 安装 / 定向重载后 resumed', result.detail)
       ok((await service.get(tx.operationId))?.attempts === 0, '调度闭环：pending-boundary 续接不额外计安装 attempt')
-      ok(fake.calls.indexOf('smoke') < fake.calls.indexOf('install:scripts=false'), '调度闭环：先隔离 smoke，后执行安装')
+      ok(fake.calls.indexOf('smoke') < fake.calls.indexOf('install:scripts=false'), '调度闭环：禁用 lifecycle 时仍先加载验证，后执行安装')
       ok(fake.calls.filter((call) => call === 'restart').length === 1, '调度闭环：只定向重载目标一次')
       ok((await service.get(tx.operationId))?.receipt?.verification === 'smoke-passed', '调度闭环：receipt 记录真实 smoke 级别')
     }
@@ -116,7 +131,7 @@ export async function runPiPackageSchedulerTests(ok, { AcquisitionService, PiPac
       const fake = makePorts({ async smoke() { return { ok: false, problems: ['未发现包内 Skill'] } } })
       const scheduler = new PiPackageActivationScheduler(service, fake.ports)
       const result = await scheduler.schedule(tx.operationId)
-      ok(result.state === 'failed' && result.detail.includes('未发现包内 Skill'), 'smoke 失败：事务如实失败')
+      ok(result.state === 'failed' && result.detail.includes('临时环境加载验证（smoke）未通过：未发现包内 Skill'), 'smoke 失败：事务如实报告临时环境加载失败')
       ok(!fake.calls.some((call) => call.startsWith('install:') || call === 'restart'), 'smoke 失败：没有安装或重启')
     }
 
