@@ -18,7 +18,6 @@ async function load(name, entry, external = []) {
 const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal-fade.ts')
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
 const receipt = await load('question-receipt', 'src/renderer/src/features/session/question-receipt.ts')
-const actions = await load('message-actions', 'src/renderer/src/features/session/message-actions.ts')
 const highlight = await load('code-highlight', 'src/renderer/src/lib/code-highlight.ts')
 const math = await load('markdown-math', 'src/renderer/src/features/session/markdown-math.ts', ['remark-math', 'rehype-katex', 'katex', 'katex/*'])
 await rm(dir, { recursive: true, force: true })
@@ -132,19 +131,6 @@ check('提问回执：表单字段按标签成对展示', () => {
   assert.equal(model.state, 'answered')
   assert.equal(model.answer, null)
   assert.deepEqual(model.pairs, [{ label: '名称', value: '砚' }, { label: 'b', value: 'x、y' }])
-})
-
-check('分叉：取本回合之后的下一条用户消息', () => {
-  const messages = [
-    { id: 'u1', role: 'user', text: 'one', entryId: 'e1' },
-    { id: 'a1', role: 'assistant' },
-    { id: 'u2', role: 'user', text: '  ' },
-    { id: 'u3', role: 'user', text: 'three', entryId: 'e3' }
-  ]
-  assert.deepEqual(actions.forkTargetAfter(messages, ['a1']), { entryId: 'e3', text: 'three' })
-  assert.deepEqual(actions.forkTargetAfter(messages, ['a1'], (text) => text === 'three'), null)
-  assert.equal(actions.forkTargetAfter(messages, ['u3']), null)
-  assert.equal(actions.forkTargetAfter(messages, []), null)
 })
 
 check('高亮：超限回退纯文本', () => {

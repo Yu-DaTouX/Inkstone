@@ -10,7 +10,8 @@ const MAX_ACTIONS = 2
 export const WRAP_UP_GUIDANCE = [
   'In a turn where you changed files or ran commands, call `wrap_up` once at the end, right before your final reply. Do not call it in turns that only answer or explain.',
   '`recap`: 2-3 sentences on what is now done and what is not done or not verified.',
-  'Add `ask` (one question) and 1-2 `actions` only when the next step truly needs the user to decide; the first action is your recommendation, and each `message` is written as the user\'s own reply.'
+  'Add `ask` (one question) and 1-2 `actions` only when the next step truly needs the user to decide; the first action is your recommendation, and each `message` is written as the user\'s own reply.',
+  'If your final reply asks the user a question or offers a next step that waits for their go-ahead, put that same question in `ask` with matching `actions`; never leave it only in the reply text, because a card without `ask` shows no question or buttons.'
 ].join('\n')
 
 const WRAP_UP_TOOL = {
@@ -21,7 +22,7 @@ const WRAP_UP_TOOL = {
     type: 'object',
     properties: {
       recap: { type: 'string', description: '2-3 sentences: what is now done, and what is not done or not verified.' },
-      ask: { type: 'string', description: 'One question, only when the next step needs the user to decide.' },
+      ask: { type: 'string', description: 'One question, only when the next step needs the user to decide. Required whenever the final reply asks the user something or waits for their go-ahead; use the same question.' },
       actions: {
         type: 'array',
         maxItems: MAX_ACTIONS,

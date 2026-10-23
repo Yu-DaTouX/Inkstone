@@ -323,6 +323,7 @@ export interface Store {
   addFileRefs: (files: File[]) => Promise<void>
   addFileRefPaths: (paths: string[]) => Promise<void>
   removeAttachment: (id: string) => void
+  dropSentAttachments: (sentIds: readonly string[], draftKeys: readonly string[]) => void
   clearAttachments: () => void
   pickImages: () => Promise<void>
   pickFiles: () => Promise<void>
@@ -2603,6 +2604,23 @@ export const useStore = create<Store>((rawSet, get) => {
     set({
       attachments: next,
       ...(draftKey ? { sessionRuntimes: writeDraftAttachments(current, draftKey, next) } : {})
+    })
+  },
+
+  dropSentAttachments: (sentIds, draftKeys) => {
+    if (!sentIds.length) return
+    const sent = new Set(sentIds)
+    const current = get()
+    let state: Store = current
+    for (const key of new Set([...draftKeys, composerDraftKey(current)])) {
+      const cached = key ? state.sessionRuntimes[key]?.draftAttachments ?? [] : []
+      if (!cached.some((item) => sent.has(item.id))) continue
+      state = { ...state, sessionRuntimes: writeDraftAttachments(state, key, cached.filter((item) => !sent.has(item.id))) }
+    }
+    const attachments = current.attachments.filter((item) => !sent.has(item.id))
+    set({
+      ...(attachments.length !== current.attachments.length ? { attachments } : {}),
+      ...(state.sessionRuntimes !== current.sessionRuntimes ? { sessionRuntimes: state.sessionRuntimes } : {})
     })
   },
 

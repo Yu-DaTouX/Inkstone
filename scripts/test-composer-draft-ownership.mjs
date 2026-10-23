@@ -348,6 +348,19 @@ export async function runComposerDraftOwnershipTests(ok) {
       ok(cached.length === 1 && cached[0].id === 'f1', 'hydrate 不复活已移除的 a1', JSON.stringify(cached.map((a) => a.id)))
     }
 
+    section('插话发送成功：清掉草稿缓存里已发送的图片，切回会话不复活')
+    {
+      const pending = [img('a1'), fileRef('f1', 'C:/p/readme.md')]
+      viewA({ attachments: pending, sessionRuntimes: { A: { ...runtimeSnapshot('A', 'rA', 1, 'A-old', 'A'), draftAttachments: pending } } })
+      ok((useStore.getState().sessionRuntimes.A?.draftAttachments ?? []).some((a) => a.id === 'a1'), '前提：会话 A 的草稿缓存里有待发送的 a1')
+      useStore.getState().dropSentAttachments(['a1'], ['A'])
+      ok(useStore.getState().attachments.map((a) => a.id).join() === 'f1', '输入框只剩未发送的 f1', JSON.stringify(useStore.getState().attachments.map((a) => a.id)))
+      ok((useStore.getState().sessionRuntimes.A?.draftAttachments ?? []).every((a) => a.id !== 'a1'), '会话 A 的草稿缓存去掉 a1', JSON.stringify(useStore.getState().sessionRuntimes.A?.draftAttachments?.map((a) => a.id)))
+      useStore.getState().hydrateComposerDraft('A')
+      const cached = useStore.getState().attachments
+      ok(cached.every((a) => a.id !== 'a1'), 'hydrate 不复活已发送的 a1', JSON.stringify(cached.map((a) => a.id)))
+    }
+
     section('仅路径 deferred 跨会话失败：写薄路径键，不盲写活动 runner B')
     {
       setView({

@@ -20,8 +20,7 @@ import { Badge, IconButton, Notice } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
-import { forkAt, forkFromText } from '../../lib/fork'
-import { forkTargetAfter } from './message-actions'
+import { forkFromText } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
@@ -361,22 +360,9 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
   return [copyState, setCopyState]
 }
 
-async function forkAfterTurn(sourceIds: readonly string[]): Promise<void> {
-  const state = useStore.getState()
-  const target = forkTargetAfter(state.messages, sourceIds, isSubagentNotice)
-  if (!target) {
-    await state.clone()
-    return
-  }
-  if (target.entryId) await forkAt(target.entryId)
-  else await forkFromText(target.text)
-}
-
 function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
   const t = useT()
-  const tt = useSessionText()
   const models = useStore((s) => s.models)
-  const busy = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming || s.session?.isCompacting))
   const [copyState, setCopyState] = useCopyState()
   const reply = replyText(turn)
   const elapsed = turn.elapsedMs && turn.elapsedMs > 0 ? formatDuration(turn.elapsedMs) : null
@@ -397,16 +383,6 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
           onPress={() => void navigator.clipboard.writeText(reply).then(() => setCopyState('copied'), () => setCopyState('failed'))}
         >
           <Icon name={copyState === 'copied' ? 'check' : 'copy'} size={14} />
-        </IconButton>
-      ) : null}
-      {!readOnly && turn.sourceIds.length ? (
-        <IconButton
-          aria-label={tt('turnForkTip')}
-          data-testid="v3-turn-fork"
-          isDisabled={turn.streaming || busy}
-          onPress={() => void forkAfterTurn(turn.sourceIds)}
-        >
-          <Icon name="branch" size={14} />
         </IconButton>
       ) : null}
     </div>

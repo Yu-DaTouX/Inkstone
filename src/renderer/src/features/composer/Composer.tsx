@@ -313,6 +313,7 @@ export function Composer({ className }: { className?: string } = {}) {
           return
         }
         const sentIds = attachments.map((a) => a.id)
+        const sentFrom = runtimeKey
         const images = attachments
           .filter((a) => a.kind !== 'file')
           .map((a) => ({ data: a.data, mimeType: a.mimeType }))
@@ -326,7 +327,9 @@ export function Composer({ className }: { className?: string } = {}) {
           : await send(outgoing, images.length ? images : undefined)
         if (ok) {
           setValue((draft) => (draft === value ? '' : draft))
-          useStore.setState((state) => ({ attachments: attachmentsAfterSubmit(state.attachments, sentIds) }))
+          useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
+          const saved = sentFrom ? loadDraft(sentFrom) : undefined
+          if (saved) saveDraft(sentFrom, { text: saved.text, attachments: attachmentsAfterSubmit(saved.attachments, sentIds) })
         }
       } catch (error) {
         notify('error', error instanceof Error && error.message ? error.message : t('state.error.sendFailed'))
@@ -335,7 +338,7 @@ export function Composer({ className }: { className?: string } = {}) {
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [value, roundRunning, runCommandPath, notify, send, t, lang]
+    [value, roundRunning, runCommandPath, notify, send, t, lang, runtimeKey]
   )
 
   const onPaste = useCallback(

@@ -252,8 +252,7 @@ export const useUiV3 = create<UiV3State>((set, get) => {
       workspaceBaseLayout: next.baseLayout,
       workspaceExpandedTile: next.expandedTile,
       workspaceFocus: next.expandedTile !== null,
-      workspaceTab: tab,
-      workspaceOpen: panes.length > 0 ? true : state.workspaceOpen
+      workspaceTab: tab
     })
   },
   setWorkspaceTab: (requested) => {
@@ -295,6 +294,8 @@ export const useUiV3 = create<UiV3State>((set, get) => {
     const key = state.layoutKey
     const next = withoutLayoutTiles(entryOf(key), gone)
     commit(key, next)
+    const home = key === HOME_LAYOUT_KEY ? null : readTileLayoutEntry(HOME_LAYOUT_KEY)
+    if (home && panesOfEntry(home).some((id) => gone.has(id))) writeTileLayoutEntry(HOME_LAYOUT_KEY, withoutLayoutTiles(home, gone))
     if (panesOfEntry(next).length === 0) get().setWorkspaceOpen(false)
   },
   setWorkspaceSplit: (open) => set({ workspaceSplit: open }),
