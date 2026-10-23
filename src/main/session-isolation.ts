@@ -141,6 +141,15 @@ export class AutoIsolationStore {
     await this.persist()
   }
 
+  async remove(worktree: string): Promise<void> {
+    await this.load()
+    const key = isolationCwdKey(worktree)
+    const next = this.records.filter((r) => isolationCwdKey(r.worktree) !== key)
+    if (next.length === this.records.length) return
+    this.records = next
+    await this.persist()
+  }
+
   async markSynced(worktree: string): Promise<void> {
     await this.load()
     const key = isolationCwdKey(worktree)
@@ -218,6 +227,22 @@ export async function isolateCwdForConflict(
       createdAt: Date.now()
     }
   }
+}
+
+export async function discardUnusedIsolation(record: AutoIsolationRecord): Promise<boolean> {
+  if (existsSync(record.worktree)) {
+    const dirty = await gitRun(record.worktree, ['status', '--porcelain'], { allowFailure: true, timeout: 30_000 })
+    if (!dirty.ok || dirty.stdout.trim()) return false
+    const ahead = await gitRun(record.mainCwd, ['rev-list', '--count', `${record.baseBranch || 'HEAD'}..${record.branch}`], {
+      allowFailure: true,
+      timeout: 30_000
+    })
+    if (!ahead.ok || Number(ahead.stdout.trim() || '0') > 0) return false
+    const removed = await gitRun(record.repoRoot, ['worktree', 'remove', record.worktree], { allowFailure: true, timeout: GIT_WRITE_TIMEOUT })
+    if (!removed.ok) return false
+  }
+  await gitRun(record.repoRoot, ['branch', '-d', record.branch], { allowFailure: true, timeout: 30_000 })
+  return true
 }
 
 export async function syncIsolationBack(record: AutoIsolationRecord): Promise<SyncOutcome> {

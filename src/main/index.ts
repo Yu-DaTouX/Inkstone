@@ -119,7 +119,8 @@ import type { ConsentAnswer } from '../shared/tool-consent'
 import { RemoteAccess } from './remote-access'
 import { SessionChainStore } from './session-chain-service'
 import { WorktreeLinkStore } from './worktree-links'
-import { AutoIsolationStore, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
+import { AutoIsolationStore, discardUnusedIsolation, isolateCwdForConflict, isolationCwdKey, syncIsolationBack } from './session-isolation'
+import { discardIdleEmptyIsolations, hasSavedSessionUnder } from './isolation-cleanup'
 import { localCommandDescriptors } from './command-registry'
 import { clearExitSnapshot, pickRestoreRunner, readExitSnapshot, writeExitSnapshot } from './exit-snapshot'
 import { QUEUE_RECOVERY_DIR } from './queue-persistence'
@@ -885,10 +886,32 @@ async function initializeIsolationView(): Promise<void> {
   for (const record of records) setIsolationView(record.worktree, { state: 'waiting', branch: record.branch })
 }
 
+async function discardUnusedIsolations(): Promise<void> {
+  const registry = runners
+  if (!registry) return
+  const discarded = await discardIdleEmptyIsolations({
+    records: () => autoIsolations.all(),
+    runners: () => registry.statuses().map((status) => ({
+      id: status.id,
+      cwd: status.cwd,
+      isActive: status.isActive,
+      busy: status.running || status.waiting,
+      messageCount: registry.agentOf(status.id)?.getState()?.messageCount ?? 0
+    })),
+    stopRunner: (id) => registry.stopOne(id),
+    hasSavedSession: (record) => hasSavedSessionUnder(SESSIONS_DIR, record),
+    discard: discardUnusedIsolation,
+    forget: (record) => autoIsolations.remove(record.worktree)
+  }).catch(() => [])
+  for (const record of discarded) setIsolationView(record.worktree, null)
+  if (discarded.length) pushRunners()
+}
+
 async function syncPendingIsolations(): Promise<void> {
   if (!runners || !win || win.isDestroyed()) return
   if (Date.now() - isolationSweepAt < ISOLATION_SYNC_MIN_INTERVAL) return
   isolationSweepAt = Date.now()
+  await discardUnusedIsolations()
   const records = await autoIsolations.all().catch(() => [])
   for (const record of records) {
     if (runners.hasBusyCwd(record.mainCwd)) {
@@ -1882,6 +1905,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
       const text = `[运行实例回收] ${id} (${sessionId ?? 'unknown'}) 空闲 ${Math.floor(idleMs / 1000)} 秒，释放1个 pi 实例，剩余 ${remaining} 个`
       console.log(text)
       push({ ch: 'log', payload: { text } })
+      void discardUnusedIsolations()
     },
     prepareNewSession: async agent => {
       return applyRememberedModel(agent, (await getSettings()).lastMainModel)
