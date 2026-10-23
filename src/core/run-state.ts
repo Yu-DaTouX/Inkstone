@@ -22,7 +22,7 @@ export interface RunObservation extends RunIdentity {
   pendingUiCount: number
   conn: 'starting' | 'ready' | 'exited' | 'error'
   isActive: boolean
-  isolation?: { state: 'waiting' | 'blocked'; branch: string }
+  isolation?: { state: 'waiting' | 'ready' | 'blocked'; branch: string }
 }
 
 export function executionBusy(state: ExecutionState | null, hasRunningBash: () => boolean, pendingUiCount: () => number): boolean {

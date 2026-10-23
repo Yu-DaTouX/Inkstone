@@ -87,7 +87,7 @@ for (const changed of [false, true]) {
     handle: (_channel, fn) => { handler = fn }, runners: registry,
     normalizeExpectedRuntime: (input) => input, resolveExpectedTarget: () => 'r1', targetMatchesExpected: () => current,
     pinSendTarget: () => ({ ...target, agent }), pinnedTargetMatches: () => current,
-    getSettings: async () => ({ checkpointsEnabled: true }), reserveWorkspaceMutation,
+    getSettings: async () => ({ checkpointsEnabled: true }), reserveWorkspaceMutation, warnSharedCwdOnce: () => {},
     captureCheckpoint: async () => { events.push('capture-start'); await captured.promise; events.push('capture-finished') }
   })
   const pending = handler('fixture', undefined, undefined, target)

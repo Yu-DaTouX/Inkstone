@@ -245,6 +245,30 @@ export async function runExecutionAdmissionTests(ok) {
     ok(final.ok === true, '反复 claim / release 后仍能正常入场')
     reg.releaseExecute(a.id, final.token)
   }
+
+  {
+    const shared = (cwd) => cwd.toLowerCase().startsWith('c:/docs')
+    const { reg } = make({ sharesCwd: shared })
+    const a = await reg.select({ cwd: 'C:/docs', sessionFile: 'C:/docs/a.jsonl' })
+    busy(reg, a.id)
+    const b = await reg.select({ cwd: 'C:/docs', sessionFile: 'C:/docs/b.jsonl' })
+    ok(b.ok === true && b.id !== a.id, '共用目录：同目录有会话在跑时仍能开第二个', JSON.stringify(b))
+    ok(reg.guardExecute(b.id).ok === true, '共用目录：发送前复核放行')
+    busy(reg, a.id, false)
+    const ca = reg.admitExecute(a.id)
+    const cb = reg.admitExecute(b.id)
+    ok(ca.ok && cb.ok, '共用目录：两个会话可以同时入场', JSON.stringify({ ca, cb }))
+    ok(reg.hasExecutionAdmission('c:/docs/') === true, '共用目录：仍能查到这个目录有入场中的发送')
+    ok(reg.confirmExecute(a.id, ca.token) && reg.confirmExecute(b.id, cb.token), '共用目录：各自的 claim 都能确认')
+    reg.releaseExecute(a.id, ca.token)
+    reg.releaseExecute(b.id, cb.token)
+    ok(reg.hasExecutionAdmission('C:/docs') === false, '共用目录：释放后不再有入场')
+
+    const g = await reg.select({ cwd: 'C:/repo', sessionFile: 'C:/repo/a.jsonl' })
+    busy(reg, g.id)
+    const h = await reg.select({ cwd: 'C:/repo', sessionFile: 'C:/repo/b.jsonl' })
+    ok(h.ok === false, '非共用目录仍然拦住第二个会话', JSON.stringify(h))
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

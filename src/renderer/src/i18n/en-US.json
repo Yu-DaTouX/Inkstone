@@ -2407,5 +2407,14 @@
   "state.error.sessionTreeFailed": "Could not read the session tree",
   "state.error.branchStale": "The target branch is no longer valid; retry",
   "state.error.nativeBridgeMissing": "The host has no native session bridge yet",
-  "state.error.branchSwitchFailed": "Could not switch branch"
+  "state.error.branchSwitchFailed": "Could not switch branch",
+  "isolation.merge.title": "Isolated branch has changes to merge",
+  "isolation.merge.blockedTitle": "Could not merge the isolated branch",
+  "isolation.merge.branch": "Branch {branch}",
+  "isolation.merge.hint": "Merging squashes the changes into one commit in the main folder. Until then they stay on the isolated branch.",
+  "isolation.merge.blockedHint": "Your changes are still on the isolated branch. Fix the main folder, then retry.",
+  "isolation.merge.action": "Merge into main",
+  "isolation.merge.retry": "Retry merge",
+  "isolation.merge.merging": "Merging…",
+  "isolation.merge.failed": "Merge failed. Changes are still on the isolated branch."
 }
