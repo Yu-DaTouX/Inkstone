@@ -6,7 +6,7 @@ import { renderUsageToggle } from '../../patterns/UsagePattern'
 import { useStore } from '../../state/store'
 import { PageHeader } from '../../ui'
 import { settingsText } from '../settings/settings-text'
-import { dailyEntries, peakHourText, usageBars, type UsageDimension } from '../settings/usage/usage-model'
+import { dailyEntries, peakHourText, usageBars, usageModelName, type UsageDimension } from '../settings/usage/usage-model'
 import { UsageCurrency } from './UsageCurrency'
 import './usage-page.css'
 
@@ -31,12 +31,11 @@ export function UsagePage() {
     observer.observe(el)
     return () => observer.disconnect()
   }, [stats])
-  const modelName = (key: string): string => models.find((model) => `${model.provider}/${model.id}` === key)?.name || key
   const rows = !stats
     ? []
     : dimension === 'day'
-      ? usageBars(dailyEntries(stats.heat, range)).reverse().map((bar) => ({ ...bar, cost: null as number | null }))
-      : usageBars(stats.models.map((item) => ({ key: item.key, label: modelName(item.key), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost }))
+      ? usageBars(dailyEntries(stats.heat, range)).reverse().map((bar) => ({ ...bar, cost: null as number | null, title: bar.key }))
+      : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, title: stats.models[i].sources?.join(' · ') }))
   const tiles: Array<[string, string]> = [
     [t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'],
     [t('usage.cost'), stats ? money(stats.cost) : '—'],
@@ -80,7 +79,7 @@ export function UsagePage() {
         {dimension === 'day' && range === 'all' ? <p className="usage-page-note">{text.usageDailyCap}</p> : null}
         {stats && rows.length === 0 ? <p className="usage-page-note">{dimension === 'day' ? text.usageNoDays : text.usageNoModels}</p> : null}
         <ul className="start-models usage-page-rows">{rows.map((row) => (
-          <li key={row.key} className="start-model" data-idle={row.value > 0 ? undefined : ''} title={row.key}>
+          <li key={row.key} className="start-model" data-idle={row.value > 0 ? undefined : ''} title={row.title || row.key}>
             <span className="start-model-name">{row.label}</span>
             <span className="start-model-num usage-page-cost">{row.cost != null && row.cost > 0 ? money(row.cost) : ''}</span>
             <span className="start-model-num">{compactNumber(row.value)}</span>

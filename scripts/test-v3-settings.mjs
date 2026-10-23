@@ -117,6 +117,9 @@ assert.equal(peakHourText(9), '09:00')
 assert.equal(peakHourText(0), '00:00')
 assert.equal(peakHourText(null), null)
 assert.equal(peakHourText(24), null)
+const opusModels = [{ provider: 'claude-bridge', id: 'claude-opus-5-5', name: 'claude-opus-5-5' }, { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }]
+assert.equal(usage.usageModelName({ key: 'claude-opus-5-5', sources: ['anthropic/claude-opus-5-5', 'claude-bridge/claude-opus-5-5'] }, opusModels), 'Claude Opus 5.5', '合并模型优先显示带名称的供应商模型')
+assert.equal(usage.usageModelName({ key: 'deepseek-v4.1-flash', sources: ['commandcode/deepseek/deepseek-v4.1-flash'] }, []), 'deepseek-v4.1-flash', '没有模型信息时显示去掉前缀的模型 ID')
 
 const appearance = readFileSync(here('../src/renderer/src/features/settings/appearance/AppearanceSettings.tsx'), 'utf8')
 for (const id of ['v3-theme-light', 'v3-theme-dark']) {

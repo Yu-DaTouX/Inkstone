@@ -15,6 +15,11 @@ export interface UsageModelShare {
   key: string
   tokens: number
   cost: number
+  sources: string[]
+}
+
+export function usageModelId(key: string): string {
+  return key.slice(key.lastIndexOf('/') + 1).toLowerCase()
 }
 
 export interface UsageTokenBreakdown {
@@ -73,6 +78,13 @@ export function aggregateUsageSources(
   const hours = new Array<number>(24).fill(0)
   const models = new Map<string, UsageModelShare>()
   const perDay = new Map<string, number>()
+  const modelEntry = (source: string): UsageModelShare => {
+    const key = usageModelId(source)
+    const hit = models.get(key) ?? { key, tokens: 0, cost: 0, sources: [] }
+    if (!hit.sources.includes(source)) hit.sources.push(source)
+    models.set(key, hit)
+    return hit
+  }
 
   const collect = (files: FileUsage[], isMain: boolean): void => {
     for (const file of files) {
@@ -96,16 +108,8 @@ export function aggregateUsageSources(
           tokensSubagents += u.t
           costSubagents += u.c ?? 0
         }
-        for (const [key, n] of Object.entries(u.models)) {
-          const hit = models.get(key) ?? { key, tokens: 0, cost: 0 }
-          hit.tokens += n
-          models.set(key, hit)
-        }
-        for (const [key, c] of Object.entries(u.modelCost ?? {})) {
-          const hit = models.get(key) ?? { key, tokens: 0, cost: 0 }
-          hit.cost += c
-          models.set(key, hit)
-        }
+        for (const [key, n] of Object.entries(u.models)) modelEntry(key).tokens += n
+        for (const [key, c] of Object.entries(u.modelCost ?? {})) modelEntry(key).cost += c
       }
       if (touched) sessions++
     }
@@ -135,7 +139,7 @@ export function aggregateUsageSources(
     costBreakdown: { main: costMain, subagents: costSubagents },
     activeDays: days.size,
     peakHour: peak > 0 ? hours.indexOf(peak) : null,
-    models: [...models.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 8),
+    models: [...models.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 8).map((model) => ({ ...model, sources: model.sources.sort() })),
     heat,
     at: now
   }
