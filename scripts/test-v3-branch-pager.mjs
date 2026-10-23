@@ -131,6 +131,7 @@ export const jsxs = jsx
 `
 
 const UI_STUB = `export function Button() { return null }
+export function Card(props) { return props.children ?? null }
 export function IconButton(props) { return props && props['data-testid'] ? '[' + props['data-testid'] + ']' : null }
 export function Spinner() { return null }
 export function Badge() { return null }\nexport function Notice(props){ return props.children ?? null }\nexport function Kbd(){ return null }\nexport function ShimmerText(props){ return [props.lead ?? null, props.children] }\nexport function CompletionSweep(){ return null }`
