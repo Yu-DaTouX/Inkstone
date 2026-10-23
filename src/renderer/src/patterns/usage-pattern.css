@@ -119,10 +119,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .start-model-provider {
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-  }
   .start-model-bar {
     grid-area: bar;
     margin-bottom: var(--s-2);

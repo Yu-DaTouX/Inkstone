@@ -31,6 +31,36 @@ export async function runUsageStatsTests(ok) {
   m.countLine(Buffer.from(JSON.stringify({ type: 'message', timestamp: at(0, 9), message: { role: 'assistant', provider: 'p', model: 'q', usage: { input: 3, output: 4, cacheRead: 5, cacheWrite: 0 } } })), noTotal)
   ok(noTotal[today]?.t === 12, '没有 totalTokens 时按各项相加')
 
+  const diagnosticReply = JSON.parse(reply(at(0, 10), 1234).toString())
+  diagnosticReply.id = 'long-'.repeat(100)
+  diagnosticReply.message.provider = 'anthropic'
+  diagnosticReply.message.model = 'claude-opus-5-5'
+  diagnosticReply.message.usage.cost.total = 0.125
+  diagnosticReply.message.diagnostics = { detail: '诊断'.repeat(4000), provider: 'fake', model: 'fake', usage: { totalTokens: 999999, cost: { total: 999 } } }
+  const longTail = {}
+  m.countLine(Buffer.from(JSON.stringify(diagnosticReply)), longTail)
+  ok(longTail[today]?.m === 1 && longTail[today]?.t === 1234, '长消息头与长尾诊断不影响真实 usage 计数')
+  ok(longTail[today]?.models['anthropic/claude-opus-5-5'] === 1234 && !longTail[today]?.models['fake/fake'], '只取 message 直接字段，不把 diagnostics 的模型和 usage 算进去')
+  ok(longTail[today]?.c === 0.125 && longTail[today]?.modelCost['anthropic/claude-opus-5-5'] === 0.125, '长尾诊断不影响费用归属')
+  const reordered = { message: { usage: { totalTokens: 77, cost: { total: 0.5 } }, model: 'm', diagnostics: { usage: { totalTokens: 999 } }, provider: 'p', role: 'assistant' }, timestamp: at(0, 10), type: 'message' }
+  const flexible = {}
+  m.countLine(Buffer.from(JSON.stringify(reordered, null, 1).replaceAll('\n', ' ')), flexible)
+  ok(flexible[today]?.t === 77 && flexible[today]?.models['p/m'] === 77 && flexible[today]?.c === 0.5, '属性顺序和空格不改变统计结果')
+  const noUsage = {}
+  delete diagnosticReply.message.usage
+  m.countLine(Buffer.from(JSON.stringify(diagnosticReply)), noUsage)
+  ok(noUsage[today]?.t === 0 && !noUsage[today]?.c, '没有真实 usage 时不能使用 diagnostics 中的嵌套用量')
+  const invalid = {}
+  m.countLine(Buffer.from('{"type":"message","timestamp":"' + at(0, 10) + '","message":{"role":"assistant","usage":{"totalTokens":999}'), invalid)
+  m.countLine(Buffer.from('null'), invalid)
+  m.countLine(Buffer.from(JSON.stringify({ ...reordered, timestamp: 'invalid' })), invalid)
+  ok(Object.keys(invalid).length === 0, '截断、空值和无效时间戳不产生统计')
+  const numeric = {}
+  m.countLine(Buffer.from(JSON.stringify({ ...reordered, message: { role: 'assistant', provider: 'p', model: 'q', usage: { totalTokens: 0, input: 100, cost: { total: 9 } } } })), numeric)
+  ok(numeric[today]?.t === 0 && !numeric[today]?.c, '显式零用量不按分项猜测，也不虚增费用')
+  m.countLine(Buffer.from(JSON.stringify({ ...reordered, message: { role: 'assistant', provider: 'p', model: 'q', usage: { input: '100', output: -2, cacheRead: 10, cacheWrite: null, reasoning: 999, cost: { total: '9' } } } })), numeric)
+  ok(numeric[today]?.t === 10 && !numeric[today]?.c, '分项回退只加有效数值，不混入 reasoning、负数和字符串费用')
+
   const b = {}
   m.countLine(user(at(2, 14)), b)
   m.countLine(reply(at(40, 14), 500), b)
@@ -45,7 +75,7 @@ export async function runUsageStatsTests(ok) {
   const week = s.aggregateUsage([a, b], '7d', now)
   ok(week.sessions === 2 && week.tokens === 1200 && week.activeDays === 2, '7 天：只算范围内的天')
   const month = s.aggregateUsage([a, b], '30d', now)
-  ok(month.tokens === 2000 && month.models[0].key === 'commandcode/deepseek/deepseek-v4.1-flash', '30 天：范围与模型排序')
+  ok(month.tokens === 2000 && month.models[0].key === 'deepseek-v4.1-flash' && month.models[0].sources[0] === 'commandcode/deepseek/deepseek-v4.1-flash', '30 天：范围与模型排序')
   ok(all.heat.length >= (s.HEAT_WEEKS - 1) * 7 + 1 && all.heat.at(-1).date === today && new Date(all.heat[0].date + 'T00:00:00').getDay() === 1, '热力图从周一开始到今天')
   ok(s.aggregateUsage([], 'all', now).peakHour === null, '没有数据时高峰时段为空')
   const lv = s.heatLevels([0, 1, 2, 3, 4, 100])
@@ -61,7 +91,7 @@ export async function runUsageStatsTests(ok) {
   m.countLine(paid(at(1, 9), 50, 0.1), sub)
   const costed = s.aggregateUsageSources({ main: [c], subagents: [sub] }, 'all', now)
   ok(Math.abs(costed.cost - 0.3515) < 1e-9 && Math.abs(costed.costBreakdown.subagents - 0.1) < 1e-9, '聚合费用：主会话与子代理合计并拆分')
-  ok(Math.abs(costed.models.find((x) => x.key === 'p/q').cost - 0.3515) < 1e-9, '按模型累计费用')
+  ok(Math.abs(costed.models.find((x) => x.key === 'q').cost - 0.3515) < 1e-9, '按模型累计费用')
   ok(s.aggregateUsage([a], 'all', now).cost === 0, '旧缓存没有费用字段时按 0')
 
   const curOut = join(dir, 'currency.mjs')

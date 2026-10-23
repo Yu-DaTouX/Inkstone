@@ -19,11 +19,13 @@ function replyLine(ts, opts = {}) {
     input = 0,
     output = 0,
     cacheRead = 0,
-    cacheWrite = 0
+    cacheWrite = 0,
+    cost = 0,
+    diagnostics
   } = opts
   const usage = { input, output, cacheRead, cacheWrite }
   if (total !== undefined) usage.totalTokens = total
-  usage.cost = { total: 0 }
+  usage.cost = { total: cost }
   return JSON.stringify({
     type: 'message',
     id: `a-${ts}-${model}`,
@@ -36,7 +38,8 @@ function replyLine(ts, opts = {}) {
       provider,
       model,
       usage,
-      stopReason: 'stop'
+      stopReason: 'stop',
+      diagnostics
     }
   })
 }
@@ -109,9 +112,9 @@ export async function runUsageStatsSubagentTests(ok) {
   await writeChild('child-models', 's.jsonl', [replyLine(iso(now - DAY), { provider: 'p-child', model: 'c1', total: 95 })])
   const models = await reader()('all')
   ok(models.models.length === 8, '合并后模型仍只取 top8')
-  ok(models.models[0].key === 'p-child/c1', '子代理的大用量模型进入顶部（先合原始模型再排序）')
-  ok(models.models.some((x) => x.key === 'p-main/m9'), '主会话大模型保留')
-  ok(!models.models.some((x) => x.key === 'p-main/m1') && !models.models.some((x) => x.key === 'p-main/m2'), '最小的两个模型被截掉，没有按来源各取一份')
+  ok(models.models[0].key === 'c1', '子代理的大用量模型进入顶部（先合原始模型再排序）')
+  ok(models.models.some((x) => x.key === 'm9'), '主会话大模型保留')
+  ok(!models.models.some((x) => x.key === 'm1') && !models.models.some((x) => x.key === 'm2'), '最小的两个模型被截掉，没有按来源各取一份')
 
   await reset()
   await writeMain('range.jsonl', [replyLine(iso(now - 40 * DAY), { total: 700 }), replyLine(iso(now - DAY), { total: 100 })])
@@ -146,6 +149,49 @@ export async function runUsageStatsSubagentTests(ok) {
   ok(statuses.tokenBreakdown.subagents === 66, '各状态子代理的真实 usage 相加，snapshot/result .json 与无 usage 行不计')
 
   await reset()
+  const providers = ['anthropic', 'claude-bridge', 'openai-codex', 'commandcode', 'deepseek']
+  const diagnostics = { detail: '诊断'.repeat(6000), provider: 'fake', model: 'fake', usage: { totalTokens: 999999, cost: { total: 999 } } }
+  await writeMain('providers.jsonl', providers.map((provider, i) => replyLine(iso(now - DAY), { provider, model: 'shared-model', total: (i + 1) * 100, cost: (i + 1) / 10, diagnostics })))
+  await writeChild('providers-child', 's.jsonl', providers.map((provider, i) => replyLine(iso(now - DAY + 1000), { provider, model: 'shared-model', total: (i + 1) * 10, cost: (i + 1) / 100, diagnostics })))
+  const providerStats = await reader()('all')
+  ok(providerStats.tokens === 1650 && providerStats.tokenBreakdown.main === 1500 && providerStats.tokenBreakdown.subagents === 150, '各渠道长尾诊断：主会话与子代理均不漏算或虚增')
+  ok(providerStats.models.length === 1 && providerStats.models[0].key === 'shared-model' && providerStats.models[0].tokens === 1650, '同版本模型跨供应商、跨主会话与子代理合并为一行')
+  ok(providerStats.models[0].sources.join(',') === providers.map((provider) => `${provider}/shared-model`).sort().join(','), '合并后保留全部原始供应商来源')
+  ok(Math.abs(providerStats.cost - 1.65) < 1e-9 && Math.abs(providerStats.costBreakdown.main - 1.5) < 1e-9 && Math.abs(providerStats.costBreakdown.subagents - 0.15) < 1e-9, '各渠道费用按主会话与子代理精确拆分')
+  ok(Math.abs(providerStats.models[0].cost - 1.65) < 1e-9, '合并费用为各渠道原始费用之和，不受嵌套诊断费用干扰')
+  await reset()
+  await writeMain('variants.jsonl', [
+    replyLine(iso(now - DAY), { provider: 'anthropic', model: 'claude-opus-5-5', total: 10 }),
+    replyLine(iso(now - DAY), { provider: 'claude-bridge', model: 'Claude-Opus-5-5', total: 20 }),
+    replyLine(iso(now - DAY), { provider: 'commandcode', model: 'deepseek/deepseek-v4.1-flash', total: 30 }),
+    replyLine(iso(now - DAY), { provider: 'deepseek', model: 'deepseek-v4.1-flash', total: 40 }),
+    replyLine(iso(now - DAY), { provider: 'deepseek', model: 'deepseek-flash', total: 50 }),
+    replyLine(iso(now - DAY), { provider: 'anthropic', model: 'claude-opus-5-5-thinking', total: 60 })
+  ])
+  const variants = (await reader()('all')).models
+  const tokensOf = (key) => variants.find((model) => model.key === key)?.tokens
+  ok(tokensOf('claude-opus-5-5') === 30 && tokensOf('deepseek-v4.1-flash') === 70, '同版本 ID 去掉供应商前缀与大小写差异后合并')
+  ok(tokensOf('deepseek-flash') === 50 && tokensOf('claude-opus-5-5-thinking') === 60 && variants.length === 4, '别名、不同版本或变体不强行合并')
+
+  await reset()
+  const parentFile = join(mainDir, 'parent.jsonl')
+  const forkedAt = iso(now - 2 * DAY)
+  const inherited = [userLine(iso(now - 3 * DAY)), replyLine(iso(now - 3 * DAY + 1000), { total: 100, cost: 1 })]
+  const forkHeader = JSON.stringify({ type: 'session', timestamp: forkedAt, parentSession: parentFile })
+  await writeFile(parentFile, `${inherited.join('\n')}\n`)
+  await writeMain('fork.jsonl', [forkHeader, ...inherited, userLine(forkedAt), replyLine(forkedAt, { total: 20, cost: 0.2 })])
+  await writeChild('fork-child', 's.jsonl', [forkHeader, ...inherited, userLine(forkedAt), replyLine(forkedAt, { total: 30, cost: 0.3 })])
+  const forks = await reader()('all')
+  ok(forks.tokens === 150 && forks.tokenBreakdown.main === 120 && forks.tokenBreakdown.subagents === 30, '主会话与子代理 fork 只算分叉后新用量，继承历史不重算')
+  ok(forks.messages === 4 && forks.sessions === 2 && Math.abs(forks.cost - 1.5) < 1e-9, 'fork 继承消息与费用不重复计数，分叉同毫秒的新消息仍计入')
+  const forkReader = reader()
+  await appendFile(join(subRoot, 'fork-child', 's.jsonl'), `${replyLine(iso(now - DAY), { total: 40, cost: 0.4 })}\n`)
+  ok((await forkReader('all')).tokenBreakdown.subagents === 70, '缓存重启后追加 fork 子代理，只算新增用量')
+  ok((await forkReader('all')).tokens === 190, 'fork 子代理重复读取不翻倍')
+  const persistedFork = Object.values(JSON.parse(await readFile(cacheFile, 'utf8')).files).find((entry) => entry.sourceKind === 'subagent')
+  ok(persistedFork.forkedAt === Date.parse(forkedAt), 'fork 时间边界随增量偏移一起持久化')
+
+  await reset()
   const aliasFile = join(mainDir, 'alias.jsonl')
   await writeFile(aliasFile, `${replyLine(iso(now - DAY), { total: 50 })}\n`)
   const stat = await import('node:fs/promises').then((fs) => fs.stat(aliasFile))
@@ -155,11 +201,11 @@ export async function runUsageStatsSubagentTests(ok) {
       { path: relative(process.cwd(), aliasFile), size: stat.size },
       ...(process.platform === 'win32' ? [{ path: aliasFile.toUpperCase(), size: stat.size }] : [])
     ],
-    listSubagents: async () => [],
+    listSubagents: async () => [{ path: aliasFile, size: stat.size }],
     cacheFile: join(root, 'dedupe-cache.json')
   }
   const aliasStats = await m.createUsageReader(aliasSources)('all')
-  ok(aliasStats.tokens === 50, '同一物理文件的相对/大小写别名不重复计数')
+  ok(aliasStats.tokens === 50 && aliasStats.tokenBreakdown.main === 50 && aliasStats.tokenBreakdown.subagents === 0, '同一物理文件跨来源、相对/大小写别名均不重复计数')
   const linkedFile = join(mainDir, 'linked.jsonl')
   await writeFile(linkedFile, `${replyLine(iso(now - DAY), { total: 77 })}\n`)
   const linkAlias = join(mainDir, 'link-alias.jsonl')
@@ -199,14 +245,35 @@ export async function runUsageStatsSubagentTests(ok) {
   const restarted = reader()
   ok((await restarted('all')).tokens === 200, '新读取器从磁盘缓存重启后结果一致')
   const savedCache = JSON.parse(await readFile(cacheFile, 'utf8'))
-  ok(savedCache.version === 3, '缓存写出 v3 版本')
+  ok(savedCache.version === 4, '缓存写出 v4 版本')
   ok(Object.values(savedCache.files).every((entry) => entry.sourceKind === 'main' || entry.sourceKind === 'subagent'), '缓存条目带 sourceKind')
 
   const realKey = Object.keys(savedCache.files)[0]
   await writeFile(cacheFile, JSON.stringify({ version: 1, files: { [realKey]: { size: 1, offset: 0, usage: { '2020-01-01': { m: 1, t: 999999, h: {}, models: {} } } } } }))
   const migrated = await reader()('all')
   ok(migrated.tokens === 200, '旧 v1 缓存被丢弃重建，不把旧计数当权威')
-  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 3, '迁移后缓存升到 v3')
+  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 4, '迁移后缓存升到 v4')
+
+  await writeMain('opus-long.jsonl', [replyLine(iso(now - DAY), { provider: 'anthropic', model: 'claude-opus-5-5', total: 300, cost: 0.3, diagnostics })])
+  await reader()('all')
+  const staleV3 = JSON.parse(await readFile(cacheFile, 'utf8'))
+  staleV3.version = 3
+  for (const entry of Object.values(staleV3.files)) {
+    entry.usage = { '2020-01-01': { m: 1, t: 999999, c: 999, h: {}, models: {} } }
+  }
+  await writeFile(cacheFile, JSON.stringify(staleV3))
+  const rebuiltV3 = await reader()('all')
+  ok(rebuiltV3.tokens === 500 && Math.abs(rebuiltV3.cost - 0.3) < 1e-9, 'v3 缓存即使文件大小和偏移没变也整份重算，补回长尾 Opus 用量与费用')
+  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 4 && (await reader()('all')).tokens === 500, 'v3 迁移自动保存 v4，重启后不重复累计')
+
+  await reset()
+  const partialFile = join(mainDir, 'partial.jsonl')
+  const complete = Buffer.from(replyLine(iso(now - DAY), { total: 88, diagnostics: { detail: '汉'.repeat(400000) } }))
+  const partialReader = reader()
+  await writeFile(partialFile, complete.subarray(0, complete.length - 2))
+  ok((await partialReader('all')).tokens === 0, '未落完且跨 1 MiB 分块的行先不计数')
+  await appendFile(partialFile, Buffer.concat([complete.subarray(complete.length - 2), Buffer.from('\n')]))
+  ok((await partialReader('all')).tokens === 88 && (await partialReader('all')).tokens === 88, '跨分块多字节行补完后精确计一次')
 
   await reset()
   await writeMain('bad.jsonl', ['{not json at all', replyLine(iso(now - DAY), { total: 42 }), ''])

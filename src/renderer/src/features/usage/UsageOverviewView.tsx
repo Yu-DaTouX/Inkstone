@@ -3,6 +3,7 @@ import type { TFunc } from '../../i18n'
 import { HEAT_WEEKS, heatLevels, localDay, type UsageRange } from '../../../../shared/usage-stats'
 import type { ModelInfo, UsageStatsResult } from '../../../../shared/ipc'
 import { compactNumber, shareText } from './usage-format'
+import { usageModelName } from '../settings/usage/usage-model'
 
 const HEAT_SHOWN = 20
 
@@ -73,23 +74,7 @@ export function UsageOverviewView({
   onOpenDetails,
   compact = false
 }: UsageOverviewViewProps) {
-  const names = useMemo(() => {
-    const base = (key: string): string => {
-      const slash = key.indexOf('/')
-      const provider = key.slice(0, slash)
-      const id = key.slice(slash + 1)
-      const hit = models.find((m) => m.provider === provider && m.id === id) ?? models.find((m) => m.id === id)
-      return hit?.name || id.replace(/^.*\//, '')
-    }
-    const keys = stats?.models.map((m) => m.key) ?? []
-    const out = new Map<string, { name: string; provider: string }>()
-    for (const key of keys) {
-      const name = base(key)
-      const dup = keys.some((k) => k !== key && base(k) === name)
-      out.set(key, { name, provider: dup ? key.slice(0, key.indexOf('/')) : '' })
-    }
-    return out
-  }, [stats, models])
+  const names = useMemo(() => new Map((stats?.models ?? []).map((m) => [m.key, usageModelName(m, models)])), [stats, models])
 
   const levels = useMemo(() => heatLevels(stats?.heat.map((d) => d.tokens) ?? []), [stats])
   const [pixelRatio, setPixelRatio] = useState(() => typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
@@ -181,11 +166,8 @@ export function UsageOverviewView({
               const share = total > 0 ? m.tokens / total : 0
               const name = names.get(m.key)
               return (
-                <li key={m.key} className="start-model" title={m.key}>
-                  <span className="start-model-name">
-                    {name?.name ?? m.key}
-                    {name?.provider ? <span className="start-model-provider"> · {name.provider}</span> : null}
-                  </span>
+                <li key={m.key} className="start-model" title={m.sources?.join(' · ') || m.key}>
+                  <span className="start-model-name">{name ?? m.key}</span>
                   <span className="start-model-bar" aria-hidden>
                     <span style={{ width: `${Math.max(0.5, share * 100)}%` }} />
                   </span>
