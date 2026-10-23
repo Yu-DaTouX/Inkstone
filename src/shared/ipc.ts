@@ -305,7 +305,7 @@ export interface RunnerStatus {
   createdAt: number
   lastActiveAt: number
   isActive: boolean
-  isolation?: 'waiting' | 'blocked'
+  isolation?: 'waiting' | 'ready' | 'blocked'
   isolationBranch?: string
 }
 
@@ -1638,6 +1638,7 @@ export interface YanBridge {
   }>
   setVisibleRunnerSessions(sessions: VisibleRunnerSession[]): Promise<boolean>
   runnerStatuses(): Promise<RunnerStatus[]>
+  mergeIsolation(cwd: string): Promise<{ ok: boolean; error?: string }>
   stopRunner(id: string): Promise<boolean>
   runs: {
     snapshot(): Promise<{ revision: number; runs: import('./runs').RunSnapshot[] }>

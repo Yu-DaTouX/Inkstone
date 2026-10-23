@@ -116,10 +116,23 @@ export class RunnerRegistry {
   private admissionCounter = 0
   private admissions = new Map<string, ExecuteAdmissionClaim>()
 
+  private sharesCwd(cwd: string): boolean {
+    return this.opts.sharesCwd?.(cwd) === true
+  }
+
+  private admissionKey(runner: Runner): string {
+    const cwd = canonicalCwd(runner.cwd)
+    return this.sharesCwd(runner.cwd) ? `${cwd}#${runner.id}` : cwd
+  }
+
+  blocksConcurrentRun(cwd: string, exceptRunId?: string): boolean {
+    return !this.sharesCwd(cwd) && this.hasBusyCwd(cwd, exceptRunId)
+  }
+
   private pruneAdmissions(): void {
     for (const [key, claim] of this.admissions) {
       const runner = this.runners.get(claim.runId)
-      if (!runner || runner.generation !== claim.generation || canonicalCwd(runner.cwd) !== key) {
+      if (!runner || runner.generation !== claim.generation || this.admissionKey(runner) !== key) {
         this.admissions.delete(key)
       }
     }
@@ -129,13 +142,13 @@ export class RunnerRegistry {
     const runner = this.runners.get(id)
     if (!runner) return { ok: false, error: '运行实例不存在' }
     this.pruneAdmissions()
-    const key = canonicalCwd(runner.cwd)
+    const key = this.admissionKey(runner)
     const existing = this.admissions.get(key)
     if (existing) {
       if (admissionClaimedBy(existing, id, runner.generation)) return { ok: true, token: existing.token }
       return { ok: false, error: SAME_CWD_ADMISSION_ERROR }
     }
-    if (this.hasBusyCwd(runner.cwd, id)) return { ok: false, error: SAME_CWD_BUSY_ERROR }
+    if (this.blocksConcurrentRun(runner.cwd, id)) return { ok: false, error: SAME_CWD_BUSY_ERROR }
     const token = ++this.admissionCounter
     this.admissions.set(key, { token, runId: id, generation: runner.generation, cwd: runner.cwd })
     return { ok: true, token }
@@ -145,9 +158,9 @@ export class RunnerRegistry {
     const runner = this.runners.get(id)
     if (!runner) return false
     this.pruneAdmissions()
-    const claim = this.admissions.get(canonicalCwd(runner.cwd))
+    const claim = this.admissions.get(this.admissionKey(runner))
     if (claim) return claim.token === token && admissionClaimedBy(claim, id, runner.generation)
-    return this.busy(runner) && !this.hasBusyCwd(runner.cwd, id)
+    return this.busy(runner) && !this.blocksConcurrentRun(runner.cwd, id)
   }
 
   releaseExecute(id: string, token: number): void {
@@ -199,7 +212,8 @@ export class RunnerRegistry {
         origin?: RunnerRunOrigin
       }) => void
       resolveCwdConflict?: (target: SelectTarget) => Promise<{ cwd: string } | { reason: string } | null>
-      isolationOf?: (cwd: string) => { state: 'waiting' | 'blocked'; branch: string } | undefined
+      isolationOf?: (cwd: string) => { state: 'waiting' | 'ready' | 'blocked'; branch: string } | undefined
+      sharesCwd?: (cwd: string) => boolean
     }
   ) {}
 
@@ -346,7 +360,8 @@ export class RunnerRegistry {
 
   hasExecutionAdmission(cwd: string): boolean {
     this.pruneAdmissions()
-    return this.admissions.has(canonicalCwd(cwd))
+    const key = canonicalCwd(cwd)
+    return [...this.admissions.values()].some((claim) => canonicalCwd(claim.cwd) === key)
   }
 
   private busy(runner: Runner): boolean {
@@ -421,7 +436,7 @@ export class RunnerRegistry {
       }
     }
 
-    const conflict = [...this.runners.values()].find(
+    const conflict = !this.sharesCwd(target.cwd) && [...this.runners.values()].find(
       (runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd) && this.busy(runner)
     )
     if (conflict) {
@@ -443,7 +458,7 @@ export class RunnerRegistry {
           ok: false,
           error:
             `同一工作目录还有会话正在运行，无法在这里再开一个：两个同时写文件的回合会互相覆盖。${reason}` +
-            '请等它跑完或停止它；Git 仓库会自动建隔离工作树，非 Git 目录没有安全的隔离基线。'
+            '请等它跑完或停止它。'
         }
       }
     }
@@ -770,7 +785,7 @@ export class RunnerRegistry {
     if (!runner) return { ok: true }
     return guardSameCwdExecute(
       { runnerId: runner.id, cwd: runner.cwd, selfBusy: this.busy(runner) },
-      (cwd, exceptRunId) => this.hasBusyCwd(cwd, exceptRunId)
+      (cwd, exceptRunId) => this.blocksConcurrentRun(cwd, exceptRunId)
     )
   }
 
