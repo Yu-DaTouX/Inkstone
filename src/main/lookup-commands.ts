@@ -9,7 +9,7 @@ import { deepseekReadPage, resolveDeepseekSearchKey, runDeepseekSearch } from '.
 import { DocsError, queryDocs } from './search/context7'
 import { runBingSearch } from './search/bing'
 import { runDdgSearch } from './search/ddg'
-import { readPage, ReadPageError, type ReadPageResult } from './search/read-page'
+import { assertReadablePage, normalizeReadUrl, readPage, ReadPageError, type ReadPageResult } from './search/read-page'
 import { runSo360Search } from './search/so360'
 import { resolveSearchKey, searchApiConfig } from './search/config'
 import { defaultSearchPlan, mapLimit, searchModifiers, searchQueries, tooManyQueries, TtlCache, type SearchKeys } from './search/plan'
@@ -89,13 +89,15 @@ export class LookupCommands {
           maxChars: this.searchNumber(params, ['max-chars', 'maxChars']),
           timeoutMs: this.searchNumber(params, ['timeout-ms', 'timeoutMs', 'timeout'])
         }
-        const cacheKey = JSON.stringify({ url: url.trim(), maxChars: read.maxChars ?? null, via: via ?? null })
-        const hit = this.fetchCache.get(cacheKey)
-        const fetched = hit ?? (await this.readWithFallback(url, read, via))
-        if (!hit) this.fetchCache.set(cacheKey, fetched)
+        const cacheKey = JSON.stringify({ url: normalizeReadUrl(url), maxChars: read.maxChars ?? null, timeoutMs: read.timeoutMs ?? null, via: via ?? null })
+        const { value: fetched, cached } = await this.fetchCache.getOrLoad(
+          cacheKey,
+          () => this.readWithFallback(url, read, via),
+          { refresh: params.refresh === true || params.refresh === 'true' }
+        )
         const { page, via: usedVia, note } = fetched
         return {
-          data: { ...page, via: usedVia, ...(note ? { note } : {}), ...(hit ? { cached: true } : {}) },
+          data: { ...page, via: usedVia, ...(note ? { note } : {}), ...(cached ? { cached: true } : {}) },
           summary: {
             kind: 'search',
             action: 'fetch',
@@ -106,7 +108,7 @@ export class LookupCommands {
             truncated: page.truncated,
             via: usedVia,
             ...(note ? { note } : {}),
-            ...(hit ? { cached: true } : {})
+            ...(cached ? { cached: true } : {})
           }
         }
       } catch (e) {
@@ -193,11 +195,12 @@ export class LookupCommands {
       const plan: { sources: SearchSourceId[]; policy?: SearchPolicy } = keys ? defaultSearchPlan(text, keys) : { sources: explicitSources }
       const input: SearchQuery = { text, sources: plan.sources, ...shared }
       const cacheKey = JSON.stringify({ input, policy: plan.policy ?? null })
-      const hit = this.searchCache.get(cacheKey)
-      if (hit) return { outcome: hit, cached: true }
-      const outcome = await runSearch(input, { runner: searchRunner(), now: () => Date.now() }, plan.policy)
-      if (!outcome.error && outcome.items.length > 0) this.searchCache.set(cacheKey, outcome)
-      return { outcome, cached: false }
+      const { value: outcome, cached } = await this.searchCache.getOrLoad(
+        cacheKey,
+        () => runSearch(input, { runner: searchRunner(), now: () => Date.now() }, plan.policy),
+        { refresh: params.refresh === true || params.refresh === 'true', accept: (result) => !result.error && result.items.length > 0 }
+      )
+      return { outcome, cached }
     })
 
     if (results.length === 1) {
@@ -236,12 +239,15 @@ export class LookupCommands {
     read: { maxChars?: number; timeoutMs?: number },
     via: string | undefined
   ): Promise<FetchedPage> {
-    if (via === 'firecrawl') return { page: await firecrawlReadPage(url, read), via: 'firecrawl' }
-    if (via === 'deepseek') return { page: await deepseekReadPage(url, read), via: 'deepseek' }
+    const timeoutMs = Math.min(60_000, Math.max(5_000, Math.round(read.timeoutMs ?? 30_000)))
+    const deadline = Date.now() + timeoutMs
+    const remaining = (): number => Math.max(0, deadline - Date.now())
+    if (via === 'firecrawl') return { page: assertReadablePage(await firecrawlReadPage(url, { ...read, timeoutMs })), via: 'firecrawl' }
+    if (via === 'deepseek') return { page: assertReadablePage(await deepseekReadPage(url, { ...read, timeoutMs })), via: 'deepseek' }
     let local: ReadPageResult | null = null
     let localError: ReadPageError | null = null
     try {
-      local = await readPage(url, read)
+      local = await readPage(url, { ...read, timeoutMs: Math.min(20_000, remaining()) })
       if (local.text.trim().length >= THIN_PAGE_CHARS || via === 'local') return { page: local, via: 'local' }
     } catch (e) {
       if (!(e instanceof ReadPageError) || e.code === 'bad_url' || e.code === 'private_host' || via === 'local') throw e
@@ -254,8 +260,12 @@ export class LookupCommands {
     ]
     const failures: string[] = []
     for (const remote of remotes) {
+      if (remaining() < 5_000) {
+        failures.push('正文读取总时限已到，未继续请求后备来源')
+        break
+      }
       try {
-        const page = await remote.read(url, read)
+        const page = assertReadablePage(await remote.read(url, { ...read, timeoutMs: remaining() }))
         const why = local ? '本地读到的正文太短' : `本地读取失败（${localError?.message}）`
         return { page, via: remote.via, note: [why, ...failures, `已改用 ${remote.label}`].join('，') }
       } catch (e) {

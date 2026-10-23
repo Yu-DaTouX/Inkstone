@@ -1683,6 +1683,16 @@ runWorkspaceChangesTests(ok, workspaceChanges)
   await runHiddenPageTests(ok)
 }
 
+{
+  const { runSearchLookupTests } = await import('./test-search-lookup.mjs')
+  await runSearchLookupTests(ok)
+}
+
+{
+  const { runPromptSkillContractTests } = await import('./test-prompt-skill-contracts.mjs')
+  await runPromptSkillContractTests(ok)
+}
+
 runAtQueryTests(ok, atQuery)
 {
   const { runQuotaCommandCodeTests, runQuotaToneTests } = await import('./test-quota.mjs')

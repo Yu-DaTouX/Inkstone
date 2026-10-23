@@ -43,7 +43,7 @@
 
 ## 开始使用
 
-1. 到[发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)下载安装包并安装，之后软件会自动更新；也有免安装的便携版。
+1. 到[发布页](https://github.com/Yu-DaTouX/Inkstone/releases/latest)下载安装包并安装，之后软件会自动检查更新，由你确认下载和重启安装；也有免安装的便携版。
 2. 打开砚，在 **设置 → 模型** 里登录，或填入 API Key。
 3. 新建会话，在输入框底栏选好项目文件夹，说出要做的事。
 

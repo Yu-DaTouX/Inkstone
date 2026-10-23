@@ -1,4 +1,5 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { getEventListeners } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -69,6 +70,8 @@ export async function runSearchTests(ok, mod) {
     const a = normalizeUrlForDedupe('https://Example.com/a/?utm_source=x&b=1#frag')
     const b = normalizeUrlForDedupe('https://example.com/a?b=1')
     ok(a === b, '大小写 host / 跟踪参数 / hash / 尾斜杠都归一')
+    ok(normalizeUrlForDedupe('https://example.com/file?ref=main') !== normalizeUrlForDedupe('https://example.com/file?ref=dev'), 'ref 可能是分支等业务参数，不为去重而删除')
+    ok(normalizeUrlForDedupe('https://example.com/file?source=one') !== normalizeUrlForDedupe('https://example.com/file?source=two'), 'source 可能影响正文，不为去重而删除')
     ok(normalizeUrlForDedupe('not a url') === 'not a url', '非 URL 原样返回（不抛）')
   }
 
@@ -84,6 +87,12 @@ export async function runSearchTests(ok, mod) {
     ok(normalizeRow('hackernews', { title: 'no id' }) === null, '缺 id 丢一条（不给死链）')
     ok(normalizeRow('wikipedia', { title: '', url: 'x' }) === null, '空标题丢一条')
     ok(normalizeRow('arxiv', null) === null, 'null 行丢一条')
+    for (const url of ['not a url', '/relative', 'javascript:alert(1)', 'file:///a', 'data:text/plain,x', 'https://user:pass@example.com/', 'https://user@example.com/', 'https://example.com/a b']) {
+      ok(normalizeRow('bing', { title: 'bad', url }) === null, `拒绝非法或带凭据的结果网址：${url}`)
+    }
+    const longUrl = 'https://example.com/?q=' + 'x'.repeat(1800)
+    ok(normalizeRow('bing', { title: 'long', url: longUrl })?.url === longUrl, '长 URL 完整保留，不按 500 字符裁剪')
+    ok(normalizeRow('bing', { title: 'too long', url: longUrl + 'x'.repeat(8192) }) === null, '超过明确 URL 上限则丢弃，不生成截断链接')
   }
 
   {
@@ -160,6 +169,20 @@ export async function runSearchTests(ok, mod) {
       { limitPerSource: 6, limitTotal: 12 }
     )
     ok(withContent.items[0].content.startsWith('正文\n\n第二段') && withContent.items[0].content.length === 3000, '正文保留段落、压掉多余空行，截到 3000 字')
+    const summaryItem = normalizeRow('deepseek', { title: 'summary', url: 'https://d/1', snippet: '字'.repeat(4000), summary: '长'.repeat(4000), rerank_score: 1.2, authority: 3 })
+    ok(summaryItem.summary.length === 3000 && summaryItem.summary.endsWith('…') && summaryItem.snippet.length === 280, '长 summary 独立有界保留，旧 snippet 上限不变')
+    ok(summaryItem.quality.provider === 'deepseek' && summaryItem.quality.rerank_score === 1.2 && summaryItem.quality.authority === 3, '官方质量字段带供应商标签，不用于跨来源排序')
+    for (const rerank_score of [NaN, Infinity, -1, 4, '1.2', undefined]) {
+      ok(!normalizeRow('deepseek', { title: 'bad score', url: 'https://d/1', rerank_score }).quality, '无效质量分不进入结果')
+    }
+    for (const authority of [-1, 5, 1.5, '3', NaN]) {
+      ok(!normalizeRow('deepseek', { title: 'bad authority', url: 'https://d/1', authority }).quality, '未知或无效 authority 不进入质量字段')
+    }
+    const qualityFusion = aggregate([
+      { source: 'tavily', rows: [{ title: 'a', url: 'https://d/1' }], elapsedMs: 1 },
+      { source: 'deepseek', rows: [{ title: 'b', url: 'https://d/1', summary: '长摘要', rerank_score: 1.2 }], elapsedMs: 1 }
+    ], { limitPerSource: 6, limitTotal: 12 })
+    ok(qualityFusion.items[0].summary === '长摘要' && qualityFusion.items[0].quality.provider === 'deepseek', '跨来源去重补齐长摘要时保留质量供应商归属')
     const siteRows = [
       { title: 'junk1', url: 'https://outlook.com/a' },
       { title: 'gh1', url: 'https://github.com/a' },
@@ -190,6 +213,10 @@ export async function runSearchTests(ok, mod) {
       [{ source: 'wikipedia', rows: [{ title: 'ok', url: 'https://x/1' }, { nope: true }], elapsedMs: 1 }],
       { limitPerSource: 6, limitTotal: 12 }
     )
+    const allBad = aggregate([{ source: 'bing', rows: [null, { title: 'bad', url: 'oops' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
+    ok(allBad.sources[0].status === 'empty' && allBad.items.length === 0, '成功响应全部坏行时不标 ok')
+    const filteredCap = aggregate([{ source: 'bing', rows: [null, { title: 'a', url: 'https://a/1' }, { title: 'dup', url: 'https://a/1#hash' }, { title: 'b', url: 'https://a/2' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
+    ok(filteredCap.items.length === 2 && !filteredCap.truncated, '坏行与重复行不占每来源名额，也不误报截断')
     ok(dirty.sources[0].status === 'ok', '脏行不算来源失败')
     ok(/跳过/.test(dirty.sources[0].message ?? '') , '脏行数如实写进状态说明')
   }
@@ -289,6 +316,27 @@ export async function runSearchTests(ok, mod) {
     await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, allPaidFail, policy)
     ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,bing,brave,so360', '付费来源都失败 → 用上第二个网页引擎')
 
+    for (const [label, primaryRows, sites] of [
+      ['坏行', [null, { title: 'bad', url: 'nope' }]],
+      ['重复行', Array.from({ length: 8 }, (_, i) => ({ title: 'dup', url: `https://allowed/0?utm_source=${i}` }))],
+      ['站外结果', rows('outside', 8), ['allowed']]
+    ]) {
+      const calls = deps(async (id) => ({ source: id, rows: id === 'tavily' ? primaryRows : rows('allowed', id === 'brave' ? 3 : 1), elapsedMs: 1 }))
+      const out = await runSearch({ text: 'q', sources: ['tavily', 'bing'], ...(sites ? { sites } : {}) }, calls, policy)
+      ok(calls.calls.some((call) => call.id === 'brave'), `${label}不能挡住后备来源`)
+      ok(out.items.length >= 3, `${label}后仍补足有效去重结果`)
+    }
+    const unusable = deps(async (id) => {
+      if (id !== 'bing') return { source: id, rows: Array.from({ length: 8 }, () => ({ title: 'bad', url: 'bad' })), elapsedMs: 1 }
+      await wait(80)
+      return { source: id, rows: rows('bing', 3), elapsedMs: 80 }
+    })
+    const notStopped = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, unusable, { ...policy, graceMs: 5 })
+    ok(notStopped.sources.find((source) => source.source === 'bing').status === 'ok', '原始行数再多但全无效，也不能提前停止慢兜底')
+    const overlapping = deps(async (id) => ({ source: id, rows: rows('same', id === 'so360' ? 3 : 2), elapsedMs: 1 }))
+    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, overlapping, policy)
+    ok(overlapping.calls.map((call) => call.id).join(',') === 'tavily,bing,brave,so360', 'primary 与后备跨来源重复不能累计成够用，继续下一后备')
+
     const noPolicy = deps(async (id) => {
       await wait(id === 'bing' ? 60 : 5)
       return { source: id, rows: rows(id, 6), elapsedMs: 5 }
@@ -350,6 +398,30 @@ export async function runSearchTests(ok, mod) {
     const failure = await run(failed)
     ok(failure.rows === null && failure.error?.code === 'NOT_FOUND', '外壳里的失败码照实上报（不是 backend_error）')
     ok(/No articles found/.test(failure.error?.message ?? ''), '外壳里的失败说明照实上报（不是整段 JSON）')
+
+    const pidFile = join(dir, 'hanging.pid')
+    const hanging = fake('hanging.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)\n`)
+    const controller = new AbortController()
+    const pending = createOpencliRunner(hanging)(source, 'q', { limit: 2, timeoutMs: 10_000, signal: controller.signal })
+    const deadline = Date.now() + 5000
+    while (!existsSync(pidFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+    ok(existsSync(pidFile), '取消夹具子进程已启动')
+    const pid = Number(readFileSync(pidFile, 'utf8'))
+    controller.abort()
+    const cancelled = await pending
+    ok(cancelled.skipped === true && !cancelled.timedOut, 'OpenCLI 外部取消返回 skipped，不等自身超时')
+    ok(getEventListeners(controller.signal, 'abort').length === 0, '取消后清理外部 signal 监听器')
+    let alive = true
+    for (let i = 0; i < 100 && alive; i++) {
+      try { process.kill(pid, 0) } catch { alive = false }
+      if (alive) await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    ok(!alive, '取消确实终止 OpenCLI 子进程')
+    const preCancelled = await createOpencliRunner('yan-should-not-spawn')(source, 'q', { limit: 2, timeoutMs: 1000, signal: controller.signal })
+    ok(preCancelled.skipped && !preCancelled.unavailable, '预先取消时不启动子进程')
+    const normal = new AbortController()
+    await createOpencliRunner(envelope)(source, 'q', { limit: 2, timeoutMs: 1000, signal: normal.signal })
+    ok(getEventListeners(normal.signal, 'abort').length === 0, '正常退出也清理外部 signal 监听器')
 
     const huge = fake('huge.mjs', 'process.stdout.write("[" + "1,".repeat(400000))\n')
     const hugeRun = await run(huge)

@@ -81,7 +81,8 @@ function searchText(data) {
   for (const query of queries) {
     if (queries.length > 1 && query?.query) lines.push(`## ${query.query}`)
     for (const [index, item] of (Array.isArray(query?.items) ? query.items : []).entries()) {
-      lines.push(`${index + 1}. ${item.title ?? ''}\n   ${item.url ?? ''}${item.snippet ? `\n   ${String(item.snippet).replace(/\s+/g, ' ').slice(0, 400)}` : ''}${item.content ? `\n   ${String(item.content).slice(0, 3000)}` : ''}`)
+      const quality = item.quality?.provider === 'deepseek' ? `\n   DeepSeek quality: ${JSON.stringify(item.quality)} (provider-specific; do not compare across sources)` : ''
+      lines.push(`${index + 1}. ${item.title ?? ''}\n   ${item.url ?? ''}${item.source ? `\n   Source: ${item.source}${item.published ? `; published: ${item.published}` : ''}` : ''}${item.summary ? `\n   ${String(item.summary).slice(0, 3000)}` : item.snippet ? `\n   ${String(item.snippet).replace(/\s+/g, ' ').slice(0, 400)}` : ''}${item.content ? `\n   ${String(item.content).slice(0, 3000)}` : ''}${quality}`)
     }
   }
   return lines.length ? lines.join('\n') : JSON.stringify(outcome ?? {}).slice(0, OUTPUT_MAX_CHARS)
@@ -155,20 +156,22 @@ export const GIT_INSPECT_TOOL = {
 export const WEB_SEARCH_TOOL = {
   name: 'web_search',
   label: 'Web search',
-  description: 'Search the web through Inkstone. Returns ranked titles, URLs and snippets. Use web_fetch to read a result page.',
+  description: 'Search the web through Inkstone. Returns ranked titles, URLs, sources, snippets and available longer summaries. Configured paid sources may incur charges. Results may be cached for 10 minutes; use refresh for a fresh search. Use web_fetch to read a result page.',
   parameters: {
     type: 'object',
     properties: {
       query: { type: 'string' },
-      recent: { type: 'string', enum: ['day', 'week', 'month', 'year'] },
-      site: { type: 'string', description: 'Comma-separated domains, at most 5' }
+      recent: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Best-effort time filter; some sources may include older or undated results.' },
+      site: { type: 'string', description: 'Comma-separated domains, at most 5; use this when a required domain must be enforced.' },
+      withContent: { type: 'boolean', description: 'Request longer source content when the configured DeepSeek search source supports it. Output is bounded; read important pages with web_fetch.' },
+      refresh: { type: 'boolean', description: 'Skip the 10-minute result cache.' }
     },
     required: ['query']
   },
   async execute(_toolCallId, params, signal) {
     const query = typeof params?.query === 'string' ? params.query.trim() : ''
     if (!query) return text('query is required', {}, true)
-    const result = await callHost('search.query', { queryText: query, ...(params.recent ? { recent: params.recent } : {}), ...(params.site ? { site: params.site } : {}) }, signal)
+    const result = await callHost('search.query', { queryText: query, ...(params.recent ? { recent: params.recent } : {}), ...(params.site ? { site: params.site } : {}), ...(params.withContent === true ? { withContent: true } : {}), ...(params.refresh === true ? { refresh: true } : {}) }, signal)
     if (!result.ok) return text(`web_search failed: ${result.error}`, {}, true)
     return text(clip(searchText(result.data)), { summary: result.summary, search: { action: 'query', query, items: searchDetailItems(result.data) } })
   }
@@ -177,19 +180,20 @@ export const WEB_SEARCH_TOOL = {
 export const WEB_FETCH_TOOL = {
   name: 'web_fetch',
   label: 'Web fetch',
-  description: 'Read a public http(s) page as text through Inkstone (no login state, no local or intranet addresses).',
+  description: 'Read a public http(s) page as text through Inkstone. Does not share the user browser login state; local and intranet addresses and URLs containing credentials are rejected. May use configured paid fallback sources. Results may be cached for 10 minutes; use refresh to bypass the cache.',
   parameters: {
     type: 'object',
     properties: {
       url: { type: 'string' },
-      maxChars: { type: 'number' }
+      maxChars: { type: 'number', minimum: 500, maximum: 40000 },
+      refresh: { type: 'boolean', description: 'Skip the 10-minute result cache.' }
     },
     required: ['url']
   },
   async execute(_toolCallId, params, signal) {
     const url = typeof params?.url === 'string' ? params.url.trim() : ''
     if (!/^https?:\/\//i.test(url)) return text('url must start with http:// or https://', {}, true)
-    const result = await callHost('search.fetch', { url, ...(typeof params.maxChars === 'number' ? { maxChars: params.maxChars } : {}) }, signal)
+    const result = await callHost('search.fetch', { url, ...(typeof params.maxChars === 'number' ? { maxChars: params.maxChars } : {}), ...(params.refresh === true ? { refresh: true } : {}) }, signal)
     if (!result.ok) return text(`web_fetch failed: ${result.error}`, {}, true)
     return text(clip(pageText(result.data)), { summary: result.summary, search: fetchSearchDetail(result.data, url) })
   }

@@ -231,6 +231,10 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
   return (source, query, opts) =>
     new Promise<SourceRun>((resolve) => {
       const started = Date.now()
+      if (opts.signal?.aborted) {
+        resolve({ source: source.id, rows: null, skipped: true, elapsedMs: 0 })
+        return
+      }
       if (target.error) {
         resolve({
           source: source.id,
@@ -266,6 +270,21 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
       let timedOut = false
       let overflow = false
 
+      let settled = false
+      const done = (result: SourceRun): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        opts.signal?.removeEventListener('abort', abort)
+        child.stdout?.removeAllListeners('data')
+        child.stderr?.removeAllListeners('data')
+        child.removeListener('close', onClose)
+        resolve(result)
+      }
+      const abort = (): void => {
+        child.kill('SIGKILL')
+        done({ source: source.id, rows: null, skipped: true, elapsedMs: Date.now() - started })
+      }
       const timer = setTimeout(() => {
         timedOut = true
         child.kill('SIGKILL')
@@ -282,10 +301,10 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
         if (err.length < 8192) err += chunk.toString('utf8')
       })
 
-      child.on('error', (e: Error) => {
+      child.once('error', (e: Error) => {
         clearTimeout(timer)
         const enoent = (e as NodeJS.ErrnoException).code === 'ENOENT'
-        resolve({
+        done({
           source: source.id,
           rows: null,
           unavailable: enoent,
@@ -297,11 +316,11 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
         })
       })
 
-      child.on('close', (code) => {
+      const onClose = (code: number | null): void => {
         clearTimeout(timer)
         const elapsedMs = Date.now() - started
         if (timedOut) {
-          resolve({
+          done({
             source: source.id,
             rows: null,
             timedOut: true,
@@ -316,7 +335,7 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           try {
             parsed = JSON.parse(text) as unknown
           } catch {
-            resolve({
+            done({
               source: source.id,
               rows: null,
               error: {
@@ -329,12 +348,12 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           }
           const rows = backendRows(parsed)
           if (rows) {
-            resolve({ source: source.id, rows, elapsedMs })
+            done({ source: source.id, rows, elapsedMs })
             return
           }
           const failure = backendEnvelopeError(parsed)
           if (failure) {
-            resolve({
+            done({
               source: source.id,
               rows: null,
               error: { code: failure.code ?? 'backend_error', message: failure.message ?? `后端退出码 ${code}` },
@@ -342,7 +361,7 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
             })
             return
           }
-          resolve({
+          done({
             source: source.id,
             rows: null,
             error: {
@@ -354,7 +373,7 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           return
         }
         const parsedErr = parseBackendError(text || err)
-        resolve({
+        done({
           source: source.id,
           rows: null,
           error: {
@@ -363,7 +382,10 @@ export function createOpencliRunner(explicit?: string, target = resolveBackendTa
           },
           elapsedMs
         })
-      })
+      }
+      child.once('close', onClose)
+      opts.signal?.addEventListener('abort', abort, { once: true })
+      if (opts.signal?.aborted) abort()
     })
 }
 
@@ -412,14 +434,6 @@ export function normalizeQuery(input: SearchQuery):
   }
 }
 
-function whenAborted(signal: AbortSignal, source: SearchSourceId, started: number, now: () => number): Promise<SourceRun> {
-  return new Promise((resolve) => {
-    const skip = (): void => resolve({ source, rows: null, skipped: true, elapsedMs: now() - started })
-    if (signal.aborted) skip()
-    else signal.addEventListener('abort', skip, { once: true })
-  })
-}
-
 export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: SearchPolicy): Promise<SearchOutcome> {
   const started = deps.now()
   const parsed = normalizeQuery(input)
@@ -445,7 +459,12 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   const primary = new Set<SearchSourceId>(policy?.primary ?? [])
   const stop = new AbortController()
   let pendingPrimary = parsed.sources.filter((s) => primary.has(s.id)).length
-  let primaryRows = 0
+  const aggregateOptions = {
+    limitPerSource: parsed.limitPerSource,
+    limitTotal: parsed.limitTotal,
+    ...(input.sites?.length ? { sites: input.sites } : {}),
+    ...(input.recent ? { recent: input.recent } : {})
+  }
   let grace: NodeJS.Timeout | undefined
   const modifiers = {
     ...(input.recent ? { recent: input.recent } : {}),
@@ -457,8 +476,8 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   const settle = (run: SourceRun): void => {
     if (!policy || !primary.has(run.source)) return
     pendingPrimary--
-    if (run.rows?.length) primaryRows += run.rows.length
-    else if (!run.skipped && reserve.length) {
+    const primaryRows = aggregate(runs.filter((result) => primary.has(result.source)), aggregateOptions).items.length
+    if (pendingPrimary === 0 && primaryRows < policy.enoughRows && !run.skipped && reserve.length) {
       const next = reserve.shift()!
       primary.add(next.id)
       pendingPrimary++
@@ -471,14 +490,24 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
 
   const runOne = async (source: SearchSource): Promise<void> => {
     const begun = deps.now()
-    const run = stop.signal.aborted
-      ? await whenAborted(stop.signal, source.id, begun, deps.now)
-      : await Promise.race([
-          deps.runner(source, parsed.text, { limit: parsed.limitPerSource, timeoutMs: parsed.timeoutMs, signal: stop.signal, ...modifiers }),
-          whenAborted(stop.signal, source.id, begun, deps.now)
-        ])
-    runs.push(run)
-    settle(run)
+    let onAbort: (() => void) | undefined
+    const aborted = new Promise<SourceRun>((resolve) => {
+      onAbort = () => resolve({ source: source.id, rows: null, skipped: true, elapsedMs: deps.now() - begun })
+      if (stop.signal.aborted) onAbort()
+      else stop.signal.addEventListener('abort', onAbort, { once: true })
+    })
+    try {
+      const run = stop.signal.aborted
+        ? await aborted
+        : await Promise.race([
+            deps.runner(source, parsed.text, { limit: parsed.limitPerSource, timeoutMs: parsed.timeoutMs, signal: stop.signal, ...modifiers }),
+            aborted
+          ])
+      runs.push(run)
+      settle(run)
+    } finally {
+      if (onAbort) stop.signal.removeEventListener('abort', onAbort)
+    }
   }
 
   const inflight = new Set<Promise<void>>()
@@ -499,12 +528,7 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   const order = new Map([...parsed.sources, ...reserveAll].map((s, i) => [s.id, i]))
   runs.sort((a, b) => (order.get(a.source) ?? 0) - (order.get(b.source) ?? 0))
 
-  const merged = aggregate(runs, {
-    limitPerSource: parsed.limitPerSource,
-    limitTotal: parsed.limitTotal,
-    ...(input.sites?.length ? { sites: input.sites } : {}),
-    ...(input.recent ? { recent: input.recent } : {})
-  })
+  const merged = aggregate(runs, aggregateOptions)
   return {
     query: parsed.text,
     items: merged.items,

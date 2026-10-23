@@ -154,9 +154,10 @@ const GROUP_USAGE = {
 动作：
   request  使用一个普通工具前先问宿主能不能用（例如本机发现的生图模型、转换工具）。
            yan consent request --capability image.local --action generate --resource "D:/models/sd" --purpose "给报告配图"
-           结果的 allowed 为 true 才继续；decision 是 auto（按以往同意自动放行）、allow、deny 或 no-answer。
-           宿主只记录用户在确认框里的真实答复；同类操作多次同意后才会自动放行。
-           删除 / 覆盖、对外发送、付费、权限与凭证、安装一类永远询问；你判断有风险时加 --dangerous true。
+           结果的 allowed 为 true 才继续；decision 是 auto（权限档直接放行）、allow、deny 或 no-answer。
+           常规操作直接放行；「自动批准」档对删除 / 覆盖、对外发送、付费、权限与凭证、安装等危险操作询问；你判断有风险时加 --dangerous true。
+           「不受限制」档直接放行，包括危险操作；此命令不保证弹出确认框，不能代替用户明确要求的事前询问。
+           宿主只记录用户在确认框里的真实答复。
            这不替代权限档位与远程授权的其他检查，也不能把危险操作标成安全。
 
 `,
@@ -341,8 +342,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 说明：
   · title 是界面上显示的 2–8 字短标题，并行派多个时每个都写，互相区分；
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
-  · start 默认在当前目录执行，可能直接改文件；未指定 --model 时跟随当前会话模型；
-    readOnly=true 只开放 read/grep/find/ls；需要代码隔离时显式传 --isolation worktree（要求 Git）；
+  · start 默认在当前目录执行，可能直接改文件；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
+    readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；
     任务依赖对话里已有的讨论或读过的文件时用 fork，能几句话讲清时用普通子代理；fork 只在当前目录运行，
     不能与 --read-only、--isolation worktree 或其他 --model 同用，当前上下文已用超过 60% 时会被拒绝；
@@ -373,13 +374,13 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
             yan search query --query-text "electron WebContentsView" --site github.com,electronjs.org
             yan search query --query-text "bun 基准" --query-text "deno 基准"     一次最多 5 个查询并行，结果在 data.queries
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
-          --recent day|week|month|year  只要这段时间内的结果（各来源原生过滤；维基百科 / arXiv / HN 不支持）
+          --recent day|week|month|year  尽量筛选这段时间内的结果；360、维基百科 / arXiv / HN 不支持严格时间过滤，须核对发布日期
           --site a.com,b.org             只搜这些站点（最多 5 个）
           --question "用户原问题"         把用户原话交给 DeepSeek，帮它理解查询
           --with-content                 DeepSeek 结果直接带正文（content，每条最多 3000 字），可省掉一次 fetch
-  fetch   把一个网页读成正文文本（JS 渲染页也行；不带登录态，不读本机/内网地址）。本地读不出正文时，
+  fetch   把一个网页读成正文文本（JS 渲染页也行；不共享用户浏览器登录态，不读本机/内网地址）。本地读不出正文时，
           依次改用用户配了 key 的 Firecrawl、DeepSeek（结果里 via 写明是谁读的）；--via local|firecrawl|deepseek 可强制；
-          10 分钟内读过的同一网址直接复用（cached）
+          10 分钟内读过的同一网址直接复用（cached）；自动回退共用总时限（默认 30 秒，--timeout-ms 可设 5000–60000）
             yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
   docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
           用 --library-id 指定
@@ -388,6 +389,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
 
 说明：
+  · stdout 只给摘要和 resultFile 路径；用 read 读取结果文件中所需的 items / queries / sources，不能把摘要当完整搜索结果；
+  · query / fetch 支持 --refresh 跳过 10 分钟结果缓存；同参数的进行中请求会合并，不重复发起；
   · 网页引擎与付费来源都内置；只有维基百科 / arXiv / Hacker News 依赖用户自行安装的 OpenCLI，
     没装时这几个来源报 unavailable，doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error / skipped（已够用、提前停止）；

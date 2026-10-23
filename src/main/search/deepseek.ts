@@ -81,12 +81,15 @@ export async function runDeepseekSearch(
   if (!body || !Array.isArray(body.results)) {
     return { source: 'deepseek', rows: null, error: { code: 'bad_response', message: 'DeepSeek 返回的内容不是预期的 JSON' }, elapsedMs: elapsed() }
   }
-  const rows = [...body.results]
+  const rows = body.results.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row))
     .sort((a, b) => rerankOf(b) - rerankOf(a))
     .map((r) => ({
       title: r.title,
       url: r.url,
-      snippet: typeof r.summary === 'string' && r.summary.trim() ? r.summary : r.snippet,
+      snippet: typeof r.snippet === 'string' && r.snippet.trim() ? r.snippet : r.summary,
+      summary: r.summary,
+      rerank_score: r.rerank_score,
+      authority: r.authority,
       published: typeof r.date === 'string' ? r.date.slice(0, 10) : undefined,
       ...(opts.withContent && typeof r.content === 'string' && r.content.trim() ? { content: r.content } : {})
     }))

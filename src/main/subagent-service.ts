@@ -24,6 +24,7 @@ function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<st
       action: 'start',
       id: run.id,
       status: run.status,
+      model: run.model,
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
       task: run.task,

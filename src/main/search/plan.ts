@@ -65,6 +65,7 @@ export function searchModifiers(params: Record<string, unknown>): { ok: true; mo
 
 export class TtlCache<T> {
   private readonly entries = new Map<string, { at: number; value: T }>()
+  private readonly pending = new Map<string, Promise<T>>()
 
   constructor(
     private readonly ttlMs: number,
@@ -82,6 +83,27 @@ export class TtlCache<T> {
     this.entries.delete(key)
     this.entries.set(key, hit)
     return hit.value
+  }
+
+  async getOrLoad(
+    key: string,
+    load: () => Promise<T>,
+    options: { refresh?: boolean; accept?: (value: T) => boolean } = {}
+  ): Promise<{ value: T; cached: boolean }> {
+    const cached = options.refresh ? undefined : this.get(key)
+    if (cached !== undefined) return { value: cached, cached: true }
+    const existing = this.pending.get(key)
+    if (existing) return { value: await existing, cached: false }
+    const pending = Promise.resolve().then(load).then((value) => {
+      if (!options.accept || options.accept(value)) this.set(key, value)
+      return value
+    })
+    this.pending.set(key, pending)
+    try {
+      return { value: await pending, cached: false }
+    } finally {
+      if (this.pending.get(key) === pending) this.pending.delete(key)
+    }
   }
 
   set(key: string, value: T): void {

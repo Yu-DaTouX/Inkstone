@@ -34,6 +34,7 @@ export async function shouldBlockHiddenPageRequest(
     return false
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+  if (parsed.username || parsed.password) return true
   const host = parsed.hostname
   if (isLinkLocalHost(host) || isPrivateHost(host)) return true
   return resolves(host)

@@ -28,17 +28,18 @@ const QUESTION_TOOL = {
       options: { type: 'array', items: { type: 'string' }, maxItems: 3 },
       fields: {
         type: 'array',
+        description: 'A form with 1-5 fields instead of top-level options. choice and multi require field options; range requires min and max.',
         maxItems: 5,
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
-            label: { type: 'string' },
+            name: { type: 'string', description: 'Unique within the form; 1-40 characters after trimming. Start with an ASCII letter; use only ASCII letters, digits, underscores or hyphens.' },
+            label: { type: 'string', description: 'Non-empty field label, at most 200 characters after trimming.' },
             kind: { type: 'string', enum: FIELD_KINDS },
-            options: { type: 'array', items: { type: 'string' } },
-            min: { type: 'number' },
-            max: { type: 'number' },
-            step: { type: 'number' },
+            options: { type: 'array', items: { type: 'string' }, description: 'Required for choice (2-3 options) and multi (2-6 options); ignored for other kinds. Each option must be non-empty and at most 80 characters after trimming.' },
+            min: { type: 'number', description: 'Required for range, optional for number; ignored for other kinds. Must be finite and less than max when both bounds are provided.' },
+            max: { type: 'number', description: 'Required for range, optional for number; ignored for other kinds. Must be finite and greater than min when both bounds are provided.' },
+            step: { type: 'number', description: 'Optional finite numeric step for number or range; ignored for other kinds.' },
             optional: { type: 'boolean' }
           },
           required: ['name', 'label', 'kind']

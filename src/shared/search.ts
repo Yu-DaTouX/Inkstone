@@ -33,6 +33,8 @@ export const SEARCH_TIMEOUT_MS_DEFAULT = 20_000
 export const SEARCH_TIMEOUT_MS_MAX = 60_000
 export const SEARCH_OUTPUT_MAX_BYTES = 512 * 1024
 export const SEARCH_SNIPPET_MAX = 280
+export const SEARCH_SUMMARY_MAX = 3000
+export const SEARCH_URL_MAX = 8192
 export const SEARCH_QUERY_MAX = 200
 export const SEARCH_QUERIES_MAX = 5
 export const SEARCH_SITES_MAX = 5
@@ -60,6 +62,8 @@ export interface SearchItem {
   title: string
   url: string
   snippet?: string
+  summary?: string
+  quality?: { provider: 'deepseek'; rerank_score?: number; authority?: number }
   source: SearchSourceId
   published?: string
   content?: string

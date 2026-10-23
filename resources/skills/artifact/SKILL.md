@@ -1,6 +1,6 @@
 ---
 name: artifact
-description: 用户要一个能打开查看或操作的成果（表格页、仪表盘、报告页、网页、小工具、计算器、小游戏、可视化讲解、海报、邀请函、名片等单页设计），要动画短片、片头、3D 视频（用 HTML 合成，可导出 MP4，不需要另装软件），或要修改之前做的这类成果时使用。用户只说「做个 X 表」「设计个海报」「做个短视频」也算；需求再模糊也先读本技能、直接做第一版，不要先提问。
+description: 用户要一个能打开查看或操作的成果（表格页、仪表盘、报告页、网页、小工具、计算器、小游戏、可视化讲解、海报、邀请函、名片等单页设计），要动画短片、片头、3D 视频（用 HTML 合成，导出 MP4 需外部 FFmpeg），或要修改之前做的这类成果时使用。用户只说「做个 X 表」「设计个海报」「做个短视频」也算；需求再模糊也先读本技能、直接做第一版，不要先提问。
 ---
 
 # 成果页（Artifact）
@@ -62,7 +62,8 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 - **只交一个 HTML**：原文要求输出 `.png`、`.pdf`、`.md`、`.js` 的地方，一律改为一个单文件 HTML 成果页（图形用内联 SVG 或 `<canvas>`）。canvas-design 的美学宣言不另存文件，取一个名字、写一两句放进回复。
 - **字体只能用系统字体**：不能下载或引用网络字体，原文点名的字体（含 theme-factory 的 DejaVu、FreeSans）换成气质相近的系统字体。中文：黑体 `"PingFang SC", "Microsoft YaHei", sans-serif`、宋体 `"Songti SC", "SimSun", serif`、楷体 `"Kaiti SC", "KaiTi", serif`；西文还可用 `Georgia`、`"Times New Roman"`、`"Segoe UI"`、`Bahnschrift`（窄体）、`Impact`、`"Courier New"`、`ui-monospace, Consolas`。Bahnschrift、等宽字体只在风格牌指定时用。
 - **没有 p5.js**：algorithmic-art 原文用 CDN 上的 p5.js，在砚里会被拦截。改用原生 Canvas 2D 自己写：种子随机数（如 mulberry32）、值噪声或 Perlin 噪声、`requestAnimationFrame` 循环。`templates/viewer.html` 只参考它的版面（左侧参数面板、种子切换、重新生成），不要照抄其中的 `<script src>`。
-- **open-design craft 的砚内对应**：文中的「active `DESIGN.md`」指你选定的风格牌（或项目 `DESIGN.md`、远端设计系统）；`--accent` 等令牌按风格牌写进 `:root`。显示字体要用衬线的说法不适用，字体按风格牌。`.ph-img`、`data-od-id`、`data-screen-label`、seed 模板、daemon 注入都是 open-design 自己的机制，跳过。文中说「the linter / lint-artifact 会查」的规则，在砚里由 `yan artifact preview` 结果的 `lint` 字段报告。全大写字距这类只对拉丁字母有意义的规则，中文里忽略。
+- **open-design craft 的砚内对应**：文中的「active `DESIGN.md`」指你选定的风格牌（或项目 `DESIGN.md`、远端设计系统）；`--accent` 等令牌按风格牌写进 `:root`。显示字体要用衬线的说法不适用，字体按风格牌。`.ph-img`、`data-od-id`、`data-screen-label`、seed 模板、daemon 注入都是 open-design 自己的机制，跳过。文中说「the linter / lint-artifact 会查」的规则，砚的 `yan artifact preview` 仅在 `lint` 字段报告部分源码规则，不能替代人工逐项检查与截图检查。全大写字距这类只对拉丁字母有意义的规则，中文里忽略。
+- **中文排版与对比度覆盖**：CJK 标题（包括封面、hero 大标题）行高用 `1.3`–`1.4`、字距用 `0`，覆盖原文或风格牌里的低行高、负字距建议，避免从西文父元素继承。WCAG 文字对比度默认至少 `4.5:1`；只有普通字重 ≥24px（18pt）或粗体 ≥18.67px（14pt）的大文字才适用 `3:1`，不是 18px 普通文字。
 - **Vercel 规范里用不上的条目跳过**：URL 同步状态与深链、离开前提示未保存、hydration、密码管理器、网络请求、`localStorage` 等依赖浏览器环境或服务端的条目，在单文件沙箱里不适用。
 - **OpenAI 段落里的「avoid default stacks (… system)」**：砚只能用系统字体，字体按风格牌来，不算违反。
 - **自检按本文**：原文的「截图自查」「Take a second pass」「FINAL STEP」都用本文第 4 步的 `yan artifact preview` 完成，总共最多三次，不另开浏览器。
@@ -73,7 +74,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
    同时**定风格**：按上面「风格怎么定」的顺序，先看用户说了什么，没点名风格就运行 `yan artifact style --kind <类型>` 选一张牌；这一步不能跳过，不要自己凭印象起风格名。
 2. **准备数据**：需要事实数据时，有搜索能力就先查官方或一手来源（`yan search`），记下来源与时间；查不到就用你确知的数并在页面上标「约」与数据时间。不编造精确到个位的数字。
 3. **一次写完第一版**：思考里只定方向和结构（几行要点），**不要在思考里先把 HTML 打一遍草稿**，直接在 write 工具里写，用户才能在右侧看着页面一点点长出来。用 write 工具把完整文件写到项目里的 `artifacts/<英文短名>.html`（用户指定路径时用用户的）。写的时候右侧会自动打开实时预览，所以第一版就要完整可看，不要先写骨架再一点点补。
-4. **自检**：有交互的成果（工具、游戏、讲解、落地页、仪表盘），先用 read 打开 `official/vercel-web-interface-guidelines/AGENTS.md`（Vercel 官方界面规范），对照 Keyboard、Targets & Input、Animation、Layout、Content & Accessibility、Dark Mode & Theming、Design 几节，把不满足的 MUST 一并改掉；纯海报和静态画面跳过这一步。`yan artifact preview --path <文件>`，看返回的控制台错误、横向溢出和 `lint`（按 open-design 反 AI 套路规则查源码：`[必须改]` 的和报错同等对待，`[建议改]` 能顺手改就改），再用 read 打开 `light-desktop` 和 `light-narrow` 两张截图（写了深色版时把桌面那张换成 `dark-desktop`）。每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏），首屏以下的表格、图表、页脚也要看；结果里写着「中段省略，最后一格是页尾」时，说明页面超过 4 屏：前 3 格是开头三屏，最后一格是页尾，中间部分要靠代码确认。只修硬伤：报错、横向溢出、`lint` 里的 `[必须改]`、内容被裁掉或互相遮挡、文字看不清。有硬伤就改**同一个文件**，把这一轮发现的问题一次改完，再预览确认；确认后还有硬伤可以再改一轮，然后就结束；配色、间距这类审美微调留给用户提。**`yan artifact preview` 一共最多运行三次。** 不要另开浏览器、起本地服务器或自己截图裁图，这个命令已经按砚的真实沙箱渲染。
+4. **自检**：有交互的成果（工具、游戏、讲解、落地页、仪表盘），先用 read 打开 `official/vercel-web-interface-guidelines/AGENTS.md`（Vercel 官方界面规范），对照 Keyboard、Targets & Input、Animation、Layout、Content & Accessibility、Dark Mode & Theming、Design 几节，把不满足的 MUST 一并改掉；纯海报和静态画面跳过这一步。`yan artifact preview --path <文件>`，看返回的控制台错误、横向溢出和 `lint`（按 open-design 反 AI 套路规则查源码：`[必须改]` 的和报错同等对待，`[建议改]` 能顺手改就改），本地 lint 只覆盖部分规则，未报告不代表全部通过。视频合成用 read 打开返回的 `sheet` 总览图，按 `guides/video.md` 核对时间点、seek 与构图，不找普通页面截图；普通页面打开 `light-desktop` 和 `light-narrow` 两张截图（写了深色版时把桌面那张换成 `dark-desktop`）。普通页面的每张截图是整页按屏拼成的拼版（从左到右、从上到下依次是第 1、2… 屏），首屏以下的表格、图表、页脚也要看；结果里写着「中段省略，最后一格是页尾」时，说明页面超过 4 屏：前 3 格是开头三屏，最后一格是页尾，中间部分要靠代码确认。只修硬伤：报错、横向溢出、`lint` 里的 `[必须改]`、内容被裁掉或互相遮挡、文字看不清。有硬伤就改**同一个文件**，把这一轮发现的问题一次改完，再预览确认；确认后还有硬伤可以再改一轮，然后就结束；配色、间距这类审美微调留给用户提。**`yan artifact preview` 一共最多运行三次。** 不要另开浏览器、起本地服务器或自己截图裁图，这个命令已经按砚的真实沙箱渲染。
 5. **挂到回复**：`yan artifact attach --path <文件> --description "<一句话说明>"`。子 Agent 不能 attach，在结果里写明文件路径，由主会话挂载。
 6. **回复要短**：做了什么（三四条，含用了哪张风格牌）、数据来源与局限、可以怎么继续改。不要贴 HTML 源码。
 

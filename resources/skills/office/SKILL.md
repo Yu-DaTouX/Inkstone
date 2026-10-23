@@ -5,7 +5,7 @@ description: 读取、修改或生成 Word、Excel、PowerPoint 或 PDF 文件�
 
 # 办公文件
 
-砚负责把**磁盘上的真实文件**展示给用户（预览面板只显示提取出的文字；改动面板只列出相对 Git 的改动文件，Office 文件按二进制处理，没有逐行对比）。这个技能负责告诉你怎么读、怎么改。不要用「已修改」的文字代替真实修改，改完必须重新读一遍核对。
+砚负责把**磁盘上的真实文件**展示给用户（Word / Excel / PPT 预览显示提取出的文字，PDF 支持页面预览；改动面板只列出相对 Git 的改动文件，Office 文件按二进制处理，没有逐行对比）。这个技能负责告诉你怎么读、怎么改。不要用「已修改」的文字代替真实修改，改完必须重新读一遍核对。
 
 ## 1. 读
 
@@ -17,10 +17,10 @@ description: 读取、修改或生成 Word、Excel、PowerPoint 或 PDF 文件�
 运行本技能目录下的 `scripts/check_env.py`（与本文件同目录的 `scripts/` 里）：
 
 ```bash
-python scripts/check_env.py
+python "<本次读取的 SKILL.md 所在目录>/scripts/check_env.py"
 ```
 
-它输出 JSON，列出 `python-docx`、`openpyxl`、`python-pptx`、`pypdf`、LibreOffice 是否可用。
+将示例中的目录替换为本技能的实际目录，不按项目 cwd 定位。它输出 JSON，列出 `python-docx`、`openpyxl`、`python-pptx`、`pypdf`、LibreOffice 是否可用。
 
 - 缺少需要的库时：**不要自行安装**。告诉用户缺什么和安装命令（例如 `pip install python-docx openpyxl python-pptx`），也可以按 `capabilities` 技能的顺序查有没有可接入的能力，等用户决定。
 - 没有 Python 时同样如实说明，不要改用手工拼 XML 之类的做法冒险改文件。
@@ -28,7 +28,7 @@ python scripts/check_env.py
 ## 3. 改之前
 
 - 确认要改的文件和范围（哪一页、哪一段、哪些单元格）。范围不清就先问。
-- 文件不在 Git 仓库里时，先复制一份备份（例如 `报告.backup.docx`），并告诉用户备份位置；文件已提交到 Git 时，可以从最近一次提交找回原文件，不必另存。
+- 修改已有文件前，先复制当前磁盘文件到不覆盖已有文件的备份路径（例如 `报告.backup.docx`），并告诉用户备份位置；已提交到 Git 也不能跳过备份。
 - 文件正被 Word / Excel 打开时保存会失败，请用户先关闭。
 
 ## 4. 修改方法
@@ -45,9 +45,9 @@ python scripts/check_env.py
 
 1. 再用 `yan office read --path <文件>` 读一遍，确认改动确实写进去了。
 2. 向用户说明改了哪里：第几页 / 哪一段 / 哪些单元格，原来是什么、现在是什么。
-3. 提示用户可以在右侧工作区的预览面板里查看提取出的文字；版式、图片与前后对比请用 Office 打开确认。
+3. 提示用户可以在右侧工作区预览 Word / Excel / PPT 提取出的文字或 PDF 页面；Office 文件的版式、图片与前后对比请用对应应用打开确认。
 
 ## 边界
 
 - 复杂排版、原生修订与批注、宏、数据透视表、扫描件 OCR 不保证支持，遇到时如实说明。
-- 不要删除或覆盖用户没让你动的文件；覆盖原文件前必须已有备份或 Git 版本。
+- 不要删除或覆盖用户没让你动的文件；覆盖原文件前必须已有本次动手前的备份。

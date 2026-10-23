@@ -70,7 +70,7 @@ const ZH: Record<CapsTextKey, string> = {
   extensionsPackagesNote:
     '扩展以你的身份运行代码，无沙箱；对新会话生效。',
   marketNoAutoNote:
-    '打开本页不联网；点「搜索」「下载」才请求。',
+    '打开本页时，插件目录可能联网更新；搜索与下载仅在点击后请求。',
   promptsHiddenHint:
     '来自当前会话，只读，需在声明位置编辑；「隐藏于菜单」只是不进补全，并非停用，仍可调用。',
   promptsNoSession: '请先打开一个会话再查看提示词。',
@@ -130,7 +130,7 @@ const EN: Record<CapsTextKey, string> = {
   extensionsPackagesNote:
     'Extensions run code as you, with no sandbox; apply to new sessions.',
   marketNoAutoNote:
-    'No network until you click Search or Download.',
+    'The plugin catalog may refresh online when this page opens. Search and downloads run only when clicked.',
   promptsHiddenHint:
     'From the current session; read-only, edit them where declared. “Hidden from menu” only skips completion; it is not disabled.',
   promptsNoSession:

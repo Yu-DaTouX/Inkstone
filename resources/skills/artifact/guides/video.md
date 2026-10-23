@@ -43,7 +43,7 @@
     font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
   .clip { position: absolute; inset: 0; opacity: 0; display: grid; place-items: center; }
-  .clip h2 { margin: 0; font-size: 88px; font-weight: 700; letter-spacing: -2px; }
+  .clip h2 { margin: 0; font-size: 88px; font-weight: 700; line-height: 1.35; letter-spacing: 0; }
   .bar { position: absolute; left: 18%; bottom: 24%; width: 40%; height: 16px; background: var(--accent); transform-origin: left center; transform: scaleX(0); }
 </style>
 </head>
@@ -180,7 +180,7 @@ GSAP 只在用户明确要求时用，且必须是项目本地文件：把 `node
   #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #0b0d12; color: #f4f1ea; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
   #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .clip { position: absolute; left: 6%; bottom: 10%; opacity: 0; }
-  .clip h2 { margin: 0; font-size: 56px; font-weight: 700; }
+  .clip h2 { margin: 0; font-size: 56px; font-weight: 700; line-height: 1.35; letter-spacing: 0; }
 </style>
 <script data-yan-lib="three"></script>
 </head>
@@ -274,8 +274,8 @@ window.__timelines = window.__timelines || {};
 - 用了 3D 的：`<head>` 里有 `<script data-yan-lib="three"></script>`，渲染器带 `preserveDrawingBuffer: true`，总览图里每一格 3D 画面都不是空白或纯色；往回 seek 同一秒画面相同。
 - 每个片段的 `data-start + data-duration` 都 ≤ 根 `data-duration`，最后一镜正好结束在总时长。
 - 页面加载后不自播放：第一帧静止，没有播放按钮。
-- `yan artifact preview --path <文件>` 是主要自检：视频合成会按合成画幅、在「每个片段的中点 + 结尾帧（总时长 - 0.001 秒）」逐时间点 seek 后截图，拼成一张带 `t=秒` 标注的总览图（从左到右、从上到下按时间先后）。用 read 打开总览图逐格看：不空白、不重叠、文字没被裁掉、结尾那一帧不是黑屏；每个片段都该分到一格，缺了说明取样或控制器有问题。
+- `yan artifact preview --path <文件>` 是主要自检：视频合成会按合成画幅、在「每个片段的中点 + 结尾帧（总时长 - 0.001 秒）」逐时间点 seek 后截图，拼成一张带 `t=秒` 标注的总览图（从左到右、从上到下按时间先后）。用 read 打开总览图逐格看：不空白、不重叠、文字没被裁掉、结尾那一帧不是黑屏；候选时间点会去重，超过 8 个时会分散抽样，最多 8 格，不保证每镜都有；以返回的 `samples` 为准，未采到的镜头需另行检查。
 - 摘要里的 `overflow` 列出包围盒超出画框的可见元素：有就说明那一镜的构图或字号超了，回去改版式，不要靠 `overflow: hidden` 把问题藏起来。
 - 摘要里 `consoleErrors` 不为 0 不能交付；报告里还会写有没有等到 `window.__timelines` 控制器，等到超时说明 seek 没生效，这时的截图不代表各时间点画面。
-- 想看别的时刻就用 `--at` 覆盖默认取样：`yan artifact preview --path <文件> --at 0,1.5,总时长-0.001`（逗号分隔的秒，最多 8 个）；控制器的 `seek(0)` 与 `seek(总时长 - 0.001)` 必须都夹在有效区间内。
-- 用户要 MP4 视频文件时运行 `yan artifact export-video --path <文件>`：逐帧 seek 录成 MP4，输出在 HTML 同目录的同名 .mp4；只录画面、不混音，需要系统里已装好 FFmpeg。
+- 想看别的时刻就用 `--at` 覆盖默认取样：`yan artifact preview --path <文件> --at 0,1.5,总时长-0.001`（实际参数须填逗号分隔的非负秒数，末项先算成数字；`--at` 也会去重，超过 8 个时抽样至最多 8 格）；控制器的 `seek(0)` 与 `seek(总时长 - 0.001)` 必须都夹在有效区间内。
+- 用户要 MP4 视频文件时运行 `yan artifact export-video --path <文件>`：逐帧 seek 录成 MP4，输出在 HTML 同目录的同名 .mp4；只录画面、不混音，FFmpeg 是外部前提，须已在 PATH 中或通过 `YAN_FFMPEG` 指定可执行文件；缺失时如实说明，不承诺无需安装，也不自行安装。

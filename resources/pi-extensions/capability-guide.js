@@ -24,7 +24,7 @@ const GUIDE_LINES = [
   'Command groups (run `yan <group> --help` before first use; where a skill is named, read its SKILL.md from the skills list once):',
   '- capabilities: search (built-in commands, loaded skills and registered MCP tools) when unsure a capability exists; for a missing skill read skill capabilities, find one and request it (the user approves)',
   '- browser: open, operate or inspect web pages',
-  '- search: web search, page text, library docs',
+  '- search: web search, page text, library docs. Use the site parameter for required domains; check relevance and publication dates instead of treating non-empty results or provider scores as proof. Read the source page before relying on a factual claim; shorten or change the query/source when results are irrelevant, and use refresh when freshness matters.',
   ...CLI_ONLY_GROUPS,
   '- subagent: only for independent parallel work, noisy exploration, or a model the user names; read skill subagent first; do not sleep-poll, the host notifies you',
   '- image: generate images; artifact: attach an existing file to this reply',
@@ -130,7 +130,7 @@ const ENVIRONMENT_SECTION = 'inkstone_environment'
 export const TASK_REMINDER_AFTER = 8
 export function taskReminder(tools = false) {
   const how = tools ? 'with the `todos` tool' : 'with `yan tasks apply`'
-  return `<system-reminder>This turn has run many tool calls without a to-do list. If the work has 3+ distinct steps, write them ${how} now and tick them off as they finish, so the user can follow progress. Otherwise, if you have not written to the user since your opening line, add one short status line in your reply language alongside your next tool call, and keep working.</system-reminder>`
+  return `<system-reminder>This turn has run many tool calls without a to-do list. If the work has 3+ distinct steps, write them ${how} now and tick them off as they finish, so the user can follow progress. Otherwise, keep working quietly; tool-call count alone is not a reason to speak. Only add a short status line in your reply language at a substantive point allowed by the existing progress guidance: a failed step, a change of approach, a need for user input, a finding that would change the user's decision, or a long run without to-dos entering a new phase. Always honor a user request for silence or only a final answer.</system-reminder>`
 }
 export const TASK_REMINDER = taskReminder(false)
 

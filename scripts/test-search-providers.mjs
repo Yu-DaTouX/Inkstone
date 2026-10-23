@@ -105,7 +105,7 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
 
     const key = async () => 'sk-ds-test'
     const okRun = fakeFetch([json(200, { results: [
-      { title: 'D1', url: 'https://d.example/1', snippet: '短摘要', summary: '给模型的长摘要', date: '2026-10-01T08:00:00Z', rerank_score: 2.1 },
+      { title: 'D1', url: 'https://d.example/1', snippet: '短摘要', summary: '给模型的长摘要', date: '2026-10-01T08:00:00Z', rerank_score: 2.1, authority: 3 },
       { title: 'D2', url: 'https://d.example/2', snippet: '只有短摘要', summary: '', date: null }
     ] })])
     const run = await deepseek.runDeepseekSearch('查'.repeat(150), { limit: 80, timeoutMs: 1000 }, okRun.impl, key)
@@ -113,8 +113,17 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(call.url === 'https://api.deepseek.com/v1/tools/search' && call.init.method === 'POST', '请求 DeepSeek /v1/tools/search')
     ok(call.init.headers.Authorization === 'Bearer sk-ds-test', '用 Bearer 带模型 key')
     ok(Array.from(call.body.query).length === 128 && call.body.count === 50, '查询截到 128 字符，条数夹到 50')
-    ok(run.rows?.length === 2 && run.rows[0].snippet === '给模型的长摘要' && run.rows[0].published === '2026-10-01', 'summary 优先作摘要，日期取到天')
-    ok(run.rows[1].snippet === '只有短摘要' && run.rows[1].published === undefined, 'summary 为空时退回 snippet')
+    ok(run.rows?.length === 2 && run.rows[0].snippet === '短摘要' && run.rows[0].summary === '给模型的长摘要' && run.rows[0].authority === 3 && run.rows[0].published === '2026-10-01', '短摘要与模型长摘要独立保留，映射官方 authority 和日期')
+    ok(run.rows[1].snippet === '只有短摘要' && run.rows[1].published === undefined, 'summary 为空时仍保留 snippet')
+    const longSummary = '长摘要'.repeat(1400)
+    const summaryRun = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(200, { results: [
+      null,
+      { title: 'long', url: 'https://d.example/long', summary: longSummary, snippet: '短摘要', rerank_score: 1.2, score: 999 },
+      { title: 'fallback', url: 'https://d.example/fallback', summary: ' ', snippet: '回退短摘要', rerank_score: 'bad' }
+    ] })]).impl, key)
+    ok(summaryRun.rows.length === 2 && summaryRun.rows[0].summary === longSummary, 'DeepSeek 独立映射长 summary，跳过非对象坏行')
+    ok(summaryRun.rows[0].snippet === '短摘要' && summaryRun.rows[1].snippet === '回退短摘要', '独立 snippet 不再被长 summary 覆盖')
+    ok(summaryRun.rows[0].rerank_score === 1.2 && !('score' in summaryRun.rows[0]), '只映射已有 rerank_score，不把未知分数当成跨供应商质量')
 
     const poor = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(402, { error: { message: 'Insufficient Balance', type: 'x', code: 'insufficient_balance' } })]).impl, key)
     ok(poor.error?.code === 'insufficient_balance' && /余额不足/.test(poor.error.message) && /Insufficient Balance/.test(poor.error.message), '402 → 余额不足，带上服务端原因')

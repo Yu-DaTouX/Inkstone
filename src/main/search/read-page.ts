@@ -40,10 +40,21 @@ export function normalizeReadUrl(raw: string): string {
     throw new ReadPageError('bad_url', '不是合法的网址')
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new ReadPageError('bad_url', '只支持 http(s) 网页')
+  if (url.username || url.password) throw new ReadPageError('bad_url', '网址不能包含用户名或密码')
   if (isPrivateHost(url.hostname) || isLinkLocalHost(url.hostname)) {
     throw new ReadPageError('private_host', '不读取本机或内网地址（本机预览请用 yan browser）')
   }
   return url.toString()
+}
+
+export function assertReadablePage(page: ReadPageResult): ReadPageResult {
+  if (!page.text.trim()) throw new ReadPageError('empty_content', '网页没有可读取的正文')
+  const title = page.title.trim()
+  if (
+    /^(?:just a moment\.*|attention required!?(?:\s*\|\s*cloudflare)?|access denied|403 forbidden|429 too many requests|verify (?:you are|you're) human|访问被拒绝|安全验证|人机验证|请完成安全验证)$/i.test(title) &&
+    /captcha|cloudflare|verify|verification|denied|forbidden|security|checking your browser|验证|访问被拒绝|权限不足/i.test(page.text.slice(0, 2000))
+  ) throw new ReadPageError('access_blocked', '网页返回了验证或访问拒绝页面，未取得正文')
+  return page
 }
 
 export async function readPage(
@@ -56,6 +67,8 @@ export async function readPage(
   try {
     return await withHiddenPage(timeoutMs, async (win, signal) => {
       let loadError = ''
+      let status = 0
+      win.webContents.on('did-navigate', (_event, _url, code) => { status = code })
       void win.loadURL(url).catch((e: Error) => {
         if (!/ERR_ABORTED/.test(e.message)) loadError = e.message
       })
@@ -66,6 +79,7 @@ export async function readPage(
       for (;;) {
         if (signal.aborted) throw new HiddenPageTimeout(timeoutMs)
         if (loadError) throw new ReadPageError('network_error', loadError)
+        if (status >= 400) throw new ReadPageError('http_error', `网页返回 HTTP ${status}，未取得正文`)
         try {
           last = (await win.webContents.executeJavaScript(EXTRACT)) as Snapshot
         } catch {
@@ -79,14 +93,14 @@ export async function readPage(
       }
       const done = last as Snapshot
       const text = done.text
-      return {
+      return assertReadablePage({
         url,
-        finalUrl: done.finalUrl,
+        finalUrl: normalizeReadUrl(done.finalUrl),
         title: done.title.trim(),
         text: text.length > maxChars ? text.slice(0, maxChars) : text,
         truncated: text.length > maxChars,
         totalChars: text.length
-      }
+      })
     })
   } catch (e) {
     if (e instanceof ReadPageError) throw e

@@ -128,6 +128,6 @@ description: 要在回答里写 yan-chart、yan-stats、yan-cards 等图形块�
 - 颜色只用变量：`var(--text)` `var(--text-dim)` `var(--text-mute)` `var(--surface)` `var(--surface-2)` `var(--border)` `var(--accent)` `var(--ok)` `var(--warn)` `var(--err)`，分类色 `var(--c1)`…`var(--c6)`；字体 `var(--font)` / `var(--mono)`。深浅主题自动适配。
 - SVG 用 `viewBox` 并让宽度自适应；高度由砚自动跟随内容。
 - 需要用户追问时调用 `askInkstone("问题")`：砚会在小部件下方显示这句话，用户确认后才填入输入框。
-- 用户点宿主标题行「保存状态」后，常规表单值会保存并在重载时恢复；密码、隐藏域和文件输入不保存。自定义状态可用 `setInkstoneState(JSON对象)` 提供，并监听 `inkstone:restore` 事件的 `detail` 恢复；提供状态本身不落盘。总状态上限 64 KB，最多 200 个表单控件。图表、卡片这类有现成块的内容不要用小部件。
+- 需要保留状态时，由小部件主动调用 `inkstoneSaveState(可 JSON 序列化的值)`，并监听 `inkstone:restore` 事件，从 `detail` 恢复。当前实现没有 `inkstoneInitialState`、`setInkstoneState` 或宿主「保存状态」按钮，也不自动采集表单。状态仅缓存在内存中，不落盘，单份上限 64 KB，最多缓存 32 个小部件；被淘汰或应用重载后不保证恢复。图表、卡片这类有现成块的内容不要用小部件。
 
 格式写错时砚会按原文显示并提示错误，不会画出图形。

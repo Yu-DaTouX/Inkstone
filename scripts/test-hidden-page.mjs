@@ -1,9 +1,15 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 const ELECTRON_STUB = `
 export class BrowserWindow {
   constructor() {
     this.destroyed = false
+    this.listeners = {}
     this.webContents = {
       id: 1,
+      on: (event, listener) => { this.listeners[event] = listener },
       setWindowOpenHandler() {},
       executeJavaScript: async () => {
         globalThis.__hiddenJsCalls = (globalThis.__hiddenJsCalls ?? 0) + 1
@@ -11,7 +17,10 @@ export class BrowserWindow {
       }
     }
   }
-  loadURL() { return Promise.resolve() }
+  loadURL(url) {
+    this.listeners['did-navigate']?.({}, url, globalThis.__hiddenStatus ?? 200)
+    return Promise.resolve()
+  }
   isDestroyed() { return this.destroyed }
   destroy() { this.destroyed = true }
 }
@@ -27,20 +36,23 @@ export async function lookup() { return [{ address: '93.184.216.34', family: 4 }
 `
 
 export async function runHiddenPageTests(ok) {
-  const { mkdtemp } = await import('node:fs/promises')
+  const { mkdtemp, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const { pathToFileURL } = await import('node:url')
   const temp = await mkdtemp(join(tmpdir(), 'yan-hidden-page-'))
   const { build } = await import('../node_modules/esbuild/lib/main.js')
+  try {
   const plugins = [
     {
       name: 'hidden-page-stubs',
       setup(b) {
+        b.onResolve({ filter: /^fixture-real-boundary$/ }, () => ({ path: join(process.cwd(), 'src/main/browser/network-boundary.ts'), namespace: 'file' }))
+        b.onResolve({ filter: /network-boundary$/ }, (args) => args.importer.endsWith('hidden-page.ts') ? { path: 'boundary', namespace: 'hidden-stub' } : undefined)
         b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'hidden-stub' }))
         b.onResolve({ filter: /^node:dns\/promises$/ }, () => ({ path: 'dns', namespace: 'hidden-stub' }))
         b.onLoad({ filter: /.*/, namespace: 'hidden-stub' }, (args) => ({
-          contents: args.path === 'dns' ? DNS_STUB : ELECTRON_STUB,
+          contents: args.path === 'boundary' ? `import { shouldBlockHiddenPageRequest as real } from 'fixture-real-boundary'; export async function shouldBlockHiddenPageRequest(...args) { if (globalThis.__hiddenBoundaryError) throw new Error('fixture boundary failure'); return real(...args) }` : args.path === 'dns' ? DNS_STUB : ELECTRON_STUB,
           loader: 'js'
         }))
       }
@@ -90,6 +102,20 @@ export async function runHiddenPageTests(ok) {
   }
 
   {
+    const external = new AbortController()
+    let stopped = false
+    const pending = hidden.withHiddenPage(5000, async (_win, signal) => {
+      await hidden.sleepUnlessAborted(5000, signal)
+      stopped = signal.aborted
+    }, external.signal)
+    external.abort()
+    const error = await pending.catch(e => e)
+    ok(error instanceof hidden.HiddenPageCancelled, '外部取消以 HiddenPageCancelled 抛出')
+    ok(stopped, '外部取消同时结束任务中的等待')
+    ok(globalThis.__hiddenBeforeRequest === null, '外部取消后注销拦截')
+  }
+
+  {
     globalThis.__hiddenJsCalls = 0
     globalThis.__hiddenResult = { title: '', finalUrl: 'https://example.com/a', text: '', state: 'loading' }
     const result = await reader.readPage('https://example.com/a', { timeoutMs: 3_000 }).catch((error) => error)
@@ -121,6 +147,12 @@ export async function runHiddenPageTests(ok) {
       ok((await decide('http://127.0.0.1:8080/x')) === true, '字面回环地址直接拦')
       ok((await decide('http://169.254.169.254/latest/meta-data/')) === true, '云 metadata 地址拦')
       ok((await decide('about:blank')) === false, 'about: 不当网络请求判')
+      globalThis.__hiddenBoundaryError = true
+      try {
+        ok((await decide('https://example.com/error')) === true, '请求边界异常 fail closed')
+      } finally {
+        delete globalThis.__hiddenBoundaryError
+      }
     })
     ok(globalThis.__hiddenBeforeRequest === null, '隐藏页结束后注销 webRequest 监听（不累积）')
   }
@@ -148,8 +180,42 @@ export async function runHiddenPageTests(ok) {
     ok(globalThis.__hiddenBeforeRequest === null, '并发隐藏页全部结束后才注销拦截')
   }
 
-  delete globalThis.__hiddenResult
-  delete globalThis.__hiddenJsCalls
-  delete globalThis.__hiddenBeforeRequest
-  delete globalThis.__hiddenPartitions
+  {
+    for (const url of ['file:///tmp/a', 'javascript:alert(1)', 'https://user:pass@example.com/', 'https://user@example.com/', 'http://localhost/', 'http://10.0.0.1/', 'http://[::1]/', 'http://169.254.169.254/']) {
+      let error
+      try { reader.normalizeReadUrl(url) } catch (e) { error = e }
+      ok(error instanceof reader.ReadPageError, `拒绝不安全 URL: ${url}`)
+    }
+    ok(reader.normalizeReadUrl(' https://example.com/article ') === 'https://example.com/article', '公网 URL 规范化')
+    const page = { url: 'https://example.com/a', finalUrl: 'https://example.com/a', title: 'Short news', text: 'A real short article.', totalChars: 21, truncated: false }
+    ok(reader.assertReadablePage(page) === page, '短真实文章不因长度被拒绝')
+    for (const [title, text, code] of [['Article', '  ', 'empty_content'], ['Just a moment...', 'Cloudflare checking your browser captcha', 'access_blocked'], ['安全验证', '请完成验证', 'access_blocked']]) {
+      let error
+      try { reader.assertReadablePage({ ...page, title, text }) } catch (e) { error = e }
+      ok(error?.code === code, `正文校验 ${code}: ${title}`)
+    }
+    globalThis.__hiddenResult = { ...page, state: 'complete' }
+    ok((await reader.readPage(page.url)).text === page.text, '实际 readPage 允许短文章')
+    for (const status of [403, 429, 500]) {
+      globalThis.__hiddenStatus = status
+      const error = await reader.readPage(page.url).catch(e => e)
+      ok(error.code === 'http_error', `HTTP ${status} 不返回正文`)
+    }
+    delete globalThis.__hiddenStatus
+    globalThis.__hiddenResult = { ...page, title: 'Just a moment...', text: 'Cloudflare captcha verification', state: 'complete' }
+    ok((await reader.readPage(page.url).catch(e => e)).code === 'access_blocked', '实际 readPage 拒绝验证页')
+    globalThis.__hiddenResult = { ...page, finalUrl: 'https://user:pass@example.com/', state: 'complete' }
+    ok((await reader.readPage(page.url).catch(e => e)).code === 'bad_url', '重定向后仍校验 URL')
+  }
+
+  } finally {
+    for (const key of ['__hiddenResult', '__hiddenJsCalls', '__hiddenBeforeRequest', '__hiddenPartitions', '__hiddenStatus', '__hiddenBoundaryError']) delete globalThis[key]
+    await rm(temp, { recursive: true, force: true })
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let count = 0
+  await runHiddenPageTests((condition, label, detail) => { assert.ok(condition, `${label}: ${detail ?? ''}`); count++ })
+  console.log(`hidden-page: ${count} assertions passed (offline)`)
 }

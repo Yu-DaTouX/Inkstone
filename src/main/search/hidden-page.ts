@@ -67,7 +67,7 @@ export async function withHiddenPage<T>(
       return privateTarget
     })
       .then((block) => callback({ cancel: block }))
-      .catch(() => callback({}))
+      .catch(() => callback({ cancel: true }))
   })
   let timer: NodeJS.Timeout | undefined
   try {

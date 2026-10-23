@@ -1,6 +1,8 @@
 import {
   SEARCH_CONTENT_MAX,
   SEARCH_SNIPPET_MAX,
+  SEARCH_SUMMARY_MAX,
+  SEARCH_URL_MAX,
   type PerSourceStatus,
   type SearchItem,
   type SearchSourceId,
@@ -66,7 +68,7 @@ export function normalizeUrlForDedupe(raw: string): string {
   }
   u.hash = ''
   for (const key of [...u.searchParams.keys()]) {
-    if (/^utm_/i.test(key) || /^(fbclid|gclid|ref|ref_src|source)$/i.test(key)) u.searchParams.delete(key)
+    if (/^utm_/i.test(key) || /^(fbclid|gclid|ref_src)$/i.test(key)) u.searchParams.delete(key)
   }
   u.host = u.host.toLowerCase()
   const qs = u.searchParams.toString()
@@ -97,12 +99,30 @@ export function normalizeRow(source: SearchSourceId, row: unknown): SearchItem |
     return item
   }
 
-  if (typeof r.url !== 'string' || r.url.length > 500) return null
-  const url = cleanText(r.url, 500)
-  if (!url) return null
+  if (typeof r.url !== 'string') return null
+  const rawUrl = decodeEntities(r.url).trim()
+  if (rawUrl.length > SEARCH_URL_MAX || !/^https?:\/\//i.test(rawUrl) || /[\s\u0000-\u001f\u007f]/.test(rawUrl)) return null
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return null
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null
+  const url = parsed.href
+  if (url.length > SEARCH_URL_MAX) return null
   const item: SearchItem = { title, url, source }
   const snippet = cleanText(r.snippet)
   if (snippet) item.snippet = snippet
+  if (source === 'deepseek') {
+    const summary = cleanText(r.summary, SEARCH_SUMMARY_MAX)
+    if (summary) item.summary = summary
+    const score = typeof r.rerank_score === 'number' && Number.isFinite(r.rerank_score) && r.rerank_score >= 0 && r.rerank_score <= 3 ? r.rerank_score : undefined
+    const authority = typeof r.authority === 'number' && Number.isInteger(r.authority) && r.authority >= 0 && r.authority <= 4 ? r.authority : undefined
+    if (score !== undefined || authority !== undefined) {
+      item.quality = { provider: 'deepseek', ...(score !== undefined ? { rerank_score: score } : {}), ...(authority !== undefined ? { authority } : {}) }
+    }
+  }
   const published = cleanText(r.published, 40)
   if (published) item.published = published
   const content = cleanContent(r.content)
@@ -156,7 +176,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
       const rows = run.rows ?? []
       const ownSeen = new Set<string>()
       let rank = 0
-      for (const row of sites ? rows : rows.slice(0, opts.limitPerSource)) {
+      for (const row of rows) {
         const item = normalizeRow(run.source, row)
         if (!item) {
           badRows++
@@ -166,13 +186,13 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
           offSite++
           continue
         }
+        const key = normalizeUrlForDedupe(item.url)
+        if (ownSeen.has(key)) continue
+        ownSeen.add(key)
         if (rank >= opts.limitPerSource) {
           truncated = true
           break
         }
-        const key = normalizeUrlForDedupe(item.url)
-        if (ownSeen.has(key)) continue
-        ownSeen.add(key)
         const gain = 1 / (FUSION_K + rank)
         const hit = merged.get(key)
         if (hit) {
@@ -181,13 +201,14 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
           if (!hit.item.snippet && item.snippet) hit.item.snippet = item.snippet
           if (!hit.item.published && item.published) hit.item.published = item.published
           if (!hit.item.content && item.content) hit.item.content = item.content
+          if (!hit.item.summary && item.summary) hit.item.summary = item.summary
+          if (!hit.item.quality && item.quality) hit.item.quality = item.quality
         } else {
           merged.set(key, { item, owner, score: gain, bestRank: rank })
         }
         rank++
       }
-      if (!sites && rows.length > opts.limitPerSource) truncated = true
-      if (rank === 0 && offSite > 0) status = 'empty'
+      if (rank === 0) status = 'empty'
     }
 
     const notes: string[] = []
