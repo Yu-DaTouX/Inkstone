@@ -18,36 +18,42 @@ const view = await load('../src/renderer/src/features/session/transcript-view-mo
 const proc = await load('../src/renderer/src/features/session/turn-process.ts')
 
 const empty = { defaultView: 'concise', sessions: {} }
-assert.deepEqual(view.TRANSCRIPT_VIEWS, ['concise', 'thinking', 'verbose'])
+assert.deepEqual(view.TRANSCRIPT_VIEWS, ['concise', 'side', 'thinking'])
 assert.equal(view.effectiveView(empty, 's1'), 'concise', '没有单独设置时跟随默认')
 assert.equal(view.effectiveView(empty, null), 'concise', '新会话跟随默认')
-assert.equal(view.nextTranscriptView('concise'), 'thinking')
-assert.equal(view.nextTranscriptView('thinking'), 'verbose')
-assert.equal(view.nextTranscriptView('verbose'), 'concise', '循环回到简洁')
-assert.equal(view.showsThinking('concise'), false)
-assert.equal(view.showsThinking('thinking'), true)
-assert.equal(view.opensEverything('verbose'), true)
-assert.equal(view.opensEverything('thinking'), false)
+assert.equal(view.nextTranscriptView('concise'), 'side')
+assert.equal(view.nextTranscriptView('side'), 'thinking')
+assert.equal(view.nextTranscriptView('thinking'), 'concise', '循环回到简洁')
+assert.equal(view.showsThinkingInline('concise'), false)
+assert.equal(view.showsThinkingInline('side'), false)
+assert.equal(view.showsThinkingInline('thinking'), true)
+assert.equal(view.showsThinkingAside('side'), true)
+assert.equal(view.showsThinkingAside('thinking'), false)
 
-const own = view.withSessionView(empty, 's1', 'verbose')
-assert.equal(view.effectiveView(own, 's1'), 'verbose', '会话单独设置生效')
+const own = view.withSessionView(empty, 's1', 'side')
+assert.equal(view.effectiveView(own, 's1'), 'side', '会话单独设置生效')
 assert.equal(view.effectiveView(own, 's2'), 'concise', '不影响其他会话')
 assert.deepEqual(view.withSessionView(own, 's1', 'concise').sessions, {}, '选回默认档时删除单独设置')
 
 const capped = Array.from({ length: 5 }, (_, i) => `s${i}`).reduce((prefs, id) => view.withSessionView(prefs, id, 'thinking', 3), empty)
 assert.deepEqual(Object.keys(capped.sessions), ['s2', 's3', 's4'], '只保留最近的若干会话')
-assert.deepEqual(Object.keys(view.withSessionView(capped, 's2', 'verbose', 3).sessions), ['s3', 's4', 's2'], '重新设置的会话排到最新')
+assert.deepEqual(Object.keys(view.withSessionView(capped, 's2', 'side', 3).sessions), ['s3', 's4', 's2'], '重新设置的会话排到最新')
 
-const madeDefault = view.withDefaultView(own, 'verbose')
-assert.equal(madeDefault.defaultView, 'verbose')
+const madeDefault = view.withDefaultView(own, 'side')
+assert.equal(madeDefault.defaultView, 'side')
 assert.deepEqual(madeDefault.sessions, {}, '与新默认相同的单独设置被清掉')
 
 assert.deepEqual(view.parseTranscriptViewPrefs(null), empty)
 assert.deepEqual(view.parseTranscriptViewPrefs('{bad'), empty, '损坏的存储回到默认')
 assert.deepEqual(
-  view.parseTranscriptViewPrefs(JSON.stringify({ defaultView: 'verbose', sessions: { a: 'thinking', b: 'nope', '': 'verbose' } })),
-  { defaultView: 'verbose', sessions: { a: 'thinking' } },
+  view.parseTranscriptViewPrefs(JSON.stringify({ defaultView: 'side', sessions: { a: 'thinking', b: 'nope', '': 'side' } })),
+  { defaultView: 'side', sessions: { a: 'thinking' } },
   '丢弃无效条目'
+)
+assert.deepEqual(
+  view.parseTranscriptViewPrefs(JSON.stringify({ defaultView: 'verbose', sessions: { a: 'verbose' } })),
+  { defaultView: 'thinking', sessions: { a: 'thinking' } },
+  '旧的详细档迁移到思考模式'
 )
 
 const tool = (id) => ({ id, name: 'bash', args: { command: id }, status: 'done' })
@@ -101,4 +107,9 @@ const merged = proc.mergeQuietSegments([
 assert.equal(merged.length, 1, '没有说明文字的相邻段落合成一组')
 assert.equal(proc.segmentSteps(merged[0]).steps.length, 1)
 
-process.stdout.write('对话显示方式：三档循环、按会话覆盖、默认值、存储容错与简洁档分组检查通过\n')
+const stripped = proc.withoutThinking(segment({ thinking: 'a', thinkingLive: true, thinkingParts: [{ text: 'a', at: 0 }], tools: [tool('t1')] }))
+assert.equal(stripped.thinking, '', '侧边推理档从正文去掉全部推理')
+assert.equal(stripped.thinkingLive, false)
+assert.equal(proc.segmentSteps(stripped).steps.length, 1)
+
+process.stdout.write('对话显示方式：三档循环、按会话覆盖、默认值、旧档迁移、存储容错、简洁与侧边推理分组检查通过\n')

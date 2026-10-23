@@ -5,11 +5,11 @@ import { useStore } from '../../state/store'
 import { useSessionText } from './text'
 import { Markdown } from './Markdown'
 import { TurnArtifacts } from './MessageParts'
-import { ThinkingLine } from './Thinking'
+import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
-import { conciseSegment, splitTurnProcess } from './turn-process'
-import { showsThinking } from './transcript-view-model'
+import { conciseSegment, splitTurnProcess, withoutThinking } from './turn-process'
+import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { TranscriptViewScope } from './use-tool-run'
 import { useTranscriptView } from '../../state/transcript-view'
 import { approvalCallIds } from './tool-run-model'
@@ -210,9 +210,11 @@ function replyText(turn: AssistantTurn): string {
 function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail: boolean }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
-  const concise = !showsThinking(view)
-  const turn = concise ? { ...sourceTurn, segments: sourceTurn.segments.map(conciseSegment) } : sourceTurn
-  const turnThinking = concise && !turn.thinkingLive ? '' : turn.thinking ?? ''
+  const inline = showsThinkingInline(view)
+  const aside = showsThinkingAside(view)
+  const turn = inline ? sourceTurn : { ...sourceTurn, segments: sourceTurn.segments.map(aside ? withoutThinking : conciseSegment) }
+  const turnThinking = aside || (!inline && !turn.thinkingLive) ? '' : turn.thinking ?? ''
+  const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
   const showCompaction = useStore((s) => {
     if (s.session?.compaction) return edge.last
@@ -234,7 +236,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
 
   return (
     <TranscriptViewScope.Provider value={view}>
-      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view}>
+      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view} data-aside={asideThinking ? '' : undefined}>
+        {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
           {edge.first ? <BranchSummary /> : null}

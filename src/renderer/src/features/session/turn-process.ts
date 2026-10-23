@@ -116,6 +116,11 @@ export function conciseSegment(segment: TurnSegment): TurnSegment {
   }
 }
 
+export function withoutThinking(segment: TurnSegment): TurnSegment {
+  if (!segment.thinking && !segment.thinkingParts?.length && !segment.thinkingLive) return segment
+  return { ...segment, thinking: '', thinkingMs: undefined, thinkingLive: false, thinkingParts: [] }
+}
+
 export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment[] {
   const merged: TurnSegment[] = []
   for (const segment of process) {

@@ -1,4 +1,4 @@
-export const TRANSCRIPT_VIEWS = ['concise', 'thinking', 'verbose'] as const
+export const TRANSCRIPT_VIEWS = ['concise', 'side', 'thinking'] as const
 
 export type TranscriptView = (typeof TRANSCRIPT_VIEWS)[number]
 
@@ -12,16 +12,23 @@ export interface TranscriptViewPrefs {
   sessions: SessionViews
 }
 
+const LEGACY_VIEWS: Readonly<Record<string, TranscriptView>> = { verbose: 'thinking' }
+
 function isTranscriptView(value: unknown): value is TranscriptView {
   return typeof value === 'string' && (TRANSCRIPT_VIEWS as readonly string[]).includes(value)
 }
 
-export function showsThinking(view: TranscriptView): boolean {
-  return view !== 'concise'
+function readView(value: unknown): TranscriptView | undefined {
+  if (isTranscriptView(value)) return value
+  return typeof value === 'string' ? LEGACY_VIEWS[value] : undefined
 }
 
-export function opensEverything(view: TranscriptView): boolean {
-  return view === 'verbose'
+export function showsThinkingInline(view: TranscriptView): boolean {
+  return view === 'thinking'
+}
+
+export function showsThinkingAside(view: TranscriptView): boolean {
+  return view === 'side'
 }
 
 export function effectiveView(prefs: TranscriptViewPrefs, sessionId: string | null | undefined): TranscriptView {
@@ -35,9 +42,10 @@ export function nextTranscriptView(current: TranscriptView): TranscriptView {
 
 function normalizeSessionViews(value: unknown, limit = SESSION_VIEW_LIMIT): Record<string, TranscriptView> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    (entry): entry is [string, TranscriptView] => entry[0] !== '' && isTranscriptView(entry[1])
-  )
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([id, raw]): [string, TranscriptView][] => {
+    const view = readView(raw)
+    return id !== '' && view ? [[id, view]] : []
+  })
   return Object.fromEntries(entries.slice(Math.max(0, entries.length - limit)))
 }
 
@@ -61,7 +69,7 @@ export function parseTranscriptViewPrefs(raw: string | null): TranscriptViewPref
   try {
     const value = JSON.parse(raw ?? 'null') as { defaultView?: unknown; sessions?: unknown } | null
     return {
-      defaultView: isTranscriptView(value?.defaultView) ? value.defaultView : DEFAULT_TRANSCRIPT_VIEW,
+      defaultView: readView(value?.defaultView) ?? DEFAULT_TRANSCRIPT_VIEW,
       sessions: normalizeSessionViews(value?.sessions)
     }
   } catch {

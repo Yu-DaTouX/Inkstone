@@ -14,8 +14,7 @@ import { QuestionCard } from './QuestionCard'
 import { QuestionReceipt } from './QuestionReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
-import { useHeldRunLabel, useToolExpansion, useTranscriptViewScope } from './use-tool-run'
-import { opensEverything } from './transcript-view-model'
+import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
 import { Icon } from './Icon'
 import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
@@ -83,8 +82,7 @@ function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(row.id)
-  const verbose = opensEverything(useTranscriptViewScope())
-  const open = stored ?? verbose
+  const open = stored ?? false
   const { summary } = row
   const label = formatToolRun(summary, tt)
   const parts = toolRunParts(summary, tt)
@@ -125,14 +123,13 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
   const call = node.call
   const running = isRunning(call)
   const denied = isDeniedCall(call)
-  const verbose = opensEverything(useTranscriptViewScope())
-  const open = stored ?? verbose
+  const open = stored ?? false
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
   const nestedTitle = nestedStepTitle(call, node.children, tt)
   const title = nestedTitle ?? toolStepTitle(call, tt)
   const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
-  const nested = collapsedNest(visibleNestedNodes(children, nestAll === true || verbose), children, open, running)
+  const nested = collapsedNest(visibleNestedNodes(children, nestAll === true), children, open, running)
   const search = nestedTitle || blocked || asking ? null : searchStepOf(call)
 
   const step = (

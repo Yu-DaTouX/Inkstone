@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { ShimmerText } from '../../ui'
 import { Icon } from './Icon'
-import { opensEverything } from './transcript-view-model'
+import { showsThinkingInline } from './transcript-view-model'
 import { useTranscriptViewScope } from './use-tool-run'
 
 function peekText(text: string): string {
@@ -14,10 +14,45 @@ function peekText(text: string): string {
   return ''
 }
 
+export function ThinkingAside({ text, ms, live }: { text: string; ms?: number; live?: boolean }): JSX.Element | null {
+  const t = useT()
+  const followRef = useRef(true)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (el && followRef.current) el.scrollTop = el.scrollHeight
+  }, [text])
+
+  if (!text) return null
+  const secs = ms && ms > 0 ? Math.max(1, Math.round(ms / 1000)) : null
+  const label = live ? t('reason.now') : secs ? t('proc.reason', { n: secs }) : t('reason.past')
+
+  return (
+    <aside className="v3-think-aside" data-live={live || undefined} aria-label={label} data-testid="v3-thinking-aside">
+      <div className="v3-think-aside-head">
+        <Icon name="brain" size={13} />
+        <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
+      </div>
+      <div
+        ref={bodyRef}
+        className="v3-think-aside-body"
+        tabIndex={0}
+        onScroll={(event) => {
+          const el = event.currentTarget
+          followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
+        }}
+      >
+        {text}
+      </div>
+    </aside>
+  )
+}
+
 export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: string; ms?: number; live?: boolean; defaultOpen?: boolean }): JSX.Element | null {
   const t = useT()
-  const verbose = opensEverything(useTranscriptViewScope())
-  const [open, setOpen] = useState(defaultOpen || verbose || !!live)
+  const asStep = showsThinkingInline(useTranscriptViewScope()) && !live
+  const [open, setOpen] = useState(defaultOpen || !!live)
   const touchedRef = useRef(false)
   const followRef = useRef(true)
   const wasLiveRef = useRef(!!live)
@@ -27,14 +62,14 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: st
   useEffect(() => {
     if (!touchedRef.current) {
       if (live && !wasLiveRef.current) setOpen(true)
-      if (!live && wasLiveRef.current && !verbose) setOpen(false)
+      if (!live && wasLiveRef.current) setOpen(false)
     }
     wasLiveRef.current = !!live
-  }, [live, verbose])
+  }, [live])
 
   useEffect(() => {
-    if (!touchedRef.current) setOpen(defaultOpen || verbose || !!wasLiveRef.current)
-  }, [defaultOpen, verbose])
+    if (!touchedRef.current) setOpen(defaultOpen || !!wasLiveRef.current)
+  }, [defaultOpen])
 
   useLayoutEffect(() => {
     const el = bodyRef.current
@@ -56,16 +91,20 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: st
   const peek = open ? '' : peekText(text)
 
   return (
-    <div ref={rootRef} className="v3-think" data-live={live || undefined} data-open={open || undefined} data-testid="v3-thinking">
-      <button className="v3-think-head" aria-expanded={open} onClick={toggle} data-testid="v3-thinking-toggle">
+    <div ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking">
+      <button className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} aria-expanded={open} onClick={toggle} data-testid="v3-thinking-toggle">
         <Icon name="brain" size={13} />
-        <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
+        {asStep ? (
+          <span className="v3-step-label">{label}</span>
+        ) : (
+          <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
+        )}
         {peek ? (
-          <span className="v3-think-peek" dir="rtl" data-testid="v3-thinking-peek">
+          <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir="rtl" data-testid="v3-thinking-peek">
             <span dir="ltr">{peek}</span>
           </span>
         ) : null}
-        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} className="v3-chev" />
+        <Icon name={asStep ? 'chevron-right' : open ? 'chevron-down' : 'chevron-right'} size={asStep ? 14 : 13} className="v3-chev" />
       </button>
       {open ? (
         <div

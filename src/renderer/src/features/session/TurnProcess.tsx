@@ -7,8 +7,7 @@ import { ThinkingLine } from './Thinking'
 import { Button } from '../../ui'
 import { useSessionText } from './text'
 import { mergeQuietSegments, pickLiveSegments, segmentSteps } from './turn-process'
-import { useToolExpansion, useTranscriptViewScope } from './use-tool-run'
-import { opensEverything } from './transcript-view-model'
+import { useToolExpansion } from './use-tool-run'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 
@@ -22,9 +21,8 @@ export function TurnProcess({ process, live, sessionId, turnId, approvalIds = NO
   const t = useT()
   const tt = useSessionText()
   const [manual, setManual] = useToolExpansion(`process:${turnId ?? process[0]?.id ?? ''}`)
-  const verbose = opensEverything(useTranscriptViewScope())
   const merged = mergeQuietSegments(process)
-  const { shown: groups, hidden } = live && manual === undefined && !verbose ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
+  const { shown: groups, hidden } = live && manual === undefined ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
 
   return (
     <div className="v3-process" data-testid="v3-process" aria-label={t('proc.title')}>

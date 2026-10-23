@@ -194,4 +194,21 @@
     .v3-stream-inner { padding-left: calc(var(--stream-px) + var(--rail-gutter)); }
     .v3-stream-row { padding-left: calc(var(--stream-px) + var(--rail-gutter)); }
   }
+
+  .v3-think-aside { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+
+  @container (min-width: 1260px) {
+    .v3-msg.assistant[data-aside] {
+      --think-aside-w: clamp(12rem, (100cqi - var(--size-chat)) / 2 - var(--s-48), 20rem);
+      display: grid;
+      grid-template-columns: var(--think-aside-w) minmax(0, 1fr);
+      align-items: start;
+      column-gap: var(--s-24);
+      width: calc(100% + var(--think-aside-w) + var(--s-24));
+      max-width: calc(var(--size-chat) + var(--think-aside-w) + var(--s-24));
+      margin-left: calc(-1 * (var(--think-aside-w) + var(--s-24)));
+    }
+    .v3-msg.assistant[data-aside] > .v3-think-aside { grid-column: 1; grid-row: 1; position: sticky; top: var(--s-12); max-height: 70vh; }
+    .v3-msg.assistant[data-aside] > .v3-assistant-body { grid-column: 2; grid-row: 1; }
+  }
 }
