@@ -37,8 +37,12 @@ function lockKey(dir: string): string {
   return process.platform === 'win32' ? full.toLowerCase() : full
 }
 
-function withDirLock<T>(dir: string, task: () => Promise<T>): Promise<T> {
-  const key = lockKey(dir)
+async function canonicalDir(dir: string): Promise<string> {
+  return realpath(dir).catch(() => resolve(dir))
+}
+
+async function withDirLock<T>(dir: string, task: () => Promise<T>): Promise<T> {
+  const key = lockKey(await canonicalDir(dir))
   const prev = dirLocks.get(key) ?? Promise.resolve()
   const next = prev.then(task, task)
   const tail = next.then(() => undefined, () => undefined)
@@ -248,10 +252,11 @@ export class ArtifactStore {
     const cacheKey = `${lockKey(this.rootDir)}|${lockKey(sessionFile)}`
     const cached = resolvedDirs.get(cacheKey)
     if (cached) return cached
-    const legacy = join(this.rootDir, legacySessionKey(sessionFile))
+    const root = await canonicalDir(this.rootDir)
+    const legacy = join(root, legacySessionKey(sessionFile))
     const sessionId = await readSessionId(sessionFile)
     if (!sessionId) return legacy
-    const dir = join(this.rootDir, sessionKeyOf(sessionId))
+    const dir = join(root, sessionKeyOf(sessionId))
     await withDirLock(dir, () => adoptLegacyDir(legacy, dir))
     resolvedDirs.set(cacheKey, dir)
     return dir
