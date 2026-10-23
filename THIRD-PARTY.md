@@ -31,6 +31,7 @@
 | [Anthropic Agent Skills](https://github.com/anthropics/skills)（提交 `dbd4588`）：`frontend-design`、`theme-factory`、`canvas-design`、`algorithmic-art` | Apache-2.0 | 原样收录在 `resources/skills/artifact/official/`，各目录附原许可 `LICENSE.txt`；未收录 `theme-showcase.pdf` 与 `canvas-fonts/`。在砚里的用法差异写在 `resources/skills/artifact/SKILL.md`，官方文件本身未修改 |
 | [OpenAI Codex](https://github.com/openai/codex)（提交 `c2d5ea52`）系统提示中的「Frontend tasks」段落 | Apache-2.0 | 原文摘录在 `resources/skills/artifact/official/openai-codex-frontend/`，附原许可 |
 | [Vercel Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)（提交 `434b7f91`） | MIT | 原文 `AGENTS.md` 在 `resources/skills/artifact/official/vercel-web-interface-guidelines/`，附原许可 |
+| [three.js](https://threejs.org)（npm 包 `three@0.186.1`，含 `TextGeometry`、`FontLoader`、`RoomEnvironment` 附加模块）与 three.js 仓库 `r186` 的 `helvetiker_bold.typeface.json`（MgOpen 字体） | three.js：MIT；字体：MgOpen 许可（允许随软件分发，需保留版权与许可声明） | 由 `scripts/vendor-three.mjs` 打包为 `resources/skills/artifact/vendor/three.min.js`，许可原文在同目录 `LICENSE-three.txt`、`LICENSE-mgopen-fonts.txt`；成果页写 `<script data-yan-lib="three"></script>` 时由砚内联 |
 
 ## 其它运行时组件
 

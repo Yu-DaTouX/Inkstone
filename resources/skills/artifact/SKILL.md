@@ -1,6 +1,6 @@
 ---
 name: artifact
-description: 用户要一个能打开查看或操作的成果（表格页、仪表盘、报告页、网页、小工具、计算器、小游戏、可视化讲解、海报、邀请函、名片等单页设计），或要修改之前做的这类成果时使用。用户只说「做个 X 表」「设计个海报」也算；需求再模糊也先读本技能、直接做第一版，不要先提问。
+description: 用户要一个能打开查看或操作的成果（表格页、仪表盘、报告页、网页、小工具、计算器、小游戏、可视化讲解、海报、邀请函、名片等单页设计），要动画短片、片头、3D 视频（用 HTML 合成，可导出 MP4，不需要另装软件），或要修改之前做的这类成果时使用。用户只说「做个 X 表」「设计个海报」「做个短视频」也算；需求再模糊也先读本技能、直接做第一版，不要先提问。
 ---
 
 # 成果页（Artifact）
@@ -45,7 +45,7 @@ description: 用户要一个能打开查看或操作的成果（表格页、仪�
 | 几页演示 / 幻灯片（不要 .pptx 文件时） | `guides/slides.md` |
 | 逐镜头推进的短片、片头、动态海报、讲解视频 | `guides/video.md` |
 
-视频类型也写成单文件 HTML，但按 hyperframes 的合成格式约定写：根元素带 `data-composition-id` / `data-width` / `data-height` / `data-duration`，片段带 `data-start` / `data-duration` / `data-track-index`。画布会识别根元素上的 `data-composition-id`，动画统一挂在 `window.__timelines[<composition-id>]` 的控制器上（接口见 `guides/video.md`），预览后可以按时间点检查画面。
+视频类型也写成单文件 HTML，但按 hyperframes 的合成格式约定写：根元素带 `data-composition-id` / `data-width` / `data-height` / `data-duration`，片段带 `data-start` / `data-duration` / `data-track-index`。画布会识别根元素上的 `data-composition-id`，动画统一挂在 `window.__timelines[<composition-id>]` 的控制器上（接口见 `guides/video.md`），预览后可以按时间点检查画面。要 3D 画面时用 `<script data-yan-lib="three"></script>` 引入砚随包的 three.js，写法见 `guides/video.md` 的「三维画面」。
 
 指南和本文冲突时，以本文的沙箱限制为准。
 

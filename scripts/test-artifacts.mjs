@@ -330,6 +330,12 @@ async function runVersionAndPortabilityTests(ArtifactStore, project) {
     assert(repeat.id === v2.id, 'repeating an unchanged attach on the same message should return the existing record')
     assert((await store.list(session)).filter((item) => item.messageId === 'm3').length === 1, 'repeating an unchanged attach should not add a manifest record')
 
+    await writeFile(join(project, 'scene.html'), '<!doctype html><script data-yan-lib="three"></script><script>new THREE.Scene()</script>')
+    const scene = await store.attach({ sessionFile: session, messageId: 'm-3d', cwd: project, sourcePath: 'scene.html' })
+    const stored = await readFile(scene.path, 'utf8')
+    assert(!stored.includes('data-yan-lib="three"') && stored.includes('data-yan-lib-inline="three"') && stored.includes('WebGLRenderer'), 'attaching HTML with a bundled-library tag should inline the library into the stored copy')
+    assert((await readFile(join(project, 'scene.html'), 'utf8')).includes('data-yan-lib="three"'), 'the project source keeps its library tag')
+
     const many = await Promise.all(Array.from({ length: 205 }, (_, i) => store.save({ sessionFile: session, messageId: `many-${i}`, filename: `n-${i}.txt`, bytes: Buffer.from(`n${i}`) })))
     const all = await store.list(session)
     assert(all.some((item) => item.artifact.id === legacy.id) && all.some((item) => item.artifact.id === many[204].id), 'the manifest must not drop old records past 200 items')
