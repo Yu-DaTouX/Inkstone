@@ -32,6 +32,9 @@ import {
   ModalOverlay,
   Popover,
   ProgressBar,
+  RailRow,
+  RailValue,
+  SegmentBar,
   Separator,
   SettingRow,
   SettingRows,
@@ -53,6 +56,7 @@ import {
   StatusDot,
   StatusSlot,
   SubmenuTrigger,
+  Swatch,
   Tab,
   TabList,
   TabPanel,
@@ -281,7 +285,7 @@ export const StatStates: Story = {
   name: 'Stat / StatGrid / MeterRing / MiniBars · 指标格',
   parameters: {
     stateMatrix: {
-      components: ['Stat', 'StatGrid', 'MeterRing', 'MiniBars'],
+      components: ['Stat', 'StatGrid', 'MeterRing', 'MiniBars', 'SegmentBar', 'Swatch'],
       states: STATES('default', 'value-known'),
       declared: []
     }
@@ -295,6 +299,59 @@ export const StatStates: Story = {
         <Stat label="累计命中率" value="82.4%" aside={<MeterRing aria-label="累计命中率" value={82.4} />} />
         <Stat label="输出速度" value="64.2" unit="tok/s" span={2} aside={<MiniBars values={[40, 52, 61, 45, 70, 58, 66, 64]} />} />
       </StatGrid>
+      <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+        <SegmentBar
+          aria-label="Token 构成"
+          segments={[
+            { key: 'input', value: 12, tone: 1 },
+            { key: 'cacheRead', value: 600, tone: 2 },
+            { key: 'cacheWrite', value: 40, tone: 3 },
+            { key: 'output', value: 55, tone: 6 }
+          ]}
+        />
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <Swatch tone={2} /> 缓存读取
+        </span>
+        <MiniBars values={[40, 52, 61, 45, 70]} pending={30} slots={12} stretch />
+      </div>
+    </div>
+  )
+}
+
+export const RailStates: Story = {
+  name: 'RailValue / RailRow · 会话栏磁贴',
+  parameters: {
+    stateMatrix: {
+      components: ['RailValue', 'RailRow'],
+      states: STATES('default', 'value-known', 'value-unknown', 'tone-ok', 'tone-ask', 'tone-fail', 'disabled'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-12)', maxWidth: 280 }}>
+      <Row label="收起摘要">
+        <RailValue glyph={{ kind: 'ring', percent: 45, label: '上下文' }} value="45%" digits={4} />
+        <RailValue glyph={{ kind: 'ring', percent: null, label: '上下文' }} value="—" />
+        <RailValue glyph={{ kind: 'ring', percent: 92, label: '用量' }} tone="ask" value="5h 92%" />
+        <RailValue glyph={{ kind: 'segments', done: 2, total: 3 }} value="2 / 3" />
+        <RailValue glyph={{ kind: 'segments', done: 3, total: 3 }} tone="ok" value="3 / 3" />
+        <RailValue glyph={{ kind: 'dot', status: 'running' }} value="2 运行中" />
+        <RailValue glyph={{ kind: 'dot', status: 'fail' }} error value="读取失败" />
+        <RailValue glyph={{ kind: 'delta', added: 128, removed: 12 }} />
+      </Row>
+      <Row label="组合">
+        <span style={{ display: 'inline-flex', gap: 'var(--s-4)' }}>
+          <RailValue glyph={{ kind: 'ring', percent: 82, label: '缓存命中' }} value="82%" />
+          <RailValue joined value="42.3" unit="tok/s" digits={4} glyph={{ kind: 'bars', values: [30, 44, 40], pending: 38, slots: 4 }} glyphEnd />
+        </span>
+      </Row>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+        <RailRow label="inkstone" icon={<StatusDot kind="idle" />} value="pi-desktop" onPress={() => undefined} />
+        <RailRow label="filesystem" dot="ok" value="12 个工具" />
+        <RailRow label="github" dot="fail" value="出错" error />
+        <RailRow label="report-final-version-with-a-very-long-name.md" value="docs" isDisabled onPress={() => undefined} />
+        <RailRow label="index.ts" value={<RailValue glyph={{ kind: 'delta', added: 3, removed: 1 }} />} action={<Button size="sm" variant="ghost">×</Button>} />
+      </ul>
     </div>
   )
 }

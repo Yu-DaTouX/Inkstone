@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import { Copy, FileText, Files, Folder, FolderOpen, GitBranch, GitCommitHorizontal, Monitor } from 'lucide-react'
-import { Button, Menu, MenuItem, Meter, Notice, Popover } from '../../ui'
+import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, X } from 'lucide-react'
+import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone, type StatusDotKind } from '../../ui'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useStreamingThrottledStore, useThrottledValue } from '../../state/streaming-throttle'
@@ -30,6 +31,7 @@ import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
 import { RailCard } from './RailCard'
 import { RailStatsBody, useRailStats } from './RailStats'
+import { GLANCE_BARS, type RailStatsModel } from './rail-stats'
 import { RailSectionsMenu } from './RailSectionsMenu'
 import {
   isRailSectionHidden,
@@ -38,7 +40,17 @@ import {
   useRailSections,
   type RailSectionId
 } from './rail-sections'
-import { outputFolder, outputName, sessionOutputs, useGitLineTotals } from './rail-data'
+import {
+  outputCandidates,
+  outputFolder,
+  outputName,
+  useDismissedOutputs,
+  useGitLineTotals,
+  useOutputScreen,
+  visibleOutputs,
+  type RailChangedFile,
+  type RailOutput
+} from './rail-data'
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './tool-tiles'
@@ -247,12 +259,25 @@ function useMcpServers(refreshKey: string): McpSnapshot {
   return snap
 }
 
-const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], string> = {
-  ready: 'is-ok',
-  connecting: 'is-run',
-  disconnected: '',
-  'needs-auth': 'is-warn',
-  error: 'is-err'
+const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], StatusDotKind> = {
+  ready: 'ok',
+  connecting: 'running',
+  disconnected: 'idle',
+  'needs-auth': 'awaiting',
+  error: 'fail'
+}
+
+const RAIL_LIST_LIMIT = 5
+
+function mcpSummaryDot(servers: readonly CapabilityMcpServerSettingView[]): StatusDotKind {
+  if (servers.some((server) => server.status === 'error')) return 'fail'
+  if (servers.some((server) => server.status === 'needs-auth')) return 'awaiting'
+  if (servers.some((server) => server.status === 'connecting')) return 'running'
+  return servers.length > 0 && servers.every((server) => server.status === 'ready') ? 'ok' : 'idle'
+}
+
+function glyphTone(tone: string | null | undefined): RailTone | undefined {
+  return tone === 'ask' || tone === 'fail' ? tone : undefined
 }
 
 const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
@@ -275,7 +300,7 @@ function scheduledRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
   return [...scheduled.filter((run) => !isSettledPhase(run.phase)), ...finished]
 }
 
-type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'switchBranch'
+type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'openChanges'
 
 interface RowMenuItem {
   key: RowMenuKey
@@ -305,12 +330,14 @@ function RailRowMenu({
   const anchor = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   return (
-    <li className="wb-ov-item wb-rail-row" title={title}>
-      <Button ref={anchor} variant="ghost" size="sm" className="wb-rail-row-btn" aria-haspopup="menu" aria-expanded={open} onPress={() => setOpen(true)} data-testid={testId}>
-        <span className="wb-ov-item-icon">{icon}</span>
-        <span className="wb-ov-item-label">{label}</span>
-        {value ? <span className="wb-ov-item-value">{value}</span> : null}
-      </Button>
+    <RailRow
+      label={label}
+      title={title}
+      icon={icon}
+      value={value || undefined}
+      onPress={() => setOpen(true)}
+      buttonProps={{ ref: anchor, 'aria-haspopup': 'menu', 'aria-expanded': open, 'data-testid': testId }}
+    >
       <Popover triggerRef={anchor} isOpen={open} onOpenChange={setOpen} placement="bottom start" offset={4}>
         <Menu aria-label={menuLabel} autoFocus="first" onAction={(key) => onAction(key as RowMenuKey)} onClose={() => setOpen(false)}>
           {items.map((item) => (
@@ -321,7 +348,7 @@ function RailRowMenu({
           ))}
         </Menu>
       </Popover>
-    </li>
+    </RailRow>
   )
 }
 
@@ -400,36 +427,118 @@ function QuotaDetail({ model, now }: { model: QuotaTileModel; now: number }): Re
   )
 }
 
-function OutputRows({ files, text, onOpen }: { files: ReturnType<typeof sessionOutputs>; text: RailText; onOpen: (path: string) => void }): ReactElement {
-  const statusLabel = { created: text.outputCreated, modified: text.outputModified, deleted: text.outputDeleted }
+function RailList<T>({
+  items,
+  text,
+  testId,
+  render
+}: {
+  items: readonly T[]
+  text: RailText
+  testId?: string
+  render: (item: T) => ReactElement
+}): ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded ? items : items.slice(0, RAIL_LIST_LIMIT)
+  const hiddenCount = items.length - RAIL_LIST_LIMIT
   return (
-    <ul className="wb-ov-items" data-testid="wb-rail-outputs">
-      {files.map((file) => (
-        <li key={file.path} className="wb-ov-item wb-rail-row" title={`${statusLabel[file.status]} ${file.path}`}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="wb-rail-row-btn"
-            isDisabled={file.status === 'deleted'}
-            onPress={() => onOpen(file.path)}
-          >
-            <span className="wb-ov-item-icon">
-              <FileText size={14} aria-hidden />
-            </span>
-            <span className="wb-ov-item-label">{outputName(file.path)}</span>
-            {outputFolder(file.path) ? <span className="wb-ov-item-value">{outputFolder(file.path)}</span> : null}
-          </Button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="wb-ov-items" data-testid={testId}>
+        {shown.map(render)}
+      </ul>
+      {hiddenCount > 0 ? (
+        <Button variant="ghost" size="sm" className="wb-rail-more" aria-expanded={expanded} onPress={() => setExpanded((v) => !v)}>
+          {expanded ? text.showLess : text.more(hiddenCount)}
+        </Button>
+      ) : null}
+    </>
   )
 }
 
-function LineDelta({ added, removed, text }: { added: number; removed: number; text: RailText }): ReactElement {
+function OutputRows({
+  files,
+  text,
+  onOpen,
+  onDismiss
+}: {
+  files: readonly RailOutput[]
+  text: RailText
+  onOpen: (path: string) => void
+  onDismiss: (path: string) => void
+}): ReactElement {
   return (
-    <span className="wb-rail-delta" aria-label={text.linesChanged(added, removed)}>
-      <span className="wb-rail-added">+{added}</span>
-      <span className="wb-rail-removed">−{removed}</span>
+    <RailList
+      items={files}
+      text={text}
+      testId="wb-rail-outputs"
+      render={(file) => {
+        const name = outputName(file.path)
+        return (
+          <RailRow
+            key={file.path}
+            label={name}
+            title={file.path}
+            icon={<FileTypeIcon name={name} size={16} />}
+            value={outputFolder(file.path) || undefined}
+            onPress={() => onOpen(file.path)}
+            action={
+              <IconButton variant="plain" size="sm" aria-label={text.removeOutput(name)} className="wb-rail-dismiss" onPress={() => onDismiss(file.path)}>
+                <X size={12} aria-hidden />
+              </IconButton>
+            }
+          />
+        )
+      }}
+    />
+  )
+}
+
+function ChangedRows({ files, text, onOpen }: { files: readonly RailChangedFile[]; text: RailText; onOpen: () => void }): ReactElement {
+  return (
+    <RailList
+      items={files}
+      text={text}
+      testId="wb-rail-changed-files"
+      render={(file) => {
+        const name = outputName(file.path)
+        const counted = file.added !== null && file.removed !== null
+        return (
+          <RailRow
+            key={file.path}
+            label={name}
+            title={counted ? `${file.path}\n${text.linesChanged(file.added ?? 0, file.removed ?? 0)}` : file.path}
+            icon={<FileTypeIcon name={name} size={16} />}
+            value={counted ? <RailValue glyph={{ kind: 'delta', added: file.added ?? 0, removed: file.removed ?? 0 }} /> : outputFolder(file.path) || undefined}
+            onPress={onOpen}
+          />
+        )
+      }}
+    />
+  )
+}
+
+function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText }): ReactElement {
+  const { glance } = model
+  const metric = glance.metric
+  return (
+    <span className="wb-rail-glance" title={glance.title} data-testid="wb-rail-stats-glance">
+      {glance.hit !== null ? (
+        <RailValue glyph={{ kind: 'ring', percent: glance.hit, label: text.cacheHit }} value={glance.hitText} digits={4} />
+      ) : null}
+      {metric.kind === 'speed' ? (
+        <RailValue
+          joined={glance.hit !== null}
+          value={metric.value}
+          unit={metric.unit}
+          digits={4}
+          glyph={metric.bars ? { kind: 'bars', values: metric.bars, pending: metric.pending, slots: GLANCE_BARS + 1 } : undefined}
+          glyphEnd
+        />
+      ) : metric.kind === 'tokens' ? (
+        <RailValue joined={glance.hit !== null} value={metric.value} unit={metric.unit} digits={5} />
+      ) : (
+        <RailValue joined={glance.hit !== null} value={metric.text} />
+      )}
     </span>
   )
 }
@@ -471,15 +580,28 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const repo = useGitRepo(cwd || null, gitRefresh)
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
   const lineTotals = useGitLineTotals(cwd || null, !!repo && repo.changedCount > 0 && !isRailSectionHidden({ hidden }, 'changes'), gitRefresh)
-  const changesSummary = !repo
-    ? undefined
-    : repo.changedCount === 0
-      ? text.changesNone
-      : lineTotals
-        ? <LineDelta added={lineTotals.added} removed={lineTotals.removed} text={rail} />
-        : text.changesFiles(repo.changedCount)
+  const changesSummary = !repo ? undefined : repo.changedCount === 0 ? (
+    <RailValue value={rail.changesNone} />
+  ) : lineTotals ? (
+    <RailValue
+      glyph={{ kind: 'delta', added: lineTotals.added, removed: lineTotals.removed }}
+      title={rail.linesChanged(lineTotals.added, lineTotals.removed)}
+      aria-label={rail.linesChanged(lineTotals.added, lineTotals.removed)}
+    />
+  ) : (
+    <RailValue value={text.changesFiles(repo.changedCount)} />
+  )
+  const environmentSummary = cwd ? (
+    <RailValue
+      glyph={repo && repo.changedCount > 0 ? { kind: 'dot', status: 'awaiting' } : undefined}
+      value={branch ? `${projectName} · ${branch}` : projectName}
+      title={[cwd, branch ? `${text.branchLabel} ${branch}` : '', repo && repo.changedCount > 0 ? rail.dirty : ''].filter(Boolean).join('\n')}
+    />
+  ) : (
+    <RailValue value={rail.local} />
+  )
 
-  const statsModel = useRailStats(messages, !isRailSectionHidden({ hidden }, 'stats'))
+  const statsModel = useRailStats(!isRailSectionHidden({ hidden }, 'stats'))
   const contextOpen = isOpen('context')
   const autoCompactLimit = autoCompactLimitOf(session, settings)
   const contextData = useMemo(
@@ -487,13 +609,24 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     [contextOpen, session, stats, messages, autoCompactLimit]
   )
   const usage = contextData?.usage ?? contextUsageSummary(session, stats, autoCompactLimit)
-  const contextSummary = usage.known && usage.percent !== null ? `${Math.round(usage.percent)}%` : undefined
-  const contextTone = usage.tone !== 'ok' && usage.known ? usage.tone : undefined
+  const contextKnown = usage.known && usage.percent !== null
+  const contextSummary = (
+    <RailValue
+      glyph={{ kind: 'ring', percent: contextKnown ? usage.percent : null, label: rail.sections.context }}
+      tone={contextKnown ? glyphTone(usage.tone) : undefined}
+      value={contextKnown ? `${Math.round(usage.percent ?? 0)}%` : '—'}
+      digits={4}
+    />
+  )
 
   const hasTodos = hasTodoTileContent(todos)
   const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
 
-  const outputs = useMemo(() => sessionOutputs(messages), [messages])
+  const outputPool = useMemo(() => outputCandidates(messages, cwd || undefined), [messages, cwd])
+  const outputPaths = useMemo(() => outputPool.map((output) => output.path), [outputPool])
+  const outputScreen = useOutputScreen(cwd || null, outputPaths, gitRefresh)
+  const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
+  const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
   const sessionIds = view.sessionId ? [view.sessionId] : []
   const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds })
@@ -502,14 +635,23 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const stoppingIds = useSubagentStopping((s) => s.ids)
   const taskCount = backgroundTaskCount(runs, backgroundRuns, stoppingIds, Date.now())
   const taskTotal = taskCount.total
-  const taskSummary = taskCount.running > 0 ? text.runningCount(taskCount.running) : text.doneCount(taskTotal)
+  const taskSummary =
+    taskCount.running > 0 ? (
+      <RailValue glyph={{ kind: 'dot', status: 'running' }} value={rail.tasksRunning(taskCount.running)} />
+    ) : (
+      <RailValue glyph={{ kind: 'dot', status: 'idle' }} value={rail.tasksEnded(taskTotal)} />
+    )
 
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
   const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
   const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
-  const mcpSummary = mcp.state === 'ready' && mcp.servers.length > 0 ? text.mcpConnected(mcpReady, mcp.servers.length) : undefined
-  const mcpTone = mcp.servers.some((server) => server.status === 'error') ? 'fail' : mcp.servers.some((server) => server.status === 'needs-auth') ? 'ask' : undefined
+  const mcpSummary =
+    mcp.servers.length > 0 ? (
+      <RailValue glyph={{ kind: 'dot', status: mcpSummaryDot(mcp.servers) }} value={rail.connected(mcpReady, mcp.servers.length)} />
+    ) : mcp.state === 'error' ? (
+      <RailValue glyph={{ kind: 'dot', status: 'fail' }} value={text.mcpFailed} error />
+    ) : undefined
 
   const quota = useQuotaTile(provider, agentRunning, t, text)
   const quotaModel = quota.model
@@ -518,16 +660,22 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const binding = bindingQuotaWindow(quotaWindows.filter((w) => !windowAwaitingReset(w, quota.now))) ?? bindingQuotaWindow(quotaWindows)
   const bindingAwaiting = binding ? windowAwaitingReset(binding, quota.now) : false
   const bindingTone = binding ? quotaWindowTone(binding, quotaStale, quota.now) : null
-  const quotaSummary = binding
-    ? `${quotaShortLabel(t, binding)} ${bindingAwaiting ? '—' : `${Math.round(windowUsedPct(binding) ?? 0)}%`}`
-    : quotaModel?.balance
-      ? money(quotaModel.balance.amount, quotaModel.balance.currency)
-      : quotaModel?.problem
-        ? quotaModel.problem.tone === 'ask'
-          ? text.quotaExpired
-          : text.quotaFailed
-        : undefined
-  const quotaTone = bindingTone === 'ask' || bindingTone === 'fail' ? bindingTone : !binding && !quotaModel?.balance ? quotaModel?.problem?.tone : undefined
+  const bindingPct = binding && !bindingAwaiting ? windowUsedPct(binding) : null
+  const quotaSummary = binding ? (
+    <RailValue
+      glyph={{ kind: 'ring', percent: bindingPct, label: rail.sections.usage }}
+      tone={glyphTone(bindingTone)}
+      value={`${quotaShortLabel(t, binding)} ${bindingPct === null ? '—' : `${Math.round(bindingPct)}%`}`}
+    />
+  ) : quotaModel?.balance ? (
+    <RailValue value={money(quotaModel.balance.amount, quotaModel.balance.currency)} />
+  ) : quotaModel?.problem ? (
+    quotaModel.problem.tone === 'ask' ? (
+      <RailValue glyph={{ kind: 'dot', status: 'awaiting' }} value={text.quotaExpired} />
+    ) : (
+      <RailValue glyph={{ kind: 'dot', status: 'fail' }} value={text.quotaFailed} error />
+    )
+  ) : undefined
 
   const openOutput = (path: string): void => {
     if (!owner) return
@@ -549,19 +697,17 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       case 'copyBranch':
         if (repo?.branch) void navigator.clipboard.writeText(repo.branch)
         return
-      case 'switchBranch':
-        onOpenView('branch')
+      case 'openChanges':
+        onOpenView('changes')
     }
   }
 
-  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; tone?: 'ok' | 'ask' | 'fail'; onOpenView?: () => void; body: ReactNode }>> = {
+  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; onOpenView?: () => void; body: ReactNode }>> = {
     environment: {
+      summary: environmentSummary,
       body: (
         <ul className="wb-ov-items">
-          <li className="wb-ov-item" data-testid="wb-rail-local">
-            <Monitor size={14} className="wb-ov-item-icon" aria-hidden />
-            <span className="wb-ov-item-label">{rail.local}</span>
-          </li>
+          <RailRow label={rail.local} icon={<Monitor size={14} aria-hidden />} data-testid="wb-rail-local" />
           {cwd ? (
             <RailRowMenu
               label={projectName}
@@ -588,7 +734,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
               onAction={runRowAction}
               items={[
                 ...(repo?.branch ? [{ key: 'copyBranch' as const, label: rail.copyBranch, icon: <Copy size={14} aria-hidden /> }] : []),
-                { key: 'switchBranch', label: rail.switchBranch, icon: <GitBranch size={14} aria-hidden /> }
+                { key: 'openChanges', label: rail.openChanges, icon: <FileDiff size={14} aria-hidden /> }
               ]}
             />
           ) : null}
@@ -598,14 +744,17 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     ...(statsModel
       ? {
           stats: {
-            summary: rail.statsSummary(statsModel.summary.turns, statsModel.summary.total),
+            summary: isOpen('stats') ? (
+              <RailValue value={statsModel.headline} title={statsModel.headlineTitle ?? undefined} />
+            ) : (
+              <StatsGlance model={statsModel} text={rail} />
+            ),
             body: <RailStatsBody model={statsModel} />
           }
         }
       : {}),
     context: {
       summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
-      tone: contextTone,
       onOpenView: () => onOpenView('context'),
       body: contextData && usage.known ? (
         <ContextDetail data={contextData} last={session?.lastCompaction} text={text} />
@@ -617,7 +766,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           usage: {
             summary: quotaSummary,
-            tone: quotaTone,
             onOpenView: () => onOpenView('quota'),
             body: <QuotaDetail model={quotaModel} now={quota.now} />
           }
@@ -627,26 +775,23 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           connectors: {
             summary: mcpSummary,
-            tone: mcpTone,
             body: (
-              <>
-                {mcp.state === 'error' ? <p className="wb-ov-note">{text.mcpFailed}</p> : null}
-                {mcp.servers.length > 0 ? (
-                  <ul className="wb-ov-items">
-                    {mcp.servers.map((server) => (
-                      <li key={server.id} className="wb-ov-item" title={text.mcpStatus[server.status]}>
-                        <span className="wb-ov-item-icon">
-                          <span className={`wb-ov-dot ${MCP_DOT[server.status]}`} aria-hidden />
-                        </span>
-                        <span className="wb-ov-item-label">{server.title || server.id}</span>
-                        <span className="wb-ov-item-value">
-                          {server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </>
+              <ul className="wb-ov-items">
+                {mcp.state === 'error' ? <RailRow label={text.mcpFailed} dot="fail" error /> : null}
+                {mcp.servers.map((server) => {
+                  const name = server.title || server.id
+                  return (
+                    <RailRow
+                      key={server.id}
+                      label={name}
+                      title={`${name} · ${text.mcpStatus[server.status]}`}
+                      dot={MCP_DOT[server.status]}
+                      error={server.status === 'error'}
+                      value={server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
+                    />
+                  )
+                })}
+              </ul>
             )
           }
         }
@@ -654,7 +799,13 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     ...(hasTodos
       ? {
           progress: {
-            summary: rail.progress(todoModel.done, todoModel.total),
+            summary: (
+              <RailValue
+                glyph={{ kind: 'segments', done: todoModel.done, total: todoModel.total }}
+                tone={todoModel.total > 0 && todoModel.done >= todoModel.total ? 'ok' : undefined}
+                value={rail.progress(todoModel.done, todoModel.total)}
+              />
+            ),
             body: <TodoTileRows model={todoModel} text={todoText} />
           }
         }
@@ -662,8 +813,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     ...(outputs.length > 0
       ? {
           outputs: {
-            summary: String(outputs.length),
-            body: <OutputRows files={outputs} text={rail} onOpen={openOutput} />
+            summary: <RailValue value={rail.outputFiles(outputs.length)} />,
+            body: <OutputRows files={outputs} text={rail} onOpen={openOutput} onDismiss={dismissOutput} />
           }
         }
       : {}),
@@ -672,32 +823,22 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           changes: {
             summary: changesSummary,
             onOpenView: () => onOpenView('changes'),
-            body: repo.changedCount > 0 ? (
-              <>
+            body:
+              repo.changedCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
+                <ChangedRows files={lineTotals.entries} text={rail} onOpen={() => onOpenView('changes')} />
+              ) : (
                 <ul className="wb-ov-items">
                   {([
                     [text.changesStaged, repo.stagedCount],
                     [text.changesUnstaged, repo.unstagedCount],
                     [text.changesUntracked, repo.untrackedCount]
-                  ] as const).filter(([, count]) => count > 0).map(([label, count]) => (
-                    <li key={label} className="wb-ov-item">
-                      <span className="wb-ov-item-label">{label}</span>
-                      <span className="wb-ov-item-value">{count}</span>
-                    </li>
-                  ))}
+                  ] as const)
+                    .filter(([, count]) => count > 0)
+                    .map(([label, count]) => (
+                      <RailRow key={label} label={label} icon={<FileDiff size={14} aria-hidden />} value={String(count)} />
+                    ))}
                 </ul>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="wb-rail-commit"
-                  icon={<GitCommitHorizontal size={14} aria-hidden />}
-                  onPress={() => onOpenView('changes')}
-                  data-testid="wb-rail-commit"
-                >
-                  {rail.commitChanges}
-                </Button>
-              </>
-            ) : null
+              )
           }
         }
       : {}),
@@ -712,6 +853,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     ...(extWidgets.length > 0
       ? {
           extensions: {
+            summary: <RailValue value={rail.extensionsCount(extWidgets.length)} />,
             body: (
               <div className="wb-ov-ext" data-testid="wb-ov-ext">
                 {extWidgets.map(([key, lines]) => (
@@ -743,7 +885,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             id={id}
             title={rail.sections[id]}
             summary={section.summary}
-            tone={section.tone}
             open={isOpen(id)}
             onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
             onOpenView={section.onOpenView}

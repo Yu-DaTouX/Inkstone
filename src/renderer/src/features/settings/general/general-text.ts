@@ -22,6 +22,8 @@ export interface GeneralText {
   sessionKeepAwakeBatteryDesc: string
   sessionCheckpoints: string
   sessionCheckpointsDesc: string
+  sessionWrapUpCard: string
+  sessionWrapUpCardDesc: string
   sessionSubagentNotify: string
   sessionSubagentNotifyDesc: string
   sessionSubagentModel: string
@@ -179,6 +181,8 @@ const ZH: GeneralText = {
   sessionKeepAwakeBatteryDesc: '关闭后，拔掉电源时不再阻止睡眠。',
   sessionCheckpoints: '发送前给项目文件存检查点',
   sessionCheckpointsDesc: '每轮发送前存可回退快照；关闭后无法回退。',
+  sessionWrapUpCard: '回合结束时显示下一步建议',
+  sessionWrapUpCardDesc: '改过文件或跑过命令的回合，回复下方附一段回顾；有待你决定的事时给出回复按钮。',
   sessionSubagentNotify: '子 Agent 结束时通知发起会话',
   sessionSubagentNotifyDesc: '子 Agent 跑完后唤醒父会话继续汇总。',
   sessionSubagentModel: '子 Agent 默认模型',
@@ -336,6 +340,8 @@ const EN: GeneralText = {
   sessionKeepAwakeBatteryDesc: 'When off, unplugging no longer blocks sleep.',
   sessionCheckpoints: 'Snapshot project files before sending',
   sessionCheckpointsDesc: 'Snapshot before each turn; rewind is off when disabled.',
+  sessionWrapUpCard: 'Show next-step suggestions at the end of a turn',
+  sessionWrapUpCardDesc: 'After turns that change files or run commands, a short recap appears below the reply, with reply buttons when you need to decide.',
   sessionSubagentNotify: 'Notify the parent session when a subagent finishes',
   sessionSubagentNotifyDesc: 'Wakes the parent session to summarise after a subagent completes.',
   sessionSubagentModel: 'Default subagent model',

@@ -1661,7 +1661,8 @@ export const useStore = create<Store>((rawSet, get) => {
   locateMessage: (messageId) => {
     const id = String(messageId ?? '')
     if (!id) return false
-    const el = document.querySelector(`[data-msg-id="${id.replace(/["\\]/g, '\\$&')}"]`)
+    const quoted = id.replace(/["\\]/g, '\\$&')
+    const el = document.querySelector(`[data-msg-id="${quoted}"], .v3-msg[data-turn-id="${quoted}"]`)
     if (!el) return false
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
     el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
