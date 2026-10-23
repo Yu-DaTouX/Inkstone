@@ -28,7 +28,7 @@ export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
   | { action: 'new' }
-  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[] }
+  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null> }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'thinking'; sessionId: string; level: string }
   | { action: 'abort'; runId: string }
@@ -847,7 +847,19 @@ export class RemoteServer {
         }
         if (!validText(body.text, MAX_MESSAGE_CHARS)) return writeError(res, 400, '消息不能为空且不得超过 20,000 个字符')
         const text = body.text
-        await this.idempotent(req, res, { device }, true, () => this.options.handlers.command({ action: 'send', sessionId, text }))
+        const authorize = async (targetSessionId = sessionId): Promise<RemoteOperationResult | null> => {
+          const [latestProjectId, targetProjectId] = await Promise.all([
+            handlers.projectOfSession(sessionId),
+            handlers.projectOfSession(targetSessionId)
+          ])
+          if (!latestProjectId || latestProjectId !== projectId || targetProjectId !== projectId) return { ok: false, status: 403, error: '会话项目归属已变化，请重新打开', code: 'peer_project_denied' }
+          const checked = grants.check(connectionId, device.id, 'send', latestProjectId)
+          return checked.ok ? null : { ok: false, status: checked.status, error: checked.error, code: checked.code }
+        }
+        await this.idempotent(req, res, { device }, true, async () => {
+          const denied = await authorize()
+          return denied ?? this.options.handlers.command({ action: 'send', sessionId, text, authorize })
+        })
         return
       }
     }

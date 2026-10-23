@@ -1,5 +1,6 @@
 import { reserveWorkspaceMutation } from '../workspace-mutation'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute } from 'node:path'
+import { executionBusy } from '../../core/run-state'
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
 import { assessCheckpointFit, listCheckpoints, previewCheckpoint, restoreCheckpoint } from '../checkpoints'
@@ -19,10 +20,12 @@ export function registerCheckpointIpc(ipc: IpcRegistrar, host: SessionHost): voi
     if (!t || typeof id !== 'string') return { ok: false, error: '没有活动会话', restored: 0 }
     const release = reserveWorkspaceMutation(t.cwd)
     if (!release) return { ok: false, error: '项目正在回退，请稍后重试', restored: 0 }
-    const cwdKey = (cwd: string) => process.platform === 'win32' ? resolve(cwd).toLowerCase() : resolve(cwd)
     try {
-      const busy = host.runners()?.statuses().some((runner) => cwdKey(runner.cwd) === cwdKey(t.cwd) && (runner.running || runner.waiting || (host.runners()?.agentOf(runner.id)?.getState()?.pendingMessageCount ?? 0) > 0))
-      if (busy || host.ac()?.getState()?.isAgentRunning || (host.ac()?.getState()?.pendingMessageCount ?? 0) > 0) return { ok: false, error: '同一项目的会话仍在运行，请先停止再回退代码', restored: 0 }
+      const registry = host.runners()
+      const agent = host.ac()
+      const busy = registry?.hasBusyCwd(t.cwd) || registry?.hasExecutionAdmission(t.cwd) ||
+        executionBusy(agent?.getState() ?? null, () => agent?.hasRunningBash() ?? false, () => agent?.getPendingUiCount() ?? 0)
+      if (busy) return { ok: false, error: '同一项目的会话仍在运行，请先停止再回退代码', restored: 0 }
       return await restoreCheckpoint(t.cwd, id, t.key)
     } finally { release() }
   }

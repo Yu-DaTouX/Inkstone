@@ -287,6 +287,7 @@ async function testF07(SubagentController) {
     let releasePrepare
     const prepareGate = new Promise((resolve) => { releasePrepare = resolve })
     const container = await mkdtemp(join(tmpdir(), 'inkstone-f07-prep-'))
+    await execFileAsync('git', ['init', '-q'], { cwd: container, windowsHide: true, timeout: 10000 })
     const worktree = join(container, 'worktree')
     await mkdir(worktree, { recursive: true })
     await writeFile(join(worktree, 'marker.txt'), 'x', 'utf8')

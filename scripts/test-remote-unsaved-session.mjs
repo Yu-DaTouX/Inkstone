@@ -72,18 +72,21 @@ try {
     isActive: false
   }
 
+  const registry = {
+    statuses: () => [unsaved],
+    select: async (target) => {
+      selections.push(target)
+      return { ok: true, id: 'r1', runId: 'r1', sessionId: 'pending-2', generation: 1, via: 'hit' }
+    },
+    hasBusyCwd: () => false,
+    runtimeOf: () => ({ generation: 1, sessionId: 'pending-2' }),
+    agentOf: () => agent
+  }
+
   host.configureRemoteHost({
     win: () => null,
     remoteAccess: () => null,
-    runners: () => ({
-      statuses: () => [unsaved],
-      select: async (target) => {
-        selections.push(target)
-        return { ok: true, id: 'r1', runId: 'r1', sessionId: 'pending-2', generation: 1, via: 'hit' }
-      },
-      hasBusyCwd: () => false,
-      agentOf: () => agent
-    }),
+    runners: () => registry,
     ac: () => null,
     readHistoryWithArtifacts: async () => null,
     validateCwd: async (cwd) => ({ ok: true, cwd: String(cwd) }),

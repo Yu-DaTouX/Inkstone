@@ -16,6 +16,7 @@ export interface ScheduledTask {
   createdBy: 'user' | 'model'
   createdAt: number
   nextRunAt?: number
+  pendingRun?: { id: string; startedAt: number; scheduledAt?: number; status: 'claimed' | 'unknown' }
   lastRunAt?: number
   lastSessionId?: string
   lastError?: string

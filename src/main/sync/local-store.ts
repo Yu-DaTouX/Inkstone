@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { atomicWriteFile } from './atomic'
 import { canonicalJson, sha256Hex } from './canonical'
 import { findForbiddenFields, pickSyncSettings } from './settings-whitelist'
@@ -135,6 +135,7 @@ async function readSkills(paths: SyncPaths): Promise<ReadResult> {
     const file = join(paths.skillsDir, entry.name, 'SKILL.md')
     if (!existsSync(file)) continue
     try {
+      await checkedSkillFile(paths, entry.name)
       const payload = await readFile(file, 'utf8')
       records.push({ key: `skill:${entry.name}`, kind: 'skill', payload, modifiedAt: await mtimeMs(file) })
     } catch (error) {
@@ -146,15 +147,41 @@ async function readSkills(paths: SyncPaths): Promise<ReadResult> {
 
 function skillNameFromKey(key: string): string | undefined {
   const name = key.startsWith('skill:') ? key.slice('skill:'.length) : ''
-  if (!name || name !== basename(name) || !/^[\w.-]+$/.test(name)) return undefined
+  if (!name || name === '.' || name === '..' || name !== basename(name) || !/^[\w.-]+$/.test(name)) return undefined
   return name
 }
 
 async function applySkill(paths: SyncPaths, record: SyncRecord): Promise<void> {
   const name = skillNameFromKey(record.key)
   if (!name) throw new Error(`技能 key 非法：${record.key}`)
+  await mkdir(paths.skillsDir, { recursive: true })
+  const file = await checkedSkillFile(paths, name)
   await mkdir(join(paths.skillsDir, name), { recursive: true })
-  await atomicWriteFile(join(paths.skillsDir, name, 'SKILL.md'), record.payload)
+  await checkedSkillFile(paths, name)
+  await atomicWriteFile(file, record.payload)
+}
+
+async function checkedSkillFile(paths: SyncPaths, name: string): Promise<string> {
+  const root = await realpath(paths.skillsDir)
+  const directory = resolve(root, name)
+  const file = join(directory, 'SKILL.md')
+  const check = (target: string): void => {
+    const tail = relative(root, target)
+    if (!tail || tail === '..' || tail.startsWith(`..${sep}`) || isAbsolute(tail)) {
+      throw new Error(`技能路径越界：${name}`)
+    }
+  }
+  check(directory)
+  for (const target of [directory, file]) {
+    try {
+      await lstat(target)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    check(await realpath(target))
+  }
+  return file
 }
 
 interface BookmarkPayload {
