@@ -1,20 +1,12 @@
 import { execFile, spawn } from 'node:child_process'
 import {
   constants as fsConstants,
-  copyFileSync,
-  closeSync,
   existsSync,
-  fstatSync,
-  ftruncateSync,
   mkdirSync,
-  openSync,
-  realpathSync,
   mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync
+  rmSync
 } from 'node:fs'
+import { access, copyFile, mkdir, open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -261,15 +253,24 @@ export function parseSessionJsonl(
   return { ok: true, value: { header, entries, leafId } }
 }
 
-export function readSessionFile(
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function readSessionFile(
   path: string,
   maxBytes: number = DEFAULT_MAX_IMPORT_BYTES
-): { ok: true; value: ParsedSessionFile; sizeBytes: number } | SessionIoFailure {
+): Promise<{ ok: true; value: ParsedSessionFile; sizeBytes: number } | SessionIoFailure> {
   const source = resolve(String(path ?? ''))
-  if (!path || !existsSync(source)) return fail('not_found', `找不到会话文件：${source}`)
+  if (!path || !(await pathExists(source))) return fail('not_found', `找不到会话文件：${source}`)
   let stats
   try {
-    stats = statSync(source)
+    stats = await stat(source)
   } catch (error) {
     return fail('not_found', `无法读取会话文件：${error instanceof Error ? error.message : String(error)}`)
   }
@@ -279,7 +280,7 @@ export function readSessionFile(
   }
   let text: string
   try {
-    text = readFileSync(source, 'utf8')
+    text = await readFile(source, 'utf8')
   } catch (error) {
     return fail('not_found', `无法读取会话文件：${error instanceof Error ? error.message : String(error)}`)
   }
@@ -288,10 +289,10 @@ export function readSessionFile(
   return { ok: true, value: parsed.value, sizeBytes: stats.size }
 }
 
-export function inspectSessionJsonl(
+export async function inspectSessionJsonl(
   path: string,
   maxBytes?: number
-):
+): Promise<
   | {
       ok: true
       path: string
@@ -302,8 +303,9 @@ export function inspectSessionJsonl(
       entryCount: number
       leafId: string | null
     }
-  | SessionIoFailure {
-  const read = readSessionFile(path, maxBytes)
+  | SessionIoFailure
+> {
+  const read = await readSessionFile(path, maxBytes)
   if (!read.ok) return read
   const { header, entries, leafId } = read.value
   return {
@@ -420,57 +422,57 @@ export interface ExportJsonlSuccess {
   entryCount: number
 }
 
-function sameSessionFile(sourcePath: string, outputPath: string): boolean {
+async function sameSessionFile(sourcePath: string, outputPath: string): Promise<boolean> {
   const key = (file: string) => process.platform === 'win32' ? file.toLowerCase() : file
   if (key(resolve(sourcePath)) === key(resolve(outputPath))) return true
   try {
-    if (key(realpathSync(sourcePath)) === key(realpathSync(outputPath))) return true
-    const source = statSync(sourcePath, { bigint: true })
-    const output = statSync(outputPath, { bigint: true })
+    if (key(await realpath(sourcePath)) === key(await realpath(outputPath))) return true
+    const source = await stat(sourcePath, { bigint: true })
+    const output = await stat(outputPath, { bigint: true })
     return source.ino !== 0n && source.dev === output.dev && source.ino === output.ino
   } catch {
     return false
   }
 }
 
-function writeSessionExport(sourcePath: string, outputPath: string, text: string, overwrite: boolean): void {
-  if (sameSessionFile(sourcePath, outputPath)) throw new Error('导出目标不能是源会话文件本身或它的别名')
-  const source = statSync(sourcePath, { bigint: true })
-  const fd = openSync(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | (overwrite ? 0 : fsConstants.O_EXCL))
+async function writeSessionExport(sourcePath: string, outputPath: string, text: string, overwrite: boolean): Promise<void> {
+  if (await sameSessionFile(sourcePath, outputPath)) throw new Error('导出目标不能是源会话文件本身或它的别名')
+  const source = await stat(sourcePath, { bigint: true })
+  const handle = await open(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | (overwrite ? 0 : fsConstants.O_EXCL))
   try {
-    const output = fstatSync(fd, { bigint: true })
+    const output = await handle.stat({ bigint: true })
     if (source.ino !== 0n && source.dev === output.dev && source.ino === output.ino) {
       throw new Error('导出目标不能是源会话文件本身或它的别名')
     }
-    ftruncateSync(fd, 0)
-    writeFileSync(fd, text, 'utf8')
+    await handle.truncate(0)
+    await handle.writeFile(text, 'utf8')
   } finally {
-    closeSync(fd)
+    await handle.close()
   }
 }
 
-export function exportSessionJsonl(
+export async function exportSessionJsonl(
   request: ExportJsonlRequest
-): ExportJsonlSuccess | SessionIoFailure {
+): Promise<ExportJsonlSuccess | SessionIoFailure> {
   if (!request.outputPath || !String(request.outputPath).trim()) {
     return fail('invalid_path', '缺少导出目标路径')
   }
-  const read = readSessionFile(request.sourcePath, request.maxBytes)
+  const read = await readSessionFile(request.sourcePath, request.maxBytes)
   if (!read.ok) return read
   const outputPath = resolve(String(request.outputPath))
   const sourcePath = resolve(String(request.sourcePath))
-  if (sameSessionFile(sourcePath, outputPath)) return fail('invalid_path', '导出目标不能是源会话文件本身或它的别名')
-  if (existsSync(outputPath) && !request.overwrite) {
+  if (await sameSessionFile(sourcePath, outputPath)) return fail('invalid_path', '导出目标不能是源会话文件本身或它的别名')
+  if ((await pathExists(outputPath)) && !request.overwrite) {
     return fail('exists', `导出目标已存在：${outputPath}（pi 原生会覆盖，这里要求显式确认）`)
   }
   const scope: ExportScope = request.scope === 'full' ? 'full' : 'branch'
   const leafId = request.leafId === undefined ? read.value.leafId : request.leafId
   let entryCount = read.value.entries.length
   try {
-    mkdirSync(dirname(outputPath), { recursive: true })
+    await mkdir(dirname(outputPath), { recursive: true })
     if (scope === 'full') {
-      const raw = readFileSync(sourcePath, 'utf8')
-      writeSessionExport(sourcePath, outputPath, raw.endsWith('\n') ? raw : `${raw}\n`, request.overwrite === true)
+      const raw = await readFile(sourcePath, 'utf8')
+      await writeSessionExport(sourcePath, outputPath, raw.endsWith('\n') ? raw : `${raw}\n`, request.overwrite === true)
     } else {
       const { header, entries } = read.value
       let branch: LiteSessionEntry[]
@@ -488,7 +490,7 @@ export function exportSessionJsonl(
         ...(request.systemPrompt !== undefined ? { systemPrompt: request.systemPrompt } : {}),
         ...(request.tools !== undefined ? { tools: request.tools } : {})
       })
-      writeSessionExport(sourcePath, outputPath, text, request.overwrite === true)
+      await writeSessionExport(sourcePath, outputPath, text, request.overwrite === true)
       entryCount = branch.length
     }
   } catch (error) {
@@ -530,17 +532,17 @@ export interface ImportSessionSuccess {
   entryCount: number
 }
 
-export function importSessionJsonl(
+export async function importSessionJsonl(
   request: ImportSessionRequest
-): ImportSessionSuccess | SessionIoFailure {
-  const read = readSessionFile(request.sourcePath, request.maxBytes)
+): Promise<ImportSessionSuccess | SessionIoFailure> {
+  const read = await readSessionFile(request.sourcePath, request.maxBytes)
   if (!read.ok) return read
   const sourcePath = resolve(String(request.sourcePath))
   const sessionDir = resolve(
     String(request.sessionDir ?? defaultSessionDirFor(request.cwd ?? process.cwd()))
   )
   try {
-    mkdirSync(sessionDir, { recursive: true })
+    await mkdir(sessionDir, { recursive: true })
   } catch (error) {
     return fail(
       'invalid_path',
@@ -553,22 +555,22 @@ export function importSessionJsonl(
   if (!alreadyStored) {
     const { name, ext } = parse(destinationPath)
     let suffix = 1
-    while (existsSync(destinationPath)) {
+    while (await pathExists(destinationPath)) {
       destinationPath = join(sessionDir, `${name}-${suffix++}${ext}`)
     }
     for (let attempt = 0; ; attempt += 1) {
       try {
         if (request.freshSessionId) {
           const text = [{ ...read.value.header, id: importedId }, ...read.value.entries].map(entry => JSON.stringify(entry)).join('\n') + '\n'
-          writeFileSync(destinationPath, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+          await writeFile(destinationPath, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
         } else {
-          copyFileSync(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL)
+          await copyFile(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL)
         }
         break
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code
         if (code === 'EEXIST' && attempt < 2) {
-          while (existsSync(destinationPath)) {
+          while (await pathExists(destinationPath)) {
             destinationPath = join(sessionDir, `${name}-${suffix++}${ext}`)
           }
           continue

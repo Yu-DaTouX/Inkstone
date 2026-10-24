@@ -14,7 +14,7 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
   const send = useStore((s) => s.send)
   const cycleModel = useStore((s) => s.cycleModel)
   const compact = useStore((s) => s.compact)
-  const messages = useStore((s) => s.messages)
+  const hasPrompt = useStore((s) => promptForTurn(sourceIds, s.messages) !== null)
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -36,14 +36,13 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
 
   const view = sessionViewIdentity({ peekedSessionId, peekedPath, session })
   const active = viewMatchesProjectedSession(view, session)
-  const prompt = promptForTurn(sourceIds, messages)
-
   const actions = active && !readOnly && !recovered
-    ? model.actions.filter((action) => (action !== 'retry' || !!prompt) && (action !== 'wait' || !quotaResume))
+    ? model.actions.filter((action) => (action !== 'retry' || hasPrompt) && (action !== 'wait' || !quotaResume))
     : []
 
   const run = (action: ErrorCardAction): void => {
     if (action === 'retry') {
+      const prompt = promptForTurn(sourceIds, useStore.getState().messages)
       if (!prompt) return
       forgetToolExpansion(view.key)
       void send(prompt.text, prompt.images.length ? prompt.images : undefined)

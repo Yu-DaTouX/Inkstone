@@ -60,10 +60,12 @@ export default function(pi) {
   });
 }`)
   const main = await readFile(join(root, 'out/main/index.js'), 'utf8')
-  const marker = 'return yanThinResourcePath("danger-guard.js");'
-  if (main.split(marker).length !== 2) throw Error('Fixture extension injection marker changed')
+  const markers = [...main.matchAll(/function yanThinResourcePath\((\w+)\) \{/g)]
+  if (markers.length !== 1) throw Error('Fixture extension injection marker changed')
+  const [marker, param] = markers[0]
   fixtureMain = join(root, 'out/main', `hermes-fixture-${randomUUID()}.js`)
-  await writeFile(fixtureMain, main.replace(marker, `return ${JSON.stringify(extension)};`)
+  await writeFile(fixtureMain, main.replace(marker, `${marker}
+  if (${param} === "danger-guard.js") return ${JSON.stringify(extension)};`)
     .replaceAll('devResourcesDir: join(app.getAppPath(), "resources")', `devResourcesDir: ${JSON.stringify(join(root, 'resources'))}`))
   await writeFile(join(sessions, 'hermes.jsonl'), [
     { type: 'session', version: 3, id, timestamp, cwd: temp },

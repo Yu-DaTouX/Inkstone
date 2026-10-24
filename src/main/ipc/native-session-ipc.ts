@@ -57,7 +57,7 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
         }
         const stale = fresh()
         if (stale) return stale
-        const imported = importSessionJsonl({ sourcePath: path, cwd, ...(sourceFile ? { sessionDir: dirname(sourceFile) } : {}), freshSessionId: true })
+        const imported = await importSessionJsonl({ sourcePath: path, cwd, ...(sourceFile ? { sessionDir: dirname(sourceFile) } : {}), freshSessionId: true })
         if (!imported.ok) return imported
         const switched = await selectSessionWithHost(host, { sessionFile: imported.destinationPath, cwd, scope: 'global' })
         if (!switched.ok) return { ok: false, error: switched.error ?? '会话已导入，但未能切换；原会话保持不变' }
@@ -80,7 +80,7 @@ export function registerNativeSessionIpc(ipc: IpcRegistrar, host: SessionHost, p
         if (stale) return stale
         const snapshot = await agent.sessionEntries()
         if (!snapshot.ok) return snapshot
-        const result = exportSessionJsonl({ sourcePath: sourceFile, outputPath: path, overwrite: true, leafId: snapshot.leafId })
+        const result = await exportSessionJsonl({ sourcePath: sourceFile, outputPath: path, overwrite: true, leafId: snapshot.leafId })
         return result.ok ? { ok: true, path: result.outputPath } : result
       }
       if (request.action === 'share') {

@@ -52,6 +52,7 @@ import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/brows
 import { markStopRequested } from '../features/session/stop-intent'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
+import { reuseSessionSummaries } from './session-list'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
   composerDraftForView,
@@ -783,7 +784,7 @@ function thinkLabelOf(level: string): string {
 }
 
 function patchMessage(list: UIMessage[], id: string, patch: MessagePatch): UIMessage[] {
-  const i = list.findIndex((m) => m.id === id)
+  const i = list.findLastIndex((m) => m.id === id)
   if (i < 0) return list
 
   if (patch.textDelta === undefined && patch.thinkingDelta === undefined) {
@@ -1372,7 +1373,7 @@ export const useStore = create<Store>((rawSet, get) => {
         break
       case 'tool': {
         const { msgId, call, outputDelta } = m.payload
-        const msg = s.messages.find((x) => x.id === msgId)
+        const msg = s.messages.findLast((x) => x.id === msgId)
         if (!msg) break
         const calls = (msg.toolCalls ?? []).slice()
         const i = calls.findIndex((c) => c.id === call.id)
@@ -1468,7 +1469,9 @@ export const useStore = create<Store>((rawSet, get) => {
 
   refreshSessions: async () => {
     try {
-      set({ sessions: await window.yan.listSessions() })
+      const listed = await window.yan.listSessions()
+      const sessions = reuseSessionSummaries(get().sessions, Array.isArray(listed) ? listed : [])
+      if (sessions !== get().sessions) set({ sessions })
     } catch {
     }
   },

@@ -400,11 +400,11 @@ const notifySubagentFinished = createSubagentNotifier({
 })
 const subagentSearch = new LookupCommands({ capabilityOpts: () => undefined, cwd: () => process.cwd() })
 const subagentService: SubagentService = new SubagentService({
-  preambleExtension: preambleExtensionPath,
-  codemodeExtension: codemodeExtensionPath,
+  preambleExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.preambleExtension),
+  codemodeExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.codemodeExtension),
   providerExtensions: providerExtensionPaths,
-  guardExtension: dangerGuardExtensionPath,
-  shellExtension: shellFallbackExtensionPath,
+  guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),
+  shellExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.shellFallbackExtension),
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
   runReadOnlyCommand: (command, params) => subagentSearch.runSearchCommand(command.slice('search.'.length), params),
   previewHtml: (htmlPath, root, options) => captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
@@ -559,90 +559,53 @@ function bundledSkillPaths(): string[] {
   }
 }
 
+const foundYanThinResources = new Map<string, string>()
+
 function yanThinResourcePath(file: string): string | undefined {
+  const known = foundYanThinResources.get(file)
+  if (known) return known
   const candidates = [
     process.resourcesPath ? join(process.resourcesPath, 'yan-thin', file) : '',
     join(__dirname_, '..', '..', 'resources', 'pi-extensions', file),
     join(process.cwd(), 'resources', 'pi-extensions', file)
   ].filter(Boolean)
-  return candidates.find((p) => existsSync(p))
+  const found = candidates.find((p) => existsSync(p))
+  if (found) foundYanThinResources.set(file, found)
+  return found
 }
 
-function questionExtensionPath(): string | undefined {
-  return yanThinResourcePath('question.js')
+const YAN_THIN_EXTENSION_FILES = {
+  codemodeExtension: 'codemode-policy.js',
+  questionExtension: 'question.js',
+  wrapUpExtension: 'wrap-up.js',
+  shellFallbackExtension: 'shell-fallback.js',
+  responseDetailExtension: 'response-detail.js',
+  preambleExtension: 'preamble.js',
+  languageExtension: 'language.js',
+  ultracodeExtension: 'ultracode.js',
+  capabilityGuideExtension: 'capability-guide.js',
+  mcpAppProxyExtension: 'mcp-app-proxy.js',
+  contextTrimExtension: 'context-trim.js',
+  imageLabelsExtension: 'image-labels.js',
+  nativeSessionExtension: 'native-session-bridge.js',
+  repeatGuardExtension: 'repeat-guard.js',
+  dangerGuardExtension: 'danger-guard.js'
+} as const
+
+const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js'] as const
+
+function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined } {
+  const entries = Object.entries(YAN_THIN_EXTENSION_FILES).map(([key, file]) => [key, yanThinResourcePath(file)])
+  return Object.fromEntries(entries) as { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined }
 }
 
-function wrapUpExtensionPath(): string | undefined {
-  return yanThinResourcePath('wrap-up.js')
-}
-
-function shellFallbackExtensionPath(): string | undefined {
-  return yanThinResourcePath('shell-fallback.js')
-}
-
-function codemodeExtensionPath(): string | undefined {
-  return yanThinResourcePath('codemode-policy.js')
-}
-
-function responseDetailExtensionPath(): string | undefined {
-  return yanThinResourcePath('response-detail.js')
-}
-
-function preambleExtensionPath(): string | undefined {
-  return yanThinResourcePath('preamble.js')
-}
-
-function languageExtensionPath(): string | undefined {
-  return yanThinResourcePath('language.js')
-}
-
-function capabilityGuideExtensionPath(): string | undefined {
-  return yanThinResourcePath('capability-guide.js')
-}
-
-function contextTrimExtensionPath(): string | undefined {
-  return yanThinResourcePath('context-trim.js')
-}
-
-function imageLabelsExtensionPath(): string | undefined {
-  return yanThinResourcePath('image-labels.js')
-}
-
-function nativeSessionExtensionPath(): string | undefined {
-  return yanThinResourcePath('native-session-bridge.js')
-}
-
-function repeatGuardExtensionPath(): string | undefined {
-  return yanThinResourcePath('repeat-guard.js')
-}
-function mcpAppProxyExtensionPath(): string | undefined {
-  return yanThinResourcePath('mcp-app-proxy.js')
-}
-function dangerGuardExtensionPath(): string | undefined {
-  return yanThinResourcePath('danger-guard.js')
-}
 function providerExtensionPaths(): string[] {
-  return [yanThinResourcePath('commandcode.js'), yanThinResourcePath('provider-diagnostics.js'), yanThinResourcePath('anthropic-progress-updates.js')].filter((p): p is string => !!p)
+  return PROVIDER_EXTENSION_FILES.map(yanThinResourcePath).filter((p): p is string => !!p)
 }
+
 function yanThinExtensionPaths(): string[] {
-  return [
-    codemodeExtensionPath(),
-    questionExtensionPath(),
-    wrapUpExtensionPath(),
-    shellFallbackExtensionPath(),
-    responseDetailExtensionPath(),
-    preambleExtensionPath(),
-    languageExtensionPath(),
-    yanThinResourcePath('ultracode.js'),
-    capabilityGuideExtensionPath(),
-    mcpAppProxyExtensionPath(),
-    contextTrimExtensionPath(),
-    imageLabelsExtensionPath(),
-    nativeSessionExtensionPath(),
-    repeatGuardExtensionPath(),
-    dangerGuardExtensionPath(),
-    ...providerExtensionPaths(),
-  ].filter((p): p is string => !!p && isAgentContextExtension(p))
+  return [...Object.values(yanThinExtensions()), ...providerExtensionPaths()]
+    .filter((p): p is string => !!p && isAgentContextExtension(p))
 }
 
 function push(msg: MainPush): void {
@@ -1984,26 +1947,12 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         observeRun: runsHost?.observerFor({ generation }) ?? undefined,
         cwd,
         piBin: settings.piBin,
-        codemodeExtension: codemodeExtensionPath(),
-        questionExtension: questionExtensionPath(),
-        wrapUpExtension: wrapUpExtensionPath(),
-        shellFallbackExtension: shellFallbackExtensionPath(),
-        responseDetailExtension: responseDetailExtensionPath(),
+        ...yanThinExtensions(),
         getResponseDetail: () => agentResponseDetail,
         browserHost: () => browser,
         subagentHost: subagentService.capabilityHost,
         scheduleHost: scheduleService,
-        preambleExtension: preambleExtensionPath(),
-        languageExtension: languageExtensionPath(),
-        ultracodeExtension: yanThinResourcePath('ultracode.js'),
-        capabilityGuideExtension: capabilityGuideExtensionPath(),
-        contextTrimExtension: contextTrimExtensionPath(),
-        imageLabelsExtension: imageLabelsExtensionPath(),
-        nativeSessionExtension: nativeSessionExtensionPath(),
-        mcpAppProxyExtension: mcpAppProxyExtensionPath(),
         mcpAppToolsSnapshot: mcpAppProxyToolsEnv().YAN_MCP_APP_TOOLS,
-        repeatGuardExtension: repeatGuardExtensionPath(),
-        dangerGuardExtension: dangerGuardExtensionPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: bundledSkillPaths(),
         userSkills: () => userSkillPaths(),

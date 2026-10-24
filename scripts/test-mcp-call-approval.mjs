@@ -46,7 +46,8 @@ const electronStub = {
 const outfile = fileURLToPath(new URL('../out/test/mcp-call-approval.mjs', import.meta.url))
 const entry = join(root, 'entry.ts')
 const sourceOf = (relative) => fileURLToPath(new URL(relative, import.meta.url)).replace(/\\/g, '/')
-await writeFile(entry, `export { AgentController } from '${sourceOf('../src/main/agent.ts')}'`)
+await writeFile(entry, `export { AgentController } from '${sourceOf('../src/main/agent.ts')}'
+export { confirmMcpCall } from '${sourceOf('../src/main/agent-commands/mcp-command.ts')}'`)
 await build({
   entryPoints: [entry],
   outfile,
@@ -58,7 +59,7 @@ await build({
   plugins: [electronStub]
 })
 
-const { AgentController } = await import(pathToFileURL(outfile).href)
+const { AgentController, confirmMcpCall } = await import(pathToFileURL(outfile).href)
 
 function fakeManager(tool) {
   return {
@@ -90,7 +91,7 @@ function makeAgent({ permissionMode = 'danger', confirmDanger = null } = {}) {
 }
 
 const describeCall = (agent, manager, toolName = 'Click', params = { arguments: { x: 1 } }) =>
-  agent.confirmMcpCall(manager, 'windows-mcp', toolName, params)
+  confirmMcpCall(agent.commandHost, manager, 'windows-mcp', toolName, params)
 
 process.stdout.write('\n▌yan mcp call 在自动批准档也要过一次审批\n')
 await check('「不受限制」档不问，直接放行', async () => {
@@ -160,12 +161,12 @@ await check('参数带进详情但截断到 2000 字符', async () => {
 })
 
 process.stdout.write('\n▌runMcpCommand 的 call 分支先过审批再调工具\n')
-await check('agent.ts 的 call 分支在 callMcpTool 之前调 confirmMcpCall', async () => {
-  const source = await readFile(fileURLToPath(new URL('../src/main/agent.ts', import.meta.url)), 'utf8')
-  const start = source.indexOf('private async runMcpCommand')
-  assert.ok(start > 0, '应能在 agent.ts 里定位 runMcpCommand')
+await check('mcp-command.ts 的 call 分支在 callMcpTool 之前调 confirmMcpCall', async () => {
+  const source = await readFile(fileURLToPath(new URL('../src/main/agent-commands/mcp-command.ts', import.meta.url)), 'utf8')
+  const start = source.indexOf('export async function runMcpCommand')
+  assert.ok(start > 0, '应能在 mcp-command.ts 里定位 runMcpCommand')
   const body = source.slice(start, start + 8000)
-  const confirmAt = body.indexOf("action === 'call') await this.confirmMcpCall(")
+  const confirmAt = body.indexOf("action === 'call') await confirmMcpCall(host, manager,")
   const callAt = body.indexOf('const outcome = await callMcpTool(')
   assert.ok(confirmAt > 0, 'call 分支应调 confirmMcpCall')
   assert.ok(callAt > confirmAt, 'prompt 必须在 callMcpTool 之前')

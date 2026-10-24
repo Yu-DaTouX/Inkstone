@@ -8,6 +8,11 @@ import { saveUserSkill } from './user-skills'
 import { listManagedSkills, managedSkillOf, type ManagedSkillEntry } from './skill-manager'
 import { acquiredUserSkillNames, listSessionSkills, promoteSessionSkill, removeSessionSkill } from './capabilities/acquired-skills'
 import { runArtifactPreview } from './artifact-preview-command'
+import { runConsentRequestCommand } from './agent-commands/consent-request'
+import { runLocalImageServiceCommand } from './agent-commands/local-image-service'
+import { runMcpCommand } from './agent-commands/mcp-command'
+import { runOfficeReadCommand } from './agent-commands/office-read'
+import { runSkillRead } from './agent-commands/skill-read'
 import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
@@ -24,21 +29,12 @@ import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shar
 import { settledTurnOutcome } from '../shared/turn-outcome'
 import { isQuotaWaitError, isRateLimitError } from '../shared/quota-resume'
 import { isSubagentNotice } from '../shared/subagent-notice'
-import { mcpApprovalNeeded, mcpCallDanger } from '../shared/mcp-approval'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import { previewOffice } from './office/office-service'
-import { localDeviceId, markConsentAuto, readConsentLedger, recordConsentAnswer } from './consent-store'
 import type { ApprovalDecision } from '../shared/approval'
 import {
-  consentFeedbackSummary,
-  consentKeyOf,
-  consentVerdict,
-  dangerCategoryOf,
-  normalizeConsentParts,
   type ConsentAnswer,
-  type ConsentDecision,
   type ConsentKeyParts,
   type ConsentVerdict
 } from '../shared/tool-consent'
@@ -73,7 +69,7 @@ import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarize
 
 import { requestedTimeout } from '../shared/ui-timeout'
 import { createStreamLoopDetector, type LoopHit, type StreamLoopDetector } from '../shared/stream-loop-detector'
-import { readSkillById, skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
+import { skillsFromCommands, type RawSkillCommand } from './capabilities/skill-service'
 import { CapabilityAcquisition } from './capabilities/acquisition-commands'
 
 import { BrowserCommands } from './browser-commands'
@@ -82,7 +78,6 @@ import { TurnTimingTracker } from './turn-timing-tracker'
 import { UiRequests, questionToolCallId, type HostUiResponse } from './ui-requests'
 import { runSignalFromUiRequest, runSignalFromUiResolved, signalFromQueueUpdate, signalsFromPiEvent } from './runs/pi-events'
 import type { RunModel, RunSignal } from '../shared/runs'
-import { paramString } from './command-params'
 import { McpConnectionManager } from './mcp/connection-manager'
 import { loadMcpServers, mcpServersForProject } from './mcp/config'
 import {
@@ -92,7 +87,7 @@ import {
   type McpNativeBootWitness,
   type McpNativeConfigReader
 } from './mcp/app-native-witness'
-import { assertLegacyMcpAccessBlocked, runMcpAppProxyCommand } from './mcp/app-proxy-service'
+import { runMcpAppProxyCommand } from './mcp/app-proxy-service'
 import { mcpAppHost } from './mcp/app-host'
 import { isInkstoneManaged } from './mcp/app-spec'
 import {
@@ -104,18 +99,15 @@ import {
   type LegacyReconcileResult,
   type SettingsSafeAccess
 } from './mcp/settings-safe-access'
-import { callMcpTool, describeMcpTool, McpToolError } from './mcp/tool-service'
 import type { McpServerStatus } from '../shared/mcp'
 import type { CapabilityMcpServerSettingView } from '../shared/ipc'
 import type { ApprovalOwner } from '../shared/approval'
-import { migratedMcpCommandNotice } from '../shared/mcp-native-import'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
 import { titleSampleImages, titleSamples } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import type { QueueEditOp } from '../shared/ipc'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
-import { comfyStatus, ComfyLaunchError, ensureComfyRunning, stopManagedComfy } from './comfy-launcher'
 import { defaultImageModel, detectImageProviders, generateImage, imageProviderEndpoint, imageProviderNeedsConfirmation, isImageProvider, resolveImageProvider, waitForImage, type ImageGenerationRequest } from './image-generation'
 import {
   capabilitySnapshot,
@@ -476,6 +468,18 @@ export class AgentController extends EventEmitter {
     cwd: () => this.cwd,
     notifySearchApiMissing: () => this.push({ ch: 'search-api-hint', payload: {} })
   })
+  private get commandHost() {
+    return {
+      cwd: () => this.cwd,
+      rawCommands: () => this.rawCommands(),
+      mcpConnectionManager: () => this.mcpConnectionManager(),
+      mcpConfigError: () => this.mcpConfigError,
+      permissionMode: async () => this.getPermissionMode?.(),
+      confirmToolConsent: async (request: ToolConsentPrompt) => (this.confirmToolConsent ? this.confirmToolConsent(request) : null),
+      confirmDanger: async (request: DangerConfirmPrompt) => (this.confirmDanger ? this.confirmDanger(request) : null),
+      approvalOwner: () => this.approvalOwner()
+    }
+  }
   private readonly browserCommands = new BrowserCommands({
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
     capabilityOpts: () => this.capabilityOpts
@@ -1190,7 +1194,7 @@ export class AgentController extends EventEmitter {
       return this.acquisition.runCapabilitiesAcquire(params)
     }
     if (command === 'skill.read') {
-      return this.runSkillRead(params)
+      return runSkillRead(this.commandHost, params)
     }
     if (command === 'skill.save') {
       return this.runSkillSave(params)
@@ -1199,7 +1203,7 @@ export class AgentController extends EventEmitter {
       return this.runMcpAppCommand(command, params, signal)
     }
     if (command.startsWith('mcp.')) {
-      return this.runMcpCommand(command.slice('mcp.'.length), params, signal)
+      return runMcpCommand(this.commandHost, command.slice('mcp.'.length), params, signal)
     }
     if (command.startsWith('knowledge.')) {
       return this.lookup.runKnowledgeCommand(command.slice('knowledge.'.length), params)
@@ -1208,14 +1212,14 @@ export class AgentController extends EventEmitter {
       return this.lookup.runSearchCommand(command.slice('search.'.length), params)
     }
     if (command === 'image.generate') return this.runImageCommand(params)
-    if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return this.runLocalImageServiceCommand(command)
+    if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return runLocalImageServiceCommand(command)
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
-    if (command === 'artifact.preview') return this.runArtifactPreviewCommand(params)
+    if (command === 'artifact.preview') return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
     if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
-    if (command === 'office.read') return this.runOfficeReadCommand(params)
+    if (command === 'office.read') return runOfficeReadCommand(this.cwd, params)
     if (command === 'file.trash') return this.runFileTrashCommand(params, signal)
-    if (command === 'consent.request') return this.runConsentRequestCommand(params)
+    if (command === 'consent.request') return runConsentRequestCommand(this.commandHost, params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
     if (command === 'session.move') return this.runSessionMoveCommand(params)
     switch (command) {
@@ -1333,36 +1337,6 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runConsentRequestCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    const normalized = normalizeConsentParts(params, localDeviceId(), 'local')
-    if (!normalized.ok) throw new CapabilityCommandError('consent_bad_request', normalized.error)
-    const parts = normalized.parts
-    const purpose = typeof params.purpose === 'string' ? params.purpose.trim().slice(0, 500) : ''
-    const declaredDanger = params.dangerous === true || params.dangerous === 'true'
-    if ((!declaredDanger && !dangerCategoryOf(parts)) || (await this.getPermissionMode?.()) === 'all') {
-      return { summary: { kind: 'consent', allowed: true, decision: 'auto', reason: 'permission-mode' } }
-    }
-    const ledger = await readConsentLedger()
-    const verdict = consentVerdict(ledger.entries.find((entry) => entry.key === consentKeyOf(parts)), parts, Date.now())
-    const summary = (decision: 'auto' | ConsentDecision | 'no-answer') => ({
-      kind: 'consent',
-      capability: parts.capability,
-      action: parts.action,
-      resource: parts.resource,
-      decision,
-      allowed: decision === 'auto' || decision === 'allow',
-      reason: verdict.reason
-    })
-    if (verdict.mode === 'auto') {
-      await markConsentAuto(parts).catch(() => undefined)
-      return { data: { verdict }, summary: summary('auto') }
-    }
-    const answer = this.confirmToolConsent ? await this.confirmToolConsent({ parts, purpose, verdict, cwd: this.cwd, owner: this.approvalOwner() }) : null
-    if (!answer) return { data: { verdict }, summary: summary('no-answer') }
-    await recordConsentAnswer(parts, answer.decision)
-    return { data: { verdict }, summary: { ...summary(answer.decision), ...consentFeedbackSummary(answer.decision, answer.feedback) } }
-  }
-
   private async runDangerConfirmCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
     if ((await this.getPermissionMode?.()) === 'all') return { summary: { kind: 'danger-confirm', allowed: true, decision: 'auto' } }
     const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
@@ -1403,23 +1377,6 @@ export class AgentController extends EventEmitter {
         target: answer.target ?? dir,
         allowed: answer.decision === 'approved',
         ...(answer.feedback ? { feedback: answer.feedback, message: answer.message } : {})
-      }
-    }
-  }
-
-  private async runOfficeReadCommand(params: Record<string, unknown>): Promise<CapabilityCommandResult> {
-    const path = typeof params.path === 'string' ? params.path.trim() : ''
-    if (!path) throw new CapabilityCommandError('office_path_required', '缺少 --path')
-    const view = await previewOffice(path, this.cwd)
-    if (!view.ok) throw new CapabilityCommandError('office_read_failed', view.error)
-    return {
-      data: { path, format: view.format, note: view.note, truncated: view.truncated, sections: view.sections },
-      summary: {
-        kind: 'office-read',
-        format: view.format,
-        sections: view.sections.length,
-        lines: view.sections.reduce((n, section) => n + section.lines.length, 0),
-        truncated: view.truncated
       }
     }
   }
@@ -1524,10 +1481,6 @@ export class AgentController extends EventEmitter {
     return artifact
   }
 
-  private async runArtifactPreviewCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
-    return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
-  }
-
   private async runArtifactAttachCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const sourcePath = typeof params.path === 'string' ? params.path.trim() : ''
     if (!sourcePath) throw new CapabilityCommandError('artifact_path_missing', 'artifact.attach 需要 path')
@@ -1609,26 +1562,6 @@ export class AgentController extends EventEmitter {
     }
   }
 
-  private async runLocalImageServiceCommand(command: 'image.local.status' | 'image.local.start' | 'image.local.stop'): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
-    if (command === 'image.local.stop') {
-      const stopped = stopManagedComfy()
-      const status = await comfyStatus()
-      return { data: status, summary: { kind: 'comfyui', stopped, running: status.running, note: stopped ? '已关闭砚启动的 ComfyUI' : status.running ? '正在运行的 ComfyUI 不是砚启动的，没有关闭' : 'ComfyUI 没有在运行' } }
-    }
-    if (command === 'image.local.start') {
-      try {
-        const server = await ensureComfyRunning()
-        const status = await comfyStatus()
-        return { data: status, summary: { kind: 'comfyui', running: true, baseUrl: server.baseUrl, managed: status.managed, workflows: server.models.length } }
-      } catch (error) {
-        if (error instanceof ComfyLaunchError) throw new CapabilityCommandError(error.code, error.reason ? `ComfyUI 启动失败：${error.reason}` : 'ComfyUI 启动失败')
-        throw error
-      }
-    }
-    const status = await comfyStatus()
-    return { data: status, summary: { kind: 'comfyui', running: status.running, managed: status.managed, launchable: status.launchable, ...(status.idleStopAt ? { idleStopInSeconds: Math.max(0, Math.round((status.idleStopAt - Date.now()) / 1000)) } : {}), workflows: status.workflows.length } }
-  }
-
   private cancelImages(): void {
     for (const controller of this.imageRequests) controller.abort()
   }
@@ -1705,31 +1638,6 @@ export class AgentController extends EventEmitter {
       throw failure
     } finally {
       this.imageRequests.delete(controller)
-    }
-  }
-
-  private async runSkillRead(params: Record<string, unknown>) {
-    const id = this.knowledgeString(params, ['id', 'skillId', 'skill-id'])
-    if (!id) {
-      throw new CapabilityCommandError('skill_id_required', 'skill read 需要 --id <技能ID>（形如 skill:<名称>）')
-    }
-    const commands = await this.rawCommands()
-    try {
-      const skill = await readSkillById(commands, id)
-      return {
-        data: skill,
-        summary: {
-          kind: 'skill',
-          action: 'read',
-          id: skill.id,
-          name: skill.name,
-          contentHash: skill.contentHash,
-          bytes: Buffer.byteLength(skill.body, 'utf8')
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new CapabilityCommandError('skill_unavailable', message)
     }
   }
 
@@ -2055,173 +1963,6 @@ export class AgentController extends EventEmitter {
       },
       ...(signal ? { signal } : {})
     })
-  }
-
-  private async runMcpList(signal?: AbortSignal) {
-    signal?.throwIfAborted()
-    const manager = this.mcpConnectionManager()
-    const usable = manager.list().filter((server) => server.enabled !== false && !server.migratedToNative)
-    const servers = await Promise.all(
-      usable.map(async (server) => {
-        try {
-          const tools = await manager.listToolsCached(server.id, { signal })
-          return {
-            serverId: server.id,
-            title: server.title ?? server.id,
-            effect: server.effect ?? 'unknown',
-            status: manager.statusOf(server.id).status,
-            tools: tools.map((tool) => ({
-              name: tool.name,
-              ...(tool.description ? { description: tool.description.replace(/\s+/g, ' ').slice(0, 200) } : {})
-            }))
-          }
-        } catch (error) {
-          return {
-            serverId: server.id,
-            title: server.title ?? server.id,
-            effect: server.effect ?? 'unknown',
-            status: manager.statusOf(server.id).status,
-            tools: [],
-            error: error instanceof Error ? error.message : String(error)
-          }
-        }
-      })
-    )
-    signal?.throwIfAborted()
-    return {
-      data: { servers },
-      summary: {
-        kind: 'mcp',
-        action: 'list',
-        servers: servers.map((server) => ({
-          serverId: server.serverId,
-          status: server.status,
-          tools: server.tools.map((tool) => tool.name),
-          ...('error' in server ? { error: server.error } : {})
-        })),
-        ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
-      }
-    }
-  }
-
-  private async runMcpCommand(action: string, params: Record<string, unknown>, signal?: AbortSignal) {
-    if (signal?.aborted) throw new CapabilityCommandError('mcp_cancelled', 'MCP 请求已取消')
-    if (action === 'list') return this.runMcpList(signal)
-    if (action !== 'describe' && action !== 'call') {
-      throw new CapabilityCommandError('not_implemented', `命令已接通但尚未实现：mcp.${action}`)
-    }
-    const serverId = this.knowledgeString(params, ['serverId', 'server', 'server-id'])
-    const toolName = this.knowledgeString(params, ['toolName', 'tool', 'name', 'tool-name'])
-    if (!serverId) {
-      throw new CapabilityCommandError(
-        'mcp_server_required',
-        this.mcpConfigError
-          ? `需要 --server <服务ID>；另外 MCP 配置有问题：${this.mcpConfigError}`
-          : '需要 --server <服务ID>（服务在 YAN_DIR/mcp-servers.json 里登记）'
-      )
-    }
-    if (!toolName) {
-      throw new CapabilityCommandError('mcp_tool_required', '需要 --tool <工具名>（先用 yan mcp describe 拿 schema）')
-    }
-
-    assertLegacyMcpAccessBlocked({ serverId, toolName, action })
-    const manager = this.mcpConnectionManager()
-    const migratedToNative = manager.list().find((entry) => entry.id === serverId)?.migratedToNative
-    if (migratedToNative) {
-      throw new CapabilityCommandError('mcp_migrated_to_native', migratedMcpCommandNotice(serverId, migratedToNative))
-    }
-    try {
-      if (action === 'describe') {
-        const described = await describeMcpTool(manager, serverId, toolName, signal)
-        return {
-          data: described,
-          summary: {
-            kind: 'mcp',
-            action: 'describe',
-            serverId,
-            toolName,
-            schemaRevision: described.schemaRevision,
-            selfReportedReadOnly: described.selfReportedReadOnly,
-            ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
-          }
-        }
-      }
-
-      if (action === 'call') await this.confirmMcpCall(manager, serverId, toolName, params, signal)
-
-      const rawArgs = params.arguments ?? params.args
-      const args = rawArgs && typeof rawArgs === 'object' ? (rawArgs as Record<string, unknown>) : {}
-      const expectedRevision = this.knowledgeString(params, [
-        'schemaRevision',
-        'schema-revision',
-        'expectedRevision',
-        'expected-revision'
-      ])
-      const outcome = await callMcpTool(manager, serverId, toolName, args, {
-        resultsDir: join(YAN_DIR, 'mcp-results'),
-        signal,
-        ...(expectedRevision ? { expectedRevision } : {})
-      })
-      return {
-        data: outcome,
-        summary: {
-          kind: 'mcp',
-          action: 'call',
-          serverId,
-          toolName,
-          toolError: outcome.toolError,
-          bytes: outcome.bytes,
-          ...(outcome.resultFile ? { resultFile: outcome.resultFile } : {}),
-          ...(outcome.images ? { imageFiles: outcome.images } : {}),
-          ...(this.mcpConfigError ? { configWarning: this.mcpConfigError } : {})
-        }
-      }
-    } catch (error) {
-      if (signal?.aborted) throw new CapabilityCommandError('mcp_cancelled', 'MCP 请求已取消')
-      if (error instanceof CapabilityCommandError) throw error
-      if (error instanceof McpToolError) {
-        throw new CapabilityCommandError(error.code, error.message, error.data)
-      }
-      const message = error instanceof Error ? error.message : String(error)
-      throw new CapabilityCommandError('mcp_unavailable', `MCP 调用失败：${message}`)
-    }
-  }
-
-  private knowledgeString(params: Record<string, unknown>, keys: string[]): string | undefined {
-    return paramString(params, keys)
-  }
-
-  private async confirmMcpCall(
-    manager: McpConnectionManager,
-    serverId: string,
-    toolName: string,
-    params: Record<string, unknown>,
-    signal?: AbortSignal
-  ): Promise<void> {
-    signal?.throwIfAborted()
-    const mode = await this.getPermissionMode?.()
-    signal?.throwIfAborted()
-    if (mode === 'all') return
-    const described = await describeMcpTool(manager, serverId, toolName, signal)
-    if (!mcpApprovalNeeded(described.annotations)) return
-    const detail = JSON.stringify(params.arguments ?? params.args ?? {})
-    const answer = this.confirmDanger
-      ? await this.confirmDanger({
-          tool: 'yan mcp call',
-          detail: `${serverId} / ${toolName}\n${detail.slice(0, 2000)}`,
-          reasons: mcpCallDanger(`mcp__${serverId}__${toolName}`, described.annotations),
-          cwd: this.cwd,
-          owner: this.approvalOwner(),
-          signal
-        })
-      : null
-    signal?.throwIfAborted()
-    if (answer?.decision !== 'allow') {
-      throw new CapabilityCommandError(
-        'mcp_call_denied',
-        answer?.feedback ? `用户拒绝了这次 MCP 调用：${answer.feedback}` : '没有得到用户确认，已拒绝这次 MCP 调用'
-      )
-    }
   }
 
   private async currentUserRound(): Promise<number> {

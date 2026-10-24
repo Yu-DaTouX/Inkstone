@@ -78,7 +78,7 @@ console.log('\n--- JSONL 逐行校验（parseSessionJsonl / inspectSessionJsonl�
   ok(good.ok && good.value.header.id === 'sess-1' && good.value.entries.length === 4, '合法文件解析出头与 4 条条目')
   ok(good.value.leafId === 'd', '叶子是最后一个有 id 的条目')
   ok(!io.parseSessionJsonl('').ok, '空文件被拒（empty）')
-  eq(io.parseSessionJsonl('').code, 'empty', '空文件错误码')
+  eq((await io.parseSessionJsonl('')).code, 'empty', '空文件错误码')
   const noHeader = io.parseSessionJsonl(JSON.stringify(userA) + '\n')
   eq(noHeader.code, 'invalid_header', '首行不是会话头 → invalid_header')
   const badJson = io.parseSessionJsonl(JSON.stringify(header) + '\n{not json}\n')
@@ -87,12 +87,12 @@ console.log('\n--- JSONL 逐行校验（parseSessionJsonl / inspectSessionJsonl�
   eq(badType.code, 'invalid_line', '缺少 type 字段 → invalid_line')
   const headerNoId = io.parseSessionJsonl(JSON.stringify({ type: 'session' }) + '\n')
   eq(headerNoId.code, 'invalid_header', '会话头缺 id → invalid_header')
-  eq(io.inspectSessionJsonl(join(work, 'missing.jsonl')).code, 'not_found', '文件不存在 → not_found')
+  eq((await io.inspectSessionJsonl(join(work, 'missing.jsonl'))).code, 'not_found', '文件不存在 → not_found')
 
   const tooBig = join(work, 'too-big.jsonl')
   writeFileSync(tooBig, sessionText, 'utf8')
-  eq(io.inspectSessionJsonl(tooBig, 10).code, 'too_large', '超过大小上限 → too_large')
-  const info = io.inspectSessionJsonl(sessionPath)
+  eq((await io.inspectSessionJsonl(tooBig, 10)).code, 'too_large', '超过大小上限 → too_large')
+  const info = await io.inspectSessionJsonl(sessionPath)
   ok(info.ok && info.entryCount === 4 && info.version === 3, 'inspect 返回条目数与版本')
 }
 
@@ -133,20 +133,20 @@ console.log('\n--- 活动分支（buildActiveBranch / serializeSessionBranch）-
 console.log('\n--- JSONL 导出（exportSessionJsonl）---')
 {
   const outBranch = join(work, 'out-branch.jsonl')
-  const r1 = io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch })
+  const r1 = await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch })
   ok(r1.ok && r1.scope === 'branch' && r1.entryCount === 3, '默认导出活动分支（3 条）')
   const outLines = readFileSync(outBranch, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l))
   eq(outLines[0].version, 3, '导出文件是 v3 头')
   eq(readFileSync(sessionPath, 'utf8'), sessionText, '导出不修改源文件')
 
   const outFull = join(work, 'out-full.jsonl')
-  const r2 = io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outFull, scope: 'full' })
+  const r2 = await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outFull, scope: 'full' })
   ok(r2.ok && r2.scope === 'full', 'full 模式可用')
   eq(readFileSync(outFull, 'utf8'), sessionText, 'full 模式原样复制（含放弃分支）')
 
-  eq(io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch }).code, 'exists', '默认拒绝覆盖已有导出')
-  ok(io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch, overwrite: true }).ok, '显式 overwrite 才覆盖')
-  eq(io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: sessionPath }).code, 'invalid_path', '导出目标不能是源文件')
+  eq((await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch })).code, 'exists', '默认拒绝覆盖已有导出')
+  ok((await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: outBranch, overwrite: true })).ok, '显式 overwrite 才覆盖')
+  eq((await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: sessionPath })).code, 'invalid_path', '导出目标不能是源文件')
 }
 
 console.log('\n--- JSONL 导入（importSessionJsonl，不覆盖 + 保留原件）---')
@@ -154,22 +154,22 @@ console.log('\n--- JSONL 导入（importSessionJsonl，不覆盖 + 保留原件�
   const sessionsDir = join(work, 'sessions-flat')
   const incoming = join(work, 'incoming.jsonl')
   writeFileSync(incoming, sessionText, 'utf8')
-  const first = io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
+  const first = await io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
   ok(first.ok && first.destinationPath === join(sessionsDir, 'incoming.jsonl'), '首次导入复制到会话目录')
   ok(existsSync(incoming), '导入保留源文件（只复制）')
   eq(readFileSync(first.destinationPath, 'utf8'), sessionText, '复制内容与源一致')
 
-  const second = io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
+  const second = await io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
   ok(second.ok && second.destinationPath.endsWith('incoming-1.jsonl'), '同名冲突追加 -1，绝不覆盖')
-  const third = io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
+  const third = await io.importSessionJsonl({ sourcePath: incoming, sessionDir: sessionsDir })
   ok(third.ok && third.destinationPath.endsWith('incoming-2.jsonl'), '再次冲突追加 -2')
 
-  const inPlace = io.importSessionJsonl({ sourcePath: join(sessionsDir, 'incoming.jsonl'), sessionDir: sessionsDir })
+  const inPlace = await io.importSessionJsonl({ sourcePath: join(sessionsDir, 'incoming.jsonl'), sessionDir: sessionsDir })
   ok(inPlace.ok && inPlace.alreadyStored && inPlace.destinationPath === join(sessionsDir, 'incoming.jsonl'), '源已在目标位置时不复制')
 
   const invalid = join(work, 'invalid.jsonl')
   writeFileSync(invalid, '{}\n', 'utf8')
-  eq(io.importSessionJsonl({ sourcePath: invalid, sessionDir: sessionsDir }).code, 'invalid_line', '非法文件拒绝导入（首行无 type）')
+  eq((await io.importSessionJsonl({ sourcePath: invalid, sessionDir: sessionsDir })).code, 'invalid_line', '非法文件拒绝导入（首行无 type）')
 }
 
 console.log('\n--- 会话目录编码（与 pi getDefaultSessionDirPath 一致）---')
@@ -190,13 +190,13 @@ console.log('\n--- 会话目录编码（与 pi getDefaultSessionDirPath 一致�
 console.log('\n--- Desktop live-leaf and import-identity regressions ---')
 {
   const outputPath = join(work, 'live-leaf.jsonl')
-  const exported = io.exportSessionJsonl({ sourcePath: sessionPath, outputPath, leafId: 'b' })
+  const exported = await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath, leafId: 'b' })
   ok(exported.ok, 'live leaf overrides file tail')
   const lines = readFileSync(outputPath,'utf8').trim().split('\n').map(JSON.parse)
   eq(lines.slice(1).map(entry=>entry.id), ['a','b'], 'selected branch excludes later appended branch')
-  const empty = io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: join(work,'empty-branch.jsonl'), leafId:null })
+  const empty = await io.exportSessionJsonl({ sourcePath: sessionPath, outputPath: join(work,'empty-branch.jsonl'), leafId:null })
   ok(empty.ok && empty.entryCount === 0, 'null live leaf exports header only')
-  const imported = io.importSessionJsonl({sourcePath:sessionPath,sessionDir:join(work,'fresh-import'),freshSessionId:true})
+  const imported = await io.importSessionJsonl({sourcePath:sessionPath,sessionDir:join(work,'fresh-import'),freshSessionId:true})
   ok(imported.ok && imported.sessionId !== header.id, 'fresh import has unique desktop id')
   eq(JSON.parse(readFileSync(imported.destinationPath,'utf8').split('\n')[0]).id, imported.sessionId, 'fresh header id matches index id')
   eq(readFileSync(sessionPath,'utf8'),sessionText,'import never modifies original file')

@@ -53,7 +53,7 @@ const spawnedScripts = [
   'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
   'test-readonly-model-registration', 'test-mcp-image-results',
   'test-stream-loop-detector', 'test-stream-loop-settings', 'test-smooth-text-settings',
-  'test-native-session-export-alias', 'test-schedule-safety', 'test-subagent-terminal-races',
+  'test-native-session-export-alias', 'test-session-list-reuse', 'test-schedule-safety', 'test-subagent-terminal-races',
   'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
   'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-split-drop-model', 'test-sidebar-content-search',

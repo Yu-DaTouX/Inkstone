@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { useT, type MessageKey } from '../../i18n'
+import { useShallow } from 'zustand/react/shallow'
 import { useStore } from '../../state/store'
 import { Badge, Button, IconButton, Notice } from '../../ui'
 import { isHtmlArtifact, type HtmlArtifactPreviewError } from '../../../../shared/html-artifact-preview'
@@ -7,7 +8,7 @@ import { filePreviewUrl } from '../../lib/file-preview-url'
 import { HtmlArtifactThumb } from '../artifacts/HtmlArtifactThumb'
 import { deriveArtifactIdentityKey, useNearViewport, usePreviewSnapshot } from '../artifacts/widget-lifecycle'
 import { artifactVersions } from '../artifacts/model'
-import type { AssistantArtifact } from '../../../../shared/ipc'
+import type { AssistantArtifact, UIMessage } from '../../../../shared/ipc'
 import { Icon } from './Icon'
 
 const HTML_ERROR_KEYS: Record<HtmlArtifactPreviewError, MessageKey> = {
@@ -55,6 +56,15 @@ export function TurnArtifacts({
   )
 }
 
+function artifactsFromSource(messages: readonly UIMessage[], sourceId: string): AssistantArtifact[] {
+  const found: AssistantArtifact[] = []
+  for (const message of messages) {
+    if (!message.artifacts) continue
+    for (const item of message.artifacts) if (item.sourceId === sourceId) found.push(item)
+  }
+  return found
+}
+
 function ArtifactCard({
   artifact,
   sessionId,
@@ -65,11 +75,8 @@ function ArtifactCard({
   messageId: string | null
 }): JSX.Element {
   const t = useT()
-  const messages = useStore((s) => s.messages)
-  const versions = useMemo(
-    () => artifactVersions(messages.flatMap((message) => message.artifacts ?? []), artifact),
-    [messages, artifact]
-  )
+  const siblings = useStore(useShallow((s): AssistantArtifact[] => artifactsFromSource(s.messages, artifact.sourceId)))
+  const versions = useMemo(() => artifactVersions(siblings, artifact), [siblings, artifact])
   const [pickedId, setPickedId] = useState(artifact.id)
   const index = Math.max(0, versions.findIndex((item) => item.id === pickedId))
   const shown = versions[index] ?? artifact

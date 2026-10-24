@@ -44,7 +44,7 @@
     "probe-pi": "npm run build && node scripts/probe-pi.mjs",
     "shot": "electron scripts/shot.mjs",
     "test:live": "node scripts/test-live.mjs",
-    "check": "npm run typecheck && npm run check:shell-icons && npm run check:icons && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live sound hotkeys browserframes pending working queuestack deltas fileref modelswitch sessionlayout runnerselect",
+    "check": "npm run typecheck && npm run check:tests && npm run check:shell-icons && npm run check:icons && npm run build && npm run test:unit && npm run test:skill-source && npm run vendor:pi:check -- --if-present && npm run measure:design && npm run test:live -- live sound hotkeys browserframes pending working queuestack deltas fileref modelswitch sessionlayout runnerselect",
     "test:unit": "node scripts/test-unit.mjs",
     "test:checkpoints": "node scripts/test-checkpoints.mjs",
     "test:agent-native-context": "node scripts/test-agent-native-context.mjs",
@@ -76,6 +76,7 @@
     "installer:sidebar": "electron scripts/build-installer-sidebar.mjs",
     "check:shell-icons": "node scripts/check-shell-icons.mjs",
     "check:icons": "node scripts/check-icons.mjs",
+    "check:tests": "node scripts/check-test-registry.mjs",
     "probe:search": "node scripts/probe/search.mjs",
     "report:i18n": "node scripts/report-unused-i18n.mjs"
   },

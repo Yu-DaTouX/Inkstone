@@ -36,6 +36,6 @@ try {
   install({ on: (name, fn) => { throwing[name] = fn }, appendEntry: () => { throw new Error('disk failure') } })
   check(throwing.provider_stream_event(error, ctx) === undefined, 'diagnostic write failure does not interrupt the model request')
   const host = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8')
-  check(host.includes("yanThinResourcePath('provider-diagnostics.js')"), 'shared provider extension list loads diagnostics for main and child agents')
+  check(/PROVIDER_EXTENSION_FILES = \[[^\]]*'provider-diagnostics\.js'/.test(host), 'shared provider extension list loads diagnostics for main and child agents')
 } finally { console.error = originalError }
 console.log(`provider-diagnostics: ${checks} checks passed (local hooks only, no network)`)

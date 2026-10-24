@@ -25,69 +25,69 @@ try {
   ]
   const original = lines.map(x => JSON.stringify(x)).join('\n') + '\n'
   fs.writeFileSync(source, original)
-  const rejectAlias = (target, label) => {
-    const result = exportSessionJsonl({ sourcePath: source, outputPath: target, overwrite: true })
+  const rejectAlias = async (target, label) => {
+    const result = await exportSessionJsonl({ sourcePath: source, outputPath: target, overwrite: true })
     verify(!result.ok && result.code === 'invalid_path', `${label}: rejected`)
     verify(fs.readFileSync(source, 'utf8') === original, `${label}: source unchanged`)
   }
-  rejectAlias(source, 'same path')
+  await rejectAlias(source, 'same path')
   const hard = join(work, 'hard.jsonl')
   fs.linkSync(source, hard)
-  rejectAlias(hard, 'hard link')
+  await rejectAlias(hard, 'hard link')
   verify(fs.readFileSync(hard, 'utf8') === original, 'hard link contents unchanged')
   const junction = join(work, 'junction')
   fs.symlinkSync(dir, junction, process.platform === 'win32' ? 'junction' : 'dir')
-  rejectAlias(join(junction, 'session.jsonl'), 'directory alias')
+  await rejectAlias(join(junction, 'session.jsonl'), 'directory alias')
   const caseAlias = join(dir, 'SESSION.JSONL')
-  if (fs.existsSync(caseAlias)) rejectAlias(caseAlias, 'case alias')
+  if (fs.existsSync(caseAlias)) await rejectAlias(caseAlias, 'case alias')
   else console.log('case-alias test skipped: case-sensitive filesystem')
 
   const branch = join(work, 'branch.jsonl')
-  verify(exportSessionJsonl({ sourcePath: source, outputPath: branch }).ok, 'new branch export succeeds')
+  verify((await exportSessionJsonl({ sourcePath: source, outputPath: branch })).ok, 'new branch export succeeds')
   verify(!fs.readFileSync(branch, 'utf8').includes('abandoned'), 'branch semantics preserved')
   const before = fs.readFileSync(branch, 'utf8')
-  verify(!exportSessionJsonl({ sourcePath: source, outputPath: branch }).ok, 'existing output needs permission')
+  verify(!(await exportSessionJsonl({ sourcePath: source, outputPath: branch })).ok, 'existing output needs permission')
   verify(fs.readFileSync(branch, 'utf8') === before, 'existing output unchanged on refusal')
   fs.writeFileSync(branch, 'old tail '.repeat(2000))
-  verify(exportSessionJsonl({ sourcePath: source, outputPath: branch, overwrite: true, scope: 'full' }).ok, 'full overwrite succeeds')
+  verify((await exportSessionJsonl({ sourcePath: source, outputPath: branch, overwrite: true, scope: 'full' })).ok, 'full overwrite succeeds')
   verify(fs.readFileSync(branch, 'utf8') === original, 'full overwrite truncates only approved output')
 
   const race = join(work, 'race.jsonl')
-  const open = fs.openSync
-  fs.openSync = (file, ...args) => {
+  const open = fs.promises.open
+  fs.promises.open = async (file, ...args) => {
     if (String(file) === race && !fs.existsSync(race)) fs.linkSync(source, race)
     return open(file, ...args)
   }
   syncBuiltinESMExports()
-  try { rejectAlias(race, 'post-check alias race') }
-  finally { fs.openSync = open; syncBuiltinESMExports() }
+  try { await rejectAlias(race, 'post-check alias race') }
+  finally { fs.promises.open = open; syncBuiltinESMExports() }
   verify(fs.readFileSync(source, 'utf8') === original, 'all original branches retained')
 
   const missingLeaf = join(work, 'missing-leaf.jsonl')
-  const missing = exportSessionJsonl({ sourcePath: source, outputPath: missingLeaf, leafId: 'nope' })
+  const missing = await exportSessionJsonl({ sourcePath: source, outputPath: missingLeaf, leafId: 'nope' })
   verify(!missing.ok && missing.code === 'invalid_path', 'unknown leaf rejected')
   verify(!String(missing.error ?? '').includes('写入导出文件失败'), 'unknown leaf reports the leaf, not a write failure')
   verify(!fs.existsSync(missingLeaf), 'unknown leaf writes no file')
-  verify(exportSessionJsonl({ sourcePath: source, outputPath: join(work, 'count.jsonl') }).entryCount === 2, 'entryCount matches the exported branch')
+  verify((await exportSessionJsonl({ sourcePath: source, outputPath: join(work, 'count.jsonl') })).entryCount === 2, 'entryCount matches the exported branch')
 
   const importDir = join(work, 'imports')
-  const stored = importSessionJsonl({ sourcePath: source, sessionDir: importDir })
+  const stored = await importSessionJsonl({ sourcePath: source, sessionDir: importDir })
   verify(stored.ok, 'import stores the session file')
   const occupant = join(importDir, 'session-1.jsonl')
   fs.writeFileSync(occupant, 'occupied\n')
-  const exists = fs.existsSync
+  const access = fs.promises.access
   let hidden = 0
-  fs.existsSync = (file) => {
+  fs.promises.access = async (file, ...args) => {
     if (hidden < 1 && String(file) === occupant) {
       hidden++
-      return false
+      throw Object.assign(new Error(`ENOENT: ${file}`), { code: 'ENOENT' })
     }
-    return exists(file)
+    return access(file, ...args)
   }
   syncBuiltinESMExports()
   let racedImport
-  try { racedImport = importSessionJsonl({ sourcePath: source, sessionDir: importDir }) }
-  finally { fs.existsSync = exists; syncBuiltinESMExports() }
+  try { racedImport = await importSessionJsonl({ sourcePath: source, sessionDir: importDir }) }
+  finally { fs.promises.access = access; syncBuiltinESMExports() }
   verify(racedImport.ok, 'import retries when the target name is taken between check and write')
   verify(racedImport.destinationPath !== occupant, 'import does not overwrite the raced file')
   verify(fs.readFileSync(occupant, 'utf8') === 'occupied\n', 'raced file keeps its contents')
