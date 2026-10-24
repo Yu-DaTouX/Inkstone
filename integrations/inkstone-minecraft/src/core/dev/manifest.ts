@@ -88,6 +88,25 @@ export function classifyResources(paths: string[]): ResourceChanges {
   return result
 }
 
+const REGISTRATION_ASSETS: Array<{ pattern: RegExp; registry: 'item' | 'block' }> = [
+  { pattern: /^assets\/([a-z0-9_.-]+)\/items\/([a-z0-9_./-]+)\.json$/, registry: 'item' },
+  { pattern: /^assets\/([a-z0-9_.-]+)\/models\/item\/([a-z0-9_./-]+)\.json$/, registry: 'item' },
+  { pattern: /^assets\/([a-z0-9_.-]+)\/blockstates\/([a-z0-9_./-]+)\.json$/, registry: 'block' }
+]
+
+export function registrationCandidates(addedPaths: string[]): Array<{ registry: 'item' | 'block'; id: string }> {
+  const found = new Map<string, { registry: 'item' | 'block'; id: string }>()
+  for (const path of addedPaths) {
+    for (const { pattern, registry } of REGISTRATION_ASSETS) {
+      const match = pattern.exec(path)
+      if (!match || match[1] === 'minecraft') continue
+      const id = `${match[1]}:${match[2]}`
+      found.set(`${registry}|${id}`, { registry, id })
+    }
+  }
+  return [...found.values()]
+}
+
 export function mixinPackagesFrom(configs: Array<{ package?: unknown }>): string[] {
   return configs.map((config) => (typeof config.package === 'string' ? config.package.replaceAll('.', '/') + '/' : '')).filter(Boolean)
 }

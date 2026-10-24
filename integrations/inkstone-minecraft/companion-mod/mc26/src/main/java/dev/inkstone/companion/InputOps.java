@@ -28,9 +28,10 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-final class InputOps {
+public final class InputOps {
 	private static final Map<String, List<Runnable>> HOLDS = new LinkedHashMap<>();
 	private static int holdIds;
+	private static final List<KeyMapping> PRESSED = new ArrayList<>();
 
 	private InputOps() {
 	}
@@ -79,7 +80,15 @@ final class InputOps {
 
 	private static void hold(KeyMapping binding, List<Runnable> releases) {
 		binding.setDown(true);
-		releases.add(() -> binding.setDown(false));
+		PRESSED.add(binding);
+		releases.add(() -> {
+			PRESSED.remove(binding);
+			binding.setDown(false);
+		});
+	}
+
+	public static synchronized void reassertHolds() {
+		for (KeyMapping binding : PRESSED) binding.setDown(true);
 	}
 
 	private static void holdKey(String name, List<Runnable> releases) {
@@ -148,9 +157,9 @@ final class InputOps {
 			player.swing(hand);
 			hit = hitEntity(entity);
 		} else if (blockPos != null) {
-			client.gameMode.useItemOn(player, hand, new BlockHitResult(Vec3.atCenterOf(blockPos), face, blockPos, false));
-			player.swing(hand);
 			hit = hitBlock(blockPos);
+			if (!client.gameMode.useItemOn(player, hand, new BlockHitResult(Vec3.atCenterOf(blockPos), face, blockPos, false)).consumesAction()) hit = fallbackUse(client, player, hand, hit);
+			player.swing(hand);
 		} else {
 			hit = crosshairUse(client, player, hand);
 		}
@@ -172,17 +181,26 @@ final class InputOps {
 		return Json.map("type", "miss");
 	}
 
+	private static Map<String, Object> fallbackUse(Minecraft client, LocalPlayer player, InteractionHand hand, Map<String, Object> target) {
+		boolean used = client.gameMode.useItem(player, hand).consumesAction();
+		Map<String, Object> hit = new LinkedHashMap<>(target);
+		hit.put("fallback", used ? "item" : "none");
+		return hit;
+	}
+
 	private static Map<String, Object> crosshairUse(Minecraft client, LocalPlayer player, InteractionHand hand) {
 		HitResult current = client.hitResult;
 		if (current instanceof EntityHitResult entityHit) {
-			client.gameMode.interact(player, entityHit.getEntity(), entityHit, hand);
+			Map<String, Object> hit = hitEntity(entityHit.getEntity());
+			if (!client.gameMode.interact(player, entityHit.getEntity(), entityHit, hand).consumesAction()) hit = fallbackUse(client, player, hand, hit);
 			player.swing(hand);
-			return hitEntity(entityHit.getEntity());
+			return hit;
 		}
 		if (current instanceof BlockHitResult blockHit) {
-			client.gameMode.useItemOn(player, hand, blockHit);
+			Map<String, Object> hit = hitBlock(blockHit.getBlockPos());
+			if (!client.gameMode.useItemOn(player, hand, blockHit).consumesAction()) hit = fallbackUse(client, player, hand, hit);
 			player.swing(hand);
-			return hitBlock(blockHit.getBlockPos());
+			return hit;
 		}
 		client.gameMode.useItem(player, hand);
 		player.swing(hand);

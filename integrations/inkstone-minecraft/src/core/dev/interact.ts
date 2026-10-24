@@ -40,6 +40,7 @@ export interface HitResult {
   type: 'block' | 'entity' | 'miss'
   pos?: [number, number, number]
   entity?: string
+  fallback?: 'item' | 'none'
 }
 
 export interface InputReply {
@@ -269,7 +270,8 @@ function parseHit(value: unknown): HitResult | undefined {
   const raw = record(value)
   const type = raw.type === 'block' || raw.type === 'entity' ? raw.type : raw.type === 'miss' ? 'miss' : undefined
   if (!type) return undefined
-  return { type, pos: triple(raw.pos), entity: type === 'entity' ? formatEntity(raw.entity) : undefined }
+  const fallback = raw.fallback === 'item' || raw.fallback === 'none' ? raw.fallback : undefined
+  return { type, pos: triple(raw.pos), entity: type === 'entity' ? formatEntity(raw.entity) : undefined, ...(fallback ? { fallback } : {}) }
 }
 
 function parseItem(value: unknown): CompanionItem | null {

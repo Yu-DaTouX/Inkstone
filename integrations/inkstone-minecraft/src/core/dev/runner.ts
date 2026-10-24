@@ -15,7 +15,7 @@ import { hotswapClasses } from './hotswap.ts'
 import { jbrDownloadHint, resolveJbr, supportsEnhancedRedefinition } from './jbr.ts'
 import { downloadJbr } from './jbr-download.ts'
 import { filterLog, listCrashes, tailFile } from './logs.ts'
-import { classifyResources, diffManifest, mixinPackagesFrom, scanManifest, type FileManifest } from './manifest.ts'
+import { classifyResources, diffManifest, mixinPackagesFrom, registrationCandidates, scanManifest, type FileManifest } from './manifest.ts'
 import {
   agentWindowJvmArgs,
   argFileText,
@@ -554,6 +554,13 @@ export class DevProject {
       result.hotswap.restartReasons.push({ reason: 'metadata', detail: `改了 ${resources.metadata.join('、')}，需要重启` })
     }
     const endpoint = this.endpoint(session)
+    const unregistered = endpoint ? await this.unregistered(endpoint, registrationCandidates(resourceDiff.added)) : []
+    if (unregistered.length) {
+      result.restartNeeded = true
+      result.hotswap ??= { swapped: [], added: [], removed: [], skippedNotLoaded: [], restartNeeded: true, restartReasons: [] }
+      result.hotswap.restartNeeded = true
+      result.hotswap.restartReasons.push({ reason: 'registration', detail: `新资源对应的 ${unregistered.join('、')} 还没注册进游戏：注册表在启动时冻结，新物品/方块要重启才会出现` })
+    }
     if (endpoint && (resources.assets.length || kind === 'resources')) {
       await companionRequest(endpoint, '/reload-resources', {}, 240_000)
       result.resourcesReloaded = true
@@ -572,6 +579,19 @@ export class DevProject {
       result.restarted = true
     }
     return result
+  }
+
+  private async unregistered(endpoint: CompanionEndpoint, candidates: Array<{ registry: 'item' | 'block'; id: string }>): Promise<string[]> {
+    const missing: string[] = []
+    for (const { registry, id } of candidates.slice(0, 20)) {
+      try {
+        const reply = (await companionRequest(endpoint, '/registry', { registry: `minecraft:${registry}`, filter: id, limit: 50 }, 15_000)) as { ids?: unknown }
+        const ids = Array.isArray(reply.ids) ? reply.ids.map(String) : null
+        if (ids && !ids.includes(id)) missing.push(`${registry === 'item' ? '物品' : '方块'} ${id}`)
+      } catch {
+      }
+    }
+    return missing
   }
 
   private async commandWith(endpoint: CompanionEndpoint, command: string): Promise<CommandResult> {

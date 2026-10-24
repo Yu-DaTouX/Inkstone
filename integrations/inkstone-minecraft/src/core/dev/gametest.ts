@@ -582,7 +582,7 @@ export async function runGameTests(options: GameTestOptions): Promise<GameTestRe
       }
     }
     if (executed.aborted) notes.push(`${config.task} 超过 ${Math.round(timeoutMs / 1000)} 秒被中止，可能残留 java 进程（先确认不是用户自己的游戏再结束）`)
-    if (executed.record.ok && outcome.tests === 0 && !outcome.failed && !outcome.errors) notes.push(`${config.task} 一项测试都没跑：过滤器可能没匹配到（通配符要带命名空间）`)
+    if (executed.record.ok && outcome.tests === 0 && !outcome.failed && !outcome.errors) notes.push(`${config.task} 一项测试都没跑：过滤器可能没匹配到（通配符要带命名空间）${snakeHint(options.filter)}`)
     outcome.ok = executed.record.ok && outcome.failed === 0 && outcome.errors === 0 && outcome.tests > 0
     result.outcomes.push(outcome)
     result.totals.tests += outcome.tests
@@ -593,6 +593,12 @@ export async function runGameTests(options: GameTestOptions): Promise<GameTestRe
   }
 
   return finishWithClient(finish())
+}
+
+function snakeHint(filter: string | null | undefined): string {
+  if (!filter || !/[a-z][A-Z]/.test(filter)) return ''
+  const snake = filter.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+  return `；测试名一般是 snake_case（方法 coinPouchUse 注册成 coin_pouch_use），可以试 ${snake}`
 }
 
 export function summarizeGameTests(result: GameTestResult): string {

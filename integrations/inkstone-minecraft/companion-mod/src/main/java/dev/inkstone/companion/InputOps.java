@@ -28,9 +28,10 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
-final class InputOps {
+public final class InputOps {
 	private static final Map<String, List<Runnable>> HOLDS = new LinkedHashMap<>();
 	private static int holdIds;
+	private static final List<KeyBinding> PRESSED = new ArrayList<>();
 
 	private InputOps() {
 	}
@@ -79,7 +80,15 @@ final class InputOps {
 
 	private static void hold(KeyBinding binding, List<Runnable> releases) {
 		binding.setPressed(true);
-		releases.add(() -> binding.setPressed(false));
+		PRESSED.add(binding);
+		releases.add(() -> {
+			PRESSED.remove(binding);
+			binding.setPressed(false);
+		});
+	}
+
+	public static synchronized void reassertHolds() {
+		for (KeyBinding binding : PRESSED) binding.setPressed(true);
 	}
 
 	private static void holdKey(String name, List<Runnable> releases) {
@@ -148,9 +157,9 @@ final class InputOps {
 			player.swingHand(hand);
 			hit = hitEntity(entity);
 		} else if (blockPos != null) {
-			client.interactionManager.interactBlock(player, hand, new BlockHitResult(Vec3d.ofCenter(blockPos), face, blockPos, false));
-			player.swingHand(hand);
 			hit = hitBlock(blockPos);
+			if (!client.interactionManager.interactBlock(player, hand, new BlockHitResult(Vec3d.ofCenter(blockPos), face, blockPos, false)).isAccepted()) hit = fallbackUse(client, player, hand, hit);
+			player.swingHand(hand);
 		} else {
 			hit = crosshairUse(client, player, hand);
 		}
@@ -172,17 +181,26 @@ final class InputOps {
 		return Json.map("type", "miss");
 	}
 
+	private static Map<String, Object> fallbackUse(MinecraftClient client, ClientPlayerEntity player, Hand hand, Map<String, Object> target) {
+		boolean used = client.interactionManager.interactItem(player, hand).isAccepted();
+		Map<String, Object> hit = new LinkedHashMap<>(target);
+		hit.put("fallback", used ? "item" : "none");
+		return hit;
+	}
+
 	private static Map<String, Object> crosshairUse(MinecraftClient client, ClientPlayerEntity player, Hand hand) {
 		HitResult current = client.crosshairTarget;
 		if (current instanceof EntityHitResult entityHit) {
-			client.interactionManager.interactEntity(player, entityHit.getEntity(), hand);
+			Map<String, Object> hit = hitEntity(entityHit.getEntity());
+			if (!client.interactionManager.interactEntity(player, entityHit.getEntity(), hand).isAccepted()) hit = fallbackUse(client, player, hand, hit);
 			player.swingHand(hand);
-			return hitEntity(entityHit.getEntity());
+			return hit;
 		}
 		if (current instanceof BlockHitResult blockHit) {
-			client.interactionManager.interactBlock(player, hand, blockHit);
+			Map<String, Object> hit = hitBlock(blockHit.getBlockPos());
+			if (!client.interactionManager.interactBlock(player, hand, blockHit).isAccepted()) hit = fallbackUse(client, player, hand, hit);
 			player.swingHand(hand);
-			return hitBlock(blockHit.getBlockPos());
+			return hit;
 		}
 		client.interactionManager.interactItem(player, hand);
 		player.swingHand(hand);

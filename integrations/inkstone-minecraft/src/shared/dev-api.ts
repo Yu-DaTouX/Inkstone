@@ -103,6 +103,7 @@ export type RestartReason =
   | 'not-running'
   | 'jdwp-unavailable'
   | 'redefine-failed'
+  | 'registration'
 
 export interface HotswapResult {
   swapped: string[]

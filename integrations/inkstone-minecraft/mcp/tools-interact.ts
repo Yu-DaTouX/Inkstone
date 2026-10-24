@@ -9,6 +9,7 @@ import {
   sendPerf,
   sendScript,
   sendUi,
+  parseScreen,
   sendWait,
   scriptTimeout,
   type BlockFace,
@@ -97,8 +98,9 @@ function itemText(item: CompanionItem | null | undefined): string {
 
 function hitText(hit: HitResult): string {
   if (hit.type === 'miss') return '没命中（挥空）'
-  if (hit.type === 'block') return `方块 ${hit.pos ? point(hit.pos) : '（未给坐标）'}`
-  return `实体 ${hit.entity ?? '（未给实体）'}`
+  const fallback = hit.fallback === 'item' ? '，目标没有响应，已改为对空使用手中物品' : hit.fallback === 'none' ? '，目标和手中物品都没有响应' : ''
+  if (hit.type === 'block') return `方块 ${hit.pos ? point(hit.pos) : '（未给坐标）'}${fallback}`
+  return `实体 ${hit.entity ?? '（未给实体）'}${fallback}`
 }
 
 function faceText(target: InputTarget | undefined): string {
@@ -291,10 +293,17 @@ function slotGroup(slot: UiSlot): string {
 
 function emptySlotLines(slots: UiSlot[]): string[] {
   if (!slots.length) return []
-  const entries = slots.map((slot) => (slot.cx !== undefined && slot.cy !== undefined ? `${slot.index}(${slot.cx},${slot.cy})` : `${slot.index}`))
+  const groups = new Map<string, string[]>()
+  for (const slot of slots) {
+    const entry = slot.cx !== undefined && slot.cy !== undefined ? `${slot.index}(${slot.cx},${slot.cy})` : `${slot.index}`
+    const group = slotGroup(slot)
+    groups.set(group, [...(groups.get(group) ?? []), entry])
+  }
   const lines: string[] = []
-  for (let start = 0; start < entries.length; start += 12) lines.push(`    ${entries.slice(start, start + 12).join(' ')}`)
-  return [`  空槽 ${slots.length} 个（序号与中心坐标）：`, ...lines]
+  for (const [group, entries] of groups) {
+    for (let start = 0; start < entries.length; start += 12) lines.push(`    ${start === 0 ? `${group}：` : '　'.repeat(group.length + 1)}${entries.slice(start, start + 12).join(' ')}`)
+  }
+  return [`  空槽 ${slots.length} 个（按分组，序号与中心坐标）：`, ...lines]
 }
 
 function formatScreen(screen: UiScreen | null, slotLimit = 60, widgetLimit = 40): string {
@@ -388,6 +397,14 @@ async function saveShots(projectDir: string, reply: ScriptReply): Promise<SavedS
   return saved
 }
 
+function uiStepScreen(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  if (!('screen' in raw)) return undefined
+  const tooltip = Array.isArray(raw.tooltip) ? raw.tooltip.filter((line): line is string => typeof line === 'string') : []
+  return formatScreen(parseScreen(raw.screen), 20, 10) + (tooltip.length ? `\n物品提示（tooltip）：\n${tooltip.map((line) => `  ${line}`).join('\n')}` : '')
+}
+
 function stepSummary(value: unknown): string {
   if (value === undefined || value === null) return ''
   const body = typeof value === 'string' ? value : JSON.stringify(value)
@@ -408,6 +425,11 @@ function formatScript(reply: ScriptReply, saved: SavedShot[]): { body: string; f
   for (const result of reply.results) {
     const status = result.ok ? '成功' : `失败：${result.error ?? '未知原因'}`
     lines.push(`#${result.index} ${result.op} ${status} tick=${result.tick} ${result.timeMs}ms`)
+    const screen = result.op === 'ui' && result.ok ? uiStepScreen(result.result) : undefined
+    if (screen !== undefined) {
+      lines.push(...screen.split('\n').map((line) => `  ${line}`))
+      continue
+    }
     const summary = stepSummary(result.result)
     if (summary) lines.push(`  结果：${summary}`)
   }
@@ -568,6 +590,12 @@ function scriptSteps(args: Record<string, unknown>): ScriptStep[] {
       }
     }
     if (!['command', 'input', 'ui', 'wait', 'screenshot', 'player', 'chat', 'perf'].includes(op.trim())) throw new Error(`第 ${index} 步 op=${op} 不支持：command、input、ui、wait、screenshot、player、chat、perf、tick 之一`)
+    try {
+      if (op.trim() === 'input') return [{ ...inputRequest(step), op: 'input' } as unknown as ScriptStep]
+      if (op.trim() === 'ui') return [{ ...uiRequest(step), op: 'ui' } as unknown as ScriptStep]
+    } catch (error) {
+      throw new Error(`第 ${index} 步 ${op.trim()}：${error instanceof Error ? error.message : String(error)}`)
+    }
     return [step as ScriptStep]
   })
 }

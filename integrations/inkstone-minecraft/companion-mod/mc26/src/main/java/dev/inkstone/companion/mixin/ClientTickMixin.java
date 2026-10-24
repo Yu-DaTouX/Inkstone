@@ -11,6 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class ClientTickMixin {
 	@Inject(method = "tick", at = @At("HEAD"))
 	private void inkstoneTick(CallbackInfo info) {
-		if (Companion.active()) Companion.onClientTick();
+		if (Companion.active()) {
+			Companion.onClientTick();
+			dev.inkstone.companion.InputOps.reassertHolds();
+		}
 	}
 }

@@ -358,7 +358,7 @@ try {
     assert.equal(body.split('\n')[0], '界面：InventoryScreen「Crafting」（容器，menu minecraft:inventory）')
     assert.match(body, /槽位 3 个、控件 2 个/)
     assert.match(body, /0 菜单@8,8：minecraft:stone ×3/)
-    assert.match(body, /空槽 1 个（序号与中心坐标）：\n {4}1$/m)
+    assert.match(body, /空槽 1 个（按分组，序号与中心坐标）：\n {4}菜单：1$/m)
     assert.match(body, /36 快捷栏@8,84：minecraft:oak_log/)
     assert.match(body, /0 edit「搜索」@80,4 80×12（焦点）/)
     assert.match(body, /1 button「开始游戏」@4,4 60×20/)
@@ -492,6 +492,18 @@ try {
     assert.match(bodyOf(result), /#1 wait 成功/)
   })
 
+  await test('脚本：input 与 ui 步骤按单步工具的参数规范化', async () => {
+    await toolOf('mc_script').run({
+      steps: [
+        { op: 'input', action: 'use', target_block: [1, 64, 2], target_face: 'north', hold_ticks: 10 },
+        { op: 'ui', action: 'hover', slot: 3 }
+      ]
+    })
+    const steps = lastBody().steps as Array<Record<string, unknown>>
+    assert.deepEqual(steps[0], { action: 'use', target: { block: [1, 64, 2], face: 'north' }, holdTicks: 10, op: 'input' })
+    assert.deepEqual(steps[1], { action: 'hover', slot: 3, op: 'ui' })
+  })
+
   await test('脚本：本地先拒绝非法步骤', async () => {
     const before = state.requests.length
     const cases: Array<[Record<string, unknown>, RegExp]> = [
@@ -499,7 +511,8 @@ try {
       [{ steps: 'nope' }, /非空数组/],
       [{ steps: ['x'] }, /第 0 步不是对象/],
       [{ steps: [{}] }, /第 0 步缺少 op/],
-      [{ steps: [{ op: 'teleport' }] }, /不支持/]
+      [{ steps: [{ op: 'teleport' }] }, /不支持/],
+      [{ steps: [{ op: 'input', action: 'fly' }] }, /第 0 步 input：未知 action fly/]
     ]
     for (const [args, pattern] of cases) {
       const result = await toolOf('mc_script').run(args)

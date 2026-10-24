@@ -194,6 +194,7 @@ final class StateOps {
 			case "lang" -> {
 				String code = value.toLowerCase(Locale.ROOT);
 				options.languageCode = code;
+				client.getLanguageManager().setSelected(code);
 				client.reloadResourcePacks();
 				return true;
 			}

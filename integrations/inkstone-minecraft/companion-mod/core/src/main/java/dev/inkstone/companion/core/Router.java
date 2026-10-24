@@ -176,7 +176,7 @@ public final class Router {
 		if (holdTicks > 1 && "use".equals(action)) {
 			String id = bridge.hold(body);
 			Holds.start(id, holdTicks);
-			return Json.map("ok", true, "hit", Json.map("type", "miss"), "screen", bridge.screenClass(), "hold", id);
+			return Json.map("ok", true, "screen", bridge.screenClass(), "hold", id);
 		}
 		return bridge.act(body, entityUuid);
 	}
