@@ -1,5 +1,5 @@
 import { buildCompanionMod } from '../src/core/dev/companion-build.ts'
-import { detectJava, pickJava } from '../src/core/java.ts'
+import { detectJava, pickJava } from '../src/core/dev/java.ts'
 
 const java = process.argv[2] ?? pickJava(await detectJava(), 25)?.path
 if (!java) {

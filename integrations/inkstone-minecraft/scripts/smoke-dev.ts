@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { dataDir } from '../src/core/settings.ts'
+import { dataDir } from '../src/core/dev/settings.ts'
 import { DevProject } from '../src/core/dev/runner.ts'
 
 const [projectDir, action = 'status', ...rest] = process.argv.slice(2)

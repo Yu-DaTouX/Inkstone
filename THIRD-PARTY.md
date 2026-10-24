@@ -69,9 +69,3 @@
 | ML Kit 条码扫描（`com.google.mlkit:barcode-scanning`） | Google ML Kit 条款（见包内声明） |
 
 完整许可文本随各自分发包一起保留；升级依赖时请同步核对本表。
-
-## Minecraft 加载器安装（Forge / NeoForge）
-
-| 组件 | 许可 | 说明 |
-| --- | --- | --- |
-| [minecraft-launcher-core-node](https://github.com/Voxelum/minecraft-launcher-core-node)（XMCL，提交 `154e2719`）的 `packages/installer/forge.ts`、`neoforge.ts`、`profile.ts` | MIT，Copyright (c) 2023 CI010 | 安装器解包与安装处理器流程按 MIT 许可移植到 `integrations/inkstone-minecraft/src/core/install/forge-install.ts`、`processors.ts`，并按本仓库的下载器、类型与版本 JSON 结构改写（未安装 `@xmcl/installer` 包，其 6.3.6 发布件不可用）。移植部分的文件头保留来源与版权声明。许可原文：<https://github.com/Voxelum/minecraft-launcher-core-node/blob/master/LICENSE> |

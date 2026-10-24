@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { JavaEntry } from '../../shared/api.ts'
-import { detectJava, pickJava } from '../java.ts'
+import type { JavaEntry } from '../../shared/dev-api.ts'
+import { detectJava, pickJava } from './java.ts'
 import { javaReleaseFor } from './fabric-meta.ts'
 import { cleanGradleOutput, runGradle } from './gradle.ts'
 

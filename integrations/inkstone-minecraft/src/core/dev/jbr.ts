@@ -2,9 +2,9 @@ import { execFile } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { JavaEntry } from '../../shared/api.ts'
+import type { JavaEntry } from '../../shared/dev-api.ts'
 import type { JbrInfo } from '../../shared/dev-api.ts'
-import { detectJava, javaFromHome } from '../java.ts'
+import { detectJava, javaFromHome } from './java.ts'
 
 export const JBR_RELEASES_URL = 'https://github.com/JetBrains/JetBrainsRuntime/releases'
 

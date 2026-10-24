@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { dataDir, SettingsStore } from '../src/core/settings.ts'
+import { dataDir, loadDevSettings } from '../src/core/dev/settings.ts'
 import { serveStdio } from './protocol.ts'
 import { createToolsWithExtras, McpContext } from './tools.ts'
 
@@ -12,7 +12,7 @@ const INSTRUCTIONS = [
 ].join('\n')
 
 const root = dataDir()
-const settings = await new SettingsStore(join(root, 'settings.json')).load()
+const settings = await loadDevSettings(join(root, 'settings.json'))
 const context = new McpContext({
   runtimesDir: join(root, 'runtimes'),
   javaPaths: settings.extraJavaPaths,

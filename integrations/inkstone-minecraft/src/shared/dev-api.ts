@@ -1,5 +1,11 @@
 export type MappingFlavor = 'yarn' | 'mojmap'
 
+export interface JavaEntry {
+  path: string
+  version: string
+  majorVersion: number
+}
+
 export interface FabricVersionSet {
   minecraft: string
   loader: string

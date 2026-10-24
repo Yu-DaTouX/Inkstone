@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DevService } from '../src/core/dev/service.ts'
-import { dataDir } from '../src/core/settings.ts'
+import { dataDir } from '../src/core/dev/settings.ts'
 import { createTools, McpContext } from '../mcp/tools.ts'
 
 const [projectDir, outDir] = process.argv.slice(2)

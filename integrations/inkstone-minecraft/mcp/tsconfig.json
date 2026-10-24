@@ -1,4 +1,4 @@
 {
   "extends": "../tsconfig.node.json",
-  "include": ["./**/*.ts", "../src/core/**/*.ts", "../src/shared/**/*.ts", "../scripts/test-dev*.ts", "../scripts/smoke-dev*.ts"]
+  "include": ["./**/*.ts", "../src/**/*.ts", "../scripts/**/*.ts"]
 }

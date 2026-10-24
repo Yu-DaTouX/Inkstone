@@ -17,5 +17,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/core/**/*.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "scripts/**/*.ts", "electron.vite.config.ts"]
+  "include": ["src/**/*.ts", "mcp/**/*.ts", "scripts/**/*.ts"]
 }

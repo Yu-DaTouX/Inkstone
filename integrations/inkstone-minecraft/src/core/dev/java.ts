@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import type { JavaEntry } from '../shared/api.ts'
+import type { JavaEntry } from '../../shared/dev-api.ts'
 
 const JAVA_EXE = process.platform === 'win32' ? 'java.exe' : 'java'
 
