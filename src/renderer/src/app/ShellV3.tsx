@@ -304,7 +304,7 @@ export default function ShellV3(): ReactElement {
   }, [settings])
 
   const appearanceKey = settings
-    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion])
+    ? JSON.stringify([settings.density, settings.fontSizeUi, settings.fontUi, settings.fontUiCustom, settings.fontCode, settings.fontCodeCustom, settings.reduceMotion, settings.streamWidth])
     : null
   useEffect(() => {
     const current = useStore.getState().settings

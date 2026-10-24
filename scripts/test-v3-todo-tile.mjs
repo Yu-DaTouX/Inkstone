@@ -115,6 +115,13 @@ async function main() {
   ok(JSON.stringify(kinds(explicit)) === JSON.stringify(['done', 'running', 'blocked', 'pending']), '有 status 时逐行按显式状态', kinds(explicit))
   ok(explicit.activeIndex === 1, '有 running 时 activeIndex 指向它，即使回合标记为未跑', explicit.activeIndex)
 
+  const parallel = Model.buildTodoTileModel(
+    [todo('a', { status: 'running' }), todo('b', { status: 'done' }), todo('c', { status: 'running' }), todo('d', { status: 'done' })],
+    true
+  )
+  ok(JSON.stringify(kinds(parallel)) === JSON.stringify(['running', 'done', 'running', 'done']), '并行进度：保留多项进行中和非连续完成位置', kinds(parallel))
+  ok(parallel.done === 2 && parallel.total === 4, '非连续完成项按实际状态计数', parallel)
+
   const explicitNoRunning = Model.buildTodoTileModel([todo('a', { status: 'pending' }), todo('b', { status: 'blocked' })], true)
   ok(explicitNoRunning.activeIndex === -1, '有 status 但无 running：不退回推断（不把 pending 当进行中）', explicitNoRunning.activeIndex)
 

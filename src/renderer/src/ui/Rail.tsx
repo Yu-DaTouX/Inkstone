@@ -12,6 +12,7 @@ export type RailTone = 'ok' | 'ask' | 'fail'
 export type RailGlyph =
   | { kind: 'ring'; percent: number | null; label: string }
   | { kind: 'segments'; done: number; total: number }
+  | { kind: 'tasks'; states: readonly ('pending' | 'running' | 'blocked' | 'done')[] }
   | { kind: 'bars'; values: readonly number[]; pending?: number | null; slots?: number }
   | { kind: 'dot'; status: StatusDotKind }
   | { kind: 'delta'; added: number; removed: number }
@@ -62,6 +63,12 @@ function RailGlyphMark({ glyph }: { glyph: RailGlyph }) {
         </span>
       )
     }
+    case 'tasks':
+      return (
+        <span className="ui-rail-value__tasks" aria-hidden="true" style={{ width: `${Math.min(72, Math.max(24, glyph.states.length * 6 - 2))}px` }}>
+          {glyph.states.map((state, index) => <span key={index} data-state={state} />)}
+        </span>
+      )
     case 'bars':
       return <MiniBars className="ui-rail-value__bars" values={glyph.values} pending={glyph.pending} slots={glyph.slots} />
     case 'dot':

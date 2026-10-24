@@ -75,6 +75,8 @@ try {
     check(g && g.durationMs === 2000, '请求时长 = message_start → message_end 的单调差', JSON.stringify(g))
     check(g.ttftMs === 500, 'TTFT = message_start → 首个真正内容的差', String(g.ttftMs))
     check(g.decodeMs === 1500, 'decodeMs = 首个真正内容 → message_end 的差', String(g.decodeMs))
+    const separate = generationTiming({ startedMono: 0, firstContentMono: 1000, firstOutputMono: 9000, endedMono: 10000 })
+    check(separate.decodeMs === 9000 && separate.outputDecodeMs === 1000, '正文生成窗口独立于前面的思考或摘要')
     check(near(g.ttftMs + g.decodeMs, g.durationMs, 1), 'TTFT + decode ≈ 请求时长（同一段墙钟不重叠）')
 
     const noFirst = generationTiming({ startedMono: 1000, endedMono: 3000 })
@@ -113,7 +115,7 @@ try {
     anchorId: 'm0',
     sourceIds: ['m1', 'm2', 'm3']
   }
-  const g1 = { durationMs: 100, ttftMs: 20, decodeMs: 80 }
+  const g1 = { durationMs: 100, ttftMs: 20, decodeMs: 80, outputDecodeMs: 60 }
   const g2 = { durationMs: 200, ttftMs: 50, decodeMs: 150 }
   const g3 = { durationMs: 300, ttftMs: 90, decodeMs: 210 }
   const asst = (id, timing) => ({ id, role: 'assistant', text: id, ...(timing ? { generationTiming: timing } : {}) })
@@ -549,6 +551,19 @@ try {
       message: { role: 'assistant', usage: { output: 5 }, stopReason: 'stop', timestamp: 2 }
     })
     check(lastUpdate().payload.id === idB && lastUpdate().payload.patch.generationTiming.ttftMs >= 1, '工具调用请求收尾也有完整计时')
+    check(lastUpdate().payload.patch.generationTiming.outputDecodeMs >= 1, '工具参数属于模型输出，有独立输出计时')
+
+    emit({ type: 'turn_start' })
+    emit({ type: 'message_start', message: { role: 'assistant' } })
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'summary' } })
+    const idSummary = pushes.filter((m) => m.ch === 'msg-add').at(-1).payload.id
+    await wait(40)
+    check(lastUpdate().payload.patch.generationTiming.outputDecodeMs === undefined, '思考摘要不会提前启动正文计时')
+    emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'answer' } })
+    await wait(30)
+    emit({ type: 'message_end', message: { role: 'assistant', usage: { output: 1387, reasoning: 1248 }, stopReason: 'stop' } })
+    const separated = lastUpdate().payload.patch.generationTiming
+    check(separated.outputDecodeMs >= 1 && separated.outputDecodeMs < separated.decodeMs, '真实事件链保留思考与正文各自的生成窗口')
 
     emit({ type: 'turn_start' })
     emit({ type: 'message_start', message: { role: 'assistant' } })
@@ -578,7 +593,7 @@ try {
       .filter((m) => m.payload.patch.text !== undefined)
       .map((m) => m.payload.id)
     check(new Set([idA, idB, idC, idD]).size === 4, '四个 assistant 请求拿到四个不同的消息 id')
-    check(finalIds.every((id) => [idA, idB, idC, idD].includes(id)), '收尾补丁没有挂到别的不存在的消息上')
+    check(finalIds.every((id) => [idA, idB, idSummary, idC, idD].includes(id)), '收尾补丁没有挂到别的不存在的消息上')
   }
 
   console.log('\n--- 7. 原生 turn_start 作请求准备起点：duration/ttft 含等待，decode 不含 ---')

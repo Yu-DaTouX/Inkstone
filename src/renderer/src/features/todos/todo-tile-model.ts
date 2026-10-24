@@ -40,7 +40,7 @@ export function buildTodoTileModel(todos: readonly SessionTodo[], agentRunning: 
       ? 'done'
       : todo.status === 'blocked'
         ? 'blocked'
-        : index === activeIndex
+        : todo.status === 'running' || index === activeIndex
           ? 'running'
           : 'pending'
   }))

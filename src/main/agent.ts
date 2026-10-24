@@ -545,6 +545,7 @@ export class AgentController extends EventEmitter {
     generationStartedMono?: number
     requestStartEvent?: 'turn_start'
     firstContentMono?: number
+    firstOutputMono?: number
     usage?: Usage
     pushedText: number
     pushedThinking: number
@@ -2213,6 +2214,10 @@ export class AgentController extends EventEmitter {
             ((kind === 'text_delta' || kind === 'thinking_delta') && delta.length > 0)
           if (realContent) this.streaming.firstContentMono = performance.now()
         }
+        if (this.streaming.firstOutputMono === undefined &&
+          (kind === 'toolcall_start' || (kind === 'text_delta' && String(ev.delta ?? '').length > 0))) {
+          this.streaming.firstOutputMono = performance.now()
+        }
 
         const call = this.items.liveAssistantDelta(ev, Date.now())
         if (kind === 'thinking_start') {
@@ -2795,7 +2800,7 @@ export class AgentController extends EventEmitter {
   }
 
   private generationTimingOf(
-    s: { generationStartedMono?: number; firstContentMono?: number; requestStartEvent?: 'turn_start' },
+    s: { generationStartedMono?: number; firstContentMono?: number; firstOutputMono?: number; requestStartEvent?: 'turn_start' },
     endedMono = performance.now()
   ): GenerationTiming | undefined {
     if (s.generationStartedMono === undefined) return undefined
@@ -2803,13 +2808,15 @@ export class AgentController extends EventEmitter {
       startedMono: s.generationStartedMono,
       endedMono,
       firstContentMono: s.firstContentMono,
+      firstOutputMono: s.firstOutputMono,
       ...(s.requestStartEvent ? { startEvent: s.requestStartEvent } : {})
     })
     if (!g) return undefined
     if (g.startEvent === 'turn_start') return g
     return {
       durationMs: g.durationMs,
-      ...(g.decodeMs !== undefined ? { decodeMs: g.decodeMs } : {})
+      ...(g.decodeMs !== undefined ? { decodeMs: g.decodeMs } : {}),
+      ...(g.outputDecodeMs !== undefined ? { outputDecodeMs: g.outputDecodeMs } : {})
     }
   }
 

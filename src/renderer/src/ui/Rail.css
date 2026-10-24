@@ -62,6 +62,32 @@
     height: var(--s-12);
   }
 
+  .ui-rail-value__tasks {
+    flex: none;
+    display: inline-flex;
+    gap: 2px;
+    height: 6px;
+  }
+
+  .ui-rail-value__tasks > span {
+    flex: 1;
+    min-width: 0;
+    border-radius: var(--r-2xs);
+    background: var(--line2);
+  }
+
+  .ui-rail-value__tasks > [data-state='done'] {
+    background: var(--fg2);
+  }
+
+  .ui-rail-value__tasks > [data-state='running'] {
+    background: var(--accent-t);
+  }
+
+  .ui-rail-value__tasks > [data-state='blocked'] {
+    background: var(--fail-t);
+  }
+
   .ui-rail-value__dot {
     flex: none;
   }

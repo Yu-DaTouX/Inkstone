@@ -473,7 +473,7 @@ function StatsGlance({ model, text }: { model: RailStatsModel; text: RailText })
   return (
     <span className="wb-rail-glance" title={glance.title} data-testid="wb-rail-stats-glance">
       {glance.hit !== null ? (
-        <RailValue aria-label={text.cacheHit} value={`${text.hitShort} ${glance.hitText}`} />
+        <RailValue className="wb-rail-hit" aria-label={text.cacheHit} value={<><span className="wb-rail-hit-label">{text.hitShort} </span>{glance.hitText}</>} />
       ) : null}
       {metric.kind === 'speed' ? (
         <RailValue
@@ -727,7 +727,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           progress: {
             summary: (
               <RailValue
-                glyph={{ kind: 'segments', done: todoModel.done, total: todoModel.total }}
+                glyph={{ kind: 'tasks', states: todoModel.rows.map((row) => row.kind) }}
                 tone={todoModel.total > 0 && todoModel.done >= todoModel.total ? 'ok' : undefined}
                 value={rail.progress(todoModel.done, todoModel.total)}
               />

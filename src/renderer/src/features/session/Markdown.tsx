@@ -1,6 +1,8 @@
 import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { WrapText } from 'lucide-react'
+import { Button, IconButton } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink, type LinkTarget } from '../../../../shared/links'
@@ -241,23 +243,26 @@ function codeLang(node?: HastNode): string | undefined {
 const hastText = (node: HastNode): string =>
   node.type === 'text' ? node.value ?? '' : (node.children ?? []).map(hastText).join('')
 
-function CodeBlock({ lang, children }: { lang?: string; children?: ReactNode }): JSX.Element {
+function CodeBlock({ lang, source, children }: { lang?: string; source: string; children?: ReactNode }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const insertIntoComposer = useStore((s) => s.insertIntoComposer)
-  const preRef = useRef<HTMLPreElement>(null)
+  const sourceCwd = useContext(MessageSourceCwd)
+  const identity = useContext(WidgetIdentityContext)
+  const live = useContext(MarkdownLive)
+  const readable = !lang || /^(?:md|markdown|text|txt|plain|plaintext)$/i.test(lang)
+  const [reading, setReading] = useState(false)
   const [wrap, setWrap] = useState(false)
   const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState(false)
   const copy = (): void => {
-    const text = preRef.current?.innerText ?? ''
-    void navigator.clipboard.writeText(text).then(
+    void navigator.clipboard.writeText(source).then(
       () => { setFailed(false); setCopied(true); window.setTimeout(() => setCopied(false), 1600) },
       () => { setFailed(true); window.setTimeout(() => setFailed(false), 2000) }
     )
   }
   const onContextMenu = (event: React.MouseEvent): void => {
-    const text = (preRef.current?.innerText ?? '').replace(/\n$/, '')
+    const text = source.replace(/\n$/, '')
     openMessageMenu(event, tt('menuCode'), [
       { id: 'copy', label: tt('menuCopyCode'), run: () => copyText(text) },
       { id: 'insert', label: tt('menuInsertCode'), run: () => insertIntoComposer(`\`\`\`${lang ?? ''}\n${text}\n\`\`\``) }
@@ -267,27 +272,40 @@ function CodeBlock({ lang, children }: { lang?: string; children?: ReactNode }):
     <div className="v3-code" data-lang={lang || 'text'} onContextMenu={onContextMenu}>
       <div className="v3-code-head">
         <span className="v3-code-lang">{lang || 'text'}</span>
-        <button
-          type="button"
+        <span className="v3-code-sp" />
+        {readable ? (
+          <Button variant="ghost" size="sm" aria-pressed={reading} onPress={() => setReading((v) => !v)}>
+            {t(reading ? 'code.source' : 'code.reading')}
+          </Button>
+        ) : null}
+        <IconButton
+          variant="ghost"
+          size="sm"
           className="v3-code-act"
           aria-pressed={wrap}
-          aria-label={t('sheet.inputNewline')}
-          title={t('sheet.inputNewline')}
-          onClick={() => setWrap((v) => !v)}
+          aria-label={t('code.wrap')}
+          title={t('code.wrap')}
+          isDisabled={reading}
+          onPress={() => setWrap((v) => !v)}
         >
-          <Icon name="minus" size={14} />
-        </button>
-        <button
-          type="button"
+          <WrapText size={14} aria-hidden />
+        </IconButton>
+        <IconButton
+          variant="ghost"
+          size="sm"
           className="v3-code-act"
           aria-label={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
           title={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
-          onClick={copy}
+          onPress={copy}
         >
           <Icon name={copied ? 'check' : 'copy'} size={14} />
-        </button>
+        </IconButton>
       </div>
-      <pre ref={preRef} className={wrap ? 'wrap' : undefined}>{children}</pre>
+      {reading ? (
+        <div className="v3-code-reading">
+          <Markdown text={source} sourceCwd={sourceCwd} live={live} sessionId={identity?.sessionId} messageId={identity?.messageId} />
+        </div>
+      ) : <pre className={wrap ? 'wrap' : undefined}>{children}</pre>}
     </div>
   )
 }
@@ -297,9 +315,10 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: ReactNode
   const live = useContext(MarkdownLive)
   const offset = useContext(MarkdownOffset)
   const lang = codeLang(node)
+  const code = node?.children?.find((child) => child.type === 'element' && child.tagName === 'code')
+  const source = code ? hastText(code) : ''
   if (lang && isVisualBlockLang(lang)) {
-    const fallback = <CodeBlock lang={lang}>{children}</CodeBlock>
-    const code = node?.children?.find((child) => child.type === 'element' && child.tagName === 'code')
+    const fallback = <CodeBlock lang={lang} source={source}>{children}</CodeBlock>
     if (lang === 'mermaid') {
       if (live) return <div className="v3-visual-pending" role="status">{t('vb.pending')}</div>
       return <MermaidBlock source={code ? hastText(code) : ''} fallback={fallback} />
@@ -314,7 +333,7 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: ReactNode
       />
     )
   }
-  return <CodeBlock lang={lang}>{children}</CodeBlock>
+  return <CodeBlock lang={lang} source={source}>{children}</CodeBlock>
 }
 
 const MD_COMPONENTS: Options['components'] = {

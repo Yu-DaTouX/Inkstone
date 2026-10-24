@@ -14,6 +14,7 @@ import { codeFontChoice } from '../../../lib/appearance-v3'
 import { useTranscriptViews } from '../../../state/transcript-view'
 import { TRANSCRIPT_VIEWS } from '../../session/transcript-view-model'
 import { transcriptViewText } from '../../session/transcript-view-text'
+import { StreamWidthSetting } from './StreamWidthSetting'
 
 type FontChoice = 'sans' | 'serif' | 'maple' | 'mono' | 'custom'
 type SendKeyChoice = 'enter' | 'ctrlEnter'
@@ -186,6 +187,8 @@ export function AppearanceSettings(): ReactElement {
             onChange={(value) => void patchSettings({ density: value, fontSizeUi: FONT_UI_DEFAULT }).catch(reportSaveFailure)}
           />
         </SettingsRow>
+
+        <StreamWidthSetting />
 
         <SettingsRow settingId="appearance-transcript-view" label={viewText.label} description={viewText.description}>
           <Segmented

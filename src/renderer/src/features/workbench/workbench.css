@@ -769,6 +769,7 @@
   }
 
   .wb-tile {
+    container-type: inline-size;
     position: relative;
     flex: none;
     display: flex;
@@ -824,6 +825,7 @@
     flex: 1;
     min-width: 0;
     display: flex;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--s-4);
   }
@@ -859,28 +861,32 @@
 
   .wb-rail-glance {
     display: inline-flex;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--s-4);
     min-width: 0;
   }
 
-  .wb-tile[data-tile='stats'] .wb-tile-toggle > .ui-btn__label {
-    flex-wrap: wrap;
-  }
-
-  .wb-tile[data-tile='stats'] .wb-tile-summary {
-    flex: 1 1 max-content;
-    overflow: visible;
-    white-space: normal;
-  }
-
   .wb-tile[data-tile='stats'] .wb-rail-glance {
-    flex-wrap: wrap;
     justify-content: flex-end;
   }
 
   .wb-tile[data-tile='stats'] .wb-rail-glance > .ui-rail-value {
     flex: none;
+  }
+
+  @container (max-width: 300px) {
+    .wb-rail-glance .ui-rail-value__bars,
+    .wb-rail-hit-label {
+      display: none;
+    }
+  }
+
+  @container (max-width: 230px) {
+    .wb-rail-glance .wb-rail-hit,
+    .wb-rail-glance .ui-rail-value[data-joined='1']::before {
+      display: none;
+    }
   }
 
   .wb-tile-open {

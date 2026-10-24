@@ -12,7 +12,8 @@ import {
   projectSessionMetrics,
   sessionTurnCounts,
   splitLiveStep,
-  stepSpeeds
+  stepSpeeds,
+  stepSpeed
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
 import { buildRailStats, railTimeText, type RailSegment, type RailStatsModel } from './rail-stats'
@@ -63,6 +64,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       historyPartial,
       subagentTokens: subTokens,
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
+      latestSpeed: stepSpeed(settled.findLast((message) => message.role === 'assistant')),
       liveSpeed: live ? (liveReading?.speed ?? null) : undefined,
       liveSpeedEstimated: liveReading?.estimated ?? false,
       liveSince: liveActivitySince(messages, live, running),

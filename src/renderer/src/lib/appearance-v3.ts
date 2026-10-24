@@ -1,10 +1,11 @@
-import { FONT_STACKS, resolveUiDensity, sanitizeFontName } from '../../../shared/appearance'
+import { FONT_STACKS, resolveUiDensity, sanitizeFontName, sanitizeStreamWidth } from '../../../shared/appearance'
 import { APPEARANCE_EVENT } from './appearance'
 import { setAppReducedMotion } from './reduced-motion'
 
 export interface AppearanceV3Settings {
   density?: string
   fontSizeUi?: number
+  streamWidth?: number
   fontUi?: string
   fontUiCustom?: string
   fontCode?: string
@@ -14,7 +15,7 @@ export interface AppearanceV3Settings {
 
 export type CodeFontChoice = 'mono' | 'maple' | 'custom'
 
-const FONT_VARS = ['--font-ui', '--font-mono'] as const
+const OVERRIDE_VARS = ['--font-ui', '--font-mono', '--size-chat'] as const
 
 let mapleRequested: Promise<unknown> | null = null
 
@@ -55,6 +56,8 @@ function overrides(s: AppearanceV3Settings, base: CSSStyleDeclaration): Record<s
   if (ui) out['--font-ui'] = ui
   const code = codeFontStack(s, base.getPropertyValue('--font-mono').trim())
   if (code) out['--font-mono'] = code
+  const width = sanitizeStreamWidth(s.streamWidth)
+  if (width !== undefined) out['--size-chat'] = `${width}px`
   return out
 }
 
@@ -64,7 +67,7 @@ export function applyAppearanceV3(root: HTMLElement, s: AppearanceV3Settings): v
   const density = resolveUiDensity(s.density, s.fontSizeUi)
   if (root.dataset.density !== density) root.dataset.density = density
   setAppReducedMotion(root, s.reduceMotion === true)
-  for (const name of FONT_VARS) root.style.removeProperty(name)
+  for (const name of OVERRIDE_VARS) root.style.removeProperty(name)
   const next = overrides(s, getComputedStyle(root))
   for (const [name, value] of Object.entries(next)) root.style.setProperty(name, value)
   if (s.fontUi === 'maple' || codeFontChoice(s.fontCode) === 'maple') void loadMaple()

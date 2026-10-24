@@ -15,6 +15,14 @@ export const FONT_UI_MIN = 11
 export const FONT_UI_MAX = 16
 export const FONT_UI_DEFAULT = 13
 
+export const STREAM_WIDTH_MIN = 480
+export const STREAM_WIDTH_MAX = 1440
+
+export function sanitizeStreamWidth(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(Math.min(STREAM_WIDTH_MAX, Math.max(STREAM_WIDTH_MIN, value)))
+}
+
 export function sanitizeFontName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const name = value.trim().replace(/\s+/g, ' ')

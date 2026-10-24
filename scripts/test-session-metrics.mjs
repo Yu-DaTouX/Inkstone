@@ -507,7 +507,17 @@ try {
       { id: 'u1', role: 'user', text: 'hi' },
       { id: 'a1', role: 'assistant', text: 'answer', thinking: 'visible reasoning', usage: usage({ output: 1100, reasoning: 1000 }), generationTiming: timing }
     ], null)
-    eq(shown.tps, 1100, '推理已流式显示时整段输出都在解码窗口内')
+    eq(shown.tps, null, '思考文字可能只是摘要，缺正文独立计时不把全部推理 Token 算进速度')
+    const summary = {
+      id: 'summary', role: 'assistant', text: 'answer', thinking: 'short summary',
+      usage: usage({ output: 1387, reasoning: 1248 }),
+      generationTiming: { ...timing, outputDecodeMs: 1000 }
+    }
+    eq(stepSpeed(summary), 139, '摘要不代表完整推理：1387 总输出减去 1248 推理，仅 139 正文 Token / 1s')
+    eq(projectSessionMetrics([summary], null).tps, 139, '历史统计同样使用正文 Token 与对应时长')
+    eq(liveStepSpeed(summary), { speed: 139, estimated: false }, '有真实输出时流式速度和结束后口径一致')
+    eq(stepSpeed({ ...summary, generationTiming: { ...timing, outputDecodeMs: 5 } }), null, '正文整包到达时不拿推理阶段时间凑可靠测速')
+    eq(stepSpeed({ ...summary, usage: usage({ output: 1000, reasoning: 1000 }) }), null, '纯推理不冒充正文输出速度')
   }
 
   {
@@ -545,6 +555,7 @@ try {
       generationTiming: { durationMs: 1000, decodeMs: 800, ttftMs: 200 }
     }
     eq(liveStepSpeed(streaming), { speed: 5, estimated: true }, '进行中按已到达文本估算速度')
+    eq(liveStepSpeed({ ...streaming, toolCalls: [tool({ argsRaw: '12345678' })] }), { speed: 7.5, estimated: true }, '流式估算计入模型生成的工具参数，不重复计入解析对象')
     eq(liveStepSpeed(outputOnly), { speed: 100, estimated: false }, '有真实输出 Token 时用真实速度')
     eq(liveStepSpeed(noMeasuredDecode), null, '有真实输出但无可靠解码时间时不用估算顶替')
     eq(liveStepSpeed({ ...streaming, text: '', thinking: '' }), null, '没有到达内容时不编速度')

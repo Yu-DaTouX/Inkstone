@@ -45,6 +45,13 @@ export async function runSettingsStoreTests(ok) {
   ok(onDisk.theme === 'light', '磁盘上真的落了新值')
   ok((await getSettings()).theme === 'light', '后续读取拿到新值')
 
+  ok(validateRendererSettingsPatch({ streamWidth: 960 }).streamWidth === 960, '渲染补丁允许消息流宽度')
+  await patchSettings({ streamWidth: 960 })
+  ok((await getSettings()).streamWidth === 960 && JSON.parse(await readFile(FILE, 'utf8')).streamWidth === 960, '消息流宽度写盘后读回一致')
+  ok((await patchSettings({ streamWidth: 1 })).streamWidth === 480 && (await patchSettings({ streamWidth: 9999 })).streamWidth === 1440, '消息流宽度夹在有效范围内')
+  await patchSettings({ streamWidth: undefined })
+  ok((await getSettings()).streamWidth === undefined && !('streamWidth' in JSON.parse(await readFile(FILE, 'utf8'))), '恢复默认移除宽度覆盖')
+
   await rename(FILE, `${FILE}.backup`)
   await mkdir(FILE, { recursive: true })
   let failed = false
