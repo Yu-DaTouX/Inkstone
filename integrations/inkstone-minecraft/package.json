@@ -1,0 +1,37 @@
+{
+  "name": "inkstone-minecraft",
+  "version": "0.1.0",
+  "description": "Inkstone Minecraft：可独立运行、也可作为砚插件的 Minecraft Java 版启动器",
+  "author": "Yu-DaTouX",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --experimental-strip-types --no-warnings scripts/test-core.ts",
+    "test:install": "node --experimental-strip-types --no-warnings scripts/test-install.ts",
+    "test:forge": "node --experimental-strip-types --no-warnings scripts/test-forge.ts",
+    "test:mods": "node --experimental-strip-types --no-warnings scripts/test-mods.ts",
+    "test:crash": "node --experimental-strip-types --no-warnings scripts/test-crash.ts",
+    "test:service": "node --experimental-strip-types --no-warnings scripts/test-service.ts",
+    "test:gametest": "node --experimental-strip-types --no-warnings scripts/test-gametest.ts",
+    "typecheck:dev": "tsc --noEmit -p mcp/tsconfig.json",
+    "test:dev": "node --no-warnings scripts/test-dev.ts",
+    "test:worlds": "node --no-warnings scripts/test-worlds.ts",
+    "test:interact": "node --experimental-strip-types --no-warnings scripts/test-interact.ts",
+    "test:tick": "node --experimental-strip-types --no-warnings scripts/test-tick.ts",
+    "mcp": "node --no-warnings mcp/server.ts"
+  },
+  "dependencies": {
+    "@xmcl/core": "2.16.2",
+    "@xmcl/unzip": "2.1.2",
+    "@xmcl/user": "4.4.2"
+  },
+  "overrides": {
+    "@xmcl/unzip": "2.1.2"
+  }
+}

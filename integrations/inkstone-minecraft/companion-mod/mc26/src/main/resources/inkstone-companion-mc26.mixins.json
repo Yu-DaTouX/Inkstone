@@ -1,0 +1,18 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.inkstone.companion.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"BossHealthOverlayMixin",
+		"ChatHudMixin",
+		"GameRendererMixin",
+		"ClientTickMixin",
+		"HudMixin",
+		"ScreenOffsetMixin",
+		"WindowMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

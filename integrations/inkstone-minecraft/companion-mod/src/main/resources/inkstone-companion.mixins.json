@@ -1,0 +1,21 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.inkstone.companion.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"refmap": "inkstone-companion-refmap.json",
+	"client": [
+		"BossBarHudMixin",
+		"ChatHudMixin",
+		"ChatPacketMixin",
+		"ClientTickMixin",
+		"EntityFlagMixin",
+		"GameRendererMixin",
+		"HudMixin",
+		"ScreenOffsetMixin",
+		"WindowMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
