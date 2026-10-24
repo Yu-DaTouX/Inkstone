@@ -61,6 +61,7 @@ export interface UiSlot {
   cx?: number
   cy?: number
   container: 'menu' | 'player'
+  role?: 'hotbar' | 'inventory' | 'armor' | 'offhand' | 'other' | 'menu'
   item: CompanionItem | null
 }
 
@@ -298,6 +299,7 @@ function parseSlots(value: unknown): UiSlot[] {
         cx: num(raw.cx),
         cy: num(raw.cy),
         container: raw.container === 'player' ? 'player' : 'menu',
+        role: raw.role === 'hotbar' || raw.role === 'inventory' || raw.role === 'armor' || raw.role === 'offhand' || raw.role === 'other' || raw.role === 'menu' ? raw.role : undefined,
         item: parseItem(raw.item)
       }
     ]

@@ -725,10 +725,10 @@ try {
     const viewed = await toolOf(tools, 'mc_view').run({ target: 'screen' })
     assert.equal(bodyOf(viewed).includes('画面可能已被改变'), false)
     assert.deepEqual(calls, ['companion:/chat', 'command:/time set day', 'apply:true', 'companion:/command', 'stop', 'companion:/status', 'image:/screenshot'])
-    assert.match(bodyOf(viewed), /\u5df2\u5b58\u539f\u56fe\uff1a.*shots.*-view-screen\.png/)
+    assert.match(bodyOf(viewed), /已存原图：.*shots.*-view-screen\.png/)
   })
 
-  await test('MCP\uff1a\u670d\u52a1\u7aef\u547d\u4ee4\u6ca1\u6709\u56de\u663e\u65f6\u8bfb\u6267\u884c\u671f\u95f4\u7684\u65b0\u804a\u5929', async () => {
+  await test('MCP：服务端命令没有回显时读执行期间的新聊天', async () => {
     const calls: string[] = []
     const base = stubProject('agent', calls)
     const project = {
@@ -737,14 +737,38 @@ try {
       companion: async (path: string, body: Record<string, unknown> = {}) => {
         calls.push(`companion:${path}:${body.since ?? '-'}`)
         if (path !== '/chat') return { playing: true }
-        return body.since === 7 ? { latest: 8, messages: [{ seq: 8, time: 1700000000000, kind: 'system', text: '\u5929\u8d4b\u680f 1\uff1a\u7a7a' }] } : { latest: 7, messages: [] }
+        return body.since === 7 ? { latest: 8, messages: [{ seq: 8, time: 1700000000000, kind: 'system', text: '天赋栏 1：空' }] } : { latest: 7, messages: [] }
       }
     } as unknown as DevProject
     const commanded = await toolOf(stubTools(project), 'mc_command').run({ command: '/pit perks' })
     assert.equal(commanded.isError, undefined)
-    assert.match(bodyOf(commanded), /\u547d\u4ee4\u6765\u6e90\u6ca1\u6709\u56de\u663e/)
-    assert.match(bodyOf(commanded), /\u5929\u8d4b\u680f 1\uff1a\u7a7a/)
+    assert.match(bodyOf(commanded), /命令来源没有回显/)
+    assert.match(bodyOf(commanded), /天赋栏 1：空/)
     assert.deepEqual(calls, ['companion:/chat:-', 'companion:/chat:7'])
+  })
+
+  await test('MCP：并发的服务端命令排队执行，兜底消息不串到别的命令', async () => {
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const chat: Array<{ seq: number; time: number; kind: string; text: string }> = []
+    const project = {
+      ...stubProject('agent', []),
+      command: async (command: string) => {
+        await sleep(30)
+        if (command.includes('show')) chat.push({ seq: chat.length + 1, time: 1700000000000, kind: 'system', text: '正在展示物品' })
+        await sleep(30)
+        return { command, ok: true, output: [], error: null }
+      },
+      companion: async (path: string, body: Record<string, unknown> = {}) => {
+        if (path !== '/chat') return { playing: true }
+        const since = typeof body.since === 'number' ? body.since : chat.length
+        return { latest: chat.length, messages: chat.filter((message) => message.seq > since) }
+      }
+    } as unknown as DevProject
+    const tool = toolOf(stubTools(project), 'mc_command')
+    const [shown, perks] = await Promise.all([tool.run({ command: '/show' }), tool.run({ command: '/pit perks' })])
+    assert.match(bodyOf(shown), /正在展示物品/)
+    assert.doesNotMatch(bodyOf(perks), /正在展示物品/)
+    assert.match(bodyOf(perks), /没有输出/)
   })
 
   const specOf = (projectDir: string, workingDir: string): string =>

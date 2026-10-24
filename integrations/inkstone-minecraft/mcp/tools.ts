@@ -242,6 +242,19 @@ async function screenshotScreen(project: DevProject, body: Record<string, unknow
 
 const chatCursors = new Map<string, number>()
 
+const commandQueues = new Map<string, Promise<unknown>>()
+
+function serializedCommand<T>(project: DevProject, run: () => Promise<T>): Promise<T> {
+  const key = project.projectDir.toLowerCase()
+  const next = (commandQueues.get(key) ?? Promise.resolve()).then(run)
+  const settled = next.catch(() => undefined)
+  commandQueues.set(key, settled)
+  void settled.then(() => {
+    if (commandQueues.get(key) === settled) commandQueues.delete(key)
+  })
+  return next
+}
+
 async function chatLatest(project: DevProject): Promise<number | undefined> {
   try {
     const reply = record(await project.companion('/chat', { limit: 1 }))
@@ -459,14 +472,20 @@ export function createTools(context: McpContext): ToolDefinition[] {
         }
         if (await userInControl(project)) return failure(USER_IN_CONTROL)
         if (str(args, 'via') === 'chat') {
-          const sent = await companionCall(project, '/command', { command: clean, via: 'chat' })
-          const { messages } = await readChatSince(project)
+          const { sent, messages } = await serializedCommand(project, async () => {
+            const sent = await companionCall(project, '/command', { command: clean, via: 'chat' })
+            const { messages } = await readChatSince(project)
+            return { sent, messages }
+          })
           const body = [`已从聊天发送：/${clean}${sent.sent === true ? '' : '（伴随 mod 没确认已发送）'}`, messages.length ? formatChat(messages) : '聊天里没有新消息（命令可能没产生输出；聊天历史用 mc_chat 读）']
           return text(body.join('\n'))
         }
-        const before = await chatLatest(project)
-        const result = await project.command(command)
-        const echoed = result.output.length || before === undefined ? [] : await chatAfter(project, before)
+        const { result, echoed } = await serializedCommand(project, async () => {
+          const before = await chatLatest(project)
+          const result = await project.command(command)
+          const echoed = result.output.length || before === undefined ? [] : await chatAfter(project, before)
+          return { result, echoed }
+        })
         const output = result.output.length ? result.output : echoed.length ? ['（命令来源没有回显，下面是执行期间新增的聊天/系统消息）', ...echoed] : ['（没有输出，执行期间也没有新的聊天/系统消息；命令若会打开界面，用 mc_ui read 查看）']
         const body = [`/${result.command.replace(/^\//, '')}`, ...output]
         if (result.error) body.push(`错误：${result.error}`)

@@ -72,9 +72,17 @@ final class UiOps {
 		for (int index = 0; index < menu.slots.size(); index++) {
 			Slot slot = menu.slots.get(index);
 			boolean player = client.player != null && slot.container == client.player.getInventory();
-			slots.add(Json.map("index", index, "x", offsetX + slot.x, "y", offsetY + slot.y, "cx", offsetX + slot.x + 8, "cy", offsetY + slot.y + 8, "container", player ? "player" : "menu", "item", item(slot.getItem())));
+			slots.add(Json.map("index", index, "x", offsetX + slot.x, "y", offsetY + slot.y, "cx", offsetX + slot.x + 8, "cy", offsetY + slot.y + 8, "container", player ? "player" : "menu", "role", player ? playerRole(slot.getContainerSlot()) : "menu", "item", item(slot.getItem())));
 		}
 		return slots;
+	}
+
+	private static String playerRole(int containerSlot) {
+		if (containerSlot >= 0 && containerSlot < 9) return "hotbar";
+		if (containerSlot >= 9 && containerSlot < 36) return "inventory";
+		if (containerSlot >= 36 && containerSlot < 40) return "armor";
+		if (containerSlot == 40) return "offhand";
+		return "other";
 	}
 
 	private static List<AbstractWidget> clickable(Screen screen) {

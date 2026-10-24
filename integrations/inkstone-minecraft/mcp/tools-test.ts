@@ -1,4 +1,5 @@
 import { GAMETEST_TIMEOUT_MS, planGameTests, runGameTests, summarizeGameTestPlan, summarizeGameTests } from '../src/core/dev/gametest.ts'
+import { jbrCandidatePaths } from '../src/core/dev/jbr.ts'
 import { failure, text, type ToolDefinition } from './protocol.ts'
 import type { McpContext } from './tools.ts'
 
@@ -24,7 +25,7 @@ export function createTestTools(context: McpContext): ToolDefinition[] {
         'action=run（默认）执行测试；action=list 只看检测到的运行配置、要用的 JDK 和客户端状态，不跑。',
         'side：server（默认，一般是 runGametest）、client（runClientGametest 这类客户端测试）、both（按配置各跑一次）。task 可直接指定 Gradle 任务名覆盖检测结果。',
         'filter：测试名过滤器。项目自己定义了过滤属性时用项目的方式传（ThePit 的 runGametest 是 -Pfilters="thepit:*combat*"，客户端是 -Pcfilters=子串）；项目没有定义时按 Fabric 原生方式传 -Dfabric-api.gametest.filter（只对项目自己转发给游戏 JVM 的构建生效）。服务端过滤器是通配符、必须带命名空间、一次一个；匹配不到时报告里是 0 项。',
-        'JDK：按项目 build.gradle 的 release / toolchain（没有再按 Minecraft 版本）挑，返回实际用的 java 路径；找不到会直接说明缺哪个版本。',
+        'JDK：按项目 build.gradle 的 release / toolchain（没有再按 Minecraft 版本）挑，同版本优先用插件下载的 JBR，返回实际用的 java 路径；找不到会直接说明缺哪个版本。',
         '开发客户端在运行时：控制方是 Agent 就先停掉再跑（restart_client=true 跑完自动重启并回到原来的世界），控制方是用户则拒绝并提示先交还。测试报告默认是 build/junit.xml，也会按项目里的 -D...gametest.report-file 和 build 目录里最新的 junit*.xml 找。'
       ].join('\n'),
       inputSchema: {
@@ -43,7 +44,8 @@ export function createTestTools(context: McpContext): ToolDefinition[] {
         const project = context.project(args)
         const session = await project.status().catch(() => null)
         const client = session ? { running: session.state === 'running' || session.state === 'starting', owner: session.control?.owner ?? null } : null
-        if (str(args, 'action') === 'list') return text(summarizeGameTestPlan(await planGameTests(project.projectDir, context.options.javaPaths), client))
+        const javaPaths = [...(await jbrCandidatePaths(context.options.runtimesDir).catch(() => [])), ...context.options.javaPaths]
+        if (str(args, 'action') === 'list') return text(summarizeGameTestPlan(await planGameTests(project.projectDir, javaPaths), client))
         const side = str(args, 'side') === 'both' ? 'both' : str(args, 'side') === 'client' ? 'client' : 'server'
         const world = session?.world ?? null
         try {
@@ -52,7 +54,7 @@ export function createTestTools(context: McpContext): ToolDefinition[] {
             filter: str(args, 'filter') ?? null,
             side,
             task: str(args, 'task') ?? null,
-            javaPaths: context.options.javaPaths,
+            javaPaths,
             timeoutMs: Math.max(30, num(args, 'timeout_seconds') ?? GAMETEST_TIMEOUT_MS / 1000) * 1000,
             client,
             restartAfter: args.restart_client === true,

@@ -95,7 +95,7 @@ function screenPayload(): unknown {
       slots: [
         { index: 0, x: 8, y: 8, container: 'menu', item: { id: 'minecraft:stone', count: 3, components: '{}' } },
         { index: 1, x: 26, y: 8, container: 'menu', item: null },
-        { index: 36, x: 8, y: 84, container: 'player', item: { id: 'minecraft:oak_log', count: 1 } }
+        { index: 36, x: 8, y: 84, container: 'player', role: 'hotbar', item: { id: 'minecraft:oak_log', count: 1 } }
       ],
       widgets: [
         { id: 0, type: 'edit', label: '搜索', value: state.chat, focused: true, active: true, x: 80, y: 4, w: 80, h: 12 },
@@ -358,8 +358,8 @@ try {
     assert.equal(body.split('\n')[0], '界面：InventoryScreen「Crafting」（容器，menu minecraft:inventory）')
     assert.match(body, /槽位 3 个、控件 2 个/)
     assert.match(body, /0 菜单@8,8：minecraft:stone ×3/)
-    assert.match(body, /1 菜单@26,8：空/)
-    assert.match(body, /36 背包@8,84：minecraft:oak_log/)
+    assert.match(body, /空槽 1 个（序号与中心坐标）：\n {4}1$/m)
+    assert.match(body, /36 快捷栏@8,84：minecraft:oak_log/)
     assert.match(body, /0 edit「搜索」@80,4 80×12（焦点）/)
     assert.match(body, /1 button「开始游戏」@4,4 60×20/)
     assert.match(body, /手中（carried）：minecraft:dirt ×2/)

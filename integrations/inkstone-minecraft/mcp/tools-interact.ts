@@ -279,7 +279,22 @@ function formatWidget(widget: UiWidget): string {
 
 function formatSlot(slot: UiSlot): string {
   const center = slot.cx !== undefined && slot.cy !== undefined ? ` 中心${slot.cx},${slot.cy}` : ''
-  return `  ${slot.index} ${slot.container === 'player' ? '背包' : '菜单'}@${slot.x},${slot.y}${center}：${itemText(slot.item)}`
+  return `  ${slot.index} ${slotGroup(slot)}@${slot.x},${slot.y}${center}：${itemText(slot.item)}`
+}
+
+const SLOT_GROUP_TEXT: Record<string, string> = { hotbar: '快捷栏', inventory: '背包', armor: '盔甲', offhand: '副手', other: '背包' }
+
+function slotGroup(slot: UiSlot): string {
+  if (slot.container !== 'player') return '菜单'
+  return SLOT_GROUP_TEXT[slot.role ?? ''] ?? '背包'
+}
+
+function emptySlotLines(slots: UiSlot[]): string[] {
+  if (!slots.length) return []
+  const entries = slots.map((slot) => (slot.cx !== undefined && slot.cy !== undefined ? `${slot.index}(${slot.cx},${slot.cy})` : `${slot.index}`))
+  const lines: string[] = []
+  for (let start = 0; start < entries.length; start += 12) lines.push(`    ${entries.slice(start, start + 12).join(' ')}`)
+  return [`  空槽 ${slots.length} 个（序号与中心坐标）：`, ...lines]
 }
 
 function formatScreen(screen: UiScreen | null, slotLimit = 60, widgetLimit = 40): string {
@@ -288,8 +303,10 @@ function formatScreen(screen: UiScreen | null, slotLimit = 60, widgetLimit = 40)
   const scale = screen.guiScale ? `；GUI 缩放 ${screen.guiScale}，截图像素 = GUI 坐标 × ${screen.guiScale}` : ''
   const lines = [head, `槽位 ${screen.slots.length} 个、控件 ${screen.widgets.length} 个${scale}`]
   if (screen.hover) lines.push(`悬停：GUI 坐标 (${screen.hover.x}, ${screen.hover.y})，下一帧按这里绘制悬停与 tooltip，直到再操作界面或真实鼠标移动`)
-  lines.push(...screen.slots.slice(0, slotLimit).map(formatSlot))
-  if (screen.slots.length > slotLimit) lines.push(`  …还有 ${screen.slots.length - slotLimit} 个槽位没列出`)
+  const filled = screen.slots.filter((slot) => slot.item)
+  lines.push(...filled.slice(0, slotLimit).map(formatSlot))
+  if (filled.length > slotLimit) lines.push(`  …还有 ${filled.length - slotLimit} 个有物品的槽位没列出`)
+  lines.push(...emptySlotLines(screen.slots.filter((slot) => !slot.item)))
   lines.push(...screen.widgets.slice(0, widgetLimit).map(formatWidget))
   if (screen.widgets.length > widgetLimit) lines.push(`  …还有 ${screen.widgets.length - widgetLimit} 个控件没列出`)
   if (screen.carried !== undefined) lines.push(`手中（carried）：${itemText(screen.carried)}`)
@@ -303,7 +320,7 @@ function uiConclusion(request: UiRequest): string {
     const what = request.slot !== undefined ? `槽位 ${request.slot}` : request.widget !== undefined ? `控件 ${request.widget}` : `坐标 (${request.x}, ${request.y})`
     return `已点击${what}（${button === 'left' ? '左键' : button === 'right' ? '右键' : '中键'}${request.shift ? ' + shift' : ''}）`
   }
-  if (request.action === 'hover') return `已悬停在${request.slot !== undefined ? `槽位 ${request.slot}` : `坐标 (${request.x}, ${request.y})`}`
+  if (request.action === 'hover') return `已悬停在${request.slot !== undefined ? `槽位 ${request.slot}` : `坐标 (${request.x}, ${request.y})`}；提示框下一帧才绘制，截图前至少等 1 tick（mc_script 里写 ui → wait 1 → screenshot），截图里没有提示框就重新 hover`
   if (request.action === 'type') {
     const flags = [request.replace ? '已替换原内容' : '', request.submit ? '并提交' : ''].filter(Boolean)
     return `已输入 ${request.text.length} 个字符${request.widget !== undefined ? `到控件 ${request.widget}` : ''}${flags.length ? `（${flags.join('，')}）` : ''}`
@@ -638,6 +655,7 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
         try {
           return text(formatUi(request, await sendUi(sender(project), request)))
         } catch (error) {
+          if (request.action === 'close' && error instanceof CompanionError && /no screen is open/i.test(error.message)) return text('当前没有打开的界面，无需关闭\n\n界面：无（玩家在游戏内）')
           return companionFailure(error)
         }
       }

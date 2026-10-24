@@ -431,7 +431,7 @@ export class DevProject {
       const applied: string[] = []
       for (const command of environmentCommands(options.env)) {
         const result = await this.commandWith(endpoint, command)
-        applied.push(result.ok ? `/${command} 已执行` : `/${command} 失败：${result.error ?? result.output.join(' ')}`)
+        applied.push(result.ok ? `/${command} 已执行` : command.startsWith('difficulty ') ? `/${command} 无需变更（已是该难度）` : `/${command} 失败：${result.error ?? result.output.join(' ')}`)
       }
       if (applied.length) {
         notes.push(`启动环境：${applied.join('；')}`)
