@@ -154,6 +154,27 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
     } catch (cause) { if (view === viewKey()) setError(cause instanceof Error ? cause.message : text.failed) }
     finally { if (view === viewKey()) setBusy(false) }
   }
+  const trust = async (): Promise<void> => {
+    const cwd = snapshot?.project?.cwd
+    if (!cwd) return
+    const accepted = await confirm({ title: text.confirmTrust, body: text.trustBody, detail: cwd, confirmLabel: text.trust, tone: 'danger' })
+    if (!accepted) return
+    const view = viewKey()
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await window.yan.trust.allow(cwd)
+      if (view !== viewKey()) return
+      if (!result.ok) setError(result.error || text.failed)
+      else {
+        setNotice(text.trusted)
+        notifyMcpSettingsChanged()
+        await refresh()
+      }
+    } catch (cause) { if (view === viewKey()) setError(cause instanceof Error ? cause.message : text.failed) }
+    finally { if (view === viewKey()) setBusy(false) }
+  }
   const services = snapshot ? scope === 'global' ? snapshot.global : snapshot.projectServices : []
   return <Panel label={text.title}>
     <Group title={text.title} desc={text.description} settingId="caps-mcp-servers" actions={<>
@@ -167,7 +188,10 @@ export function McpServices({ advanced }: { advanced: ReactNode }) {
       ]} />
       <Meta>{scope === 'global' ? text.globalHint : text.projectHint}</Meta>
       {!snapshot?.project && !loading ? <Meta>{text.noProject}</Meta> : null}
-      {scope === 'project' && snapshot && !snapshot.projectTrusted ? <Warn>{text.untrusted}</Warn> : null}
+      {scope === 'project' && snapshot && !snapshot.projectTrusted ? <>
+        <Warn>{text.untrusted}</Warn>
+        <div className="caps-actions"><Button isDisabled={busy || loading} onPress={() => void trust()} data-testid="mcp-trust-project">{text.trust}</Button></div>
+      </> : null}
       {error ? <Warn>{error}</Warn> : null}
       {notice ? <Meta>{notice}</Meta> : null}
       {snapshot?.errors.map((problem) => <Warn key={problem}>{problem}</Warn>)}
@@ -214,7 +238,7 @@ function McpServiceRow({ service, snapshot, scope, runtime, busy, onMutate, onCh
     <Meta>{service.special ? text.computerHint : service.conflict ? text.conflict : status}</Meta>
     {service.backend === 'host' && snapshot.busy && !service.special ? <Meta>{text.busy}</Meta> : null}
     {service.name === 'codegraph' ? <CodegraphDetails revision={snapshot.revision} /> : null}
-    {details ? <div className="caps-stack mcp-service-details">
+    {details ? <div className="mcp-service-details">
       <Meta>{service.owner === 'pi' ? text.piNote : text.hostNote}</Meta>
       <Meta>{text.source}：{service.source}</Meta>
       <Meta>{text.connection}：{service.connection || service.transport}</Meta>

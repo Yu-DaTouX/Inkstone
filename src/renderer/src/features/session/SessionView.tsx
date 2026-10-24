@@ -295,7 +295,6 @@ export function SessionView(): JSX.Element {
       const metrics = domMetrics(el)
       const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
       applyFollow(decision)
-      if (decision.stick) intentRef.current = null
       if (decision.repin) el.scrollTop = el.scrollHeight
       metricsRef.current = decision.repin ? domMetrics(el) : metrics
       readingRef.current = decision.stick ? null : rowAnchor(el)
@@ -312,7 +311,6 @@ export function SessionView(): JSX.Element {
     const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
     metricsRef.current = metrics
     applyFollow(decision)
-    if (decision.stick) intentRef.current = null
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
   }, [record, applyFollow])
@@ -328,7 +326,7 @@ export function SessionView(): JSX.Element {
       const handle = vlistRef.current
       const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
       if (event.deltaY > 0 && metrics && distanceFromBottom(metrics) <= 1) {
-        intentRef.current = null
+        intentRef.current = performance.now()
         setStickNow(true)
       } else mark()
     }

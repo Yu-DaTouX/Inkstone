@@ -291,6 +291,10 @@ export type CapabilityAuthorizationPrompt = {
   endpoint?: string
 }
 
+function stateModelKey(data: unknown): string | undefined {
+  return data && typeof data === 'object' ? modelKeyOf(normalizeModelInfo((data as Record<string, unknown>).model)) : undefined
+}
+
 function normalizeQueueMode(v: unknown): QueueMode | undefined {
   return v === 'all' || v === 'one-at-a-time' ? v : undefined
 }
@@ -4171,11 +4175,13 @@ export class AgentController extends EventEmitter {
     const rpc = this.rpc
     if (!rpc) return
     try {
+      const before = await rpc.command('get_state')
       const levels = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
       const state = await rpc.command('get_state')
       if (!state.success) return
       const data = { ...(state.data as Record<string, unknown>) }
-      if (levels.success && !Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')) {
+      const sameModel = before.success && stateModelKey(before.data) === stateModelKey(state.data)
+      if (levels.success && sameModel && !Object.prototype.hasOwnProperty.call(data, 'availableThinkingLevels')) {
         data.availableThinkingLevels = levels.data?.levels
       }
       this.setStateFrom(data)
@@ -4223,10 +4229,13 @@ export class AgentController extends EventEmitter {
 
   async listThinkingLevels(): Promise<string[]> {
     if (!this.rpc) return []
-    const res = await this.rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
+    const rpc = this.rpc
+    const res = await rpc.command<{ levels?: string[] }>('get_available_thinking_levels')
+    const owner = await rpc.command('get_state').catch(() => undefined)
     const normalized = normalizeThinkingLevels(res.data?.levels, res.success)
     const levels = normalized.values
-    if (this.state) {
+    const ownerKey = owner?.success ? stateModelKey(owner.data) : undefined
+    if (this.state && ownerKey && ownerKey === modelKeyOf(this.state.model)) {
       this.state = {
         ...this.state,
         availableThinkingLevels: levels,

@@ -15,8 +15,8 @@ import { CAPABILITIES_TABS, type CapabilitiesTabId } from '../types'
 import './capabilities.css'
 
 export type { CapabilitiesTabId }
-const LEGACY_TAB: Record<string, CapabilitiesTabId> = { voice: 'tools', market: 'market', git: 'tools' }
-const LEGACY_SETTING: Record<string, string> = { voice: 'caps-tools-voice-setup', git: 'caps-tools-git' }
+const LEGACY_TAB: Record<string, CapabilitiesTabId> = { skills: 'skills', mcp: 'mcp', tools: 'tools', voice: 'tools', market: 'market', git: 'tools' }
+const LEGACY_SETTING: Record<string, string> = { tools: 'caps-tools-computer-use', voice: 'caps-tools-voice-setup', git: 'caps-tools-git' }
 
 let handledRevealRevision = 0
 let handledRequestRevision: number | null = null

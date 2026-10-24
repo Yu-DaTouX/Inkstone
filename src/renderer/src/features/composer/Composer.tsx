@@ -3,7 +3,7 @@ import { ArrowUp, Square } from 'lucide-react'
 import { Button } from '../../ui'
 import type { Attachment } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
-import { useStore, pendingSendsForView } from '../../state/store'
+import { currentThinkingLevels, useStore, pendingSendsForView } from '../../state/store'
 import { submitComposerInput } from '../../lib/composer-submit'
 import { composerStoreActions } from '../../lib/composer-store-send'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
@@ -79,7 +79,7 @@ export function Composer({ className }: { className?: string } = {}) {
   const notify = useStore((s) => s.notify)
   const commands = useStore((s) => s.commands)
   const models = useStore((s) => s.models)
-  const thinkingLevels = useStore((s) => s.thinkingLevels)
+  const thinkingLevels = useStore(currentThinkingLevels)
   const session = useStore((s) => s.session)
   const sendKey = useStore((s) => s.settings?.sendKey ?? 'auto')
   const sessionId = session?.sessionId

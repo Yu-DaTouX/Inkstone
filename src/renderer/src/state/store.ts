@@ -376,6 +376,11 @@ export type PendingSend = {
   images?: { data: string; mimeType: string }[]
 }
 
+export function currentThinkingLevels(state: Pick<Store, 'session' | 'thinkingLevels'>): string[] {
+  const own = state.session?.availableThinkingLevels
+  return state.session?.thinkingLevelsStatus === 'known' && Array.isArray(own) ? own : state.thinkingLevels
+}
+
 export function pendingSendsForView(s: Pick<Store, 'pendingSends' | 'peekedSessionId' | 'peekedPath' | 'session'>): PendingSend[] {
   const sessionId = viewIdentityOf(s).sessionId
   return s.pendingSends.filter((item) => item.sessionId === sessionId)

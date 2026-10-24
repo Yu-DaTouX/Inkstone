@@ -16,7 +16,7 @@ import { Button, Popover, Slider, Select, ListBoxItem as ProviderItem } from '..
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
 import { useT } from '../i18n'
-import { useStore } from '../state/store'
+import { currentThinkingLevels, useStore } from '../state/store'
 import {
   buildPickerSections,
   isFavorite,
@@ -273,7 +273,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   const session = useStore((s) => s.session)
   const models = useStore((s) => s.models)
   const settings = useStore((s) => s.settings)
-  const levels = useStore((s) => s.thinkingLevels)
+  const levels = useStore(currentThinkingLevels)
   const setModel = useStore((s) => s.setModel)
   const setThinking = useStore((s) => s.setThinking)
   const setUltracode = useStore((s) => s.setUltracode)
