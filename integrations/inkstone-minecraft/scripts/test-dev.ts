@@ -28,7 +28,7 @@ import { filterLog, groupLogEntries, summarizeCrash } from '../src/core/dev/logs
 import { classifyResources, diffManifest, isMixinClass, mixinPackagesFrom, scanManifest } from '../src/core/dev/manifest.ts'
 import { buildTable, formatMapping, lookupMapping, parseProguard, parseTiny, proguardTypeToDescriptor } from '../src/core/dev/mappings.ts'
 import { createImage, decodePng, encodePng, pixel, scaleDown, setPixel } from '../src/core/dev/png.ts'
-import { argFileText, findMixinAgent, mergeOptions, parseOptions, prepareRunDir, stripJvmArgs, withWindowSize, agentWindowJvmArgs, agentWindowTitle } from '../src/core/dev/session.ts'
+import { argFileText, splitLaunchArgs, findMixinAgent, mergeOptions, parseOptions, prepareRunDir, stripJvmArgs, withWindowSize, agentWindowJvmArgs, agentWindowTitle } from '../src/core/dev/session.ts'
 import { extractSources, pickMinecraftSourceJars, readSource, searchSources, sourceJarKind } from '../src/core/dev/sources.ts'
 import { loadTexture, texturePathFromId, textureWriteDir } from '../src/core/dev/texture-lookup.ts'
 import { analyzePalette, imageFromGrid, parseHexColor, renderTextureView } from '../src/core/dev/texture.ts'
@@ -556,6 +556,10 @@ try {
     assert.deepEqual(withWindowSize(['--username', 'Dev', '--gameDir', '.']), ['--username', 'Dev', '--gameDir', '.', '--width', '960', '--height', '540'])
     assert.deepEqual(withWindowSize(['--width', '1280', '--height', '720', '--username', 'Dev']), ['--username', 'Dev', '--width', '960', '--height', '540'])
     assert.deepEqual(withWindowSize(['--width=1920', '--quickPlaySingleplayer', 'inkstone-test']), ['--quickPlaySingleplayer', 'inkstone-test', '--width', '960', '--height', '540'])
+    assert.deepEqual(splitLaunchArgs(['-Xmx4096m', ...agentWindowJvmArgs('E:/work/坑')]), {
+      fileArgs: ['-Xmx4096m', '-Dinkstone.window.placement=corner', '-Dinkstone.control=agent', '-Dinkstone.input=background'],
+      commandArgs: ['-Dinkstone.window.title=Inkstone Agent · 坑']
+    })
     assert.deepEqual(stripJvmArgs(['-Dinkstone.window.title=Old', '-Dinkstone.window.placement=normal', '-Dinkstone.control=user', '-Dother=1']), ['-Dother=1'])
   })
 

@@ -18,6 +18,7 @@ import { classifyResources, diffManifest, mixinPackagesFrom, scanManifest, type 
 import {
   agentWindowJvmArgs,
   argFileText,
+  splitLaunchArgs,
   findMixinAgent,
   freePort,
   killTree,
@@ -374,13 +375,14 @@ export class DevProject {
       else notes.push(`测试世界 ${world} 还不存在，没有伴随 mod 无法自动创建`)
     }
     await mkdir(this.paths.logs, { recursive: true })
-    await writeFile(this.paths.argFile, argFileText([...jvmArgs, '-cp', spec.classpath.join(process.platform === 'win32' ? ';' : ':'), spec.mainClass, ...gameArgs]))
+    const { fileArgs, commandArgs } = splitLaunchArgs(jvmArgs)
+    await writeFile(this.paths.argFile, argFileText([...fileArgs, '-cp', spec.classpath.join(process.platform === 'win32' ? ';' : ':'), spec.mainClass]))
     const logFile = join(this.paths.logs, `client-${new Date().toISOString().replace(/[:.]/g, '-')}.log`)
     const fd = openSync(logFile, 'a')
     const env: NodeJS.ProcessEnv = { ...process.env, ...spec.environment }
     delete env.ELECTRON_RUN_AS_NODE
     delete env._JAVA_OPTIONS
-    const child = spawn(java.path, [`@${this.paths.argFile}`], { cwd: spec.workingDir, env, detached: true, stdio: ['ignore', fd, fd], windowsHide: false })
+    const child = spawn(java.path, [...commandArgs, `@${this.paths.argFile}`, ...gameArgs], { cwd: spec.workingDir, env, detached: true, stdio: ['ignore', fd, fd], windowsHide: false })
     closeSync(fd)
     const startedAt = Date.now()
     const session: SessionFile = {

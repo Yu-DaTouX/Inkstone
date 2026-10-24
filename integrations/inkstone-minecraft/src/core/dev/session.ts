@@ -129,6 +129,11 @@ export function quoteArgFileEntry(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
+export function splitLaunchArgs(jvmArgs: string[]): { fileArgs: string[]; commandArgs: string[] } {
+  const ascii = (arg: string): boolean => /^[\x00-\x7f]*$/.test(arg)
+  return { fileArgs: jvmArgs.filter(ascii), commandArgs: jvmArgs.filter((arg) => !ascii(arg)) }
+}
+
 export function argFileText(args: string[]): string {
   return args.map(quoteArgFileEntry).join('\n') + '\n'
 }
