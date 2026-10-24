@@ -11,12 +11,13 @@ import { useToolExpansion } from './use-tool-run'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 
-export function TurnProcess({ process, live, sessionId, turnId, approvalIds = NO_APPROVALS }: {
+export function TurnProcess({ process, live, sessionId, turnId, approvalIds = NO_APPROVALS, glowId }: {
   process: TurnSegment[]
   live: boolean
   sessionId: string | null
   turnId?: string
   approvalIds?: ReadonlySet<string>
+  glowId?: string | null
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
@@ -46,7 +47,7 @@ export function TurnProcess({ process, live, sessionId, turnId, approvalIds = NO
               </div>
             ) : null}
             {steps.map((step) => step.kind === 'tools'
-              ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} />
+              ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} />
               : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} />)}
           </div>
         )

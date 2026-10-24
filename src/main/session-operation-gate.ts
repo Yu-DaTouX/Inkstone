@@ -1,4 +1,4 @@
-export type SessionOperation = 'send' | 'compact' | 'fork' | 'rewind'
+export type SessionOperation = 'send' | 'compact' | 'fork' | 'rewind' | 'reload'
 
 export interface SessionOperationLease {
   readonly op: SessionOperation
@@ -15,17 +15,19 @@ interface Hold extends SessionOperationLease {
 }
 
 const CONFLICTS: Record<SessionOperation, readonly SessionOperation[]> = {
-  send: ['fork', 'rewind'],
-  compact: ['compact', 'fork', 'rewind'],
-  fork: ['send', 'compact', 'fork', 'rewind'],
-  rewind: ['send', 'compact', 'fork', 'rewind']
+  send: ['fork', 'rewind', 'reload'],
+  compact: ['compact', 'fork', 'rewind', 'reload'],
+  fork: ['send', 'compact', 'fork', 'rewind', 'reload'],
+  rewind: ['send', 'compact', 'fork', 'rewind', 'reload'],
+  reload: ['send', 'compact', 'fork', 'rewind', 'reload']
 }
 
 const LABELS: Record<SessionOperation, string> = {
   send: '发送',
   compact: '压缩',
   fork: '分叉',
-  rewind: '回退'
+  rewind: '回退',
+  reload: '重新加载工具'
 }
 
 export function sessionOperationBusyError(op: SessionOperation, holder: SessionOperation): string {

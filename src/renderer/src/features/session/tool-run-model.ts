@@ -1,11 +1,20 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
+import { searchStepOf } from './web-search/model'
 import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
 import { isDeniedCall } from './tool-title'
 
 const TOOL_GROUP_MIN = 2
 export const RUN_LABEL_HOLD_MS = 650
+
+export function liveToolGlowId(tools: readonly UIToolCall[]): string | null {
+  const active = tools.filter((call) => call.status === 'running' || call.status === 'pending')
+  for (let i = active.length - 1; i >= 0; i--) {
+    if (!active.some((call) => call.parentToolCallId === active[i].id)) return active[i].id
+  }
+  return active.at(-1)?.id ?? null
+}
 
 type ToolCategory =
   | 'read'
@@ -274,7 +283,25 @@ export function summarizeToolRun(
 }
 
 function isStandaloneNode(node: ToolCallNode): boolean {
-  return isStandaloneTool(node.call)
+  return isStandaloneTool(node.call) || isWebTool(node.call)
+}
+
+export function isWebTool(call: UIToolCall): boolean {
+  const category = toolCategory(call)
+  return !!searchStepOf(call) || category === 'web' || category === 'fetch'
+}
+
+function withVisibleWebNodes(nodes: ToolCallNode[]): ToolCallNode[] {
+  return nodes.flatMap((root) => {
+    const promoted: ToolCallNode[] = []
+    const detach = (node: ToolCallNode): ToolCallNode => ({ ...node, children: node.children.flatMap((child) => {
+      const kept = detach(child)
+      if (isWebTool(child.call)) { promoted.push(kept); return [] }
+      return [kept]
+    }) })
+    const node = detach(root)
+    return [node, ...promoted]
+  })
 }
 
 function countedRunCalls(nodes: readonly ToolCallNode[]): UIToolCall[] {
@@ -315,7 +342,7 @@ export function buildToolRows(
     }
     run = []
   }
-  for (const node of toolCallForest([...tools])) {
+  for (const node of withVisibleWebNodes(toolCallForest([...tools]))) {
     if (isStandaloneNode(node)) {
       flush()
       rows.push(single(node, true))

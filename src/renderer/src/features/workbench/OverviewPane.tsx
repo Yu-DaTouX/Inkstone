@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, X } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone, type StatusDotKind } from '../../ui'
+import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -25,7 +25,7 @@ import type { RunSnapshot } from '../../../../shared/runs'
 import { money } from '../../../../shared/quota-mini'
 import { bindingQuotaWindow, quotaReadingStale, windowAwaitingReset, windowUsedPct } from '../../../../shared/quota-forecast'
 import type { GitRepoState } from '../../../../shared/git'
-import type { CapabilityMcpServerSettingView, CompactionRun, ProviderQuota, QuotaWindow, SubagentRun } from '../../../../shared/ipc'
+import type { CompactionRun, ProviderQuota, QuotaWindow, SubagentRun } from '../../../../shared/ipc'
 import { autoCompactLimitOf, contextPaneData, contextUsageSummary, shortTokens, type ContextPaneData } from './context-pane-view'
 import { workbenchText, type OverviewText } from './workbench-text'
 import type { WorkbenchTabId, WorkspaceOwner } from './types'
@@ -56,6 +56,7 @@ import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './tool-tiles'
 import { BackgroundTasks, backgroundTaskCount } from './BackgroundTasks'
 import { isSettledPhase, runEndedAt } from './background-tasks'
+import { useMcpConnections } from './McpConnections'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -230,51 +231,7 @@ function useQuotaTile(provider: string, running: boolean, t: TFunc, text: Overvi
   return { model, now }
 }
 
-interface McpSnapshot {
-  state: 'loading' | 'ready' | 'error'
-  servers: CapabilityMcpServerSettingView[]
-}
-
-function useMcpServers(refreshKey: string): McpSnapshot {
-  const [snap, setSnap] = useState<McpSnapshot>({ state: 'loading', servers: [] })
-  useEffect(() => {
-    const capabilities = window.yan?.capabilities
-    if (!capabilities) {
-      setSnap({ state: 'error', servers: [] })
-      return undefined
-    }
-    let alive = true
-    capabilities
-      .snapshot()
-      .then((next) => {
-        if (alive) setSnap({ state: 'ready', servers: next.servers.filter((server) => server.enabled) })
-      })
-      .catch(() => {
-        if (alive) setSnap((prev) => ({ state: prev.servers.length ? 'ready' : 'error', servers: prev.servers }))
-      })
-    return () => {
-      alive = false
-    }
-  }, [refreshKey])
-  return snap
-}
-
-const MCP_DOT: Record<CapabilityMcpServerSettingView['status'], StatusDotKind> = {
-  ready: 'ok',
-  connecting: 'running',
-  disconnected: 'idle',
-  'needs-auth': 'awaiting',
-  error: 'fail'
-}
-
 const RAIL_LIST_LIMIT = 5
-
-function mcpSummaryDot(servers: readonly CapabilityMcpServerSettingView[]): StatusDotKind {
-  if (servers.some((server) => server.status === 'error')) return 'fail'
-  if (servers.some((server) => server.status === 'needs-auth')) return 'awaiting'
-  if (servers.some((server) => server.status === 'connecting')) return 'running'
-  return servers.length > 0 && servers.every((server) => server.status === 'ready') ? 'ok' : 'idle'
-}
 
 function glyphTone(tone: string | null | undefined): RailTone | undefined {
   return tone === 'ask' || tone === 'fail' ? tone : undefined
@@ -645,14 +602,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
 
   const extWidgets = Object.entries(widgets).filter(([, lines]) => lines.length > 0)
 
-  const mcp = useMcpServers(agentRunning ? 'running' : 'idle')
-  const mcpReady = mcp.servers.filter((server) => server.status === 'ready').length
-  const mcpSummary =
-    mcp.servers.length > 0 ? (
-      <RailValue glyph={{ kind: 'dot', status: mcpSummaryDot(mcp.servers) }} value={rail.connected(mcpReady, mcp.servers.length)} />
-    ) : mcp.state === 'error' ? (
-      <RailValue glyph={{ kind: 'dot', status: 'fail' }} value={text.mcpFailed} error />
-    ) : undefined
+  const mcp = useMcpConnections(owner, agentRunning)
 
   const quota = useQuotaTile(provider, agentRunning, t, text)
   const quotaModel = quota.model
@@ -771,28 +721,11 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           }
         }
       : {}),
-    ...(mcp.state === 'error' || mcp.servers.length > 0
+    ...(mcp.visible
       ? {
           connectors: {
-            summary: mcpSummary,
-            body: (
-              <ul className="wb-ov-items">
-                {mcp.state === 'error' ? <RailRow label={text.mcpFailed} dot="fail" error /> : null}
-                {mcp.servers.map((server) => {
-                  const name = server.title || server.id
-                  return (
-                    <RailRow
-                      key={server.id}
-                      label={name}
-                      title={`${name} · ${text.mcpStatus[server.status]}`}
-                      dot={MCP_DOT[server.status]}
-                      error={server.status === 'error'}
-                      value={server.status === 'ready' && server.toolCount !== null ? text.mcpTools(server.toolCount) : text.mcpStatus[server.status]}
-                    />
-                  )
-                })}
-              </ul>
-            )
+            summary: mcp.summary,
+            body: mcp.body
           }
         }
       : {}),
@@ -846,7 +779,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           backgroundTasks: {
             summary: taskSummary,
-            body: <BackgroundTasks subagents={runs} scheduled={backgroundRuns} lang={lang} text={text} />
+            body: <BackgroundTasks key={view.key} subagents={runs} scheduled={backgroundRuns} lang={lang} text={text} />
           }
         }
       : {}),

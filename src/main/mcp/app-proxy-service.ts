@@ -6,7 +6,7 @@ import { CapabilityCommandError, type CapabilityCommandResult } from '../capabil
 import { YAN_DIR } from '../paths'
 import { loadMcpServersCached } from './config'
 import { truncateUtf8 } from '../../shared/mcp'
-import { isInkstoneManaged, type McpAppCsp, type McpAppServerConfig } from './app-spec'
+import type { McpAppCsp, McpAppServerConfig } from './app-spec'
 import {
   McpAppUnmanagedError,
   mcpAppHost,
@@ -127,7 +127,7 @@ class McpAppProxyError extends Error {
 }
 
 interface McpAppProxyHostLike {
-  listManagedServers(): McpAppServerConfig[]
+  listManagedServers(projectId?: string): McpAppServerConfig[]
   listToolsWithMeta(
     serverId: string,
     options?: { signal?: AbortSignal; projectId?: string }
@@ -280,8 +280,9 @@ export class McpAppProxyService {
     serverIds?: string[]
     callerProjectId?: string
     signal?: AbortSignal
+    allowEmpty?: boolean
   } = {}): Promise<McpAppProxyRefreshResult> {
-    const managed = this.host.listManagedServers()
+    const managed = this.host.listManagedServers(options.callerProjectId)
     const callerProjectId =
       typeof options.callerProjectId === 'string' && options.callerProjectId.trim()
         ? options.callerProjectId.trim()
@@ -294,7 +295,7 @@ export class McpAppProxyService {
     })
     const generatedAt = new Date().toISOString()
 
-    if (targets.length === 0) {
+    if (targets.length === 0 && !options.allowEmpty) {
       return {
         ok: false,
         path: this.snapshotPath(),
@@ -401,7 +402,7 @@ export class McpAppProxyService {
 
   managedConfigOrNull(serverId: string): McpAppServerConfig | null {
     const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
-    if (!config || !isInkstoneManaged(config)) return null
+    if (!config || config.ownedBy !== 'inkstone' || !config.appHost) return null
     return config
   }
 

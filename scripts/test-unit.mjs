@@ -50,7 +50,7 @@ for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
 const spawnedScripts = [
   'test-mcp-annotations-guard', 'test-backend-capability-boundaries', 'test-terminal-status', 'test-taskbar-status',
-  'test-mcp-native-import', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
+  'test-mcp-native-import', 'test-mcp-service-settings', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
   'test-readonly-model-registration', 'test-mcp-image-results',
   'test-stream-loop-detector', 'test-stream-loop-settings', 'test-smooth-text-settings',
   'test-native-session-export-alias', 'test-session-list-reuse', 'test-schedule-safety', 'test-subagent-terminal-races',

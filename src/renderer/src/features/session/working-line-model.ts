@@ -104,7 +104,7 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
   if (!kind) return null
   const elapsedMs = TIMED_KINDS.has(kind) ? wholeSecondsMs(input.elapsedMs) : null
   const tokens = TOKEN_KINDS.has(kind) && typeof input.tokens === 'number' && input.tokens > 0 ? input.tokens : null
-  const base = { kind, elapsedMs, tokens, quiet: kind === 'tool' && !!input.quiet }
+  const base = { kind, elapsedMs, tokens, quiet: ['tool', 'thinking', 'responding', 'working'].includes(kind) && !!input.quiet }
   switch (kind) {
     case 'stopping':
       return { ...base, textKey: 'workStopping' }

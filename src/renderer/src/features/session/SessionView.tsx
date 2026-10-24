@@ -34,6 +34,8 @@ import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, pickReadingAnchor, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
 import './session.css'
+import { sameComposerView } from '../../state/composer-recovery'
+import { withSubmittingMessages } from '../../state/submitting-messages'
 
 const PAGER_TREE_DEBOUNCE_MS = 400
 
@@ -100,6 +102,7 @@ export function SessionView(): JSX.Element {
   const uiRequests = useStore((s) => s.uiRequests)
   const settings = useStore((s) => s.settings)
   const switchLoading = useStore((s) => s.switchLoading)
+  const submittingMessages = useStore((s) => s.submittingMessages)
 
   const view = useMemo(
     () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),
@@ -219,8 +222,8 @@ export function SessionView(): JSX.Element {
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const streamingId = viewActive ? streamingMessageId({ session, messages, runTail }) : undefined
   const effectiveMessages = useMemo(
-    () => mergeQuestionLog(messages, questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
-    [messages, questionLog, questionLogSession, view.sessionId]
+    () => mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => sameComposerView(useStore.getState(), item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
+    [messages, submittingMessages, questionLog, questionLogSession, view.key, session]
   )
   const projectedMessages = useMemo(() => withoutWrapUpMessages(effectiveMessages), [effectiveMessages])
   const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
@@ -292,6 +295,7 @@ export function SessionView(): JSX.Element {
       const metrics = domMetrics(el)
       const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
       applyFollow(decision)
+      if (decision.stick) intentRef.current = null
       if (decision.repin) el.scrollTop = el.scrollHeight
       metricsRef.current = decision.repin ? domMetrics(el) : metrics
       readingRef.current = decision.stick ? null : rowAnchor(el)
@@ -308,6 +312,7 @@ export function SessionView(): JSX.Element {
     const decision = decideFollow(stickRef.current, metrics, intentRef.current, performance.now(), metricsRef.current)
     metricsRef.current = metrics
     applyFollow(decision)
+    if (decision.stick) intentRef.current = null
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
     record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
   }, [record, applyFollow])
@@ -315,20 +320,31 @@ export function SessionView(): JSX.Element {
   useEffect(() => {
     const host = hostRef.current
     if (!host) return undefined
-    const mark = (): void => { intentRef.current = performance.now() }
+    const mark = (): void => {
+      intentRef.current = performance.now()
+      if (stickRef.current) setStickNow(false)
+    }
+    const wheel = (event: WheelEvent): void => {
+      const handle = vlistRef.current
+      const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+      if (event.deltaY > 0 && metrics && distanceFromBottom(metrics) <= 1) {
+        intentRef.current = null
+        setStickNow(true)
+      } else mark()
+    }
     const onKey = (event: KeyboardEvent): void => { if (isScrollIntentKey(event.key)) mark() }
     const options: AddEventListenerOptions = { passive: true, capture: true }
-    host.addEventListener('wheel', mark, options)
+    host.addEventListener('wheel', wheel, options)
     host.addEventListener('touchmove', mark, options)
     host.addEventListener('pointerdown', mark, options)
     host.addEventListener('keydown', onKey, options)
     return () => {
-      host.removeEventListener('wheel', mark, options)
+      host.removeEventListener('wheel', wheel, options)
       host.removeEventListener('touchmove', mark, options)
       host.removeEventListener('pointerdown', mark, options)
       host.removeEventListener('keydown', onKey, options)
     }
-  }, [])
+  }, [setStickNow])
 
   const setStreamNode = useCallback((node: HTMLDivElement | null) => {
     streamRef.current = node
@@ -344,9 +360,11 @@ export function SessionView(): JSX.Element {
       const narrowed = widthRef.current > 0 && Math.abs(width - widthRef.current) > 0.5
       widthRef.current = width
       if (stickRef.current) {
+        if (userScrollActive(intentRef.current, performance.now())) return
         node.scrollTop = node.scrollHeight
         return
       }
+      setShowJump(distanceFromBottom(domMetrics(node)) > JUMP_THRESHOLD_PX)
       if (!narrowed) return
       const anchor = readingRef.current
       if (!anchor) return
@@ -406,7 +424,14 @@ export function SessionView(): JSX.Element {
   useEffect(() => { remountsRef.current = 0 }, [identity])
 
   useEffect(() => {
-    if (!stickRef.current || settlingRef.current) return
+    if (settlingRef.current) return
+    if (!stickRef.current) {
+      const handle = vlistRef.current
+      const metrics = virtual && handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+      if (metrics) setShowJump(distanceFromBottom(metrics) > JUMP_THRESHOLD_PX)
+      return
+    }
+    if (userScrollActive(intentRef.current, performance.now())) return
     if (virtual) {
       vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
       return

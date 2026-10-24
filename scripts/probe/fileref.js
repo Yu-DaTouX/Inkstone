@@ -46,14 +46,14 @@
     if (tag) {
       const text = tag.textContent ?? ''
       ok(/probe\.ts/.test(text), '标签带文件名（可访问名）')
-      ok(tag.querySelector('.ca-name')?.textContent === 'probe.ts', '文件名进 .ca-name')
+      ok(tag.querySelector('.ui-file-card__name')?.textContent === 'probe.ts', '文件卡片显示名称')
       const title = tag.getAttribute('title') ?? ''
-      ok(/probe\.ts/.test(title) && /2 KB/.test(title), '文件名与大小进 tooltip（40×40 方块不放肉眼可见的大小字）', JSON.stringify(title))
+      ok(/probe\.ts/.test(title) && /2 KB/.test(title), '文件名与大小进 tooltip', JSON.stringify(title))
       ok(!!tag.querySelector('svg.lucide') && !tag.querySelector('img'), '标签用图标而不是图片缩略图')
-      ok(tag.querySelector('.ca-ext')?.textContent === 'ts', '标签显示扩展名')
       ok(!tag.querySelector('.ca-ref') && !tag.querySelector('[data-testid="attachment-open"]'), '文件标签没有 @图N 徽标与图片查看入口')
       const box = tag.getBoundingClientRect()
-      ok(Math.round(box.width) === 40 && Math.round(box.height) === 40, '文件标签是 40×40 方块', `${Math.round(box.width)}×${Math.round(box.height)}`)
+      const nameBox = tag.querySelector('.ui-file-card__name')?.getBoundingClientRect()
+      ok(box.width > 40 && nameBox?.width > 1 && nameBox?.height > 1, '文件名在卡片内可见', `${Math.round(box.width)}×${Math.round(box.height)}`)
     }
 
     const send = q('[data-testid="composer-send"]')

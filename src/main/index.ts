@@ -11,7 +11,7 @@ import { access, appendFile, readdir, readFile, stat, writeFile } from 'node:fs/
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { loadModelPricing } from './model-pricing'
-import { mcpAppProxyToolsEnv, mcpAppProxyService } from './mcp/app-proxy-service'
+import { mcpAppProxyService } from './mcp/app-proxy-service'
 import { AgentController, type CapabilityAuthorizationChoice, type CapabilityAuthorizationPrompt, type ExternalApiConfirmationRequest, type ToolConsentPrompt } from './agent'
 import { applyRememberedModel } from './model-default'
 import { applyTurnTimings, effectiveTerminalReason, readTurnTimings, timingKey } from './turn-timing-store'
@@ -1952,7 +1952,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
         browserHost: () => browser,
         subagentHost: subagentService.capabilityHost,
         scheduleHost: scheduleService,
-        mcpAppToolsSnapshot: mcpAppProxyToolsEnv().YAN_MCP_APP_TOOLS,
+        mcpAppToolsSnapshot: mcpAppProxyService().snapshotPath(),
         providerExtensions: providerExtensionPaths(),
         bundledSkills: bundledSkillPaths(),
         userSkills: () => userSkillPaths(),

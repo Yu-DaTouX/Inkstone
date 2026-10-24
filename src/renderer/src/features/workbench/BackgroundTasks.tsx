@@ -62,7 +62,7 @@ export function BackgroundTasks({ subagents, scheduled, lang, text }: Background
     return [...agentEntries, ...runEntries]
   }, [subagents, scheduled, now, lang, stopping])
   const sections = sectionTasks(entries)
-  const [finishedOpen, setFinishedOpen] = useState(sections.running.length === 0)
+  const [finishedOpen, setFinishedOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const onGone = (): void => setNotice(text.taskGone)
@@ -115,6 +115,16 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
 
   if (entry.kind === 'subagent') {
     const { run, row } = entry
+    if (!entry.live) return (
+      <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
+        <div className="wb-bg-line">
+          <Button variant="ghost" size="sm" className="wb-bg-main" title={run.task} onPress={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
+            <SubagentStateIcon state={row.state} />
+            <span className="wb-bg-label">{compactTaskPaths(run.brief?.title || row.description)}</span>
+          </Button>
+        </div>
+      </li>
+    )
     const label = compactTaskPaths(row.label)
     const time = row.durationMs === null ? '' : formatDuration(row.durationMs, { minSeconds: 1 })
     const modelName = run.model ? turnModelLabel(run.model, models).label : ''
@@ -180,7 +190,7 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
             <StatusDot kind={RUN_DOT[tone]} />
           </StatusSlot>
           <span className="wb-bg-label">{snapshot.title || snapshot.code}</span>
-          <span className="wb-bg-time">{time}</span>
+          {entry.live ? <span className="wb-bg-time">{time}</span> : null}
         </span>
         {entry.live ? (
           <IconButton size="sm" aria-label={text.stopTask} isDisabled={stoppingRun} onPress={() => void stop()} data-testid="wb-bg-stop">
@@ -188,7 +198,7 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
           </IconButton>
         ) : null}
       </div>
-      <p className="wb-bg-detail">{`${text.scheduledKind} · ${phaseWord(lang, snapshot.phase)}`}</p>
+      {entry.live ? <p className="wb-bg-detail">{`${text.scheduledKind} · ${phaseWord(lang, snapshot.phase)}`}</p> : null}
     </li>
   )
 }

@@ -7,8 +7,9 @@ export interface QuotaSample {
 
 export type QuotaForecast =
   | { kind: 'sampling'; needMs: number }
-  | { kind: 'steady'; atResetPct: number }
-  | { kind: 'exhaust'; exhaustAt: number }
+  | { kind: 'uncertain' }
+  | { kind: 'steady'; atResetPct: number; basedOnMs?: number }
+  | { kind: 'exhaust'; exhaustAt: number; earliestAt?: number; latestAt?: number; basedOnMs?: number }
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -31,8 +32,8 @@ export const WINDOW_DURATION = {
 export function forecastSpan(durationMs: number): { lookbackMs: number; minSpanMs: number } {
   if (durationMs <= 12 * HOUR) return { lookbackMs: HOUR, minSpanMs: 15 * MINUTE }
   if (durationMs <= 2 * DAY) return { lookbackMs: 6 * HOUR, minSpanMs: HOUR }
-  if (durationMs <= 8 * DAY) return { lookbackMs: DAY, minSpanMs: HOUR }
-  return { lookbackMs: 7 * DAY, minSpanMs: HOUR }
+  if (durationMs <= 8 * DAY) return { lookbackMs: 3 * DAY, minSpanMs: DAY }
+  return { lookbackMs: 7 * DAY, minSpanMs: 2 * DAY }
 }
 
 export function windowUsedPct(window: Pick<QuotaWindow, 'used' | 'total'>): number | null {
@@ -41,8 +42,12 @@ export function windowUsedPct(window: Pick<QuotaWindow, 'used' | 'total'>): numb
 }
 
 export function appendQuotaSample(samples: readonly QuotaSample[], sample: QuotaSample): QuotaSample[] {
+  const prior = samples[samples.length - 1]
+  if (!Number.isFinite(sample.at) || !Number.isFinite(sample.pct) || sample.pct < 0) return [...samples]
+  if (prior && sample.at < prior.at) return [...samples]
   const kept = samples.filter((s) => s.at <= sample.at && sample.at - s.at <= QUOTA_SAMPLE_KEEP_MS)
   const tail = kept[kept.length - 1]
+  if (tail && sample.at === tail.at) { kept[kept.length - 1] = sample; return kept }
   if (tail && sample.pct < tail.pct - QUOTA_RESET_DROP_PCT) return [sample]
   const beforeTail = kept[kept.length - 2]
   if (tail && beforeTail && sample.at - tail.at < QUOTA_SAMPLE_GAP_MS && tail.at - beforeTail.at < QUOTA_SAMPLE_GAP_MS) {
@@ -60,15 +65,36 @@ export function forecastQuota(
 ): QuotaForecast | undefined {
   const pct = windowUsedPct(window)
   if (pct === null || window.informational || window.exceeded) return undefined
-  if (!window.durationMs || window.resetAt === undefined || window.resetAt <= now) return undefined
+  if (!window.durationMs || !Number.isFinite(window.durationMs) || window.durationMs <= 0 || window.resetAt === undefined || !Number.isFinite(window.resetAt) || window.resetAt <= now) return undefined
   if (100 - pct <= QUOTA_EXHAUSTED_MARGIN_PCT) return undefined
   const { lookbackMs, minSpanMs } = forecastSpan(window.durationMs)
-  const recent = samples.filter((s) => s.at >= now - lookbackMs && s.at <= now)
+  const cycleStart = window.resetAt - window.durationMs
+  const recent = samples.filter((s) => Number.isFinite(s.at) && Number.isFinite(s.pct) && s.at >= Math.max(now - lookbackMs, cycleStart) && s.at <= now)
   const first = recent[0]
   const last = recent[recent.length - 1]
   const span = first && last ? last.at - first.at : 0
   if (!first || !last || span < minSpanMs) return { kind: 'sampling', needMs: minSpanMs - span }
+  if (now - last.at > QUOTA_STALE_MS || Math.abs(last.pct - pct) > 0.5) return undefined
+  if (recent.some((sample, index) => index > 0 && (sample.at <= recent[index - 1].at || sample.pct < recent[index - 1].pct))) return { kind: 'uncertain' }
   const rate = (last.pct - first.pct) / span
+  if (window.durationMs > 2 * DAY) {
+    if (recent.length < 6 || last.pct - first.pct < 3) return { kind: 'uncertain' }
+    const middle = recent.find((sample) => sample.at >= first.at + span / 2)
+    if (!middle || middle.at === first.at || middle.at === last.at) return { kind: 'uncertain' }
+    const beforeRate = (middle.pct - first.pct) / (middle.at - first.at)
+    const afterRate = (last.pct - middle.pct) / (last.at - middle.at)
+    if (Math.min(beforeRate, afterRate) <= 0 || Math.max(beforeRate, afterRate) > 3 * Math.min(beforeRate, afterRate)) return { kind: 'uncertain' }
+    const uncertainty = Math.max(1 / span, Math.abs(beforeRate - afterRate) / 2)
+    const lowRate = rate - uncertainty
+    const highRate = rate + uncertainty
+    if (!(lowRate > 0)) return { kind: 'uncertain' }
+    const projected = pct + rate * (window.resetAt - now)
+    if (pct + highRate * (window.resetAt - now) < 100) return { kind: 'steady', atResetPct: Math.round(projected), basedOnMs: span }
+    const earliestAt = Math.round(now + (100 - pct) / highRate)
+    const latestAt = Math.round(now + (100 - pct) / lowRate)
+    if (latestAt >= window.resetAt) return { kind: 'uncertain' }
+    return { kind: 'exhaust', exhaustAt: Math.round(now + (100 - pct) / rate), earliestAt, latestAt, basedOnMs: span }
+  }
   if (!(rate > 0)) return { kind: 'steady', atResetPct: Math.round(pct) }
   const projected = pct + rate * (window.resetAt - now)
   if (projected < 100) return { kind: 'steady', atResetPct: Math.round(projected) }
@@ -76,7 +102,7 @@ export function forecastQuota(
 }
 
 export function forecastProjectionPct(forecast: QuotaForecast | undefined): number | null {
-  if (!forecast || forecast.kind === 'sampling') return null
+  if (!forecast || forecast.kind === 'sampling' || forecast.kind === 'uncertain') return null
   return forecast.kind === 'exhaust' ? 100 : Math.min(100, forecast.atResetPct)
 }
 

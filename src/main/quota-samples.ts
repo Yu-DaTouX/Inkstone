@@ -77,7 +77,7 @@ export function createQuotaSampleStore(file: string): QuotaSampleStore {
         if (pct === null || window.informational) return window
         const key = `${seriesKey}|${window.id}`
         const prior = series[key]
-        const newCycle = prior?.resetAt !== undefined && window.resetAt !== undefined && window.resetAt - prior.resetAt > CYCLE_SHIFT_MS
+        const newCycle = prior?.resetAt !== undefined && window.resetAt !== undefined && Math.abs(window.resetAt - prior.resetAt) > CYCLE_SHIFT_MS
         const samples = appendQuotaSample(newCycle ? [] : prior?.samples ?? [], { at: now, pct })
         series[key] = { ...(window.resetAt !== undefined ? { resetAt: window.resetAt } : {}), samples }
         const next: QuotaWindow = { ...window }

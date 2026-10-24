@@ -1,5 +1,6 @@
 import type { HostT } from './host-actions'
 import type { Attachment } from '../../../shared/ipc'
+import { fileReferencePath } from '../features/composer/file-refs'
 
 type ComposerAttachment = Attachment
 
@@ -108,7 +109,7 @@ export async function submitComposerInput(port: ComposerSubmitPort): Promise<Com
   const fileRefs = port.attachments.filter((a) => a.kind === 'file' && a.path)
   const outgoing = fileRefs.length
     ? `${raw ? raw + '\n\n' : ''}${port.t('composer.fileRefs', {
-        list: fileRefs.map((a) => `- ${a.path}`).join('\n')
+        list: fileRefs.map((a) => `- ${fileReferencePath(a)}`).join('\n')
       })}`
     : raw
 

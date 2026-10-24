@@ -1,6 +1,6 @@
 import type { McpServerStatus } from '../../shared/mcp'
 import type { McpConnectionManager } from './connection-manager'
-import { loadMcpServers, type McpConfigLoadResult } from './config'
+import { loadMcpServers, mcpServersForProject, type McpConfigLoadResult } from './config'
 import { isInkstoneManaged, type McpAppServerConfig } from './app-spec'
 import { mcpAppHost, type McpAppHost, type McpAppToolDescriptor } from './app-host'
 
@@ -22,9 +22,7 @@ export class SettingsSafeAccessError extends Error {
 
 function visibleServers(access: SettingsSafeAccess, projectId: string | undefined): McpAppServerConfig[] {
   const { servers } = access.loadServers()
-  return servers.filter(
-    (server) => !server.projectScope || (Boolean(projectId) && server.projectScope === projectId)
-  )
+  return mcpServersForProject(servers, projectId)
 }
 
 export function managedConfigOf(

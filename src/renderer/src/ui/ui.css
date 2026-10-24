@@ -1455,3 +1455,22 @@
     box-shadow: var(--ring-line2);
   }
 }
+@layer primitives {
+  .ui-file-card.ui-btn {
+    display: flex;
+    justify-content: flex-start;
+    gap: var(--s-10);
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding: var(--s-12);
+    text-align: left;
+  }
+  .ui-file-card > .ui-btn__label { min-width: 0; }
+  .ui-file-card__name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

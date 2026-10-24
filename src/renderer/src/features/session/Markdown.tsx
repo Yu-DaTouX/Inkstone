@@ -208,17 +208,25 @@ function InlineCodeLink({ className, children }: { className?: string; children?
   if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
+    e.stopPropagation()
     if (candidate.kind === 'url') void openLink(candidate.url)
     else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
   }
   const openExternally = (e: React.MouseEvent): void => {
     e.preventDefault()
+    e.stopPropagation()
     window.getSelection()?.removeAllRanges()
     if (candidate.kind === 'url') void window.yan.browser.openExternal(candidate.url)
     else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
   }
   return (
-    <code className="v3-md-code-link" title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu}>
+    <code className="v3-md-code-link" role="link" tabIndex={0} title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      event.stopPropagation()
+      if (candidate.kind === 'url') void openLink(candidate.url)
+      else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
+    }}>
       {children}
     </code>
   )
@@ -422,6 +430,10 @@ export const Markdown = memo(function Markdown({
   sessionId?: string | null
   messageId?: string | null
 }): JSX.Element {
+  const sessionCwd = useStore((s) => sessionId
+    ? s.sessionRuntimes[sessionId]?.session?.cwd ?? s.sessions.find((item) => item.id === sessionId)?.cwd ?? (s.session?.sessionId === sessionId ? s.session.cwd : undefined)
+    : s.session?.cwd)
+  sourceCwd = sourceCwd || sessionCwd
   const revealedText = useSmoothReveal(text, live)
   const deferredText = useDeferredValue(revealedText)
   const renderedText = live ? deferredText : text

@@ -1,0 +1,46 @@
+const ZH = {
+  title: 'MCP 服务', description: '管理工具，以及哪些会话可以使用它们。', global: '全局服务', project: '当前项目',
+  globalHint: '这里的开关设置所有会话的默认状态。项目可以单独覆盖。', projectHint: '这里的开关只影响当前项目，其他项目不变。',
+  noProject: '当前会话没有所属项目，可先管理全局服务。', noServices: '还没有服务，添加一个即可使用。',
+  add: '添加服务', refresh: '重新读取', advanced: '高级设置与旧服务迁移', details: '详情',
+  inherited: '来自全局', projectOnly: '仅当前项目', allSessions: '所有会话', enabled: '已启用', disabled: '已关闭',
+  projectOn: '本项目已开启', projectOff: '本项目已关闭', inherit: '恢复全局设置',
+  name: '服务名称', command: '启动命令', args: '启动参数（每行一个）', url: '服务地址',
+  transport: '连接方式', local: '本地程序', remote: '网络服务', env: '环境变量（可选，JSON 键值）',
+  save: '保存', cancel: '取消', scope: '使用范围', move: '调整使用范围', moveGlobal: '改为全局服务', moveProject: '改为仅当前项目',
+  remove: '删除服务', confirmRemove: '确认删除这个服务？', removeGlobal: '删除全局配置后，新会话将无法使用这个服务。', removeProject: '只删除当前项目的服务配置。',
+  confirmMove: '调整服务使用范围？', toGlobal: '其他项目的新会话也将可以使用这个服务。', toProject: '只有当前项目的新会话可以使用这个服务。',
+  nextSession: '已保存，新会话生效；也可以点击“应用到当前会话”。', nextCall: '已保存，后续调用按新设置处理。',
+  apply: '应用到当前会话', applied: '当前会话已重新加载工具，聊天记录保留。连接状态以实际检查结果为准。',
+  configChanged: '配置已变化，当前会话需要重新加载；新会话使用新配置。', configRead: '当前会话已读取配置，连接状态尚未查询。', configUnknown: '配置已保存，尚未核对当前会话是否已加载。',
+  check: '检查连接', checkSession: '检查当前会话', checking: '检查中…', checkResult: '当前会话检查结果',
+  hostNote: '由砚连接', piNote: '由 pi 连接', source: '配置位置', connection: '连接信息',
+  busy: '有任务正在运行，结束后可调整此服务。', untrusted: '当前项目尚未受信任，项目配置暂不生效，也不能修改。',
+  conflict: '存在重复连接配置，请在高级设置中处理归属。', computer: '电脑操作', computerHint: '需要操作排队和用户接管，请在本机工具中管理。', openTools: '前往本机工具',
+  failed: '操作失败，请重试。', envInvalid: '环境变量需要填写 JSON 字符串键值对象。', scopeLabel: '管理范围',
+  showAdvanced: '显示高级选项', loaded: '连接状态以实际检查结果为准，启用开关不代表已经连接。'
+}
+type Labels = typeof ZH
+const EN: Labels = {
+  title: 'MCP services', description: 'Manage tools and which conversations can use them.', global: 'Global services', project: 'Current project',
+  globalHint: 'These switches set defaults for all conversations. Projects can override them.', projectHint: 'These switches affect only this project.',
+  noProject: 'This conversation has no project. You can manage global services.', noServices: 'No services yet. Add one to get started.',
+  add: 'Add service', refresh: 'Refresh', advanced: 'Advanced settings and migration', details: 'Details',
+  inherited: 'From global', projectOnly: 'This project only', allSessions: 'All conversations', enabled: 'Enabled', disabled: 'Disabled',
+  projectOn: 'Enabled for this project', projectOff: 'Disabled for this project', inherit: 'Restore global default',
+  name: 'Service name', command: 'Command', args: 'Arguments (one per line)', url: 'Service URL',
+  transport: 'Connection', local: 'Local program', remote: 'Network service', env: 'Environment variables (optional JSON)',
+  save: 'Save', cancel: 'Cancel', scope: 'Available in', move: 'Change scope', moveGlobal: 'Make global', moveProject: 'Use only in this project',
+  remove: 'Remove service', confirmRemove: 'Remove this service?', removeGlobal: 'New conversations will no longer have this global service.', removeProject: 'Remove only this project’s service configuration.',
+  confirmMove: 'Change service scope?', toGlobal: 'New conversations in other projects will also have this service.', toProject: 'Only new conversations in this project will have this service.',
+  nextSession: 'Saved for new conversations. You can also apply it to this conversation.', nextCall: 'Saved. Subsequent calls use the updated settings.',
+  apply: 'Apply to this conversation', applied: 'Tools reloaded in this conversation. Chat history is preserved. Check connections for actual status.',
+  configChanged: 'Configuration changed. This conversation needs a reload; new conversations use the new settings.', configRead: 'This conversation read the configuration. Connection status has not been queried.', configUnknown: 'Configuration saved. Loading in this conversation has not been verified.',
+  check: 'Check connection', checkSession: 'Check this conversation', checking: 'Checking…', checkResult: 'Current conversation status',
+  hostNote: 'Connected by Inkstone', piNote: 'Connected by pi', source: 'Configuration file', connection: 'Connection details',
+  busy: 'A task is running. Adjust this service after it finishes.', untrusted: 'This project is not trusted. Its configuration is inactive and cannot be edited.',
+  conflict: 'Duplicate connection definitions. Resolve ownership in advanced settings.', computer: 'Computer use', computerHint: 'Operation queuing and user takeover are managed in local tools.', openTools: 'Open local tools',
+  failed: 'Operation failed. Please retry.', envInvalid: 'Enter environment variables as a JSON object with string values.', scopeLabel: 'Management scope',
+  showAdvanced: 'Advanced options', loaded: 'Connection status comes from actual checks. An enabled switch does not mean connected.'
+}
+export const mcpServicesText = (lang: string): Labels => lang === 'en-US' ? EN : ZH

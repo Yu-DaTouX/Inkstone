@@ -115,7 +115,7 @@ export async function grantFile(input: string): Promise<FileRefInfo> {
   } catch {
     return fail(input, '无法读取文件信息')
   }
-  if (st.isDirectory()) return fail(input, '这是文件夹，暂不支持递归引用')
+  if (st.isDirectory()) return { ok: true, input, path: real, name: basename(real) || real, size: 0, mimeType: 'inode/directory', kind: 'other', isDirectory: true }
   if (!st.isFile()) return fail(input, '不是普通文件')
 
   const name = basename(real)

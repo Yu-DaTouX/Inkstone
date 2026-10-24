@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { FileText, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge } from '../../ui'
 import { InlineImage } from '../../ui/InlineImage'
+import { FileCard } from '../../ui/FileCard'
 import { fmtSize } from './attachment-files'
 import { brokenImageRefs, imageRefLabel, imageRefPrefix } from './image-refs'
 import { ImageViewer } from './image-viewer'
@@ -23,12 +24,13 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
   return (
     <div className="composer-attachments" data-testid="composer-attachments">
       {imageItems.map(({ attachment: a, n }) => (
-        <div className="ca-tile" key={a.id} title={`${a.name} · ${fmtSize(a.size)}`} data-kind={a.kind ?? 'image'}>
+        <div className="ca-tile" key={a.id} title={a.isDirectory ? a.path : `${a.name} · ${fmtSize(a.size)}`} data-kind={a.kind ?? 'image'}>
           {a.kind === 'file' ? (
-            <span className="ca-body ca-body-file" aria-hidden>
-              <FileText size={16} />
-              <span className="ca-ext">{extensionOf(a.name)}</span>
-            </span>
+            <FileCard name={a.name} path={a.path} isDirectory={a.isDirectory} onPress={() => {
+              if (!a.path) return
+              if (a.isDirectory) void window.yan.openPath(a.path)
+              else void useStore.getState().previewFile(a.path)
+            }} />
           ) : (
             <button
               type="button"
@@ -41,7 +43,6 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
               <InlineImage className="ca-thumb" src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
             </button>
           )}
-          {a.kind === 'file' ? <span className="ca-name">{a.name}</span> : null}
           {a.kind !== 'file' ? (
             <Badge tone="accent" className="ca-ref" title={t('composer.imageRefHint', { label: `@${imageRefLabel(prefix, n)}` })}>
               {imageRefLabel(prefix, n)}
@@ -74,11 +75,6 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
       />
     </div>
   )
-}
-
-function extensionOf(name: string): string {
-  const ext = /\.([a-z0-9]+)$/i.exec(name)?.[1] ?? ''
-  return ext.toLowerCase()
 }
 
 export function ImageRefWarning({ text }: { text: string }) {

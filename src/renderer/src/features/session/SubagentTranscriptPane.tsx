@@ -22,7 +22,7 @@ import { forwardedText } from './subagent-composer'
 import { discardSubagentResult, mergeSubagentResult } from './subagent-review'
 import { SUBAGENT_CARD_BOT, compactTaskPaths, subagentTitle, useSubagentView } from './SubagentLine'
 import { retrySubagent, rowLang, stopSubagentChecked, switchSubagentPane, useSubagentRow } from './subagent-actions'
-import { orderSubagentRuns, subagentNeighbor, subagentSiblings, useSubagentGroups } from './subagent-list'
+import { subagentNeighbor, subagentSessionPeers } from './subagent-list'
 import { turnModelLabel } from './turn-model-label'
 import { TurnView } from './TurnView'
 import { useSessionText } from './text'
@@ -60,15 +60,12 @@ export function subagentPaneName(run: Pick<SubagentRun, 'task' | 'brief'>): stri
   return run.brief?.title || compactTaskPaths(subagentTitle(run.task))
 }
 
-const NO_IDS: string[] = []
 const FOCUS_TRIES = 12
 
 type PaneStep = 'prev' | 'next'
 
 function useSubagentGroupIds(run: SubagentRun): readonly string[] {
-  const published = useSubagentGroups((s) => s.byRun[run.id])
-  const fallback = useStore(useShallow((s): string[] => (published ? NO_IDS : orderSubagentRuns(subagentSiblings(s.subagents, run)).map((item) => item.id))))
-  return published ?? fallback
+  return useStore(useShallow((s): string[] => subagentSessionPeers(s.subagents, run).map((item) => item.id)))
 }
 
 function focusPaneStep(runId: string, step: PaneStep, tries = FOCUS_TRIES): void {

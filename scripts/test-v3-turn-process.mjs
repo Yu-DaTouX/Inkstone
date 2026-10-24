@@ -73,6 +73,25 @@ group('只有回复：没有过程行，行为与原来一致')
   ok(out.tail.length === 0, '没有尾部段', out.tail.length)
 }
 
+group('收尾卡片前后的多条正文都可读')
+{
+  const out = splitTurnProcess([
+    seg('before-wrap', { response: text('long-reply', '完整交付与文件地址') }),
+    seg('after-wrap', { response: text('short-reply', '请决定下一步') })
+  ])
+  ok(out.earlierReplies.map((segment) => segment.response.text).join() === '完整交付与文件地址', '保留卡片前的正文', out.earlierReplies)
+  ok(out.reply.response.text === '请决定下一步' && out.process.length === 0, '末条回复保留且前文不藏入过程区', out)
+}
+
+group('搜索卡片不进入运行中的旧步骤折叠区')
+{
+  const out = pickLiveSegments([
+    seg('web-old', { tools: [{ ...tool('web-call', 'web_search'), args: { query: 'fixture' } }] }),
+    ...Array.from({ length: 5 }, (_, i) => seg(`normal-${i}`, { tools: [tool(`read-${i}`, 'read')] }))
+  ])
+  ok(out.shown.some((segment) => segment.id === 'web-old'), '较早的搜索步骤仍在正文过程区可见', out.shown.map((segment) => segment.id))
+}
+
 group('旁白 + 工具 + 回复：旁白与工具进过程行，回复在最后')
 {
   const out = splitTurnProcess([

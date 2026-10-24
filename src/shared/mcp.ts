@@ -10,6 +10,7 @@ export interface McpServerConfig {
   url?: string
   authRef?: string
   projectScope?: string
+  projectEnabled?: Record<string, boolean>
   effect?: 'read' | 'write' | 'external-action' | 'unknown'
   enabled?: boolean
   migratedToNative?: McpMigratedToNativeMark

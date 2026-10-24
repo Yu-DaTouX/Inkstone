@@ -35,8 +35,8 @@ try {
 
   eq(fc.forecastSpan(5 * HOUR), { lookbackMs: HOUR, minSpanMs: 15 * MIN }, '5h 窗口回看 1 小时、至少 15 分钟')
   eq(fc.forecastSpan(DAY), { lookbackMs: 6 * HOUR, minSpanMs: HOUR }, '日窗口回看 6 小时')
-  eq(fc.forecastSpan(7 * DAY), { lookbackMs: DAY, minSpanMs: HOUR }, '周窗口回看 1 天')
-  eq(fc.forecastSpan(30 * DAY), { lookbackMs: 7 * DAY, minSpanMs: HOUR }, '月窗口回看 7 天')
+  eq(fc.forecastSpan(7 * DAY), { lookbackMs: 3 * DAY, minSpanMs: DAY }, '周窗口至少观察一天，不用短时消耗外推整周')
+  eq(fc.forecastSpan(30 * DAY), { lookbackMs: 7 * DAY, minSpanMs: 2 * DAY }, '月窗口至少观察两天')
 
   {
     const f = fc.forecastQuota(series([[5 * MIN, 38], [0, 40]]), win(), now)
@@ -91,6 +91,23 @@ try {
   check(!fc.quotaReadingStale(now - 29 * MIN, now, false), '30 分钟内算新鲜')
   check(fc.quotaReadingStale(now, now, true), '读取失败一律算过期')
   check(fc.windowAwaitingReset(win({ resetAt: now - 1 }), now), '重置时间已过：待更新')
+  {
+    const week = win({ id: 'weekly', used: 2, durationMs: 7 * DAY, resetAt: now + 6 * DAY + 21 * HOUR })
+    eq(fc.forecastQuota(series([[HOUR, 0], [0, 2]]), week, now), { kind: 'sampling', needMs: 23 * HOUR }, '截图中的周用量2%配短历史，不显示耗尽倒计时')
+    const longWeek = { ...week, resetAt: now + 5 * DAY }
+    const flat = Array.from({ length: 7 }, (_, i) => ({ at: now - DAY + i * 4 * HOUR, pct: 2 * i / 6 }))
+    eq(fc.forecastQuota(flat, longWeek, now), { kind: 'uncertain' }, '一天内只变化2个百分点，精度不足以预测')
+    eq(fc.forecastProjectionPct({ kind: 'uncertain' }), null, '不可靠预测不把用量条填满')
+    const stable = Array.from({ length: 7 }, (_, i) => ({ at: now - DAY + i * 4 * HOUR, pct: 20 + 5 * i }))
+    const forecast = fc.forecastQuota(stable, { ...longWeek, used: 50 }, now)
+    check(forecast?.kind === 'exhaust' && forecast.earliestAt < forecast.exhaustAt && forecast.latestAt > forecast.exhaustAt && forecast.basedOnMs === DAY, '足够稳定的长历史给范围，不伪装精确时刻')
+    const burst = stable.map((point, i) => ({ ...point, pct: i < 4 ? 20 : 20 + 15 * (i - 3) }))
+    eq(fc.forecastQuota(burst, { ...longWeek, used: 65 }, now), { kind: 'uncertain' }, '闲置后突增的短时爆发不当作未来常速')
+    check(fc.forecastQuota(stable.map((point) => ({ ...point, at: point.at - HOUR })), { ...longWeek, used: 50 }, now) === undefined, '过期样本不预测')
+    const previous = [{ at: now, pct: 3 }]
+    eq(fc.appendQuotaSample(previous, { at: now - MIN, pct: 2 }), previous, '乱序返回不截掉较新的样本')
+    eq(fc.appendQuotaSample(previous, { at: now, pct: 3 }), previous, '相同时间缓存读数不堆成更多样本')
+  }
   check(!fc.windowAwaitingReset(win({ resetAt: undefined }), now), '没有重置时间不算待更新')
 
   {

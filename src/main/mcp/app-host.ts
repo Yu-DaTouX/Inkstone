@@ -1,5 +1,5 @@
 import { McpConnectionManager, type McpRawToolDescriptor, type McpRequestOptions } from './connection-manager'
-import { loadMcpServersCached } from './config'
+import { loadMcpServersCached, mcpServersForProject } from './config'
 import { toolResultText, type McpServerStatus } from '../../shared/mcp'
 import {
   isInkstoneManaged,
@@ -110,7 +110,7 @@ interface PooledServer {
 
 type OwnershipEvaluation =
   | { ok: true; config: McpAppServerConfig; fingerprint: string }
-  | { ok: false; error: McpAppUnmanagedError | McpAppOwnershipError }
+  | { ok: false; error: McpAppUnmanagedError | McpAppOwnershipError; preservePool?: boolean }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
@@ -133,6 +133,10 @@ function configFingerprint(config: McpAppServerConfig): string {
     ownedBy: config.ownedBy ?? null,
     projectScope: config.projectScope ?? null
   })
+}
+
+function enabledSomewhere(config: McpAppServerConfig): boolean {
+  return config.enabled !== false || !config.projectScope && Object.values(config.projectEnabled ?? {}).some((enabled) => enabled)
 }
 
 function toAppToolDescriptor(tool: McpRawToolDescriptor): McpAppToolDescriptor {
@@ -192,8 +196,8 @@ export class McpAppHost {
     this.ownership = toGuard(ownership)
   }
 
-  listManagedServers(): McpAppServerConfig[] {
-    return loadMcpServersCached(this.env).servers.filter(isInkstoneManaged)
+  listManagedServers(projectId?: string): McpAppServerConfig[] {
+    return mcpServersForProject(loadMcpServersCached(this.env).servers, projectId).filter(isInkstoneManaged)
   }
 
   statusOf(serverId: string): { status: McpServerStatus; error?: string } {
@@ -225,15 +229,18 @@ export class McpAppHost {
   }
 
   private async evaluateOwnership(serverId: string, options: McpAppRequestOptions): Promise<OwnershipEvaluation> {
-    const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
+    const definitions = loadMcpServersCached(this.env).servers
+    const original = definitions.find((server) => server.id === serverId)
+    const config = mcpServersForProject(definitions, options.projectId).find((server) => server.id === serverId)
     if (!config) {
-      return { ok: false, error: new McpAppUnmanagedError(`MCP 服务 ${serverId} 不在配置里，拒绝由砚宿主连接`) }
+      return { ok: false, preservePool: !!original && isInkstoneManaged({ ...original, enabled: enabledSomewhere(original) }), error: new McpAppUnmanagedError(`MCP 服务 ${serverId} 不在当前项目配置里，拒绝由砚宿主连接`) }
     }
     if (!isInkstoneManaged(config)) {
       return {
         ok: false,
+        preservePool: config.enabled === false && enabledSomewhere(original ?? config) && isInkstoneManaged({ ...config, enabled: true }),
         error: new McpAppUnmanagedError(
-          `MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），拒绝连接`
+          config.enabled === false ? `MCP 服务 ${serverId} 已在当前使用范围关闭，拒绝连接` : `MCP 服务 ${serverId} 未声明由砚托管（ownedBy=${config.ownedBy ?? 'pi'}），拒绝连接`
         )
       }
     }
@@ -280,7 +287,7 @@ export class McpAppHost {
   private async acquireEligible(serverId: string, options: McpAppRequestOptions): Promise<PooledServer> {
     const evaluation = await this.evaluateOwnership(serverId, options)
     if (!evaluation.ok) {
-      await this.runPool(serverId, () => this.dropPooled(serverId))
+      if (!evaluation.preservePool) await this.runPool(serverId, () => this.dropPooled(serverId))
       throw evaluation.error
     }
     return this.acquire(serverId, evaluation.config, evaluation.fingerprint)
@@ -296,7 +303,7 @@ export class McpAppHost {
     }
     const evaluation = await this.evaluateOwnership(serverId, options)
     if (!evaluation.ok) {
-      await this.runPool(serverId, async () => {
+      if (!evaluation.preservePool) await this.runPool(serverId, async () => {
         if (this.pool.get(serverId) === pooled) await this.dropPooled(serverId)
       })
       throw new McpAppOwnershipError(
@@ -333,7 +340,8 @@ export class McpAppHost {
   }
 
   async reconcile(serverId: string): Promise<McpAppReconcileResult> {
-    const config = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
+    const original = loadMcpServersCached(this.env).servers.find((server) => server.id === serverId)
+    const config = original ? { ...original, enabled: enabledSomewhere(original) } : undefined
     const managed = Boolean(config && isInkstoneManaged(config))
     if (!config || !managed) {
       const closed = await this.runPool(serverId, () => this.dropPooled(serverId))

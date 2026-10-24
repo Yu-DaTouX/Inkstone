@@ -76,8 +76,17 @@ check('渐显：rehype 只包正文文本，跳过代码', () => {
 })
 
 check('跟随：贴底时保持跟随，无按钮', () => {
-  const at = follow.decideFollow(false, { offset: 970, size: 1500, viewport: 500 }, null, 0)
+  const at = follow.decideFollow(false, { offset: 1000, size: 1500, viewport: 500 }, null, 0)
   assert.deepEqual(at, { stick: true, showJump: false, repin: false })
+})
+
+check('跟随：用户还没滚到底时，不因40px容差抢回滚动位置', () => {
+  const reading = follow.decideFollow(false, { offset: 980, size: 1500, viewport: 500 }, null, 2000)
+  assert.deepEqual(reading, { stick: false, showJump: false, repin: false })
+  const active = follow.decideFollow(true, { offset: 980, size: 1500, viewport: 500 }, 100, 200)
+  assert.deepEqual(active, { stick: false, showJump: false, repin: false })
+  const bottom = follow.decideFollow(false, { offset: 1000, size: 1500, viewport: 500 }, 100, 200)
+  assert.deepEqual(bottom, { stick: true, showJump: false, repin: false })
 })
 
 check('跟随：无用户操作的版面回弹继续跟随并重新贴底', () => {

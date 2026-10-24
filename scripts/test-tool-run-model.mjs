@@ -28,8 +28,24 @@ async function run() {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-tool-run-'))
   try {
     const m = await load(dir)
+    assert.equal(m.liveToolGlowId([call('container', 'codemode', {}, { status: 'running' }), call('write', 'write', {}, { status: 'pending', parentToolCallId: 'container' })]), 'write', '容器与正在生成参数的子工具只突出子工具')
+    assert.equal(m.liveToolGlowId([call('older', 'read', {}, { status: 'running' }), call('newer', 'write', {}, { status: 'pending' })]), 'newer', '跨段多个活动工具只突出最新一项')
+    assert.equal(m.liveToolGlowId([call('done', 'read')]), null, '已结束工具不保留辉光')
     const zh = (key, vars) => m.sessionText('zh-CN', key, vars)
     const en = (key, vars) => m.sessionText('en-US', key, vars)
+    const webTools = [
+      call('code-parent', 'codemode', { code: 'fixture' }),
+      call('nested-read', 'read', { path: 'data.json' }, { parentToolCallId: 'code-parent' }),
+      call('nested-search', 'web_search', { query: 'Minecraft MCP' }, { parentToolCallId: 'code-parent' }),
+      call('nested-fetch', 'web_fetch', { url: 'https://example.invalid/docs' }, { parentToolCallId: 'code-parent' }),
+      call('after-read', 'read', { path: 'result.json' })
+    ]
+    const webRows = m.buildToolRows(webTools)
+    for (const id of ['nested-search', 'nested-fetch']) {
+      assert.ok(webRows.some((row) => row.kind === 'single' && row.standalone && row.id === id), '搜索和网页读取从 codemode 提升成独立卡片')
+    }
+    const codeRow = webRows.find((row) => row.id === 'code-parent')
+    assert.deepEqual(codeRow.node.children.map((node) => node.call.id), ['nested-read'], '原工具中不重复嵌套搜索卡片，普通读取仍保留')
 
     assert.equal(m.toolCategory(call('a', 'read', { path: 'a.ts' })), 'read')
     assert.equal(m.toolCategory(call('a', 'bash', { command: 'npm test' })), 'command')

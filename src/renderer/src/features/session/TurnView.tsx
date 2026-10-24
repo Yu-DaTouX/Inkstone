@@ -9,12 +9,15 @@ import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
 import { conciseSegment, splitTurnProcess, withoutThinking } from './turn-process'
+import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { TranscriptViewScope } from './use-tool-run'
 import { useTranscriptView } from '../../state/transcript-view'
 import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
 import { UserText } from './UserText'
+import { MessageFiles } from './MessageFiles'
+import { splitFileReferences } from '../composer/file-refs'
 import { Icon } from './Icon'
 import { Badge, IconButton, Notice } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
@@ -39,7 +42,7 @@ import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail = false }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
-  if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} branchPager={branchPager} />
+  if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
   return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} />
@@ -62,7 +65,8 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
   if (isSubagentNotice(msg.text)) return null
-  const displayText = stripImageLegend(msg.text ?? '')
+  const fileContent = splitFileReferences(stripImageLegend(msg.text ?? ''))
+  const displayText = fileContent.text
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
   const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
   return (
@@ -88,6 +92,8 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           </div>
         ) : null}
 
+        {fileContent.files.length ? <MessageFiles files={fileContent.files} sourceCwd={msg.sourceCwd} /> : null}
+
         {msg.qa?.length ? (
           <div className="v3-qa" data-testid="v3-question-qa">
             {msg.qa.map((item, i) => (
@@ -97,7 +103,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               </div>
             ))}
           </div>
-        ) : msg.text ? (
+        ) : displayText ? (
           <div className="v3-bubble">
             <UserText text={displayText} />
           </div>
@@ -138,7 +144,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               <Icon name="branch" size={14} />
             </IconButton>
           ) : null}
-          {msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
+          {msg.id.startsWith('submitting-') ? <span role="status">{t('composer.sending')}</span> : msg.timestamp ? <TurnClock timestamp={msg.timestamp} /> : null}
         </div>
       </div>
     </article>
@@ -233,6 +239,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const split = flow ? splitTurnProcess(flow) : null
   const processSegs = split?.process ?? []
   const thinkingBySegment = processSegs.length > 0
+  const glowId = liveToolGlowId(turn.tools)
 
   return (
     <TranscriptViewScope.Provider value={view}>
@@ -254,8 +261,16 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   sessionId={sessionId}
                   turnId={turn.id}
                   approvalIds={approvalIds}
+                  glowId={glowId}
                 />
               ) : null}
+              {split.earlierReplies.map((segment) => (
+                <div key={segment.id} className="v3-seg" data-testid="v3-seg">
+                  <div className="v3-para">
+                    <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
+                  </div>
+                </div>
+              ))}
               {split.reply ? (
                 <div className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
@@ -277,7 +292,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                         ))}
                       </div>
                     ) : null}
-                    <ToolSteps tools={seg.tools} approvalIds={approvalIds} />
+                    <ToolSteps tools={seg.tools} approvalIds={approvalIds} glowId={glowId} />
                     {seg.response ? (
                       <div className="v3-para">
                         <Markdown text={seg.response.text} sourceCwd={seg.response.sourceCwd} live={!!streaming && seg.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={seg.response.id} />
@@ -307,7 +322,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 : turn.response && !turn.response.hasTools
                   ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
                   : null}
-              <ToolSteps tools={turn.tools} approvalIds={approvalIds} />
+              <ToolSteps tools={turn.tools} approvalIds={approvalIds} glowId={glowId} />
             </>
           )}
   

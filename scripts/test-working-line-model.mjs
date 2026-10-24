@@ -27,6 +27,8 @@ async function run() {
     assert.equal(working.kind, 'working')
     assert.equal(working.elapsedMs, 5000, '秒数对齐整秒')
     assert.equal(working.tokens, 1234)
+    assert.equal(m.workingLine({ ...base, requested: true, streaming: true, quiet: true }).quiet, true, '已有生成参数工具辉光时，正文状态行保持安静')
+    assert.equal(m.workingLine({ ...base, requested: true, waiting: true, quiet: true }).quiet, false, '等待用户操作仍明确可见')
     assert.equal(m.workingLine({ ...base, requested: true, tokens: 0 }).tokens, null, '没有 token 时不显示')
 
     const order = { ...base, requested: true, stopping: true, waiting: true, retry: { attempt: 2, maxAttempts: 3, at: 99_000, delayMs: 4000 }, compacting: true, toolRunning: true }

@@ -22,11 +22,14 @@ export interface McpConfigLoadResult {
   file?: string
 }
 
-export function mcpServersForProject(
-  servers: readonly McpServerConfig[],
+export function mcpServersForProject<T extends McpServerConfig>(
+  servers: readonly T[],
   projectId: string | undefined
-): McpServerConfig[] {
+): T[] {
   return servers.filter((server) => !server.projectScope || Boolean(projectId) && server.projectScope === projectId)
+    .map((server) => projectId && !server.projectScope && typeof server.projectEnabled?.[projectId] === 'boolean'
+      ? { ...server, enabled: server.projectEnabled[projectId] }
+      : server)
 }
 
 const TRANSPORTS = new Set(['stdio', 'http'])
@@ -34,7 +37,7 @@ const EFFECTS = new Set(['read', 'write', 'external-action', 'unknown'])
 
 const KNOWN_SERVER_KEYS = new Set([
   'id', 'title', 'transport', 'command', 'args', 'env', 'url', 'authRef',
-  'projectScope', 'effect', 'enabled', 'migratedToNative', 'ownedBy', 'appHost'
+  'projectScope', 'projectEnabled', 'effect', 'enabled', 'migratedToNative', 'ownedBy', 'appHost'
 ])
 
 function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
@@ -75,6 +78,9 @@ function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
     }
   }
   const migratedToNative = parseMigratedMark(r.migratedToNative)
+  if (r.projectEnabled !== undefined && (!r.projectEnabled || typeof r.projectEnabled !== 'object' || Array.isArray(r.projectEnabled) || Object.values(r.projectEnabled).some((value) => typeof value !== 'boolean'))) {
+    return { problem: `${id}: projectEnabled 必须是项目 ID 到布尔值的对象` }
+  }
   const extras: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(r)) {
     if (!KNOWN_SERVER_KEYS.has(key)) extras[key] = value
@@ -93,6 +99,7 @@ function normalize(raw: unknown): McpAppServerConfig | { problem: string } {
     ...(typeof r.url === 'string' ? { url: r.url } : {}),
     ...(typeof r.authRef === 'string' && r.authRef.trim() ? { authRef: r.authRef.trim() } : {}),
     ...(typeof r.projectScope === 'string' && r.projectScope.trim() ? { projectScope: r.projectScope.trim() } : {}),
+    ...(r.projectEnabled ? { projectEnabled: { ...r.projectEnabled as Record<string, boolean> } } : {}),
     ...(effect ? { effect } : {}),
     ...(r.enabled === false ? { enabled: false } : {}),
     ...(migratedToNative ? { migratedToNative } : {}),
