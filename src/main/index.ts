@@ -74,7 +74,7 @@ import { mcpAppHost, closeMcpAppHost, configureMcpAppHostOwnership } from './mcp
 import { loadMcpServersCached } from './mcp/config'
 import type { McpAppOwner } from '../shared/mcp-app-preview'
 import { createMcpAppRuntimeOwnershipFacts } from './mcp/app-runtime-ownership'
-import { registerPackagesIpc } from './ipc/packages-ipc'
+import { refreshMinecraftPluginOnStartup, registerPackagesIpc } from './ipc/packages-ipc'
 import { registerOpenCodeProxyIpc } from './ipc/opencode-ipc'
 import { autoStartOpenCodeProxy, stopOpenCodeProxySync } from './opencode-proxy'
 import { registerDesktopPetIpc } from './ipc/desktop-pet-ipc'
@@ -2955,6 +2955,7 @@ function registerIpc(): void {
   })
 
   registerPackagesIpc(ipc, { hasBusyCwd: (cwd: string) => runners?.hasBusyCwd(cwd) === true })
+  refreshMinecraftPluginOnStartup()
   registerOpenCodeProxyIpc(ipc, { restartAgent: (reason: string) => restartAgent(reason) })
   registerDesktopPetIpc(ipc)
   registerCanvasCaptureIpc(ipc)

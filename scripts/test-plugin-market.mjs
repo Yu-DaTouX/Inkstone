@@ -95,6 +95,12 @@ export async function runPluginMarketTests(ok) {
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify(doc))
     const updated = await mc.installMinecraftPlugin(paths)
     ok(updated.ok && !updated.status.configured && JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'].enabled === false, 'Minecraft 插件：更新时保留用户的停用设置')
+    ok(await mc.refreshMinecraftPlugin(paths) === 'current', '\u542f\u52a8\u68c0\u67e5\uff1a\u5df2\u662f\u968f\u5305\u7248\u672c\u65f6\u4e0d\u52a8')
+    await writeFile(join(source, 'mcp', 'server.ts'), 'export const changed = 1\n')
+    const refreshed = await mc.refreshMinecraftPlugin(paths)
+    const afterRefresh = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft']
+    ok(refreshed === 'updated' && (await readFile(join(paths.pluginDir, 'mcp', 'server.ts'), 'utf8')).includes('changed') && afterRefresh.enabled === false, '\u542f\u52a8\u68c0\u67e5\uff1a\u968f\u5305\u6587\u4ef6\u53d8\u5316\u65f6\u81ea\u52a8\u66f4\u65b0\u5e76\u4fdd\u7559\u505c\u7528')
+    ok(await mc.refreshMinecraftPlugin({ ...paths, runtime: 'D:/New/Inkstone.exe' }) === 'updated' && JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'].command === 'D:/New/Inkstone.exe', '\u542f\u52a8\u68c0\u67e5\uff1a\u781a\u7684\u4f4d\u7f6e\u53d8\u5316\u65f6\u6539\u5199\u8fd0\u884c\u65f6\u8def\u5f84')
     const removed = await mc.removeMinecraftPlugin(paths)
     const afterDoc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
     ok(removed.ok && !removed.status.installed && !removed.status.skill && !afterDoc.mcpServers['inkstone-minecraft'] && afterDoc.mcpServers.codegraph, 'Minecraft 插件：移除只删自己的登记、目录与技能')
@@ -106,6 +112,7 @@ export async function runPluginMarketTests(ok) {
     await writeFile(join(agentDir, 'mcp.json'), '{bad')
     const broken = await mc.installMinecraftPlugin(paths)
     ok(!broken.ok && (await readFile(join(agentDir, 'mcp.json'), 'utf8')) === '{bad', 'Minecraft 插件：坏 JSON 拒绝改写')
+    ok(await mc.refreshMinecraftPlugin(paths) === 'skipped', '\u542f\u52a8\u68c0\u67e5\uff1a\u6ca1\u5b89\u88c5\u6216\u767b\u8bb0\u5df2\u5220\u65f6\u4e0d\u81ea\u52a8\u88c5\u56de')
     const missing = await mc.installMinecraftPlugin({ ...paths, source: null })
     ok(!missing.ok && /随包插件文件缺失/.test(missing.error), 'Minecraft 插件：没有随包文件时说明原因')
   } finally { await rm(mcRoot, { recursive: true, force: true }) }

@@ -6,7 +6,7 @@ import { resolvePi } from '../protocol'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
-import { installMinecraftPlugin, minecraftPluginStatus, removeMinecraftPlugin, type MinecraftPluginPaths } from '../minecraft-plugin'
+import { installMinecraftPlugin, minecraftPluginStatus, refreshMinecraftPlugin, removeMinecraftPlugin, type MinecraftPluginPaths } from '../minecraft-plugin'
 import { app, dialog } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
@@ -33,6 +33,22 @@ async function minecraftPaths(): Promise<MinecraftPluginPaths> {
     agentDir: PI_AGENT_DIR,
     runtime: process.execPath
   }
+}
+
+let minecraftQueue: Promise<unknown> = Promise.resolve()
+
+function queueMinecraft<T>(task: () => Promise<T>): Promise<T> {
+  const next = minecraftQueue.then(task, task)
+  minecraftQueue = next.catch(() => undefined)
+  return next
+}
+
+export function refreshMinecraftPluginOnStartup(): void {
+  void queueMinecraft(async () => {
+    const result = await refreshMinecraftPlugin(await minecraftPaths())
+    if (result === 'updated') console.log('[minecraft-plugin] \u5df2\u66f4\u65b0\u5230\u968f\u5305\u7248\u672c')
+    else if (typeof result === 'object') console.warn('[minecraft-plugin] \u66f4\u65b0\u5931\u8d25', result.error)
+  }).catch((error) => console.warn('[minecraft-plugin] \u66f4\u65b0\u68c0\u67e5\u5931\u8d25', error))
 }
 
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
@@ -71,9 +87,9 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
 
   handle('yan:packages:minecraft', async (action: unknown) => {
     const paths = await minecraftPaths()
-    if (action === 'install') return installMinecraftPlugin(paths)
-    if (action === 'remove') return removeMinecraftPlugin(paths)
-    return { ok: true, status: await minecraftPluginStatus(paths) }
+    if (action === 'install') return queueMinecraft(() => installMinecraftPlugin(paths))
+    if (action === 'remove') return queueMinecraft(() => removeMinecraftPlugin(paths))
+    return queueMinecraft(async () => ({ ok: true, status: await minecraftPluginStatus(paths) }))
   })
 
   handle('yan:packages:codegraphStatus', async (cwd: unknown) =>

@@ -1,6 +1,6 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import type { MinecraftPluginResult, MinecraftPluginStatus } from '../shared/plugin-market'
 
@@ -8,6 +8,7 @@ export const MINECRAFT_PLUGIN_ID = 'inkstone-minecraft'
 export const MINECRAFT_SKILL = 'inkstone-fabric-dev'
 const PLUGIN_PARTS = ['package.json', 'mcp', 'src', 'skills', 'templates', 'companion-mod']
 const SKIPPED_DIRS = new Set(['.gradle', 'run', '.inkstone', 'node_modules', 'out'])
+const SOURCE_STAMP = '.inkstone-source.json'
 
 export interface MinecraftPluginPaths {
   source: string | null
@@ -36,6 +37,42 @@ export function copiesIntoPlugin(root: string, path: string): boolean {
   if (inside.length === 0) return true
   if (inside[0] !== 'libs') return false
   return inside.length === 1 || (inside.length === 2 && inside[1].endsWith('.jar'))
+}
+
+export async function minecraftSourceFingerprint(source: string): Promise<string> {
+  const hash = createHash('sha256')
+  const walk = async (path: string): Promise<void> => {
+    if (!copiesIntoPlugin(source, path)) return
+    const entries = await readdir(path, { withFileTypes: true }).catch(() => null)
+    if (!entries) {
+      hash.update(relative(source, path).split(sep).join('/')).update('\0').update(await readFile(path)).update('\0')
+      return
+    }
+    for (const entry of entries.map((item) => item.name).sort()) await walk(join(path, entry))
+  }
+  for (const part of PLUGIN_PARTS) if (existsSync(join(source, part))) await walk(join(source, part))
+  return hash.digest('hex')
+}
+
+async function installedFingerprint(pluginDir: string): Promise<string | undefined> {
+  try {
+    const value = JSON.parse(await readFile(join(pluginDir, SOURCE_STAMP), 'utf8')) as { fingerprint?: unknown }
+    return typeof value.fingerprint === 'string' ? value.fingerprint : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function refreshMinecraftPlugin(paths: MinecraftPluginPaths): Promise<'updated' | 'current' | 'skipped' | MinecraftPluginResult> {
+  if (!paths.source || !existsSync(serverScript(paths.source)) || !existsSync(serverScript(paths.pluginDir))) return 'skipped'
+  const { document } = await readMcp(paths.agentDir).catch(() => ({ document: undefined }))
+  const entry = document?.mcpServers?.[MINECRAFT_PLUGIN_ID]
+  if (!isOurs(entry, paths.pluginDir)) return 'skipped'
+  const runtimeCurrent = (entry as { command?: unknown }).command === paths.runtime
+  const skillPresent = existsSync(join(paths.skillsDir, MINECRAFT_SKILL, 'SKILL.md'))
+  if (runtimeCurrent && skillPresent && (await installedFingerprint(paths.pluginDir)) === (await minecraftSourceFingerprint(paths.source))) return 'current'
+  const result = await installMinecraftPlugin(paths)
+  return result.ok ? 'updated' : result
 }
 
 function isOurs(entry: unknown, pluginDir: string): boolean {
@@ -115,6 +152,7 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promi
         const from = join(source, part)
         if (existsSync(from)) await cp(from, join(staging, part), { recursive: true, filter: (item) => copiesIntoPlugin(source, item) })
       }
+      await writeFile(join(staging, SOURCE_STAMP), `${JSON.stringify({ fingerprint: await minecraftSourceFingerprint(source) })}\n`, 'utf8')
       await rm(paths.pluginDir, { recursive: true, force: true })
       await mkdir(join(paths.pluginDir, '..'), { recursive: true })
       await rename(staging, paths.pluginDir)
