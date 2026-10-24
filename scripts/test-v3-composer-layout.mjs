@@ -86,6 +86,7 @@ const STORE_STUB = `const state = {
   restoreSend: () => {}, removeQueued: async () => {}
 }
 export function pendingSendsForView(){ return [] }
+export function currentThinkingLevels(s){ return s.thinkingLevels }
 export function useStore(sel){ return sel ? sel(state) : state }
 useStore.getState = () => state
 useStore.setState = (patch) => { Object.assign(state, typeof patch === 'function' ? patch(state) : patch) }

@@ -62,7 +62,7 @@ async function loadLayout() {
 async function buildSsr(outdir) {
   const stubMap = new Map(
     Object.entries({
-      'src/renderer/src/state/store.ts': 'export function useStore(sel){ return sel ? sel({ session: null, models: [], settings: {}, thinkingLevels: [], authProviders: [] }) : {} }\nuseStore.getState = () => ({ notify(){}, patchSettings: async()=>{}, openSettings(){} })\nuseStore.setState = () => {}\n',
+      'src/renderer/src/state/store.ts': 'export function currentThinkingLevels(s){ return s.thinkingLevels }\nexport function useStore(sel){ return sel ? sel({ session: null, models: [], settings: {}, thinkingLevels: [], authProviders: [] }) : {} }\nuseStore.getState = () => ({ notify(){}, patchSettings: async()=>{}, openSettings(){} })\nuseStore.setState = () => {}\n',
       'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => String(k) }\nexport function useOptionalT(){ return (k) => String(k) }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )

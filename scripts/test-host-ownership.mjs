@@ -176,6 +176,7 @@ export async function runHostOwnershipTests(ok) {
       getSettings: () => gate.promise,
       captureCheckpoint: (...args) => { checkpoints.push(args) },
       reserveWorkspaceMutation: () => () => {},
+      warnSharedCwdOnce: () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)
@@ -279,6 +280,7 @@ export async function runHostOwnershipTests(ok) {
       getSettings: () => Promise.resolve({ checkpointsEnabled: true }),
       captureCheckpoint: () => {},
       reserveWorkspaceMutation: () => () => {},
+      warnSharedCwdOnce: () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)

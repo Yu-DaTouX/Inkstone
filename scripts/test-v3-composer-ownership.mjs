@@ -198,6 +198,7 @@ export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, 
 export function translate(_lang, k){ return String(k) }`,
   attachmentFiles: `export async function readFiles(){ return [] }`,
   lucide: `export function ArrowUp(){ return null }
+export function GitMerge(){ return null }
 export function Square(){ return null }
 export function Hourglass(){ return null }`
 }

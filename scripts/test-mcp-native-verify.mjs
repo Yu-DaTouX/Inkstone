@@ -54,6 +54,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
+  banner: { js: "import { createRequire as __yanCreateRequire } from 'node:module'; const require = __yanCreateRequire(import.meta.url);" },
   plugins: [electronStub],
   logLevel: 'silent'
 })
@@ -531,6 +532,7 @@ try {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    banner: { js: "import { createRequire as __yanCreateRequire } from 'node:module'; const require = __yanCreateRequire(import.meta.url);" },
     logLevel: 'silent'
   })
   const harness = await import(pathToFileURL(harnessFile).href)
@@ -592,6 +594,7 @@ try {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    banner: { js: "import { createRequire as __yanCreateRequire } from 'node:module'; const require = __yanCreateRequire(import.meta.url);" },
     logLevel: 'silent'
   })
   const killHarness = await import(pathToFileURL(killHarnessFile).href)

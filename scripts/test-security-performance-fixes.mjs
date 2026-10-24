@@ -142,7 +142,7 @@ try {
   vm.runInNewContext((await transform(handlerSource, { loader: 'ts', target: 'es2022' })).code, {
     handle: (_channel, callback) => { prune = callback }, deps: { isSessionBusy: () => busy },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: historyDir, YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments,
+    PI_AGENT_DIR: historyDir, YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {}, ...attachments,
     referencedAttachmentNames: async files => {
       const refs = await attachments.referencedAttachmentNames(files)
       if (mutate) await writeFile(sessionFile, validImageRow + '\n{}')
@@ -168,7 +168,7 @@ try {
     handle: (_channel, callback) => { missing = callback },
     deps: { isSessionBusy: () => false },
     join: (...parts) => parts[parts.length - 1] === 'attachments' ? imageDir : join(...parts),
-    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, ...attachments
+    PI_AGENT_DIR: join(temp, 'no-sessions-here'), YAN_DIR: temp, stat, existsSync, PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {}, ...attachments
   })
   const skipped = await missing()
   assert.equal(skipped.removed, 0); assert.equal(skipped.bytes, 0); assert.equal(skipped.kept, 0)

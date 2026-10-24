@@ -156,7 +156,7 @@ function abs(rel) {
 }
 
 function makeStubPlugin(rawMap) {
-  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
+  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', 'src/renderer/src/ui/FileCard.tsx': 'export function FileCard(){ return null }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
   return {
     name: 'v3-rewind-stubs',
     setup(b) {
@@ -226,7 +226,7 @@ export { textFingerprint } from '${posix(abs('src/shared/checkpoints.ts'))}'
     {
       'src/renderer/src/features/session/Markdown.tsx': `export function Markdown(){ return null }`,
       'src/renderer/src/features/session/MessageParts.tsx': `export function TurnArtifacts(){ return null }`,
-      'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }`,
+      'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }\nexport function ThinkingAside(){ return null }`,
       'src/renderer/src/features/session/ToolSteps.tsx': `export function ToolSteps(){ return null }`,
       'src/renderer/src/features/session/Image.tsx': `export function MessageImage(){ return null }`,
       'src/renderer/src/features/session/text.ts': `export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }`,

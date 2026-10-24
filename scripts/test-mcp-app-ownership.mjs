@@ -182,8 +182,8 @@ try {
   }
 
   {
-    await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}, { projectId: 'other' }), 'project-mismatch', '跨项目调用项目服务：拒绝')
-    await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}), 'project-mismatch', '无项目身份调用项目服务：拒绝')
+    await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}, { projectId: 'other' }), 'not-managed', '跨项目调用项目服务：拒绝')
+    await fails(() => appHost.callToolWithMeta('managed-project', 'tool', {}), 'not-managed', '无项目身份调用项目服务：拒绝')
     const outcome = await appHost.callToolWithMeta('managed-project', 'tool', {}, { projectId: 'proj-1' })
     ok(outcome.text === 'ok', '同项目身份调用项目服务：允许')
 

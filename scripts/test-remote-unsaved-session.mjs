@@ -73,6 +73,7 @@ try {
   }
 
   const registry = {
+    blocksConcurrentRun: () => false,
     statuses: () => [unsaved],
     select: async (target) => {
       selections.push(target)

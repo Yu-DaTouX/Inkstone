@@ -14,7 +14,7 @@ async function fixture(disappear) {
     PI_AGENT_DIR: '/fixture', YAN_DIR: '/fixture', join, existsSync: () => true,
     listSessionFiles: () => ['session.jsonl'],
     stat: async () => { if (disappear && afterScan) throw Object.assign(new Error('gone'), { code: 'ENOENT' }); return { size: 1, mtimeMs: 1, ctimeMs: 1 } },
-    PRUNE_FINGERPRINT_BATCH: 32,
+    PRUNE_FINGERPRINT_BATCH: 32, clearSessionReadCache: () => {},
     referencedAttachmentNames: async () => { afterScan = true; return new Set() },
     pruneAttachments: () => { pruned = true; return { removed: 0 } }, Date, JSON
   })
@@ -40,7 +40,7 @@ async function batchFixture(count, batch) {
       if (index === batch) secondBatchYielded = yielded
       return new Promise((done) => setImmediate(() => done({ size: 1, mtimeMs: 1, ctimeMs: 1 })))
     },
-    PRUNE_FINGERPRINT_BATCH: batch,
+    PRUNE_FINGERPRINT_BATCH: batch, clearSessionReadCache: () => {},
     referencedAttachmentNames: async () => new Set(),
     pruneAttachments: () => ({ removed: 0 }), Date, JSON
   })

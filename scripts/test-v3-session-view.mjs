@@ -106,7 +106,7 @@ function abs(rel) {
 }
 
 function makeStubPlugin(rawMap, extraResolve = {}) {
-  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
+  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', 'src/renderer/src/ui/FileCard.tsx': 'export function FileCard(){ return null }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
   const virtual = new Map(Object.entries(extraResolve))
   return {
     name: 'v3-session-view-stubs',
@@ -148,6 +148,7 @@ async function buildOne(outdir, name, entrySource, rawStubMap, shims) {
     bundle: true,
     format: 'esm',
     platform: 'neutral',
+    mainFields: ['module', 'main'],
     logLevel: 'silent',
     jsx: 'automatic',
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
@@ -210,7 +211,7 @@ export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'
     {
       'src/renderer/src/features/session/Markdown.tsx': `export const Markdown=(props)=>{ Markdown.__calls.push(props); return null }\nMarkdown.__stub='markdown'\nMarkdown.__calls=[]`,
       'src/renderer/src/features/session/MessageParts.tsx': `export function TurnArtifacts(props){ TurnArtifacts.__calls.push(props); return null }\nTurnArtifacts.__stub='turn-artifacts'\nTurnArtifacts.__calls=[]`,
-      'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }`,
+      'src/renderer/src/features/session/Thinking.tsx': `export function ThinkingLine(){ return null }\nexport function ThinkingAside(){ return null }`,
       'src/renderer/src/features/session/ToolSteps.tsx': `export function ToolSteps(){ return null }`,
       'src/renderer/src/features/session/Image.tsx': `export function MessageImage(){ return null }`,
       'src/renderer/src/features/session/UserText.tsx': `export function UserText(props){ return props.text }`,
