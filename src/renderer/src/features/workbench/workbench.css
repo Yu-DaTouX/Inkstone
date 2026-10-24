@@ -864,6 +864,25 @@
     min-width: 0;
   }
 
+  .wb-tile[data-tile='stats'] .wb-tile-toggle > .ui-btn__label {
+    flex-wrap: wrap;
+  }
+
+  .wb-tile[data-tile='stats'] .wb-tile-summary {
+    flex: 1 1 max-content;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .wb-tile[data-tile='stats'] .wb-rail-glance {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .wb-tile[data-tile='stats'] .wb-rail-glance > .ui-rail-value {
+    flex: none;
+  }
+
   .wb-tile-open {
     flex: none;
     margin-right: calc(-1 * var(--s-6));

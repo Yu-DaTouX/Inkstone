@@ -61,7 +61,7 @@ export function useWorkingLine(): WorkingLine | null {
     elapsedMs,
     now,
     tokens: turnOutputTokens(messages, userId),
-    quiet: progress?.phase === 'tool'
+    quiet: messages.slice(lastUser + 1).some((message) => message.role === 'assistant' && message.toolCalls?.some((call) => call.status === 'running' || call.status === 'pending')) || !!assistant?.thinkingLive && !!assistant.thinking?.trim()
   })
 }
 

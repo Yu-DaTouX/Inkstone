@@ -460,6 +460,9 @@ const api: YanBridge = {
     commitNativeImport: (token: string) =>
       invoke<NativeMcpImportCommitResponse>('yan:capabilities:commitNativeImport', token),
     nativeServers: () => invoke<NativeMcpServerListView>('yan:capabilities:nativeMcpServers'),
+    mcpServices: () => invoke('yan:capabilities:mcpServices'),
+    changeMcpService: (input) => invoke('yan:capabilities:changeMcpService', input),
+    applyMcpServices: (input) => invoke('yan:capabilities:applyMcpServices', input),
     manageNativeServer: (action: 'enable' | 'disable' | 'remove', name: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:manageNativeMcpServer', { action, name })
   },

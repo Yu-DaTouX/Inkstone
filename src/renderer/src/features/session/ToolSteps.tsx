@@ -7,7 +7,7 @@ import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
 import { isDeniedCall, shellTitle, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
-import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, summarizeToolRun, toolRunParts, type ToolRow } from './tool-run-model'
+import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolRunParts, type ToolRow } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -53,7 +53,7 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
   return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
-export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string> }): JSX.Element | null {
+export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools) }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null }): JSX.Element | null {
   const t = useT()
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
@@ -63,7 +63,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UITool
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
         {rows.map((row) => {
-          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
+          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} glowId={glowId} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.standalone && isQuestionCall(row.node.call)) {
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
@@ -71,14 +71,14 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS }: { tools: UITool
               ? <QuestionCard key={row.id} requestId={asked.id} />
               : <QuestionReceipt key={row.id} call={row.node.call} />
           }
-          return <StepNode key={row.id} node={row.node} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
+          return <StepNode key={row.id} node={row.node} glowId={glowId} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
         })}
       </div>
     </section>
   )
 }
 
-function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean }): JSX.Element {
+function ToolGroupRow({ row, asking, glowId }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(row.id)
@@ -95,7 +95,7 @@ function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }
     <div className="v3-step v3-step-group" data-state={summary.state} data-depth={0}>
       <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={label} data-testid="v3-step-group">
         {running ? (
-          <ShimmerText className="v3-steps-label" active>{shown}</ShimmerText>
+          <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
         ) : (
           <span className="v3-steps-label">
             {parts.map((part, index) => <span key={index} data-failed={part.failed || undefined}>{part.text}</span>)}
@@ -108,14 +108,14 @@ function ToolGroupRow({ row, asking }: { row: Extract<ToolRow, { kind: 'group' }
       {asking ? <ApprovalCard inline /> : null}
       {open ? (
         <div className="v3-step-nest" role="group" aria-label={label} data-testid="v3-step-group-list">
-          {members.map((member) => <StepNode key={member.node.call.id} node={member.node} depth={1} repeat={member.repeat} />)}
+          {members.map((member) => <StepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
         </div>
       ) : null}
     </div>
   )
 }
 
-function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: { node: ToolCallNode; depth: number; blocked?: boolean; repeat?: number; asking?: boolean }): JSX.Element {
+function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = false }: { node: ToolCallNode; depth: number; glowId: string | null; blocked?: boolean; repeat?: number; asking?: boolean }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(`step:${node.call.id}`)
@@ -137,12 +137,12 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
       <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={`${title.label} ${meta}`.trim()} data-testid="v3-step">
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
         <span className="v3-step-label">
-          <ShimmerText active={running && !blocked}>{title.label}</ShimmerText>
+          <ShimmerText active={running && !blocked && call.id === glowId}>{title.label}</ShimmerText>
         </span>
         {denied ? <Icon name="deny" size={13} className="v3-step-deny" /> : null}
         {meta ? (
           <span className="v3-step-target" data-code={title.code || undefined}>
-            <ShimmerText active={running && !blocked}>{meta}</ShimmerText>
+            {meta}
           </span>
         ) : null}
         {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
@@ -158,7 +158,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
               {t('tool2.nestEarlier', { n: nested.earlier })}
             </Button>
           ) : null}
-          {nested.shown.map((child) => <StepNode key={child.call.id} node={child} depth={depth + 1} />)}
+          {nested.shown.map((child) => <StepNode key={child.call.id} node={child} glowId={glowId} depth={depth + 1} />)}
         </div>
       ) : null}
     </>
@@ -166,7 +166,7 @@ function StepNode({ node, depth, blocked = false, repeat = 1, asking = false }: 
 
   return (
     <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
-      {search ? <SearchStepView call={call} step={search}>{step}</SearchStepView> : step}
+      {search ? <SearchStepView call={call} step={search} glow={call.id === glowId}>{step}</SearchStepView> : step}
     </div>
   )
 }

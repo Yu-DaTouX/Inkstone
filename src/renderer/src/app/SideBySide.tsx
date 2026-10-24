@@ -11,6 +11,7 @@ import { workbenchText } from '../features/workbench/workbench-text'
 import { ToolTileBody } from '../features/workbench/ToolTileBody'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { newestMessages } from '../state/split-snapshots'
+import { withSubmittingMessages } from '../state/submitting-messages'
 import { SessionView } from '../features/session/SessionView'
 import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
@@ -324,8 +325,9 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
   const runtime = useStore((s) => (target.sessionId ? s.sessionRuntimes[target.sessionId] : undefined))
   const summary = useSplitSummary(target)
   const cached = runtime?.messages
+  const submittingMessages = useStore((s) => s.submittingMessages)
   const [history, setHistory] = useState<UIMessage[] | null>(null)
-  const messages = useMemo(() => newestMessages(cached, history ?? undefined) ?? [], [cached, history])
+  const messages = useMemo(() => withSubmittingMessages(newestMessages(cached, history ?? undefined) ?? [], submittingMessages.filter((item) => sameSplitSession(item.identity, target))), [cached, history, submittingMessages, target])
   const draft = runtime?.draft ?? ''
   const running = !!runtime?.session?.isAgentRunning || !!runtime?.session?.isStreaming
   const waiting = (runtime?.uiRequests.length ?? 0) > 0
@@ -358,7 +360,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
       className="v3-split-peer"
       data-testid="v3-split-peer"
       onClickCapture={(event) => {
-        if ((event.target as HTMLElement).closest('button, [data-split-own]')) return
+        if ((event.target as HTMLElement).closest('a, button, input, textarea, select, summary, [role="button"], [role="link"], .v3-md-code-link, [data-split-own]')) return
         const selection = window.getSelection()
         if (selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return
         focusSplitSession(target)
@@ -368,9 +370,14 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
         <div
           className="v3-stream"
           ref={streamRef}
+          onWheel={(event) => {
+            const el = event.currentTarget
+            stickRef.current = event.deltaY > 0 && el.scrollHeight - el.scrollTop - el.clientHeight <= 1
+          }}
+          onTouchMove={() => { stickRef.current = false }}
           onScroll={(event) => {
             const el = event.currentTarget
-            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+            stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 1
           }}
         >
           <div className="v3-stream-inner">

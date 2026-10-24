@@ -42,6 +42,7 @@ export type McpNativeConversion =
   | { ok: false; reason: string }
 
 export function convertMcpServerToNative(config: McpServerConfig): McpNativeConversion {
+  if (config.projectEnabled && Object.keys(config.projectEnabled).length) return { ok: false, reason: '此服务存在项目开关覆盖，请先在项目设置中恢复全局设置，再切换连接方式' }
   if (config.id === WINDOWS_MCP_SERVER_ID) {
     return { ok: false, reason: 'windows-mcp 保留在砚的连接里（电脑操作需要排队与用户接管），不导入 pi 原生' }
   }

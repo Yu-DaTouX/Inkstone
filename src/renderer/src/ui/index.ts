@@ -4,6 +4,7 @@ export { cx } from './cx'
 
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
 export { IconButton, type IconButtonProps } from './IconButton'
+export { FileCard } from './FileCard'
 export {
   SearchField,
   TextArea,

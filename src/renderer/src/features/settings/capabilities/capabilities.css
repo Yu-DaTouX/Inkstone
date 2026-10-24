@@ -75,6 +75,9 @@
     gap: var(--s-8);
   }
 
+  .mcp-service-form, .mcp-service-details { gap: var(--s-12); padding: var(--s-12) 0; }
+  .mcp-session-result { white-space: pre-wrap; overflow-wrap: anywhere; }
+
   .caps-item--skeleton {
     gap: var(--s-8);
   }

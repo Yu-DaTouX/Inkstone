@@ -35,11 +35,11 @@ function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; s
   return out
 }
 
-export function SearchStepView({ call, step, children }: { call: UIToolCall; step: SearchStep; children: ReactNode }): JSX.Element {
+export function SearchStepView({ call, step, children, glow = true }: { call: UIToolCall; step: SearchStep; children: ReactNode; glow?: boolean }): JSX.Element {
   const tt = useWebSearchText()
   const openLink = useStore((s) => s.openLink)
   const turnIndex = useCitationIndex()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(step.command.action === 'query')
   const [showAll, setShowAll] = useState(false)
   const running = call.status === 'running' || call.status === 'pending'
   const fromDetails = step.sources !== undefined
@@ -83,7 +83,7 @@ export function SearchStepView({ call, step, children }: { call: UIToolCall; ste
           </svg>
         </span>
         <span className="ws-cap-label">
-          {settled ? label : <ShimmerText active>{label}</ShimmerText>}
+          {settled ? label : <ShimmerText active={glow}>{label}</ShimmerText>}
         </span>
         <span className="ws-cap-target" title={searchStepLabel(step.command)}>{searchStepLabel(step.command)}</span>
         {sites.length ? (

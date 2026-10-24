@@ -113,6 +113,13 @@ export function subagentSiblings(runs: readonly SubagentRun[], run: SubagentRun)
   )
 }
 
+export function subagentSessionPeers(runs: readonly SubagentRun[], run: SubagentRun): SubagentRun[] {
+  return orderSubagentRuns(runs.filter((item) => {
+    if (item.id === run.id) return true
+    return !!run.parentSessionId && item.parentSessionId === run.parentSessionId && isLiveSubagentRun(item) && item.review !== 'merged' && item.review !== 'discarded'
+  }))
+}
+
 const GROUPS_LIMIT = 400
 
 interface SubagentGroupsState {

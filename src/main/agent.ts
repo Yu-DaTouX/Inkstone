@@ -4096,9 +4096,32 @@ export class AgentController extends EventEmitter {
   async nativeReload(): Promise<void> {
     if (!this.nativeRuntime) throw new Error('pi 原生桥尚未就绪')
     if (this.hasRunningBash() || this.agentRunning || this.state?.isCompacting || this.state?.pendingMessageCount || this.ui.pending.size) throw new Error('当前会话尚未空闲')
-    await this.nativeRuntime.reload()
-    await this.refreshState()
-    await this.refreshStats()
+    const admission = this.operations.acquire('reload', this.capabilityOpts?.runnerGeneration)
+    if (!admission.ok) throw new Error(admission.error)
+    const rpc = this.rpc
+    const identity = this.state?.sessionId
+    try {
+      const capture = await captureNativeStartupWitness({
+        agentDir: PI_AGENT_DIR, cwd: this.cwd, bootId: newBootId(),
+        generation: this.capabilityOpts?.runnerGeneration ?? 1,
+        projectId: this.capabilityOpts?.projectId ?? null,
+        ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
+      })
+      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error('会话已切换，重新加载已取消')
+      this.nativeWitness = null
+      await this.nativeRuntime.reload()
+      if (this.rpc !== rpc || this.stopping || this.state?.sessionId !== identity) throw new Error('会话已切换，请检查当前工具状态')
+      if (capture.ok && capture.witness) {
+        const confirmed = await verifyNativeStartupWitness(capture.witness, {
+          ...(this.nativeConfigReader ? { readNativeConfig: this.nativeConfigReader } : {})
+        })
+        if (this.rpc === rpc && !this.stopping && confirmed.ok) this.nativeWitness = capture.witness
+      }
+      await this.refreshState()
+      await this.refreshStats()
+    } finally {
+      this.operations.release(admission.lease)
+    }
   }
 
   async nativeScopedModels(): Promise<ScopedModelsSnapshot> {

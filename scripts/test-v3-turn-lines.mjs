@@ -200,7 +200,7 @@ async function buildBundle(outdir) {
   await writeFile(entry, [
     `export * from '${posix(abs('src/renderer/src/features/session/turn-lines.ts'))}'`,
     `export { SubagentLine, subagentTitle } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
-    `export { orderSubagentRuns, subagentListRank, subagentListSlice, subagentNeighbor, subagentRowFocusTarget, subagentSiblings, useSubagentGroups } from '${posix(abs('src/renderer/src/features/session/subagent-list.ts'))}'`,
+    `export { orderSubagentRuns, subagentListRank, subagentListSlice, subagentNeighbor, subagentRowFocusTarget, subagentSiblings, subagentSessionPeers, useSubagentGroups } from '${posix(abs('src/renderer/src/features/session/subagent-list.ts'))}'`,
     `export { swapLayoutTiles, switchSubagentPane } from '${posix(abs('src/renderer/src/features/session/subagent-actions.ts'))}'`,
     `export { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'`,
     `export { columnLayout, orderedTileIds } from '${posix(abs('src/renderer/src/features/workbench/tile-tree.ts'))}'`,
@@ -612,6 +612,16 @@ async function main() {
       subagentRun({ id: 's4', parentRunId: 'r1', review: 'merged' })
     ]
     ok(bundle.subagentSiblings(sib, sib[0]).map((run) => run.id).join() === 's1,s2', '列表没挂载时按同一次父运行找同组子 Agent', bundle.subagentSiblings(sib, sib[0]).map((run) => run.id).join())
+    const sessionRuns = [
+      subagentRun({ id: 'one', status: 'running', parentSessionId: 'chat', parentMessageId: 'm1', startedAt: 1 }),
+      subagentRun({ id: 'two', status: 'running', parentSessionId: 'chat', parentMessageId: 'm2', startedAt: 2 }),
+      subagentRun({ id: 'starting', status: 'starting', parentSessionId: 'chat', parentMessageId: 'm3', startedAt: 3 }),
+      subagentRun({ id: 'finished', status: 'done', parentSessionId: 'chat', startedAt: 0 }),
+      subagentRun({ id: 'foreign', status: 'running', parentSessionId: 'other' })
+    ]
+    ok(bundle.subagentSessionPeers(sessionRuns, sessionRuns[0]).map((run) => run.id).join() === 'one,two,starting', '转录窗格跨消息切换本会话全部运行与启动中的子代理')
+    ok(bundle.subagentSessionPeers(sessionRuns, sessionRuns[3]).map((run) => run.id).includes('finished'), '正在查看的代理结束后仍保留当前位置')
+    ok(bundle.subagentSessionPeers([subagentRun({id:'unknown',parentSessionId:undefined}),...sessionRuns], subagentRun({id:'unknown',parentSessionId:undefined})).length === 1, '归属不明时不串到其他会话')
 
     const layout = lib.columnLayout(['files', 'subagent:s1', 'context'])
     const swapped = bundle.swapLayoutTiles(layout, 'subagent:s1', 'subagent:s2')

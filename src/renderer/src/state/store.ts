@@ -84,6 +84,7 @@ import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTask
 import { useSplitView } from './split-view'
 import { claimResource, releaseResource, resourceOwner } from './resource-owners'
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
+import type { SubmittingMessage } from './submitting-messages'
 import { useSubagentStopping } from './subagent-stopping'
 
 function uiText(key: MessageKey, vars?: TVars): string {
@@ -208,6 +209,7 @@ export interface Store {
   queueRestore: string | null
   attachments: Attachment[]
   pendingSourceLinks: { sessionId: string; sourceIds: string[]; attempts?: number }[]
+  submittingMessages: SubmittingMessage[]
   locateMessage: (messageId: string) => boolean
 
   peekedPath: string | null
@@ -753,7 +755,7 @@ async function collectSourceIds(attachments: Attachment[], sessionId: string): P
   const files: string[] = []
   for (const a of attachments) {
     if (a.kind === 'file') {
-      if (a.path) files.push(a.path)
+      if (a.path && !a.isDirectory) files.push(a.path)
       continue
     }
     if (!a.data) continue
@@ -1096,6 +1098,7 @@ export const useStore = create<Store>((rawSet, get) => {
   queueRestore: null,
   attachments: [],
   pendingSourceLinks: [],
+  submittingMessages: [],
   peekedPath: null,
   peekedSessionId: null,
   peekNote: null,
@@ -1605,25 +1608,36 @@ export const useStore = create<Store>((rawSet, get) => {
 
   send: async (text, images, mode) => {
     const target = composerSubmitIdentity(get())
-    const guardView = hasComposerIdentity(target)
-    if (!(await get().ensureActivated(target))) return false
-    if (guardView && !sameComposerView(get(), target)) return false
-    const sessionId = get().session?.sessionId
-    const sourceIds = sessionId ? await collectSourceIds(get().attachments, sessionId) : []
-    if (guardView && !sameComposerView(get(), target)) return false
-    if (sourceIds.length) {
-      set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
+    const attachments = get().attachments
+    const submission: SubmittingMessage = {
+      identity: target,
+      message: { id: `submitting-${crypto.randomUUID()}`, role: 'user', text, images, timestamp: Date.now(), sourceCwd: get().session?.cwd },
+      previousIds: get().messages.map((message) => message.id)
     }
-    const expected = expectedRuntimeFor(get(), target)
-    const res = await piCall(() => window.yan.send(text, images, mode, expected))
-    if (!res.ok) {
+    set({ submittingMessages: [...get().submittingMessages, submission] })
+    try {
+      const guardView = hasComposerIdentity(target)
+      if (!(await get().ensureActivated(target))) return false
+      if (guardView && !sameComposerView(get(), target)) return false
+      const sessionId = get().session?.sessionId
+      const sourceIds = sessionId ? await collectSourceIds(attachments, sessionId) : []
+      if (guardView && !sameComposerView(get(), target)) return false
       if (sourceIds.length) {
-        set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
+        set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
       }
-      set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.sendFailed')) })
-      return false
+      const expected = expectedRuntimeFor(get(), target)
+      const res = await piCall(() => window.yan.send(text, images, mode, expected))
+      if (!res.ok) {
+        if (sourceIds.length) {
+          set({ pendingSourceLinks: get().pendingSourceLinks.filter((x) => x.sourceIds !== sourceIds) })
+        }
+        set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.sendFailed')) })
+        return false
+      }
+      return true
+    } finally {
+      set({ submittingMessages: get().submittingMessages.filter((item) => item !== submission) })
     }
-    return true
   },
 
   armQuotaResume: async (ifWindowFull = false) => {
@@ -2602,7 +2616,8 @@ export const useStore = create<Store>((rawSet, get) => {
         data: '',
         preview: '',
         kind: 'file',
-        path: info.path
+        path: info.path,
+        isDirectory: info.isDirectory
       })
     }
     if (refs.length) get().addAttachments(refs)

@@ -9,6 +9,7 @@ import type {
   NativeMcpServerListView
 } from './mcp-native-import'
 import type { McpAppBridge } from './mcp-app-switch'
+import type { McpSettingsMutation, McpSettingsResult, McpSettingsSnapshot } from './mcp-settings'
 import type { McpAppViewApi } from './mcp-app-view'
 
 export type {
@@ -339,6 +340,7 @@ export interface Attachment {
   preview: string
   kind?: 'image' | 'file'
   path?: string
+  isDirectory?: boolean
 }
 
 export const CANVAS_CAPTURE_CHANNEL = 'yan:canvas:capture'
@@ -1464,6 +1466,9 @@ export interface CapabilitiesBridge {
   prepareNativeImport(serverId: string): Promise<NativeMcpImportPrepareResponse>
   commitNativeImport(token: string): Promise<NativeMcpImportCommitResponse>
   nativeServers(): Promise<NativeMcpServerListView>
+  mcpServices(): Promise<McpSettingsSnapshot>
+  changeMcpService(input: McpSettingsMutation): Promise<McpSettingsResult>
+  applyMcpServices(input: { context: string; expectedSessionId: string }): Promise<McpSettingsResult>
   manageNativeServer(action: NativeMcpManageAction, name: string): Promise<NativeMcpManageResult>
 }
 
@@ -2114,6 +2119,7 @@ export interface FileRefInfo {
   size: number
   mimeType: string
   kind: FileRefKind
+  isDirectory?: boolean
   error?: string
 }
 

@@ -17,6 +17,11 @@ import { loadMcpServers, mcpServersForProject } from '../mcp/config'
 import { createNativeMcpVerifier } from '../mcp/native-verify'
 import { listNativeMcpServers } from '../mcp/native-list'
 import { manageNativeMcpServer } from '../mcp/native-manage'
+import { changeMcpServiceSettings, listMcpServiceSettings, type McpSettingsHost } from '../mcp/service-settings'
+import { verifyNativeStartupWitness } from '../mcp/app-native-witness'
+import { mcpAppProxyService } from '../mcp/app-proxy-service'
+import { validateNativeSessionRequest } from '../native-session-guard'
+import type { McpSettingsMutation } from '../../shared/mcp-settings'
 import type { NativeMcpServerListView } from '../../shared/mcp-native-import'
 import {
   commitNativeMcpImport,
@@ -110,6 +115,62 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
     return listNativeMcpServers({ agentDir: PI_AGENT_DIR, ...(projectCwd ? { projectCwd, projectTrusted } : {}) })
   }
   handle('yan:capabilities:nativeMcpServers', currentNativeMcpList)
+  const mcpContext = (): string => {
+    const runner = registry()?.activeRunner()
+    const state = currentAgent()?.getState()
+    return JSON.stringify([runner?.id, state?.sessionId, runner?.cwd, currentAgent()?.capabilityProjectId, runner ? registry()?.runtimeOf(runner.id)?.generation : undefined])
+  }
+  const mcpSettingsHost = async (): Promise<McpSettingsHost> => {
+    const context = mcpContext()
+    const agent = currentAgent()
+    const runner = registry()?.activeRunner()
+    const st = await settings()
+    const project = st.projects.find((entry) => entry.id === agent?.capabilityProjectId)
+    const projectTrusted = project && runner ? await isProjectTrusted(runner.cwd).catch(() => false) : false
+    const witness = agent?.nativeBootWitness()
+    const nativeConfigChanged = witness ? !(await verifyNativeStartupWitness(witness)).ok : null
+    const busy = (): boolean => registry()?.agents().some((item) => {
+      const state = item.getState()
+      return !!(state?.isAgentRunning || state?.isStreaming || state?.isCompacting || state?.pendingMessageCount || item.hasRunningBash() || item.getPendingUiCount())
+    }) ?? false
+    if (context !== mcpContext()) throw new Error('当前会话或项目已切换，请重新读取')
+    return {
+      agentDir: PI_AGENT_DIR, context,
+      project: project && runner ? { id: project.id, name: project.name, cwd: runner.cwd } : null,
+      projectTrusted, projects: st.projects, nativeConfigChanged,
+      busy: busy(), isBusy: busy,
+      assertContext: () => { if (context !== mcpContext()) throw new Error('当前会话或项目已切换，请重新读取') }
+    }
+  }
+  handle('yan:capabilities:mcpServices', async () => listMcpServiceSettings(await mcpSettingsHost()))
+  handle('yan:capabilities:changeMcpService', async (input: McpSettingsMutation) => {
+    const host = await mcpSettingsHost()
+    const result = await changeMcpServiceSettings(host, input)
+    return result
+  })
+  const mcpApplications = new WeakSet<AgentController>()
+  handle('yan:capabilities:applyMcpServices', async (input: { context?: unknown; expectedSessionId?: unknown }) => {
+    const agent = currentAgent()
+    if (!agent) return { ok: false, error: '当前没有可用的运行实例' }
+    const context = mcpContext()
+    const fresh = (): void => {
+      if (!input || input.context !== context || context !== mcpContext() || currentAgent() !== agent) throw new Error('会话已切换，请重新读取服务列表')
+      const check = validateNativeSessionRequest({ action: 'reload', expectedSessionId: input.expectedSessionId }, agent.getState(), agent.hasRunningBash() || agent.getPendingUiCount() > 0)
+      if (!check.ok) throw new Error(check.error)
+    }
+    if (mcpApplications.has(agent)) return { ok: false, error: '当前会话正在应用 MCP 设置' }
+    mcpApplications.add(agent)
+    try {
+      fresh()
+      const result = await mcpAppProxyService().refresh({ callerProjectId: agent.capabilityProjectId ?? undefined, allowEmpty: true })
+      fresh()
+      if (!result.ok) throw new Error(result.errors.map((entry) => `${entry.serverId}: ${entry.error}`).join('\n') || result.error || '托管工具刷新失败')
+      await agent.nativeReload()
+      await agent.listCommands()
+      return { ok: true }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+    finally { mcpApplications.delete(agent) }
+  })
   handle('yan:capabilities:manageNativeMcpServer', async (value: unknown) =>
     manageNativeMcpServer(await currentNativeMcpList(), value)
   )

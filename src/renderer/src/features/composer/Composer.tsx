@@ -8,6 +8,8 @@ import { submitComposerInput } from '../../lib/composer-submit'
 import { composerStoreActions } from '../../lib/composer-store-send'
 import { attachmentsAfterSubmit, runLocalCommandGuarded } from '../../lib/v3-submit-ownership'
 import { readFiles } from './attachment-files'
+import { fileReferencePath } from './file-refs'
+import { composerSubmitIdentity } from '../../state/composer-recovery'
 import { loadDraft, saveDraft } from './draft-store'
 import { ModelThinkingPicker } from '../../patterns/ModelThinkingPicker'
 import { ContextRing } from '../../patterns/ContextRing'
@@ -302,6 +304,8 @@ export function Composer({ className }: { className?: string } = {}) {
       if (!raw && attachments.length === 0) return
       if (submittingRef.current) return
       submittingRef.current = true
+      const identity = composerSubmitIdentity(useStore.getState())
+      let cleared = false
       try {
         if (composerLocalCommand(value, commands)) {
           await runLocalCommandGuarded({
@@ -320,18 +324,21 @@ export function Composer({ className }: { className?: string } = {}) {
         const fileRefs = attachments.filter((a) => a.kind === 'file' && a.path)
         const body = withImageLegend(raw, images.length, imageRefPrefix(lang))
         const outgoing = fileRefs.length
-          ? `${body ? `${body}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${a.path}`).join('\n') })}`
+          ? `${body ? `${body}\n\n` : ''}${t('composer.fileRefs', { list: fileRefs.map((a) => `- ${fileReferencePath(a)}`).join('\n') })}`
           : body
-        const ok = roundRunning
-          ? await send(outgoing, images.length ? images : undefined, mode)
-          : await send(outgoing, images.length ? images : undefined)
+        const sending = roundRunning ? send(outgoing, images.length ? images : undefined, mode) : send(outgoing, images.length ? images : undefined)
+        setValue('')
+        useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
+        cleared = true
+        const ok = await sending
         if (ok) {
-          setValue((draft) => (draft === value ? '' : draft))
-          useStore.getState().dropSentAttachments(sentIds, sentFrom ? [sentFrom] : [])
           const saved = sentFrom ? loadDraft(sentFrom) : undefined
           if (saved) saveDraft(sentFrom, { text: saved.text, attachments: attachmentsAfterSubmit(saved.attachments, sentIds) })
+        } else {
+          useStore.getState().recoverComposerInput({ identity, text: value, attachments })
         }
       } catch (error) {
+        if (cleared) useStore.getState().recoverComposerInput({ identity, text: value, attachments })
         notify('error', error instanceof Error && error.message ? error.message : t('state.error.sendFailed'))
       } finally {
         submittingRef.current = false
@@ -494,7 +501,7 @@ export function Composer({ className }: { className?: string } = {}) {
     <div
       className={`composer-wrap ${dragging ? 'is-dropping' : ''} ${className ?? ''}`}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-yan-file-path')) {
+        if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-yan-file-path') || e.dataTransfer.types.includes('application/x-yan-file-paths')) {
           e.preventDefault()
           e.dataTransfer.dropEffect = 'copy'
           setDragging(true)

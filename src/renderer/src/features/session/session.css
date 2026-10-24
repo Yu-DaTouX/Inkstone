@@ -74,6 +74,8 @@
 
   .v3-user-images { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; }
   .v3-user-image { position: relative; }
+  .v3-user-files { display: flex; flex-wrap: wrap; gap: var(--s-6); justify-content: flex-end; max-width: 100%; }
+  .v3-user-files .ui-file-card { width: min(240px, 100%); }
   .v3-user-image-ref { position: absolute; top: var(--s-4); left: var(--s-4); pointer-events: none; }
   .v3-image-ref { background: transparent; color: var(--accent-t); font-weight: 500; }
 

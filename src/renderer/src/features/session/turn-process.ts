@@ -1,11 +1,13 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment, TurnThinking } from '../../../../shared/turns'
+import { isWebTool } from './tool-run-model'
 
 const LIVE_SEGMENTS = 3
 
 interface TurnProcessSplit {
   process: TurnSegment[]
   reply: TurnSegment | null
+  earlierReplies: TurnSegment[]
   tail: TurnSegment[]
 }
 
@@ -34,10 +36,11 @@ export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessS
     }
   }
   if (at < 0) {
-    return { process: withWork(segments.filter(inProcess)), reply: null, tail: [] }
+    return { process: withWork(segments.filter(inProcess)), reply: null, earlierReplies: [], tail: [] }
   }
 
   const replySource = segments[at]
+  const earlierReplies = segments.slice(0, at).filter((segment) => !!segment.response)
   const candidates = segments.slice(0, at).filter(inProcess)
   if (inProcess(replySource)) {
     candidates.push({ ...replySource, response: null, responseParts: undefined })
@@ -53,7 +56,7 @@ export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessS
     texts: [],
     responseParts: replySource.responseParts
   }
-  return { process, reply, tail: segments.slice(at + 1) }
+  return { process, reply, earlierReplies, tail: segments.slice(at + 1) }
 }
 
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {
@@ -148,7 +151,7 @@ export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_
   const shown: TurnSegment[] = []
   const dropped: TurnSegment[] = []
   segments.forEach((segment, index) => {
-    const pinned = segment.tools.some((call) => call.status === 'running' || call.status === 'pending' || (call.status === 'error' && !call.cancelled))
+    const pinned = segment.tools.some((call) => isWebTool(call) || call.status === 'running' || call.status === 'pending' || (call.status === 'error' && !call.cancelled))
     if (index >= recentFrom || pinned) shown.push(segment)
     else dropped.push(segment)
   })

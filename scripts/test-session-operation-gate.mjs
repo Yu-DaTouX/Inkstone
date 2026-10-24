@@ -52,6 +52,13 @@ async function run() {
     assert.equal(gate.acquire('rewind', 1).ok, false)
     gate.reset()
     assert.deepEqual(gate.busy(), [])
+    const reload = gate.acquire('reload', 1)
+    assert.equal(reload.ok, true)
+    for (const op of ['send', 'compact', 'fork', 'rewind', 'reload']) assert.equal(gate.acquire(op, 1).ok, false, `重新加载阻止 ${op}`)
+    gate.release(reload.lease)
+    assert.equal(gate.acquire('send', 1).ok, true, '重新加载结束恢复发送')
+    assert.equal(gate.acquire('reload', 1).ok, false, '发送中不能重新加载')
+    gate.reset()
 
     const order = []
     const result = await gate.run('fork', 2, async (lease) => {
