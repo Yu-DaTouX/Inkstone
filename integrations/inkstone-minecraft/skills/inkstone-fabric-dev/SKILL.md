@@ -15,19 +15,19 @@ description: 开发 Minecraft Fabric mod（新建项目、加物品方块、画�
 | `mc_run` | `start` 启动开发客户端并进入测试世界（默认和平难度、创造模式、en_us），可同时给 `gamemode`/`difficulty`/`lang`/`time`/`weather` 把环境一次调好；`status` 看状态、控制方、当前环境（世界/版本/模式/难度/语言/坐标）与性能；`stop`、`restart`；`take_control` 从用户手里收回控制权（仅在用户明确同意后） |
 | `mc_apply` | 每次改完代码或资源都调用：增量编译 → 热替换类 → 重载资源/数据，返回哪些生效、哪些需要重启。`restart_if_needed=true` 时自动重启 |
 | `mc_build` | 只想看编译错误时用 |
-| `mc_view` | `screen` 截图；`count`/`intervalMs` 连拍（每张带时间戳）、`hideHud` 隐藏 HUD、`crop` 只截一块、`grid` 在图上叠坐标网格与刻度（看图点自定义界面先开它）；`item`/`block` 渲染单个物品或方块的透明 PNG |
-| `mc_input` | 真实输入：`attack`/`use`（可先对准方块或实体）、`look`、`move`、`hotbar`、`key` |
-| `mc_ui` | 读界面并操作：`read` 界面类名、GUI 缩放、有物品的槽位（标菜单/快捷栏/背包/盔甲/副手，含中心坐标）、空槽一览与控件；`click`（按下并松开，可放下手上物品）、`hover`（停在槽位上，返回 tooltip 文本，随后 `mc_view` 能截到提示框）、`type`、`key`、`open`、`close` |
+| `mc_view` | `screen` 截图；`count`/`intervalMs` 连拍（每张带时间戳）、`hideHud` 隐藏 HUD、`crop` 只截一块、`grid` 在图上叠坐标网格与刻度（看图点自定义界面先开它）；`item`/`block` 渲染单个物品或方块的透明 PNG。每张原图都存进项目的 `.inkstone/dev/shots/`，返回里写明路径，交给用户时直接给路径 |
+| `mc_input` | 真实输入：`attack`/`use`（可先对准方块或实体）、`look`、`move`、`hotbar`、`key`。`use` 和原版一致：方块/实体不响应时改为使用手中物品（返回里会写明）；`hold_ticks` 按住拉弓、进食；打开界面的 `use`/`key` 会等界面出现再返回 |
+| `mc_ui` | 读界面并操作：`read` 界面类名、GUI 缩放、有物品的槽位（标菜单/快捷栏/背包/盔甲/副手，含中心坐标）、空槽一览与控件；`click`（按下并松开，可放下手上物品）、`hover`（停在槽位或坐标上，返回 tooltip 文本，随后 `mc_view` 能截到提示框；做别的界面操作或真实鼠标移动后悬停取消，截图里没有提示框就再 hover 一次）、`type`、`key`、`open`、`close`（没有界面时也不报错）。截图像素 = GUI 坐标 × GUI 缩放 |
 | `mc_chat` | 读聊天、系统消息、actionbar、标题；`since` 做增量 |
-| `mc_script` | 一串步骤（`command`/`input`/`ui`/`wait`/`screenshot`/`player`/`chat`/`perf`/`tick`）在客户端 tick 上按顺序跑，一次拿回每步结果与截图；`screenshot` 步也支持 `grid`，`tick` 步参数同 `mc_tick` |
+| `mc_script` | 一串步骤（`command`/`input`/`ui`/`wait`/`screenshot`/`player`/`chat`/`perf`/`tick`）在客户端 tick 上按顺序跑，一次拿回每步结果与截图；`input`、`ui` 步参数与 `mc_input`、`mc_ui` 完全相同（`target_block`、`hold_ticks`、`slot` 等），`ui` 步直接返回界面；`screenshot` 步也支持 `grid`，`tick` 步参数同 `mc_tick` |
 | `mc_perf` | FPS、MSPT、TPS、内存、实体数、区块数 |
 | `mc_highlight` | 高亮测试对象：`entity`（`selector` 或 `uuid`）圈实体、`block`（`pos`）描方块、`clear` 清掉；`color` 用 `#rrggbb`、`seconds` 默认 30 |
 | `mc_wait` | 等一件事发生（`in_world`、`screen`、`no_screen`、`chat`、`ticks`、`entity`、`player`），等到就返回结论，超时第一行是「等待超时」，用来代替反复截图轮询 |
 | `mc_tick` | 放慢、冻结、单步推进游戏逻辑：`status`、`rate`（1–10000）、`freeze`、`unfreeze`、`step`、`sprint`、`reset`（解除冻结并调回 20）。只影响游戏逻辑 tick，不影响渲染帧率与按真实时间计的界面动画；测完必须 `reset` |
-| `mc_command` | 以权限 4 执行命令：`give @s mymod:ruby`、`setblock`、`/reload`、`data get`；`check=true` 只解析（语法与补全建议，不执行）；`via=chat` 从客户端聊天发送，结果用 `mc_chat` 读 |
+| `mc_command` | 以权限 4 执行命令：`give @s mymod:ruby`、`setblock`、`/reload`、`data get`；`check=true` 只解析（语法与补全建议，不执行）；`via=chat` 从客户端聊天发送，结果用 `mc_chat` 读。命令没有回显时会附上执行期间新增的聊天/系统消息（模组直接发给玩家的消息就在这里）；只打开界面的命令用 `mc_ui read` 看。同一项目的命令按顺序排队，并发调用不会串消息 |
 | `mc_inspect` | `status`；`player` 玩家完整状态（模式、无敌、生命吸收、饥饿、经验、效果、背包、视线）；`registry`、`block`、`entities` |
-| `mc_options` | 客户端选项：`lang`、`guiScale`、`renderDistance`、`fov`、`gamma`、`hideGui` 等。运行时经伴随 mod 当场生效，游戏没在运行时改 `run/options.txt` |
-| `mc_test` | 跑 GameTest：`filter` 过滤、`side=server/client/both`，自动停/重启开发客户端，返回通过数与 junit 报告路径 |
+| `mc_options` | 客户端选项：`lang`、`guiScale`、`renderDistance`、`fov`、`gamma`、`hideGui` 等。运行时经伴随 mod 当场生效（`lang` 会自动重载资源），游戏没在运行时改 `run/options.txt` |
+| `mc_test` | 跑 GameTest：`filter` 过滤、`side=server/client/both`。会先停掉开发客户端，跑完默认不重启（`restart_client=true` 才重启），之后要继续看游戏就 `mc_run action=start`。优先用插件的 JBR，返回通过数、实际用的 JDK 与 junit 报告路径。测试名是 snake_case（`coinJarDeposit` → `coin_jar_deposit`），0 项时会提示可试的写法 |
 | `mc_world` | 开发存档：`list`、`import`（用户指定的外部存档复制成只读副本）、`snapshot`/`snapshots`/`restore`/`delete_snapshot` |
 | `mc_texture` | `view` 放大看贴图（坐标网格 + 调色板 + 字符像素图）；`write` 用调色板和字符图画贴图 |
 | `mc_logs` | 读日志（可按级别、正则过滤）或 `crash=true` 读崩溃摘要 |
@@ -52,7 +52,7 @@ description: 开发 Minecraft Fabric mod（新建项目、加物品方块、画�
 `mc_run action=start` 建的 `inkstone-test` 是平坦、关掉昼夜与刷怪的创造世界；客户端语言看 `run/options.txt`（新装默认 `en_us`），世界难度默认和平。这些默认值都可以改：
 
 - 一次调好：`mc_run action=start gamemode=survival difficulty=normal lang=zh_cn time=noon weather=clear`。`lang` 在启动前写进 `options.txt`，其余进世界后用命令设，返回里会逐条写明成功还是失败。
-- 运行中改：`mc_command difficulty normal`、`mc_command gamemode survival`、`mc_command time set day`、`mc_options set={"lang":"zh_cn"}`（语言要重载资源）、`mc_options set={"guiScale":"3"}`。
+- 运行中改：`mc_command difficulty normal`、`mc_command gamemode survival`、`mc_command time set day`、`mc_options set={"lang":"zh_cn"}`（当场切换，测中英文 tooltip 不用重启）、`mc_options set={"guiScale":"3"}`。
 - 和平难度不能召唤怪物（`Monsters cannot be summoned in Peaceful difficulty`），也不能让玩家受伤；测战斗、测伤害先 `difficulty normal`。
 - `mc_run action=status` 给当前环境（世界、版本、维度、模式、难度、语言、坐标、是否暂停）和性能，不用靠猜。
 
@@ -67,6 +67,9 @@ description: 开发 Minecraft Fabric mod（新建项目、加物品方块、画�
 5. **要精确顺序**（按住若干 tick 再松开、开界面点到具体槽位）用 `mc_script`，一条调用里跑完整串并带回每步结果与截图。
 6. **命令写不准先 `check`**：`mc_command check=true` 只解析，返回能不能解析、错在哪个字符、补全建议。
 7. **进不去状态先查玩家**：`mc_inspect what=player` 看是不是创造模式（不掉血）、无敌、和平难度，或 `mc_ui read` 看是不是还开着某个界面。
+8. **刚用命令摆的方块，客户端可能还没收到**：`setblock` 后紧接着 `mc_input use` 可能对着「空气」，先 `mc_wait until=ticks ticks=2`。
+9. **掉落、破坏逻辑在生存模式测**：创造模式破坏方块不走 `playerDestroy`、不掉落，测「破坏后掉落物保留数据」要 `gamemode survival`，嫌挖得慢就给急迫效果。
+10. **点槽位优先用 `slot`**：要用坐标时取 `mc_ui read` 返回的「中心x,y」，不要用左上角。
 
 ## 看得准：网格、高亮、等待
 
@@ -126,11 +129,13 @@ description: 开发 Minecraft Fabric mod（新建项目、加物品方块、画�
 | 新增类 | 新类首次被用到时正常加载 | 同左 | `mc_apply` |
 | Mixin 新增方法/字段、改 `@Inject` 目标或 `@At` | 不行（实测） | 不行 | 重启 |
 | `onInitialize`、静态初始化、构造器里的逻辑（含注册） | 替换成功但不会再执行 | 同左 | 重启 |
-| 新物品、方块、实体等注册项 | 注册表已冻结 | 同左 | 重启 |
+| 新物品、方块、方块实体、实体、数据组件等注册项 | 注册表已冻结 | 同左 | 重启（见下方说明） |
 | `fabric.mod.json`、`*.mixins.json`、access widener | — | — | 重启（自动判定） |
 | `assets/`：贴图、模型、blockstates、语言、声音 | 资源重载（实测） | 同左 | `mc_apply` |
 | `data/`：配方、战利品表、标签、进度、函数 | `/reload`（实测） | 同左 | `mc_apply` |
 | 世界生成、维度、伤害类型、附魔等动态注册表 | `/reload` 不更新 | 同左 | 重启，常常还要新世界 |
+
+新注册项的判定：`mc_apply` 发现新增了物品模型（`assets/<ns>/items/`、`models/item/`）、`blockstates`，或语言文件里多了 `item.<ns>.<名字>`、`block.<ns>.<名字>` 键时，会去游戏里查注册表，没注册就报「需要重启」。**只写了 Java 注册代码、还没加这些资源时判断不出来**，返回可能显示「已热替换」，但新东西并不存在。所以加了新注册项就直接 `mc_run action=restart`，再用 `mc_inspect what=registry`（如 `registry=minecraft:block filter=mymod:ruby_block`）或 `mc_command give` 确认它真的在。
 
 规律：只改「已经在跑的方法里面」的东西可以热替换；改「有哪些方法和字段」、或改「只在启动时执行一次」的代码要重启。为了少重启，可以把要反复调的数值和绘制逻辑放进普通方法体，而不是静态字段初始化。
 
