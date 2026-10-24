@@ -1,0 +1,111 @@
+name: Windows release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 草稿 Release 的 tag（留空则用 v<版本>-ci.<运行号>，不会和正式版冲突）
+        required: false
+        default: ''
+      packaged_test:
+        description: 打包后跑 test:packaged 验收
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PI_VERSION: '1.4.0'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('integrations/inkstone-minecraft/companion-mod/**/*.gradle', 'integrations/inkstone-minecraft/companion-mod/**/gradle.properties', 'integrations/inkstone-minecraft/companion-mod/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Resolve version and tag
+        id: meta
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+            if [ "$tag" != "v$version" ]; then
+              echo "tag $tag 与 package.json 版本 $version 不一致" >&2
+              exit 1
+            fi
+          else
+            tag="${{ inputs.tag }}"
+            [ -n "$tag" ] || tag="v$version-ci.${{ github.run_number }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      - name: Bundle pi runtime
+        run: |
+          npm install -g "@earendil-works/pi-coding-agent@$PI_VERSION"
+          YAN_PI_SRC="$(npm root -g)/@earendil-works/pi-coding-agent" npm run vendor:pi
+
+      - name: Build companion mod jars
+        working-directory: integrations/inkstone-minecraft/companion-mod
+        run: |
+          ./gradlew.bat build -q --no-daemon
+          (cd mc26 && ./gradlew.bat build -q --no-daemon)
+          ls build/libs/inkstone-companion-*.jar mc26/build/libs/inkstone-companion-mc26-*.jar
+
+      - run: npm run typecheck
+
+      - run: npm run dist
+
+      - name: Packaged acceptance
+        if: github.event_name == 'push' || inputs.packaged_test
+        run: node scripts/test-packaged.mjs
+
+      - name: Assemble release assets
+        run: node scripts/release-assets.mjs release/public
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inkstone-${{ steps.meta.outputs.version }}-windows
+          path: release/public
+          retention-days: 7
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="CI 构建（提交 ${GITHUB_SHA::8}，运行 ${{ github.run_id }}）。草稿：核对资产、补写更新说明后再发布。安装包未签名。"
+          gh release create "${{ steps.meta.outputs.tag }}" release/public/* \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Inkstone ${{ steps.meta.outputs.version }}" \
+            --notes "$notes"
