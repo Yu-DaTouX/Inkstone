@@ -560,7 +560,9 @@ export async function runGameTests(options: GameTestOptions): Promise<GameTestRe
     if (report) {
       outcome.report = report.file
       outcome.reportFresh = report.fresh
-      if (!report.fresh) notes.push(`${config.task} 的报告没有在本次运行后更新，可能是上一次的：${report.file}`)
+      if (!report.fresh) notes.push(`${config.task} 的报告没有在本次运行后更新，是上一次的，没有计入本次结果：${report.file}`)
+    }
+    if (report?.fresh) {
       try {
         const parsed = parseJunit(await readFile(report.file, 'utf8'))
         outcome.tests = parsed.total
@@ -582,7 +584,7 @@ export async function runGameTests(options: GameTestOptions): Promise<GameTestRe
       }
     }
     if (executed.aborted) notes.push(`${config.task} 超过 ${Math.round(timeoutMs / 1000)} 秒被中止，可能残留 java 进程（先确认不是用户自己的游戏再结束）`)
-    if (executed.record.ok && outcome.tests === 0 && !outcome.failed && !outcome.errors) notes.push(`${config.task} 一项测试都没跑：过滤器可能没匹配到（通配符要带命名空间）${snakeHint(options.filter)}`)
+    if ((executed.record.ok || /found no tests|No tests found/i.test(output)) && outcome.tests === 0 && !outcome.failed && !outcome.errors) notes.unshift(`${config.task} 一项测试都没跑：过滤器可能没匹配到（通配符要带命名空间）${snakeHint(options.filter)}`)
     outcome.ok = executed.record.ok && outcome.failed === 0 && outcome.errors === 0 && outcome.tests > 0
     result.outcomes.push(outcome)
     result.totals.tests += outcome.tests

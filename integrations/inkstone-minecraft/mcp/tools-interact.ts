@@ -397,10 +397,19 @@ async function saveShots(projectDir: string, reply: ScriptReply): Promise<SavedS
   return saved
 }
 
+async function screenAfterInput(send: ReturnType<typeof sender>): Promise<string | null> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const screen = (await sendUi(send, { action: 'read' })).screen
+    if (screen) return screen.class
+  }
+  return null
+}
+
 function uiStepScreen(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
-  if (!('screen' in raw)) return undefined
+  if (!('screen' in raw)) return Object.keys(raw).length ? undefined : '界面：无（玩家在游戏内）'
   const tooltip = Array.isArray(raw.tooltip) ? raw.tooltip.filter((line): line is string => typeof line === 'string') : []
   return formatScreen(parseScreen(raw.screen), 20, 10) + (tooltip.length ? `\n物品提示（tooltip）：\n${tooltip.map((line) => `  ${line}`).join('\n')}` : '')
 }
@@ -641,7 +650,9 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
           return failure(error instanceof Error ? error.message : String(error))
         }
         try {
-          return text(formatInput(request, await sendInput(sender(project), request)))
+          const reply = await sendInput(sender(project), request)
+          if ((request.action === 'use' || request.action === 'key') && !reply.screen && !request.holdTicks) reply.screen = await screenAfterInput(sender(project))
+          return text(formatInput(request, reply))
         } catch (error) {
           return companionFailure(error)
         }

@@ -25,7 +25,7 @@ import { hotswapClasses } from '../src/core/dev/hotswap.ts'
 import { isJbrRelease } from '../src/core/dev/jbr.ts'
 import { classSignature, encodeCommand, JdwpClient, PacketReader, PacketWriter } from '../src/core/dev/jdwp.ts'
 import { filterLog, groupLogEntries, summarizeCrash } from '../src/core/dev/logs.ts'
-import { classifyResources, diffManifest, isMixinClass, mixinPackagesFrom, registrationCandidates, scanManifest } from '../src/core/dev/manifest.ts'
+import { classifyResources, diffManifest, isMixinClass, langRegistrationCandidates, mixinPackagesFrom, registrationCandidates, scanManifest } from '../src/core/dev/manifest.ts'
 import { buildTable, formatMapping, lookupMapping, parseProguard, parseTiny, proguardTypeToDescriptor } from '../src/core/dev/mappings.ts'
 import { createImage, decodePng, encodePng, pixel, scaleDown, setPixel } from '../src/core/dev/png.ts'
 import { argFileText, splitLaunchArgs, findMixinAgent, mergeOptions, parseOptions, prepareRunDir, stripJvmArgs, withWindowSize, agentWindowJvmArgs, agentWindowTitle } from '../src/core/dev/session.ts'
@@ -263,6 +263,9 @@ try {
     assert.deepEqual(registrationCandidates(['assets/thepit/items/coin_pouch.json', 'assets/thepit/models/item/coin_pouch.json', 'assets/thepit/blockstates/vault.json', 'assets/minecraft/items/stick.json', 'assets/thepit/lang/en_us.json']), [
       { registry: 'item', id: 'thepit:coin_pouch' },
       { registry: 'block', id: 'thepit:vault' }
+    ])
+    assert.deepEqual(langRegistrationCandidates(['item.thepit.old', 'block.thepit.old'], ['item.thepit.old', 'block.thepit.old', 'block.thepit.coin_jar', 'item.thepit.coin_jar.tooltip', 'item.minecraft.stick', 'gui.thepit.title']), [
+      { registry: 'block', id: 'thepit:coin_jar' }
     ])
     const packages = mixinPackagesFrom([{ package: 'com.example.mixin' }, {}])
     assert.equal(isMixinClass('com/example/mixin/client/FooMixin', packages), true)

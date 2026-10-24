@@ -107,6 +107,27 @@ export function registrationCandidates(addedPaths: string[]): Array<{ registry: 
   return [...found.values()]
 }
 
+const LANG_FILE = /^assets\/[a-z0-9_.-]+\/lang\/[a-z_]+\.json$/
+const LANG_REGISTRATION_KEY = /^(item|block)\.([a-z0-9_-]+)\.([a-z0-9_/]+)$/
+
+export function isLangFile(path: string): boolean {
+  return LANG_FILE.test(path)
+}
+
+export function langRegistrationCandidates(before: Iterable<string>, after: Iterable<string>): Array<{ registry: 'item' | 'block'; id: string }> {
+  const known = new Set(before)
+  const found = new Map<string, { registry: 'item' | 'block'; id: string }>()
+  for (const key of after) {
+    if (known.has(key)) continue
+    const match = LANG_REGISTRATION_KEY.exec(key)
+    if (!match || match[2] === 'minecraft') continue
+    const registry = match[1] as 'item' | 'block'
+    const id = `${match[2]}:${match[3]}`
+    found.set(`${registry}|${id}`, { registry, id })
+  }
+  return [...found.values()]
+}
+
 export function mixinPackagesFrom(configs: Array<{ package?: unknown }>): string[] {
   return configs.map((config) => (typeof config.package === 'string' ? config.package.replaceAll('.', '/') + '/' : '')).filter(Boolean)
 }

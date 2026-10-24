@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, openSync, closeSync } from 'node:fs'
-import { mkdir, open, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { JavaEntry } from '../../shared/dev-api.ts'
 import type { ApplyResult, BuildResult, CommandResult, CompanionControl, CompanionOwner, CrashSummary, DevLaunchOptions, DevLogQuery, DevSessionInfo, JbrInfo } from '../../shared/dev-api.ts'
@@ -15,7 +15,7 @@ import { hotswapClasses } from './hotswap.ts'
 import { jbrDownloadHint, resolveJbr, supportsEnhancedRedefinition } from './jbr.ts'
 import { downloadJbr } from './jbr-download.ts'
 import { filterLog, listCrashes, tailFile } from './logs.ts'
-import { classifyResources, diffManifest, mixinPackagesFrom, registrationCandidates, scanManifest, type FileManifest } from './manifest.ts'
+import { classifyResources, diffManifest, isLangFile, langRegistrationCandidates, mixinPackagesFrom, registrationCandidates, scanManifest, type FileManifest } from './manifest.ts'
 import {
   agentWindowJvmArgs,
   argFileText,
@@ -165,6 +165,21 @@ export class DevProject {
 
   private scanClasses(spec: LaunchSpec): Promise<FileManifest> {
     return scanManifest(this.classRoots(spec), (path) => path.endsWith('.class'))
+  }
+
+  private async langKeys(spec: LaunchSpec): Promise<Set<string>> {
+    const keys = new Set<string>()
+    for (const root of this.resourceRoots(spec)) {
+      const manifest = await scanManifest([root], isLangFile).catch(() => ({}) as FileManifest)
+      for (const path of Object.keys(manifest)) {
+        try {
+          const parsed = JSON.parse(await readFile(join(root, path), 'utf8')) as Record<string, unknown>
+          for (const key of Object.keys(parsed)) keys.add(key)
+        } catch {
+        }
+      }
+    }
+    return keys
   }
 
   private scanResources(spec: LaunchSpec): Promise<FileManifest> {
@@ -515,6 +530,7 @@ export class DevProject {
     const running = !!session && pidAlive(session.pid)
     const beforeClasses = (await readJson<FileManifest>(this.paths.classes)) ?? (await this.scanClasses(spec))
     const beforeResources = (await readJson<FileManifest>(this.paths.resources)) ?? (await this.scanResources(spec))
+    const langBefore = await this.langKeys(spec)
     const build = await this.buildNow(kind)
     const result = emptyApply(build)
     if (!build.ok) {
@@ -554,7 +570,8 @@ export class DevProject {
       result.hotswap.restartReasons.push({ reason: 'metadata', detail: `改了 ${resources.metadata.join('、')}，需要重启` })
     }
     const endpoint = this.endpoint(session)
-    const unregistered = endpoint ? await this.unregistered(endpoint, registrationCandidates(resourceDiff.added)) : []
+    const candidates = [...registrationCandidates(resourceDiff.added), ...langRegistrationCandidates(langBefore, await this.langKeys(spec))]
+    const unregistered = endpoint ? await this.unregistered(endpoint, [...new Map(candidates.map((item) => [`${item.registry}|${item.id}`, item])).values()]) : []
     if (unregistered.length) {
       result.restartNeeded = true
       result.hotswap ??= { swapped: [], added: [], removed: [], skippedNotLoaded: [], restartNeeded: true, restartReasons: [] }
