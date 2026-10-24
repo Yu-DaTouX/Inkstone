@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { join, parse, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
 import { gitRun } from './git-service'
+import { createGitDeadline, type GitDeadline } from './git-run-policy'
 import {
   textFingerprint,
   type CheckpointChange,
@@ -84,7 +85,7 @@ async function writeIndex(dir: string, index: Index): Promise<void> {
   await rename(tmp, join(dir, 'index.json'))
 }
 
-function shadowGit(cwd: string, dir: string, args: string[], opts: { timeout?: number; allowFailure?: boolean; stdin?: string } = {}) {
+function shadowGit(cwd: string, dir: string, args: string[], opts: { timeout?: number; allowFailure?: boolean; stdin?: string; deadline?: GitDeadline } = {}) {
   return gitRun(
     cwd,
     [
@@ -95,14 +96,15 @@ function shadowGit(cwd: string, dir: string, args: string[], opts: { timeout?: n
       '-c', 'user.name=Inkstone', '-c', 'user.email=checkpoint@inkstone.local',
       ...args
     ],
-    { timeout: opts.timeout ?? 60_000, allowFailure: opts.allowFailure, stdin: opts.stdin }
+    { timeout: opts.timeout ?? 60_000, allowFailure: opts.allowFailure, stdin: opts.stdin, deadline: opts.deadline }
   )
 }
 
-async function removeStaleTemp(dir: string, now = Date.now()): Promise<void> {
+async function removeStaleTemp(dir: string, now = Date.now(), deadline?: GitDeadline): Promise<void> {
   const repo = join(dir, 'repo.git')
   const candidates: string[] = [join(repo, 'index.lock')]
   for (const sub of [join(repo, 'objects', 'pack'), join(repo, 'objects')]) {
+    if (deadline?.expired()) return
     try {
       for (const name of await readdir(sub)) {
         if (/^tmp_(pack|idx|obj|rev)_/.test(name) || /^\.tmp-/.test(name)) candidates.push(join(sub, name))
@@ -111,6 +113,7 @@ async function removeStaleTemp(dir: string, now = Date.now()): Promise<void> {
     }
   }
   for (const path of candidates) {
+    if (deadline?.expired()) return
     try {
       const st = await stat(path)
       if (st.isFile() && now - st.mtimeMs > STALE_TEMP_MS) await rm(path, { force: true })
@@ -119,28 +122,32 @@ async function removeStaleTemp(dir: string, now = Date.now()): Promise<void> {
   }
 }
 
-async function ensureRepo(cwd: string, dir: string): Promise<boolean> {
-  await removeStaleTemp(dir)
+async function ensureRepo(cwd: string, dir: string, deadline?: GitDeadline): Promise<boolean> {
+  if (deadline?.expired()) return false
+  await removeStaleTemp(dir, Date.now(), deadline)
+  if (deadline?.expired()) return false
   const repo = join(dir, 'repo.git')
   if (!existsSync(join(repo, 'HEAD'))) {
     await mkdir(dir, { recursive: true })
-    const res = await gitRun(cwd, ['init', '--bare', '--quiet', repo], { allowFailure: true, timeout: 20_000 })
+    const res = await gitRun(cwd, ['init', '--bare', '--quiet', repo], { allowFailure: true, timeout: 20_000, deadline })
     if (!res.ok) return false
   }
+  if (deadline?.expired()) return false
   const exclude = join(repo, 'info', 'exclude')
   try {
     await mkdir(join(repo, 'info'), { recursive: true })
     await writeFile(exclude, `${EXTRA_EXCLUDES.join('\n')}\n`, 'utf8')
   } catch {
   }
-  return true
+  return !deadline?.expired()
 }
 
-async function measureFiles(cwd: string, paths: string[]): Promise<{ oversized: string[]; total: number; largest: { path: string; bytes: number } | null }> {
+async function measureFiles(cwd: string, paths: string[], deadline?: GitDeadline): Promise<{ oversized: string[]; total: number; largest: { path: string; bytes: number } | null } | null> {
   const oversized: string[] = []
   let total = 0
   let largest: { path: string; bytes: number } | null = null
   for (let i = 0; i < paths.length; i += STAT_BATCH) {
+    if (deadline?.expired()) return null
     const batch = paths.slice(i, i + STAT_BATCH)
     const sizes = await Promise.all(batch.map((p) => lstat(join(cwd, p)).then((st) => (st.isFile() ? st.size : 0), () => 0)))
     sizes.forEach((size, j) => {
@@ -149,7 +156,7 @@ async function measureFiles(cwd: string, paths: string[]): Promise<{ oversized: 
       if (!largest || size > largest.bytes) largest = { path: batch[j], bytes: size }
     })
   }
-  return { oversized, total, largest }
+  return deadline?.expired() ? null : { oversized, total, largest }
 }
 
 export function assessCheckpointFit(cwd: string): Promise<WorkspaceFit | null> {
@@ -162,7 +169,9 @@ export function assessCheckpointFit(cwd: string): Promise<WorkspaceFit | null> {
     if (!listing.ok) return null
     const listed = [...new Set(listing.stdout.split('\0').filter(Boolean))]
     if (listed.length > MAX_FILES) return { files: listed.length, tooManyFiles: true, oversizedFiles: 0, largest: null, totalBytes: 0, tooLarge: false, fits: false }
-    const { oversized, total, largest } = await measureFiles(cwd, listed)
+    const measured = await measureFiles(cwd, listed)
+    if (!measured) return null
+    const { oversized, total, largest } = measured
     const tooLarge = total > MAX_TOTAL_BYTES
     return {
       files: listed.length,
@@ -179,65 +188,74 @@ export function assessCheckpointFit(cwd: string): Promise<WorkspaceFit | null> {
 async function oversizedInWorktree(cwd: string, dir: string, sha: string): Promise<string[] | null> {
   const listed = await shadowGit(cwd, dir, ['ls-tree', '-r', '-z', '--name-only', sha], { allowFailure: true })
   if (!listed.ok) return null
-  return (await measureFiles(cwd, listed.stdout.split('\0').filter(Boolean))).oversized
+  return (await measureFiles(cwd, listed.stdout.split('\0').filter(Boolean)))?.oversized ?? null
 }
 
-async function snapshotTree(cwd: string, dir: string): Promise<{ tree: string; oversized: string[] } | null> {
-  const estimate = await shadowGit(cwd, dir, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { allowFailure: true })
+async function snapshotTree(cwd: string, dir: string, deadline?: GitDeadline): Promise<{ tree: string; oversized: string[] } | null> {
+  const estimate = await shadowGit(cwd, dir, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { allowFailure: true, deadline })
   if (!estimate.ok) return null
   const listed = [...new Set(estimate.stdout.split('\0').filter(Boolean))]
   if (listed.length > MAX_FILES) return null
-  const { oversized, total } = await measureFiles(cwd, listed)
-  if (total > MAX_TOTAL_BYTES) return null
+  const measured = await measureFiles(cwd, listed, deadline)
+  if (!measured || measured.total > MAX_TOTAL_BYTES) return null
+  const { oversized } = measured
   if (oversized.length) {
-    const drop = await shadowGit(cwd, dir, ['update-index', '--force-remove', '-z', '--stdin'], { allowFailure: true, stdin: `${oversized.join('\0')}\0` })
+    const drop = await shadowGit(cwd, dir, ['update-index', '--force-remove', '-z', '--stdin'], { allowFailure: true, stdin: `${oversized.join('\0')}\0`, deadline })
     if (!drop.ok) return null
   }
   const add = oversized.length
     ? await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors', '--pathspec-from-file=-', '--pathspec-file-nul'], {
         allowFailure: true,
-        stdin: ['.', ...oversized.map((p) => `:(exclude,literal)${p}`)].join('\0') + '\0'
+        stdin: ['.', ...oversized.map((p) => `:(exclude,literal)${p}`)].join('\0') + '\0',
+        deadline
       })
-    : await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors'], { allowFailure: true })
-  if (!add.ok && !/permission denied|unable to index|Invalid argument|short read|failed to insert/i.test(add.stderr)) return null
-  const count = await shadowGit(cwd, dir, ['ls-files', '--cached', '-z'], { allowFailure: true })
+    : await shadowGit(cwd, dir, ['add', '-A', '--ignore-errors'], { allowFailure: true, deadline })
+  if (deadline?.expired() || (!add.ok && !/permission denied|unable to index|Invalid argument|short read|failed to insert/i.test(add.stderr))) return null
+  const count = await shadowGit(cwd, dir, ['ls-files', '--cached', '-z'], { allowFailure: true, deadline })
   if (count.ok && count.stdout.split('\0').length > MAX_FILES) return null
-  const tree = await shadowGit(cwd, dir, ['write-tree'], { allowFailure: true })
+  const tree = await shadowGit(cwd, dir, ['write-tree'], { allowFailure: true, deadline })
   const sha = tree.stdout.trim()
   return tree.ok && /^[0-9a-f]{40}$/.test(sha) ? { tree: sha, oversized } : null
 }
 
-async function commitTree(cwd: string, dir: string, tree: string, message: string): Promise<string | null> {
-  const res = await shadowGit(cwd, dir, ['commit-tree', tree, '-m', message.slice(0, 200)], { allowFailure: true })
+async function commitTree(cwd: string, dir: string, tree: string, message: string, deadline?: GitDeadline): Promise<string | null> {
+  const res = await shadowGit(cwd, dir, ['commit-tree', tree, '-m', message.slice(0, 200)], { allowFailure: true, deadline })
   const sha = res.stdout.trim()
   if (!res.ok || !/^[0-9a-f]{40}$/.test(sha)) return null
-  await shadowGit(cwd, dir, ['update-ref', `refs/cp/${sha}`, sha], { allowFailure: true })
-  return sha
+  const ref = await shadowGit(cwd, dir, ['update-ref', `refs/cp/${sha}`, sha], { allowFailure: true, deadline })
+  return ref.ok ? sha : null
 }
 
 export async function captureCheckpoint(cwd: string, sessionKey: string, text: string, budgetMs = 10_000): Promise<CheckpointRecord | null> {
   if (!isCheckpointableDir(cwd) || !sessionKey) return null
   const key = normalizeCwd(cwd)
-  let expired = false
-  const timer = setTimeout(() => { expired = true }, budgetMs)
-  timer.unref?.()
-  try {
-    return await serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', () => expired)).catch(() => null)
-  } finally {
-    clearTimeout(timer)
+  const deadline = createGitDeadline(budgetMs, () => performance.now())
+  while (locks.has(key)) {
+    if (deadline.expired()) return null
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        locks.get(key)!.catch(() => undefined),
+        new Promise<void>((done) => { timer = setTimeout(done, deadline.remaining()) })
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   }
+  return serialized(key, () => takeSnapshot(cwd, sessionKey, text, 'turn', deadline)).catch(() => null)
 }
 
-async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], expired: () => boolean = () => false): Promise<CheckpointRecord | null> {
+async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind: CheckpointRecord['kind'], deadline?: GitDeadline): Promise<CheckpointRecord | null> {
   const dir = projectDir(cwd)
-  if (expired() || !(await ensureRepo(cwd, dir)) || expired()) return null
-  const snapshot = await snapshotTree(cwd, dir)
-  if (!snapshot || expired()) return null
+  if (deadline?.expired() || !(await ensureRepo(cwd, dir, deadline))) return null
+  const snapshot = await snapshotTree(cwd, dir, deadline)
+  if (!snapshot || deadline?.expired()) return null
   const tree = snapshot.tree
   const index = await readIndex(dir, cwd)
+  if (deadline?.expired()) return null
   let sha = index.lastTree === tree ? index.lastSha : undefined
   if (!sha) {
-    sha = (await commitTree(cwd, dir, tree, `${kind} ${new Date().toISOString()}`)) ?? undefined
+    sha = (await commitTree(cwd, dir, tree, `${kind} ${new Date().toISOString()}`, deadline)) ?? undefined
     if (!sha) return null
   }
   const record: StoredRecord = {
@@ -249,7 +267,7 @@ async function takeSnapshot(cwd: string, sessionKey: string, text: string, kind:
     kind,
     sha
   }
-  if (expired()) return null
+  if (deadline?.expired()) return null
   index.records.push(record)
   index.lastTree = tree
   index.lastSha = sha

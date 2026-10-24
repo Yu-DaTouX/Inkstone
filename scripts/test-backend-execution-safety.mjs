@@ -58,6 +58,7 @@ const sendCode = ts.transpileModule(index.slice(sendStart, sendEnd), { compilerO
 for (const changed of [false, true]) {
   const captured = deferred()
   const events = []
+  const preparationLogs = []
   const cwd = join(root, `send-${changed}`)
   const target = { runId: 'r1', generation: 7, sessionId: 's1' }
   let current = true
@@ -88,7 +89,8 @@ for (const changed of [false, true]) {
     normalizeExpectedRuntime: (input) => input, resolveExpectedTarget: () => 'r1', targetMatchesExpected: () => current,
     pinSendTarget: () => ({ ...target, agent }), pinnedTargetMatches: () => current,
     getSettings: async () => ({ checkpointsEnabled: true }), reserveWorkspaceMutation, warnSharedCwdOnce: () => {},
-    captureCheckpoint: async () => { events.push('capture-start'); await captured.promise; events.push('capture-finished') }
+    captureCheckpoint: async () => { events.push('capture-start'); await captured.promise; events.push('capture-finished'); return { id: 'fixture-checkpoint' } },
+    console: { log: (text) => preparationLogs.push(text) }
   })
   const pending = handler('fixture', undefined, undefined, target)
   await flush()
@@ -102,6 +104,14 @@ for (const changed of [false, true]) {
   assert.deepEqual(events, changed ? ['capture-start', 'capture-finished'] : ['capture-start', 'capture-finished', 'send'])
   assert.equal(released, changed)
   assert.equal(workspaceMutationInProgress(cwd), false)
+  assert.equal(preparationLogs.length, changed ? 0 : 1)
+  if (!changed) {
+    const timing = JSON.parse(preparationLogs[0].replace('[发送准备] ', ''))
+    assert.equal(timing.runnerId, 'r1')
+    assert.equal(timing.checkpointSaved, true)
+    assert.ok(timing.elapsedMs >= timing.checkpointMs && timing.checkpointMs >= 0)
+    assert.equal(preparationLogs[0].includes('fixture'), false)
+  }
 }
 console.log('✓ 发送等待快照，持有执行入场，目标变化时取消并释放')
 
@@ -238,7 +248,13 @@ console.log('✓ 回退与同目录 Bash、压缩、待提交执行双向互斥'
   const gitStarted = deferred()
   const gitFinished = deferred()
   let running = false
-  globalThis.__checkpointGit = async (_cwd, args) => {
+  let gitCalls = 0
+  let deadline
+  globalThis.__checkpointGit = async (_cwd, args, options) => {
+    gitCalls++
+    deadline ??= options.deadline
+    assert.ok(deadline)
+    assert.equal(options.deadline, deadline)
     if (args.includes('ls-files')) {
       running = true
       gitStarted.resolve()
@@ -260,14 +276,38 @@ console.log('✓ 回退与同目录 Bash、压缩、待提交执行双向互斥'
   let settled = false
   const pending = captureCheckpoint(cwd, 'session', 'fixture', 25).then((value) => { settled = true; return value })
   await gitStarted.promise
+  const activeCalls = gitCalls
+  assert.equal(await captureCheckpoint(cwd, 'queued', 'expired-queue', 5), null)
+  assert.equal(gitCalls, activeCalls)
+  assert.equal(running, true)
   await new Promise((done) => setTimeout(done, 40))
   assert.equal(settled, false)
   assert.equal(running, true)
   gitFinished.resolve()
   assert.equal(await pending, null)
   assert.equal(running, false)
+  await flush()
+  assert.equal(gitCalls, activeCalls)
+  const commands = []
+  let sharedDeadline
+  globalThis.__checkpointGit = async (_cwd, args, options) => {
+    sharedDeadline ??= options.deadline
+    assert.equal(options.deadline, sharedDeadline)
+    commands.push(args)
+    if (args.includes('ls-files')) {
+      await new Promise((done) => setTimeout(done, Math.ceil(options.deadline.remaining()) + 2))
+      return { ok: false, timedOut: true, stdout: '', stderr: '' }
+    }
+    return { ok: true, stdout: '', stderr: '' }
+  }
+  const startedAt = performance.now()
+  assert.equal(await captureCheckpoint(cwd, 'timed', 'shared-budget', 50), null)
+  assert.ok(sharedDeadline.expired())
+  assert.ok(performance.now() - startedAt < 1000)
+  assert.ok(commands.some((args) => args.includes('ls-files')))
+  assert.equal(commands.some((args) => args.includes('add') || args.includes('commit-tree')), false)
   delete globalThis.__checkpointGit
 }
-console.log('✓ 快照预算超时后，仍等后台读取结束才允许发送')
+console.log('✓ 快照复用总截止时间，排队超时不启动；活动读取收尾后才允许发送')
 delete globalThis.__executionRestore
 console.log('backend execution safety ok')

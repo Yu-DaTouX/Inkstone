@@ -42,6 +42,8 @@ try {
   await mkdir(join(proj, 'node_modules'))
   await writeFile(join(proj, 'node_modules', 'x.js'), 'x\n')
 
+  ok(await cp.captureCheckpoint(proj, 'sess-1', '零预算不写入', 0) === null, '零预算直接跳过检查点')
+  ok((await cp.listCheckpoints(proj, 'sess-1')).length === 0, '跳过后不留下检查点记录')
   const c1 = await cp.captureCheckpoint(proj, 'sess-1', '第一轮：改 a')
   ok(!!c1 && c1.kind === 'turn' && c1.sessionKey === 'sess-1', '发消息前能存下检查点')
 

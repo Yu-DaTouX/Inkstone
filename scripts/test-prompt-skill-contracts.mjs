@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { createQuestionTool, TOOL_GUIDANCE } from '../resources/pi-extensions/question.js'
-import { createTodosTool, taskReminder } from '../resources/pi-extensions/capability-guide.js'
+import { capabilityGuide, createTodosTool, taskReminder } from '../resources/pi-extensions/capability-guide.js'
 import readOnlyTools from '../resources/pi-extensions/readonly-tools.js'
 
 export async function runPromptSkillContractTests(ok) {
@@ -21,6 +21,9 @@ export async function runPromptSkillContractTests(ok) {
   const cancelled = await createQuestionTool(async () => ({ ok: true, data: { answer: null, cancelled: true } })).execute('q2', {})
   match(cancelled.content[0].text, /Do not guess/i, '提问无答复不猜测')
   for (const tools of [false, true]) {
+    const guide = capabilityGuide(tools)
+    match(guide, /Batch independent reads and small calls with codemode; print only the needed results/, '能力指引限制批处理输出')
+    match(guide, /When direct tools are available, use `write`\/`edit` directly for large file content.*context trimming/, '能力指引让大段写入保留可裁剪参数且兼容仅 codemode 模式')
     const reminder = taskReminder(tools)
     match(reminder, /tool-call count alone is not a reason to speak/i, 'todo 提醒不因工具次数强制发言')
     match(reminder, /honor a user request for silence or only a final answer/i, 'todo 提醒服从静默/仅最终答复')

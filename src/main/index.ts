@@ -2326,6 +2326,9 @@ function registerIpc(): void {
   })
 
   handle('yan:send', async (text: string, images?: { data: string; mimeType: string }[], mode?: 'steer' | 'followUp', expectedInput?: unknown) => {
+    const preparationStartedAt = Date.now()
+    let checkpointMs = 0
+    let checkpointSaved: boolean | undefined
     const expected = normalizeExpectedRuntime(expectedInput)
     if (expected === 'invalid') return { ok: false, error: '发送目标身份无效，消息未发送' }
     let targetId = expected ? resolveExpectedTarget(expected) ?? undefined : runners?.activeRunnerId
@@ -2374,9 +2377,11 @@ function registerIpc(): void {
         if (state && idleForTurn()) {
           const release = reserveWorkspaceMutation(agent.workingDirectory)
           if (!release) return { ok: false, error: '项目正在保存或回退代码，请稍后发送；草稿已保留' }
+          const checkpointStartedAt = Date.now()
           try {
-            await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text)
+            checkpointSaved = !!(await captureCheckpoint(agent.workingDirectory, state.conversationId ?? state.sessionId, text))
           } finally {
+            checkpointMs = Math.max(0, Date.now() - checkpointStartedAt)
             release()
           }
         }
@@ -2384,6 +2389,7 @@ function registerIpc(): void {
       if (sendOwnershipChanged(id) || runners !== registry) {
         return { ok: false, error: '目标会话已不在或已切换，消息未发送；草稿已保留' }
       }
+      console.log(`[发送准备] ${JSON.stringify({ runnerId: id, elapsedMs: Math.max(0, Date.now() - preparationStartedAt), checkpointMs, checkpointSaved })}`)
       const result = await agent.send(text, images, mode, undefined, pin?.generation)
       handedOff = result.ok
       return result
