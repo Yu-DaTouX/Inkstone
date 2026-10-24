@@ -2,6 +2,7 @@ package dev.inkstone.companion;
 
 import com.google.gson.JsonObject;
 import dev.inkstone.companion.core.Companion;
+import dev.inkstone.companion.core.Hover;
 import dev.inkstone.companion.core.Json;
 import dev.inkstone.companion.core.Keys;
 import dev.inkstone.companion.core.Ui;
@@ -29,7 +30,10 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 
 final class UiOps {
 	private UiOps() {
@@ -44,6 +48,9 @@ final class UiOps {
 		result.put("title", screen.getTitle() == null ? "" : screen.getTitle().getString());
 		AbstractContainerMenu menu = menu(screen);
 		result.put("kind", Ui.kind(screen.getClass().getSimpleName(), menu != null));
+		result.put("guiScale", client.getWindow().getGuiScale());
+		double[] hover = Hover.point(screen);
+		if (hover != null) result.put("hover", Json.map("x", hover[0], "y", hover[1]));
 		if (menu != null) result.put("menu", menu.getClass().getSimpleName());
 		result.put("slots", slots(client, screen, menu));
 		result.put("widgets", widgets(screen));
@@ -65,7 +72,7 @@ final class UiOps {
 		for (int index = 0; index < menu.slots.size(); index++) {
 			Slot slot = menu.slots.get(index);
 			boolean player = client.player != null && slot.container == client.player.getInventory();
-			slots.add(Json.map("index", index, "x", offsetX + slot.x, "y", offsetY + slot.y, "container", player ? "player" : "menu", "item", item(slot.getItem())));
+			slots.add(Json.map("index", index, "x", offsetX + slot.x, "y", offsetY + slot.y, "cx", offsetX + slot.x + 8, "cy", offsetY + slot.y + 8, "container", player ? "player" : "menu", "item", item(slot.getItem())));
 		}
 		return slots;
 	}
@@ -116,6 +123,8 @@ final class UiOps {
 			return read();
 		}
 		if (screen == null) throw new IllegalArgumentException("no screen is open");
+		if ("hover".equals(action)) return hover(client, screen, body);
+		Hover.clear();
 		switch (action) {
 			case "click" -> click(client, screen, body);
 			case "type" -> type(client, screen, body);
@@ -147,11 +156,14 @@ final class UiOps {
 			List<AbstractWidget> clickable = clickable(screen);
 			if (widgetIndex < 0 || widgetIndex >= clickable.size()) throw new IllegalArgumentException("widget " + widgetIndex + " does not exist (found " + clickable.size() + ")");
 			AbstractWidget widget = clickable.get(widgetIndex);
-			widget.mouseClicked(new MouseButtonEvent(widget.getX() + widget.getWidth() / 2.0, widget.getY() + widget.getHeight() / 2.0, new MouseButtonInfo(button, 0)), false);
+			MouseButtonEvent event = new MouseButtonEvent(widget.getX() + widget.getWidth() / 2.0, widget.getY() + widget.getHeight() / 2.0, new MouseButtonInfo(button, 0));
+			if (widget.mouseClicked(event, false)) widget.mouseReleased(event);
 			return;
 		}
 		if (body.has("x") && body.has("y")) {
-			screen.mouseClicked(new MouseButtonEvent(Json.number(body, "x", 0), Json.number(body, "y", 0), new MouseButtonInfo(button, 0)), false);
+			MouseButtonEvent event = new MouseButtonEvent(Json.number(body, "x", 0), Json.number(body, "y", 0), new MouseButtonInfo(button, 0));
+			screen.mouseClicked(event, false);
+			screen.mouseReleased(event);
 			return;
 		}
 		throw new IllegalArgumentException("click needs slot, widget or x+y");
@@ -184,6 +196,31 @@ final class UiOps {
 			if (screen instanceof ChatScreen chat) chat.handleChatInput(field.getValue(), false);
 			else screen.keyPressed(new KeyEvent(Keys.code("enter"), 0, 0));
 		}
+	}
+
+	private static Map<String, Object> hover(Minecraft client, Screen screen, JsonObject body) {
+		ItemStack stack = null;
+		if (body.has("slot")) {
+			AbstractContainerMenu menu = menu(screen);
+			if (menu == null || !(screen instanceof ScreenOffset offset)) throw new IllegalArgumentException("this screen has no slots");
+			int index = Json.integer(body, "slot", 0);
+			if (index < 0 || index >= menu.slots.size()) throw new IllegalArgumentException("slot " + index + " does not exist (found " + menu.slots.size() + ")");
+			Slot slot = menu.slots.get(index);
+			Hover.set(offset.inkstoneScreenX() + slot.x + 8, offset.inkstoneScreenY() + slot.y + 8, screen);
+			stack = slot.getItem();
+		} else if (body.has("x") && body.has("y")) {
+			Hover.set(Json.number(body, "x", 0), Json.number(body, "y", 0), screen);
+		} else throw new IllegalArgumentException("hover needs slot or x+y");
+		Map<String, Object> result = read();
+		if (stack != null && !stack.isEmpty()) result.put("tooltip", tooltip(client, stack));
+		return result;
+	}
+
+	private static List<String> tooltip(Minecraft client, ItemStack stack) {
+		List<String> lines = new ArrayList<>();
+		Item.TooltipContext context = client.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(client.level);
+		for (Component line : stack.getTooltipLines(context, client.player, TooltipFlag.NORMAL)) lines.add(line.getString());
+		return lines;
 	}
 
 	private static void open(Minecraft client, JsonObject body) {

@@ -58,6 +58,8 @@ export interface UiSlot {
   index: number
   x: number
   y: number
+  cx?: number
+  cy?: number
   container: 'menu' | 'player'
   item: CompanionItem | null
 }
@@ -86,15 +88,19 @@ export interface UiScreen {
   slots: UiSlot[]
   widgets: UiWidget[]
   carried?: CompanionItem | null
+  guiScale?: number
+  hover?: { x: number; y: number }
 }
 
 export interface UiReply {
   screen: UiScreen | null
+  tooltip?: string[]
 }
 
 export type UiRequest =
   | { action: 'read' }
   | { action: 'click'; slot?: number; button?: 'left' | 'right' | 'middle'; shift?: boolean; widget?: number; x?: number; y?: number }
+  | { action: 'hover'; slot?: number; x?: number; y?: number }
   | { action: 'type'; widget?: number; text: string; replace?: boolean; submit?: boolean }
   | { action: 'key'; key: string }
   | { action: 'close' }
@@ -289,6 +295,8 @@ function parseSlots(value: unknown): UiSlot[] {
         index,
         x: num(raw.x) ?? 0,
         y: num(raw.y) ?? 0,
+        cx: num(raw.cx),
+        cy: num(raw.cy),
         container: raw.container === 'player' ? 'player' : 'menu',
         item: parseItem(raw.item)
       }
@@ -332,7 +340,9 @@ export function parseScreen(value: unknown): UiScreen | null {
     menu: str(raw.menu),
     slots: parseSlots(raw.slots),
     widgets: parseWidgets(raw.widgets),
-    carried: raw.carried === undefined ? undefined : parseItem(raw.carried)
+    carried: raw.carried === undefined ? undefined : parseItem(raw.carried),
+    guiScale: num(raw.guiScale),
+    hover: raw.hover === undefined ? undefined : { x: num(record(raw.hover).x) ?? 0, y: num(record(raw.hover).y) ?? 0 }
   }
 }
 
@@ -365,7 +375,8 @@ export async function sendInput(send: CompanionSender, request: InputRequest, ti
 
 export async function sendUi(send: CompanionSender, request: UiRequest, timeoutMs = 30_000): Promise<UiReply> {
   const raw = record(await send('/ui', { ...request }, timeoutMs))
-  return { screen: parseScreen(raw.screen) }
+  const tooltip = Array.isArray(raw.tooltip) ? raw.tooltip.filter((line): line is string => typeof line === 'string') : undefined
+  return tooltip ? { screen: parseScreen(raw.screen), tooltip } : { screen: parseScreen(raw.screen) }
 }
 
 export async function sendChat(send: CompanionSender, request: ChatRequest = {}, timeoutMs = 15_000): Promise<ChatReply> {

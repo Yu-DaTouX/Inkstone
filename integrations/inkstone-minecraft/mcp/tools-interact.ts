@@ -226,6 +226,16 @@ function uiRequest(args: Record<string, unknown>): UiRequest {
     if (args.shift === true) request.shift = true
     return request
   }
+  if (action === 'hover') {
+    const slot = num(args, 'slot')
+    const x = num(args, 'x')
+    const y = num(args, 'y')
+    if ((x !== undefined) !== (y !== undefined)) throw new Error('x 与 y 要同时给（GUI 坐标）')
+    if (slot !== undefined && x !== undefined) throw new Error('slot 与 x+y 只能选一个')
+    if (slot !== undefined) return { action: 'hover', slot: Math.round(slot) }
+    if (x !== undefined && y !== undefined) return { action: 'hover', x, y }
+    throw new Error('hover 需要 slot 或 x+y')
+  }
   if (action === 'type') {
     const value = typeof args.text === 'string' ? args.text : undefined
     if (value === undefined) throw new Error('type 需要 text')
@@ -249,7 +259,7 @@ function uiRequest(args: Record<string, unknown>): UiRequest {
     if (value !== undefined) request.text = value
     return request
   }
-  throw new Error(`未知 action ${action}：read、click、type、key、close、open 之一`)
+  throw new Error(`未知 action ${action}：read、click、hover、type、key、close、open 之一`)
 }
 
 const KIND_TEXT: Record<UiScreen['kind'], string> = {
@@ -268,13 +278,16 @@ function formatWidget(widget: UiWidget): string {
 }
 
 function formatSlot(slot: UiSlot): string {
-  return `  ${slot.index} ${slot.container === 'player' ? '背包' : '菜单'}@${slot.x},${slot.y}：${itemText(slot.item)}`
+  const center = slot.cx !== undefined && slot.cy !== undefined ? ` 中心${slot.cx},${slot.cy}` : ''
+  return `  ${slot.index} ${slot.container === 'player' ? '背包' : '菜单'}@${slot.x},${slot.y}${center}：${itemText(slot.item)}`
 }
 
 function formatScreen(screen: UiScreen | null, slotLimit = 60, widgetLimit = 40): string {
   if (!screen) return '界面：无（玩家在游戏内）'
   const head = `界面：${screen.class}「${screen.title}」（${KIND_TEXT[screen.kind]}${screen.menu ? `，menu ${screen.menu}` : ''}）`
-  const lines = [head, `槽位 ${screen.slots.length} 个、控件 ${screen.widgets.length} 个`]
+  const scale = screen.guiScale ? `；GUI 缩放 ${screen.guiScale}，截图像素 = GUI 坐标 × ${screen.guiScale}` : ''
+  const lines = [head, `槽位 ${screen.slots.length} 个、控件 ${screen.widgets.length} 个${scale}`]
+  if (screen.hover) lines.push(`悬停：GUI 坐标 (${screen.hover.x}, ${screen.hover.y})，下一帧按这里绘制悬停与 tooltip，直到再操作界面或真实鼠标移动`)
   lines.push(...screen.slots.slice(0, slotLimit).map(formatSlot))
   if (screen.slots.length > slotLimit) lines.push(`  …还有 ${screen.slots.length - slotLimit} 个槽位没列出`)
   lines.push(...screen.widgets.slice(0, widgetLimit).map(formatWidget))
@@ -290,6 +303,7 @@ function uiConclusion(request: UiRequest): string {
     const what = request.slot !== undefined ? `槽位 ${request.slot}` : request.widget !== undefined ? `控件 ${request.widget}` : `坐标 (${request.x}, ${request.y})`
     return `已点击${what}（${button === 'left' ? '左键' : button === 'right' ? '右键' : '中键'}${request.shift ? ' + shift' : ''}）`
   }
+  if (request.action === 'hover') return `已悬停在${request.slot !== undefined ? `槽位 ${request.slot}` : `坐标 (${request.x}, ${request.y})`}`
   if (request.action === 'type') {
     const flags = [request.replace ? '已替换原内容' : '', request.submit ? '并提交' : ''].filter(Boolean)
     return `已输入 ${request.text.length} 个字符${request.widget !== undefined ? `到控件 ${request.widget}` : ''}${flags.length ? `（${flags.join('，')}）` : ''}`
@@ -301,7 +315,9 @@ function uiConclusion(request: UiRequest): string {
 
 function formatUi(request: UiRequest, reply: UiReply): string {
   const head = uiConclusion(request)
-  return head ? `${head}\n\n${formatScreen(reply.screen)}` : formatScreen(reply.screen)
+  const tooltip = reply.tooltip?.length ? `\n\n物品提示（tooltip）：\n${reply.tooltip.map((line) => `  ${line}`).join('\n')}` : request.action === 'hover' && request.slot !== undefined ? '\n\n物品提示：槽位为空' : ''
+  const body = formatScreen(reply.screen) + tooltip
+  return head ? `${head}\n\n${body}` : body
 }
 
 function clockText(time: number): string {
@@ -590,16 +606,16 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
       name: 'mc_ui',
       title: '读界面并操作界面',
       description:
-        '读开发客户端当前界面并操作它：action=read 返回界面类名、标题、槽位（菜单/背包、坐标、物品）和控件（按钮、输入框、复选框、滑块，含 id、标签、值、焦点、位置）；click 点槽位（可右键、shift）、控件 id 或 GUI 坐标；type 往输入框写文本（replace 先清空、submit 回车提交）；key 在界面内按键；close 关界面；open 打开 inventory 或 chat（chat 可预填 text 以读补全）。每个操作都返回执行后的界面。用户接管时只有 read 可用。',
+        '读开发客户端当前界面并操作它：action=read 返回界面类名、标题、GUI 缩放、槽位（菜单/背包、左上角与中心坐标、物品）和控件（按钮、输入框、复选框、滑块，含 id、标签、值、焦点、位置）；click 点槽位（可右键、shift）、控件 id 或 GUI 坐标（按下并松开，手上物品可放下）；hover 把鼠标停在槽位或 GUI 坐标上，返回该槽物品的 tooltip 文本，之后 mc_view 截图能看到悬停提示框；type 往输入框写文本（replace 先清空、submit 回车提交）；key 在界面内按键；close 关界面；open 打开 inventory 或 chat（chat 可预填 text 以读补全）。每个操作都返回执行后的界面。用户接管时只有 read 可用。',
       inputSchema: {
         type: 'object',
         properties: {
           project: PROJECT_PROPERTY,
-          action: { type: 'string', enum: ['read', 'click', 'type', 'key', 'close', 'open'], description: 'read 读界面（默认）、click 点击、type 输入、key 按键、close 关闭、open 打开' },
-          slot: { type: 'number', description: 'click：槽位序号（来自 read 的 slots[].index）' },
+          action: { type: 'string', enum: ['read', 'click', 'hover', 'type', 'key', 'close', 'open'], description: 'read 读界面（默认）、click 点击、hover 悬停、type 输入、key 按键、close 关闭、open 打开' },
+          slot: { type: 'number', description: 'click/hover：槽位序号（来自 read 的 slots[].index）' },
           widget: { type: 'number', description: 'click/type：控件 id（来自 read 的 widgets[].id，同一界面内稳定）' },
-          x: { type: 'number', description: 'click：界面 GUI 坐标 x，需要和 y 一起给' },
-          y: { type: 'number', description: 'click：界面 GUI 坐标 y' },
+          x: { type: 'number', description: 'click/hover：界面 GUI 坐标 x，需要和 y 一起给；点槽位用 slots[].cx' },
+          y: { type: 'number', description: 'click/hover：界面 GUI 坐标 y；点槽位用 slots[].cy' },
           button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'click：鼠标键，默认 left' },
           shift: { type: 'boolean', description: 'click：按住 shift（快速移动整叠）' },
           text: { type: 'string', description: 'type：要写入的文本；open 且 screen=chat 时可预填聊天栏文本' },

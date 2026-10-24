@@ -724,7 +724,27 @@ try {
     assert.match(bodyOf(stopped), /控制方：Agent/)
     const viewed = await toolOf(tools, 'mc_view').run({ target: 'screen' })
     assert.equal(bodyOf(viewed).includes('画面可能已被改变'), false)
-    assert.deepEqual(calls, ['command:/time set day', 'apply:true', 'companion:/command', 'stop', 'companion:/status', 'image:/screenshot'])
+    assert.deepEqual(calls, ['companion:/chat', 'command:/time set day', 'apply:true', 'companion:/command', 'stop', 'companion:/status', 'image:/screenshot'])
+    assert.match(bodyOf(viewed), /\u5df2\u5b58\u539f\u56fe\uff1a.*shots.*-view-screen\.png/)
+  })
+
+  await test('MCP\uff1a\u670d\u52a1\u7aef\u547d\u4ee4\u6ca1\u6709\u56de\u663e\u65f6\u8bfb\u6267\u884c\u671f\u95f4\u7684\u65b0\u804a\u5929', async () => {
+    const calls: string[] = []
+    const base = stubProject('agent', calls)
+    const project = {
+      ...base,
+      command: async (command: string) => ({ command, ok: true, output: [], error: null }),
+      companion: async (path: string, body: Record<string, unknown> = {}) => {
+        calls.push(`companion:${path}:${body.since ?? '-'}`)
+        if (path !== '/chat') return { playing: true }
+        return body.since === 7 ? { latest: 8, messages: [{ seq: 8, time: 1700000000000, kind: 'system', text: '\u5929\u8d4b\u680f 1\uff1a\u7a7a' }] } : { latest: 7, messages: [] }
+      }
+    } as unknown as DevProject
+    const commanded = await toolOf(stubTools(project), 'mc_command').run({ command: '/pit perks' })
+    assert.equal(commanded.isError, undefined)
+    assert.match(bodyOf(commanded), /\u547d\u4ee4\u6765\u6e90\u6ca1\u6709\u56de\u663e/)
+    assert.match(bodyOf(commanded), /\u5929\u8d4b\u680f 1\uff1a\u7a7a/)
+    assert.deepEqual(calls, ['companion:/chat:-', 'companion:/chat:7'])
   })
 
   const specOf = (projectDir: string, workingDir: string): string =>

@@ -12,6 +12,7 @@
 		"EntityFlagMixin",
 		"GameRendererMixin",
 		"HudMixin",
+		"MouseMixin",
 		"ScreenOffsetMixin",
 		"WindowMixin"
 	],

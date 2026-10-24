@@ -17,7 +17,7 @@ description: 开发 Minecraft Fabric mod（新建项目、加物品方块、画�
 | `mc_build` | 只想看编译错误时用 |
 | `mc_view` | `screen` 截图；`count`/`intervalMs` 连拍（每张带时间戳）、`hideHud` 隐藏 HUD、`crop` 只截一块、`grid` 在图上叠坐标网格与刻度（看图点自定义界面先开它）；`item`/`block` 渲染单个物品或方块的透明 PNG |
 | `mc_input` | 真实输入：`attack`/`use`（可先对准方块或实体）、`look`、`move`、`hotbar`、`key` |
-| `mc_ui` | 读界面并操作：`read` 界面类名、槽位与控件；`click`、`type`、`key`、`open`、`close` |
+| `mc_ui` | 读界面并操作：`read` 界面类名、GUI 缩放、槽位（含中心坐标）与控件；`click`（按下并松开，可放下手上物品）、`hover`（停在槽位上，返回 tooltip 文本，随后 `mc_view` 能截到提示框）、`type`、`key`、`open`、`close` |
 | `mc_chat` | 读聊天、系统消息、actionbar、标题；`since` 做增量 |
 | `mc_script` | 一串步骤（`command`/`input`/`ui`/`wait`/`screenshot`/`player`/`chat`/`perf`/`tick`）在客户端 tick 上按顺序跑，一次拿回每步结果与截图；`screenshot` 步也支持 `grid`，`tick` 步参数同 `mc_tick` |
 | `mc_perf` | FPS、MSPT、TPS、内存、实体数、区块数 |

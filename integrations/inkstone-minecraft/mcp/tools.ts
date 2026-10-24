@@ -156,6 +156,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((done) => setTimeout(done, ms))
 }
 
+async function saveViewShot(projectDir: string, png: Buffer, label: string, at: number): Promise<string> {
+  const dir = join(statePaths(projectDir).dir, 'shots')
+  await mkdir(dir, { recursive: true })
+  const date = new Date(at)
+  const pad = (value: number, width = 2): string => String(value).padStart(width, '0')
+  const time = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}`
+  const file = join(dir, `${time}-view-${label.replace(/[^\w-]/g, '_')}.png`)
+  await writeFile(file, png)
+  return file
+}
+
 function stamp(at: number): string {
   const date = new Date(at)
   const pad = (value: number, width = 2) => String(value).padStart(width, '0')
@@ -230,6 +241,29 @@ async function screenshotScreen(project: DevProject, body: Record<string, unknow
 }
 
 const chatCursors = new Map<string, number>()
+
+async function chatLatest(project: DevProject): Promise<number | undefined> {
+  try {
+    const reply = record(await project.companion('/chat', { limit: 1 }))
+    return typeof reply?.latest === 'number' && Number.isFinite(reply.latest) ? reply.latest : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function chatAfter(project: DevProject, since: number): Promise<string[]> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) await sleep(300)
+    try {
+      const reply = record(await project.companion('/chat', { limit: 50, since }))
+      const messages = Array.isArray(reply?.messages) ? (reply.messages as Array<Record<string, unknown>>) : []
+      if (messages.length) return formatChat(messages).split('\n')
+    } catch {
+      return []
+    }
+  }
+  return []
+}
 
 async function readChatSince(project: DevProject): Promise<{ messages: Array<Record<string, unknown>>; latest: number }> {
   const key = project.projectDir.toLowerCase()
@@ -430,8 +464,11 @@ export function createTools(context: McpContext): ToolDefinition[] {
           const body = [`已从聊天发送：/${clean}${sent.sent === true ? '' : '（伴随 mod 没确认已发送）'}`, messages.length ? formatChat(messages) : '聊天里没有新消息（命令可能没产生输出；聊天历史用 mc_chat 读）']
           return text(body.join('\n'))
         }
+        const before = await chatLatest(project)
         const result = await project.command(command)
-        const body = [`/${result.command.replace(/^\//, '')}`, ...(result.output.length ? result.output : ['（没有输出）'])]
+        const echoed = result.output.length || before === undefined ? [] : await chatAfter(project, before)
+        const output = result.output.length ? result.output : echoed.length ? ['（命令来源没有回显，下面是执行期间新增的聊天/系统消息）', ...echoed] : ['（没有输出，执行期间也没有新的聊天/系统消息；命令若会打开界面，用 mc_ui read 查看）']
+        const body = [`/${result.command.replace(/^\//, '')}`, ...output]
         if (result.error) body.push(`错误：${result.error}`)
         return result.ok ? text(body.join('\n')) : failure(body.join('\n'))
       }
@@ -516,6 +553,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
           const content: ToolContent[] = []
           const notes: string[] = []
           const startedAt = Date.now()
+          const saved: string[] = []
           for (let index = 0; index < count; index += 1) {
             if (index > 0 && intervalMs) await sleep(intervalMs)
             const shot = await screenshotScreen(project, body)
@@ -523,12 +561,14 @@ export function createTools(context: McpContext): ToolDefinition[] {
             const decoded = decodePng(shot.png)
             const scaled = scaleDown(decoded, 1280)
             const at = Date.now()
+            saved.push(await saveViewShot(project.projectDir, shot.png, count > 1 ? `screen-${index + 1}` : 'screen', at))
             content.push({ type: 'image', data: (scaled === decoded ? shot.png : encodePng(scaled)).toString('base64'), mimeType: 'image/png' })
             content.push({
               type: 'text',
               text: `#${index + 1}/${count} ${stamp(at)}（第 ${((at - startedAt) / 1000).toFixed(1)}s）${decoded.width}×${decoded.height}${scaled === decoded ? '' : ` → ${scaled.width}×${scaled.height}`}`
             })
           }
+          notes.push(saved.length === 1 ? `已存原图：${saved[0]}` : `已存原图：\n${saved.join('\n')}`)
           if (count > 1) notes.push(`连拍 ${count} 张，间隔 ${intervalMs}ms`)
           if (await userInControl(project)) notes.push('用户正在操作，画面可能已被改变')
           if (notes.length) content.push({ type: 'text', text: notes.join('\n') })
@@ -537,7 +577,8 @@ export function createTools(context: McpContext): ToolDefinition[] {
         const id = str(args, 'id')
         if (!id) return failure('渲染物品或方块需要 id')
         const png = await project.image('/render', { id, kind: target, size: num(args, 'size') ?? 256 })
-        return image(png, `${target === 'block' ? '方块' : '物品'} ${id} 的游戏内渲染（透明背景）`)
+        const file = await saveViewShot(project.projectDir, png, `${target}-${id}`, Date.now())
+        return image(png, `${target === 'block' ? '方块' : '物品'} ${id} 的游戏内渲染（透明背景）\n已存：${file}`)
       }
     },
     {
