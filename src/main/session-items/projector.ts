@@ -325,6 +325,20 @@ export class SessionItemProjector {
     return hit.call
   }
 
+  cancelUnfinishedTools(now: number): UIToolCall[] {
+    const cancelled: UIToolCall[] = []
+    for (const { call, slot } of this.callIndex.values()) {
+      if (slot?.turnId !== this.turnId || slot.header.role !== 'assistant') continue
+      if (call.status !== 'running' && call.status !== 'pending') continue
+      call.status = 'ok'
+      call.cancelled = true
+      call.endedAt = now
+      this.syncCall(call)
+      cancelled.push(call)
+    }
+    return cancelled
+  }
+
   liveCompaction(evt: LiveCompactionEvent): CompactionItem | null {
     if (evt.type === 'compaction_start') {
       const item: CompactionItem = {

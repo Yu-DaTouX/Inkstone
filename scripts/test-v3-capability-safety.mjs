@@ -312,6 +312,16 @@ assert.equal(preview.token, 'TOKEN-SECRET-000', '不改写 preview.token（commi
 
   const zhHiddenHint = capsText('zh-CN', 'promptsHiddenHint')
   assert.ok(/不是停用|并非停用/.test(zhHiddenHint), '隐藏说明要点明并非停用')
+  assert.ok(!zhHiddenHint.includes('声明位置'), '不再要求用户猜测声明位置')
+  for (const language of ['zh-CN', 'en-US']) {
+    const hint = capsText(language, 'promptsHiddenHint')
+    assert.ok(hint.includes('.md'), '说明模板文件格式')
+    assert.ok(hint.includes('/translate'), '说明文件名与调用命令的关系')
+    assert.ok(hint.includes('/reload'), '说明保存后如何重新加载，不混同刷新列表')
+    for (const key of ['promptsRefresh', 'promptUserDirectory', 'promptProjectDirectory', 'promptOpenDirectory', 'promptOpenFailed', 'promptCreate', 'promptName', 'promptNameHint', 'promptContent', 'promptContentPlaceholder', 'promptCreateHint', 'promptSave', 'promptSaveFailed', 'promptRetryReload', 'promptSavedReloadFailed', 'promptSavedNoSession', 'promptSavedLocation', 'promptCreated', 'promptNotLoaded']) {
+      assert.ok(capsText(language, key).length > 0, `目录入口有 ${language} 文案`)
+    }
+  }
 }
 
 console.log('test-v3-capability-safety: ok')

@@ -654,7 +654,6 @@ export class BrowserController {
     }
     this.detachViewFromAllWindows(tab.view)
     tab.observer.dispose()
-    this.siteGate()?.forgetSession(tab.id)
     await tab.cdp.detach().catch(() => undefined)
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close()
     const priorIndex = [...this.tabs.keys()].indexOf(id)

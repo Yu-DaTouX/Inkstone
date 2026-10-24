@@ -6,6 +6,7 @@ import { Button, EmptyState, Input, IconButton, Notice, Tab, TabList, Tabs, Text
 import { claimResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
+import { PaneTitle, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
 import { browserText } from './browser-text'
 import { browserControlAllowed } from './ownership'
 import { useBrowserBoundsSync, useBrowserOverlayBlocker, useBrowserSurfaceActive } from './use-browser-surface'
@@ -32,6 +33,7 @@ function Gate({ text, testId }: { text: string; testId: string }): ReactElement 
 
 export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactElement {
   const t = useT()
+  const chrome = usePaneChrome()
   const { lang } = useI18n()
   const text = browserText(lang)
   const state = useStore((s) => s.browserState)
@@ -108,6 +110,13 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     }
   }
 
+  usePaneMenu('browser', control ? [{
+    id: 'browser:sites',
+    label: text.sitesManage,
+    icon: <ShieldCheck size={14} aria-hidden="true" />,
+    onAction: () => setSitesOpen(true)
+  }] : [])
+
   if (!owner.active) return <Gate text={text.inactive} testId="browser-pane-inactive" />
   if (!control) {
     if (!state.open && (!browserOwnerKey || browserOwnerKey === owner.key)) {
@@ -137,45 +146,50 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   }
 
   const tabs = state.tabs ?? []
+  const tabStrip = (
+    <div className={`v3-browser__tabsrow${chrome?.title ? ' v3-browser__tabsrow--chrome' : ''}`} data-testid="browser-pane-tabs">
+      <Tabs
+        className="v3-browser__tabs"
+        selectedKey={state.activeTabId}
+        onSelectionChange={(key) => {
+          if (typeof key === 'string' && control && key !== state.activeTabId) {
+            void window.yan.browser.switchTab(key)
+          }
+        }}
+      >
+        <TabList className="v3-browser__tablist" aria-label={text.tabLabel}>
+          {tabs.map((tab) => (
+            <Tab
+              key={tab.id}
+              id={tab.id}
+              className="v3-browser__tab"
+              closeLabel={t('browser.closeTab')}
+              onClose={() => {
+                if (controlRef.current) void window.yan.browser.closeTab(tab.id)
+              }}
+            >
+              {tab.title || tab.url || t('browser.newTab')}
+            </Tab>
+          ))}
+        </TabList>
+      </Tabs>
+      <IconButton
+        aria-label={t('browser.newTab')}
+        size="sm"
+        className="v3-browser__newtab"
+        data-testid="browser-pane-new-tab"
+        onPress={() => {
+          if (controlRef.current) void window.yan.browser.newTab()
+        }}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </IconButton>
+    </div>
+  )
 
   return (
     <div className="v3-browser" data-testid="browser-pane" data-active={surfaceActive ? '1' : '0'}>
-      <div className="v3-browser__tabsrow">
-        <Tabs
-          selectedKey={state.activeTabId}
-          onSelectionChange={(key) => {
-            if (typeof key === 'string' && control && key !== state.activeTabId) {
-              void window.yan.browser.switchTab(key)
-            }
-          }}
-        >
-          <TabList className="v3-browser__tablist" aria-label={text.tabLabel}>
-            {tabs.map((tab) => (
-              <Tab
-                key={tab.id}
-                id={tab.id}
-                className="v3-browser__tab"
-                closeLabel={t('browser.closeTab')}
-                onClose={() => {
-                  if (controlRef.current) void window.yan.browser.closeTab(tab.id)
-                }}
-              >
-                {tab.title || tab.url || t('browser.newTab')}
-              </Tab>
-            ))}
-          </TabList>
-        </Tabs>
-        <IconButton
-          aria-label={t('browser.newTab')}
-          className="v3-browser__newtab"
-          data-testid="browser-pane-new-tab"
-          onPress={() => {
-            if (controlRef.current) void window.yan.browser.newTab()
-          }}
-        >
-          <Plus size={14} aria-hidden="true" />
-        </IconButton>
-      </div>
+      {chrome?.title ? <PaneTitle>{tabStrip}</PaneTitle> : tabStrip}
 
       <div className="v3-browser__toolbar">
         <IconButton
@@ -234,13 +248,15 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           </TextField>
         </form>
 
-        <IconButton
-          aria-label={text.sitesManage}
-          data-testid="browser-pane-allowed-sites"
-          onPress={() => setSitesOpen(true)}
-        >
-          <ShieldCheck size={14} aria-hidden="true" />
-        </IconButton>
+        {!chrome ? (
+          <IconButton
+            aria-label={text.sitesManage}
+            data-testid="browser-pane-allowed-sites"
+            onPress={() => setSitesOpen(true)}
+          >
+            <ShieldCheck size={14} aria-hidden="true" />
+          </IconButton>
+        ) : null}
 
         <IconButton
           aria-label={t('browser.openExternal')}

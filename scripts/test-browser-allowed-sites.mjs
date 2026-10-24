@@ -68,12 +68,11 @@ async function run() {
     assert.equal(access.decide('s2', 'https://fresh.test/x').decision, 'allow')
 
     assert.equal(access.record('s2', 'https://declined.test/', false), 'deny')
-    assert.equal(access.decide('s2', 'https://declined.test/x').decision, 'deny')
+    assert.equal(access.decide('s2', 'https://declined.test/x').decision, 'ask')
     assert.equal(access.decide('s3', 'https://declined.test/x').decision, 'ask')
-    assert.equal(access.record('s2', 'https://declined.test/', true), 'deny')
-    assert.equal(access.decide('s2', 'https://declined.test/x').decision, 'deny')
+    assert.equal(access.record('s2', 'https://declined.test/', false), 'deny')
+    assert.equal(access.decide('s2', 'https://declined.test/x').decision, 'ask')
     assert.equal(memory.saved.includes('https://declined.test'), false)
-    access.forgetSession('s2')
     assert.equal(access.decide('s2', 'https://declined.test/x').decision, 'ask')
 
     assert.equal(access.add('fourth.test').result, 'ok')
@@ -125,11 +124,19 @@ async function run() {
 
     answer = false
     assert.equal(await gate.check('chat', 'https://denied.test/'), 'deny')
-    assert.equal(gate.peek('chat', 'https://denied.test/'), 'deny')
+    assert.equal(gate.peek('chat', 'https://denied.test/'), 'ask')
     assert.equal(gate.peek('other', 'https://denied.test/'), 'ask')
     assert.equal(await gate.check('chat', 'http://169.254.169.254/'), 'forbidden')
     assert.equal(await gate.check('chat', 'file:///x'), 'invalid')
     assert.equal(asks.length, 2)
+    assert.equal(await gate.check('chat', 'https://denied.test/'), 'deny')
+    assert.equal(asks.length, 3)
+    answer = true
+    assert.equal(await gate.check('chat', 'https://denied.test/'), 'allow')
+    assert.equal(asks.length, 4)
+    assert.equal(gate.peek('chat', 'https://denied.test/'), 'allow')
+    gate.removeSite('https://denied.test')
+    assert.equal(gate.peek('chat', 'https://denied.test/'), 'ask')
 
     const add = gate.addSite('added.test')
     assert.equal(add.result, 'ok')
@@ -141,11 +148,12 @@ async function run() {
 
     let release = null
     const slowAsks = []
+    let slowAnswer = true
     const slow = createPreviewSiteGate({
       confirm: async (origin) => {
         slowAsks.push(origin)
         if (release) await new Promise((resolve) => { release = resolve })
-        return true
+        return slowAnswer
       }
     })
     release = () => {}
@@ -155,6 +163,19 @@ async function run() {
     assert.equal(slowAsks.filter((origin) => origin === 'https://slow.test').length, 1)
     release()
     assert.deepEqual(await Promise.all([first, second]), ['allow', 'allow'])
+    slow.removeSite('https://slow.test')
+    slowAnswer = false
+    const deniedFirst = slow.check('s1', 'https://slow.test/')
+    const deniedSecond = slow.check('s1', 'https://slow.test/again')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(slowAsks.length, 2, '并发请求在每次尝试中仍合并为一次询问')
+    release()
+    assert.deepEqual(await Promise.all([deniedFirst, deniedSecond]), ['deny', 'deny'])
+    assert.equal(slow.peek('s1', 'https://slow.test/'), 'ask')
+    slowAnswer = true
+    release = null
+    assert.equal(await slow.check('s1', 'https://slow.test/'), 'allow')
+    assert.equal(slowAsks.length, 3, '拒绝后的独立重试重新询问并可放行')
 
     const broken = createPreviewSiteGate({ confirm: async () => { throw new Error('x') } })
     assert.equal(await broken.check('s1', 'https://err.test/'), 'deny')

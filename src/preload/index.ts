@@ -40,6 +40,7 @@ import type {
   AttachmentUsage,
   BuiltinCapabilityView,
   CapabilitySettingsSnapshot,
+  PromptTemplateDirectories,
   ManagedSkillAction,
   CapabilitySearchResultView,
   CapabilityVerificationStatus,
@@ -419,6 +420,7 @@ const api: YanBridge = {
     catalog: (refresh) => invoke('yan:packages:catalog', refresh === true),
     exportPlugin: (id) => invoke('yan:packages:exportPlugin', id),
     addMcp: (id) => invoke('yan:packages:addMcp', id),
+    minecraft: (action) => invoke('yan:packages:minecraft', action),
     codegraphStatus: (cwd) => invoke('yan:packages:codegraphStatus', cwd),
     codegraphIndex: (cwd) => invoke('yan:packages:codegraphIndex', cwd),
     anthropicEnv: () => invoke<string[]>('yan:packages:anthropicEnv'),
@@ -444,6 +446,10 @@ const api: YanBridge = {
   },
   capabilities: {
     snapshot: () => invoke<CapabilitySettingsSnapshot>('yan:capabilities:settings'),
+    promptDirectories: () => invoke<PromptTemplateDirectories>('yan:capabilities:promptDirectories'),
+    openPromptDirectory: (path: string) => invoke<{ ok: boolean; error?: string }>('yan:capabilities:openPromptDirectory', path),
+    createPromptTemplate: (input: { name: string; content: string }) =>
+      invoke<{ ok: boolean; path?: string; error?: string }>('yan:capabilities:createPromptTemplate', input),
     discover: (queryText: string) => invoke<CapabilitySearchResultView>('yan:capabilities:discover', queryText),
     sessionSkill: (action: 'promote' | 'remove', name: string) =>
       invoke<{ ok: boolean; error?: string }>('yan:capabilities:sessionSkill', { action, name }),

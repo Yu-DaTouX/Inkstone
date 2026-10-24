@@ -183,6 +183,39 @@ try {
   const liveItems = live.items()
   assert.deepEqual(liveItems.map((item) => item.id), ['m0', 'compaction:1', 'm0:0:0', 'm0:0:1', 'call_live', 'call_live/1', 'late'])
 
+  {
+    const stopping = new m.SessionItemProjector()
+    stopping.appendMessage({ id: 'older-user', role: 'user', text: 'old' })
+    stopping.appendMessage({ id: 'older-assistant', role: 'assistant', text: '', toolCalls: [{ id: 'older-call', name: 'bash', status: 'running' }] })
+    stopping.appendMessage({ id: 'stop-user', role: 'user', text: 'stop this turn' })
+    const done = { id: 'done-write', name: 'write', status: 'ok', args: { path: '01.txt' }, output: 'written', details: { fileDiff: { added: 63 } }, endedAt: 400 }
+    const root = { id: 'root-call', name: 'codemode', status: 'running', args: { code: 'tools.bash()' } }
+    const nested = { id: 'nested-call', name: 'bash', status: 'running', parentToolCallId: 'root-call', output: 'partial output', details: { progress: 1 } }
+    const pending = { id: 'pending-write', name: 'write', status: 'pending', argsRaw: '{"path":"04.txt","content":"partial' }
+    stopping.appendMessage({ id: 'stop-assistant', role: 'assistant', text: '', toolCalls: [done, root, nested, pending] })
+    stopping.appendMessage({ id: 'independent-bash', role: 'bash', text: 'separate command', toolCalls: [{ id: 'independent-call', name: 'bash', status: 'running' }] })
+    const finishedBefore = structuredClone(done)
+    assert.deepEqual(stopping.cancelUnfinishedTools(500).map(call => call.id), ['root-call', 'nested-call', 'pending-write'], '只收尾本轮未完成的模型工具，包含嵌套和未生成完参数的调用')
+    assert.deepEqual(done, finishedBefore, '完成的写入和差异记录不变')
+    assert.deepEqual([nested.output, nested.details], ['partial output', { progress: 1 }], '取消收尾保留部分输出与详情')
+    assert.equal(pending.argsRaw, '{"path":"04.txt","content":"partial', '保留未生成完的参数原文')
+    assert.equal(pending.args, undefined)
+    for (const call of [root, nested, pending]) {
+      assert.equal(call.status, 'ok')
+      assert.equal(call.cancelled, true)
+      assert.equal(call.endedAt, 500)
+      assert.equal(stopping.items().find(item => item.id === call.id).status, 'cancelled', '语义投影与 UI 调用状态同步')
+    }
+    assert.equal(stopping.call('older-call').status, 'running', '不改历史轮次')
+    assert.equal(stopping.call('independent-call').status, 'running', '独立命令由其自己的终止通道收尾')
+    assert.deepEqual(stopping.cancelUnfinishedTools(600), [], '重复停止不重复改写或推送')
+    stopping.liveToolUpdate('nested-call', { content: [{ type: 'text', text: 'late output' }] })
+    assert.equal(stopping.call('nested-call').cancelled, true, '迟到进度不会恢复运行态')
+    stopping.liveToolEnd('nested-call', { result: { content: [{ type: 'text', text: 'native result' }] } }, 700)
+    assert.equal(stopping.call('nested-call').cancelled, undefined, '原生最终结果优先于兜底状态')
+    assert.equal(stopping.call('nested-call').output, 'native result')
+  }
+
   const persisted = [
     userMessage,
     { role: 'assistant', content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text: 'Hi there' }, { type: 'toolCall', id: 'call_live', name: 'bash', arguments: { command: 'ls' } }], timestamp: 101 },
@@ -464,6 +497,47 @@ try {
   }
   await ctl.stop()
   assert.deepEqual(await ctl.getMessages(), [])
+  for (const via of ['abort', 'agent-settled']) {
+    const stopPushes = []
+    const stopping = new AgentController({ push: msg => stopPushes.push(msg), cwd: dir })
+    stopping.state = { sessionId: 'stop-args', cwd: dir }
+    stopping.rpc = { command: async () => ({ success: true, data: {} }) }
+    stopping.refreshState = async () => undefined
+    stopping.refreshStats = async () => undefined
+    stopping.refreshTodos = async () => undefined
+    stopping.maybeGenerateTitle = async () => undefined
+    stopping.persistTurnTiming = async () => undefined
+    const stopEmit = evt => stopping.handleEvent(evt)
+    stopEmit({ type: 'message_start', message: { role: 'user', content: 'write files' } })
+    stopEmit({ type: 'message_start', message: { role: 'assistant' } })
+    stopEmit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', id: 'stopped-write', toolName: 'write', contentIndex: 0 } })
+    stopEmit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"04.txt","content":"partial' } })
+    stopping.items.liveToolStart({ toolCallId: 'stopped-child', toolName: 'read', parentToolCallId: 'stopped-write' }, 10)
+    stopping.items.liveToolUpdate('stopped-child', { content: [{ type: 'text', text: 'partial output' }] })
+    if (via === 'abort') assert.equal((await stopping.abort()).error, undefined)
+    else stopEmit({ type: 'agent_settled', aborted: true })
+    for (const id of ['stopped-write', 'stopped-child']) {
+      const call = stopping.items.call(id)
+      assert.equal(call.cancelled, true, `${via}：取消仍在生成参数及嵌套卡片`)
+      assert.ok(call.endedAt)
+      const pushed = stopPushes.find(msg => msg.ch === 'tool' && msg.payload.call.id === id && msg.payload.call.cancelled)
+      assert.ok(pushed, `${via}：不是仅改内存，必须推送已取消的卡片`)
+      assert.equal(pushed.payload.msgId, stopping.items.ownerOf(id))
+    }
+    assert.equal(stopping.items.call('stopped-child').output, 'partial output')
+  }
+
+  {
+    const unconfirmed = new AgentController({ push() {}, cwd: dir })
+    unconfirmed.state = { sessionId: 'unconfirmed-stop', cwd: dir }
+    unconfirmed.rpc = { command: async command => command === 'abort' ? { success: false, error: 'stop not confirmed' } : { success: true, data: {} } }
+    unconfirmed.items.appendMessage({ id: 'user-stop', role: 'user', text: 'go' })
+    unconfirmed.items.appendMessage({ id: 'assistant-stop', role: 'assistant', text: '', toolCalls: [{ id: 'not-confirmed', name: 'write', status: 'running' }] })
+    assert.match((await unconfirmed.abort()).error, /stop not confirmed/)
+    assert.equal(unconfirmed.items.call('not-confirmed').status, 'running', '停止未确认时不伪造取消成功')
+    assert.equal(unconfirmed.items.call('not-confirmed').cancelled, undefined)
+  }
+
   console.log('session items ok')
 } finally {
   await rm(dir, { recursive: true, force: true })

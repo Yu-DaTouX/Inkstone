@@ -56,16 +56,17 @@ export function quotaForecastLine(
     return { kind: forecast.kind, text: t('quota.fc.sampling', { t: quotaCountdown(t, forecast.needMs) }), tip: '' }
   }
   if (forecast.kind === 'uncertain') return { kind: forecast.kind, text: t('quota.fc.uncertain'), tip: t('quota.fc.uncertainTip') }
+  const limitTip = forecast.limitedByFiveHour ? t('quota.fc.fiveHourTip') : ''
   const historyTip = forecast.basedOnMs ? t('quota.fc.historyTip', { t: quotaCountdown(t, forecast.basedOnMs) }) : ''
   if (forecast.kind === 'steady') {
-    return { kind: forecast.kind, text: t(forecast.basedOnMs ? 'quota.fc.historyReset' : 'quota.fc.atReset', { pct: forecast.atResetPct }), tip: historyTip }
+    return { kind: forecast.kind, text: t(forecast.basedOnMs ? 'quota.fc.historyReset' : 'quota.fc.atReset', { pct: forecast.atResetPct }), tip: [historyTip, limitTip].filter(Boolean).join('\n') }
   }
   return {
     kind: forecast.kind,
     text: forecast.earliestAt && forecast.latestAt
       ? t('quota.fc.range', { min: quotaCountdown(t, forecast.earliestAt - now), max: quotaCountdown(t, forecast.latestAt - now) })
       : t('quota.fc.exhaust', { t: quotaCountdown(t, forecast.exhaustAt - now) }),
-    tip: historyTip || t('quota.fc.exhaustTip', { time: clock(forecast.exhaustAt) })
+    tip: [historyTip || t('quota.fc.exhaustTip', { time: clock(forecast.exhaustAt) }), limitTip].filter(Boolean).join('\n')
   }
 }
 

@@ -114,7 +114,6 @@ export class PreviewSiteAccess {
   private allowed: string[]
   private loaded: boolean
   private loading: Promise<void> | null = null
-  private readonly declined = new Map<string, Set<string>>()
 
   constructor(
     private readonly store?: SiteAccessStore,
@@ -142,12 +141,11 @@ export class PreviewSiteAccess {
     return [...this.allowed]
   }
 
-  decide(sessionId: string, url: string): { decision: SiteDecision; origin: string | null } {
+  decide(_sessionId: string, url: string): { decision: SiteDecision; origin: string | null } {
     const origin = normalizeSiteOrigin(url)
     if (!origin) return { decision: 'invalid', origin: null }
     if (isForbiddenOrigin(origin)) return { decision: 'forbidden', origin }
     if (this.allowed.includes(origin)) return { decision: 'allow', origin }
-    if (this.declined.get(sessionId)?.has(origin)) return { decision: 'deny', origin }
     return { decision: 'ask', origin }
   }
 
@@ -155,13 +153,7 @@ export class PreviewSiteAccess {
     const verdict = this.decide(sessionId, url)
     if (!verdict.origin) return verdict.decision
     if (verdict.decision === 'forbidden' || verdict.decision === 'invalid') return verdict.decision
-    if (!allowed) {
-      const declined = this.declined.get(sessionId) ?? new Set<string>()
-      declined.add(verdict.origin)
-      this.declined.set(sessionId, declined)
-      return 'deny'
-    }
-    if (verdict.decision === 'deny') return 'deny'
+    if (!allowed) return 'deny'
     if (verdict.decision === 'allow') return 'allow'
     const added = addAllowedSite(this.allowed, verdict.origin)
     if (added.result !== 'ok' || added.list.length > this.limit) return 'deny'
@@ -187,10 +179,6 @@ export class PreviewSiteAccess {
   clear(): string[] {
     this.persist([])
     return []
-  }
-
-  forgetSession(sessionId: string): void {
-    this.declined.delete(sessionId)
   }
 
   private persist(list: string[]): void {

@@ -96,7 +96,7 @@ export function promptHistoryStep(
 
   if (input.shiftKey || input.metaKey || input.ctrlKey || input.altKey || input.composing) return done(state)
   if (state.index === null && !input.empty) return done(state)
-  if (input.key === 'ArrowUp' ? !input.caretAtStart : !input.caretAtEnd) return done(state)
+  if (state.nav === null && (input.key === 'ArrowUp' ? !input.caretAtStart : !input.caretAtEnd)) return done(state)
 
   const prompts = input.prompts
   if (prompts.length === 0) return done(state)

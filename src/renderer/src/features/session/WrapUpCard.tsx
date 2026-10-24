@@ -42,7 +42,7 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
   const t = useT()
   const tt = useSessionText()
   const hidden = useWrapUpDismissed(dismissKey)
-  if (hidden) return null
+  if (hidden || !card.ask?.trim()) return null
   const choose = (message: string): void => {
     dismissWrapUp(dismissKey)
     void sendAsComposerMessage(message, t)

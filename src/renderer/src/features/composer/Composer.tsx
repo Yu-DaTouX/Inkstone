@@ -520,6 +520,11 @@ export function Composer({ className }: { className?: string } = {}) {
         <ImageRefWarning text={value} />
         <div className="composer-input">
           <ComposerMenu completion={completion} anchor={menuAnchor} />
+          {historyNav ? (
+            <div className="composer-history" role="status" aria-live="polite" data-testid="composer-history-status">
+              {historyStatus}
+            </div>
+          ) : null}
           <div className="composer-line">
             <span className="composer-prompt" aria-hidden>
               {prompt}
@@ -584,9 +589,6 @@ export function Composer({ className }: { className?: string } = {}) {
             )}
           </div>
         </div>
-        <span className="sr-only" role="status" aria-live="polite" data-testid="composer-history-status">
-          {historyStatus}
-        </span>
       </div>
     </div>
   )

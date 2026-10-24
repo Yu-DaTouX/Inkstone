@@ -2391,6 +2391,9 @@ export class AgentController extends EventEmitter {
         const modelError = this.pendingModelError
         const settledSessionId = this.state?.sessionId
         const outcome = settledTurnOutcome({ aborted: evt.aborted === true, terminal: this.turn.terminal, modelError: !!modelError })
+        if (evt.aborted === true || this.turn.terminal === 'stopped') {
+          for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
+        }
         const errorContinuation = !continuation && modelError && !modelError.retried && isTransientModelError(modelError.text) &&
           this.rpc && this.state?.sessionId
           ? { rpc: this.rpc, sessionId: this.state.sessionId, generation: this.capabilityOpts?.runnerGeneration,
@@ -3621,6 +3624,7 @@ export class AgentController extends EventEmitter {
     }
 
     const stoppedAt = Date.now()
+    for (const call of this.items.cancelUnfinishedTools(stoppedAt)) this.pushTool(call)
     const stoppedElapsed = this.turn.startedMono !== undefined
       ? Math.max(1, Math.round(performance.now() - this.turn.startedMono))
       : this.turn.elapsedMs

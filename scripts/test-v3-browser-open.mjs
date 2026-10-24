@@ -9,7 +9,10 @@ const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const entry = [
   "export * from './src/renderer/src/features/browser/browser-open.ts'",
   "export * from './src/renderer/src/features/browser/ownership.ts'",
-  "export * from './src/renderer/src/features/browser/browser-text.ts'"
+  "export * from './src/renderer/src/features/browser/browser-text.ts'",
+  "export { useStore } from './src/renderer/src/state/store.ts'",
+  "export { useUiV3 } from './src/renderer/src/state/ui-v3.ts'",
+  "export { releaseResource } from './src/renderer/src/state/resource-owners.ts'"
 ].join('\n')
 
 const built = await build({
@@ -22,12 +25,15 @@ const built = await build({
   bundle: true,
   write: false,
   platform: 'node',
-  format: 'esm'
+  format: 'esm',
+  define: { 'import.meta.env.DEV': 'false', 'import.meta.env.PROD': 'true' }
 })
+globalThis.document = { documentElement: { lang: 'zh-CN' }, querySelector: () => null }
+globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} }
 const mod = await import(
   `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`
 )
-const { BrowserOpener, browserControlAllowed, browserText } = mod
+const { BrowserOpener, browserControlAllowed, browserText, useStore, useUiV3, releaseResource } = mod
 
 let pass = 0
 let fail = 0
@@ -218,6 +224,65 @@ group('文案：打开入口在两种语言都有')
   ok(typeof zh.opening === 'string' && zh.opening.length > 0, '中文有「正在打开」文案')
   ok(typeof en.open === 'string' && en.open.length > 0, '英文有「打开」按钮文案')
   ok(en.open !== zh.open, '两种语言文案不同')
+}
+
+group('消息链接：成功加载后前台显示浏览器，拒绝及切换会话不抢焦点')
+{
+  const initial = useStore.getInitialState()
+  const uiInitial = useUiV3.getInitialState()
+  const calls = []
+  let gate = async () => ({ decision: 'allow' })
+  let pendingOpen = null
+  window.yan = {
+    browser: {
+      siteAccess: (...args) => gate(...args),
+      open: async (url) => {
+        calls.push(url)
+        return pendingOpen ? pendingOpen.promise : browserState({ url })
+      },
+      setVisible: async () => {}
+    }
+  }
+  const reset = () => {
+    releaseResource('browser')
+    calls.length = 0
+    pendingOpen = null
+    gate = async () => ({ decision: 'allow' })
+    useStore.setState({ ...initial, session: { sessionId: 'A', conversationId: 'A' }, settings: { rightPanelOpen: true } })
+    useUiV3.setState({ ...uiInitial, workspaceOpen: false, workspaceTab: 'files', workspacePanes: [] })
+  }
+  reset()
+  await useStore.getState().openLink('https://www.google.com/')
+  ok(calls.length === 1, '消息链接确实加载网页')
+  ok(useUiV3.getState().workspaceTab === 'browser', '自动选中浏览器而非留在其他面板')
+  ok(useUiV3.getState().workspaceOpen, '收起的工作区自动展开')
+
+  reset()
+  gate = async () => ({ decision: 'deny' })
+  await useStore.getState().openLink('https://blocked.test/')
+  ok(calls.length === 0 && !useUiV3.getState().workspaceOpen, '权限拒绝不加载、不显示面板')
+
+  reset()
+  const approval = deferred()
+  gate = () => approval.promise
+  const approving = useStore.getState().openLink('https://old.test/')
+  useStore.setState({ session: { sessionId: 'B', conversationId: 'B' } })
+  approval.resolve({ decision: 'allow' })
+  await approving
+  ok(calls.length === 0 && !useUiV3.getState().workspaceOpen, '等待权限期间切换会话不打开旧链接')
+
+  reset()
+  pendingOpen = deferred()
+  const loading = useStore.getState().openLink('https://slow.test/')
+  await Promise.resolve()
+  ok(calls.length === 1, '切换前网页已开始加载')
+  useStore.setState({ session: { sessionId: 'B', conversationId: 'B' } })
+  pendingOpen.resolve(browserState())
+  await loading
+  ok(!useUiV3.getState().workspaceOpen, '加载期间切换会话后不抢新会话前台')
+  releaseResource('browser')
+  useStore.setState(initial)
+  useUiV3.setState(uiInitial)
 }
 
 process.stdout.write(`\n${fail === 0 ? '✓' : '✗'} ${pass} 项通过，${fail} 项失败\n`)

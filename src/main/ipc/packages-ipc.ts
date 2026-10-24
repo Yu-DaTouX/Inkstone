@@ -3,9 +3,10 @@ import { getSettings } from '../settings'
 import { configurePackageContext, listPackages, runPackageAction } from '../packages'
 import { trustStatus } from '../project-trust'
 import { resolvePi } from '../protocol'
-import { PI_AGENT_DIR } from '../paths'
+import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { searchPiPackages, exportHermesPlugin, HERMES_PLUGIN_FILES, addCodegraphMcp, codegraphStatus, indexCodegraphProject } from '../plugin-market'
 import { loadPluginCatalog } from '../plugin-catalog'
+import { installMinecraftPlugin, minecraftPluginStatus, removeMinecraftPlugin, type MinecraftPluginPaths } from '../minecraft-plugin'
 import { app, dialog } from 'electron'
 import { join, resolve } from 'node:path'
 import { access } from 'node:fs/promises'
@@ -14,6 +15,24 @@ const ANTHROPIC_OVERRIDE_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'AN
 
 export interface PackagesIpcDeps {
   hasBusyCwd(cwd: string): boolean
+}
+
+async function bundledIntegration(name: string, marker: string): Promise<string | null> {
+  const candidates = [join(process.resourcesPath, 'integrations', name), join(app.getAppPath(), 'integrations', name), resolve(import.meta.dirname, '../../integrations', name)]
+  for (const candidate of candidates) {
+    if (await access(join(candidate, marker)).then(() => true, () => false)) return candidate
+  }
+  return null
+}
+
+async function minecraftPaths(): Promise<MinecraftPluginPaths> {
+  return {
+    source: await bundledIntegration('inkstone-minecraft', join('mcp', 'server.ts')),
+    pluginDir: join(YAN_DIR, 'plugins', 'inkstone-minecraft'),
+    skillsDir: join(YAN_DIR, 'skills'),
+    agentDir: PI_AGENT_DIR,
+    runtime: process.execPath
+  }
 }
 
 export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): void {
@@ -48,6 +67,13 @@ export function registerPackagesIpc(ipc: IpcRegistrar, deps: PackagesIpcDeps): v
     if (id !== 'codegraph') return { ok: false, error: '未知插件' }
     try { return await addCodegraphMcp(PI_AGENT_DIR) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+  })
+
+  handle('yan:packages:minecraft', async (action: unknown) => {
+    const paths = await minecraftPaths()
+    if (action === 'install') return installMinecraftPlugin(paths)
+    if (action === 'remove') return removeMinecraftPlugin(paths)
+    return { ok: true, status: await minecraftPluginStatus(paths) }
   })
 
   handle('yan:packages:codegraphStatus', async (cwd: unknown) =>

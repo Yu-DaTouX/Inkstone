@@ -41,12 +41,13 @@ export interface RailSpeed {
   unit: string
   bars: number[]
   live: number | null | undefined
+  estimated: boolean
   caption: string
   title: string | null
 }
 
 export type RailGlanceMetric =
-  | { kind: 'speed'; value: string; unit: string; bars: number[] | null; pending: number | null }
+  | { kind: 'speed'; value: string; unit: string; bars: number[] | null; pending: number | null; estimated?: boolean }
   | { kind: 'tokens'; value: string; unit: string }
   | { kind: 'counts'; text: string }
 
@@ -78,6 +79,7 @@ export interface RailStatsInput {
   subagentTokens: number
   speeds?: readonly number[]
   liveSpeed?: number | null
+  liveSpeedEstimated?: boolean
   liveSince?: number | null
   money?: (usd: number) => string
   t: (key: MessageKey, vars?: Record<string, string | number>) => string
@@ -255,11 +257,12 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
 
 function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed | null {
   const bars = (input.speeds ?? []).filter((v) => Number.isFinite(v) && v > 0)
-  if (metrics.tps === null && bars.length === 0) return null
+  if (metrics.tps === null && bars.length === 0 && input.liveSpeed === undefined) return null
   const { t } = input
   const perSec = t('tok.perSec')
   const live = input.liveSpeed === undefined ? undefined : input.liveSpeed !== null && Number.isFinite(input.liveSpeed) && input.liveSpeed > 0 ? input.liveSpeed : null
   const latest = bars.length > 0 ? bars[bars.length - 1] : null
+  const estimated = live !== undefined && live !== null && input.liveSpeedEstimated === true
   const caption = [
     ...(bars.length > 0 ? [t('sm.recentSteps', { n: bars.length })] : []),
     ...(latest === null ? [] : [t('sm.latestSpeed', { speed: tpsText(latest, perSec) })]),
@@ -267,12 +270,20 @@ function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed |
   ].join(' · ')
   return {
     label: t('sm.tps'),
-    value: tpsNumber(metrics.tps),
+    value:
+      live === undefined
+        ? tpsNumber(latest ?? metrics.tps)
+        : `${estimated ? '≈' : ''}${tpsNumber(live)}`,
     unit: perSec,
     bars,
     live,
+    estimated,
     caption,
-    title: joinNotes(metrics.tpsPartial ? [t('sm.timingPartialTip')] : [])
+    title: joinNotes([
+      ...(metrics.tpsPartial ? [t('sm.timingPartialTip')] : []),
+      t('sm.outputSpeedTip'),
+      ...(estimated ? [t('sm.liveSpeedEstimate')] : [])
+    ])
   }
 }
 
@@ -289,10 +300,18 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
   const bars = (input.speeds ?? []).filter((v) => Number.isFinite(v) && v > 0)
   const running = input.liveSpeed !== undefined
   const live = positive(input.liveSpeed)
+  const liveEstimated = running && live !== null && input.liveSpeedEstimated === true
   const hit = metrics.hitRate !== null && Number.isFinite(metrics.hitRate) ? Math.min(100, Math.max(0, metrics.hitRate)) : null
-  const settledSpeed = positive(metrics.tps) ?? (bars.length > 0 ? bars[bars.length - 1] : null)
+  const settledSpeed = bars.length > 0 ? bars[bars.length - 1] : positive(metrics.tps)
   const metric: RailGlanceMetric = running
-    ? { kind: 'speed', value: tpsNumber(live), unit: perSec, bars: bars.slice(-GLANCE_BARS), pending: live }
+    ? {
+        kind: 'speed',
+        value: `${liveEstimated ? '≈' : ''}${tpsNumber(live)}`,
+        unit: perSec,
+        bars: bars.slice(-GLANCE_BARS),
+        pending: live,
+        ...(liveEstimated ? { estimated: true } : {})
+      }
     : settledSpeed !== null
       ? { kind: 'speed', value: tpsNumber(settledSpeed), unit: perSec, bars: null, pending: null }
       : metrics.total !== null
@@ -302,8 +321,9 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
     headline,
     ...(metrics.total === null ? [] : [`${t('sm.total')} ${tokenText(metrics.total, metrics.partial, unit)}`]),
     ...(hit === null ? [] : [`${t('sm.hitRate')} ${formatHitRate(metrics.hitRate) ?? '—'}`]),
-    ...(metrics.tps === null ? [] : [`${t('sm.tps')} ${tpsText(metrics.tps, perSec)}`]),
-    ...(running ? [`${t('sm.liveStep')} ${tpsText(live, perSec)}`] : [])
+    ...(running || settledSpeed === null ? [] : [`${t('sm.tps')} ${tpsText(settledSpeed, perSec)}`]),
+    ...(running ? [`${t('sm.liveStep')} ${tpsText(live, perSec)}`] : []),
+    ...(liveEstimated ? [t('sm.liveSpeedEstimate')] : [])
   ].join('\n')
   return { hit, hitText: hitText(hit), hitLabel: t('sm.hitRate'), metric, title }
 }

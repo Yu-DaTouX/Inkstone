@@ -18,10 +18,12 @@ try {
   const {
     liveActivitySince,
     liveStepId,
+    liveStepSpeed,
     projectSessionMetrics,
     sessionTurnCounts,
     splitLiveStep,
-    stepSpeed
+    stepSpeed,
+    stepSpeeds
   } = await import(pathToFileURL(resolve(temp, 'session-metrics.mjs')).href)
 
   let checks = 0
@@ -72,7 +74,7 @@ try {
     eq(m.cost, null, 'stats 未加载 → 花费 null，不当 0')
     eq(m.modelMs, null, '只有 speed、没有 generationTiming → 模型总用时未知')
     eq(m.modelPartial, false, '完全未知不是「部分」，是缺')
-    eq(m.tps, 20, '旧 speed 作为已记录 TPS 仍可参与（a1：10 tok / 0.5s）')
+    eq(m.tps, null, '旧 speed 无法证明仅包含生成时间，不参与模型输出测速')
     check(m.tpsPartial === true, '有请求没有计时 → TPS 只覆盖部分步数')
     eq(m.ttftMs, null, '没有 generationTiming.ttftMs → TTFT 未知，不编造')
     eq(m.toolMs, 1500, '工具用时取区间并集（重叠不重复计）')
@@ -348,8 +350,8 @@ try {
     const m = projectSessionMetrics(messages, null)
     eq(m.modelMs, null, 'speed 只覆盖解码段，补不出首包 → 模型总用时未知')
     eq(m.modelPartial, false, '完全未知不是「部分」')
-    eq(m.tps, 50, '旧 speed 作为已记录 TPS 仍可用')
-    eq(m.tpsPartial, false, '这一步被已记录 TPS 覆盖')
+    eq(m.tps, null, '没有可靠生成计时时不使用旧 speed 猜测')
+    eq(m.tpsPartial, true, '缺少真实生成计时仍标为不完整')
   }
 
   {
@@ -452,7 +454,7 @@ try {
       { id: 'u1', role: 'user', text: 'hi' },
       { id: 'a3', role: 'assistant', text: 'z', usage: usage({ output: 100 }), speed: 50 }
     ], null)
-    eq(legacy.tps, 50, '没有 generationTiming 时旧 speed 仍兼容')
+    eq(legacy.tps, null, '没有 generationTiming 时不反推解码时长')
     eq(legacy.modelMs, null, '旧 speed 不充模型总用时')
   }
 
@@ -513,8 +515,8 @@ try {
       { id: 'u1', role: 'user', text: 'hi' },
       { id: 'a1', role: 'assistant', text: 'x', usage: usage({ output: 500 }), generationTiming: { durationMs: 2000, decodeMs: 5, ttftMs: 1995, startEvent: 'turn_start' } }
     ], null)
-    eq(burst.tps, 250, '整段一次到达（解码只有几毫秒）时改用整段时长')
-    check(burst.tpsPartial === true, '整段时长算出的速度是下限，标 ≥')
+    eq(burst.tps, null, '整包到达无法测量真实生成速度，不用含等待的总时长估算')
+    check(burst.tpsPartial === true, '整包响应没有可用的生成计时')
     const fast = projectSessionMetrics([
       { id: 'u1', role: 'user', text: 'hi' },
       { id: 'a1', role: 'assistant', text: 'x', usage: usage({ output: 2000 }), generationTiming: { durationMs: 1500, decodeMs: 1000, ttftMs: 500, startEvent: 'turn_start' } }
@@ -524,6 +526,30 @@ try {
   }
 
   {
+    const outputOnly = {
+      id: 'output-only', role: 'assistant', text: 'answer',
+      usage: usage({ input: 1_000_000, cacheRead: 2_000_000, cacheWrite: 3_000_000, output: 100 }),
+      generationTiming: { durationMs: 100_000, ttftMs: 99_000, decodeMs: 1000, startEvent: 'turn_start' },
+      toolCalls: [tool({ startedAt: 1000, endedAt: 3_601_000 })]
+    }
+    eq(stepSpeed(outputOnly), 100, '只按模型输出 / 生成时间，不计输入、缓存、首字等待或工具执行')
+    const noMeasuredDecode = { ...outputOnly, id: 'buffered', generationTiming: { durationMs: 100_000, decodeMs: 1 }, speed: 999 }
+    eq(stepSpeed(noMeasuredDecode), null, '不把整包响应或旧速度当作真实生成速度')
+    const mixed = [outputOnly, noMeasuredDecode, { ...outputOnly, id: 'shell', role: 'bash' }]
+    eq(projectSessionMetrics(mixed, null).tps, 100, '估算响应和命令输出不混入会话模型生成均速')
+    eq(stepSpeeds(mixed, 12), [100], '柱图与主速度共用可靠模型输出样本')
+
+    const streaming = {
+      id: 'streaming', role: 'assistant', text: '12345678', thinking: '中文',
+      usage: usage({ output: 0 }),
+      generationTiming: { durationMs: 1000, decodeMs: 800, ttftMs: 200 }
+    }
+    eq(liveStepSpeed(streaming), { speed: 5, estimated: true }, '进行中按已到达文本估算速度')
+    eq(liveStepSpeed(outputOnly), { speed: 100, estimated: false }, '有真实输出 Token 时用真实速度')
+    eq(liveStepSpeed(noMeasuredDecode), null, '有真实输出但无可靠解码时间时不用估算顶替')
+    eq(liveStepSpeed({ ...streaming, text: '', thinking: '' }), null, '没有到达内容时不编速度')
+    eq(liveStepSpeed({ ...streaming, generationTiming: { durationMs: 100, decodeMs: 100 } }), null, '解码过短不估算')
+
     const withError = projectSessionMetrics([
       { id: 'u1', role: 'user', text: 'hi' },
       { id: 'a0', role: 'assistant', text: '', error: 'boom', usage: usage({}) },

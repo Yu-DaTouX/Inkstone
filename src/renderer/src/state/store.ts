@@ -49,6 +49,8 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
+import { revealToolTile } from '../features/workbench/tool-tiles'
+import { useUiV3 } from './ui-v3'
 import { markStopRequested } from '../features/session/stop-intent'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
@@ -983,6 +985,12 @@ export const useStore = create<Store>((rawSet, get) => {
     setBrowserState: (browserState) => set({ browserState }),
     reveal: () => {
       if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+      const ui = useUiV3.getState()
+      ui.navigate({ name: 'chat' })
+      if (!revealToolTile('browser')) {
+        ui.setWorkspaceTab('browser')
+        ui.setWorkspaceOpen(true)
+      }
       applyBrowserVisibility(get)
     },
     blocked: (reason) => {
@@ -2375,6 +2383,7 @@ export const useStore = create<Store>((rawSet, get) => {
   openLink: async (url) => {
     const view = get()
     const sessionId = view.session?.sessionId ?? view.session?.conversationId ?? ''
+    const owner = currentViewOwnerKey(view)
     let decision: string
     try {
       decision = (await window.yan.browser.siteAccess(sessionId, url)).decision
@@ -2385,7 +2394,8 @@ export const useStore = create<Store>((rawSet, get) => {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.siteBlocked', { url })) })
       return
     }
-    await get().openBrowser(url)
+    if (currentViewOwnerKey(get()) !== owner) return
+    await get().openBrowser(url, { key: owner })
   },
 
   previewFile: async (path, line, cwd, lineEnd) => {

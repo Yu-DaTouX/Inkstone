@@ -14,6 +14,8 @@ async function load(dir) {
   await writeFile(entry, [
     `export * from '${session}/tool-run-model.ts'`,
     `export * from '${session}/tool-expansion.ts'`,
+    `export { generatingArgs, toolRunningLabel } from '${session}/tool-summary.ts'`,
+    `export { SessionItemProjector } from '${posix(join(ROOT, 'src/main/session-items/projector.ts'))}'`,
     `export { sessionText } from '${session}/text.ts'`
   ].join('\n'))
   const outfile = join(dir, 'bundle.mjs')
@@ -79,6 +81,26 @@ async function run() {
     assert.equal(summary.state, 'ok')
     assert.equal(m.formatToolRun(summary, zh), '读取 1 个文件，编辑 1 个文件，运行 1 条命令')
     assert.equal(m.formatToolRun(summary, en), 'Read a file, edited a file, ran a command')
+
+    {
+      const projector = new m.SessionItemProjector()
+      projector.appendMessage({ id: 'stop-user', role: 'user', text: 'write' })
+      const tools = [
+        call('completed-write', 'write', { path: '03.txt' }, { details: diff('03.txt', 55, 0, 'created') }),
+        call('incomplete-write', 'write', undefined, { args: undefined, argsRaw: '{"path":"04.txt","content":"partial', status: 'running' })
+      ]
+      projector.appendMessage({ id: 'stop-assistant', role: 'assistant', text: '', toolCalls: tools })
+      assert.equal(m.generatingArgs(tools[1]), true)
+      assert.equal(m.buildToolRows(tools)[0].summary.state, 'running')
+      projector.cancelUnfinishedTools(100)
+      const stopped = m.buildToolRows(tools)[0].summary
+      assert.equal(stopped.state, 'cancelled', '停止后组卡片为已取消，而不是仍在写入')
+      assert.equal(stopped.running, null)
+      assert.equal(m.generatingArgs(tools[1]), false, '未完成的参数不再显示生成中')
+      assert.ok(!m.toolRunningLabel(tools[1], '生成参数中…', zh).includes('生成参数中'))
+      assert.equal(stopped.added, 55, '保留已完成写入的改动统计')
+      assert.equal(tools[0].cancelled, undefined)
+    }
 
     const broken = m.buildToolRows([
       call('r1', 'read', { path: 'a.ts' }),

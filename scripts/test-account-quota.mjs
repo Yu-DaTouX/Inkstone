@@ -162,6 +162,11 @@ export async function runAccountQuotaTests(ok) {
   ok(claude[0].label === '五小时' && claude[0].resetAt === Date.parse('2026-10-07T15:00:00+00:00'), 'Claude：窗口名与重置时间')
   ok(claude[1].exceeded === true && claude[1].resetAt === undefined, 'Claude：100% 标为已超限，缺重置时间不编')
 
+  ok(claude[0].allowsOverage === undefined, '未开启额外付费用量时保留五小时硬限额')
+  const paidClaude = s.claudeUsageWindows({ five_hour: { utilization: 100, resets_at: '2026-10-07T15:00:00+00:00' }, extra_usage: { is_enabled: true, utilization: 10 } })
+  ok(paidClaude[0].allowsOverage === true, '明确开启额外付费用量时不把五小时额度视为强制暂停')
+  ok(!s.claudeUsageWindows({ five_hour: { utilization: 100 }, extra_usage: { is_enabled: true, utilization: 100 } })[0].allowsOverage, '额外付费用量本身已用尽时仍按硬限额考虑')
+
   const gemini = s.geminiQuotaWindows({
     buckets: [
       { modelId: 'gemini-2.5-pro', remainingFraction: 0.25, resetTime: '2026-10-08T00:00:00Z', tokenType: 'REQUESTS' },

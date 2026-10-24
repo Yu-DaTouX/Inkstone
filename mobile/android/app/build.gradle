@@ -88,8 +88,8 @@ android {
         manifestPlaceholders = [inkstoneAppLabel: testSuffix != null ? "Inkstone Test" : project.hasProperty("inkstoneHubTest") ? "Inkstone Hub Test" : "@string/app_name"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "0.1.1"
+        versionCode 3
+        versionName "0.1.2"
         testInstrumentationRunner "com.yudatoux.inkstone.QuestionAlertProbe"
     }
     testBuildType "release"

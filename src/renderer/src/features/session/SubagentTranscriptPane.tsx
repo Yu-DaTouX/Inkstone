@@ -187,9 +187,9 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           <span className="sa-pane-name" title={model.task}>{subagentPaneName(run)}</span>
           <span className="sa-pane-role">{`· ${role}`}</span>
           {modelName ? <span className="sa-pane-model" title={run.model}>{modelName}</span> : null}
-          <span className="sa-pane-state" data-testid="v3-subagent-pane-status">
+          <span className="sa-pane-state" aria-label={statusWord} title={statusWord} data-testid="v3-subagent-pane-status">
             <SubagentStateIcon state={row.state} />
-            {statusWord}
+            <span className="sa-pane-state-label">{statusWord}</span>
           </span>
         </span>
       </PaneTitle>

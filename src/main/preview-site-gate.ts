@@ -14,7 +14,6 @@ export interface PreviewSiteGate {
   addSite(value: string): { result: SiteAddResult; list: string[]; origin?: string }
   removeSite(value: string): { removed: boolean; list: string[] }
   clearSites(): string[]
-  forgetSession(sessionId: string): void
 }
 
 export function createPreviewSiteGate(deps: PreviewSiteGateDeps, access?: PreviewSiteAccess): PreviewSiteGate {
@@ -50,9 +49,6 @@ export function createPreviewSiteGate(deps: PreviewSiteGateDeps, access?: Previe
     sites: () => sites.sites(),
     addSite: (value) => sites.add(value),
     removeSite: (value) => sites.remove(value),
-    clearSites: () => sites.clear(),
-    forgetSession(sessionId) {
-      sites.forgetSession(sessionId)
-    }
+    clearSites: () => sites.clear()
   }
 }

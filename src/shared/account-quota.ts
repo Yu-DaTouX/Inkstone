@@ -155,8 +155,11 @@ const CLAUDE_WINDOW_LABELS: Record<string, string> = {
 }
 
 export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
+  const root = obj(payload) ?? {}
+  const extra = obj(root.extra_usage)
+  const allowsOverage = extra?.is_enabled === true && !(typeof extra.utilization === 'number' && extra.utilization >= 100)
   const windows: QuotaWindow[] = []
-  for (const [key, value] of Object.entries(obj(payload) ?? {})) {
+  for (const [key, value] of Object.entries(root)) {
     const w = obj(value)
     if (!w || typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) continue
     const resetAt = typeof w.resets_at === 'string' ? Date.parse(w.resets_at) : NaN
@@ -170,6 +173,7 @@ export function claudeUsageWindows(payload: unknown): QuotaWindow[] {
       total: 100,
       resetAt: Number.isFinite(resetAt) ? resetAt : undefined,
       exceeded: listed && w.utilization >= 100,
+      ...(key === 'five_hour' && allowsOverage ? { allowsOverage: true } : {}),
       ...(durationMs ? { durationMs } : {})
     })
   }

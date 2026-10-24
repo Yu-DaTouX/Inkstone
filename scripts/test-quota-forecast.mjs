@@ -74,6 +74,38 @@ try {
   check(fc.forecastQuota(series([[HOUR, 1], [0, 99.8]]), win({ used: 99.8 }), now) === undefined, '剩余不足 0.5 点不再预测')
 
   {
+    const weekly = win({ id: 'weekly', label: '本周', used: 50, durationMs: 7 * DAY, resetAt: now + 2 * DAY })
+    const weeklySamples = series([[HOUR, 45], [30 * MIN, 47.5], [0, 50]])
+    const short = win({ used: 50 })
+    const limit = { window: short, samples: series([[HOUR, 0], [30 * MIN, 25], [0, 50]]) }
+    const predict = (w = weekly, l = limit, samples = weeklySamples) => fc.forecastQuota(samples, w, now, l)
+    eq(fc.forecastQuota(weeklySamples, weekly, now), { kind: 'sampling', needMs: 23 * HOUR }, '无短限额时按周窗口规则，历史不足一天先采样')
+    eq(predict(), { kind: 'exhaust', exhaustAt: now + 23 * HOUR, limitedByFiveHour: true }, '周预测计入当前及后续五小时窗口耗尽后的等待')
+    eq(predict({ ...weekly, resetAt: now + 12 * HOUR }), { kind: 'steady', atResetPct: 75, limitedByFiveHour: true }, '计入五小时暂停后，可能到周重置仍不会用完')
+    eq(predict({ ...weekly, used: 99 }), { kind: 'exhaust', exhaustAt: now + 12 * MIN }, '周额度先用完时不额外加等待')
+    eq(predict({ ...weekly, used: 55 }, limit, weeklySamples.map(sample => ({ ...sample, pct: sample.pct + 5 }))), { kind: 'exhaust', exhaustAt: now + 19 * HOUR, limitedByFiveHour: true }, '恰好用完一个未来窗口时不多等一轮')
+    const slowLimit = { window: { ...short, used: 10 }, samples: series([[HOUR, 0], [30 * MIN, 5], [0, 10]]) }
+    eq(predict(weekly, slowLimit), { kind: 'exhaust', exhaustAt: now + 10 * HOUR, limitedByFiveHour: false }, '短限额不约束当前速度时不拉长预测')
+    const full = { window: { ...short, used: 100, exceeded: true }, samples: series([[HOUR, 50], [30 * MIN, 75], [0, 100]]) }
+    eq(predict(weekly, full), { kind: 'exhaust', exhaustAt: now + 24 * HOUR, limitedByFiveHour: true }, '五小时已经用尽时，先等本次重置')
+    const paused = { window: full.window, samples: series([[3 * HOUR, 0], [2 * HOUR, 50], [HOUR, 100], [0, 100]]) }
+    eq(predict(weekly, paused, series([[3 * HOUR, 40], [2 * HOUR, 45], [HOUR, 50], [0, 50]])), { kind: 'exhaust', exhaustAt: now + 24 * HOUR, limitedByFiveHour: true }, '历史限流停顿不再重复扣算，只取同段实际消耗')
+    eq(predict(weekly, { ...limit, samples: [] }), { kind: 'sampling', needMs: 15 * MIN }, '短限额缺采样时不沿用错误的单窗口预测')
+    eq(predict(weekly, { ...limit, samples: series([[45 * MIN, 25], [0, 50]]) }), { kind: 'sampling', needMs: 15 * MIN }, '没有足够同时间采样时不混用不同观察区间')
+    eq(predict(weekly, limit, series([[HOUR, 50], [30 * MIN, 50], [0, 50]])), { kind: 'steady', atResetPct: 50 }, '当前模型组合不消耗该周额度时不编造增长')
+    eq(predict(weekly, { window: { ...short, used: 50 }, samples: series([[HOUR, 50], [30 * MIN, 50], [0, 50]]) }), { kind: 'sampling', needMs: 15 * MIN }, '短窗口没增长而周窗口增长时不据此捏造倍率')
+    eq(predict(weekly, { ...limit, samples: series([[HOUR, 50], [30 * MIN, 25], [0, 50]]) }), { kind: 'sampling', needMs: 15 * MIN }, '异常下降的配对样本不跨重置周期算速率')
+    for (const field of [{ allowsOverage: true }, { informational: true }]) {
+      eq(predict(weekly, { ...limit, window: { ...short, ...field } }), { kind: 'sampling', needMs: 23 * HOUR }, '额外付费或参考窗口不强制暂停周消耗，按周窗口规则采样')
+    }
+    for (const resetAt of [undefined, now - MIN, Infinity]) {
+      eq(predict(weekly, { ...limit, window: { ...short, resetAt } }), undefined, '五小时重置状态不可用时隐藏不可靠周预测')
+    }
+    check(fc.forecastQuota(weeklySamples, { ...weekly, resetAt: Infinity }, now) === undefined, '无穷重置时间不参与预测')
+    check(fc.forecastQuota(weeklySamples, { ...weekly, durationMs: Infinity }, now) === undefined, '无穷窗口长度不参与预测')
+  }
+
+  {
     let samples = []
     samples = fc.appendQuotaSample(samples, { at: now, pct: 10 })
     samples = fc.appendQuotaSample(samples, { at: now + MIN, pct: 11 })
@@ -142,6 +174,24 @@ try {
     const info = await reopened.withForecasts('provider|t', [win({ id: 'credits', informational: true, forecast: { kind: 'steady', atResetPct: 1 } })], now)
     eq(info[0].forecast, { kind: 'steady', atResetPct: 1 }, '参考窗口原样返回')
     await reopened.flush()
+  }
+
+  {
+    const store = createQuotaSampleStore(join(temp, 'paired-samples.json'))
+    const weekly = win({ id: 'secondary', label: '本周', durationMs: 7 * DAY, resetAt: now + 2 * DAY })
+    let constrained
+    let unconstrained
+    for (const [ago, shortUsed, weeklyUsed] of [[HOUR, 0, 45], [30 * MIN, 25, 47.5], [0, 50, 50]]) {
+      constrained = await store.withForecasts('account-a', [{ ...weekly, used: weeklyUsed }, win({ id: 'primary', used: shortUsed })], now - ago)
+      unconstrained = await store.withForecasts('account-b', [win({ id: 'primary', used: shortUsed / 5 }), { ...weekly, used: weeklyUsed }], now - ago)
+    }
+    eq(constrained[0].forecast, { kind: 'exhaust', exhaustAt: now + 23 * HOUR, limitedByFiveHour: true }, '采样库先更新所有窗口，周窗口排在前面也能联动')
+    eq(unconstrained[1].forecast, { kind: 'exhaust', exhaustAt: now + 10 * HOUR, limitedByFiveHour: false }, '不同账号的五小时采样不会串用')
+    const paid = await store.withForecasts('account-a', [{ ...weekly, used: 50 }, win({ id: 'primary', used: 50, allowsOverage: true })], now)
+    eq(paid[0].forecast, { kind: 'sampling', needMs: 23 * HOUR }, '额外付费账号不加硬暂停，按周窗口规则采样')
+    const reset = await store.withForecasts('account-a', [{ ...weekly, used: 50 }, win({ id: 'primary', used: 1, resetAt: now + 7 * HOUR })], now + MIN)
+    eq(reset[0].forecast, { kind: 'sampling', needMs: 15 * MIN }, '五小时重置后必须重新积累可配对采样')
+    await store.flush()
   }
 
   {

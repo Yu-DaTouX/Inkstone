@@ -5,6 +5,7 @@ import {
   QUOTA_SAMPLE_KEEP_MS,
   appendQuotaSample,
   forecastQuota,
+  windowSpan,
   windowUsedPct,
   type QuotaSample
 } from '../shared/quota-forecast'
@@ -72,16 +73,22 @@ export function createQuotaSampleStore(file: string): QuotaSampleStore {
     async withForecasts(seriesKey, windows, now = Date.now()) {
       if (!windows.length) return windows
       const series = await load()
-      const out = windows.map((window) => {
+      for (const window of windows) {
         const pct = windowUsedPct(window)
-        if (pct === null || window.informational) return window
+        if (pct === null || window.informational) continue
         const key = `${seriesKey}|${window.id}`
         const prior = series[key]
         const newCycle = prior?.resetAt !== undefined && window.resetAt !== undefined && Math.abs(window.resetAt - prior.resetAt) > CYCLE_SHIFT_MS
         const samples = appendQuotaSample(newCycle ? [] : prior?.samples ?? [], { at: now, pct })
         series[key] = { ...(window.resetAt !== undefined ? { resetAt: window.resetAt } : {}), samples }
+      }
+      const short = windows.find(window => !window.informational && !window.allowsOverage && windowSpan(window).span === 'fiveHour')
+      const limit = short ? { window: short, samples: series[`${seriesKey}|${short.id}`]?.samples ?? [] } : undefined
+      const out = windows.map((window) => {
+        if (windowUsedPct(window) === null || window.informational) return window
+        const samples = series[`${seriesKey}|${window.id}`]?.samples ?? []
         const next: QuotaWindow = { ...window }
-        const forecast = forecastQuota(samples, window, now)
+        const forecast = forecastQuota(samples, window, now, windowSpan(window).span === 'week' ? limit : undefined)
         if (forecast) next.forecast = forecast
         else delete next.forecast
         return next

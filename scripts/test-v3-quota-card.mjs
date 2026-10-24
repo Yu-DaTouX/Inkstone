@@ -34,7 +34,7 @@ try {
   await writeFile(
     entry,
     `export { QuotaCard } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/features/workbench/QuotaPane.tsx')))}\n` +
-      `export { quotaResetLine } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/patterns/QuotaWindowRow.tsx')))}\n` +
+      `export { quotaResetLine, quotaForecastLine } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/patterns/QuotaWindowRow.tsx')))}\n` +
       `export { I18nProvider } from ${JSON.stringify(posix(resolve(ROOT, 'src/renderer/src/i18n/index.tsx')))}\n`
   )
   const out = join(dir, 'bundle.mjs')
@@ -93,6 +93,11 @@ try {
   ok(mod.quotaResetLine(t, { id: 'monthly', label: 'x', used: 0, total: 1, resetAt: now + 5 * 86400_000 }, now).text.startsWith('quota.resetOn'), '月窗口显示日期')
   ok(mod.quotaResetLine(t, { id: 'five_hour', label: 'x', used: 0, total: 1, resetAt: now + 90 * 60_000 }, now).text.includes('quota.durHM'), '短窗口显示时分倒计时')
   ok(mod.quotaResetLine(t, { id: 'weekly', label: 'x', used: 0, total: 1, resetAt: now + 3 * 86400_000 + 3600_000 }, now).text.includes('quota.durDH'), '长窗口显示天时倒计时')
+  const constrained = { id: 'weekly', label: '本周', used: 50, total: 100, resetAt: now + 2 * 86400_000, forecast: { kind: 'exhaust', exhaustAt: now + 23 * 3600_000, limitedByFiveHour: true } }
+  ok(mod.quotaForecastLine(t, constrained, now).tip.includes('quota.fc.fiveHourTip'), '周预测提示已计入五小时额度和重置等待')
+  const constrainedSteady = { ...constrained, forecast: { kind: 'steady', atResetPct: 75, limitedByFiveHour: true } }
+  ok(mod.quotaForecastLine(t, constrainedSteady, now).tip.includes('quota.fc.fiveHourTip'), '重置前不会用尽时同样说明五小时约束')
+  ok(html({ key: 'constrained', windows: [constrained] }).includes('已计入五小时额度耗尽后的等待'), '实际组件渲染预测约束说明')
   console.log(`\nv3-quota-card: ${checks} checks passed`)
 } finally {
   await rm(dir, { recursive: true, force: true })

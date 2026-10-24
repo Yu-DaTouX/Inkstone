@@ -33,7 +33,8 @@ export function wrapUpCardOf(call: UIToolCall): WrapUpCardModel | null {
   const args = record(call.args)
   const recap = text(args?.recap)
   if (!recap) return null
-  const ask = text(args?.ask) || null
+  const ask = text(args?.ask)
+  if (!ask) return null
   const actions = ask && Array.isArray(args?.actions)
     ? args.actions
       .map((item) => ({ label: text(record(item)?.label), message: text(record(item)?.message) }))

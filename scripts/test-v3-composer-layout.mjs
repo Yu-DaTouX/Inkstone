@@ -95,7 +95,7 @@ export const __state = state
 
 const STUBS = {
   'src/renderer/src/state/store.ts': STORE_STUB,
-  'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k) => k }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }',
+  'src/renderer/src/i18n/index.tsx': 'export function useT(){ return (k, p) => k === "composer.historyStatus" ? "历史记录 " + p.n + "/" + p.total : k }\nexport function useI18n(){ return { lang: "zh-CN" } }\nexport function translate(_l, k){ return String(k) }',
   'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
   'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
   'src/renderer/src/features/composer/attachment-files.ts': 'export async function readFiles(){ return [] }',
@@ -465,6 +465,42 @@ async function main() {
     ok(String(placeholderOf()).includes('Enter') && String(placeholderOf()).includes('queue.queueIt'), '回合运行中 → 保留发送/排队两条车道提示')
     __state.runners = []
     __state.activeRunnerId = null
+
+    __state.messages = [
+      { id: 'h1', role: 'user', text: '第一条' },
+      { id: 'h2', role: 'assistant', text: '回复' },
+      { id: 'h3', role: 'user', text: '第二条' }
+    ]
+    typeInto('')
+    ok(byTestId(rt.render(Composer, {}), 'composer-history-status') === null, '未浏览历史时不占用提示行')
+    const pressHistoryKey = (key) => {
+      byTestId(rt.render(Composer, {}), 'composer-input').props.onKeyDown({
+        key, preventDefault() {}, nativeEvent: {}
+      })
+      return rt.render(Composer, {})
+    }
+    tree = pressHistoryKey('ArrowUp')
+    let history = byTestId(tree, 'composer-history-status')
+    ok(history?.props.children === '历史记录 2/2', '首次 ↑ 显示最新一条的序号与用户消息总数')
+    ok(history?.props.className === 'composer-history' && !history.props.className.includes('sr-only'), '历史序号可见，不再仅供读屏')
+    ok(children(byClass(tree, 'composer-input')).indexOf(history) < children(byClass(tree, 'composer-input')).indexOf(byClass(tree, 'composer-line')), '历史序号位于输入内容上方')
+    tree = pressHistoryKey('ArrowUp')
+    ok(byTestId(tree, 'composer-history-status')?.props.children === '历史记录 1/2', '继续 ↑ 显示更早的序号')
+    tree = pressHistoryKey('ArrowDown')
+    ok(byTestId(tree, 'composer-history-status')?.props.children === '历史记录 2/2', '↓ 回到较新序号')
+    tree = pressHistoryKey('ArrowDown')
+    ok(byTestId(tree, 'composer-history-status') === null, '↓ 回到草稿后隐藏提示')
+    pressHistoryKey('ArrowUp')
+    tree = pressHistoryKey('a')
+    ok(byTestId(tree, 'composer-history-status') === null, '开始编辑后隐藏历史序号')
+    pressHistoryKey('ArrowUp')
+    __state.session = { sessionId: 'history-other' }
+    tree = rt.render(Composer, {})
+    ok(byTestId(tree, 'composer-history-status') === null, '切换会话后清除历史序号')
+    for (const [lang, label] of [['zh-CN', '历史记录 {n}/{total}'], ['en-US', 'History {n}/{total}']]) {
+      const messages = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
+      ok(messages['composer.historyStatus'] === label, `${lang} 历史序号文案使用当前条/总条数`)
+    }
 
     console.log(`\n结果：${checks} 项通过`)
   } finally {

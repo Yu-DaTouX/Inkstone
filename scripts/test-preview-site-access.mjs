@@ -49,15 +49,15 @@ async function run() {
     assert.equal(access.decide('s1', 'https://example.com/c').decision, 'allow')
     assert.equal(access.decide('s2', 'https://example.com/c').decision, 'allow')
     assert.equal(access.record('s1', 'https://evil.test', false), 'deny')
-    assert.equal(access.record('s1', 'https://evil.test', true), 'deny')
-    assert.equal(access.decide('s1', 'https://evil.test/x').decision, 'deny')
+    assert.equal(access.decide('s1', 'https://evil.test/x').decision, 'ask')
+    assert.equal(access.record('s1', 'https://evil.test', true), 'allow')
+    assert.equal(access.decide('s1', 'https://evil.test/x').decision, 'allow')
     assert.equal(access.record('s1', 'http://169.254.169.254/', true), 'forbidden')
     assert.equal(access.decide('s1', 'http://169.254.169.254/').decision, 'forbidden')
     assert.equal(access.decide('s1', 'ftp://x').decision, 'invalid')
     access.record('s1', 'https://third.test', true)
     assert.equal(access.decide('s1', 'https://example.com').decision, 'allow')
-    access.forgetSession('s1')
-    assert.equal(access.decide('s1', 'https://evil.test').decision, 'ask')
+    assert.equal(access.decide('s1', 'https://third.test').decision, 'ask')
 
     const { createPreviewSiteGate } = await compile('src/main/preview-site-gate.ts', join(dir, 'gate.mjs'))
     const asked = []
@@ -78,11 +78,11 @@ async function run() {
     answer = false
     assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
     answer = true
-    assert.equal(await gate.check('s1', 'https://bad.test/'), 'deny')
-    assert.equal(asked.length, 2)
+    assert.equal(await gate.check('s1', 'https://bad.test/'), 'allow')
+    assert.equal(asked.length, 3)
     assert.equal(await gate.check('s1', 'http://169.254.169.254/'), 'forbidden')
     assert.equal(await gate.check('s1', 'file:///x'), 'invalid')
-    assert.equal(asked.length, 2)
+    assert.equal(asked.length, 3)
     release = () => {}
     const first = gate.check('s3', 'https://slow.test/')
     const second = gate.check('s3', 'https://slow.test/x')
@@ -91,7 +91,6 @@ async function run() {
     release()
     assert.deepEqual(await Promise.all([first, second]), ['allow', 'allow'])
     release = null
-    gate.forgetSession('s1')
     assert.equal(await gate.check('s1', 'https://bad.test/'), 'allow')
     const failing = createPreviewSiteGate({ confirm: async () => { throw new Error('x') } })
     assert.equal(await failing.check('s1', 'https://err.test/'), 'deny')

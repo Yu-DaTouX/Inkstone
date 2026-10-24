@@ -1,6 +1,6 @@
 {
   "name": "inkstone-mobile",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "砚（Inkstone）手机端：查看电脑上的任务、回复问题、发送文字；任务仍在电脑上执行",
   "scripts": {

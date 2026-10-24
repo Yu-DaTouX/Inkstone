@@ -1,4 +1,5 @@
 import type { ContextFrom, SessionState, UIMessage, UIToolCall } from '../../../shared/ipc'
+import { estimateTextTokens } from '../../../shared/session-metrics'
 
 export type ContextCategory = 'system' | 'user' | 'assistant' | 'thinking' | 'tools'
 export interface ContextSlice { id: ContextCategory; tokens: number }
@@ -45,12 +46,7 @@ export function inContextMessages(messages: readonly UIMessage[], from: ContextF
   return messages.slice(start)
 }
 
-export function estimateTokens(text: string | undefined): number {
-  if (!text) return 0
-  let ascii = 0, other = 0
-  for (let i = 0; i < text.length; i++) text.charCodeAt(i) < 128 ? ascii++ : other++
-  return Math.ceil(ascii / 4 + other)
-}
+export const estimateTokens = estimateTextTokens
 
 function argsText(args: unknown): string {
   if (typeof args === 'string') return args

@@ -139,17 +139,17 @@ export function DesktopPetRow({ entry, copy }: { entry: PluginCatalogEntry; copy
               >
                 {running ? t('ocp.stop') : busy === 'start' ? t('pkg.working') : t('ocp.start')}
               </Button>
-              <Button variant="ghost" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-update">
+              <Button variant="secondary" isDisabled={!!busy} onPress={() => void install()} data-testid="caps-pet-update">
                 {busy === 'install' ? t('pet.installing') : t('pet.reinstall')}
               </Button>
             </>
           )}
           {installed && status?.log.length ? (
-            <Button variant="ghost" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
+            <Button variant="secondary" onPress={() => setShowLog((value) => !value)} data-testid="caps-pet-log-toggle">
               {showLog ? t('ocp.hideLog') : t('ocp.showLog')}
             </Button>
           ) : null}
-          <Button variant="ghost" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-pet-source">
+          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(entry.url)} data-testid="caps-pet-source">
             {t('market.source')}
           </Button>
           {installed ? (

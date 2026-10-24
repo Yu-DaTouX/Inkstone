@@ -58,23 +58,29 @@ assert.equal(first.action, 'recall', '空输入 ↑ 取回最新一条用户消�
 assert.equal(first.text, '第三条', '取回的是最新一条')
 assert.deepEqual(first.nav, { index: 3, total: 3, hasDraft: false }, '播报位置从 3/3 开始')
 
-const second = step(first.state, { text: '第三条' })
+const second = step(first.state, { text: '第三条', empty: false, caretAtStart: false })
 assert.equal(second.text, '第二条\n第二行', '连续 ↑ 向更早移动')
 assert.deepEqual(second.nav, { index: 2, total: 3, hasDraft: false })
 
 const third = step(second.state, { text: '第二条\n第二行' })
 assert.equal(third.text, '第一条', '继续 ↑ 到最早一条')
+assert.equal(step(third.state, { text: '第一条', caretAtStart: false }).action, 'swallow', '最早一条再 ↑ 不先移动光标')
+assert.equal(
+  step(second.state, { text: '第二条\n第二行', empty: false, caretAtStart: false, caretAtEnd: false }).text,
+  '第一条',
+  '多行历史中 ↑ 一次切换，不先移动光标'
+)
 assert.equal(step(third.state, { text: '第一条' }).action, 'swallow', '最早一条再 ↑ 只吞键不移动')
 assert.equal(step(third.state, { text: '第一条' }).preventDefault, undefined, '吞键结果不带 preventDefault 字段')
 
-const back = step(third.state, { key: 'ArrowDown', text: '第一条' })
+const back = step(third.state, { key: 'ArrowDown', text: '第一条', empty: false, caretAtEnd: false })
 assert.equal(back.text, '第二条\n第二行', '↓ 回到较新一条')
 assert.deepEqual(back.nav, { index: 2, total: 3, hasDraft: false })
 
 const newest = step(back.state, { key: 'ArrowDown', text: '第二条\n第二行' })
 assert.equal(newest.text, '第三条', '↓ 回到最新一条')
 
-const restore = step(newest.state, { key: 'ArrowDown', text: '第三条' })
+const restore = step(newest.state, { key: 'ArrowDown', text: '第三条', empty: false, caretAtEnd: false })
 assert.equal(restore.action, 'restore', '↓ 越过最新一条时恢复草稿')
 assert.equal(restore.text, '', '草稿是进入历史前的空文本')
 assert.equal(restore.nav, null, '恢复草稿后不再播报历史位置')

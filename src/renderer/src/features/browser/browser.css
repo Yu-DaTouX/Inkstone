@@ -25,12 +25,24 @@
     border-bottom: 1px solid var(--line);
   }
 
+  .v3-browser__tabsrow--chrome {
+    flex: 1;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .v3-browser__tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .v3-browser__tablist {
     min-width: 0;
     flex: 1 1 auto;
   }
 
   .v3-browser__tab {
+    flex: none;
     max-width: 220px;
     min-width: 0;
     overflow: hidden;
@@ -45,7 +57,6 @@
 
   .v3-browser__newtab {
     flex: none;
-    margin-bottom: var(--s-4);
   }
 
   .v3-browser__toolbar {

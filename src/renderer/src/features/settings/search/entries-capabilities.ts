@@ -21,9 +21,9 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     id: 'caps-prompts',
     section: 'capabilities',
     tab: 'skills',
-    zh: '提示词',
-    en: 'Prompts',
-    keywords: ['prompt', '斜杠命令', 'slash command', '隐藏于菜单'],
+    zh: '提示词模板',
+    en: 'Prompt templates',
+    keywords: ['prompt', '新建模板', '模板目录', '.pi/prompts', 'new template', 'template folder', '斜杠命令', 'slash command', '隐藏于菜单'],
     more: true
   },
   {

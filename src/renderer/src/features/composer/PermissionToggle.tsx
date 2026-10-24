@@ -46,7 +46,7 @@ export function PermissionToggle() {
               >
                 <span className="cpm-label">{t(`permission.label.${mode}` as 'permission.label.danger')}</span>
                 {mode === permission ? <Check className="cpm-check" size={13} aria-hidden /> : null}
-                <span className="cpm-hint">{t(`permission.desc.${mode}` as 'permission.desc.danger')}</span>
+                <span className="cpm-hint">{t(`permission.hint.${mode}` as 'permission.hint.danger')}</span>
               </MenuItem>
             ))}
           </Menu>

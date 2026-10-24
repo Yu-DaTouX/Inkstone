@@ -21,6 +21,25 @@ type CapsTextKey =
   | 'promptsNoSession'
   | 'promptHiddenTag'
   | 'promptsEmpty'
+  | 'promptsRefresh'
+  | 'promptUserDirectory'
+  | 'promptProjectDirectory'
+  | 'promptOpenDirectory'
+  | 'promptOpenFailed'
+  | 'promptCreate'
+  | 'promptName'
+  | 'promptNameHint'
+  | 'promptContent'
+  | 'promptContentPlaceholder'
+  | 'promptCreateHint'
+  | 'promptSave'
+  | 'promptSaveFailed'
+  | 'promptRetryReload'
+  | 'promptSavedReloadFailed'
+  | 'promptSavedNoSession'
+  | 'promptSavedLocation'
+  | 'promptCreated'
+  | 'promptNotLoaded'
   | 'skillRemoveConfirm'
   | 'skillRemoveScopeChanged'
   | 'pkgStaleResult'
@@ -52,7 +71,7 @@ type CapsTextKey =
 
 const ZH: Record<CapsTextKey, string> = {
   extensions: '扩展',
-  prompts: '提示词',
+  prompts: '提示词模板',
   sectionReload: '重新读取',
   mcpNativeUnavailable:
     '当前无法读取 pi 原生 MCP 状态。',
@@ -72,10 +91,29 @@ const ZH: Record<CapsTextKey, string> = {
   marketNoAutoNote:
     '打开本页时，插件目录可能联网更新；搜索与下载仅在点击后请求。',
   promptsHiddenHint:
-    '来自当前会话，只读，需在声明位置编辑；「隐藏于菜单」只是不进补全，并非停用，仍可调用。',
+    '点击「新建模板」，填写名称和正文，保存后自动加载到当前空闲会话。也可在下方目录编辑 .md 文件（如 translate.md 对应 /translate），编辑后发送 /reload。插件模板需修改原文件。「隐藏于菜单」只是不进补全，并非停用。',
   promptsNoSession: '请先打开一个会话再查看提示词。',
   promptHiddenTag: '隐藏于菜单',
-  promptsEmpty: '当前会话没有注册提示词。',
+  promptsEmpty: '当前会话尚未加载提示词模板，点击「新建模板」即可创建。',
+  promptsRefresh: '刷新列表',
+  promptUserDirectory: '用户模板（所有项目）',
+  promptProjectDirectory: '项目模板（当前会话）',
+  promptOpenDirectory: '打开模板目录',
+  promptOpenFailed: '无法打开模板目录',
+  promptCreate: '新建模板',
+  promptName: '命令名称',
+  promptNameHint: '例如 translate。只用英文、数字、-、_，首位为英文或数字，不带 / 或 .md。',
+  promptContent: '提示词正文',
+  promptContentPlaceholder: '例如：将后面的内容翻译成英文，只输出译文。',
+  promptCreateHint: '保存到用户模板，所有项目可用。命令后的内容会自动接到正文后面；已有参数占位符会保留。保存后自动加载到当前空闲会话。',
+  promptSave: '保存',
+  promptSaveFailed: '无法创建模板',
+  promptRetryReload: '重试加载',
+  promptSavedReloadFailed: '文件已保存，但暂未加载：{error}。无需重复创建，可稍后重试加载。',
+  promptSavedNoSession: '模板已保存，打开新会话后即可使用。',
+  promptSavedLocation: '已保存至：{path}',
+  promptCreated: '模板 /{name} 已创建并加载。',
+  promptNotLoaded: '重载后未找到模板 /{name}，请检查同名命令或模板加载设置',
   skillRemoveConfirm:
     '将删除该技能文件，不能撤销；想保留先选「保留到我的技能」。',
   skillRemoveScopeChanged:
@@ -111,7 +149,7 @@ const ZH: Record<CapsTextKey, string> = {
 
 const EN: Record<CapsTextKey, string> = {
   extensions: 'Extensions',
-  prompts: 'Prompts',
+  prompts: 'Prompt templates',
   sectionReload: 'Reload',
   mcpNativeUnavailable:
     'Native MCP status is unavailable.',
@@ -132,11 +170,30 @@ const EN: Record<CapsTextKey, string> = {
   marketNoAutoNote:
     'The plugin catalog may refresh online when this page opens. Search and downloads run only when clicked.',
   promptsHiddenHint:
-    'From the current session; read-only, edit them where declared. “Hidden from menu” only skips completion; it is not disabled.',
+    'Click “New template”, enter its name and instructions, and save to load it into the current idle session. You can also edit .md files below (e.g. translate.md defines /translate), then send /reload. Edit plugin templates in their original files. “Hidden from menu” only skips completion; it is not disabled.',
   promptsNoSession:
     'Open a session to view prompts.',
   promptHiddenTag: 'Hidden from menu',
-  promptsEmpty: 'No prompts are registered in the current session.',
+  promptsEmpty: 'No prompt templates are loaded in this session. Click “New template” to create one.',
+  promptsRefresh: 'Refresh list',
+  promptUserDirectory: 'User templates (all projects)',
+  promptProjectDirectory: 'Project templates (current session)',
+  promptOpenDirectory: 'Open template folder',
+  promptOpenFailed: 'Could not open the template folder',
+  promptCreate: 'New template',
+  promptName: 'Command name',
+  promptNameHint: 'For example, translate. Use English letters, digits, - or _, starting with a letter or digit. Do not include / or .md.',
+  promptContent: 'Instructions',
+  promptContentPlaceholder: 'For example: Translate the following text into English. Output only the translation.',
+  promptCreateHint: 'Saved to user templates, available in all projects. Command arguments are appended automatically unless argument placeholders are already present. Saving loads the template into the current idle session.',
+  promptSave: 'Save',
+  promptSaveFailed: 'Could not create the template',
+  promptRetryReload: 'Retry loading',
+  promptSavedReloadFailed: 'The file is saved, but not loaded yet: {error}. No need to create it again; retry loading later.',
+  promptSavedNoSession: 'Template saved. It will be available when you open a new session.',
+  promptSavedLocation: 'Saved to: {path}',
+  promptCreated: 'Template /{name} was created and loaded.',
+  promptNotLoaded: 'Template /{name} was not found after reloading. Check for command conflicts or template loading settings',
   skillRemoveConfirm:
     'Deletes the skill files and cannot be undone; to keep, choose “Keep in my skills” first.',
   skillRemoveScopeChanged:
@@ -179,7 +236,7 @@ export function fillCapsText(template: string, values: Record<string, string>): 
   return template.replace(/\{(\w+)\}/g, (match, name: string) => values[name] ?? match)
 }
 
-export function useCapsText(): (key: CapsTextKey) => string {
+export function useCapsText(): (key: CapsTextKey, values?: Record<string, string>) => string {
   const { lang } = useI18n()
-  return (key) => capsText(lang, key)
+  return (key, values) => values ? fillCapsText(capsText(lang, key), values) : capsText(lang, key)
 }

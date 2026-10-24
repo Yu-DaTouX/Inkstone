@@ -8,10 +8,10 @@ import { useMoney } from '../usage/UsageOverview'
 import {
   liveActivitySince,
   liveStepId,
+  liveStepSpeed,
   projectSessionMetrics,
   sessionTurnCounts,
   splitLiveStep,
-  stepSpeed,
   stepSpeeds
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
@@ -52,6 +52,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     if (!enabled) return null
     const { messages, liveId, running } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
+    const liveReading = liveStepSpeed(live)
     const metrics = projectSessionMetrics(settled, stats, { historyPartial })
     const subTokens = subagentTokens(
       selectSubagentRuns(subagents, { sessionIds: viewSessionId ? [viewSessionId] : [] }).all
@@ -62,7 +63,8 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       historyPartial,
       subagentTokens: subTokens,
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
-      liveSpeed: live ? stepSpeed(live) : undefined,
+      liveSpeed: live ? (liveReading?.speed ?? null) : undefined,
+      liveSpeedEstimated: liveReading?.estimated ?? false,
       liveSince: liveActivitySince(messages, live, running),
       money,
       t

@@ -102,6 +102,7 @@ function ToolGroupRow({ row, asking, glowId }: { row: Extract<ToolRow, { kind: '
           </span>
         )}
         <ToolRunStats summary={summary} />
+        {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
         {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
@@ -145,6 +146,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
             {meta}
           </span>
         ) : null}
+        {call.cancelled ? <Badge className="v3-steps-badge" data-testid="v3-step-cancelled">{t('run.cancelled')}</Badge> : null}
         {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
         {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
@@ -165,7 +167,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   )
 
   return (
-    <div className="v3-step" data-state={denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
+    <div className="v3-step" data-state={call.cancelled ? 'cancelled' : denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
       {search ? <SearchStepView call={call} step={search} glow={call.id === glowId}>{step}</SearchStepView> : step}
     </div>
   )

@@ -855,6 +855,7 @@ export interface QuotaWindow {
   informational?: boolean
   estimated?: boolean
   durationMs?: number
+  allowsOverage?: boolean
   forecast?: QuotaForecast
 }
 
@@ -1350,6 +1351,7 @@ export interface PackagesBridge {
   catalog(refresh?: boolean): Promise<import('./plugin-catalog').PluginCatalogView>
   exportPlugin(id: string): Promise<import('./plugin-market').PluginExportResult>
   addMcp(id: string): Promise<import('./plugin-market').PluginExportResult>
+  minecraft(action: 'status' | 'install' | 'remove'): Promise<import('./plugin-market').MinecraftPluginResult>
   codegraphStatus(cwd: string): Promise<import('./plugin-market').CodegraphStatus>
   codegraphIndex(cwd: string): Promise<{ ok: boolean; error?: string; log?: string }>
   anthropicEnv(): Promise<string[]>
@@ -1454,8 +1456,16 @@ export interface CapabilityVerificationStatus {
   toolCount?: number
 }
 
+export interface PromptTemplateDirectories {
+  user: string
+  project?: string
+}
+
 export interface CapabilitiesBridge {
   snapshot(): Promise<CapabilitySettingsSnapshot>
+  promptDirectories(): Promise<PromptTemplateDirectories>
+  openPromptDirectory(path: string): Promise<{ ok: boolean; error?: string }>
+  createPromptTemplate(input: { name: string; content: string }): Promise<{ ok: boolean; path?: string; error?: string }>
   discover(queryText: string): Promise<CapabilitySearchResultView>
   sessionSkill(action: 'promote' | 'remove', name: string): Promise<{ ok: boolean; error?: string }>
   manageSkill(action: ManagedSkillAction, scope: 'yan' | 'pi', dir: string): Promise<{ ok: boolean; error?: string }>

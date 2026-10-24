@@ -31,6 +31,9 @@ extraResources:
   - from: integrations/hermes-inkstone
     to: integrations/hermes-inkstone
     filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']
+  - from: integrations/inkstone-minecraft
+    to: integrations/inkstone-minecraft
+    filter: ['package.json', 'mcp/**/*', 'src/**/*', 'skills/**/*', 'templates/**/*', 'companion-mod/**/*', '!companion-mod/**/.gradle/**', '!companion-mod/**/run/**', '!companion-mod/**/build/**', 'companion-mod/build/libs/*.jar', 'companion-mod/mc26/build/libs/*.jar']
   - from: resources/pi-runtime/dist
     to: pi-runtime/dist
     filter: ['**/*']

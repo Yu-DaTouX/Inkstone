@@ -53,7 +53,7 @@ async function extensionTests(dataDir) {
     ok(on.tools[0].parameters.properties.actions.maxItems === 2, 'actions capped at two')
     const sections = {}
     ok(on.handlers.before_agent_start({ systemPrompt: 'BASE', systemPromptOptions: { sections } }) === undefined, 'sectioned prompt returns nothing')
-    ok(/call `wrap_up` once at the end/.test(sections.inkstone_wrap_up ?? ''), 'guidance written into its own section')
+    ok(/Only when the next step truly needs the user to decide/.test(sections.inkstone_wrap_up ?? '') && /Otherwise do not call it/.test(sections.inkstone_wrap_up), 'guidance limits cards to pending decisions')
     ok(/same question in `ask`/.test(sections.inkstone_wrap_up) && /never leave it only in the reply text/.test(sections.inkstone_wrap_up), 'guidance requires a question asked in the reply to appear in ask')
     ok(/Required whenever the final reply asks/.test(on.tools[0].parameters.properties.ask.description), 'ask description repeats the rule at the call site')
     const flat = on.handlers.before_agent_start({ systemPrompt: 'BASE' })
@@ -65,6 +65,7 @@ async function extensionTests(dataDir) {
     ok(shown.content[0].text === 'Shown to the user.' && !shown.isError, 'execute returns immediately without error')
     const noAsk = await on.tools[0].execute('c2', { recap: 'Done.', actions: [{ label: 'A', message: 'B' }] })
     equal(noAsk.details.actions, [], 'actions dropped without ask')
+    ok(noAsk.content[0].text.includes('no card shown') && !noAsk.isError, 'legacy recap-only call is a no-op, not a shown card')
     ok((await on.tools[0].execute('c3', {})).isError === true, 'missing recap is an error')
 
     await writeFile(desktop, JSON.stringify({ wrapUpCard: false }))
@@ -114,11 +115,12 @@ async function rendererTests(dir) {
 
   equal(m.wrapUpCardOf(wrap('w1', { recap: ' Done. ', ask: ' Ship? ', actions: [{ label: 'Yes', message: 'Ship it' }, { label: 'No', message: '' }, { label: 'Later', message: 'Wait' }, { label: 'X', message: 'Y' }] })),
     { callId: 'w1', recap: 'Done.', ask: 'Ship?', actions: [{ label: 'Yes', message: 'Ship it' }, { label: 'Later', message: 'Wait' }] }, 'card normalizes and caps actions')
-  equal(m.wrapUpCardOf(wrap('w2', { recap: 'Done.', actions: [{ label: 'Yes', message: 'Go' }] })).actions, [], 'no ask means no buttons')
+  equal(m.wrapUpCardOf(wrap('w2', { recap: 'Done.', actions: [{ label: 'Yes', message: 'Go' }] })), null, 'no ask means no card even with buttons')
+  equal(m.wrapUpCardOf(wrap('blank', { recap: 'Done.', ask: '  ' })), null, 'blank ask means no card')
   ok(m.wrapUpCardOf(wrap('w3', { ask: 'x' })) === null, 'no recap means no card')
   ok(m.wrapUpCardOf(wrap('w4', { recap: 'x' }, { status: 'error' })) === null, 'failed call shows no card')
   ok(m.wrapUpCardOf(call('q', 'question', { recap: 'x' })) === null, 'other tools are not cards')
-  ok(m.latestWrapUp([wrap('a', { recap: 'first' }), call('b', 'bash'), wrap('c', { recap: 'second' }), wrap('d', {}, { status: 'error' })])?.callId === 'c', 'latest valid wrap_up wins')
+  ok(m.latestWrapUp([wrap('a', { recap: 'first', ask: 'Continue?' }), call('b', 'bash'), wrap('c', { recap: 'second', ask: 'Ship?' }), wrap('d', {}, { status: 'error' })])?.callId === 'c', 'latest valid wrap_up wins')
 
   const messages = [
     { id: 'u1', role: 'user', text: 'do it' },
@@ -137,6 +139,8 @@ async function rendererTests(dir) {
   ok(raw.find((turn) => turn.kind === 'assistant').response?.hasTools === true, 'unstripped: reply next to wrap_up counts as tool commentary')
   ok(assistant.tools.length === 1 && assistant.response?.text === 'All tests pass.' && assistant.response.hasTools === false, 'stripped: reply stays the reply and only bash counts as a tool')
 
+  const recapMessages = messages.map((message) => message.id === 'a2' ? { ...message, toolCalls: [wrap('old', { recap: 'Tests pass.' })] } : message)
+  ok(m.sessionWrapUp({ enabled: true, active: true, busy: false, turns: clean, messages: recapMessages }) === null, 'saved recap-only history no longer shows a card')
   const live = { kind: 'assistant', ...assistant }
   equal(m.sessionWrapUp({ enabled: true, active: true, busy: false, turns: clean, messages })?.card.callId, 'w', 'latest finished turn shows its card from saved args')
   ok(m.sessionWrapUp({ enabled: false, active: true, busy: false, turns: clean, messages }) === null, 'setting off hides card')
@@ -193,10 +197,11 @@ async function cardMarkupTests(dir) {
   const render = (card) => renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(WrapUpCard, { card: { callId: card.callId, recap: card.recap, ask: card.ask ?? null, actions: card.actions ?? [] }, dismissKey: card.callId })))
 
   const recapOnly = render({ callId: 'm1', recap: 'Edited `wrap-up.js`; tests pass.' })
-  ok(recapOnly.includes('v3-wrapup-kicker') && !recapOnly.includes('data-pending') && !recapOnly.includes('v3-wrapup-ask'), 'recap-only card shows a recap heading and no decision area')
-  ok(recapOnly.includes('<code class="v3-wrapup-code">wrap-up.js</code>') && !recapOnly.includes('`'), 'backticks in recap render as inline code')
+  equal(recapOnly, '', 'recap-only card renders nothing')
+  equal(render({ callId: 'blank', recap: 'Done.', ask: '  ' }), '', 'blank-question card renders nothing')
 
-  const pending = render({ callId: 'm2', recap: 'Done.', ask: 'Restart `yan`?', actions: [{ label: 'Restart', message: 'Restart it' }, { label: 'Later', message: 'Wait' }] })
+  const pending = render({ callId: 'm2', recap: 'Edited `wrap-up.js`; tests pass.', ask: 'Restart `yan`?', actions: [{ label: 'Restart', message: 'Restart it' }, { label: 'Later', message: 'Wait' }] })
+  ok(pending.includes('<code class="v3-wrapup-code">wrap-up.js</code>') && !pending.includes('`'), 'backticks in decision recap render as inline code')
   ok(pending.includes('data-pending=""') && pending.includes('data-testid="v3-wrap-up-question"'), 'card with ask is marked pending and shows the question')
   ok(pending.indexOf('v3-wrap-up-recap') < pending.indexOf('v3-wrap-up-question') && pending.indexOf('v3-wrap-up-question') < pending.indexOf('v3-wrap-up-action'), 'order: recap, question, then buttons')
   ok((pending.match(/data-testid="v3-wrap-up-action"/g) ?? []).length === 2 && pending.includes('<code class="v3-wrapup-code">yan</code>'), 'two buttons and inline code in the question')

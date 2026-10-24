@@ -8,8 +8,15 @@ export interface QuotaSample {
 export type QuotaForecast =
   | { kind: 'sampling'; needMs: number }
   | { kind: 'uncertain' }
-  | { kind: 'steady'; atResetPct: number; basedOnMs?: number }
-  | { kind: 'exhaust'; exhaustAt: number; earliestAt?: number; latestAt?: number; basedOnMs?: number }
+  | { kind: 'steady'; atResetPct: number; basedOnMs?: number; limitedByFiveHour?: boolean }
+  | { kind: 'exhaust'; exhaustAt: number; earliestAt?: number; latestAt?: number; basedOnMs?: number; limitedByFiveHour?: boolean }
+
+export interface QuotaForecastLimit {
+  window: QuotaWindow
+  samples: readonly QuotaSample[]
+}
+
+type ForecastWindow = Pick<QuotaWindow, 'used' | 'total' | 'resetAt' | 'durationMs' | 'informational' | 'exceeded'>
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -58,10 +65,77 @@ export function appendQuotaSample(samples: readonly QuotaSample[], sample: Quota
   return kept.length > QUOTA_SAMPLE_MAX ? kept.slice(kept.length - QUOTA_SAMPLE_MAX) : kept
 }
 
+function forecastWithLimit(
+  samples: readonly QuotaSample[],
+  window: ForecastWindow,
+  now: number,
+  limit: QuotaForecastLimit
+): QuotaForecast | undefined {
+  const short = limit.window
+  const resetAt = short.resetAt
+  const cycleMs = short.durationMs ?? WINDOW_DURATION.fiveHour
+  const weekResetAt = window.resetAt
+  const pct = windowUsedPct(window)
+  const shortPct = windowUsedPct(short)
+  if (pct === null || shortPct === null || !Number.isFinite(cycleMs) || cycleMs <= 0) return undefined
+  if (resetAt === undefined || !Number.isFinite(resetAt) || resetAt <= now || weekResetAt === undefined) return undefined
+  if (!window.durationMs || window.durationMs <= cycleMs) return undefined
+
+  const weeklyByTime = new Map(samples.map(sample => [sample.at, sample.pct]))
+  const pairs = limit.samples.flatMap(sample => {
+    const weekly = weeklyByTime.get(sample.at)
+    return weekly === undefined || sample.at < now - cycleMs || sample.at > now
+      ? []
+      : [{ at: sample.at, short: sample.pct, weekly }]
+  })
+  let end = pairs.length - 1
+  while (end > 0 && pairs[end - 1].short >= 100) end -= 1
+  const { lookbackMs, minSpanMs } = forecastSpan(cycleMs)
+  const anchor = pairs[end]?.at ?? now
+  const recent = pairs.slice(0, end + 1).filter(sample => sample.at >= anchor - lookbackMs)
+  let activeMs = 0
+  let shortDelta = 0
+  let weeklyDelta = 0
+  for (let i = 1; i < recent.length; i += 1) {
+    const before = recent[i - 1]
+    const after = recent[i]
+    if (after.at <= before.at || before.short >= 100) continue
+    if (after.short < before.short || after.weekly < before.weekly) return { kind: 'sampling', needMs: minSpanMs }
+    activeMs += after.at - before.at
+    shortDelta += after.short - before.short
+    weeklyDelta += after.weekly - before.weekly
+  }
+  if (activeMs < minSpanMs) return { kind: 'sampling', needMs: minSpanMs - activeMs }
+  if (weeklyDelta <= 0) return { kind: 'steady', atResetPct: Math.round(pct) }
+  if (!(shortDelta > 0)) return { kind: 'sampling', needMs: minSpanMs }
+
+  const shortRate = shortDelta / activeMs
+  const weeklyRate = weeklyDelta / activeMs
+  const activeNeeded = (100 - pct) / weeklyRate
+  const currentRemaining = short.exceeded ? 0 : Math.max(0, 100 - shortPct)
+  const currentActive = Math.min(Math.min(resetAt, weekResetAt) - now, currentRemaining / shortRate)
+  if (activeNeeded <= currentActive) return { kind: 'exhaust', exhaustAt: Math.round(now + activeNeeded) }
+  const futureMs = Math.max(0, weekResetAt - resetAt)
+  const activePerCycle = Math.min(cycleMs, 100 / shortRate)
+  const fullCycles = Math.floor(futureMs / cycleMs)
+  const availableActive = currentActive + fullCycles * activePerCycle + Math.min(futureMs % cycleMs, activePerCycle)
+  const limitedByFiveHour = availableActive < weekResetAt - now
+  const projected = pct + availableActive * weeklyRate
+  if (projected < 100) return { kind: 'steady', atResetPct: Math.round(projected), limitedByFiveHour }
+  const futureActive = activeNeeded - currentActive
+  const cyclesBefore = Math.max(0, Math.ceil(futureActive / activePerCycle) - 1)
+  return {
+    kind: 'exhaust',
+    exhaustAt: Math.round(resetAt + cyclesBefore * cycleMs + futureActive - cyclesBefore * activePerCycle),
+    limitedByFiveHour
+  }
+}
+
 export function forecastQuota(
   samples: readonly QuotaSample[],
-  window: Pick<QuotaWindow, 'used' | 'total' | 'resetAt' | 'durationMs' | 'informational' | 'exceeded'>,
-  now: number
+  window: ForecastWindow,
+  now: number,
+  limit?: QuotaForecastLimit
 ): QuotaForecast | undefined {
   const pct = windowUsedPct(window)
   if (pct === null || window.informational || window.exceeded) return undefined
@@ -70,6 +144,10 @@ export function forecastQuota(
   const { lookbackMs, minSpanMs } = forecastSpan(window.durationMs)
   const cycleStart = window.resetAt - window.durationMs
   const recent = samples.filter((s) => Number.isFinite(s.at) && Number.isFinite(s.pct) && s.at >= Math.max(now - lookbackMs, cycleStart) && s.at <= now)
+  if (limit && !limit.window.informational && !limit.window.allowsOverage && windowSpan(limit.window).span === 'fiveHour'
+    && window.durationMs > (limit.window.durationMs ?? WINDOW_DURATION.fiveHour)) {
+    return forecastWithLimit(recent, window, now, limit)
+  }
   const first = recent[0]
   const last = recent[recent.length - 1]
   const span = first && last ? last.at - first.at : 0

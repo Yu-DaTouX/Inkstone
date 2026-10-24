@@ -19,6 +19,20 @@ export interface CodegraphStatus {
   cwd?: string
   indexed?: boolean
 }
+export interface MinecraftPluginStatus {
+  bundled: boolean
+  installed: boolean
+  configured: boolean
+  conflict: boolean
+  skill: boolean
+  pluginDir: string
+}
+export interface MinecraftPluginResult {
+  ok: boolean
+  path?: string
+  error?: string
+  status?: MinecraftPluginStatus
+}
 export interface PluginExportResult {
   ok: boolean
   cancelled?: boolean

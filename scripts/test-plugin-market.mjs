@@ -53,6 +53,66 @@ export async function runPluginMarketTests(ok) {
     const bad = await addCodegraphMcp(agentDir, present)
     ok(!bad.ok && (await readFile(join(agentDir, 'mcp.json'), 'utf8')) === '{bad', '坏 JSON 拒绝改写')
   } finally { await rm(agentDir, { recursive: true, force: true }) }
+  await build({ entryPoints: ['src/main/minecraft-plugin.ts'], outfile: 'out/test/minecraft-plugin.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const mc = await import(pathToFileURL('out/test/minecraft-plugin.mjs').href)
+  const mcRoot = await mkdtemp(join(tmpdir(), 'inkstone-mc-plugin-'))
+  try {
+    const source = join(mcRoot, 'source')
+    const files = {
+      'package.json': '{}',
+      'mcp/server.ts': 'server',
+      'skills/inkstone-fabric-dev/SKILL.md': 'skill',
+      'templates/fabric/a.txt': 't',
+      'src/core/dev/runner.ts': 'r',
+      'companion-mod/build/libs/inkstone-companion-0.1.0.jar': 'jar',
+      'companion-mod/build/classes/A.class': 'class',
+      'companion-mod/.gradle/cache.bin': 'cache',
+      'companion-mod/mc26/build/libs/inkstone-companion-mc26-0.1.0.jar': 'jar26',
+      'companion-mod/mc26/run/options.txt': 'run',
+      'companion-mod/core/src/Main.java': 'java',
+      'node_modules/x/index.js': 'nm'
+    }
+    for (const [name, body] of Object.entries(files)) {
+      await mkdir(join(source, name, '..'), { recursive: true })
+      await writeFile(join(source, name), body)
+    }
+    const agentDir = join(mcRoot, 'agent')
+    const paths = { source, pluginDir: join(mcRoot, 'yan', 'plugins', 'inkstone-minecraft'), skillsDir: join(mcRoot, 'yan', 'skills'), agentDir, runtime: 'C:/Inkstone/Inkstone.exe' }
+    await mkdir(agentDir, { recursive: true })
+    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ keep: 1, mcpServers: { codegraph: { command: 'codegraph' } } }))
+    const before = await mc.minecraftPluginStatus(paths)
+    ok(before.bundled && !before.installed && !before.configured && !before.conflict, 'Minecraft 插件：安装前只有随包文件')
+    const installed = await mc.installMinecraftPlugin(paths)
+    const doc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
+    const entry = doc.mcpServers['inkstone-minecraft']
+    ok(installed.ok && installed.status.installed && installed.status.configured && installed.status.skill, 'Minecraft 插件：安装后已登记 MCP 并装好技能')
+    ok(entry.command === paths.runtime && entry.env.ELECTRON_RUN_AS_NODE === '1' && entry.args.at(-1) === join(paths.pluginDir, 'mcp', 'server.ts'), 'Minecraft 插件：用砚自带运行时启动复制后的服务')
+    ok(doc.keep === 1 && doc.mcpServers.codegraph.command === 'codegraph', 'Minecraft 插件：保留 mcp.json 其他内容')
+    const has = (name) => readFile(join(paths.pluginDir, name), 'utf8').then(() => true, () => false)
+    ok(await has('companion-mod/build/libs/inkstone-companion-0.1.0.jar') && await has('companion-mod/mc26/build/libs/inkstone-companion-mc26-0.1.0.jar') && await has('companion-mod/core/src/Main.java'), 'Minecraft 插件：带上伴随 mod 源码与预编译 jar')
+    ok(!(await has('companion-mod/build/classes/A.class')) && !(await has('companion-mod/.gradle/cache.bin')) && !(await has('companion-mod/mc26/run/options.txt')) && !(await has('node_modules/x/index.js')), 'Minecraft 插件：不复制构建中间产物、运行目录与依赖')
+    doc.mcpServers['inkstone-minecraft'].enabled = false
+    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify(doc))
+    const updated = await mc.installMinecraftPlugin(paths)
+    ok(updated.ok && !updated.status.configured && JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'].enabled === false, 'Minecraft 插件：更新时保留用户的停用设置')
+    const removed = await mc.removeMinecraftPlugin(paths)
+    const afterDoc = JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8'))
+    ok(removed.ok && !removed.status.installed && !removed.status.skill && !afterDoc.mcpServers['inkstone-minecraft'] && afterDoc.mcpServers.codegraph, 'Minecraft 插件：移除只删自己的登记、目录与技能')
+    await writeFile(join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: { 'inkstone-minecraft': { command: 'node', args: ['other/server.ts'] } } }))
+    const conflict = await mc.installMinecraftPlugin(paths)
+    ok(!conflict.ok && conflict.status.conflict && !conflict.status.installed, 'Minecraft 插件：同名服务不是砚装的时拒绝覆盖')
+    await mc.removeMinecraftPlugin(paths)
+    ok(JSON.parse(await readFile(join(agentDir, 'mcp.json'), 'utf8')).mcpServers['inkstone-minecraft'].args[0] === 'other/server.ts', 'Minecraft 插件：移除不动别人的同名服务')
+    await writeFile(join(agentDir, 'mcp.json'), '{bad')
+    const broken = await mc.installMinecraftPlugin(paths)
+    ok(!broken.ok && (await readFile(join(agentDir, 'mcp.json'), 'utf8')) === '{bad', 'Minecraft 插件：坏 JSON 拒绝改写')
+    const missing = await mc.installMinecraftPlugin({ ...paths, source: null })
+    ok(!missing.ok && /随包插件文件缺失/.test(missing.error), 'Minecraft 插件：没有随包文件时说明原因')
+  } finally { await rm(mcRoot, { recursive: true, force: true }) }
+  await build({ entryPoints: ['src/shared/plugin-catalog.ts'], outfile: 'out/test/plugin-catalog-shared.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
+  const catalog = await import(pathToFileURL('out/test/plugin-catalog-shared.mjs').href)
+  ok(catalog.BUILTIN_PLUGIN_CATALOG.plugins.some((entry) => entry.id === 'inkstone-minecraft' && entry.kind === 'mcp'), '内置插件目录包含 Minecraft 插件')
+  ok(catalog.normalizePluginCatalog({ schema: 1, plugins: [{ id: 'other-mcp', kind: 'mcp', name: 'x', url: 'https://example.com', text: { 'zh-CN': { desc: 'x' } } }] }).plugins.length === 0, '远程目录不能加入没有代码支撑的 MCP 插件')
   if (process.argv.includes('--live')) {
     const live = await searchPiPackages('browser')
     ok(live.ok && live.entries.length > 0, '真实 npm pi-package 目录可用：' + live.entries.length)

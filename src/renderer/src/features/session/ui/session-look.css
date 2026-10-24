@@ -22,7 +22,7 @@
   .v3-prose li + li, .v3-prose li > :is(ul, ol) { margin-top: var(--s-6); }
   .v3-prose li > p { margin: 0; }
   .v3-prose li > p + p { margin-top: var(--s-6); }
-  .v3-prose strong { font-weight: 500; }
+  .v3-prose strong { font-weight: var(--w-semibold); }
   .v3-prose blockquote { margin: 0; padding: 0 0 0 var(--s-8); border-left: 2px solid var(--alpha-2); color: var(--fg2); }
   .v3-prose blockquote > * { margin: 0; }
   .v3-prose blockquote > * + * { margin-top: var(--s-6); }

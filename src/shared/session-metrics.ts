@@ -83,25 +83,15 @@ function effectiveMessages(messages: readonly UIMessage[]): UIMessage[] {
 export interface StepDecode {
   tokens: number
   ms: number
-  approx: boolean
 }
 
 export function stepDecode(m: UIMessage): StepDecode | null {
   if (m.role !== 'assistant') return null
   const gt = m.generationTiming
-  const durationMs = gt && isNonNegative(gt.durationMs) ? gt.durationMs : null
-  const usage = sanitizeUsage(m.usage)
-  const out = usage ? usage.output : 0
-  const visible = visibleOutput(m, usage)
-  const realDecode = gt && isNonNegative(gt.decodeMs) && gt.decodeMs > 0 ? gt.decodeMs : null
-  const legacySpeed = gt === undefined && isNonNegative(m.speed) && m.speed > 0 ? m.speed : null
-  const burst = realDecode !== null && visible > 0 && (realDecode < MIN_DECODE_MS || visible / (realDecode / 1000) > MAX_PLAUSIBLE_TPS)
-  if (burst) {
-    return durationMs !== null && durationMs >= MIN_DECODE_MS && out > 0 ? { tokens: out, ms: durationMs, approx: true } : null
-  }
-  const decodeMs = realDecode ?? (legacySpeed !== null && out > 0 ? (out / legacySpeed) * 1000 : null)
-  const counted = realDecode !== null ? visible : out
-  return counted > 0 && decodeMs !== null ? { tokens: counted, ms: decodeMs, approx: false } : null
+  const tokens = visibleOutput(m, sanitizeUsage(m.usage))
+  const ms = gt && isNonNegative(gt.decodeMs) ? gt.decodeMs : 0
+  if (tokens <= 0 || ms < MIN_DECODE_MS || tokens / (ms / 1000) > MAX_PLAUSIBLE_TPS) return null
+  return { tokens, ms }
 }
 
 export function stepSpeeds(messages: readonly UIMessage[], limit: number): number[] {
@@ -111,6 +101,32 @@ export function stepSpeeds(messages: readonly UIMessage[], limit: number): numbe
     if (decode && decode.ms > 0) out.push(decode.tokens / (decode.ms / 1000))
   }
   return out.slice(Math.max(0, out.length - limit))
+}
+
+export function estimateTextTokens(text: string | undefined): number {
+  if (!text) return 0
+  let ascii = 0
+  let other = 0
+  for (let i = 0; i < text.length; i += 1) text.charCodeAt(i) < 128 ? (ascii += 1) : (other += 1)
+  return Math.ceil(ascii / 4 + other)
+}
+
+export interface LiveStepSpeed {
+  speed: number
+  estimated: boolean
+}
+
+export function liveStepSpeed(m: UIMessage | null | undefined): LiveStepSpeed | null {
+  if (!m || m.role !== 'assistant') return null
+  const decode = stepDecode(m)
+  if (decode) return { speed: decode.tokens / (decode.ms / 1000), estimated: false }
+  if (visibleOutput(m, sanitizeUsage(m.usage)) > 0) return null
+  const ms = m.generationTiming?.decodeMs
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < MIN_DECODE_MS) return null
+  const tokens = estimateTextTokens(`${m.text ?? ''}${m.thinking ?? ''}`)
+  if (tokens <= 0) return null
+  const speed = tokens / (ms / 1000)
+  return speed > 0 && speed <= MAX_PLAUSIBLE_TPS ? { speed, estimated: true } : null
 }
 
 function turnCountsOf(msgs: readonly UIMessage[]): SessionTurnCounts {
@@ -280,7 +296,6 @@ export function projectSessionMetrics(
   let decodeTime = 0
   let tpsCovered = 0
   let tpsEligible = 0
-  let tpsApprox = false
   let ttftSum = 0
   let ttftCount = 0
   let ttftEligible = 0
@@ -305,7 +320,6 @@ export function projectSessionMetrics(
       decodeOut += decode.tokens
       decodeTime += decode.ms
       tpsCovered += 1
-      if (decode.approx) tpsApprox = true
     }
 
     const ttft = gt && gt.startEvent === 'turn_start' && isNonNegative(gt.ttftMs) ? gt.ttftMs : null
@@ -315,7 +329,7 @@ export function projectSessionMetrics(
     }
   }
   const tps = decodeTime > 0 ? decodeOut / (decodeTime / 1000) : null
-  const tpsPartial = tpsCovered < tpsEligible || tpsApprox || (historyPartial && tps !== null)
+  const tpsPartial = tpsCovered < tpsEligible || (historyPartial && tps !== null)
   const modelPartial =
     (modelMs !== null && (modelMissing > 0 || modelLowerBound)) || (historyPartial && modelMs !== null)
   const ttftMs = ttftCount > 0 ? ttftSum / ttftCount : null

@@ -5,14 +5,16 @@ import { isSearchProviderId } from '../../shared/search'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { basename, isAbsolute } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { basename, isAbsolute, join } from 'node:path'
 import { shell } from 'electron'
 import { setManagedSkillEnabled, trashManagedSkill } from '../skill-manager'
 import { builtinCapabilities } from '../extensions-inventory'
-import type { AppSettings } from '../../shared/ipc'
+import type { AppSettings, PromptTemplateDirectories } from '../../shared/ipc'
 import type { AgentController } from '../agent'
 import type { RunnerRegistry } from '../runners'
 import { PI_AGENT_DIR } from '../paths'
+import { mergeCommandDescriptors } from '../command-registry'
 import { loadMcpServers, mcpServersForProject } from '../mcp/config'
 import { createNativeMcpVerifier } from '../mcp/native-verify'
 import { listNativeMcpServers } from '../mcp/native-list'
@@ -178,6 +180,60 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:capabilities:settings', async () => {
     const agent = currentAgent()
     return agent ? agent.capabilitySettingsSnapshot() : { skills: [], servers: [], configWarning: false }
+  })
+  const promptDirectories = (): PromptTemplateDirectories => {
+    const cwd = registry()?.activeRunner()?.cwd
+    return {
+      user: join(PI_AGENT_DIR, 'prompts'),
+      ...(cwd ? { project: join(cwd, '.pi', 'prompts') } : {})
+    }
+  }
+  handle('yan:capabilities:promptDirectories', promptDirectories)
+  handle('yan:capabilities:openPromptDirectory', async (value: unknown) => {
+    if (typeof value !== 'string' || !Object.values(promptDirectories()).includes(value)) {
+      return { ok: false, error: '模板目录无效或当前会话已切换，请刷新列表后重试' }
+    }
+    if (!isAbsolute(value) || /^[\\/]{2}/.test(value)) return { ok: false, error: '不支持此模板目录' }
+    try {
+      await mkdir(value, { recursive: true })
+      const error = await shell.openPath(value)
+      return error ? { ok: false, error } : { ok: true }
+    } catch (cause) {
+      return { ok: false, error: cause instanceof Error ? cause.message : String(cause) }
+    }
+  })
+  handle('yan:capabilities:createPromptTemplate', async (value: unknown) => {
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as { name?: unknown; content?: unknown }
+      : {}
+    const name = typeof input.name === 'string' ? input.name.trim() : ''
+    const content = typeof input.content === 'string' ? input.content.trim() : ''
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name)) {
+      return { ok: false, error: '名称需为 1–64 个英文、数字、- 或 _，首位为英文或数字，且不能使用系统保留名称' }
+    }
+    if (!content || content.length > 64_000 || content.includes('\0')) {
+      return { ok: false, error: '提示词正文不能为空，不能包含空字符，且不能超过 64000 个字符' }
+    }
+    const directory = promptDirectories().user
+    if (!isAbsolute(directory) || /^[\\/]{2}/.test(directory)) return { ok: false, error: '不支持此模板目录' }
+    try {
+      const commands = await currentAgent()?.listCommands() ?? mergeCommandDescriptors(undefined)
+      if (commands.some(command => command.name.toLowerCase() === name.toLowerCase())) {
+        return { ok: false, error: '该名称已被命令或模板使用，请换一个名称' }
+      }
+      const hasArguments = /\$(?:@|ARGUMENTS|\d+)|\$\{(?:@:\d+(?::\d+)?|(?:@|ARGUMENTS|\d+):-[^}]*)\}/.test(content)
+      const description = JSON.stringify(content.split('\n', 1)[0].trim().slice(0, 120))
+      const template = `---\ndescription: ${description}\n---\n\n${content}${hasArguments ? '' : '\n\n$@'}\n`
+      const path = join(directory, `${name}.md`)
+      await mkdir(directory, { recursive: true })
+      await writeFile(path, template, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+      return { ok: true, path }
+    } catch (cause) {
+      const error = (cause as NodeJS.ErrnoException)?.code === 'EEXIST'
+        ? '同名模板文件已存在，请换一个名称；原文件未修改'
+        : cause instanceof Error ? cause.message : String(cause)
+      return { ok: false, error }
+    }
   })
   handle('yan:capabilities:sessionSkill', async (value: unknown) => {
     const input = value && typeof value === 'object' ? (value as { action?: unknown; name?: unknown }) : {}

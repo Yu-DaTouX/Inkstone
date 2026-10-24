@@ -8,6 +8,7 @@ import {
 } from '../../../../../shared/plugin-catalog'
 import { Button } from '../../../ui'
 import { DesktopPetRow } from './DesktopPetRow'
+import { MinecraftPluginRow } from './MinecraftPluginRow'
 import { Entry, Group } from './parts'
 
 function catalogDate(timestamp: number | null, lang: string): string {
@@ -87,6 +88,7 @@ export function InkstonePluginGroup(): ReactElement {
         {catalog.plugins.map((entry) => {
           const copy = pluginText(entry, lang)
           if (entry.kind === 'pet') return <DesktopPetRow key={entry.id} entry={entry} copy={copy} />
+          if (entry.id === 'inkstone-minecraft') return <MinecraftPluginRow key={entry.id} entry={entry} copy={copy} />
           const metaParts = [copy.desc, copy.target, copy.hint]
           return (
             <Entry

@@ -72,20 +72,24 @@ async function fetchRemote(request: typeof fetch): Promise<{ body: unknown; view
   return { body, view: { source: 'remote', updatedAt: catalog.updatedAt, fetchedAt, plugins: catalog.plugins } }
 }
 
+export function newerCatalog(view: PluginCatalogView): PluginCatalogView {
+  return view.updatedAt >= BUILTIN_PLUGIN_CATALOG.updatedAt ? view : BUILTIN_PLUGIN_CATALOG
+}
+
 export async function loadPluginCatalog(refresh = false, request: typeof fetch = fetch): Promise<PluginCatalogView> {
   if (!refresh && memory?.fetchedAt && Date.now() - memory.fetchedAt < FRESH_MS) return memory
   if (inflight) return inflight
   inflight = (async () => {
     const cached = await readCache()
     if (!refresh && cached?.fetchedAt && Date.now() - cached.fetchedAt < FRESH_MS) {
-      memory = cached
-      return cached
+      memory = newerCatalog(cached)
+      return memory
     }
     try {
       const remote = await fetchRemote(request)
       await writeCache(remote.body, remote.view.fetchedAt ?? Date.now()).catch(() => undefined)
-      memory = remote.view
-      return remote.view
+      memory = newerCatalog(remote.view)
+      return memory
     } catch (error) {
       console.warn('[plugin-catalog] 远程目录不可用，改用本地副本：', error instanceof Error ? error.message : String(error))
       const local = cached ?? memory
