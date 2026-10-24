@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react'
-import { AlertCircle, ArrowUpCircle, ExternalLink, FolderOpen, PackagePlus, RefreshCw, Trash2, Undo2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactElement } from 'react'
+import { AlertCircle, ArrowUpCircle, Download, ExternalLink, FolderOpen, PackagePlus, RefreshCw, Trash2, Undo2 } from 'lucide-react'
 import { Badge } from '@yan/ui/Badge'
 import { Button } from '@yan/ui/Button'
+import { Checkbox } from '@yan/ui/Checkbox'
 import { IconButton } from '@yan/ui/IconButton'
 import { Notice } from '@yan/ui/Notice'
 import { ProgressBar } from '@yan/ui/Progress'
@@ -9,7 +10,7 @@ import { SettingRow, SettingSection } from '@yan/ui/SettingRow'
 import { Switch } from '@yan/ui/Switch'
 import { SearchField } from '@yan/ui/TextField'
 import type { FolderTarget, TaskInfo } from '../../shared/api.ts'
-import type { ModEntry, ModListResult, ModUpdateCheckResult, ModUpdateInfo } from '../../shared/mods-api.ts'
+import type { ModBatchResult, ModEntry, ModListResult, ModUpdateCheckResult, ModUpdateInfo } from '../../shared/mods-api.ts'
 import { ConfirmDialog } from './overlays.tsx'
 import { EmptyBlock, PageHead } from './SubNavLayout.tsx'
 
@@ -87,6 +88,15 @@ function IssueBadges({ mod }: { mod: ModEntry }): ReactElement {
   )
 }
 
+function batchNotice(label: string, result: ModBatchResult): string {
+  if (result.done.length === 0) {
+    const reason = result.failed[0]
+    return reason ? `${label}失败：${reason.file}（${reason.reason}）` : `没有需要${label}的 Mod`
+  }
+  const tail = result.failed.length > 0 ? `；${result.failed.length} 个失败：${result.failed[0]!.file}（${result.failed[0]!.reason}）` : ''
+  return `已${label} ${result.done.length} 个 Mod${tail}`
+}
+
 interface Props {
   folder: string
   versionId: string
@@ -104,9 +114,13 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
   const [checking, setChecking] = useState(false)
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState<ModEntry | null>(null)
+  const [deleteFiles, setDeleteFiles] = useState<string[] | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [task, setTask] = useState<TaskInfo | null>(null)
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
 
   const load = useCallback((): void => {
     setLoading(true)
@@ -127,6 +141,7 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
     setData(null)
     setUpdates(null)
     setNotice('')
+    setSelected(new Set())
     load()
   }, [load])
 
@@ -175,6 +190,25 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
       .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, 'zh-CN'))
   }, [data, filter, query, updateBySha])
 
+  useEffect(() => {
+    setSelected((current) => {
+      const files = new Set((data?.mods ?? []).map((mod) => mod.file))
+      const next = new Set([...current].filter((file) => files.has(file)))
+      if (next.size === current.size && [...next].every((file) => current.has(file))) return current
+      return next
+    })
+  }, [data])
+
+  const missingDeps = useMemo(() => {
+    const ids = new Set<string>()
+    for (const mod of data?.mods ?? []) {
+      for (const issue of mod.issues) {
+        if (issue.kind === 'missing-dependency' && issue.modId) ids.add(issue.modId)
+      }
+    }
+    return [...ids]
+  }, [data])
+
   const run = async (action: () => Promise<ModListResult>, success?: string): Promise<void> => {
     setNotice('')
     try {
@@ -188,6 +222,12 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
 
   const toggle = async (mod: ModEntry): Promise<void> => {
     setPending(mod.file)
+    setSelected((current) => {
+      if (!current.has(mod.file)) return current
+      const next = new Set(current)
+      next.delete(mod.file)
+      return next
+    })
     try {
       await run(() => window.craft.modToggle(folder, versionId, mod.file, !mod.enabled))
     } finally {
@@ -196,14 +236,57 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
   }
 
   const confirmDelete = async (): Promise<void> => {
-    const mod = deleting
-    if (!mod) return
-    setDeleting(null)
-    await run(() => window.craft.modRemove(folder, versionId, mod.file), `${mod.name} 已移到 .trash，可恢复`)
+    const files = deleteFiles
+    if (!files || files.length === 0) return
+    setDeleteFiles(null)
+    if (files.length === 1) {
+      const mod = data?.mods.find((item) => item.file === files[0])
+      await run(() => window.craft.modRemove(folder, versionId, files[0]!), `${mod?.name ?? files[0]} 已移到 .trash，可恢复`)
+      return
+    }
+    setBatchBusy(true)
+    try {
+      const result = await window.craft.modRemoveMany(folder, versionId, files)
+      setData(result.list)
+      setSelected(new Set())
+      setNotice(batchNotice('移到 .trash', result))
+    } catch (cause) {
+      setNotice(cleanError(cause))
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  const batch = async (kind: 'enable' | 'disable'): Promise<void> => {
+    const files = [...selected]
+    if (files.length === 0) return
+    setBatchBusy(true)
+    setNotice('')
+    try {
+      const result = await window.craft.modToggleMany(folder, versionId, files, kind === 'enable')
+      setData(result.list)
+      setSelected(new Set())
+      setNotice(batchNotice(kind === 'enable' ? '启用' : '停用', result))
+    } catch (cause) {
+      setNotice(cleanError(cause))
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   const restore = (id: string): void => {
     void run(() => window.craft.modRestore(folder, versionId, id), '已恢复到 mods')
+  }
+
+  const addPaths = async (paths: string[]): Promise<void> => {
+    setNotice('')
+    try {
+      const copied = await window.craft.modAddFiles(folder, versionId, paths)
+      load()
+      setNotice(copied.length > 0 ? `已添加 ${copied.length} 个文件` : '这些文件已经在 mods 里了')
+    } catch (cause) {
+      setNotice(cleanError(cause))
+    }
   }
 
   const addFiles = async (): Promise<void> => {
@@ -211,9 +294,7 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
     try {
       const paths = await window.craft.pickModFiles()
       if (paths.length === 0) return
-      const copied = await window.craft.modAddFiles(folder, versionId, paths)
-      load()
-      setNotice(copied.length > 0 ? `已添加 ${copied.length} 个文件` : '这些文件已经在 mods 里了')
+      await addPaths(paths)
     } catch (cause) {
       setNotice(cleanError(cause))
     }
@@ -247,22 +328,106 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
     }
   }
 
-  const onRowKey = (event: KeyboardEvent<HTMLDivElement>, mod: ModEntry): void => {
-    if (event.key === ' ' || event.key === 'Enter') {
-      event.preventDefault()
-      void toggle(mod)
-    }
-    if (event.key === 'Delete') {
-      event.preventDefault()
-      setDeleting(mod)
+  const installDeps = async (modIds: string[]): Promise<void> => {
+    if (modIds.length === 0) return
+    setNotice('')
+    try {
+      setTaskId(await window.craft.modInstallDeps(folder, versionId, modIds))
+    } catch (cause) {
+      setNotice(cleanError(cause))
     }
   }
 
+  const moveFocus = (file: string, delta: number): void => {
+    const index = visible.findIndex((mod) => mod.file === file)
+    const next = visible[index + delta]
+    if (!next) return
+    rowRefs.current.get(next.file)?.focus()
+  }
+
+  const toggleSelected = (file: string, value: boolean): void => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (value) next.add(file)
+      else next.delete(file)
+      return next
+    })
+  }
+
+  const onRowKey = (event: KeyboardEvent<HTMLDivElement>, mod: ModEntry): void => {
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveFocus(mod.file, 1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveFocus(mod.file, -1)
+      return
+    }
+    if (event.key === ' ') {
+      event.preventDefault()
+      void toggle(mod)
+      return
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (mod.projectId) void window.craft.openUrl(`https://modrinth.com/project/${mod.projectId}`)
+      else void onOpenFolder('mods')
+      return
+    }
+    if (event.key === 'Delete') {
+      event.preventDefault()
+      setDeleteFiles(selected.has(mod.file) && selected.size > 1 ? [...selected] : [mod.file])
+    }
+  }
+
+  const onDrop = (event: DragEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    setDragging(false)
+    const files = [...event.dataTransfer.files]
+      .filter((file) => file.name.toLowerCase().endsWith('.jar'))
+      .map((file) => window.craft.pathForFile(file))
+      .filter((path) => path.length > 0)
+    if (files.length === 0) {
+      setNotice('只支持拖入 .jar 文件')
+      return
+    }
+    void addPaths(files)
+  }
+
+  useEffect(() => {
+    const block = (event: globalThis.DragEvent): void => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    }
+    document.addEventListener('dragover', block)
+    document.addEventListener('drop', block)
+    return () => {
+      document.removeEventListener('dragover', block)
+      document.removeEventListener('drop', block)
+    }
+  }, [])
+
   const counts = data?.counts
   const trash = data?.trash ?? []
+  const deleteNames = (deleteFiles ?? []).map((file) => data?.mods.find((mod) => mod.file === file)?.name ?? file)
 
   return (
-    <>
+    <div
+      className="mod-page"
+      data-dragging={dragging ? '1' : undefined}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        setDragging(false)
+      }}
+      onDrop={onDrop}
+    >
       <PageHead
         title="Mod"
         description={
@@ -275,6 +440,11 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
             <Button size="sm" icon={<PackagePlus size={14} />} onPress={() => void addFiles()}>
               添加文件
             </Button>
+            {missingDeps.length > 0 ? (
+              <Button size="sm" icon={<Download size={14} />} isDisabled={task?.state === 'running'} onPress={() => void installDeps(missingDeps)}>
+                补全依赖（{missingDeps.length}）
+              </Button>
+            ) : null}
             <Button size="sm" icon={<RefreshCw size={14} />} isDisabled={checking || !counts?.total} onPress={() => void checkUpdates()}>
               {checking ? '正在检查…' : '检查更新'}
             </Button>
@@ -340,7 +510,7 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
             </Button>
           }
         >
-          把 .jar 拖进 mods 文件夹，或在这里添加。也可以在下载页的 Mod 页从 Modrinth 搜索安装。
+          把 .jar 拖进这个页面，或在这里添加。也可以在下载页的 Mod 页从 Modrinth 搜索安装。
         </EmptyBlock>
       ) : visible.length === 0 ? (
         <p className="page__muted">没有符合当前筛选的 Mod。</p>
@@ -351,14 +521,23 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
             return (
               <li key={`${mod.file}`}>
                 <div
+                  ref={(element) => {
+                    if (element) rowRefs.current.set(mod.file, element)
+                    else rowRefs.current.delete(mod.file)
+                  }}
                   className="mod-row"
+                  data-multi="1"
+                  data-selected={selected.has(mod.file) ? '1' : undefined}
                   data-disabled={mod.enabled ? undefined : '1'}
                   data-issues={mod.issues.length > 0 ? '1' : undefined}
                   tabIndex={0}
                   role="group"
-                  aria-label={mod.name}
+                  aria-label={`${mod.name}${mod.enabled ? '' : '，已停用'}${selected.has(mod.file) ? '，已选中' : ''}`}
                   onKeyDown={(event) => onRowKey(event, mod)}
                 >
+                  <span className="mod-row__check">
+                    <Checkbox aria-label={`选择 ${mod.name}`} isSelected={selected.has(mod.file)} onChange={(value) => toggleSelected(mod.file, value)} />
+                  </span>
                   <ModIcon mod={mod} />
                   <span className="mod-row__main">
                     <span className="mod-row__name" title={mod.name}>
@@ -386,7 +565,7 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
                       </IconButton>
                     ) : null}
                     <Switch aria-label={`启用 ${mod.name}`} isSelected={mod.enabled} isDisabled={pending === mod.file} onChange={() => void toggle(mod)} />
-                    <IconButton aria-label={`删除 ${mod.name}`} size="sm" onPress={() => setDeleting(mod)}>
+                    <IconButton aria-label={`删除 ${mod.name}`} size="sm" onPress={() => setDeleteFiles([mod.file])}>
                       <Trash2 size={15} />
                     </IconButton>
                   </span>
@@ -396,6 +575,29 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
           })}
         </ul>
       )}
+      {selected.size > 0 ? (
+        <div className="mod-batch" role="region" aria-label="批量操作">
+          <span className="mod-batch__count">已选 {selected.size} 项</span>
+          <Button size="sm" variant="ghost" isDisabled={batchBusy} onPress={() => void batch('enable')}>
+            启用
+          </Button>
+          <Button size="sm" variant="ghost" isDisabled={batchBusy} onPress={() => void batch('disable')}>
+            停用
+          </Button>
+          <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} isDisabled={batchBusy} onPress={() => setDeleteFiles([...selected])}>
+            移到 .trash
+          </Button>
+          <Button size="sm" variant="ghost" onPress={() => setSelected(new Set())}>
+            取消选择
+          </Button>
+        </div>
+      ) : null}
+      {dragging ? (
+        <div className="mod-drop" aria-hidden="true">
+          <PackagePlus size={18} />
+          松开把 jar 添加进 mods
+        </div>
+      ) : null}
       {trash.length > 0 ? (
         <SettingSection title="回收站" description="删除的 Mod 移到这里，可以恢复。">
           {trash.map((item) => (
@@ -408,15 +610,17 @@ export function ModList({ folder, versionId, loader, onOpenFolder }: Props): Rea
         </SettingSection>
       ) : null}
       <ConfirmDialog
-        open={!!deleting}
-        title="删除这个 Mod？"
-        confirmLabel="移到 .trash"
+        open={!!deleteFiles}
+        title={deleteFiles && deleteFiles.length > 1 ? `删除这 ${deleteFiles.length} 个 Mod？` : '删除这个 Mod？'}
+        confirmLabel={deleteFiles && deleteFiles.length > 1 ? `移到 .trash（${deleteFiles.length} 个）` : '移到 .trash'}
         danger
-        onCancel={() => setDeleting(null)}
+        onCancel={() => setDeleteFiles(null)}
         onConfirm={() => void confirmDelete()}
       >
-        {deleting ? `${deleting.name}（${deleting.file}）会移到 ${loader === 'vanilla' ? '版本目录' : loader} 的 .trash 文件夹，不会永久删除，可以在回收站里恢复。` : ''}
+        {deleteFiles
+          ? `${deleteNames.slice(0, 5).join('、')}${deleteNames.length > 5 ? ` 等 ${deleteNames.length} 个文件` : ''}会移到 ${loader === 'vanilla' ? '版本目录' : loader} 的 .trash 文件夹，不会永久删除，可以在回收站里恢复。`
+          : ''}
       </ConfirmDialog>
-    </>
+    </div>
   )
 }

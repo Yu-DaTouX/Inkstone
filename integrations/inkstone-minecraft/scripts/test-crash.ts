@@ -340,6 +340,43 @@ try {
     assert.equal(crashed?.diagnosis.rule?.id, 'java-version')
     assert.equal(crashed?.diagnosis.note?.includes('崩溃报告'), true)
   })
+  await test('崩溃记录上限：每版本保留最近 20 条并清理最旧的', async () => {
+    const recordsRoot = join(root, 'retention')
+    const center = new CrashCenter(recordsRoot)
+    const base = Date.now()
+    const write = (index: number, versionId = '1.21.1'): void => {
+      const id = `${base}-${index}`
+      const dir = join(recordsRoot, id)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, '诊断.json'), JSON.stringify({ id, at: base - index * 1000, folder: 'E:/game', versionId, rule: null }), 'utf8')
+      writeFileSync(join(dir, '进程输出.log'), 'x'.repeat(1024))
+    }
+    for (let index = 0; index < 25; index += 1) write(index)
+    write(99, '别的版本')
+    const removed = await center.prune()
+    assert.equal(removed.length, 5)
+    const left = readdirSync(recordsRoot)
+    assert.equal(left.length, 21)
+    assert.equal(left.includes(`${base}-24`), false)
+    assert.equal(left.includes(`${base}-20`), false)
+    assert.equal(left.includes(`${base}-19`), true)
+    assert.equal(left.includes(`${base}-99`), true)
+  })
+
+  await test('崩溃记录总量上限：超过 200MB 类上限时先删最旧的', async () => {
+    const recordsRoot = join(root, 'retention-size')
+    const center = new CrashCenter(recordsRoot, { maxTotalBytes: 5120 })
+    const base = Date.now()
+    for (let index = 0; index < 4; index += 1) {
+      const dir = join(recordsRoot, `r-${index}`)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, '诊断.json'), JSON.stringify({ id: `r-${index}`, at: base - index * 1000, folder: 'E:/game', versionId: '1.20.1' }), 'utf8')
+      writeFileSync(join(dir, '进程输出.log'), Buffer.alloc(2048))
+    }
+    const removed = await center.prune()
+    assert.deepEqual(removed.sort(), ['r-2', 'r-3'])
+    assert.deepEqual(readdirSync(recordsRoot).sort(), ['r-0', 'r-1'])
+  })
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

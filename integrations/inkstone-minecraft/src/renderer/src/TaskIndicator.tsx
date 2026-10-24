@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { Dialog, DialogTrigger } from 'react-aria-components'
 import { X } from 'lucide-react'
 import { Button } from '@yan/ui/Button'
@@ -6,18 +6,14 @@ import { IconButton } from '@yan/ui/IconButton'
 import { Popover } from '@yan/ui/Popover'
 import { MeterRing, ProgressBar } from '@yan/ui/Progress'
 import { StatusDot } from '@yan/ui/StatusDot'
-import type { TaskInfo, TaskState } from '../../shared/api.ts'
+import type { TaskInfo } from '../../shared/api.ts'
+import { TASK_STATE_LABEL, taskPercent, taskProgressLabel } from './labels.ts'
 
-const STATE_LABEL: Record<TaskState, string> = {
-  queued: '排队中',
-  running: '进行中',
-  done: '已完成',
-  failed: '失败',
-  cancelled: '已取消'
-}
+const KEEP_FINISHED = 20
 
-function percent(task: TaskInfo): number | null {
-  return task.progress && task.progress.total > 0 ? Math.min(100, (task.progress.done / task.progress.total) * 100) : null
+function clockLabel(at: number): string {
+  const date = new Date(at)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 export function useTasks(): [TaskInfo[], () => void] {
@@ -40,54 +36,75 @@ export function useTasks(): [TaskInfo[], () => void] {
 
 export function TaskIndicator(): ReactElement | null {
   const [tasks, refresh] = useTasks()
-  if (tasks.length === 0) return null
-  const running = tasks.filter((task) => task.state === 'running' || task.state === 'queued')
-  const failed = tasks.some((task) => task.state === 'failed')
-  const overall = running.length > 0 ? running.reduce((sum, task) => sum + (percent(task) ?? 0), 0) / running.length : 100
+  const running = useMemo(() => tasks.filter((task) => task.state === 'running' || task.state === 'queued'), [tasks])
+  const failed = useMemo(() => tasks.filter((task) => task.state === 'failed'), [tasks])
+  const finished = tasks.length - running.length
+  const overall = running.length > 0 ? running.reduce((sum, task) => sum + (taskPercent(task) ?? 0), 0) / running.length : 100
+  const summary =
+    running.length > 0
+      ? `${running.length} 个任务 · ${Math.round(overall)}%${failed.length > 0 ? `，${failed.length} 个失败` : ''}`
+      : failed.length > 0
+        ? `${failed.length} 个任务失败`
+        : '任务已完成'
+
+  if (tasks.length === 0) {
+    return (
+      <span className="sr-only" aria-live="polite">
+        没有进行中的任务
+      </span>
+    )
+  }
 
   return (
-    <DialogTrigger>
-      <Button variant="ghost" size="sm" className="task-indicator" aria-label={running.length > 0 ? `${running.length} 个任务进行中` : '任务'}>
-        {running.length > 0 ? <MeterRing value={overall} size={16} strokeWidth={2} aria-label="总进度" /> : <StatusDot kind={failed ? 'fail' : 'ok'} />}
-        <span>{running.length > 0 ? `${running.length} 个任务 · ${Math.round(overall)}%` : failed ? '有任务失败' : '任务已完成'}</span>
-      </Button>
-      <Popover variant="panel" placement="bottom end" className="task-popover">
-        <Dialog className="task-popover__dialog" aria-label="任务">
-          <div className="task-popover__head">
-            <span className="task-popover__title">任务</span>
-            {tasks.some((task) => task.state !== 'running' && task.state !== 'queued') ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onPress={() => void window.craft.clearFinishedTasks().then(refresh)}
-              >
-                清除已结束
-              </Button>
-            ) : null}
-          </div>
-          <ul className="task-list">
-            {[...tasks].reverse().map((task) => {
-              const value = percent(task)
-              const active = task.state === 'running' || task.state === 'queued'
-              return (
-                <li key={task.id} className="task-row" data-state={task.state}>
-                  <div className="task-row__head">
-                    <span className="task-row__title">{task.title}</span>
-                    <span className="task-row__state">{STATE_LABEL[task.state]}</span>
-                    {active ? (
-                      <IconButton aria-label={`取消 ${task.title}`} size="sm" onPress={() => void window.craft.cancelTask(task.id)}>
-                        <X size={14} />
-                      </IconButton>
-                    ) : null}
-                  </div>
-                  {active ? <ProgressBar aria-label={task.title} value={value ?? 0} isIndeterminate={value === null} tone="run" /> : null}
-                  {task.error ? <div className="task-row__error">{task.error}</div> : task.detail ? <div className="task-row__detail">{task.detail}</div> : null}
-                </li>
-              )
-            })}
-          </ul>
-        </Dialog>
-      </Popover>
-    </DialogTrigger>
+    <>
+      <DialogTrigger>
+        <Button variant="ghost" size="sm" className="task-indicator" aria-label={`任务中心：${summary}`}>
+          {running.length > 0 ? <MeterRing value={overall} size={16} strokeWidth={2} aria-label="总进度" /> : <StatusDot kind={failed.length > 0 ? 'fail' : 'ok'} />}
+          <span>{summary}</span>
+        </Button>
+        <Popover variant="panel" placement="bottom end" className="task-popover">
+          <Dialog className="task-popover__dialog" aria-label="任务">
+            <div className="task-popover__head">
+              <span className="task-popover__title">任务</span>
+              {finished > 0 ? (
+                <Button variant="ghost" size="sm" onPress={() => void window.craft.clearFinishedTasks().then(refresh)}>
+                  清除已结束
+                </Button>
+              ) : null}
+            </div>
+            <ul className="task-list">
+              {[...tasks].reverse().map((task) => {
+                const active = task.state === 'running' || task.state === 'queued'
+                const progressLabel = taskProgressLabel(task)
+                return (
+                  <li key={task.id} className="task-row" data-state={task.state}>
+                    <div className="task-row__head">
+                      <span className="task-row__title" title={task.target ?? undefined}>
+                        {task.title}
+                      </span>
+                      <span className="task-row__state">
+                        {TASK_STATE_LABEL[task.state]}
+                        {task.endedAt ? ` · ${clockLabel(task.endedAt)}` : task.startedAt ? ` · ${clockLabel(task.startedAt)}` : ''}
+                      </span>
+                      {active ? (
+                        <IconButton aria-label={`取消 ${task.title}`} size="sm" onPress={() => void window.craft.cancelTask(task.id)}>
+                          <X size={14} />
+                        </IconButton>
+                      ) : null}
+                    </div>
+                    {active ? <ProgressBar aria-label={task.title} value={taskPercent(task) ?? 0} isIndeterminate={taskPercent(task) === null} tone="run" /> : null}
+                    {task.error ? <div className="task-row__error">{task.error}</div> : progressLabel ? <div className="task-row__detail">{progressLabel}{task.detail ? ` · ${task.detail}` : ''}</div> : task.detail ? <div className="task-row__detail">{task.detail}</div> : null}
+                  </li>
+                )
+              })}
+            </ul>
+            <p className="task-popover__foot">已结束的任务最多保留 {KEEP_FINISHED} 条，可随时清除。</p>
+          </Dialog>
+        </Popover>
+      </DialogTrigger>
+      <span className="sr-only" aria-live="polite">
+        {summary}
+      </span>
+    </>
   )
 }

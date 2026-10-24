@@ -53,7 +53,7 @@ export function LaunchCard({ status, steps, effective, runningSince, onCancel, o
     <div className="launch-card" data-state={status.state} aria-busy={starting}>
       <div className="launch-card__head">
         <span className="launch-card__title">{starting ? '正在启动' : '运行中'}</span>
-        <span className="launch-card__meta">
+        <span className="launch-card__meta" aria-live="polite">
           {starting ? `${done}/${steps.length} 步` : runningSince ? `已运行 ${elapsedLabel(runningSince, now)}` : null}
         </span>
       </div>
@@ -65,7 +65,7 @@ export function LaunchCard({ status, steps, effective, runningSince, onCancel, o
         isIndeterminate={starting && current === null}
         tone="run"
       />
-      <ol className="launch-steps">
+      <ol className="launch-steps" aria-live="polite">
         {steps.map((step) => (
           <li key={step.id} className="launch-step" data-state={step.state}>
             <span className="launch-step__glyph" aria-hidden="true">

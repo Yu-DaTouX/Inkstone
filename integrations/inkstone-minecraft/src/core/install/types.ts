@@ -12,6 +12,7 @@ export interface InstallOptions {
   fetchImpl?: typeof fetch
   mirrorOrigin?: string
   stats?: SourceStats
+  installerJavaPaths?: string[]
 }
 
 export interface InstallFile {

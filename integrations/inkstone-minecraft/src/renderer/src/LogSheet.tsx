@@ -60,6 +60,10 @@ export function LogSheet({ open, logs, folder, versionId, onClose }: Props): Rea
     })
   }, [logs, level, query])
 
+  const errorCount = useMemo(() => logs.filter((line) => lineLevel(line) === 'error').length, [logs])
+  const filtered = level !== 'all' || query.trim().length > 0
+  const copyLines = filtered ? visible : logs
+
   useEffect(() => {
     if (open && follow) end.current?.scrollIntoView({ block: 'end' })
   }, [open, follow, visible.length])
@@ -92,10 +96,10 @@ export function LogSheet({ open, logs, folder, versionId, onClose }: Props): Rea
             variant="ghost"
             size="sm"
             icon={<Copy size={14} />}
-            isDisabled={visible.length === 0}
-            onPress={() => void navigator.clipboard.writeText(visible.map((line) => line.text).join('\n')).then(() => setCopied(true))}
+            isDisabled={copyLines.length === 0}
+            onPress={() => void navigator.clipboard.writeText(copyLines.map((line) => line.text).join('\n')).then(() => setCopied(true))}
           >
-            {copied ? '已复制' : '复制'}
+            {copied ? '已复制' : filtered ? `复制这 ${copyLines.length} 行` : '复制全部'}
           </Button>
         </>
       }
@@ -107,6 +111,11 @@ export function LogSheet({ open, logs, folder, versionId, onClose }: Props): Rea
           跟随
         </Switch>
       </div>
+      <p className="log-counts">
+        共 {logs.length} 行
+        {filtered ? `，显示 ${visible.length} 行` : ''}
+        {errorCount > 0 ? `，其中 ${errorCount} 行错误` : ''}
+      </p>
       <div className="log-view" role="log" tabIndex={0} aria-label="日志内容">
         {logs.length === 0 ? <div className="log-view__empty">启动游戏后，日志会出现在这里。</div> : null}
         {logs.length > 0 && visible.length === 0 ? <div className="log-view__empty">没有符合条件的行。</div> : null}

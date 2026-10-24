@@ -18,6 +18,7 @@ export interface NeoForgeInstallOptions {
   fetchImpl?: typeof fetch
   mirrorOrigin?: string
   stats?: SourceStats
+  installerJavaPaths?: string[]
 }
 
 export type { ForgeInstallResult }

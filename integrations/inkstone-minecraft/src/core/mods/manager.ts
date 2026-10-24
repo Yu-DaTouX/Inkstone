@@ -1,6 +1,7 @@
 import { copyFile, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type {
+  ModBatchResult,
   ModInstallResult,
   ModListResult,
   ModrinthProject,
@@ -14,6 +15,7 @@ import type {
 import type { TaskProgress } from '../../shared/api.ts'
 import { downloadFiles, type RemoteFile } from '../download/download.ts'
 import { analyzeMods, countIssues } from './analyze.ts'
+import { collectDependencyNeeds, installDependencyNeeds, missingDependencyIds, type DependencyInstallOutcome } from './deps.ts'
 import { ModrinthClient } from './modrinth.ts'
 import { modsDir, readModEntries, scanModFiles, type HashCache } from './scan.ts'
 import { ModStore } from './store.ts'
@@ -91,17 +93,35 @@ export class ModsManager {
   }
 
   async toggle(ctx: InstanceContext, file: string, enabled: boolean): Promise<ModListResult> {
+    await this.applyToggle(ctx, file, enabled)
+    return this.list(ctx)
+  }
+
+  private async applyToggle(ctx: InstanceContext, file: string, enabled: boolean): Promise<void> {
     const target = await this.targetPath(ctx, file)
     const info = await stat(target).catch(() => null)
     if (!info?.isFile()) throw new Error('找不到这个 Mod 文件')
     const disabled = file.toLowerCase().endsWith('.disabled')
-    if (enabled === !disabled) return this.list(ctx)
+    if (enabled === !disabled) return
     const nextName = enabled ? file.slice(0, -'.disabled'.length) : `${file}.disabled`
     const next = join(modsDir(ctx.gameDir), nextName)
     const conflict = await stat(next).catch(() => null)
     if (conflict) throw new Error(`已经有 ${nextName}，先处理重复文件`)
     await rename(target, next)
-    return this.list(ctx)
+  }
+
+  async toggleMany(ctx: InstanceContext, files: string[], enabled: boolean): Promise<ModBatchResult> {
+    const done: string[] = []
+    const failed: Array<{ file: string; reason: string }> = []
+    for (const file of files) {
+      try {
+        await this.applyToggle(ctx, file, enabled)
+        done.push(file)
+      } catch (error) {
+        failed.push({ file, reason: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    return { list: await this.list(ctx), done, failed }
   }
 
   private async targetPath(ctx: InstanceContext, file: string): Promise<string> {
@@ -110,10 +130,45 @@ export class ModsManager {
   }
 
   async remove(ctx: InstanceContext, file: string): Promise<ModListResult> {
+    await this.applyRemove(ctx, file)
+    return this.list(ctx)
+  }
+
+  private async applyRemove(ctx: InstanceContext, file: string): Promise<void> {
     const info = await stat(await this.targetPath(ctx, file)).catch(() => null)
     if (!info?.isFile()) throw new Error('找不到这个 Mod 文件')
     await moveToTrash(ctx.gameDir, ctx.versionId, file)
-    return this.list(ctx)
+  }
+
+  async removeMany(ctx: InstanceContext, files: string[]): Promise<ModBatchResult> {
+    const done: string[] = []
+    const failed: Array<{ file: string; reason: string }> = []
+    for (const file of files) {
+      try {
+        await this.applyRemove(ctx, file)
+        done.push(file)
+      } catch (error) {
+        failed.push({ file, reason: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    return { list: await this.list(ctx), done, failed }
+  }
+
+  async installDependencies(ctx: InstanceContext, modIds: string[], options: ModWorkOptions = {}): Promise<DependencyInstallOutcome> {
+    const listed = await this.list(ctx)
+    const ids = modIds.length > 0 ? modIds : missingDependencyIds(listed.mods)
+    if (ids.length === 0) return { installed: [], skipped: [], failed: [], picks: [] }
+    const needs = collectDependencyNeeds(listed.mods, ids)
+    return installDependencyNeeds(
+      needs,
+      { modsDir: modsDir(ctx.gameDir), loader: ctx.loader, minecraftVersion: ctx.minecraftVersion },
+      {
+        client: this.client,
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(this.fetchImpl ? { fetchImpl: this.fetchImpl } : {}),
+        ...(options.onProgress ? { onProgress: options.onProgress } : {})
+      }
+    )
   }
 
   async restore(ctx: InstanceContext, id: string): Promise<ModListResult> {

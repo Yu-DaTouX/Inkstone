@@ -1,6 +1,6 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { KeyboardEvent, ReactElement, ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
-import { TooltipTrigger } from 'react-aria-components'
+import { Focusable, TooltipTrigger } from 'react-aria-components'
 import { IconButton } from '@yan/ui/IconButton'
 import { Tooltip } from '@yan/ui/Tooltip'
 
@@ -27,9 +27,28 @@ interface Props<T extends string> {
 }
 
 export function SubNavLayout<T extends string>({ label, groups, active, onChange, header, onBack, backLabel, children }: Props<T>): ReactElement {
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('.subnav__item')]
+    if (items.length === 0) return
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (index + 1) % items.length
+            : index <= 0
+              ? items.length - 1
+              : index - 1
+    items[next]?.focus()
+    event.preventDefault()
+  }
+
   return (
     <div className="subnav-layout">
-      <nav className="subnav" aria-label={label}>
+      <nav className="subnav" aria-label={label} onKeyDown={onKeyDown}>
         {onBack ? (
           <div className="subnav__back">
             <IconButton aria-label={backLabel ?? '返回'} size="sm" onPress={onBack}>
@@ -45,12 +64,14 @@ export function SubNavLayout<T extends string>({ label, groups, active, onChange
             {group.label ? <div className="subnav__group-label">{group.label}</div> : null}
             {group.items.map((item) => (
               <TooltipTrigger key={item.id} delay={400}>
-                <button type="button" className="subnav__item" aria-current={item.id === active ? 'page' : undefined} onClick={() => onChange(item.id)}>
-                  <span className="subnav__icon" aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="subnav__label">{item.label}</span>
-                </button>
+                <Focusable>
+                  <button type="button" className="subnav__item" aria-label={item.label} aria-current={item.id === active ? 'page' : undefined} onClick={() => onChange(item.id)}>
+                    <span className="subnav__icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className="subnav__label">{item.label}</span>
+                  </button>
+                </Focusable>
                 <Tooltip placement="right" className="subnav__tip">
                   {item.label}
                 </Tooltip>

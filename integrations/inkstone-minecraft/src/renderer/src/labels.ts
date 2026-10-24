@@ -1,4 +1,4 @@
-import type { Account, InstanceInfo, LaunchState } from '../../shared/api.ts'
+import type { Account, InstanceInfo, LaunchState, TaskInfo, TaskProgress, TaskState } from '../../shared/api.ts'
 import type { BadgeTone } from '@yan/ui/Badge'
 import type { StatusDotKind } from '@yan/ui/StatusDot'
 
@@ -58,4 +58,37 @@ export function instanceMeta(instance: InstanceInfo): string {
 
 export function memoryLabel(mb: number): string {
   return mb >= 1024 && mb % 1024 === 0 ? `${mb / 1024} GB` : mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`
+}
+
+export const TASK_STATE_LABEL: Record<TaskState, string> = {
+  queued: '排队中',
+  running: '进行中',
+  done: '已完成',
+  failed: '失败',
+  cancelled: '已取消'
+}
+
+const TASK_UNIT_LABEL: Record<TaskProgress['unit'], string> = {
+  files: '个文件',
+  bytes: '字节',
+  steps: '步'
+}
+
+function sizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+export function taskPercent(task: TaskInfo): number | null {
+  return task.progress && task.progress.total > 0 ? Math.min(100, Math.round((task.progress.done / task.progress.total) * 100)) : null
+}
+
+export function taskProgressLabel(task: TaskInfo): string {
+  const progress = task.progress
+  if (!progress || progress.total <= 0) return task.state === 'queued' ? '等待开始' : ''
+  const percent = taskPercent(task)
+  const counts = progress.unit === 'bytes' ? `${sizeLabel(progress.done)} / ${sizeLabel(progress.total)}` : `${progress.done} / ${progress.total} ${TASK_UNIT_LABEL[progress.unit]}`
+  return percent === null ? counts : `${counts} · ${percent}%`
 }

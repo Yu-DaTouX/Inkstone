@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { totalmem } from 'node:os'
 import { join } from 'node:path'
 import type { LoaderKind } from '../../shared/api.ts'
@@ -93,11 +93,79 @@ export function summaryText(diagnosis: CrashDiagnosis, bundle: CrashBundle): str
   return maskSecrets(lines.filter((line): line is string => line !== null).join('\n'))
 }
 
+export interface CrashRetention {
+  maxPerVersion: number
+  maxTotalBytes: number
+}
+
+export const CRASH_RETENTION: CrashRetention = { maxPerVersion: 20, maxTotalBytes: 200 * 1024 * 1024 }
+
+async function directoryBytes(dir: string): Promise<number> {
+  let total = 0
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += await directoryBytes(path)
+      continue
+    }
+    const info = await stat(path).catch(() => null)
+    total += info?.size ?? 0
+  }
+  return total
+}
+
 export class CrashCenter {
   private readonly root: string
+  private readonly retention: CrashRetention
 
-  constructor(root: string) {
+  constructor(root: string, retention: Partial<CrashRetention> = {}) {
     this.root = root
+    this.retention = { ...CRASH_RETENTION, ...retention }
+  }
+
+  async prune(): Promise<string[]> {
+    let entries
+    try {
+      entries = await readdir(this.root, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    const records: Array<{ name: string; at: number; key: string; bytes: number }> = []
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const dir = join(this.root, entry.name)
+      const diagnosis = await this.readDiagnosis(dir)
+      if (!diagnosis) continue
+      records.push({ name: entry.name, at: diagnosis.at, key: `${diagnosis.folder.toLowerCase()}|${diagnosis.versionId}`, bytes: await directoryBytes(dir) })
+    }
+    records.sort((a, b) => b.at - a.at)
+    const groups = new Map<string, typeof records>()
+    for (const record of records) {
+      const list = groups.get(record.key) ?? []
+      list.push(record)
+      groups.set(record.key, list)
+    }
+    const keep = new Set<string>()
+    for (const list of groups.values()) for (const record of list.slice(0, this.retention.maxPerVersion)) keep.add(record.name)
+    let total = 0
+    for (const record of records) {
+      if (!keep.has(record.name)) continue
+      total += record.bytes
+      if (total > this.retention.maxTotalBytes) keep.delete(record.name)
+    }
+    const removed: string[] = []
+    for (const record of records) {
+      if (keep.has(record.name)) continue
+      await rm(join(this.root, record.name), { recursive: true, force: true })
+      removed.push(record.name)
+    }
+    return removed
   }
 
   async begin(options: CrashRunOptions): Promise<CrashRunContext> {
@@ -160,6 +228,7 @@ export class CrashCenter {
     await writeFile(join(recordDir, '启动参数.txt'), bundle.launchArgs, 'utf8')
     for (const report of bundle.crashReports) await writeFile(join(recordDir, 'crash-reports', report.name), maskSecrets(report.text), 'utf8')
     for (const log of bundle.hsErr) await writeFile(join(recordDir, 'hs_err', log.name), maskSecrets(log.text), 'utf8')
+    await this.prune().catch(() => [])
     return { diagnosis, bundle }
   }
 

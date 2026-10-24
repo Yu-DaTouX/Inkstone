@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { CraftApi, LaunchStatus, LogLine, TaskInfo } from '../shared/api.ts'
 import type { CrashDiagnosis } from '../shared/crash-api.ts'
 import { CRAFT_CHANNELS } from '../shared/channels.ts'
@@ -21,6 +21,8 @@ const api: CraftApi = {
   repair: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.repair, folder, versionId),
   onInstancesChanged: (listener) => subscribe<string>(CRAFT_CHANNELS.instancesChanged, listener),
   javas: () => ipcRenderer.invoke(CRAFT_CHANNELS.javas),
+  pickJava: () => ipcRenderer.invoke(CRAFT_CHANNELS.pickJava),
+  probeDownloadSources: () => ipcRenderer.invoke(CRAFT_CHANNELS.probeDownloadSources),
   pclSnapshot: () => ipcRenderer.invoke(CRAFT_CHANNELS.pclSnapshot),
   importPcl: () => ipcRenderer.invoke(CRAFT_CHANNELS.importPcl),
   addOfflineAccount: (name) => ipcRenderer.invoke(CRAFT_CHANNELS.addOfflineAccount, name),
@@ -57,10 +59,41 @@ const api: CraftApi = {
   modUpdate: (request) => ipcRenderer.invoke(CRAFT_CHANNELS.modsUpdate, request),
   modInstall: (request) => ipcRenderer.invoke(CRAFT_CHANNELS.modsInstall, request),
   modAddFiles: (folder, versionId, paths) => ipcRenderer.invoke(CRAFT_CHANNELS.modsAddFiles, folder, versionId, paths),
+  modToggleMany: (folder, versionId, files, enabled) => ipcRenderer.invoke(CRAFT_CHANNELS.modsToggleMany, folder, versionId, files, enabled),
+  modRemoveMany: (folder, versionId, files) => ipcRenderer.invoke(CRAFT_CHANNELS.modsRemoveMany, folder, versionId, files),
+  modInstallDeps: (folder, versionId, modIds) => ipcRenderer.invoke(CRAFT_CHANNELS.modsInstallDeps, folder, versionId, modIds),
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
+  },
   pickModFiles: () => ipcRenderer.invoke(CRAFT_CHANNELS.pickModFiles),
   modSearch: (query) => ipcRenderer.invoke(CRAFT_CHANNELS.modsSearch, query),
   modVersions: (projectId, loader, minecraft) => ipcRenderer.invoke(CRAFT_CHANNELS.modsVersions, projectId, loader, minecraft),
   modProject: (projectId) => ipcRenderer.invoke(CRAFT_CHANNELS.modsProject, projectId),
+  downloadCategories: (projectType) => ipcRenderer.invoke(CRAFT_CHANNELS.downloadCategories, projectType),
+  downloadSearch: (query) => ipcRenderer.invoke(CRAFT_CHANNELS.downloadSearch, query),
+  downloadVersions: (projectId, loader, minecraft) => ipcRenderer.invoke(CRAFT_CHANNELS.downloadVersions, projectId, loader, minecraft),
+  downloadInstall: (request) => ipcRenderer.invoke(CRAFT_CHANNELS.downloadInstall, request),
+  pickModpack: () => ipcRenderer.invoke(CRAFT_CHANNELS.pickModpack),
+  inspectModpack: (path) => ipcRenderer.invoke(CRAFT_CHANNELS.inspectModpack, path),
+  importModpack: (request) => ipcRenderer.invoke(CRAFT_CHANNELS.importModpack, request),
+  renameInstance: (folder, versionId, nextId) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceRename, folder, versionId, nextId),
+  copyInstance: (folder, versionId, name) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceCopy, folder, versionId, name),
+  deleteInstance: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceDelete, folder, versionId),
+  trashedInstances: (folder) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceTrash, folder),
+  restoreInstance: (folder, trashId) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceRestore, folder, trashId),
+  versionResources: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.resourcesList, folder, versionId),
+  versionScreenshots: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.resourcesScreenshots, folder, versionId),
+  resourceToggle: (folder, versionId, file, enabled) => ipcRenderer.invoke(CRAFT_CHANNELS.resourcesToggle, folder, versionId, file, enabled),
+  resourceDelete: (folder, versionId, kind, file) => ipcRenderer.invoke(CRAFT_CHANNELS.resourcesDelete, folder, versionId, kind, file),
+  instanceIconOptions: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceIconOptions, folder, versionId),
+  setInstanceIcon: (folder, versionId, kind, ref) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceIconSet, folder, versionId, kind, ref),
+  clearInstanceIcon: (folder, versionId) => ipcRenderer.invoke(CRAFT_CHANNELS.instanceIconClear, folder, versionId),
+  pickImage: () => ipcRenderer.invoke(CRAFT_CHANNELS.pickImage),
+  crashGet: (folder, versionId, id) => ipcRenderer.invoke(CRAFT_CHANNELS.crashGet, folder, versionId, id),
   openUrl: (url) => ipcRenderer.invoke(CRAFT_CHANNELS.openUrl, url)
 }
 

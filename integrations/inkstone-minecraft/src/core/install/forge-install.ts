@@ -316,6 +316,13 @@ async function reuseJar(folder: string, baseId: string, jar: InstallFile | null)
   }
 }
 
+export async function pickInstallerJava(paths: string[], requiredMajor: number, label: string): Promise<string> {
+  const configured = paths.length > 0 ? pickJava(await detectJava(paths, false), requiredMajor, null) : undefined
+  const picked = configured ?? pickJava(await detectJava([]), requiredMajor, null)
+  if (!picked) throw new Error(`需要 Java ${requiredMajor} 来运行 ${label} 安装器，请在设置 → Java 里添加一个 Java ${requiredMajor}`)
+  return picked.path
+}
+
 async function resolveInstallerJava(request: ForgeInstallRequest, requiredMajor: number, label: string): Promise<string> {
   if (request.javaPath) {
     const resolved = await resolveJava(request.javaPath)
@@ -323,9 +330,7 @@ async function resolveInstallerJava(request: ForgeInstallRequest, requiredMajor:
     if (resolved.majorVersion < requiredMajor) throw new Error(`需要 Java ${requiredMajor} 来运行 ${label} 安装器，指定的是 Java ${resolved.majorVersion}`)
     return resolved.path
   }
-  const picked = pickJava(await detectJava(), requiredMajor, null)
-  if (!picked) throw new Error(`需要 Java ${requiredMajor} 来运行 ${label} 安装器，请在设置里添加`)
-  return picked.path
+  return pickInstallerJava(request.installerJavaPaths ?? [], requiredMajor, label)
 }
 
 async function ensureVanilla(request: ForgeInstallRequest, label: string): Promise<void> {

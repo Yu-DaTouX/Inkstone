@@ -159,6 +159,12 @@ export interface ModrinthProject {
   issuesUrl: string | null
 }
 
+export interface ModBatchResult {
+  list: ModListResult
+  done: string[]
+  failed: Array<{ file: string; reason: string }>
+}
+
 export interface ModInstallRequest {
   folder: string
   versionId: string

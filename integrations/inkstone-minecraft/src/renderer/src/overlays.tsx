@@ -28,10 +28,10 @@ export function ConfirmDialog({ open, title, children, confirmLabel, danger, bus
           <div className="ui-dialog__body">
             <div className="confirm__text">{children}</div>
             <div className="confirm__actions">
-              <Button variant="ghost" onPress={onCancel} isDisabled={busy}>
+              <Button variant="ghost" onPress={onCancel} isDisabled={busy} autoFocus={danger}>
                 取消
               </Button>
-              <Button variant={danger ? 'danger' : 'primary'} onPress={onConfirm} isDisabled={busy} autoFocus>
+              <Button variant={danger ? 'danger' : 'primary'} onPress={onConfirm} isDisabled={busy} autoFocus={!danger}>
                 {confirmLabel}
               </Button>
             </div>

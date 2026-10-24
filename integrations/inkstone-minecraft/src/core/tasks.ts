@@ -67,6 +67,12 @@ export class TaskCenter extends EventEmitter {
     this.patch(id, { state: 'cancelled', endedAt: Date.now() })
   }
 
+  detail(id: string, detail: string): void {
+    const task = this.tasks.get(id)
+    if (!task) return
+    this.put({ ...task, detail })
+  }
+
   clearFinished(): void {
     for (const task of [...this.tasks.values()]) {
       if (task.state !== 'running' && task.state !== 'queued') this.tasks.delete(task.id)

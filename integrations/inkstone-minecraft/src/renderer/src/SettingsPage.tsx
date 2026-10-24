@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { Coffee, Download, FolderOpen, FolderPlus, Gamepad2, Import, Info, Palette, Trash2, UserRound } from 'lucide-react'
+import { Coffee, Download, FolderOpen, FolderPlus, Gauge, Gamepad2, Import, Info, Palette, Plus, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { Badge } from '@yan/ui/Badge'
 import { Button } from '@yan/ui/Button'
 import { IconButton } from '@yan/ui/IconButton'
@@ -8,7 +8,7 @@ import { Select } from '@yan/ui/Select'
 import { SettingRow, SettingSection } from '@yan/ui/SettingRow'
 import { Slider } from '@yan/ui/Slider'
 import { version } from '../../../package.json'
-import type { DownloadSource, JavaEntry, LauncherSettings, ThemePreference } from '../../shared/api.ts'
+import type { DownloadProbe, DownloadSource, JavaEntry, LauncherSettings, ThemePreference } from '../../shared/api.ts'
 import { ImportPage } from './ImportPage.tsx'
 import { accountKindLabel, accountKindTone, accountStatus, memoryLabel } from './labels.ts'
 import { ConfirmDialog } from './overlays.tsx'
@@ -75,6 +75,10 @@ interface Props {
 
 export function SettingsPage({ settings, apply, section, onSection, onImported }: Props): ReactElement {
   const [javas, setJavas] = useState<JavaEntry[] | null>(null)
+  const [javaScan, setJavaScan] = useState(0)
+  const [probe, setProbe] = useState<DownloadProbe[] | null>(null)
+  const [probing, setProbing] = useState(false)
+  const [probeError, setProbeError] = useState('')
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
   const [concurrency, setConcurrency] = useState(settings.downloadConcurrency)
@@ -93,7 +97,28 @@ export function SettingsPage({ settings, apply, section, onSection, onImported }
     return () => {
       alive = false
     }
-  }, [section, settings.extraJavaPaths])
+  }, [section, settings.extraJavaPaths, javaScan])
+
+  const isCustomJava = (path: string): boolean => settings.extraJavaPaths.some((item) => item.toLowerCase() === path.toLowerCase())
+
+  const addJava = async (): Promise<void> => {
+    const path = await window.craft.pickJava()
+    if (!path || isCustomJava(path)) return
+    update({ extraJavaPaths: [...settings.extraJavaPaths, path] })
+  }
+
+  const runProbe = async (): Promise<void> => {
+    setProbing(true)
+    setProbeError('')
+    try {
+      const list = await window.craft.probeDownloadSources()
+      setProbe(list)
+    } catch (cause) {
+      setProbeError(cause instanceof Error ? cause.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(cause))
+    } finally {
+      setProbing(false)
+    }
+  }
 
   const addFolder = async (): Promise<void> => {
     const path = await window.craft.pickFolder()
@@ -212,13 +237,36 @@ export function SettingsPage({ settings, apply, section, onSection, onImported }
             </>
           ) : section === 'java' ? (
             <>
-              <PageHead title="Java" description="启动时按版本要求自动挑选；PCL 为单个版本指定的 Java 优先使用。" />
-              <SettingSection title="找到的 Java">
+              <PageHead
+                title="Java"
+                description="启动时按版本要求自动挑选；PCL 为单个版本指定的 Java 优先使用。"
+                actions={
+                  <>
+                    <Button size="sm" variant="ghost" icon={<RefreshCw size={14} />} onPress={() => setJavaScan((value) => value + 1)}>
+                      重新检测
+                    </Button>
+                    <Button size="sm" icon={<Plus size={14} />} onPress={() => void addJava()}>
+                      添加 Java
+                    </Button>
+                  </>
+                }
+              />
+              <SettingSection title={javas && javas.length > 0 ? `找到 ${javas.length} 个 Java` : '找到的 Java'}>
                 {javas === null ? <SettingRow label="正在检测…" /> : null}
-                {javas?.length === 0 ? <SettingRow label="没有找到 Java" description="安装功能完成后可以在这里一键下载。" /> : null}
+                {javas?.length === 0 ? <SettingRow label="没有找到 Java" description="点右上角「添加 Java」指定一个 java 可执行文件。" /> : null}
                 {javas?.map((java) => (
                   <SettingRow key={java.path} label={`Java ${java.majorVersion}`} description={java.path}>
+                    <Badge tone={isCustomJava(java.path) ? 'accent' : 'neutral'}>{isCustomJava(java.path) ? '已指定' : '自动检测'}</Badge>
                     <span className="page__muted">{java.version}</span>
+                    {isCustomJava(java.path) ? (
+                      <IconButton
+                        aria-label={`移除 Java ${java.majorVersion}`}
+                        size="sm"
+                        onPress={() => update({ extraJavaPaths: settings.extraJavaPaths.filter((item) => item.toLowerCase() !== java.path.toLowerCase()) })}
+                      >
+                        <Trash2 size={14} />
+                      </IconButton>
+                    ) : null}
                   </SettingRow>
                 ))}
               </SettingSection>
@@ -240,7 +288,15 @@ export function SettingsPage({ settings, apply, section, onSection, onImported }
             </>
           ) : section === 'download' ? (
             <>
-              <PageHead title="下载" description="安装游戏、加载器和资源时使用。" />
+              <PageHead
+                title="下载"
+                description="安装游戏、加载器和资源时使用。"
+                actions={
+                  <Button size="sm" icon={<Gauge size={14} />} isDisabled={probing} onPress={() => void runProbe()}>
+                    {probing ? '正在测速…' : '测速'}
+                  </Button>
+                }
+              />
               <SettingSection title="下载源">
                 <SettingRow label="下载源" description={DOWNLOAD_SOURCES.find((item) => item.id === settings.downloadSource)?.description}>
                   <Select aria-label="下载源" selectedKey={settings.downloadSource} onSelectionChange={(key) => key != null && update({ downloadSource: key as DownloadSource })}>
@@ -251,6 +307,16 @@ export function SettingsPage({ settings, apply, section, onSection, onImported }
                     ))}
                   </Select>
                 </SettingRow>
+                {probe?.map((item) => (
+                  <SettingRow
+                    key={item.source}
+                    label={item.label}
+                    description={item.error ? `测速失败：${item.error}` : item.bytes > 0 ? `读取 ${Math.round(item.bytes / 1024)} KB 的版本清单` : '没有拿到数据'}
+                  >
+                    <Badge tone={item.error ? 'fail' : item.source === 'bmclapi' ? 'accent' : 'neutral'}>{item.error ? '不可用' : `${item.ms} 毫秒`}</Badge>
+                  </SettingRow>
+                ))}
+                {probeError ? <SettingRow label="测速失败" description={probeError} /> : null}
                 <SettingRow label="同时下载" description="网络不稳定时调低。" block>
                   <Slider
                     aria-label="同时下载数"

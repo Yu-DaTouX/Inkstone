@@ -1,16 +1,19 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import type { FolderTarget, InstallRequest, LauncherSettings, LaunchRequest, LaunchStatus, LogLine, TaskInfo } from '../shared/api.ts'
+import type { DownloadProbe, FolderTarget, InstallRequest, LauncherSettings, LaunchRequest, LaunchStatus, LogLine, TaskInfo } from '../shared/api.ts'
 import type { CrashActionRequest, CrashDiagnosis } from '../shared/crash-api.ts'
 import type { PreflightRequest } from '../shared/launch-api.ts'
+import type { ResourceKind } from '../shared/version-api.ts'
 
 const FOLDER_TARGETS: readonly FolderTarget[] = ['version', 'game', 'mods', 'saves', 'resourcepacks', 'shaderpacks', 'screenshots', 'logs', 'crash-reports']
 import { CRAFT_CHANNELS } from '../shared/channels.ts'
+import { MANIFEST_URL, MIRROR_ORIGIN, USER_AGENT } from '../core/download/sources.ts'
 import { CraftService } from '../core/service.ts'
 import { DevService } from '../core/dev/service.ts'
 import { DEV_CHANNELS, type CreateFabricProjectRequest, type CompanionOwner, type DevLaunchOptions, type FabricVersionSet, type MappingFlavor } from '../shared/dev-api.ts'
 import type { InstanceOverride, ModrinthSearchQuery, ModUpdateInfo } from '../shared/mods-api.ts'
+import type { ContentSearchQuery } from '../shared/download-api.ts'
 
 const service = new CraftService({
   pclLauncherDirs: (process.env.INKSTONE_MC_PCL_DIRS ?? '').split(';').filter(Boolean)
@@ -25,6 +28,27 @@ const dev = new DevService({
 let window: BrowserWindow | null = null
 
 const TITLE_BAR_HEIGHT = 40
+
+const PROBE_TARGETS: { source: DownloadProbe['source']; label: string; url: string }[] = [
+  { source: 'bmclapi', label: 'BMCLAPI', url: `${MIRROR_ORIGIN}/mc/game/version_manifest_v2.json` },
+  { source: 'official', label: '官方', url: MANIFEST_URL }
+]
+
+async function probeDownloadSources(): Promise<DownloadProbe[]> {
+  return Promise.all(
+    PROBE_TARGETS.map(async (target) => {
+      const startedAt = Date.now()
+      try {
+        const response = await fetch(target.url, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': USER_AGENT } })
+        if (!response.ok) return { source: target.source, label: target.label, ms: null, bytes: 0, error: `HTTP ${response.status}` }
+        const bytes = (await response.arrayBuffer()).byteLength
+        return { source: target.source, label: target.label, ms: Date.now() - startedAt, bytes, error: null }
+      } catch (error) {
+        return { source: target.source, label: target.label, ms: null, bytes: 0, error: error instanceof Error ? error.message : String(error) }
+      }
+    })
+  )
+}
 
 function titleBarColors(): { color: string; symbolColor: string; height: number } {
   const dark = nativeTheme.shouldUseDarkColors
@@ -83,6 +107,16 @@ function registerIpc(): void {
   ipcMain.handle(CRAFT_CHANNELS.repair, (_event, folder: unknown, versionId: unknown) => service.repair(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名')))
   service.on('instances-changed', (folder: string) => broadcast(CRAFT_CHANNELS.instancesChanged, folder))
   ipcMain.handle(CRAFT_CHANNELS.javas, () => service.javas())
+  ipcMain.handle(CRAFT_CHANNELS.pickJava, async () => {
+    const options = {
+      title: '选择 Java 可执行文件',
+      properties: ['openFile' as const],
+      filters: process.platform === 'win32' ? [{ name: 'Java', extensions: ['exe'] }] : undefined
+    }
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle(CRAFT_CHANNELS.probeDownloadSources, probeDownloadSources)
   ipcMain.handle(CRAFT_CHANNELS.pclSnapshot, () => service.pclSnapshot())
   ipcMain.handle(CRAFT_CHANNELS.importPcl, () => service.importPcl())
   ipcMain.handle(CRAFT_CHANNELS.addOfflineAccount, (_event, name: string) => service.addOfflineAccount(String(name ?? '')))
@@ -124,6 +158,53 @@ function registerIpc(): void {
   )
   ipcMain.handle(CRAFT_CHANNELS.crashAction, (_event, request: unknown) => service.crashAction(crashActionRequestArg(request)))
   service.on('crash', (diagnosis: CrashDiagnosis) => broadcast(CRAFT_CHANNELS.crashEvent, diagnosis))
+}
+
+function registerVersionIpc(): void {
+  ipcMain.handle(CRAFT_CHANNELS.instanceRename, (_event, folder: unknown, versionId: unknown, nextId: unknown) =>
+    service.renameInstance(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), requiredText(nextId, '新版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.instanceCopy, (_event, folder: unknown, versionId: unknown, name: unknown) =>
+    service.copyInstance(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), typeof name === 'string' && name.trim() ? name.trim() : null)
+  )
+  ipcMain.handle(CRAFT_CHANNELS.instanceDelete, (_event, folder: unknown, versionId: unknown) =>
+    service.deleteInstance(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.instanceTrash, (_event, folder: unknown) => service.trashedInstances(requiredText(folder, '游戏目录')))
+  ipcMain.handle(CRAFT_CHANNELS.instanceRestore, (_event, folder: unknown, id: unknown) =>
+    service.restoreInstance(requiredText(folder, '游戏目录'), requiredText(id, '回收站记录'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.resourcesList, (_event, folder: unknown, versionId: unknown) =>
+    service.versionResources(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.resourcesScreenshots, (_event, folder: unknown, versionId: unknown) =>
+    service.versionScreenshots(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.resourcesToggle, (_event, folder: unknown, versionId: unknown, file: unknown, enabled: unknown) =>
+    service.resourceToggle(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), requiredText(file, '文件名'), enabled === true)
+  )
+  ipcMain.handle(CRAFT_CHANNELS.resourcesDelete, (_event, folder: unknown, versionId: unknown, kind: unknown, file: unknown) => {
+    const value: ResourceKind = kind === 'shaderpacks' ? 'shaderpacks' : kind === 'saves' ? 'saves' : 'resourcepacks'
+    return service.resourceDelete(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), value, requiredText(file, '文件名'))
+  })
+  ipcMain.handle(CRAFT_CHANNELS.instanceIconOptions, (_event, folder: unknown, versionId: unknown) =>
+    service.instanceIconOptions(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.instanceIconSet, (_event, folder: unknown, versionId: unknown, kind: unknown, ref: unknown) => {
+    const value = kind === 'mod' || kind === 'save' || kind === 'server' || kind === 'file' ? kind : 'file'
+    return service.setInstanceIcon(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), value, typeof ref === 'string' && ref.trim() ? ref.trim() : null)
+  })
+  ipcMain.handle(CRAFT_CHANNELS.instanceIconClear, (_event, folder: unknown, versionId: unknown) =>
+    service.clearInstanceIcon(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.pickImage, async () => {
+    const options = { title: '选择实例图标', properties: ['openFile' as const], filters: [{ name: 'PNG 图片', extensions: ['png'] }] }
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle(CRAFT_CHANNELS.crashGet, (_event, folder: unknown, versionId: unknown, id: unknown) =>
+    service.crashGet(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), requiredText(id, '崩溃记录'))
+  )
 }
 
 function registerDevIpc(): void {
@@ -203,6 +284,15 @@ function registerModsIpc(): void {
   ipcMain.handle(CRAFT_CHANNELS.modsRemove, (_event, folder: unknown, versionId: unknown, file: unknown) =>
     service.modRemove(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), requiredText(file, '文件名'))
   )
+  ipcMain.handle(CRAFT_CHANNELS.modsToggleMany, (_event, folder: unknown, versionId: unknown, files: unknown, enabled: unknown) =>
+    service.modToggleMany(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), textList(files), enabled === true)
+  )
+  ipcMain.handle(CRAFT_CHANNELS.modsRemoveMany, (_event, folder: unknown, versionId: unknown, files: unknown) =>
+    service.modRemoveMany(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), textList(files))
+  )
+  ipcMain.handle(CRAFT_CHANNELS.modsInstallDeps, (_event, folder: unknown, versionId: unknown, modIds: unknown) =>
+    service.modInstallDeps(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), textList(modIds))
+  )
   ipcMain.handle(CRAFT_CHANNELS.modsRestore, (_event, folder: unknown, versionId: unknown, id: unknown) =>
     service.modRestore(requiredText(folder, '游戏目录'), requiredText(versionId, '版本名'), requiredText(id, '回收站记录'))
   )
@@ -261,6 +351,59 @@ function registerModsIpc(): void {
   })
 }
 
+function registerDownloadIpc(): void {
+  ipcMain.handle(CRAFT_CHANNELS.downloadCategories, (_event, projectType: unknown) => service.downloadCategories(typeof projectType === 'string' ? projectType : 'mod'))
+  ipcMain.handle(CRAFT_CHANNELS.downloadSearch, (_event, query: unknown) => {
+    const raw = recordArg(query)
+    const sort = raw.sort === 'downloads' || raw.sort === 'updated' || raw.sort === 'newest' ? raw.sort : 'relevance'
+    const projectType = raw.projectType === 'resourcepack' ? 'resourcepack' : raw.projectType === 'shader' ? 'shader' : raw.projectType === 'modpack' ? 'modpack' : 'mod'
+    return service.downloadSearch({
+      projectType,
+      query: typeof raw.query === 'string' ? raw.query : '',
+      category: typeof raw.category === 'string' && raw.category.trim() ? raw.category.trim() : null,
+      loader: typeof raw.loader === 'string' && raw.loader.trim() ? raw.loader.trim() : null,
+      minecraft: typeof raw.minecraft === 'string' && raw.minecraft.trim() ? raw.minecraft.trim() : null,
+      sort,
+      limit: Number.isFinite(Number(raw.limit)) ? Math.min(Math.max(Math.round(Number(raw.limit)), 1), 50) : 20,
+      offset: Number.isFinite(Number(raw.offset)) ? Math.max(Math.round(Number(raw.offset)), 0) : 0
+    } satisfies ContentSearchQuery)
+  })
+  ipcMain.handle(CRAFT_CHANNELS.downloadVersions, (_event, projectId: unknown, loader: unknown, minecraft: unknown) =>
+    service.downloadVersions(
+      requiredText(projectId, 'Modrinth 项目'),
+      typeof loader === 'string' && loader.trim() ? loader.trim() : null,
+      typeof minecraft === 'string' && minecraft.trim() ? minecraft.trim() : null
+    )
+  )
+  ipcMain.handle(CRAFT_CHANNELS.downloadInstall, (_event, request: unknown) => {
+    const raw = recordArg(request)
+    return service.downloadInstall({
+      folder: requiredText(raw.folder, '游戏目录'),
+      versionId: requiredText(raw.versionId, '版本名'),
+      projectType: raw.projectType === 'shader' ? 'shader' : 'resourcepack',
+      versionFileId: requiredText(raw.versionFileId, 'Modrinth 版本')
+    })
+  })
+  ipcMain.handle(CRAFT_CHANNELS.pickModpack, async () => {
+    const options = {
+      title: '选择 Modrinth 整合包',
+      properties: ['openFile' as const],
+      filters: [{ name: 'Modrinth 整合包', extensions: ['mrpack'] }]
+    }
+    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle(CRAFT_CHANNELS.inspectModpack, (_event, path: unknown) => service.inspectModpack(requiredText(path, '整合包路径')))
+  ipcMain.handle(CRAFT_CHANNELS.importModpack, (_event, request: unknown) => {
+    const raw = recordArg(request)
+    return service.importModpack({
+      folder: requiredText(raw.folder, '游戏目录'),
+      path: requiredText(raw.path, '整合包路径'),
+      ...(typeof raw.name === 'string' && raw.name.trim() ? { name: raw.name.trim() } : {})
+    })
+  })
+}
+
 function modUpdateRequestArg(value: unknown) {
   const raw = recordArg(value)
   const updates = Array.isArray(raw.updates) ? (raw.updates.filter((item) => !!item && typeof item === 'object') as ModUpdateInfo[]) : []
@@ -269,6 +412,10 @@ function modUpdateRequestArg(value: unknown) {
 
 function recordArg(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+}
+
+function textList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()) : []
 }
 
 function projectDirArg(value: unknown): string {
@@ -347,6 +494,8 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc()
     registerDevIpc()
     registerModsIpc()
+    registerDownloadIpc()
+    registerVersionIpc()
     applyTheme(await service.settings())
     window = createWindow()
     nativeTheme.on('updated', () => {

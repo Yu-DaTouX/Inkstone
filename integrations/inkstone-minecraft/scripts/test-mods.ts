@@ -4,8 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { analyzeMods, loaderMismatch } from '../src/core/mods/analyze.ts'
+import { collectDependencyNeeds, dependencyVersionLabel, installDependencyNeeds, loaderTags, missingDependencyIds, pickVersionForRange, spacedQueries } from '../src/core/mods/deps.ts'
 import { matchesVersionRange } from '../src/core/mods/mc-range.ts'
 import { ModsManager, type InstanceContext } from '../src/core/mods/manager.ts'
+import { ModrinthClient } from '../src/core/mods/modrinth.ts'
+import type { ModEntry, ModrinthVersion } from '../src/shared/mods-api.ts'
 import { readJarMod } from '../src/core/mods/metadata.ts'
 import { listTrash, moveToTrash, restoreFromTrash } from '../src/core/mods/trash.ts'
 import { scanModFiles } from '../src/core/mods/scan.ts'
@@ -47,6 +50,47 @@ function route(path: string, handler: (body: unknown) => unknown): void {
 }
 
 const requests: Routed[] = []
+
+function modEntry(overrides: Partial<ModEntry>): ModEntry {
+  return {
+    file: 'mod.jar',
+    enabled: true,
+    size: 1,
+    sha1: 'sha-mod',
+    modifiedAt: 0,
+    kind: 'fabric',
+    modId: 'mod',
+    name: 'Mod',
+    version: '1.0.0',
+    description: null,
+    icon: null,
+    remoteIconUrl: null,
+    projectId: null,
+    mcRange: null,
+    dependencies: [],
+    provides: [],
+    nestedIds: [],
+    issues: [],
+    ...overrides
+  }
+}
+
+function mver(versionNumber: string): ModrinthVersion {
+  return {
+    id: `ver-${versionNumber}`,
+    projectId: 'proj-dep',
+    projectTitle: null,
+    name: versionNumber,
+    versionNumber,
+    gameVersions: ['1.21.1'],
+    loaders: ['fabric'],
+    publishedAt: '2026-01-01T00:00:00Z',
+    downloads: 0,
+    file: { url: `https://cdn.test/${versionNumber}.jar`, fileName: `${versionNumber}.jar`, size: 1, sha1: 'sha-file' },
+    dependencies: [],
+    existsLocally: false
+  }
+}
 
 const fakeFetch: typeof fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -551,6 +595,99 @@ try {
     writeFileSync(join(dir, 'a.bin'), Buffer.alloc(100))
     writeFileSync(join(dir, 'inner', 'b.bin'), Buffer.alloc(50))
     assert.equal(await directorySize(dir), 150)
+  })
+
+  await test('依赖范围：合并声明者的范围与 modid 去重', () => {
+    const entries = [
+      modEntry({ file: 'sodium-extra.jar', name: 'Sodium Extra', dependencies: [{ modId: 'sodium-extra-api', required: true, versionRange: '>=1.0 <2.0', kind: 'depends' }] }),
+      modEntry({ file: 'other.jar', name: 'Other', dependencies: [{ modId: 'sodium-extra-api', required: true, versionRange: '>=1.5', kind: 'depends' }] }),
+      modEntry({ file: 'indium.jar', name: 'Indium', dependencies: [{ modId: 'fabric-api', required: true, versionRange: '*', kind: 'depends' }] })
+    ]
+    const needs = collectDependencyNeeds(entries, ['sodium-extra-api', 'fabric-api', 'minecraft'])
+    assert.deepEqual(needs.map((need) => need.modId).sort(), ['fabric-api', 'sodium-extra-api'])
+    const sodium = needs.find((need) => need.modId === 'sodium-extra-api')
+    assert.deepEqual(sodium?.ranges, ['>=1.0 <2.0', '>=1.5'])
+    assert.deepEqual(sodium?.requiredBy.sort(), ['Other', 'Sodium Extra'])
+    assert.deepEqual(needs.find((need) => need.modId === 'fabric-api')?.ranges, [])
+    assert.deepEqual(missingDependencyIds(entries), [])
+  })
+
+  await test('依赖范围：按范围选版本，选不到时给出原因', () => {
+    const list = [mver('0.7.0'), mver('0.9.1'), mver('0.8.2')]
+    assert.equal(pickVersionForRange(list, '>=0.8 <0.9').version?.versionNumber, '0.8.2')
+    assert.equal(pickVersionForRange(list, null).version?.versionNumber, '0.9.1')
+    assert.equal(pickVersionForRange(list, '0.7.x').version?.versionNumber, '0.7.0')
+    const miss = pickVersionForRange(list, '>=2.0')
+    assert.equal(miss.version, null)
+    assert.match(miss.reason ?? '', /需要 >=2\.0/)
+    assert.match(pickVersionForRange([], null).reason ?? '', /没有适合/)
+  })
+
+  await test('依赖范围：带 MC 前缀的版本号先剥前缀再比对', () => {
+    const prefixed = [mver('1.21.1-1.5.7.2381'), mver('1.21.1-1.5.17.2426'), mver('mc1.21.1-0.6.0-beta.4-fabric')]
+    assert.equal(dependencyVersionLabel(prefixed[0]!), '1.5.7.2381')
+    assert.equal(dependencyVersionLabel(prefixed[2]!), '0.6.0-beta.4-fabric')
+    const core = pickVersionForRange(prefixed.slice(0, 2), '[1.5.15,)')
+    assert.equal(core.version?.versionNumber, '1.21.1-1.5.17.2426')
+    const sodium = pickVersionForRange([prefixed[2]!], '>=0.6 <0.7')
+    assert.equal(sodium.version?.versionNumber, 'mc1.21.1-0.6.0-beta.4-fabric')
+    assert.equal(pickVersionForRange([prefixed[0]!], '[1.5.15,)').version, null)
+  })
+
+  await test('依赖范围：Quilt 同时查 Fabric 文件，modid 粘连时按空格重试', () => {
+    assert.deepEqual(loaderTags('quilt'), ['quilt', 'fabric'])
+    assert.deepEqual(loaderTags('forge'), ['forge'])
+    assert.deepEqual(loaderTags('neoforge'), ['neoforge'])
+    assert.equal(spacedQueries('sophisticatedcore').includes('sophisticated core'), true)
+    assert.equal(spacedQueries('fabric-api').length, 0)
+    assert.deepEqual(spacedQueries('abc'), [])
+  })
+
+  await test('依赖补全：按范围下载、已存在跳过、选不到说明原因', async () => {
+    const inRange = Buffer.from('dependency-in-range')
+    downloads.set('/dep-0.8.2.jar', inRange)
+    route('/project/dependency-mod/version', () => [
+      modrinthVersion({
+        id: 'dep-091',
+        project_id: 'proj-dependency',
+        version_number: '0.9.1',
+        files: [{ url: 'https://cdn.test/dep-0.9.1.jar', filename: 'dependency-mod-0.9.1.jar', size: 3, primary: true, hashes: { sha1: sha1(Buffer.from('out-of-range')) } }]
+      }),
+      modrinthVersion({
+        id: 'dep-082',
+        project_id: 'proj-dependency',
+        version_number: '0.8.2',
+        files: [{ url: 'https://cdn.test/dep-0.8.2.jar', filename: 'dependency-mod-0.8.2.jar', size: inRange.length, primary: true, hashes: { sha1: sha1(inRange) } }]
+      })
+    ])
+    const client = new ModrinthClient({ fetchImpl: fakeFetch, apiBase: 'http://modrinth.test/v2' })
+    const context = { modsDir, loader: 'fabric', minecraftVersion: '1.21.1' }
+    const first = await installDependencyNeeds([{ modId: 'dependency-mod', ranges: ['>=0.8 <0.9'], requiredBy: ['Sodium Extra'] }], context, { client, fetchImpl: fakeFetch })
+    assert.deepEqual(first.installed, ['dependency-mod-0.8.2.jar'])
+    assert.deepEqual(readFileSync(join(modsDir, 'dependency-mod-0.8.2.jar')), inRange)
+    const again = await installDependencyNeeds([{ modId: 'dependency-mod', ranges: ['>=0.8 <0.9'], requiredBy: ['Sodium Extra'] }], context, { client, fetchImpl: fakeFetch })
+    assert.deepEqual(again.skipped, ['dependency-mod-0.8.2.jar'])
+    assert.equal(again.installed.length, 0)
+    const miss = await installDependencyNeeds([{ modId: 'dependency-mod', ranges: ['>=2.0'], requiredBy: [] }], context, { client, fetchImpl: fakeFetch })
+    assert.equal(miss.failed.length, 1)
+    assert.match(miss.failed[0]?.reason ?? '', /需要 >=2\.0/)
+    const unknown = await installDependencyNeeds([{ modId: 'not-on-modrinth', ranges: [], requiredBy: [] }], context, { client, fetchImpl: fakeFetch })
+    assert.equal(unknown.failed.length, 1)
+  })
+
+  await test('批量：多选启停与删除，失败项带原因', async () => {
+    writeFileSync(join(modsDir, 'batch-a.jar'), Buffer.from('batch-a'))
+    writeFileSync(join(modsDir, 'batch-b.jar'), Buffer.from('batch-b'))
+    const manager = new ModsManager({ dataDir, fetchImpl: fakeFetch })
+    const disabled = await manager.toggleMany(ctx, ['batch-a.jar', 'batch-b.jar', 'batch-missing.jar'], false)
+    assert.deepEqual(disabled.done.sort(), ['batch-a.jar', 'batch-b.jar'])
+    assert.equal(disabled.failed.length, 1)
+    assert.match(disabled.failed[0]?.reason ?? '', /找不到/)
+    assert.equal(existsSync(join(modsDir, 'batch-a.jar.disabled')), true)
+    assert.equal(disabled.list.mods.filter((mod) => !mod.enabled).length >= 2, true)
+    const removed = await manager.removeMany(ctx, ['batch-a.jar.disabled', 'batch-b.jar.disabled'])
+    assert.deepEqual(removed.done.sort(), ['batch-a.jar.disabled', 'batch-b.jar.disabled'])
+    assert.equal(existsSync(join(modsDir, 'batch-a.jar.disabled')), false)
   })
 } finally {
   rmSync(root, { recursive: true, force: true })

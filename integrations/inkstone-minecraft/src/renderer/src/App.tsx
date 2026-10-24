@@ -88,7 +88,15 @@ export function App(): ReactElement {
         {!settings ? (
           <p className="shell__loading">正在读取设置…</p>
         ) : page === 'launch' && version ? (
-          <VersionPage key={`${version.folder}|${version.id}`} folder={version.folder} versionId={version.id} settings={settings} onBack={() => setVersion(null)} onOpenLogs={() => setLogOpen(true)} />
+          <VersionPage
+            key={`${version.folder}|${version.id}`}
+            folder={version.folder}
+            versionId={version.id}
+            settings={settings}
+            onBack={() => setVersion(null)}
+            onOpenLogs={() => setLogOpen(true)}
+            onRenamed={(id) => setVersion({ folder: version.folder, id })}
+          />
         ) : page === 'launch' ? (
           <LaunchPage
             settings={settings}

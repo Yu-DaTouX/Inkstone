@@ -34,6 +34,7 @@ export function LaunchPage({ settings, status, apply, onImport, onManage, onOpen
   const current = fresh ?? settings
   const folder = current.selectedFolder ?? current.folders[0]?.path ?? null
   const [instances, setInstances] = useState<InstanceInfo[] | null>(null)
+  const [instancesError, setInstancesError] = useState('')
   const [scan, setScan] = useState(0)
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
@@ -55,11 +56,16 @@ export function LaunchPage({ settings, status, apply, onImport, onManage, onOpen
 
   useEffect(() => {
     setInstances(null)
+    setInstancesError('')
     if (!folder) return
     let alive = true
     void window.craft.instances(folder).then(
       (list) => alive && setInstances(list),
-      () => alive && setInstances([])
+      (cause: unknown) => {
+        if (!alive) return
+        setInstances([])
+        setInstancesError(cleanError(cause))
+      }
     )
     return () => {
       alive = false
@@ -302,6 +308,7 @@ export function LaunchPage({ settings, status, apply, onImport, onManage, onOpen
           folders={current.folders}
           folder={folder}
           instances={folder ? instances : []}
+          error={instancesError}
           selectedId={selected?.id ?? null}
           onFolder={(path) => void apply(window.craft.updateSettings({ selectedFolder: path, selectedVersion: null }))}
           onSelect={(id) => void apply(window.craft.updateSettings({ selectedVersion: id, selectedFolder: folder }))}
@@ -315,9 +322,19 @@ export function LaunchPage({ settings, status, apply, onImport, onManage, onOpen
             })
           }
           onImport={onImport}
+          onRefresh={() => setScan((value) => value + 1)}
         />
       </section>
-      <CrashDialog diagnosis={crash} busy={crashBusy} result={crashResult} onClose={() => setCrash(null)} onAction={(action) => void runCrashAction(action)} />
+      <CrashDialog
+        diagnosis={crash}
+        busy={crashBusy}
+        result={crashResult}
+        onClose={() => {
+          setCrash(null)
+          if (status?.state === 'failed') onOpenLogs()
+        }}
+        onAction={(action) => void runCrashAction(action)}
+      />
     </div>
   )
 }

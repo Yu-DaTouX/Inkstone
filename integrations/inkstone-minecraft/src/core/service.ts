@@ -1,18 +1,22 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { rename } from 'node:fs/promises'
+import { rename, readFile } from 'node:fs/promises'
 import { homedir, totalmem } from 'node:os'
 import { join } from 'node:path'
 import type { Account, FolderTarget, InstallKind, InstallRequest, InstanceInfo, JavaEntry, LauncherSettings, LaunchRequest, LaunchStatus, LoaderVersions, LogLine, MinecraftVersionList, PclSnapshot, SkinInfo, TaskProgress } from '../shared/api.ts'
 import type { CrashActionRequest, CrashActionResult, CrashDiagnosis, CrashExportResult, CrashRecordSummary } from '../shared/crash-api.ts'
 import type { LaunchEffective, LaunchStep, LaunchStepId, PreflightReport, PreflightRequest, SettingSource } from '../shared/launch-api.ts'
 import type { LoaderKind } from '../shared/api.ts'
-import type { InstanceOverride, InstanceOverview, ModInstallRequest, ModListResult, ModrinthProject, ModrinthSearchQuery, ModrinthSearchResult, ModrinthVersion, ModUpdateCheckResult, ModUpdateRequest } from '../shared/mods-api.ts'
+import type { ContentCategory, ContentInstallRequest, ContentSearchQuery, ModpackInstallRequest, ModpackSummary } from '../shared/download-api.ts'
+import type { InstanceOverride, InstanceOverview, ModBatchResult, ModInstallRequest, ModListResult, ModrinthProject, ModrinthSearchQuery, ModrinthSearchResult, ModrinthVersion, ModUpdateCheckResult, ModUpdateRequest } from '../shared/mods-api.ts'
 import { accountFromPcl, mergeAccounts, offlineAccount, validOfflineName } from './accounts.ts'
 import { InstanceIconCache } from './instance-icons.ts'
-import { buildOverview, directorySize, InstanceSettingsStore, lastPlayedAt, resolveSettings } from './instance-settings.ts'
+import { buildOverview, directorySize, EMPTY_OVERRIDE, InstanceSettingsStore, lastPlayedAt, resolveSettings } from './instance-settings.ts'
+import { copyInstance as copyVersionDir, instanceIconOptions as readIconOptions, InstanceIconStore, listScreenshots, listTrashedInstances, normalizeServerAddress, readIconOption, renameInstance as renameVersionDir, resourceList as readResources, restoreTrashedInstance, serverArgs, toggleResourcePack, trashInstance as trashVersionDir, trashResource } from './version-ops.ts'
+import type { CopyInstanceResult, InstanceIconKind, InstanceIconOption, InstanceTrashRecord, ResourceKind, ScreenshotEntry, VersionResources } from '../shared/version-api.ts'
 import { ModsManager, type InstanceContext } from './mods/manager.ts'
+import { collectDependencyNeeds } from './mods/deps.ts'
 import { installFabric, installQuilt } from './install/loaders.ts'
 import { listFabricLoaders, listMinecraftVersions, listQuiltLoaders } from './install/list.ts'
 import { installForge, listForgeLoaders } from './install/forge.ts'
@@ -33,6 +37,11 @@ import { describeLaunchCommand, initialLaunchSteps, launchOffline, updateLaunchS
 import { normalizeFolder, readPclSnapshot, readPclVersionSetup } from './pcl-import.ts'
 import { dataDir, SettingsStore } from './settings.ts'
 import { SkinCache } from './skins.ts'
+import { CommunityClient } from './download/community.ts'
+import { cleanupCancelledInstall } from './install/cleanup.ts'
+import { defaultModpackName, importModpack as importModpackFile, inspectModpack, sanitizeVersionName } from './install/mrpack.ts'
+import { installTypeOf, projectTypeOf } from './download/community.ts'
+import type { TaskHandle } from './tasks.ts'
 
 const LOG_LIMIT = 2000
 const LIST_CACHE_MS = 10 * 60 * 1000
@@ -72,7 +81,9 @@ export class CraftService extends EventEmitter {
   readonly mods: ModsManager
   readonly instanceSettings: InstanceSettingsStore
   private readonly icons = new InstanceIconCache()
+  private readonly customIcons: InstanceIconStore
   readonly tasks = new TaskCenter()
+  private readonly community = new CommunityClient()
   private javaCache: Promise<JavaEntry[]> | null = null
   private versionCache: { at: number; value: MinecraftVersionList } | null = null
   private readonly loaderCache = new Map<string, { at: number; value: LoaderVersions }>()
@@ -94,6 +105,7 @@ export class CraftService extends EventEmitter {
     this.mods = new ModsManager({ dataDir: this.dataDir })
     this.instanceSettings = new InstanceSettingsStore(join(this.dataDir, 'instances.json'))
     this.crash = new CrashCenter(join(this.dataDir, 'crash'))
+    this.customIcons = new InstanceIconStore(this.dataDir)
   }
 
   settings(): Promise<LauncherSettings> {
@@ -152,6 +164,7 @@ export class CraftService extends EventEmitter {
         isolated: true,
         source: settings.downloadSource,
         concurrency: settings.downloadConcurrency,
+        installerJavaPaths: settings.extraJavaPaths,
         signal: handle.signal,
         onProgress: handle.progress
       }
@@ -159,9 +172,9 @@ export class CraftService extends EventEmitter {
         const result = kind === 'forge' ? await installForge(options) : await installNeoForge(options)
         await this.updateSettings({ selectedFolder: folder, selectedVersion: result.name })
         this.emit('instances-changed', folder)
-        this.note(`${result.name} 安装完成：${result.downloaded} 个文件${result.processors ? `，运行 ${result.processors} 个安装处理器` : ''}`)
-        handle.succeed(`已安装 ${result.name}`)
-      })().catch((error: unknown) => handle.fail(error))
+        this.note(`${result.name} 安装完成：${result.downloaded} 个文件${result.processors ? `，运行 ${result.processors} 个安装处理器` : ''}${result.java ? `，安装器用 ${result.java}` : ''}`)
+        handle.succeed(`已安装 ${result.name}${result.java ? `，安装器用 ${result.java}` : ''}`)
+      })().catch((error: unknown) => this.failInstall(handle, error, folder, name))
       return handle.id
     }
     if (kind !== 'vanilla' && kind !== 'fabric' && kind !== 'quilt') throw new Error('这个加载器还不支持安装')
@@ -188,7 +201,7 @@ export class CraftService extends EventEmitter {
       this.emit('instances-changed', folder)
       this.note(`${result.name} 安装完成：${result.downloaded} 个文件${result.note ? `；${result.note}` : ''}`)
       handle.succeed(`已安装 ${result.name}`)
-    })().catch((error: unknown) => handle.fail(error))
+    })().catch((error: unknown) => this.failInstall(handle, error, folder, name))
     return handle.id
   }
 
@@ -277,7 +290,8 @@ export class CraftService extends EventEmitter {
 
   async instanceIcon(folder: string, versionId: string): Promise<string | null> {
     if (!validVersionId(versionId)) return null
-    return this.icons.get(await this.knownFolder(folder), versionId)
+    const root = await this.knownFolder(folder)
+    return this.icons.get(root, versionId, await this.customIcons.customPath(root, versionId))
   }
 
   async folderPath(folder: string, versionId: string, target: FolderTarget): Promise<string> {
@@ -478,6 +492,7 @@ export class CraftService extends EventEmitter {
       )
       this.markStep('files', { state: 'done', detail: '文件完整' })
       const context = await this.crash.begin({ folder, versionId: request.versionId, loader: instance.loader, gameDir, javaPath, maxMemoryMb })
+      const autoServer = override.autoEnter === false ? null : resolveSettings(override, pcl, settings).effective.server
       const launchOptions = {
         folder,
         versionId: request.versionId,
@@ -487,7 +502,7 @@ export class CraftService extends EventEmitter {
         maxMemoryMb,
         nativeRoot: join(this.dataDir, 'natives'),
         jvmArgs: effective.jvmArgs,
-        gameArgs: effective.gameArgs,
+        gameArgs: this.gameArgsWithServer(effective.gameArgs, autoServer, instance.minecraftVersion),
         resolution: { width: effective.width ?? undefined, height: effective.height ?? undefined, fullscreen: effective.fullscreen }
       }
       const launchArgs = await describeLaunchCommand(launchOptions).catch(() => [])
@@ -675,11 +690,20 @@ export class CraftService extends EventEmitter {
       if (modIds.length === 0) return { ok: false, message: '没有找到要补全的 modid' }
       const handle = this.tasks.start('mod-install', `补全依赖（${modIds.join('、')}）`)
       try {
+        const listed = await this.mods.list(await this.instanceContext(folder, request.versionId))
+        const ranges: Record<string, string[]> = {}
+        const requiredBy: Record<string, string[]> = {}
+        for (const need of collectDependencyNeeds(listed.mods, modIds)) {
+          ranges[need.modId] = need.ranges
+          requiredBy[need.modId] = need.requiredBy
+        }
         const result = await installMissingDependencies({
           modsDir,
           minecraftVersion: instance.minecraftVersion,
           loader: instance.loader,
           modIds,
+          ranges,
+          requiredBy,
           signal: handle.signal,
           onProgress: handle.progress
         })
@@ -750,6 +774,40 @@ export class CraftService extends EventEmitter {
     const result = await this.mods.restore(ctx, String(id ?? ''))
     this.emit('instances-changed', ctx.folder)
     return result
+  }
+
+  async modToggleMany(folder: string, versionId: string, files: string[], enabled: boolean): Promise<ModBatchResult> {
+    const ctx = await this.instanceContext(folder, versionId)
+    const result = await this.mods.toggleMany(ctx, files, enabled === true)
+    this.emit('instances-changed', ctx.folder)
+    return result
+  }
+
+  async modRemoveMany(folder: string, versionId: string, files: string[]): Promise<ModBatchResult> {
+    const ctx = await this.instanceContext(folder, versionId)
+    const result = await this.mods.removeMany(ctx, files)
+    this.emit('instances-changed', ctx.folder)
+    return result
+  }
+
+  async modInstallDeps(folder: string, versionId: string, modIds: string[]): Promise<string> {
+    const ctx = await this.instanceContext(folder, versionId)
+    const handle = this.tasks.start('mod-install', `补全 ${ctx.versionId} 的依赖`, `${ctx.folder}|${ctx.versionId}`)
+    void this.mods
+      .installDependencies(ctx, modIds.filter((id) => typeof id === 'string'), { signal: handle.signal, onProgress: handle.progress })
+      .then((outcome) => {
+        this.emit('instances-changed', ctx.folder)
+        const installed = [...outcome.installed, ...outcome.skipped]
+        const failed = outcome.failed.map((item) => `${item.modId}：${item.reason}`).join('；')
+        if (installed.length === 0) {
+          handle.fail(new Error(failed || '没有下载到任何文件'))
+          return
+        }
+        this.note(`补全 ${installed.length} 个依赖文件`)
+        handle.succeed(`补全 ${installed.length} 个文件${failed ? `；没装成 ${failed}` : ''}`)
+      })
+      .catch((error: unknown) => handle.fail(error))
+    return handle.id
   }
 
   async modCheckUpdates(folder: string, versionId: string): Promise<ModUpdateCheckResult> {
@@ -838,6 +896,129 @@ export class CraftService extends EventEmitter {
     return this.instanceSettings.patch(ctx.folder, versionId, patch)
   }
 
+  private ensureInstanceIdle(versionId: string): void {
+    if ((this.current.state === 'running' || this.current.state === 'starting') && this.current.versionId === versionId) {
+      throw new Error('游戏正在运行，先停止再做这个操作')
+    }
+  }
+
+  private async moveInstanceOverride(root: string, from: string, to: string): Promise<void> {
+    const override = await this.instanceSettings.get(root, from)
+    await this.instanceSettings.patch(root, to, override)
+    await this.instanceSettings.patch(root, from, EMPTY_OVERRIDE)
+    const icon = await this.customIcons.customPath(root, from)
+    if (!icon) return
+    const png = await readFile(icon).catch(() => null)
+    if (png) await this.customIcons.set(root, to, png)
+    await this.customIcons.clear(root, from)
+  }
+
+  async renameInstance(folder: string, versionId: string, nextId: string): Promise<{ id: string; jarRenamed: boolean }> {
+    if (!validVersionId(versionId)) throw new Error('版本名不合法')
+    const root = await this.knownFolder(folder)
+    this.ensureInstanceIdle(versionId)
+    const result = await renameVersionDir(root, versionId, String(nextId ?? ''))
+    await this.moveInstanceOverride(root, versionId, result.id)
+    const settings = await this.store.load()
+    if (settings.selectedVersion === versionId) await this.updateSettings({ selectedVersion: result.id })
+    this.emit('instances-changed', root)
+    this.note(`${versionId} 改名为 ${result.id}${result.jarRenamed ? '（文件夹、json 与 jar 一起改了）' : '（文件夹与 json 一起改了）'}`)
+    return { id: result.id, jarRenamed: result.jarRenamed }
+  }
+
+  async copyInstance(folder: string, versionId: string, name: string | null): Promise<CopyInstanceResult> {
+    if (!validVersionId(versionId)) throw new Error('版本名不合法')
+    const root = await this.knownFolder(folder)
+    this.ensureInstanceIdle(versionId)
+    const result = await copyVersionDir(root, versionId, name ?? undefined)
+    await this.instanceSettings.patch(root, result.id, await this.instanceSettings.get(root, versionId))
+    this.emit('instances-changed', root)
+    this.note(`已复制 ${versionId} 为 ${result.id}`)
+    return result
+  }
+
+  async deleteInstance(folder: string, versionId: string): Promise<InstanceTrashRecord> {
+    if (!validVersionId(versionId)) throw new Error('版本名不合法')
+    const root = await this.knownFolder(folder)
+    this.ensureInstanceIdle(versionId)
+    const record = await trashVersionDir(root, versionId)
+    await this.instanceSettings.patch(root, versionId, EMPTY_OVERRIDE)
+    const settings = await this.store.load()
+    if (settings.selectedVersion === versionId) {
+      const rest = (await listInstances(root)).filter((item) => item.id !== versionId)
+      await this.updateSettings({ selectedVersion: rest[0]?.id ?? null })
+    }
+    this.emit('instances-changed', root)
+    this.note(`${versionId} 已移到 .trash/instances，可以在版本回收站里恢复`)
+    return record
+  }
+
+  async trashedInstances(folder: string): Promise<InstanceTrashRecord[]> {
+    return listTrashedInstances(await this.knownFolder(folder))
+  }
+
+  async restoreInstance(folder: string, trashId: string): Promise<string> {
+    const root = await this.knownFolder(folder)
+    const versionId = await restoreTrashedInstance(root, String(trashId ?? ''))
+    this.emit('instances-changed', root)
+    this.note(`${versionId} 已从回收站恢复`)
+    return versionId
+  }
+
+  async versionResources(folder: string, versionId: string): Promise<VersionResources> {
+    return readResources((await this.instanceContext(folder, versionId)).gameDir)
+  }
+
+  async versionScreenshots(folder: string, versionId: string): Promise<ScreenshotEntry[]> {
+    return listScreenshots((await this.instanceContext(folder, versionId)).gameDir)
+  }
+
+  async resourceToggle(folder: string, versionId: string, file: string, enabled: boolean): Promise<VersionResources> {
+    const ctx = await this.instanceContext(folder, versionId)
+    await toggleResourcePack(ctx.gameDir, String(file ?? ''), enabled === true)
+    this.note(`资源包 ${file} ${enabled ? '已启用' : '已停用'}`)
+    return readResources(ctx.gameDir)
+  }
+
+  async resourceDelete(folder: string, versionId: string, kind: ResourceKind, file: string): Promise<VersionResources> {
+    const ctx = await this.instanceContext(folder, versionId)
+    if (kind !== 'resourcepacks' && kind !== 'shaderpacks' && kind !== 'saves') throw new Error('不支持的资源类型')
+    await trashResource(ctx.gameDir, kind, String(file ?? ''))
+    this.note(`${file} 已移到 .trash/${kind}`)
+    return readResources(ctx.gameDir)
+  }
+
+  async instanceIconOptions(folder: string, versionId: string): Promise<InstanceIconOption[]> {
+    return readIconOptions((await this.instanceContext(folder, versionId)).gameDir)
+  }
+
+  async setInstanceIcon(folder: string, versionId: string, kind: string, ref: string | null): Promise<string | null> {
+    const ctx = await this.instanceContext(folder, versionId)
+    const png = kind === 'file' ? await readFile(String(ref ?? '')).catch(() => null) : await readIconOption(ctx.gameDir, kind as InstanceIconKind, String(ref ?? ''))
+    if (!png) throw new Error('这个来源里没有可用的 PNG 图标')
+    await this.customIcons.set(ctx.folder, versionId, png)
+    this.note(`已更换 ${versionId} 的图标`)
+    return this.icons.get(ctx.folder, versionId, await this.customIcons.customPath(ctx.folder, versionId))
+  }
+
+  async clearInstanceIcon(folder: string, versionId: string): Promise<void> {
+    const ctx = await this.instanceContext(folder, versionId)
+    await this.customIcons.clear(ctx.folder, versionId)
+    this.note(`已清除 ${versionId} 的自定义图标`)
+  }
+
+  crashGet(folder: string, versionId: string, id: string): Promise<CrashDiagnosis | null> {
+    return this.crash.get(normalizeFolder(folder), versionId, String(id ?? ''))
+  }
+
+  private gameArgsWithServer(base: string, server: string | null, minecraftVersion: string | null): string {
+    const extra = serverArgs(minecraftVersion, server)
+    if (extra.length === 0) return base
+    if (/--server\b|--quickPlayMultiplayer\b/.test(base)) return base
+    this.note(`启动后自动进入服务器：${normalizeServerAddress(server) ?? server}（${extra.join(' ')}）`)
+    return [base, ...extra].filter(Boolean).join(' ')
+  }
+
   async stop(): Promise<LaunchStatus> {
     if (this.launchAbort && !this.launchAbort.signal.aborted) this.launchAbort.abort()
     const child = this.child
@@ -845,6 +1026,79 @@ export class CraftService extends EventEmitter {
     this.note('正在停止游戏')
     child.kill()
     return this.status()
+  }
+
+  private async failInstall(handle: TaskHandle, error: unknown, folder: string, name: string): Promise<void> {
+    if (handle.signal.aborted) {
+      const report = await cleanupCancelledInstall({ folder, name }).catch(() => null)
+      const cleaned = report?.cleaned ?? 0
+      this.tasks.detail(handle.id, `已取消，已清理 ${cleaned} 个临时文件`)
+      this.note(`安装已取消，已清理 ${cleaned} 个临时文件`)
+    }
+    handle.fail(error)
+  }
+
+  downloadCategories(projectType: string): Promise<ContentCategory[]> {
+    return this.community.categories(projectTypeOf(projectType))
+  }
+
+  downloadSearch(query: ContentSearchQuery): Promise<ModrinthSearchResult> {
+    return this.community.search(query)
+  }
+
+  downloadVersions(projectId: string, loader: string | null, minecraft: string | null): Promise<ModrinthVersion[]> {
+    return this.community.versions(String(projectId ?? ''), { loader, minecraft })
+  }
+
+  async downloadInstall(request: ContentInstallRequest): Promise<string> {
+    const ctx = await this.instanceContext(request.folder, request.versionId)
+    const type = installTypeOf(request.projectType)
+    const dir = join(ctx.gameDir, type === 'shader' ? 'shaderpacks' : 'resourcepacks')
+    const label = type === 'shader' ? '光影' : '资源包'
+    const handle = this.tasks.start('mod-install', `安装${label}到 ${ctx.versionId}`, `${ctx.folder}|${ctx.versionId}`)
+    void this.community
+      .installTo(dir, String(request.versionFileId ?? ''), { signal: handle.signal, onProgress: handle.progress })
+      .then((result) => {
+        this.emit('instances-changed', ctx.folder)
+        this.note(`${label}${result.skipped ? '已存在' : '已安装'}：${result.file}`)
+        handle.succeed(result.skipped ? `已经有 ${result.file}` : `已安装 ${result.file}`)
+      })
+      .catch((error: unknown) => handle.fail(error))
+    return handle.id
+  }
+
+  inspectModpack(path: string): Promise<ModpackSummary> {
+    return inspectModpack(String(path ?? ''))
+  }
+
+  async importModpack(request: ModpackInstallRequest): Promise<string> {
+    const folder = await this.knownFolder(request.folder)
+    const path = String(request.path ?? '').trim()
+    if (!path) throw new Error('先选一个 .mrpack 文件')
+    const settings = await this.store.load()
+    const summary = await inspectModpack(path)
+    const name = sanitizeVersionName(request.name?.trim() || defaultModpackName(path, summary))
+    if (!validVersionId(name)) throw new Error('版本名不合法')
+    const handle = this.tasks.start('install', `导入整合包 ${name}`, `${folder}|${name}`)
+    void importModpackFile({
+      folder,
+      path,
+      name,
+      isolated: true,
+      source: settings.downloadSource,
+      concurrency: settings.downloadConcurrency,
+      installerJavaPaths: settings.extraJavaPaths,
+      signal: handle.signal,
+      onProgress: handle.progress
+    })
+      .then(async (result) => {
+        await this.updateSettings({ selectedFolder: folder, selectedVersion: result.name })
+        this.emit('instances-changed', folder)
+        this.note(`${result.name} 导入完成：MC ${result.minecraft} ${result.loader} ${result.loaderVersion ?? ''}，${result.downloaded} 个文件，${result.overrides} 个覆盖文件`)
+        handle.succeed(`已导入 ${result.name}`)
+      })
+      .catch((error: unknown) => this.failInstall(handle, error, folder, name))
+    return handle.id
   }
 
   dispose(): void {
