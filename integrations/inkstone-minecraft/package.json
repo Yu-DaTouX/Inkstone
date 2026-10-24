@@ -8,8 +8,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p mcp/tsconfig.json",
-    "test": "npm run -s test:dev && npm run -s test:worlds && npm run -s test:interact && npm run -s test:tick && npm run -s test:gametest",
+    "test": "npm run -s test:dev && npm run -s test:jbr && npm run -s test:worlds && npm run -s test:interact && npm run -s test:tick && npm run -s test:gametest",
     "test:dev": "node --no-warnings scripts/test-dev.ts",
+    "test:jbr": "node --no-warnings scripts/test-jbr.ts",
     "test:worlds": "node --no-warnings scripts/test-worlds.ts",
     "test:interact": "node --experimental-strip-types --no-warnings scripts/test-interact.ts",
     "test:tick": "node --experimental-strip-types --no-warnings scripts/test-tick.ts",

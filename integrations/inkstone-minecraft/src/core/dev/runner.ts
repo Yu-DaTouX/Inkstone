@@ -12,7 +12,8 @@ import { companionControl, companionImage, companionJarDirs, companionReachable,
 import { javaReleaseFor } from './fabric-meta.ts'
 import { cleanGradleOutput, parseGradleErrors, runGradle } from './gradle.ts'
 import { hotswapClasses } from './hotswap.ts'
-import { resolveJbr } from './jbr.ts'
+import { jbrDownloadHint, resolveJbr, supportsEnhancedRedefinition } from './jbr.ts'
+import { downloadJbr } from './jbr-download.ts'
 import { filterLog, listCrashes, tailFile } from './logs.ts'
 import { classifyResources, diffManifest, mixinPackagesFrom, scanManifest, type FileManifest } from './manifest.ts'
 import {
@@ -284,16 +285,21 @@ export class DevProject {
 
   private async gameJava(release: number, options: DevLaunchOptions): Promise<{ path: string; jbr: boolean; enhanced: boolean; hint: string | null }> {
     if (options.javaPath) {
-      const jbrInfo = await resolveJbr(release, this.options.runtimesDir, [options.javaPath])
-      const isJbr = jbrInfo.path?.toLowerCase() === options.javaPath.toLowerCase()
-      return { path: options.javaPath, jbr: isJbr, enhanced: isJbr && jbrInfo.enhancedRedefinition, hint: null }
+      const own = await resolveJbr(release, this.options.runtimesDir, [options.javaPath])
+      if (own.path?.toLowerCase() === options.javaPath.toLowerCase() && own.enhancedRedefinition) return { path: options.javaPath, jbr: true, enhanced: true, hint: null }
     }
     const jbrInfo = await resolveJbr(release, this.options.runtimesDir, this.options.javaPaths ?? [])
-    if (jbrInfo.found && jbrInfo.path) return { path: jbrInfo.path, jbr: true, enhanced: jbrInfo.enhancedRedefinition, hint: jbrInfo.enhancedRedefinition ? null : jbrInfo.downloadHint }
-    if (options.requireJbr) throw new Error(jbrInfo.downloadHint)
-    const plain = pickJava(await this.javas(), release)
-    if (!plain) throw new Error(`没有找到 Java ${release}`)
-    return { path: plain.path, jbr: false, enhanced: false, hint: jbrInfo.downloadHint }
+    if (jbrInfo.found && jbrInfo.path && jbrInfo.enhancedRedefinition) return { path: jbrInfo.path, jbr: true, enhanced: true, hint: null }
+    const log = (line: string): void => this.log(line)
+    let downloaded: string
+    try {
+      log(`[inkstone] 本机没有可用的 JBR ${release}，开始自动下载（约 100MB，只需一次）`)
+      downloaded = await downloadJbr(release, this.options.runtimesDir, log)
+    } catch (error) {
+      throw new Error(`开发客户端必须用 JBR ${release} 启动，自动下载失败：${error instanceof Error ? error.message : String(error)}\n${jbrDownloadHint(release, this.options.runtimesDir)}`)
+    }
+    if (!(await supportsEnhancedRedefinition(downloaded))) throw new Error(`下载的 JBR（${downloaded}）不支持增强热替换\n${jbrDownloadHint(release, this.options.runtimesDir)}`)
+    return { path: downloaded, jbr: true, enhanced: true, hint: `已自动下载 JBR ${release}：${downloaded}` }
   }
 
   private async companionJar(variant: CompanionVariant): Promise<string | null> {
