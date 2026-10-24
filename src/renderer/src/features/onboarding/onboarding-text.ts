@@ -60,6 +60,13 @@ export interface OnboardingText {
   entrySettings: string
   entrySidebar: string
   entryPhone: string
+
+  artWelcome: string
+  artTheme: string
+  artSound: string
+  artAuth: string
+  artContext: string
+  artDone: string
 }
 
 const ZH: OnboardingText = {
@@ -121,7 +128,14 @@ const ZH: OnboardingText = {
   entryTerminal: '用终端直接执行命令',
   entrySettings: '设置里改模型、外观与能力',
   entrySidebar: '侧栏管理会话与项目',
-  entryPhone: '手机连接电脑查看运行'
+  entryPhone: '手机连接电脑查看运行',
+
+  artWelcome: '砚的标志：开口石框与提示符',
+  artTheme: '浅色与深色两张界面卡片',
+  artSound: '铃铛与声波',
+  artAuth: '砚通过插头连到模型服务',
+  artContext: '上下文卡片堆到上限后压缩',
+  artDone: '完成徽章'
 }
 
 const EN: OnboardingText = {
@@ -183,7 +197,14 @@ const EN: OnboardingText = {
   entryTerminal: 'Run commands in the terminal',
   entrySettings: 'Change models, appearance and capabilities in Settings',
   entrySidebar: 'Manage sessions and projects in the sidebar',
-  entryPhone: 'Connect your phone to watch runs'
+  entryPhone: 'Connect your phone to watch runs',
+
+  artWelcome: 'Inkstone mark: an open stone frame with a prompt',
+  artTheme: 'Light and dark interface cards',
+  artSound: 'A bell with sound waves',
+  artAuth: 'Inkstone plugged into a model service',
+  artContext: 'Context cards stack up to the limit, then compact',
+  artDone: 'Completion badge'
 }
 
 export function onboardingText(lang: Lang): OnboardingText {

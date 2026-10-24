@@ -1,4 +1,5 @@
 export const ONBOARDED_STORAGE_KEY = 'yan.onboarded'
+export const ONBOARDING_REVISION = 2
 
 function storage(): Storage | null {
   try {
@@ -10,7 +11,7 @@ function storage(): Storage | null {
 
 export function hasSeenOnboarding(): boolean {
   try {
-    return storage()?.getItem(ONBOARDED_STORAGE_KEY) === '1'
+    return Number(storage()?.getItem(ONBOARDED_STORAGE_KEY)) >= ONBOARDING_REVISION
   } catch {
     return false
   }
@@ -18,7 +19,7 @@ export function hasSeenOnboarding(): boolean {
 
 export function markOnboarded(): void {
   try {
-    storage()?.setItem(ONBOARDED_STORAGE_KEY, '1')
+    storage()?.setItem(ONBOARDED_STORAGE_KEY, String(ONBOARDING_REVISION))
   } catch {
   }
 }

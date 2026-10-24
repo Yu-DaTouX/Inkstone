@@ -34,6 +34,7 @@ import {
   type OnboardingStepId
 } from './onboarding-model'
 import { onboardingText, type OnboardingText } from './onboarding-text'
+import { OnboardingIllustration } from './OnboardingIllustration'
 import './onboarding.css'
 
 export type OnboardingResult = 'done' | 'skip'
@@ -145,18 +146,29 @@ export function OnboardingWizard({ onClose, initialStep, onOpenSettings }: Onboa
             </ol>
           </nav>
 
-          <div className="v3-ob-body">
-            {ONBOARDING_STEPS.map((entry, i) => (
-              <div
-                key={entry.id}
-                className="v3-ob-stage"
-                data-active={i === index ? '1' : '0'}
-                aria-hidden={i === index ? undefined : true}
-                data-testid={`v3-ob-panel-${entry.id}`}
-              >
-                {renderPanel(entry)}
-              </div>
-            ))}
+          <div className="v3-ob-main">
+            <OnboardingIllustration
+              step={step.id}
+              text={text}
+              light={settings?.theme === 'light'}
+              soundOn={settings?.sound.enabled === true}
+              volume={typeof settings?.sound.volume === 'number' ? settings.sound.volume : 0.4}
+              authed={authReady}
+              limit={settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS}
+            />
+            <div className="v3-ob-body">
+              {ONBOARDING_STEPS.map((entry, i) => (
+                <div
+                  key={entry.id}
+                  className="v3-ob-stage"
+                  data-active={i === index ? '1' : '0'}
+                  aria-hidden={i === index ? undefined : true}
+                  data-testid={`v3-ob-panel-${entry.id}`}
+                >
+                  {renderPanel(entry)}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="v3-ob-foot">
