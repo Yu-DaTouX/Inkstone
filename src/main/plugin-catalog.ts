@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { net } from 'electron'
 import { YAN_DIR } from './paths'
 import {
   BUILTIN_PLUGIN_CATALOG,
@@ -10,7 +11,7 @@ import {
 
 const CACHE_FILE = join(YAN_DIR, 'plugin-catalog.json')
 const FRESH_MS = 6 * 60 * 60_000
-const FETCH_TIMEOUT_MS = 8_000
+const FETCH_TIMEOUT_MS = 15_000
 const MAX_BYTES = 256 * 1024
 
 interface CachedCatalog {
@@ -76,7 +77,7 @@ export function newerCatalog(view: PluginCatalogView): PluginCatalogView {
   return view.updatedAt >= BUILTIN_PLUGIN_CATALOG.updatedAt ? view : BUILTIN_PLUGIN_CATALOG
 }
 
-export async function loadPluginCatalog(refresh = false, request: typeof fetch = fetch): Promise<PluginCatalogView> {
+export async function loadPluginCatalog(refresh = false, request: typeof fetch = net.fetch.bind(net) as typeof fetch): Promise<PluginCatalogView> {
   if (!refresh && memory?.fetchedAt && Date.now() - memory.fetchedAt < FRESH_MS) return memory
   if (inflight) return inflight
   inflight = (async () => {
