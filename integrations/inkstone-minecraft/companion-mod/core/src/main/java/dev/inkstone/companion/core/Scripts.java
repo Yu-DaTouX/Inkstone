@@ -9,6 +9,7 @@ import java.util.Map;
 public final class Scripts {
 	private static final int DEFAULT_TIMEOUT_TICKS = 400;
 	private static final ThreadLocal<Boolean> IN_TICK = ThreadLocal.withInitial(() -> Boolean.FALSE);
+	private static final ThreadLocal<Job> ACTIVE_STEP = new ThreadLocal<>();
 	private static Job current;
 
 	private Scripts() {
@@ -47,6 +48,22 @@ public final class Scripts {
 		return IN_TICK.get();
 	}
 
+	static boolean cancelled() {
+		Job job = ACTIVE_STEP.get();
+		return job != null && job.finished;
+	}
+
+	static void cancelForUser() {
+		Job job;
+		synchronized (Scripts.class) { job = current; }
+		if (job == null) return;
+		synchronized (job) {
+			job.denied = true;
+			finish(job, "user_control");
+			job.notifyAll();
+		}
+	}
+
 	static void tick(Router router) {
 		Job job;
 		synchronized (Scripts.class) {
@@ -57,6 +74,7 @@ public final class Scripts {
 			if (job.finished) return;
 			try {
 				IN_TICK.set(Boolean.TRUE);
+				router.requireAgent();
 				advance(job, router);
 				if (job.error == null && Companion.tickCount() - job.startedTick > job.timeoutTicks) finish(job, "script timed out after " + job.timeoutTicks + " ticks");
 			} catch (Router.Denied denied) {
@@ -80,6 +98,9 @@ public final class Scripts {
 				job.waitSpec = null;
 			} else if (outcome.done()) {
 				completeWait(job, router, outcome, job.waitSpec);
+			} else if (System.currentTimeMillis() - job.stepStartedAt >= job.waitState.timeoutMs()) {
+				record(job, false, null, "condition wait timed out: " + outcome.detail(), null);
+				job.waitSpec = null;
 			}
 			return;
 		}
@@ -96,7 +117,7 @@ public final class Scripts {
 		job.stepOp = op;
 		job.stepTick = Companion.tickCount();
 		job.index++;
-		if ("screenshot".equals(op)) {
+		if ("screenshot".equals(op) || "input".equals(op)) {
 			startScreenshot(job, router, step);
 			return;
 		}
@@ -123,7 +144,18 @@ public final class Scripts {
 			case "perf" -> result = router.call("/perf", step);
 			default -> throw new IllegalArgumentException("unknown op " + op);
 		}
-		record(job, true, result.json(), null, result.png());
+		String failure = failure(step, result.json());
+		record(job, failure == null, result.json(), failure, result.png());
+	}
+
+	private static String failure(JsonObject step, Object result) {
+		if ("any".equals(Json.string(step, "expect", "success"))) return null;
+		if (!(result instanceof Map<?, ?> payload)) return null;
+		if (!Boolean.FALSE.equals(payload.get("ok")) && !Boolean.FALSE.equals(payload.get("valid"))) return null;
+		Object detail = payload.get("error");
+		if (detail == null) detail = payload.get("reason");
+		if (detail == null) detail = payload.get("output");
+		return detail == null ? "step returned ok=false" : String.valueOf(detail);
 	}
 
 	private static void completeWait(Job job, Router router, Waits.Outcome outcome, JsonObject spec) {
@@ -159,15 +191,19 @@ public final class Scripts {
 		job.screenshotPending = true;
 		Thread worker = new Thread(() -> {
 			try {
-				Router.Result result = router.call("/screenshot", step);
+				ACTIVE_STEP.set(job);
+				Router.Result result = router.call("input".equals(Json.string(step, "op", "")) ? "/input" : "/screenshot", step);
 				synchronized (job) {
-					record(job, true, null, null, result.png());
+					String failure = failure(step, result.json());
+					record(job, failure == null, result.json(), failure, result.png());
 				}
 			} catch (Throwable error) {
 				synchronized (job) {
+					if (error instanceof Router.Denied) job.denied = true;
 					record(job, false, null, String.valueOf(error.getMessage() == null ? error : error.getMessage()), null);
 				}
 			} finally {
+				ACTIVE_STEP.remove();
 				synchronized (job) {
 					job.screenshotPending = false;
 					job.notifyAll();
@@ -205,7 +241,7 @@ public final class Scripts {
 		final int timeoutTicks;
 		final JsonArray results = new JsonArray();
 		int index;
-		boolean finished;
+		volatile boolean finished;
 		boolean denied;
 		String error;
 		JsonObject waitSpec;

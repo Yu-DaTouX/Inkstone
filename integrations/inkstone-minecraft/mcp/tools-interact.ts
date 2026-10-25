@@ -124,6 +124,8 @@ function inputRequest(args: Record<string, unknown>): InputRequest {
   const request: InputRequest = { action: action as InputRequest['action'] }
 
   if (action === 'attack' || action === 'use') {
+    const settle = num(args, 'settle_ticks')
+    if (settle !== undefined) request.settleTicks = clamp(Math.round(settle), 1, 20)
     if (block) request.target = face ? { block, face: face as BlockFace } : { block }
     if (entity) request.target = { entity }
     if (hand) request.hand = hand as InputHand
@@ -194,7 +196,9 @@ function inputConclusion(request: InputRequest): string {
 }
 
 function formatInput(request: InputRequest, reply: InputReply): string {
-  const lines = [inputConclusion(request)]
+  const lines = [reply.ok ? inputConclusion(request) : `操作未执行：${reply.reason ?? '目标校验失败'}`]
+  if (reply.distance !== undefined) lines.push(`目标距离 ${reply.distance.toFixed(2)} 格${reply.reach !== undefined ? `，可交互距离 ${reply.reach.toFixed(2)} 格` : ''}`)
+  if (reply.settledTicks !== undefined) lines.push(`朝向已同步，等待 ${reply.settledTicks} tick；返回表示客户端已提交操作，实际伤害或方块变化请查询确认`)
   if (reply.hit) lines.push(`命中：${hitText(reply.hit)}`)
   if (request.action === 'attack' || request.action === 'use') {
     if (!request.target) lines.push('目标：没指定 target，按准星当前指向执行')
@@ -427,7 +431,7 @@ function formatScript(reply: ScriptReply, saved: SavedShot[]): { body: string; f
   const lastTick = reply.results.length ? reply.results[reply.results.length - 1].tick : 0
   const head = failedSteps.length
     ? `脚本 ${total} 步中 ${failedSteps.length} 步失败：第 ${failedSteps[0].index} 步（${failedSteps[0].op}）${failedSteps[0].error ?? '未知原因'}`
-    : total
+    : reply.error ? `脚本失败：${reply.error}` : total
       ? `脚本 ${total} 步全部成功（累计 ${durationMs}ms，最后 tick=${lastTick}）`
       : '脚本没有返回任何步骤结果'
   const lines = [head]
@@ -443,14 +447,15 @@ function formatScript(reply: ScriptReply, saved: SavedShot[]): { body: string; f
     if (summary) lines.push(`  结果：${summary}`)
   }
   if (saved.length) lines.push(...saved.map((shot) => `截图 #${shot.index}（${shot.op}）：${shot.path}`))
-  return { body: lines.join('\n'), failed: failedSteps.length > 0 }
+  return { body: lines.join('\n'), failed: failedSteps.length > 0 || !!reply.error }
 }
 
 function perfLines(perf: PerfReply): string {
   const percent = perf.memory.max > 0 ? Math.round((perf.memory.used / perf.memory.max) * 100) : 0
   return [
     `FPS ${perf.fps}，MSPT ${perf.mspt.toFixed(1)}ms，TPS ${perf.tps.toFixed(1)}`,
-    `实体 ${perf.entities}，区块 ${perf.chunks}，内存 ${Math.round(perf.memory.used)}/${Math.round(perf.memory.max)} MB（${percent}%）`
+    `实体 ${perf.entities}，区块 ${perf.chunks}，内存 ${Math.round(perf.memory.used)}/${Math.round(perf.memory.max)} MB（${percent}%）`,
+    'FPS 是客户端渲染帧率，后台、小窗、失焦及 maxFps 设置可能限帧；服务器逻辑性能请看 MSPT/TPS'
   ].join('\n')
 }
 
@@ -504,7 +509,7 @@ function formatHighlight(request: HighlightRequest, reply: HighlightReply): stri
   if (request.action === 'clear') return reply.cleared === undefined ? '已清除全部高亮' : `已清除全部高亮（${reply.cleared} 个）`
   const what = request.action === 'entity' ? `实体 ${request.selector ?? request.uuid}` : `方块 ${point(request.pos)}`
   const seconds = request.seconds ?? HIGHLIGHT_SECONDS_DEFAULT
-  const lines = [`已高亮${what}（${request.color ?? '默认色'}，${seconds} 秒，截图里直接可见）`]
+  const lines = [request.action === 'entity' ? `已请求实体发光：${what}（${seconds} 秒）；使用原版 glowing 标记，自定义 renderer 可能不绘制轮廓，不能保证截图可见，color 不适用于实体` : `已高亮${what}（${request.color ?? '默认色'}，${seconds} 秒，截图里直接可见）`]
   lines.push(`id=${reply.id ?? '（未给）'}，到期 ${reply.until ? clockText(reply.until) : '（未给）'}；提前结束用 action=clear`)
   return lines.join('\n')
 }
@@ -602,6 +607,7 @@ function scriptSteps(args: Record<string, unknown>): ScriptStep[] {
     try {
       if (op.trim() === 'input') return [{ ...inputRequest(step), op: 'input' } as unknown as ScriptStep]
       if (op.trim() === 'ui') return [{ ...uiRequest(step), op: 'ui' } as unknown as ScriptStep]
+      if (op.trim() === 'wait') return [{ ...step, ...waitRequest({ ...step, until: step.until ?? 'ticks' }), op: 'wait' } as unknown as ScriptStep]
     } catch (error) {
       throw new Error(`第 ${index} 步 ${op.trim()}：${error instanceof Error ? error.message : String(error)}`)
     }
@@ -626,6 +632,7 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
           target_entity: { type: 'string', description: 'attack/use 的目标实体：选择器（@e[type=minecraft:zombie,limit=1,sort=nearest]）或 UUID，二者与 target_block 只能选一个' },
           hand: { type: 'string', enum: ['main', 'off'], description: 'attack/use 用手，默认 main' },
           hold_ticks: { type: 'number', description: 'use 持续按住的 tick 数（拉弓、进食）；key 也可用，按住时长。1 秒 = 20 tick' },
+          settle_ticks: { type: 'number', description: 'attack/use 带目标时，同步朝向后等待的客户端 tick 数，默认 1，范围 1–20；目标消失或超出距离会返回失败' },
           yaw: { type: 'number', description: 'look：水平角，0 为南，90 为西' },
           pitch: { type: 'number', description: 'look：俯仰角，-90..90，负值向上' },
           at: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: 'look：看向的世界坐标 [x,y,z]，与 yaw/pitch 二选一（按眼睛位置自动算角度）' },
@@ -651,8 +658,8 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
         }
         try {
           const reply = await sendInput(sender(project), request)
-          if ((request.action === 'use' || request.action === 'key') && !reply.screen && !request.holdTicks) reply.screen = await screenAfterInput(sender(project))
-          return text(formatInput(request, reply))
+          if (reply.ok && (request.action === 'use' || request.action === 'key') && !reply.screen && !request.holdTicks) reply.screen = await screenAfterInput(sender(project))
+          return reply.ok ? text(formatInput(request, reply)) : failure(formatInput(request, reply))
         } catch (error) {
           return companionFailure(error)
         }
@@ -731,7 +738,7 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
       name: 'mc_script',
       title: '按 tick 跑一串步骤',
       description:
-        '在客户端 tick 上按顺序执行一串步骤并一次性返回每步结果与截图，适合精确到 tick 的复现：steps 每步用 op 指定动作——command（command、check、via）、input（与 mc_input 参数相同）、ui（与 mc_ui 参数相同）、wait（ticks）、screenshot（hideHud、crop、grid）、player、chat（since、limit）、perf、tick（参数同 mc_tick，本地转成 /tick 命令步，reset 展开成 unfreeze + rate 20 两步）。截图要照坐标点界面时给 screenshot 步加 grid:true（或 grid:{step:25}）在图上叠坐标网格与刻度。返回每步的 tick、耗时、结果或错误；截图自动存到项目 .inkstone/dev/shots 并一起返回图片。任一步失败时整体算失败，第一行就是失败原因。用户接管时会被拒绝。',
+        '在客户端 tick 上按顺序执行一串步骤并一次性返回每步结果与截图，适合精确到 tick 的复现：steps 每步用 op 指定动作——command（command、check、via）、input（与 mc_input 参数相同）、ui（与 mc_ui 参数相同）、wait（ticks 或 until 条件，支持 selector、match、field、timeout_ms，与 mc_wait 相同）、screenshot（hideHud、crop、grid）、player、chat（since、limit）、perf、tick（参数同 mc_tick，本地转成 /tick 命令步，reset 展开成 unfreeze + rate 20 两步）。截图要照坐标点界面时给 screenshot 步加 grid:true（或 grid:{step:25}）在图上叠坐标网格与刻度。返回每步的 tick、耗时、结果或错误；截图自动存到项目 .inkstone/dev/shots 并一起返回图片。command 默认要求成功（ok:false 或 valid:false 立即停止）；可选清理命令可明确写 expect:"any"。条件等待超时同样失败即停，第一行给出失败原因。用户接管时会被拒绝。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -743,7 +750,18 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
               type: 'object',
               properties: {
                 op: { type: 'string', enum: ['command', 'input', 'ui', 'wait', 'screenshot', 'player', 'chat', 'perf', 'tick'], description: '步骤类型；tick 步用 mc_tick 的参数，本地展开成 /tick command 步' },
-                command: { type: 'string', description: 'op=command：命令文本' },
+                command: { type: 'string', description: 'op=command：命令文本；默认 ok=false 或解析 valid=false 立即判失败并停止后续步骤' },
+                expect: { type: 'string', enum: ['success', 'any'], description: '默认 success：失败即停；any 明确允许命令返回失败（例如可选清理操作）' },
+                until: { type: 'string', enum: ['in_world', 'screen', 'no_screen', 'chat', 'ticks', 'entity', 'player'], description: 'op=wait：与 mc_wait 相同的条件，不传则等 ticks' },
+                selector: { type: 'string', description: 'wait until=entity：选择器' },
+                match: { type: 'string', description: 'wait until=chat：文本片段' },
+                since: { type: 'number', description: 'wait until=chat：只看此序号之后的消息' },
+                field: { type: 'string', description: 'wait until=player：字段名' },
+                equals: { description: 'wait until=player：字段等于这个值' },
+                lt: { type: 'number' },
+                gt: { type: 'number' },
+                timeout_ms: { type: 'number', description: 'op=wait：条件等待超时，默认 30000' },
+                poll_ticks: { type: 'number', description: 'op=wait：检查间隔，默认 2 tick' },
                 check: { type: 'boolean', description: 'op=command：只解析不执行' },
                 via: { type: 'string', enum: ['server', 'chat'], description: 'op=command：server 走服务端命令源（默认），chat 走客户端聊天发送' },
                 action: { type: 'string', description: 'op=input/ui：动作名，与 mc_input / mc_ui 的 action 相同' },
@@ -822,7 +840,7 @@ export function createInteractTools(context: McpContext): ToolDefinition[] {
       name: 'mc_highlight',
       title: '高亮测试对象',
       description:
-        '给要测的东西加看得见的高亮，自己截图时、用户看画面时都能直接找到：action=entity 用 selector（@e[type=minecraft:zombie,limit=1,sort=nearest]）或 uuid 圈出实体轮廓；action=block 用 pos=[x,y,z] 给方块描框；action=clear 清掉全部。color 写 #rrggbb，seconds 默认 30、上限 600，到期自动消失。返回高亮 id 与到期时间。只影响渲染，不改实体与方块的存档数据。用户接管时会被拒绝。',
+        'action=entity 用 selector 或 uuid 设置客户端原版 glowing 标记；自定义 renderer 可能不绘制轮廓，无法保证可见，color 不适用于实体。action=block 用 pos=[x,y,z] 叠加方块描框，支持 color=#rrggbb；action=clear 清除全部。seconds 默认 30、上限 600，到期自动消失。返回高亮 id 与到期时间。只影响客户端，不改存档。用户接管时会被拒绝。',
       inputSchema: {
         type: 'object',
         properties: {

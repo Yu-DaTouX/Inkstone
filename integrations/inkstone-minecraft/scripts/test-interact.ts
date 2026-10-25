@@ -532,7 +532,7 @@ try {
   await test('高亮：实体、方块、颜色、时长与清除', async () => {
     const entity = await toolOf('mc_highlight').run({ action: 'entity', selector: '@e[type=minecraft:zombie,limit=1]', color: 'FFCC00', seconds: 45 })
     assert.equal(entity.isError, undefined)
-    assert.equal(firstLine(entity), '已高亮实体 @e[type=minecraft:zombie,limit=1]（#ffcc00，45 秒，截图里直接可见）')
+    assert.match(firstLine(entity), /已请求实体发光.*45 秒.*glowing.*不能保证截图可见/)
     assert.match(bodyOf(entity), /id=hl-1，到期 \d\d:\d\d:\d\d/)
     assert.deepEqual(lastBody(), { action: 'entity', selector: '@e[type=minecraft:zombie,limit=1]', color: '#ffcc00', seconds: 45 })
     assert.equal(state.requests[state.requests.length - 1].path, '/highlight')
@@ -540,7 +540,7 @@ try {
     assert.equal(firstLine(block), '已高亮方块 (1, 64, -2)（默认色，30 秒，截图里直接可见）')
     assert.deepEqual(lastBody(), { action: 'block', pos: [1, 64, -2] })
     const uuid = await toolOf('mc_highlight').run({ action: 'entity', uuid: 'u-1', seconds: 900 })
-    assert.equal(firstLine(uuid), '已高亮实体 u-1（默认色，600 秒，截图里直接可见）')
+    assert.match(firstLine(uuid), /已请求实体发光.*u-1.*600 秒.*不能保证截图可见/)
     assert.deepEqual(lastBody(), { action: 'entity', uuid: 'u-1', seconds: 600 })
     const cleared = await toolOf('mc_highlight').run({ action: 'clear' })
     assert.equal(firstLine(cleared), '已清除全部高亮（2 个）')

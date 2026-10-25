@@ -1,6 +1,6 @@
 {
   "name": "inkstone-minecraft",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Inkstone Minecraft：砚插件，让 agent 开发 Minecraft Fabric mod（MCP 工具、技能、伴随 mod 与开发核心）",
   "author": "Yu-DaTouX",
   "license": "MIT",
@@ -8,7 +8,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p mcp/tsconfig.json",
-    "test": "npm run -s test:dev && npm run -s test:jbr && npm run -s test:worlds && npm run -s test:interact && npm run -s test:tick && npm run -s test:gametest",
+    "test": "npm run -s test:dev && npm run -s test:jbr && npm run -s test:worlds && npm run -s test:interact && npm run -s test:tick && npm run -s test:gametest && npm run -s test:issues",
+    "test:issues": "node --no-warnings scripts/test-issues.ts",
     "test:dev": "node --no-warnings scripts/test-dev.ts",
     "test:jbr": "node --no-warnings scripts/test-jbr.ts",
     "test:worlds": "node --no-warnings scripts/test-worlds.ts",

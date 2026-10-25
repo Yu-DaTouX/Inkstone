@@ -81,6 +81,7 @@ export interface DevSessionInfo {
 export interface DevLaunchOptions {
   projectDir: string
   world?: string | null
+  username?: string
   javaPath?: string
   maxMemoryMb?: number
   requireJbr?: boolean

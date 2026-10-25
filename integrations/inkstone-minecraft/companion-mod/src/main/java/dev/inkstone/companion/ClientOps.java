@@ -82,6 +82,7 @@ final class ClientOps {
 		reload.get(180, TimeUnit.SECONDS);
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (System.nanoTime() < deadline && Boolean.TRUE.equals(Ops.onClient(() -> client.getOverlay() != null))) Thread.sleep(100);
+		if (Boolean.TRUE.equals(Ops.onClient(() -> client.getOverlay() != null))) throw new IllegalStateException("resource reload finished but loading overlay is still visible");
 		return Json.map("ok", true, "ms", (System.nanoTime() - started) / 1_000_000);
 	}
 

@@ -49,6 +49,12 @@ public final class Router {
 			case "/block" -> Result.ok(blockInfo(bridge.block(Json.integer(body, "x", 0), Json.integer(body, "y", 0), Json.integer(body, "z", 0), Json.string(body, "dimension", ""))));
 			case "/entities" -> Result.ok(entityList(bridge.entities(body, Math.max(1, Json.integer(body, "limit", 10)))));
 			case "/world" -> Result.ok(worldOpen(bridge.openWorld(Json.string(body, "name", DEFAULT_WORLD), Json.bool(body, "create", false))));
+			case "/snapshot-begin" -> {
+				requireAgent();
+				yield Result.ok(bridge.beginSnapshot());
+			}
+			case "/snapshot-end" -> Result.ok(SnapshotLease.finish(Json.string(body, "lease", "")));
+			case "/tick-step" -> Result.ok(tickStep(body));
 			case "/shutdown" -> Result.ok(bridge.shutdown());
 			case "/input" -> Result.ok(input(body));
 			case "/ui" -> Result.ok(ui(body));
@@ -63,7 +69,8 @@ public final class Router {
 		};
 	}
 
-	private void requireAgent() throws Denied {
+	void requireAgent() throws Denied {
+		if (Scripts.cancelled()) throw new IllegalStateException("script has already finished");
 		if (!control.agent()) throw new Denied();
 	}
 
@@ -72,6 +79,7 @@ public final class Router {
 		status.put("control", control.json());
 		status.put("env", bridge.env());
 		status.put("highlight", Highlights.count());
+		status.put("takeover", NativeTitleBar.status());
 		return status;
 	}
 
@@ -172,13 +180,48 @@ public final class Router {
 				}
 			}
 		}
+		int settledTicks = 0;
+		if (target != null) {
+			settledTicks = Math.max(1, Math.min(20, Json.integer(body, "settleTicks", 1)));
+			int start = Companion.tickCount();
+			GameBridge.PlayerLook expected = bridge.look();
+			long deadline = System.currentTimeMillis() + 5000;
+			while (Companion.tickCount() - start < settledTicks || !bridge.serverLook(expected.yaw(), expected.pitch())) {
+				requireAgent();
+				if (System.currentTimeMillis() >= deadline) return Json.map("ok", false, "reason", "朝向同步超时，未发送交互", "hit", null, "screen", bridge.screenClass());
+				Thread.sleep(10);
+			}
+		}
+		requireAgent();
+		Map<String, Object> result = bridge.act(body, entityUuid);
+		if (target != null) result.put("settledTicks", settledTicks);
+		if (Boolean.FALSE.equals(result.get("ok"))) return result;
 		int holdTicks = Json.integer(body, "holdTicks", 0);
 		if (holdTicks > 1 && "use".equals(action)) {
 			String id = bridge.hold(body);
 			Holds.start(id, holdTicks);
-			return Json.map("ok", true, "screen", bridge.screenClass(), "hold", id);
+			result.put("hold", id);
 		}
-		return bridge.act(body, entityUuid);
+		return result;
+	}
+
+	private Map<String, Object> tickStep(JsonObject body) throws Exception {
+		requireAgent();
+		int ticks = Math.max(1, Math.min(100000, Json.integer(body, "ticks", 1)));
+		GameBridge.TickProgress before = bridge.tickProgress();
+		if (!before.frozen() || before.stepping()) return Json.map("ok", false, "error", "step requires a frozen world with no pending step", "before", before.tick(), "after", before.tick());
+		GameBridge.CommandResult command = bridge.command("tick step " + ticks);
+		if (Boolean.FALSE.equals(command.success())) return commandResult(command);
+		long deadline = System.currentTimeMillis() + Math.max(1000, Math.min(600000, Json.integer(body, "timeoutMs", 120000)));
+		GameBridge.TickProgress after;
+		for (;;) {
+			requireAgent();
+			after = bridge.tickProgress();
+			if (after.tick() - before.tick() >= ticks && !after.stepping()) break;
+			if (!after.frozen() || System.currentTimeMillis() >= deadline) return Json.map("ok", false, "error", "step barrier timed out or world was unfrozen; step may still be pending", "before", before.tick(), "after", after.tick(), "output", command.output());
+			Thread.sleep(10);
+		}
+		return Json.map("ok", true, "before", before.tick(), "after", after.tick(), "stepped", after.tick() - before.tick(), "output", command.output());
 	}
 
 	private void aim(double[] target) throws Exception {
@@ -359,7 +402,7 @@ public final class Router {
 		}
 	}
 
-	public static final class Denied extends Exception {
+	public static final class Denied extends RuntimeException {
 		public Denied() {
 			super("user_control");
 		}

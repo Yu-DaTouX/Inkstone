@@ -13,8 +13,10 @@ import { readSource, searchSources, sourceRoots, type SourceScope } from '../src
 import { loadTexture, texturePathFromId, textureWriteDir } from '../src/core/dev/texture-lookup.ts'
 import { imageFromGrid, renderTextureView } from '../src/core/dev/texture.ts'
 import { gridRequest } from '../src/core/dev/interact.ts'
+import { potentialJavaPaths } from '../src/core/dev/java.ts'
 import { failure, image, text, type ToolContent, type ToolDefinition, type ToolResult } from './protocol.ts'
 import { tickResetReminder, tickStatusLine } from './tools-tick.ts'
+import { withOperations } from './operations.ts'
 
 export interface McpContextOptions {
   runtimesDir: string
@@ -23,7 +25,7 @@ export interface McpContextOptions {
   log: (line: string) => void
 }
 
-export const USER_IN_CONTROL = '用户正在操作开发客户端（按 F8 或在开发页点「交还 Agent」后再试）'
+export const USER_IN_CONTROL = '用户正在操作开发客户端（通过接管入口交还 Agent 后再试）'
 
 async function userInControl(project: DevProject): Promise<boolean> {
   try {
@@ -132,12 +134,14 @@ export interface SessionExtras {
 
 export function formatSession(session: DevSessionInfo, extras: SessionExtras = {}): string {
   const live = extras.live ?? null
+  const takeover = record(live?.takeover)
   const lines = [
     `状态：${session.state}${session.pid ? `（pid ${session.pid}）` : ''}`,
     session.minecraftVersion ? `Minecraft：${session.minecraftVersion}` : '',
     session.javaPath ? `Java：${session.javaPath}${session.enhancedRedefinition ? '（JBR，增强热替换）' : session.jbr ? '（JBR）' : '（普通 JDK，只能热替换方法体）'}${session.mixinHotswap ? '，Mixin 方法体可热替换' : ''}` : '',
     session.state === 'running' ? `伴随 mod：${session.companionReady ? '已连接' : '未连接'}${session.world ? `，世界 ${session.world}` : ''}` : '',
-    session.control ? `控制方：${session.control.owner === 'user' ? '用户（已接管，写操作会被拒绝；用户按 F8 或开发页「交还 Agent」后恢复）' : 'Agent'}` : '',
+    session.control ? `控制方：${session.control.owner === 'user' ? '用户（已接管，写操作会被拒绝；通过游戏窗口顶栏或 F8 交还 Agent 后恢复）' : 'Agent'}` : '',
+    takeover?.created === true ? `接管入口：游戏窗口原生标题栏，点击「${session.control?.owner === 'user' ? '交还 Agent' : '接管'}」切换${takeover.visible === true ? '' : `（当前未显示：${String(takeover.reason ?? '窗口未就绪')}）`}` : takeover ? `接管按钮未就绪：${String(takeover.reason ?? '本平台不支持原生标题栏按钮')}；仍可用 F8` : '',
     formatEnv(live?.env),
     extras.perf ? formatPerf(extras.perf) : '',
     extras.jbrHint ? `JBR：${extras.jbrHint}` : '',
@@ -418,6 +422,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
           project: PROJECT_PROPERTY,
           action: { type: 'string', enum: ['start', 'stop', 'restart', 'status', 'take_control'] },
           world: { type: 'string', description: '要进入的存档名，默认 inkstone-test；传空字符串则停在标题界面' },
+          username: { type: 'string', description: '固定离线玩家名，1–16 位字母数字下划线；默认把 Loom 随机 Player 名替换成 InkstoneAgent，并使用稳定离线 UUID。已有实名登录参数会保留。' },
           gamemode: { type: 'string', enum: ['survival', 'creative', 'adventure', 'spectator'], description: 'start/restart 时进世界后用 /gamemode 设置；不传则保持世界原有模式' },
           difficulty: { type: 'string', enum: ['peaceful', 'easy', 'normal', 'hard'], description: 'start/restart 时用 /difficulty 设置；和平难度不能召唤怪物' },
           lang: { type: 'string', description: '客户端语言（zh_cn、en_us 等），start/restart 启动前写进 run/options.txt；运行时改语言要用 mc_options' },
@@ -430,11 +435,11 @@ export function createTools(context: McpContext): ToolDefinition[] {
         const project = context.project(args)
         const action = str(args, 'action') ?? 'status'
         if (action === 'take_control') return text(`已收回控制权\n${formatSession(await project.setControl('agent'))}`)
-        if ((action === 'stop' || action === 'restart') && (await userInControl(project))) return failure(USER_IN_CONTROL)
+        if (['start', 'stop', 'restart'].includes(action) && (await userInControl(project))) return failure(USER_IN_CONTROL)
         if (action === 'status') return text(await statusText(project))
         const world = typeof args.world === 'string' ? (args.world.trim() ? args.world.trim() : null) : undefined
         const env = launchEnv(args)
-        const options = { projectDir: project.projectDir, world, maxMemoryMb: context.options.maxMemoryMb, ...(env ? { env } : {}) }
+        const options = { projectDir: project.projectDir, world, username: str(args, 'username'), maxMemoryMb: context.options.maxMemoryMb, ...(env ? { env } : {}) }
         const tickNote = action === 'start' ? null : await tickResetReminder(project)
         const session = action === 'start' ? await project.launch(options) : action === 'stop' ? await project.stop() : await project.restart(options)
         const live = session.companionReady ? await companionMaybe(project, '/status') : null
@@ -500,7 +505,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
         type: 'object',
         properties: {
           project: PROJECT_PROPERTY,
-          lines: { type: 'number', description: '最多返回多少行，默认 120' },
+          lines: { type: 'number', description: '先按 level/filter 筛选，再取匹配结果的末尾 N 行，默认 120；读取范围为日志末尾 512 KiB' },
           level: { type: 'string', enum: ['error', 'warn', 'all'], description: '默认 all' },
           filter: { type: 'string', description: '正则或关键字（不区分大小写）' },
           crash: { type: 'boolean' }
@@ -511,7 +516,12 @@ export function createTools(context: McpContext): ToolDefinition[] {
         const project = context.project(args)
         if (args.crash === true) {
           const crashes = await project.crashes(3)
-          if (!crashes.length) return text('没有崩溃报告')
+          if (!crashes.length) {
+            const session = await project.status()
+            if (session.state !== 'crashed' && !(session.exitCode !== null && session.exitCode !== 0)) return text('没有崩溃报告')
+            const tail = await project.logs({ lines: num(args, 'lines') ?? 120 })
+            return text(`客户端异常退出（exitCode=${session.exitCode ?? '未知'}），没有生成崩溃报告。以下为启动日志末尾：${session.logFile ?? '无日志路径'}\n${tail.join('\n') || '（没有可读日志）'}`)
+          }
           const [latest, ...older] = crashes
           return text(
             [
@@ -528,8 +538,8 @@ export function createTools(context: McpContext): ToolDefinition[] {
           )
         }
         const level = str(args, 'level')
-        const lines = await project.logs({ lines: num(args, 'lines') ?? 120, filter: str(args, 'filter'), levels: level === 'error' ? ['ERROR'] : level === 'warn' ? ['ERROR', 'WARN'] : undefined })
-        return text(lines.length ? lines.join('\n') : '日志为空或没有匹配的行')
+        const result = await project.logDetails({ lines: num(args, 'lines') ?? 120, filter: str(args, 'filter'), levels: level === 'error' ? ['ERROR'] : level === 'warn' ? ['ERROR', 'WARN'] : undefined })
+        return text(`日志末尾 512 KiB 内匹配 ${result.matchedLines} 行，返回最后 ${result.lines.length} 行\n${result.lines.join('\n') || '（没有匹配的日志）'}`)
       }
     },
     {
@@ -622,6 +632,9 @@ export function createTools(context: McpContext): ToolDefinition[] {
         const ref = str(args, 'texture')
         if (!ref) return failure('需要 texture')
         if (str(args, 'action') === 'write') {
+          const unknown = Object.keys(args).filter((key) => !['project', 'action', 'texture', 'max_size', 'palette', 'grid'].includes(key))
+          if (unknown.length) return failure(`未知参数：${unknown.join('、')}。${unknown.includes('rows') ? '像素行请使用 grid，而不是 rows。' : '可用参数：project、action、texture、max_size、palette、grid。'}`)
+          if (!Array.isArray(args.grid) || !args.grid.length || !args.grid.every((row) => typeof row === 'string')) return failure('write 需要非空的 grid 字符串数组，每行一个像素字符串（不是 rows）')
           const palette = (args.palette && typeof args.palette === 'object' ? args.palette : {}) as Record<string, string>
           const grid = Array.isArray(args.grid) ? args.grid.map(String) : []
           const resourcePath = texturePathFromId(ref)
@@ -720,7 +733,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
           if (get.length) body.get = get
           if (keys.length) body.set = set
           try {
-            const reply = await companionCall(project, '/options', body)
+            const reply = await companionCall(project, '/options', body, keys.includes('lang') ? 225_000 : undefined)
             const values = record(reply.values) ?? {}
             const applied = Array.isArray(reply.applied) ? reply.applied.map(String) : []
             const needsRestart = Array.isArray(reply.needsRestart) ? reply.needsRestart.map(String) : []
@@ -728,6 +741,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
             for (const key of keys.length ? keys : get) lines.push(`${key} = ${values[key] ?? '（未知）'}`)
             for (const key of Object.keys(values).filter((key) => !(keys.length ? keys : get).includes(key))) lines.push(`${key} = ${values[key]}`)
             if (keys.length) lines.push(applied.length ? `已当场生效：${applied.join('、')}` : '没有项能当场生效')
+            if (applied.includes('lang')) lines.push('语言资源重载已完成，加载遮罩已结束')
             if (needsRestart.length) lines.push(`需要重启才生效：${needsRestart.join('、')}`)
             return text(lines.join('\n'))
           } catch (error) {
@@ -751,7 +765,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
       name: 'mc_source',
       title: '搜索反编译源码',
       description:
-        '在反编译的 Minecraft 源码（项目当前映射：yarn 或 mojmap）、项目自己的源码、以及依赖（Fabric API 等，scope 含 deps 时）里搜索或读取。action=search 按关键字/正则搜，path_filter 限定包路径；action=read 读一个类（全名或简单类名）的指定行段；action=gen_sources 先生成 Minecraft 反编译源码（首次约 1 分钟）。',
+        '在反编译的 Minecraft 源码（项目当前映射：yarn 或 mojmap）、项目自己的源码、以及依赖（Fabric API 等，scope 含 deps 时）里搜索或读取。action=search 按关键字/正则搜，path_filter 支持包路径或完整 Java 文件路径；action=read 读一个类（全名或简单类名）的指定行段；action=gen_sources 先生成 Minecraft 反编译源码（首次约 1 分钟，客户端运行时拒绝生成，已有源码可直接读）。deps 没有源码包时按当前启动 classpath 用 JDK javap 读取公共 API 签名，结果会明确标记不是源码；每次最多检查 25 个字节码类，请用 path_filter 限定包或类。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -773,12 +787,22 @@ export function createTools(context: McpContext): ToolDefinition[] {
         const project = context.project(args)
         const action = str(args, 'action') ?? 'search'
         if (action === 'gen_sources') {
+          const session = await project.status()
+          if (['starting', 'building'].includes(session.state) || (session.pid && session.state === 'running')) return failure('开发客户端正在运行或启动/构建中，gen_sources 可能被其锁住 Minecraft jar。已有源码可直接用 search/read；确需重新生成时，请先明确授权停止客户端并调用 mc_run action=stop，再重试。')
           const result = await project.gradle(['genSources'])
           return result.ok ? text(`已生成反编译源码（${(result.durationMs / 1000).toFixed(0)}s）`) : failure(result.output.slice(-3000))
         }
         const scopes = (Array.isArray(args.scope) && args.scope.length ? args.scope : ['minecraft', 'project']) as SourceScope[]
-        const roots = await sourceRoots(project.projectDir, statePaths(project.projectDir).sources, await context.minecraft(project), await context.sourceDirs(project), scopes)
-        const missing = scopes.includes('minecraft') && !roots.some((root) => root.scope === 'minecraft') ? '\n（还没有 Minecraft 反编译源码：先调用 mc_source action=gen_sources）' : ''
+        const spec = await project.readSpec()
+        const session = await readJson<SessionFile>(statePaths(project.projectDir).session)
+        const javaPaths = [spec?.javaLauncher, session?.javaPath, ...context.options.javaPaths]
+        const hasJavap = (file: string | null | undefined): file is string => !!file && existsSync(join(dirname(file), process.platform === 'win32' ? 'javap.exe' : 'javap'))
+        if (scopes.includes('deps') && !javaPaths.some(hasJavap)) javaPaths.push(...await potentialJavaPaths())
+        const roots = await sourceRoots(project.projectDir, statePaths(project.projectDir).sources, await context.minecraft(project), await context.sourceDirs(project), scopes, { classpath: spec?.classpath ?? [], javaPath: javaPaths.find(hasJavap) ?? null })
+        const missing = [
+          scopes.includes('minecraft') && !roots.some((root) => root.scope === 'minecraft') ? '还没有当前 Minecraft 版本的反编译源码：先调用 mc_source action=gen_sources' : '',
+          scopes.includes('deps') && !roots.some((root) => root.scope === 'deps') ? '依赖没有可用的 sources.jar，不能从“扫描 0 个文件”推断依赖不存在这个类或方法；需要为当前项目的依赖版本取得源码' : ''
+        ].filter(Boolean).map((line) => `\n（${line}）`).join('')
         if (action === 'read') {
           const target = str(args, 'target') ?? str(args, 'query')
           if (!target) return failure('read 需要 target')
@@ -817,6 +841,7 @@ export function createTools(context: McpContext): ToolDefinition[] {
           if (!minecraft) throw error
         }
         if (!minecraft) return failure('无法确定 Minecraft 版本，传 minecraft 参数')
+        if (/^26\./.test(minecraft)) return text(`Minecraft ${minecraft} 不再混淆，开发源码使用官方类名，本工具不提供旧 intermediary/yarn 名到此版本的跨版本转换。请用 mc_source 搜索或读取对应的官方类名；无需为此重新构建项目。`)
         const table = await loadMappingTable(minecraft, cacheDir ?? join(context.options.runtimesDir, '..', 'mappings'))
         return text(`Minecraft ${minecraft}\n${formatMapping(lookupMapping(table, name, num(args, 'limit') ?? 20), table)}`)
       }
@@ -909,5 +934,5 @@ export async function loadExtraTools(context: McpContext, dir = dirname(fileURLT
 }
 
 export async function createToolsWithExtras(context: McpContext): Promise<ToolDefinition[]> {
-  return [...createTools(context), ...(await loadExtraTools(context))]
+  return withOperations([...createTools(context), ...(await loadExtraTools(context))], (args) => context.project(args).projectDir.toLowerCase())
 }

@@ -1,8 +1,11 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 
 export interface SourceSetSpec {
   name: string
@@ -40,6 +43,7 @@ export interface SessionFile {
   companionPort: number | null
   token: string | null
   world: string | null
+  username?: string
   logFile: string
   minecraftVersion: string | null
   owner: number
@@ -129,6 +133,23 @@ export function quoteArgFileEntry(value: string): string {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
+export async function writeLaunchArgFile(file: string, args: string[]): Promise<void> {
+  const content = argFileText(args)
+  await writeFile(file, content, 'utf8')
+  if (process.platform !== 'win32' || !/[^\x00-\x7f]/.test(content)) return
+  const script = fileURLToPath(new URL('../../../templates/java/write-argfile.ps1', import.meta.url))
+  const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  try {
+    await promisify(execFile)(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], {
+      windowsHide: true,
+      timeout: 15_000,
+      env: { ...process.env, INKSTONE_JAVA_ARGFILE: file }
+    })
+  } catch (error) {
+    throw new Error(`无法用 Windows 本地编码写入 Java 参数文件；请检查项目路径是否含系统代码页无法表示的字符：${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 export function splitLaunchArgs(jvmArgs: string[]): { fileArgs: string[]; commandArgs: string[] } {
   const ascii = (arg: string): boolean => /^[\x00-\x7f]*$/.test(arg)
   return { fileArgs: jvmArgs.filter(ascii), commandArgs: jvmArgs.filter((arg) => !ascii(arg)) }
@@ -136,6 +157,32 @@ export function splitLaunchArgs(jvmArgs: string[]): { fileArgs: string[]; comman
 
 export function argFileText(args: string[]): string {
   return args.map(quoteArgFileEntry).join('\n') + '\n'
+}
+
+export function stablePlayerArgs(args: string[], username?: string): string[] {
+  const value = (name: string) => {
+    const index = args.indexOf(name)
+    return index >= 0 ? args[index + 1] : args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1)
+  }
+  const token = value('--accessToken')
+  if (token && !/^(0|dummy|DummyAccessToken|none)$/i.test(token)) {
+    if (username) throw new Error('已有登录凭证时不能覆盖玩家身份；固定开发名仅用于离线客户端')
+    return [...args]
+  }
+  const existing = value('--username')
+  const name = username ?? (existing && !/^Player\d+$/.test(existing) ? existing : 'InkstoneAgent')
+  if (!/^[A-Za-z0-9_]{1,16}$/.test(name)) throw new Error('开发玩家名必须是 1–16 位英文字母、数字或下划线')
+  const hash = createHash('md5').update(`OfflinePlayer:${name}`, 'utf8').digest()
+  hash[6] = (hash[6] & 0x0f) | 0x30
+  hash[8] = (hash[8] & 0x3f) | 0x80
+  const hex = hash.toString('hex')
+  const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  const out: string[] = []
+  for (let index = 0; index < args.length; index++) {
+    if (args[index] === '--username' || args[index] === '--uuid') index++
+    else if (!args[index].startsWith('--username=') && !args[index].startsWith('--uuid=')) out.push(args[index])
+  }
+  return [...out, '--username', name, '--uuid', uuid]
 }
 
 export const DEV_OPTIONS: Record<string, string> = {

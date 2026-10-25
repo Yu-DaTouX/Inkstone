@@ -1,4 +1,5 @@
 import { existsSync, type Dirent } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { cp, mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { readNbt, type NbtCompound, type NbtValue } from './nbt.ts'
@@ -395,6 +396,7 @@ export interface SnapshotRequest {
   world: string
   label?: string | null
   at?: number
+  beforePublish?: () => Promise<void>
 }
 
 export async function createSnapshot(request: SnapshotRequest): Promise<SnapshotEntry> {
@@ -408,13 +410,16 @@ export async function createSnapshot(request: SnapshotRequest): Promise<Snapshot
   let id = base
   for (let index = 2; existsSync(join(root, id)); index++) id = `${base}-${index}`
   const dir = join(root, id)
+  const staging = join(root, `.pending-${id}-${randomUUID()}`)
   try {
-    await cp(source, dir, { recursive: true, force: false, errorOnExist: false, filter: withoutSessionLock })
-    const level = await readLevel(dir)
-    const sizes = await measure(dir)
+    await cp(source, staging, { recursive: true, force: false, errorOnExist: false, filter: withoutSessionLock })
+    const level = await readLevel(staging)
+    const sizes = await measure(staging)
+    await request.beforePublish?.()
+    await rename(staging, dir)
     return { id, dir, world, label: request.label?.trim() || null, at, files: sizes.files, bytes: sizes.bytes, level }
   } catch (failure) {
-    await rm(dir, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true })
     throw new Error(`创建快照失败：${failure instanceof Error ? failure.message : String(failure)}`)
   }
 }
@@ -425,7 +430,7 @@ export async function listSnapshots(projectDir: string, world?: string | null): 
   const snapshots: SnapshotEntry[] = []
   for (const name of worlds) {
     const dir = join(root, name)
-    const ids = await readdir(dir, { withFileTypes: true }).then((entries) => entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)).catch(() => [])
+    const ids = await readdir(dir, { withFileTypes: true }).then((entries) => entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.pending-')).map((entry) => entry.name)).catch(() => [])
     for (const id of ids) {
       const snapshotDir = join(dir, id)
       const level = await readLevel(snapshotDir).catch(() => null)

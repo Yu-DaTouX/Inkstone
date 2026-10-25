@@ -20,4 +20,4 @@ const context = new McpContext({
   maxMemoryMb: settings.maxMemoryMb,
   log: (line) => process.stderr.write(`${line}\n`)
 })
-serveStdio(await createToolsWithExtras(context), { name: 'inkstone-minecraft', version: '0.1.0', instructions: INSTRUCTIONS })
+serveStdio(await createToolsWithExtras(context), { name: 'inkstone-minecraft', version: '0.1.1', instructions: INSTRUCTIONS })

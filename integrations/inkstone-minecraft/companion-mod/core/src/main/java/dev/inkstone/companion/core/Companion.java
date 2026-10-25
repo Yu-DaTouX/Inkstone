@@ -50,9 +50,7 @@ public final class Companion {
 		}
 		Control control = Control.fromProperties();
 		AgentWindow.attach(control, bridge);
-		control.onChanged(() -> {
-			if (!control.agent()) restoreTicks(bridge);
-		});
+		control.onChanged(() -> controlChanged(bridge, control));
 		long handle = bridge.windowHandle();
 		if (handle != 0L) AgentWindow.afterCreate(handle);
 		Router router = new Router(bridge, control);
@@ -66,6 +64,11 @@ public final class Companion {
 		}
 		instance = new Companion(bridge, control, router);
 		active = true;
+		try {
+			log.accept("loaded companion " + FabricLoader.getInstance().getModContainer("inkstone_companion").map(container -> container.getMetadata().getVersion().getFriendlyString()).orElse("unknown") + " from " + Companion.class.getProtectionDomain().getCodeSource().getLocation());
+		} catch (RuntimeException error) {
+			log.accept("companion source unavailable: " + error);
+		}
 		log.accept("listening on 127.0.0.1:" + server.port() + " (control " + control.owner() + ", input " + System.getProperty("inkstone.input", "background") + ")");
 		String world = System.getProperty("inkstone.companion.world", "");
 		if (!world.isBlank()) WorldBootstrap.start(bridge, world);
@@ -111,6 +114,21 @@ public final class Companion {
 		}, "inkstone-companion-ticks");
 		worker.setDaemon(true);
 		worker.start();
+	}
+
+	static void controlChanged(GameBridge bridge, Control control) {
+		if (!control.agent()) {
+			Scripts.cancelForUser();
+			restoreTicks(bridge);
+		}
+		bridge.runOnClient(() -> {
+			Holds.clear(bridge);
+			bridge.resetInput();
+			return true;
+		}).exceptionally(error -> {
+			log("control input reset failed: " + error);
+			return false;
+		});
 	}
 
 	public static void log(String message) {

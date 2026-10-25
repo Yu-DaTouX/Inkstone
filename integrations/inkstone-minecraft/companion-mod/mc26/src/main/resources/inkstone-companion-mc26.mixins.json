@@ -3,11 +3,13 @@
 	"minVersion": "0.8",
 	"package": "dev.inkstone.companion.mixin",
 	"compatibilityLevel": "JAVA_21",
+	"mixins": ["ServerTickMixin"],
 	"client": [
 		"BossHealthOverlayMixin",
 		"ChatHudMixin",
 		"GameRendererMixin",
 		"MouseHandlerMixin",
+		"MouseControlAccessor",
 		"ClientTickMixin",
 		"HudMixin",
 		"ScreenOffsetMixin",

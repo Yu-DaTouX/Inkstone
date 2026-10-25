@@ -207,6 +207,7 @@ interface StubOptions {
   projectDir: string
   owner?: 'agent' | 'user'
   running?: boolean
+  world?: string
   calls: string[]
 }
 
@@ -218,6 +219,10 @@ function stubProject(options: StubOptions): DevProject {
     readSpec: async () => ({ workingDir: join(options.projectDir, 'run') }),
     status: async () => session(),
     control: async () => session().control ?? null,
+    companion: async (path: string) => {
+      options.calls.push(path)
+      return path === '/snapshot-begin' ? { ok: true, lease: 'fixture-lease', worldPath: join(options.projectDir, 'run', 'saves', options.world ?? 'inkstone-test') } : { ok: true }
+    },
     command: async (command: string) => {
       options.calls.push(`command:${command}`)
       return { command, ok: true, output: ['已保存'], error: null }
@@ -446,6 +451,19 @@ try {
     assert.equal(all[0].world, 'inkstone-test')
   })
 
+  await test('快照：复制期间不可恢复，屏障失效不留下可恢复半成品', async () => {
+    const project = join(root, 'p-snapshot-barrier')
+    const runDir = join(project, 'run')
+    await makeSave(join(runDir, 'saves', 'w'), { dataVersion: 3955, versionName: '1.21.1' })
+    await assert.rejects(createSnapshot({ runDir, projectDir: project, world: 'w', beforePublish: async () => {
+      assert.equal((await listSnapshots(project, 'w')).length, 0)
+      throw new Error('lease expired')
+    } }), /lease expired/)
+    assert.equal((await listSnapshots(project, 'w')).length, 0)
+    const result = await createSnapshot({ runDir, projectDir: project, world: 'w', beforePublish: async () => { assert.equal((await listSnapshots(project, 'w')).length, 0) } })
+    assert.equal((await listSnapshots(project, 'w'))[0].id, result.id)
+  })
+
   await test('快照：同秒重名加序号、同标签不重名、backup=false 不备份', async () => {
     const project = join(root, 'p-snap2')
     const runDir = join(project, 'run')
@@ -523,7 +541,7 @@ try {
     assert.match(bodyOf(missing), /需要 source/)
   })
 
-  await test('MCP：运行中快照先 save-all flush，用户接管时拒绝', async () => {
+  await test('MCP：运行中快照持有保存屏障，复制后释放，用户接管时拒绝', async () => {
     const project = join(root, 'p-mcp-snap')
     await makeSave(join(project, 'run', 'saves', 'inkstone-test'), { dataVersion: 3955, versionName: '1.21.1' })
     const calls: string[] = []
@@ -531,8 +549,8 @@ try {
     const created = await toolOf(tools, 'mc_world').run({ action: 'snapshot', world: 'inkstone-test', label: 'before-test' })
     assert.equal(created.isError, undefined)
     assert.match(bodyOf(created).split('\n')[0], /已创建快照 \d{8}-\d{6}-before-test/)
-    assert.match(bodyOf(created), /快照前已执行 save-all flush/)
-    assert.deepEqual(calls, ['command:save-all flush'])
+    assert.match(bodyOf(created), /同步保存并完成复制屏障/)
+    assert.deepEqual(calls, ['/snapshot-begin', '/snapshot-end'])
 
     const takenCalls: string[] = []
     const taken = createWorldTools(stubContext(stubProject({ projectDir: project, owner: 'user', calls: takenCalls })))
@@ -588,7 +606,7 @@ try {
     const project = join(root, 'p-mcp-del')
     await makeSave(join(project, 'run', 'saves', 'w'), { dataVersion: 3955, versionName: '1.21.1' })
     const calls: string[] = []
-    const tools = createWorldTools(stubContext(stubProject({ projectDir: project, calls })))
+    const tools = createWorldTools(stubContext(stubProject({ projectDir: project, calls, world: 'w' })))
     assert.match(bodyOf(await toolOf(tools, 'mc_world').run({ action: 'snapshots', world: 'w' })), /还没有快照/)
     const created = await toolOf(tools, 'mc_world').run({ action: 'snapshot', world: 'w', label: 'baseline' })
     const id = /已创建快照 (\S+)（/.exec(bodyOf(created))?.[1] ?? ''
@@ -606,7 +624,7 @@ try {
     const unknown = await toolOf(tools, 'mc_world').run({ action: 'wat' })
     assert.equal(unknown.isError, true)
     assert.match(bodyOf(unknown), /不支持的 action/)
-    assert.deepEqual(calls, ['command:save-all flush'])
+    assert.deepEqual(calls, ['/snapshot-begin', '/snapshot-end'])
   })
 
   await test('工具描述写清参数', () => {

@@ -5,7 +5,7 @@ import type { CrashSummary } from '../../shared/dev-api.ts'
 
 export type LogLevel = 'ERROR' | 'WARN' | 'INFO' | 'DEBUG'
 
-const LEVEL_PATTERN = /\/(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\]/
+const LEVEL_PATTERN = /(?:\/|\[)(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\]/
 const VANILLA_FRAMES = /^(java\.|javax\.|jdk\.|sun\.|com\.sun\.|net\.minecraft\.|com\.mojang\.|net\.fabricmc\.|org\.spongepowered\.|org\.lwjgl\.|com\.google\.|org\.apache\.|io\.netty\.|it\.unimi\.|dev\.inkstone\.companion\.)/
 
 export async function tailFile(file: string, maxBytes = 512 * 1024): Promise<string> {
@@ -44,7 +44,7 @@ export function groupLogEntries(text: string): LogEntry[] {
   return entries
 }
 
-export function filterLog(text: string, options: { lines?: number; filter?: string; levels?: LogLevel[] }): string[] {
+export function filterLogDetails(text: string, options: { lines?: number; filter?: string; levels?: LogLevel[] }): { lines: string[]; matchedLines: number } {
   let entries = groupLogEntries(text)
   if (options.levels?.length) entries = entries.filter((entry) => entry.level && options.levels!.includes(entry.level))
   if (options.filter) {
@@ -57,8 +57,12 @@ export function filterLog(text: string, options: { lines?: number; filter?: stri
     entries = entries.filter((entry) => entry.lines.some((line) => pattern.test(line)))
   }
   const flat = entries.flatMap((entry) => entry.lines)
-  const limit = options.lines ?? 200
-  return flat.slice(-limit)
+  const limit = Math.max(1, Math.min(10_000, Math.floor(options.lines ?? 200)))
+  return { lines: flat.slice(-limit), matchedLines: flat.length }
+}
+
+export function filterLog(text: string, options: { lines?: number; filter?: string; levels?: LogLevel[] }): string[] {
+  return filterLogDetails(text, options).lines
 }
 
 export function summarizeCrash(text: string, file: string, at: number): CrashSummary {

@@ -61,7 +61,7 @@ export function createTestTools(context: McpContext): ToolDefinition[] {
             stopClient: () => project.stop().then(() => undefined),
             restartClient: () => project.launch({ projectDir: project.projectDir, world, maxMemoryMb: context.options.maxMemoryMb }).then(() => undefined)
           })
-          const body = summarizeGameTests(result)
+          const body = `${result.stoppedClient && !result.restartedClient ? '开发客户端已为测试停止，尚未重启；继续实机测试请用 mc_run action=start，或下次传 restart_client=true。\n' : ''}${summarizeGameTests(result)}`
           return result.ok ? text(body) : failure(body)
         } catch (error) {
           return failure(`跑 GameTest 失败：${error instanceof Error ? error.message : String(error)}`)

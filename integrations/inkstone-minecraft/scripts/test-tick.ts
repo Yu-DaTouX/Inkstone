@@ -107,6 +107,13 @@ async function fakeCompanion(request: IncomingMessage, response: ServerResponse)
   const path = (request.url ?? '').split('?')[0]
   if (request.headers.authorization !== `Bearer ${TOKEN}`) return json(response, 401, { error: 'unauthorized' })
   state.requests.push({ path, body })
+  if (path === '/tick-step') {
+    if (state.owner === 'user') return json(response, 423, { error: 'user_control' })
+    const ticks = Number(body.ticks ?? 1)
+    const reply = tickReply(`tick step ${ticks}`)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    return json(response, 200, { ok: reply.ok, before: 100, after: reply.ok ? 100 + ticks : 100, stepped: reply.ok ? ticks : 0, error: reply.ok ? undefined : 'step requires a frozen world', output: reply.output })
+  }
   if (path === '/command' && state.owner === 'user') return json(response, 423, { error: 'user_control' })
   if (path === '/command') {
     const command = typeof body.command === 'string' ? body.command : ''
@@ -280,8 +287,8 @@ try {
     resetTick()
     const notFrozen = await tool.run({ action: 'step', ticks: 5 })
     assert.equal(notFrozen.isError, true)
-    assert.equal(firstLine(notFrozen), '命令失败：/tick step 5 → Could not step 5 tick(s)')
-    assert.match(bodyOf(notFrozen), /先 action=freeze 再 step/)
+    assert.match(firstLine(notFrozen), /单步未确认完成.*100 → 100/)
+    assert.match(bodyOf(notFrozen), /step requires a frozen world/)
     assert.equal(state.frozen, false)
     await tool.run({ action: 'freeze' })
     const stepped = await tool.run({ action: 'step', ticks: 3 })
@@ -289,7 +296,8 @@ try {
     assert.match(bodyOf(stepped), /Stepping 3 tick\(s\)/)
     assert.equal(bodyOf(stepped).includes('命令失败'), false)
     const single = await tool.run({ action: 'step' })
-    assert.match(bodyOf(single), /\/tick step 1\nStepping 1 tick\(s\)/)
+    assert.match(bodyOf(single), /单步已完成.*100 → 101/)
+    assert.match(bodyOf(single), /Stepping 1 tick\(s\)/)
     resetTick()
   })
 

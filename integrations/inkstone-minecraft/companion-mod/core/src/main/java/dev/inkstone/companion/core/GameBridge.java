@@ -58,11 +58,19 @@ public interface GameBridge {
 
 	void setLook(float yaw, float pitch) throws Exception;
 
+	boolean serverLook(float yaw, float pitch) throws Exception;
+
+	TickProgress tickProgress() throws Exception;
+
+	Map<String, Object> beginSnapshot() throws Exception;
+
 	Map<String, Object> act(JsonObject body, String entityUuid) throws Exception;
 
 	String hold(JsonObject body) throws Exception;
 
 	void releaseHold(String id) throws Exception;
+
+	void resetInput() throws Exception;
 
 	void pressKey(String key) throws Exception;
 
@@ -113,6 +121,9 @@ public interface GameBridge {
 	}
 
 	record PlayerLook(double x, double y, double z, double eyeY, float yaw, float pitch, float fov) {
+	}
+
+	record TickProgress(long tick, boolean frozen, boolean stepping, float rate) {
 	}
 
 	record Frame(byte[] png, int guiWidth, int guiHeight) {

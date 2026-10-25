@@ -15,12 +15,27 @@ dependencies {
 }
 
 sourceSets {
+	issues {
+		java.srcDir '../core/src/test/java'
+		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+	}
 	main {
 		java {
 			srcDir '../core/src/main/java'
 		}
 	}
 }
+
+tasks.register('testIssues', JavaExec) {
+	dependsOn issuesClasses
+	classpath = sourceSets.issues.runtimeClasspath
+	mainClass = 'dev.inkstone.companion.core.CompanionIssuesTest'
+	systemProperty 'java.awt.headless', 'true'
+	if (project.hasProperty('issueEvidence')) systemProperty 'inkstone.test.evidence', project.property('issueEvidence')
+}
+
+check.dependsOn testIssues
 
 processResources {
 	def version = project.version

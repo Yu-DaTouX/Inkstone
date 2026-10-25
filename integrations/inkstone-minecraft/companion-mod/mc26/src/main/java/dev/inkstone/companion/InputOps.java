@@ -45,14 +45,17 @@ public final class InputOps {
 	}
 
 	static void setLook(float yaw, float pitch) {
+		requireAgent();
 		Minecraft client = Minecraft.getInstance();
 		LocalPlayer player = client.player;
 		if (player == null) throw new IllegalStateException("not in a world");
 		player.setYRot(yaw);
 		player.setXRot(Math.max(-90f, Math.min(90f, pitch)));
+		if (player.connection != null) player.connection.send(new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Rot(player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
 	}
 
 	static synchronized String hold(JsonObject body) {
+		requireAgent();
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null) throw new IllegalStateException("not in a world");
 		String action = Json.string(body, "action", "");
@@ -110,10 +113,12 @@ public final class InputOps {
 	}
 
 	static void pressKey(String name) {
+		requireAgent();
 		KeyMapping.click(InputConstants.Type.KEYSYM.getOrCreate(Keys.code(name)));
 	}
 
 	static void hotbar(int slot) {
+		requireAgent();
 		Minecraft client = Minecraft.getInstance();
 		LocalPlayer player = client.player;
 		if (player == null) throw new IllegalStateException("not in a world");
@@ -121,6 +126,7 @@ public final class InputOps {
 	}
 
 	static Map<String, Object> act(JsonObject body, String entityUuid) {
+		requireAgent();
 		Minecraft client = Minecraft.getInstance();
 		LocalPlayer player = client.player;
 		if (player == null) throw new IllegalStateException("not in a world");
@@ -139,6 +145,24 @@ public final class InputOps {
 			}
 		}
 		if (!entityUuid.isBlank()) entity = byUuid(client, entityUuid);
+		if (!entityUuid.isBlank() && (entity == null || entity.isRemoved())) return rejected(client, "指定实体已消失，未回退到准星目标", null, null);
+		double reach = entity != null ? ("attack".equals(action) ? player.getAttackRangeWith(player.getMainHandItem()).effectiveMaxRange(player) : player.entityInteractionRange()) : player.blockInteractionRange();
+		Double distance = null;
+		if (entity != null) {
+			Vec3 eye = player.getEyePosition();
+			distance = Math.sqrt(entity.getBoundingBox().distanceToSqr(eye));
+			boolean within = "attack".equals(action) ? player.isWithinAttackRange(player.getMainHandItem(), entity.getBoundingBox(), 0.0) : player.isWithinEntityInteractionRange(entity, 0.0);
+			if (!within) return rejected(client, "目标超出可交互距离，未发送交互", distance, reach);
+			var intersection = entity.getBoundingBox().inflate(entity.getPickRadius()).clip(eye, eye.add(player.getViewVector(1.0f).scale(reach)));
+			HitResult obstruction = player.pick(reach, 1.0f, false);
+			if (!entity.getBoundingBox().inflate(entity.getPickRadius()).contains(eye) && (intersection.isEmpty() || (obstruction.getType() == HitResult.Type.BLOCK && obstruction.getLocation().distanceToSqr(eye) + 0.0001 < intersection.get().distanceToSqr(eye)))) return rejected(client, "指定实体已离开视线或被方块遮挡，未发送交互", distance, reach);
+		} else if (blockPos != null) {
+			distance = Math.sqrt(new net.minecraft.world.phys.AABB(blockPos).distanceToSqr(player.getEyePosition()));
+			if (!player.isWithinBlockInteractionRange(blockPos, 0.0)) return rejected(client, "目标超出可交互距离，未发送交互", distance, reach);
+			if (client.level.getBlockState(blockPos).isAir()) return rejected(client, "指定方块是空气，未发送交互", distance, reach);
+			HitResult current = player.pick(reach, 1.0f, false);
+			if (!(current instanceof BlockHitResult blockHit) || current.getType() != HitResult.Type.BLOCK || !blockHit.getBlockPos().equals(blockPos)) return rejected(client, "指定方块不在视线内或被遮挡，未发送交互", distance, reach);
+		}
 		Map<String, Object> hit;
 		if ("attack".equals(action)) {
 			if (entity != null) {
@@ -163,7 +187,20 @@ public final class InputOps {
 		} else {
 			hit = crosshairUse(client, player, hand);
 		}
-		return Json.map("ok", true, "hit", hit, "screen", client.screen == null ? null : client.screen.getClass().getSimpleName());
+		return Json.map("ok", true, "hit", hit, "distance", distance, "reach", target == null ? null : reach, "screen", client.screen == null ? null : client.screen.getClass().getSimpleName());
+	}
+
+	private static Map<String, Object> rejected(Minecraft client, String reason, Double distance, Double reach) {
+		return Json.map("ok", false, "reason", reason, "hit", null, "distance", distance, "reach", reach, "screen", client.screen == null ? null : client.screen.getClass().getSimpleName());
+	}
+
+	static synchronized void releaseAll() {
+		for (String id : new ArrayList<>(HOLDS.keySet())) release(id);
+		PRESSED.clear();
+	}
+
+	private static void requireAgent() {
+		if (!Companion.control().agent()) throw new dev.inkstone.companion.core.Router.Denied();
 	}
 
 	private static Map<String, Object> crosshairAttack(Minecraft client, LocalPlayer player, InteractionHand hand) {
