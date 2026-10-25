@@ -37,6 +37,8 @@ export async function runPromptSkillContractTests(ok) {
   match(office, /不按项目 cwd 定位/, 'office 不按项目 cwd 猜测脚本位置')
   match(office, /不覆盖已有文件的备份路径.*已提交到 Git 也不能跳过备份/s, 'office 修改前备份不覆盖且不因 Git 豁免')
   match(office, /PDF.*只读与提取.*不要尝试修改已有 PDF 的版式/s, 'office PDF 只读边界')
+  const docSync = /^description: (.*)$/m.exec(await read('resources/skills/doc-sync/SKILL.md'))?.[1] ?? ''
+  match(docSync, /用户要求同步.*项目约定.*AGENTS\.md.*普通编码任务收尾不用/, 'doc-sync 只在用户或项目约定要求同步文档时触发')
   const subagent = await read('resources/skills/subagent/SKILL.md')
   match(subagent, /没有指定时省略 `--model`.*默认设置.*不主动传当前模型/s, 'subagent 不覆盖宿主默认模型')
   const widget = await read('resources/skills/visual-answer/SKILL.md')
