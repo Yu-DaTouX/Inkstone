@@ -463,6 +463,18 @@ function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedR
   }
 }
 
+async function sessionActionTarget(get: () => Store) {
+  const identity = composerSubmitIdentity(get())
+  const gate = sessionSwitchGate
+  if (!(await get().ensureActivated(identity))) return null
+  await get().syncRunners()
+  const current = () => gate === sessionSwitchGate && sameComposerView(get(), identity)
+  if (!current()) return null
+  const expected = expectedRuntimeFor(get(), composerSubmitIdentity(get()))
+  if (!expected || expected.generation === undefined) return null
+  return { expected, current }
+}
+
 function patchArtifact(list: UIMessage[], messageId: string, artifact: NonNullable<UIMessage['artifacts']>[number]): UIMessage[] {
   const index = list.findIndex((message) => message.id === messageId)
   if (index < 0) return list
@@ -2183,9 +2195,10 @@ export const useStore = create<Store>((rawSet, get) => {
   fork: async (entryId) => {
     ++sessionSwitchGate
     if (get().switchLoading) set({ switchLoading: false })
-    if (!(await get().ensureActivated())) return false
+    const target = await sessionActionTarget(get)
+    if (!target) return false
     const sourceRunner = get().activeRunnerId
-    const res = await piCall(() => window.yan.fork(entryId))
+    const res = await piCall(() => window.yan.fork(entryId, target.expected))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.forkFailed')) })
       return false
@@ -2198,7 +2211,7 @@ export const useStore = create<Store>((rawSet, get) => {
       await get().refreshSessions()
       return true
     }
-    if (get().activeRunnerId !== sourceRunner) {
+    if (get().activeRunnerId !== sourceRunner || !target.current()) {
       set({ notices: pushNotice(get().notices, 'warning', uiText('state.fork.createdSessionChanged')) })
       await get().refreshSessions()
       return true
@@ -2233,8 +2246,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   exportHtml: async (outputPath) => {
-    const res = await piCall(() => window.yan.exportHtml(outputPath))
-    if (res.ok) get().notify('info', uiText('state.export.done', { path: res.path ?? '' }))
+    const target = await sessionActionTarget(get)
+    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    const res = await piCall(() => window.yan.exportHtml(outputPath, target.expected))
+    if (res.ok && target.current()) get().notify('info', uiText('state.export.done', { path: res.path ?? '' }))
     return res
   },
 
@@ -2254,11 +2269,14 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   setModel: async (provider, id, quiet = false) => {
-    const res = await piCall(() => window.yan.setModel(provider, id))
+    const target = await sessionActionTarget(get)
+    if (!target) return { ok: false, error: uiText('state.error.sessionNotActivated') }
+    const res = await piCall(() => window.yan.setModel(provider, id, target.expected))
     if (!res.ok) {
       if (!quiet) set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.setModelFailed')) })
       return res
     }
+    if (!target.current()) return { ok: false, error: uiText('state.error.sessionSwitchedCommandSkipped') }
     const selected = get().models.find(m => m.provider === provider && m.id === id)
     try { await get().patchSettings({ lastMainModel: { provider, id, name: selected?.name } }) }
     catch (error) { return { ok: false, error: uiText('state.error.modelPrefSaveFailed', { error: String(error) }) } }
@@ -2267,14 +2285,19 @@ export const useStore = create<Store>((rawSet, get) => {
 
   setThinking: async (level) => {
     try {
-      await window.yan.setThinking(level)
+      const target = await sessionActionTarget(get)
+      if (!target) return
+      const res = await window.yan.setThinking(level, target.expected)
+      if (!res.ok && target.current()) get().notify('error', res.error ?? uiText('state.error.cannotSwitchThinking'))
     } catch {
       set({ notices: pushNotice(get().notices, 'error', uiText('state.error.cannotSwitchThinking')) })
     }
   },
 
   setUltracode: async (on) => {
-    const res = await piCall(() => window.yan.setUltracode(on))
+    const target = await sessionActionTarget(get)
+    if (!target) return
+    const res = await piCall(() => window.yan.setUltracode(on, target.expected))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.settingFailed')) })
     }
@@ -2315,7 +2338,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   cycleModel: async () => {
-    const res = await piCall(() => window.yan.cycleModel())
+    const target = await sessionActionTarget(get)
+    if (!target) return
+    const res = await piCall(() => window.yan.cycleModel(target.expected))
+    if (!target.current()) return
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
       return
@@ -2326,7 +2352,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   cycleModelBack: async () => {
-    const res = await piCall(() => window.yan.cycleModelBack())
+    const target = await sessionActionTarget(get)
+    if (!target) return
+    const res = await piCall(() => window.yan.cycleModelBack(target.expected))
+    if (!target.current()) return
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchModel')) })
       return
@@ -2337,7 +2366,10 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   cycleThinking: async () => {
-    const res = await piCall(() => window.yan.cycleThinking())
+    const target = await sessionActionTarget(get)
+    if (!target) return
+    const res = await piCall(() => window.yan.cycleThinking(target.expected))
+    if (!target.current()) return
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'info', res.error ?? uiText('state.error.cannotSwitchThinking')) })
       return

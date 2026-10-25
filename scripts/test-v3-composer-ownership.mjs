@@ -461,6 +461,7 @@ async function main() {
   const composerStore = composerBundle.useStore
   const composerActivation = composerBundle.activation
 
+  if (!process.argv.includes('--session-actions-only')) {
   group('D4 切换在途：ensureActivated 拒绝发送，Composer 保留草稿')
   {
     const { yan: y1, calls, pending } = makeYan()
@@ -781,6 +782,75 @@ async function main() {
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
     ok(ta.props.value === '', '执行成功后输入框才被清空', ta.props.value)
+  }
+
+  }
+
+  group('R04/R05 预览会话设置和导出捕获目标，等待期间切走则取消')
+  {
+    const { yan: scoped } = makeYan()
+    globalThis.window.yan = scoped
+    const writes = []
+    const b = { id: 'run-b', runId: 'run-b', sessionId: 'sess-b', generation: 5, sessionFile: 'B', cwd: 'C:/proj', isActive: true }
+    scoped.runnerStatuses = async () => [b]
+    scoped.listModels = async () => []
+    scoped.listCommands = async () => []
+    scoped.selectSession = async () => ({ ok: true, ...b })
+    for (const name of ['setModel', 'setThinking', 'setUltracode', 'exportHtml', 'cycleModel', 'cycleModelBack', 'cycleThinking']) scoped[name] = async (...args) => { writes.push({ name, args }); return { ok: true, path: 'B.html' } }
+    let preferences = 0
+    resetStore(useStore, activation, {
+      session: { sessionId: 'sess-a', cwd: 'C:/proj' }, peekedPath: 'B', peekedSessionId: 'sess-b', activeRunnerId: 'run-a',
+      runners: [{ id: 'run-a', runId: 'run-a', sessionId: 'sess-a', generation: 2 }],
+      pendingActivation: { sessionFile: 'B', sessionId: 'sess-b', cwd: 'C:/proj' },
+      patchSettings: async () => { preferences++ }
+    })
+    const firstModel = await useStore.getState().setModel('fixture', 'model-b')
+    await useStore.getState().setThinking('high')
+    await useStore.getState().setUltracode(true)
+    await useStore.getState().exportHtml('B.html')
+    await useStore.getState().cycleModel()
+    await useStore.getState().cycleModelBack()
+    await useStore.getState().cycleThinking()
+    ok(writes.length === 7, '模型、思考、深度模式、导出和快捷键正路径都执行', { writes, firstModel, identity: useStore.getState().peekedSessionId, pending: useStore.getState().pendingActivation })
+    ok(writes.every(item => { const owner = item.args.at(-1); return owner.sessionId === 'sess-b' && owner.runId === 'run-b' && owner.generation === 5 }), '所有 IPC 携带 B 的运行身份与代次', writes)
+    ok(preferences === 1, '成功的模型选择保存偏好一次', preferences)
+
+    for (const name of ['setModel', 'setThinking', 'setUltracode', 'exportHtml', 'cycleModel', 'cycleModelBack', 'cycleThinking']) {
+      writes.length = 0
+      useStore.setState({ peekedSessionId: 'sess-b', peekedPath: 'B', pendingActivation: { sessionFile: 'B', sessionId: 'sess-b', cwd: 'C:/proj' } })
+      scoped.selectSession = async () => ({ ok: true, deferred: true, sessionId: 'sess-b' })
+      const args = name === 'setModel' ? ['fixture', 'model-b'] : name === 'setThinking' ? ['high'] : name === 'setUltracode' ? [true] : name === 'exportHtml' ? ['B.html'] : []
+      await useStore.getState()[name](...args)
+      ok(writes.length === 0, `${name} 激活未完成时不会写 A`)
+    }
+
+    scoped.selectSession = async () => ({ ok: true, ...b })
+    useStore.setState({ pendingActivation: null, peekedSessionId: 'sess-b', peekedPath: 'B' })
+    const waiting = defer()
+    let listing = false
+    scoped.runnerStatuses = async () => { listing = true; return waiting.promise }
+    const raced = useStore.getState().exportHtml('B.html')
+    await waitFor(() => listing)
+    useStore.setState({ peekedSessionId: 'sess-c', peekedPath: 'C' })
+    waiting.resolve([b])
+    await raced
+    ok(writes.length === 0, '等待运行列表期间切走不会导出 A 或 C')
+
+    scoped.runnerStatuses = async () => [b]
+    useStore.setState({ peekedSessionId: 'sess-b', peekedPath: 'B' })
+    const modelWait = defer()
+    let changing = false
+    scoped.setModel = async () => { changing = true; return modelWait.promise }
+    const changingModel = useStore.getState().setModel('fixture', 'later')
+    await waitFor(() => changing)
+    useStore.setState({ peekedSessionId: 'sess-c', peekedPath: 'C' })
+    modelWait.resolve({ ok: true })
+    const changed = await changingModel
+    ok(changed.ok === false && preferences === 1, '模型响应返回前切走，不把旧结果保存为新视图的默认偏好')
+
+    let exportRan = false
+    await storeBundle.runLocalCommandGuarded({ raw: '/export B.html', ensureActivated: async () => false, run: () => { exportRan = true }, notifyBlocked() {} })
+    ok(!exportRan, '/export 本地命令受目标激活检查保护')
   }
 
   await rm(outdir, { recursive: true, force: true })

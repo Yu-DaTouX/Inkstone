@@ -59,6 +59,25 @@ export async function runStreamLoopDetectorTests(ok) {
     const CYCLE = '好。\n\n'
 
     {
+      for (const sizes of [[1], [7], [32], [128], [4096]]) {
+        const d = det()
+        const content = '已完成。 </parameter> </invoke>\n' + '</function_calls> '.repeat(200)
+        const result = feedChunks((chunk) => d.onText(chunk), content, sizes)
+        ok(result.hit?.rule === 'text-cycle' && result.hit.emittedChars < 512, `协议标签：分块 ${sizes} 在正文中及时停止重复闭合标签`, JSON.stringify(result.hit))
+        const fenced = det()
+        const code = '```xml\n' + '</function_calls>\n'.repeat(200) + '```\n示例结束。'
+        ok(!feedChunks((chunk) => fenced.onText(chunk), code, sizes).hit, `协议标签：分块 ${sizes} 保留 fenced XML 示例`)
+        const malformed = det()
+        const broken = '<invoke name="wrap_up">\n</invoke>\n```\n' + '</function_calls>\n'.repeat(200)
+        ok(!!feedChunks((chunk) => malformed.onText(chunk), broken, sizes).hit, `协议标签：分块 ${sizes} 识别工具协议尾部的孤立围栏`)
+        const bare = det()
+        ok(!feedChunks((chunk) => bare.onText(chunk), '```\n' + '</function_calls>\n'.repeat(200) + '```\n', sizes).hit, `协议标签：分块 ${sizes} 保留普通无语言代码围栏`)
+      }
+      const d = det()
+      ok(!d.onText('<function_calls><invoke name="test"><parameter name="x">1</parameter></invoke></function_calls>'.repeat(30)), '协议标签：完整的 XML 记录不按闭合标签循环处理')
+    }
+
+    {
       const content = CYCLE.repeat(200)
       const ref = feedChunks((c) => det().onThinking(c), content, [100000])
       const runs = [[1], [3], [7], [32], [5, 3, 17], [31, 1], [100000]].map((sizes) => {

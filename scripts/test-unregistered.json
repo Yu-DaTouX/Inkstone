@@ -129,7 +129,6 @@
     "test-v3-capability-settings",
     "test-v3-command-items",
     "test-v3-composer-layout",
-    "test-v3-composer-ownership",
     "test-v3-context-default",
     "test-v3-context-settings",
     "test-v3-diff",

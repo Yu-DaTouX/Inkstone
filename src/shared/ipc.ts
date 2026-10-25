@@ -1695,10 +1695,10 @@ export interface YanBridge {
   compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
   renameSession(name: string): Promise<{ ok: boolean; error?: string }>
 
-  fork(entryId: string): Promise<{ ok: boolean; error?: string; text?: string }>
+  fork(entryId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
   clone(): Promise<{ ok: boolean; error?: string }>
   forkPoints(): Promise<ForkPoint[]>
-  exportHtml(outputPath?: string): Promise<{ ok: boolean; path?: string; error?: string }>
+  exportHtml(outputPath?: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; path?: string; error?: string }>
   deleteSession(path: string): Promise<{ ok: boolean; undoToken?: string; error?: string }>
   restoreSession(undoToken: string): Promise<{ ok: boolean; error?: string }>
   listArtifactLibrary(): Promise<ArtifactLibraryResult>
@@ -1708,9 +1708,9 @@ export interface YanBridge {
   abortBash(): Promise<void>
 
   listModels(): Promise<ModelInfo[]>
-  setModel(provider: string, modelId: string): Promise<{ ok: boolean; error?: string }>
-  setThinking(level: string): Promise<{ ok: boolean; error?: string }>
-  setUltracode(on: boolean): Promise<{ ok: boolean; error?: string }>
+  setModel(provider: string, modelId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setThinking(level: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
+  setUltracode(on: boolean, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string }>
   listThinkingLevels(): Promise<string[]>
 
   setAutoCompaction(enabled: boolean): Promise<{ ok: boolean; error?: string }>
@@ -1725,9 +1725,9 @@ export interface YanBridge {
   setFollowUpMode(mode: QueueMode): Promise<{ ok: boolean; error?: string }>
 
   abortRetry(): Promise<{ ok: boolean; error?: string }>
-  cycleModel(): Promise<{ ok: boolean; error?: string; to?: string }>
-  cycleModelBack(): Promise<{ ok: boolean; error?: string; to?: string }>
-  cycleThinking(): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleModel(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleModelBack(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
+  cycleThinking(expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; to?: string }>
   lastAssistantText(): Promise<string | null>
 
   piInfo(): Promise<PiInfo>

@@ -91,7 +91,7 @@
   .v3-steps-sum { gap: 2px; }
   .v3-step-head { gap: var(--s-2); }
   .v3-step-group > .v3-step-head { gap: 2px; }
-  .v3-step-label { flex: none; color: var(--fg2); }
+.v3-step-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
   .v3-step[data-state='error'] > .v3-step-head .v3-step-label { color: var(--fail-t); }
   .v3-step[data-state='denied'] > .v3-step-head :is(.v3-step-label, .v3-steps-label) { color: var(--fg3); }
   .v3-step-deny { flex: none; color: var(--fg3); }

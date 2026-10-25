@@ -1,7 +1,7 @@
 import { request as httpRequest, type ClientRequest } from 'node:http'
 import { fromB64u, generateKeyPair, RELAY_PROTOCOL_VERSION, serverSession, toB64u, type KeyPair, type SecureChannel } from './crypto'
 import type { RelayClient } from './store'
-import { REMOTE_IDEMPOTENCY_HEADER } from '../../shared/remote-protocol'
+import { REMOTE_IDEMPOTENCY_HEADER, REMOTE_MESSAGE_MAX_BYTES } from '../../shared/remote-protocol'
 
 export interface Pipe {
   send(text: string): void
@@ -163,8 +163,10 @@ export class TunnelSession {
     if (!target) return this.fail(id, 503, '电脑上的远程服务没有运行')
 
     const body = typeof msg.body === 'string' ? msg.body : ''
-    if (body.length > MAX_BODY_B64) return this.fail(id, 413, '请求太大')
+    const maxBytes = method === 'POST' && /^\/remote\/v1\/sessions\/[^/]+\/messages$/.test(url.pathname) ? REMOTE_MESSAGE_MAX_BYTES : null
+    if (body.length > (maxBytes === null ? MAX_BODY_B64 : 4 * Math.ceil(maxBytes / 3))) return this.fail(id, 413, '请求太大')
     let payload = body ? Buffer.from(body, 'base64') : Buffer.alloc(0)
+    if (maxBytes !== null && payload.length > maxBytes) return this.fail(id, 413, '请求太大')
     const given = msg.headers && typeof msg.headers === 'object' ? (msg.headers as Record<string, unknown>) : {}
     const headers: Record<string, string> = {}
     for (const name of FORWARD_HEADERS) {

@@ -8,6 +8,7 @@ import type { MainPush } from '../shared/ipc'
 import {
   REMOTE_EVENT_BUFFER,
   REMOTE_IDEMPOTENCY_HEADER,
+  REMOTE_MESSAGE_MAX_BYTES,
   REMOTE_IDEMPOTENCY_KEY_RE,
   REMOTE_IDEMPOTENCY_TTL_MS,
   REMOTE_PROTOCOL_VERSION,
@@ -693,7 +694,7 @@ export class RemoteServer {
         return
       }
       let body: Record<string, unknown>
-      try { body = await this.readJson(req, operation === 'messages' ? 12 * 1024 * 1024 : MAX_BODY_BYTES) }
+      try { body = await this.readJson(req, operation === 'messages' ? REMOTE_MESSAGE_MAX_BYTES : MAX_BODY_BYTES) }
       catch { writeError(res, 413, '消息超过大小限制或格式无效'); return }
       if (operation === 'select') {
         this.writeOperation(res, await this.options.handlers.command({ action: 'select', sessionId }))
