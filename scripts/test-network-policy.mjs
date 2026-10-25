@@ -29,6 +29,7 @@ export async function runNetworkPolicyTests(ok, policy) {
     )
   }
   ok(!isPrivateAddress('8.8.8.8'), '公网 IPv4 不被误判为私网')
+  ok(!isPrivateAddress('198.18.0.12') && !isPrivateAddress('198.19.255.1'), '代理 fake-ip 网段 198.18/15 不当作私网')
   ok(!isPrivateAddress('2001:4860:4860::8888'), '公网 IPv6 不被误判为私网')
   ok(!isPrivateAddress('2001:4860:4860:0:0:0:0:8888'), '公网 IPv6 完整写法不被误判为私网')
   ok(await resolvesToPrivateAddress('127.0.0.1'), '直接 IP 不绕过私网识别')
