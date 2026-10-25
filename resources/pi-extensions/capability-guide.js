@@ -35,7 +35,7 @@ const GUIDE_LINES = [
   '- Word / Excel / PowerPoint / PDF: skill office; saved procedures and templates: skill playbook',
   '- Everything else: `yan --help`',
   '',
-  'Results: stdout holds only a summary and a `resultFile` path; read the parts you need, never the whole result file. A successful command is not a finished task: do not claim to have run what you did not call, verified what you did not check, or seen a screenshot you did not open. Let Inkstone attach artifacts to the reply instead of only giving a path.',
+  '`yan` results: stdout holds only a summary and a `resultFile` path; read the parts you need, never the whole result file. A successful `yan` command is not by itself a finished task: do not claim to have run what you did not call, verified what you did not check, or seen a screenshot you did not open. Let Inkstone attach artifacts to the reply instead of only giving a path.',
   '',
   'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI / API → MCP only when needed; follow the user when they choose.'
 ]
