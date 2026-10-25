@@ -50,7 +50,11 @@ const QUESTION_TOOL = {
   }
 }
 
+// 超时说明用户多半不在：按 Claude Code 的做法让模型带着写明的假设继续，而不是停下来白等
+const TIMEOUT_TEXT = 'No answer before the question timed out; the user may be away. Proceed with your best judgment from the context so far, state the assumption you made in your final reply, and ask again later only if it still matters. Approvals and high-risk confirmations still apply.'
+
 export function questionResult(outcome) {
+  if (!outcome.ok && outcome.code === 'question_timeout') return toolText(TIMEOUT_TEXT, { cancelled: false, timedOut: true, code: outcome.code })
   if (!outcome.ok) {
     return toolText(outcome.cancelled ? 'Question cancelled.' : `Question failed: ${outcome.error}`, { cancelled: outcome.cancelled === true, code: outcome.code }, !outcome.cancelled)
   }
