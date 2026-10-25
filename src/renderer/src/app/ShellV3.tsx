@@ -25,6 +25,7 @@ import { SideBySide } from './SideBySide'
 import { collapsedPanes, sessionTiles } from './SideBySideLayout'
 import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
+import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
 import { resolveV3Shortcut, shortcutOverridesFromSettings } from './shortcuts'
 import { NoticeBridge } from './NoticeBridge'
 import { PeerApprovalDialog } from './PeerApprovalDialog'
@@ -218,6 +219,8 @@ export default function ShellV3(): ReactElement {
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutSheetOpen, setShortcutSheetOpen] = useState(false)
+  const sessionSwitcher = useSessionSwitcher()
+  const stepSessionSwitcher = sessionSwitcher.step
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const onboardDecided = useRef(false)
   const [narrow, setNarrow] = useState<boolean>(() => window.matchMedia('(max-width: 899px)').matches)
@@ -497,6 +500,10 @@ export default function ShellV3(): ReactElement {
             ui.navigate({ name: 'chat' })
             void useStore.getState().newSession({ scope: 'global' })
             return
+          case 'switchSessionNext':
+          case 'switchSessionPrevious':
+            if (stepSessionSwitcher(shortcut, event)) event.preventDefault()
+            return
           case 'toggleSidebar':
             event.preventDefault()
             ui.toggleSidebar()
@@ -589,7 +596,7 @@ export default function ShellV3(): ReactElement {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab, lang])
+  }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab, lang, stepSessionSwitcher])
 
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
@@ -705,6 +712,7 @@ export default function ShellV3(): ReactElement {
         onNavigate={(name) => useUiV3.getState().navigate({ name })}
       />
       <ShortcutSheet isOpen={shortcutSheetOpen} onOpenChange={setShortcutSheetOpen} />
+      <SessionSwitcher control={sessionSwitcher} />
       <SettingsPanelV3 onShowOnboarding={() => setOnboardingOpen(true)} />
       {onboardingOpen ? (
         <OnboardingWizard

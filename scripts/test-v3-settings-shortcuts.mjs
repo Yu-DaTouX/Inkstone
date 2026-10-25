@@ -44,7 +44,7 @@ assert.equal(bindingFromKeyStroke(stroke({ key: 'k', ctrl: true, altGraph: true 
 const rebindable = SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id)
 assert.deepEqual(
   rebindable,
-  ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
+  ['newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
     'workspaceClosePane', 'workspaceToggleMaximize',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],

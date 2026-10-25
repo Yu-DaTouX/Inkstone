@@ -1,0 +1,44 @@
+@layer patterns {
+  .session-switcher {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-pop);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 18vh var(--s-16) 0;
+    pointer-events: none;
+  }
+
+  .session-switcher__panel {
+    width: min(420px, 100%);
+    max-height: min(60vh, 420px);
+    overflow-y: auto;
+    padding: var(--s-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+    pointer-events: auto;
+  }
+
+  .session-switcher__title {
+    padding: var(--s-4) var(--s-8) var(--s-6);
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+
+  .session-switcher__row {
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .session-switcher__row[data-selected] {
+    background: var(--sel);
+  }
+
+  .session-switcher__meta {
+    flex: none;
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+}

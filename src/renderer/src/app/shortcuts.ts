@@ -1,6 +1,8 @@
 export type ShortcutId =
   | 'commandPalette'
   | 'newSession'
+  | 'switchSessionNext'
+  | 'switchSessionPrevious'
   | 'toggleSidebar'
   | 'toggleWorkspace'
   | 'openSettings'
@@ -54,6 +56,8 @@ export const EMPTY_SHORTCUT_OVERRIDES: ShortcutOverrides = {}
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: 'commandPalette', keys: ['Ctrl', 'K'], purposeKey: 'commandPalette', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'newSession', keys: ['Ctrl', 'N'], purposeKey: 'newSession', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'switchSessionNext', keys: ['Ctrl', 'Tab'], purposeKey: 'switchSessionNext', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
+  { id: 'switchSessionPrevious', keys: ['Ctrl', 'Shift', 'Tab'], purposeKey: 'switchSessionPrevious', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'toggleSidebar', keys: ['Ctrl', 'B'], purposeKey: 'toggleSidebar', rebindable: false, scope: 'global', terminalsYield: true, registeredBy: 'renderer' },
   { id: 'toggleWorkspace', keys: ['Ctrl', 'Alt', 'B'], purposeKey: 'toggleWorkspace', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },
   { id: 'openSettings', keys: ['Ctrl', ','], purposeKey: 'openSettings', rebindable: true, scope: 'global', terminalsYield: false, registeredBy: 'renderer' },

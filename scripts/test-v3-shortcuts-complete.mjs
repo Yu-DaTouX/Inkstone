@@ -50,6 +50,8 @@ const pressed = (over) => resolveV3Shortcut(key(over))
 const RENDERER_IDS = [
   'commandPalette',
   'newSession',
+  'switchSessionNext',
+  'switchSessionPrevious',
   'toggleSidebar',
   'toggleWorkspace',
   'openSettings',
@@ -93,7 +95,7 @@ for (const def of SHORTCUTS) {
 
 assert.deepEqual(
   SHORTCUTS.filter((def) => def.rebindable).map((def) => def.id),
-  ['newSession', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
+  ['newSession', 'switchSessionNext', 'switchSessionPrevious', 'toggleWorkspace', 'openSettings', 'shortcutSheet', 'goBack', 'stopRun', 'openTerminal',
     'workspaceTab1', 'workspaceTab2', 'workspaceTab3', 'workspaceTab4', 'workspaceTab5', 'workspaceTab6',
     'workspaceClosePane', 'workspaceToggleMaximize',
     'splitFocusNext', 'splitFocusPrevious', 'splitNewRight', 'splitNewBelow', 'splitClose', 'splitFocusLeft', 'splitFocusRight', 'splitFocusUp', 'splitFocusDown'],

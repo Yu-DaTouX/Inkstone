@@ -31,6 +31,8 @@ const ZH: ShortcutText = {
   purposes: {
     commandPalette: '命令面板',
     newSession: '新会话',
+    switchSessionNext: '切换到最近使用的会话',
+    switchSessionPrevious: '反向切换最近使用的会话',
     toggleSidebar: '展开或收起侧栏',
     toggleWorkspace: '展开或收起工作区',
     openSettings: '打开设置',
@@ -82,6 +84,8 @@ const EN: ShortcutText = {
   purposes: {
     commandPalette: 'Command palette',
     newSession: 'New chat',
+    switchSessionNext: 'Switch to a recent session',
+    switchSessionPrevious: 'Switch recent sessions in reverse',
     toggleSidebar: 'Show or hide the sidebar',
     toggleWorkspace: 'Show or hide the workspace',
     openSettings: 'Open settings',

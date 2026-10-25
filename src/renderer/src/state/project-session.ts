@@ -27,7 +27,7 @@ export function pickProjectSession(input: {
   return recent?.path
 }
 
-function compareRecency(
+export function compareRecency(
   a: Pick<SessionSummary, 'lastActivityAt' | 'lastOpenedAt' | 'updatedAt'>,
   b: Pick<SessionSummary, 'lastActivityAt' | 'lastOpenedAt' | 'updatedAt'>
 ): number {
