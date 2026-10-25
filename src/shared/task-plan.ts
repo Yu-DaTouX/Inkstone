@@ -10,8 +10,8 @@ export const TASK_ACTIONS = ['set', 'add', 'complete', 'uncomplete', 'remove', '
 export type TaskAction = (typeof TASK_ACTIONS)[number]
 
 export const TASK_PLAN_LIMITS = {
-  maxItems: 8,
-  maxTextLength: 32
+  maxItems: 20,
+  maxTextLength: 80
 } as const
 
 export interface TaskItemShape {
