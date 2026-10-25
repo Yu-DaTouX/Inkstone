@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { appendReminder } from './request-reminder.js'
+import { registerFinishReminder } from './finish-reminder.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with `yan tasks apply` before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
@@ -240,6 +241,7 @@ export default function capabilityGuideExtension(pi) {
   const tools = hostToolsAvailable() && typeof pi.registerTool === 'function'
   if (tools) pi.registerTool(createTodosTool())
   const guideText = capabilityGuide(tools)
+  registerFinishReminder(pi)
   registerTaskReminder(pi, tools)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
