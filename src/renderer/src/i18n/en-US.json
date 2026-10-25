@@ -659,8 +659,6 @@
   "picker.temp": "Temperature",
   "picker.tempDefault": "Default",
   "picker.tempDesc": "Sampling randomness, 0–2: lower is steadier, higher is more varied. Scroll the wheel or type a value; remembered per model, clear it to use the provider default. The row is hidden while thinking is on, since requests then carry no temperature.",
-  "picker.detail": "Response detail",
-  "picker.detailDesc": "How much it explains — separate from thinking effort; no level drops errors",
   "picker.image": "image",
   "picker.modelTip": "Switch model",
   "picker.needsAuth": "not set up",

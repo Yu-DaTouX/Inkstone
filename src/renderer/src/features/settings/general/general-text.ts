@@ -24,6 +24,11 @@ export interface GeneralText {
   sessionCheckpointsDesc: string
   sessionWrapUpCard: string
   sessionWrapUpCardDesc: string
+  sessionResponseDetail: string
+  sessionResponseDetailDesc: string
+  responseDetailBrief: string
+  responseDetailStandard: string
+  responseDetailDetailed: string
   sessionSubagentNotify: string
   sessionSubagentNotifyDesc: string
   sessionSubagentModel: string
@@ -186,6 +191,11 @@ const ZH: GeneralText = {
   sessionCheckpointsDesc: '每轮发送前存可回退快照；关闭后无法回退。',
   sessionWrapUpCard: '回合结束时显示下一步建议',
   sessionWrapUpCardDesc: '仅在下一步需要你决定时显示问题与回复按钮；普通完成结果只保留最终回复。',
+  sessionResponseDetail: '回复详细程度',
+  sessionResponseDetailDesc: '只管讲多细，与思考强度无关；错误提示始终保留。',
+  responseDetailBrief: '简洁',
+  responseDetailStandard: '标准',
+  responseDetailDetailed: '详细',
   sessionSubagentNotify: '子 Agent 结束时通知发起会话',
   sessionSubagentNotifyDesc: '子 Agent 跑完后唤醒父会话继续汇总。',
   sessionSubagentModel: '子 Agent 默认模型',
@@ -348,6 +358,11 @@ const EN: GeneralText = {
   sessionCheckpointsDesc: 'Snapshot before each turn; rewind is off when disabled.',
   sessionWrapUpCard: 'Show next-step suggestions at the end of a turn',
   sessionWrapUpCardDesc: 'Show a question and reply buttons only when the next step needs your decision. Completed results stay in the final reply.',
+  sessionResponseDetail: 'Response detail',
+  sessionResponseDetailDesc: 'How much it explains, separate from thinking effort. Errors are always reported.',
+  responseDetailBrief: 'Brief',
+  responseDetailStandard: 'Standard',
+  responseDetailDetailed: 'Detailed',
   sessionSubagentNotify: 'Notify the parent session when a subagent finishes',
   sessionSubagentNotifyDesc: 'Wakes the parent session to summarise after a subagent completes.',
   sessionSubagentModel: 'Default subagent model',

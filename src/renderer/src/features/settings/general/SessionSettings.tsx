@@ -11,6 +11,8 @@ import { PiRetryDetailRows, PiSessionGroups, usePiNativeSettings } from './PiNat
 import { piNativeText } from './pi-native-text'
 
 const ARCHIVE_OPTIONS = [0, 7, 14, 30] as const
+const RESPONSE_DETAILS = ['brief', 'standard', 'detailed'] as const
+type ResponseDetailChoice = (typeof RESPONSE_DETAILS)[number]
 const QUEUE_MODES: QueueMode[] = ['one-at-a-time', 'all']
 const FOLLOW_SESSION = 'follow'
 
@@ -28,6 +30,12 @@ export function SessionSettings(): ReactElement {
   const subagentNotify = settings?.subagentNotify !== false
   const loopAutoContinue = settings?.streamLoopAutoContinue !== false
   const wrapUpCard = settings?.wrapUpCard !== false
+  const responseDetail: ResponseDetailChoice = settings?.responseDetail ?? 'standard'
+  const responseDetailLabels: Record<ResponseDetailChoice, string> = {
+    brief: text.responseDetailBrief,
+    standard: text.responseDetailStandard,
+    detailed: text.responseDetailDetailed
+  }
   const models = useStore((s) => s.models)
   const subagentDefault = settings?.subagentDefaultModel
   const subagentModelKey = subagentDefault && subagentDefault !== 'follow' ? `${subagentDefault.provider}/${subagentDefault.id}` : FOLLOW_SESSION
@@ -81,6 +89,19 @@ export function SessionSettings(): ReactElement {
             isSelected={wrapUpCard}
             onChange={(on) => void patchSettings({ wrapUpCard: on })}
             data-testid="v3-session-wrap-up-card"
+          />
+        </SettingsRow>
+
+        <SettingsRow settingId="session-response-detail" label={text.sessionResponseDetail} description={text.sessionResponseDetailDesc}>
+          <Segmented
+            label={text.sessionResponseDetail}
+            value={responseDetail}
+            options={RESPONSE_DETAILS.map((value) => ({
+              value,
+              label: responseDetailLabels[value],
+              testId: `v3-session-response-detail-${value}`
+            }))}
+            onChange={(value) => void patchSettings({ responseDetail: value as ResponseDetailChoice })}
           />
         </SettingsRow>
 

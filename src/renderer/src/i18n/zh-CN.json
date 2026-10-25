@@ -659,8 +659,6 @@
   "picker.temp": "温度",
   "picker.tempDefault": "默认",
   "picker.tempDesc": "回复的随机程度，0–2：越低越稳定，越高越发散。滚轮逐档调，也可直接输入数值；按模型分别记，清空即用服务商默认值。思考开着时请求不带温度，此行会隐藏。",
-  "picker.detail": "回复详细程度",
-  "picker.detailDesc": "只管讲多细，与思考强度无关；错误提示始终保留",
   "picker.image": "图像",
   "picker.modelTip": "切换模型",
   "picker.needsAuth": "未配置",

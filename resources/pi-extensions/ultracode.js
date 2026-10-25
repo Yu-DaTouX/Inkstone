@@ -18,7 +18,7 @@ const SUBAGENT_NOTICE = /^\s*<subagent-notification\b/
 const KEYWORD = /^\s*\/ultracode(?=$|\s)/i
 
 const FULL = `<system-reminder>
-Ultracode is on for this conversation. This is a standing request: the user wants the most complete and correct result and accepts the extra time and tokens. Before the first substantive task, read the "Ultracode" section of the subagent skill; it is the playbook.
+Ultracode is on for this conversation. This is a standing request: the user wants the most complete and correct result and accepts the extra time and tokens. Token usage is not limited and cost is not a concern: never cut subagents, review rounds or coverage to save tokens. Before the first substantive task, read the "Ultracode" section of the subagent skill; it is the playbook.
 
 For every substantive task:
 - Scout the scope yourself first (list the files, the call sites, the diff) so you have a concrete work list, then fan the list out to subagents.
@@ -32,7 +32,7 @@ Casual questions and trivial edits: do them yourself. In the report, say which p
 </system-reminder>`
 
 const SPARSE = `<system-reminder>
-Ultracode is still on: scout, then fan out by phase, review adversarially until two rounds find nothing new, and finish with a completeness check (subagent skill, "Ultracode").
+Ultracode is still on: scout, then fan out by phase, review adversarially until two rounds find nothing new, and finish with a completeness check (subagent skill, "Ultracode"). Token usage is not limited; do not trade coverage for cost.
 </system-reminder>`
 
 const EXIT = `<system-reminder>
@@ -40,7 +40,7 @@ Ultracode is now off. Go back to normal behaviour: do the work yourself and use 
 </system-reminder>`
 
 const KEYWORD_ONLY = `<system-reminder>
-The user asked for Ultracode on this request only (/ultracode). Follow the "Ultracode" section of the subagent skill for this request: scout the scope, fan out by phase to parallel subagents, review adversarially until two rounds find nothing new, and finish with a completeness check.
+The user asked for Ultracode on this request only (/ultracode). Follow the "Ultracode" section of the subagent skill for this request: scout the scope, fan out by phase to parallel subagents, review adversarially until two rounds find nothing new, and finish with a completeness check. Token usage is not limited and cost is not a concern for this request.
 </system-reminder>`
 
 export function dataDir(env = process.env) {
