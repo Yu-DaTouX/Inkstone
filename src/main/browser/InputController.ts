@@ -150,6 +150,11 @@ export class InputController {
     const modifiers = process.platform === 'darwin' ? MOD_META : MOD_CTRL
     await this.key('keyDown', 'a', 'KeyA', modifiers, 65, element.sessionId)
     await this.key('keyUp', 'a', 'KeyA', modifiers, 65, element.sessionId)
+    if (!text) {
+      await this.key('keyDown', 'Backspace', 'Backspace', 0, 8, element.sessionId)
+      await this.key('keyUp', 'Backspace', 'Backspace', 0, 8, element.sessionId)
+      return
+    }
     await this.cdp.send('Input.insertText', { text }, element.sessionId)
   }
 
@@ -171,13 +176,13 @@ export class InputController {
     const viewport = metrics?.cssLayoutViewport ?? metrics?.layoutViewport
     const x = Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2))
     const y = Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2))
-    await this.cdp.send('Input.dispatchMouseEvent', {
-      type: 'mouseWheel',
-      x,
-      y,
-      deltaX: Number.isFinite(deltaX) ? deltaX : 0,
-      deltaY: Number.isFinite(deltaY) ? deltaY : 0
-    })
+    const dx = Number.isFinite(deltaX) ? deltaX : 0
+    const dy = Number.isFinite(deltaY) ? deltaY : 0
+    if (await this.pageHidden()) {
+      await this.cdp.send('Runtime.evaluate', { expression: `window.scrollBy(${dx}, ${dy})`, returnByValue: true })
+      return
+    }
+    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: dx, deltaY: dy })
   }
 
   private async pageHidden(sessionId?: string): Promise<boolean> {

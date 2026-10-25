@@ -2,6 +2,8 @@ import type { BrowserCommandHost, BrowserObservationResult, CapabilityRunOptions
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { serveLocalFile } from './browser/local-file-server'
 import { CapabilityCommandError } from './capability-server'
 import { WAIT_POLL_MS, describeWait, parseWaitCondition, waitSatisfied } from '../shared/browser-wait'
 import { YAN_DIR } from './paths'
@@ -11,6 +13,7 @@ import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
 export interface BrowserCommandsHost {
   browserHostOrNull(): BrowserCommandHost | null
   capabilityOpts(): CapabilityRunOptions | undefined
+  cwd?(): string
   isActive?(): boolean
 }
 
@@ -45,7 +48,7 @@ export class BrowserCommands {
         }
         if (['click', 'type', 'select'].includes(action)) {
           const ref = this.browserText(params, 'ref')
-          if (ref && !this.refs.has(ref)) throw new CapabilityCommandError('STALE_ELEMENT', '元素引用不属于本次运行的最新观察，请重新 observe。')
+          if (ref && !this.refs.has(ref)) throw new CapabilityCommandError('STALE_ELEMENT', `元素引用不属于最新一次观察（${ref.split(':e')[0]}）。click / type / select / press / scroll 的回执本身就是新观察，ref 已换代：用上一条回执 resultFile 里 elements 的 ref，不必另行 observe。`)
         }
         if (['click', 'type', 'select', 'press', 'scroll'].includes(action) && this.targetId !== state.activeTabId) {
           throw new CapabilityCommandError('STALE_TARGET', '浏览器目标已改变，请重新 observe 后继续。')
@@ -88,13 +91,7 @@ export class BrowserCommands {
     switch (action) {
       case 'navigate':
       case 'open': {
-        const url = this.browserText(params, 'url')
-        if (!url) {
-          throw new CapabilityCommandError(
-            'missing_url',
-            `${action} 需要一个 http(s) 地址（about:blank 也可以）：yan browser ${action} --url <地址>`
-          )
-        }
+        const url = await this.navigationTarget(action, params)
         const res = await host.navigate(url)
         if (!res.ok) this.browserFailure(action, res)
         const state = host.getState()
@@ -192,7 +189,7 @@ export class BrowserCommands {
         }
         const state =
           action === 'new-tab'
-            ? await host.newTab(this.browserText(params, 'url'))
+            ? await host.newTab(this.browserText(params, 'url') || this.browserText(params, 'file') ? await this.navigationTarget(action, params) : undefined)
             : action === 'switch-tab'
               ? await host.switchTab(id as string)
               : await host.closeTab(id)
@@ -274,6 +271,27 @@ export class BrowserCommands {
       )
     }
     return host
+  }
+
+  private async navigationTarget(action: string, params: Record<string, unknown>): Promise<string> {
+    const file = this.browserText(params, 'file')
+    const url = this.browserText(params, 'url')
+    const local = file ?? (url && /^file:/i.test(url) ? fileURLToPath(url) : undefined)
+    if (local) {
+      const path = process.platform === 'win32' ? local.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:') : local
+      try {
+        return await serveLocalFile(path, this.ctl.cwd?.())
+      } catch (error) {
+        throw new CapabilityCommandError('local_file_unavailable', error instanceof Error ? error.message : String(error))
+      }
+    }
+    if (!url) {
+      throw new CapabilityCommandError(
+        'missing_url',
+        `${action} 需要 http(s) 地址或本地文件：yan browser ${action} --url <地址> 或 --file <路径>`
+      )
+    }
+    return url
   }
 
   browserText(params: Record<string, unknown>, key: string): string | undefined {

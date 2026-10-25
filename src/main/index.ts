@@ -2886,9 +2886,11 @@ function registerIpc(): void {
 
   handle('yan:pickCwd', async () => {
     if (!win) return null
+    const lastCwd = (await getSettings()).cwd
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
-      title: '选择工作目录'
+      title: '选择工作目录',
+      ...(lastCwd && existsSync(lastCwd) ? { defaultPath: lastCwd } : {})
     })
     if (r.canceled || !r.filePaths[0]) return null
     return r.filePaths[0]

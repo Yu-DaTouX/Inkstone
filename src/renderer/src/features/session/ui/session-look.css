@@ -175,6 +175,8 @@
   .v3-steps-stats > .v3-add { background: var(--add-bg); }
   .v3-steps-stats > .v3-del { background: var(--del-bg); }
   .v3-steps-stats.err { color: var(--fail-t); }
+  .v3-steps-stats[data-kind='files'] { flex: none; font-family: inherit; white-space: nowrap; }
+  .v3-steps-stats[data-kind='files']::before { content: '·'; margin-inline-end: var(--s-6); }
   .v3-process-note { color: var(--fg3); font-size: var(--t-footnote); }
   .v3-steps-list, .v3-steps-live { display: flex; flex-direction: column; min-width: 0; }
   .v3-step-head { position: relative; display: flex; align-items: center; gap: var(--s-6); width: 100%; min-height: var(--d-row); padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--fg3); font: inherit; font-size: var(--t-body); line-height: var(--t-body-lh); cursor: pointer; text-align: left; transition: color var(--dur-fast) var(--ease); }

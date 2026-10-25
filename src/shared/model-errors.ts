@@ -45,7 +45,7 @@ const PATTERNS: { kind: ModelErrorKind; label: string; re: RegExp }[] = [
   {
     kind: 'aborted',
     label: '本轮被取消',
-    re: /\b(aborted by user|request aborted|operation aborted)\b|AbortError|用户取消|主动取消|已取消|已中止|本轮被取消/i
+    re: /\b(aborted by user|(request|operation) (was )?aborted)\b|AbortError|用户取消|主动取消|已取消|已中止|本轮被取消/i
   }
 ]
 

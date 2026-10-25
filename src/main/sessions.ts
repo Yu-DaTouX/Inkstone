@@ -5,7 +5,7 @@ import { sep } from 'node:path'
 import { join, resolve } from 'node:path'
 import type { ProjectRecord, SessionSummary } from '../shared/ipc'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import { decorateSessions } from './session-layout'
+import { decorateSessions, getSessionLayout, normalizeLayoutPath } from './session-layout'
 import { countSessionMessages, forgetSessionMessageCounts } from './session-message-count'
 import { parseSubagentNotice } from '../shared/subagent-notice'
 import { ArtifactStore, readSessionId } from './artifacts'
@@ -327,6 +327,12 @@ export async function listSessions(limit = 200, projects?: ProjectRecord[]): Pro
 
   files.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const picked = files.slice(0, limit)
+  if (projects && files.length > limit) {
+    const archived = new Set(
+      (await getSessionLayout()).entries.flatMap((entry) => (entry.archivedAt && entry.sessionFile ? [normalizeLayoutPath(entry.sessionFile)] : []))
+    )
+    if (archived.size) picked.push(...files.slice(limit).filter((f) => archived.has(normalizeLayoutPath(f.path))))
+  }
 
   const out: Array<SessionSummary | undefined> = new Array(picked.length)
   let cursor = 0

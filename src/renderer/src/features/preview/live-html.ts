@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { useStore } from '../../state/store'
-import { showPreview } from '../workbench/tool-tiles'
+import { showPreview, usePreviewBindings } from '../workbench/tool-tiles'
 import { currentTurnHtmlCalls, resolveAgainst, thinkingHtmlDraft, type HtmlToolCall } from './live-html-calls'
 
 export interface LiveHtmlTarget {
@@ -48,10 +48,21 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
     let returning = false
     let thinkingDraft: string | null = null
     let thinkingDraftAt = 0
+    let draftPreview: { owner: string | null; sessionId: string; path: string } | null = null
+    const closeDraftPreview = (): void => {
+      if (!draftPreview) return
+      const { owner, sessionId, path } = draftPreview
+      draftPreview = null
+      usePreviewBindings.getState().close(owner, path)
+      opened.delete(`${sessionId}|${path.toLowerCase()}`)
+      const target = useLiveHtml.getState().target
+      if (target?.sessionId === sessionId && target.path === path) useLiveHtml.setState({ target: null })
+    }
     return useStore.subscribe((state) => {
       const sessionId = state.session?.sessionId ?? null
       const cwd = state.session?.cwd ?? ''
       if (sessionId !== lastSession) {
+        closeDraftPreview()
         lastSession = sessionId
         live.clear()
         historical.clear()
@@ -86,7 +97,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
         historical.add(call.id)
         return false
       })
-      const current = useLiveHtml.getState().target
+      let current = useLiveHtml.getState().target
       const fromThinking = running ? thinkingHtmlDraft(state.messages) : null
       if (!fromThinking) thinkingDraft = null
       else if (fromThinking !== thinkingDraft && Date.now() - thinkingDraftAt >= THINKING_DRAFT_MS) {
@@ -98,6 +109,10 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
         thinkingDraft !== null
           ? { id: 'thinking', path: lastCall?.path ?? THINKING_DRAFT_PATH, done: false, draft: thinkingDraft, focusText: null }
           : lastCall
+      if (draftPreview && (!latest || resolveAgainst(cwd, latest.path) !== draftPreview.path)) {
+        closeDraftPreview()
+        current = useLiveHtml.getState().target
+      }
       if (!latest) {
         if (current?.sessionId === sessionId && current.generating && !running) {
           useLiveHtml.setState({ target: { ...current, generating: false, drafting: false, revision: current.revision + 1 } })
@@ -136,6 +151,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
       if (!opened.has(openKey)) {
         opened.add(openKey)
         showPreview(ownerRef.current, path, { preview: true })
+        if (latest.id === 'thinking' && !lastCall) draftPreview = { owner: ownerRef.current, sessionId, path }
       }
     })
   }, [])

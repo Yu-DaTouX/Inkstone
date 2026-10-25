@@ -470,6 +470,9 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                           <span className="mtp-item-main">
                             <span className="mtp-item-name">{m.name}</span>
                             <span className="mtp-tags">
+                              {section.kind === 'favorites' || section.kind === 'recent' ? (
+                                <span className="mtp-tag">{m.provider}</span>
+                              ) : null}
                               {isFavorite(favorites, m) ? (
                                 <Star className="mtp-fav" size={11} fill="currentColor" aria-hidden />
                               ) : null}

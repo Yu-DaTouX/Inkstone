@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { app, shell, BrowserWindow, WebContentsView } from 'electron'
+import { app, shell, BrowserWindow, View, WebContentsView } from 'electron'
 import type {
   BrowserTransferRevokeReason,
   BrowserTransferView,
@@ -51,6 +51,12 @@ import { createStateFlush, ownedViewVisible } from './browser/host-state'
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
 const INITIAL_URL = 'about:blank'
+const HIDDEN_LAYOUT_SIZE = { width: 1280, height: 800 }
+const HIDDEN_LAYOUT_MIN_WIDTH = 320
+const HIDDEN_LAYOUT_MIN_HEIGHT = 240
+const HIDDEN_LAYOUT_TIMEOUT_MS = 1_500
+const HIDDEN_PAINT_TIMEOUT_MS = 500
+const HIDDEN_PAINT_SCRIPT = 'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))'
 
 function safeUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
@@ -1173,7 +1179,47 @@ export class BrowserController {
       }
       return observation
     }
+    await this.layoutHiddenTab(tab!)
     return p.observer.capture(tab!.state.url, tab!.state.title)
+  }
+
+  private async layoutHiddenTab(tab: BrowserTab, repaint = false): Promise<void> {
+    const win = this.getWindow()
+    const contents = tab.view.webContents
+    if (!win || win.isDestroyed() || tab.borrowedBy || contents.isDestroyed() || tab.view.getVisible()) return
+    const viewport = async (): Promise<[number, number]> => {
+      const size = await contents.executeJavaScript('[innerWidth, innerHeight]', true).catch(() => [0, 0])
+      return Array.isArray(size) ? [Number(size[0]) || 0, Number(size[1]) || 0] : [0, 0]
+    }
+    const [width, height] = await viewport()
+    const sized = width >= HIDDEN_LAYOUT_MIN_WIDTH && height >= HIDDEN_LAYOUT_MIN_HEIGHT
+    if (sized && !repaint) return
+    const target = sized ? tab.view.getBounds() : HIDDEN_LAYOUT_SIZE
+    const parking = new View()
+    parking.setBounds({ x: 0, y: 0, width: 1, height: 1 })
+    win.contentView.addChildView(parking)
+    try {
+      parking.addChildView(tab.view)
+      tab.view.setBounds({ x: 0, y: 0, width: target.width, height: target.height })
+      tab.view.setVisible(true)
+      const deadline = Date.now() + HIDDEN_LAYOUT_TIMEOUT_MS
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        if ((await viewport())[0] >= HIDDEN_LAYOUT_MIN_WIDTH) break
+      }
+      await Promise.race([
+        contents.executeJavaScript(HIDDEN_PAINT_SCRIPT, true).catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, HIDDEN_PAINT_TIMEOUT_MS))
+      ])
+    } finally {
+      if (!win.isDestroyed()) {
+        tab.view.setVisible(false)
+        if (this.tabs.get(tab.id) === tab && !tab.borrowedBy) win.contentView.addChildView(tab.view)
+        else parking.removeChildView(tab.view)
+        win.contentView.removeChildView(parking)
+        if (this.activeTabId === tab.id && this.viewVisibleRequested && this.activeMode === 'embedded') this.showOnlyOwnedView(tab.id)
+      }
+    }
   }
 
   async network(): Promise<BrowserNetworkSnapshot> {
@@ -1259,6 +1305,8 @@ export class BrowserController {
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
+    const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
+    if (tab) await this.layoutHiddenTab(tab, true)
     return { mimeType: 'image/png', data: await p.cdp.screenshot() }
   }
 

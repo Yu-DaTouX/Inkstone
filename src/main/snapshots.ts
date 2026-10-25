@@ -17,6 +17,7 @@ export type { FileDiff, FileSnapshotSide }
 
 interface Entry {
   path: string
+  readPath: string
   before: Side
   at: number
 }
@@ -47,9 +48,9 @@ export function captureSide(path: string): Side {
   }
 }
 
-export function snapshotBefore(callId: string, path: string): void {
-  const before = captureSide(path)
-  pending.set(callId, { path, before, at: Date.now() })
+export function snapshotBefore(callId: string, path: string, readPath = path): void {
+  const before = captureSide(readPath)
+  pending.set(callId, { path, readPath, before, at: Date.now() })
   while (pending.size > MAX_ENTRIES) {
     const oldest = pending.keys().next().value
     if (oldest === undefined) break
@@ -61,7 +62,7 @@ export function snapshotAfter(callId: string): FileDiff | null {
   const entry = pending.get(callId)
   if (!entry) return null
   pending.delete(callId)
-  const after = captureSide(entry.path)
+  const after = captureSide(entry.readPath)
   const status: FileDiff['status'] =
     !entry.before.exists && after.exists
       ? 'created'

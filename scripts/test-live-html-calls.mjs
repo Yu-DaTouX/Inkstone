@@ -81,6 +81,9 @@ try {
   assert.ok(m.htmlInText('```html\n' + page).endsWith('<p>段落</p>'), '未写完的草稿取到当前末尾')
   const second = m.htmlInText(page + '</html>\n改一版：\n' + page.replace('段落', '第二版'))
   assert.ok(second.includes('第二版'), '多份草稿取最后一份')
+  assert.equal(m.htmlInText('模板这样写：\n' + page.replace('<p>段落</p>', '<p>${escapeHtml(title)}</p>')), null, '含模板插值的是代码不是草稿')
+  assert.equal(m.htmlInText('const tpl = `' + page), null, '写在字符串里的 HTML 不是草稿')
+  assert.equal(m.htmlInText(page + '</html>\n' + '接下来想 RSS 的事。'.repeat(80)), null, '草稿写完后推理已转到别处')
   const thinking = (calls) => [{ id: 'u', role: 'user', text: 'x' }, { id: 'a', role: 'assistant', text: '', thinking: page, toolCalls: calls }]
   assert.ok(m.thinkingHtmlDraft(thinking([])), '思考里的 HTML 作为草稿')
   assert.equal(m.thinkingHtmlDraft(thinking([{ id: 'w', name: 'write', args: {}, status: 'running' }])), null, '同一条消息已开始写文件时以工具参数为准')

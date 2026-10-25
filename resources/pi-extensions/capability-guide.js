@@ -135,6 +135,12 @@ export function taskReminder(tools = false) {
 }
 export const TASK_REMINDER = taskReminder(false)
 
+export const TASK_STALE_AFTER = 20
+export function staleTaskReminder(tools = false) {
+  const how = tools ? 'the `todos` tool' : '`yan tasks apply`'
+  return `<system-reminder>The to-do list has not been updated for ${TASK_STALE_AFTER}+ tool calls, so the user's progress panel may be out of date. If steps have finished, tick them off with ${how} now; if the plan changed, rewrite the list. Do not mention this reminder.</system-reminder>`
+}
+
 export function touchesTasks(toolName, input) {
   if (toolName === TODOS_TOOL.name) return true
   return toolName === 'bash' && /\byan\s+tasks\b/.test(String(input?.command ?? ''))
@@ -192,19 +198,35 @@ function registerTaskReminder(pi, tools) {
   let calls = 0
   let planned = false
   let reminded = false
+  let sincePlan = 0
+  let staleReminded = false
   pi.on('message_end', (event) => {
     if (String(event?.message?.role ?? '') !== 'user') return
     calls = 0
     planned = false
     reminded = false
+    sincePlan = 0
+    staleReminded = false
   })
   pi.on('tool_call', (event) => {
     calls += 1
-    if (touchesTasks(String(event?.toolName ?? ''), event?.input)) planned = true
+    sincePlan += 1
+    if (touchesTasks(String(event?.toolName ?? ''), event?.input)) {
+      planned = true
+      sincePlan = 0
+      staleReminded = false
+    }
     return undefined
   })
   pi.on('before_provider_request', (event) => {
-    if (planned || reminded || calls < TASK_REMINDER_AFTER) return undefined
+    if (planned) {
+      if (staleReminded || sincePlan < TASK_STALE_AFTER) return undefined
+      const next = appendReminder(event?.payload, staleTaskReminder(tools))
+      if (!next) return undefined
+      staleReminded = true
+      return next
+    }
+    if (reminded || calls < TASK_REMINDER_AFTER) return undefined
     const next = withTaskReminder(event?.payload, tools)
     if (!next) return undefined
     reminded = true

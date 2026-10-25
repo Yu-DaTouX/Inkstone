@@ -124,6 +124,9 @@ export function currentTurnHtmlCalls(messages: readonly UIMessage[]): HtmlToolCa
 
 const HTML_START = /<!doctype html|<html[\s>]/gi
 const THINKING_DRAFT_MIN = 300
+const THINKING_DRAFT_STALE_TAIL = 800
+const TEMPLATE_CODE = /\$\{[^}\n]*\}|\{\{[^}\n]*\}\}|<%[\s\S]*?%>/
+const QUOTED_START = /[`'"(+=]\s*$/
 
 export function htmlInText(text: string): string | null {
   let start = -1
@@ -136,7 +139,10 @@ export function htmlInText(text: string): string | null {
   const fence = rest.indexOf('```')
   const ends = [close >= 0 ? rest.indexOf('>', close) + 1 : -1, fence].filter((value) => value > 0)
   const html = ends.length ? rest.slice(0, Math.min(...ends)) : rest
-  return html.length >= THINKING_DRAFT_MIN ? html : null
+  if (html.length < THINKING_DRAFT_MIN || TEMPLATE_CODE.test(html)) return null
+  if (ends.length && text.length - start - html.length > THINKING_DRAFT_STALE_TAIL) return null
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1
+  return QUOTED_START.test(text.slice(lineStart, start)) ? null : html
 }
 
 export function thinkingHtmlDraft(messages: readonly UIMessage[]): string | null {

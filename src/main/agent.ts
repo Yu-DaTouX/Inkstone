@@ -486,7 +486,8 @@ export class AgentController extends EventEmitter {
   }
   private readonly browserCommands = new BrowserCommands({
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
-    capabilityOpts: () => this.capabilityOpts
+    capabilityOpts: () => this.capabilityOpts,
+    cwd: () => this.cwd
   })
 
   private readonly acquisition = new CapabilityAcquisition({
@@ -2341,7 +2342,7 @@ export class AgentController extends EventEmitter {
         const call = started.call
         if (isWriteTool(call.name)) {
           const path = writePathOf(call.args)
-          if (path) snapshotBefore(call.id, path)
+          if (path) snapshotBefore(call.id, path, isAbsolute(path) ? path : resolve(this.cwd, path))
         } else if (isShellTool(call.name)) {
           void beginTreeSnapshot(call.id, this.cwd, this.state?.sessionId)
         }

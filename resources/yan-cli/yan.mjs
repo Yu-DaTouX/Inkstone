@@ -2,6 +2,8 @@
 
 import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
+import { resolve as resolvePath } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const API_VERSION = 1
 
@@ -330,7 +332,10 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                   "boundary":"只读，不要改代码",
                   "timeoutMinutes":10}}
   list                         查看所有子代理的状态与活动摘要
-  get    --id <子代理ID>        查看一个子代理的实时转录与审阅状态
+  get    --id <子代理ID> [--transcript]
+                               查看状态、最终结论全文、改动过的文件与审阅状态；
+                               --transcript 额外附上完整转录（体积大，一般不需要）
+  status --id <子代理ID>        get 的别名
   send   --id <子代理ID> --message <信息> [--mode steer|follow-up]
                                向本会话派出的子代理发信息；也可 --request-file send.json
                                运行中：steer（默认）在当前工具结束后送达，用来纠偏或补充资料；
@@ -402,7 +407,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
   navigate --url <地址>          打开 http(s) 页面（about:blank 也可以）
-  open     --url <地址>          navigate 的别名
+  navigate --file <路径>         打开本地 HTML（相对路径按当前目录；也接受 file:// 地址）：
+                                 砚在 127.0.0.1 上临时托管它所在的项目目录，相对链接与样式照常加载
+  open     --url <地址>          navigate 的别名（同样支持 --file）
   state                          当前状态：是否打开 / 标签列表 / 活动标签
   observe                        观察当前页面：URL / 标题 / 可交互元素 ref / 可见文本
   network                        最近 80 条请求的 URL / 方法 / 状态 / 资源类型（无请求头、正文或 Cookie）
@@ -417,10 +424,10 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   press    --key <键>            Enter / Tab / Escape / ArrowDown …
   scroll   --delta-y <像素> [--delta-x <像素>]
   back / forward / reload        历史与刷新
-  new-tab  [--url <地址>]        新标签页
+  new-tab  [--url <地址> | --file <路径>]  新标签页
   switch-tab  --id <标签id>      切到某个标签（id 从 state 里取）
   close-tab   [--id <标签id>]    关闭标签
-  screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）
+  screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）；右侧面板收起时也能截
   download                       最近一次完成的下载
   request-user-control [--reason <原因>]
                                  暂停自动化，交给用户处理密码 / 验证码 / 支付
@@ -435,7 +442,9 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
     目标不是下拉框回 code=NOT_SELECT，没有这个可选值回 code=OPTION_NOT_FOUND（并附上可选值）；
-  · 元素 ref 会随页面变化失效（报 STALE_ELEMENT 之类）→ 重新 observe 一次再点；
+  · 每个 click / type / select / press / scroll 的回执都是一次新观察，ref 随之换代：
+    连续填表时直接用上一条回执 resultFile 里的 elements[].ref，不必每步 observe；报 STALE_ELEMENT 时同理；
+  · type --text "" 清空输入框；
   · 不提供「执行任意页面 JavaScript」的入口（那是被有意关掉的）。
 `
 }
@@ -476,10 +485,11 @@ const GROUP_SPECS = {
     required: { create: ['prompt'], delete: ['id'], pause: ['id'] }
   },
   subagent: {
-    actions: ['start', 'list', 'get', 'send', 'stop'],
+    actions: ['start', 'list', 'get', 'status', 'send', 'stop'],
     required: {
       start: ['task'],
       get: ['id'],
+      status: ['id'],
       send: ['id', 'message'],
       stop: ['id']
     }
@@ -542,8 +552,6 @@ const GROUP_SPECS = {
       'disconnect-chrome'
     ],
     required: {
-      navigate: ['url'],
-      open: ['url'],
       click: ['ref'],
       type: ['ref', 'text'],
       press: ['key'],
@@ -635,6 +643,7 @@ if (positional[0] === 'image' && positional[1] === 'local') {
   command = `${positional[0]}.${positional[1]}`
 }
 if (command === 'artifact.export-video') command = 'artifact.exportVideo'
+if (command === 'subagent.status') command = 'subagent.get'
 
 const flagParams = {}
 for (const [k, v] of Object.entries(flags)) {
@@ -649,9 +658,29 @@ if (params.readOnly === undefined && params['read-only'] !== undefined) {
   params.readOnly = params['read-only']
 }
 
+if (positional[0] === 'browser' && ['navigate', 'open', 'new-tab'].includes(positional[1])) {
+  const rawUrl = typeof params.url === 'string' ? params.url.trim() : ''
+  let localPath = typeof params.file === 'string' && params.file.trim() ? params.file.trim() : ''
+  if (!localPath && /^file:/i.test(rawUrl)) {
+    try {
+      localPath = fileURLToPath(rawUrl)
+    } catch (err) {
+      fail(EXIT.usage, `file:// 地址无法解析：${rawUrl}`, { detail: String(err?.message ?? err) })
+    }
+  }
+  if (localPath) {
+    if (process.platform === 'win32') localPath = localPath.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:')
+    params.file = resolvePath(process.cwd(), localPath)
+    delete params.url
+  } else if (positional[1] !== 'new-tab' && !rawUrl) {
+    fail(EXIT.usage, `browser ${positional[1]} 缺少参数：--url <地址> 或 --file <本地路径>`, { detail: '用 yan browser --help 看用法' })
+  }
+}
+
 if (groupSpec?.required?.[positional[1]]) {
   const missing = groupSpec.required[positional[1]].filter((key) => {
     const value = params[key]
+    if (command === 'browser.type' && key === 'text' && value === '') return false
     return value === undefined || value === '' || value === true
   })
   if (missing.length) {

@@ -5,11 +5,33 @@ export const NOTICE_COALESCE_WINDOW_MS = 3_000
 export const NOTICE_BATCH_MIN_WAIT_MS = 60_000
 export const NOTICE_BATCH_MAX_WAIT_MS = 10 * 60_000
 export const NOTICE_SIBLINGS_POLL_MS = 15_000
+export const NOTICE_BUSY_POLL_MS = 3_000
 const MAX_DELIVERY_ATTEMPTS = 5
 export const NOTICE_MAX_UNDELIVERED_RUNS = 20
+const READ_RESULTS_MAX = 200
+
+const readResults = new Set<string>()
+
+export function markSubagentResultRead(id: string): void {
+  readResults.delete(id)
+  readResults.add(id)
+  while (readResults.size > READ_RESULTS_MAX) readResults.delete(readResults.values().next().value as string)
+}
+
+function takeUnread(runs: SubagentRun[]): SubagentRun[] {
+  const unread = runs.filter((run) => !readResults.has(run.id))
+  for (const run of runs) readResults.delete(run.id)
+  return unread
+}
 
 export interface NoticeTarget {
   send(text: string, images: undefined, mode: 'followUp'): Promise<{ ok: boolean; error?: string }>
+  getState?(): { isAgentRunning?: boolean; isStreaming?: boolean } | null
+}
+
+function targetBusy(target: NoticeTarget): boolean {
+  const state = target.getState?.()
+  return state?.isAgentRunning === true || state?.isStreaming === true
 }
 
 export interface SubagentNotifierDeps {
@@ -149,17 +171,33 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
     stopPoll(batch)
     void (async () => {
       if (!(await deps.enabled())) return
-      const runs = [...(undelivered.get(key) ?? []), ...batch.runs]
+      const runs = takeUnread([...(undelivered.get(key) ?? []), ...batch.runs])
       undelivered.delete(key)
+      if (runs.length === 0) return
       const target = deps.find(runs[runs.length - 1])
       if (!target) {
         undelivered.set(key, runs)
         trimUndelivered()
         return
       }
+      if (targetBusy(target)) {
+        holdUntilIdle(key, runs)
+        return
+      }
       if (await deliver(target, runs)) failedAttempts.delete(key)
       else keepUndelivered(key, runs)
     })().catch(() => undefined)
+  }
+
+  const holdUntilIdle = (key: string, runs: SubagentRun[]): void => {
+    const open = pending.get(key)
+    if (open) {
+      open.runs.unshift(...runs)
+      return
+    }
+    const batch: PendingBatch = { runs, timer: undefined as unknown as ReturnType<typeof setTimeout>, deadlineAt: now() + NOTICE_BUSY_POLL_MS }
+    pending.set(key, batch)
+    rearm(key, batch, NOTICE_BUSY_POLL_MS)
   }
 
   const retry = (): void => {

@@ -8,7 +8,7 @@ export class ScreenshotTimeoutError extends Error {
 
   constructor(timeoutMs: number, detail?: string) {
     super(
-      `截图 ${Math.round(timeoutMs / 1000)} 秒没有返回：浏览器面板没显示（原生网页隐藏时不产出画面）。先展开右侧浏览器面板再截图；必要时用 yan browser open 打开页面。${detail ? `（${detail}）` : ''}`
+      `截图 ${Math.round(timeoutMs / 1000)} 秒没有返回：浏览器面板没显示（原生网页隐藏时不产出画面）。可以展开右侧浏览器面板后重试。${detail ? `（${detail}）` : ''}`
     )
     this.name = 'ScreenshotTimeoutError'
   }

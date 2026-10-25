@@ -114,11 +114,12 @@ const ARTIFACT_MAX = 20
 
 const SOURCE_TOOLS = new Set(['read', 'grep', 'find', 'ls', 'glob', 'web_search', 'fetch', 'browser'])
 const SOURCE_KEYS = ['path', 'file', 'filePath', 'filepath', 'dir', 'cwd', 'url']
+const WRITE_TOOLS = new Set(['write', 'edit'])
 
 interface SubagentTranscriptLike {
   role: string
   text: string
-  toolCalls?: { name: string; args?: unknown }[]
+  toolCalls?: { name: string; args?: unknown; status?: string }[]
 }
 
 function pushUnique(list: string[], value: string, max: number): void {
@@ -127,6 +128,19 @@ function pushUnique(list: string[], value: string, max: number): void {
   if (list.includes(trimmed)) return
   if (list.length >= max) return
   list.push(trimmed)
+}
+
+export function writtenPaths(transcript: readonly SubagentTranscriptLike[]): string[] {
+  const paths: string[] = []
+  for (const msg of transcript) {
+    for (const call of msg.toolCalls ?? []) {
+      if (!WRITE_TOOLS.has(String(call.name ?? '')) || call.status === 'error') continue
+      const args = call.args && typeof call.args === 'object' ? (call.args as Record<string, unknown>) : {}
+      const path = args.path ?? args.file_path ?? args.filePath
+      if (typeof path === 'string') pushUnique(paths, path, ARTIFACT_MAX * 5)
+    }
+  }
+  return paths
 }
 
 export function summarizeSubagentRun(
@@ -174,6 +188,7 @@ export function summarizeSubagentRun(
 
   const artifacts: string[] = []
   for (const path of input.diffPaths ?? []) pushUnique(artifacts, String(path), ARTIFACT_MAX)
+  for (const path of writtenPaths(input.transcript)) pushUnique(artifacts, path, ARTIFACT_MAX)
   if (input.resultPath) pushUnique(artifacts, input.resultPath, ARTIFACT_MAX)
 
   return {

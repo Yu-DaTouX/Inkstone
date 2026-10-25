@@ -6,6 +6,8 @@ import type { ModelLabelResolution } from './subagents/model-label'
 import type { SubagentRun } from '../shared/ipc'
 import { forkContextError, type SubagentForkSource } from './subagent-fork'
 import { normalizeSubagentId } from '../shared/subagent-id'
+import { writtenPaths } from '../shared/subagent-brief'
+import { markSubagentResultRead } from './subagent-notify'
 
 const SUBAGENT_SYSTEM_PROMPT = [
   'You are a subagent working on one focused task inside a larger project.',
@@ -15,6 +17,26 @@ const SUBAGENT_SYSTEM_PROMPT = [
   '- Decide how many tool calls the task needs; stop when you have enough evidence to report.',
   '- Finish with a concise report: what you changed or found, and how you verified it.'
 ].join('\n')
+
+function finalMessage(run: SubagentRun): string {
+  for (let i = run.transcript.length - 1; i >= 0; i -= 1) {
+    const msg = run.transcript[i]
+    if (msg.role === 'assistant' && msg.text.trim()) return msg.text.trim()
+  }
+  return ''
+}
+
+export function compactSubagentRun(run: SubagentRun): Record<string, unknown> {
+  const { transcript, diff, ...rest } = run
+  const changedFiles = [...new Set([...(run.isolation === 'worktree' ? diff?.paths ?? [] : []), ...writtenPaths(transcript)])]
+  return {
+    ...rest,
+    finalMessage: finalMessage(run),
+    changedFiles,
+    ...(run.isolation === 'worktree' && diff ? { diff } : {}),
+    transcriptMessages: transcript.length
+  }
+}
 
 function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<string, unknown> } {
   return {
@@ -210,8 +232,11 @@ export class SubagentService {
           `找不到子代理：${id}`
         )
       }
+      const withTranscript = params.transcript === true || params.transcript === 'true'
+      if (run.status !== 'running' && run.status !== 'starting') markSubagentResultRead(id)
+      const compact = compactSubagentRun(run)
       return {
-        data: run,
+        data: withTranscript ? run : compact,
         summary: {
           kind: 'subagent',
           action: 'get',
@@ -219,6 +244,8 @@ export class SubagentService {
           status: run.status,
           latestActivity: run.latestActivity,
           transcript: run.transcript.length,
+          changedFiles: compact.changedFiles,
+          finalMessage: String(compact.finalMessage ?? '').slice(0, 400),
           review: run.review
         }
       }
