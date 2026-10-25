@@ -14,7 +14,6 @@ export interface BrowserText {
   siteAskDetail: string
   siteAskDeny: string
   siteAskAllow: string
-  sitesManage: string
   sitesTitle: string
   sitesDescription: string
   sitesAddLabel: string
@@ -36,18 +35,17 @@ const ZH: BrowserText = {
   opening: '正在打开…',
   tabLabel: '内置浏览器标签页',
   viewportLabel: '网页显示区域',
-  siteAskTitle: '允许打开网站',
-  siteAskLead: (origin) => `内置浏览器要打开 ${origin}。`,
-  siteAskDetail: '允许后这个站点会被记住，以后在浏览器里打开不再询问；删除放行站点后会重新询问。不允许只取消本次打开，下次点击仍可重新选择。',
-  siteAskDeny: '本次不打开',
+  siteAskTitle: '允许加载远程图片',
+  siteAskLead: (origin) => `聊天里有一张来自 ${origin} 的图片。`,
+  siteAskDetail: '允许后会记住这个站点，以后它的图片直接加载，可在「设置 › 安全」里管理。不允许只取消本次加载。',
+  siteAskDeny: '本次不加载',
   siteAskAllow: '允许并记住',
-  sitesManage: '管理放行站点',
-  sitesTitle: '放行的站点',
-  sitesDescription: '这些站点在内置浏览器里打开时不再询问。删除后，下次由页面跳转或弹窗打开时会重新询问。',
+  sitesTitle: '聊天远程图片的允许列表',
+  sitesDescription: '聊天里来自这些站点的图片会直接加载。删除后，再加载这个站点的图片时会重新询问。',
   sitesAddLabel: '添加网址',
   sitesAddPlaceholder: 'example.com',
   sitesAdd: '添加',
-  sitesEmpty: '还没有放行的站点。',
+  sitesEmpty: '还没有允许的站点。',
   sitesRemove: (label) => `移除 ${label}`,
   sitesClear: '全部清除',
   sitesDone: '完成',
@@ -58,8 +56,8 @@ const ZH: BrowserText = {
         ? '这个站点已经在列表里。'
         : result === 'blocked'
           ? '这个站点受安全限制，不能添加。'
-          : '放行站点已达上限，无法添加更多。',
-  sitesLoadError: '读取放行站点失败。'
+          : '允许列表已达上限，无法添加更多。',
+  sitesLoadError: '读取允许列表失败。'
 }
 
 const EN: BrowserText = {
@@ -70,16 +68,15 @@ const EN: BrowserText = {
   opening: 'Opening…',
   tabLabel: 'Built-in browser tabs',
   viewportLabel: 'Web page area',
-  siteAskTitle: 'Allow this site',
-  siteAskLead: (origin) => `The built-in browser wants to open ${origin}.`,
+  siteAskTitle: 'Load remote image',
+  siteAskLead: (origin) => `This chat has an image from ${origin}.`,
   siteAskDetail:
-    'Allowing remembers this site, so the browser will not ask again. Removing it from allowed sites makes the browser ask again. Denying only cancels this attempt; click again to choose.',
-  siteAskDeny: 'Not this time',
+    'Allowing remembers this site so its images load directly; manage the list in Settings › Security. Denying only cancels this load.',
+  siteAskDeny: 'Not now',
   siteAskAllow: 'Allow and remember',
-  sitesManage: 'Manage allowed sites',
-  sitesTitle: 'Allowed sites',
+  sitesTitle: 'Chat remote image allow list',
   sitesDescription:
-    'The built-in browser opens these sites without asking. Remove one and the next page navigation or popup asks again.',
+    'Images from these sites load directly in chat. Remove one and its images ask again.',
   sitesAddLabel: 'Add URL',
   sitesAddPlaceholder: 'example.com',
   sitesAdd: 'Add',
@@ -94,8 +91,8 @@ const EN: BrowserText = {
         ? 'That site is already allowed.'
         : result === 'blocked'
           ? 'This site cannot be added because of safety restrictions.'
-          : 'The allowed sites list is full.',
-  sitesLoadError: 'Could not read the allowed sites.'
+          : 'The allow list is full.',
+  sitesLoadError: 'Could not read the allow list.'
 }
 
 export function browserText(lang: Lang): BrowserText {

@@ -34,10 +34,8 @@ const stubs = new Map(Object.entries({
   'src/renderer/src/features/workbench/pane-chrome.tsx': `
 export const usePaneChrome = () => globalThis.__browserChrome
 export function PaneTitle({ children }) { globalThis.__browserTitle = children; return null }
-export function usePaneMenu(source, items) { globalThis.__browserMenu = items }
 `,
   'src/renderer/src/features/browser/use-browser-surface.ts': 'export const useBrowserBoundsSync = () => true; export const useBrowserSurfaceActive = () => {}; export const useBrowserOverlayBlocker = () => {}',
-  'src/renderer/src/features/browser/AllowedSitesDialog.tsx': 'export const AllowedSitesDialog = () => null'
 }).map(([path, contents]) => [resolve(path), contents]))
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-browser-header-'))
@@ -102,9 +100,7 @@ try {
   assert.match(body, /browser-pane-forward/, '保留前进')
   assert.match(body, /browser-pane-reload/, '保留刷新')
   assert.match(body, /browser-pane-open-external/, '保留外部打开')
-  assert.doesNotMatch(body, /browser-pane-allowed-sites/, '工作区管理入口移入面板菜单')
-  assert.equal(globalThis.__browserMenu[0].id, 'browser:sites')
-  assert.equal(globalThis.__browserMenu[0].label, '管理放行站点')
+  assert.doesNotMatch(body, /browser-pane-allowed-sites/, '浏览器面板不再有放行站点入口')
 
   const header = renderToStaticMarkup(globalThis.__browserTitle)
   assert.match(header, /v3-browser__tabsrow--chrome/)
@@ -118,13 +114,12 @@ try {
 
   const standalone = render(null)
   assert.match(standalone, /data-ui="tabs"/, '无标题槽的容器保留内联标签栏')
-  assert.match(standalone, /browser-pane-allowed-sites/, '无面板菜单时保留管理按钮')
+  assert.doesNotMatch(standalone, /browser-pane-allowed-sites/, '无面板菜单时也没有放行站点入口')
   const mounting = render({ title: null })
   assert.match(mounting, /data-ui="tabs"/, '标题槽挂载前不丢失标签栏')
   const inactive = render({ title: {} }, { owner: { ...owner, active: false } })
   assert.match(inactive, /browser-pane-inactive/)
   assert.equal(globalThis.__browserTitle, null, '非活动会话不注册可操作标签栏')
-  assert.deepEqual(globalThis.__browserMenu, [], '非活动会话不提供可操作权限菜单')
   console.log('test-v3-browser-header: 全部通过')
 } finally {
   await rm(dir, { recursive: true, force: true })

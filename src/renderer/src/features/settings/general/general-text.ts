@@ -72,6 +72,9 @@ export interface GeneralText {
   securityAllowRootsDesc: string
   securityAllowRootsEmpty: string
   securityAllowRootsRemove: string
+  securityRemoteImages: string
+  securityRemoteImagesDesc: string
+  securityRemoteImagesManage: string
 
   devicesEnable: string
   devicesEnableDesc: string
@@ -231,6 +234,9 @@ const ZH: GeneralText = {
   securityAllowRootsDesc: '在确认卡选「允许并记住」后加入；只能移除。',
   securityAllowRootsEmpty: '还没有记住任何目录。',
   securityAllowRootsRemove: '移除',
+  securityRemoteImages: '聊天远程图片的允许列表',
+  securityRemoteImagesDesc: '列表里站点的图片在聊天里直接加载，其他站点的图片要先点一下才加载。',
+  securityRemoteImagesManage: '管理',
 
   devicesEnable: '手机接入',
   devicesEnableDesc: '允许手机查看会话、回复、发文字；任务仍在本机运行。',
@@ -390,6 +396,9 @@ const EN: GeneralText = {
   securityAllowRootsDesc: 'Added via “allow and remember”; you can only remove here.',
   securityAllowRootsEmpty: 'No folders remembered yet.',
   securityAllowRootsRemove: 'Remove',
+  securityRemoteImages: 'Chat remote image allow list',
+  securityRemoteImagesDesc: 'Images from these sites load directly in chat; images from other sites wait for a click.',
+  securityRemoteImagesManage: 'Manage',
 
   devicesEnable: 'Phone access',
   devicesEnableDesc: 'Phone can view sessions, reply and send text; tasks run here.',

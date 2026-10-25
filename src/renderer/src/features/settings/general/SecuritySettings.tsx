@@ -8,6 +8,7 @@ import { permissionNeedsConfirm } from './general-model'
 import { SettingsGroup, SettingsRow, Segmented } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiProjectTrustGroup } from './PiNativeSettings'
+import { AllowedSitesDialog } from '../../browser/AllowedSitesDialog'
 
 export interface AllowRootsListProps {
   roots: readonly string[]
@@ -51,6 +52,7 @@ export function SecuritySettings(): ReactElement {
   const outside = settings?.guardOutsideWrites === true
   const roots = settings?.guardAllowRoots ?? []
   const [confirmAll, setConfirmAll] = useState(false)
+  const [sitesOpen, setSitesOpen] = useState(false)
 
   const apply = (next: PermissionMode): void => {
     void patchSettings({ permissionMode: next })
@@ -108,7 +110,18 @@ export function SecuritySettings(): ReactElement {
             onRemove={(path) => void removeGuardAllowRoot(path)}
           />
         </SettingsRow>
+
+        <SettingsRow
+          settingId="security-remote-images"
+          label={text.securityRemoteImages}
+          description={text.securityRemoteImagesDesc}
+        >
+          <Button variant="secondary" onPress={() => setSitesOpen(true)} data-testid="v3-security-remote-images">
+            {text.securityRemoteImagesManage}
+          </Button>
+        </SettingsRow>
       </SettingsGroup>
+      <AllowedSitesDialog isOpen={sitesOpen} onClose={() => setSitesOpen(false)} />
 
       <PiProjectTrustGroup title={labels.groupSecurityProjects} />
 

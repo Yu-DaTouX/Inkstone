@@ -51,6 +51,7 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'security-permission-mode', section: 'security', zh: '权限档', en: 'Permission tier', keywords: ['权限', '自动批准', '不受限制', '审批', 'permission', 'approve', 'unrestricted'] },
   { id: 'security-outside-writes', section: 'security', zh: '写入项目之外时确认', en: 'Confirm writes outside the project', keywords: ['项目外', '写入', '确认', 'outside', 'guard'] },
   { id: 'security-allow-roots', section: 'security', zh: '已记住的允许目录', en: 'Remembered allowed folders', keywords: ['允许目录', '白名单', 'allow', 'folders'], more: true },
+  { id: 'security-remote-images', section: 'security', zh: '聊天远程图片的允许列表', en: 'Chat remote image allow list', keywords: ['远程图片', '图片', '放行站点', '允许的站点', 'remote image', 'allowed sites'], more: true },
   { id: 'security-project-trust', section: 'security', zh: '项目默认信任', en: 'Default project trust', keywords: ['信任', '新项目', 'trust'], more: true },
 
   { id: 'shortcuts-keys', section: 'shortcuts', zh: '快捷键', en: 'Keyboard shortcuts', keywords: ['键位', '改键', '热键', 'keybinding', 'hotkey', 'shortcut'] },

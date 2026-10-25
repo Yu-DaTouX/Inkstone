@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Plus, RotateCw, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Plus, RotateCw } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, EmptyState, Input, IconButton, Notice, Tab, TabList, Tabs, TextField } from '../../ui'
 import { claimResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
-import { PaneTitle, usePaneChrome, usePaneMenu } from '../workbench/pane-chrome'
+import { PaneTitle, usePaneChrome } from '../workbench/pane-chrome'
 import { browserText } from './browser-text'
 import { browserControlAllowed } from './ownership'
 import { useBrowserBoundsSync, useBrowserOverlayBlocker, useBrowserSurfaceActive } from './use-browser-surface'
-import { AllowedSitesDialog } from './AllowedSitesDialog'
 import './browser.css'
 
 export type { BrowserPaneProps }
@@ -66,7 +65,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [opening, setOpening] = useState(false)
-  const [sitesOpen, setSitesOpen] = useState(false)
   const navSeq = useRef(0)
 
   useEffect(() => {
@@ -109,13 +107,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       setOpening(false)
     }
   }
-
-  usePaneMenu('browser', control ? [{
-    id: 'browser:sites',
-    label: text.sitesManage,
-    icon: <ShieldCheck size={14} aria-hidden="true" />,
-    onAction: () => setSitesOpen(true)
-  }] : [])
 
   if (!owner.active) return <Gate text={text.inactive} testId="browser-pane-inactive" />
   if (!control) {
@@ -248,16 +239,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
           </TextField>
         </form>
 
-        {!chrome ? (
-          <IconButton
-            aria-label={text.sitesManage}
-            data-testid="browser-pane-allowed-sites"
-            onPress={() => setSitesOpen(true)}
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-          </IconButton>
-        ) : null}
-
         <IconButton
           aria-label={t('browser.openExternal')}
           data-testid="browser-pane-open-external"
@@ -325,7 +306,6 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         aria-label={text.viewportLabel}
         data-testid="browser-pane-viewport"
       />
-      <AllowedSitesDialog isOpen={sitesOpen} onClose={() => setSitesOpen(false)} />
     </div>
   )
 }
