@@ -57,7 +57,7 @@ import { projectPackageDirs } from './packages'
 import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
 import { mergeCommandDescriptors } from './command-registry'
-import { cachedTitles, generateTitle, manualTitleOf, setManualTitle } from './title'
+import { cachedTitles, fallbackTitle, generateTitle, manualTitleOf, setManualTitle } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
 import { SessionEntriesLite } from './session-entries-lite'
 import { localizeImage } from './image-store'
@@ -104,7 +104,7 @@ import type { McpServerStatus } from '../shared/mcp'
 import type { CapabilityMcpServerSettingView } from '../shared/ipc'
 import type { ApprovalOwner } from '../shared/approval'
 import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shared/task-plan'
-import { titleSampleImages, titleSamples } from '../shared/title-samples'
+import { titleSampleImages, titleSamples, titleSampleText, type TitleSampleMessage } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import type { QueueEditOp } from '../shared/ipc'
 import { ArtifactStore } from './artifacts'
@@ -3487,6 +3487,7 @@ export class AgentController extends EventEmitter {
       const sessionId = this.state?.sessionId
       const generation = this.capabilityOpts?.runnerGeneration
       if (!rpc) return { ok: false, error: 'pi 尚未就绪' }
+      const titleOnSend = !autoContinue && !this.state?.sessionName && !this.messages.some((m) => m.role === 'user')
       if (autoContinue) {
         this.loopGuardAutoContinueCount += 1
         if (autoContinue.reason === 'model-error') {
@@ -3501,6 +3502,7 @@ export class AgentController extends EventEmitter {
       const res = await this.submitQueueCommand('prompt', text, images, mode === 'steer' ? 'steering' : 'followUp', payload)
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
+      if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
       await this.refreshState()
       return { ok: true }
     })
@@ -4528,7 +4530,7 @@ export class AgentController extends EventEmitter {
   }
 
   private async maybeGenerateTitle(
-    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; sessionId?: string } = {}
+    opts: { force?: boolean; candidate?: boolean; lockHeld?: boolean; sessionId?: string; prompt?: TitleSampleMessage } = {}
   ): Promise<string | null> {
     const st = this.state
     const rpc = this.rpc
@@ -4541,9 +4543,10 @@ export class AgentController extends EventEmitter {
       return null
     }
 
-    const users = this.messages.filter(
+    const users: TitleSampleMessage[] = this.messages.filter(
       (m) => m.role === 'user' && (m.text.trim() || m.images?.length)
     )
+    if (users.length === 0 && opts.prompt && titleSampleText(opts.prompt)) users.push(opts.prompt)
     if (users.length === 0) return null
 
     const samples = titleSamples(users)
@@ -4553,7 +4556,7 @@ export class AgentController extends EventEmitter {
     const sessionId = st.sessionId
 
     try {
-      const res = await generateTitle({
+      const generated = await generateTitle({
         sessionId,
         samples,
         images: titleImages,
@@ -4563,6 +4566,7 @@ export class AgentController extends EventEmitter {
         allowManual: opts.candidate,
         persist: !opts.candidate
       })
+      const res = generated ?? (opts.prompt && !this.stopping ? await fallbackTitle(sessionId, samples[0]) : null)
       if (!res?.title || this.stopping || this.rpc !== rpc || this.titleLifecycle !== titleLifecycle) return null
 
       if (opts.candidate) return res.title
