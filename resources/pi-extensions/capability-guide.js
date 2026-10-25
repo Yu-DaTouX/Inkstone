@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { registerFinishReminder } from './finish-reminder.js'
 import { registerWriteLineEndings } from './write-line-endings.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
@@ -175,7 +174,6 @@ export default function capabilityGuideExtension(pi) {
   const tools = hostToolsAvailable() && typeof pi.registerTool === 'function'
   if (tools) pi.registerTool(createTodosTool())
   const guideText = capabilityGuide(tools)
-  registerFinishReminder(pi)
   registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')

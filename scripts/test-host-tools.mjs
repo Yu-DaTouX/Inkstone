@@ -108,13 +108,9 @@ try {
     assert.equal(definition.parameters.type, 'object')
   }
 
-  const payloadFor = (text = '继续') => ({ messages: [{ role: 'user', content: text }] })
-  hooks.message_end({ message: { role: 'user' } })
-  for (let i = 0; i < 40; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
-  assert.equal(hooks.before_provider_request({ payload: payloadFor() }), undefined, '长回合没有待办也不追加催办提醒')
-  hooks.tool_call({ toolName: 'todos', input: { action: 'set', items: [{ text: 'a' }] } })
-  for (let i = 0; i < 40; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
-  assert.equal(hooks.before_provider_request({ payload: payloadFor() }), undefined, '待办久未更新也不追加催办提醒')
+  // 催办和收尾提醒都已去掉：提问与能力指引不再往请求里追加任何提醒
+  assert.equal(hooks.before_provider_request, undefined, '提问与能力指引不注册 before_provider_request')
+  assert.equal(hooks.message_end, undefined, '提问与能力指引不跟踪回合')
 
   const { appendReminder } = await import(new URL('../resources/pi-extensions/request-reminder.js', import.meta.url))
   const userItem = { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
