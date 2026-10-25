@@ -119,7 +119,7 @@ export function environmentGuide(now = new Date(), platform = process.platform, 
     ? `OS: ${os}.`
     : shell === 'powershell'
       ? 'OS: Windows; system commands run in PowerShell.'
-      : 'OS: Windows; the bash tool runs Git Bash. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`).'
+      : 'OS: Windows; the bash tool runs Git Bash. Windows programs such as node and python do not understand Git Bash paths like /tmp/... or /c/...: pass them C:/... paths (convert with `cygpath -m`). Edit files with the edit/write tools; Python text-mode writes on Windows turn \\n into \\r\\n.'
   return [
     `Today: ${day} (local date).`,
     shellLine,

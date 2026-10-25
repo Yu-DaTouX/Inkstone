@@ -41,12 +41,15 @@ export function ensurePython3Shim(dir, python) {
   return dir
 }
 
+const PYTHON_UTF8_DEFAULTS = { PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+
 export function createPythonEnvFixer(options) {
   const fixPath = createPythonPathFixer(options)
   return (env) => {
     const next = fixPath(env)
-    if (Object.keys(next).some((name) => name.toUpperCase() === 'PYTHONIOENCODING')) return next
-    return { ...next, PYTHONIOENCODING: 'utf-8' }
+    const present = new Set(Object.keys(next).map((name) => name.toUpperCase()))
+    const missing = Object.entries(PYTHON_UTF8_DEFAULTS).filter(([name]) => !present.has(name))
+    return missing.length === 0 ? next : { ...next, ...Object.fromEntries(missing) }
   }
 }
 

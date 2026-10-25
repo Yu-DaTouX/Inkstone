@@ -47,6 +47,13 @@ assert.equal(fixer(untouched), untouched)
 const envFixer = createPythonEnvFixer({ fs: fakeFs({}) })
 assert.equal(envFixer({ PATH: 'C:\\Windows' }).PYTHONIOENCODING, 'utf-8')
 assert.equal(envFixer({ PATH: 'C:\\Windows', PythonIOEncoding: 'gbk' }).PYTHONIOENCODING, undefined)
+assert.equal(envFixer({ PATH: 'C:\\Windows' }).PYTHONUTF8, '1', '文件读写默认 UTF-8')
+const userUtf8 = envFixer({ PATH: 'C:\\Windows', PythonUtf8: '0' })
+assert.equal(userUtf8.PYTHONUTF8, undefined, '用户已设置 PYTHONUTF8 时不覆盖')
+assert.equal(userUtf8.PythonUtf8, '0')
+assert.equal(userUtf8.PYTHONIOENCODING, 'utf-8')
+const preset = { PATH: 'C:\\Windows', PYTHONIOENCODING: 'gbk', PYTHONUTF8: '0' }
+assert.equal(envFixer(preset), preset, '都已设置时原样返回')
 
 if (process.platform === 'win32') {
   const dir = await mkdtemp(join(tmpdir(), "yan-py-shim-it's "))

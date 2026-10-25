@@ -88,6 +88,7 @@ try {
   assert.match(guide.CAPABILITY_GUIDE, /yan tasks apply/)
   assert.match(guide.taskReminder(true), /`todos` tool/)
   assert.equal(guide.TASK_REMINDER, guide.taskReminder(false))
+  assert.match(guide.environmentGuide(new Date(2026, 9, 26), 'win32', undefined), /Git Bash.*edit\/write tools; Python text-mode writes on Windows turn \\n into \\r\\n\./)
   assert.match(question.TOOL_GUIDANCE, /`question` tool/)
   assert.match(question.CLI_GUIDANCE, /yan question ask/)
 
