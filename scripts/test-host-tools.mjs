@@ -121,6 +121,21 @@ try {
   assert.ok(reminded, '用户提出新要求后计划标记归零，长回合又会提醒写计划')
   assert.match(JSON.stringify(reminded.messages.at(-1)), /many tool calls without a to-do list/)
 
+  const { appendReminder } = await import(new URL('../resources/pi-extensions/request-reminder.js', import.meta.url))
+  const userItem = { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
+  const toolOutput = { type: 'function_call_output', call_id: 'c1', output: 'ok' }
+  const onUser = appendReminder({ model: 'm', input: [userItem], stream: true }, 'R')
+  assert.deepEqual(onUser, { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: '继续' }, { type: 'input_text', text: 'R' }] }], stream: true }, 'Responses：末项是用户消息时追加 input_text')
+  assert.equal(userItem.content.length, 1, 'Responses：不改原 payload')
+  assert.deepEqual(appendReminder({ input: [userItem, toolOutput] }, 'R').input, [userItem, toolOutput, { role: 'user', content: [{ type: 'input_text', text: 'R' }] }], 'Responses：末项是工具结果时追加一条用户消息')
+  assert.deepEqual(appendReminder({ input: [{ type: 'message', role: 'user', content: 'hi' }] }, 'R').input.at(-1).content, [{ type: 'input_text', text: 'hi' }, { type: 'input_text', text: 'R' }])
+  assert.equal(appendReminder({ input: [] }, 'R'), undefined)
+  assert.equal(appendReminder({}, 'R'), undefined)
+  hooks.message_end({ message: { role: 'user' } })
+  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
+  const responsesReminded = hooks.before_provider_request({ payload: { input: [userItem, toolOutput] } })
+  assert.match(JSON.stringify(responsesReminded?.input?.at(-1)), /many tool calls without a to-do list/, 'Responses 接口也能收到写计划提醒')
+
   const sizes = registered.map((definition) => JSON.stringify({ name: definition.name, description: definition.description, parameters: definition.parameters }).length)
   const removed = guide.CAPABILITY_GUIDE.length - withTools.length + (question.CLI_GUIDANCE.length - question.TOOL_GUIDANCE.length)
   console.log(`host tools ok (tool definitions ${sizes.join(' + ')} chars ≈ ${Math.round(sizes.reduce((a, b) => a + b, 0) / 4)} tokens; guide text change ${-removed} chars)`)
