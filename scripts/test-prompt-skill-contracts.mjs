@@ -22,7 +22,7 @@ export async function runPromptSkillContractTests(ok) {
   match(cancelled.content[0].text, /Do not guess/i, '提问无答复不猜测')
   for (const tools of [false, true]) {
     const guide = capabilityGuide(tools)
-    match(guide, /Batch independent reads and small calls with codemode; print only the needed results/, '能力指引限制批处理输出')
+    ok(!/Batch independent reads|Promise\.allSettled/.test(guide), '能力指引不重复 pi 原生 <rules> 里的 codemode 批量规则')
     match(guide, /When direct tools are available, use `write`\/`edit` directly for large file content.*context trimming/, '能力指引让大段写入保留可裁剪参数且兼容仅 codemode 模式')
   }
   let request

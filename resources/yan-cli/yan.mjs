@@ -402,6 +402,8 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 说明：
   · stdout 只给摘要和 resultFile 路径；用 read 读取结果文件中所需的 items / queries / sources，不能把摘要当完整搜索结果；
   · query / fetch 支持 --refresh 跳过 10 分钟结果缓存；同参数的进行中请求会合并，不重复发起；
+  · 结果非空、来源评分高都不等于可信：核对相关性和发布日期，事实结论先读来源原网页；必须来自某些站点时用 --site；
+    结果不相关时缩短或换查询 / 来源，要最新信息时加 --refresh；
   · 网页引擎与付费来源都内置；只有维基百科 / arXiv / Hacker News 依赖用户自行安装的 OpenCLI，
     没装时这几个来源报 unavailable，doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error / skipped（已够用、提前停止）；
