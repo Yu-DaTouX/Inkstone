@@ -1,5 +1,6 @@
 export async function runPreambleExtensionTests(ok, mod) {
-  const { NATIVE_PREAMBLE, YAN_PREAMBLE, PROGRESS_GUIDANCE, default: extension } = mod
+  const { NATIVE_PREAMBLE, YAN_PREAMBLE, PROGRESS_GUIDANCE, WORK_RULES, default: extension } = mod
+  const GUIDANCE = [PROGRESS_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')
 
   ok(typeof NATIVE_PREAMBLE === 'string' && NATIVE_PREAMBLE.startsWith('You are an expert coding assistant'), '导出的原生句就是 pi 的英文 preamble')
   ok(typeof YAN_PREAMBLE === 'string' && YAN_PREAMBLE.includes('Inkstone'), '导出的砚开场白包含产品名 Inkstone')
@@ -14,13 +15,13 @@ export async function runPreambleExtensionTests(ok, mod) {
   const base = `${NATIVE_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>`
   const out = run(base)
   ok(out?.systemPrompt?.startsWith(YAN_PREAMBLE), '原生开场白被替换成砚的英文开场白', String(out?.systemPrompt).slice(0, 60))
-  ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>\n\n${PROGRESS_GUIDANCE}`, '原生规则逐字保留，末尾追加简短进展约定')
+  ok(out.systemPrompt === `${YAN_PREAMBLE}\n\n<tools>\n- read: Read file contents\n</tools>\n\n<rules>\n- Be concise\n</rules>\n\n${GUIDANCE}`, '原生规则逐字保留，末尾追加简短进展约定与工作规则')
   ok(!out.systemPrompt.includes(NATIVE_PREAMBLE), '替换后不再包含原生英文句')
 
-  ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}\n\n${PROGRESS_GUIDANCE}`, '未知原生开场白保留原文并补充砚身份和进展约定')
+  ok(run('BASE').systemPrompt === `BASE\n\n${YAN_PREAMBLE}\n\n${GUIDANCE}`, '未知原生开场白保留原文并补充砚身份和进展约定')
   ok(run('').systemPrompt.includes(YAN_PREAMBLE), '空系统提示仍包含砚身份')
   ok(run(out.systemPrompt) === undefined, '幂等：身份和进展约定不重复追加')
-  ok(run(`${YAN_PREAMBLE}\n\n<tools>`).systemPrompt.endsWith(PROGRESS_GUIDANCE), '旧身份提示补齐进展约定')
+  ok(run(`${YAN_PREAMBLE}\n\n<tools>`).systemPrompt.endsWith(GUIDANCE),'旧身份提示补齐进展约定')
   {
     const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
     const withDocs = run(`${NATIVE_PREAMBLE}\n\n${docs}\n\n<cwd>\nC:/x\n</cwd>`)
@@ -35,9 +36,11 @@ export async function runPreambleExtensionTests(ok, mod) {
   {
     const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
     const sections = {}
-    const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections } }, {})
+    const promptGuidelines = ['Existing rule', WORK_RULES[1]]
+    const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections, promptGuidelines } }, {})
     ok(result === undefined, '有具名分区时不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
     ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs?.includes('C:\\pi\\README.md'), '进展约定与压缩文档写进具名分区')
+    ok(promptGuidelines.length === 1 + WORK_RULES.length && promptGuidelines[0] === 'Existing rule' && WORK_RULES.every((rule) => promptGuidelines.filter((item) => item === rule).length === 1), '工作规则逐条加进 pi 原生 <rules>，不重复')
 
     ok(typeof handlers.context_with_system === 'function', '扩展注册了 context_with_system')
     const system = { role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLE, tools: '<tools>\n- read\n</tools>' } }
@@ -49,5 +52,6 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
   }
   ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('Work quietly') && PROGRESS_GUIDANCE.includes('Do not narrate routine steps') && PROGRESS_GUIDANCE.includes('Inkstone internals') && !PROGRESS_GUIDANCE.includes('After each batch of tool calls'), '进展约定：安静干活，只在关键节点说话，不讲砚内部机制，尊重静默要求')
-  ok(/requested change is made and the relevant tests or checks pass, stop and report; do not re-read, refactor or re-verify unchanged code/.test(PROGRESS_GUIDANCE) && !PROGRESS_GUIDANCE.includes('editing to verifying') && PROGRESS_GUIDANCE.includes('claiming only what you observed'), '进展约定：改完且检查通过就收尾，仍只声称观察到的结果')
+  ok(/requested change is made and the relevant tests or checks pass, stop and report; do not re-read, refactor or re-verify unchanged code/.test(WORK_RULES[0]) && !PROGRESS_GUIDANCE.includes('stop and report') && !PROGRESS_GUIDANCE.includes('editing to verifying') && PROGRESS_GUIDANCE.includes('claiming only what you observed'), '改完且检查通过就收尾单独成一条规则，进展约定仍只声称观察到的结果')
+  ok(/every case.*exit non-zero.*first failure/.test(WORK_RULES[1]) && /\| tail.*\| head.*exit code/.test(WORK_RULES[2]) && /whole files or large ranges.*parallel/.test(WORK_RULES[3]), '工作规则：检查脚本跑完全部用例、测试不接 tail/head、整段读取并行发出')
 }

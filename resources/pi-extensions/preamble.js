@@ -4,9 +4,23 @@ export const NATIVE_PREAMBLE =
 export const YAN_PREAMBLE =
   'You are an assistant operating inside Inkstone (砚), the desktop AI workspace. pi is the underlying execution engine, not the user-facing application. You help users through Inkstone and its available tools, reading files, executing commands, editing code, and writing new files.'
 
-export const PROGRESS_GUIDANCE = 'Work quietly. Before substantive tool work, state your plan once per request in one short line. Do not narrate routine steps or announce tool calls, and do not explain Inkstone internals (yan CLI, skill files, subagent ids, host notifications) unless asked or the task is about them. Mid-task, speak only when a step fails, you change approach, you need the user, a finding would change what the user decides, or a long run with no to-dos enters a new phase. Write status lines in your reply language. Once the requested change is made and the relevant tests or checks pass, stop and report; do not re-read, refactor or re-verify unchanged code. Put the complete answer after your last tool call, never only in text between tool calls. Finish with the result, not a recap: what was found or changed, claiming only what you observed, then briefly anything unverified or unfinished. If the user requests silence or only a final answer, comply.'
+export const PROGRESS_GUIDANCE = 'Work quietly. Before substantive tool work, state your plan once per request in one short line. Do not narrate routine steps or announce tool calls, and do not explain Inkstone internals (yan CLI, skill files, subagent ids, host notifications) unless asked or the task is about them. Mid-task, speak only when a step fails, you change approach, you need the user, a finding would change what the user decides, or a long run with no to-dos enters a new phase. Write status lines in your reply language. Put the complete answer after your last tool call, never only in text between tool calls. Finish with the result, not a recap: what was found or changed, claiming only what you observed, then briefly anything unverified or unfinished. If the user requests silence or only a final answer, comply.'
 
-const DOCS_BLOCK = /<docs>\n([\s\S]*?)\n<\/docs>/
+export const WORK_RULES = [
+  'Once the requested change is made and the relevant tests or checks pass, stop and report; do not re-read, refactor or re-verify unchanged code.',
+  'Check scripts you write must run every case, list all failures together at the end and exit non-zero; do not stop at the first failure.',
+  'Do not pipe test or build commands into `| tail` or `| head`; the shell tool already truncates long output and keeps the exit code.',
+  'When exploring code, read whole files or large ranges, and issue independent reads in parallel in the same turn.'
+]
+
+const FALLBACK_GUIDANCE = [PROGRESS_GUIDANCE, ...WORK_RULES.map((rule) => `- ${rule}`)].join('\n')
+
+function addWorkRules(guidelines) {
+  if (!Array.isArray(guidelines)) return
+  for (const rule of WORK_RULES) if (!guidelines.includes(rule)) guidelines.push(rule)
+}
+
+const DOCS_BLOCK =/<docs>\n([\s\S]*?)\n<\/docs>/
 
 function compactDocs(body) {
   const main = /Main documentation:\s*(.+)/.exec(body)?.[1]?.trim()
@@ -41,13 +55,14 @@ export default function preambleExtension(pi) {
       const short = docs ? compactDocs(docs[1]) : undefined
       if (short) sections.docs = short
       sections[PROGRESS_SECTION] = PROGRESS_GUIDANCE
+      addWorkRules(event.systemPromptOptions.promptGuidelines)
       return
     }
     const identity = base.includes(YAN_PREAMBLE) ? base : base.includes(NATIVE_PREAMBLE) ? base.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) : `${base}\n\n${YAN_PREAMBLE}`
     const docs = DOCS_BLOCK.exec(identity)
     const short = docs ? compactDocs(docs[1]) : undefined
     const compacted = short ? identity.replace(DOCS_BLOCK, `<docs>\n${short}\n</docs>`) : identity
-    const updated = compacted.includes(PROGRESS_GUIDANCE) ? compacted : `${compacted}\n\n${PROGRESS_GUIDANCE}`
+    const updated = compacted.includes(FALLBACK_GUIDANCE) ? compacted : `${compacted}\n\n${FALLBACK_GUIDANCE}`
     if (updated === base) return
     return { systemPrompt: updated }
   })
