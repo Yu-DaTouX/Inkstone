@@ -24,9 +24,10 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:closeTab', async (_e, id?: string) => browserOf()?.closeTab(id))
   rawHandle('yan:browser:close', async () => browserOf()?.close())
   rawHandle('yan:browser:navigate', async (_e, url: string) => browserOf()?.navigate(url) ?? NOT_READY)
-  rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => ({
-    decision: siteGate ? await siteGate.check(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
-  }))
+  rawHandle('yan:browser:siteAccess', async (_e, sessionId: unknown, url: unknown) => {
+    const decision = siteGate ? siteGate.peek(typeof sessionId === 'string' ? sessionId : '', String(url ?? '')) : 'allow'
+    return { decision: decision === 'ask' ? 'allow' : decision }
+  })
   rawHandle('yan:browser:remoteImage', async (_e, sessionId: unknown, url: unknown, prompt: unknown) => {
     await siteGate?.ready()
     return fetchRemoteImage({ gate: siteGate ?? null }, typeof sessionId === 'string' ? sessionId : '', url, prompt === true)

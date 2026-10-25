@@ -1,7 +1,7 @@
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
-import { openBlockedByExtension } from './open-guard'
+import { openBlockedByName } from './open-guard'
 import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
 import { disposeContentSearch } from './file-content-search'
@@ -57,7 +57,7 @@ import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, qui
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
 import { registerBrowserIpc } from './ipc/browser-ipc'
-import { createPreviewSiteGate, type PreviewSiteGate } from './preview-site-gate'
+import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
 import { registerRemoteIpc } from './ipc/remote-ipc'
 import { registerOfficeIpc } from './ipc/office-ipc'
@@ -616,7 +616,6 @@ function push(msg: MainPush): void {
   win.webContents.send('yan:push', msg)
 }
 
-let browserSiteGate: PreviewSiteGate | null = null
 const browserSiteAsks = new Map<string, (allowed: boolean) => void>()
 
 function askBrowserSiteApproval(origin: string, url: string): Promise<boolean> {
@@ -2761,7 +2760,7 @@ function registerIpc(): void {
     } catch {
       return { ok: false, error: 'missing' }
     }
-    if (!directory && openBlockedByExtension(p)) return { ok: false, error: 'blocked' }
+    if (!directory && openBlockedByName(p)) return { ok: false, error: 'blocked' }
     const err = await shell.openPath(p)
     return err ? { ok: false, error: err } : { ok: true }
   })
@@ -2998,7 +2997,6 @@ function registerIpc(): void {
       save: (list) => void patchSettings({ browserAllowedSites: list }).catch(() => undefined)
     }
   })
-  browserSiteGate = previewSites
   void previewSites.ready()
   registerBrowserIpc(ipc, () => browser, previewSites, answerBrowserSiteApproval)
 
@@ -3405,7 +3403,7 @@ app.whenReady().then(async () => {
   registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
-  browser = new BrowserController(() => win, push, () => browserSiteGate, askProfileSyncApproval)
+  browser = new BrowserController(() => win, push, askProfileSyncApproval)
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)

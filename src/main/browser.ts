@@ -20,7 +20,6 @@ import type {
   BrowserTabState,
   MainPush
 } from '../shared/ipc'
-import { BrowserPolicy } from './browser/BrowserPolicy'
 import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
 import { failureUrl, shouldSurfaceLoadError } from '../shared/browser-navigation'
 import { CDPBridge } from './browser/CDPBridge'
@@ -45,11 +44,9 @@ import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
 import { isForbiddenOrigin, normalizeSiteOrigin } from './preview-site-access'
-import type { PreviewSiteGate } from './preview-site-gate'
 import { decideRequestBoundary } from './browser/network-boundary'
 import { decideExternalRequest } from './browser/external-boundary'
 import { createStateFlush, ownedViewVisible } from './browser/host-state'
-import { decideNavigationGuard } from './browser/navigation-guard'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
@@ -96,7 +93,6 @@ interface BrowserTab {
   committedUrl: string
   pendingMainFrameUrl: string | null
   openerUrl: string
-  agentLoading: boolean
   borrowedBy?: string
 }
 
@@ -202,12 +198,10 @@ export class BrowserController {
     canGoForward: false,
     tabs: []
   }
-  private readonly policy = new BrowserPolicy()
 
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly push: Push,
-    private readonly siteGate: () => PreviewSiteGate | null = () => null,
     private readonly approveProfileSync: () => Promise<boolean> = async () => false
   ) {}
 
@@ -287,8 +281,7 @@ export class BrowserController {
       state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
       committedUrl: '',
       pendingMainFrameUrl: null,
-      openerUrl: '',
-      agentLoading: false
+      openerUrl: ''
     }
     void tab.network.start()
     view.webContents.on('did-start-loading', () => {
@@ -299,7 +292,6 @@ export class BrowserController {
     view.webContents.on('did-stop-loading', () => {
       tab.state.loading = false
       tab.pendingMainFrameUrl = null
-      tab.agentLoading = false
       this.syncTabProgress(tab)
       tab.registry.clear()
       this.updateState()
@@ -312,7 +304,6 @@ export class BrowserController {
       tab.committedUrl = url
       tab.state.loadError = undefined
       tab.pendingMainFrameUrl = null
-      tab.agentLoading = false
       tab.state.canGoBack = view.webContents.canGoBack()
       tab.state.canGoForward = view.webContents.canGoForward()
       tab.registry.clear()
@@ -333,14 +324,12 @@ export class BrowserController {
     })
     view.webContents.on('render-process-gone', () => {
       tab.state.loading = false
-      tab.agentLoading = false
       tab.registry.clear()
       this.updateState()
     })
     view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       tab.pendingMainFrameUrl = null
       tab.state.loading = false
-      tab.agentLoading = false
       if (shouldSurfaceLoadError(errorCode, isMainFrame !== false)) {
         tab.state.loadError = {
           code: errorCode,
@@ -353,14 +342,14 @@ export class BrowserController {
     view.webContents.setWindowOpenHandler(({ url }) => {
       const target = safeUrl(url)
       if (target) {
-        void this.openGatedTab(tab, target, tab.committedUrl || tab.openerUrl).catch((error) =>
+        void this.openBackgroundTab(target, tab.committedUrl || tab.openerUrl).catch((error) =>
           this.pushError(`无法打开后台标签：${error instanceof Error ? error.message : String(error)}`)
         )
       }
       return { action: 'deny' }
     })
-    view.webContents.on('will-navigate', (event, url) => this.guardNavigation(tab, event, url))
-    view.webContents.on('will-redirect', (event, url) => this.guardNavigation(tab, event, url))
+    view.webContents.on('will-navigate', (event, url) => this.guardNavigation(event, url))
+    view.webContents.on('will-redirect', (event, url) => this.guardNavigation(event, url))
     view.webContents.debugger.on('message', (_event, method) => {
       if (method === 'Page.frameNavigated' || method === 'DOM.documentUpdated') {
         tab.registry.clear()
@@ -497,7 +486,6 @@ export class BrowserController {
       tab.state.title = ''
       tab.state.loading = true
       tab.pendingMainFrameUrl = next
-      tab.agentLoading = true
       this.updateState()
       await tab.view.webContents.loadURL(next).catch(() => undefined)
     }
@@ -507,44 +495,8 @@ export class BrowserController {
     return this.getState()
   }
 
-  private guardNavigation(tab: BrowserTab, event: { preventDefault(): void }, rawUrl: string): void {
-    const url = safeUrl(rawUrl)
-    if (!url) {
-      event.preventDefault()
-      return
-    }
-    const gate = this.siteGate()
-    const outcome = decideNavigationGuard(tab.agentLoading, () => (gate ? gate.peek(tab.id, url) : 'allow'))
-    if (outcome === 'pass') return
-    event.preventDefault()
-    if (outcome === 'ask') void this.navigateAfterApproval(tab, url)
-  }
-
-  private async navigateAfterApproval(tab: BrowserTab, url: string): Promise<void> {
-    const gate = this.siteGate()
-    if (!gate) return
-    const decision = await gate.check(tab.id, url).catch(() => 'deny' as const)
-    if (decision !== 'allow') return
-    if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
-    tab.state.url = url
-    tab.state.title = ''
-    tab.state.loading = true
-    tab.pendingMainFrameUrl = url
-    tab.agentLoading = true
-    this.updateState()
-    await tab.view.webContents.loadURL(url).catch(() => undefined)
-    if (tab.view.webContents.isDestroyed() || this.tabs.get(tab.id) !== tab) return
-    this.syncTabNavigation(tab)
-    this.updateState()
-  }
-
-  private async openGatedTab(tab: BrowserTab, url: string, openerUrl: string): Promise<void> {
-    const gate = this.siteGate()
-    if (gate && gate.peek(tab.id, url) !== 'allow') {
-      const decision = await gate.check(tab.id, url).catch(() => 'deny' as const)
-      if (decision !== 'allow') return
-    }
-    await this.openBackgroundTab(url, openerUrl)
+  private guardNavigation(event: { preventDefault(): void }, rawUrl: string): void {
+    if (!safeUrl(rawUrl)) event.preventDefault()
   }
 
   private async openBackgroundTab(rawUrl: string, openerUrl: string): Promise<void> {
@@ -741,7 +693,6 @@ export class BrowserController {
       tab.state.title = ''
       tab.state.loading = true
       tab.pendingMainFrameUrl = url
-      tab.agentLoading = true
       this.updateState()
       await tab.view.webContents.loadURL(url).catch(() => undefined)
     }
@@ -1238,8 +1189,6 @@ export class BrowserController {
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     try {
       const element = p.registry.resolve(ref)
-      const policy = this.policy.checkAction('click', `${element.role} ${element.name}`)
-      if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       await p.input.click(element)
       await this.waitForPage()
       return { ok: true, observation: await this.observeTarget(p) }
@@ -1254,8 +1203,6 @@ export class BrowserController {
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     try {
       const element = p.registry.resolve(ref)
-      const policy = this.policy.checkAction('type', `${element.role} ${element.name}`)
-      if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       await p.input.type(element, text)
       await this.waitForPage()
       return { ok: true, observation: await this.observeTarget(p) }
@@ -1268,8 +1215,6 @@ export class BrowserController {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    const policy = this.policy.checkAction(key.trim().toLowerCase() === 'enter' ? 'submit' : 'press', key)
-    if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
     try {
       await p.input.press(key)
       await this.waitForPage()
@@ -1285,8 +1230,6 @@ export class BrowserController {
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
     try {
       const element = p.registry.resolve(ref)
-      const policy = this.policy.checkAction('select', `${element.role} ${element.name}`)
-      if (!policy.ok) return { ok: false, code: policy.code, error: policy.message }
       const outcome = await p.input.select(element, value)
       await this.waitForPage()
       return { ok: true, chosen: outcome, observation: await this.observeTarget(p) }
