@@ -18,6 +18,10 @@ export function runAtQueryTests(ok, atQuery) {
   const url = findAtQuery('打开 https://example.com/@docs', '打开 https://example.com/@docs'.length)
   ok(url === null, 'URL 中的 @ 不会误触发文件引用')
 
+  const glued = findAtQuery('看这张@img', '看这张@img'.length)
+  ok(glued?.query === 'img', '中文紧贴 @ 时也能触发引用')
+  ok(findAtQuery('图片(@im', '图片(@im'.length)?.query === 'im', '括号紧贴 @ 时能触发引用')
+
   const escaped = findAtQuery('字面量 \\@not-a-file', '字面量 \\@not-a-file'.length)
   ok(escaped === null, '反斜杠转义的 @ 不会触发文件引用')
 

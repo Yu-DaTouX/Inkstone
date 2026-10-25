@@ -19,7 +19,7 @@ export function findAtQuery(
   if (options.inCode || options.afterMention) return null
   const end = Math.max(0, Math.min(cursor, value.length))
   const isBoundary = (char: string | undefined): boolean =>
-    !char || /[\s([{<'"：:;,，]/.test(char)
+    !char || !/[A-Za-z0-9_.+\-/\\]/.test(char)
   const isEscaped = (at: number): boolean => {
     let slashes = 0
     for (let i = at - 1; i >= 0 && value[i] === '\\'; i -= 1) slashes += 1
