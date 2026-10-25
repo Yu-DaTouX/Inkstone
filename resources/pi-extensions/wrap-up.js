@@ -8,7 +8,7 @@ export const WRAP_UP_TOOL_NAME = 'wrap_up'
 const MAX_ACTIONS = 2
 
 export const WRAP_UP_GUIDANCE = [
-  'Only when the next step truly needs the user to decide, call `wrap_up` once, right before your final reply. Otherwise do not call it; completed results go in the final reply only.',
+  'Only when the next step truly needs the user to decide, call `wrap_up` once, right before your final reply. Otherwise do not call it, and never invent a next step to show a card; completed results go in the final reply only.',
   'If your reply asks the user a question or waits for their go-ahead, put the same question in `ask` with 1-2 `actions` (the first is your recommendation); never leave it only in the reply text.'
 ].join('\n')
 
