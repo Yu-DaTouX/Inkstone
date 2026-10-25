@@ -38,12 +38,12 @@ const { DEFAULT_COMPACT_TOKENS, DEFAULT_TRIM_TOKENS, readContextSettings, compac
 ok(DEFAULT_AUTO_COMPACT_TOKENS === 400_000, 'shared 自动压缩缺省为 400k', String(DEFAULT_AUTO_COMPACT_TOKENS))
 ok(DEFAULT_COMPACT_TOKENS === 400_000, '随包扩展自动压缩缺省为 400k', String(DEFAULT_COMPACT_TOKENS))
 ok(DEFAULT_AUTO_COMPACT_TOKENS === DEFAULT_COMPACT_TOKENS, '两端自动压缩缺省一致')
-ok(DEFAULT_CONTEXT_TRIM_TOKENS === 80_000 && DEFAULT_TRIM_TOKENS === 80_000, '裁剪缺省仍为 80k 且两端一致')
+ok(DEFAULT_CONTEXT_TRIM_TOKENS === 300_000 && DEFAULT_TRIM_TOKENS === 300_000, '裁剪缺省为 300k 且两端一致')
 ok(
   JSON.stringify([...AUTO_COMPACT_STEPS]) === JSON.stringify([100_000, 250_000, 300_000, 400_000, 600_000, 800_000]),
   '自动压缩档位未变'
 )
-ok(JSON.stringify([...CONTEXT_TRIM_STEPS]) === JSON.stringify([50_000, 80_000, 120_000]), '裁剪档位未变')
+ok(JSON.stringify([...CONTEXT_TRIM_STEPS]) === JSON.stringify([50_000, 80_000, 120_000, 200_000, 300_000]), '裁剪档位含 200k、300k')
 ok(
   pickTokenStep(DEFAULT_AUTO_COMPACT_TOKENS, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS) === undefined,
   '等于缺省值的档位不写入设置（UI 依赖 shared 缺省自动跟随）'
@@ -61,7 +61,7 @@ try {
   {
     const s = readContextSettings()
     ok(s.compactTokens === 400_000, '未设置 autoCompactTokens 时用 400k', String(s.compactTokens))
-    ok(s.trimTokens === 80_000, '未设置 contextTrimTokens 时用 80k', String(s.trimTokens))
+    ok(s.trimTokens === 300_000, '未设置 contextTrimTokens 时用 300k', String(s.trimTokens))
     ok(s.compact === true && s.trim === true, '未设置时裁剪与提前压缩默认开启')
   }
 

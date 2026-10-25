@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-export const DEFAULT_TRIM_TOKENS = 80_000
+export const DEFAULT_TRIM_TOKENS = 300_000
 export const DEFAULT_COMPACT_TOKENS = 400_000
 const TRIM_WINDOW_RATIO = 0.3
 const COMPACT_WINDOW_RATIO = 0.9

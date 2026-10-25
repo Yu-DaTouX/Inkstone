@@ -127,7 +127,7 @@ const ENVIRONMENT_SECTION = 'inkstone_environment'
 const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
-  description: 'Update the user\'s to-do panel. action: "set" replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 20 items; each text is a short title of 80 characters or fewer.',
+  description: 'Update the user\'s to-do panel. action: "set" (the default when only items are given) replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 20 items; each text is a short title of 80 characters or fewer.',
   parameters: {
     type: 'object',
     properties: {
@@ -139,7 +139,6 @@ const TODOS_TOOL = {
       },
       index: { type: 'integer', minimum: 1 }
     },
-    required: ['action']
   }
 }
 
@@ -162,7 +161,8 @@ export function createTodosTool(call = callHostTool) {
     ...TODOS_TOOL,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
       const input = params ?? {}
-      const request = { action: input.action, ...(input.items !== undefined ? { items: input.items } : {}), ...(input.index !== undefined ? { index: input.index } : {}), operationId: toolCallId }
+      const action = input.action ?? (input.items !== undefined ? 'set' : undefined)
+      const request = { action, ...(input.items !== undefined ? { items: input.items } : {}), ...(input.index !== undefined ? { index: input.index } : {}), operationId: toolCallId }
       return todosResult(await call({ command: 'tasks.apply', params: request, toolCallId, cwd: ctx?.cwd, signal }))
     }
   }

@@ -19,7 +19,7 @@ async function loadTs(rel) {
 
 const limits = await loadTs('../src/shared/context-limits.ts')
 const { CONTEXT_TRIM_STEPS, AUTO_COMPACT_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt, contextTrimAt, pickTokenStep } = limits
-assert.deepEqual([...CONTEXT_TRIM_STEPS], [50_000, 80_000, 120_000], '裁剪档位与随包扩展一致')
+assert.deepEqual([...CONTEXT_TRIM_STEPS], [50_000, 80_000, 120_000, 200_000, 300_000], '裁剪档位与随包扩展一致')
 assert.deepEqual([...AUTO_COMPACT_STEPS], [100_000, 250_000, 300_000, 400_000, 600_000, 800_000], '压缩档位与随包扩展一致')
 assert.equal(autoCompactAt(400_000, 1_000_000), 400_000, '窗口足够时不提前')
 assert.equal(autoCompactAt(400_000, 300_000), 270_000, '窗口小按 90% 提前')
