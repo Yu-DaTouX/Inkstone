@@ -153,7 +153,7 @@ export function withTaskReminder(payload, tools = false) {
 const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
-  description: 'Update the user\'s to-do panel. set: whole list; add: append; complete/uncomplete/remove: 1-based index; clear. At most 8 items; each text is a short title of 32 characters or fewer.',
+  description: 'Update the user\'s to-do panel. action: "set" replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 8 items; each text is a short title of 32 characters or fewer.',
   parameters: {
     type: 'object',
     properties: {

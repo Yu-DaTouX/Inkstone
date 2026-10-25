@@ -75,6 +75,7 @@ try {
   assert.match(todoResult.content[0].text, /\[x\] 1\. read/)
   assert.equal(todoResult.details.revision, 2)
   const todoFail = guide.todosResult({ ok: false, error: 'index out of range', data: { todos: [{ text: 'x', done: false }] } })
+  assert.match(todos.description, /action: "set" replaces the whole list with items; "add" appends items; "complete"\/"uncomplete"\/"remove" take a 1-based index; "clear" empties it\..*At most 8 items.*32 characters/)
   assert.equal(todoFail.isError, true)
   assert.match(todoFail.content[0].text, /\[ \] 1\. x/)
 
