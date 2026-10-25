@@ -108,3 +108,4 @@ __pycache__/
 /ai-quota/
 /scratchpad_*.mjs
 /*.lnk
+/artifacts/
