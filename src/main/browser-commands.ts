@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serveLocalFile } from './browser/local-file-server'
 import { CapabilityCommandError } from './capability-server'
-import { WAIT_POLL_MS, describeWait, parseWaitCondition, waitSatisfied } from '../shared/browser-wait'
+import { WAIT_POLL_MS, describeWait, parseWaitCondition, sameWaitElement, waitSatisfied, type WaitElement } from '../shared/browser-wait'
 import { YAN_DIR } from './paths'
 import type { BrowserObservation, BrowserNetworkSnapshot, BrowserState } from '../shared/ipc'
 import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
@@ -20,6 +20,7 @@ export interface BrowserCommandsHost {
 export class BrowserCommands {
   private readonly owner = `browser-${randomUUID()}`
   private refs = new Set<string>()
+  private lastElements = new Map<string, WaitElement>()
   private targetId: string | undefined
   private identity?: string
   constructor(private readonly ctl: BrowserCommandsHost) {}
@@ -71,6 +72,7 @@ export class BrowserCommands {
             throw new CapabilityCommandError('STALE_TARGET', '操作期间显示目标发生变化，动作可能已完成，请核对结果并重新 observe；不要重放动作。')
           }
           this.refs = new Set(observation.elements.map((e) => e.ref))
+          this.lastElements = new Map(observation.elements.map((e) => [e.ref, e]))
           this.targetId = this.browserHost().getState().activeTabId
         } else if (userMutations.has(action)) {
           this.refs.clear()
@@ -228,13 +230,14 @@ export class BrowserCommands {
       }
 
       case 'request-user-control': {
-        const state = host.requestUserControl()
         const reason = this.browserText(params, 'reason')
+        const state = host.requestUserControl({ reason, sessionId: this.ctl.capabilityOpts()?.sessionId ?? '' })
         return {
           data: state,
           summary: this.browserSummary(action, state, {
             userControl: state.userControl === true,
-            ...(reason ? { reason } : {})
+            ...(reason ? { reason } : {}),
+            next: '浏览器已交给用户，界面上有卡片说明原因。请在回复里告诉用户要做什么，然后结束本轮；用户做完会发消息（或点卡片按钮），那时控制已交还，再继续。'
           })
         }
       }
@@ -320,12 +323,15 @@ export class BrowserCommands {
     const parsed = parseWaitCondition(params)
     if (!parsed.ok) throw new CapabilityCommandError(parsed.code, parsed.message)
     const { condition, timeoutMs } = parsed
+    const target = condition.ref ? this.lastElements.get(condition.ref) : undefined
+    if (condition.ref && !target) throw new CapabilityCommandError('STALE_ELEMENT', `元素引用已失效：${condition.ref}。请重新调用 yan browser observe 后用新的 ref。`)
+    const matches = target ? sameWaitElement(target) : undefined
     const deadline = Date.now() + timeoutMs
     let last: BrowserObservation | null = null
 
     while (Date.now() <= deadline) {
       last = await this.browserObserve('wait')
-      if (waitSatisfied(condition, last)) return last
+      if (waitSatisfied(condition, last, matches)) return last
       await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS))
     }
 

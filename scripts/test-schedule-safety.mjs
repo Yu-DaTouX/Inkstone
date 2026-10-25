@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { readFile, writeFile, mkdtemp, mkdir, rm, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -32,8 +32,12 @@ try {
   const wrongSchemaFile = join(work, 'wrong-schema.json')
   const wrongSchema = JSON.stringify({ v: 1, tasks: [{ id: 'bad', prompt: 'partial' }] })
   await writeFile(wrongSchemaFile, wrongSchema)
-  await assert.rejects(make(wrongSchemaFile).start()); checks++
-  verify(await readFile(wrongSchemaFile, 'utf8') === wrongSchema, 'invalid entry not silently discarded')
+  const wrongService = make(wrongSchemaFile)
+  await wrongService.start()
+  wrongService.stop()
+  verify(wrongService.list().length === 0, 'invalid entry skipped instead of disabling every task')
+  const backups = (await readdir(work)).filter((name) => name.startsWith('wrong-schema.json.invalid-'))
+  verify(backups.length === 1 && await readFile(join(work, backups[0]), 'utf8') === wrongSchema, 'invalid entry kept in a backup copy')
 
   const readErrorPath = join(work, 'read-is-directory')
   await mkdir(readErrorPath)

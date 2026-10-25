@@ -109,6 +109,11 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .sched-task-cwd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .sched-task-model {
     overflow: hidden;
     max-width: 18ch;

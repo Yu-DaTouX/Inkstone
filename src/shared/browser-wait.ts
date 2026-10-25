@@ -48,12 +48,24 @@ export function parseWaitCondition(params: Record<string, unknown>): WaitParseRe
   }
 }
 
+export interface WaitElement {
+  ref: string
+  role?: string
+  name?: string
+  frameUrl?: string
+}
+
+export function sameWaitElement(target: WaitElement): (element: WaitElement) => boolean {
+  return (element) => element.role === target.role && element.name === target.name && (element.frameUrl ?? '') === (target.frameUrl ?? '')
+}
+
 export function waitSatisfied(
   condition: BrowserWaitCondition,
-  observation: { url: string; text: string; elements: { ref: string }[] }
+  observation: { url: string; text: string; elements: WaitElement[] },
+  matches: (element: WaitElement) => boolean = (element) => element.ref === condition.ref
 ): boolean {
   if (condition.ref) {
-    const found = observation.elements.some((el) => el.ref === condition.ref)
+    const found = observation.elements.some(matches)
     if (condition.gone ? found : !found) return false
   }
   if (condition.text && !observation.text.includes(condition.text)) return false

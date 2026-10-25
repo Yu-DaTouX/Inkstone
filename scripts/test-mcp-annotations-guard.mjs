@@ -16,14 +16,16 @@ const ok = (cond, name) => {
 
 const requests = []
 let decision = 'allow'
+const prefs = { mode: 'danger', outsideWrites: false, allowRoots: [] }
 const server = createServer((req, res) => {
   let body = ''
   req.on('data', (chunk) => { body += chunk })
   req.on('end', () => {
     let payload = {}
     try { payload = JSON.parse(body) } catch {}
-    requests.push(payload)
     res.writeHead(200, { 'content-type': 'application/json' })
+    if (payload?.command === 'danger.prefs') return res.end(JSON.stringify({ ok: true, summary: { kind: 'danger-prefs', ...prefs } }))
+    requests.push(payload)
     res.end(JSON.stringify(payload?.command === 'danger.confirm'
       ? { ok: true, summary: { kind: 'danger-confirm', allowed: decision === 'allow', decision: decision === 'allow' ? 'allow' : 'deny' } }
       : { ok: true, summary: {} }))
@@ -40,7 +42,7 @@ process.env.YAN_PROJECT_ID = 'test-project'
 process.env.YAN_DATA_DIR = dataDir
 delete process.env.YAN_DANGER_GUARD
 
-const writePrefs = (mode) => writeFile(join(dataDir, 'desktop.json'), JSON.stringify({ permissionMode: mode }), 'utf8')
+const writePrefs = async (mode) => { prefs.mode = mode }
 await writePrefs('danger')
 
 const tools = [
@@ -99,7 +101,9 @@ ok(hit.asked, '读取注解失败时默认询问')
 fakePi.getAllTools = getAllTools
 
 hit = await call('mcp__db__query', { prompt: 'x'.repeat(3000) })
-ok(hit.asked && hit.request?.params?.detail.length === 2000, 'MCP 参数即使含 prompt 仍遵守展示长度上限')
+ok(hit.asked && JSON.parse(hit.request?.params?.detail ?? '{}').prompt?.length === 3000, 'MCP 参数完整展示，不截断到 2000 字')
+hit = await call('mcp__db__query', { prompt: 'x'.repeat(21000) })
+ok(!hit.asked && hit.result?.block === true && String(hit.result?.reason).includes('超过 20000 字'), '超过 2 万字的审批内容直接拒绝，不截断后让用户批准')
 
 hit = await call('mcp__ghost__self', {})
 ok(hit.asked, '显式破坏即使同时标了只读也要问')
@@ -137,6 +141,10 @@ await writePrefs('all')
 hit = await call('mcp__github__delete_repo', { repo: 'x' })
 ok(!hit.asked && hit.result === undefined, '不受限制档直接放行 MCP 工具')
 await writePrefs('danger')
+
+await writeFile(join(dataDir, 'desktop.json'), JSON.stringify({ permissionMode: 'all' }), 'utf8')
+hit = await call('mcp__github__delete_repo', { repo: 'x' })
+ok(hit.asked, '模型改写 desktop.json 不能把守卫升成不受限制（档位只认宿主）')
 
 process.env.YAN_DANGER_GUARD = '0'
 hit = await call('mcp__github__delete_repo', { repo: 'x' })

@@ -24,6 +24,7 @@ import {
   findMixinAgent,
   freePort,
   killTree,
+  pidIsJava,
   pidAlive,
   prepareRunDir,
   readJson,
@@ -507,7 +508,7 @@ export class DevProject {
       const deadline = Date.now() + 20_000
       while (pidAlive(session.pid) && Date.now() < deadline) await sleep(500)
     }
-    if (pidAlive(session.pid) && session.pid) await killTree(session.pid)
+    if (pidAlive(session.pid) && session.pid && await pidIsJava(session.pid)) await killTree(session.pid)
     const deadline = Date.now() + 5000
     while (pidAlive(session.pid) && Date.now() < deadline) await sleep(200)
     const current = await this.session()
@@ -601,8 +602,13 @@ export class DevProject {
     await writeJson(this.paths.resources, afterResources)
     if (result.restartNeeded && autoRestart) {
       await this.stopNow()
-      await this.launchNow({ projectDir: this.projectDir, world: session.world })
-      result.restarted = true
+      try {
+        await this.launchNow({ projectDir: this.projectDir, world: session.world })
+        result.restarted = true
+      } catch (error) {
+        result.restarted = false
+        result.notes.push(`改动已应用，但重启客户端失败，游戏现在没有运行：${error instanceof Error ? error.message : String(error)}。请用 mc_run 重新启动。`)
+      }
     }
     return result
   }

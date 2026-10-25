@@ -51,6 +51,13 @@ import { createStateFlush, ownedViewVisible } from './browser/host-state'
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
 const INITIAL_URL = 'about:blank'
+export const DOWNLOAD_CONFIRM_BYTES = 100 * 1024 * 1024
+
+export interface LargeDownload {
+  filename: string
+  bytes: number
+  source: string
+}
 const HIDDEN_LAYOUT_SIZE = { width: 1280, height: 800 }
 const HIDDEN_LAYOUT_MIN_WIDTH = 320
 const HIDDEN_LAYOUT_MIN_HEIGHT = 240
@@ -167,6 +174,7 @@ export class BrowserController {
   >()
   private activeTabId: string | null = null
   private userControl = false
+  private userControlRequest: { reason: string; sessionId: string; at: number } | null = null
   private lastDownload: BrowserState['lastDownload']
   private automationOwner?: string
   private readonly ownedDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
@@ -208,7 +216,8 @@ export class BrowserController {
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly push: Push,
-    private readonly approveProfileSync: () => Promise<boolean> = async () => false
+    private readonly approveProfileSync: () => Promise<boolean> = async () => false,
+    private readonly approveLargeDownload: (download: LargeDownload) => Promise<boolean> = async () => false
   ) {}
 
   getState(): BrowserState {
@@ -227,6 +236,7 @@ export class BrowserController {
       tabs: [...embeddedTabs, ...externalTabs],
       activeTabId: activeIsExternal ? this.externalTabId(ext!.targetId) : this.activeTabId ?? undefined,
       userControl: this.userControl,
+      ...(this.userControl && this.userControlRequest ? { userControlRequest: this.userControlRequest } : {}),
       lastDownload: this.lastDownload,
       loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
@@ -1296,10 +1306,18 @@ export class BrowserController {
     }
   }
 
-  requestUserControl(): BrowserState {
+  requestUserControl(request: { reason?: string; sessionId?: string } = {}): BrowserState {
     this.userControl = true
+    this.userControlRequest = { reason: request.reason ?? '', sessionId: request.sessionId ?? '', at: Date.now() }
     this.updateState()
     return this.getState()
+  }
+
+  releaseUserControlFor(sessionId: string): void {
+    if (!this.userControl) return
+    const owner = this.userControlRequest?.sessionId
+    if (owner && owner !== sessionId) return
+    this.setUserControl(false)
   }
 
   async screenshot(): Promise<{ mimeType: string; data: Buffer }> {
@@ -1312,6 +1330,7 @@ export class BrowserController {
 
   setUserControl(value: boolean): BrowserState {
     this.userControl = value
+    if (!value) this.userControlRequest = null
     this.updateState()
     return this.getState()
   }
@@ -1391,6 +1410,25 @@ export class BrowserController {
     const origin = item.getURL()
     mkdirSync(directory, { recursive: true })
     item.setSavePath(path)
+    let asked = false
+    const confirmIfLarge = (bytes: number): void => {
+      if (asked || bytes <= DOWNLOAD_CONFIRM_BYTES) return
+      asked = true
+      item.pause()
+      void this.approveLargeDownload({ filename, bytes: Math.max(item.getTotalBytes(), bytes), source: origin })
+        .catch(() => false)
+        .then((allowed) => {
+          if (item.getState() !== 'progressing') return
+          if (allowed) {
+            item.resume()
+            return
+          }
+          item.cancel()
+          this.pushError(`已取消下载 ${filename}：文件超过 ${DOWNLOAD_CONFIRM_BYTES / 1024 / 1024} MB，没有得到确认`)
+        })
+    }
+    confirmIfLarge(item.getTotalBytes())
+    item.on('updated', () => confirmIfLarge(item.getReceivedBytes()))
     item.once('done', (_event, state) => {
       if (state !== 'completed') return
       this.lastDownload = { path, filename, size: item.getReceivedBytes(), source: origin }

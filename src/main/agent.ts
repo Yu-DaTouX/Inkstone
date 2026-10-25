@@ -1,5 +1,6 @@
+import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readonly'
 import { EventEmitter } from 'node:events'
-import { getSettings } from './settings'
+import { dangerGuardPrefs, getSettings } from './settings'
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -32,7 +33,7 @@ import { isSubagentNotice } from '../shared/subagent-notice'
 import { agentOwnedPiArgs, nativePiToolsSupported } from '../shared/agent-context'
 import type { CapabilityCommandResult, CapabilityHandlers, YanCliEnv } from './capability-server'
 import { CapabilityCommandError, CapabilityServer } from './capability-server'
-import type { ApprovalDecision } from '../shared/approval'
+import { APPROVAL_DETAIL_MAX, type ApprovalDecision } from '../shared/approval'
 import {
   type ConsentAnswer,
   type ConsentKeyParts,
@@ -151,6 +152,7 @@ import type { SubagentForkSource } from './subagent-fork'
 import { isUltracodeOn, setUltracodeOn } from './ultracode-sessions'
 import { captureMoveContinuation, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
 import type { ScheduleService } from './schedule-service'
+import type { ScheduledTask } from '../shared/schedule'
 import { runScheduleCommand, ScheduleCommandError } from './schedule-commands'
 
 const FLUSH_MS = 16
@@ -230,7 +232,7 @@ export interface BrowserCommandHost {
   select(ref: string, value: string): Promise<BrowserObservationResult>
   press(key: string): Promise<BrowserObservationResult>
   scroll(deltaX: number, deltaY: number): Promise<BrowserObservationResult>
-  requestUserControl(): BrowserState
+  requestUserControl(request?: { reason?: string; sessionId?: string }): BrowserState
   screenshot(): Promise<{ mimeType: string; data: Buffer }>
 }
 
@@ -332,6 +334,7 @@ function imageFailureDetail(error: unknown): string {
     doubao_image_result_missing: '火山方舟没有返回图片',
     local_service_missing: '本机没有可用的生图服务',
     local_launch_unavailable: '没有能自动启动的本机 ComfyUI',
+    local_launch_denied: '没有得到用户确认，未启动本机 ComfyUI',
     local_launch_failed: '本机 ComfyUI 启动失败',
     local_launch_timeout: '本机 ComfyUI 启动超时',
     local_workflow_missing: 'ComfyUI 里没有可用的已保存工作流',
@@ -941,6 +944,7 @@ export class AgentController extends EventEmitter {
       this.operations.reset()
       this.flushNow()
       this.streaming = null
+      for (const call of this.items.cancelUnfinishedTools(Date.now())) this.pushTool(call)
       this.items.discardStreaming()
       this.bash = null
       this.agentRunning = false
@@ -1046,6 +1050,7 @@ export class AgentController extends EventEmitter {
     const scopeBefore = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
     const state = await this.requireRpc().command('get_state').catch(() => null)
     if (state?.success) this.setStateFrom(state.data as Record<string, unknown>)
+    if (this.state?.sessionId && this.state.sessionId !== scopeBefore.sessionId) await this.reclaimSavedQueue().catch(() => undefined)
     const sessionFile = this.state?.sessionFile
 
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
@@ -1177,7 +1182,7 @@ export class AgentController extends EventEmitter {
     if (command.startsWith('schedule.')) {
       if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')
       try {
-        return await runScheduleCommand(this.scheduleHost, command, params, { cwd: this.cwd })
+        return await runScheduleCommand(this.scheduleHost, command, params, { cwd: this.cwd, confirm: (task, action) => this.confirmScheduleChange(task, action) })
       } catch (error) {
         if (error instanceof ScheduleCommandError) throw new CapabilityCommandError(error.code, error.message)
         throw error
@@ -1238,6 +1243,7 @@ export class AgentController extends EventEmitter {
     if (command === 'file.trash') return this.runFileTrashCommand(params, signal)
     if (command === 'consent.request') return runConsentRequestCommand(this.commandHost, params)
     if (command === 'danger.confirm') return this.runDangerConfirmCommand(params)
+    if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await dangerGuardPrefs()) } }
     if (command === 'session.move') return this.runSessionMoveCommand(params)
     switch (command) {
       case 'tasks.apply':
@@ -1358,7 +1364,7 @@ export class AgentController extends EventEmitter {
     if ((await this.getPermissionMode?.()) === 'all') return { summary: { kind: 'danger-confirm', allowed: true, decision: 'auto' } }
     const tool = typeof params.tool === 'string' ? params.tool.slice(0, 40) : 'tool'
     const detail = typeof params.detail === 'string' ? params.detail : ''
-    if (detail.length > 20000) return { summary: { kind: 'danger-confirm', allowed: false, decision: 'no-answer', reason: '审批内容过长，请缩短任务后重试' } }
+    if (detail.length > APPROVAL_DETAIL_MAX) return { summary: { kind: 'danger-confirm', allowed: false, decision: 'no-answer', reason: `审批内容有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短内容或分步执行` } }
     const reasons = Array.isArray(params.reasons)
       ? params.reasons.filter((r): r is string => typeof r === 'string').map((r) => r.slice(0, 200)).slice(0, 6)
       : []
@@ -1638,6 +1644,20 @@ export class AgentController extends EventEmitter {
     for (const controller of this.imageRequests) controller.abort()
   }
 
+  private async confirmScheduleChange(task: ScheduledTask, action: 'delete' | 'pause'): Promise<string | null> {
+    if ((await this.getPermissionMode?.()) === 'all') return null
+    const verb = action === 'delete' ? '删除' : '暂停'
+    const answer = this.confirmDanger ? await this.confirmDanger({
+      tool: `yan schedule ${action}`,
+      detail: [`任务：${task.name}`, `目录：${task.cwd ?? this.cwd}`, '', task.prompt].join('\n').slice(0, APPROVAL_DETAIL_MAX),
+      reasons: [`要${verb}${task.createdBy === 'user' ? '你创建的' : ''}定时任务：${task.name}`],
+      cwd: this.cwd,
+      owner: this.approvalOwner()
+    }) : null
+    if (answer?.decision === 'allow') return null
+    return answer?.feedback ?? `没有得到用户确认，未${verb}定时任务`
+  }
+
   private async runImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
     const request = params as unknown as ImageGenerationRequest
     const prompt = typeof request.prompt === 'string' ? request.prompt.trim() : ''
@@ -1695,7 +1715,22 @@ export class AgentController extends EventEmitter {
         cwd, availability, sessionFile, messageId,
         artifactDir: this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'),
         signal: controller.signal,
-        onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) }
+        onProgress: (stage, detail) => { if (stage !== 'done') publishProgress(stage, detail) },
+        confirmComfyLaunch: async () => {
+          if ((await this.getPermissionMode?.()) === 'all') return true
+          publishProgress('confirming', '等待确认启动本机 ComfyUI')
+          const answer = this.confirmDanger ? await this.confirmDanger({
+            tool: 'yan image generate',
+            detail: `将在本机启动 ComfyUI（Python 进程，监听 127.0.0.1），用于生成：\n${prompt}`.slice(0, APPROVAL_DETAIL_MAX),
+            reasons: ['要在本机启动 ComfyUI 进程'],
+            cwd, owner: this.approvalOwner(), signal: controller.signal
+          }) : null
+          return answer?.decision === 'allow'
+        },
+        confirmCloudNodes: async (workflow) => {
+          publishProgress('confirming', '等待确认 ComfyUI 云端 API 节点')
+          return !!(await this.confirmExternalApi?.({ provider: 'local', endpoint: `ComfyUI 云端 API 节点（工作流 ${workflow}）`, model: workflow, prompt, cwd }))
+        }
       })
       checkCancelled()
       await this.attachArtifact(result.artifact, messageId, sessionFile)
@@ -3043,21 +3078,23 @@ export class AgentController extends EventEmitter {
       await this.queueRun(async () => {
         if (!canStop()) return
         const original = this.queueState
-        if ([...original.steering, ...original.followUp].some(item => item.images?.length)) {
-          throw new Error('排队内容含图片，自动回填不能保证后台附件完整，请手动停止并收回')
-        }
-        const result = await rpc.command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
-        if (!result.success || !result.data || !Array.isArray(result.data.steering) || !Array.isArray(result.data.followUp)) {
-          throw new Error(result.error || 'clear_queue 未返回可确认的队列快照')
-        }
-        const reclaimed = snapshotQueue({
-          steering: this.queueItems(result.data.steering, original.steering),
-          followUp: this.queueItems(result.data.followUp, original.followUp)
-        })
-        if (ownsRun()) this.resetQueue(true)
-        if (reclaimed.steering.length || reclaimed.followUp.length) {
-          this.push({ ch: 'queue-reclaimed', payload: { ...reclaimed, sessionId } })
-          record('queue-reclaimed', { rule: hit.rule, stream, messageId, outcome: 'reclaimed' })
+        const queuedImages = [...original.steering, ...original.followUp].some(item => item.images?.length)
+        if (queuedImages) {
+          record('queue-kept', { rule: hit.rule, stream, messageId, outcome: 'kept-with-images' })
+        } else {
+          const result = await rpc.command<{ steering?: string[]; followUp?: string[] }>('clear_queue')
+          if (!result.success || !result.data || !Array.isArray(result.data.steering) || !Array.isArray(result.data.followUp)) {
+            throw new Error(result.error || 'clear_queue 未返回可确认的队列快照')
+          }
+          const reclaimed = snapshotQueue({
+            steering: this.queueItems(result.data.steering, original.steering),
+            followUp: this.queueItems(result.data.followUp, original.followUp)
+          })
+          if (ownsRun()) this.resetQueue(true)
+          if (reclaimed.steering.length || reclaimed.followUp.length) {
+            this.push({ ch: 'queue-reclaimed', payload: { ...reclaimed, sessionId } })
+            record('queue-reclaimed', { rule: hit.rule, stream, messageId, outcome: 'reclaimed' })
+          }
         }
         if (!canStop()) {
           record('stale-before-abort', { rule: hit.rule, stream, messageId, outcome: 'stale' })
@@ -3400,6 +3437,7 @@ export class AgentController extends EventEmitter {
     autoContinue?: AutoContinueScope,
     expectGeneration?: number
   ): Promise<{ ok: boolean; error?: string }> {
+    if (isRestoredReadonly()) return { ok: false, error: RESTORED_READONLY_MESSAGE }
     return this.withOperation('send', expectGeneration, () => this.sendClaimed(text, images, mode, autoContinue))
   }
 
@@ -4006,7 +4044,8 @@ export class AgentController extends EventEmitter {
     })
   }
 
-  async renameSession(name: string): Promise<{ ok: boolean; error?: string }> {
+  async renameSession(name: string, sessionId?: string): Promise<{ ok: boolean; error?: string }> {
+    if (sessionId && this.state?.sessionId !== sessionId) return { ok: false, error: '要改名的会话已不是当前会话，请重新打开后再试' }
     const trimmed = name.trim()
     if (!trimmed) {
       return { ok: false, error: '名字不能为空（pi 不支持清除会话名）' }

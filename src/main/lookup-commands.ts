@@ -5,12 +5,10 @@ import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searc
 import { runBraveSearch } from './search/brave'
 import { runTavilySearch } from './search/tavily'
 import { firecrawlReadPage } from './search/firecrawl'
-import { deepseekReadPage, resolveDeepseekSearchKey, runDeepseekSearch } from './search/deepseek'
+import { deepseekHasBalance, fundedDeepseekReadPage, resolveDeepseekSearchKey, runFundedDeepseekSearch } from './search/deepseek'
 import { DocsError, queryDocs } from './search/context7'
-import { runBingSearch } from './search/bing'
 import { runDdgSearch } from './search/ddg'
 import { assertReadablePage, normalizeReadUrl, readPage, ReadPageError, type ReadPageResult } from './search/read-page'
-import { runSo360Search } from './search/so360'
 import { resolveSearchKey, searchApiConfig } from './search/config'
 import { defaultSearchPlan, mapLimit, searchModifiers, searchQueries, tooManyQueries, TtlCache, type SearchKeys } from './search/plan'
 import { SEARCH_QUERIES_MAX, type SearchOutcome, type SearchQuery, type SearchSourceId } from '../shared/search'
@@ -180,8 +178,8 @@ export class LookupCommands {
     let keys: SearchKeys | undefined
     if (explicitSources.length === 0) {
       const [tavily, brave, deepseek] = await Promise.all([resolveSearchKey('tavily'), resolveSearchKey('brave'), resolveDeepseekSearchKey()])
-      keys = { tavily: !!tavily, brave: !!brave, deepseek: !!deepseek }
-      if (!keys.tavily && !keys.brave && !keys.deepseek && !this.searchApiHintSent) {
+      keys = { tavily: !!tavily, brave: !!brave, deepseek: !!deepseek && (await deepseekHasBalance(deepseek)) }
+      if (!tavily && !brave && !deepseek && !this.searchApiHintSent) {
         this.searchApiHintSent = true
         if (!(await searchApiConfig()).hintDismissed) this.host.notifySearchApiMissing?.()
       }
@@ -245,7 +243,7 @@ export class LookupCommands {
     const deadline = Date.now() + timeoutMs
     const remaining = (): number => Math.max(0, deadline - Date.now())
     if (via === 'firecrawl') return { page: assertReadablePage(await firecrawlReadPage(url, { ...read, timeoutMs })), via: 'firecrawl' }
-    if (via === 'deepseek') return { page: assertReadablePage(await deepseekReadPage(url, { ...read, timeoutMs })), via: 'deepseek' }
+    if (via === 'deepseek') return { page: assertReadablePage(await fundedDeepseekReadPage(url, { ...read, timeoutMs })), via: 'deepseek' }
     let local: ReadPageResult | null = null
     let localError: ReadPageError | null = null
     try {
@@ -258,7 +256,7 @@ export class LookupCommands {
     const [firecrawlKey, deepseekKey] = await Promise.all([resolveSearchKey('firecrawl'), resolveDeepseekSearchKey()])
     const remotes = [
       ...(firecrawlKey ? [{ via: 'firecrawl' as const, label: 'Firecrawl', read: firecrawlReadPage }] : []),
-      ...(deepseekKey ? [{ via: 'deepseek' as const, label: 'DeepSeek', read: deepseekReadPage }] : [])
+      ...(deepseekKey ? [{ via: 'deepseek' as const, label: 'DeepSeek', read: fundedDeepseekReadPage }] : [])
     ]
     const failures: string[] = []
     for (const remote of remotes) {
@@ -469,10 +467,8 @@ function searchRunner(): AdapterRunner {
     switch (source.id) {
       case 'brave': return runBraveSearch(query, opts)
       case 'tavily': return runTavilySearch(query, opts)
-      case 'deepseek': return runDeepseekSearch(query, opts)
-      case 'bing': return runBingSearch(query, opts)
+      case 'deepseek': return runFundedDeepseekSearch(query, opts)
       case 'ddg': return runDdgSearch(query, opts)
-      case 'so360': return runSo360Search(query, opts)
       default: return opencli(source, query, opts)
     }
   }

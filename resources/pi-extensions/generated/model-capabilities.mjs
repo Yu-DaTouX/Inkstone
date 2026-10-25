@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 24cf86e6a5f604dca428529e2d95f7a308af264584f7cf6b453edb480cf1cf4c */
+/* source-sha256: 67be2920e5a7e6a4b1a0ca9e7770ad072f4600f2bdac7aab1b76f7741779d3ed */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",
@@ -13,6 +13,9 @@ var PI_API_IDS = [
   "openrouter-images",
   "pi-messages"
 ];
+function sameBaseUrl(a, b) {
+  return a.trim().replace(/\/+$/, "").toLowerCase() === b.trim().replace(/\/+$/, "").toLowerCase();
+}
 var CUSTOM_API_CHOICES = [
   { id: "openai-completions", label: "OpenAI Chat Completions" },
   { id: "openai-responses", label: "OpenAI Responses" },
@@ -181,8 +184,10 @@ function mergeCustomProviders(modelsJson, updates, removals = []) {
       const prior = previousModels.find((item) => item.id === model.id);
       return prior ? { ...prior, ...model } : model;
     });
+    const sameHost = typeof previous.baseUrl === "string" && sameBaseUrl(previous.baseUrl, update.baseUrl);
     if (update.apiKey) entry.apiKey = update.apiKey;
-    else if (typeof previous.apiKey === "string") entry.apiKey = previous.apiKey;
+    else if (typeof previous.apiKey === "string" && sameHost) entry.apiKey = previous.apiKey;
+    else delete entry.apiKey;
     providers[update.id] = entry;
     changed = true;
   }
@@ -284,6 +289,7 @@ export {
   parseModelEntries,
   parseModelList,
   readCustomProviders,
+  sameBaseUrl,
   validateBaseUrl,
   validateCustomProvider
 };

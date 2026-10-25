@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
@@ -31,6 +32,9 @@ final class Ops {
 	static <T> T unwrap(CompletableFuture<T> future, long seconds) throws Exception {
 		try {
 			return future.get(seconds, TimeUnit.SECONDS);
+		} catch (TimeoutException error) {
+			if (future.cancel(false)) throw new TimeoutException("game thread busy for " + seconds + "s; the action was cancelled and did not run");
+			throw new TimeoutException("game thread busy for " + seconds + "s; the action already started and may still finish");
 		} catch (ExecutionException error) {
 			Throwable cause = error.getCause();
 			if (cause instanceof Exception exception) throw exception;

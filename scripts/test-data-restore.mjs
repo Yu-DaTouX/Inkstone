@@ -100,7 +100,7 @@ try {
   const legacyHydrated = await artifactStore.hydrateMessages(recoveredLegacySession, [{ id: 'legacy-reply', role: 'assistant', text: '' }])
   check(!legacyHydrated[0].artifacts?.[0]?.unavailable, '旧版成果可继续由真实成果存储加载')
   const env = restoredDataEnvironment(restored.path, { PATH: 'system-path', ELECTRON_RUN_AS_NODE: '1', OPENAI_API_KEY: 'fake', YAN_DATA_DIR: 'old', PI_AGENT_DIR: 'old', CUSTOM_SECRET: 'fake' })
-  check(env.PATH === 'system-path' && env.YAN_USER_DATA === join(restored.path, 'electron') && env.YAN_PI_DIR === pi && !env.OPENAI_API_KEY && !env.ELECTRON_RUN_AS_NODE && !env.CUSTOM_SECRET && !env.PI_AGENT_DIR, '独立窗口不继承服务密钥、旧数据目录或 Electron Node 模式')
+  check(env.PATH === 'system-path' && env.YAN_USER_DATA === join(restored.path, 'electron') && env.YAN_PI_DIR === pi && !env.OPENAI_API_KEY && !env.ELECTRON_RUN_AS_NODE && !env.CUSTOM_SECRET && !env.PI_AGENT_DIR && env.YAN_RESTORED_READONLY === '1', '独立窗口不继承服务密钥、旧数据目录或 Electron Node 模式，且标记为只读')
   check(await readFile(sourceSession, 'utf8') === messages.map((item) => JSON.stringify(item)).join('\n') + '\n' && JSON.parse(await readFile(join(yan, 'desktop.json'), 'utf8')).remoteAccess.enabled === true, '恢复不修改源会话和现有设置')
   const restoredAgain = await restoreDataBackup(backup.path, destination)
   check(restoredAgain.path !== restored.path, '重复恢复始终创建新目录，不覆盖前次恢复')

@@ -1,5 +1,5 @@
 import { SubagentController, type SubagentApprovalOrigin, type SubagentDangerAnswer } from './subagents'
-import { getSettings } from './settings'
+import { dangerGuardPrefs, getSettings } from './settings'
 import { CapabilityCommandError, type CapabilityCommandResult } from './capability-server'
 import type { SubagentCommandContext, SubagentCommandHost } from './agent'
 import type { ModelLabelResolution } from './subagents/model-label'
@@ -109,6 +109,7 @@ export class SubagentService {
       ...(this.deps.previewHtml ? { previewHtml: this.deps.previewHtml } : {}),
       appendSystemPrompt: SUBAGENT_SYSTEM_PROMPT,
       confirmDanger: (params, cwd, origin, signal) => this.deps.confirmDanger?.(params, cwd, origin, signal) ?? Promise.resolve(false),
+      dangerPrefs: () => dangerGuardPrefs(),
       ...(this.deps.resolveModelApi ? { resolveModelApi: (label, origin) => this.deps.resolveModelApi!(label, origin) } : {}),
       onChange: (run) => this.deps.onChange(run),
       ...(this.deps.onPatch ? { onPatch: (payload) => this.deps.onPatch?.(payload) } : {}),

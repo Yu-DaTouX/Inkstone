@@ -295,6 +295,19 @@ async function runImageAdapterTests({ generateImage, root, project, sessionFile 
   assert(subPosted['200:195'].inputs.text === '竹林' && subPosted['200:195'].inputs.clip[0] === '200:63', 'subgraph nodes should be flattened with instance-prefixed ids')
   assert(subPosted['200:197'].inputs.positive[0] === '200:195' && subPosted['200:197'].inputs.negative[0] === '200:199', 'subgraph links should resolve inside the instance')
   assert(subPosted['9'].inputs.images[0] === '200:198', 'outer links from a subgraph output should resolve to the inner node')
+  let cloudAsked = ''
+  const namedCloud = await withFetch([
+    ['/api/userdata?dir=workflows', async () => Response.json(['a_cloud.json', 'b_sub.json'])],
+    ['/api/userdata/workflows%2Fa_cloud.json', async () => Response.json(cloudWorkflow)],
+    ['/object_info/', async (href) => {
+      const type = decodeURIComponent(href.split('/object_info/')[1])
+      return Response.json(subInfo[type] ? { [type]: subInfo[type] } : {})
+    }]
+  ], () => generateImage(
+    { prompt: '\u7af9\u6797', provider: 'local', model: 'a_cloud' },
+    ctx({ credentials: credentials(), availability: { ...NO_PROVIDERS, local: comfyServer }, confirmCloudNodes: async (workflow) => { cloudAsked = workflow; return false } })
+  ).then(() => 'generated', (error) => error.code))
+  assert(cloudAsked === 'a_cloud.json' && namedCloud.result === 'local_workflow_unsupported' && !namedCloud.calls.some((call) => call.url.endsWith('/prompt')), 'a model-named workflow with cloud API nodes asks first and is not queued when denied')
   assert(subPosted['200:196'].inputs.width === 1216 && !subPosted['200'], 'size applies inside subgraphs and the instance itself is not submitted')
 
   console.log('artifact: image adapters (Google, Doubao, Codex, edit sources, SD WebUI, ComfyUI workflows incl. subgraphs) passed')

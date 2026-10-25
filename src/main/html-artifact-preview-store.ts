@@ -1,3 +1,4 @@
+import { decodeHtml } from './html-charset'
 import { createHash, randomBytes } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
@@ -59,7 +60,7 @@ export class HtmlArtifactPreviewStore {
       const token = randomBytes(16).toString('hex')
       const nonce = randomBytes(16).toString('hex')
       const hash = createHash('sha256').update(source).digest('hex')
-      this.snapshots.set(token, { html: source.toString('utf8'), nonce, hash, dir: dirname(target), root: rootReal })
+      this.snapshots.set(token, { html: decodeHtml(source), nonce, hash, dir: dirname(target), root: rootReal })
       return { ok: true, url: `${HTML_ARTIFACT_SCHEME}://${token}/index.html`, nonce, hash }
     } catch {
       return { ok: false, error: 'read' }

@@ -240,6 +240,7 @@ export interface SubagentOptions {
     origin?: SubagentApprovalOrigin,
     signal?: AbortSignal
   ): Promise<boolean | SubagentDangerAnswer>
+  dangerPrefs?(): Promise<{ mode: 'danger' | 'all'; outsideWrites: boolean; allowRoots: string[] }>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   extensions?: string[]
   readOnlyExtension?: string
@@ -263,7 +264,7 @@ export function subagentHostCommands(opts: {
   readOnlyHost?: SubagentOptions['runReadOnlyCommand']
   previewHtml?: PreviewHtml
 }): SubagentHostCommands {
-  const onlyCommands = ['danger.confirm', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
+  const onlyCommands = ['danger.confirm', 'danger.prefs', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
   return {
     onlyCommands,
     handle: async (command, params, cwd) => {
@@ -778,6 +779,7 @@ export class SubagentController {
         run: async (command, params, _context, signal) => {
           const handled = await host.handle(command, params, cwd)
           if (handled) return handled
+          if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
           const origin = { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }
           const answer = ctx.confirmDanger && !signal?.aborted && !stopApprovals.signal.aborted
             ? await awaitApprovalAnswer(ctx.confirmDanger(params, cwd, origin, signal), [signal, stopApprovals.signal])
@@ -1142,6 +1144,10 @@ export class SubagentController {
           run.review = 'pending'
           run.resultPath = run.workspace.worktreePath
         }
+      } else if (run.isolation === 'worktree' && collected.ignoredOutputs?.length) {
+        run.review = 'pending'
+        run.resultPath = run.workspace.worktreePath
+        run.error = run.error ?? `子代理只写了被 .gitignore 忽略的文件（${collected.ignoredOutputs.slice(0, 5).join('、')}${collected.ignoredOutputs.length > 5 ? ' 等' : ''}），无法生成补丁，已保留工作区`
       } else {
         run.review = 'none'
         run.resultPath = collected.patchPath

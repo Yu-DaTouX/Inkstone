@@ -69,7 +69,7 @@ export function guardHtmlArtifactFrames(contents: WebContents): void {
     if (event.isMainFrame) return
     const parentInitiated = event.initiator === contents.mainFrame
     const directChild = event.frame?.parent === contents.mainFrame
-    const controlled = htmlArtifactPreviews.read(event.url) !== null
+    const controlled = htmlArtifactPreviews.read(event.url) !== null || parseMcpAppUrl(event.url) !== null
     if (!parentInitiated || !directChild || !controlled) event.preventDefault()
   })
 }

@@ -287,6 +287,10 @@ try {
 
     const projTool = forA.tools.find((tool) => tool.serverId === 'proj-a-app')
     ok(projTool?.projectScope === 'p-a', '跨项目快照：条目带各自 projectScope，供薄层按 runner 项目筛选')
+    await scopedService.refresh({ callerProjectId: 'p-b' })
+    await scopedService.refresh({ callerProjectId: 'p-a' })
+    const merged = JSON.parse(await readFile(scopedService.snapshotPath(), 'utf8')).tools.map((tool) => tool.serverId)
+    ok(merged.includes('proj-a-app') && merged.includes('proj-b-app') && merged.filter((id) => id === 'global-app').length === 1, '按项目刷新不抹掉其他项目的托管工具，全局工具不重复', merged.join(','))
     ok(proxy.MCP_APP_PROXY_PROJECT_ENV === 'YAN_MCP_APP_PROJECT_ID', '跨项目快照：项目身份环境变量名固定')
   }
 

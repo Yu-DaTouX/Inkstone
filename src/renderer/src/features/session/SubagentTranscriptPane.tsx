@@ -151,7 +151,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
       ? tt('subagentScopeShared')
       : tt('subagentScopeWorktree')
   const statusWord = subagentRowLabel(row.state, '', rowLang(lang))
-  const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId
+  const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId && !run.fork && !run.brief
   const brief = subagentBriefText(run)
   const shown = useFullTranscript(run)
   const turns = useMemo(() => subagentTranscriptTurns(shown), [shown])

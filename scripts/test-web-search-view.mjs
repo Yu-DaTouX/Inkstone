@@ -234,7 +234,7 @@ async function run() {
     const sources = [
       { title: 'A', url: 'https://github.com/a/b', domain: 'github.com', snippet: 'A 摘要', source: 'ddg' },
       { title: 'B', url: 'https://arxiv.org/abs/123#top', domain: 'arxiv.org', snippet: 'B 摘要', source: 'brave' },
-      { title: 'A 重复', url: 'https://github.com/a/b?utm_medium=x', domain: 'github.com', snippet: '', source: 'bing' }
+      { title: 'A 重复', url: 'https://github.com/a/b?utm_medium=x', domain: 'github.com', snippet: '', source: 'ddg' }
     ]
     const index = m.buildCitationIndex(sources)
     ok(index.size === 2, '同 URL（含 utm）只保留一条', index.size)

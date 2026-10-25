@@ -1,7 +1,7 @@
 import { readFile, mkdir, copyFile, open, rename, unlink } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { isAbsolute, parse, resolve } from 'node:path'
+import { basename, isAbsolute, parse, resolve } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -25,6 +25,7 @@ import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
 import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeStreamWidth } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
+import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
 
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
@@ -57,7 +58,7 @@ const DEFAULTS: AppSettings = {
   uiScale: 0,
   profile: defaultProfile(),
   codemodeEnabled: true,
-  guardOutsideWrites: false,
+  guardOutsideWrites: true,
   permissionMode: DEFAULT_PERMISSION_MODE,
   guardAllowRoots: [],
   browserAllowedSites: [],
@@ -154,6 +155,45 @@ let cached: AppSettings | null = null
 let cacheGeneration = 0
 
 let writeQueue: Promise<unknown> = Promise.resolve()
+
+const GUARD_TAMPERED_NOTICE = '检测到权限设置被砚以外的程序改动，已恢复为你在设置里选择的档位。'
+const GUARD_UNSEALED_NOTICE = '权限档没有可核对的加密记录（首次升级或记录丢失），已回到「自动批准」；需要「不受限制」请在设置里重新选择。'
+let guardNoticeSink: ((message: string) => void) | null = null
+let pendingGuardNotices: string[] = []
+let lastGuardNoticeKey = ''
+
+export function setGuardSettingsNoticeSink(sink: (message: string) => void): void {
+  guardNoticeSink = sink
+  const messages = pendingGuardNotices
+  pendingGuardNotices = []
+  for (const message of messages) sink(message)
+}
+
+function noticeGuardSettings(message: string, key: string): void {
+  if (key === lastGuardNoticeKey) return
+  lastGuardNoticeKey = key
+  if (guardNoticeSink) guardNoticeSink(message)
+  else pendingGuardNotices.push(message)
+}
+
+async function enforceGuardSeal(settings: AppSettings, quiet = false): Promise<AppSettings> {
+  const store = await electronGuardSealStore()
+  if (!store) return settings
+  const file = guardFieldsOf(settings)
+  const seal = await store.read()
+  const trusted = trustedGuardFields(file, seal)
+  if (!seal || !sameGuardFields(seal, trusted)) await store.write(trusted).catch(() => undefined)
+  if (!sameGuardFields(file, trusted)) {
+    if (!quiet) noticeGuardSettings(seal ? GUARD_TAMPERED_NOTICE : GUARD_UNSEALED_NOTICE, JSON.stringify(file))
+    void patchSettings({}).catch(() => undefined)
+  }
+  return { ...settings, ...trusted }
+}
+
+export async function dangerGuardPrefs(): Promise<{ mode: GuardFields['permissionMode']; outsideWrites: boolean; allowRoots: string[] }> {
+  const fields = guardFieldsOf(await getSettings())
+  return { mode: fields.permissionMode, outsideWrites: fields.guardOutsideWrites, allowRoots: fields.guardAllowRoots }
+}
 
 function invalidate(): void {
   cacheGeneration++
@@ -256,6 +296,7 @@ export async function getSettings(): Promise<AppSettings> {
       throw new Error(`设置读取失败：${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  let healedBackup: string | null = null
   if (text === undefined) parsed = {}
   else {
     try {
@@ -263,12 +304,23 @@ export async function getSettings(): Promise<AppSettings> {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置文件必须是对象')
       parsed = value as Partial<AppSettings>
     } catch (error) {
-      try { await copyFile(FILE, `${FILE}.corrupt-${randomUUID()}.bak`) } catch { }
-      throw new Error(`设置解析失败，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}`)
+      const backup = `${FILE}.corrupt-${randomUUID()}.bak`
+      try {
+        await rename(FILE, backup)
+      } catch {
+        try {
+          await copyFile(FILE, backup)
+        } catch {
+          throw new Error(`设置解析失败，且无法备份原文件，已拒绝覆盖：${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      parsed = {}
+      healedBackup = backup
     }
   }
   if (typeof parsed.cwd !== 'string' || !parsed.cwd.trim() || !isAbsolute(parsed.cwd)) parsed.cwd = await defaultWorkFolder()
-  const loaded = sanitizeSettings(parsed)
+  const loaded = await enforceGuardSeal(sanitizeSettings(parsed), healedBackup !== null)
+  if (healedBackup) noticeGuardSettings(`设置文件损坏，已备份为 ${basename(healedBackup)}，这次用默认设置启动（权限档按加密记录恢复）。`, `heal:${healedBackup}`)
   if (generation !== cacheGeneration) return getSettings()
   cached = loaded
   return structuredClone(loaded)
@@ -406,7 +458,14 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
 
   next = sanitizeSettings(next)
   const temp = `${FILE}.${process.pid}.${randomUUID()}.tmp`
+  const sealStore = await electronGuardSealStore()
+  const guardChanged = !sameGuardFields(guardFieldsOf(cur), guardFieldsOf(next))
+  let sealWritten = false
   try {
+    if (sealStore && guardChanged) {
+      await sealStore.write(guardFieldsOf(next))
+      sealWritten = true
+    }
     await mkdir(DIR, { recursive: true })
     const handle = await open(temp, 'wx')
     try {
@@ -420,6 +479,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
     } catch { }
   } catch (e) {
     await unlink(temp).catch(() => undefined)
+    if (sealStore && sealWritten) await sealStore.write(guardFieldsOf(cur)).catch(() => undefined)
     invalidate()
     throw new Error(`设置写入失败：${e instanceof Error ? e.message : String(e)}`)
   }

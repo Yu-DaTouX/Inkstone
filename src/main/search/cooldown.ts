@@ -2,14 +2,12 @@ import type { SearchSourceId } from '../../shared/search'
 import type { SourceRun } from './aggregate'
 
 const COOLDOWN_MS: Record<string, number> = {
-  insufficient_balance: 15 * 60_000,
   api_key_rejected: 15 * 60_000,
   captcha: 10 * 60_000,
   rate_limited: 2 * 60_000
 }
 
 const REASON: Record<string, string> = {
-  insufficient_balance: '余额不足',
   api_key_rejected: '密钥被拒绝',
   captcha: '要求人机验证',
   rate_limited: '被限流'

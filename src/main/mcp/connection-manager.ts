@@ -30,6 +30,9 @@ function isTransportFailure(
   return client.transport === undefined
 }
 
+const MAX_TOOL_LIST_PAGES = 50
+const MAX_TOOL_LIST_ITEMS = 2000
+
 export class McpConnectionCancelledError extends Error {
   constructor() {
     super('MCP 连接已由用户取消')
@@ -398,7 +401,10 @@ export class McpConnectionManager {
     if (!client) throw new McpConnectionCancelledError()
     const tools: McpRawToolDescriptor[] = []
     let cursor: string | undefined
+    const seenCursors = new Set<string>()
+    let pages = 0
     do {
+      if (++pages > MAX_TOOL_LIST_PAGES) throw new Error(`${serverId} 的工具列表超过 ${MAX_TOOL_LIST_PAGES} 页，已停止读取`)
       const page = await this.runRequest(conn, client, options, `列出 ${serverId} 的工具`, (signal) =>
         client.listTools(cursor ? { cursor } : undefined, { signal })
       )
@@ -411,7 +417,10 @@ export class McpConnectionManager {
           ...(tool._meta !== undefined ? { meta: tool._meta as Record<string, unknown> } : {})
         })
       }
+      if (tools.length > MAX_TOOL_LIST_ITEMS) throw new Error(`${serverId} 的工具超过 ${MAX_TOOL_LIST_ITEMS} 个，已停止读取`)
       cursor = page.nextCursor
+      if (cursor && seenCursors.has(cursor)) throw new Error(`${serverId} 的工具列表翻页游标重复，已停止读取`)
+      if (cursor) seenCursors.add(cursor)
     } while (cursor)
     return tools
   }

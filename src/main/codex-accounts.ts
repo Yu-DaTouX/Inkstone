@@ -230,6 +230,7 @@ export function codexAccountTargets(): Promise<CodexAccountTarget[]> {
         account.plan = identity.plan ?? account.plan
         account.savedAt = Date.now()
         changed = true
+        await writeStore(store)
         targets.push({ ...base, key: account.key, email: account.email, plan: account.plan, credential: account.credential })
       } catch (e) {
         targets.push({ ...base, problem: e instanceof Error ? e.message : String(e) })

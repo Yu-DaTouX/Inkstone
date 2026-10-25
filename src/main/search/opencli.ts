@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { killProcessTree } from '../git-service'
 import { statSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import {
@@ -229,10 +230,12 @@ export function backendEnvelopeError(value: unknown): { code?: string; message?:
   return { ...(code ? { code } : {}), ...(message ? { message } : {}) }
 }
 
-export function createOpencliRunner(explicit?: string, target = resolveBackendTarget(explicit)): AdapterRunner {
+export function createOpencliRunner(explicit?: string, initial = resolveBackendTarget(explicit)): AdapterRunner {
+  let target = initial
   return (source, query, opts) =>
     new Promise<SourceRun>((resolve) => {
       const started = Date.now()
+      if (target.error) target = resolveBackendTarget(explicit)
       if (opts.signal?.aborted) {
         resolve({ source: source.id, rows: null, skipped: true, elapsedMs: 0 })
         return
@@ -491,10 +494,6 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
     }
     const next = reserve[0]
     if (!next) return
-    if (!next.needsKey) {
-      if (pendingAll > 0) return
-      if (aggregate(runs, aggregateOptions).items.length >= policy.enoughRows) return
-    }
     reserve.shift()
     primary.add(next.id)
     pendingPrimary++
@@ -699,7 +698,8 @@ export function installOpenCli(): Promise<OpenCliInstallResult> {
       resolve({ ok: false, error: e instanceof Error ? e.message : String(e) })
       return
     }
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5 * 60_000)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; killProcessTree(child) }, 5 * 60_000)
     child.stdout?.on('data', keep)
     child.stderr?.on('data', keep)
     child.on('error', (e) => {
@@ -709,7 +709,7 @@ export function installOpenCli(): Promise<OpenCliInstallResult> {
     child.on('close', (code) => {
       clearTimeout(timer)
       const tail = log.trim().split('\n').slice(-12).join('\n')
-      resolve(code === 0 ? { ok: true, log: tail } : { ok: false, error: `npm 退出码 ${code ?? '?'}`, log: tail })
+      resolve(code === 0 ? { ok: true, log: tail } : { ok: false, error: timedOut ? 'npm 安装超过 5 分钟，已结束安装进程' : `npm 退出码 ${code ?? '?'}`, log: tail })
     })
   })
 }

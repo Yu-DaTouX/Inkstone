@@ -83,8 +83,13 @@ try {
   assert.equal(projectedState.cwdName, 'private-project', 'state 事件只留目录名')
   assert.equal(host.remotePushPayload('state', null), null, '清空会话时 state 投影为 null')
 
-  const notify = { text: '随便一条通知' }
-  assert.equal(host.remotePushPayload('notify', notify), notify, '其它通道原样转发')
+  assert.deepEqual(host.remotePushPayload('notify', { text: '随便一条通知' }), {}, '其它通道不转发正文')
+  assert.deepEqual(
+    host.remotePushPayload('tool', { sessionId: 's1', args: { command: 'cat secret' }, output: 'token=abc', cwd: 'C:\\Users\\someone' }),
+    { sessionId: 's1' },
+    'tool 事件只留会话 id，不带参数、输出与目录'
+  )
+  assert.deepEqual(host.remotePushPayload('approval', { sessionId: 's2', detail: 'rm -rf C:\\work' }), { sessionId: 's2' }, '审批事件不带 detail')
 
   const settled = host.remotePushPayload('turn-settled', { sessionId: 's-branch', outcome: 'failed', secret: 'C:\\Users\\someone' })
   assert.deepEqual(settled, { sessionId: 's-branch', outcome: 'failed' }, '回合终态只留会话 id 与结果')

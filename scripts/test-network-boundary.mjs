@@ -16,8 +16,20 @@ export async function runNetworkBoundaryTests(ok, mod) {
     '未知来源的新标签不能访问本机服务'
   )
   ok(
-    decide({ targetHost: '10.0.0.5', initiatorUrl: 'http://localhost:5173/', requestedByUs: false }) === 'allow',
-    '本地页面访问内网地址放行（本地预览）'
+    decide({ targetHost: '10.0.0.5', initiatorUrl: 'http://localhost:5173/', requestedByUs: false }) === 'block-private',
+    '本地页面访问其他内网主机 → 拦'
+  )
+  ok(
+    decide({ targetHost: '127.0.0.1', initiatorUrl: 'http://localhost:5173/', requestedByUs: false }) === 'allow',
+    '本地页面访问本机其他端口放行（本地预览）'
+  )
+  ok(
+    decide({ targetHost: '192.168.1.20', initiatorUrl: 'http://192.168.1.20:8080/', requestedByUs: false }) === 'allow',
+    '内网页面访问自己所在主机放行'
+  )
+  ok(
+    decide({ targetHost: 'rebind.example', initiatorUrl: 'http://127.0.0.1:3000/', requestedByUs: false }) === 'check-dns',
+    '本地页面请求公网域名也要做 DNS 重绑定检查'
   )
 
   ok(

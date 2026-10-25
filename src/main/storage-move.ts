@@ -46,6 +46,23 @@ function defaultAgentDir(): string {
   return join(homedir(), '.pi', 'agent')
 }
 
+function abandonedMoveLock(lock: string): boolean {
+  let owner: number
+  try {
+    owner = Number(readFileSync(lock, 'utf8').trim())
+  } catch {
+    return false
+  }
+  if (!Number.isSafeInteger(owner) || owner <= 0) return true
+  if (owner === process.pid) return false
+  try {
+    process.kill(owner, 0)
+    return false
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH'
+  }
+}
+
 export function storageMovable(): boolean {
   return !process.env.PORTABLE_EXECUTABLE_DIR?.trim() && !process.env.YAN_PI_DIR?.trim() && !process.argv.some((a) => a.startsWith('--yan-pi-dir='))
 }
@@ -91,6 +108,36 @@ function isJunction(p: string): boolean {
     return lstatSync(p).isSymbolicLink()
   } catch {
     return false
+  }
+}
+
+const SYNC_FOLDER_NAMES: Array<[RegExp, string]> = [
+  [/^onedrive( - .+)?$/i, 'OneDrive'],
+  [/^dropbox( \(.+\))?$/i, 'Dropbox'],
+  [/^google drive$|^我的云端硬盘$|^my drive$/i, 'Google Drive'],
+  [/^icloud ?drive$|^iclouddrive$/i, 'iCloud Drive'],
+  [/坚果云|^nutstore/i, '坚果云'],
+  [/^百度网盘同步|^baidunetdisk.*sync/i, '百度网盘'],
+  [/^syncthing$|^sync$/i, 'Syncthing']
+]
+const SYNC_FOLDER_MARKERS: Array<[string, string]> = [['.stfolder', 'Syncthing'], ['.dropbox', 'Dropbox'], ['.nutstore', '坚果云']]
+
+export function syncFolderService(target: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const full = resolve(target)
+  for (const key of ['OneDrive', 'OneDriveConsumer', 'OneDriveCommercial']) {
+    const root = env[key]
+    if (!root) continue
+    const rel = relative(resolve(root), full)
+    if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return 'OneDrive'
+  }
+  let dir = full
+  for (;;) {
+    const name = basename(dir)
+    for (const [pattern, service] of SYNC_FOLDER_NAMES) if (pattern.test(name)) return service
+    for (const [marker, service] of SYNC_FOLDER_MARKERS) if (existsSync(join(dir, marker))) return service
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
   }
 }
 
@@ -143,6 +190,7 @@ export async function runPendingStorageMove(onProgress?: (progress: StorageMoveP
   }
   try {
     mkdirSync(controlDir(), { recursive: true })
+    if (abandonedMoveLock(LOCK_FILE())) rmSync(LOCK_FILE(), { force: true })
     writeFileSync(LOCK_FILE(), String(process.pid), { flag: 'wx' })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {

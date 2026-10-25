@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
@@ -122,6 +122,37 @@ export class ScheduleService {
       } else delete task.nextRunAt
       return { result: { ok: true, task: structuredClone(task) }, changed: true }
     })
+  }
+
+  async applySynced(definition: Record<string, unknown>): Promise<void> {
+    const id = typeof definition.id === 'string' ? definition.id : ''
+    if (!id || !/^[\w.-]+$/.test(id)) throw new Error('定时任务记录缺少有效 id')
+    const signature = (value: unknown): string => JSON.stringify(value ?? null)
+    const error = await this.mutate<string | null>((tasks) => {
+      const local = tasks.find((task) => task.id === id)
+      if (local) {
+        if (signature(local.prompt) !== signature(definition.prompt) || signature(local.trigger) !== signature(definition.trigger)) {
+          return { result: `定时任务 ${id} 的提示词或触发时间与本机不同，已跳过（保留本机内容）` }
+        }
+        let changed = false
+        if (typeof definition.name === 'string' && definition.name !== local.name) { local.name = definition.name; changed = true }
+        if (definition.enabled === false && local.enabled) { local.enabled = false; delete local.nextRunAt; changed = true }
+        return { result: null, changed }
+      }
+      const checked = this.check({ name: definition.name, prompt: definition.prompt, model: definition.model, trigger: definition.trigger } as ScheduleInput)
+      if (!checked.ok) return { result: `定时任务 ${id} 形状无效：${checked.error}` }
+      const createdAt = Number.isFinite(definition.createdAt) ? Number(definition.createdAt) : this.now()
+      tasks.push({
+        id,
+        ...checked.value,
+        createdBy: definition.createdBy === 'model' ? 'model' : 'user',
+        createdAt,
+        enabled: false,
+        pendingApproval: true
+      })
+      return { result: null, changed: true }
+    })
+    if (error) throw new Error(error)
   }
 
   async remove(id: string): Promise<boolean> {
@@ -253,6 +284,7 @@ export class ScheduleService {
     const parsed = JSON.parse(text) as { v?: number; tasks?: ScheduledTask[] }
     if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.tasks)) throw new Error('定时任务文件格式无效，已保留原文件')
     const ids = new Set<string>()
+    const valid: ScheduledTask[] = []
     for (const task of parsed.tasks) {
       if (!task || typeof task.id !== 'string' || !task.id || ids.has(task.id) ||
           typeof task.prompt !== 'string' || typeof task.enabled !== 'boolean' ||
@@ -262,11 +294,13 @@ export class ScheduleService {
           (task.pendingRun !== undefined && (!task.pendingRun || typeof task.pendingRun.id !== 'string' || !task.pendingRun.id ||
             !Number.isFinite(task.pendingRun.startedAt) || !['claimed', 'unknown'].includes(task.pendingRun.status) ||
             (task.pendingRun.scheduledAt !== undefined && !Number.isFinite(task.pendingRun.scheduledAt))))) {
-        throw new Error('定时任务条目无效，已保留原文件')
+        continue
       }
       ids.add(task.id)
+      valid.push(task)
     }
-    return parsed.tasks
+    if (valid.length !== parsed.tasks.length) await copyFile(this.opts.file, `${this.opts.file}.invalid-${Date.now()}`)
+    return valid
   }
 
   private async save(tasks: ScheduledTask[]): Promise<void> {

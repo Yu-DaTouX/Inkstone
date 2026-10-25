@@ -158,7 +158,7 @@ function useAccountQuotaCard(provider: string, enabled: boolean, runEnded: numbe
       .then((report) => {
         if (id !== seq.current) return
         const matches = (report.cards ?? []).filter((card) => card.provider.trim().toLowerCase() === want)
-        setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches[0] ?? null })
+        setSnap({ provider, state: 'ready', card: matches.find((card) => card.active) ?? matches.find((card) => card.active === undefined) ?? null })
       })
       .catch(() => {
         if (id !== seq.current) return

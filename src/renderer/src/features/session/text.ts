@@ -164,6 +164,12 @@ export type SessionTextKey =
   | 'wrapUpDismiss'
   | 'wrapUpDone'
   | 'wrapUpDecide'
+  | 'browserHandoffTitle'
+  | 'browserHandoffReason'
+  | 'browserHandoffHint'
+  | 'browserHandoffDone'
+  | 'browserHandoffShow'
+  | 'browserHandoffMessage'
 
 const ZH: Record<SessionTextKey, string> = {
   visual: '结构化图块（{lang}）暂不支持在这里渲染。',
@@ -328,7 +334,13 @@ const ZH: Record<SessionTextKey, string> = {
   wrapUpLabel: '下一步建议',
   wrapUpDismiss: '关闭建议',
   wrapUpDone: '本轮小结',
-  wrapUpDecide: '等你决定'
+  wrapUpDecide: '等你决定',
+  browserHandoffTitle: '浏览器交给你了',
+  browserHandoffReason: '需要你在浏览器里亲自完成一步操作，比如登录、验证码或支付。',
+  browserHandoffHint: '这期间 Agent 不会操作浏览器。做完后点「我做好了」，或直接发消息告诉它。',
+  browserHandoffDone: '我做好了',
+  browserHandoffShow: '查看浏览器',
+  browserHandoffMessage: '浏览器里的操作我已经做完了，请继续。'
 }
 
 const EN: Record<SessionTextKey, string> = {
@@ -494,7 +506,13 @@ const EN: Record<SessionTextKey, string> = {
   wrapUpLabel: 'Next step',
   wrapUpDismiss: 'Dismiss suggestion',
   wrapUpDone: 'Turn recap',
-  wrapUpDecide: 'Your call'
+  wrapUpDecide: 'Your call',
+  browserHandoffTitle: 'The browser is yours',
+  browserHandoffReason: 'A step needs you in the browser, such as signing in, a captcha, or a payment.',
+  browserHandoffHint: 'The agent will not touch the browser meanwhile. Press "Done" when finished, or just send a message.',
+  browserHandoffDone: 'Done',
+  browserHandoffShow: 'Show browser',
+  browserHandoffMessage: 'I have finished the step in the browser. Please continue.'
 }
 
 export function sessionText(lang: string, key: SessionTextKey, vars?: Record<string, string | number>): string {

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, parse, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
@@ -67,14 +67,24 @@ function serialized<T>(key: string, task: () => Promise<T>): Promise<T> {
   return next
 }
 
-async function readIndex(dir: string, cwd: string): Promise<Index> {
+async function readIndex(dir: string, cwd: string, onCorrupt: 'reset' | 'throw' = 'reset'): Promise<Index> {
+  const file = join(dir, 'index.json')
+  let text: string
   try {
-    const parsed = JSON.parse(await readFile(join(dir, 'index.json'), 'utf8')) as Partial<Index>
+    text = await readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { version: 1, cwd, records: [] }
+    throw error
+  }
+  try {
+    const parsed = JSON.parse(text) as Partial<Index>
     if (parsed?.version === 1 && Array.isArray(parsed.records)) {
       return { version: 1, cwd: cwd || (typeof parsed.cwd === 'string' ? parsed.cwd : ''), records: parsed.records, lastTree: parsed.lastTree, lastSha: parsed.lastSha, lastGcAt: parsed.lastGcAt }
     }
   } catch {
   }
+  if (onCorrupt === 'throw') throw new Error('检查点索引损坏')
+  await copyFile(file, `${file}.corrupt-${Date.now()}`)
   return { version: 1, cwd, records: [] }
 }
 
@@ -287,8 +297,8 @@ function shaOf(record: StoredRecord | undefined): string | null {
 
 export async function listCheckpoints(cwd: string, sessionKey: string): Promise<CheckpointRecord[]> {
   if (!isCheckpointableDir(cwd) || !sessionKey) return []
-  const index = await readIndex(projectDir(cwd), cwd)
-  return index.records.filter((r) => r.sessionKey === sessionKey).map(viewOf)
+  const index = await readIndex(projectDir(cwd), cwd, 'throw').catch(() => null)
+  return index ? index.records.filter((r) => r.sessionKey === sessionKey).map(viewOf) : []
 }
 
 function parseChanges(output: string): { changes: CheckpointChange[]; total: number } {
@@ -372,14 +382,15 @@ export async function pruneCheckpoints(now = Date.now()): Promise<void> {
   }
   for (const name of dirs) {
     const dir = join(ROOT, name)
-    const initial = await readIndex(dir, '')
+    const initial = await readIndex(dir, '', 'throw').catch(() => null)
+    if (!initial) continue
     const lockKey = initial.cwd ? normalizeCwd(initial.cwd) : `checkpoint-dir:${name}`
     await serialized(lockKey, async () => {
     try {
       const st = await stat(dir)
       if (!st.isDirectory()) return
       await removeStaleTemp(dir)
-      const index = await readIndex(dir, '')
+      const index = await readIndex(dir, '', 'throw')
       const kept = index.records.filter((r) => now - r.at < KEEP_MS)
       if (!kept.length) {
         await rm(dir, { recursive: true, force: true })

@@ -67,7 +67,7 @@ export function useSessionSwitcher(): SessionSwitcherControl {
     if (items.length < (hasCurrent ? 2 : 1)) return false
     const index = initialSwitcherIndex(items.length, direction, hasCurrent)
     const keys = bindingKeys(id)
-    if (heldModifiersReleased(keys, { ctrlKey: false, metaKey: false, altKey: false, shiftKey: event.shiftKey })) {
+    if (heldModifiersReleased(keys, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey })) {
       openSession(items[index])
       return true
     }

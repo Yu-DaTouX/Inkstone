@@ -6,6 +6,9 @@ import { resolveQuotaProviderSecret } from '../quota-credentials'
 
 const SEARCH_ENDPOINT = 'https://api.deepseek.com/v1/tools/search'
 const FETCH_ENDPOINT = 'https://api.deepseek.com/v1/tools/fetch'
+const BALANCE_ENDPOINT = 'https://api.deepseek.com/user/balance'
+const BALANCE_TTL_MS = 3 * 60_000
+const BALANCE_TIMEOUT_MS = 3_000
 const QUERY_MAX_CHARS = 128
 const COUNT_MAX = 50
 
@@ -34,6 +37,49 @@ function failure(res: Extract<ApiResult, { ok: false }>, action: 'search' | 'fet
     case 404: if (action === 'fetch') return { code: 'no_content', message: 'DeepSeek 没取到这个网页的可用内容（HTTP 404）' }; break
   }
   return { code: res.code, message: res.message + suffix }
+}
+
+const NO_BALANCE = 'DeepSeek 账户余额不足，已暂停调用（充值后约 3 分钟内自动恢复）'
+
+let balance: { key: string; at: number; funded: Promise<boolean> } | null = null
+
+function rememberBalance(key: string, funded: boolean): void {
+  balance = { key, at: Date.now(), funded: Promise.resolve(funded) }
+}
+
+interface BalanceBody {
+  is_available?: unknown
+  balance_infos?: Array<{ total_balance?: unknown } | null>
+}
+
+async function queryBalance(key: string, fetchImpl: typeof fetch): Promise<boolean> {
+  const res = await callApi('DeepSeek', BALANCE_ENDPOINT, { headers: { Accept: 'application/json', Authorization: `Bearer ${key}` } }, BALANCE_TIMEOUT_MS, fetchImpl)
+  const body = res.ok ? parseJson<BalanceBody>(res.text) : null
+  if (typeof body?.is_available === 'boolean') return body.is_available
+  if (Array.isArray(body?.balance_infos)) return body.balance_infos.some((info) => Number(info?.total_balance) > 0)
+  return true
+}
+
+export function deepseekHasBalance(key: string, fetchImpl: typeof fetch = fetch, now = Date.now()): Promise<boolean> {
+  if (balance?.key === key && now - balance.at < BALANCE_TTL_MS) return balance.funded
+  const funded = queryBalance(key, fetchImpl)
+  balance = { key, at: now, funded }
+  return funded
+}
+
+export async function runFundedDeepseekSearch(query: string, opts: SourceRequest): Promise<SourceRun> {
+  const key = await resolveDeepseekSearchKey()
+  if (key && !(await deepseekHasBalance(key))) {
+    return { source: 'deepseek', rows: null, unavailable: true, error: { code: 'insufficient_balance', message: NO_BALANCE }, elapsedMs: 0 }
+  }
+  return runDeepseekSearch(query, opts)
+}
+
+export async function fundedDeepseekReadPage(rawUrl: string, opts: { maxChars?: number; timeoutMs?: number } = {}): Promise<ReadPageResult> {
+  normalizeReadUrl(rawUrl)
+  const key = await resolveDeepseekSearchKey()
+  if (key && !(await deepseekHasBalance(key))) throw new ReadPageError('insufficient_balance', NO_BALANCE)
+  return deepseekReadPage(rawUrl, opts)
 }
 
 const rerankOf = (row: Record<string, unknown>): number => (typeof row.rerank_score === 'number' && Number.isFinite(row.rerank_score) ? row.rerank_score : -1)
@@ -76,6 +122,7 @@ export async function runDeepseekSearch(
     withCallerAbort(fetchImpl, opts.signal)
   )
   if (opts.signal?.aborted) return { source: 'deepseek', rows: null, skipped: true, elapsedMs: elapsed() }
+  if (!res.ok && res.status === 402) rememberBalance(key, false)
   if (!res.ok) return { source: 'deepseek', rows: null, error: failure(res, 'search'), ...(res.timedOut ? { timedOut: true } : {}), elapsedMs: elapsed() }
   const body = parseJson<SearchBody>(res.text)
   if (!body || !Array.isArray(body.results)) {
@@ -119,6 +166,7 @@ export async function deepseekReadPage(
     fetchImpl
   )
   if (!res.ok) {
+    if (res.status === 402) rememberBalance(key, false)
     const { code, message } = failure(res, 'fetch')
     throw new ReadPageError(code, message)
   }

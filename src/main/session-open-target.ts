@@ -8,6 +8,7 @@ export interface SessionOpenTarget {
   projectId?: string
   scope: SessionScope
   fromSession: boolean
+  missingCwd?: string
 }
 
 export interface SessionOpenTargetOptions {
@@ -58,9 +59,11 @@ export async function resolveSessionOpenTarget(options: SessionOpenTargetOptions
     }
   }
   if (!cwd) {
+    const recorded = entry?.cwd ?? headerCwd
+    const missing = recorded ? { missingCwd: recorded } : {}
     return entry
-      ? { cwd: options.fallbackCwd, ...(entry.projectId ? { projectId: entry.projectId } : {}), scope: entry.scope, fromSession: false }
-      : ownershipOfFallback(options)
+      ? { cwd: options.fallbackCwd, ...(entry.projectId ? { projectId: entry.projectId } : {}), scope: entry.scope, fromSession: false, ...missing }
+      : { ...ownershipOfFallback(options), ...missing }
   }
   if (entry) {
     return { cwd, ...(entry.projectId ? { projectId: entry.projectId } : {}), scope: entry.scope, fromSession: true }

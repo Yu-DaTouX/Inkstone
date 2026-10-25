@@ -1,3 +1,5 @@
+import { isRestoredReadonly, RESTORED_READONLY_MESSAGE } from './restored-readonly'
+import { setUserHandoffRelease, userMessageSent } from './browser/user-handoff'
 import { isAgentContextExtension, nativePiToolsSupported } from '../shared/agent-context'
 import { storageMoveReady } from './storage-move-boot'
 import { app, shell, BrowserWindow, clipboard, ClipboardItem, crashReporter, ipcMain, dialog, screen, Menu, Notification, Tray, nativeImage, nativeTheme } from 'electron'
@@ -23,11 +25,11 @@ import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, t
 import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
 import { registerDeepLinkProtocol, windowDeepLinkRouter } from './deeplink'
 import { RunnerVisibility } from './runner-reclaim'
-import { getSettings, patchSettings, updateSettings, validateRendererSettingsPatch } from './settings'
+import { getSettings, patchSettings, setGuardSettingsNoticeSink, updateSettings, validateRendererSettingsPatch } from './settings'
 import { syncNativeCompactionLines, type LineModel } from './native-compaction-line'
 import { DEFAULT_AUTO_COMPACT_TOKENS } from '../shared/context-limits'
 import { registerWorkspaceDataIpc } from './ipc/workspace-data-ipc'
-import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize } from './storage-move'
+import { cancelStorageMove, scheduleStorageMove, storageInfo, storageSize, syncFolderService } from './storage-move'
 import { getSessionLayout, moveSessionLayout, rememberSession } from './session-layout'
 import { disposeKeepAwake, updateKeepAwake, watchPowerSource } from './keep-awake'
 import { rewriteSessionCwd, movedSessionContinuationPrompt, type SessionMoveAnswer, type SessionMovePrompt } from './session-move'
@@ -51,7 +53,7 @@ import { smokeStagedPiPackage } from './capabilities/pi-package-smoke'
 import { allowTrust, trustStatus } from './project-trust'
 import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
-import { BrowserController } from './browser'
+import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
 import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, resizeTerminal, setTerminalSink, writeTerminal } from './terminal'
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
@@ -110,7 +112,7 @@ import { resolveSubagentModelPick } from './subagents/model-label'
 import { createSubagentNotifier, findNoticeTarget } from './subagent-notify'
 import { botIconDirs, botIconFile, notificationBotMood, type NotificationBotKind } from './bot-icon'
 import type { ModelRef } from '../shared/model-brand'
-import { withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
+import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
 import { registerAppUpdate } from './app-update'
@@ -200,10 +202,15 @@ process.on('exit', (code) => {
   }
 })
 
+const CRASH_CLEANUP_MS = 5000
+
 process.on('uncaughtException', (error) => {
-  exitReason = 'uncaughtException'
   reportMainError('uncaughtException', error)
-  setImmediate(() => app.exit(1))
+  if (exitReason === 'uncaughtException') return
+  exitReason = 'uncaughtException'
+  const exit = (): void => app.exit(1)
+  setTimeout(exit, CRASH_CLEANUP_MS)
+  setImmediate(() => { void shutdown().finally(exit) })
 })
 process.on('unhandledRejection', (reason) => reportMainError('unhandledRejection', reason))
 
@@ -432,7 +439,7 @@ const subagentService: SubagentService = new SubagentService({
   confirmDanger: async (params, cwd, origin) => {
     if ((await getSettings()).permissionMode === 'all') return true
     const detail = String(params.detail ?? '')
-    if (detail.length > 20000) return false
+    if (detail.length > APPROVAL_DETAIL_MAX) return false
     const answer = await approvals.ask({
       ...(origin?.sessionId ? { sessionId: origin.sessionId } : {}),
       ...(origin?.runId ? { runId: origin.runId } : {}),
@@ -681,6 +688,21 @@ const approvals = new ApprovalBroker({
   },
   publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot })
 })
+
+async function askLargeDownloadApproval(download: LargeDownload): Promise<boolean> {
+  const settings = await getSettings()
+  const megabytes = Math.ceil(download.bytes / 1024 / 1024)
+  const answer = await approvals.ask({
+    kind: 'permission',
+    tool: 'browser-download',
+    title: `网页要下载一个 ${megabytes} MB 的文件，继续吗？`,
+    detail: `文件：${download.filename}\n来源：${download.source}\n保存到：下载文件夹`,
+    reasons: [`单个下载超过 ${DOWNLOAD_CONFIRM_BYTES / 1024 / 1024} MB`],
+    cwd: settings.cwd,
+    canRemember: false
+  })
+  return answer?.choice === 'once' || answer?.choice === 'remember'
+}
 
 async function askProfileSyncApproval(): Promise<boolean> {
   const settings = await getSettings()
@@ -1392,6 +1414,10 @@ async function executeControlCommand(command: ControlCommand): Promise<ControlRe
       return { ok: true, action: command.action, data: controlStatus() }
     }
 
+    if ((command.action === 'click' || command.action === 'type' || command.action === 'key') && approvals.list().length > 0) {
+      return { ok: false, action: command.action, error: '有待处理的审批时不接受遥控输入，请在砚窗口里手动处理审批' }
+    }
+
     if (command.action === 'click') {
       const [width, height] = win.getContentSize()
       const x = command.x ?? -1
@@ -1551,6 +1577,25 @@ function capabilityProjectId(settings: Awaited<ReturnType<typeof getSettings>>, 
   const registered = projectIdForCwd(settings, cwd)
   if (registered) return registered
   return deriveProjectId(cwd, (id) => settings.projects.some((project) => project.id === id))
+}
+
+async function relocateMissingCwd(missing: string): Promise<string | null> {
+  if (!win) return null
+  const choice = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: '项目文件夹找不到了',
+    message: '这个会话原来的项目文件夹不在了',
+    detail: `${missing}\n\n可能被改名、移动或删除。重新指定后，这个会话会在新文件夹里继续。`,
+    buttons: ['重新指定文件夹', '取消'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  })
+  if (choice.response !== 0) return null
+  let near = dirname(resolve(missing))
+  while (!existsSync(near) && dirname(near) !== near) near = dirname(near)
+  const picked = await dialog.showOpenDialog(win, { title: '选择这个会话的项目文件夹', defaultPath: near, properties: ['openDirectory'] })
+  return picked.canceled ? null : picked.filePaths[0] ?? null
 }
 
 async function validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { ok: false; error: string }> {
@@ -1885,6 +1930,11 @@ function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; 
 
 async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (runners?.active()?.running) return { ok: true }
+  const crashedId = runners?.activeRunnerId
+  if (runners && crashedId && !restore?.sessionFile && runners.statuses().some((status) => status.id !== crashedId && (status.running || status.waiting))) {
+    const restarted = await runners.restartOne(crashedId)
+    if (restarted.ok) return { ok: true }
+  }
   await runners?.stopAll()
   await subagentService.current()?.stopAll()
 
@@ -2195,12 +2245,19 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
     usable: (cwd) => validateCwd(cwd),
     projectIdForCwd: (cwd) => projectIdForCwd(settings, cwd)
   })
-  const res = await runners.startPrimary(openTarget.cwd, restore?.sessionFile, openTarget.projectId)
+  const restoreFile = openTarget.missingCwd ? undefined : restore?.sessionFile
+  const startTarget = openTarget.missingCwd
+    ? { cwd: settings.cwd, ...((id) => id ? { projectId: id, scope: 'project' as const } : { scope: 'global' as const })(projectIdForCwd(settings, settings.cwd)) }
+    : openTarget
+  if (openTarget.missingCwd) {
+    push({ ch: 'notify', payload: { id: `missing-cwd-${Date.now()}`, method: 'notify', notifyType: 'warning', message: `上次会话的项目文件夹不在了：${openTarget.missingCwd}。这次没有恢复它；从侧栏打开该会话时可以重新指定文件夹。` } })
+  }
+  const res = await runners.startPrimary(startTarget.cwd, restoreFile, startTarget.projectId)
   await rememberRunnerSession(res, {
-    cwd: openTarget.cwd,
-    projectId: openTarget.projectId,
-    scope: openTarget.scope,
-    ...(restore?.sessionFile ? { sessionFile: restore.sessionFile } : {})
+    cwd: startTarget.cwd,
+    projectId: startTarget.projectId,
+    scope: startTarget.scope,
+    ...(restoreFile ? { sessionFile: restoreFile } : {})
   })
   pushRunners()
   if (res.ok && res.id) await pushRunnerSnapshot(res.id)
@@ -2308,6 +2365,7 @@ function registerIpc(): void {
     const registry = runners
     const agent = id ? registry?.agentOf(id) : null
     if (!id || !registry || !agent) return { ok: false, error: 'pi 未运行' }
+    userMessageSent(agent.getState()?.sessionId)
     let admissionToken: number | undefined
     let handedOff = false
     const idleForTurn = (): boolean => {
@@ -2542,8 +2600,8 @@ function registerIpc(): void {
     stopSessionRun: async ({ sessionId }) => {
       const agent = runners?.agentForSession(sessionId) ?? null
       if (!agent) return { ok: false, error: '找不到这次运行对应的会话实例' }
-      const cleared = await stopRunner(agent)
-      return { ok: true, recovered: cleared }
+      const { error, ...cleared } = await agent.abort()
+      return error ? { ok: false, error } : { ok: true, recovered: cleared }
     },
     stopSubagentRun: async (runId) => {
       const service = subagentService.current()
@@ -2568,7 +2626,8 @@ function registerIpc(): void {
         piAgentDir: PI_AGENT_DIR,
         settingsApplier: async (patch) => {
           await patchSettings(patch)
-        }
+        },
+        scheduleApplier: (definition) => scheduleService.applySynced(definition)
       }),
     pickSyncFolder: async () => {
       if (!win) return null
@@ -2752,6 +2811,8 @@ function registerIpc(): void {
     if (browser) push({ ch: 'browser-state', payload: browser.getState() })
     pushRunners()
     void reclaimQueuedMessages()
+    setGuardSettingsNoticeSink((message) => push({ ch: 'notify', payload: { id: `guard-settings-${Date.now()}-${message.length}`, method: 'notify', notifyType: 'warning', message } }))
+    if (isRestoredReadonly()) push({ ch: 'notify', payload: { id: 'restored-readonly', method: 'notify', notifyType: 'info', message: RESTORED_READONLY_MESSAGE } })
   })
 
   handle('yan:openPath', async (p: string) => {
@@ -2778,7 +2839,20 @@ function registerIpc(): void {
   handle('yan:storage:pick', async () => {
     if (!win) return null
     const r = await dialog.showOpenDialog(win, { title: '选择新的数据位置（建议非系统盘上的空文件夹）', properties: ['openDirectory', 'createDirectory'] })
-    return r.canceled ? null : r.filePaths[0] ?? null
+    const picked = r.canceled ? null : r.filePaths[0] ?? null
+    const service = picked ? syncFolderService(picked) : null
+    if (!picked || !service) return picked
+    const answer = await dialog.showMessageBox(win, {
+      type: 'warning',
+      title: '这是同步盘文件夹',
+      message: `选中的文件夹由 ${service} 同步`,
+      detail: '数据目录里有模型 API Key 与登录凭证（auth.json），放在同步盘会被上传到云端或其他设备。建议换一个不同步的文件夹。',
+      buttons: ['重新选择', '仍然使用'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    })
+    return answer.response === 1 ? picked : null
   })
   handle('yan:storage:schedule', async (target: string, relaunch?: boolean) => {
     const r = await scheduleStorageMove(String(target ?? ''))
@@ -2957,7 +3031,7 @@ function registerIpc(): void {
 
 
   registerScheduleIpc(ipc, scheduleService)
-  void scheduleService.start().catch((e) => reportMainError('定时任务', e))
+  if (!isRestoredReadonly()) void scheduleService.start().catch((e) => reportMainError('定时任务', e))
   registerSubagentsIpc(ipc, {
     service: subagentService,
     parentContext: async (owner) => {
@@ -3407,6 +3481,7 @@ const sessionHost: SessionHost = {
   pushRunners,
   pushRunnerSnapshot,
   validateCwd,
+  relocateMissingCwd,
   startAgent,
   rememberRunnerSession,
   readHistoryWithArtifacts,
@@ -3427,7 +3502,8 @@ app.whenReady().then(async () => {
   registerHtmlArtifactProtocol()
   void loadModelPricing()
   watchPowerSource()
-  browser = new BrowserController(() => win, push, askProfileSyncApproval)
+  browser = new BrowserController(() => win, push, askProfileSyncApproval, askLargeDownloadApproval)
+  setUserHandoffRelease((sessionId) => browser?.releaseUserControlFor(sessionId))
   setTerminalSink((event) => {
     if (event.kind === 'exit') {
       blockedTerminalNotices.delete(event.id)
@@ -3610,7 +3686,7 @@ app.whenReady().then(async () => {
     isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
   })
 
-  syncController?.start()
+  if (!isRestoredReadonly()) syncController?.start()
   const deliverStartupDeepLinks = (): void => {
     deepLinkRouter.flush()
     deepLinkRouter.handleArgv(process.argv)

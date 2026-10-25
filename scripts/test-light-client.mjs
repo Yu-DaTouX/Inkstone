@@ -48,8 +48,13 @@ try {
   check(!readonlyTools.gitInspectArgs('show', ['HEAD', '--', '--output=名字.ts']).error, '-- 之后的路径不按选项拦截')
   const { CapabilityServer } = await load('server', 'src/main/capability-server.ts')
   let confirmed = 0
-  const server = new CapabilityServer({ opsDir: join(root, 'ops'), onlyCommands: ['danger.confirm'], handlers: {
-    run: async () => { confirmed++; return { summary: { allowed: true } } }
+  const prefs = { mode: 'danger', outsideWrites: true, allowRoots: [] }
+  const server = new CapabilityServer({ opsDir: join(root, 'ops'), onlyCommands: ['danger.confirm', 'danger.prefs'], handlers: {
+    run: async (command) => {
+      if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...prefs } }
+      confirmed++
+      return { summary: { allowed: true } }
+    }
   } })
   const endpoint = await server.start({ sessionId: 'child-1', projectId: 'project-1' })
   Object.assign(process.env, { YAN_CLI_URL: endpoint.url, YAN_CLI_TOKEN: endpoint.token, YAN_SESSION_ID: 'child-1', YAN_PROJECT_ID: 'project-1' })
@@ -58,13 +63,15 @@ try {
     let hook
     guard.default({ on: (event, callback) => { if (event === 'tool_call') hook = callback } })
     const invoke = command => hook({ toolName: 'bash', input: { command } }, { cwd: root })
-    await writeFile(join(process.env.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ permissionMode: 'danger', guardOutsideWrites: true }))
+    await writeFile(join(process.env.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ permissionMode: 'all' }))
+    check(await invoke('git reset --hard HEAD') === undefined && confirmed === 1, '磁盘设置被改成不受限制时，守卫仍按宿主档位审批')
+    confirmed = 0
     check(await invoke('git status') === undefined && confirmed === 0, '危险档普通命令不审批')
     check(await invoke('git reset --hard HEAD') === undefined && confirmed === 1, '危险命令通过子运行审批通道获准')
     process.env.YAN_CLI_TOKEN = 'incorrect'
     check((await invoke('git reset --hard HEAD'))?.block === true && confirmed === 1, '无效令牌不能绕过审批')
     process.env.YAN_CLI_TOKEN = endpoint.token
-    await writeFile(join(process.env.YAN_DATA_DIR, 'desktop.json'), JSON.stringify({ permissionMode: 'all' }))
+    prefs.mode = 'all'
     check(await invoke('rm -rf /') === undefined && confirmed === 1, '原生档不拦截删除，也不请求审批；测试仅调用钩子，不执行命令')
     const response = await fetch(endpoint.url, { method: 'POST', headers: { authorization: `Bearer ${endpoint.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ apiVersion: 1, command: 'subagent.start', params: {}, sessionId: 'child-1', projectId: 'project-1' }) })
     check((await response.json()).ok === false && confirmed === 1, '子审批令牌不能调用派活等其他宿主能力')

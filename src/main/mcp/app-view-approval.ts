@@ -1,4 +1,5 @@
 import {
+  APPROVAL_DETAIL_MAX,
   normalizePermissionMode,
   type ApprovalAnswer,
   type ApprovalRequest,
@@ -152,11 +153,15 @@ export async function approveAppViewCall(
     askReasons = risks
   }
 
+  const detail = JSON.stringify(call.args ?? {})
+  if (detail.length > APPROVAL_DETAIL_MAX) {
+    return finish({ allowed: false, asked: false, reasons: askReasons, trust, reason: `App 调用参数有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认` })
+  }
   const request: Omit<ApprovalRequest, 'id' | 'createdAt'> = {
     kind: 'danger',
     tool: toolName,
     title: `App 视图请求调用 ${server} / ${tool}`,
-    detail: JSON.stringify(call.args ?? {}).slice(0, 2000),
+    detail,
     reasons: askReasons,
     cwd: String(call.cwd ?? ''),
     canRemember: false,

@@ -558,7 +558,7 @@ export function Composer({ className }: { className?: string } = {}) {
               <PlusMenu onInsert={insertAtCursor} />
             </div>
             <div className="composer-aux">
-              <VoiceButton onText={insertAtCursor} />
+              <VoiceButton onText={insertAtCursor} scope={sessionId} />
               <ContextRing />
             </div>
             <ModelThinkingPicker />

@@ -142,27 +142,25 @@ for (const id of ['parent-1', 'child-1']) {
   await writeFile(join(sourcesDir(id), 'img-1.bin'), 'x')
 }
 
-await check('sessionsToDelete 递归带上子会话', async () => {
+await check('sessionsToDelete 只含被删的会话本身', async () => {
   const targets = await sessionsToDelete(parent)
   const paths = targets.map((target) => target.path)
-  assert.equal(paths.length, 2, `应含父会话与子会话：${paths.join(', ')}`)
-  assert.ok(paths.some((item) => item.endsWith('parent-1.jsonl')), '应含父会话')
-  assert.ok(paths.some((item) => item.endsWith('child-1.jsonl')), '应含子会话')
-  assert.equal(targets.find((target) => target.path.endsWith('child-1.jsonl'))?.sessionId, 'child-1')
+  assert.equal(paths.length, 1, `只应含父会话：${paths.join(', ')}`)
+  assert.ok(paths[0].endsWith('parent-1.jsonl'), '应为父会话')
 })
 
-await check('删除后会话文件进回收站、技能目录与来源副本消失', async () => {
+await check('删除后会话文件进回收站、技能目录与来源副本消失，分支会话不受影响', async () => {
   const token = await deleteSession(parent)
   assert.ok(token, '应返回撤销令牌')
   assert.equal(existsSync(parent), false, '父会话文件应已移走')
-  assert.equal(existsSync(child), false, '子会话文件应已移走')
+  assert.equal(existsSync(child), true, '分支会话文件保留')
   assert.equal(existsSync(sessionSkillsDir('parent-1')), false, '会话技能目录应被删掉')
-  assert.equal(existsSync(sessionSkillsDir('child-1')), false, '子会话技能目录应被删掉')
+  assert.equal(existsSync(sessionSkillsDir('child-1')), true, '分支会话技能目录保留')
   assert.equal(existsSync(sourcesDir('parent-1')), false, '来源副本应被删掉')
-  assert.equal(existsSync(sourcesDir('child-1')), false, '子会话来源副本应被删掉')
+  assert.equal(existsSync(sourcesDir('child-1')), true, '分支会话来源副本保留')
   const trashed = await readdir(trashDir)
   assert.ok(trashed.some((name) => name.endsWith('-parent-1.jsonl')), '父会话文件应在回收站里')
-  assert.ok(trashed.some((name) => name.endsWith('-child-1.jsonl')), '子会话文件应在回收站里')
+  assert.ok(!trashed.some((name) => name.endsWith('-child-1.jsonl')), '分支会话文件不进回收站')
 })
 
 await check('撤销只恢复会话文件，不恢复技能目录与来源副本', async () => {

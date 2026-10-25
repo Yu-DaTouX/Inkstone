@@ -415,26 +415,9 @@ async function pruneTrash(): Promise<void> {
 }
 
 export async function sessionsToDelete(path: string): Promise<Array<{ path: string; sessionId?: string }>> {
-  const all = await listSessions(Number.MAX_SAFE_INTEGER)
-  const byParent = new Map<string, SessionSummary[]>()
-  for (const session of all) {
-    if (!session.parentSession) continue
-    const children = byParent.get(session.parentSession) ?? []
-    children.push(session)
-    byParent.set(session.parentSession, children)
-  }
-  const targets: Array<{ path: string; sessionId?: string }> = []
-  const visited = new Set<string>()
-  const visit = (candidate: string, sessionId?: string): void => {
-    if (visited.has(candidate)) return
-    visited.add(candidate)
-    const id = sessionId ?? all.find((session) => resolve(session.path) === candidate)?.id
-    targets.push({ path: candidate, ...(id ? { sessionId: id } : {}) })
-    if (!id) return
-    for (const child of byParent.get(id) ?? []) visit(resolve(child.path), child.id)
-  }
-  visit(path)
-  return targets
+  const target = resolve(path)
+  const id = (await listSessions(Number.MAX_SAFE_INTEGER)).find((session) => resolve(session.path) === target)?.id
+  return [{ path: target, ...(id ? { sessionId: id } : {}) }]
 }
 
 export async function deleteSession(path: string, protectedPath?: string): Promise<string> {
@@ -450,7 +433,7 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
   const targets = await sessionsToDelete(resolved)
   const paths = targets.map((target) => target.path)
   if (protectedPath && paths.includes(resolve(protectedPath))) {
-    throw new Error('当前正在使用的会话位于将删除的分支中')
+    throw new Error('不能删除当前正在使用的会话')
   }
 
   await mkdir(TRASH_DIR, { recursive: true })

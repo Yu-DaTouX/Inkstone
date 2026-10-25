@@ -257,8 +257,22 @@ await check('移动后再打开会话不会追加 moveHistory，也不把归属�
 
 process.stdout.write('\n▌会话文件头目录不可用时回退当前目录，但不改写归属\n')
 
+await check('项目目录不在时先问用户；用户取消就不打开，也不改记录', async () => {
+  const asked = []
+  host.relocateMissingCwd = async (missing) => { asked.push(missing); return null }
+  const before = selections.length
+  const result = await switchSession(files.headerGone)
+  delete host.relocateMissingCwd
+  assert.equal(result.ok, false)
+  assert.equal(asked.length, 1)
+  assert.equal(norm(asked[0]), norm(dirGone))
+  assert.equal(selections.length, before)
+  assert.equal(norm((await entryOf('sess-gone')).cwd), norm(dirGone))
+})
+
 await check('文件头目录已不存在：回退到当前目录 A，归属仍是 project-b', async () => {
   const target = await resolveTarget(files.headerGone)
+  assert.equal(norm(target.missingCwd), norm(dirGone))
   assert.equal(norm(target.cwd), norm(dirA))
   assert.equal(target.fromSession, false)
   assert.equal(target.projectId, 'project-b')

@@ -582,6 +582,13 @@ function findNewSessionSnapshot(
 export { mergePeekedHistory }
 
 
+function viewedActiveRunner(s: Store, list: RunnerStatus[]): RunnerStatus | undefined {
+  const active = list.find((runner) => runner.isActive)
+  if (!active) return undefined
+  const viewing = viewingSessionId(s)
+  return !viewing || !active.sessionId || active.sessionId === viewing ? active : undefined
+}
+
 function snapshotForView(s: Store, snapshot?: SessionRuntimeSnapshot): SessionRuntimeSnapshot | undefined {
   if (!snapshot) return undefined
   const viewing = viewingSessionId(s)
@@ -908,6 +915,11 @@ async function runQuotaResumeCheck(gen: number, known?: QuotaWindow[]): Promise<
     try {
       const next = await window.yan.providerQuota(wait.provider, useStore.getState().settings?.providerBudgets?.[wait.provider])
       if (gen !== quotaResumeGen) return
+      if (!next.supported) {
+        quotaResumeGen++
+        useStore.setState((s) => ({ quotaResume: null, notices: pushNotice(s.notices, 'info', uiText('state.quota.noWindows')) }))
+        return
+      }
       windows = next.staleError ? undefined : next.windows
     } catch {
       windows = undefined
@@ -1207,7 +1219,7 @@ export const useStore = create<Store>((rawSet, get) => {
   syncRunners: async () => {
     try {
       const list = await window.yan.runnerStatuses()
-      const active = list.find((r) => r.isActive)
+      const active = viewedActiveRunner(get(), list)
       set({ runners: keepRef(get().runners, list), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
       if (active) {
         const runtime = runtimeFromRunner(active)
@@ -1326,7 +1338,7 @@ export const useStore = create<Store>((rawSet, get) => {
       }
       case 'runners':
         {
-          const active = m.payload.find((runner) => runner.isActive)
+          const active = viewedActiveRunner(s, m.payload)
           const keep = new Set([viewingSessionId(s) ?? '',
             ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
@@ -2118,7 +2130,7 @@ export const useStore = create<Store>((rawSet, get) => {
   },
 
   renameSession: async (name) => {
-    const res = await piCall(() => window.yan.renameSession(name))
+    const res = await piCall(() => window.yan.renameSession(name, get().session?.sessionId))
     if (!res.ok) {
       set({ notices: pushNotice(get().notices, 'error', res.error ?? uiText('state.error.renameFailed')) })
       return
@@ -2135,7 +2147,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const previous = state.manualTitles[sid]
     set({ manualTitles: { ...state.manualTitles, [sid]: trimmed } })
     if (sid === state.session?.sessionId) {
-      await piCall(() => window.yan.renameSession(trimmed))
+      await piCall(() => window.yan.renameSession(trimmed, sid))
     }
     const res = await piCall(() => window.yan.setManualTitle(sid, trimmed))
     if (!res.ok) {

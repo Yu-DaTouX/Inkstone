@@ -889,9 +889,9 @@ export function createTools(context: McpContext): ToolDefinition[] {
 }
 
 const TOOL_HINTS: Record<string, Record<string, boolean>> = {
-  mc_build: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  mc_apply: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  mc_run: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  mc_build: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  mc_apply: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  mc_run: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   mc_command: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   mc_logs: { readOnlyHint: true, openWorldHint: false },
   mc_view: { readOnlyHint: true, openWorldHint: false },

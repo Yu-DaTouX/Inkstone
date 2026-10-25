@@ -175,7 +175,8 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
         onGone()
         return
       }
-      await window.yan.runs.stop(snapshot.runId)
+      const result = await window.yan.runs.stop(snapshot.runId)
+      if (!result.ok) useStore.getState().notify('error', result.error ? `${text.stopFailed}：${result.error}` : text.stopFailed)
     } catch {
       useStore.getState().notify('error', text.stopFailed)
     } finally {

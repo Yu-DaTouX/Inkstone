@@ -373,12 +373,21 @@ export class McpAppProxyService {
       }
     }
 
+    const targetIds = new Set(targets.map((server) => server.id))
+    const managedIds = new Set(managed.map((server) => server.id))
+    const keptFromOtherScopes = (this.readSnapshot()?.tools ?? []).filter((tool) => {
+      if (targetIds.has(tool.serverId)) return false
+      const scope = typeof tool.projectScope === 'string' ? tool.projectScope : ''
+      return managedIds.has(tool.serverId) || (!!scope && scope !== callerProjectId)
+    })
+    const keptServerIds = new Set(keptFromOtherScopes.map((tool) => tool.serverId))
+    const keptServers = (this.readSnapshot()?.servers ?? []).filter((server) => keptServerIds.has(server.id) && !targetIds.has(server.id))
     const snapshot: McpAppProxySnapshot = {
       version: SNAPSHOT_VERSION,
       generatedAt,
       source: SNAPSHOT_SOURCE,
-      tools,
-      servers,
+      tools: [...keptFromOtherScopes, ...tools],
+      servers: [...keptServers, ...servers],
       excluded
     }
     await writeAtomicText(this.snapshotPath(), `${JSON.stringify(snapshot, null, 2)}\n`)

@@ -119,6 +119,11 @@ export function ScheduleTaskCard({ task, busy, lang, t, onToggle, onRunNow, onEd
           <span>{describeTriggerText(task.trigger, t, lang)}</span>
           {task.enabled && task.nextRunAt ? <span>{t('sched.next', { when: formatWhen(task.nextRunAt, lang) })}</span> : null}
           {task.lastRunAt ? <span>{t('sched.last', { when: formatWhen(task.lastRunAt, lang) })}</span> : null}
+          {task.cwd ? (
+            <span className="sched-task-cwd" title={task.cwd}>
+              {t('sched.cwdMeta', { cwd: task.cwd })}
+            </span>
+          ) : null}
           {task.model ? (
             <span className="sched-task-model" title={task.model}>
               {shortModel(task.model)}

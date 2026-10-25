@@ -376,17 +376,16 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 
 动作：
   query   联网搜索。不写 --sources 时自动挑来源：有付费 key 时只用一个付费来源（中文 DeepSeek → Tavily → Brave，
-          其余 Tavily → Brave → DeepSeek，按次计费）加 DuckDuckGo 兜底；付费来源出错才换下一个，都出错再加 360；
-          没有 key 时用 DuckDuckGo + 360。先到的来源已够用时，慢的来源会被提前停止（状态 skipped）。
-          Bing、维基百科 / arXiv / Hacker News 不默认查，需要时用 --sources 点名（后三个需 OpenCLI；
-          Bing 在后台抓取时常返回无关结果，点名时留意核对）。
+          其余 Tavily → Brave → DeepSeek，按次计费）加 DuckDuckGo 兜底；付费来源出错才换下一个；
+          没有 key 时只用 DuckDuckGo。DeepSeek 余额不足时暂停调用，充值后约 3 分钟内自动恢复。先到的来源已够用时，
+          慢的来源会被提前停止（状态 skipped）。维基百科 / arXiv / Hacker News 不默认查，需要时用 --sources 点名（需 OpenCLI）。
           结果按各来源排名交错合并，多个来源都搜到的网址排前；10 分钟内同样的查询直接复用（cached）
             yan search query --query-text "flash attention"
             yan search query --query-text "Node.js 最新版本" --recent month
             yan search query --query-text "electron WebContentsView" --site github.com,electronjs.org
             yan search query --query-text "bun 基准" --query-text "deno 基准"     一次最多 5 个查询并行，结果在 data.queries
             yan search query --query-text "…" --sources wikipedia,arxiv --limit-per-source 5 --limit-total 12
-          --recent day|week|month|year  尽量筛选这段时间内的结果；360、维基百科 / arXiv / HN 不支持严格时间过滤，须核对发布日期
+          --recent day|week|month|year  尽量筛选这段时间内的结果；维基百科 / arXiv / HN 不支持严格时间过滤，须核对发布日期
           --site a.com,b.org             只搜这些站点（最多 5 个）
           --question "用户原问题"         把用户原话交给 DeepSeek，帮它理解查询
           --with-content                 DeepSeek 结果直接带正文（content，每条最多 3000 字），可省掉一次 fetch
@@ -406,7 +405,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · 网页引擎与付费来源都内置；只有维基百科 / arXiv / Hacker News 依赖用户自行安装的 OpenCLI，
     没装时这几个来源报 unavailable，doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error / skipped（已够用、提前停止）；
-  · 网页来源（bing / ddg / so360 / brave / tavily / deepseek）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
+  · 网页来源（ddg / brave / tavily / deepseek）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
   · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
   · 这个 search 是「联网找网页」；在已装能力里找工具用 yan capabilities search。
 `,
@@ -437,7 +436,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）；右侧面板收起时也能截
   download                       最近一次完成的下载
   request-user-control [--reason <原因>]
-                                 暂停自动化，交给用户处理密码 / 验证码 / 支付
+                                 把浏览器交给用户处理密码 / 验证码 / 支付；之后结束本轮，用户发消息即交还
   connect-chrome [--url <地址>]  接入本机已安装的 Chrome（需要登录态时用）
   disconnect-chrome              断开并关闭砚启动的那个 Chrome
 

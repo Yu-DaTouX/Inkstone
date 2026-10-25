@@ -1,6 +1,7 @@
 import type { CodegraphStatus, MarketSearchResult, PluginExportResult } from '../shared/plugin-market'
 import { buildNativeMcpDocument } from '../shared/mcp-native-import'
 import { execFile, spawn } from 'node:child_process'
+import { killProcessTree } from './git-service'
 import { randomBytes } from 'node:crypto'
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -74,7 +75,7 @@ export async function indexCodegraphProject(cwd: string): Promise<{ ok: boolean;
       windowsHide: true,
       env: { ...process.env, NO_COLOR: '1' }
     })
-    const timer = setTimeout(() => child.kill(), 15 * 60_000)
+    const timer = setTimeout(() => killProcessTree(child), 15 * 60_000)
     child.stdout?.on('data', keep)
     child.stderr?.on('data', keep)
     child.on('error', (error) => { clearTimeout(timer); done({ ok: false, error: error.message, log }) })

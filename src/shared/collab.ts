@@ -200,7 +200,8 @@ export function slugForRemote(name: string, fallback: string): string {
       .toLowerCase()
       .slice(0, 40)
   ).replace(/\.lock$/, '')
-  const safe = cleaned || fallback.replace(/[^A-Za-z0-9]/g, '').slice(0, 12).toLowerCase() || 'peer'
+  const id = fallback.replace(/[^A-Za-z0-9]/g, '').slice(0, 12).toLowerCase()
+  const safe = cleaned && id ? `${cleaned}-${id}` : cleaned || id || 'peer'
   return `${COLLAB_REMOTE_PREFIX}${safe}`
 }
 

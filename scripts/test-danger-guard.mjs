@@ -45,9 +45,9 @@ export function runDangerGuardTests(ok, mod) {
     'cd x && shutdown -h now'
   ]) ok(asks(cmd), `要问：${cmd}`)
 
+  for (const cmd of ['rm -rf ~/Documents', 'rm -rf $HOME/x']) ok(asks(cmd), `项目外递归删除要问：${cmd}`)
+
   for (const cmd of [
-    'rm -rf ~/Documents',
-    'rm -rf $HOME/x',
     'rm -rf node_modules',
     'rm -rf dist build',
     'rm -f a.txt',

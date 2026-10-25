@@ -13,7 +13,7 @@ type Phase =
   | { kind: 'transcribing' }
   | { kind: 'error'; message: string }
 
-export function VoiceButton({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
+export function VoiceButton({ onText, disabled, scope }: { onText: (text: string) => void; disabled?: boolean; scope?: string }) {
   const t = useT()
   const openSettings = useStore((s) => s.openSettings)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
@@ -23,6 +23,16 @@ export function VoiceButton({ onText, disabled }: { onText: (text: string) => vo
   const cancelled = useRef(false)
   const onTextRef = useRef(onText)
   onTextRef.current = onText
+  const scopeRef = useRef(scope)
+
+  useEffect(() => {
+    if (scopeRef.current === scope) return
+    scopeRef.current = scope
+    cancelled.current = true
+    generation.current++
+    recorder.current?.stop()
+    setPhase({ kind: 'idle' })
+  }, [scope])
 
   useEffect(() => {
     if (phase.kind !== 'recording') return undefined

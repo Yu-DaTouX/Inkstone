@@ -36,6 +36,16 @@ export interface SubagentDiffSummary {
 export interface CollectedDiff {
   summary: SubagentDiffSummary
   patchPath?: string
+  ignoredOutputs?: string[]
+}
+
+const REBUILDABLE_DIRS = new Set(['node_modules', 'dist', 'out', 'build', 'target', '.gradle', '.cache', '.venv', 'venv', '__pycache__', '.next', '.turbo', 'coverage', '.pytest_cache'])
+
+export function ignoredOutputsOf(listing: string): string[] {
+  return listing
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/\/$/, ''))
+    .filter((path) => path && !path.split('/').some((part) => REBUILDABLE_DIRS.has(part)))
 }
 
 interface GitOutput {
@@ -220,7 +230,11 @@ export async function collectDiff(workspace: PreparedWorkspace, archiveDir: stri
   ])
 
   const summary = summarizeGitDiff(nameStatus, numstat)
-  if (patch.length === 0) return { summary }
+  if (patch.length === 0) {
+    const listing = await git(workspace.cwd, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory']).then((r) => r.stdout, () => '')
+    const ignoredOutputs = ignoredOutputsOf(listing)
+    return ignoredOutputs.length ? { summary, ignoredOutputs } : { summary }
+  }
 
   const patchPath = join(archiveDir, `${id}.patch`)
   await writeFile(patchPath, patch)

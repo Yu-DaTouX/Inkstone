@@ -783,7 +783,7 @@ function PreviewBody({
       return (
         <>
           <PreviewNotes notes={view.notes} text={text} />
-          <MediaView key={view.abs} format={view.format} name={view.name} abs={view.abs} cwd={cwd} labels={text} onReveal={onReveal} onOpen={onOpen} />
+          <MediaView key={`${view.abs}:${revision}`} revision={revision} format={view.format} name={view.name} abs={view.abs} cwd={cwd} labels={text} onReveal={onReveal} onOpen={onOpen} />
         </>
       )
     case 'office':

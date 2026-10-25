@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { QuestionLogEntry } from '../shared/ipc'
@@ -76,7 +76,12 @@ export class QuestionLogStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: {} }
       throw error
     }
-    return sanitizeDocument(JSON.parse(text))
+    try {
+      return sanitizeDocument(JSON.parse(text))
+    } catch {
+      copyFileSync(this.file(), `${this.file()}.corrupt-${Date.now()}`)
+      return { version: 1, sessions: {} }
+    }
   }
 
   private write(doc: QuestionLogDocument): void {

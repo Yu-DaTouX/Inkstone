@@ -137,6 +137,17 @@ export async function minecraftPluginStatus(paths: MinecraftPluginPaths): Promis
   }
 }
 
+const SKILL_STAMP = '.installed-by-inkstone'
+
+async function skillIsOurs(paths: MinecraftPluginPaths): Promise<boolean> {
+  const target = join(paths.skillsDir, MINECRAFT_SKILL)
+  if (!existsSync(target)) return true
+  if (existsSync(join(target, SKILL_STAMP))) return true
+  const installed = await readFile(join(target, 'SKILL.md'), 'utf8').catch(() => null)
+  const bundled = await readFile(join(paths.pluginDir, 'skills', MINECRAFT_SKILL, 'SKILL.md'), 'utf8').catch(() => null)
+  return installed !== null && installed === bundled
+}
+
 export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promise<MinecraftPluginResult> {
   try {
     const source = paths.source
@@ -146,6 +157,10 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promi
     if (current !== undefined && !isOurs(current, paths.pluginDir)) {
       return { ok: false, error: `${path} 里已有同名服务「${MINECRAFT_PLUGIN_ID}」，不是砚装的，未改动`, status: await minecraftPluginStatus(paths) }
     }
+    const skillTarget = join(paths.skillsDir, MINECRAFT_SKILL)
+    if (!(await skillIsOurs(paths))) {
+      return { ok: false, error: `${skillTarget} 里已有同名技能，不是砚装的，未改动`, status: await minecraftPluginStatus(paths) }
+    }
     const staging = `${paths.pluginDir}.${randomBytes(4).toString('hex')}.new`
     try {
       for (const part of PLUGIN_PARTS) {
@@ -153,15 +168,23 @@ export async function installMinecraftPlugin(paths: MinecraftPluginPaths): Promi
         if (existsSync(from)) await cp(from, join(staging, part), { recursive: true, filter: (item) => copiesIntoPlugin(source, item) })
       }
       await writeFile(join(staging, SOURCE_STAMP), `${JSON.stringify({ fingerprint: await minecraftSourceFingerprint(source) })}\n`, 'utf8')
-      await rm(paths.pluginDir, { recursive: true, force: true })
       await mkdir(join(paths.pluginDir, '..'), { recursive: true })
-      await rename(staging, paths.pluginDir)
+      const previous = `${paths.pluginDir}.${randomBytes(4).toString('hex')}.old`
+      const hadPrevious = existsSync(paths.pluginDir)
+      if (hadPrevious) await rename(paths.pluginDir, previous)
+      try {
+        await rename(staging, paths.pluginDir)
+      } catch (error) {
+        if (hadPrevious) await rename(previous, paths.pluginDir).catch(() => undefined)
+        throw error
+      }
+      if (hadPrevious) await rm(previous, { recursive: true, force: true }).catch(() => undefined)
     } finally {
       await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     }
-    const skillTarget = join(paths.skillsDir, MINECRAFT_SKILL)
     await rm(skillTarget, { recursive: true, force: true })
     await cp(join(paths.pluginDir, 'skills', MINECRAFT_SKILL), skillTarget, { recursive: true })
+    await writeFile(join(skillTarget, SKILL_STAMP), '', 'utf8')
     const enabled = current && typeof current === 'object' && (current as { enabled?: unknown }).enabled === false ? { enabled: false } : {}
     await writeMcp(path, { ...(document ?? {}), mcpServers: { ...(document?.mcpServers ?? {}), [MINECRAFT_PLUGIN_ID]: { ...minecraftMcpServer(paths), ...enabled } } })
     return { ok: true, path, status: await minecraftPluginStatus(paths) }
@@ -178,7 +201,7 @@ export async function removeMinecraftPlugin(paths: MinecraftPluginPaths): Promis
       const { [MINECRAFT_PLUGIN_ID]: _removed, ...rest } = servers
       await writeMcp(path, { ...document, mcpServers: rest })
     }
-    await rm(join(paths.skillsDir, MINECRAFT_SKILL), { recursive: true, force: true })
+    if (await skillIsOurs(paths)) await rm(join(paths.skillsDir, MINECRAFT_SKILL), { recursive: true, force: true })
     await rm(paths.pluginDir, { recursive: true, force: true })
     return { ok: true, path, status: await minecraftPluginStatus(paths) }
   } catch (error) {

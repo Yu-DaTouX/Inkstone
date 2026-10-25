@@ -205,7 +205,8 @@ export async function providerQuotaWithFallback(rawProvider: string, monthlyBudg
     return fresh
   }
   const prior = lastGood.get(key)
-  if (!fresh.error || !prior || Date.now() - prior.checkedAt > LAST_GOOD_MAX_AGE_MS) return fresh
+  if (!fresh.supported) lastGood.delete(key)
+  if (!fresh.supported || !fresh.error || !prior || Date.now() - prior.checkedAt > LAST_GOOD_MAX_AGE_MS) return fresh
   return { ...prior, error: undefined, staleError: fresh.error }
 }
 

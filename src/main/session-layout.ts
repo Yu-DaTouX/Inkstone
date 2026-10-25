@@ -103,7 +103,22 @@ function sanitizeDocument(value: unknown): SessionLayoutDocument {
     .filter((x): x is SessionLayoutEntry => x !== null)
   const unique = new Map<string, SessionLayoutEntry>()
   for (const entry of entries) unique.set(entry.sessionId, entry)
-  return { version: 1, entries: [...unique.values()].slice(-MAX_ENTRIES) }
+  return { version: 1, entries: keepWithinLimit([...unique.values()]) }
+}
+
+function lastActivity(entry: SessionLayoutEntry): number {
+  return Math.max(entry.updatedAt, entry.lastOpenedAt ?? 0, entry.archivedAt ?? 0)
+}
+
+function carriesUserState(entry: SessionLayoutEntry): boolean {
+  return !!entry.archivedAt || !!entry.pinned || !!entry.projectId || entry.scope === 'pending'
+}
+
+function keepWithinLimit(entries: SessionLayoutEntry[]): SessionLayoutEntry[] {
+  if (entries.length <= MAX_ENTRIES) return entries
+  const dropOrder = [...entries].sort((a, b) => Number(carriesUserState(a)) - Number(carriesUserState(b)) || lastActivity(a) - lastActivity(b))
+  const dropped = new Set(dropOrder.slice(0, entries.length - MAX_ENTRIES))
+  return entries.filter((entry) => !dropped.has(entry))
 }
 
 async function readFromDisk(): Promise<SessionLayoutDocument> {

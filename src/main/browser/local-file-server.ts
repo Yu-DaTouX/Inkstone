@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { createReadStream, statSync } from 'node:fs'
+import { closeSync, createReadStream, openSync, readSync, statSync } from 'node:fs'
+import { declaredHtmlCharset } from '../html-charset'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const MIME: Record<string, string> = {
@@ -46,6 +47,36 @@ function inside(root: string, target: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
+const DOCUMENT_DESTS = new Set(['document', 'iframe', 'frame'])
+const EMBEDDED_DESTS = new Set(['script', 'style', 'image', 'font', 'audio', 'video', 'track', 'worker', 'sharedworker', 'manifest'])
+
+export function localRequestAllowed(
+  root: string,
+  prefix: string,
+  target: string,
+  headers: Record<string, string | string[] | undefined>
+): boolean {
+  if (relative(root, target).split(sep).some((part) => part.startsWith('.'))) return false
+  const dest = String(headers['sec-fetch-dest'] ?? '').toLowerCase()
+  if (DOCUMENT_DESTS.has(dest) || EMBEDDED_DESTS.has(dest)) return true
+  const referer = String(headers.referer ?? '')
+  let refererPath: string
+  try {
+    refererPath = new URL(referer).pathname
+  } catch {
+    return false
+  }
+  if (!refererPath.startsWith(`${prefix}/`)) return false
+  let documentRel: string
+  try {
+    documentRel = decodeURIComponent(refererPath.slice(prefix.length))
+  } catch {
+    return false
+  }
+  const documentDir = dirname(resolve(root, `.${sep}${documentRel}`))
+  return inside(root, documentDir) && inside(documentDir, target)
+}
+
 function rootKey(root: string): string {
   return process.platform === 'win32' ? root.toLowerCase() : root
 }
@@ -70,16 +101,17 @@ function startRoot(root: string): Promise<LocalRoot> {
       return
     }
     let target = resolve(root, `.${sep}${rel}`)
-    if (!inside(root, target)) {
+    if (!inside(root, target) || !localRequestAllowed(root, prefix, target, req.headers)) {
       res.writeHead(403).end()
       return
     }
     try {
       if (statSync(target).isDirectory()) target = join(target, 'index.html')
+      if (!MIME[extname(target).toLowerCase()]) throw new Error('not a web asset')
       const stat = statSync(target)
       if (!stat.isFile()) throw new Error('not file')
       res.writeHead(200, {
-        'content-type': MIME[extname(target).toLowerCase()] ?? 'application/octet-stream',
+        'content-type': contentTypeOf(target),
         'content-length': stat.size,
         'cache-control': 'no-store'
       })
@@ -98,6 +130,24 @@ function startRoot(root: string): Promise<LocalRoot> {
       done({ root, prefix, origin: `http://127.0.0.1:${port}`, server })
     })
   })
+}
+
+function contentTypeOf(file: string): string {
+  const ext = extname(file).toLowerCase()
+  const base = MIME[ext] ?? 'application/octet-stream'
+  if (ext !== '.html' && ext !== '.htm') return base
+  const head = Buffer.alloc(4096)
+  let fd: number | null = null
+  try {
+    fd = openSync(file, 'r')
+    const read = readSync(fd, head, 0, head.length, 0)
+    const charset = declaredHtmlCharset(head.subarray(0, read))
+    return charset && charset !== 'utf-8' ? `text/html; charset=${charset}` : base
+  } catch {
+    return base
+  } finally {
+    if (fd !== null) closeSync(fd)
+  }
 }
 
 export function localFileRoot(file: string, cwd: string | undefined): string {

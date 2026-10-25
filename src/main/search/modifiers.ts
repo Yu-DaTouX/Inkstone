@@ -6,7 +6,7 @@ export interface SourceRequest extends SearchModifiers {
   signal?: AbortSignal
 }
 
-export const RECENCY_SOURCES: ReadonlySet<SearchSourceId> = new Set(['bing', 'ddg', 'brave', 'tavily', 'deepseek'])
+export const RECENCY_SOURCES: ReadonlySet<SearchSourceId> = new Set(['ddg', 'brave', 'tavily', 'deepseek'])
 
 export function siteMatches(url: string, sites: readonly string[]): boolean {
   let host: string
@@ -37,10 +37,6 @@ export function recencySince(recent: SearchRecency, now = Date.now()): Date {
 
 export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10)
-}
-
-export function daysSinceEpoch(date: Date): number {
-  return Math.floor(date.getTime() / DAY_MS)
 }
 
 export function normalizeSite(raw: string): string | null {

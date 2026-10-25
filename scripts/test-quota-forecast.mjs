@@ -202,6 +202,8 @@ try {
     eq(mergeLiveQuota(null, failed), failed, '没有旧数据时原样返回失败')
     const fresh = { ...good, checkedAt: now + MIN }
     eq(mergeLiveQuota(good, fresh), fresh, '成功读取直接替换')
+    const unsupported = { provider: 'anthropic', supported: false, error: '该供应商没有可用的公开余额 API', checkedAt: now + MIN }
+    eq(mergeLiveQuota({ ...good, provider: 'anthropic' }, unsupported), unsupported, '改用 API Key 后不再沿用旧订阅窗口')
   }
 
   console.log(`quota forecast: ${checks} checks passed`)

@@ -12,6 +12,10 @@ export const PI_API_IDS = [
   'pi-messages'
 ] as const
 
+export function sameBaseUrl(a: string, b: string): boolean {
+  return a.trim().replace(/\/+$/, '').toLowerCase() === b.trim().replace(/\/+$/, '').toLowerCase()
+}
+
 export const CUSTOM_API_CHOICES = [
   { id: 'openai-completions', label: 'OpenAI Chat Completions' },
   { id: 'openai-responses', label: 'OpenAI Responses' },
@@ -248,8 +252,10 @@ export function mergeCustomProviders(
       const prior = previousModels.find((item) => item.id === model.id)
       return prior ? { ...prior, ...model } : model
     })
+    const sameHost = typeof previous.baseUrl === 'string' && sameBaseUrl(previous.baseUrl, update.baseUrl)
     if (update.apiKey) entry.apiKey = update.apiKey
-    else if (typeof previous.apiKey === 'string') entry.apiKey = previous.apiKey
+    else if (typeof previous.apiKey === 'string' && sameHost) entry.apiKey = previous.apiKey
+    else delete entry.apiKey
     providers[update.id] = entry
     changed = true
   }

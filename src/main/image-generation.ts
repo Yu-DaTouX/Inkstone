@@ -663,7 +663,8 @@ async function buildComfyPrompt(
   candidates: ComfyWorkflowEntry[],
   named: boolean,
   request: { prompt: string; width?: number; height?: number; images?: string[] },
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  confirmCloudNodes?: (workflow: string) => Promise<boolean>
 ): Promise<{ prompt: ApiPrompt; workflow: string }> {
   const cache: Record<string, ObjectInfoEntry> = {}
   const problems: string[] = []
@@ -673,8 +674,8 @@ async function buildComfyPrompt(
       const workflow = (await waitForImage(fetchComfyWorkflow(server.baseUrl, candidate.name), signal)) as UiWorkflow | ApiPrompt
       const info = await comfyObjectInfo(server, workflowNodeTypes(workflow), cache, signal)
       const converted = toApiPrompt(workflow, info)
-      if (!named && usesApiNodes(converted, info)) {
-        problems.push(`${candidate.name}：用到 ComfyUI 云端 API 节点`)
+      if (usesApiNodes(converted, info) && !(named && confirmCloudNodes && await waitForImage(confirmCloudNodes(candidate.name), signal))) {
+        problems.push(`${candidate.name}：用到 ComfyUI 云端 API 节点${named ? '，未获得确认' : ''}`)
         continue
       }
       return { prompt: applyRequest(converted, { ...request, filenamePrefix: 'Inkstone/yan' }), workflow: candidate.name }
@@ -686,7 +687,7 @@ async function buildComfyPrompt(
   throw new ImageProviderError(candidates.length ? 'local_workflow_unsupported' : 'local_workflow_missing', problems.slice(0, 3).join('；') || undefined)
 }
 
-async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, managed: boolean, report?: ImageProgressReporter, signal?: AbortSignal): Promise<Generated> {
+async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], server: LocalModelServer, managed: boolean, report?: ImageProgressReporter, signal?: AbortSignal, confirmCloudNodes?: (workflow: string) => Promise<boolean>): Promise<Generated> {
   const entries = await waitForImage(listComfyWorkflows(server.baseUrl).catch(() => []), signal)
   const wanted = stringParam(req.model, '')
   const candidates = comfyCandidates(entries, wanted, sources.length > 0)
@@ -703,7 +704,7 @@ async function comfyImage(req: ImageGenerationRequest, sources: SourceImage[], s
     prompt: req.prompt,
     ...(size ? { width: size.width, height: size.height } : {}),
     ...(images.length ? { images } : {})
-  }, signal)
+  }, signal, confirmCloudNodes)
   checkImageCancelled(signal)
   const prompt = built.prompt
   const chosen = { name: built.workflow }
@@ -795,6 +796,8 @@ export interface ImageGenerationContext {
   credentials?: ImageCredentialSource
   availability?: ImageAvailability
   signal?: AbortSignal
+  confirmComfyLaunch?: () => Promise<boolean>
+  confirmCloudNodes?: (workflow: string) => Promise<boolean>
 }
 
 export async function generateImage(request: ImageGenerationRequest, context: ImageGenerationContext): Promise<ImageGenerationResult> {
@@ -840,6 +843,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
   } else if (provider === 'local') {
     let server = availability.local
     if (!server && (availability.localLaunch || request.provider === 'local')) {
+      if (context.confirmComfyLaunch && !(await waitForImage(context.confirmComfyLaunch(), signal))) throw new ImageProviderError('local_launch_denied')
       try {
         server = await waitForImage(ensureComfyRunning((detail) => {
           if (!signal?.aborted) report('preparing', detail)
@@ -853,7 +857,7 @@ async function generateImageImpl(request: ImageGenerationRequest, context: Image
     if (server.kind === 'comfyui') {
       const hold = holdManagedComfy(server.baseUrl)
       try {
-        generated = await comfyImage(req, sources, server, hold.managed, report, signal)
+        generated = await comfyImage(req, sources, server, hold.managed, report, signal, context.confirmCloudNodes)
       } finally {
         hold.release()
       }

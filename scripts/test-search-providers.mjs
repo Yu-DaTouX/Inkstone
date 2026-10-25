@@ -125,8 +125,22 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(summaryRun.rows[0].snippet === '短摘要' && summaryRun.rows[1].snippet === '回退短摘要', '独立 snippet 不再被长 summary 覆盖')
     ok(summaryRun.rows[0].rerank_score === 1.2 && !('score' in summaryRun.rows[0]), '只映射已有 rerank_score，不把未知分数当成跨供应商质量')
 
+    const balanceOf = (body, status = 200) => fakeFetch([json(status, body)])
+    const funded = balanceOf({ is_available: true, balance_infos: [{ currency: 'CNY', total_balance: '12.50' }] })
+    ok(await deepseek.deepseekHasBalance('sk-ds-a', funded.impl, 1_000) === true, '有余额 → 照常用 DeepSeek')
+    ok(funded.calls[0].url === 'https://api.deepseek.com/user/balance' && funded.calls[0].init.headers.Authorization === 'Bearer sk-ds-a', '余额查询走 /user/balance 并带模型 key')
+    ok(await deepseek.deepseekHasBalance('sk-ds-a', never, 1_000 + 60_000) === true, '3 分钟内复用余额结果，不重复查询')
+    const empty = balanceOf({ is_available: false, balance_infos: [{ currency: 'CNY', total_balance: '0.00' }] })
+    ok(await deepseek.deepseekHasBalance('sk-ds-a', empty.impl, 1_000 + 4 * 60_000) === false && empty.calls.length === 1, '缓存过期后重新查询，余额为 0 → 暂停 DeepSeek')
+    ok(await deepseek.deepseekHasBalance('sk-ds-b', balanceOf({ balance_infos: [{ total_balance: '3' }] }).impl, 1_000) === true, '换了 key 重新查询；没有 is_available 时按 total_balance 判断')
+    ok(await deepseek.deepseekHasBalance('sk-ds-c', balanceOf({}, 500).impl, 1_000) === true, '余额查询失败不误关 DeepSeek，交给实际调用报错')
+    let shared = 0
+    const slow = async () => { shared++; return new Response(JSON.stringify({ is_available: true }), { status: 200 }) }
+    await Promise.all([deepseek.deepseekHasBalance('sk-ds-d', slow, 1_000), deepseek.deepseekHasBalance('sk-ds-d', slow, 1_000)])
+    ok(shared === 1, '同时发起的多个查询共用一次余额请求')
     const poor = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(402, { error: { message: 'Insufficient Balance', type: 'x', code: 'insufficient_balance' } })]).impl, key)
     ok(poor.error?.code === 'insufficient_balance' && /余额不足/.test(poor.error.message) && /Insufficient Balance/.test(poor.error.message), '402 → 余额不足，带上服务端原因')
+    ok(await deepseek.deepseekHasBalance('sk-ds-test', never) === false, '调用返回 402 后立即记为没余额，不再继续调用')
     const busy = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(429, {})]).impl, key)
     ok(busy.error?.code === 'rate_limited' && /QPS/.test(busy.error.message), '429 → 超过 QPS')
     const denied = await deepseek.runDeepseekSearch('q', { limit: 5, timeoutMs: 1000 }, fakeFetch([json(401, {})]).impl, key)
@@ -225,22 +239,21 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
   }
 
   {
-    const { plan, modifiers, bing, ddg, so360, brave, deepseek } = mod
+    const { plan, modifiers, ddg, brave, deepseek } = mod
     const none = { tavily: false, brave: false, deepseek: false }
     const zhFree = plan.defaultSearchPlan('北京天气', none)
-    ok(zhFree.sources.join(',') === 'ddg,so360', '没有 key：查 DuckDuckGo + 360，不再带 Bing、维基百科 / arXiv / HN')
-    ok(zhFree.policy.primary.join(',') === 'ddg' && zhFree.policy.reserve.length === 0, '没有 key 时 DuckDuckGo 够用就提前停掉慢的 360')
-    ok(plan.defaultSearchPlan('weather', none).sources.join(',') === 'ddg,so360', '英文同样是 DuckDuckGo + 360')
+    ok(zhFree.sources.join(',') === 'ddg' && zhFree.policy.reserve.length === 0, '没有 key：只查 DuckDuckGo，不带 360、Bing、维基百科 / arXiv / HN')
+    ok(plan.defaultSearchPlan('weather', none).sources.join(',') === 'ddg', '英文同样只查 DuckDuckGo')
     const all = { tavily: true, brave: true, deepseek: true }
     const zhPaid = plan.defaultSearchPlan('北京天气', all)
     ok(zhPaid.sources.join(',') === 'deepseek,ddg', '有 key：中文只用 DeepSeek 一个付费来源加 DuckDuckGo，不再三家同时扣费')
-    ok(zhPaid.policy.primary.join(',') === 'deepseek' && zhPaid.policy.reserve.join(',') === 'tavily,brave,so360', '其余付费来源与 360 留作后备')
+    ok(zhPaid.policy.primary.join(',') === 'deepseek' && zhPaid.policy.reserve.join(',') === 'tavily,brave', '其余付费来源留作后备')
     const enPaid = plan.defaultSearchPlan('weather', { tavily: false, brave: true, deepseek: true })
-    ok(enPaid.sources.join(',') === 'brave,ddg' && enPaid.policy.reserve.join(',') === 'deepseek,so360', '英文按 Tavily → Brave → DeepSeek 挑第一个有 key 的')
+    ok(enPaid.sources.join(',') === 'brave,ddg' && enPaid.policy.reserve.join(',') === 'deepseek', '英文按 Tavily → Brave → DeepSeek 挑第一个有 key 的')
     for (const keys of [none, all, { tavily: true, brave: false, deepseek: false }]) {
       for (const text of ['北京天气', 'weather']) {
         const p = plan.defaultSearchPlan(text, keys)
-        ok(![...p.sources, ...p.policy.reserve].includes('bing'), `默认来源里没有 Bing（${text}）`)
+        ok(![...p.sources, ...p.policy.reserve].some((id) => id === 'bing' || id === 'so360'), `默认来源里没有 Bing 与 360（${text}）`)
       }
     }
 
@@ -262,11 +275,7 @@ export async function runSearchProviderTests(ok, mod, dataDir) {
     ok(modifiers.withOperators('查'.repeat(200), ['after:2026-01-01'], 128).endsWith(' after:2026-01-01'), '截短的是查询词，不是限定条件')
 
     const now = Date.UTC(2026, 9, 19)
-    ok(bing.bingUrl('q', 6, 'en', 'week', now).includes('&filters=' + encodeURIComponent('ex1:"ez2"')), 'Bing 最近一周用 ez2')
-    ok(bing.bingUrl('q', 6, 'en', 'year', now).includes(encodeURIComponent(`ex1:"ez5_${Math.floor(now / 86400000) - 366}_${Math.floor(now / 86400000)}"`)), 'Bing 最近一年用日期区间')
-    ok(!bing.bingUrl('q', 6, 'en').includes('filters='), '不限时间时不带 filters')
     ok(ddg.ddgUrl('q', 'month').endsWith('&df=m'), 'DuckDuckGo 用 df 时间参数')
-    ok(so360.so360Url('q') === 'https://www.so.com/s?q=q', '360 网页没有时间筛选，不再拼无效参数')
     ok(modifiers.siteMatches('https://www.zhuanlan.zhihu.com/p/1', ['zhihu.com']) && !modifiers.siteMatches('https://notzhihu.com/', ['zhihu.com']), '站点匹配包含子域名，不误认相似域名')
 
     const dsBody = deepseek.deepseekSearchBody('新闻', { limit: 6, timeoutMs: 1000, recent: 'week', sites: ['xinhuanet.com'], question: '这周有什么新闻', withContent: true }, now)

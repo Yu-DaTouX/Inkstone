@@ -1,3 +1,4 @@
+import { RESTORED_READONLY_ENV } from './restored-readonly'
 import { spawn } from 'node:child_process'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,7 +12,8 @@ export function restoredDataEnvironment(root: string, source: NodeJS.ProcessEnv 
     YAN_SESSIONS_DIR: join(root, 'pi-agent', 'sessions'),
     YAN_DATA_DIR: join(root, 'pi-agent', 'yan'),
     YAN_USER_DATA: join(root, 'electron'),
-    YAN_DOWNLOADS_DIR: join(root, 'downloads')
+    YAN_DOWNLOADS_DIR: join(root, 'downloads'),
+    [RESTORED_READONLY_ENV]: '1'
   }
 }
 

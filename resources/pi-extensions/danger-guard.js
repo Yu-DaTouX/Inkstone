@@ -1,8 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000
+const PREFS_TIMEOUT_MS = 5000
+const APPROVAL_DETAIL_MAX = 20000
+const MAX_SHELL_DEPTH = 6
 
 export function isBroadTarget(raw) {
   let target = String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')
@@ -32,7 +35,14 @@ function commandOf(segment) {
   return { head, args: parts.slice(start + 1) }
 }
 
-function recursiveDeleteTarget({ head, args }) {
+function deletesOutsideProject(raw, cwd) {
+  const target = resolveTarget(raw, cwd)
+  if (!target) return false
+  const roots = [cwd || process.cwd(), tmpdir(), '/tmp', '/var/tmp'].map((p) => physicalPath(normalizePath(p)).replace(/\/$/, ''))
+  return !isInside(target, roots)
+}
+
+function recursiveDeleteTarget({ head, args }, cwd) {
   let recursive = false
   if (head === 'rm') {
     recursive = args.some((a) => /^-[a-z]*r[a-z]*$/i.test(a) || a === '--recursive' || /^-recurse$/i.test(a))
@@ -45,7 +55,7 @@ function recursiveDeleteTarget({ head, args }) {
   }
   if (!recursive) return null
   const targets = args.filter((a) => !/^(-|\/[a-z]$)/i.test(a) && !/^-{1,2}\w/.test(a))
-  return targets.find(isBroadTarget) ?? null
+  return targets.find((target) => isBroadTarget(target) || deletesOutsideProject(target, cwd)) ?? null
 }
 
 const POWER_COMMANDS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'stop-computer', 'restart-computer'])
@@ -70,27 +80,76 @@ const SENSITIVE_PATH =
   /\/(?:\.ssh|\.aws|\.gnupg|\.kube)(?:\/|$)|^\/(?:etc|usr|bin|sbin|boot|lib)(?:\/|$)|^[a-z]:\/windows(?:\/|$)|^[a-z]:\/program files|\/\.(?:bashrc|zshrc|profile|gitconfig|npmrc)$|\/start menu\/programs\/startup/i
 
 function normalizePath(p) {
-  const text = String(p ?? '').replace(/\\/g, '/').toLowerCase()
+  const text = String(p ?? '').replace(/\\/g, '/').toLowerCase().replace(/^\/\/[?.]\/unc\//, '//').replace(/^\/\/[?.]\//, '')
   const match = /^([a-z]:)?(.*)$/.exec(text)
   const drive = match?.[1] ?? ''
   const rest = match?.[2] ?? ''
   return drive + (rest ? posix.normalize(rest) : '')
 }
 
+function physicalPath(normalized) {
+  if (process.platform === 'win32' && !/^(?:[a-z]:|\/\/)/.test(normalized)) return normalized
+  let probe = normalized
+  let rest = ''
+  for (let i = 0; i < 64 && probe; i++) {
+    try {
+      if (existsSync(probe)) {
+        const real = normalizePath(realpathSync.native(probe)).replace(/\/$/, '')
+        return rest ? `${real}/${rest}` : real || normalized
+      }
+    } catch {}
+    const cut = probe.replace(/\/$/, '').lastIndexOf('/')
+    if (cut < 0) break
+    let parent = cut === 0 ? '/' : probe.slice(0, cut)
+    if (/^[a-z]:$/.test(parent)) parent += '/'
+    if (parent === probe) break
+    const name = probe.replace(/\/$/, '').slice(cut + 1)
+    rest = rest ? `${name}/${rest}` : name
+    probe = parent
+  }
+  return normalized
+}
+
+function encodedPowerShell({ head, args }) {
+  if (head !== 'powershell' && head !== 'pwsh') return null
+  for (let i = 0; i < args.length; i++) {
+    const flag = args[i].toLowerCase()
+    if (!/^[-/]/.test(flag)) continue
+    const name = flag.slice(1)
+    if (name !== 'ec' && !(name && 'encodedcommand'.startsWith(name))) continue
+    const value = String(args[i + 1] ?? '').replace(/^["']|["']$/g, '')
+    if (!/^[a-z0-9+/=]+$/i.test(value)) return ''
+    const decoded = Buffer.from(value, 'base64').toString('utf16le')
+    return decoded && !decoded.includes('\ufffd') ? decoded : ''
+  }
+  return null
+}
+
+function unwrapShellBody(body) {
+  return body.trim().replace(/\\(["'])/g, '$1').replace(/^["']|["']$/g, '')
+}
+
 function isAbsolutePath(p) {
   return /^(?:[a-z]:)?[\\/]/i.test(p) || /^[a-z]:/i.test(p)
 }
 
-function scanCommand(command, reasons, depth = 0) {
+function scanCommand(command, reasons, depth = 0, cwd = '') {
   for (const segment of command.split(SEGMENT_SPLIT)) {
     const cmd = commandOf(segment)
-    const hit = recursiveDeleteTarget(cmd)
-    if (hit) reasons.push(`递归删除大范围目录：${hit}`)
+    const hit = recursiveDeleteTarget(cmd, cwd)
+    if (hit) reasons.push(isBroadTarget(hit) ? `递归删除大范围目录：${hit}` : `递归删除项目之外的目录：${hit}`)
     if (POWER_COMMANDS.has(cmd.head)) reasons.push('关机或重启')
-    if (depth < 2) {
-      const wrapped = SHELL_WRAPPER.exec(segment)
-      if (wrapped) scanCommand(wrapped[1].trim().replace(/^["']|["']$/g, ''), reasons, depth + 1)
+    const encoded = encodedPowerShell(cmd)
+    if (encoded === '') reasons.push('PowerShell 编码命令无法解读，砚无法检查其中的操作')
+    else if (encoded !== null) {
+      const inner = []
+      if (depth < MAX_SHELL_DEPTH) scanCommand(encoded, inner, depth + 1, cwd)
+      else inner.push('命令嵌套层数过多，砚无法检查最内层的操作')
+      if (inner.length) reasons.push(...inner, `PowerShell 编码命令，解码后为：${encoded.slice(0, 300)}`)
     }
+    const wrapped = SHELL_WRAPPER.exec(segment)
+    if (wrapped && depth < MAX_SHELL_DEPTH) scanCommand(unwrapShellBody(wrapped[1]), reasons, depth + 1, cwd)
+    else if (wrapped) reasons.push('命令嵌套层数过多，砚无法检查最内层的操作')
   }
   for (const rule of COMMAND_RULES) if (rule.re.test(command)) reasons.push(rule.label)
 }
@@ -100,15 +159,15 @@ export function detectDanger(toolName, input, cwd) {
   const name = String(toolName ?? '')
   if (name === 'bash' || name === 'powershell') {
     const command = String(input?.command ?? '')
-    scanCommand(command, reasons)
+    scanCommand(command, reasons, 0, cwd)
     if (/\bsudo\b/i.test(command) && reasons.length === 0 && /\brm\b/i.test(command)) reasons.push('以管理员身份删除文件')
   } else if (name === 'write' || name === 'edit' || name === 'multi_edit' || name === 'apply_patch') {
     const raw = input?.path ?? input?.file_path ?? input?.filePath
     if (typeof raw === 'string' && raw.trim()) {
       const base = cwd || process.cwd()
       const abs = isAbsolutePath(raw) ? raw : `${String(base).replace(/[\\/]+$/, '')}/${raw}`
-      const normalized = normalizePath(abs)
-      const root = normalizePath(base).replace(/\/$/, '')
+      const normalized = physicalPath(normalizePath(abs))
+      const root = physicalPath(normalizePath(base)).replace(/\/$/, '')
       const inside = normalized === root || normalized.startsWith(`${root}/`)
       const home = normalizePath(homedir()).replace(/\/$/, '')
       const shown = normalized.startsWith(`${home}/`) ? `~${normalized.slice(home.length)}` : normalized
@@ -182,12 +241,12 @@ function resolveTarget(raw, cwd) {
   if (!cleaned) return ''
   const fixed = cleaned.replace(/[*?].*$/, '')
   const base = String(cwd || process.cwd()).replace(/[\\/]+$/, '')
-  return normalizePath(isAbsolutePath(fixed) ? fixed : `${base}/${fixed}`)
+  return physicalPath(normalizePath(isAbsolutePath(fixed) ? fixed : `${base}/${fixed}`))
 }
 
 function allowedRoots(cwd, prefs) {
   const list = [cwd, tmpdir(), '/tmp', '/var/tmp', join(homedir(), '.pi'), process.env.PI_CODING_AGENT_DIR, process.env.YAN_DATA_DIR, ...(prefs.allowRoots ?? [])]
-  return list.filter((p) => typeof p === 'string' && p.trim()).map((p) => normalizePath(p).replace(/\/$/, ''))
+  return list.filter((p) => typeof p === 'string' && p.trim()).map((p) => physicalPath(normalizePath(p)).replace(/\/$/, ''))
 }
 
 function isInside(target, roots) {
@@ -242,18 +301,30 @@ export function outsideWrites(toolName, input, cwd, prefs = {}) {
   return [...new Set(hits)].slice(0, 6)
 }
 
-function guardPrefs() {
+const STRICT_PREFS = { mode: 'danger', outsideWrites: true, allowRoots: [] }
+
+async function hostPrefs() {
+  const url = process.env.YAN_CLI_URL
+  const token = process.env.YAN_CLI_TOKEN
+  const sessionId = process.env.YAN_SESSION_ID
+  const projectId = process.env.YAN_PROJECT_ID
+  if (!url || !token || !sessionId || !projectId) return STRICT_PREFS
   try {
-    const dir = process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
-    const settings = JSON.parse(readFileSync(join(dir, 'desktop.json'), 'utf8'))
-    const legacy = settings.permissionMode !== 'danger' && settings.permissionMode !== 'all'
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ apiVersion: 1, command: 'danger.prefs', params: {}, sessionId, projectId }),
+      signal: AbortSignal.timeout(PREFS_TIMEOUT_MS)
+    })
+    const summary = (await response.json())?.summary
+    if (!summary || (summary.mode !== 'danger' && summary.mode !== 'all')) return STRICT_PREFS
     return {
-      mode: settings.permissionMode === 'all' ? 'all' : 'danger',
-      outsideWrites: !legacy && settings.guardOutsideWrites === true,
-      allowRoots: Array.isArray(settings.guardAllowRoots) ? settings.guardAllowRoots.filter((p) => typeof p === 'string') : []
+      mode: summary.mode,
+      outsideWrites: summary.outsideWrites !== false,
+      allowRoots: Array.isArray(summary.allowRoots) ? summary.allowRoots.filter((p) => typeof p === 'string') : []
     }
   } catch {
-    return { mode: 'danger', outsideWrites: false, allowRoots: [] }
+    return STRICT_PREFS
   }
 }
 
@@ -282,6 +353,7 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
         ? JSON.stringify(input ?? {})
         : String(input?.path ?? input?.file_path ?? input?.filePath ?? '') ||
           (typeof input?.code === 'string' ? input.code : JSON.stringify(input ?? {}))
+  if (detail.length > APPROVAL_DETAIL_MAX) return { allowed: false, why: `审批内容有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短内容或分步执行` }
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -289,7 +361,7 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
       body: JSON.stringify({
         apiVersion: 1,
         command: 'danger.confirm',
-        params: { tool: toolName, detail: fullDetail ? detail : detail.slice(0, 2000), reasons, ...(outsideDirs.length ? { outsideDirs } : {}), ...(toolCallId ? { toolCallId } : {}) },
+        params: { tool: toolName, detail, reasons, ...(outsideDirs.length ? { outsideDirs } : {}), ...(toolCallId ? { toolCallId } : {}) },
         sessionId,
         projectId
       }),
@@ -299,6 +371,8 @@ async function askHost(toolName, input, reasons, outsideDirs = [], toolCallId = 
     if (payload?.ok && payload?.summary?.allowed === true) return { allowed: true }
     const feedback = typeof payload?.summary?.feedback === 'string' ? payload.summary.feedback.trim() : ''
     if (feedback) return { allowed: false, why: `用户拒绝了这次操作，并给出理由：${feedback}。请按这个理由调整做法后再试` }
+    const reason = typeof payload?.summary?.reason === 'string' ? payload.summary.reason.trim() : ''
+    if (reason) return { allowed: false, why: reason }
     return { allowed: false, why: payload?.summary?.decision === 'no-answer' ? '没有得到用户确认' : '用户拒绝了这次操作' }
   } catch (err) {
     return { allowed: false, why: `没能取得用户确认（${String(err?.message ?? err).slice(0, 80)}）` }
@@ -310,7 +384,7 @@ export default function dangerGuardExtension(pi) {
     if (process.env.YAN_DANGER_GUARD === '0') return undefined
     const name = String(event?.toolName ?? '')
     if (!name) return undefined
-    const prefs = guardPrefs()
+    const prefs = await hostPrefs()
     if (prefs.mode === 'all') return undefined
     const delegation = claudeDelegationDanger(name, event?.input ?? {}, ctx?.cwd)
     if (delegation.length && JSON.stringify(event?.input ?? {}).length > 20000) return { block: true, reason: 'Claude Code 委派任务过长，无法完整展示审批内容。请缩短任务，或使用砚子 Agent。' }

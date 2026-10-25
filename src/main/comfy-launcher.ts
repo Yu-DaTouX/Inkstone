@@ -182,6 +182,10 @@ export async function ensureComfyRunning(report?: (detail: string) => void): Pro
   }
   const running = await detectLocalImageService()
   if (running?.kind === 'comfyui') return running
+  if (!starting && managed && !managed.exited) {
+    if (managed.busy > 0) throw new ComfyLaunchError('local_launch_timeout', '砚启动的 ComfyUI 正在处理任务但没有响应，请稍后再试')
+    stopManagedComfy()
+  }
   if (!starting) {
     starting = (async () => {
       const dir = await findLaunchableComfy()

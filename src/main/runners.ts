@@ -586,6 +586,7 @@ export class RunnerRegistry {
       }
     }
 
+    if (this.disposed) return { ok: false, error: '运行实例正在重启，请稍后再打开这个会话' }
     const id = `r${++this.seq}`
     const generation = nextGeneration()
     const agent = this.opts.createAgent(id, target.cwd, generation)
@@ -621,6 +622,13 @@ export class RunnerRegistry {
       }
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
+    }
+    if (failure === undefined && (this.disposed || this.runners.get(id) !== runner)) {
+      failure = '运行实例在启动过程中被停止'
+      if (this.runners.get(id) !== runner) {
+        await agent.stop().catch(() => undefined)
+        return { ok: false, error: failure }
+      }
     }
     if (failure !== undefined) {
       await this.discardNewRunner(id, runner, previousActive)
@@ -698,6 +706,13 @@ export class RunnerRegistry {
       failure = error instanceof Error ? error.message : String(error)
     }
 
+    const removed = this.disposed || this.runners.get(id) !== runner
+    if (removed) {
+      await replacement.stop().catch(() => undefined)
+      await previous.stop().catch(() => undefined)
+      this.opts.onChanged?.()
+      return { ok: false, error: failure ?? '运行实例在重载过程中被停止' }
+    }
     if (failure) {
       runner.agent = previous
       runner.generation = previousGeneration

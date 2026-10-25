@@ -55,7 +55,7 @@ const QUOTA_BALANCE_RE = /insufficient[ _](?:balance|funds|credit)|balance|credi
 
 function quotaScopeOf(text: string): ModelErrorQuotaScope {
   if (QUOTA_USAGE_RE.test(text)) return 'usage'
-  if (QUOTA_RATE_RE.test(text)) return 'rate'
+  if (QUOTA_RATE_RE.test(text) || /\b429\b/.test(text)) return 'rate'
   return 'usage'
 }
 

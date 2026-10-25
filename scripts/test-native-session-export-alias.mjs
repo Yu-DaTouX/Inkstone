@@ -53,14 +53,31 @@ try {
   verify(fs.readFileSync(branch, 'utf8') === original, 'full overwrite truncates only approved output')
 
   const race = join(work, 'race.jsonl')
-  const open = fs.promises.open
-  fs.promises.open = async (file, ...args) => {
-    if (String(file) === race && !fs.existsSync(race)) fs.linkSync(source, race)
-    return open(file, ...args)
+  const rename = fs.promises.rename
+  fs.promises.rename = async (from, to) => {
+    if (String(to) === race && !fs.existsSync(race)) fs.linkSync(source, race)
+    return rename(from, to)
   }
   syncBuiltinESMExports()
-  try { await rejectAlias(race, 'post-check alias race') }
-  finally { fs.promises.open = open; syncBuiltinESMExports() }
+  try {
+    await exportSessionJsonl({ sourcePath: source, outputPath: race, overwrite: true })
+    verify(fs.readFileSync(source, 'utf8') === original, 'post-check alias race: source unchanged')
+    verify(!fs.readdirSync(work).some((name) => name.endsWith('.tmp')), 'post-check alias race: no temp file left')
+  } finally { fs.promises.rename = rename; syncBuiltinESMExports() }
+
+  const failing = join(work, 'failing.jsonl')
+  fs.writeFileSync(failing, 'precious\n')
+  const writeFile = fs.promises.writeFile
+  fs.promises.writeFile = async (target, ...args) => {
+    if (String(target).startsWith(failing)) throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+    return writeFile(target, ...args)
+  }
+  syncBuiltinESMExports()
+  try {
+    const failed = await exportSessionJsonl({ sourcePath: source, outputPath: failing, overwrite: true })
+    verify(!failed.ok, 'write failure reported')
+    verify(fs.readFileSync(failing, 'utf8') === 'precious\n', 'write failure keeps the existing output intact')
+  } finally { fs.promises.writeFile = writeFile; syncBuiltinESMExports() }
   verify(fs.readFileSync(source, 'utf8') === original, 'all original branches retained')
 
   const missingLeaf = join(work, 'missing-leaf.jsonl')

@@ -32,7 +32,12 @@ export interface SelectedSessionTarget {
 }
 
 export async function selectSessionWithHost(host: SessionHost, target: SelectedSessionTarget) {
-  const cwdResult = await host.validateCwd(target.cwd)
+  let cwdResult = await host.validateCwd(target.cwd)
+  if (!cwdResult.ok && !target.preview && host.relocateMissingCwd && typeof target.cwd === 'string' && target.cwd.trim() && !existsSync(resolve(target.cwd))) {
+    const picked = await host.relocateMissingCwd(target.cwd)
+    if (!picked) return { ok: false, error: `这个会话的项目文件夹不在了：${target.cwd}` }
+    cwdResult = await host.validateCwd(picked)
+  }
   if (!cwdResult.ok) return cwdResult
   if (!host.runners()) {
     const r = await host.startAgent()
@@ -226,6 +231,13 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       usable: (cwd) => host.validateCwd(cwd),
       projectIdForCwd: (cwd) => host.projectIdForCwd(settings, cwd)
     })
+    if (target.missingCwd && host.relocateMissingCwd) {
+      const picked = await host.relocateMissingCwd(target.missingCwd)
+      const checked = picked ? await host.validateCwd(picked) : null
+      if (!checked) return { ok: false, error: `这个会话的项目文件夹不在了：${target.missingCwd}` }
+      if (!checked.ok) return checked
+      target.cwd = checked.cwd
+    }
     const res = await registry.select({ sessionFile: path, cwd: target.cwd, ...(target.projectId ? { projectId: target.projectId } : {}), scope: target.scope })
     await host.rememberRunnerSession(res, {
       sessionFile: path,
@@ -249,7 +261,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   })
 
   handle('yan:cachedTitles', async () => cachedTitles())
-  handle('yan:renameSession', async (name: string) => host.ac()?.renameSession(name) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:renameSession', async (name: string, sessionId?: string) => host.ac()?.renameSession(name, typeof sessionId === 'string' ? sessionId : undefined) ?? { ok: false, error: 'pi 未运行' })
   handle('yan:manualTitles', async () => manualTitles())
   handle('yan:setManualTitle', async (sessionId: string, name: string) =>
     setManualTitle(String(sessionId ?? ''), String(name ?? ''))

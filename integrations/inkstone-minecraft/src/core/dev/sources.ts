@@ -56,6 +56,14 @@ export async function findDependencySourceJars(projectDir: string): Promise<stri
   return findFiles(join(projectDir, '.gradle', 'loom-cache', 'remapped_mods'), (name) => name.endsWith('-sources.jar'), 10)
 }
 
+export function entryTarget(root: string, entry: string, suffix = ''): string | null {
+  const parts = entry.split(/[\\/]/)
+  if (!entry || isAbsolute(entry) || /^[A-Za-z]:/.test(entry) || parts.some((part) => part === '..')) return null
+  const target = join(root, ...parts) + suffix
+  const rel = relative(root, target)
+  return rel && !rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel) ? target : null
+}
+
 export async function extractSources(jar: string, outDir: string): Promise<string> {
   const marker = join(outDir, '.extracted')
   const info = await stat(jar)
@@ -65,7 +73,8 @@ export async function extractSources(jar: string, outDir: string): Promise<strin
   await zip.readAll(
     (name) => name.endsWith('.java') || name.endsWith('.kt'),
     async (name, data) => {
-      const target = join(outDir, ...name.split('/'))
+      const target = entryTarget(outDir, name)
+      if (!target) return
       await mkdir(dirname(target), { recursive: true })
       await writeFile(target, data)
     }
@@ -125,7 +134,8 @@ async function readBytecode(root: SourceRoot, file: string): Promise<string> {
   if (!root.javap || !existsSync(root.javap)) throw new Error(`依赖 ${root.label} 没有 sources.jar，且当前 Java 缺少 javap；请使用同版本 JDK 或提供此依赖的源码包`)
   const info = await stat(root.jar!)
   const key = createHash('sha256').update(`${root.jar}|${info.size}|${info.mtimeMs}`).digest('hex').slice(0, 20)
-  const cached = join(root.dir, key, `${file}.javap`)
+  const cached = entryTarget(join(root.dir, key), file, '.javap')
+  if (!cached) throw new Error(`jar 条目路径不合法：${file}`)
   if (existsSync(cached)) return readFile(cached, 'utf8')
   const result = await promisify(execFile)(root.javap, ['-J-Dstdout.encoding=UTF-8', '-J-Dstderr.encoding=UTF-8', '-public', '-classpath', root.jar!, file.slice(0, -6).replaceAll('/', '.')], { windowsHide: true, timeout: 15_000, maxBuffer: 1024 * 1024 })
   const text = `字节码公共 API 签名（javap），不是反编译源码；来源 ${basename(root.jar!)}\n${result.stdout}`

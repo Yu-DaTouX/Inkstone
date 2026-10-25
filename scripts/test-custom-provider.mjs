@@ -116,7 +116,13 @@ export async function runCustomProviderTests(ok, mod) {
   ok(!!(merged.next.providers).openai, '用户的其它 provider 原样保留')
   const demo = (merged.next.providers)['yan-demo']
   ok(demo.api === 'openai-responses', 'protocol 被更新')
-  ok(demo.apiKey === 'sk-super-secret', '没重新输入密钥时沿用磁盘上的旧 key')
+  ok(!('apiKey' in demo), '改了服务地址又没重新输入密钥时，旧 key 不跟到新地址')
+  const sameHost = mergeCustomProviders(
+    disk,
+    [{ id: 'yan-demo', api: 'openai-responses', baseUrl: 'https://api.example.com/v1/', models: [{ id: 'demo-2' }] }],
+    []
+  )
+  ok((sameHost.next.providers)['yan-demo'].apiKey === 'sk-super-secret', '地址没变时沿用磁盘上的旧 key')
   ok(demo.myCustomField === 'keep-me', '条目里的未知字段也保留')
 
   const modelFieldsDisk = { providers: { 'yan-demo': { api: 'openai-completions', baseUrl: 'https://api.example.com/v1', models: [{ id: 'demo-1', name: 'Demo', myModelField: 'keep-me' }] } } }

@@ -7,7 +7,7 @@ import { callMcpTool, describeMcpTool, McpToolError } from '../mcp/tool-service'
 import { assertLegacyMcpAccessBlocked } from '../mcp/app-proxy-service'
 import { mcpApprovalNeeded, mcpCallDanger } from '../../shared/mcp-approval'
 import { migratedMcpCommandNotice } from '../../shared/mcp-native-import'
-import type { ApprovalDecision, ApprovalOwner } from '../../shared/approval'
+import { APPROVAL_DETAIL_MAX, type ApprovalDecision, type ApprovalOwner } from '../../shared/approval'
 import type { DangerConfirmPrompt } from '../agent'
 
 export interface McpCommandHost {
@@ -81,10 +81,11 @@ export async function confirmMcpCall(
   if (mode === 'all') return
   const described = await describeMcpTool(manager, serverId, toolName, signal)
   if (!mcpApprovalNeeded(described.annotations)) return
-  const detail = JSON.stringify(params.arguments ?? params.args ?? {})
+  const detail = `${serverId} / ${toolName}\n${JSON.stringify(params.arguments ?? params.args ?? {})}`
+  if (detail.length > APPROVAL_DETAIL_MAX) throw new CapabilityCommandError('mcp_call_too_long', `MCP 调用参数有 ${detail.length} 字，超过 ${APPROVAL_DETAIL_MAX} 字，无法完整展示给用户确认。请缩短参数后重试`)
   const answer = await host.confirmDanger({
     tool: 'yan mcp call',
-    detail: `${serverId} / ${toolName}\n${detail.slice(0, 2000)}`,
+    detail,
     reasons: mcpCallDanger(`mcp__${serverId}__${toolName}`, described.annotations),
     cwd: host.cwd(),
     owner: host.approvalOwner(),

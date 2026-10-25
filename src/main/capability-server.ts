@@ -88,6 +88,7 @@ export const KNOWN_COMMANDS = new Set([
   'file.trash',
   'consent.request',
   'danger.confirm',
+  'danger.prefs',
   'session.move',
   'knowledge.search',
   'knowledge.read',

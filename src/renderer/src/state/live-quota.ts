@@ -25,7 +25,7 @@ export function liveQuotaSupported(provider: string): boolean {
 }
 
 export function mergeLiveQuota(prior: ProviderQuota | null | undefined, next: ProviderQuota): ProviderQuota {
-  if (next.windows?.length || !next.error) return next
+  if (next.windows?.length || !next.error || !next.supported) return next
   if (!prior?.windows?.length || next.checkedAt - prior.checkedAt > LIVE_QUOTA_LAST_GOOD_MS) return next
   return { ...prior, error: undefined, staleError: next.error }
 }

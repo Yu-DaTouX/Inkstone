@@ -27,7 +27,7 @@ export async function runScheduleCommand(
   service: ScheduleService,
   command: string,
   params: Record<string, unknown>,
-  context: { cwd: string }
+  context: { cwd: string; confirm?: (task: ScheduledTask, action: 'delete' | 'pause') => Promise<string | null> }
 ): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
   if (command === 'schedule.list') {
     const tasks = service.list()
@@ -52,6 +52,14 @@ export async function runScheduleCommand(
   }
   const id = typeof params.id === 'string' ? params.id.trim() : ''
   if (!id) throw new ScheduleCommandError('schedule_id_required', '缺少 --id')
+  if (command === 'schedule.delete' || command === 'schedule.pause') {
+    const task = service.list().find((item) => item.id === id)
+    if (!task) throw new ScheduleCommandError('schedule_not_found', '找不到这个定时任务')
+    if (!task.pendingApproval && context.confirm) {
+      const denied = await context.confirm(task, command === 'schedule.delete' ? 'delete' : 'pause')
+      if (denied !== null) throw new ScheduleCommandError('schedule_denied', denied)
+    }
+  }
   if (command === 'schedule.delete') {
     const ok = await service.remove(id)
     if (!ok) throw new ScheduleCommandError('schedule_not_found', '找不到这个定时任务')

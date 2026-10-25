@@ -13,6 +13,7 @@ export interface SessionHost {
   pushRunners(): void
   pushRunnerSnapshot(id: string, opts?: { chainHistory?: boolean }): Promise<void>
   validateCwd(cwd: unknown): Promise<{ ok: true; cwd: string } | { ok: false; error: string }>
+  relocateMissingCwd?(missing: string): Promise<string | null>
   startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }>
   rememberRunnerSession(
     result: { ok: boolean; id?: string; sessionId?: string },

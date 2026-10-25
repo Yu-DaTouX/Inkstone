@@ -60,6 +60,17 @@ function stateTone(state: ServiceState): BadgeTone {
   return 'neutral'
 }
 
+const ORPHAN_LOGIN = /已有.*登录.*进行/
+
+async function retryAfterOrphan<T extends { ok: boolean; error?: string }>(start: () => Promise<T>): Promise<T> {
+  let result = await start()
+  for (let attempt = 0; attempt < 20 && !result.ok && ORPHAN_LOGIN.test(result.error ?? ''); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    result = await start()
+  }
+  return result
+}
+
 export function ModelsSettings(): ReactElement {
   const t = useT()
   const text = useModelsText()
@@ -240,7 +251,11 @@ export function ModelsSettings(): ReactElement {
     if (info.id === 'openai-codex') {
       setCodexLogging(true)
       try {
-        const r = await window.yan.codexLogin()
+        let r = await window.yan.codexLogin()
+        if (!r.ok && ORPHAN_LOGIN.test(r.error ?? '')) {
+          await window.yan.codexLoginCancel()
+          r = await retryAfterOrphan(() => window.yan.codexLogin())
+        }
         if (r.ok) {
           setMsg({ kind: 'ok', text: t('auth.loginOk') })
           refreshModelsAfterRestart()
@@ -257,7 +272,11 @@ export function ModelsSettings(): ReactElement {
     }
     setOauth({ provider: info.id, events: [] })
     try {
-      const r = await window.yan.oauthLogin(info.id)
+      let r = await window.yan.oauthLogin(info.id)
+      if (!r.ok && !r.cancelled && ORPHAN_LOGIN.test(r.error ?? '')) {
+        await window.yan.oauthLoginCancel('')
+        r = await retryAfterOrphan(() => window.yan.oauthLogin(info.id))
+      }
       if (r.ok) {
         setMsg({ kind: 'ok', text: t('auth.loginOkGeneric') })
         refreshModelsAfterRestart()

@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -28,19 +29,25 @@ export async function readConsentLedger(path = LEDGER_PATH): Promise<ConsentLedg
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyConsentLedger()
     throw error
   }
-  return parseConsentLedger(JSON.parse(text))
+  try {
+    return parseConsentLedger(JSON.parse(text))
+  } catch {
+    await copyFile(path, `${path}.corrupt-${Date.now()}`)
+    return emptyConsentLedger()
+  }
 }
 
 export function updateConsentLedger(mutate: (ledger: ConsentLedger) => ConsentLedger, path = LEDGER_PATH): Promise<ConsentLedger> {
   const task = queue.then(async () => {
     const next = mutate(await readConsentLedger(path))
     await mkdir(dirname(path), { recursive: true })
-    const temp = `${path}.${process.pid}.tmp`
-    await writeFile(temp, JSON.stringify(next, null, 2), 'utf8')
+    const temp = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
     try {
+      await writeFile(temp, JSON.stringify(next, null, 2), { encoding: 'utf8', flag: 'wx' })
       await rename(temp, path)
-    } catch {
-      await writeFile(path, JSON.stringify(next, null, 2), 'utf8')
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw error
     }
     return next
   })

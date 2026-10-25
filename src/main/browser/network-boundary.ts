@@ -48,6 +48,23 @@ export function isLoopbackOrigin(value: string): boolean {
   }
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127\./.test(h)
+}
+
+export function sameLocalHost(originUrl: string, targetHost: string): boolean {
+  let origin: string
+  try {
+    origin = new URL(originUrl).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  const target = targetHost.toLowerCase()
+  if (!isPrivateHost(origin)) return false
+  return origin === target || (isLoopbackHost(origin) && isLoopbackHost(target))
+}
+
 export function decideRequestBoundary(input: {
   targetHost: string
   initiatorUrl: string
@@ -56,7 +73,7 @@ export function decideRequestBoundary(input: {
 }): BoundaryDecision {
   const { targetHost, initiatorUrl, requestedByUs, resourceType } = input
   if (isLinkLocalHost(targetHost)) return 'block-private'
-  if (isLoopbackOrigin(initiatorUrl)) return 'allow'
+  if (sameLocalHost(initiatorUrl, targetHost)) return 'allow'
   if (!isPrivateHost(targetHost)) return 'check-dns'
   return requestedByUs && resourceType === 'mainFrame' ? 'allow' : 'block-private'
 }

@@ -6,7 +6,7 @@ import {
   mkdtempSync,
   rmSync
 } from 'node:fs'
-import { access, copyFile, mkdir, open, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -437,17 +437,25 @@ async function sameSessionFile(sourcePath: string, outputPath: string): Promise<
 
 async function writeSessionExport(sourcePath: string, outputPath: string, text: string, overwrite: boolean): Promise<void> {
   if (await sameSessionFile(sourcePath, outputPath)) throw new Error('导出目标不能是源会话文件本身或它的别名')
-  const source = await stat(sourcePath, { bigint: true })
-  const handle = await open(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | (overwrite ? 0 : fsConstants.O_EXCL))
-  try {
-    const output = await handle.stat({ bigint: true })
-    if (source.ino !== 0n && source.dev === output.dev && source.ino === output.ino) {
-      throw new Error('导出目标不能是源会话文件本身或它的别名')
+  if (!overwrite) {
+    const handle = await open(outputPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL)
+    try {
+      await handle.writeFile(text, 'utf8')
+    } catch (error) {
+      await handle.close().catch(() => undefined)
+      await rm(outputPath, { force: true }).catch(() => undefined)
+      throw error
     }
-    await handle.truncate(0)
-    await handle.writeFile(text, 'utf8')
-  } finally {
     await handle.close()
+    return
+  }
+  const temp = `${outputPath}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  try {
+    await writeFile(temp, text, { encoding: 'utf8', flag: 'wx' })
+    await rename(temp, outputPath)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    throw error
   }
 }
 

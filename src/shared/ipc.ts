@@ -976,6 +976,7 @@ export interface BrowserState {
   activeTabId?: string
   tabs?: BrowserTabState[]
   userControl?: boolean
+  userControlRequest?: { reason: string; sessionId: string; at: number }
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   permissions?: BrowserPermissionRecord[]
   blockedRequests?: BrowserBlockedRequest[]
@@ -1693,7 +1694,7 @@ export interface YanBridge {
   nativeSession(request: import('./native-session-host').NativeSessionHostRequest): Promise<import('./native-session-host').NativeSessionHostResult>
   compact(customInstructions?: string): Promise<{ ok: boolean; error?: string }>
   compactionInfo(cwd: string, contextWindow: number): Promise<CompactionInfo | null>
-  renameSession(name: string): Promise<{ ok: boolean; error?: string }>
+  renameSession(name: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
 
   fork(entryId: string, expected?: ExpectedRuntimeOwner): Promise<{ ok: boolean; error?: string; text?: string }>
   clone(): Promise<{ ok: boolean; error?: string }>
@@ -1938,6 +1939,7 @@ export interface YanBridge {
     forward(): Promise<{ ok: boolean; error?: string }>
     reload(): Promise<{ ok: boolean; error?: string }>
     openExternal(url?: string): Promise<{ ok: boolean; error?: string }>
+    releaseUserControl(): Promise<BrowserState>
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
     closeExternalChrome(): Promise<BrowserState>
     syncLocalProfile(): Promise<ChromeSyncReport>

@@ -15,14 +15,13 @@ const PAID_ORDER: Record<'zh' | 'en', readonly ('deepseek' | 'tavily' | 'brave')
   zh: ['deepseek', 'tavily', 'brave'],
   en: ['tavily', 'brave', 'deepseek']
 }
-const FIRST_WEB: SearchSourceId = 'ddg'
-const SECOND_WEB: SearchSourceId = 'so360'
+const WEB: SearchSourceId = 'ddg'
 
 export function defaultSearchPlan(text: string, keys: SearchKeys): { sources: SearchSourceId[]; policy: SearchPolicy } {
   const paid = PAID_ORDER[detectLocale(text)].filter((id) => keys[id])
   const settle = { enoughRows: PRIMARY_ENOUGH_ROWS, graceMs: PRIMARY_GRACE_MS }
-  if (paid.length === 0) return { sources: [FIRST_WEB, SECOND_WEB], policy: { primary: [FIRST_WEB], reserve: [], ...settle } }
-  return { sources: [paid[0], FIRST_WEB], policy: { primary: [paid[0]], reserve: [...paid.slice(1), SECOND_WEB], ...settle } }
+  if (paid.length === 0) return { sources: [WEB], policy: { primary: [WEB], reserve: [], ...settle } }
+  return { sources: [paid[0], WEB], policy: { primary: [paid[0]], reserve: paid.slice(1), ...settle } }
 }
 
 export function searchQueries(params: Record<string, unknown>): string[] {

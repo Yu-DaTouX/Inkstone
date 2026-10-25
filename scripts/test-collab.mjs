@@ -116,8 +116,8 @@ const deviceDir = join(root, 'devices')
 for (const dir of [plain, work, deviceDir]) mkdirSync(dir, { recursive: true })
 
 const DEVICE_NAME = '砚 · Laptop-A'
-const REMOTE_SLUG = 'yan-laptop-a'
-const FEATURE_REF = trackingRefFor(slugForRemote('B 电脑', 'x'), 'feature')
+let REMOTE_SLUG = 'yan-laptop-a'
+const FEATURE_REF = trackingRefFor(slugForRemote('B 电脑', 'peerb'), 'feature')
 const PUSHED_REF = (branch) => trackingRefFor(REMOTE_SLUG, branch)
 
 const incoming = []
@@ -372,7 +372,9 @@ try {
     peerDeviceId = peer.deviceId
     phoneToken = (await pairAs('phone', '我的手机')).token
     assert.ok(peerToken && phoneToken && peerDeviceId)
-    assert.equal(slugForRemote(DEVICE_NAME, peerDeviceId), REMOTE_SLUG)
+    REMOTE_SLUG = slugForRemote(DEVICE_NAME, peerDeviceId)
+    assert.ok(REMOTE_SLUG.startsWith('yan-laptop-a-') && REMOTE_SLUG.length > 'yan-laptop-a-'.length, REMOTE_SLUG)
+    assert.notEqual(slugForRemote(DEVICE_NAME, 'another-device'), REMOTE_SLUG, '同名设备的追踪引用不互相覆盖')
   })
 
   await check('collab 路由：未申请连接 401，手机令牌 403，事件流打开前 409', async () => {
@@ -454,7 +456,7 @@ try {
     await writeFile(file, pulledBundle)
     const result = await gitOps.fetchBundle(A, file, 'feature', FEATURE_REF, featureOid2)
     assert.equal(result.ok, true, result.error)
-    assert.equal(FEATURE_REF, 'refs/remotes/yan-b/feature')
+    assert.equal(FEATURE_REF, 'refs/remotes/yan-b-peerb/feature')
     assert.equal(sh(A, 'rev-parse', FEATURE_REF), featureOid2)
     assert.equal(sh(A, 'rev-parse', 'refs/heads/main'), sh(A, 'rev-parse', 'origin/main'))
     assert.equal(existsSync(join(A, '.git', 'FETCH_HEAD')), false)
@@ -904,7 +906,7 @@ try {
   section('CollabService：本机侧编排')
 
   const PEER_ID = 'peer-b'
-  const REMOTE = 'yan-b'
+  const REMOTE = 'yan-b-peerb'
   const svcState = join(svcDir, 'collab-state.json')
   const svcTemp = join(svcDir, 'tmp')
   const svcImports = join(svcDir, 'imports')
@@ -1047,7 +1049,7 @@ try {
     svcConnection = { state: 'connected', grant: svcGrant }
     svcTracking = trackingRefFor(REMOTE, 'feature')
     service = makeService(svcState)
-    assert.equal(svcTracking, 'refs/remotes/yan-b/feature')
+    assert.equal(svcTracking, 'refs/remotes/yan-b-peerb/feature')
   })
 
   await check('remoteProject（未 link）：按根提交推荐本地项目，分支带追踪引用且还没有拉取记录', async () => {
@@ -1235,7 +1237,7 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result))
     assert.equal(result.merged, true)
     assert.notEqual(sh(SC, 'rev-parse', 'HEAD'), headBefore)
-    assert.equal(sh(SC, 'log', '-1', '--format=%s'), '合并 yan-b/feature（多人协作）')
+    assert.equal(sh(SC, 'log', '-1', '--format=%s'), '合并 yan-b-peerb/feature（多人协作）')
     const state = await readState()
     assert.equal(state.requests.find((item) => item.id === 'mr-manual-1').status, 'merged')
     const again = await service.merge('local-a', svcTracking)
@@ -1571,8 +1573,8 @@ try {
     const featureOid = sh(SC, 'rev-parse', svcTracking)
     const result = await service.continueFrom('local-a', svcTracking)
     assert.equal(result.ok, true, result.error)
-    assert.equal(result.data.branch, 'b/feature')
-    assert.equal(sh(result.data.worktree, 'symbolic-ref', '--short', 'HEAD'), 'b/feature')
+    assert.equal(result.data.branch, 'b-peerb/feature')
+    assert.equal(sh(result.data.worktree, 'symbolic-ref', '--short', 'HEAD'), 'b-peerb/feature')
     assert.equal(sh(result.data.worktree, 'rev-parse', 'HEAD'), featureOid)
     assert.ok(existsSync(join(result.data.worktree, 'f.txt')))
     assert.ok(result.data.prompt.includes(result.data.worktree), result.data.prompt)
@@ -1587,12 +1589,12 @@ try {
     const s5Import = [...state.sessionImports].reverse().find((item) => item.sessionId === 's5')
     const second = await service.continueFrom('local-a', svcTracking, s5Import.importId)
     assert.equal(second.ok, true, second.error)
-    assert.equal(second.data.branch, 'b/feature-2')
+    assert.equal(second.data.branch, 'b-peerb/feature-2')
     assert.ok(second.data.prompt.includes(join(svcImports, s5Import.importId, 'messages.json')))
     assert.ok(second.data.prompt.includes(s5Import.title))
     const third = await service.continueFrom('local-a', svcTracking, 'import-none')
     assert.equal(third.ok, true, third.error)
-    assert.equal(third.data.branch, 'b/feature-3')
+    assert.equal(third.data.branch, 'b-peerb/feature-3')
     assert.ok(!third.data.prompt.includes('messages.json'))
   })
 
@@ -1614,7 +1616,7 @@ try {
     assert.equal(sh(SC, 'rev-parse', fetched.data.trackingRef), chineseOid)
     const continued = await service.continueFrom('local-a', fetched.data.trackingRef)
     assert.equal(continued.ok, true, continued.error)
-    assert.equal(continued.data.branch, `b/branch-${chineseOid.slice(0, 7)}`)
+    assert.equal(continued.data.branch, `b-peerb/branch-${chineseOid.slice(0, 7)}`)
     assert.equal(sh(continued.data.worktree, 'rev-parse', 'HEAD'), chineseOid)
   })
 

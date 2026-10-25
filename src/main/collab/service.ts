@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   COLLAB_REQUEST_NOTE_MAX,
@@ -113,13 +113,22 @@ export class CollabService implements CollabBridge {
 
   private load(): Promise<CollabStateFile> {
     if (this.state) return Promise.resolve(this.state)
-    this.loading ??= this.readState()
+    this.loading ??= this.readState().finally(() => { this.loading = null })
     return this.loading
   }
 
   private async readState(): Promise<CollabStateFile> {
+    let text: string
     try {
-      const raw = JSON.parse(await readFile(this.deps.stateFile, 'utf8')) as Partial<CollabStateFile>
+      text = await readFile(this.deps.stateFile, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error
+      this.state = emptyState()
+      return this.state
+    }
+    try {
+      const raw = JSON.parse(text) as Partial<CollabStateFile>
+      if (raw?.version !== 1) throw new SyntaxError('unsupported collab state')
       this.state = raw?.version === 1
         ? {
             version: 1,
@@ -130,6 +139,7 @@ export class CollabService implements CollabBridge {
           }
         : emptyState()
     } catch {
+      await copyFile(this.deps.stateFile, `${this.deps.stateFile}.corrupt-${Date.now()}`)
       this.state = emptyState()
     }
     return this.state

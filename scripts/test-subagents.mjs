@@ -1217,7 +1217,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     ok(typeof subagentHostCommands === 'function', '子代理宿主命令工厂可用')
 
     const plain = subagentHostCommands({})
-    ok(plain.onlyCommands.join(',') === 'danger.confirm', '没有 previewHtml 时仍只给 danger.confirm', plain.onlyCommands.join(','))
+    ok(plain.onlyCommands.join(',') === 'danger.confirm,danger.prefs', '没有 previewHtml 时只给审批与权限档查询', plain.onlyCommands.join(','))
 
     const readOnlyHost = async () => ({ summary: { kind: 'search' } })
     const readOnly = subagentHostCommands({ readOnlyHost })

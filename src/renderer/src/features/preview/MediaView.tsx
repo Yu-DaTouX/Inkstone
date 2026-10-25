@@ -15,7 +15,8 @@ export function MediaView({
   cwd,
   labels,
   onReveal,
-  onOpen
+  onOpen,
+  revision
 }: {
   format: MediaFormat
   name: string
@@ -24,9 +25,10 @@ export function MediaView({
   labels: PreviewText
   onReveal: () => void
   onOpen: () => void
+  revision?: number
 }): ReactElement {
   const [failed, setFailed] = useState(false)
-  const url = filePreviewUrl(abs)
+  const url = revision ? `${filePreviewUrl(abs)}?v=${revision}` : filePreviewUrl(abs)
   if (format === 'pdf') return <PdfView name={name} abs={abs} cwd={cwd} labels={labels} onOpen={onOpen} />
   if (failed) return <MediaFailure format={format} labels={labels} onReveal={onReveal} />
   return (

@@ -50,6 +50,7 @@ export function registerBrowserIpc(
   rawHandle('yan:browser:back', () => browserOf()?.back() ?? NOT_READY)
   rawHandle('yan:browser:forward', () => browserOf()?.forward() ?? NOT_READY)
   rawHandle('yan:browser:reload', () => browserOf()?.reload() ?? NOT_READY)
+  rawHandle('yan:browser:releaseUserControl', () => browserOf()?.setUserControl(false) ?? CLOSED_STATE)
   rawHandle('yan:browser:openExternal', (_e, url?: string) => browserOf()?.openExternal(url) ?? NOT_READY)
   rawHandle('yan:browser:openExternalChrome', (_e, url?: string) => browserOf()?.openExternalChrome(url) ?? NOT_READY)
   rawHandle('yan:browser:closeExternalChrome', () => browserOf()?.closeExternalChrome())

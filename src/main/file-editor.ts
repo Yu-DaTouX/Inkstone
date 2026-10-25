@@ -58,6 +58,10 @@ async function readDiskBytes(target: string): Promise<{ exists: boolean; bytes: 
   }
 }
 
+export function usesCrlf(text: string): boolean {
+  return text.includes('\r\n') && !/(^|[^\r])\n/.test(text)
+}
+
 export async function readEditableFile(root: string, target: string): Promise<EditableFileView> {
   if (typeof root !== 'string' || typeof target !== 'string' || !target.trim()) {
     return missingView('denied', '', '')
@@ -107,6 +111,7 @@ export async function readEditableFile(root: string, target: string): Promise<Ed
   } catch {
     return missingView('encoding', candidate, name)
   }
+  if (usesCrlf(text)) text = text.replace(/\r\n/g, '\n')
 
   return {
     ok: true,
@@ -170,6 +175,7 @@ export async function writeEditableFile(
       const currentHash = sha256(current)
       if (expectedHash === null || currentHash !== expectedHash) return { status: 'conflict' as const, currentHash }
       keepBom = current.subarray(0, 3).equals(UTF8_BOM) && !text.startsWith('\uFEFF')
+      if (usesCrlf(current.toString('utf8'))) text = text.replace(/\r?\n/g, '\r\n')
       mode = info.mode & 0o777
       preserveMode = true
     } else {

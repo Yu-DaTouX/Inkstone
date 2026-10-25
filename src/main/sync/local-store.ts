@@ -344,6 +344,7 @@ function definitionSignature(value: unknown): string {
 
 export interface LocalStoreAppliers {
   applySettings?: (patch: Partial<AppSettings>) => Promise<void>
+  applySchedule?: (definition: Record<string, unknown>) => Promise<void>
 }
 
 export class LocalStore {
@@ -379,8 +380,12 @@ export class LocalStore {
         return applySkill(this.paths, record)
       case 'bookmark':
         return applyBookmark(this.paths, record)
-      case 'schedule':
-        return applySchedule(this.paths, record)
+      case 'schedule': {
+        if (!this.appliers.applySchedule) return applySchedule(this.paths, record)
+        const definition = pickScheduleDefinition(JSON.parse(record.payload))
+        if (!definition) throw new Error(`定时任务记录形状无效：${record.key}`)
+        return this.appliers.applySchedule(definition)
+      }
       default: {
         const never: never = record.kind
         throw new Error(`未知的同步类别：${String(never)}`)

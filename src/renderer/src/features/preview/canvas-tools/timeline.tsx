@@ -299,6 +299,7 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
               icon={<Film size={13} />}
               title={text.exportHint}
               data-testid="v3-canvas-timeline-export-start"
+              isDisabled={context.generating}
               onPress={exporter.start}
             >
               {text.exportVideo}

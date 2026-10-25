@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { readFile, unlink } from 'node:fs/promises'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isInkstoneManaged, type McpAppNativeEntry, type McpAppServerConfig } from './app-spec'
 import { atomicWrite, nativeMcpTextFingerprint } from './native-import'
@@ -563,6 +563,17 @@ function skippedSteps(): McpAppSwitchCommitResult['steps'] {
   return { native: 'skipped', host: 'skipped', verify: 'skipped', hostDisconnect: 'skipped' }
 }
 
+async function keepNativeOriginal(pending: PendingSwitch): Promise<string | null> {
+  if (pending.targetOriginalText === null) return null
+  const backup = `${pending.targetPath}.inkstone-backup-${Date.now()}`
+  try {
+    await writeFile(backup, pending.targetOriginalText, { encoding: 'utf8', flag: 'wx' })
+    return backup
+  } catch {
+    return null
+  }
+}
+
 async function restoreNative(
   writeText: (path: string, text: string, expectedFingerprint?: string) => Promise<void>,
   pending: PendingSwitch
@@ -762,10 +773,13 @@ export async function commitMcpAppSwitch(input: {
       await writeText(pending.hostConfigFile, pending.hostContent, pending.hostFingerprint)
     } catch (error) {
       const remediation = await restoreNative(writeText, pending)
+      const backup = remediation === 'restored' ? null : await keepNativeOriginal(pending)
       const suffix =
         remediation === 'restored'
           ? '已用保存的原值把 pi 配置恢复回去。'
-          : 'pi 配置的自动恢复失败，两边可能都不完整，请按上方路径手动修复。'
+          : backup
+            ? `pi 配置的自动恢复失败，两边可能都不完整；原来的 pi 配置已另存到 ${backup}，可用它手动恢复。`
+            : 'pi 配置的自动恢复失败，两边可能都不完整，请按上方路径手动修复。'
       return {
         ...base,
         ok: false,

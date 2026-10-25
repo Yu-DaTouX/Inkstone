@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { Button, Card, IconButton } from '../../ui'
 import { sendAsComposerMessage } from '../../lib/composer-store-send'
+import { composerLocalCommand } from '../composer/composer-layout'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { parseUserInline } from './user-text'
@@ -47,7 +48,7 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
   if (hidden || !card.ask?.trim()) return null
   const choose = (message: string): void => {
     dismissWrapUp(dismissKey)
-    if (isFillInTemplate(message)) insertIntoComposer(message)
+    if (isFillInTemplate(message) || composerLocalCommand(message.trim(), useStore.getState().commands)) insertIntoComposer(message)
     else void sendAsComposerMessage(message, t)
   }
   return (

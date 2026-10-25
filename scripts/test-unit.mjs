@@ -1334,18 +1334,19 @@ const branchChild = await makeSession('branch-child.jsonl', {
 const branchGrandchild = await makeSession('branch-grandchild.jsonl', {
   id: 'branch-grandchild', parentSession: 'branch-child', timestamp: new Date().toISOString(), cwd: 'C:\\branch', messages: ['grandchild']
 })
-const branchToken = await deleteSession(branchRoot)
+const branchToken = await deleteSession(branchRoot, branchGrandchild)
 const afterBranchDelete = await listSessions()
-ok(![branchRoot, branchChild, branchGrandchild].some((p) => afterBranchDelete.some((s) => s.path === p)), '删除父会话会移除整棵父子孙树')
+ok(!afterBranchDelete.some((s) => s.path === branchRoot), '删除父会话只移除父会话本身')
+ok([branchChild, branchGrandchild].every((p) => afterBranchDelete.some((s) => s.path === p)), '删除父会话保留分支会话')
 await restoreSession(branchToken)
 const afterBranchRestore = await listSessions()
-ok([branchRoot, branchChild, branchGrandchild].every((p) => afterBranchRestore.some((s) => s.path === p)), '撤销删除会恢复整棵父子孙树')
+ok([branchRoot, branchChild, branchGrandchild].every((p) => afterBranchRestore.some((s) => s.path === p)), '撤销删除恢复父会话')
 
 let protectedRejected = false
-try { await deleteSession(branchRoot, branchGrandchild) } catch { protectedRejected = true }
-ok(protectedRejected, '当前会话位于子树时拒绝删除父会话')
+try { await deleteSession(branchGrandchild, branchGrandchild) } catch { protectedRejected = true }
+ok(protectedRejected, '拒绝删除当前正在使用的会话')
 const afterProtected = await listSessions()
-ok([branchRoot, branchChild, branchGrandchild].every((p) => afterProtected.some((s) => s.path === p)), '拒绝删除时不会移动任何分支文件')
+ok([branchRoot, branchChild, branchGrandchild].every((p) => afterProtected.some((s) => s.path === p)), '拒绝删除时不会移动任何会话文件')
 
 const undoToken = await deleteSession(pPath)
 list = await listSessions()
@@ -2611,9 +2612,7 @@ await runSearchTests(ok, searchMod)
       "export * as context7 from './src/main/search/context7.ts'",
       "export * as plan from './src/main/search/plan.ts'",
       "export * as modifiers from './src/main/search/modifiers.ts'",
-      "export * as bing from './src/main/search/bing.ts'",
       "export * as ddg from './src/main/search/ddg.ts'",
-      "export * as so360 from './src/main/search/so360.ts'",
       "export * as brave from './src/main/search/brave.ts'",
       "export * as shared from './src/shared/search.ts'"
     ].join('\n')

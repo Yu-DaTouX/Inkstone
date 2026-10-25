@@ -10,6 +10,7 @@ import { TurnView } from './TurnView'
 import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
 import { ToolExpansionScope } from './use-tool-run'
 import { PendingRunNotice } from './RunNotice'
+import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { OutlineRail, userTurnRenderIndex } from './OutlineRail'
@@ -534,6 +535,7 @@ export function SessionView(): JSX.Element {
       <div className="v3-asks">
         {viewActive || (approvals[0] && approvalMatchesView(approvals[0], subagents, view)) ? <ApprovalCard /> : null}
         {viewActive && uiRequests.length > 0 ? <QuestionCard /> : null}
+        {viewActive ? <BrowserHandoffCard sessionId={view.sessionId} /> : null}
       </div>
 
       <RewindDialogV3 ownerKey={view.key} active={viewActive} />

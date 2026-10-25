@@ -8,9 +8,14 @@ interface ScopeGrants {
 
 type GrantFields = Pick<ApprovalRequest, 'kind' | 'tool' | 'rememberDirs'> & Partial<Pick<ApprovalRequest, 'reasons' | 'danger' | 'title'>>
 
+const OUTSIDE_WRITE_REASON = '写入项目之外的路径：'
+
 function operationClass(request: GrantFields): string {
   if (request.kind === 'consent') return `${request.title ?? ''}\u0000${request.danger ?? ''}`
-  if (request.kind === 'danger' || request.kind === 'delete') return `${[...(request.reasons ?? [])].sort().join('\n')}\u0000${request.danger ?? ''}`
+  if (request.kind === 'danger' || request.kind === 'delete' || request.kind === 'outside') {
+    const reasons = (request.reasons ?? []).filter((reason) => request.kind !== 'outside' || !reason.startsWith(OUTSIDE_WRITE_REASON))
+    return `${request.title ?? ''}\u0000${[...reasons].sort().join('\n')}\u0000${request.danger ?? ''}`
+  }
   return ''
 }
 

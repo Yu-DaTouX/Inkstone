@@ -8,9 +8,11 @@ import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 const root = await mkdtemp(join(tmpdir(), 'inkstone-cc-guard-'))
-const saved = { ...process.env }; let hook, allowed = false; const requests = []
+const saved = { ...process.env }; let hook, allowed = false; const requests = []; const prefs = { mode: 'danger', outsideWrites: false, allowRoots: [] }
 const server = createServer((req, res) => { let body = ''; req.on('data', p => body += p); req.on('end', () => {
-  requests.push(JSON.parse(body)); res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ok:true,summary:{allowed}}))
+  const payload = JSON.parse(body); res.setHeader('content-type', 'application/json')
+  if (payload.command === 'danger.prefs') return res.end(JSON.stringify({ok:true,summary:{kind:'danger-prefs',...prefs}}))
+  requests.push(payload); res.end(JSON.stringify({ok:true,summary:{allowed}}))
 }) })
 await new Promise(done => server.listen(0, '127.0.0.1', done))
 try {
@@ -30,9 +32,12 @@ try {
   assert.equal((await call('ProjectClaude',{prompt:'Project tool'})).block,true)
   const before = requests.length
   await writeFile(join(root,'desktop.json'),'{"permissionMode":"all"}')
-  assert.equal(await call('ProjectClaude',{prompt:'Native mode'}),undefined); assert.equal(requests.length,before)
-  await writeFile(join(root,'desktop.json'),'{"permissionMode":"danger"}')
-  assert.equal(await call('read',{path:'a.txt'}),undefined); assert.equal(requests.length,before)
+  assert.equal((await call('ProjectClaude',{prompt:'Disk says all'})).block,true,'desktop.json written by the model does not change the guard mode')
+  const afterDisk = requests.length
+  prefs.mode = 'all'
+  assert.equal(await call('ProjectClaude',{prompt:'Native mode'}),undefined); assert.equal(requests.length,afterDisk)
+  prefs.mode = 'danger'
+  assert.equal(await call('read',{path:'a.txt'}),undefined); assert.equal(requests.length,afterDisk)
   delete process.env.YAN_CLI_URL
   assert.equal((await call('ProjectClaude',{prompt:'No host'})).block,true)
   await build({entryPoints:['src/main/agent.ts'],outfile:resolve('out/test/cc-guard-host.mjs'),bundle:true,packages:'external',platform:'node',format:'esm',logLevel:'silent',plugins:[{name:'unused-electron',setup(b){b.onResolve({filter:/^electron$/},()=>({path:'electron',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const app={getLocale:()=> 'en',getPath:()=> ${JSON.stringify(root)}};export class BrowserWindow{};export const session={};`,loader:'js'}))}}]})

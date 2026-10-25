@@ -96,6 +96,17 @@ export function pidAlive(pid: number | null | undefined): boolean {
   }
 }
 
+export async function pidIsJava(pid: number): Promise<boolean> {
+  if (process.platform !== 'win32') return true
+  try {
+    const { stdout } = await promisify(execFile)('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 5000 })
+    const image = /^"([^"]+)","\d+"/m.exec(stdout)?.[1]?.toLowerCase()
+    return image === 'java.exe' || image === 'javaw.exe'
+  } catch {
+    return false
+  }
+}
+
 export function killTree(pid: number): Promise<void> {
   return new Promise((resolve) => {
     if (process.platform === 'win32') {

@@ -1,3 +1,4 @@
+import { userMessageSent } from './browser/user-handoff'
 import type { BrowserWindow } from 'electron'
 import { nativeImage } from 'electron'
 import { join, dirname, basename, resolve } from 'node:path'
@@ -141,7 +142,8 @@ export function remotePushPayload(channel: string, payload: unknown): unknown {
   if (channel === 'runners') return Array.isArray(payload) ? payload.map((item) => remoteRunnerStatus(item as RunnerStatus)) : payload
   if (channel === 'turn-settled') return remoteTurnSettled(payload)
   if (channel === 'agent-error') return remoteModelError(payload)
-  return payload
+  const sessionId = asRecord(payload).sessionId
+  return typeof sessionId === 'string' ? { sessionId } : {}
 }
 
 export async function remoteSnapshot(): Promise<Record<string, unknown>> {
@@ -381,6 +383,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
     return withRemoteSession(command.sessionId, async (agent, runId, summary, generation) => {
       const model = agent.getState()?.model
       if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
+      userMessageSent(agent.getState()?.sessionId)
       const result = await agent.send(command.text, command.images, undefined, undefined, generation)
       return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
     }, command.authorize)
@@ -429,7 +432,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
   const saved = await setManualTitle(summary.id, command.name)
   if (!saved.ok) return { ok: false, status: 500, error: saved.error ?? '保存会话名称失败' }
   if (host.ac()?.getState()?.sessionId === summary.id) {
-    const renamed = await host.ac()!.renameSession(command.name)
+    const renamed = await host.ac()!.renameSession(command.name, summary.id)
     if (!renamed.ok) return { ok: false, status: 409, error: renamed.error ?? '当前会话名称未能同步到 pi' }
   }
   host.push({ ch: 'session-title', payload: { sessionId: summary.id, title: command.name } })

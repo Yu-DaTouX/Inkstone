@@ -27,7 +27,7 @@ export async function runSearchTests(ok, mod) {
   const T0 = 1_000_000
 
   {
-    ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,tavily,deepseek,bing,ddg,so360', '登记原有三个来源与六个网页来源')
+    ok(SEARCH_SOURCES.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews,brave,tavily,deepseek,ddg', '登记原有三个来源与四个网页来源')
     ok(SEARCH_SOURCES.every((s) => !s.needsBrowser), '已登记来源均不需要浏览器扩展')
     ok(new Set(SEARCH_SOURCES.map((s) => s.id)).size === SEARCH_SOURCES.length, '来源 id 不重复')
   }
@@ -37,8 +37,9 @@ export async function runSearchTests(ok, mod) {
     const q = normalizeQuery({ text: '  flash attention  ' })
     ok(q.ok && q.text === 'flash attention', '查询词去首尾空白')
     ok(q.sources.map(s => s.id).join(',') === 'wikipedia,arxiv,hackernews', '不指定来源时保留默认三个来源')
-    const web = normalizeQuery({ text: 'x', sources: ['brave', 'bing', 'ddg', 'so360'] })
-    ok(web.ok && web.sources.map(s => s.id).join(',') === 'brave,bing,ddg,so360', '四个网页来源可显式选择且保持请求顺序')
+    const web = normalizeQuery({ text: 'x', sources: ['brave', 'deepseek', 'bing', 'ddg', 'so360'] })
+    ok(web.ok && web.sources.map(s => s.id).join(',') === 'brave,deepseek,ddg', '网页来源可显式选择且保持请求顺序')
+    ok(web.ignoredSources?.join(',') === 'bing,so360', '已移除的 Bing 与 360 按未知来源忽略并报告')
     const only = normalizeQuery({ text: 'x', sources: ['arxiv'] })
     ok(only.ok && only.sources.length === 1 && only.sources[0].id === 'arxiv', '只查指定来源')
     const bogus = normalizeQuery({ text: 'x', sources: ['arxiv', 'nope', 'arxiv'] })
@@ -88,11 +89,11 @@ export async function runSearchTests(ok, mod) {
     ok(normalizeRow('wikipedia', { title: '', url: 'x' }) === null, '空标题丢一条')
     ok(normalizeRow('arxiv', null) === null, 'null 行丢一条')
     for (const url of ['not a url', '/relative', 'javascript:alert(1)', 'file:///a', 'data:text/plain,x', 'https://user:pass@example.com/', 'https://user@example.com/', 'https://example.com/a b']) {
-      ok(normalizeRow('bing', { title: 'bad', url }) === null, `拒绝非法或带凭据的结果网址：${url}`)
+      ok(normalizeRow('ddg', { title: 'bad', url }) === null, `拒绝非法或带凭据的结果网址：${url}`)
     }
     const longUrl = 'https://example.com/?q=' + 'x'.repeat(1800)
-    ok(normalizeRow('bing', { title: 'long', url: longUrl })?.url === longUrl, '长 URL 完整保留，不按 500 字符裁剪')
-    ok(normalizeRow('bing', { title: 'too long', url: longUrl + 'x'.repeat(8192) }) === null, '超过明确 URL 上限则丢弃，不生成截断链接')
+    ok(normalizeRow('ddg', { title: 'long', url: longUrl })?.url === longUrl, '长 URL 完整保留，不按 500 字符裁剪')
+    ok(normalizeRow('ddg', { title: 'too long', url: longUrl + 'x'.repeat(8192) }) === null, '超过明确 URL 上限则丢弃，不生成截断链接')
   }
 
   {
@@ -152,7 +153,7 @@ export async function runSearchTests(ok, mod) {
     const fused = aggregate(
       [
         { source: 'tavily', rows: crowdA, elapsedMs: 1 },
-        { source: 'bing', rows: crowdB, elapsedMs: 1 }
+        { source: 'ddg', rows: crowdB, elapsedMs: 1 }
       ],
       { limitPerSource: 6, limitTotal: 12 }
     )
@@ -160,7 +161,7 @@ export async function runSearchTests(ok, mod) {
     ok(fused.items[0].title === 'x3' && fused.items[0].snippet === 'b 的摘要', '保留靠前来源的标题，缺摘要时用另一个来源补上')
     ok(fused.items.length === 7 && fused.sources[1].count === 1, '重复网址只算一次，计在靠前的来源名下')
     const sameSourceDup = aggregate(
-      [{ source: 'bing', rows: [{ title: 'a', url: 'https://a/1' }, { title: 'a dup', url: 'https://a/1#x' }], elapsedMs: 1 }],
+      [{ source: 'ddg', rows: [{ title: 'a', url: 'https://a/1' }, { title: 'a dup', url: 'https://a/1#x' }], elapsedMs: 1 }],
       { limitPerSource: 6, limitTotal: 12 }
     )
     ok(sameSourceDup.items.length === 1 && sameSourceDup.sources[0].count === 1, '同一来源内的重复网址去掉')
@@ -189,16 +190,16 @@ export async function runSearchTests(ok, mod) {
       { title: 'junk2', url: 'https://myGov.au/b' },
       { title: 'gh2', url: 'https://gist.github.com/b' }
     ]
-    const siteOut = aggregate([{ source: 'bing', rows: siteRows, elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    const siteOut = aggregate([{ source: 'ddg', rows: siteRows, elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
     ok(siteOut.items.map((i) => i.title).join(',') === 'gh1,gh2', '限定站点时去掉站外结果（含子域名的保留）')
     ok(/2 条不在指定站点/.test(siteOut.sources[0].message ?? ''), '去掉了几条写进来源状态')
-    const allOff = aggregate([{ source: 'bing', rows: siteRows.filter((r) => r.title.startsWith('junk')), elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    const allOff = aggregate([{ source: 'ddg', rows: siteRows.filter((r) => r.title.startsWith('junk')), elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
     ok(allOff.sources[0].status === 'empty' && allOff.items.length === 0, '全是站外结果 → empty，不把垃圾交给模型')
-    const longSite = aggregate([{ source: 'bing', rows: [...siteRows, ...Array.from({ length: 8 }, (_, i) => ({ title: `g${i}`, url: `https://github.com/x${i}` }))], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
+    const longSite = aggregate([{ source: 'ddg', rows: [...siteRows, ...Array.from({ length: 8 }, (_, i) => ({ title: `g${i}`, url: `https://github.com/x${i}` }))], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, sites: ['github.com'] })
     ok(longSite.items.length === 6 && longSite.truncated, '先去站外结果再按每来源上限取，不因站外结果占名额而变少')
-    const timeNote = aggregate([{ source: 'so360', rows: [{ title: 't', url: 'https://t/1' }], elapsedMs: 1 }, { source: 'ddg', rows: [{ title: 'd', url: 'https://d/1' }], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, recent: 'day' })
+    const timeNote = aggregate([{ source: 'wikipedia', rows: [{ title: 't', url: 'https://t/1' }], elapsedMs: 1 }, { source: 'ddg', rows: [{ title: 'd', url: 'https://d/1' }], elapsedMs: 1 }], { limitPerSource: 6, limitTotal: 12, recent: 'day' })
     ok(/不支持按时间过滤/.test(timeNote.sources[0].message ?? '') && !timeNote.sources[1].message, '不支持时间范围的来源如实标注，支持的不标')
-    const skipped = aggregate([{ source: 'bing', rows: null, skipped: true, elapsedMs: 5 }], { limitPerSource: 6, limitTotal: 12 })
+    const skipped = aggregate([{ source: 'ddg', rows: null, skipped: true, elapsedMs: 5 }], { limitPerSource: 6, limitTotal: 12 })
     ok(skipped.sources[0].status === 'skipped' && /提前停止/.test(summarizeSources(skipped.sources)), '提前停止的来源标 skipped，摘要写清')
     ok(/被总数上限截断/.test(summarizeSources(totalCap.sources)), '摘要里说清是被上限截断，而不是干脏的「0 条」')
     ok(perSource.sources[0].droppedByLimit === undefined, '没被总数上限碰到的来源不标 droppedByLimit')
@@ -213,9 +214,9 @@ export async function runSearchTests(ok, mod) {
       [{ source: 'wikipedia', rows: [{ title: 'ok', url: 'https://x/1' }, { nope: true }], elapsedMs: 1 }],
       { limitPerSource: 6, limitTotal: 12 }
     )
-    const allBad = aggregate([{ source: 'bing', rows: [null, { title: 'bad', url: 'oops' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
+    const allBad = aggregate([{ source: 'ddg', rows: [null, { title: 'bad', url: 'oops' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
     ok(allBad.sources[0].status === 'empty' && allBad.items.length === 0, '成功响应全部坏行时不标 ok')
-    const filteredCap = aggregate([{ source: 'bing', rows: [null, { title: 'a', url: 'https://a/1' }, { title: 'dup', url: 'https://a/1#hash' }, { title: 'b', url: 'https://a/2' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
+    const filteredCap = aggregate([{ source: 'ddg', rows: [null, { title: 'a', url: 'https://a/1' }, { title: 'dup', url: 'https://a/1#hash' }, { title: 'b', url: 'https://a/2' }], elapsedMs: 1 }], { limitPerSource: 2, limitTotal: 12 })
     ok(filteredCap.items.length === 2 && !filteredCap.truncated, '坏行与重复行不占每来源名额，也不误报截断')
     ok(dirty.sources[0].status === 'ok', '脏行不算来源失败')
     ok(/跳过/.test(dirty.sources[0].message ?? '') , '脏行数如实写进状态说明')
@@ -266,7 +267,7 @@ export async function runSearchTests(ok, mod) {
   {
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const rows = (id, n) => Array.from({ length: n }, (_, i) => ({ title: `${id}${i}`, url: `https://${id}/${i}` }))
-    const policy = { primary: ['tavily'], reserve: ['brave', 'so360'], enoughRows: 3, graceMs: 30 }
+    const policy = { primary: ['tavily'], reserve: ['brave', 'deepseek'], enoughRows: 3, graceMs: 30 }
     const deps = (impl) => {
       const calls = []
       return {
@@ -287,10 +288,10 @@ export async function runSearchTests(ok, mod) {
       return { source: id, rows: rows(id, 6), elapsedMs: 2000 }
     })
     const started = Date.now()
-    const early = await runSearch({ text: 'q', sources: ['tavily', 'bing'], recent: 'week', sites: ['tavily'] }, fast, policy)
+    const early = await runSearch({ text: 'q', sources: ['tavily', 'ddg'], recent: 'week', sites: ['tavily'] }, fast, policy)
     ok(Date.now() - started < 1000, '付费来源够用后，网页引擎在宽限期后被提前停止')
     ok(aborted, '停止时通知了网页引擎（关掉隐藏窗口）')
-    ok(early.sources.find((s) => s.source === 'bing')?.status === 'skipped', '被停掉的来源标 skipped')
+    ok(early.sources.find((s) => s.source === 'ddg')?.status === 'skipped', '被停掉的来源标 skipped')
     ok(early.items.length === 6 && fast.calls.length === 2, '没有动用后备来源')
     ok(fast.calls[0].opts.recent === 'week' && fast.calls[0].opts.sites?.[0] === 'tavily', '时间范围与站点限定传给每个来源')
 
@@ -299,7 +300,7 @@ export async function runSearchTests(ok, mod) {
       await wait(10)
       return { source: id, rows: rows(id, 2), elapsedMs: 10 }
     })
-    const both = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, quick, policy)
+    const both = await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, quick, policy)
     ok(both.sources.every((s) => s.status === 'ok') && both.items.length === 8, '宽限期内返回的网页引擎结果照样合并')
 
     const failing = deps(async (id) => {
@@ -307,34 +308,27 @@ export async function runSearchTests(ok, mod) {
       if (id === 'brave') return { source: id, rows: rows(id, 4), elapsedMs: 5 }
       return { source: id, rows: rows(id, 3), elapsedMs: 5 }
     })
-    const fallback = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, failing, policy)
-    ok(failing.calls.map((c) => c.id).join(',') === 'tavily,bing,brave', '付费来源出错 → 换下一个付费来源，不碰最后的网页后备')
-    ok(fallback.sources.map((s) => `${s.source}:${s.status}`).join(',') === 'tavily:error,bing:ok,brave:ok', '出错的来源照实汇报，后备来源排在后面')
+    const fallback = await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, failing, policy)
+    ok(failing.calls.map((c) => c.id).join(',') === 'tavily,ddg,brave', '付费来源出错 → 换下一个付费来源，够用后不再动其余后备')
+    ok(fallback.sources.map((s) => `${s.source}:${s.status}`).join(',') === 'tavily:error,ddg:ok,brave:ok', '出错的来源照实汇报，后备来源排在后面')
 
     const allPaidFail = deps(async (id) =>
-      id === 'bing' ? { source: id, rows: rows(id, 1), elapsedMs: 5 } : { source: id, rows: null, error: { code: 'http_error' }, elapsedMs: 5 })
-    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, allPaidFail, policy)
-    ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,bing,brave,so360', '付费来源都失败且网页结果不够 → 用上第二个网页引擎')
-
-    const webEnough = deps(async (id) => {
-      if (id === 'bing') { await wait(20); return { source: id, rows: rows(id, 6), elapsedMs: 20 } }
-      return { source: id, rows: null, error: { code: 'insufficient_balance' }, elapsedMs: 1 }
-    })
-    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, webEnough, { ...policy, reserve: ['so360'] })
-    ok(webEnough.calls.map((c) => c.id).join(',') === 'tavily,bing', '付费来源失败但网页引擎已够用 → 不再等第二个网页引擎', webEnough.calls.map((c) => c.id))
+      id === 'ddg' ? { source: id, rows: rows(id, 1), elapsedMs: 5 } : { source: id, rows: null, error: { code: 'http_error' }, elapsedMs: 5 })
+    await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, allPaidFail, policy)
+    ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,ddg,brave,deepseek', '付费来源都失败且网页结果不够 → 用上全部后备来源')
 
     const { SourceCooldown } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
       build({ entryPoints: ['src/main/search/cooldown.ts'], outfile: 'out/test/search-cooldown.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
     ).then(() => import('../out/test/search-cooldown.mjs'))
     const cooldown = new SourceCooldown()
     const balance = deps(async (id) =>
-      id === 'tavily' ? { source: id, rows: null, error: { code: 'insufficient_balance', message: '余额不足' }, elapsedMs: 1 } : { source: id, rows: rows(id, 6), elapsedMs: 1 })
-    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
-    const second = await runSearch({ text: 'q2', sources: ['tavily', 'bing'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
-    ok(balance.calls.map((c) => c.id).join(',') === 'tavily,bing,bing', '余额不足的来源进入冷却，下一次直接跳过', balance.calls.map((c) => c.id))
+      id === 'tavily' ? { source: id, rows: null, error: { code: 'api_key_rejected', message: '密钥被拒绝' }, elapsedMs: 1 } : { source: id, rows: rows(id, 6), elapsedMs: 1 })
+    await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
+    const second = await runSearch({ text: 'q2', sources: ['tavily', 'ddg'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
+    ok(balance.calls.map((c) => c.id).join(',') === 'tavily,ddg,ddg', '密钥被拒绝的来源进入冷却，下一次直接跳过', balance.calls.map((c) => c.id))
     const cooled = second.sources.find((s) => s.source === 'tavily')
     ok(cooled?.status === 'skipped' && cooled.code === 'cooldown' && /冷却中/.test(cooled.message ?? ''), '冷却跳过照实汇报', cooled)
-    await runSearch({ text: 'q3', sources: ['tavily', 'bing'] }, { ...balance, cooldown })
+    await runSearch({ text: 'q3', sources: ['tavily', 'ddg'] }, { ...balance, cooldown })
     ok(balance.calls.at(-2)?.id === 'tavily', '点名来源（没有策略）时不受冷却影响', balance.calls.map((c) => c.id))
 
     for (const [label, primaryRows, sites] of [
@@ -343,26 +337,26 @@ export async function runSearchTests(ok, mod) {
       ['站外结果', rows('outside', 8), ['allowed']]
     ]) {
       const calls = deps(async (id) => ({ source: id, rows: id === 'tavily' ? primaryRows : rows('allowed', id === 'brave' ? 3 : 1), elapsedMs: 1 }))
-      const out = await runSearch({ text: 'q', sources: ['tavily', 'bing'], ...(sites ? { sites } : {}) }, calls, policy)
+      const out = await runSearch({ text: 'q', sources: ['tavily', 'ddg'], ...(sites ? { sites } : {}) }, calls, policy)
       ok(calls.calls.some((call) => call.id === 'brave'), `${label}不能挡住后备来源`)
       ok(out.items.length >= 3, `${label}后仍补足有效去重结果`)
     }
     const unusable = deps(async (id) => {
-      if (id !== 'bing') return { source: id, rows: Array.from({ length: 8 }, () => ({ title: 'bad', url: 'bad' })), elapsedMs: 1 }
+      if (id !== 'ddg') return { source: id, rows: Array.from({ length: 8 }, () => ({ title: 'bad', url: 'bad' })), elapsedMs: 1 }
       await wait(80)
-      return { source: id, rows: rows('bing', 3), elapsedMs: 80 }
+      return { source: id, rows: rows('ddg', 3), elapsedMs: 80 }
     })
-    const notStopped = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, unusable, { ...policy, graceMs: 5 })
-    ok(notStopped.sources.find((source) => source.source === 'bing').status === 'ok', '原始行数再多但全无效，也不能提前停止慢兜底')
-    const overlapping = deps(async (id) => ({ source: id, rows: rows('same', id === 'so360' ? 3 : 2), elapsedMs: 1 }))
-    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, overlapping, policy)
-    ok(overlapping.calls.map((call) => call.id).join(',') === 'tavily,bing,brave,so360', 'primary 与后备跨来源重复不能累计成够用，继续下一后备')
+    const notStopped = await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, unusable, { ...policy, graceMs: 5 })
+    ok(notStopped.sources.find((source) => source.source === 'ddg').status === 'ok', '原始行数再多但全无效，也不能提前停止慢兜底')
+    const overlapping = deps(async (id) => ({ source: id, rows: rows('same', id === 'deepseek' ? 3 : 2), elapsedMs: 1 }))
+    await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, overlapping, policy)
+    ok(overlapping.calls.map((call) => call.id).join(',') === 'tavily,ddg,brave,deepseek', 'primary 与后备跨来源重复不能累计成够用，继续下一后备')
 
     const noPolicy = deps(async (id) => {
-      await wait(id === 'bing' ? 60 : 5)
+      await wait(id === 'ddg' ? 60 : 5)
       return { source: id, rows: rows(id, 6), elapsedMs: 5 }
     })
-    const explicit = await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, noPolicy)
+    const explicit = await runSearch({ text: 'q', sources: ['tavily', 'ddg'] }, noPolicy)
     ok(explicit.sources.every((s) => s.status === 'ok'), '点名来源（没有策略）时等所有来源返回')
   }
 

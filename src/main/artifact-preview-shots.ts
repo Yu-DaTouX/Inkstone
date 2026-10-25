@@ -1,5 +1,5 @@
 import { BrowserWindow, nativeImage, type NativeImage } from 'electron'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
@@ -15,6 +15,20 @@ import {
   videoSeekScript,
   type VideoCompositionInfo
 } from './video-composition'
+
+const PREVIEW_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const PREVIEW_DIR_KEEP = 30
+
+export async function pruneOldPreviewDirs(outDir: string, now = Date.now()): Promise<void> {
+  const entries = await readdir(outDir, { withFileTypes: true }).catch(() => [])
+  const dirs = await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && /^[0-9a-f-]{36}$/i.test(entry.name))
+    .map(async (entry) => ({ path: join(outDir, entry.name), at: (await stat(join(outDir, entry.name)).catch(() => null))?.mtimeMs ?? 0 })))
+  dirs.sort((a, b) => b.at - a.at)
+  for (const [index, dir] of dirs.entries()) {
+    if (index >= PREVIEW_DIR_KEEP || now - dir.at > PREVIEW_DIR_MAX_AGE_MS) await rm(dir.path, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
 
 export interface PreviewShot {
   scheme: 'light' | 'dark'
@@ -333,6 +347,7 @@ export async function captureHtmlPreviewShots(input: {
     const level = (details as unknown as { level?: string | number }).level
     if ((level === 'error' || level === 3) && consoleErrors.length < 20) consoleErrors.push(String((details as unknown as { message?: string }).message ?? '').slice(0, 400))
   })
+  await pruneOldPreviewDirs(input.outDir).catch(() => undefined)
   const dir = join(input.outDir, randomUUID())
   await mkdir(dir, { recursive: true })
   const shots: PreviewShot[] = []

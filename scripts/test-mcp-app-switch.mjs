@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -286,6 +287,9 @@ try {
   ok(!committed10.ok, '恢复失败时仍如实返回失败')
   eq(committed10.remediation, 'remediation-failed', '恢复失败明确标注 remediation-failed')
   ok(committed10.notice.includes('恢复失败') || committed10.notice.includes('手动修复'), '恢复失败给出修复入口')
+  const backupPath = /另存到 (.+?)，/.exec(committed10.notice)?.[1]
+  ok(!!backupPath && fs.existsSync(backupPath), '恢复失败时原 pi 配置另存到备份文件', committed10.notice)
+  if (backupPath) fs.rmSync(backupPath, { force: true })
 
   await reset()
   const setupHost = makeHost()

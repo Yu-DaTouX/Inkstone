@@ -98,11 +98,36 @@ export async function runSettingsStoreTests(ok) {
   const saved = await readFile(FILE, 'utf8')
   for (const content of ['{broken', 'null', '[]']) {
     await writeFile(FILE, content)
-    let refused = false
-    try { await patchSettings({ theme: 'light' }) } catch { refused = true }
-    ok(refused && await readFile(FILE, 'utf8') === content, '损坏 JSON 或结构保留原文件并拒绝覆盖')
+    const { readdir } = await import('node:fs/promises')
+    const { dirname, basename } = await import('node:path')
+    const before = new Set(await readdir(dirname(FILE)))
+    let healed = false
+    try { healed = (await patchSettings({ theme: 'light' })).theme === 'light' } catch { healed = false }
+    const backups = (await readdir(dirname(FILE))).filter((name) => !before.has(name) && name.startsWith(`${basename(FILE)}.corrupt-`))
+    const kept = backups.length === 1 && await readFile(join(dirname(FILE), backups[0]), 'utf8') === content
+    ok(healed && kept && JSON.parse(await readFile(FILE, 'utf8')).theme === 'light', '损坏 JSON 或结构先备份原文件，再用默认设置继续')
   }
   await writeFile(FILE, saved)
   await patchSettings({ theme: 'dark' })
+  await writeFile(FILE, JSON.stringify({ cwd: temp, permissionMode: 'danger' }))
+  await patchSettings({ theme: 'dark' })
+  ok((await getSettings()).guardOutsideWrites === true, '新设置文件没有该项时，写入项目之外默认确认')
+  await writeFile(FILE, JSON.stringify({ cwd: temp, permissionMode: 'danger', guardOutsideWrites: false }))
+  await patchSettings({ theme: 'dark' })
+  ok((await getSettings()).guardOutsideWrites === false, '老用户已存的关闭值保持不变')
+
+  const sealOut = join(temp, 'guard-seal.mjs')
+  await build({ entryPoints: ['src/main/settings-guard-seal.ts'], outfile: sealOut, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent', plugins: [{ name: 'seal-electron-stub', setup(b) { b.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'seal-stub' })); b.onLoad({ filter: /.*/, namespace: 'seal-stub' }, () => ({ contents: ELECTRON_STUB, loader: 'js' })) } }] })
+  const { trustedGuardFields, electronGuardSealStore } = await import(pathToFileURL(sealOut).href)
+  const sealed = { permissionMode: 'all', guardOutsideWrites: true, guardAllowRoots: ['/a'] }
+  const same = trustedGuardFields(sealed, sealed)
+  ok(same.permissionMode === 'all' && same.guardOutsideWrites && same.guardAllowRoots.join() === '/a', '封签与文件一致时原样采用')
+  const weakened = trustedGuardFields({ permissionMode: 'all', guardOutsideWrites: false, guardAllowRoots: ['/a', '/b'] }, { ...sealed, permissionMode: 'danger' })
+  ok(weakened.permissionMode === 'danger' && weakened.guardOutsideWrites && weakened.guardAllowRoots.join() === '/a', '文件被改宽松时按封签恢复')
+  const stricter = trustedGuardFields({ permissionMode: 'danger', guardOutsideWrites: true, guardAllowRoots: [] }, { permissionMode: 'all', guardOutsideWrites: false, guardAllowRoots: ['/a'] })
+  ok(stricter.permissionMode === 'danger' && stricter.guardOutsideWrites && stricter.guardAllowRoots.length === 0, '文件被改得更严格时接受')
+  const unsealed = trustedGuardFields({ permissionMode: 'all', guardOutsideWrites: false, guardAllowRoots: ['/a'] }, null)
+  ok(unsealed.permissionMode === 'danger' && unsealed.guardOutsideWrites === false && unsealed.guardAllowRoots.join() === '/a', '没有封签时不信任「不受限制」，其余沿用')
+  ok(await electronGuardSealStore() === null, '没有系统加密时不启用封签')
   await rm(temp, { recursive: true, force: true })
 }
