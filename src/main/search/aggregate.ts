@@ -142,7 +142,7 @@ function cleanContent(input: unknown): string | undefined {
 }
 
 function statusOf(run: SourceRun): { status: SourceStatusKind; code?: string; message?: string } {
-  if (run.skipped) return { status: 'skipped', code: 'skipped', message: run.error?.message ?? '已有足够结果，提前停止' }
+  if (run.skipped) return { status: 'skipped', code: run.error?.code ?? 'skipped', message: run.error?.message ?? '已有足够结果，提前停止' }
   if (run.unavailable) return { status: 'unavailable', code: run.error?.code ?? 'backend_unavailable', message: run.error?.message }
   if (run.timedOut) return { status: 'timeout', code: run.error?.code ?? 'timeout', message: run.error?.message }
   if (run.error) return { status: 'error', code: run.error.code ?? 'error', message: run.error.message }
@@ -247,7 +247,7 @@ export function summarizeSources(sources: PerSourceStatus[]): string {
     }
     if (s.status === 'empty') return `${s.source} 无结果`
     if (s.status === 'timeout') return `${s.source} 超时`
-    if (s.status === 'skipped') return `${s.source} 已提前停止`
+    if (s.status === 'skipped') return s.code === 'cooldown' ? `${s.source} 冷却中已跳过` : `${s.source} 已提前停止`
     if (s.status === 'unavailable') return `${s.source} 不可用`
     return `${s.source} 出错${s.code ? `（${s.code}）` : ''}`
   }

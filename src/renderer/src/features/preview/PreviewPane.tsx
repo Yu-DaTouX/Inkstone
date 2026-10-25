@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
@@ -285,6 +285,15 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const copy = useCallback((): void => {
     if (activeAbs) void navigator.clipboard.writeText(activeAbs)
   }, [activeAbs])
+  const [exportError, setExportError] = useState<string | null>(null)
+  const exportPng = useCallback((): void => {
+    if (!activeAbs) return
+    setExportError(null)
+    void window.yan.exportHtmlImage(activeAbs).then(
+      (result) => { if (!result.ok) setExportError(result.error ?? '') },
+      (error: unknown) => setExportError(error instanceof Error ? error.message : String(error))
+    )
+  }, [activeAbs])
 
   const crumbs = useMemo(() => {
     if (!activeAbs) return []
@@ -456,6 +465,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
           { id: 'preview:open', label: text.open, icon: <ExternalLink size={14} aria-hidden />, onAction: open },
           { id: 'preview:reveal', label: text.reveal, icon: <FolderOpen size={14} aria-hidden />, onAction: reveal },
           { id: 'preview:copy', label: text.copyPath, icon: <Copy size={14} aria-hidden />, onAction: copy },
+          ...(fileHtml ? [{ id: 'preview:exportPng', label: text.exportPng, icon: <Download size={14} aria-hidden />, onAction: exportPng }] : []),
           ...(onRevealInTree && crumbs.length
             ? [{ id: 'preview:revealInTree', label: text.revealInTree, icon: <ListTree size={14} aria-hidden />, onAction: () => onRevealInTree(activeAbs) }]
             : []),
@@ -622,6 +632,21 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
             {text.liveGenerating}
           </Badge>
         </div>
+      ) : null}
+      {exportError !== null ? (
+        <Notice
+          tone="fail"
+          compact
+          className="v3-preview-export-error"
+          data-testid="v3-preview-export-error"
+          action={
+            <IconButton size="sm" aria-label={text.closeTab} onPress={() => setExportError(null)}>
+              <X size={14} />
+            </IconButton>
+          }
+        >
+          {text.exportPngFailed.replace('{error}', exportError)}
+        </Notice>
       ) : null}
     </section>
   )

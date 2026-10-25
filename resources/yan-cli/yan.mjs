@@ -31,6 +31,7 @@ const USAGE = `yan — 砚宿主能力 CLI
   yan artifact attach --path <项目内文件> [--description <说明>]
   yan artifact preview --path <项目内 HTML> [--at 1.5,4]   截图自查（视频合成逐时间点截总览图）
   yan artifact export-video --path <项目内 HTML> [--fps 30] [--out <文件.mp4>]   导出 MP4（需要系统 FFmpeg）
+  yan artifact export-image --path <项目内 HTML> [--selector <CSS>] [--scale 2] [--out <文件.png>]   导出 PNG（海报、长图）
   yan artifact style --kind <成果类型>                随机抽风格牌，用户没点名风格时开工前用
   yan artifact style --remote list [--query <词>]       远端设计系统清单（按需下载，不随包）
   yan artifact style --remote <id>                      拉取一套设计系统到本机后照它做
@@ -236,6 +237,12 @@ task-update.json：
           --out 只能写到当前项目目录里（相对路径按项目目录算），没写 .mp4 后缀时自动补上。
           需要系统里已经装好 FFmpeg（PATH 里的 ffmpeg，或用环境变量 YAN_FFMPEG 指定路径）；
           只录画面，合成里的 <audio>/<video> 不混音；时长上限 10 分钟、帧数上限 18000。
+  export-image
+          把 HTML 渲染成 PNG（海报、邀请函、长图，发朋友圈或打印用），默认输出到 HTML 同目录的同名 .png，已存在时加序号，不覆盖。
+          用法：yan artifact export-image --path <文件.html> [--selector <CSS 选择器>] [--width 1280] [--height 800] [--scale 2] [--out <文件.png>]
+          不写 --selector 和尺寸时：页面中央只有一个画面（如固定宽度的海报）就只截它，否则截整页；
+          --selector 只截指定元素；--width/--height 指定视口并截整页；--scale 是像素倍数（默认 2，上限 4）。
+          --out 只能写到当前项目目录里（相对路径按项目目录算），没写 .png 后缀时自动补上。
   style   随机抽几张风格牌（配色、字体、版式、母题），用户没点名风格时开工前用，
           用法：yan artifact style --kind <poster|dashboard|game|explainer|tool|landing|slides|video> [--count 3] [--theme light|dark]
           最近抽过的牌会尽量避开；取某一张：yan artifact style --id <牌 id 或中文名>；列出全部牌：yan artifact style --list
@@ -495,8 +502,8 @@ const GROUP_SPECS = {
     }
   },
   artifact: {
-    actions: ['attach', 'preview', 'export-video', 'style'],
-    required: { attach: ['path'], preview: ['path'], 'export-video': ['path'] }
+    actions: ['attach', 'preview', 'export-video', 'export-image', 'style'],
+    required: { attach: ['path'], preview: ['path'], 'export-video': ['path'], 'export-image': ['path'] }
   },
   image: {
     actions: ['generate', 'local'],
@@ -643,6 +650,7 @@ if (positional[0] === 'image' && positional[1] === 'local') {
   command = `${positional[0]}.${positional[1]}`
 }
 if (command === 'artifact.export-video') command = 'artifact.exportVideo'
+if (command === 'artifact.export-image') command = 'artifact.exportImage'
 if (command === 'subagent.status') command = 'subagent.get'
 
 const flagParams = {}

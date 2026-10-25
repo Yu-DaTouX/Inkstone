@@ -312,9 +312,30 @@ export async function runSearchTests(ok, mod) {
     ok(fallback.sources.map((s) => `${s.source}:${s.status}`).join(',') === 'tavily:error,bing:ok,brave:ok', '出错的来源照实汇报，后备来源排在后面')
 
     const allPaidFail = deps(async (id) =>
-      id === 'bing' ? { source: id, rows: rows(id, 3), elapsedMs: 5 } : { source: id, rows: null, error: { code: 'http_error' }, elapsedMs: 5 })
+      id === 'bing' ? { source: id, rows: rows(id, 1), elapsedMs: 5 } : { source: id, rows: null, error: { code: 'http_error' }, elapsedMs: 5 })
     await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, allPaidFail, policy)
-    ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,bing,brave,so360', '付费来源都失败 → 用上第二个网页引擎')
+    ok(allPaidFail.calls.map((c) => c.id).join(',') === 'tavily,bing,brave,so360', '付费来源都失败且网页结果不够 → 用上第二个网页引擎')
+
+    const webEnough = deps(async (id) => {
+      if (id === 'bing') { await wait(20); return { source: id, rows: rows(id, 6), elapsedMs: 20 } }
+      return { source: id, rows: null, error: { code: 'insufficient_balance' }, elapsedMs: 1 }
+    })
+    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, webEnough, { ...policy, reserve: ['so360'] })
+    ok(webEnough.calls.map((c) => c.id).join(',') === 'tavily,bing', '付费来源失败但网页引擎已够用 → 不再等第二个网页引擎', webEnough.calls.map((c) => c.id))
+
+    const { SourceCooldown } = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+      build({ entryPoints: ['src/main/search/cooldown.ts'], outfile: 'out/test/search-cooldown.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
+    ).then(() => import('../out/test/search-cooldown.mjs'))
+    const cooldown = new SourceCooldown()
+    const balance = deps(async (id) =>
+      id === 'tavily' ? { source: id, rows: null, error: { code: 'insufficient_balance', message: '余额不足' }, elapsedMs: 1 } : { source: id, rows: rows(id, 6), elapsedMs: 1 })
+    await runSearch({ text: 'q', sources: ['tavily', 'bing'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
+    const second = await runSearch({ text: 'q2', sources: ['tavily', 'bing'] }, { ...balance, cooldown }, { ...policy, reserve: [] })
+    ok(balance.calls.map((c) => c.id).join(',') === 'tavily,bing,bing', '余额不足的来源进入冷却，下一次直接跳过', balance.calls.map((c) => c.id))
+    const cooled = second.sources.find((s) => s.source === 'tavily')
+    ok(cooled?.status === 'skipped' && cooled.code === 'cooldown' && /冷却中/.test(cooled.message ?? ''), '冷却跳过照实汇报', cooled)
+    await runSearch({ text: 'q3', sources: ['tavily', 'bing'] }, { ...balance, cooldown })
+    ok(balance.calls.at(-2)?.id === 'tavily', '点名来源（没有策略）时不受冷却影响', balance.calls.map((c) => c.id))
 
     for (const [label, primaryRows, sites] of [
       ['坏行', [null, { title: 'bad', url: 'nope' }]],

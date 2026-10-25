@@ -159,6 +159,10 @@ async function rendererTests(dir) {
   equal(without.tools.map((tool) => tool.id), ['x1', 'x2'], 'turn tools drop wrap_up')
   equal(without.segments[0].tools.map((tool) => tool.id), ['x1', 'x2'], 'segment tools drop wrap_up')
   equal(without.segments[0].thinkingParts.map((part) => part.at), [0, 1, 2], 'thinking anchors after wrap_up shift back')
+  equal(m.isFillInTemplate('城市是___，场地是___，集合时间___'), true, 'underscore blanks are a fill-in template')
+  equal(m.isFillInTemplate('报名链接：【 】'), true, 'empty brackets are a fill-in template')
+  equal(m.isFillInTemplate('用同一套信息做一版 1:1 朋友圈方图'), false, 'a complete reply is sent directly')
+  equal(m.isFillInTemplate('先修 snake_case 命名'), false, 'a single underscore is not a blank')
   ok(m.withoutWrapUp(assistant) === assistant, 'turn without wrap_up keeps identity')
 }
 

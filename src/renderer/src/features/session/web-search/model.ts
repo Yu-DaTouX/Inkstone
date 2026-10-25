@@ -113,7 +113,12 @@ function firstFlag(flags: Map<string, string[]>, keys: readonly string[]): strin
 }
 
 export function parseSearchCommand(command: string | undefined | null): SearchCommand | null {
-  if (typeof command !== 'string' || !command.trim()) return null
+  return parseSearchCommands(command)[0] ?? null
+}
+
+export function parseSearchCommands(command: string | undefined | null): SearchCommand[] {
+  const found: SearchCommand[] = []
+  if (typeof command !== 'string' || !command.trim()) return found
   for (const segment of commandSegments(tokenizeCommand(command))) {
     for (let i = 0; i + 2 < segment.length; i += 1) {
       if (!YAN_BIN.test(segment[i])) continue
@@ -123,13 +128,32 @@ export function parseSearchCommand(command: string | undefined | null): SearchCo
       const flags = readFlags(segment.slice(i + 3))
       if (action === 'fetch') {
         const url = firstFlag(flags, ['url'])[0] ?? ''
-        return url ? { action, queries: [], url } : null
+        if (url) found.push({ action, queries: [], url })
+      } else {
+        const queries = firstFlag(flags, ['query-text', 'queryText', 'query', 'text'])
+        if (queries.length) found.push({ action, queries, url: '' })
       }
-      const queries = firstFlag(flags, ['query-text', 'queryText', 'query', 'text'])
-      return queries.length ? { action, queries, url: '' } : null
+      break
     }
   }
-  return null
+  return found
+}
+
+export function extractOperationIds(output: string | undefined | null): (string | null)[] {
+  if (typeof output !== 'string' || !output) return []
+  const ids: (string | null)[] = []
+  for (const raw of output.split('\n')) {
+    const line = raw.trim()
+    if (!line.startsWith('{') || !line.includes('"ok"')) continue
+    try {
+      const parsed = JSON.parse(line) as { ok?: unknown; operationId?: unknown }
+      if (parsed.ok === false) ids.push(null)
+      else if (typeof parsed.operationId === 'string' && OPERATION_ID.test(parsed.operationId)) ids.push(parsed.operationId.toLowerCase())
+    } catch {
+      continue
+    }
+  }
+  return ids
 }
 
 export function extractOperationId(output: string | undefined | null): string | null {
@@ -285,27 +309,34 @@ function directSearchCommand(name: string, args: unknown): SearchCommand | null 
 }
 
 export function searchStepOf(call: UIToolCall): SearchStep | null {
-  if (call.cancelled || call.denied) return null
-  if (call.status === 'error') return null
+  return searchStepsOf(call)[0] ?? null
+}
+
+export function searchStepsOf(call: UIToolCall): SearchStep[] {
+  if (call.cancelled || call.denied) return []
+  if (call.status === 'error') return []
   const direct = directSearchCommand(call.name, call.args)
-  if (direct) return { command: direct, operationId: null, fromTool: true, sources: searchSourcesFromDetails(call.details) }
-  if (call.name !== 'bash' && call.name !== 'powershell' && call.name !== 'shell' && call.name !== 'run' && call.name !== 'exec') return null
+  if (direct) return [{ command: direct, operationId: null, fromTool: true, sources: searchSourcesFromDetails(call.details) }]
+  if (call.name !== 'bash' && call.name !== 'powershell' && call.name !== 'shell' && call.name !== 'run' && call.name !== 'exec') return []
   const args = call.args as Record<string, unknown> | undefined
-  if (!args || typeof args !== 'object') return null
+  if (!args || typeof args !== 'object') return []
   const command = typeof args.command === 'string' ? args.command : typeof args.cmd === 'string' ? args.cmd : ''
-  const parsed = parseSearchCommand(command)
-  if (!parsed) return null
-  return { command: parsed, operationId: extractOperationId(call.output) }
+  const commands = parseSearchCommands(command)
+  if (!commands.length) return []
+  if (commands.length === 1) return [{ command: commands[0], operationId: extractOperationId(call.output) }]
+  const ids = extractOperationIds(call.output)
+  return commands.map((parsed, i) => ({ command: parsed, operationId: ids[i] ?? null }))
 }
 
 export function collectSearchOperationIds(tools: readonly UIToolCall[]): string[] {
   const ids: string[] = []
   const seen = new Set<string>()
   for (const call of tools) {
-    const step = searchStepOf(call)
-    if (!step?.operationId || seen.has(step.operationId)) continue
-    seen.add(step.operationId)
-    ids.push(step.operationId)
+    for (const step of searchStepsOf(call)) {
+      if (!step.operationId || seen.has(step.operationId)) continue
+      seen.add(step.operationId)
+      ids.push(step.operationId)
+    }
   }
   return ids
 }

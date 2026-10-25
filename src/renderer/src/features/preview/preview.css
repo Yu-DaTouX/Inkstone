@@ -650,17 +650,25 @@
 
   .v3-preview-live {
     position: absolute;
-    left: 50%;
-    bottom: var(--s-16);
-    transform: translateX(-50%);
+    right: var(--s-12);
+    bottom: var(--s-12);
     pointer-events: none;
     z-index: 1;
+    opacity: 0.92;
   }
 
   .v3-preview-live {
     border-radius: var(--r-full);
     background: var(--bg);
     box-shadow: var(--shadow-pop);
+  }
+
+  .v3-preview-export-error {
+    position: absolute;
+    left: var(--s-12);
+    right: var(--s-12);
+    bottom: var(--s-12);
+    z-index: 2;
   }
 
   .v3-preview-live .ui-badge {

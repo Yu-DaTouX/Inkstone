@@ -16,6 +16,12 @@ export interface WrapUpCardModel {
   actions: WrapUpAction[]
 }
 
+const FILL_IN_BLANK = /_{2,}|＿{2,}|【\s*】|\[\s*\]|（\s*）|\(\s*\)|\{\s*\}/
+
+export function isFillInTemplate(message: string): boolean {
+  return FILL_IN_BLANK.test(message)
+}
+
 export function isWrapUpCall(call: Pick<UIToolCall, 'name'>): boolean {
   return call.name === WRAP_UP_TOOL
 }

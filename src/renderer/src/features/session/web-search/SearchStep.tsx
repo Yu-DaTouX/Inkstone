@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { Globe } from 'lucide-react'
 import { useStore } from '../../../state/store'
-import { Avatar, Button, Card, ShimmerText } from '../../../ui'
+import { Avatar, Button, Card, ShimmerText, Skeleton } from '../../../ui'
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
 import { useCitationIndex } from './citations'
@@ -58,6 +58,7 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
   }
 
   const expanded = open && settled
+  const pending = open && !settled && !fetching
   const folded = !showAll && sources.length > SOURCE_PREVIEW + 1
 
   return (
@@ -118,12 +119,31 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
             <div className="ws-empty">{tt('empty')}</div>
           )}
         </div>
+      ) : pending ? (
+        <div className="ws-op" aria-hidden="true" data-testid="ws-sources-pending">
+          {Array.from({ length: SOURCE_PREVIEW }, (_, i) => <PendingCard key={i} index={i} />)}
+        </div>
       ) : null}
     </>
   )
 }
 
 const SOURCE_PREVIEW = 3
+
+function PendingCard({ index }: { index: number }): JSX.Element {
+  return (
+    <Card padding="sm" quiet className="ws-source ws-source-pending" style={{ '--ws-i': index } as CSSProperties}>
+      <span className="ws-source-pending-title">
+        <Skeleton width="92%" />
+        <Skeleton width="64%" />
+      </span>
+      <span className="ws-source-meta">
+        <Skeleton shape="circle" width={15} height={15} />
+        <Skeleton width="48%" />
+      </span>
+    </Card>
+  )
+}
 
 function MoreSourcesCard({ rest, onPress }: { rest: WebSearchSourceView[]; onPress: () => void }): JSX.Element {
   const tt = useWebSearchText()

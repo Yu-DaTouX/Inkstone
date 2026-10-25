@@ -31,7 +31,7 @@ const WRAP_UP_TOOL = {
           type: 'object',
           properties: {
             label: { type: 'string', description: 'Short button text.' },
-            message: { type: 'string', description: 'What the user sends by clicking, in the user\'s words.' }
+            message: { type: 'string', description: 'What the user sends by clicking, in the user\'s words: a complete reply ready to send, never a template with blanks such as ___. If the user must supply details, make the button ask you to collect them.' }
           },
           required: ['label', 'message']
         }

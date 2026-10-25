@@ -128,7 +128,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
           revision++
         }
       }
-      const generating = running
+      const generating = running && !latest.done
       const draft = latest.draft
       const drafting = !latest.done && draft !== null
       const previousFocus = current?.sessionId === sessionId && current.path === path ? current.focus : null
@@ -150,7 +150,7 @@ export function useLiveHtmlFollow(ownerKey: string | null): void {
       const openKey = `${sessionId}|${path.toLowerCase()}`
       if (!opened.has(openKey)) {
         opened.add(openKey)
-        showPreview(ownerRef.current, path, { preview: true })
+        showPreview(ownerRef.current, path, { preview: latest.id === 'thinking' })
         if (latest.id === 'thinking' && !lastCall) draftPreview = { owner: ownerRef.current, sessionId, path }
       }
     })

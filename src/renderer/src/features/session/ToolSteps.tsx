@@ -19,7 +19,7 @@ import { Icon } from './Icon'
 import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 import { SearchStepView } from './web-search/SearchStep'
-import { searchStepOf } from './web-search/model'
+import { searchStepsOf } from './web-search/model'
 
 const OUTPUT_PREVIEW_LINES = 16
 const NEST_VISIBLE = 3
@@ -131,7 +131,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
   const nested = collapsedNest(visibleNestedNodes(children, nestAll === true), children, open, running)
-  const search = nestedTitle || blocked || asking ? null : searchStepOf(call)
+  const searches = nestedTitle || blocked || asking ? [] : searchStepsOf(call)
 
   const step = (
     <>
@@ -168,7 +168,11 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 
   return (
     <div className="v3-step" data-state={call.cancelled ? 'cancelled' : denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
-      {search ? <SearchStepView call={call} step={search} glow={call.id === glowId}>{step}</SearchStepView> : step}
+      {searches.length
+        ? searches.map((search, i) => (
+            <SearchStepView key={i} call={call} step={search} glow={call.id === glowId}>{i === 0 ? step : null}</SearchStepView>
+          ))
+        : step}
     </div>
   )
 }

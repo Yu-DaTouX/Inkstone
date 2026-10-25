@@ -78,6 +78,7 @@ export const KNOWN_COMMANDS = new Set([
   'artifact.attach',
   'artifact.preview',
   'artifact.exportVideo',
+  'artifact.exportImage',
   'image.generate',
   'image.local.status',
   'image.local.start',

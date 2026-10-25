@@ -526,6 +526,7 @@ const api: YanBridge = {
     cancel: () => invoke<void>('yan:storage:cancel')
   },
   revealPath: (p) => invoke<{ ok: boolean }>('yan:revealPath', p),
+  exportHtmlImage: (p) => invoke<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>('yan:exportHtmlImage', p),
   copyImage: (dataUrl) => invoke<{ ok: boolean; error?: string }>('yan:image:copy', dataUrl),
   saveImage: (dataUrl, suggestedName) => invoke<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>('yan:image:save', dataUrl, suggestedName),
 

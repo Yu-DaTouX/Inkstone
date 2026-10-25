@@ -17,6 +17,8 @@ export interface PreviewText {
   open: string
   reveal: string
   copyPath: string
+  exportPng: string
+  exportPngFailed: string
   copyPathDone: string
   retry: string
   lineRange: string
@@ -203,6 +205,8 @@ const ZH: PreviewText = {
   open: '用系统程序打开',
   reveal: '在文件夹中显示',
   copyPath: '复制路径',
+  exportPng: '导出 PNG',
+  exportPngFailed: '导出 PNG 失败：{error}',
   copyPathDone: '已复制',
   retry: '重试',
   lineRange: '第 {start}–{end} 行',
@@ -389,6 +393,8 @@ const EN: PreviewText = {
   open: 'Open in system app',
   reveal: 'Show in folder',
   copyPath: 'Copy path',
+  exportPng: 'Export PNG',
+  exportPngFailed: 'PNG export failed: {error}',
   copyPathDone: 'Copied',
   retry: 'Retry',
   lineRange: 'Lines {start}–{end}',

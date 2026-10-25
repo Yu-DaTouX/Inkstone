@@ -5,7 +5,8 @@ import { sendAsComposerMessage } from '../../lib/composer-store-send'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { parseUserInline } from './user-text'
-import type { WrapUpCardModel } from './wrap-up'
+import { isFillInTemplate, type WrapUpCardModel } from './wrap-up'
+import { useStore } from '../../state/store'
 import './wrap-up.css'
 
 const dismissed = new Set<string>()
@@ -42,10 +43,12 @@ export function WrapUpCard({ card, dismissKey }: { card: WrapUpCardModel; dismis
   const t = useT()
   const tt = useSessionText()
   const hidden = useWrapUpDismissed(dismissKey)
+  const insertIntoComposer = useStore((s) => s.insertIntoComposer)
   if (hidden || !card.ask?.trim()) return null
   const choose = (message: string): void => {
     dismissWrapUp(dismissKey)
-    void sendAsComposerMessage(message, t)
+    if (isFillInTemplate(message)) insertIntoComposer(message)
+    else void sendAsComposerMessage(message, t)
   }
   return (
     <Card as="section" padding="sm" className="v3-wrapup" data-pending={card.ask ? '' : undefined} aria-label={tt('wrapUpLabel')} data-testid="v3-wrap-up">

@@ -369,6 +369,11 @@ export interface CapabilityRunOptions {
     root: string,
     request: { fps?: number; scale?: number; outPath?: string }
   ) => Promise<unknown>
+  exportImage?: (
+    htmlPath: string,
+    root: string,
+    request: { width?: number; height?: number; scale?: number; selector?: string; outPath?: string }
+  ) => Promise<unknown>
 }
 
 async function projectPiPackageArgs(cwd: string): Promise<string[]> {
@@ -671,6 +676,11 @@ export class AgentController extends EventEmitter {
         htmlPath: string,
         root: string,
         request: { fps?: number; scale?: number; outPath?: string }
+      ) => Promise<unknown>
+      exportImage?: (
+        htmlPath: string,
+        root: string,
+        request: { width?: number; height?: number; scale?: number; selector?: string; outPath?: string }
       ) => Promise<unknown>
     }
     observeRun?: RunObserver
@@ -1222,6 +1232,7 @@ export class AgentController extends EventEmitter {
     if (command === 'artifact.attach') return this.runArtifactAttachCommand(params)
     if (command === 'artifact.preview') return runArtifactPreview(this.capabilityOpts?.previewHtml, params.path, this.cwd, params.at)
     if (command === 'artifact.exportVideo') return this.runArtifactExportVideoCommand(params)
+    if (command === 'artifact.exportImage') return this.runArtifactExportImageCommand(params)
     if (command === 'question.ask') return this.runQuestionCommand(params, signal)
     if (command === 'office.read') return runOfficeReadCommand(this.cwd, params)
     if (command === 'file.trash') return this.runFileTrashCommand(params, signal)
@@ -1564,6 +1575,61 @@ export class AgentController extends EventEmitter {
       if (code === 'too-long') throw new CapabilityCommandError('artifact_export_too_long', message)
       if (code === 'bad-request') throw new CapabilityCommandError('artifact_path_outside', message)
       if (code === 'cancelled') throw new CapabilityCommandError('artifact_export_cancelled', message)
+      throw new CapabilityCommandError('artifact_export_failed', `导出失败：${message}`)
+    }
+  }
+
+  private async runArtifactExportImageCommand(params: Record<string, unknown>): Promise<{ data?: unknown; summary: Record<string, unknown> }> {
+    const raw = typeof params.path === 'string' ? params.path.trim() : ''
+    if (!raw) throw new CapabilityCommandError('artifact_path_missing', 'artifact.exportImage 需要 path')
+    if (!/\.html?$/i.test(raw)) throw new CapabilityCommandError('artifact_export_type', 'artifact.exportImage 只支持 .html / .htm 文件')
+    const exporter = this.capabilityOpts?.exportImage
+    if (!exporter) throw new CapabilityCommandError('artifact_export_unavailable', '当前环境不能导出图片')
+    const number = (key: string, flag: string): number | undefined => {
+      const value = params[key]
+      if (value === undefined || value === true) return undefined
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed) || parsed <= 0) throw new CapabilityCommandError('artifact_export_size', `--${flag} 需要大于 0 的数字`)
+      return parsed
+    }
+    const width = number('width', 'width')
+    const height = number('height', 'height')
+    const scale = number('scale', 'scale')
+    const selector = typeof params.selector === 'string' && params.selector.trim() ? params.selector.trim() : undefined
+    const outRaw = typeof params.out === 'string' ? params.out.trim() : typeof params.outPath === 'string' ? params.outPath.trim() : ''
+    const cwd = this.cwd
+    const htmlPath = isAbsolute(raw) ? raw : resolve(cwd, raw)
+    const outResolved = outRaw ? (isAbsolute(outRaw) ? resolve(outRaw) : resolve(cwd, outRaw)) : undefined
+    const outPath = outResolved && extname(outResolved).toLowerCase() !== '.png' ? `${outResolved}.png` : outResolved
+    if (outPath && !(await realPathWithin(cwd, outPath))) {
+      throw new CapabilityCommandError('artifact_export_out', '--out 只能写到当前项目目录里')
+    }
+    try {
+      const result = (await exporter(htmlPath, cwd, {
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(scale !== undefined ? { scale } : {}),
+        ...(selector ? { selector } : {}),
+        ...(outPath ? { outPath } : {})
+      })) as { path: string; width: number; height: number; scale: number; pixelWidth: number; pixelHeight: number; target: string; bytes: number; consoleErrors?: string[] }
+      return {
+        data: result,
+        summary: {
+          path: result.path,
+          size: `${result.width}x${result.height}`,
+          pixels: `${result.pixelWidth}x${result.pixelHeight}`,
+          target: result.target,
+          bytes: result.bytes,
+          ...(result.consoleErrors?.length ? { consoleErrors: result.consoleErrors.length } : {}),
+          note: result.target === 'poster' ? '自动识别为页面中央的单个画面并只截它；要整页或指定区域用 --width / --selector。' : result.target === 'page' ? '截的是整页。' : '截的是 --selector 指定的元素。'
+        }
+      }
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code
+      const message = error instanceof Error ? error.message : String(error)
+      if (code === 'export-busy') throw new CapabilityCommandError('artifact_export_busy', message)
+      if (code === 'bad-request') throw new CapabilityCommandError('artifact_path_outside', message)
+      if (code === 'selector-missing') throw new CapabilityCommandError('artifact_export_selector', message)
       throw new CapabilityCommandError('artifact_export_failed', `导出失败：${message}`)
     }
   }

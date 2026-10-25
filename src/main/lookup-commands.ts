@@ -19,6 +19,7 @@ import { commitKnowledge, listKnowledge, readKnowledge } from './project-memory-
 import { isSafeKnowledgeId, isSafeRelativeRef } from '../shared/project-memory'
 import { searchProjectKnowledge } from '../shared/project-memory-search'
 import { paramNumber, paramString } from './command-params'
+import { SourceCooldown } from './search/cooldown'
 
 const THIN_PAGE_CHARS = 200
 const SEARCH_CACHE_TTL_MS = 10 * 60_000
@@ -36,6 +37,7 @@ export interface LookupCommandsHost {
 export class LookupCommands {
   private searchApiHintSent = false
   private readonly searchCache = new TtlCache<SearchOutcome>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
+  private readonly searchCooldown = new SourceCooldown()
   private readonly fetchCache = new TtlCache<FetchedPage>(SEARCH_CACHE_TTL_MS, SEARCH_CACHE_MAX)
 
   constructor(private readonly host: LookupCommandsHost) {}
@@ -197,7 +199,7 @@ export class LookupCommands {
       const cacheKey = JSON.stringify({ input, policy: plan.policy ?? null })
       const { value: outcome, cached } = await this.searchCache.getOrLoad(
         cacheKey,
-        () => runSearch(input, { runner: searchRunner(), now: () => Date.now() }, plan.policy),
+        () => runSearch(input, { runner: searchRunner(), now: () => Date.now(), cooldown: this.searchCooldown }, plan.policy),
         { refresh: params.refresh === true || params.refresh === 'true', accept: (result) => !result.error && result.items.length > 0 }
       )
       return { outcome, cached }

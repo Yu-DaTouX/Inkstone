@@ -192,6 +192,23 @@ async function run() {
     ok(m.extractOperationId(undefined) === null, 'undefined 返回 null')
   }
 
+  group('一次 shell 调用里先搜索再读取：按顺序各配一个结果')
+  {
+    const FETCH_OP = '22222222-3333-4444-8555-666666666666'
+    const command = 'yan search query --query-text "IMO 2026 Leonids" 2>&1 | head -5; echo ===; yan search fetch --url "https://www.timeanddate.com/x" 2>&1 | head -30'
+    const output = [
+      JSON.stringify({ ok: true, operationId: OPERATION, summary: { kind: 'search', action: 'query' } }),
+      '===',
+      JSON.stringify({ ok: true, operationId: FETCH_OP, summary: { kind: 'search', action: 'fetch' } })
+    ].join('\n')
+    const steps = m.searchStepsOf({ id: 'c1', name: 'bash', status: 'done', args: { command }, output })
+    ok(steps.length === 2, '拆出两个步骤', steps)
+    ok(steps[0].command.action === 'query' && steps[0].operationId === OPERATION, '搜索配搜索的结果', steps[0])
+    ok(steps[1].command.action === 'fetch' && steps[1].operationId === FETCH_OP, '读取配读取的结果', steps[1])
+    ok(m.searchStepOf({ id: 'c1', name: 'bash', status: 'done', args: { command }, output }).operationId === OPERATION, '单步视图不再拿最后一个结果', null)
+    ok(JSON.stringify(m.collectSearchOperationIds([{ id: 'c1', name: 'bash', status: 'done', args: { command }, output }])) === JSON.stringify([OPERATION, FETCH_OP]), '引用编号收集两次结果')
+  }
+
   group('URL 规范化：去 hash、末尾斜杠与 utm 参数')
   {
     ok(m.normalizeUrl('https://Example.com/Post/#section') === 'https://example.com/Post', 'host 归一、去 hash 与末尾斜杠', m.normalizeUrl('https://Example.com/Post/#section'))

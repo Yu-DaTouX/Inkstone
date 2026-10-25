@@ -38,6 +38,7 @@ import { ArtifactStore, sessionArtifactDir } from './artifacts'
 import { registerHtmlArtifactProtocol, guardHtmlArtifactFrames, htmlArtifactPreviews } from './html-artifact-preview'
 import { captureHtmlPreviewShots } from './artifact-preview-shots'
 import { exportVideo } from './video-export'
+import { exportHtmlImage } from './artifact-image-export'
 import './mcp/app-protocol'
 import { readRepoState } from './git-service'
 import { configureWriteContext } from './git-actions'
@@ -1978,7 +1979,9 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
           previewHtml: (htmlPath: string, root: string, options?: { at?: number[] }) =>
             captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
           exportVideo: (htmlPath: string, root: string, request: { fps?: number; scale?: number; outPath?: string }) =>
-            exportVideo({ htmlPath, root, ...request })
+            exportVideo({ htmlPath, root, ...request }),
+          exportImage: (htmlPath: string, root: string, request: { width?: number; height?: number; scale?: number; selector?: string; outPath?: string }) =>
+            exportHtmlImage({ previews: htmlArtifactPreviews, htmlPath, root, ...request })
         },
         confirmCapabilityAuthorization: async (
           request: CapabilityAuthorizationPrompt
@@ -2794,6 +2797,24 @@ function registerIpc(): void {
     if (!p || !existsSync(p)) return { ok: false }
     shell.showItemInFolder(p)
     return { ok: true }
+  })
+
+  handle('yan:exportHtmlImage', async (htmlPath: unknown) => {
+    if (!win) return { ok: false, error: 'window:missing' }
+    if (typeof htmlPath !== 'string' || !/\.html?$/i.test(htmlPath) || !existsSync(htmlPath)) return { ok: false, error: 'export:path' }
+    const r = await dialog.showSaveDialog(win, {
+      title: '导出 PNG',
+      defaultPath: join(dirname(htmlPath), `${basename(htmlPath).replace(/\.html?$/i, '')}.png`),
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    })
+    if (r.canceled || !r.filePath) return { ok: true, canceled: true }
+    try {
+      const result = await exportHtmlImage({ previews: htmlArtifactPreviews, htmlPath, root: dirname(htmlPath), outPath: r.filePath })
+      shell.showItemInFolder(result.path)
+      return { ok: true, path: result.path }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   handle('yan:image:copy', async (dataUrl: unknown) => {

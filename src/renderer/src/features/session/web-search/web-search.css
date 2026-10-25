@@ -25,7 +25,7 @@
   .ws-cap-icon { position: relative; display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; color: var(--fg3); }
   .ws-cap-icon[data-done] { color: var(--fg2); }
   .ws-cap-icon > svg:not(.ws-ring) { position: relative; z-index: 1; }
-  .ws-ring { position: absolute; inset: -2px; width: 22px; height: 22px; overflow: visible; }
+  .ws-ring { position: absolute; inset: -2px; width: 22px; height: 22px; max-width: none; overflow: visible; }
   .ws-ring-track { fill: none; stroke: var(--line2); stroke-width: 2; }
   .ws-cap-icon[data-done] .ws-ring-track { stroke: color-mix(in srgb, var(--ok) 55%, transparent); }
   .ws-ring-arc {
@@ -76,6 +76,9 @@
     animation: ws-rise var(--dur-slow) var(--ease) both;
     animation-delay: calc(var(--ws-i, 0) * 60ms);
   }
+  .ws-source-pending.ui-card { flex-direction: column; justify-content: space-between; gap: var(--s-8); }
+  .ws-source-pending-title { display: grid; gap: var(--s-6); }
+  .ws-source-pending .ui-skeleton--text { height: 0.8em; }
   @keyframes ws-rise {
     from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
     to { opacity: 1; transform: none; filter: none; }

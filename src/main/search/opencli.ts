@@ -20,6 +20,7 @@ import {
   type SearchBackendStatus
 } from '../../shared/search'
 import { aggregate, summarizeSources, type SourceRun } from './aggregate'
+import type { SourceCooldown } from './cooldown'
 import type { SourceRequest } from './modifiers'
 
 export type AdapterRunner = (source: SearchSource, query: string, opts: SourceRequest) => Promise<SourceRun>
@@ -27,6 +28,7 @@ export type AdapterRunner = (source: SearchSource, query: string, opts: SourceRe
 export interface SearchDeps {
   runner: AdapterRunner
   now: () => number
+  cooldown?: SourceCooldown
 }
 
 export interface SearchPolicy {
@@ -459,6 +461,9 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   const primary = new Set<SearchSourceId>(policy?.primary ?? [])
   const stop = new AbortController()
   let pendingPrimary = parsed.sources.filter((s) => primary.has(s.id)).length
+  let pendingAll = parsed.sources.length
+  const cooldown = policy ? deps.cooldown : undefined
+  const allCooling = !!cooldown && [...parsed.sources, ...reserveAll].every((s) => cooldown.check(s.id, deps.now()))
   const aggregateOptions = {
     limitPerSource: parsed.limitPerSource,
     limitTotal: parsed.limitTotal,
@@ -474,22 +479,38 @@ export async function runSearch(input: SearchQuery, deps: SearchDeps, policy?: S
   }
 
   const settle = (run: SourceRun): void => {
-    if (!policy || !primary.has(run.source)) return
-    pendingPrimary--
+    pendingAll--
+    if (cooldown && !allCooling) cooldown.record(run, deps.now())
+    if (!policy) return
+    if (primary.has(run.source)) pendingPrimary--
+    if (pendingPrimary > 0 || stop.signal.aborted) return
     const primaryRows = aggregate(runs.filter((result) => primary.has(result.source)), aggregateOptions).items.length
-    if (pendingPrimary === 0 && primaryRows < policy.enoughRows && !run.skipped && reserve.length) {
-      const next = reserve.shift()!
-      primary.add(next.id)
-      pendingPrimary++
-      queue.unshift(next)
+    if (primaryRows >= policy.enoughRows) {
+      if (!grace) grace = setTimeout(() => stop.abort(), policy.graceMs)
+      return
     }
-    if (pendingPrimary === 0 && primaryRows >= policy.enoughRows && !grace) {
-      grace = setTimeout(() => stop.abort(), policy.graceMs)
+    const next = reserve[0]
+    if (!next) return
+    if (!next.needsKey) {
+      if (pendingAll > 0) return
+      if (aggregate(runs, aggregateOptions).items.length >= policy.enoughRows) return
     }
+    reserve.shift()
+    primary.add(next.id)
+    pendingPrimary++
+    pendingAll++
+    queue.unshift(next)
   }
 
   const runOne = async (source: SearchSource): Promise<void> => {
     const begun = deps.now()
+    const cooling = cooldown && !allCooling ? cooldown.check(source.id, begun) : null
+    if (cooling) {
+      const run = cooldown!.skippedRun(source.id, cooling, begun)
+      runs.push(run)
+      settle(run)
+      return
+    }
     let onAbort: (() => void) | undefined
     const aborted = new Promise<SourceRun>((resolve) => {
       onAbort = () => resolve({ source: source.id, rows: null, skipped: true, elapsedMs: deps.now() - begun })
