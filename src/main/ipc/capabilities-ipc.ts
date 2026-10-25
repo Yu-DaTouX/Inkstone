@@ -2,7 +2,7 @@ import type { IpcRegistrar } from './registrar'
 import { installOpenCli, searchDoctor } from '../search/opencli'
 import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
 import { isSearchProviderId } from '../../shared/search'
-import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, resolveComputerUseInteraction } from '../computer-use'
+import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, refreshComputerUseEntry, resolveComputerUseInteraction } from '../computer-use'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -99,6 +99,9 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   )
   handle('yan:search:setApiHintDismissed', async (dismissed: unknown) => setSearchHintDismissed(dismissed === true))
 
+  void refreshComputerUseEntry()
+    .then((changed) => (changed ? registry()?.reloadMcpServers() : undefined))
+    .catch(() => undefined)
   handle('yan:computerUse:status', async () => computerUseStatus())
   handle('yan:computerUse:installUv', async () => installUv())
   handle('yan:computerUse:resolveInteraction', async () => {

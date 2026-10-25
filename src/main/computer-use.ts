@@ -12,6 +12,7 @@ export const COMPUTER_USE_SERVER_ID = 'windows-mcp'
 // windows-mcp 0.8.6 起要求 Python >= 3.14；0.8.5 是 3.13 下最后一个可用版本。
 // 传具体版本号是为了让 uv 自动下载对应解释器，不依赖用户机器上已有的 Python。
 const WINDOWS_MCP_PYTHON = '3.14'
+const WINDOWS_MCP_PACKAGE = 'windows-mcp==0.8.8'
 
 export const COMPUTER_USE_TOOLS = [
   'Snapshot',
@@ -162,13 +163,15 @@ export async function installUv(): Promise<ComputerUseResult> {
   return { ok: false, error: `winget 没有装好 uv（退出码 ${r.code ?? '?'}）`, log: tail(r.log) }
 }
 
+const serverArgs = (): string[] => ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')]
+
 function serverEntry(uvx: string): Record<string, unknown> {
   return {
     id: COMPUTER_USE_SERVER_ID,
     title: '电脑操作（Windows-MCP）',
     transport: 'stdio',
     command: uvx,
-    args: ['--python', WINDOWS_MCP_PYTHON, 'windows-mcp', 'serve', '--tools', COMPUTER_USE_TOOLS.join(',')],
+    args: serverArgs(),
     env: { ANONYMIZED_TELEMETRY: 'false' },
     effect: 'external-action'
   }
@@ -178,7 +181,7 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   if (process.platform !== 'win32') return { ok: false, error: '电脑操作目前只支持 Windows' }
   const uvx = findUvx()
   if (!uvx) return { ok: false, error: '还没有安装 uv' }
-  const warm = await run(uvx, ['--python', WINDOWS_MCP_PYTHON, 'windows-mcp', '--help'], 10 * 60_000)
+  const warm = await run(uvx, ['--python', WINDOWS_MCP_PYTHON, WINDOWS_MCP_PACKAGE, '--help'], 10 * 60_000)
   if (warm.code !== 0) return { ok: false, error: `下载或启动 windows-mcp 失败（退出码 ${warm.code ?? '?'}）`, log: tail(warm.log) }
   try {
     await serializeServerWrite(async () => {
@@ -189,6 +192,18 @@ export async function enableComputerUse(): Promise<ComputerUseResult> {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+export async function refreshComputerUseEntry(): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  const args = serverArgs()
+  return serializeServerWrite(async () => {
+    const { shape, list, raw } = await readRawServers()
+    const stale = list.some((item) => isOurs(item) && JSON.stringify((item as { args?: unknown }).args) !== JSON.stringify(args))
+    if (!stale) return false
+    await writeServers(shape, raw, list.map((item) => (isOurs(item) ? { ...(item as object), args } : item)))
+    return true
+  })
 }
 
 export async function disableComputerUse(): Promise<ComputerUseResult> {
