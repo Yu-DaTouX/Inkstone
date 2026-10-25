@@ -77,6 +77,7 @@ export interface RailStatsInput {
   counts?: SessionTurnCounts
   historyPartial: boolean
   subagentTokens: number
+  subagentCost?: number
   speeds?: readonly number[]
   latestSpeed?: number | null
   liveSpeed?: number | null
@@ -336,7 +337,12 @@ export function buildRailStats(input: RailStatsInput): RailStatsModel | null {
   const unit = t('tok.unit')
   const historyNotes = historyPartial ? [t('sm.historyPartialTip')] : []
   const tokenNotes = [...historyNotes, ...(metrics.partial ? [t('sm.partialTip')] : [])]
-  const cost = costText(metrics, input.money ?? defaultMoney)
+  const childCost = positive(input.subagentCost) ?? 0
+  const cost = costText({
+    cost: (metrics.cost ?? 0) + childCost,
+    costEstimated: metrics.costEstimated,
+    costZero: metrics.costZero && childCost === 0
+  }, input.money ?? defaultMoney)
   const extras = [
     ...(subagentTokens > 0 && metrics.total !== null ? [`${t('sm.withSubagents')} +${steadyCount(subagentTokens)}`] : []),
     ...(cost === null ? [] : [t('sm.costLine', { cost })])

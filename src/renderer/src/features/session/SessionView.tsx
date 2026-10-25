@@ -32,7 +32,8 @@ import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
-import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, pickReadingAnchor, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
+import { domAnchor, domMetrics, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -50,27 +51,11 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
 
 const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
-const SCROLL_SNAPSHOT_LIMIT = 32
 
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
 
 const isPending = (item: RenderItem): item is PendingTurn => item.kind === 'pending'
-
-type ScrollSnapshot = { top: number; bottom: boolean; anchor: ReadingAnchor | null }
-
-function domMetrics(el: HTMLElement): ScrollMetrics {
-  return { offset: el.scrollTop, size: el.scrollHeight, viewport: el.clientHeight }
-}
-
-function domAnchor(box: HTMLElement): ReadingAnchor | null {
-  const base = box.getBoundingClientRect().top
-  const rows = [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].map((node) => {
-    const rect = node.getBoundingClientRect()
-    return { id: node.dataset.turnId ?? '', top: rect.top - base, bottom: rect.bottom - base }
-  })
-  return pickReadingAnchor(rows.filter((row) => row.id), 0)
-}
 
 function rowAnchor(box: HTMLElement): ReadingAnchor | null {
   const base = box.getBoundingClientRect().top
@@ -81,7 +66,9 @@ function rowAnchor(box: HTMLElement): ReadingAnchor | null {
   return null
 }
 
-function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>): ReadingAnchor | null {
+function virtualAnchor(handle: VListHandle, items: ReadonlyArray<RenderItem>, box: HTMLElement | null): ReadingAnchor | null {
+  const anchor = box ? domAnchor(box) : null
+  if (anchor) return anchor
   const index = handle.findItemIndex(handle.scrollOffset)
   const item = items[index]
   if (!item) return null
@@ -251,7 +238,6 @@ export function SessionView(): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const vlistRef = useRef<VListHandle>(null)
-  const scrollsRef = useRef(new Map<string, ScrollSnapshot>())
   const settlingRef = useRef(false)
   const renderTurnsRef = useRef(renderTurns)
   renderTurnsRef.current = renderTurns
@@ -264,15 +250,7 @@ export function SessionView(): JSX.Element {
   }, [])
 
   const record = useCallback((top: number, bottom: boolean, anchor: ReadingAnchor | null) => {
-    if (!identity) return
-    const map = scrollsRef.current
-    map.delete(identity)
-    map.set(identity, { top, bottom, anchor: bottom ? null : anchor })
-    while (map.size > SCROLL_SNAPSHOT_LIMIT) {
-      const oldest = map.keys().next().value
-      if (oldest === undefined) break
-      map.delete(oldest)
-    }
+    saveScrollSnapshot(identity, { top, bottom, anchor })
   }, [identity])
 
   const widthRef = useRef(0)
@@ -312,7 +290,7 @@ export function SessionView(): JSX.Element {
     metricsRef.current = metrics
     applyFollow(decision)
     if (decision.repin) h.scrollToIndex(renderTurnsRef.current.length - 1, { align: 'end' })
-    record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current))
+    record(h.scrollOffset, decision.stick, decision.stick ? null : virtualAnchor(h, renderTurnsRef.current, hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null))
   }, [record, applyFollow])
 
   useEffect(() => {
@@ -388,8 +366,8 @@ export function SessionView(): JSX.Element {
   }, [])
 
   useLayoutEffect(() => {
-    if (!identity) return undefined
-    const snap = scrollsRef.current.get(identity)
+    if (!identity || switchLoading) return undefined
+    const snap = readScrollSnapshot(identity)
     const bottom = !snap || snap.bottom
     stickRef.current = bottom
     setStick(bottom)
@@ -397,6 +375,7 @@ export function SessionView(): JSX.Element {
     intentRef.current = null
     metricsRef.current = null
     settlingRef.current = true
+    let settleRaf = 0
     const raf = requestAnimationFrame(() => {
       const anchor = snap?.anchor ?? null
       if (virtual) {
@@ -408,16 +387,25 @@ export function SessionView(): JSX.Element {
         if (!bottom && handle) setShowJump(distanceFromBottom({ offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize }) > JUMP_THRESHOLD_PX)
       } else if (streamRef.current) {
         const box = streamRef.current
-        const node = anchor ? [...box.querySelectorAll<HTMLElement>('.v3-msg[data-turn-id]')].find((el) => el.dataset.turnId === anchor.turnId) : undefined
-        if (bottom) box.scrollTop = box.scrollHeight
-        else if (anchor && node) box.scrollTop = Math.max(0, node.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop + anchor.offset)
-        else if (snap) box.scrollTop = snap.top
+        restoreDomScroll(box, snap)
         if (!bottom) setShowJump(distanceFromBottom(domMetrics(box)) > JUMP_THRESHOLD_PX)
       }
-      settlingRef.current = false
+      if (virtual && !bottom && snap) {
+        settleRaf = requestAnimationFrame(() => {
+          const box = hostRef.current?.querySelector<HTMLElement>('.v3-stream')
+          if (box) {
+            restoreDomScroll(box, snap)
+            vlistRef.current?.scrollTo(box.scrollTop)
+          }
+          settlingRef.current = false
+        })
+      } else settlingRef.current = false
     })
-    return () => cancelAnimationFrame(raf)
-  }, [identity, virtual, remountKey])
+    return () => {
+      cancelAnimationFrame(raf)
+      cancelAnimationFrame(settleRaf)
+    }
+  }, [identity, virtual, remountKey, switchLoading])
 
   useEffect(() => { remountsRef.current = 0 }, [identity])
 

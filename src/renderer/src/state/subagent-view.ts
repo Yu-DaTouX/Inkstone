@@ -164,6 +164,13 @@ export function hasVisibleSubagents(s: { subagents: SubagentRun[]; session?: { s
   return visibleSubagentRuns(s.subagents, { sessionIds }).length > 0
 }
 
+export function subagentCost(runs: readonly SubagentRun[]): number {
+  return dedupeRuns([...runs]).reduce((sum, run) => {
+    const cost = run.usage?.cost
+    return sum + (typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : 0)
+  }, 0)
+}
+
 export function subagentTokens(runs: readonly SubagentRun[]): number {
   let sum = 0
   for (const run of runs) {

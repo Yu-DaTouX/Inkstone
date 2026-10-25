@@ -132,13 +132,17 @@ async function main() {
     Array.from({ length: 250 }, (_, i) => todo(`t${i}`, { done: i % 2 === 0 })),
     false
   )
-  ok(long.total === 250 && long.rows.length === 250 && long.done === 125, '超长列表：总数与完成数如实，逐行不丢', { total: long.total, done: long.done, rows: long.rows.length })
+  ok(long.total === 250 && long.rows.length === 250 && long.done === 125, '超长列表：完整清单与统计不丢', { total: long.total, done: long.done, rows: long.rows.length })
+  ok(Model.TODO_TILE_VISIBLE_LIMIT === 6 && long.visibleRows.length === 6, '进度卡最多显示六条')
+  const late = Model.buildTodoTileModel(Array.from({ length: 20 }, (_, i) => todo(`late${i}`, { status: i === 17 ? 'running' : 'done' })), true)
+  ok(late.visibleRows.length === 6 && late.visibleRows.some((row) => row.index === 17), '清单较长时仍显示当前进行项')
+  ok(empty.visibleRows.length === 0 && allDone.visibleRows.length === 2, '空清单和短清单不填充占位行')
 
   const emptyHtml = render({ todos: [] })
   ok(!emptyHtml.includes('data-testid="v3-todo-row"'), '无待办时没有任何清单行', emptyHtml)
 
   const partialHtml = render({ todos: [todo('写模型'), todo('做磁贴', { done: true }), todo('跑测试')] })
-  ok(partialHtml.includes('data-testid="v3-todo-scroll"'), '有待办时有内部滚动容器')
+  ok(partialHtml.includes('data-testid="v3-todo-scroll"'), '有待办时有进度清单容器')
   ok((partialHtml.match(/data-testid="v3-todo-row"/g) ?? []).length === 3, '逐行渲染清单')
   ok(partialHtml.includes('data-kind="done"') && partialHtml.includes('lucide-check'), '完成项打勾')
   ok(!partialHtml.includes('ui-spinner'), '没有 status 且回合未跑：不画进行中')
@@ -153,7 +157,7 @@ async function main() {
   ok(blockedHtml.includes('data-kind="blocked"') && blockedHtml.includes('lucide-circle-alert') && blockedHtml.includes('受阻'), 'blocked 行有图标与文字，可与待办区分')
 
   const longHtml = render({ todos: Array.from({ length: 250 }, (_, i) => todo(`任务 ${i}`, { done: i % 2 === 0 })) })
-  ok((longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length === 250, '超长列表 250 行全部在滚动容器内渲染', (longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length)
+  ok((longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length === 6, '超长列表只渲染六行，不嵌套滚动', (longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length)
   ok(Model.buildTodoTileModel(Array.from({ length: 250 }, (_, i) => todo(`t${i}`, { done: i % 2 === 0 })), false).done === 125, '超长列表完成数正确')
 
   const enHtml = render({ todos: [todo('blocked', { status: 'blocked' })], lang: 'en-US' })
@@ -174,7 +178,7 @@ async function main() {
   const css = await readFile(join(ROOT, 'src/renderer/src/features/todos/todo-tile.css'), 'utf8')
   const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
   ok(cssCode.includes('@layer features'), '专属 CSS 落在 features 层')
-  ok(cssCode.includes('max-height: 152px') && cssCode.includes('overflow-y: auto'), '高度有上限，超出在磁贴内部滚动')
+  ok(!cssCode.includes('overflow-y: auto') && !cssCode.includes('overscroll-behavior: contain'), '不截住滚轮，会话栏统一滚动')
   ok(!cssCode.includes('@import') && !cssCode.includes('.rp-') && !/styles\/|chat\.css/.test(cssCode), 'CSS 只做版面，不引 v2 样式、不回写 v2 类名')
 
   const pushConsumers = await readFile(join(ROOT, 'src/renderer/src/state/push-consumers.ts'), 'utf8')

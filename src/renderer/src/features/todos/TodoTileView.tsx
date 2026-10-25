@@ -22,7 +22,7 @@ export function TodoTileRows({ model, text }: { model: TodoTileModel; text: Todo
   return (
     <div className="v3-todo-scroll" data-testid="v3-todo-scroll">
       <ul className="v3-todo-list">
-        {model.rows.map((row) => (
+        {model.visibleRows.map((row) => (
           <li key={row.index} className="v3-todo-row" data-kind={row.kind} data-testid="v3-todo-row" title={row.text}>
             <span className="v3-todo-mark">
               {row.kind === 'done' ? <Check size={12} aria-hidden /> : null}

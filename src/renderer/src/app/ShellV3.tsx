@@ -149,9 +149,13 @@ export default function ShellV3(): ReactElement {
   useLayoutEffect(() => {
     const body = bodyRef.current
     if (!body) return
-    const observer = new ResizeObserver(() => setBodyWidth(body.clientWidth))
+    const updateSize = (): void => {
+      setBodyWidth(body.clientWidth)
+      body.style.setProperty('--sidebar-offset', `${Math.max(0, body.getBoundingClientRect().left)}px`)
+    }
+    const observer = new ResizeObserver(updateSize)
     observer.observe(body)
-    setBodyWidth(body.clientWidth)
+    updateSize()
     return () => observer.disconnect()
   }, [])
   useV3RouteSync()

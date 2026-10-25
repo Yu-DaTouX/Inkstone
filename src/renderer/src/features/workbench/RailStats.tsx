@@ -3,7 +3,7 @@ import { MiniBars, SegmentBar, Separator, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
 import { useStreamingThrottledStore } from '../../state/streaming-throttle'
-import { selectSubagentRuns, subagentTokens } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentCost, subagentScopeForView, subagentTokens } from '../../state/subagent-view'
 import { useMoney } from '../usage/UsageOverview'
 import {
   liveActivitySince,
@@ -47,7 +47,10 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
   const stats = useStore((s) => s.stats)
   const peekNote = useStore((s) => s.peekNote)
   const subagents = useStore((s) => s.subagents)
-  const viewSessionId = useStore((s) => s.peekedSessionId ?? s.session?.sessionId ?? null)
+  const session = useStore((s) => s.session)
+  const peekedSessionId = useStore((s) => s.peekedSessionId)
+  const peekedPath = useStore((s) => s.peekedPath)
+  const runners = useStore((s) => s.runners)
   const historyPartial = (peekNote?.truncated ?? 0) > 0
   return useMemo(() => {
     if (!enabled) return null
@@ -55,14 +58,13 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
     const { settled, live } = splitLiveStep(messages, liveId)
     const liveReading = liveStepSpeed(live)
     const metrics = projectSessionMetrics(settled, stats, { historyPartial })
-    const subTokens = subagentTokens(
-      selectSubagentRuns(subagents, { sessionIds: viewSessionId ? [viewSessionId] : [] }).all
-    )
+    const runs = selectSubagentRuns(subagents, subagentScopeForView({ session, peekedSessionId, peekedPath, runners })).all
     return buildRailStats({
       metrics,
       counts: sessionTurnCounts(messages),
       historyPartial,
-      subagentTokens: subTokens,
+      subagentTokens: subagentTokens(runs),
+      subagentCost: subagentCost(runs),
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
       latestSpeed: stepSpeed(settled.findLast((message) => message.role === 'assistant')),
       liveSpeed: live ? (liveReading?.speed ?? null) : undefined,
@@ -71,7 +73,7 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
       money,
       t
     })
-  }, [enabled, snapshot, stats, historyPartial, subagents, viewSessionId, money, t])
+  }, [enabled, snapshot, stats, historyPartial, subagents, session, peekedSessionId, peekedPath, runners, money, t])
 }
 
 function useLiveClock(active: boolean): number {

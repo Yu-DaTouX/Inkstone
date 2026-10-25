@@ -40,7 +40,7 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
               data-testid="attachment-open"
               onClick={() => setViewing(n)}
             >
-              <InlineImage className="ca-thumb" src={`data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
+              <InlineImage className="ca-thumb" src={a.preview.startsWith('data:') ? a.preview : `data:${a.mimeType};base64,${a.preview}`} alt={a.name} />
             </button>
           )}
           {a.kind !== 'file' ? (

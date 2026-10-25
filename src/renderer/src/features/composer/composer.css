@@ -10,6 +10,10 @@
     --think-max: var(--fail);
   }
 
+  .isolation-merge {
+    flex-wrap: wrap;
+  }
+
   .composer-wrap {
     position: relative;
     display: flex;

@@ -211,4 +211,11 @@ assert.equal(latestUnknown.glance.metric.value, '—', '最新一步缺可靠计
 assert.equal(latestUnknown.speed.value, '—', '展开与收起的未知状态一致')
 assert.equal(build1({}, { speeds: [200, 1387], latestSpeed: 139 }).glance.metric.value, '139', '优先使用最新步骤的实际测速')
 
+assert.ok(build1({ cost: 0.4 }, { subagentCost: 0.6 }).extras.includes('sm.costLine(cost=$1.00)'), '费用合并主会话和子代理，不分成两笔')
+assert.ok(build1({ cost: 0, costZero: true }, { subagentCost: 0.6 }).extras.includes('$0.60'), '主会话报零也显示子代理费用')
+assert.ok(build1({ cost: null }, { subagentCost: 0.6 }).extras.includes('$0.60'), '主会话未报告时保留已知子代理费用')
+assert.ok(build1({ cost: 0.4, costEstimated: 0.1 }, { subagentCost: 0.6 }).extras.includes('≈$1.00'), '合计保留主会话估算标记')
+assert.equal(build1({ cost: 0.4 }, { subagentCost: Number.NaN }).extras, build1({ cost: 0.4 }).extras, '异常子代理费用不污染合计')
+assert.equal(build1({ cost: 0.4 }, { subagentCost: -1 }).extras, build1({ cost: 0.4 }).extras)
+
 console.log('rail-stats ok')

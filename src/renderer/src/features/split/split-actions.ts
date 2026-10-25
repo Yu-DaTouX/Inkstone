@@ -15,6 +15,8 @@ import { sideBySideCandidate } from '../../app/SideBySideLayout'
 import { applySessionDrop, defaultDropTarget, dropContextFor, type SplitDropTarget } from './split-drop-model'
 import { neighbourSplitPane, nextSplitPane, sessionPaneCount, type SplitDirection } from './split-nav'
 import { splitText } from './split-text'
+import { domAnchor, domMetrics, saveScrollSnapshot } from '../session/scroll-position'
+import { distanceFromBottom } from '../session/scroll-follow'
 
 export const SPLIT_RUNNER_LIMIT = 3
 
@@ -43,6 +45,14 @@ export function focusSplitSession(target: SplitSessionRef): void {
   const store = useStore.getState()
   store.requestComposerFocus(target)
   if (sameSplitSession(displayedSessionOf(store), target)) return
+  if (typeof document !== 'undefined') {
+    for (const pane of document.querySelectorAll<HTMLElement>('[data-scroll-key]')) {
+      const stream = pane.querySelector<HTMLElement>('.v3-stream')
+      if (!stream) continue
+      const bottom = distanceFromBottom(domMetrics(stream)) <= 1
+      saveScrollSnapshot(pane.dataset.scrollKey ?? '', { top: stream.scrollTop, bottom, anchor: bottom ? null : domAnchor(stream) })
+    }
+  }
   if (target.path) {
     void store.switchSession(target.path)
     return

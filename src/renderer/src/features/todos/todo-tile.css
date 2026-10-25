@@ -1,10 +1,4 @@
 @layer features {
-  .v3-todo-scroll {
-    max-height: 152px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   .v3-todo-list {
     display: flex;
     flex-direction: column;

@@ -17,6 +17,7 @@ async function load(name, entry, external = []) {
 
 const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal-fade.ts')
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
+const position = await load('scroll-position', 'src/renderer/src/features/session/scroll-position.ts')
 const receipt = await load('question-receipt', 'src/renderer/src/features/session/question-receipt.ts')
 const highlight = await load('code-highlight', 'src/renderer/src/lib/code-highlight.ts')
 const math = await load('markdown-math', 'src/renderer/src/features/session/markdown-math.ts', ['remark-math', 'rehype-katex', 'katex', 'katex/*'])
@@ -119,6 +120,44 @@ check('跟随：阅读锚点取视口顶部所在的回合', () => {
   assert.equal(follow.pickReadingAnchor([], 0), null)
   assert.equal(follow.isScrollIntentKey('PageUp'), true)
   assert.equal(follow.isScrollIntentKey('a'), false)
+})
+
+check('分屏：滚动位置跨视图实例共享，Windows 路径大小写与斜杠一致', () => {
+  const snapshot = { top: 420, bottom: false, anchor: { turnId: 'turn-b', offset: 20 } }
+  position.saveScrollSnapshot('C:/Sessions/Chat.jsonl', snapshot)
+  assert.deepEqual(position.readScrollSnapshot('c:\\sessions\\chat.jsonl'), snapshot)
+  position.saveScrollSnapshot('other', { top: 500, bottom: true, anchor: { turnId: 'discard', offset: 0 } })
+  assert.equal(position.readScrollSnapshot('other').anchor, null)
+  assert.equal(position.readScrollSnapshot('missing'), undefined)
+  position.saveScrollSnapshot('', snapshot)
+  assert.equal(position.readScrollSnapshot(''), undefined)
+})
+
+check('分屏：切焦点后按回合锚点恢复，允许编辑器高度和上方内容变化', () => {
+  const box = {
+    scrollTop: 200,
+    scrollHeight: 2000,
+    clientHeight: 500,
+    getBoundingClientRect: () => ({ top: 100 }),
+    querySelectorAll: () => [
+      { dataset: { turnId: 'a' }, getBoundingClientRect: () => ({ top: -300, bottom: -10 }) },
+      { dataset: { turnId: 'b' }, getBoundingClientRect: () => ({ top: 80, bottom: 400 }) }
+    ]
+  }
+  assert.deepEqual(position.domMetrics(box), { offset: 200, size: 2000, viewport: 500 })
+  assert.deepEqual(position.domAnchor(box), { turnId: 'b', offset: 20 })
+  position.restoreDomScroll(box, { top: 999, bottom: false, anchor: { turnId: 'b', offset: 40 } })
+  assert.equal(box.scrollTop, 220, '保持相同回合及回合内偏移，不沿用不同视图的绝对位置')
+  position.restoreDomScroll(box, { top: 333, bottom: false, anchor: { turnId: 'gone', offset: 0 } })
+  assert.equal(box.scrollTop, 333, '锚点丢失时回退绝对位置')
+  position.restoreDomScroll(box, { top: 0, bottom: true, anchor: null })
+  assert.equal(box.scrollTop, 2000, '原来贴底的视图继续贴底')
+})
+
+check('分屏：共享滚动记录有界，不无限保留历史会话', () => {
+  for (let i = 0; i < 33; i += 1) position.saveScrollSnapshot(`bounded-${i}`, { top: i, bottom: false, anchor: null })
+  assert.equal(position.readScrollSnapshot('bounded-0'), undefined)
+  assert.equal(position.readScrollSnapshot('bounded-32').top, 32)
 })
 
 check('提问回执：运行中、已答、跳过、失败', () => {

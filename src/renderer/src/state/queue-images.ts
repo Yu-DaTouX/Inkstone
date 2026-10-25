@@ -53,7 +53,7 @@ export function queueImagesToAttachments(
       mimeType,
       size: decodedBytes(base64),
       data: base64,
-      preview: dataUrl ? image.data : `data:${mimeType};base64,${base64}`,
+      preview: base64,
       kind: 'image'
     })
   }

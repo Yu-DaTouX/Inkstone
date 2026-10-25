@@ -13,6 +13,7 @@ import type { WorkbenchTabId } from '../features/workbench/types'
 import { newestMessages } from '../state/split-snapshots'
 import { withSubmittingMessages } from '../state/submitting-messages'
 import { SessionView } from '../features/session/SessionView'
+import { domAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot } from '../features/session/scroll-position'
 import type { TurnSubagentScope } from '../state/subagent-view'
 import { Composer } from '../features/composer/Composer'
 import { TurnView } from '../features/session/TurnView'
@@ -236,6 +237,7 @@ function PaneFrame({
       data-row={target.below ? '1' : '0'}
       data-testid="v3-split-col"
       data-pane={target.sessionId ?? target.path ?? ''}
+      data-scroll-key={tool ? undefined : target.path ?? target.sessionId ?? ''}
       data-tile-key={key}
       data-split-index={index}
       data-tool-tile={tool ?? undefined}
@@ -350,6 +352,15 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
 
   const streamRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
+  const identity = target.path ?? target.sessionId ?? ''
+  const hasTurns = turns.length > 0
+  useLayoutEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    const snapshot = readScrollSnapshot(identity)
+    stickRef.current = !snapshot || snapshot.bottom
+    restoreDomScroll(el, snapshot)
+  }, [identity, hasTurns])
   useLayoutEffect(() => {
     const el = streamRef.current
     if (el && stickRef.current) el.scrollTop = el.scrollHeight
@@ -378,6 +389,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
           onScroll={(event) => {
             const el = event.currentTarget
             stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 1
+            saveScrollSnapshot(identity, { top: el.scrollTop, bottom: stickRef.current, anchor: stickRef.current ? null : domAnchor(el) })
           }}
         >
           <div className="v3-stream-inner">

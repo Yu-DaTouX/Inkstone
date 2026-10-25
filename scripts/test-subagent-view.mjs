@@ -1,5 +1,5 @@
 export async function runSubagentViewTests(ok) {
-  const { dedupeRuns, selectSubagentRuns, subagentRunsForTurnScope, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
+  const { dedupeRuns, selectSubagentRuns, subagentCost, subagentRunsForTurnScope, subagentTabId, visibleSubagentRuns } = await import('../out/test/subagent-view.mjs')
 
   console.log('\n--- H-10a 子代理运行归属 ---')
   const run = (id, extra = {}) => ({
@@ -46,6 +46,18 @@ export async function runSubagentViewTests(ok) {
   ok(twenty.all.length === 20 && twenty.running === 10, '20 个任务计数与 running 正确')
   const withDuplicate = [...manyRuns, run('r0', { parentSessionId: 'S', status: 'done' })]
   ok(selectSubagentRuns(withDuplicate, { sessionIds: ['S'] }).all.length === 20, '20 个任务重复推送不会变成 21')
+
+  const costs = selectSubagentRuns([
+    run('a', { parentSessionId: 'S', usage: { cost: 0.2 } }),
+    run('b', { parentSessionId: 'S', usage: { cost: 0.3 } }),
+    run('a', { parentSessionId: 'S', usage: { cost: 0.4 } }),
+    run('foreign', { parentSessionId: 'OTHER', usage: { cost: 99 } }),
+    run('missing', { parentSessionId: 'S' }),
+    run('invalid', { parentSessionId: 'S', usage: { cost: Number.NaN } })
+  ], { sessionIds: ['S'] }).all
+  ok(Math.abs(subagentCost(costs) - 0.7) < 1e-9, '费用只合计当前会话子代理并去重，未知费用不污染结果')
+  ok(subagentCost([run('same', { usage: { cost: 3 } }), run('same', { usage: { cost: 4 } })]) === 4, '同一子代理只计最后一次费用快照')
+  ok(subagentCost([]) === 0 && subagentCost([run('bad', { usage: { cost: -1 } })]) === 0, '空集合与无效费用均为零')
 
   const now = 1_000_000
   const finished = (id, review) => run(id, { parentSessionId: 'S', status: 'done', endedAt: now - 1000, review })

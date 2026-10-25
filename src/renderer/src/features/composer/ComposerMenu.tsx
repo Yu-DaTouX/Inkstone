@@ -246,7 +246,7 @@ export function ComposerMenu({
               onClick={() => completion.completeImage(option)}
             >
               <span className="cmp-name">
-                <InlineImage className="cmp-thumb" src={`data:${option.attachment.mimeType};base64,${option.attachment.preview}`} alt="" />
+                <InlineImage className="cmp-thumb" src={option.attachment.preview.startsWith('data:') ? option.attachment.preview : `data:${option.attachment.mimeType};base64,${option.attachment.preview}`} alt="" />
                 <Hit text={option.label} query={query} />
               </span>
               <span className="cmp-desc">{option.attachment.name}</span>
