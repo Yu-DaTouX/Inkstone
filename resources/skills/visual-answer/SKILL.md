@@ -1,6 +1,6 @@
 ---
 name: visual-answer
-description: 要在回答里写 yan-chart、yan-stats、yan-cards 等图形块或 mermaid 图时使用，给出各块的字段格式。
+description: 写 yan-chart、yan-stats、yan-cards 等回答块或 mermaid 图前读取，含各块字段格式。
 ---
 
 # 结构化回答块

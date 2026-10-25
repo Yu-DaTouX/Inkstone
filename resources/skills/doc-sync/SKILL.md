@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: 用户要求同步或更新文档，或项目约定（AGENTS.md / CLAUDE.md 等）要求改代码时同步文档时使用；两者都没有时，普通编码任务收尾不用这个技能。
+description: 用户要求同步或更新文档，或项目约定（AGENTS.md / CLAUDE.md 等）要求同步文档时使用；普通编码任务收尾不用。
 ---
 
 # 代码改完同步文档
