@@ -117,6 +117,9 @@ function parseGenerationTimings(raw: unknown[]): (GenerationTiming | null)[] {
     if (typeof g.decodeMs === 'number' && Number.isFinite(g.decodeMs) && g.decodeMs >= 0) {
       out.decodeMs = Math.max(1, Math.round(g.decodeMs))
     }
+    if (typeof g.outputDecodeMs === 'number' && Number.isFinite(g.outputDecodeMs) && g.outputDecodeMs >= 0) {
+      out.outputDecodeMs = Math.max(1, Math.round(g.outputDecodeMs))
+    }
     return out
   })
 }

@@ -206,4 +206,9 @@ assert.ok(build1({}, { speeds: [76.6] }).glance.title.includes('76.6 tok.perSec'
 assert.ok(!glanceLive.glance.title.includes('42.3'), '当前步 tooltip 不再混入旧会话均速')
 assert.equal(GLANCE_BARS, 3)
 
+const latestUnknown = build1({}, { speeds: [200, 1387], latestSpeed: null })
+assert.equal(latestUnknown.glance.metric.value, '—', '最新一步缺可靠计时，不回退为较早步骤的高速样本')
+assert.equal(latestUnknown.speed.value, '—', '展开与收起的未知状态一致')
+assert.equal(build1({}, { speeds: [200, 1387], latestSpeed: 139 }).glance.metric.value, '139', '优先使用最新步骤的实际测速')
+
 console.log('rail-stats ok')

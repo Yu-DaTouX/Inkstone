@@ -23,7 +23,7 @@ import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
 import { normalizeUsageCurrency } from '../shared/currency'
-import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset } from '../shared/appearance'
+import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sanitizeFontName, sanitizeFontSize, sanitizeFontUiPreset, sanitizeStreamWidth } from '../shared/appearance'
 import { allowedSiteList } from './preview-site-access'
 
 const DIR = YAN_DIR
@@ -229,6 +229,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.fontCode = sanitizeFontCodePreset(settings.fontCode)
   settings.fontCodeCustom = sanitizeFontName(settings.fontCodeCustom)
   settings.fontSizeUi = sanitizeFontSize(settings.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
+  settings.streamWidth = sanitizeStreamWidth(settings.streamWidth)
   settings.reduceMotion = settings.reduceMotion === true ? true : undefined
   settings.autoArchiveDays = normalizeAutoArchiveDays(settings.autoArchiveDays) || undefined
   settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
@@ -322,7 +323,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)

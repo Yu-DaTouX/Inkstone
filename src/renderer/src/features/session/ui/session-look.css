@@ -53,17 +53,12 @@
     box-shadow: var(--shadow-ring);
     overflow: hidden;
   }
-  .v3-code-head { position: absolute; top: var(--s-4); right: var(--s-8); z-index: 1; display: flex; align-items: center; gap: var(--s-2); opacity: 0; transition: opacity var(--dur-snap) var(--ease); }
-  .v3-code:hover .v3-code-head, .v3-code:focus-within .v3-code-head { opacity: 1; }
-  @media (pointer: coarse) { .v3-code-head { opacity: 1; } }
+  .v3-code-head { display: flex; align-items: center; gap: var(--s-2); min-width: 0; padding: var(--s-4) var(--s-8); }
   .v3-code-lang { padding: 0 var(--s-4); color: var(--fg3); font-size: var(--t-caption); text-transform: lowercase; }
   .v3-code-sp { flex: 1 1 auto; }
-  .v3-code-act { display: inline-flex; align-items: center; justify-content: center; width: var(--size-btn); height: var(--size-btn); border: 0; border-radius: var(--r-sm); background: var(--surface); color: var(--fg3); cursor: pointer; }
-  .v3-code-act:hover { color: var(--fg); background: var(--hover); }
-  .v3-code-act:active { color: var(--fg); background: var(--press); }
-  .v3-code-act:focus-visible { outline: none; box-shadow: var(--ring-focus-inset); }
-  .v3-code-act[aria-pressed='true'] { color: var(--accent-t); }
-  .v3-code pre { margin: 0; padding: var(--s-8) calc(var(--s-10) + 1ch); padding-right: 72px; overflow-x: auto; font-family: var(--font-mono); font-size: var(--t-code); line-height: var(--t-code-lh); tab-size: 2; }
+  .v3-code-act { flex: none; }
+  .v3-code pre { margin: 0; padding: var(--s-8) calc(var(--s-10) + 1ch); overflow-x: auto; font-family: var(--font-mono); font-size: var(--t-code); line-height: var(--t-code-lh); tab-size: 2; }
+  .v3-code-reading { min-width: 0; padding: var(--s-8) var(--s-16) var(--s-16); }
   .v3-code pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-code code { color: var(--fg); background: none; }
 

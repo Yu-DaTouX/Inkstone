@@ -35,17 +35,21 @@ export interface GenerationTimingInput {
   startedMono: number
   endedMono: number
   firstContentMono?: number
+  firstOutputMono?: number
   startEvent?: 'turn_start'
 }
 
 export function generationTiming(input: GenerationTimingInput): GenerationTiming | undefined {
-  const { startedMono, endedMono, firstContentMono, startEvent } = input
+  const { startedMono, endedMono, firstContentMono, firstOutputMono, startEvent } = input
   if (!Number.isFinite(startedMono) || !Number.isFinite(endedMono)) return undefined
   const result: GenerationTiming = { durationMs: Math.max(1, Math.round(endedMono - startedMono)) }
   if (startEvent === 'turn_start') result.startEvent = 'turn_start'
   if (firstContentMono !== undefined && Number.isFinite(firstContentMono)) {
     result.ttftMs = Math.max(1, Math.round(firstContentMono - startedMono))
     result.decodeMs = Math.max(1, Math.round(endedMono - firstContentMono))
+  }
+  if (firstOutputMono !== undefined && Number.isFinite(firstOutputMono)) {
+    result.outputDecodeMs = Math.max(1, Math.round(endedMono - firstOutputMono))
   }
   return result
 }

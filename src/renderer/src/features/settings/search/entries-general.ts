@@ -2,6 +2,7 @@ import type { SettingsSearchEntry } from './search-model'
 
 export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'appearance-theme', section: 'appearance', zh: '主题', en: 'Theme', keywords: ['深色', '浅色', '暗色', 'dark', 'light', '夜间'] },
+  { id: 'appearance-stream-width', section: 'appearance', zh: '消息流宽度', en: 'Message width', keywords: ['正文宽度', '会话宽度', '阅读宽度', '输入框宽度', 'message width', 'stream width', 'chat width'] },
   { id: 'appearance-language', section: 'appearance', zh: '语言', en: 'Language', keywords: ['中文', 'English', '英文', 'lang', 'locale'] },
   { id: 'appearance-density', section: 'appearance', zh: '字号与密度', en: 'Text size & density', keywords: ['界面字号', '字体大小', '文字大小', '界面密度', '紧凑', '舒适', '宽松', '行距', 'font size', 'compact', 'comfortable'] },
   { id: 'appearance-workspace-tiles', section: 'appearance', zh: '工具磁贴', en: 'Tool tiles', keywords: ['磁贴', '状态磁贴', 'tiles', 'workspace'] },

@@ -78,6 +78,7 @@ export interface RailStatsInput {
   historyPartial: boolean
   subagentTokens: number
   speeds?: readonly number[]
+  latestSpeed?: number | null
   liveSpeed?: number | null
   liveSpeedEstimated?: boolean
   liveSince?: number | null
@@ -257,11 +258,11 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
 
 function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed | null {
   const bars = (input.speeds ?? []).filter((v) => Number.isFinite(v) && v > 0)
-  if (metrics.tps === null && bars.length === 0 && input.liveSpeed === undefined) return null
+  if (metrics.tps === null && bars.length === 0 && input.liveSpeed === undefined && input.latestSpeed === undefined) return null
   const { t } = input
   const perSec = t('tok.perSec')
   const live = input.liveSpeed === undefined ? undefined : input.liveSpeed !== null && Number.isFinite(input.liveSpeed) && input.liveSpeed > 0 ? input.liveSpeed : null
-  const latest = bars.length > 0 ? bars[bars.length - 1] : null
+  const latest = input.latestSpeed === undefined ? bars.at(-1) ?? null : positive(input.latestSpeed)
   const estimated = live !== undefined && live !== null && input.liveSpeedEstimated === true
   const caption = [
     ...(bars.length > 0 ? [t('sm.recentSteps', { n: bars.length })] : []),
@@ -272,7 +273,7 @@ function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed |
     label: t('sm.tps'),
     value:
       live === undefined
-        ? tpsNumber(latest ?? metrics.tps)
+        ? tpsNumber(input.latestSpeed === undefined ? latest ?? metrics.tps : latest)
         : `${estimated ? '≈' : ''}${tpsNumber(live)}`,
     unit: perSec,
     bars,
@@ -302,7 +303,7 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
   const live = positive(input.liveSpeed)
   const liveEstimated = running && live !== null && input.liveSpeedEstimated === true
   const hit = metrics.hitRate !== null && Number.isFinite(metrics.hitRate) ? Math.min(100, Math.max(0, metrics.hitRate)) : null
-  const settledSpeed = bars.length > 0 ? bars[bars.length - 1] : positive(metrics.tps)
+  const settledSpeed = input.latestSpeed === undefined ? bars.at(-1) ?? positive(metrics.tps) : positive(input.latestSpeed)
   const metric: RailGlanceMetric = running
     ? {
         kind: 'speed',
@@ -312,7 +313,7 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
         pending: live,
         ...(liveEstimated ? { estimated: true } : {})
       }
-    : settledSpeed !== null
+    : settledSpeed !== null || input.latestSpeed !== undefined
       ? { kind: 'speed', value: tpsNumber(settledSpeed), unit: perSec, bars: null, pending: null }
       : metrics.total !== null
         ? { kind: 'tokens', value: `${metrics.partial ? '≥' : ''}${steadyCount(metrics.total)}`, unit }

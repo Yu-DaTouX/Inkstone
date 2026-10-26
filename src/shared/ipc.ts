@@ -123,6 +123,7 @@ export interface GenerationTiming {
   durationMs: number
   ttftMs?: number
   decodeMs?: number
+  outputDecodeMs?: number
   startEvent?: 'turn_start'
 }
 
@@ -781,6 +782,7 @@ export interface AppSettings {
   fontCode?: 'maple' | 'custom'
   fontCodeCustom?: string
   fontSizeUi?: number
+  streamWidth?: number
   reduceMotion?: boolean
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean

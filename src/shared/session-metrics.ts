@@ -56,9 +56,9 @@ function sanitizeUsage(usage: Usage | undefined): Usage | undefined {
 const MIN_DECODE_MS = 150
 const MAX_PLAUSIBLE_TPS = 5000
 
-function visibleOutput(m: UIMessage, usage: Usage | undefined): number {
+function visibleOutput(usage: Usage | undefined): number {
   if (!usage) return 0
-  const hidden = usage.reasoning && !m.thinking ? Math.min(usage.reasoning, usage.output) : 0
+  const hidden = Math.min(usage.reasoning ?? 0, usage.output)
   return usage.output - hidden
 }
 
@@ -88,8 +88,12 @@ export interface StepDecode {
 export function stepDecode(m: UIMessage): StepDecode | null {
   if (m.role !== 'assistant') return null
   const gt = m.generationTiming
-  const tokens = visibleOutput(m, sanitizeUsage(m.usage))
-  const ms = gt && isNonNegative(gt.decodeMs) ? gt.decodeMs : 0
+  const usage = sanitizeUsage(m.usage)
+  const tokens = visibleOutput(usage)
+  const decodeMs = usage?.reasoning
+    ? gt?.outputDecodeMs ?? (!m.thinking ? gt?.decodeMs : undefined)
+    : gt?.decodeMs
+  const ms = isNonNegative(decodeMs) ? decodeMs : 0
   if (tokens <= 0 || ms < MIN_DECODE_MS || tokens / (ms / 1000) > MAX_PLAUSIBLE_TPS) return null
   return { tokens, ms }
 }
@@ -120,10 +124,17 @@ export function liveStepSpeed(m: UIMessage | null | undefined): LiveStepSpeed | 
   if (!m || m.role !== 'assistant') return null
   const decode = stepDecode(m)
   if (decode) return { speed: decode.tokens / (decode.ms / 1000), estimated: false }
-  if (visibleOutput(m, sanitizeUsage(m.usage)) > 0) return null
+  if ((sanitizeUsage(m.usage)?.output ?? 0) > 0) return null
   const ms = m.generationTiming?.decodeMs
   if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < MIN_DECODE_MS) return null
-  const tokens = estimateTextTokens(`${m.text ?? ''}${m.thinking ?? ''}`)
+  let content = `${m.text ?? ''}${m.thinking ?? ''}`
+  for (const call of m.toolCalls ?? []) {
+    if (typeof call.argsRaw === 'string') content += call.argsRaw
+    else {
+      try { content += JSON.stringify(call.args) ?? '' } catch { }
+    }
+  }
+  const tokens = estimateTextTokens(content)
   if (tokens <= 0) return null
   const speed = tokens / (ms / 1000)
   return speed > 0 && speed <= MAX_PLAUSIBLE_TPS ? { speed, estimated: true } : null
