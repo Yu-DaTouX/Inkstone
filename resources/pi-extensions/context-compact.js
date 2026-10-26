@@ -1,6 +1,7 @@
 // 压缩摘要：替换 pi 默认的摘要生成。pi 序列化对话时把每个工具结果截到 2000 字，大段读取的内容
-// 摘要模型根本看不到；这里原样交给摘要模型，放得下就一次调用，放不下才按顺序分段滚动更新。
-// 出任何错都返回 undefined，让 pi 走默认压缩。
+// 摘要模型根本看不到；这里原样交给摘要模型，放得下就一次调用，放不下才按顺序分段滚动更新，
+// 超长的单段按行切成几片，每片标明出处，不截断。出错时返回 undefined 让 pi 走默认压缩，
+// 并在压缩完成后把失败原因记成不进上下文的会话条目；连续失败 3 次后直接交给 pi。
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
 
@@ -62,6 +63,10 @@ const MIN_RATIO = 0.2
 const MAX_RATIO = 1.5
 const PROMPT_OVERHEAD_TOKENS = 8_000
 const DEFAULT_RESERVE_TOKENS = 16_384
+const MIN_CHUNK_TOKENS = 4_000
+const MAX_CAPACITY_RETRIES = 2
+const MAX_CONSECUTIVE_FAILURES = 3
+export const ENTRY_TYPE = 'yan-compaction'
 
 function textOf(content) {
   if (typeof content === 'string') return content
@@ -69,8 +74,8 @@ function textOf(content) {
   return content.map((part) => (part?.type === 'text' ? part.text : part?.type === 'image' ? '[image]' : '')).filter(Boolean).join('\n')
 }
 
-// 和 pi 的 serializeConversation 同样的格式，只是不截断工具结果
-export function serializeMessage(msg) {
+// 和 pi 的 serializeConversation 同样的格式，只是不截断工具结果；工具结果带序号、工具名、调用 ID 和失败标记
+export function serializeMessage(msg, index) {
   if (!msg || typeof msg !== 'object') return ''
   switch (msg.role) {
     case 'user': {
@@ -86,14 +91,15 @@ export function serializeMessage(msg) {
       if (text) parts.push(`[Assistant]: ${text}`)
       const calls = blocks.filter((b) => b.type === 'toolCall').map((b) => {
         const args = Object.entries(b.arguments ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')
-        return `${b.name}(${args})`
+        return b.id ? `${b.name}(${args}) call=${b.id}` : `${b.name}(${args})`
       })
       if (calls.length) parts.push(`[Assistant tool calls]: ${calls.join('; ')}`)
       return parts.join('\n\n')
     }
     case 'toolResult': {
-      const text = textOf(msg.content)
-      return text ? `[Tool result]: ${text}` : ''
+      const label = [Number.isInteger(index) ? `#${index}` : '', msg.toolName ?? '', msg.toolCallId ? `call=${msg.toolCallId}` : '', msg.isError ? 'error' : '']
+        .filter(Boolean).join(' ')
+      return `[Tool result${label ? ` ${label}` : ''}]: ${textOf(msg.content) || '(empty)'}`
     }
     case 'bashExecution':
       return `[User ran]: ${msg.command ?? ''}\n${msg.output ?? ''}`.trim()
@@ -107,24 +113,41 @@ export function serializeMessage(msg) {
   }
 }
 
-// 按估算的 token 数把序列化后的各段切成若干块；单段超过预算就截掉尾部（极少见）
-export function chunkParts(parts, ratio, budgetTokens) {
-  const budgetChars = Math.max(1_000, Math.floor(budgetTokens / ratio))
-  const chunks = []
-  let current = []
-  let size = 0
-  for (let part of parts) {
-    if (part.length > budgetChars) part = `${part.slice(0, budgetChars)}\n\n[... ${part.length - budgetChars} more characters truncated]`
-    if (size + part.length > budgetChars && current.length) {
-      chunks.push(current.join('\n\n'))
-      current = []
-      size = 0
+// 把超长的一段按行切成不超过 maxChars 的几片（单行太长再按字符切），每片开头标明是第几片
+export function splitPart(part, maxChars) {
+  const room = Math.max(200, maxChars - 40)
+  const pieces = []
+  let current = ''
+  for (const line of part.split('\n')) {
+    let rest = line
+    while (rest.length > room) {
+      if (current) {
+        pieces.push(current)
+        current = ''
+      }
+      pieces.push(rest.slice(0, room))
+      rest = rest.slice(room)
     }
-    current.push(part)
-    size += part.length + 2
+    if (current && current.length + 1 + rest.length > room) {
+      pieces.push(current)
+      current = ''
+    }
+    current = current ? `${current}\n${rest}` : rest
   }
-  if (current.length) chunks.push(current.join('\n\n'))
-  return chunks
+  if (current || !pieces.length) pieces.push(current)
+  return pieces.map((piece, i) => `[piece ${i + 1}/${pieces.length} of one message]\n${piece}`)
+}
+
+// 从 start 开始取不超过 budgetChars 的若干段；第一段就放不下时先原地切片
+export function takeChunk(parts, start, budgetChars) {
+  if (parts[start].length > budgetChars) parts.splice(start, 1, ...splitPart(parts[start], budgetChars))
+  let end = start
+  let size = 0
+  while (end < parts.length && (end === start || size + parts[end].length + 2 <= budgetChars)) {
+    size += parts[end].length + 2
+    end++
+  }
+  return { text: parts.slice(start, end).join('\n\n'), end }
 }
 
 // 用这次会话实测的 token 数估算"每字符多少 token"，不依赖具体模型的分词
@@ -147,13 +170,27 @@ function formatFileLists({ readFiles, modifiedFiles }) {
   return sections.length ? `\n\n${sections.join('\n\n')}` : ''
 }
 
-function addUsage(a, b) {
+// 逐项累加 usage，嵌套的 cost 等对象也一样累加
+export function addUsage(a, b) {
   if (!a) return b
   if (!b) return a
   const out = { ...a }
-  for (const [k, v] of Object.entries(b)) if (typeof v === 'number') out[k] = (out[k] ?? 0) + v
+  for (const [k, v] of Object.entries(b)) {
+    if (typeof v === 'number') out[k] = (typeof out[k] === 'number' ? out[k] : 0) + v
+    else if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = addUsage(out[k] && typeof out[k] === 'object' ? out[k] : undefined, v)
+  }
   return out
 }
+
+class SummaryError extends Error {
+  constructor(category, message, usage) {
+    super(message)
+    this.category = category
+    this.usage = usage
+  }
+}
+
+const CAPACITY_PATTERN = /context[ _-]?(length|window)|too long|too large|maximum (context|input)|exceed|input tokens/i
 
 async function summarize(ctx, model, text, previousSummary, customInstructions, maxTokens, signal) {
   let prompt = `<conversation>\n${text}\n</conversation>\n\n`
@@ -167,21 +204,51 @@ async function summarize(ctx, model, text, previousSummary, customInstructions, 
     systemPrompt: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], timestamp: Date.now() }]
   }, options)
-  if (response.stopReason === 'error') throw new Error(response.errorMessage || 'summarization failed')
-  if (response.stopReason === 'length') throw new Error('summary hit the token cap')
+  if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+    const message = response.errorMessage || 'summarization failed'
+    const category = signal?.aborted || response.stopReason === 'aborted' ? 'aborted' : CAPACITY_PATTERN.test(message) ? 'capacity' : 'error'
+    throw new SummaryError(category, message, response.usage)
+  }
+  if (response.stopReason === 'length') throw new SummaryError('length', 'summary hit the token cap', response.usage)
   const summary = textOf(response.content).trim()
-  if (!summary) throw new Error('empty summary')
+  if (!summary) throw new SummaryError('empty', 'empty summary', response.usage)
   return { summary, usage: response.usage }
 }
 
 export default function contextCompactExtension(pi) {
+  let failures = 0
+  let pendingNote = null
+
+  pi.on('session_compact', (event) => {
+    const note = pendingNote
+    pendingNote = null
+    if (!note || event?.fromExtension) return
+    try {
+      pi.appendEntry?.(ENTRY_TYPE, note)
+    } catch {
+    }
+  })
+
   pi.on('session_before_compact', async (event, ctx) => {
     const model = ctx.model
     const { preparation, customInstructions, signal } = event
+    pendingNote = null
     if (!model || !preparation?.firstKeptEntryId) return undefined
+    const startedAt = Date.now()
+    let usage
+    let calls = 0
+    let chunks = 0
+    const fallback = (category, message) => {
+      pendingNote = {
+        path: 'pi-default', category, message: String(message ?? '').slice(0, 300),
+        consecutiveFailures: failures, chunks, calls, usage, ms: Date.now() - startedAt
+      }
+      return undefined
+    }
+    if (failures >= MAX_CONSECUTIVE_FAILURES) return fallback('circuit-open', `${failures} consecutive failures`)
     try {
       const messages = [...(preparation.messagesToSummarize ?? []), ...(preparation.turnPrefixMessages ?? [])]
-      const parts = messages.map(serializeMessage).filter(Boolean)
+      const parts = messages.map((m, i) => serializeMessage(m, i + 1)).filter(Boolean)
       if (!parts.length) return undefined
       const chars = parts.reduce((n, p) => n + p.length, 0)
       const settings = preparation.settings ?? {}
@@ -189,16 +256,33 @@ export default function contextCompactExtension(pi) {
       const maxTokens = Math.min(Math.floor(0.8 * reserve), model.maxTokens > 0 ? model.maxTokens : Infinity)
       const window = model.contextWindow > 0 ? model.contextWindow : 128_000
       const ratio = tokensPerChar(preparation.tokensBefore, settings.keepRecentTokens, chars)
-      const previous = preparation.previousSummary ?? ''
-      const budget = window - maxTokens - PROMPT_OVERHEAD_TOKENS - Math.ceil(previous.length * ratio)
-      const chunks = chunkParts(parts, ratio, Math.max(budget, Math.floor(window * 0.25)))
-      let summary = previous || undefined
-      let usage
-      for (const chunk of chunks) {
-        const result = await summarize(ctx, model, chunk, summary, customInstructions, maxTokens, signal)
-        summary = result.summary
-        usage = addUsage(usage, result.usage)
+      let summary = preparation.previousSummary || undefined
+      let start = 0
+      let shrink = 1
+      let capacityRetries = 0
+      while (start < parts.length) {
+        const budget = Math.floor((window - maxTokens - PROMPT_OVERHEAD_TOKENS - Math.ceil((summary?.length ?? 0) * ratio)) * shrink)
+        if (budget < MIN_CHUNK_TOKENS) throw new SummaryError('budget', `no room for another chunk (${budget} tokens)`)
+        const chunk = takeChunk(parts, start, Math.floor(budget / ratio))
+        calls++
+        try {
+          const result = await summarize(ctx, model, chunk.text, summary, customInstructions, maxTokens, signal)
+          usage = addUsage(usage, result.usage)
+          summary = result.summary
+          start = chunk.end
+          chunks++
+          shrink = 1
+        } catch (error) {
+          usage = addUsage(usage, error?.usage)
+          if (error?.category !== 'capacity' || capacityRetries >= MAX_CAPACITY_RETRIES) throw error
+          capacityRetries++
+          shrink /= 2
+        }
       }
+      const summaryTokens = Math.ceil(summary.length * ratio)
+      const sourceTokens = Math.ceil((chars + (preparation.previousSummary?.length ?? 0)) * ratio)
+      if (summaryTokens >= sourceTokens) throw new SummaryError('grew', `summary (${summaryTokens}) not smaller than source (${sourceTokens})`)
+      failures = 0
       const files = fileLists(preparation.fileOps)
       return {
         compaction: {
@@ -206,12 +290,13 @@ export default function contextCompactExtension(pi) {
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
-          details: { ...files, chunks: chunks.length, untruncated: true }
+          details: { ...files, path: 'chunked', chunks, calls, capacityRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true }
         }
       }
-    } catch {
+    } catch (error) {
       if (signal?.aborted) return { cancel: true }
-      return undefined
+      failures++
+      return fallback(error?.category ?? 'error', error?.message)
     }
   })
 }
