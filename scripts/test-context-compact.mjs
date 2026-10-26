@@ -243,26 +243,31 @@ assert.equal(
   assert.equal(mod.appendInstruction('google-gemini', { contents: [] }, 'x', 1), null, '认不出的格式不走快速路径')
 }
 
-const tailMessage = { role: 'assistant', content: [{ type: 'text', text: '最后的回复 ZZ-9' }] }
-function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, leafAtRequest = 'L1', modelAtRequest = 'm' } = {}) {
+const sentUser = { ...messages[0], timestamp: 1 }
+const sentResult = { ...messages[2], timestamp: 3 }
+const tailMessage = { role: 'assistant', content: [{ type: 'text', text: '最后的回复 ZZ-9' }], timestamp: 4 }
+function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, sentLast = sentResult, modelAtRequest = 'm', withContext = true } = {}) {
   const handlers = {}
   mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
   const calls = []
   const model = { provider: 'p', id: 'm', api: 'openai-responses', contextWindow: 400_000, maxTokens: 64_000, reasoning: false }
   const ctx = {
     model, thinkingLevel: 'off',
-    sessionManager: { getLeafId: () => leafAtRequest, getSessionId: () => 'S1' },
+    sessionManager: { getSessionId: () => 'S1' },
     modelRegistry: { complete: async (m, context, options) => { calls.push({ context, options }); return complete(calls.length, options) } }
   }
   const payload = { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: '读完整本书' }] }], tools: [{ type: 'function', name: 'read' }] }
   const branchEntries = [
-    { id: 'L0', type: 'message', message: messages[0] },
-    { id: 'L1', type: 'message', message: messages[2] },
+    { id: 'L0', type: 'message', message: sentUser },
+    { id: 'L1', type: 'message', message: sentResult },
     { id: 'L2', type: 'message', message: tailMessage }
   ]
   const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']) } }, branchEntries, reason, signal: new AbortController().signal }
   return {
-    request: () => handlers.before_provider_request({ payload }, { ...ctx, model: { ...model, id: modelAtRequest } }),
+    request: () => {
+      if (withContext) assert.equal(handlers.context({ messages: [sentUser, sentLast] }), undefined, '只记录，不改上下文')
+      return handlers.before_provider_request({ payload }, { ...ctx, model: { ...model, id: modelAtRequest } })
+    },
     run: () => handlers.session_before_compact(event, ctx),
     compacted: () => handlers.session_compact({ fromExtension: true }),
     calls, payload
@@ -277,6 +282,7 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, leaf
   assert.equal(sent.input[0], h.payload.input[0], '重发的是主会话最后一次请求的原样前缀')
   const instruction = sent.input.at(-1).content[0].text
   assert.ok(/^Stop here\. Do not call any tool/.test(instruction) && instruction.includes('最后的回复 ZZ-9'), '指令追加在末尾，并带上请求之后的消息')
+  assert.ok(!instruction.includes('钥匙编号'), '请求里已有的最后一条工具结果不再重复附上')
   assert.ok(/source tag naming the tool/.test(instruction) && !/anchor line such as/.test(instruction), '模型看不到锚点行，改用工具和路径做来源标记')
   assert.equal(sent.tool_choice, 'none')
   assert.equal(h.calls[0].options.maxTokens, 32_000)
@@ -298,7 +304,8 @@ function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, leaf
 for (const [label, opts, expected] of [
   ['溢出触发的压缩不走快速路径（原请求本身就放不下）', { reason: 'overflow' }, 'overflow'],
   ['输出空间不够时不走快速路径', { tokensBefore: 392_000 }, 'no-room'],
-  ['请求之后会话分支变了就不用旧请求', { leafAtRequest: 'gone' }, 'stale'],
+  ['请求之后会话分支变了就不用旧请求', { sentLast: { role: 'toolResult', timestamp: 99, toolCallId: 'c1' } }, 'stale'],
+  ['没截到上下文就不用请求体', { withContext: false }, 'no-request'],
   ['换过模型就不用旧请求', { modelAtRequest: 'other' }, 'model-changed']
 ]) {
   const h = fastHarness(() => ok('分块摘要'), opts)

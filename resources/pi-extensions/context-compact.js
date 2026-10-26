@@ -384,10 +384,22 @@ async function summarizeFast(ctx, model, request, tail, customInstructions, maxT
   return { summary, usage: response.usage }
 }
 
-// 主会话最后一次请求之后的消息（通常只有最后一条助手回复）
-function messagesAfter(branchEntries, leafId) {
-  if (!Array.isArray(branchEntries) || !leafId) return null
-  const at = branchEntries.findIndex((e) => e?.id === leafId)
+// 记下一次请求里最后一条消息的身份；会话的 leaf 在发请求时可能还没追上，不能拿它定位
+function messageMark(message) {
+  return message && typeof message === 'object' ? { role: message.role, timestamp: message.timestamp, toolCallId: message.toolCallId } : null
+}
+
+// 主会话最后一次请求之后的消息（通常只有最后一条助手回复）；在分支里找不到那条消息就返回 null
+export function messagesAfter(branchEntries, mark) {
+  if (!Array.isArray(branchEntries) || !mark || mark.timestamp === undefined) return null
+  let at = -1
+  for (let i = branchEntries.length - 1; i >= 0; i--) {
+    const m = branchEntries[i]?.type === 'message' ? branchEntries[i].message : null
+    if (m && m.role === mark.role && m.timestamp === mark.timestamp && m.toolCallId === mark.toolCallId) {
+      at = i
+      break
+    }
+  }
   if (at < 0) return null
   return branchEntries.slice(at + 1).filter((e) => e?.type === 'message' && e.message).map((e) => e.message)
 }
@@ -399,14 +411,19 @@ export default function contextCompactExtension(pi) {
   let failures = 0
   let pendingNote = null
   let lastRequest = null
+  let pendingMark = null
 
-  // 这个扩展排在所有改请求体的扩展之后加载，看到的就是最终发出去的请求体
+  // 这个扩展排在所有改上下文、改请求体的扩展之后加载，看到的就是最终发出去的消息和请求体
+  pi.on('context', (event) => {
+    pendingMark = messageMark(event?.messages?.at?.(-1))
+  })
   pi.on('before_provider_request', (event, ctx) => {
     const payload = event?.payload
     const model = ctx?.model
-    lastRequest = payload && typeof payload === 'object' && model
-      ? { payload, provider: model.provider, id: model.id, leafId: ctx.sessionManager?.getLeafId?.() }
+    lastRequest = payload && typeof payload === 'object' && model && pendingMark
+      ? { payload, provider: model.provider, id: model.id, mark: pendingMark }
       : null
+    pendingMark = null
   })
 
   pi.on('session_compact', (event) => {
@@ -463,7 +480,7 @@ export default function contextCompactExtension(pi) {
       let fastError
       let fastMs
       const request = lastRequest
-      const tail = request ? messagesAfter(branchEntries, request.leafId) : null
+      const tail = request ? messagesAfter(branchEntries, request.mark) : null
       fastError = reason === 'overflow' ? 'overflow'
         : !request ? 'no-request'
         : request.provider !== model.provider || request.id !== model.id ? 'model-changed'
