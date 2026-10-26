@@ -414,6 +414,10 @@ async function pruneTrash(): Promise<void> {
   }
 }
 
+export function historySnapshotPath(sessionFile: string): string {
+  return `${sessionFile}.history.txt`
+}
+
 export async function sessionsToDelete(path: string): Promise<Array<{ path: string; sessionId?: string }>> {
   const target = resolve(path)
   const id = (await listSessions(Number.MAX_SAFE_INTEGER)).find((session) => resolve(session.path) === target)?.id
@@ -442,8 +446,9 @@ export async function deleteSession(path: string, protectedPath?: string): Promi
   const entries: Array<{ from: string; to: string }> = []
   const artifacts = new ArtifactStore(join(YAN_DIR, 'artifacts'))
   for (const source of paths) await artifacts.sessionDir(source).catch(() => undefined)
+  const moving = [...paths, ...paths.map(historySnapshotPath).filter((file) => existsSync(file))]
   try {
-    for (const [index, source] of paths.entries()) {
+    for (const [index, source] of moving.entries()) {
       const destination = join(TRASH_DIR, `${token}-${index}-${source.split(/[\\/]/).pop()}`)
       await rename(source, destination)
       cache.delete(source)

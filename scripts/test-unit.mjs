@@ -1348,12 +1348,15 @@ ok(protectedRejected, '拒绝删除当前正在使用的会话')
 const afterProtected = await listSessions()
 ok([branchRoot, branchChild, branchGrandchild].every((p) => afterProtected.some((s) => s.path === p)), '拒绝删除时不会移动任何会话文件')
 
+await writeFile(`${pPath}.history.txt`, '=== compaction 1 ===\n')
 const undoToken = await deleteSession(pPath)
 list = await listSessions()
 ok(!list.some((s) => s.id === 'ccc'), '删除后列表里没有了')
+ok(!existsSync(`${pPath}.history.txt`), '压缩原文快照随会话一起移进回收站')
 await restoreSession(undoToken)
 list = await listSessions()
 ok(list.some((s) => s.id === 'ccc'), '撤销后会话恢复到原路径')
+ok(existsSync(`${pPath}.history.txt`), '撤销删除时快照也恢复')
 
 let rejected = false
 try {

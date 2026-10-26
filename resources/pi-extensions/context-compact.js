@@ -2,6 +2,9 @@
 // 摘要模型根本看不到；这里原样交给摘要模型，放得下就一次调用，放不下才按顺序分段滚动更新，
 // 超长的单段按行切成几片，每片标明出处，不截断。出错时返回 undefined 让 pi 走默认压缩，
 // 并在压缩完成后把失败原因记成不进上下文的会话条目；连续失败 3 次后直接交给 pi。
+// 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
+// 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
+import { readFile, writeFile, rename, rm } from 'node:fs/promises'
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
 
@@ -31,7 +34,7 @@ const FORMAT = `## Goal
 1. [Ordered list of what should happen next]
 
 ## Facts & Details
-[The original tool outputs and file contents will be discarded after this summary; anything not written here is lost. List every concrete specific found in tool results and messages that may matter later: names, numbers, IDs, codes, amounts, dates, exact file paths with line numbers, function and API signatures, exact error messages, test results. Group them by source (file, command, document section). Be exhaustive here and terse: one fact per line, no prose.]
+[The original tool outputs and file contents will be discarded after this summary; anything not written here is lost. List every concrete specific found in tool results and messages that may matter later: names, numbers, IDs, codes, amounts, dates, exact file paths with line numbers, function and API signatures, exact error messages, test results. Group them by source (file, command, document section). Be exhaustive here and terse: one fact per line, no prose. Each part of the conversation starts with an anchor line such as "### [#2.17 tool_result read]"; end each fact with the anchor of the part it came from, e.g. (#2.17).]
 
 ## Critical Context
 - [Any other data, examples, or references needed to continue]
@@ -67,6 +70,14 @@ const MIN_CHUNK_TOKENS = 4_000
 const MAX_CAPACITY_RETRIES = 2
 const MAX_CONSECUTIVE_FAILURES = 3
 export const ENTRY_TYPE = 'yan-compaction'
+const SNAPSHOT_HEADER = '=== compaction '
+const SECRET_PATTERNS = [
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, 'sk-[REDACTED]'],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, 'gh_[REDACTED]'],
+  [/\bAKIA[0-9A-Z]{16}\b/g, 'AKIA[REDACTED]'],
+  [/\b(Bearer\s+)[A-Za-z0-9._~+/-]{16,}=*/gi, '$1[REDACTED]'],
+  [/((?:api[_-]?key|secret|token|password)["']?\s*[:=]\s*["']?)[^\s"',;]{12,}/gi, '$1[REDACTED]']
+]
 
 function textOf(content) {
   if (typeof content === 'string') return content
@@ -111,6 +122,56 @@ export function serializeMessage(msg, index) {
     default:
       return ''
   }
+}
+
+export function redactSecrets(text) {
+  return SECRET_PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text)
+}
+
+export function anchorLine(msg, compactionNo, index) {
+  const role = msg?.role === 'toolResult' ? 'tool_result' : msg?.role ?? 'entry'
+  const extra = msg?.role === 'toolResult' ? [msg.toolName, msg.toolCallId ? `call=${msg.toolCallId}` : '', msg.isError ? 'error' : 'ok'] : []
+  return `### [#${compactionNo}.${index} ${[role, ...extra].filter(Boolean).join(' ')}]`
+}
+
+export function snapshotPath(sessionFile) {
+  return sessionFile ? `${sessionFile}.history.txt` : null
+}
+
+async function readText(file) {
+  try {
+    return await readFile(file, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+export function nextCompactionNo(existing) {
+  return existing.split('\n').filter((line) => line.startsWith(SNAPSHOT_HEADER)).length + 1
+}
+
+// 先写临时文件、核对长度，再原子改名；返回路径和总字符数
+export async function appendSnapshot(file, existing, compactionNo, parts) {
+  const block = `${SNAPSHOT_HEADER}${compactionNo} · ${new Date().toISOString()} · ${parts.length} parts ===\n\n${redactSecrets(parts.join('\n\n'))}\n\n`
+  const content = existing + block
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`
+  try {
+    await writeFile(tmp, content, 'utf8')
+    if ((await readFile(tmp, 'utf8')).length !== content.length) throw new Error('snapshot verify failed')
+    await rename(tmp, file)
+  } catch (error) {
+    await rm(tmp, { force: true }).catch(() => undefined)
+    throw error
+  }
+  return { path: file, chars: content.length }
+}
+
+export function stripAppendices(summary) {
+  return summary ? summary.replace(/\n*<(read-files|modified-files|history-snapshot)>[\s\S]*?<\/\1>/g, '').trim() : summary
+}
+
+export function snapshotPointer({ path, chars }) {
+  return `\n\n<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${path} (${chars} characters). Each part starts with an anchor line like "### [#2.17 tool_result read call=... ok]", matching the (#2.17) citations above. You can grep it or read parts of it when you need an exact detail; it records what was seen at the time, and files on disk may have changed since.\n</history-snapshot>`
 }
 
 // 把超长的一段按行切成不超过 maxChars 的几片（单行太长再按字符切），每片开头标明是第几片
@@ -248,7 +309,13 @@ export default function contextCompactExtension(pi) {
     if (failures >= MAX_CONSECUTIVE_FAILURES) return fallback('circuit-open', `${failures} consecutive failures`)
     try {
       const messages = [...(preparation.messagesToSummarize ?? []), ...(preparation.turnPrefixMessages ?? [])]
-      const parts = messages.map((m, i) => serializeMessage(m, i + 1)).filter(Boolean)
+      const historyFile = snapshotPath(ctx.sessionManager?.getSessionFile?.())
+      const existing = historyFile ? await readText(historyFile) : ''
+      const compactionNo = nextCompactionNo(existing)
+      const parts = messages.flatMap((m, i) => {
+        const body = serializeMessage(m, i + 1)
+        return body ? [`${anchorLine(m, compactionNo, i + 1)}\n${body}`] : []
+      })
       if (!parts.length) return undefined
       const chars = parts.reduce((n, p) => n + p.length, 0)
       const settings = preparation.settings ?? {}
@@ -256,7 +323,7 @@ export default function contextCompactExtension(pi) {
       const maxTokens = Math.min(Math.floor(0.8 * reserve), model.maxTokens > 0 ? model.maxTokens : Infinity)
       const window = model.contextWindow > 0 ? model.contextWindow : 128_000
       const ratio = tokensPerChar(preparation.tokensBefore, settings.keepRecentTokens, chars)
-      let summary = preparation.previousSummary || undefined
+      let summary = stripAppendices(preparation.previousSummary) || undefined
       let start = 0
       let shrink = 1
       let capacityRetries = 0
@@ -284,13 +351,25 @@ export default function contextCompactExtension(pi) {
       if (summaryTokens >= sourceTokens) throw new SummaryError('grew', `summary (${summaryTokens}) not smaller than source (${sourceTokens})`)
       failures = 0
       const files = fileLists(preparation.fileOps)
+      let snapshot = null
+      let snapshotError
+      if (historyFile) {
+        try {
+          snapshot = await appendSnapshot(historyFile, existing, compactionNo, parts)
+        } catch (error) {
+          snapshotError = String(error?.message ?? error).slice(0, 200)
+        }
+      }
       return {
         compaction: {
-          summary: summary + formatFileLists(files),
+          summary: summary + formatFileLists(files) + (snapshot ? snapshotPointer(snapshot) : ''),
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
-          details: { ...files, path: 'chunked', chunks, calls, capacityRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true }
+          details: {
+            ...files, path: 'chunked', chunks, calls, capacityRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true,
+            compactionNo, ...(snapshot ? { snapshot: snapshot.path, snapshotChars: snapshot.chars } : {}), ...(snapshotError ? { snapshotError } : {})
+          }
         }
       }
     } catch (error) {

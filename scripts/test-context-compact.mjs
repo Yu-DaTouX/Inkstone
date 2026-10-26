@@ -122,4 +122,52 @@ const ok = (text, usage) => ({ stopReason: 'stop', content: [{ type: 'text', tex
   h.compacted(true)
   assert.equal(h.entries.length, 0, '自己生成的压缩不额外记条目（细节在 compaction 条目里）')
 }
+{
+  const { mkdtempSync, readFileSync, readdirSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'yan-snapshot-'))
+  const sessionFile = join(dir, 's1.jsonl')
+  const secretMessages = [...messages, { role: 'toolResult', toolCallId: 'c9', toolName: 'bash', isError: true, content: [{ type: 'text', text: 'export OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz0123' }] }]
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  const prompts = []
+  const ctx = {
+    model: { contextWindow: 400_000, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off',
+    sessionManager: { getSessionFile: () => sessionFile },
+    modelRegistry: { complete: async (model, context) => { prompts.push(context.messages[0].content[0].text); return ok('## Facts & Details\n- 钥匙 XQ-1234 (#1.3)') } }
+  }
+  const event = { preparation: { messagesToSummarize: secretMessages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, settings: { reserveTokens: 40_000 }, fileOps: {} }, signal: new AbortController().signal }
+  const first = await handlers.session_before_compact(event, ctx)
+  const history = readFileSync(`${sessionFile}.history.txt`, 'utf8')
+  assert.ok(history.startsWith('=== compaction 1 · '), '快照文件头写压缩序号')
+  assert.ok(history.includes('### [#1.3 tool_result read call=c1 ok]') && history.includes('钥匙编号 XQ-1234'), '快照带锚点和完整原文')
+  assert.ok(history.includes('### [#1.4 tool_result bash call=c9 error]'), '失败的工具结果锚点标 error')
+  assert.ok(!history.includes('sk-abcdefghijklmnop') && !history.includes('Bearer abcdefghijklmnop') && history.includes('[REDACTED]'), '写盘时替换常见密钥格式')
+  assert.ok(prompts[0].includes('### [#1.3 tool_result read call=c1 ok]'), '摘要模型看到的原文也带锚点')
+  assert.ok(first.compaction.summary.includes(`<history-snapshot>\nThe full text of the conversation compacted so far, tool outputs included, is saved at ${sessionFile}.history.txt (${history.length} characters)`), '摘要末尾给出快照路径和字符数')
+  assert.equal(first.compaction.details.snapshot, `${sessionFile}.history.txt`)
+  assert.equal(first.compaction.details.compactionNo, 1)
+  const second = await handlers.session_before_compact(event, ctx)
+  const history2 = readFileSync(`${sessionFile}.history.txt`, 'utf8')
+  assert.ok(history2.startsWith(history) && history2.includes('=== compaction 2 · ') && history2.includes('### [#2.3 tool_result read'), '第二次压缩往后追加，锚点用新序号')
+  assert.equal(second.compaction.details.compactionNo, 2)
+  assert.deepEqual(readdirSync(dir).sort(), ['s1.jsonl.history.txt'], '临时文件改名后不留残余')
+}
+assert.equal(
+  mod.stripAppendices('## Goal\n读书\n\n<read-files>\na.md\n</read-files>\n\n<history-snapshot>\nsaved at x (10 characters)\n</history-snapshot>'),
+  '## Goal\n读书',
+  '滚动更新前去掉上次附的文件清单和快照路径，由代码重新附上'
+)
+{
+  const h = harness(() => ok('摘要'), { previousSummary: '旧摘要\n\n<history-snapshot>\nold\n</history-snapshot>' })
+  await h.run()
+  const sent = h.calls[0].context.messages[0].content[0].text
+  assert.ok(sent.includes('<previous-summary>\n旧摘要\n</previous-summary>') && !sent.includes('old'), '交给摘要模型的旧摘要不带附录')
+}
+{
+  const h = harness(() => ok('摘要'))
+  const result = await h.run()
+  assert.ok(!result.compaction.summary.includes('<history-snapshot>') && !result.compaction.details.snapshot, '没有会话文件时不写快照也不给路径')
+}
 console.log('context-compact 测试通过')
