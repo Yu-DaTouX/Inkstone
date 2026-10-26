@@ -25,6 +25,30 @@ const check = (name, fn) => {
   passed += 1
   process.stdout.write(`  ✓ ${name}\n`)
 }
+const checkAsync = async (name, fn) => {
+  await fn()
+  passed += 1
+  process.stdout.write(`  ✓ ${name}\n`)
+}
+
+function makeFakeWorker({ respond = null, delayMs = 0 } = {}) {
+  const worker = {
+    terminated: false,
+    onmessage: null,
+    onerror: null,
+    postMessage() {
+      if (respond === null) return
+      setTimeout(() => {
+        if (worker.terminated) return
+        worker.onmessage?.({ data: respond })
+      }, delayMs)
+    },
+    terminate() {
+      worker.terminated = true
+    }
+  }
+  return worker
+}
 
 check('缩放按档位逐级走，端点夹住', () => {
   assert.equal(view.PDF_ZOOM_STEPS.length, 15)
@@ -127,6 +151,43 @@ check('查找结果超出上限时标记截断', () => {
   assert.equal(result.capped, true)
   assert.equal(find.pdfFindMatches([], 'a', { matchCase: false, wholeWord: false, regexp: false }).matches.length, 0)
   assert.equal(find.pdfFindMatches([['a']], '', { matchCase: false, wholeWord: false, regexp: false }).matches.length, 0)
+})
+
+await checkAsync('PDF 查找会话：字面搜索走同步快路径，不创建 worker', async () => {
+  let created = 0
+  const pages = [['Alpha beta', 'gamma'], ['delta ALPHA', 'ALPHA alpha']]
+  const session = find.createPdfFindSession(1000, () => {
+    created += 1
+    return makeFakeWorker()
+  })
+  const options = { matchCase: false, wholeWord: false, regexp: false }
+  const result = await session.find(pages, 'alpha', options)
+  assert.deepEqual(result, find.pdfFindMatches(pages, 'alpha', options))
+  assert.equal(created, 0, '字面搜索不应创建 worker')
+})
+
+await checkAsync('PDF 查找会话：正则搜索超时会终止 worker 并按无效处理', async () => {
+  const worker = makeFakeWorker({ respond: null })
+  const session = find.createPdfFindSession(20, () => worker)
+  const result = await session.find([['aaaaaaaaaaaaaaaaaaaaaaaaaa']], '(a+)+b', { matchCase: false, wholeWord: false, regexp: true })
+  assert.equal(result.invalid, true, '超时应复用正则无效状态')
+  assert.equal(worker.terminated, true, '超时后应终止 worker')
+})
+
+await checkAsync('PDF 查找会话：新查询到来时终止旧 worker，只采用最新结果', async () => {
+  const first = makeFakeWorker({ respond: null })
+  const secondResult = { matches: [{ page: 0, line: 0, start: 0, end: 1 }], invalid: false, capped: false }
+  const second = makeFakeWorker({ respond: secondResult, delayMs: 5 })
+  const workers = [first, second]
+  const session = find.createPdfFindSession(1000, () => workers.shift())
+  const pages = [['a']]
+  const firstPromise = session.find(pages, 'first', { matchCase: false, wholeWord: false, regexp: true })
+  const secondPromise = session.find(pages, 'second', { matchCase: false, wholeWord: false, regexp: true })
+  const [firstOutcome, secondOutcome] = await Promise.all([firstPromise, secondPromise])
+  assert.equal(first.terminated, true, '旧 worker 应被终止')
+  assert.equal(firstOutcome.invalid, false)
+  assert.equal(firstOutcome.matches.length, 0, '被取消的旧查询不应带出结果')
+  assert.deepEqual(secondOutcome, secondResult)
 })
 
 check('当前匹配定位到页，越界夹住', () => {

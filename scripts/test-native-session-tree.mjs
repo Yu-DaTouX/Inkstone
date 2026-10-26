@@ -134,5 +134,70 @@ const userMsg = (id, parentId, text) => node(id, parentId, [], { entry: { messag
   ok(native.nativeModelKey(models[0]) === 'anthropic/sonnet', 'model：稳定键是 provider/id')
 }
 
+{
+  const shallow = [node('root', null, [node('a', 'root', [userMsg('b', 'a', 'x')], { label: '检查点' })])]
+  const capped = native.capNativeTreeDepth(shallow, 64)
+  ok(JSON.stringify(capped) === JSON.stringify(shallow), 'cap：深度在上限内原样返回（含 label）')
+  ok(capped[0] !== shallow[0], 'cap：返回的是拷贝，不是原对象引用')
+}
+
+{
+  let node0 = userMsg('leaf', 'n-depth', '最深一条')
+  const DEPTH = 3000
+  for (let i = DEPTH - 1; i >= 0; i -= 1) {
+    node0 = node(`n${i}`, i === 0 ? null : `n${i - 1}`, [node0])
+  }
+  const tree = [node0]
+
+  const depthOf = (nodes) => {
+    let max = 0
+    const walk = (list, d) => {
+      for (const n of list) {
+        if (d > max) max = d
+        walk(n.children, d + 1)
+      }
+    }
+    walk(nodes, 0)
+    return max
+  }
+  ok(depthOf(tree) === DEPTH, 'cap：造出的测试树确实有 3000 层（自检）')
+
+  const capped = native.capNativeTreeDepth(tree, 500)
+  ok(depthOf(capped) === 500, 'cap：超过上限的长链被截到上限深度')
+  ok(capped[0].entry.id === 'n0', 'cap：根节点内容保留')
+
+  let cursor = capped[0]
+  let steps = 0
+  while (cursor.children.length) {
+    cursor = cursor.children[0]
+    steps += 1
+  }
+  ok(steps === 500, 'cap：从根往下正好能走到上限层数')
+  ok(cursor.children.length === 0, 'cap：上限层的节点子节点被清空')
+
+  ok(depthOf(tree) === DEPTH, 'cap：不修改传入的原始树')
+
+  let threw = null
+  try {
+    structuredClone({ ok: true, tree: capped, leafId: 'n0' })
+  } catch (error) {
+    threw = error
+  }
+  ok(threw === null, 'cap：截断后的结果可以安全跨进程克隆（不再撑爆深度）')
+
+  const defaultCapped = native.capNativeTreeDepth(tree)
+  ok(depthOf(defaultCapped) === 500, 'cap：不传上限时使用 500 层的默认值')
+}
+
+{
+  const multiRoot = native.capNativeTreeDepth([
+    node('r1', null, [userMsg('x', 'r1', '一')]),
+    node('r2', null, [userMsg('y', 'r2', '二')]),
+    'not-a-node',
+    null
+  ], 64)
+  ok(multiRoot.length === 2, 'cap：多个根都保留，非法条目被跳过')
+}
+
 console.log(failed ? `\n${failed} 项失败` : '\n全部通过')
 process.exit(failed ? 1 : 0)

@@ -33,7 +33,7 @@ export interface SelectedSessionTarget {
 
 export async function selectSessionWithHost(host: SessionHost, target: SelectedSessionTarget) {
   let cwdResult = await host.validateCwd(target.cwd)
-  if (!cwdResult.ok && !target.preview && host.relocateMissingCwd && typeof target.cwd === 'string' && target.cwd.trim() && !existsSync(resolve(target.cwd))) {
+  if (!cwdResult.ok && !target.preview && host.relocateMissingCwd && typeof target.sessionFile === 'string' && target.sessionFile.trim() && existsSync(target.sessionFile) && typeof target.cwd === 'string' && target.cwd.trim() && !existsSync(resolve(target.cwd))) {
     const picked = await host.relocateMissingCwd(target.cwd)
     if (!picked) return { ok: false, error: `这个会话的项目文件夹不在了：${target.cwd}` }
     cwdResult = await host.validateCwd(picked)

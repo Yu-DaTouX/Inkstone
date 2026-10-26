@@ -6,9 +6,8 @@ export async function readFiles(files: File[], add: (a: Attachment[]) => void, s
   for (const f of files) {
     if (f.size > 12 * 1024 * 1024) { rejected.push(f.name || 'pasted.png'); continue }
     try {
-      const buf = await f.arrayBuffer()
-      if (buf.byteLength > 12 * 1024 * 1024) { rejected.push(f.name || 'pasted.png'); continue }
-      const data = bytesToBase64(new Uint8Array(buf))
+      const data = await readFileAsBase64(f)
+      if (data === null) { rejected.push(f.name || 'pasted.png'); continue }
       out.push({
         id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: f.name || 'pasted.png',
@@ -25,13 +24,18 @@ export async function readFiles(files: File[], add: (a: Attachment[]) => void, s
   if (rejected.length) skipped?.(rejected)
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(bin)
+function readFileAsBase64(file: File): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      const comma = result.indexOf(',')
+      resolve(comma < 0 ? null : result.slice(comma + 1))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('file read failed'))
+    reader.onabort = () => reject(new Error('file read aborted'))
+    reader.readAsDataURL(file)
+  })
 }
 
 export function fmtSize(n: number): string {

@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import { allUserSkillPaths, disabledUserSkillNames, setUserSkillDisabled } from './user-skills'
-import { readJson, withPiSettingsLock, writeAtomic } from './native-compaction-line'
+import { modifyPiSettings, readJson, withPiSettingsLock } from './native-compaction-line'
 
 export type SkillManageScope = 'yan' | 'pi'
 
@@ -120,24 +120,24 @@ export function managedSkillOf(location: string, paths: SkillManagerPaths = defa
 async function setPiSkillDisabled(skillDir: string, disabled: boolean, agentDir: string): Promise<{ ok: boolean; error?: string }> {
   const file = join(agentDir, 'settings.json')
   const pattern = piSkillPattern(skillDir, agentDir)
-  return withPiSettingsLock(async () => {
-    const settings = await readJson(file)
-    if (!settings) return { ok: false, error: `${file} 不是有效的 JSON，没有改动` }
-    const current = Array.isArray(settings.skills) ? settings.skills : []
-    const kept = current.filter(
-      (entry) =>
-        typeof entry !== 'string' ||
-        !entry.startsWith('-') ||
-        toPosix(entry.slice(1).replace(/^\.[\\/]/, '')).toLowerCase() !== pattern.toLowerCase()
-    )
-    const next = disabled ? [...kept, `-${pattern}`] : kept
-    if (next.length === current.length && next.every((entry, index) => entry === current[index])) return { ok: true }
-    const updated: Record<string, unknown> = { ...settings }
-    if (next.length > 0) updated.skills = next
-    else delete updated.skills
-    await writeAtomic(file, updated)
-    return { ok: true }
-  })
+  return withPiSettingsLock(() =>
+    modifyPiSettings<{ ok: boolean; error?: string }>(file, (settings) => {
+      if (!settings) return { result: { ok: false, error: `${file} 不是有效的 JSON，没有改动` } }
+      const current = Array.isArray(settings.skills) ? settings.skills : []
+      const kept = current.filter(
+        (entry) =>
+          typeof entry !== 'string' ||
+          !entry.startsWith('-') ||
+          toPosix(entry.slice(1).replace(/^\.[\\/]/, '')).toLowerCase() !== pattern.toLowerCase()
+      )
+      const next = disabled ? [...kept, `-${pattern}`] : kept
+      if (next.length === current.length && next.every((entry, index) => entry === current[index])) return { result: { ok: true } }
+      const updated: Record<string, unknown> = { ...settings }
+      if (next.length > 0) updated.skills = next
+      else delete updated.skills
+      return { next: updated, result: { ok: true } }
+    })
+  )
 }
 
 export async function setManagedSkillEnabled(

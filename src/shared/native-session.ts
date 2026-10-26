@@ -4,6 +4,8 @@ export const NATIVE_TREE_MAX_DEPTH = 64
 export const NATIVE_TREE_MAX_ROWS = 2000
 export const NATIVE_TREE_PREVIEW_MAX = 160
 
+export const NATIVE_TREE_TRANSPORT_MAX_DEPTH = 500
+
 export interface NativeTreeEntry {
   type: string
   id: string
@@ -163,6 +165,37 @@ export interface NativeTreeViewOptions {
 
 function childrenOf(node: NativeTreeNode): NativeTreeNode[] {
   return Array.isArray(node.children) ? node.children.filter((child): child is NativeTreeNode => isRecord(child)) : []
+}
+
+export function capNativeTreeDepth(
+  tree: readonly unknown[],
+  maxDepth: number = NATIVE_TREE_TRANSPORT_MAX_DEPTH
+): NativeTreeNode[] {
+  const copyOf = (node: NativeTreeNode): NativeTreeNode => ({
+    entry: node.entry,
+    children: [],
+    ...(typeof node.label === 'string' ? { label: node.label } : {}),
+    ...(typeof node.labelTimestamp === 'string' ? { labelTimestamp: node.labelTimestamp } : {})
+  })
+  const out: NativeTreeNode[] = []
+  const stack: Array<{ source: NativeTreeNode; target: NativeTreeNode[]; depth: number }> = []
+  for (const raw of tree) {
+    if (!isRecord(raw) || !isRecord(raw.entry)) continue
+    const source = raw as unknown as NativeTreeNode
+    const copy = copyOf(source)
+    out.push(copy)
+    stack.push({ source, target: copy.children, depth: 0 })
+  }
+  while (stack.length) {
+    const frame = stack.pop()!
+    if (frame.depth >= maxDepth) continue
+    for (const kid of childrenOf(frame.source)) {
+      const copy = copyOf(kid)
+      frame.target.push(copy)
+      stack.push({ source: kid, target: copy.children, depth: frame.depth + 1 })
+    }
+  }
+  return out
 }
 
 export function pathToEntry(tree: NativeTreeNode[], entryId: string | null | undefined): string[] {

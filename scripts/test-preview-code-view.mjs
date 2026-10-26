@@ -33,6 +33,32 @@ const check = (name, fn) => {
   passed += 1
   process.stdout.write(`  ✓ ${name}\n`)
 }
+const checkAsync = async (name, fn) => {
+  await fn()
+  passed += 1
+  process.stdout.write(`  ✓ ${name}\n`)
+}
+
+function makeFakeWorker({ respond = null, delayMs = 0 } = {}) {
+  const worker = {
+    terminated: false,
+    posted: null,
+    onmessage: null,
+    onerror: null,
+    postMessage(data) {
+      worker.posted = data
+      if (respond === null) return
+      setTimeout(() => {
+        if (worker.terminated) return
+        worker.onmessage?.({ data: respond })
+      }, delayMs)
+    },
+    terminate() {
+      worker.terminated = true
+    }
+  }
+  return worker
+}
 
 check('纯文本逐行切分，去掉行尾 \\r，保留末尾空行', () => {
   const out = lines.plainCodeLines('a\r\nb\n')
@@ -335,6 +361,62 @@ check('查找：正则与无效模式，零长度匹配不卡死，结果按上�
   assert.equal(capped.capped, true)
   assert.equal(find.findMatches([], 'a').matches.length, 0)
   assert.equal(find.findMatches(['a'], '').matches.length, 0)
+})
+
+await checkAsync('查找会话：字面搜索走同步快路径，不创建 worker', async () => {
+  let created = 0
+  const session = find.createFindSession(1000, () => {
+    created += 1
+    return makeFakeWorker()
+  })
+  const texts = ['const a = A;', 'a variable', 'Aa']
+  const options = { matchCase: false, wholeWord: false, regexp: false }
+  const result = await session.find(texts, 'a', options)
+  assert.deepEqual(result, find.findMatches(texts, 'a', options))
+  assert.equal(created, 0, '字面搜索不应创建 worker')
+})
+
+await checkAsync('查找会话：正则搜索交给 worker，返回其结果并终止 worker', async () => {
+  const fakeResult = { matches: [{ line: 0, start: 0, end: 1 }], invalid: false, capped: false }
+  const worker = makeFakeWorker({ respond: fakeResult, delayMs: 5 })
+  const session = find.createFindSession(1000, () => worker)
+  const result = await session.find(['a'], 'a', { matchCase: false, wholeWord: false, regexp: true })
+  assert.deepEqual(result, fakeResult)
+  assert.equal(worker.terminated, true, '拿到结果后应终止 worker')
+})
+
+await checkAsync('查找会话：worker 超时会被终止并按正则无效处理', async () => {
+  const worker = makeFakeWorker({ respond: null })
+  const session = find.createFindSession(20, () => worker)
+  const result = await session.find(['a'], '(a+)+b', { matchCase: false, wholeWord: false, regexp: true })
+  assert.equal(result.invalid, true, '超时应复用正则无效状态')
+  assert.equal(result.matches.length, 0)
+  assert.equal(worker.terminated, true, '超时后应终止 worker')
+})
+
+await checkAsync('查找会话：新查询到来时终止旧 worker，只采用最新结果', async () => {
+  const first = makeFakeWorker({ respond: null })
+  const secondResult = { matches: [{ line: 0, start: 0, end: 1 }], invalid: false, capped: false }
+  const second = makeFakeWorker({ respond: secondResult, delayMs: 5 })
+  const workers = [first, second]
+  const session = find.createFindSession(1000, () => workers.shift())
+  const firstPromise = session.find(['a'], 'first', { matchCase: false, wholeWord: false, regexp: true })
+  const secondPromise = session.find(['a'], 'second', { matchCase: false, wholeWord: false, regexp: true })
+  const [firstOutcome, secondOutcome] = await Promise.all([firstPromise, secondPromise])
+  assert.equal(first.terminated, true, '旧 worker 应被终止')
+  assert.equal(firstOutcome.invalid, false)
+  assert.equal(firstOutcome.matches.length, 0, '被取消的旧查询不应带出结果')
+  assert.deepEqual(secondOutcome, secondResult)
+})
+
+await checkAsync('查找会话：dispose 终止尚未完成的 worker', async () => {
+  const worker = makeFakeWorker({ respond: null })
+  const session = find.createFindSession(1000, () => worker)
+  const pending = session.find(['a'], 'x', { matchCase: false, wholeWord: false, regexp: true })
+  session.dispose()
+  const result = await pending
+  assert.equal(worker.terminated, true)
+  assert.equal(result.invalid, false)
 })
 
 check('查找：步进环绕、状态、从当前行起选首个匹配', () => {

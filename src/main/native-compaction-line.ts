@@ -11,7 +11,7 @@ export interface LineModel {
   contextWindow: number
 }
 
-type Json = Record<string, unknown>
+export type Json = Record<string, unknown>
 
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v)
 
@@ -92,19 +92,52 @@ export function withPiSettingsLock<T>(run: () => Promise<T>): Promise<T> {
   return next
 }
 
+const SETTINGS_RETRY_ATTEMPTS = 5
+const SETTINGS_RETRY_DELAY_MS = 20
+
+function isRetryableWriteError(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException)?.code
+  return code === 'EPERM' || code === 'EBUSY'
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+type SettingsModifyOutcome<T> = { next: Json; result: T } | { result: T }
+
+export async function modifyPiSettings<T>(
+  file: string,
+  modify: (settings: Json | undefined) => SettingsModifyOutcome<T>
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    const settings = await readJson(file)
+    const outcome = modify(settings)
+    if (!('next' in outcome)) return outcome.result
+    try {
+      await writeAtomic(file, outcome.next)
+      return outcome.result
+    } catch (e) {
+      if (attempt >= SETTINGS_RETRY_ATTEMPTS || !isRetryableWriteError(e)) throw e
+      await delay(SETTINGS_RETRY_DELAY_MS * attempt)
+    }
+  }
+}
+
 export function syncNativeCompactionLines(models: LineModel[], cap: number): Promise<void> {
   const run = async (): Promise<void> => {
     const file = join(PI_AGENT_DIR, 'settings.json')
     const recordFile = join(YAN_DIR, 'compaction-lines.json')
-    const settings = await readJson(file)
-    if (!settings) return
     const rawOwned = await readJson(recordFile)
     const owned: Record<string, number> = {}
     for (const [key, value] of Object.entries(rawOwned ?? {})) if (typeof value === 'number') owned[key] = value
-    const result = applyLines(settings, owned, models, cap)
-    if (!result) return
-    await writeAtomic(file, result.settings)
-    await writeAtomic(recordFile, result.owned)
+    const written = await modifyPiSettings<{ owned?: Record<string, number> }>(file, (settings) => {
+      if (!settings) return { result: {} }
+      const result = applyLines(settings, owned, models, cap)
+      if (!result) return { result: {} }
+      return { next: result.settings, result: { owned: result.owned } }
+    })
+    if (written.owned) await writeAtomic(recordFile, written.owned)
   }
   return withPiSettingsLock(run)
 }

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 import type { SubagentEndReason, SubagentRecovery, SubagentRun, SubagentStopResult, UIMessage } from '../shared/ipc'
 import { normalizeMessage, toUsage, type PiMessage } from './normalize'
+import { SessionItemProjector } from './session-items/projector'
 import { accumulateUsage, ingestUsageSnapshot, normalizeSubagentContextUsage, type SubagentUsageTotals, type UsageSnapshots } from '../shared/subagent-usage'
 import {
   briefPrompt,
@@ -154,6 +155,7 @@ interface Run extends SubagentRun {
   reviewDecided?: boolean
   msgSeq: number
   streamingId?: string
+  streamProjector?: SessionItemProjector
   resultKey?: string
   stopReason?: string
   usageSnapshots: UsageSnapshots
@@ -758,7 +760,7 @@ export class SubagentController {
     const args = forkPiArgs(fork.args, { sessionDir, sessionFile: file, model: fork.model, thinkingLevel: fork.thinkingLevel })
     const piBin = fork.piBin ?? ctx.piBin
     if (ctx.createRpc) return ctx.createRpc({ cwd: fork.cwd, piBin, args })
-    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id }, ctx.runReadOnlyCommand)
+    return this.spawnWithApproval(ctx, id, fork.cwd, piBin, args, { ...fork.env, YAN_RUNNER_ID: id, YAN_RUNNER_KIND: 'fork' }, ctx.runReadOnlyCommand)
   }
 
   private async spawnWithApproval(
@@ -1396,7 +1398,10 @@ export class SubagentController {
     }
     if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
       const raw = evt.message as PiMessage | undefined
-      if (!raw) return
+      if (!raw) {
+        if (type === 'message_update') this.applyAssistantDelta(run, evt)
+        return
+      }
 
       if (raw.role === 'assistant' && raw.stopReason) {
         run.stopReason = raw.stopReason
@@ -1427,6 +1432,10 @@ export class SubagentController {
         run.msgSeq += 1
         run.streamingId = `m${run.msgSeq}`
       }
+      if (type === 'message_start' && raw.role === 'assistant') {
+        run.streamProjector = new SessionItemProjector()
+        run.streamProjector.liveMessageStart({ ...raw, model: undefined }, Date.now())
+      }
       const msg = normalizeMessage(raw, run.msgSeq)
       if (!msg) return
 
@@ -1440,6 +1449,7 @@ export class SubagentController {
       }
       if (type === 'message_end') {
         run.streamingId = undefined
+        run.streamProjector = undefined
         if (raw.role === 'assistant') this.refreshContext(run)
       }
       if (run.transcript.length > MAX_TRANSCRIPT) {
@@ -1511,6 +1521,31 @@ export class SubagentController {
       }
       this.settle(run)
     }
+  }
+
+  private applyAssistantDelta(run: Run, evt: Record<string, unknown>): void {
+    const ev = evt.assistantMessageEvent as Record<string, unknown> | undefined
+    const projector = run.streamProjector
+    if (!ev || !projector || run.streamingId === undefined) return
+    const idx = run.transcript.findIndex((m: UIMessage) => m.id === run.streamingId)
+    if (idx < 0) return
+    projector.liveAssistantDelta(ev, Date.now())
+    const content = projector.streamingContent()
+    if (!content) return
+    const msg: UIMessage = {
+      ...run.transcript[idx],
+      text: content.text,
+      thinking: content.thinking || undefined,
+      toolCalls: content.calls.length ? content.calls : undefined
+    }
+    run.transcript[idx] = msg
+    const usage = toUsage(evt.usage as PiMessage['usage'])
+    if (usage) {
+      run.usageSnapshots = ingestUsageSnapshot(run.usageSnapshots, run.streamingId, usage)
+      run.usage = addUsage(run.baseUsage, accumulateUsage(run.usageSnapshots))
+    }
+    run.latestActivity = activityOf(msg)
+    this.emitStream(run)
   }
 
   private canResumeAfterModelError(run: Run): boolean {

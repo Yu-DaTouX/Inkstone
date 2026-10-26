@@ -166,31 +166,40 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       const a = await ctrl.start('stream A', undefined, 'controlled-cwd')
       const b = await ctrl.start('stream B', undefined, 'controlled-cwd')
       const send = (rpc, type, text) => rpc.emit('event', { type, message: { role: 'assistant', content: [{ type: 'text', text }] } })
+      const delta = (rpc, text) => rpc.emit('event', { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: text } })
       send(factory.created[0], 'message_start', '')
       send(factory.created[1], 'message_start', '')
       const initial = pushed.length
+      let accA = ''
+      let accB = ''
       for (let i = 0; i < 40; i++) {
-        send(factory.created[0], 'message_update', `A-${i}中文🖋️`)
-        send(factory.created[1], 'message_update', `B-${i}`)
+        const chunkA = `A-${i}中文🖋️`
+        const chunkB = `B-${i}`
+        delta(factory.created[0], chunkA)
+        delta(factory.created[1], chunkB)
+        accA += chunkA
+        accB += chunkB
       }
       ok(pushed.length === initial, '流式突发不逐token推送完整快照')
-      ok(ctrl.get(a.run.id).transcript.at(-1).text === 'A-39中文🖋️', '主动读取不等待推送计时器')
+      ok(ctrl.get(a.run.id).transcript.at(-1).text === accA, '主动读取不等待推送计时器，真实 1.4.0 增量形状能即时读到')
       await new Promise(done => setTimeout(done, 55))
       ok(pushed.length === initial + 2, '两个运行分别合并为一个推送')
-      ok(pushed.filter(run => run.id === a.run.id).at(-1).transcript.at(-1).text === 'A-39中文🖋️', '合并推送保留完整中文emoji')
-      ok(pushed.filter(run => run.id === b.run.id).at(-1).transcript.at(-1).text === 'B-39', '并行运行不串流式内容')
-      send(factory.created[0], 'message_update', '待结束')
+      ok(pushed.filter(run => run.id === a.run.id).at(-1).transcript.at(-1).text === accA, '合并推送保留完整中文emoji')
+      ok(pushed.filter(run => run.id === b.run.id).at(-1).transcript.at(-1).text === accB, '并行运行不串流式内容')
+      delta(factory.created[0], '待结束')
       send(factory.created[0], 'message_end', '最终全文')
-      ok(pushed.at(-1).transcript.at(-1).text === '最终全文', '消息结束立即替换为权威全文')
+      ok(pushed.at(-1).transcript.at(-1).text === '最终全文', '消息结束立即替换为权威全文，覆盖掉增量拼出来的内容')
       const ended = pushed.length
       await new Promise(done => setTimeout(done, 55))
       ok(pushed.length === ended, '结束后没有旧计时器重复推送')
-      send(factory.created[1], 'message_update', '工具前最新正文')
+      delta(factory.created[1], '工具前最新正文')
+      accB += '工具前最新正文'
       factory.created[1].emit('event', { type: 'tool_execution_start', toolName: 'read' })
-      ok(pushed.at(-1).toolCalls === 1 && pushed.at(-1).transcript.at(-1).text === '工具前最新正文', '工具开始立即携带最新正文推送')
-      send(factory.created[1], 'message_update', '停止前最新正文')
+      ok(pushed.at(-1).toolCalls === 1 && pushed.at(-1).transcript.at(-1).text === accB, '工具开始立即携带最新正文推送')
+      delta(factory.created[1], '停止前最新正文')
+      accB += '停止前最新正文'
       await ctrl.stop(b.run.id)
-      ok(pushed.at(-1).status === 'cancelled' && pushed.at(-1).transcript.at(-1).text === '停止前最新正文', '停止立即推送并保留最新正文')
+      ok(pushed.at(-1).status === 'cancelled' && pushed.at(-1).transcript.at(-1).text === accB, '停止立即推送并保留最新正文')
       const stopped = pushed.length
       await new Promise(done => setTimeout(done, 55))
       ok(pushed.length === stopped, '停止清理待推送计时器')
@@ -514,7 +523,11 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       cost: { total: 0 }
     })
     rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [], usage: usage(10, 5) } })
-    rpc.emit('event', { type: 'message_update', message: { role: 'assistant', content: [], usage: usage(100, 50) } })
+    rpc.emit('event', {
+      type: 'message_update',
+      usage: usage(100, 50),
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: '' }
+    })
     rpc.emit('event', {
       type: 'message_end',
       message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], usage: usage(100, 50) }
@@ -816,7 +829,7 @@ export async function runSubagentControllerTests(ok, SubagentController) {
       const stale = run.lastProgressAt
       factory.created[0].emit('event', { type: 'response', success: true })
       ok(run.lastProgressAt === stale, '状态响应不能冒充模型或工具进展')
-      factory.created[0].emit('event', { type: 'message_update', message: { role: 'assistant', content: [] } })
+      factory.created[0].emit('event', { type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: '' } })
       ctrl.onWatch(run)
       ok(!run.wrapUp && run.lastProgressAt > stale, '模型流式输出重置停滞时钟')
       run.lastProgressAt = Date.now() - run.idleMs - 1
@@ -885,10 +898,11 @@ export async function runSubagentControllerTests(ok, SubagentController) {
 
     push('message_start', { role: 'user', content: '去写个文件' })
     push('message_start', { role: 'assistant', content: [] })
-    push('message_update', {
-      role: 'assistant',
-      content: [{ type: 'toolCall', id: 'tc1', name: 'write', arguments: {} }]
+    rpc.emit('event', {
+      type: 'message_update',
+      assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, id: 'tc1', toolName: 'write' }
     })
+    ok(ctrl.get(id)?.transcript.at(-1)?.toolCalls?.[0]?.status === 'running', '工具调用的 toolcall_start 增量在 message_end 前就能读到')
     push('message_end', {
       role: 'assistant',
       content: [{ type: 'toolCall', id: 'tc1', name: 'write', arguments: {} }]
@@ -907,6 +921,94 @@ export async function runSubagentControllerTests(ok, SubagentController) {
     ok(t[1]?.toolCalls?.[0]?.id === 'tc1', '工具调用消息就位')
     ok(t[1]?.toolCalls?.[0]?.output === 'ok', '工具结果回填到同一条调用上')
     ok(t[2]?.text === '写好了', '最终回复的文本没有被流式重复盖掉', JSON.stringify(t[2]?.text))
+    await ctrl.stopAll()
+  }
+
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/stream-1.4.0', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const started = await ctrl.start('真实 1.4.0 message_update 形状', undefined, 'controlled-cwd')
+    const id = started.run.id
+    const rpc = factory.created[0]
+    const emitDelta = (assistantMessageEvent, usage) =>
+      rpc.emit('event', { type: 'message_update', ...(usage ? { usage } : {}), assistantMessageEvent })
+
+    rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [] } })
+
+    emitDelta({ type: 'thinking_start', contentIndex: 0 })
+    emitDelta({ type: 'thinking_delta', contentIndex: 0, delta: '先想' })
+    emitDelta({ type: 'thinking_delta', contentIndex: 0, delta: '一下' })
+    ok(ctrl.get(id).transcript.at(-1).thinking === '先想一下', 'thinking 增量在 message_end 前就能读到')
+    emitDelta({ type: 'thinking_end', contentIndex: 0 })
+
+    emitDelta({ type: 'text_delta', contentIndex: 1, delta: '正在' })
+    emitDelta({ type: 'text_delta', contentIndex: 1, delta: '写文件' })
+    ok(ctrl.get(id).transcript.at(-1).text === '正在写文件', '正文增量在 message_end 前就能读到')
+
+    emitDelta({ type: 'toolcall_start', contentIndex: 2, id: 'tc1', toolName: 'write' })
+    emitDelta({ type: 'toolcall_delta', contentIndex: 2, delta: '{"path":' })
+    let call = ctrl.get(id).transcript.at(-1).toolCalls?.find((c) => c.id === 'tc1')
+    ok(call?.status === 'running' && call?.args === undefined, '工具参数还没拼完时 args 未就位')
+    emitDelta({ type: 'toolcall_delta', contentIndex: 2, delta: '"a.txt"}' })
+    call = ctrl.get(id).transcript.at(-1).toolCalls?.find((c) => c.id === 'tc1')
+    ok(call?.args?.path === 'a.txt', '工具参数增量拼完后 args 在 message_end 前就解析出来', JSON.stringify(call?.args))
+    emitDelta(
+      { type: 'toolcall_end', contentIndex: 2, toolCall: { type: 'toolCall', id: 'tc1', name: 'write', arguments: { path: 'a.txt' } } },
+      { input: 20, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 30, cost: { total: 0 } }
+    )
+    ok(ctrl.get(id).usage?.input === 20 && ctrl.get(id).usage?.output === 10, 'message_update 顶层 usage 在 message_end 前就已经计入')
+
+    rpc.emit('event', {
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '先想一下' },
+          { type: 'text', text: '正在写文件，完成' },
+          { type: 'toolCall', id: 'tc1', name: 'write', arguments: { path: 'a.txt' } }
+        ],
+        usage: { input: 20, output: 12, cacheRead: 0, cacheWrite: 0, totalTokens: 32, cost: { total: 0 } }
+      }
+    })
+    const final = ctrl.get(id).transcript.at(-1)
+    ok(final.text === '正在写文件，完成', 'message_end 用权威全文整条替换掉增量拼出来的内容')
+    ok(final.toolCalls?.[0]?.status === 'ok', 'message_end 替换后工具调用状态来自权威消息，不停在 running')
+    ok(ctrl.get(id).usage?.output === 12, 'message_end 的 usage 按消息 id 覆盖同一条流式消息的用量，不与增量阶段的用量相加')
+    await ctrl.stopAll()
+  }
+
+  {
+    const factory = makeRpcFactory()
+    const ctrl = new SubagentController({ cwd: 'C:/progress-updates', createRpc: factory.createRpc, onChange: () => {}, prepare: fakePrepare })
+    const started = await ctrl.start('progress-update 模型流式期间不提升推理为正文', undefined, 'controlled-cwd')
+    const id = started.run.id
+    const rpc = factory.created[0]
+    const emitDelta = (assistantMessageEvent) => rpc.emit('event', { type: 'message_update', assistantMessageEvent })
+
+    rpc.emit('event', { type: 'message_start', message: { role: 'assistant', content: [], model: 'claude-sonnet-5-5' } })
+    emitDelta({ type: 'thinking_start', contentIndex: 0 })
+    emitDelta({ type: 'thinking_delta', contentIndex: 0, delta: '先想想要不要写文件' })
+    emitDelta({ type: 'thinking_end', contentIndex: 0 })
+    emitDelta({ type: 'toolcall_start', contentIndex: 1, id: 'tc1', toolName: 'write' })
+
+    const mid = ctrl.get(id).transcript.at(-1)
+    ok(mid.thinking === '先想想要不要写文件', 'claude-sonnet-5-5 流式时思考内容仍在 thinking，紧跟的 toolcall_start 没把它提升为正文')
+    ok(!mid.text, 'claude-sonnet-5-5 流式时思考内容没有混进正文', JSON.stringify(mid.text))
+
+    rpc.emit('event', {
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        model: 'claude-sonnet-5-5',
+        content: [
+          { type: 'thinking', thinking: '先想想要不要写文件' },
+          { type: 'toolCall', id: 'tc1', name: 'write', arguments: {} }
+        ]
+      }
+    })
+    const final = ctrl.get(id).transcript.at(-1)
+    ok(final.thinking === '先想想要不要写文件', 'message_end 的最终展示思考内容仍在 thinking')
+    ok(mid.thinking === final.thinking && mid.text === final.text, '流式期间与 message_end 的最终展示一致，不会在结束时从正文跳回思考')
     await ctrl.stopAll()
   }
 

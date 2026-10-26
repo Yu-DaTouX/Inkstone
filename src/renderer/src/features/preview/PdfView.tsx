@@ -19,7 +19,7 @@ import {
   stepFindIndex,
   type FindOptions
 } from './code-find'
-import { pdfFindMatches, pdfMatchPage, pdfTextLines } from './pdf-find'
+import { createPdfFindSession, pdfFindMatches, pdfMatchPage, pdfTextLines, type PdfFindResult, type PdfFindSession } from './pdf-find'
 import {
   PDF_LAZY_MARGIN,
   PDF_PAGE_GAP,
@@ -59,6 +59,8 @@ interface PdfLoadState {
   status: PdfStatus['kind']
 }
 
+const EMPTY_PDF_FIND_RESULT: PdfFindResult = { matches: [], invalid: false, capped: false }
+
 export function PdfView({
   name,
   abs,
@@ -90,6 +92,9 @@ export function PdfView({
   const [pagesText, setPagesText] = useState<string[][] | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
+  const pdfFindSessionRef = useRef<PdfFindSession | null>(null)
+  if (!pdfFindSessionRef.current) pdfFindSessionRef.current = createPdfFindSession()
+  useEffect(() => () => pdfFindSessionRef.current?.dispose(), [])
 
   useEffect(() => {
     let live = true
@@ -213,10 +218,35 @@ export function PdfView({
     }
   }, [bar, doc, pagesText])
 
-  const search = useMemo(
-    () => (pagesText ? pdfFindMatches(pagesText, query, options) : { matches: [], invalid: false, capped: false }),
+  const literalSearch = useMemo(
+    () => (pagesText && !options.regexp ? pdfFindMatches(pagesText, query, options) : EMPTY_PDF_FIND_RESULT),
     [pagesText, query, options]
   )
+  const [regexSearch, setRegexSearch] = useState<PdfFindResult>(EMPTY_PDF_FIND_RESULT)
+  const [regexPending, setRegexPending] = useState(false)
+  useEffect(() => {
+    if (!options.regexp) {
+      setRegexPending(false)
+      return
+    }
+    if (!pagesText || !query) {
+      setRegexSearch(EMPTY_PDF_FIND_RESULT)
+      setRegexPending(false)
+      return
+    }
+    let live = true
+    setRegexPending(true)
+    pdfFindSessionRef.current!.find(pagesText, query, options).then((result) => {
+      if (!live) return
+      setRegexSearch(result)
+      setRegexPending(false)
+    })
+    return () => {
+      live = false
+    }
+  }, [pagesText, query, options])
+  const search = options.regexp ? regexSearch : literalSearch
+  const highlightReady = !options.regexp || (!regexPending && !regexSearch.invalid)
   const status = findStatus(findIndex, search.matches.length, search.capped)
   const activePage = pdfMatchPage(search.matches, findIndex)
 
@@ -500,6 +530,7 @@ export function PdfView({
                     scale={scale}
                     query={query}
                     options={options}
+                    highlightReady={highlightReady}
                     onSize={reportSize}
                   />
                 ) : (
@@ -520,6 +551,7 @@ function PdfPageCanvas({
   scale,
   query,
   options,
+  highlightReady,
   onSize
 }: {
   doc: PDFDocumentProxy
@@ -527,6 +559,7 @@ function PdfPageCanvas({
   scale: number
   query: string
   options: FindOptions
+  highlightReady: boolean
   onSize: (index: number, width: number, height: number) => void
 }): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -573,8 +606,12 @@ function PdfPageCanvas({
   useEffect(() => {
     const text = textRef.current
     if (!text || !query) return
-    const matcher = compileFind(query, options)
     const spans = text.querySelectorAll<HTMLElement>('span')
+    if (!highlightReady) {
+      for (const span of spans) span.removeAttribute('data-pdf-hit')
+      return
+    }
+    const matcher = compileFind(query, options)
     for (const span of spans) {
       if (!matcher) continue
       matcher.lastIndex = 0
@@ -582,7 +619,7 @@ function PdfPageCanvas({
       if (hit) span.setAttribute('data-pdf-hit', '')
       else span.removeAttribute('data-pdf-hit')
     }
-  }, [query, options, textVersion])
+  }, [query, options, textVersion, highlightReady])
 
   return (
     <>

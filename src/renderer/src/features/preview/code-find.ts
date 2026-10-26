@@ -166,3 +166,99 @@ export function findStepKey(key: string, shift: boolean): -1 | 1 | null {
   if (key === 'F3') return shift ? -1 : 1
   return null
 }
+
+export interface FindWorkerLike {
+  postMessage(data: unknown): void
+  terminate(): void
+  onmessage: ((event: { data: unknown }) => void) | null
+  onerror: ((event: unknown) => void) | null
+}
+
+export interface WorkerSession<Req, Res> {
+  run(request: Req): Promise<Res>
+  dispose(): void
+}
+
+export const FIND_WORKER_TIMEOUT_MS = 1500
+
+export function createWorkerSession<Req, Res>(
+  buildResult: (invalid: boolean) => Res,
+  timeoutMs: number,
+  makeWorker: () => FindWorkerLike
+): WorkerSession<Req, Res> {
+  let worker: FindWorkerLike | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let settle: ((result: Res) => void) | null = null
+
+  const finish = (result: Res): void => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (worker) {
+      worker.terminate()
+      worker = null
+    }
+    const done = settle
+    settle = null
+    done?.(result)
+  }
+
+  return {
+    run(request) {
+      finish(buildResult(false))
+      return new Promise<Res>((resolve) => {
+        settle = resolve
+        try {
+          const current = makeWorker()
+          worker = current
+          timer = setTimeout(() => finish(buildResult(true)), timeoutMs)
+          current.onmessage = (event) => finish(event.data as Res)
+          current.onerror = () => finish(buildResult(true))
+          current.postMessage(request)
+        } catch {
+          finish(buildResult(true))
+        }
+      })
+    },
+    dispose(): void {
+      finish(buildResult(false))
+    }
+  }
+}
+
+export interface LineFindRequest {
+  kind: 'lines'
+  texts: readonly string[]
+  query: string
+  options: FindOptions
+  limit: number
+}
+
+export interface FindSession {
+  find(texts: readonly string[], query: string, options: FindOptions, limit?: number): Promise<FindResult>
+  dispose(): void
+}
+
+function emptyFindResult(invalid: boolean): FindResult {
+  return { matches: [], invalid, capped: false }
+}
+
+function defaultFindWorker(): FindWorkerLike {
+  return new Worker(new URL('./find-worker.ts', import.meta.url), { type: 'module' }) as unknown as FindWorkerLike
+}
+
+export function createFindSession(
+  timeoutMs = FIND_WORKER_TIMEOUT_MS,
+  makeWorker: () => FindWorkerLike = defaultFindWorker
+): FindSession {
+  const session = createWorkerSession<LineFindRequest, FindResult>(emptyFindResult, timeoutMs, makeWorker)
+  return {
+    find(texts, query, options, limit = FIND_MATCH_LIMIT) {
+      if (!query) return Promise.resolve(emptyFindResult(false))
+      if (!options.regexp) return Promise.resolve(findMatches(texts, query, options, limit))
+      return session.run({ kind: 'lines', texts, query, options, limit })
+    },
+    dispose: session.dispose
+  }
+}

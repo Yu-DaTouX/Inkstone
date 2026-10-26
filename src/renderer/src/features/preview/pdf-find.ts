@@ -1,4 +1,11 @@
-import { FIND_MATCH_LIMIT, findMatches, type FindOptions } from './code-find'
+import {
+  createWorkerSession,
+  FIND_MATCH_LIMIT,
+  FIND_WORKER_TIMEOUT_MS,
+  findMatches,
+  type FindOptions,
+  type FindWorkerLike
+} from './code-find'
 
 export interface PdfFindMatch {
   page: number
@@ -72,4 +79,40 @@ export function pdfMatchPages(matches: readonly PdfFindMatch[]): Map<number, Pdf
     else byPage.set(match.page, [match])
   }
   return byPage
+}
+
+export interface PdfFindRequest {
+  kind: 'pdf'
+  pages: readonly (readonly string[])[]
+  query: string
+  options: FindOptions
+  limit: number
+}
+
+export interface PdfFindSession {
+  find(pages: readonly (readonly string[])[], query: string, options: FindOptions, limit?: number): Promise<PdfFindResult>
+  dispose(): void
+}
+
+function emptyPdfFindResult(invalid: boolean): PdfFindResult {
+  return { matches: [], invalid, capped: false }
+}
+
+function defaultPdfFindWorker(): FindWorkerLike {
+  return new Worker(new URL('./find-worker.ts', import.meta.url), { type: 'module' }) as unknown as FindWorkerLike
+}
+
+export function createPdfFindSession(
+  timeoutMs = FIND_WORKER_TIMEOUT_MS,
+  makeWorker: () => FindWorkerLike = defaultPdfFindWorker
+): PdfFindSession {
+  const session = createWorkerSession<PdfFindRequest, PdfFindResult>(emptyPdfFindResult, timeoutMs, makeWorker)
+  return {
+    find(pages, query, options, limit = FIND_MATCH_LIMIT) {
+      if (!query) return Promise.resolve(emptyPdfFindResult(false))
+      if (!options.regexp) return Promise.resolve(pdfFindMatches(pages, query, options, limit))
+      return session.run({ kind: 'pdf', pages, query, options, limit })
+    },
+    dispose: session.dispose
+  }
 }

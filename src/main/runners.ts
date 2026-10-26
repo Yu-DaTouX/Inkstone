@@ -464,7 +464,7 @@ export class RunnerRegistry {
     }
 
     this.pruneAdmissions()
-    const idle = [...this.runners.values()]
+    const idleCandidates = [...this.runners.values()]
       .filter(
         (runner) =>
           !target.hidden &&
@@ -474,7 +474,8 @@ export class RunnerRegistry {
           !this.awaitingSubagents(runner) &&
           (target.activate !== false || runner.id !== this.activeId)
       )
-      .sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0]
+      .sort((a, b) => a.lastActiveAt - b.lastActiveAt)
+    const idle = idleCandidates.find((runner) => canonicalCwd(runner.cwd) === canonicalCwd(target.cwd)) ?? idleCandidates[0]
 
     if (idle) {
       if (canonicalCwd(idle.cwd) !== canonicalCwd(target.cwd)) {

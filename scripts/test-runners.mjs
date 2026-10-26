@@ -781,6 +781,29 @@ export function runRunnerTests(ok, RunnerRegistry) {
         ok(reg.statuses().some((r) => r.id === dest.id), '提交后才发布目的实例')
         await reg.stopAll()
       }
+
+      {
+        const { reg, agents } = make()
+        const older = await reg.select({ cwd: 'C:/old-cwd', sessionFile: 'C:/old-1.jsonl' })
+        ok(older.ok && older.via === 'new', '先建立一个空闲实例作为 LRU 里更旧的那个')
+        agents[0].state = { ...agents[0].state, isAgentRunning: true }
+        const newer = await reg.select({ cwd: 'C:/target-cwd', sessionFile: 'C:/new-1.jsonl' })
+        ok(newer.ok && newer.via === 'new', '另开一个实例落在目标 cwd 上（此刻更晚活跃）')
+        agents[0].state = { ...agents[0].state, isAgentRunning: false }
+        agents[1].state = { ...agents[1].state, isAgentRunning: false }
+        ok(older.generation !== undefined && newer.generation !== undefined, '两个实例都已就绪')
+
+        const picked = await reg.select({ cwd: 'C:/target-cwd', sessionFile: 'C:/new-2.jsonl' })
+        ok(
+          picked.ok && picked.via === 'reuse' && picked.id === newer.id,
+          '空闲集合里优先选同 cwd 的实例，不是单纯按 LRU 选最旧的那个',
+          `via=${picked.via} id=${picked.id} want=${newer.id}`
+        )
+        ok(agents.length === 2, '同 cwd 复用不替换/新建 agent')
+        ok(agents[1].calls.switchSession.includes('C:/new-2.jsonl'), '复用同 cwd 实例时只是切会话')
+        ok(agents[0].calls.stop === 0, '不会为了凑 LRU 顺序去动另一个空闲实例')
+        await reg.stopAll()
+      }
     })()
   }
 }

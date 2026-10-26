@@ -10,7 +10,7 @@ import type {
   QueueMode
 } from '../shared/ipc'
 import { PI_AGENT_DIR } from './paths'
-import { readJson, withPiSettingsLock, writeAtomic } from './native-compaction-line'
+import { modifyPiSettings, readJson, withPiSettingsLock } from './native-compaction-line'
 
 type Json = Record<string, unknown>
 
@@ -175,11 +175,11 @@ export async function readPiNativeSettings(file = settingsFile()): Promise<PiNat
 export function writePiNativeSettings(input: unknown, file = settingsFile()): Promise<PiNativeSettingsResult> {
   const checked = validatePiNativePatch(input)
   if (!checked.ok) return Promise.resolve({ ok: false, error: checked.error })
-  return withPiSettingsLock(async () => {
-    const settings = await readJson(file)
-    if (!settings) return { ok: false as const, error: 'pi 的 settings.json 无法解析，未写入' }
-    const next = applyPiNativePatch(settings, checked.patch)
-    await writeAtomic(file, next)
-    return { ok: true as const, settings: piNativeSettingsOf(next) }
-  })
+  return withPiSettingsLock(() =>
+    modifyPiSettings<PiNativeSettingsResult>(file, (settings) => {
+      if (!settings) return { result: { ok: false, error: 'pi 的 settings.json 无法解析，未写入' } }
+      const next = applyPiNativePatch(settings, checked.patch)
+      return { next, result: { ok: true, settings: piNativeSettingsOf(next) } }
+    })
+  )
 }

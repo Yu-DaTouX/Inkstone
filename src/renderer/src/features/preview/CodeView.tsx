@@ -33,6 +33,7 @@ import {
   type CodeToken
 } from './code-lines'
 import {
+  createFindSession,
   findMatches,
   findShortcut,
   findStatus,
@@ -46,6 +47,8 @@ import {
   type CodeSegment,
   type FindMatch,
   type FindOptions,
+  type FindResult,
+  type FindSession,
   type MatchRange
 } from './code-find'
 import { parseLineLocation, goToLineShortcut, validateLineLocation, type LineLocation } from './code-go-to-line'
@@ -390,6 +393,8 @@ function FindOptionsBar({
   )
 }
 
+const EMPTY_FIND_RESULT: FindResult = { matches: [], invalid: false, capped: false }
+
 export function CodeView({ text, name, settings, firstNumber = 1, target, labels, onComment }: CodeViewProps) {
   const listRef = useRef<VListHandle>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -422,6 +427,8 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
   const gotoInputRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<LineCommentRange | null>(null)
   const dragStopRef = useRef<(() => void) | null>(null)
+  const findSessionRef = useRef<FindSession | null>(null)
+  if (!findSessionRef.current) findSessionRef.current = createFindSession()
   if (seenTexts !== texts) {
     setSeenTexts(texts)
     setFolded(new Set())
@@ -434,7 +441,28 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
   const range = target ? jumpRange(target.line, target.lineEnd) : null
   const lastNumber = firstNumber + Math.max(0, lines.length - 1)
 
-  const search = useMemo(() => findMatches(texts, bar === 'find' ? findQuery : '', findOptions), [texts, bar, findQuery, findOptions])
+  const literalSearch = useMemo(
+    () => (findOptions.regexp ? EMPTY_FIND_RESULT : findMatches(texts, bar === 'find' ? findQuery : '', findOptions)),
+    [texts, bar, findQuery, findOptions]
+  )
+  const [regexSearch, setRegexSearch] = useState<FindResult>(EMPTY_FIND_RESULT)
+  useEffect(() => {
+    if (!findOptions.regexp) return
+    const activeQuery = bar === 'find' ? findQuery : ''
+    if (!activeQuery) {
+      setRegexSearch(EMPTY_FIND_RESULT)
+      return
+    }
+    let live = true
+    findSessionRef.current!.find(texts, activeQuery, findOptions).then((result) => {
+      if (live) setRegexSearch(result)
+    })
+    return () => {
+      live = false
+    }
+  }, [texts, bar, findQuery, findOptions])
+  useEffect(() => () => findSessionRef.current?.dispose(), [])
+  const search = findOptions.regexp ? regexSearch : literalSearch
   const activeIndex = search.matches.length ? Math.min(Math.max(findIndex, 0), search.matches.length - 1) : -1
   const activeMatch: FindMatch | null = activeIndex >= 0 ? search.matches[activeIndex] : null
   const lineMatches = useMemo(() => matchesByLine(search.matches), [search.matches])
@@ -531,7 +559,7 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
 
   const openFind = useCallback((): void => {
     setBar('find')
-    setFindIndex(firstMatchFromLine(findMatches(texts, findQuery, findOptions).matches, current))
+    setFindIndex(findOptions.regexp ? 0 : firstMatchFromLine(findMatches(texts, findQuery, findOptions).matches, current))
     const input = findInputRef.current
     if (input) {
       input.focus()
@@ -566,7 +594,7 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
   const toggleFindOption = (key: keyof FindOptions): void => {
     const next = rememberFindOptions({ ...findOptions, [key]: !findOptions[key] })
     setFindOptions(next)
-    setFindIndex(firstMatchFromLine(findMatches(texts, findQuery, next).matches, current))
+    setFindIndex(next.regexp ? 0 : firstMatchFromLine(findMatches(texts, findQuery, next).matches, current))
   }
 
   const submitGoTo = (): void => {
