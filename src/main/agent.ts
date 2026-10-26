@@ -4227,8 +4227,12 @@ export class AgentController extends EventEmitter {
     if (!result.ok) throw new Error(result.error ?? '项目信任保存失败')
   }
 
-  private enqueueCapabilityChange<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.capabilityChangeTail.then(work, work)
+  private enqueueCapabilityChange<T>(work: () => Promise<T>): Promise<T | { ok: false; error: string }> {
+    const rpc = this.rpc, sessionId = this.state?.sessionId, generation = this.capabilityOpts?.runnerGeneration
+    const guarded = async (): Promise<T | { ok: false; error: string }> => rpc === this.rpc && sessionId === this.state?.sessionId && generation === this.capabilityOpts?.runnerGeneration
+      ? work()
+      : { ok: false as const, error: '会话已切换，设置已取消' }
+    const next = this.capabilityChangeTail.then(guarded, guarded)
     this.capabilityChangeTail = next.then(
       () => undefined,
       () => undefined

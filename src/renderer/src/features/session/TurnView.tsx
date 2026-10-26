@@ -23,7 +23,7 @@ import { Badge, IconButton, Notice } from '../../ui'
 import { imageRefLabel, imageRefPrefix, referencedImageNumbers, stripImageLegend, usedImageRefPrefix } from '../composer/image-refs'
 import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
-import { forkFromText } from '../../lib/fork'
+import { forkAt } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
 import { turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
@@ -139,8 +139,8 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
               <Icon name="back" size={14} />
             </IconButton>
           ) : null}
-          {!readOnly && msg.text ? (
-            <IconButton className="v3-msg-btn" aria-label={t('chat.fork')} data-testid="v3-msg-fork" onPress={() => void forkFromText(msg.text)}>
+          {!readOnly && msg.entryId ? (
+            <IconButton className="v3-msg-btn" aria-label={t('chat.fork')} data-testid="v3-msg-fork" onPress={() => void forkAt(msg.entryId!)}>
               <Icon name="branch" size={14} />
             </IconButton>
           ) : null}

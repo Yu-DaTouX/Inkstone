@@ -4,6 +4,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { deflateSync, crc32 } from 'node:zlib'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-relay-'))
 await build({
@@ -94,7 +95,7 @@ async function connect(relay, link, { pair = true, name = '测试手机', key } 
 const dataDir = await mkdtemp(join(tmpdir(), 'inkstone-relay-data-'))
 const devices = new M.RemoteDeviceStore(dataDir)
 const handlers = {
-  async snapshot() { return { sessions: [] } }, async history() { return { ok: true } }, async command() { return { ok: true } }
+  async snapshot() { return { sessions: [] } }, async history() { return { ok: true } }, async command(input) { return { ok: true, data: { imageBytes: input.images?.map(image => Buffer.from(image.data, 'base64').length) } } }
 }
 const relayToken = 'test-relay-token-1234567890'
 const server = new M.RemoteServer({ host: '127.0.0.1', port: 0, devices, handlers, relayToken })
@@ -133,6 +134,37 @@ try {
     assert.equal((await phone.request('GET', '/remote/v1/sessions', { headers: auth })).status, 200)
     assert.notEqual((await phone.request('GET', '/remote/v1/hub', { headers: auth })).status, 200, 'Hub 路由已移除')
     assert.equal((await bridge.status()).clients.filter((c) => c.kind === 'phone').length, 1)
+  })
+
+  await check('中继接受合法 1MiB 图片与四张 2MiB 图片，其他路由和超限请求仍拒绝', async () => {
+    const chunk = (name, data) => {
+      const body = Buffer.concat([Buffer.from(name), data])
+      const size = Buffer.alloc(4), checksum = Buffer.alloc(4)
+      size.writeUInt32BE(data.length)
+      checksum.writeUInt32BE(crc32(body))
+      return Buffer.concat([size, body, checksum])
+    }
+    const header = Buffer.alloc(13)
+    header.writeUInt32BE(1, 0)
+    header.writeUInt32BE(1, 4)
+    header[8] = 8
+    const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 127])))])
+    const image = (size) => Buffer.concat([png, chunk('tEXt', Buffer.concat([Buffer.from('padding\0'), Buffer.alloc(size - png.length - 32, 120)])), chunk('IEND', Buffer.alloc(0))])
+    const { link } = await bridge.pairLink('phone')
+    const phone = await connect(relay, link)
+    const paired = await phone.request('POST', '/remote/v1/pair', { body: { code: phone.payload.y, deviceName: '图片测试' } })
+    const headers = { authorization: `Bearer ${paired.json().token}`, 'idempotency-key': 'relay-image-test-0001' }
+    for (const [count, bytes] of [[1, 1024 * 1024], [4, 2 * 1024 * 1024]]) {
+      const data = image(bytes)
+      assert.equal(data.length, bytes)
+      headers['idempotency-key'] += 'x'
+      const result = await phone.request('POST', '/remote/v1/sessions/fixture/messages', { headers, body: { text: 'fixture', images: Array.from({ length: count }, () => ({ mimeType: 'image/png', data: data.toString('base64') })) } })
+      assert.equal(result.status, 200)
+      assert.deepEqual(result.json().data.imageBytes, Array(count).fill(bytes))
+    }
+    assert.equal((await phone.request('POST', '/remote/v1/sessions/fixture/messages', { headers, body: { text: 'x', pad: 'x'.repeat(12 * 1024 * 1024) } })).status, 413)
+    assert.equal((await phone.request('POST', '/remote/v1/pair', { body: { pad: 'x'.repeat(1_000_000) } })).status, 413)
+    assert.equal((await phone.request('GET', '/remote/v1/sessions/fixture/messages', { body: { pad: 'x'.repeat(1_000_000) } })).status, 413)
   })
 
   await check('礁石：Agent Hub 已退役，中继配对被拒绝，隧道只放行 info', async () => {

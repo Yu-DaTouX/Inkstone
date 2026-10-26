@@ -24,7 +24,7 @@ export function attachmentsAfterSubmit<T extends { id: string }>(
   return next.length === current.length ? (current as T[]) : next
 }
 
-const INSTANCE_COMMANDS = new Set(['model', 'thinking', 'compact', 'clone'])
+const INSTANCE_COMMANDS = new Set(['model', 'thinking', 'compact', 'clone', 'export'])
 
 export function localCommandNeedsActivatedTarget(raw: string): boolean {
   const text = raw.trimStart()

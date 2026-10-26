@@ -57,6 +57,7 @@ import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal,
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
+import { sessionActionAgent, SESSION_ACTION_CHANGED } from './ipc/session-action-target'
 import { registerBrowserIpc } from './ipc/browser-ipc'
 import { createPreviewSiteGate } from './preview-site-gate'
 import { registerTerminalIpc } from './ipc/terminal-ipc'
@@ -2467,11 +2468,11 @@ function registerIpc(): void {
   })
   handle(
     'yan:setModel',
-    async (provider: string, modelId: string) => ac()?.setModel(provider, modelId) ?? { ok: false, error: 'pi 未运行' }
+    async (provider: string, modelId: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setModel(provider, modelId) ?? { ok: false, error: SESSION_ACTION_CHANGED }
   )
-  handle('yan:setThinking', async (level: string) => ac()?.setThinking(level) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:setThinking', async (level: string, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setThinking(level) ?? { ok: false, error: SESSION_ACTION_CHANGED })
   handle('yan:listThinkingLevels', async () => ac()?.listThinkingLevels() ?? [])
-  handle('yan:setUltracode', async (on: boolean) => ac()?.setUltracode(!!on) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:setUltracode', async (on: boolean, expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.setUltracode(!!on) ?? { ok: false, error: SESSION_ACTION_CHANGED })
   handle('yan:listCommands', async () => ac()?.listCommands() ?? localCommandDescriptors())
 
   handle(
@@ -2501,15 +2502,15 @@ function registerIpc(): void {
   )
   handle(
     'yan:cycleModel',
-    async () => ac()?.cycleModel() ?? { ok: false, error: 'pi 未运行' }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModel() ?? { ok: false, error: SESSION_ACTION_CHANGED }
   )
   handle(
     'yan:cycleModelBack',
-    async () => ac()?.cycleModelBack() ?? { ok: false, error: 'pi 未运行' }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleModelBack() ?? { ok: false, error: SESSION_ACTION_CHANGED }
   )
   handle(
     'yan:cycleThinking',
-    async () => ac()?.cycleThinking() ?? { ok: false, error: 'pi 未运行' }
+    async (expected?: import('../shared/ipc').ExpectedRuntimeOwner) => sessionActionAgent({ ac, runners: () => runners }, expected)?.cycleThinking() ?? { ok: false, error: SESSION_ACTION_CHANGED }
   )
   handle('yan:lastAssistantText', async () => ac()?.lastAssistantText() ?? null)
 

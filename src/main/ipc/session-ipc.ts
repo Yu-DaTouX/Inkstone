@@ -1,5 +1,7 @@
 import type { IpcRegistrar } from './registrar'
 import type { SessionHost } from '../session-host'
+import type { ExpectedRuntimeOwner } from '../../shared/ipc'
+import { sessionActionAgent, SESSION_ACTION_CHANGED } from './session-action-target'
 import { shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -61,20 +63,20 @@ export async function selectSessionWithHost(host: SessionHost, target: SelectedS
 export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   const { handle } = ipc
   handle('yan:usageStats', async (range: 'all' | '30d' | '7d') => readUsageStats(range))
-  handle('yan:fork', async (entryId: string) => host.ac()?.fork(entryId) ?? { ok: false, error: 'pi 未运行' })
+  handle('yan:fork', async (entryId: string, expected?: ExpectedRuntimeOwner) => sessionActionAgent(host, expected)?.fork(entryId) ?? { ok: false, error: SESSION_ACTION_CHANGED })
   handle('yan:clone', async () => host.ac()?.clone() ?? { ok: false, error: 'pi 未运行' })
   handle('yan:forkPoints', async () => host.ac()?.forkPoints() ?? [])
-  handle('yan:exportHtml', async (outputPath?: string) => {
+  handle('yan:exportHtml', async (outputPath?: string, expected?: ExpectedRuntimeOwner) => {
     if (outputPath !== undefined && (typeof outputPath !== 'string' || !outputPath.trim())) return { ok: false, error: '导出路径无效' }
-    const agent = host.ac()
-    if (!agent) return { ok: false, error: 'pi 未运行' }
+    const agent = sessionActionAgent(host, expected)
+    if (!agent) return { ok: false, error: SESSION_ACTION_CHANGED }
     const path = outputPath === undefined ? undefined : resolve(agent.workingDirectory, outputPath)
     const sessionId = agent.getState()?.sessionId
     if (path && path === agent.getState()?.sessionFile) return { ok: false, error: '不能覆盖原始会话文件' }
     if (path && existsSync(path)) {
       const confirmed = await agent.confirmNativeOperation({ title: '覆盖 HTML 导出文件？', message: `将覆盖 ${path}。`, acceptLabel: '覆盖' })
       if (!confirmed) return { ok: false, cancelled: true }
-      if (host.ac() !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: '会话已切换，导出已取消' }
+      if (sessionActionAgent(host, expected) !== agent || agent.getState()?.sessionId !== sessionId) return { ok: false, error: '会话已切换，导出已取消' }
     }
     const res = await agent.exportHtml(path)
     if (res.ok && res.path) await shell.openPath(res.path)
@@ -305,7 +307,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
       try {
         const settings = await getSettings()
         await runAutoArchiveSweep({
-          sessions: await filterChainRepresentatives(await listSessions(200, settings.projects)),
+          sessions: await filterChainRepresentatives(await listSessions(Number.MAX_SAFE_INTEGER, settings.projects)),
           days: settings.autoArchiveDays,
           busyFiles: (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile),
           archive: (ids) => archiveSessionsBatch(ids)

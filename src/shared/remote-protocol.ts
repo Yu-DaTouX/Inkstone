@@ -7,6 +7,7 @@ export const REMOTE_IDEMPOTENCY_HEADER = 'idempotency-key'
 export const REMOTE_IDEMPOTENCY_TTL_MS = 10 * 60_000
 export const REMOTE_IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{8,128}$/
 export const REMOTE_ARTIFACT_MAX_BYTES = 10 * 1024 * 1024
+export const REMOTE_MESSAGE_MAX_BYTES = 12 * 1024 * 1024
 
 export interface RemoteInfo {
   ok: true

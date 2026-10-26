@@ -65,6 +65,7 @@ await writeFile(
   entry,
   [
     `export { registerSessionIpc } from '${sourceOf('../src/main/ipc/session-ipc.ts')}'`,
+    `export { sessionActionAgent } from '${sourceOf('../src/main/ipc/session-action-target.ts')}'`,
     `export { configureRemoteHost } from '${sourceOf('../src/main/remote-host.ts')}'`
   ].join('\n')
 )
@@ -79,8 +80,13 @@ await build({
 })
 
 try {
-  const { registerSessionIpc, configureRemoteHost } = await import(pathToFileURL(outfile).href)
+  const { registerSessionIpc, configureRemoteHost, sessionActionAgent } = await import(pathToFileURL(outfile).href)
   await writeSession('old-1.jsonl', { id: 'old-1', timestamp: new Date(old).toISOString(), cwd: 'C:/layout-cwd' })
+  await Promise.all(Array.from({ length: 205 }, async (_, index) => {
+    const file = await writeSession(`recent-${index}.jsonl`, { id: `recent-${index}`, timestamp: new Date().toISOString(), cwd: 'C:/layout-cwd' })
+    const now = new Date()
+    await utimes(file, now, now)
+  }))
 
   const sessionChains = { load: async () => undefined, chains: () => [], chainOf: () => null, representativeOf: () => undefined, forget: async () => true }
   const host = {
@@ -122,8 +128,14 @@ try {
     assert.ok(entry, '启动扫盘应写下布局条目')
     assert.ok(entry.archivedAt, '闲置 40 天、自动归档 7 天的会话应被归档')
   })
+  await check('最新 205 个会话不会挡住更老的到期会话，近期会话保持未归档', async () => {
+    assert.ok((await entryOf('old-1'))?.archivedAt)
+    assert.equal((await entryOf('recent-0'))?.archivedAt, undefined)
+  })
 
   await writeSession('old-2.jsonl', { id: 'old-2', timestamp: new Date(old).toISOString(), cwd: 'C:/layout-cwd' })
+  const oldTwo = join(sessionsDir, 'old-2.jsonl')
+  await utimes(oldTwo, new Date(), new Date())
   await check('yan:listSessions 不再顺带归档', async () => {
     const list = await handlers.get('yan:listSessions')()
     assert.ok(list.some((item) => item.id === 'old-2'), '新写入的旧会话应在列表里')
@@ -140,6 +152,45 @@ try {
     const entry = await entryOf('old-1')
     assert.equal(entry?.pinned, true)
     assert.equal(entry?.cwd, 'C:/layout-cwd', '布局缓存优先：不应改成会话头里的新工作目录')
+  })
+
+  const actions = []
+  let generation = 5
+  let confirm = async () => true
+  const a = { getState: () => ({ sessionId: 'A' }) }
+  const b = {
+    workingDirectory: root,
+    getState: () => ({ sessionId: 'B', sessionFile: join(root, 'B.jsonl') }),
+    exportHtml: async (path) => { actions.push(['export', 'B', path]); return { ok: true, path } },
+    fork: async (entryId) => { actions.push(['fork', 'B', entryId]); return { ok: true } },
+    confirmNativeOperation: () => confirm()
+  }
+  host.ac = () => a
+  host.runners = () => ({ statuses: () => [{ id: 'r2', runId: 'r2', sessionId: 'B', generation }], agentOf: (id) => id === 'r2' ? b : null })
+  const expected = { runId: 'r2', sessionId: 'B', generation: 5 }
+  await check('显式会话操作选 B，不使用当前宿主 A；缺少代次或身份不符时拒绝', async () => {
+    assert.equal(sessionActionAgent(host, expected), b)
+    assert.equal(sessionActionAgent(host, { ...expected, sessionId: 'A' }), null)
+    assert.equal(sessionActionAgent(host, { ...expected, generation: 4 }), null)
+    assert.equal(sessionActionAgent(host, { runId: 'r2', sessionId: 'B' }), null)
+    assert.equal(sessionActionAgent(host, { ...expected, runId: 'missing' }), null)
+    assert.equal(sessionActionAgent(host), a)
+  })
+  await check('导出和分叉 IPC 使用捕获的 B 身份与 entryId', async () => {
+    assert.equal((await handlers.get('yan:exportHtml')('B.html', expected)).ok, true)
+    assert.equal((await handlers.get('yan:fork')('first-duplicate-entry', expected)).ok, true)
+    assert.deepEqual(actions, [['export', 'B', join(root, 'B.html')], ['fork', 'B', 'first-duplicate-entry']])
+  })
+  await check('陈旧运行代次不能导出或分叉，覆盖确认等待后也重新校验', async () => {
+    generation = 6
+    assert.equal((await handlers.get('yan:exportHtml')('B.html', expected)).ok, false)
+    assert.equal((await handlers.get('yan:fork')('wrong', expected)).ok, false)
+    generation = 5
+    await writeFile(join(root, 'existing.html'), 'sentinel')
+    confirm = async () => { generation = 6; return true }
+    assert.equal((await handlers.get('yan:exportHtml')('existing.html', expected)).ok, false)
+    assert.equal(actions.length, 2)
+    assert.equal(await readFile(join(root, 'existing.html'), 'utf8'), 'sentinel')
   })
 } finally {
   for (const key of keys) {
