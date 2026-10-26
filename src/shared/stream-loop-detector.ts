@@ -40,7 +40,7 @@ interface StreamState {
   poolDisabled: boolean
   pending: string
   skipLine: boolean
-  fence: { char: string; length: number } | null
+  fence: { char: string; length: number; protocolTail: boolean } | null
 }
 
 const STRUCTURAL_CHARS = new Set([
@@ -179,6 +179,17 @@ function fenceMarker(line: string): RegExpMatchArray | null {
   return line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
 }
 
+function openFence(state: StreamState, marker: RegExpMatchArray): void {
+  const offset = state.tail.lastIndexOf(marker[1])
+  const before = state.tail.slice(0, offset)
+  const newline = state.tail.indexOf('\n', offset)
+  const after = newline < 0 ? '' : state.tail.slice(newline + 1)
+  const protocolTail = marker[2].trim() === '' && /<\/(?:function_calls|invoke|parameter)>\s*$/.test(before)
+  state.fence = { char: marker[1][0], length: marker[1].length, protocolTail }
+  clearCandidates(state)
+  if (protocolTail) appendTail(state, after)
+}
+
 function processLine(state: StreamState, line: string): void {
   const marker = fenceMarker(line)
   if (state.fence) {
@@ -189,8 +200,7 @@ function processLine(state: StreamState, line: string): void {
     return
   }
   if (marker) {
-    state.fence = { char: marker[1][0], length: marker[1].length }
-    clearCandidates(state)
+    openFence(state, marker)
     return
   }
   countLine(state, line)
@@ -233,8 +243,7 @@ function feedLines(state: StreamState, delta: string): void {
     if (!state.fence) {
       const marker = fenceMarker(rest)
       if (marker) {
-        state.fence = { char: marker[1][0], length: marker[1].length }
-        clearCandidates(state)
+        openFence(state, marker)
       }
     }
     state.pending = ''
@@ -261,7 +270,16 @@ function appendTail(state: StreamState, segment: string): void {
 }
 
 function checkStream(state: StreamState): LoopHit | null {
-  if (state.fence || fenceMarker(state.pending)) return null
+  if ((state.fence && !state.fence.protocolTail) || fenceMarker(state.pending)) return null
+  const protocol = state.tail.match(/((?:<\/(?:function_calls|invoke|parameter)>\s*){8,})(?:<\/?[a-z_]*(?:>)?)?$/)
+  if (protocol && protocol[1].length >= state.minRepeat) {
+    return {
+      rule: state.kind === 'thinking' ? 'reasoning-cycle' : 'text-cycle',
+      emittedChars: state.emitted,
+      repeatedChars: protocol[1].length
+    }
+  }
+  if (state.fence) return null
   const repeats = trailingCycleRepeats(state.tail, STREAM_LOOP_LIMITS.maxCycle, state.minRepeat)
   if (repeats !== null) {
     return {
