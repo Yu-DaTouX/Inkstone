@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { Archive, CirclePlus, Clock, Layers, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplug, Users } from 'lucide-react'
+import { Archive, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplug } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
@@ -20,7 +20,7 @@ import { ArchivedView } from './ArchivedView'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
-import { collabText } from '../collab/collab-text'
+import { SideMore } from './SideMore'
 import { ContentMatches, useContentSearch } from './ContentMatches'
 import { buildContentMatches } from './content-search'
 import { paneShowsSession, sessionStatusKind, sessionUnread, visiblePaneSessions } from './session-status'
@@ -324,32 +324,11 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       </div>
 
       <div className="v3-side-entries">
-        <button type="button" className="ui-row" onClick={createGlobal} data-testid="v3-nav-new-chat">
-          <span className="ui-row__lead"><CirclePlus size={16} aria-hidden /></span>
-          <span className="ui-row__label">{own.newChat}</span>
-        </button>
         <button type="button" className="ui-row" onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
           <span className="ui-row__lead"><FolderPlus size={16} aria-hidden /></span>
           <span className="ui-row__label">{own.newChatInFolder}</span>
         </button>
-        {onSchedule ? (
-          <button type="button" className="ui-row" onClick={onSchedule} aria-current={route === 'schedule' ? 'page' : undefined} data-testid="v3-schedule-entry">
-            <span className="ui-row__lead"><Clock size={16} aria-hidden /></span>
-            <span className="ui-row__label">{text.schedule}</span>
-          </button>
-        ) : null}
-        {onCollab ? (
-          <button type="button" className="ui-row" onClick={onCollab} aria-current={route === 'collab' ? 'page' : undefined} data-testid="v3-collab-entry">
-            <span className="ui-row__lead"><Users size={16} aria-hidden /></span>
-            <span className="ui-row__label">{collabText(lang).nav}</span>
-          </button>
-        ) : null}
-        {onArtifacts ? (
-          <button type="button" className="ui-row" onClick={onArtifacts} aria-current={route === 'artifacts' ? 'page' : undefined} data-testid="v3-artifacts-entry">
-            <span className="ui-row__lead"><Layers size={16} aria-hidden /></span>
-            <span className="ui-row__label">{t('artifactLibrary.title')}</span>
-          </button>
-        ) : null}
+        <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} />
       </div>
 
       <nav className="v3-side-list" ref={listRef} data-scrolled={scrolled ? '1' : undefined}>

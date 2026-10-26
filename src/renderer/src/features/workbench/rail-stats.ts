@@ -104,13 +104,13 @@ export function tpsText(tps: number | null, perSec: string): string {
   return tps === null ? '—' : `${tpsNumber(tps)} ${perSec}`
 }
 
-export function tokenText(n: number | null, partial: boolean, unit: string): string {
+export function tokenText(n: number | null, unit: string): string {
   if (n === null) return '—'
-  return `${partial ? '≥' : ''}${n.toLocaleString()} ${unit}`
+  return `${n.toLocaleString()} ${unit}`
 }
 
-export function countText(n: number, partial: boolean): string {
-  return `${partial ? '≥' : ''}${n}`
+export function countText(n: number): string {
+  return String(n)
 }
 
 export function abbrevCount(n: number): string {
@@ -151,9 +151,9 @@ export function spanText(ms: number): string {
   return clockText(raw)
 }
 
-export function sumTime(ms: number | null, partial: boolean): string {
+export function sumTime(ms: number | null): string {
   if (ms === null) return '—'
-  return `${partial ? '≥' : ''}${clockText(ms)}`
+  return clockText(ms)
 }
 
 export function hitText(pct: number | null): string | null {
@@ -179,8 +179,8 @@ export function timingPartial(metrics: SessionMetrics): boolean {
   )
 }
 
-export function railTimeText(time: Pick<RailTime, 'baseMs' | 'partial'>, liveMs = 0): string {
-  return `${time.partial ? '≥' : ''}${clockText(time.baseMs + Math.max(0, liveMs))}`
+export function railTimeText(time: Pick<RailTime, 'baseMs'>, liveMs = 0): string {
+  return clockText(time.baseMs + Math.max(0, liveMs))
 }
 
 function defaultMoney(usd: number): string {
@@ -195,7 +195,7 @@ function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: read
   if (metrics.total === null) return null
   const { t } = input
   const unit = t('tok.unit')
-  const exact = (n: number | null): string => tokenText(n, metrics.partial, unit)
+  const exact = (n: number | null): string => tokenText(n, unit)
   const segment = (key: RailSegmentKey, label: string, value: number | null): RailSegment => ({
     key,
     label,
@@ -212,7 +212,7 @@ function buildTokens(metrics: SessionMetrics, input: RailStatsInput, notes: read
   ]
   const hit = hitText(metrics.hitRate)
   return {
-    total: `${metrics.partial ? '≥' : ''}${steadyCount(metrics.total)}`,
+    total: steadyCount(metrics.total),
     unit,
     title: [`${t('sm.total')} ${exact(metrics.total)}`, ...notes].join('\n'),
     hit: hit === null ? null : t('sm.cacheHit', { pct: hit }),
@@ -231,16 +231,16 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
   const { t } = input
   const partial = timingPartial(metrics)
   const modelMs = metrics.modelMs ?? 0
-  const segment = (key: 'model' | 'tool', label: string, value: number, partialPart: boolean): RailSegment => ({
+  const segment = (key: 'model' | 'tool', label: string, value: number): RailSegment => ({
     key,
     label,
     value,
     tone: TONE[key],
-    text: sumTime(value, partialPart),
-    title: `${label} ${sumTime(value, partialPart)}`
+    text: sumTime(value),
+    title: `${label} ${sumTime(value)}`
   })
-  const model = segment('model', t('sm.modelShort'), modelMs, metrics.modelPartial || metrics.modelMs === null)
-  const tool = segment('tool', t('sm.toolShort'), toolMs, metrics.toolPartial || metrics.toolMs === null)
+  const model = segment('model', t('sm.modelShort'), modelMs)
+  const tool = segment('tool', t('sm.toolShort'), toolMs)
   const detail = [
     `${model.label} ${model.text}`,
     ...(toolMs > 0 ? [`${tool.label} ${tool.text}`] : []),
@@ -259,11 +259,11 @@ function buildTime(metrics: SessionMetrics, input: RailStatsInput): RailTime | n
 
 function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed | null {
   const bars = (input.speeds ?? []).filter((v) => Number.isFinite(v) && v > 0)
-  if (metrics.tps === null && bars.length === 0 && input.liveSpeed === undefined && input.latestSpeed === undefined) return null
-  const { t } = input
-  const perSec = t('tok.perSec')
   const live = input.liveSpeed === undefined ? undefined : input.liveSpeed !== null && Number.isFinite(input.liveSpeed) && input.liveSpeed > 0 ? input.liveSpeed : null
   const latest = input.latestSpeed === undefined ? bars.at(-1) ?? null : positive(input.latestSpeed)
+  if (bars.length === 0 && live === undefined && latest === null && metrics.tps === null) return null
+  const { t } = input
+  const perSec = t('tok.perSec')
   const estimated = live !== undefined && live !== null && input.liveSpeedEstimated === true
   const caption = [
     ...(bars.length > 0 ? [t('sm.recentSteps', { n: bars.length })] : []),
@@ -317,15 +317,17 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
     : settledSpeed !== null || input.latestSpeed !== undefined
       ? { kind: 'speed', value: tpsNumber(settledSpeed), unit: perSec, bars: null, pending: null }
       : metrics.total !== null
-        ? { kind: 'tokens', value: `${metrics.partial ? '≥' : ''}${steadyCount(metrics.total)}`, unit }
+        ? { kind: 'tokens', value: steadyCount(metrics.total), unit }
         : { kind: 'counts', text: headline }
   const title = [
     headline,
-    ...(metrics.total === null ? [] : [`${t('sm.total')} ${tokenText(metrics.total, metrics.partial, unit)}`]),
+    ...(metrics.total === null ? [] : [`${t('sm.total')} ${tokenText(metrics.total, unit)}`]),
     ...(hit === null ? [] : [`${t('sm.hitRate')} ${formatHitRate(metrics.hitRate) ?? '—'}`]),
     ...(running || settledSpeed === null ? [] : [`${t('sm.tps')} ${tpsText(settledSpeed, perSec)}`]),
     ...(running ? [`${t('sm.liveStep')} ${tpsText(live, perSec)}`] : []),
-    ...(liveEstimated ? [t('sm.liveSpeedEstimate')] : [])
+    ...(liveEstimated ? [t('sm.liveSpeedEstimate')] : []),
+    ...(input.historyPartial ? [t('sm.historyPartialTip')] : []),
+    ...(metrics.partial ? [t('sm.partialTip')] : [])
   ].join('\n')
   return { hit, hitText: hitText(hit), hitLabel: t('sm.hitRate'), metric, title }
 }
@@ -349,11 +351,11 @@ export function buildRailStats(input: RailStatsInput): RailStatsModel | null {
   ]
   const extrasTitle = [
     ...(subagentTokens > 0 && metrics.total !== null
-      ? [`${t('sm.withSubagents')} ${tokenText(metrics.total + subagentTokens, metrics.partial, unit)}`]
+      ? [`${t('sm.withSubagents')} ${tokenText(metrics.total + subagentTokens, unit)}`]
       : []),
     ...(cost !== null && metrics.costEstimated > 0 ? [t('sm.costEstimatedTip')] : [])
   ]
-  const headline = t('sm.headline', { turns: countText(counts.turns, historyPartial), steps: countText(counts.steps, historyPartial) })
+  const headline = t('sm.headline', { turns: countText(counts.turns), steps: countText(counts.steps) })
   return {
     glance: buildGlance(metrics, input, headline),
     headline,

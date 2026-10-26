@@ -20,6 +20,10 @@
     max-width: 100%;
   }
 
+  .mtp-trigger[data-disabled] {
+    opacity: 1;
+  }
+
   .mtp-trigger[data-state='unknown'] {
     color: var(--fg3);
   }
@@ -41,13 +45,14 @@
     padding: 0 var(--s-4);
     border-radius: var(--r-xs);
     background: var(--sunken);
+    color: var(--fg2);
     font-size: var(--t-footnote);
-    transition: color var(--dur-base) var(--ease);
   }
 
   .mtp-trigger .mtp-level {
     padding: 0;
     background: transparent;
+    color: inherit;
     font-size: inherit;
   }
 
@@ -59,28 +64,6 @@
 
   .mtp-trigger[aria-expanded='true'] .mtp-chev {
     transform: rotate(180deg);
-  }
-
-  .mtp-level[data-level='off'] {
-    color: var(--think-off, var(--fg3));
-  }
-  .mtp-level[data-level='minimal'] {
-    color: var(--think-minimal, var(--data-8));
-  }
-  .mtp-level[data-level='low'] {
-    color: var(--think-low, var(--data-2));
-  }
-  .mtp-level[data-level='medium'] {
-    color: var(--think-medium, var(--data-1));
-  }
-  .mtp-level[data-level='high'] {
-    color: var(--think-high, var(--data-3));
-  }
-  .mtp-level[data-level='xhigh'] {
-    color: var(--think-xhigh, var(--data-4));
-  }
-  .mtp-level[data-level='max'] {
-    color: var(--think-max, var(--fail));
   }
 
   .mtp-pop {

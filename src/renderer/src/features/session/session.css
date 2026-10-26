@@ -85,9 +85,8 @@
   .v3-process-head { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: var(--s-6); width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--fg3); font: inherit; font-size: var(--t-body); line-height: var(--t-body-lh); text-align: left; cursor: pointer; transition: color var(--dur-fast) var(--ease); }
   .v3-process-head:hover { color: var(--fg2); }
   .v3-process-head:focus-visible { outline: none; box-shadow: var(--ring-focus); }
-  .v3-process-label { flex: none; color: var(--fg2); }
   .v3-process-count { flex: none; white-space: nowrap; }
-  .v3-process-count::before { content: '·'; margin-inline-end: var(--s-6); }
+  .v3-process-count + .v3-process-count::before { content: '·'; margin-inline-end: var(--s-6); }
   .v3-process-body { display: flex; flex-direction: column; gap: var(--s-8); min-width: 0; margin-left: var(--s-4); padding-left: var(--s-10); border-left: 1px solid var(--line); }
   .v3-process:not(:has(> .v3-process-head)) > .v3-process-body { margin-left: 0; padding-left: 0; border-left: 0; }
   .v3-think-note { display: flex; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
@@ -110,10 +109,12 @@
   .v3-step-target { flex: 0 1 auto; }
   .v3-step-target[data-code] { font-family: var(--font-mono); }
   .v3-step-group > .v3-step-nest > .v3-step > .v3-step-head { gap: var(--s-2); padding: var(--s-2) 0; }
+  .v3-process-head ~ .v3-process-body .v3-step-group > .v3-step-nest { border-left: 0; }
   .v3-step-sec { min-width: 0; }
   .v3-step-sec + .v3-step-sec { margin-top: var(--s-6); padding-top: var(--s-6); border-top: 1px solid var(--line); }
   .v3-step-sec-head { margin-bottom: var(--s-2); padding-right: 28px; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); }
   .v3-step-sec + .v3-step-sec > .v3-step-sec-head { padding-right: 0; }
+  .v3-step-detail > .v3-step-sec:first-of-type > :is(.v3-step-cmd-line, .v3-step-pre):first-child { padding-right: 28px; }
   .v3-step-cmd-line { margin: 0; padding: 0; font-family: var(--font-mono); font-size: var(--t-code); line-height: var(--t-code-lh); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; }
   .v3-step-cmd-prompt { color: var(--fg3); }
   .v3-step-pre, .v3-step-patch { max-height: 400px; }

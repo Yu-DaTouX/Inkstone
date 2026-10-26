@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Copy, FileDiff, Files, Folder, FolderOpen, GitBranch, Monitor, X } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, type RailTone } from '../../ui'
+import { Button, IconButton, Menu, MenuItem, Meter, Notice, Popover, RailRow, RailValue, StatusDot, type RailTone } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT, type MessageKey, type TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -267,7 +267,7 @@ function RailRowMenu({
 }: {
   label: string
   icon: ReactNode
-  value?: string
+  value?: ReactNode
   title: string
   menuLabel: string
   items: RowMenuItem[]
@@ -664,7 +664,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             <RailRowMenu
               label={branch}
               icon={<GitBranch size={14} aria-hidden />}
-              title={`${text.branchLabel} ${branch}`}
+              value={repo && repo.changedCount > 0 ? <StatusDot kind="awaiting" /> : undefined}
+              title={[`${text.branchLabel} ${branch}`, repo && repo.changedCount > 0 ? rail.dirty : ''].filter(Boolean).join('\n')}
               menuLabel={rail.branchMenu}
               testId="wb-rail-branch"
               onAction={runRowAction}
@@ -731,7 +732,9 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             summary: changesSummary,
             onOpenView: () => onOpenView('changes'),
             body:
-              repo.changedCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
+              repo.changedCount === 0 ? (
+                <p className="wb-ov-note">{rail.changesNone}</p>
+              ) : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={() => onOpenView('changes')} />
               ) : (
                 <ul className="wb-ov-items">

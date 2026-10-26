@@ -150,6 +150,9 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
   }
   return (
     <div className="wb-rail-stats" data-testid="wb-rail-stats" data-live={live ? '1' : undefined} data-breakdown={breakdownOpen ? '1' : undefined}>
+      <p className="wb-rs-note" title={model.headlineTitle ?? undefined} data-testid="wb-rail-stats-headline">
+        {model.headline}
+      </p>
       {tokens || extras ? (
         <section className="wb-rs-main" data-block="total">
           {tokens ? (

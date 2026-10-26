@@ -73,7 +73,7 @@ export function RailCard({
         <Button variant="plain" size="sm" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
           <ChevronRight size={12} className="wb-tile-chevron" aria-hidden />
-          {summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
+          {!open && summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
         <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
           <IconButton

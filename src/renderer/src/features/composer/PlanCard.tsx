@@ -1,17 +1,37 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { activeTodoRow, buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
+import { activeTodoRow, anchorTodoIndex, buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
 import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import './plan-card.css'
 
-const NARROW_WIDTH = 520
+const PLAN_EXPANDED_STORAGE_KEY = 'inkstone.v3.planCard.expanded'
+
+function readExpanded(): boolean {
+  try {
+    return localStorage.getItem(PLAN_EXPANDED_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeExpanded(expanded: boolean): void {
+  try {
+    localStorage.setItem(PLAN_EXPANDED_STORAGE_KEY, expanded ? '1' : '0')
+  } catch {
+  }
+}
+
+function hidesRowsBelow(el: HTMLElement): boolean {
+  return el.scrollHeight - el.clientHeight - el.scrollTop > 1
+}
 
 export function PlanCard(): ReactElement | null {
   const t = useT()
   const { lang } = useI18n()
   const rowText = useMemo(() => todoTileText(lang), [lang])
+  const listId = useId()
 
   const todos = useStore((s) => s.todos)
   const todoHistory = useStore((s) => s.todoHistory)
@@ -20,66 +40,68 @@ export function PlanCard(): ReactElement | null {
 
   const model = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
   const activeRow = activeTodoRow(model)
+  const anchorIndex = anchorTodoIndex(model)
 
   const latestRound = todoHistory.length ? todoHistory[todoHistory.length - 1].round : null
   const stale = latestRound !== null && userMessageCount > latestRound
 
-  const [manualCollapsed, setManualCollapsed] = useState<boolean | null>(null)
-  const [narrow, setNarrow] = useState(false)
+  const [expanded, setExpanded] = useState(readExpanded)
   const [overflowing, setOverflowing] = useState(false)
-  const rootObserverRef = useRef<ResizeObserver | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const activeRowRef = useRef<HTMLLIElement | null>(null)
-  const markActiveRow = useCallback((el: HTMLLIElement | null) => {
-    activeRowRef.current = el
+  const anchorRowRef = useRef<HTMLLIElement | null>(null)
+  const markAnchorRow = useCallback((el: HTMLLIElement | null) => {
+    anchorRowRef.current = el
   }, [])
-  const rootRef = useCallback((el: HTMLDivElement | null) => {
-    rootObserverRef.current?.disconnect()
-    rootObserverRef.current = null
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? el.clientWidth
-      setNarrow(width > 0 && width < NARROW_WIDTH)
-    })
-    observer.observe(el)
-    rootObserverRef.current = observer
-  }, [])
-
-  const collapsed = manualCollapsed ?? narrow
 
   useLayoutEffect(() => {
     const el = scrollRef.current
-    setOverflowing(!!el && el.scrollHeight - el.clientHeight > 1)
-  }, [model.rows.length, collapsed])
-
-  useEffect(() => {
-    activeRowRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [model.activeIndex, collapsed, todos])
+    if (!el) return
+    const row = anchorRowRef.current
+    if (row) el.scrollTop = Math.max(0, row.offsetTop - row.offsetHeight)
+    setOverflowing(hidesRowsBelow(el))
+  }, [anchorIndex, model.rows.length, expanded, todos])
 
   if (!hasTodoTileContent(todos)) return null
   if (model.total > 0 && model.done >= model.total) return null
 
+  const toggle = (): void => {
+    const next = !expanded
+    setExpanded(next)
+    writeExpanded(next)
+  }
+
   const headline = stale ? t('plan.stale') : t('plan.title', { done: model.done, total: model.total })
-  const collapsedLabel = activeRow ? `${headline} · ${t('plan.workingOn', { text: activeRow.text })}` : headline
+  const workingOn = !expanded && activeRow ? ` · ${t('plan.workingOn', { text: activeRow.text })}` : ''
 
   return (
-    <div className="plan-card" data-testid="plan-card" ref={rootRef}>
+    <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
       <button
         type="button"
         className="plan-card-head"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? t('plan.expand') : t('plan.collapse')}
+        aria-expanded={expanded}
+        aria-controls={expanded ? listId : undefined}
+        title={expanded ? t('plan.collapse') : t('plan.expand')}
         data-testid="plan-card-toggle"
-        onClick={() => setManualCollapsed(!collapsed)}
+        onClick={toggle}
       >
-        <span className="plan-card-title">{collapsed ? collapsedLabel : headline}</span>
-        {collapsed ? <ChevronDown size={14} aria-hidden /> : <ChevronUp size={14} aria-hidden />}
+        <span className="plan-card-title">
+          {headline}
+          {workingOn ? <span className="plan-card-now">{workingOn}</span> : null}
+        </span>
+        {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
       </button>
-      {collapsed ? null : (
-        <div className="plan-card-scroll" ref={scrollRef} data-testid="plan-card-scroll" data-overflow={overflowing}>
-          <TodoTileRows model={model} text={rowText} markActiveRow={markActiveRow} />
+      {expanded ? (
+        <div
+          id={listId}
+          className="plan-card-scroll"
+          ref={scrollRef}
+          data-testid="plan-card-scroll"
+          data-overflow={overflowing}
+          onScroll={(event) => setOverflowing(hidesRowsBelow(event.currentTarget))}
+        >
+          <TodoTileRows model={model} text={rowText} anchorIndex={anchorIndex} markAnchorRow={markAnchorRow} />
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

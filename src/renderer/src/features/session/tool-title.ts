@@ -184,8 +184,3 @@ export function toolStepTitle(
     code: category === 'bash' && !stepDescription(call)
   }
 }
-
-export function shellTitle(name: string): string {
-  const bare = bareName(name)
-  return bare === 'powershell' || bare === 'pwsh' ? 'PowerShell' : 'Bash'
-}

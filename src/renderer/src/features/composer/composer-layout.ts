@@ -1,9 +1,9 @@
-export const COMPOSER_LEFT_ORDER = ['mode', 'permission', 'plus'] as const
+export const COMPOSER_LINE_ORDER = ['plus', 'mode', 'input', 'voice', 'send'] as const
 
-export const COMPOSER_RIGHT_ORDER = ['voice', 'context', 'model-thinking', 'run', 'send'] as const
+export const COMPOSER_STATUS_ORDER = ['permission', 'project', 'context', 'model-thinking'] as const
 
-export type ComposerLeftControl = (typeof COMPOSER_LEFT_ORDER)[number]
-export type ComposerRightControl = (typeof COMPOSER_RIGHT_ORDER)[number]
+export type ComposerLineControl = (typeof COMPOSER_LINE_ORDER)[number]
+export type ComposerStatusControl = (typeof COMPOSER_STATUS_ORDER)[number]
 
 type ComposerMode = 'bash' | 'cmd' | null
 
@@ -11,10 +11,6 @@ export function composerMode(value: string): ComposerMode {
   if (value.startsWith('!')) return 'bash'
   if (value.startsWith('/')) return 'cmd'
   return null
-}
-
-export function composerPrompt(value: string): '$' | '›' {
-  return value.startsWith('!') ? '$' : '›'
 }
 
 export function composerLocalCommand(value: string, commands: readonly { source: string; name: string }[]): boolean {

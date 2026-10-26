@@ -8,7 +8,7 @@ import { TurnArtifacts } from './MessageParts'
 import { ThinkingAside, ThinkingLine } from './Thinking'
 import { ToolSteps } from './ToolSteps'
 import { TurnProcess } from './TurnProcess'
-import { conciseSegment, splitTurnProcess, withoutThinking } from './turn-process'
+import { conciseSegment, processFailuresAlert, splitTurnProcess, withoutThinking } from './turn-process'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { TranscriptViewScope, useAsideFit } from './use-tool-run'
@@ -41,7 +41,7 @@ import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } f
 import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail = false }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
@@ -213,7 +213,7 @@ function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail: boolean }): JSX.Element | null {
+function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
@@ -263,6 +263,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 <TurnProcess
                   process={processSegs}
                   live={!!streaming && !split.reply}
+                  alertFailures={processFailuresAlert(sourceTurn, !!streaming)}
                   view={view}
                   sessionId={sessionId}
                   turnId={turn.id}
@@ -343,7 +344,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
-          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} /> : null}
+          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} pinned={tail ?? true} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -404,7 +405,7 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
   return [copyState, setCopyState]
 }
 
-function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }): JSX.Element | null {
+function TurnMeta({ turn, readOnly, pinned }: { turn: AssistantTurn; readOnly: boolean; pinned: boolean }): JSX.Element | null {
   const t = useT()
   const models = useStore((s) => s.models)
   const [copyState, setCopyState] = useCopyState()
@@ -414,7 +415,7 @@ function TurnMeta({ turn, readOnly }: { turn: AssistantTurn; readOnly: boolean }
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
   if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
   return (
-    <div className="v3-msg-meta" data-testid="v3-turn-meta">
+    <div className="v3-msg-meta" data-testid="v3-turn-meta" data-reveal={pinned || stopLabel ? undefined : 'hover'}>
       {turn.timestamp ? <TurnClock timestamp={turn.timestamp} /> : null}
       {modelDisplay ? <span className="v3-act-model" title={modelDisplay.identity}>{modelDisplay.label}</span> : null}
       {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}

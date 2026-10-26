@@ -1,5 +1,5 @@
 import type { UIToolCall } from '../../../../shared/ipc'
-import type { TurnSegment, TurnThinking } from '../../../../shared/turns'
+import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
 import { countedProcessCalls, isWebTool, summarizeToolRun } from './tool-run-model'
 
 const LIVE_SEGMENTS = 3
@@ -162,6 +162,12 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   }
   const counted = countedProcessCalls(calls)
   return { thinking, actions: counted.length, failed: summarizeToolRun(counted).failed }
+}
+
+export function processFailuresAlert(turn: Pick<AssistantTurn, 'terminalReason' | 'error' | 'errorRecovered'>, streaming: boolean): boolean {
+  if (streaming) return true
+  if (turn.terminalReason === 'failed' || turn.terminalReason === 'stopped' || turn.terminalReason === 'interrupted') return true
+  return !!turn.error && !turn.errorRecovered
 }
 
 export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {

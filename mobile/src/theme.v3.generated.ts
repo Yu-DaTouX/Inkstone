@@ -2,10 +2,16 @@
 export const v3Light = {
   "bg": "#FCFCFB",
   "side": "#F6F9FC",
-  "sidebarTint": "rgba(246,249,252,.85)",
+  "sideGlass": "rgba(246,249,252,.95)",
+  "sideTint": "rgba(247,249,252,.88)",
+  "sideRimHi": "rgba(255,255,255,.95)",
+  "sideRimLo": "rgba(11,11,11,.07)",
+  "sideSheen": "rgba(255,255,255,.58)",
   "surface": "#FFFFFF",
   "surface-0": "#F9F9F7",
   "surface-3": "#FFFFFF",
+  "compRimHi": "rgba(11,11,11,.1)",
+  "compRimLo": "rgba(11,11,11,.06)",
   "hover": "rgba(11,11,11,.05)",
   "hoverMain": "rgba(11,11,11,.04)",
   "press": "rgba(11,11,11,.1)",
@@ -70,11 +76,17 @@ export const v3Light = {
 
 export const v3Dark = {
   "bg": "#171717",
-  "side": "#1C2027",
-  "sidebarTint": "rgba(28,32,39,.85)",
+  "side": "#1B1B1D",
+  "sideGlass": "rgba(27,27,29,.92)",
+  "sideTint": "rgba(20,20,22,.80)",
+  "sideRimHi": "rgba(255,255,255,.22)",
+  "sideRimLo": "rgba(255,255,255,.035)",
+  "sideSheen": "rgba(255,255,255,.055)",
   "surface": "#1C1C1B",
   "surface-0": "#0B0B0B",
   "surface-3": "#20201F",
+  "compRimHi": "rgba(255,255,255,.16)",
+  "compRimLo": "rgba(255,255,255,.05)",
   "hover": "rgba(255,255,255,.075)",
   "hoverMain": "rgba(255,255,255,.05)",
   "press": "rgba(255,255,255,.15)",
@@ -137,4 +149,4 @@ export const v3Dark = {
   "fileTeal": "#58BDB3"
 } as const
 
-export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"xl":14,"full":999} as const
+export const v3Radius = {"2xs":2,"xs":4,"sm":6,"md":8,"lg":10,"bubble":12,"side":12,"xl":14,"full":999} as const

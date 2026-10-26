@@ -167,7 +167,6 @@ export type SessionTextKey =
   | 'approvalAllowedRemember'
   | 'approvalDenied'
   | 'approvalDeniedReason'
-  | 'processLabel'
   | 'processThinking1'
   | 'processThinking'
   | 'processActions1'
@@ -355,7 +354,6 @@ const ZH: Record<SessionTextKey, string> = {
   approvalAllowedRemember: '已允许并记住目录',
   approvalDenied: '已拒绝',
   approvalDeniedReason: '理由：{reason}',
-  processLabel: '过程',
   processThinking1: '1 段思考',
   processThinking: '{n} 段思考',
   processActions1: '1 次操作',
@@ -544,7 +542,6 @@ const EN: Record<SessionTextKey, string> = {
   approvalAllowedRemember: 'Allowed, folder remembered',
   approvalDenied: 'Denied',
   approvalDeniedReason: 'Reason: {reason}',
-  processLabel: 'Process',
   processThinking1: '1 thought',
   processThinking: '{n} thoughts',
   processActions1: '1 action',

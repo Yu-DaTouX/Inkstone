@@ -26,7 +26,7 @@ export function AttachmentStrip({ onRemoveImage }: { onRemoveImage?: (n: number)
       {imageItems.map(({ attachment: a, n }) => (
         <div className="ca-tile" key={a.id} title={a.isDirectory ? a.path : `${a.name} · ${fmtSize(a.size)}`} data-kind={a.kind ?? 'image'}>
           {a.kind === 'file' ? (
-            <FileCard name={a.name} path={a.path} isDirectory={a.isDirectory} onPress={() => {
+            <FileCard compact name={a.name} path={a.path} isDirectory={a.isDirectory} onPress={() => {
               if (!a.path) return
               if (a.isDirectory) void window.yan.openPath(a.path)
               else void useStore.getState().previewFile(a.path)

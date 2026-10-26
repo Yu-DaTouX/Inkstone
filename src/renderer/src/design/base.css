@@ -3,10 +3,6 @@
     background: var(--bg);
   }
 
-  :root[data-material] {
-    background: transparent;
-  }
-
   body {
     overflow: hidden;
     background: var(--bg);
@@ -17,10 +13,6 @@
     font-variant-numeric: normal;
     text-autospace: no-autospace;
     -webkit-font-smoothing: antialiased;
-  }
-
-  :root[data-material] body {
-    background: transparent;
   }
 
   ::selection {

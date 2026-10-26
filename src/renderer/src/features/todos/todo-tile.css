@@ -35,27 +35,22 @@
   }
 
   .v3-todo-row[data-kind='done'] .v3-todo-mark {
-    color: var(--ok);
+    color: var(--fg2);
+  }
+
+  .v3-todo-row[data-kind='done'] .v3-todo-mark circle {
+    fill: currentColor;
+  }
+
+  .v3-todo-row[data-kind='done'] .v3-todo-mark path {
+    stroke: var(--surface-3);
   }
 
   .v3-todo-row[data-kind='running'] .v3-todo-mark {
     color: var(--run);
-    animation: v3-todo-pulse var(--dur-breathe) var(--ease) infinite;
   }
 
   .v3-todo-row[data-kind='blocked'] .v3-todo-mark {
     color: var(--fail);
-  }
-
-  @keyframes v3-todo-pulse {
-    50% {
-      opacity: 0.45;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .v3-todo-row[data-kind='running'] .v3-todo-mark {
-      animation: none;
-    }
   }
 }

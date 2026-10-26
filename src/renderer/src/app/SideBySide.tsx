@@ -400,7 +400,7 @@ function PeerPane({ target }: { target: SplitSessionRef }): JSX.Element {
             ) : (
               turns.map((turn) => (
                 <div key={turn.id} className="v3-stream-row">
-                  <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} readOnly />
+                  <TurnView turn={turn} sessionId={target.sessionId ?? null} subagentScope={subagentScope} streaming={turn.kind === 'assistant' && turn.streaming} tail={turn === turns[turns.length - 1]} readOnly />
                 </div>
               ))
             )}

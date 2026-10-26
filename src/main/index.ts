@@ -3157,26 +3157,24 @@ async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
   return st
 }
 
+const WIN11_MATERIAL_MIN_BUILD = 22621
+
+let windowMaterialActive = false
+
 function windowsBuildNumber(): number {
   const build = Number(osRelease().split('.')[2])
   return Number.isFinite(build) ? build : 0
 }
 
-const WIN11_MATERIAL_MIN_BUILD = 22621
-
-let windowMaterialActive = false
-
-function syncNativeThemeSource(theme: 'light' | 'dark'): void {
-  if (!windowMaterialActive) return
-  nativeTheme.themeSource = theme
+function resolveWindowMaterial(): 'acrylic' | 'mica' | 'none' {
+  if (process.platform !== 'win32') return 'none'
+  const forced = process.env.YAN_WINDOW_MATERIAL
+  if (forced === 'acrylic' || forced === 'mica' || forced === 'none') return forced
+  return windowsBuildNumber() >= WIN11_MATERIAL_MIN_BUILD ? 'acrylic' : 'none'
 }
 
-function resolveWindowMaterial(): 'mica' | 'acrylic' | 'none' {
-  const forced = process.env.YAN_WINDOW_MATERIAL
-  if (forced === 'mica' || forced === 'acrylic' || forced === 'none') return forced
-  if (process.platform !== 'win32') return 'none'
-  if (windowsBuildNumber() < WIN11_MATERIAL_MIN_BUILD) return 'none'
-  return 'acrylic'
+function syncNativeThemeSource(theme: 'light' | 'dark'): void {
+  if (windowMaterialActive) nativeTheme.themeSource = theme
 }
 
 function createWindow(): void {
@@ -3186,8 +3184,7 @@ function createWindow(): void {
   const useW = Number.isFinite(winW) && winW > 0 ? winW : 1440
   const useH = Number.isFinite(winH) && winH > 0 ? winH : 900
   const material = resolveWindowMaterial()
-  const useMaterial = material !== 'none'
-  windowMaterialActive = useMaterial
+  windowMaterialActive = material !== 'none'
 
   win = new BrowserWindow({
     icon: shellIconPath(),
@@ -3198,14 +3195,12 @@ function createWindow(): void {
     show: false,
     frame: false,
     roundedCorners: true,
-    backgroundColor: useMaterial ? '#00000000' : '#171717',
-    transparent: useMaterial,
-    ...(useMaterial ? { backgroundMaterial: material } : {}),
+    backgroundColor: '#171717',
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
       additionalArguments: [
         ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : []),
-        ...(useMaterial ? [`--yan-window-material=${material}`] : [])
+        ...(windowMaterialActive ? [`--yan-window-material=${material}`] : [])
       ],
       sandbox: true,
       nodeIntegration: false,
@@ -3213,6 +3208,7 @@ function createWindow(): void {
       spellcheck: false
     }
   })
+  if (windowMaterialActive) win.setBackgroundMaterial(material)
   guardHtmlArtifactFrames(win.webContents)
 
   if (process.platform === 'win32') {
@@ -3231,7 +3227,7 @@ function createWindow(): void {
 
   void getSettings().then((s) => {
     if (!win) return
-    if (s.theme === 'light' && !useMaterial) win.setBackgroundColor('#fcfcfa')
+    if (s.theme === 'light' && !windowMaterialActive) win.setBackgroundColor('#fcfcfa')
     syncNativeThemeSource(s.theme)
     if (s.alwaysOnTop) {
       win.setAlwaysOnTop(true)

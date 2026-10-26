@@ -3,11 +3,17 @@
   :root {
     color-scheme: light dark;
     --bg: light-dark(#FCFCFB, #171717);
-    --side: light-dark(#F6F9FC, #1C2027);
-    --sidebar-tint: light-dark(rgba(246,249,252,.85), rgba(28,32,39,.85));
+    --side: light-dark(#F6F9FC, #1B1B1D);
+    --side-glass: light-dark(rgba(246,249,252,.95), rgba(27,27,29,.92));
+    --side-tint: light-dark(rgba(247,249,252,.88), rgba(20,20,22,.80));
+    --side-rim-hi: light-dark(rgba(255,255,255,.95), rgba(255,255,255,.22));
+    --side-rim-lo: light-dark(rgba(11,11,11,.07), rgba(255,255,255,.035));
+    --side-sheen: light-dark(rgba(255,255,255,.58), rgba(255,255,255,.055));
     --surface: light-dark(#FFFFFF, #1C1C1B);
     --surface-0: light-dark(#F9F9F7, #0B0B0B);
     --surface-3: light-dark(#FFFFFF, #20201F);
+    --comp-rim-hi: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.16));
+    --comp-rim-lo: light-dark(rgba(11,11,11,.06), rgba(255,255,255,.05));
     --hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.075));
     --hover-main: light-dark(rgba(11,11,11,.04), rgba(255,255,255,.05));
     --press: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.15));
@@ -101,8 +107,10 @@
     --shadow-md: 0 2px 6px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
     --shadow-lg: 0 0 0 .5px rgba(11,11,11,.12), 0 4px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.05);
     --shadow-comp: 0 0 0 .5px rgba(31,31,30,.15), 0 4px 20px rgba(0,0,0,.035);
+    --shadow-comp-float: 0 2px 6px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
     --shadow-pop: 0 0 0 .5px rgba(11,11,11,.12), 0 8px 24px rgba(0,0,0,.1), 0 2px 6px rgba(0,0,0,.05);
     --shadow-card: inset 0 0 0 1px rgba(11,11,11,.1), 0 1px 2px rgba(0,0,0,.03);
+    --shadow-side: 0 0 0 .5px rgba(11,11,11,.08), inset 0 1px 0 0 rgba(255,255,255,.55), inset 0 -1px 0 0 rgba(11,11,11,.05), 0 2px 6px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.12);
     --ring-focus: inset 0 0 0 1px var(--bg), 0 0 0 1px var(--accent), 0 0 6px 1px var(--focus-glow);
     --ring-focus-inset: inset 0 0 0 1px var(--accent);
     --ring-outline: 1px solid var(--accent);
@@ -152,9 +160,11 @@
     --r-md: 8px;
     --r-lg: 10px;
     --r-bubble: 12px;
+    --r-side: 12px;
     --r-xl: 14px;
     --r-full: 999px;
     --size-side: 288px;
+    --size-side-inset: 8px;
     --size-side-foot: 28px;
     --size-status: 14px;
     --size-avatar: 20px;
@@ -207,8 +217,10 @@
       --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
       --shadow-lg: inset 0 0 0 1px rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
       --shadow-comp: inset 0 0 0 1px rgba(255,255,255,.1);
+      --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
       --shadow-pop: inset 0 0 0 1px rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
       --shadow-card: inset 0 0 0 1px rgba(255,255,255,.1);
+      --shadow-side: inset 0 1px 0 0 rgba(255,255,255,.07), inset 0 -1px 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
     }
   }
   :root[data-theme='dark'] {
@@ -217,8 +229,10 @@
     --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
     --shadow-lg: inset 0 0 0 1px rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
     --shadow-comp: inset 0 0 0 1px rgba(255,255,255,.1);
+    --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
     --shadow-pop: inset 0 0 0 1px rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
     --shadow-card: inset 0 0 0 1px rgba(255,255,255,.1);
+    --shadow-side: inset 0 1px 0 0 rgba(255,255,255,.07), inset 0 -1px 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
   }
   [data-density-scope='compact'] {
     --t-caption: 11px;

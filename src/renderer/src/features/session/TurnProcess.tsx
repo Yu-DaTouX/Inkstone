@@ -14,9 +14,10 @@ import type { TranscriptView } from './transcript-view-model'
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 const STAGE_SEGMENTS = 1
 
-export function TurnProcess({ process, live, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId }: {
+export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId }: {
   process: TurnSegment[]
   live: boolean
+  alertFailures: boolean
   view: TranscriptView
   sessionId: string | null
   turnId?: string
@@ -43,9 +44,8 @@ export function TurnProcess({ process, live, view, sessionId, turnId, approvalId
     <div className="v3-process" data-open={open || undefined} data-live={live || undefined} data-testid="v3-process">
       {headless ? null : (
         <button type="button" className="v3-process-head" aria-expanded={open} onClick={() => setManual(!open)} data-testid="v3-process-toggle">
-          <span className="v3-process-label">{tt('processLabel')}</span>
           {processParts(summary, tt).map((part) => <span key={part} className="v3-process-count">{part}</span>)}
-          {summary.failed ? <span className="v3-steps-stats err" data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
+          {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           <Icon name="chevron-right" size={14} className="v3-chev" />
         </button>
       )}
@@ -57,7 +57,7 @@ export function TurnProcess({ process, live, view, sessionId, turnId, approvalId
             </Button>
           ) : null}
           {picked.shown.map((segment) => (
-            <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} />
+            <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
           ))}
         </div>
       ) : null}
@@ -72,12 +72,13 @@ function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionT
   return parts
 }
 
-function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking }: {
+function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures }: {
   segment: TurnSegment
   sessionId: string | null
   approvalIds: ReadonlySet<string>
   glowId?: string | null
   openThinking: boolean
+  alertFailures: boolean
 }): JSX.Element {
   const { lead, steps } = segmentSteps(segment)
   return (
@@ -95,7 +96,7 @@ function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking 
         </div>
       ) : null}
       {steps.map((step) => step.kind === 'tools'
-        ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} />
+        ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} />
         : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
     </div>
   )

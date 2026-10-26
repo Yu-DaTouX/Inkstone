@@ -1,5 +1,6 @@
 import '../design/index.css'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
+import { FocusScope } from 'react-aria'
 import { showToast, Splitter } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
@@ -186,7 +187,7 @@ export default function ShellV3(): ReactElement {
   useEffect(() => { if (sidebarOpen) { reveal.cancel(); setSidebarPreview(false) } }, [sidebarOpen, reveal])
   const [previewPhase, setPreviewPhase] = useState<'off' | 'leaving' | 'reset'>('off')
   const previewWasOn = useRef(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const was = previewWasOn.current
     previewWasOn.current = sidebarPreview
     if (sidebarPreview || !was || useUiV3.getState().sidebarOpen) { setPreviewPhase('off'); return }
@@ -602,6 +603,22 @@ export default function ShellV3(): ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [sidebarCompact, paletteOpen, panelMode, toggleWorkspace, openWorkspaceTab, lang, stepSessionSwitcher])
 
+  const drawerOpen = sidebarCompact && sidebarOpen
+  const drawerWasOpen = useRef(false)
+  useEffect(() => {
+    const was = drawerWasOpen.current
+    drawerWasOpen.current = drawerOpen
+    if (drawerOpen === was) return
+    if (drawerOpen) {
+      document.querySelector<HTMLElement>('.v3-side')?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')?.focus({ preventScroll: true })
+      return
+    }
+    if (!sidebarCompact) return
+    const active = document.activeElement
+    if (active && active !== document.body && !active.closest('.v3-side')) return
+    document.querySelector<HTMLElement>('[data-testid="v3-rail-toggle"]')?.focus({ preventScroll: true })
+  }, [drawerOpen, sidebarCompact])
+
   const sidebarActions = useMemo(() => ({
     onClose: () => { setSidebarPreview(false); useUiV3.getState().setSidebarOpen(false) },
     onPin: () => useUiV3.getState().setSidebarOpen(true),
@@ -623,12 +640,14 @@ export default function ShellV3(): ReactElement {
     <V3ErrorBoundary>
       <div className="v3-root" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties} data-narrow={sidebarCompact ? '1' : '0'} data-side={sidebarOpen && !sidebarDragHidden ? 'open' : 'closed'} data-side-drag={sidebarDragHidden ? '1' : undefined} data-sidebar-preview={sidebarOpen ? undefined : sidebarPreview ? '1' : previewPhase === 'off' ? undefined : previewPhase}>
         {!sidebarOpen ? <button type="button" className="v3-sidebar-reveal" aria-label={lang === 'en-US' ? 'Show sessions' : '展开会话列表'} data-testid="v3-sidebar-reveal" onClick={() => useUiV3.getState().setSidebarOpen(true)} onPointerEnter={reveal.start} onPointerLeave={reveal.cancel} /> : null}
-        <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
+        <FocusScope contain={drawerOpen}>
+          <Sidebar {...sidebarActions} preview={sidebarPreview && !sidebarOpen} />
+        </FocusScope>
         {(sidebarOpen || sidebarDragHidden) && !sidebarCompact ? <Splitter className="v3-sidebar-resizer" value={Math.min(sidebarWidth, sidebarMax)} min={SIDEBAR_WIDTH_MIN} max={sidebarMax} step={SIDEBAR_WIDTH_STEP} largeStep={SIDEBAR_WIDTH_STEP_LARGE} collapseBelow={SIDEBAR_DRAG_COLLAPSE} onCollapse={() => useUiV3.getState().setSidebarOpen(false)} onDragHide={setSidebarDragHidden} aria-label={lang === 'en-US' ? 'Resize session list' : '调整会话列表宽度'} data-testid="v3-sidebar-resizer" onChange={setSidebarWidth} /> : null}
         {sidebarCompact && sidebarOpen ? (
           <div className="v3-scrim" onClick={() => useUiV3.getState().setSidebarOpen(false)} aria-hidden />
         ) : null}
-        <main className="v3-main">
+        <main className="v3-main" inert={drawerOpen}>
           <Header
             narrow={narrow}
             sidebarOverlay={sidebarCompact}

@@ -38,7 +38,7 @@
   }
 
   .ctx-ring-arc[data-tone='ok'] {
-    stroke: var(--accent);
+    stroke: var(--fg2);
   }
 
   .ctx-ring-arc[data-tone='ask'] {

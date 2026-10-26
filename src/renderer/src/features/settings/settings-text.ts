@@ -20,7 +20,6 @@ export interface SettingsText {
   sectionUsage: string
   sectionShortcuts: string
   sectionAbout: string
-  groupGeneral: string
   groupCustomize: string
   groupLocal: string
   navSkills: string
@@ -154,7 +153,6 @@ const ZH: SettingsText = {
   sectionUsage: '用量',
   sectionShortcuts: '快捷键',
   sectionAbout: '关于',
-  groupGeneral: '设置',
   groupCustomize: '自定义',
   groupLocal: '此电脑',
   navSkills: '技能与扩展',
@@ -288,7 +286,6 @@ const EN: SettingsText = {
   sectionUsage: 'Usage',
   sectionShortcuts: 'Keyboard shortcuts',
   sectionAbout: 'About',
-  groupGeneral: 'Settings',
   groupCustomize: 'Customize',
   groupLocal: 'This computer',
   navSkills: 'Skills & extensions',

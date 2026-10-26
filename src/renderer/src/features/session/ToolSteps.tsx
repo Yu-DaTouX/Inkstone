@@ -6,7 +6,7 @@ import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-cal
 import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
-import { isDeniedCall, shellTitle, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
+import { isDeniedCall, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
 import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolRunParts, type ToolRow } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
@@ -54,7 +54,7 @@ function holdsCall(nodes: readonly ToolCallNode[], id: string): boolean {
   return nodes.some((node) => node.call.id === id || holdsCall(node.children, id))
 }
 
-export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools) }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null }): JSX.Element | null {
+export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveToolGlowId(tools), alertFailures = true }: { tools: UIToolCall[]; approvalIds?: ReadonlySet<string>; glowId?: string | null; alertFailures?: boolean }): JSX.Element | null {
   const t = useT()
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
@@ -65,7 +65,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
         {rows.map((row) => {
-          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} glowId={glowId} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
+          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.standalone && isQuestionCall(row.node.call)) {
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
@@ -80,7 +80,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
   )
 }
 
-function ToolGroupRow({ row, asking, glowId }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null }): JSX.Element {
+function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null; alertFailures: boolean }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(row.id)
@@ -100,10 +100,10 @@ function ToolGroupRow({ row, asking, glowId }: { row: Extract<ToolRow, { kind: '
           <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
         ) : (
           <span className="v3-steps-label">
-            {parts.map((part, index) => <span key={index} data-failed={part.failed || undefined}>{part.text}</span>)}
+            {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
           </span>
         )}
-        <ToolRunStats summary={summary} />
+        <ToolRunStats summary={summary} alertFailures={alertFailures} />
         {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
         {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
@@ -211,6 +211,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const command = kind === 'command' ? commandOf(call) : ''
   const onlyCommand = !!command && Object.keys(args ?? {}).every((k) => k === 'command' || k === 'timeout' || k === 'description')
   const argsText = onlyCommand ? '' : call.args && Object.keys(call.args as object).length ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? ''
+  const argsShown = !onlyCommand && !!argsText
   const copyText = [command ? `$ ${command}` : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
   const failed = call.status === 'error' && !call.cancelled && !isDeniedCall(call)
   const copy = (): void => {
@@ -238,19 +239,18 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
         <>
           {command ? (
             <section className="v3-step-sec" data-sec="command">
-              <div className="v3-step-sec-head">{shellTitle(call.name)}</div>
               <pre className="v3-step-cmd-line"><span className="v3-step-cmd-prompt" aria-hidden>$ </span>{command}</pre>
             </section>
           ) : null}
-          {onlyCommand || !argsText ? null : (
+          {argsShown ? (
             <section className="v3-step-sec" data-sec="args">
               <div className="v3-step-sec-head">{tt('detailArgs')}</div>
               <pre className="v3-step-pre args">{argsText}</pre>
             </section>
-          )}
+          ) : null}
           {call.output ? (
             <section className="v3-step-sec" data-sec="output">
-              <div className="v3-step-sec-head">{tt('detailOutput')}</div>
+              {argsShown ? <div className="v3-step-sec-head">{tt('detailOutput')}</div> : null}
               <StepOutput text={call.output} error={failed || call.cancelled} />
             </section>
           ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}

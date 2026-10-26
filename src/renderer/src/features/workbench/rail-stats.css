@@ -122,7 +122,6 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-4);
     min-width: 0;
-    padding: var(--s-8) var(--s-10);
   }
 
   .wb-rs-rows {
@@ -166,12 +165,6 @@
 }
 
 @layer patterns {
-  .wb-rs-main {
-    border-radius: var(--r-md);
-    background: var(--surface);
-    box-shadow: var(--shadow-ring);
-  }
-
   .wb-rs-toggle {
     color: var(--fg3);
   }

@@ -1045,14 +1045,6 @@
     font-size: var(--t-footnote);
   }
 
-  .wb-tile[data-tile='todos'] .v3-todo-list {
-    padding: 0;
-  }
-
-  .wb-tile[data-tile='todos'] .v3-todo-row {
-    padding-inline: 0;
-  }
-
   .wb-bg {
     display: flex;
     flex-direction: column;

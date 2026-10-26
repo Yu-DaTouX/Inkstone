@@ -96,8 +96,7 @@ const SECTION_ICON: Record<SettingsIconId, ReactElement> = {
   puzzle: <Puzzle size={ICON_SIZE} aria-hidden />
 }
 
-const GROUP_LABEL: Record<SettingsNavGroupId, keyof SettingsText> = {
-  general: 'groupGeneral',
+const GROUP_LABEL: Partial<Record<SettingsNavGroupId, keyof SettingsText>> = {
   customize: 'groupCustomize',
   local: 'groupLocal'
 }
@@ -396,20 +395,23 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
         />
       }
     >
-      {NAV_GROUPS.map(({ group, entries }) => (
-        <SettingsNavGroup key={group} title={text[GROUP_LABEL[group]]}>
-          {entries.map((entry) => (
-            <SettingsNavItem
-              key={entry.key}
-              icon={SECTION_ICON[entry.icon]}
-              label={navLabel(entry)}
-              current={isCurrent(entry)}
-              onPress={() => selectEntry(entry)}
-              data-testid={navTestId(entry)}
-            />
-          ))}
-        </SettingsNavGroup>
-      ))}
+      {NAV_GROUPS.map(({ group, entries }) => {
+        const labelKey = GROUP_LABEL[group]
+        return (
+          <SettingsNavGroup key={group} title={labelKey ? text[labelKey] : undefined}>
+            {entries.map((entry) => (
+              <SettingsNavItem
+                key={entry.key}
+                icon={SECTION_ICON[entry.icon]}
+                label={navLabel(entry)}
+                current={isCurrent(entry)}
+                onPress={() => selectEntry(entry)}
+                data-testid={navTestId(entry)}
+              />
+            ))}
+          </SettingsNavGroup>
+        )
+      })}
     </SettingsNav>
   )
 

@@ -28,18 +28,20 @@ function RowMark({ kind }: { kind: TodoRowKind }): ReactElement {
 export function TodoTileRows({
   model,
   text,
-  markActiveRow
+  anchorIndex = model.activeIndex,
+  markAnchorRow
 }: {
   model: TodoTileModel
   text: TodoTileText
-  markActiveRow?: (el: HTMLLIElement | null) => void
+  anchorIndex?: number
+  markAnchorRow?: (el: HTMLLIElement | null) => void
 }): ReactElement {
   return (
     <ul className="v3-todo-list">
       {model.rows.map((row) => (
         <li
           key={row.index}
-          ref={row.index === model.activeIndex ? markActiveRow : undefined}
+          ref={row.index === anchorIndex ? markAnchorRow : undefined}
           className="v3-todo-row"
           data-kind={row.kind}
           data-testid="v3-todo-row"

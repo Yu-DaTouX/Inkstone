@@ -23,6 +23,7 @@ import {
   CompletionSweep,
   Dialog,
   DialogTrigger,
+  FileCard,
   Focusable,
   Header,
   Heading,
@@ -75,6 +76,7 @@ import {
   ToastRegion,
   toastQueue,
   Tooltip,
+  TooltipHint,
   TooltipTrigger
 } from './index'
 
@@ -93,7 +95,7 @@ export const ButtonStates: Story = {
   parameters: {
     stateMatrix: {
       components: ['Button', 'IconButton'],
-      states: STATES('default', 'hover', 'press', 'focus', 'disabled', 'loading'),
+      states: STATES('default', 'hover', 'press', 'focus', 'disabled', 'loading', 'selected'),
       declared: STATES('hover', 'press', 'focus')
     }
   },
@@ -157,6 +159,17 @@ export const ButtonStates: Story = {
           <GearGlyph />
         </IconButton>
         <IconButton aria-label="禁用" isDisabled onPress={() => undefined}>
+          <GearGlyph />
+        </IconButton>
+      </Row>
+      <Row label="开关">
+        <IconButton aria-label="强调按下" aria-pressed onPress={() => undefined}>
+          <GearGlyph />
+        </IconButton>
+        <IconButton aria-label="中性按下" pressedTone="neutral" aria-pressed onPress={() => undefined}>
+          <GearGlyph />
+        </IconButton>
+        <IconButton aria-label="中性未按下" pressedTone="neutral" aria-pressed={false} onPress={() => undefined}>
           <GearGlyph />
         </IconButton>
       </Row>
@@ -639,7 +652,7 @@ export const PopoverTooltipStates: Story = {
   name: 'Popover / Tooltip · 展开与延迟',
   parameters: {
     stateMatrix: {
-      components: ['Popover', 'Tooltip', 'TooltipTrigger', 'Focusable'],
+      components: ['Popover', 'Tooltip', 'TooltipHint', 'TooltipTrigger', 'Focusable'],
       states: STATES('default', 'open'),
       declared: STATES('open')
     }
@@ -651,6 +664,14 @@ export const PopoverTooltipStates: Story = {
           悬停或聚焦
         </Button>
         <Tooltip>收起侧栏 Ctrl+B</Tooltip>
+      </TooltipTrigger>
+      <TooltipTrigger delay={0}>
+        <Button variant="secondary" onPress={() => undefined}>
+          带快捷键与说明
+        </Button>
+        <Tooltip>
+          <TooltipHint label="收起侧栏" shortcut="Ctrl+B" detail="再按一次展开" />
+        </Tooltip>
       </TooltipTrigger>
       <TooltipTrigger delay={0}>
         <Focusable>
@@ -707,6 +728,31 @@ export const ToastStates: Story = {
       </Row>
       <ToastRegion />
       <p style={noteStyle}>按钮只在点击时推送固定样例；故事加载本身不产生提示，也不访问宿主。</p>
+    </div>
+  )
+}
+
+export const FileCardStates: Story = {
+  name: 'FileCard · 文件与目录卡片',
+  parameters: {
+    stateMatrix: {
+      components: ['FileCard'],
+      states: STATES('default', 'disabled', 'density-compact', 'density-comfortable'),
+      declared: []
+    }
+  },
+  render: () => (
+    <div style={{ display: 'grid', gap: 'var(--s-16)' }}>
+      <Row label="标准">
+        <FileCard name="README.md" path="E:/project/README.md" onPress={() => undefined} />
+        <FileCard name="src" path="E:/project/src" isDirectory onPress={() => undefined} />
+        <FileCard name="不可用.md" isDisabled onPress={() => undefined} />
+      </Row>
+      <Row label="紧凑">
+        <FileCard compact name="README.md" path="E:/project/README.md" onPress={() => undefined} />
+        <FileCard compact name="src" path="E:/project/src" isDirectory onPress={() => undefined} />
+        <FileCard compact name="不可用.md" isDisabled onPress={() => undefined} />
+      </Row>
     </div>
   )
 }

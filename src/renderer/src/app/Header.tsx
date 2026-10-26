@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Pin, Settings, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
@@ -39,6 +39,8 @@ const TITLEBAR_PANES = [
 ] as const
 
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs']
+const MENU_KEEP_ON_TOP = 'head:keep-on-top'
+const MENU_SETTINGS = 'head:settings'
 
 const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   terminal: 'openTerminal',
@@ -64,7 +66,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const maximized = useStore((s) => s.maximized)
   const alwaysOnTop = useStore((s) => s.alwaysOnTop)
   const toggleAlwaysOnTop = useStore((s) => s.toggleAlwaysOnTop)
-  const settingsOpen = useStore((s) => s.settingsOpen)
   const shortcutOverrides = shortcutOverridesFromSettings(useStore((s) => s.settings))
   const win = window.yan.win
 
@@ -80,6 +81,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   }
   const paneLabel = (tab: WorkbenchTabId): string => withShortcut(activeLabel(tab), tab)
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
+  const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
+  const menuDot = route === 'chat' && narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -137,6 +140,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
               <IconButton
                 aria-label={sessionBarLabel}
                 aria-pressed={sessionBarOpen}
+                pressedTone="neutral"
+                className="v3-head-group-end"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
                 data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
@@ -144,7 +149,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 <SquareMenu size={16} />
               </IconButton>
             </IconTip>
-            <Separator orientation="vertical" className="v3-head-sep" />
             {narrow
               ? null
               : TITLEBAR_PANES.map(({ tab, Icon }) => (
@@ -152,6 +156,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                     <IconButton
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
+                      pressedTone="neutral"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
                       onPress={() => onTogglePane(tab)}
@@ -161,44 +166,42 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                     </IconButton>
                   </IconTip>
                 ))}
-            <MenuTrigger>
-              <IconButton aria-label={toolText.viewOptions} title={toolText.viewOptions} className="v3-head-pane" data-testid="wb-more-tools">
-                <EllipsisVertical size={16} />
-                {narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab)) ? <span className="v3-head-pane-dot" aria-hidden /> : null}
-              </IconButton>
-              <Popover placement="bottom end" offset={6}>
-                <Menu
-                  aria-label={toolText.viewOptions}
-                  className="wb-more-menu"
-                  data-testid="wb-more-menu"
-                  onAction={(key) => onTogglePane(key as WorkbenchTabId)}
-                >
-                  {[...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES].map((tab) => (
-                    <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
-                      <span className="v3-head-check" aria-hidden>{openPanes.has(tab) ? <Check size={14} /> : null}</span>
-                      {toolText.tabs[tab]}
-                    </MenuItem>
-                  ))}
-                </Menu>
-              </Popover>
-            </MenuTrigger>
-            <Separator orientation="vertical" className="v3-head-sep" />
           </>
         ) : null}
-        <IconTip label={text.settingsEntryHint}>
-          <IconButton
-            aria-label={text.settings}
-            onPress={onSettings}
-            data-testid="v3-header-settings"
-            data-active={settingsOpen ? '1' : '0'}
-          >
-            <Settings size={16} />
+        <MenuTrigger>
+          <IconButton aria-label={text.more} title={text.more} className="v3-head-pane" data-testid="wb-more-tools">
+            <EllipsisVertical size={16} />
+            {menuDot ? <span className="v3-head-pane-dot" aria-hidden /> : null}
           </IconButton>
-        </IconTip>
-
-        <IconTip label={text.keepOnTop}>
-          <IconButton aria-label={text.keepOnTop} aria-pressed={alwaysOnTop} data-active={alwaysOnTop ? '1' : '0'} onPress={() => void toggleAlwaysOnTop()} data-testid="v3-always-on-top"><Pin size={16} /></IconButton>
-        </IconTip>
+          <Popover placement="bottom end" offset={6}>
+            <Menu
+              aria-label={text.more}
+              className="wb-more-menu"
+              data-testid="wb-more-menu"
+              onAction={(key) => {
+                if (key === MENU_KEEP_ON_TOP) void toggleAlwaysOnTop()
+                else if (key === MENU_SETTINGS) onSettings()
+                else onTogglePane(key as WorkbenchTabId)
+              }}
+            >
+              {menuPanes.map((tab) => (
+                <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
+                  <span className="v3-head-check" aria-hidden>{openPanes.has(tab) ? <Check size={14} /> : null}</span>
+                  {toolText.tabs[tab]}
+                </MenuItem>
+              ))}
+              {menuPanes.length > 0 ? <Separator /> : null}
+              <MenuItem id={MENU_KEEP_ON_TOP} textValue={text.keepOnTop} aria-checked={alwaysOnTop} data-testid="v3-always-on-top">
+                <span className="v3-head-check" aria-hidden>{alwaysOnTop ? <Check size={14} /> : null}</span>
+                {text.keepOnTop}
+              </MenuItem>
+              <MenuItem id={MENU_SETTINGS} textValue={text.settings} data-testid="v3-menu-settings">
+                <span className="v3-head-check" aria-hidden />
+                {text.settings}
+              </MenuItem>
+            </Menu>
+          </Popover>
+        </MenuTrigger>
         <div className="v3-win">
           <button type="button" className="v3-winbtn v3-winbtn-min" aria-label={t('tb.minimize')} title={t('tb.minimize')} onClick={() => win.minimize()} data-testid="v3-min">
             <Minus size={14} />

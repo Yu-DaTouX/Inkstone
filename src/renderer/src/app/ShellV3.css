@@ -9,8 +9,13 @@
     color: var(--fg);
   }
 
-  :root[data-material] .v3-root {
-    background: transparent;
+  .v3-root[data-side='open'][data-narrow='0']::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: var(--sidebar-width, var(--size-side));
+    height: var(--size-side-inset);
+    -webkit-app-region: drag;
   }
 
   .v3-main {
@@ -19,7 +24,6 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg);
   }
 
   .v3-body {
@@ -40,13 +44,18 @@
     --tiles-reserve: var(--bar-reserve, 0px);
     --rail-gutter: calc(var(--s-8) + 28px + var(--s-8));
     --stream-scrollbar: 10px;
-    --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--tiles-on, 0));
+    --col-pl-min: calc(var(--s-20) + var(--rail-gutter) * var(--outline-on, 0));
     --col-r: calc(var(--s-20) + var(--tiles-reserve));
     --col-hidden-scrollbar: calc(var(--stream-scrollbar) * var(--tiles-on, 0));
-    --col-pl: max(var(--col-pl-min), min((100% - var(--sidebar-offset, 0px) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2, 100% - var(--col-r) - var(--size-chat)));
+    --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-pl: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-window-shift), 100% - var(--col-r) - var(--size-chat)));
     --col-pr: max(var(--col-r), 100% - var(--col-pl) - var(--size-chat));
-    --col-pad-l: max(var(--col-pl-min), min((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2, 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
+    --col-pad-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
+    --col-pad-l: max(var(--col-pl-min), min((100% - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift), 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
     --col-pad-r: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l) - var(--size-chat));
+  }
+  .v3-chat:has(.v3-rail) {
+    --outline-on: 1;
   }
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
@@ -84,9 +93,11 @@
   .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-text {
     display: none;
   }
-  .v3-head-sep.ui-separator {
-    align-self: center;
-    height: var(--s-16);
+  .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-wrap:has(> .ctx-ring:not([data-tone='ask'], [data-tone='fail'], [aria-expanded='true'])) {
+    display: none;
+  }
+  .v3-head-group-end {
+    margin-inline-end: var(--s-8);
   }
 
   .v3-chat {

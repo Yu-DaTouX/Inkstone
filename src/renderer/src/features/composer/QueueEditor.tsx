@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { ChevronDown, ChevronUp, CornerUpRight, EllipsisVertical, History, Send } from 'lucide-react'
-import { Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../../ui'
+import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../../ui'
 import type { QueueItem } from '../../../../shared/ipc'
 import { useT } from '../../i18n'
 import { pendingSendsForView, useStore } from '../../state/store'
@@ -22,6 +22,7 @@ export function QueueEditor() {
   const session = useStore((s) => s.session)
   const pendingSends = pendingSendsForView({ pendingSends: allPendingSends, peekedSessionId, peekedPath, session })
   const releaseSend = useStore((s) => s.releaseSend)
+  const discardSend = useStore((s) => s.discardSend)
   const restoreSend = useStore((s) => s.restoreSend)
   const steerQueued = useStore((s) => s.steerQueued)
   const removeQueued = useStore((s) => s.removeQueued)
@@ -31,6 +32,7 @@ export function QueueEditor() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const listId = useId()
 
   useEffect(() => {
     if (editingId && !locateQueueItem(queue, editingId)) {
@@ -73,6 +75,11 @@ export function QueueEditor() {
   const collapsible = total > 1
   const showBody = !collapsible || expanded
   const head = pendingSends[0] ?? steering[0] ?? followUp[0]
+  const pill = (
+    <Badge tone="accent" className="cq-pill">
+      {t('queue.pill', { n: total })}
+    </Badge>
+  )
 
   const renderEditor = (id: string) => (
     <div className="cq-edit" data-testid="queue-edit-panel">
@@ -188,6 +195,7 @@ export function QueueEditor() {
             if (key === 'steer') void releaseSend(id, 'steer')
             else if (key === 'follow') void releaseSend(id, 'followUp')
             else if (key === 'restore') restoreSend(id)
+            else if (key === 'discard') discardSend(id)
           }}
         >
           {roundRunning ? (
@@ -202,6 +210,9 @@ export function QueueEditor() {
           <MenuItem id="restore" textValue={t('queue.restore')} data-testid="pending-restore">
             {t('queue.restore')}
           </MenuItem>
+          <MenuItem id="discard" textValue={t('queue.delete')} className="cq-menu-danger" data-testid="pending-discard">
+            {t('queue.delete')}
+          </MenuItem>
         </Menu>
       </Popover>
     </MenuTrigger>
@@ -214,59 +225,68 @@ export function QueueEditor() {
       </div>
     ) : (
       <div className={`cq-row ${kind === 'steering' ? 'cq-steering' : ''}`} key={item.id} title={item.text} data-testid="queue-row">
-        {kind === 'steering' ? (
+        {!collapsible ? (
+          pill
+        ) : kind === 'steering' ? (
           <CornerUpRight className="cq-icon" size={12} aria-hidden />
         ) : (
           <History className="cq-icon" size={12} aria-hidden />
         )}
         <span className="cq-text">{item.text}</span>
         {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
-        {kind === 'steering' ? <span className="cq-tag cq-tag-run">{t('queue.inserting')}</span> : null}
+        {kind === 'steering' ? <span className="cq-tag cq-tag-steer">{t('queue.inserting')}</span> : null}
         <span className="cq-actions">
           {renderMenu(item.id, item.text, { index, total: listLength, canSteer: kind === 'followUp' })}
         </span>
       </div>
     )
 
+  const rows = (
+    <>
+      {pendingSends.map((item) => (
+        <div className="cq-row cq-pending" key={item.id} title={item.text} data-testid="queue-pending">
+          {collapsible ? <Send className="cq-icon" size={12} aria-hidden /> : pill}
+          <span className="cq-text">{item.text}</span>
+          {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
+          <span className="cq-tag">{t('queue.hold')}</span>
+          <span className="cq-actions">{renderPendingMenu(item.id, item.text)}</span>
+        </div>
+      ))}
+      {steering.map((item, index) => renderQueuedRow(item, index, steering.length, 'steering'))}
+      {followUp.map((item, index) => renderQueuedRow(item, index, followUp.length, 'followUp'))}
+    </>
+  )
+
   return (
-    <div className="composer-queue" data-testid="queue-stack" data-count={total}>
+    <div className="composer-queue" data-testid="queue-stack" data-count={total} data-collapsible={collapsible}>
       {collapsible ? (
         <button
           type="button"
           className="cq-row cq-collapsed"
           aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
           aria-label={expanded ? t('queue.collapse') : t('queue.expand')}
           data-testid="queue-toggle"
           onClick={() => setExpanded((open) => !open)}
         >
-          <span className="cq-count">{t('queue.count', { n: total })}</span>
-          {head ? <span className="cq-preview">{t('queue.next', { text: previewOf(head.text) })}</span> : <span className="cq-preview" />}
+          {pill}
+          <span className="cq-preview">{head ? t('queue.next', { text: previewOf(head.text) }) : ''}</span>
           {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
         </button>
       ) : null}
 
-      {showBody ? (
+      {!collapsible ? rows : null}
+
+      {collapsible && showBody ? (
         <>
-          {pendingSends.map((item) => (
-            <div className="cq-row cq-pending" key={item.id} title={item.text} data-testid="queue-pending">
-              <Send className="cq-icon" size={12} aria-hidden />
-              <span className="cq-text">{item.text}</span>
-              {item.images?.length ? <span className="cq-tag">{t('queue.images', { n: item.images.length })}</span> : null}
-              <span className="cq-tag">{t('queue.hold')}</span>
-              <span className="cq-actions">{renderPendingMenu(item.id, item.text)}</span>
-            </div>
-          ))}
-
-          {steering.map((item, index) => renderQueuedRow(item, index, steering.length, 'steering'))}
-          {followUp.map((item, index) => renderQueuedRow(item, index, followUp.length, 'followUp'))}
-
-          {showBody && total > 0 ? (
-            <div className="cq-footer">
-              <Button variant="ghost" size="sm" className="cq-clear" data-testid="queue-clear-all" onPress={clearAll}>
-                {t('queue.clearAll')}
-              </Button>
-            </div>
-          ) : null}
+          <div className="cq-list" id={listId} data-testid="queue-list">
+            {rows}
+          </div>
+          <div className="cq-footer">
+            <Button variant="ghost" size="sm" className="cq-clear" data-testid="queue-clear-all" onPress={clearAll}>
+              {t('queue.clearAll')}
+            </Button>
+          </div>
         </>
       ) : null}
     </div>

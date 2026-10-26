@@ -51,9 +51,11 @@ export function StreamWidthSetting(): ReactElement {
         onChangeEnd={(value) => void save(Array.isArray(value) ? value[0] : value)}
         data-testid="v3-stream-width"
       />
-      <Button variant="ghost" size="sm" aria-label={t('set.streamWidthReset')} isDisabled={saving || (draft === null && settings?.streamWidth === undefined)} onPress={() => void save(undefined)}>
-        {t('set.streamWidthDefault', { n: tokens.size.chat })}
-      </Button>
+      {draft !== null || settings?.streamWidth !== undefined ? (
+        <Button variant="ghost" size="sm" aria-label={t('set.streamWidthReset')} isDisabled={saving} onPress={() => void save(undefined)}>
+          {t('set.streamWidthDefault', { n: tokens.size.chat })}
+        </Button>
+      ) : null}
     </SettingsRow>
   )
 }

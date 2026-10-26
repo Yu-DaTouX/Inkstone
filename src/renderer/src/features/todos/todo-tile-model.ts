@@ -51,3 +51,8 @@ export function activeTodoRow(model: TodoTileModel): TodoTileRow | undefined {
   return model.activeIndex >= 0 ? model.rows[model.activeIndex] : undefined
 }
 
+export function anchorTodoIndex(model: TodoTileModel): number {
+  if (model.activeIndex >= 0) return model.activeIndex
+  return model.rows.findIndex((row) => row.kind !== 'done')
+}
+

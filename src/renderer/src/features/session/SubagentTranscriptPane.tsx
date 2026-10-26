@@ -235,7 +235,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
           </article>
           {turns.map((turn) => (
             <div key={turn.id} className="v3-stream-row">
-              <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} readOnly />
+              <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
             </div>
           ))}
           {turns.length === 0 && model.live ? <p className="sa-pane-wait">{t('sa.waitingMessages')}</p> : null}

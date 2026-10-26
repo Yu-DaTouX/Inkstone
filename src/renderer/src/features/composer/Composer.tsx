@@ -41,7 +41,6 @@ import {
   composerLocalCommand,
   composerMode,
   composerPlaceholderKey,
-  composerPrompt,
   composerSubmitAction
 } from './composer-layout'
 import {
@@ -485,9 +484,8 @@ export function Composer({ className }: { className?: string } = {}) {
   const canSend = hasComposerText(value) || attachmentCount > 0
   const mode = composerMode(value)
   const placeholder = roundRunning
-    ? `Enter ${t('queue.steerNow')} · Ctrl+Q / Alt+Enter ${t('queue.queueIt')}`
+    ? t('composer.phRunning')
     : t(composerPlaceholderKey({ bash: mode === 'bash', session: !!sessionId && !freshSession, firstRun }))
-  const prompt = composerPrompt(value)
   const historyStatus = historyNav
     ? `${t('composer.historyStatus', { n: historyNav.index, total: historyNav.total })}${
         historyNav.hasDraft ? ` · ${t('composer.historyDraftHint')}` : ''
@@ -513,11 +511,11 @@ export function Composer({ className }: { className?: string } = {}) {
       }}
       onDrop={onDrop}
     >
-      <PlanCard />
       <IsolationMergeBar />
-      <QueueEditor />
       <div className="composer">
         <ComposerBorder />
+        <PlanCard />
+        <QueueEditor />
         <AttachmentStrip onRemoveImage={(n) => setValue((draft) => renumberImageRefsAfterRemoval(draft, n))} />
         <ImageRefWarning text={value} />
         <div className="composer-input">
@@ -528,9 +526,12 @@ export function Composer({ className }: { className?: string } = {}) {
             </div>
           ) : null}
           <div className="composer-line">
-            <span className="composer-prompt" aria-hidden>
-              {prompt}
-            </span>
+            <PlusMenu onInsert={insertAtCursor} />
+            {mode ? (
+              <span className="composer-mode" data-mode={mode} data-testid="composer-mode">
+                {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
+              </span>
+            ) : null}
             <ComposerEditor
               ref={editorRef}
               value={value}
@@ -547,48 +548,44 @@ export function Composer({ className }: { className?: string } = {}) {
               onPaste={onPaste}
               onCompositionChange={setComposing}
             />
+            <div className="composer-line-end">
+              <VoiceButton onText={insertAtCursor} scope={sessionId} />
+              {submitAction === 'stop' ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={t('composer.stop')}
+                  title={t('composer.stop')}
+                  className="composer-send composer-stop"
+                  data-testid="composer-stop"
+                  onPress={() => void abort()}
+                >
+                  <Square size={10} fill="currentColor" aria-hidden />
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  aria-label={t('composer.go')}
+                  className="composer-send"
+                  data-testid="composer-send"
+                  isDisabled={!canSend}
+                  onPress={() => void submitMessage('steer')}
+                >
+                  <ArrowUp size={14} aria-hidden />
+                </Button>
+              )}
+            </div>
           </div>
           <div className="composer-bar">
             <div className="composer-tools">
-              {mode ? (
-                <span className="composer-mode" data-mode={mode} data-testid="composer-mode">
-                  {mode === 'bash' ? t('composer.bashMode') : t('composer.cmdMode')}
-                </span>
-              ) : null}
               <PermissionToggle />
               {freshSession ? <ProjectPicker /> : null}
-              <PlusMenu onInsert={insertAtCursor} />
             </div>
             <div className="composer-aux">
-              <VoiceButton onText={insertAtCursor} scope={sessionId} />
               <ContextRing />
             </div>
             <ModelThinkingPicker />
-            {submitAction === 'stop' ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                aria-label={t('composer.stop')}
-                title={t('composer.stop')}
-                className="composer-send composer-stop"
-                data-testid="composer-stop"
-                onPress={() => void abort()}
-              >
-                <Square size={10} fill="currentColor" aria-hidden />
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                aria-label={t('composer.go')}
-                className="composer-send"
-                data-testid="composer-send"
-                isDisabled={!canSend}
-                onPress={() => void submitMessage('steer')}
-              >
-                <ArrowUp size={14} aria-hidden />
-              </Button>
-            )}
           </div>
         </div>
       </div>

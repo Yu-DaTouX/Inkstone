@@ -79,11 +79,13 @@
   .v3-msg:hover .v3-msg-act, .v3-msg-act:focus-visible { opacity: 1; }
   .v3-msg-act:hover { color: var(--fg); }
   .v3-user-actions { min-height: var(--size-btn); gap: var(--s-2); }
-  .v3-user-actions > .v3-msg-btn { color: var(--fg3); opacity: 0; transition: opacity var(--dur-fast) var(--ease-snap); }
-  .v3-msg.user:is(:hover, :focus-within) .v3-user-actions > .v3-msg-btn { opacity: 1; transition: opacity var(--dur-snap) var(--ease-snap) var(--dur-snap); }
+  .v3-user-actions > .v3-msg-btn { color: var(--fg3); }
+  .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'] { opacity: 0; transition: opacity var(--dur-fast) var(--ease-snap); }
+  .v3-msg.user:is(:hover, :focus-within) .v3-user-actions > :is(.v3-msg-btn, .v3-time),
+  .v3-msg.assistant:is(:hover, :focus-within) .v3-msg-meta[data-reveal='hover'] { opacity: 1; transition: opacity var(--dur-snap) var(--ease-snap) var(--dur-snap); }
   .v3-user-actions > .v3-msg-btn:hover { color: var(--fg); }
-  @media (pointer: coarse) { .v3-user-actions > .v3-msg-btn { opacity: 1; } }
-  :root[data-reduce-motion='true'] .v3-user-actions > .v3-msg-btn { transition: none; }
+  @media (hover: none), (pointer: coarse) { .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'] { opacity: 1; } }
+  :root[data-reduce-motion='true'] :is(.v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover']) { transition: none; }
   .v3-qa { width: 100%; max-width: 480px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-ring); overflow: hidden; }
   .v3-qa-item { padding: var(--s-8) var(--s-12); }
   .v3-qa-item + .v3-qa-item { border-top: 1px solid var(--line); }

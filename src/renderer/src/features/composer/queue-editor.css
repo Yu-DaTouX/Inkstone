@@ -16,6 +16,10 @@
     opacity: 1;
   }
 
+  .composer-queue[data-collapsible='false'] .cq-actions {
+    opacity: 1;
+  }
+
   @media (pointer: coarse) {
     .cq-actions {
       opacity: 1;
@@ -24,19 +28,22 @@
 
   .cq-collapsed {
     width: 100%;
-    min-height: 40px;
-    padding: 0 var(--s-12);
+    padding-right: var(--s-8);
     border: 0;
-    border-radius: var(--r-lg);
-    background: var(--alpha-1);
-    color: var(--fg);
+    background: transparent;
     font: inherit;
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     text-align: left;
     cursor: pointer;
   }
 
+  .cborder + .composer-queue > .cq-collapsed {
+    border-radius: var(--r-side) var(--r-side) 0 0;
+  }
+
   .cq-collapsed:hover {
-    background: var(--alpha-2);
+    background: var(--hover-main);
   }
 
   .cq-collapsed:focus-visible {
@@ -44,25 +51,29 @@
     box-shadow: var(--ring-focus);
   }
 
-  .cq-count {
+  .cq-collapsed > svg {
     flex: none;
-    font-weight: 500;
-    color: var(--fg);
   }
 
   .cq-preview {
     flex: 1;
     min-width: 0;
     overflow: hidden;
+    color: var(--fg);
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--fg3);
+  }
+
+  .cq-list {
+    max-height: calc(4.5 * (var(--t-footnote-lh) + 2 * var(--s-4)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .cq-footer {
     display: flex;
     justify-content: flex-end;
-    padding: 0 var(--s-8);
+    padding: 0 var(--s-4) var(--s-4);
   }
 
   .cq-clear {
@@ -88,6 +99,11 @@
   .cq-action-danger:hover,
   .cq-action-danger:focus-visible {
     color: var(--fail);
+  }
+
+  .cq-editing {
+    padding-block: var(--s-4);
+    padding-right: var(--s-8);
   }
 
   .cq-edit {

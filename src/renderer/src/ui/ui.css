@@ -190,6 +190,12 @@
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[aria-pressed='true']:not([data-disabled]) {
     color: var(--accent-t);
   }
+  .ui-btn.ui-icon-btn--neutral-on:is([aria-pressed='true'], [data-active='1']):not([data-disabled]) {
+    color: var(--fg);
+  }
+  .ui-btn.ui-icon-btn--neutral-on:is([aria-pressed='true'], [data-active='1']):not([data-disabled], [data-active='partial']) {
+    background: var(--press);
+  }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
     background: var(--press);
     color: var(--fg);
@@ -1471,6 +1477,15 @@
     text-align: left;
   }
   .ui-file-card > .ui-btn__label { min-width: 0; }
+  .ui-file-card--compact.ui-btn {
+    width: auto;
+    gap: var(--s-6);
+    height: 40px;
+    padding: 0 var(--s-10) 0 var(--s-8);
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+  }
   .ui-file-card__name {
     display: block;
     overflow: hidden;
