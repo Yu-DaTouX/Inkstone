@@ -174,8 +174,43 @@ final class Bridge implements GameBridge {
 	}
 
 	@Override
+	public boolean serverLook(float yaw, float pitch) throws Exception {
+		return Ops.onServer(server -> {
+			var player = ServerOps.player(server);
+			return player != null && Math.abs(net.minecraft.util.math.MathHelper.wrapDegrees(player.getYaw() - yaw)) < 0.1f && Math.abs(player.getPitch() - pitch) < 0.1f;
+		});
+	}
+
+	@Override
+	public GameBridge.TickProgress tickProgress() throws Exception {
+		return Ops.onServer(server -> new GameBridge.TickProgress(dev.inkstone.companion.core.ServerTicks.completedTime(server, server.getOverworld().getTime()), server.getTickManager().isFrozen(), server.getTickManager().isStepping(), server.getTickManager().getTickRate()));
+	}
+
+	@Override
+	public Map<String, Object> beginSnapshot() throws Exception {
+		var server = MinecraftClient.getInstance().getServer();
+		if (server == null) throw new IllegalStateException("not in a singleplayer world");
+		return dev.inkstone.companion.core.SnapshotLease.begin(server::execute, () -> {
+			if (!server.saveAll(false, true, true)) throw new IllegalStateException("server save failed");
+			return dev.inkstone.companion.core.Json.map("tick", server.getOverworld().getTime(), "worldPath", server.getSavePath(net.minecraft.util.WorldSavePath.ROOT).toAbsolutePath().normalize().toString());
+		}, () -> dev.inkstone.companion.core.Companion.control().agent());
+	}
+
+	@Override
 	public String hold(com.google.gson.JsonObject body) throws Exception {
 		return Ops.onClient(() -> InputOps.hold(body));
+	}
+
+	@Override
+	public void resetInput() throws Exception {
+		Ops.onClient(() -> {
+			InputOps.releaseAll();
+			net.minecraft.client.option.KeyBinding.unpressAll();
+			MinecraftClient client = MinecraftClient.getInstance();
+			((dev.inkstone.companion.mixin.MouseControlAccessor) client.mouse).inkstone$setGrabbed(false);
+			org.lwjgl.glfw.GLFW.glfwSetInputMode(client.getWindow().getHandle(), org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL);
+			return true;
+		});
 	}
 
 	@Override

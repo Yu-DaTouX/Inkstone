@@ -148,8 +148,10 @@ final class StateOps {
 		}
 	}
 
-	static GameBridge.OptionsResult options(List<String> get, Map<String, Object> set) throws Exception {
-		return Ops.onClient(() -> optionsNow(get, set));
+	static synchronized GameBridge.OptionsResult options(List<String> get, Map<String, Object> set) throws Exception {
+		GameBridge.OptionsResult result = Ops.onClient(() -> optionsNow(get, set));
+		if (result.applied().contains("lang")) ClientOps.reloadResources();
+		return result;
 	}
 
 	private static GameBridge.OptionsResult optionsNow(List<String> get, Map<String, Object> set) {
@@ -195,7 +197,6 @@ final class StateOps {
 				String code = value.toLowerCase(Locale.ROOT);
 				options.languageCode = code;
 				client.getLanguageManager().setSelected(code);
-				client.reloadResourcePacks();
 				return true;
 			}
 			case "guiScale" -> {

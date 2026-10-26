@@ -1,25 +1,26 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, openSync, closeSync } from 'node:fs'
-import { mkdir, open, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, open, readFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import type { JavaEntry } from '../../shared/dev-api.ts'
 import type { ApplyResult, BuildResult, CommandResult, CompanionControl, CompanionOwner, CrashSummary, DevLaunchOptions, DevLogQuery, DevSessionInfo, JbrInfo } from '../../shared/dev-api.ts'
 import { detectJava, pickJava } from './java.ts'
 import { companionModDir, initScriptPath } from './assets.ts'
 import { buildCompanionMod } from './companion-build.ts'
 import { companionControl, companionImage, companionJarDirs, companionReachable, companionRequest, companionVariant, findCompanionJar, installCompanion, type CompanionEndpoint, type CompanionVariant } from './companion.ts'
-import { javaReleaseFor } from './fabric-meta.ts'
+import { compareVersions, javaReleaseFor } from './fabric-meta.ts'
 import { cleanGradleOutput, parseGradleErrors, runGradle } from './gradle.ts'
 import { hotswapClasses } from './hotswap.ts'
 import { jbrDownloadHint, resolveJbr, supportsEnhancedRedefinition } from './jbr.ts'
 import { downloadJbr } from './jbr-download.ts'
-import { filterLog, listCrashes, tailFile } from './logs.ts'
+import { filterLogDetails, listCrashes, tailFile } from './logs.ts'
 import { classifyResources, diffManifest, isLangFile, langRegistrationCandidates, mixinPackagesFrom, registrationCandidates, scanManifest, type FileManifest } from './manifest.ts'
 import {
   agentWindowJvmArgs,
-  argFileText,
+  writeLaunchArgFile,
   splitLaunchArgs,
+  stablePlayerArgs,
   findMixinAgent,
   freePort,
   killTree,
@@ -321,8 +322,13 @@ export class DevProject {
     if (this.options.companionJar !== undefined) return this.options.companionJar
     const dir = companionModDir(variant.subdir)
     const found = await findCompanionJar(companionJarDirs(dir, this.options.companionDirs), variant)
-    if (found || !existsSync(join(dir, 'build.gradle'))) return found
-    this.log('[inkstone] 首次使用，正在构建伴随 mod')
+    const version = found ? basename(found).match(variant.jar)?.[1] : null
+    if (found && version && compareVersions(version, '0.1.1') >= 0) return found
+    if (!existsSync(join(dir, 'build.gradle'))) {
+      if (found) throw new Error('伴随 mod 需要 0.1.1 或更新版本，请更新 Minecraft 插件后重试')
+      return null
+    }
+    this.log(`[inkstone] ${found ? '伴随 mod 需要升级' : '首次使用'}，正在构建伴随 mod`)
     this.gradleJava ??= await this.pickGradleJava(25)
     const built = await buildCompanionMod({ javaPath: this.gradleJava, variant, onLine: (line) => this.log(`[companion] ${line}`) })
     if (!built.ok) this.log(`[inkstone] 伴随 mod 构建失败：${built.errors.join('\n')}`)
@@ -350,6 +356,7 @@ export class DevProject {
   }
 
   private async launchNow(options: LaunchOptions): Promise<DevSessionInfo> {
+    if (options.username !== undefined && !/^[A-Za-z0-9_]{1,16}$/.test(options.username)) throw new Error('开发玩家名必须是 1–16 位英文字母、数字或下划线')
     const existing = await this.session()
     if (existing && pidAlive(existing.pid)) await this.stopNow()
     await this.setState('building', '正在构建并导出启动参数')
@@ -389,7 +396,8 @@ export class DevProject {
       ...agentWindowJvmArgs(this.projectDir),
       ...(companionPort && token ? [`-Dinkstone.companion.port=${companionPort}`, `-Dinkstone.companion.token=${token}`] : [])
     ]
-    const gameArgs = withWindowSize([...spec.args])
+    const username = options.username ?? existing?.username
+    const gameArgs = withWindowSize(stablePlayerArgs(spec.args, username))
     if (world) {
       if (worldExists(spec.workingDir, world)) gameArgs.push('--quickPlaySingleplayer', world)
       else if (companionPort) jvmArgs.push(`-Dinkstone.companion.world=${world}`)
@@ -397,7 +405,7 @@ export class DevProject {
     }
     await mkdir(this.paths.logs, { recursive: true })
     const { fileArgs, commandArgs } = splitLaunchArgs(jvmArgs)
-    await writeFile(this.paths.argFile, argFileText([...fileArgs, '-cp', spec.classpath.join(process.platform === 'win32' ? ';' : ':'), spec.mainClass]))
+    await writeLaunchArgFile(this.paths.argFile, [...fileArgs, '-cp', spec.classpath.join(process.platform === 'win32' ? ';' : ':'), spec.mainClass])
     const logFile = join(this.paths.logs, `client-${new Date().toISOString().replace(/[:.]/g, '-')}.log`)
     const fd = openSync(logFile, 'a')
     const env: NodeJS.ProcessEnv = { ...process.env, ...spec.environment }
@@ -418,6 +426,7 @@ export class DevProject {
       companionPort,
       token,
       world,
+      username,
       logFile,
       minecraftVersion: spec.minecraftVersion,
       owner: process.pid,
@@ -634,10 +643,14 @@ export class DevProject {
   }
 
   async logs(query: Omit<DevLogQuery, 'projectDir'> = {}): Promise<string[]> {
+    return (await this.logDetails(query)).lines
+  }
+
+  async logDetails(query: Omit<DevLogQuery, 'projectDir'> = {}): Promise<{ lines: string[]; matchedLines: number }> {
     const session = await this.session()
     const file = session?.logFile
-    if (!file || !existsSync(file)) return []
-    return filterLog(await tailFile(file), query)
+    if (!file || !existsSync(file)) return { lines: [], matchedLines: 0 }
+    return filterLogDetails(await tailFile(file), query)
   }
 
   async crashes(limit = 5): Promise<CrashSummary[]> {

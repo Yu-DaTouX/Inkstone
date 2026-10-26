@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { DevProject } from '../src/core/dev/runner.ts'
 import {
   createSnapshot,
@@ -133,23 +133,37 @@ export function createWorldTools(context: WorldToolContext): ToolDefinition[] {
             const world = await requireWorld(args, project)
             if (!existsSync(join(worldPath(dir, world), 'level.dat'))) return failure(`开发存档 ${world} 不存在：${worldPath(dir, world)}`)
             const state = await sessionState(project)
-            let flushed = false
+            let lease: string | null = null
             if (state.running) {
               if ((await project.control())?.owner === 'user') return failure(USER_IN_CONTROL)
               let result
               try {
-                result = await project.command('save-all flush')
+                result = await project.companion('/snapshot-begin', {}, 95_000) as Record<string, unknown>
               } catch (thrown) {
-                return failure(`快照前 save-all 失败，先停游戏再快照：${thrown instanceof Error ? thrown.message : String(thrown)}`)
+                return failure(`快照保存屏障不可用，未复制存档。请更新伴随 mod，或经用户授权停游戏后再拍快照：${thrown instanceof Error ? thrown.message : String(thrown)}`)
               }
-              if (!result.ok) return failure(`快照前 save-all 失败，先停游戏再快照：${result.error ?? result.output.join(' ')}`)
-              flushed = true
+              if (result.ok !== true || typeof result.lease !== 'string') return failure(`快照保存屏障失败：${String(result.error ?? '伴随 mod 没有返回 lease')}`)
+              lease = result.lease
+              if (typeof result.worldPath !== 'string' || resolve(result.worldPath).toLowerCase() !== resolve(worldPath(dir, world)).toLowerCase()) {
+                await project.companion('/snapshot-end', { lease })
+                return failure('当前服务器世界与请求的存档目录不一致，未复制存档；请核对 world 参数')
+              }
             }
-            const snapshot = await createSnapshot({ runDir: dir, projectDir: project.projectDir, world, label: str(args, 'label') ?? null })
+            let snapshot: SnapshotEntry
+            const guarded = lease !== null
+            try {
+              snapshot = await createSnapshot({ runDir: dir, projectDir: project.projectDir, world, label: str(args, 'label') ?? null, beforePublish: lease ? async () => {
+                const result = await project.companion('/snapshot-end', { lease }) as Record<string, unknown>
+                lease = null
+                if (result.ok !== true) throw new Error(`快照屏障失效，副本未发布：${String(result.error ?? '超时或用户接管')}`)
+              } : undefined })
+            } finally {
+              if (lease) await project.companion('/snapshot-end', { lease }).catch(() => undefined)
+            }
             return text(
               [
                 `已创建快照 ${snapshot.id}（${snapshot.files} 个文件，${formatBytes(snapshot.bytes)}）`,
-                flushed ? '快照前已执行 save-all flush' : '游戏没在运行，直接复制存档目录',
+                guarded ? '服务器线程同步保存并完成复制屏障后发布快照' : '游戏没在运行，直接复制存档目录',
                 `位置：${snapshot.dir}`,
                 `恢复：mc_world action=restore world=${world} snapshot=${snapshot.id}`
               ].join('\n')

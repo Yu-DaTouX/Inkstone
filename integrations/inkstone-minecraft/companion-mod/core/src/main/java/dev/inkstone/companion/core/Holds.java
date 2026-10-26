@@ -19,6 +19,15 @@ final class Holds {
 		REMAINING.remove(id);
 	}
 
+	static synchronized void clear(GameBridge bridge) {
+		List<String> ids = new ArrayList<>(REMAINING.keySet());
+		REMAINING.clear();
+		for (String id : ids) {
+			try { bridge.releaseHold(id); }
+			catch (Exception error) { Companion.log("release takeover hold failed: " + error); }
+		}
+	}
+
 	static synchronized void tick(GameBridge bridge) {
 		if (REMAINING.isEmpty()) return;
 		List<String> expired = new ArrayList<>();

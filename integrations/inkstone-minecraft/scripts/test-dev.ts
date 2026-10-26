@@ -666,6 +666,7 @@ try {
         return shotPng
       },
       logs: async () => ['[12:00:00] 日志行'],
+      logDetails: async () => ({ lines: ['[12:00:00] 日志行'], matchedLines: 1 }),
       companion: async (path: string) => {
         calls.push(`companion:${path}`)
         return { playing: true }
@@ -685,6 +686,7 @@ try {
     const tools = stubTools(stubProject('user', calls))
     for (const [name, args] of [
       ['mc_command', { command: '/give @s stone' }],
+      ['mc_run', { action: 'start' }],
       ['mc_run', { action: 'stop' }],
       ['mc_run', { action: 'restart' }],
       ['mc_options', { set: { lang: 'zh_cn' } }]

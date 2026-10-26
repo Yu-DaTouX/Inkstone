@@ -174,8 +174,43 @@ final class Bridge implements GameBridge {
 	}
 
 	@Override
+	public boolean serverLook(float yaw, float pitch) throws Exception {
+		return Ops.onServer(server -> {
+			var player = ServerOps.player(server);
+			return player != null && Math.abs(net.minecraft.util.Mth.wrapDegrees(player.getYRot() - yaw)) < 0.1f && Math.abs(player.getXRot() - pitch) < 0.1f;
+		});
+	}
+
+	@Override
+	public GameBridge.TickProgress tickProgress() throws Exception {
+		return Ops.onServer(server -> new GameBridge.TickProgress(dev.inkstone.companion.core.ServerTicks.completedTime(server, server.overworld().getGameTime()), server.tickRateManager().isFrozen(), server.tickRateManager().isSteppingForward(), server.tickRateManager().tickrate()));
+	}
+
+	@Override
+	public Map<String, Object> beginSnapshot() throws Exception {
+		var server = Minecraft.getInstance().getSingleplayerServer();
+		if (server == null) throw new IllegalStateException("not in a singleplayer world");
+		return dev.inkstone.companion.core.SnapshotLease.begin(server::execute, () -> {
+			if (!server.saveEverything(false, true, true)) throw new IllegalStateException("server save failed");
+			return dev.inkstone.companion.core.Json.map("tick", server.overworld().getGameTime(), "worldPath", server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize().toString());
+		}, () -> dev.inkstone.companion.core.Companion.control().agent());
+	}
+
+	@Override
 	public String hold(com.google.gson.JsonObject body) throws Exception {
 		return Ops.onClient(() -> InputOps.hold(body));
+	}
+
+	@Override
+	public void resetInput() throws Exception {
+		Ops.onClient(() -> {
+			InputOps.releaseAll();
+			net.minecraft.client.KeyMapping.releaseAll();
+			Minecraft client = Minecraft.getInstance();
+			((dev.inkstone.companion.mixin.MouseControlAccessor) client.mouseHandler).inkstone$setGrabbed(false);
+			org.lwjgl.glfw.GLFW.glfwSetInputMode(client.getWindow().handle(), org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL);
+			return true;
+		});
 	}
 
 	@Override

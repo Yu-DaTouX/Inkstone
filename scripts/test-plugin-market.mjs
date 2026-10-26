@@ -63,6 +63,7 @@ export async function runPluginMarketTests(ok) {
       'mcp/server.ts': 'server',
       'skills/inkstone-fabric-dev/SKILL.md': 'skill',
       'templates/fabric/a.txt': 't',
+      'templates/java/write-argfile.ps1': 'native-encoding-helper',
       'src/core/dev/runner.ts': 'r',
       'companion-mod/build/libs/inkstone-companion-0.1.0.jar': 'jar',
       'companion-mod/build/classes/A.class': 'class',
@@ -90,6 +91,7 @@ export async function runPluginMarketTests(ok) {
     ok(doc.keep === 1 && doc.mcpServers.codegraph.command === 'codegraph', 'Minecraft 插件：保留 mcp.json 其他内容')
     const has = (name) => readFile(join(paths.pluginDir, name), 'utf8').then(() => true, () => false)
     ok(await has('companion-mod/build/libs/inkstone-companion-0.1.0.jar') && await has('companion-mod/mc26/build/libs/inkstone-companion-mc26-0.1.0.jar') && await has('companion-mod/core/src/Main.java'), 'Minecraft 插件：带上伴随 mod 源码与预编译 jar')
+    ok(await has('templates/java/write-argfile.ps1'), 'Minecraft 插件：带上 Windows Java 参数文件编码助手')
     ok(!(await has('companion-mod/build/classes/A.class')) && !(await has('companion-mod/.gradle/cache.bin')) && !(await has('companion-mod/mc26/run/options.txt')) && !(await has('node_modules/x/index.js')), 'Minecraft 插件：不复制构建中间产物、运行目录与依赖')
     doc.mcpServers['inkstone-minecraft'].enabled = false
     await writeFile(join(agentDir, 'mcp.json'), JSON.stringify(doc))

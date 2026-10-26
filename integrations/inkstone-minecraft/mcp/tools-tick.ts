@@ -150,7 +150,7 @@ export async function tickResetReminder(project: DevProject): Promise<string | n
 }
 
 const TICK_DESCRIPTION =
-  `放慢、冻结、单步推进游戏的 tick：status 读当前速率与冻结状态；rate 设目标速率；freeze/unfreeze 冻结或解冻游戏逻辑；step 冻结后推进 n tick 再停下；sprint 用高速跑 n tick（stop=true 提前停止）；reset 解除冻结并把速率调回 ${TICK_RATE_DEFAULT}。走原版 /tick 命令（1.20.3+），每次返回第一行是解析后的结论（速率、是否冻结），后面是执行的命令与游戏回显。rate 范围 ${TICK_RATE_MIN}–${TICK_RATE_MAX}（标准速度 ${TICK_RATE_DEFAULT}）；step 只在冻结时生效。tick 只影响游戏逻辑（实体、方块、红石、模组 tick 逻辑），不影响渲染帧率，也不影响按真实时间计时的界面动画（toast、部分 HUD 动画），这类短暂界面改用 mc_wait 等 + mc_script 截图，不要指望冻结能停住它们。冻结与调低的速率会一直生效：开发会话结束前执行 action=reset 恢复。`
+  `放慢、冻结、单步推进游戏的 tick：status 读当前速率与冻结状态；rate 设目标速率；freeze/unfreeze 冻结或解冻游戏逻辑；step 冻结后推进 n tick 再停下；sprint 用高速跑 n tick（stop=true 提前停止）；reset 解除冻结并把速率调回 ${TICK_RATE_DEFAULT}。step 等待服务器世界 tick 完成并返回前后的 tick 号；其余动作走原版 /tick 命令（1.20.3+），返回第一行是解析后的结论（速率、是否冻结），后面是执行的命令与游戏回显。rate 范围 ${TICK_RATE_MIN}–${TICK_RATE_MAX}（标准速度 ${TICK_RATE_DEFAULT}）；step 只在冻结时生效。tick 只影响游戏逻辑（实体、方块、红石、模组 tick 逻辑），不影响渲染帧率，也不影响按真实时间计时的界面动画（toast、部分 HUD 动画），这类短暂界面改用 mc_wait 等 + mc_script 截图，不要指望冻结能停住它们。冻结与调低的速率会一直生效：开发会话结束前执行 action=reset 恢复。`
 
 export function createTickTools(context: McpContext): ToolDefinition[] {
   return [
@@ -169,6 +169,7 @@ export function createTickTools(context: McpContext): ToolDefinition[] {
           },
           rate: { type: 'number', description: `action=rate 的目标速率：每秒 tick 数，${TICK_RATE_MIN}–${TICK_RATE_MAX}，标准速度 ${TICK_RATE_DEFAULT}` },
           ticks: { type: 'number', description: 'action=step 推进多少 tick（默认 1）；action=sprint 冲刺多少 tick' },
+          timeout_ms: { type: 'number', description: 'step 等待实际服务器 tick 完成的上限，默认 120000，最大 600000；超时会明确返回尚未完成' },
           stop: { type: 'boolean', description: 'action=sprint：停止正在进行的冲刺（等价于 /tick sprint stop）' }
         },
         required: ['action']
@@ -183,6 +184,17 @@ export function createTickTools(context: McpContext): ToolDefinition[] {
           return failure(error instanceof Error ? error.message : String(error))
         }
         const action = str(args, 'action') ?? 'status'
+        if (action === 'step') {
+          const timeoutMs = Math.max(1000, Math.min(600_000, num(args, 'timeout_ms') ?? 120_000))
+          try {
+            const reply = await project.companion('/tick-step', { ticks: Number(stepValue(args)), timeoutMs }, timeoutMs + 15_000) as Record<string, unknown>
+            const output = Array.isArray(reply.output) ? reply.output.map(String).join('\n') : ''
+            const body = `${reply.ok === true ? '单步已完成' : '单步未确认完成'}：服务器世界 tick ${String(reply.before ?? '?')} → ${String(reply.after ?? '?')}（实际推进 ${String(reply.stepped ?? '?')}）\n${reply.error ? `原因：${String(reply.error)}\n` : ''}${output}\n测完用 action=reset 恢复`
+            return reply.ok === true ? text(body) : failure(body)
+          } catch (error) {
+            return failure(`${errorText(error)}；未确认单步完成，不应据此读取旧状态。需要带 /tick-step 完成屏障的新伴随 mod。`)
+          }
+        }
         const echoes: string[] = []
         let failed: { command: string; output: string[] } | null = null
         for (const command of commands) {

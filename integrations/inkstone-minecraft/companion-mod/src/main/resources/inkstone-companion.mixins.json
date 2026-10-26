@@ -4,6 +4,7 @@
 	"package": "dev.inkstone.companion.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"refmap": "inkstone-companion-refmap.json",
+	"mixins": ["ServerTickMixin"],
 	"client": [
 		"BossBarHudMixin",
 		"ChatHudMixin",
@@ -13,6 +14,7 @@
 		"GameRendererMixin",
 		"HudMixin",
 		"MouseMixin",
+		"MouseControlAccessor",
 		"ScreenOffsetMixin",
 		"WindowMixin"
 	],

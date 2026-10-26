@@ -23,6 +23,7 @@ export interface InputRequest {
   target?: InputTarget
   hand?: InputHand
   holdTicks?: number
+  settleTicks?: number
   yaw?: number
   pitch?: number
   at?: [number, number, number]
@@ -45,6 +46,10 @@ export interface HitResult {
 
 export interface InputReply {
   ok: boolean
+  reason?: string
+  distance?: number
+  reach?: number
+  settledTicks?: number
   hit?: HitResult
   screen: string | null
 }
@@ -152,6 +157,7 @@ export interface ScriptStepResult {
 
 export interface ScriptReply {
   results: ScriptStepResult[]
+  error?: string
 }
 
 export interface PerfReply {
@@ -374,7 +380,7 @@ export function scriptTimeout(request: ScriptRequest): number {
 
 export async function sendInput(send: CompanionSender, request: InputRequest, timeoutMs = 30_000): Promise<InputReply> {
   const raw = record(await send('/input', { ...request }, timeoutMs))
-  return { ok: raw.ok !== false, hit: parseHit(raw.hit), screen: str(raw.screen) ?? null }
+  return { ok: raw.ok !== false, hit: parseHit(raw.hit), screen: str(raw.screen) ?? null, reason: str(raw.reason), distance: num(raw.distance), reach: num(raw.reach), settledTicks: num(raw.settledTicks) }
 }
 
 export async function sendUi(send: CompanionSender, request: UiRequest, timeoutMs = 30_000): Promise<UiReply> {
@@ -397,17 +403,21 @@ export async function sendScript(send: CompanionSender, request: ScriptRequest, 
   const raw = record(await send('/script', body, timeoutMs))
   const results = Array.isArray(raw.results) ? raw.results : []
   return {
+    ...(str(raw.error) || raw.ok === false ? { error: str(raw.error) ?? 'script reported ok=false' } : {}),
     results: results.map((entry, index) => {
       const step = record(entry)
       const image = str(step.image)
+      const payload = record(step.result)
+      const nestedFailure = request.steps[index]?.expect !== 'any' && (payload.ok === false || payload.valid === false)
+      const error = str(step.error) ?? (nestedFailure ? str(payload.error) ?? str(payload.reason) ?? (Array.isArray(payload.output) ? payload.output.map(String).join('; ') : 'step returned ok=false') : undefined)
       return {
         index: num(step.index) ?? index,
         op: str(step.op) ?? '',
         tick: num(step.tick) ?? 0,
         timeMs: num(step.timeMs) ?? 0,
-        ok: step.ok !== false && !str(step.error),
+        ok: step.ok !== false && !error,
         result: step.result,
-        error: str(step.error),
+        error,
         image: image ? Buffer.from(image, 'base64') : null
       }
     })
@@ -416,6 +426,7 @@ export async function sendScript(send: CompanionSender, request: ScriptRequest, 
 
 export async function sendHighlight(send: CompanionSender, request: HighlightRequest, timeoutMs = 15_000): Promise<HighlightReply> {
   const raw = record(await send('/highlight', { ...request }, timeoutMs))
+  if (raw.ok === false) throw new Error(str(raw.error) ?? '高亮目标不可用')
   return { id: str(raw.id) ?? null, until: num(raw.until) ?? null, cleared: num(raw.cleared) }
 }
 
@@ -424,8 +435,26 @@ export function waitTimeout(request: WaitRequest): number {
 }
 
 export async function sendWait(send: CompanionSender, request: WaitRequest, timeoutMs = waitTimeout(request)): Promise<WaitReply> {
-  const raw = record(await send('/wait', { ...request }, timeoutMs))
-  return { ok: raw.ok === true, waitedMs: num(raw.waitedMs) ?? 0, tick: num(raw.tick) ?? 0, reason: str(raw.reason), detail: str(raw.detail) }
+  const started = Date.now()
+  const budget = request.timeoutMs ?? WAIT_TIMEOUT_DEFAULT
+  let lastError: string | undefined
+  let retries = 0
+  for (;;) {
+    const left = Math.max(0, budget - (Date.now() - started))
+    const priorWaited = retries ? Date.now() - started : 0
+    try {
+      const raw = record(await send('/wait', retries ? { ...request, timeoutMs: left } : { ...request }, Math.min(timeoutMs, left + 15_000)))
+      return { ok: raw.ok === true, waitedMs: priorWaited + (num(raw.waitedMs) ?? Date.now() - started - priorWaited), tick: num(raw.tick) ?? 0, reason: str(raw.reason), detail: str(raw.detail) }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const transient = error instanceof CompanionError ? error.status === 503 : /fetch failed|ECONNREFUSED|ECONNRESET|开发客户端没有在运行/i.test(message) || (error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name))
+      if (request.until !== 'in_world' || !transient || isUserControlError(error)) throw error
+      lastError = message
+      retries++
+      if (Date.now() - started >= budget) return { ok: false, waitedMs: Date.now() - started, tick: 0, reason: 'timeout', detail: lastError }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250, budget - (Date.now() - started))))
+    }
+  }
 }
 
 export async function sendPerf(send: CompanionSender, timeoutMs = 15_000): Promise<PerfReply> {

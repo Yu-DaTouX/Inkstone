@@ -95,6 +95,7 @@ public final class AgentWindow {
 		if (current == null) return;
 		try {
 			install(handle);
+			NativeTitleBar.tick(handle, current);
 			applyTitle(handle);
 			if (current.agent() && background()) GLFW.glfwSetInputMode(handle, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_NORMAL);
 			int count = TICKS.incrementAndGet();
