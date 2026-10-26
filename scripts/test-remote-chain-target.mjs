@@ -128,8 +128,8 @@ const agent = {
     isCompacting: false,
     thinkingLevel: 'off'
   }),
-  send: async (text, images) => {
-    sendCalls.push({ text, images })
+  send: async (text, images, mode) => {
+    sendCalls.push({ text, images, mode })
     return { ok: true }
   },
   listModels: async () => [
@@ -269,6 +269,10 @@ try {
   ok(selectCalls.length === 1 && norm(selectCalls[0].sessionFile) === norm(repP1.path), '发送旧段落到代表段文件')
   ok(sendCalls.length === 1 && sendCalls[0].text === 'hello', '消息实际交给代表段实例')
   ok(selectCalls.every((call) => norm(call.sessionFile) !== norm(oldP1.path)), '发送路径从未选择旧段文件')
+
+  sendCalls.length = 0
+  const steered = await mod.executeRemoteCommand({ action: 'send', sessionId: 's-old', text: 'wrap up', mode: 'steer' })
+  ok(steered.ok && sendCalls[0]?.mode === 'steer' && sent.ok && sendCalls.length === 1, '远程发送可指定插话，交给实例时带上 steer')
 
   selectCalls.length = 0
   const modeled = await mod.executeRemoteCommand({ action: 'model', sessionId: 's-old', provider: 'prov', modelId: 'm2' })

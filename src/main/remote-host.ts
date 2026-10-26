@@ -384,7 +384,7 @@ export async function executeRemoteCommand(command: RemoteCommand): Promise<Remo
       const model = agent.getState()?.model
       if (command.images?.length && model?.input && !model.input.includes('image')) return { ok: false, status: 409, error: '当前模型不支持图片，请选择支持图片的模型' }
       userMessageSent(agent.getState()?.sessionId)
-      const result = await agent.send(command.text, command.images, undefined, undefined, generation)
+      const result = await agent.send(command.text, command.images, command.mode, undefined, generation)
       return result.ok ? { ok: true, data: { ...result, runId, sessionId: summary.id } } : { ok: false, status: 409, error: result.error ?? '目标会话未能接收消息' }
     }, command.authorize)
   }

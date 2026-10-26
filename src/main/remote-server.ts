@@ -29,7 +29,7 @@ export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
   | { action: 'new' }
-  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null> }
+  | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp'; authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null> }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'thinking'; sessionId: string; level: string }
   | { action: 'abort'; runId: string }
@@ -711,7 +711,8 @@ export class RemoteServer {
           return
         }
         const text = body.text
-        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images }))
+        const mode = body.mode === 'steer' || body.mode === 'followUp' ? body.mode : undefined
+        await this.idempotent(req, res, caller, !!images?.length, () => this.options.handlers.command({ action: 'send', sessionId, text, images, mode }))
         return
       }
       if (operation === 'model') {
