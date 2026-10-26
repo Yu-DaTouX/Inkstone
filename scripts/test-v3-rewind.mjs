@@ -385,7 +385,7 @@ async function main() {
 
   const { TurnView, useStore: turnStore, createTurnProjector, textFingerprint } = turnBundle
   const project = createTurnProjector()
-  const userTurn = project([{ id: 'u1', role: 'user', text: USER_TEXT, timestamp: USER_TS }]).find((t) => t.kind === 'user')
+  const userTurn = project([{ id: 'u1', role: 'user', text: USER_TEXT, timestamp: USER_TS, entryId: 'entry-1' }]).find((t) => t.kind === 'user')
 
   const renderTurn = (props = {}) => {
     turnStore.setState({ session: null, messages: [], subagents: [], models: [], rewind: null })

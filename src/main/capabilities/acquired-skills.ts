@@ -159,10 +159,23 @@ function within(base: string, path: string): boolean {
   return rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..' && !/^[A-Za-z]:/.test(rel)
 }
 
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= 8 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw error
+      await new Promise((done) => setTimeout(done, 25 * (attempt + 1)))
+    }
+  }
+}
+
 async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
   const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`
   await writeFile(tmp, JSON.stringify(value, null, 2), 'utf8')
-  await rename(tmp, file)
+  await renameWithRetry(tmp, file)
 }
 
 async function readIndex(root: string, sessionId: string): Promise<SessionSkillIndex> {
@@ -186,7 +199,7 @@ async function writeSkillDir(target: string, files: readonly AcquiredSkillFile[]
     }
     await writeFile(join(tmp, SOURCE_META_FILE), JSON.stringify(meta, null, 2), 'utf8')
     await rm(target, { recursive: true, force: true })
-    await rename(tmp, target)
+    await renameWithRetry(tmp, target)
   } catch (error) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
     throw error
@@ -326,7 +339,7 @@ async function promoteSessionSkillUnlocked(
     await cp(source, tmp, { recursive: true, errorOnExist: true, verbatimSymlinks: true })
     const meta = (await readMeta(tmp)) ?? {}
     await writeFile(join(tmp, SOURCE_META_FILE), JSON.stringify({ ...meta, scope: 'user', promotedAt: new Date().toISOString() }, null, 2), 'utf8')
-    await rename(tmp, target)
+    await renameWithRetry(tmp, target)
   } catch (error) {
     await rm(tmp, { recursive: true, force: true }).catch(() => undefined)
     throw error

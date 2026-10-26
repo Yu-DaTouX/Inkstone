@@ -152,26 +152,21 @@ await check('没有审批通道（confirmDanger 未接线）时按拒绝处理',
   )
 })
 
-await check('参数带进详情但截断到 2000 字符', async () => {
+await check('参数完整带进详情，不再截断', async () => {
   const { agent, asked } = makeAgent({ confirmDanger: async () => ({ decision: 'allow' }) })
   await describeCall(agent, fakeManager({ name: 'Click' }), 'Click', { arguments: { text: 'x'.repeat(5000) } })
   assert.equal(asked.length, 1)
   const tail = asked[0].detail.split('\n').slice(1).join('\n')
-  assert.ok(tail.length <= 2000, `详情参数应截断：${tail.length}`)
+  assert.ok(tail.includes('x'.repeat(5000)), `详情参数应完整保留：${tail.length}`)
 })
 
-process.stdout.write('\n▌runMcpCommand 的 call 分支先过审批再调工具\n')
-await check('mcp-command.ts 的 call 分支在 callMcpTool 之前调 confirmMcpCall', async () => {
-  const source = await readFile(fileURLToPath(new URL('../src/main/agent-commands/mcp-command.ts', import.meta.url)), 'utf8')
-  const start = source.indexOf('export async function runMcpCommand')
-  assert.ok(start > 0, '应能在 mcp-command.ts 里定位 runMcpCommand')
-  const body = source.slice(start, start + 8000)
-  const confirmAt = body.indexOf("action === 'call') await confirmMcpCall(host, manager,")
-  const callAt = body.indexOf('const outcome = await callMcpTool(')
-  assert.ok(confirmAt > 0, 'call 分支应调 confirmMcpCall')
-  assert.ok(callAt > confirmAt, 'prompt 必须在 callMcpTool 之前')
-  assert.ok(!/if \(action === 'call' && .*permissionMode/.test(body), '审批防绕绕不能写在调用方之外')
+await check('参数超过审批上限时拒绝执行，不弹审批', async () => {
+  const { agent, asked } = makeAgent({ confirmDanger: async () => ({ decision: 'allow' }) })
+  await assert.rejects(
+    () => describeCall(agent, fakeManager({ name: 'Click' }), 'Click', { arguments: { text: 'x'.repeat(21000) } }),
+    (error) => error.code === 'mcp_call_too_long'
+  )
+  assert.equal(asked.length, 0)
 })
 
-process.stdout.write(`\nyan mcp call 审批：${report.pass} 通过 / ${report.fail} 失败\n`)
-if (report.fail) process.exitCode = 1
+

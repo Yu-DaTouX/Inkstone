@@ -80,6 +80,9 @@ export async function runUsageStatsSubagentTests(ok) {
   }
 
   const now = Date.now()
+  const childDay = new Date(now - 3 * DAY)
+  const childHour = (new Date(now - DAY).getHours() + 12) % 24
+  const childAt = new Date(childDay.getFullYear(), childDay.getMonth(), childDay.getDate(), childHour).getTime()
 
   await reset()
   await writeMain('m1.jsonl', [
@@ -89,8 +92,8 @@ export async function runUsageStatsSubagentTests(ok) {
     replyLine(iso(now - 2 * DAY + 1000), { total: 200 })
   ])
   await writeChild('child-1', 's.jsonl', [
-    userLine(iso(now - 3 * DAY + 5 * 3600_000)),
-    replyLine(iso(now - 3 * DAY + 5 * 3600_000 + 1000), { total: 1000 }),
+    userLine(iso(childAt)),
+    replyLine(iso(childAt + 1000), { total: 1000 }),
     replyLine(iso(now - 4 * DAY), { total: 500 })
   ])
   const base = await reader()('all')
@@ -101,7 +104,7 @@ export async function runUsageStatsSubagentTests(ok) {
   ok(base.messages === 4, '消息数只算主会话')
   ok(base.activeDays === 2, '活跃天数只算主会话')
   ok(base.peakHour === new Date(now - DAY).getHours(), '高峰时段只算主会话（子代理的不同小时不参与）')
-  ok(s.localDay(now - 3 * DAY) !== undefined && base.heat.find((d) => d.date === s.localDay(now - 3 * DAY))?.tokens === 1000, '热力图纳入子代理当日 token')
+  ok(base.heat.find((d) => d.date === s.localDay(childAt))?.tokens === 1000, '热力图纳入子代理当日 token')
   ok(base.heat.find((d) => d.date === s.localDay(now - DAY))?.tokens === 300, '热力图把主会话当日 token 一起算入')
   const defaults = await m.readUsageStats('all')
   ok(defaults.tokenBreakdown.subagents === 1500 && typeof defaults.userName === 'string', '默认入口 readUsageStats 返回同样的拆分')

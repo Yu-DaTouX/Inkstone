@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -72,10 +72,10 @@ export async function runQuestionLogTests(ok) {
   ok(capped[capped.length - 1].question === 'q59' && capped[0].question === 'q10', '裁剪保留最近的那一批', `${capped[0].question}..${capped[capped.length - 1].question}`)
 
   writeFileSync(file, '{ not json', 'utf8')
-  let rejectedCorrupt = false
-  try { store.list('session-a') } catch { rejectedCorrupt = true }
-  ok(rejectedCorrupt, '文件坏了明确拒绝读取')
+  const backups = () => readdirSync(dir).filter((name) => name.startsWith('question-log.json.corrupt-'))
+  ok(store.list('session-a').length === 0, '文件坏了读到空表，不抛错')
   ok(readFileSync(file, 'utf8') === '{ not json', '坏文件原文保留')
+  ok(backups().length === 1 && readFileSync(join(dir, backups()[0]), 'utf8') === '{ not json', '坏文件先备份一份再自愈')
   writeFileSync(
     file,
     JSON.stringify({
@@ -92,9 +92,11 @@ export async function runQuestionLogTests(ok) {
     }),
     'utf8'
   )
-  let rejectedUnsafeKey = false
-  try { store.list('session-a') } catch { rejectedUnsafeKey = true }
-  ok(rejectedUnsafeKey, '文档含非法会话 key 时拒绝读取，不静默丢弃后写回')
+  const unsafeText = readFileSync(file, 'utf8')
+  const backupsBefore = backups().length
+  ok(store.list('session-a').length === 0, '文档含非法会话 key 时按损坏处理，读到空表')
+  ok(readFileSync(file, 'utf8') === unsafeText, '读操作不改写原文件')
+  ok(backups().some((name) => readFileSync(join(dir, name), 'utf8') === unsafeText) && backups().length >= backupsBefore, '含非法 key 的文档整份备份，不静默丢弃')
   const validDocument = JSON.parse(readFileSync(file, 'utf8'))
   delete validDocument.sessions['../bad']
   writeFileSync(file, JSON.stringify(validDocument), 'utf8')

@@ -17,6 +17,7 @@ export class BrowserWindow {
   static getAllWindows() { return globalThis.__browserWindows ?? [] }
 }
 export class Menu {}
+export class View {}
 export class MenuItem {}
 export class WebContentsView {
   constructor() {
@@ -160,16 +161,19 @@ try {
   page.prevented = false
   gateCalls.length = 0
   page.emit('will-navigate', 'https://example.com/clicked')
-  assert.equal(page.prevented, true, '页面自己发起的跳转仍然要过闸门')
-  assert.deepEqual(gateCalls[0], ['peek', 'https://example.com/clicked'], '页面发起跳转先问闸门')
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual(gateCalls[1], ['check', 'https://example.com/clicked'], '闸门判为 ask 时进入确认流程')
+  assert.equal(page.prevented, false, '页面自己发起的普通跳转不再询问站点闸门')
+  assert.deepEqual(gateCalls, [], '页面发起跳转也不触发站点闸门')
 
   page.emit('did-stop-loading')
-  page.prevented = false
-  gateCalls.length = 0
   page.emit('will-redirect', 'https://example.com/redirected')
-  assert.equal(page.prevented, true, '停载后的页面发起跳转照旧受管')
+  assert.equal(page.prevented, false, '停载后的普通跳转同样放行')
+
+  for (const url of ['file:///C:/Windows/win.ini', 'http://169.254.169.254/latest/meta-data/']) {
+    page.prevented = false
+    page.emit('will-navigate', url)
+    assert.equal(page.prevented, true, `页面发起的不安全跳转仍被拦下：${url}`)
+  }
+  assert.deepEqual(gateCalls, [], '拦截不安全跳转不经过站点闸门')
 
   console.log('test-browser-redirect-gate: 全部通过')
 } finally {

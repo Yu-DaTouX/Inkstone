@@ -54,7 +54,7 @@ assert.equal(SCREENSHOT_TIMEOUT_MS, 10_000, '默认截图超时是 10 秒')
   assert(outcome instanceof Error, `截图应该以错误结束，实际是 ${String(outcome)}`)
   assert(outcome instanceof ScreenshotTimeoutError, '超时用专门的错误类型')
   assert.equal(outcome.code, 'SCREENSHOT_TIMEOUT', '超时错误带可读 code')
-  assert(/面板/.test(outcome.message) && /yan browser open/.test(outcome.message), `错误里要说清面板没显示并给出显示面板的命令：${outcome.message}`)
+  assert(/面板/.test(outcome.message) && /展开/.test(outcome.message), `错误里要说清面板没显示并提示展开面板：${outcome.message}`)
 }
 
 {

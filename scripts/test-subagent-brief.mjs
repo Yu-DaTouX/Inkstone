@@ -75,10 +75,10 @@ export function runSubagentBriefTests(ok, mod) {
     ok(result.summary === '两个模块的读法不一致：一个吞掉错误，一个往上抛。', '摘要取最后一条助手消息（并去掉首尾空白）')
     ok(result.summaryFrom === 'last-message' && !result.summaryTruncated, '摘要来源如实标注（最后一段话）')
     ok(result.sources.join(',') === 'src/main/agent.ts,src/main/index.ts', '来源只取读类工具的位置参数（bash / write / 搜索词不算）', result.sources.join(','))
-    ok(result.artifacts[0] === 'src/main/index.ts' && result.artifacts.length === 3, '成果：改动文件去重 + 结果文件')
+    ok(result.artifacts.join(',') === 'src/main/index.ts,src/main/agent.ts,src/main/not-source.ts,/tmp/sub.json', '成果：改动文件去重 + 成功写入的文件 + 结果文件', result.artifacts.join(','))
     ok(result.openQuestions.length === 0, '未决问题**不猜**（恒为空，留给主 agent 判断）')
     ok(result.at === 1234, '时间由调用方给（便于稳定推送）')
-    ok(result.summary.length > 0 && result.artifacts.length === 3, '摘要与成果都有内容')
+    ok(result.summary.length > 0 && result.artifacts.length === 4, '摘要与成果都有内容')
 
     const errOnly = summarizeSubagentRun({ transcript: [{ role: 'user', text: 'hi' }], error: 'pi 子进程提前退出', status: 'error' }, 5)
     ok(errOnly.summaryFrom === 'error' && /提前退出/.test(errOnly.summary), '没有助手正文时用错误文本并标注来源')

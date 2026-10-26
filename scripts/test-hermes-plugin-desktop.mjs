@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runHermesPhoneProbe } from './lib/hermes-phone-probe.mjs'
+import { resolvePython } from './lib/python.mjs'
 
 const root = resolve('.')
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-hermes-desktop-'))
@@ -94,7 +95,7 @@ export default function(pi) {
   delete pythonEnv.INKSTONE_URL; delete pythonEnv.INKSTONE_TOKEN
   const phoneMode = process.argv.includes('--adb')
   const result = phoneMode ? await runHermesPhoneProbe({ root, temp, port, config, id }).then(() => 0) : await new Promise((resolveExit, reject) => {
-    const child = spawn(process.env.YAN_TEST_PYTHON || 'python', ['scripts/probe/hermes-plugin-desktop.py'], { cwd: root, env: pythonEnv, windowsHide: true, stdio: 'inherit' })
+    const child = spawn(resolvePython(), ['scripts/probe/hermes-plugin-desktop.py'], { cwd: root, env: pythonEnv, windowsHide: true, stdio: 'inherit' })
     child.once('error', reject); child.once('exit', resolveExit)
   })
   await mkdir(join(root, '.local-docs/evidence'), { recursive: true })

@@ -82,6 +82,7 @@ for (const { key, annotations } of CASES) {
 ok(shared.mcpCallDanger('bash', { destructiveHint: true }).length === 0, '非 mcp__ 工具不产生 MCP 理由')
 
 const requests = []
+let hostMode = 'danger'
 const server = createServer((req, res) => {
   let body = ''
   req.on('data', (chunk) => { body += chunk })
@@ -92,7 +93,9 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(payload?.command === 'danger.confirm'
       ? { ok: true, summary: { kind: 'danger-confirm', allowed: true, decision: 'allow' } }
-      : { ok: true, summary: {} }))
+      : payload?.command === 'danger.prefs'
+        ? { ok: true, summary: { mode: hostMode, outsideWrites: true, allowRoots: [] } }
+        : { ok: true, summary: {} }))
   })
 })
 await new Promise((ready) => server.listen(0, '127.0.0.1', ready))
@@ -106,7 +109,7 @@ process.env.YAN_PROJECT_ID = 'test-project'
 process.env.YAN_DATA_DIR = dataDir
 delete process.env.YAN_DANGER_GUARD
 
-const writePrefs = (mode) => writeFile(join(dataDir, 'desktop.json'), JSON.stringify({ permissionMode: mode }), 'utf8')
+const writePrefs = async (mode) => { hostMode = mode }
 
 const tools = CASES.map(({ key, annotations }) => {
   const entry = { name: toolNameOf(key) }
@@ -122,9 +125,9 @@ ext.default(fakePi)
 ok(typeof handler === 'function', '扩展注册了 tool_call 处理器')
 
 const observedAsk = async (name) => {
-  const before = requests.length
+  const before = requests.filter((request) => request?.command === 'danger.confirm').length
   await handler({ toolName: name, toolCallId: 'call-1', input: { arg: 1 } }, { cwd: 'C:/proj' })
-  return requests.length > before
+  return requests.filter((request) => request?.command === 'danger.confirm').length > before
 }
 
 for (const mode of ['danger', 'all']) {

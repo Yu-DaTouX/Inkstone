@@ -73,13 +73,15 @@ const hostServer = createServer((req, res) => {
   req.on('end', () => {
     let payload = {}
     try { payload = JSON.parse(body) } catch { }
-    hostRequests.push(payload)
+    if (payload?.command !== 'danger.prefs') hostRequests.push(payload)
     const tool = String(payload?.params?.tool ?? '')
     const deny = [...DENY_NAMES].some((name) => tool.endsWith(`__${name}`))
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(payload?.command === 'danger.confirm'
       ? { ok: true, summary: { kind: 'danger-confirm', allowed: !deny, decision: deny ? 'deny' : 'allow' } }
-      : { ok: true, summary: {} }))
+      : payload?.command === 'danger.prefs'
+        ? { ok: true, summary: { mode: 'danger', outsideWrites: true, allowRoots: [] } }
+        : { ok: true, summary: {} }))
   })
 })
 await new Promise((ready) => hostServer.listen(0, '127.0.0.1', ready))
