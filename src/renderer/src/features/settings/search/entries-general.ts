@@ -34,8 +34,6 @@ export const GENERAL_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   { id: 'session-wrap-up-card', section: 'session', zh: '回合结束时显示下一步建议', en: 'Show next-step suggestions at the end of a turn', keywords: ['下一步', '回顾', '建议', '收尾', 'next step', 'recap', 'wrap up'], more: true },
   { id: 'session-response-detail', section: 'session', zh: '回复详细程度', en: 'Response detail', keywords: ['详细', '简洁', '详略', '回复', 'brief', 'detailed', 'verbosity'], more: true },
   { id: 'session-loop-auto-continue', section: 'session', zh: '循环停止后自动继续', en: 'Auto-continue after a loop stop', keywords: ['循环', '续跑', '自动继续', 'loop', 'continue'], more: true },
-  { id: 'session-context-trim', section: 'session', zh: '裁剪较早的大段工具输出', en: 'Trim older large tool output', keywords: ['裁剪', '工具输出', 'trim', 'tool output'], more: true },
-  { id: 'session-context-trim-at', section: 'session', zh: '裁剪起点', en: 'Trim threshold', keywords: ['裁剪阈值', 'trim threshold'], more: true },
   { id: 'session-idle-timeout', section: 'session', zh: '连接空闲超时', en: 'Connection idle timeout', keywords: ['超时', '本地模型', 'timeout', 'idle'], more: true },
   { id: 'session-cache-warming', section: 'session', zh: '缓存预热', en: 'Cache warming', keywords: ['缓存', '预热', 'cache', 'warm'], more: true },
   { id: 'session-images-resize', section: 'session', zh: '自动缩小大图', en: 'Shrink large images', keywords: ['图片', '缩放', 'image', 'resize'], more: true },

@@ -436,7 +436,8 @@ export class AgentController extends EventEmitter {
   private mcpAppProxyExtension?: string
   private mcpAppToolsSnapshot?: string
   private nativeConfigReader?: McpNativeConfigReader
-  private contextTrimExtension?: string
+  private autoCompactExtension?: string
+  private contextCompactExtension?: string
   private imageLabelsExtension?: string
   private repeatGuardExtension?: string
   private bundledSkills: string[] = []
@@ -639,7 +640,8 @@ export class AgentController extends EventEmitter {
     mcpAppProxyExtension?: string
     mcpAppToolsSnapshot?: string
     nativeConfigReader?: McpNativeConfigReader
-    contextTrimExtension?: string
+    autoCompactExtension?: string
+    contextCompactExtension?: string
     imageLabelsExtension?: string
     nativeSessionExtension?: string
     repeatGuardExtension?: string
@@ -715,7 +717,8 @@ export class AgentController extends EventEmitter {
     this.mcpAppProxyExtension = opts.mcpAppProxyExtension
     this.mcpAppToolsSnapshot = opts.mcpAppToolsSnapshot
     this.nativeConfigReader = opts.nativeConfigReader
-    this.contextTrimExtension = opts.contextTrimExtension
+    this.autoCompactExtension = opts.autoCompactExtension
+    this.contextCompactExtension = opts.contextCompactExtension
     this.imageLabelsExtension = opts.imageLabelsExtension
     this.nativeSessionExtension = opts.nativeSessionExtension
     this.repeatGuardExtension = opts.repeatGuardExtension
@@ -872,7 +875,8 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityGuideExtension
           ? ['--extension', this.capabilityGuideExtension]
           : []),
-        ...(this.contextTrimExtension ? ['--extension', this.contextTrimExtension] : []),
+        ...(this.autoCompactExtension ? ['--extension', this.autoCompactExtension] : []),
+        ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
         ...(this.imageLabelsExtension ? ['--extension', this.imageLabelsExtension] : []),
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),

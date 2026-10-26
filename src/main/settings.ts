@@ -18,7 +18,7 @@ import { YAN_DIR } from './paths'
 import { clampScale } from './zoom-math'
 import { projectIdForCwd } from './project-id'
 import { DEFAULT_PERMISSION_MODE, isLegacyPermissionMode, normalizePermissionMode } from '../shared/approval'
-import { AUTO_COMPACT_STEPS, CONTEXT_TRIM_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, DEFAULT_CONTEXT_TRIM_TOKENS, pickTokenStep } from '../shared/context-limits'
+import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, pickTokenStep } from '../shared/context-limits'
 import { isWorkspaceMode } from '../shared/workspace-mode'
 import { voiceModelSpec } from '../shared/voice-input'
 import { normalizeAutoArchiveDays } from '../shared/session-archive'
@@ -216,7 +216,8 @@ async function defaultWorkFolder(): Promise<string> {
 }
 
 function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
-  const settings = { ...DEFAULTS, ...parsed } as AppSettings
+  const { contextTrim: _contextTrim, contextTrimTokens: _contextTrimTokens, ...current } = parsed as Partial<AppSettings> & { contextTrim?: unknown; contextTrimTokens?: unknown }
+  const settings = { ...DEFAULTS, ...current } as AppSettings
   if (settings.theme !== 'light' && settings.theme !== 'dark') settings.theme = 'dark'
   if (!Array.isArray(settings.recentCwds)) settings.recentCwds = []
   if (!settings.projectNames || typeof settings.projectNames !== 'object' || Array.isArray(settings.projectNames)) settings.projectNames = {}
@@ -261,8 +262,6 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.visualAnswers = settings.visualAnswers === false ? false : undefined
   settings.wrapUpCard = settings.wrapUpCard === false ? false : undefined
   settings.asciiBackground = settings.asciiBackground === false ? false : undefined
-  settings.contextTrim = settings.contextTrim === false ? false : undefined
-  settings.contextTrimTokens = pickTokenStep(settings.contextTrimTokens, CONTEXT_TRIM_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS)
   settings.autoCompactTokens = pickTokenStep(settings.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   settings.fontUi = sanitizeFontUiPreset(settings.fontUi)
   settings.fontUiCustom = sanitizeFontName(settings.fontUiCustom)
@@ -375,7 +374,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','contextTrim','contextTrimTokens','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -441,8 +440,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('keepAwakeOnBattery' in patch) next.keepAwakeOnBattery = next.keepAwakeOnBattery === false ? false : undefined
   if ('visualAnswers' in patch) next.visualAnswers = next.visualAnswers === false ? false : undefined
   if ('wrapUpCard' in patch) next.wrapUpCard = next.wrapUpCard === false ? false : undefined
-  if ('contextTrim' in patch) next.contextTrim = next.contextTrim === false ? false : undefined
-  if ('contextTrimTokens' in patch) next.contextTrimTokens = pickTokenStep(next.contextTrimTokens, CONTEXT_TRIM_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS)
   if ('autoCompactTokens' in patch) next.autoCompactTokens = pickTokenStep(next.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   if ('fontUi' in patch) next.fontUi = sanitizeFontUiPreset(next.fontUi)
   if ('fontUiCustom' in patch) next.fontUiCustom = sanitizeFontName(next.fontUiCustom)

@@ -103,7 +103,7 @@ export const THIN_EXTENSION_FILES = [
   'language.js',
   'ultracode.js',
   'capability-guide.js',
-  'context-trim.js',
+  'auto-compact.js',
   'image-labels.js',
   'repeat-guard.js',
   'danger-guard.js',

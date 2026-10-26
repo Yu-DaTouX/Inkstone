@@ -1769,10 +1769,10 @@ await runPreambleExtensionTests(ok, preambleExtension)
 {
   const { build } = await import('../node_modules/esbuild/lib/main.js')
   await build({ entryPoints: ['src/shared/context-limits.ts'], outfile: 'out/test/context-limits.mjs', bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' })
-  const contextTrim = await import('../resources/pi-extensions/context-trim.js')
+  const autoCompact = await import('../resources/pi-extensions/auto-compact.js')
   const contextLimits = await import('../out/test/context-limits.mjs')
-  const { runContextTrimTests } = await import('./test-context-trim.mjs')
-  await runContextTrimTests(ok, contextTrim, contextLimits)
+  const { runAutoCompactTests } = await import('./test-auto-compact.mjs')
+  await runAutoCompactTests(ok, autoCompact, contextLimits)
 }
 const { runAppUpdateTests } = await import('./test-app-update.mjs')
 await runAppUpdateTests(ok)

@@ -18,14 +18,12 @@ async function loadTs(rel) {
 }
 
 const limits = await loadTs('../src/shared/context-limits.ts')
-const { CONTEXT_TRIM_STEPS, AUTO_COMPACT_STEPS, DEFAULT_CONTEXT_TRIM_TOKENS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt, contextTrimAt, pickTokenStep } = limits
-assert.deepEqual([...CONTEXT_TRIM_STEPS], [50_000, 80_000, 120_000, 200_000, 300_000], '裁剪档位与随包扩展一致')
+const { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt, pickTokenStep } = limits
+assert.ok(!('CONTEXT_TRIM_STEPS' in limits) && !('contextTrimAt' in limits), '裁剪已删除，shared 不再导出裁剪档位')
 assert.deepEqual([...AUTO_COMPACT_STEPS], [100_000, 250_000, 300_000, 400_000, 600_000, 800_000], '压缩档位与随包扩展一致')
 assert.equal(autoCompactAt(400_000, 1_000_000), 400_000, '窗口足够时不提前')
 assert.equal(autoCompactAt(400_000, 300_000), 270_000, '窗口小按 90% 提前')
 assert.equal(autoCompactAt(400_000, 0), 400_000, '窗口未知时用设置值')
-assert.equal(contextTrimAt(120_000, 300_000), 90_000, '裁剪线不超过窗口 30%')
-assert.equal(contextTrimAt(80_000, 0), 80_000, '窗口未知时用设置值')
 assert.equal(pickTokenStep(250_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS), 250_000, '档位内的非缺省值保留')
 assert.equal(pickTokenStep(400_000, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS), undefined, '等于缺省值不写入设置')
 
@@ -72,7 +70,7 @@ const en = textMod.settingsText('en-US')
 const zhKeys = Object.keys(zh).sort()
 const enKeys = Object.keys(en).sort()
 assert.deepEqual(zhKeys, enKeys, '中英文案键一一对应')
-for (const key of ['sectionSession', 'contextAutoCompact', 'contextCompactAt', 'contextTrim', 'contextTrimAt', 'contextCompactNow', 'usageByDay', 'usageByModel', 'usageDailyCap']) {
+for (const key of ['sectionSession', 'contextAutoCompact', 'contextCompactAt', 'contextCompactNow', 'usageByDay', 'usageByModel', 'usageDailyCap']) {
   assert.ok(zh[key] && en[key], `文案键 ${key} 中英都有值`)
 }
 assert.ok(!/isSelected|checked/.test(zh.contextAutoCompact), '文案键不含控件属性')
@@ -88,7 +86,8 @@ for (const forbidden of ['components/ui', 'components/settings', "'../../../styl
 for (const action of ['patchSettings', 'setAutoCompaction', 'compact']) {
   assert.ok(ctx.includes(action), `上下文页复用现有 store 动作 ${action}`)
 }
-assert.ok(ctx.includes('AUTO_COMPACT_STEPS') && ctx.includes('CONTEXT_TRIM_STEPS'), '上下文页复用 shared 档位')
+assert.ok(ctx.includes('AUTO_COMPACT_STEPS'), '上下文页复用 shared 档位')
+assert.ok(!ctx.includes('contextTrim'), '上下文页没有裁剪开关')
 assert.ok(ctx.includes('isSelected'), '开关用 RAC 的 isSelected 受控属性')
 assert.ok(!ctx.includes('checked='), '不混用 v2 的 checked 属性')
 assert.ok(!ctx.includes('window.yan'), '上下文页不直接调用 IPC')

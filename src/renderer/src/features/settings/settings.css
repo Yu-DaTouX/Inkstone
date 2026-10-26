@@ -342,10 +342,6 @@
     transition: left var(--dur-base) var(--ease);
   }
 
-  .settings-usage [data-mark='trim'] {
-    --mark-color: var(--data-2);
-  }
-
   .settings-usage [data-mark='compact'] {
     --mark-color: var(--ask);
   }
