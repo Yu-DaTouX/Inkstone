@@ -50,7 +50,14 @@ const QUESTION_TOOL = {
   }
 }
 
+// 超时说明用户多半不在：按 Claude Code 的做法让模型带着写明的假设继续，而不是停下来白等
+const TIMEOUT_TEXT = 'No answer before the question timed out; the user may be away. Proceed with your best judgment from the context so far, state the assumption you made in your final reply, and ask again later only if it still matters. Approvals and high-risk confirmations still apply.'
+// 主动关掉说明用户在场但不想答：和 Claude Code 拒答一样停下等用户；提交空答案只如实告知
+const DISMISSED_TEXT = 'The user dismissed the question without answering. Do not guess the answer: stop and wait for the user to tell you how to proceed.'
+const EMPTY_TEXT = 'The user did not answer the question.'
+
 export function questionResult(outcome) {
+  if (!outcome.ok && outcome.code === 'question_timeout') return toolText(TIMEOUT_TEXT, { cancelled: false, timedOut: true, code: outcome.code })
   if (!outcome.ok) {
     return toolText(outcome.cancelled ? 'Question cancelled.' : `Question failed: ${outcome.error}`, { cancelled: outcome.cancelled === true, code: outcome.code }, !outcome.cancelled)
   }
@@ -62,7 +69,8 @@ export function questionResult(outcome) {
     answer: data.answer ?? null,
     cancelled: data.cancelled === true
   }
-  if (details.cancelled || details.answer === null) return toolText('No answer (dismissed or timed out). Do not guess it.', details)
+  if (details.cancelled) return toolText(DISMISSED_TEXT, details)
+  if (details.answer === null) return toolText(EMPTY_TEXT, details)
   const lines = [`Answer: ${details.answer}`]
   if (details.answers) lines.push(JSON.stringify(details.answers))
   return toolText(lines.join('\n'), details)

@@ -46,9 +46,18 @@ try {
   assert.equal(answered.isError, undefined)
   const dismissed = question.questionResult({ ok: true, data: { question: 'Q?', answer: null, cancelled: true } })
   assert.match(dismissed.content[0].text, /Do not guess/)
+  assert.match(dismissed.content[0].text, /stop and wait for the user/)
+  const empty = question.questionResult({ ok: true, data: { question: 'Q?', answer: null, cancelled: false } })
+  assert.equal(empty.content[0].text, 'The user did not answer the question.')
   const form = question.questionResult({ ok: true, data: { question: 'Q?', fields: [{ name: 'a' }], answers: { a: 1 }, answer: 'a: 1', cancelled: false } })
   assert.match(form.content[0].text, /"a":1/)
   assert.equal(question.questionResult({ ok: false, error: 'timeout' }).isError, true)
+  const timedOut = question.questionResult({ ok: false, error: '问题等待超时，未猜测用户答案', code: 'question_timeout' })
+  assert.equal(timedOut.isError, undefined)
+  assert.match(timedOut.content[0].text, /best judgment/)
+  assert.match(timedOut.content[0].text, /state the assumption/)
+  assert.doesNotMatch(timedOut.content[0].text, /Do not guess/)
+  assert.equal(timedOut.details.timedOut, true)
   assert.equal(question.questionResult({ ok: false, cancelled: true, error: 'cancelled' }).isError, undefined)
 
   const calls = []
