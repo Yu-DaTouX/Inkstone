@@ -177,6 +177,7 @@ export async function runHostOwnershipTests(ok) {
       captureCheckpoint: (...args) => { checkpoints.push(args) },
       reserveWorkspaceMutation: () => () => {},
       warnSharedCwdOnce: () => {},
+      userMessageSent: () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)
@@ -281,6 +282,7 @@ export async function runHostOwnershipTests(ok) {
       captureCheckpoint: () => {},
       reserveWorkspaceMutation: () => () => {},
       warnSharedCwdOnce: () => {},
+      userMessageSent: () => {},
       sameRuntimeEnvelope
     })
     vm.runInContext(sendCode, context)

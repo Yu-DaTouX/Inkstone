@@ -63,7 +63,7 @@ try {
     admitExecute: () => ({ ok: true, token: 1 }),
     releaseExecute: () => {}
   }
-  const ports = { runners, reserveWorkspaceMutation: () => () => {}, warnSharedCwdOnce: () => {},
+  const ports = { runners, reserveWorkspaceMutation: () => () => {}, warnSharedCwdOnce: () => {}, userMessageSent: () => {},
     getSettings: async () => ({ checkpointsEnabled: true }), captureCheckpoint: async () => { captured++ }, ac: () => agent,
     startAgent: async () => { throw Error('unexpected restart') } }
   const send = await compileHandler('send', "  handle('yan:steer'", ports)

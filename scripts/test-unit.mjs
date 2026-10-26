@@ -2191,20 +2191,7 @@ await runGitRepoTests(ok)
   {
     const hooks = {}
     mod.default({ on: (name, fn) => { (hooks[name] ??= []).push(fn) } })
-    const fire = (name, event) => hooks[name].map((fn) => fn(event)).find((r) => r !== undefined)
-    const tool = { role: 'tool', content: 'out' }
-    const payload = { messages: [{ role: 'user', content: 'go' }, tool] }
-    fire('message_end', { message: { role: 'user' } })
-    for (let i = 0; i < 40; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
-    ok(fire('before_provider_request', { payload }) === undefined, '待办：长回合没有待办也不追加催办提醒')
-    fire('tool_call', { toolName: 'todos', input: { action: 'set', items: [{ text: 'a' }] } })
-    for (let i = 0; i < 40; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
-    ok(fire('before_provider_request', { payload }) === undefined, '待办：久未更新也不追加催办提醒')
-    fire('tool_call', { toolName: 'edit', input: { path: 'a' } })
-    fire('tool_result', { toolName: 'bash', input: { command: 'npm test' }, details: { exit_code: 0 }, isError: false })
-    for (let i = 0; i < 4; i++) fire('before_provider_request', { payload })
-    const reminded = fire('before_provider_request', { payload })
-    ok(reminded?.messages.length === 3 && reminded.messages[1] === tool && /tests passed after your last code change/.test(reminded.messages[2].content), '收尾提醒：能力扩展注册，测试通过后 4 步没改代码时追加在请求末尾')
+    ok(!hooks.before_provider_request && !hooks.message_end && !hooks.tool_result, '能力扩展只写系统提示分区，不在请求末尾追加待办或收尾提醒')
   }
   const visual = mod.VISUAL_ANSWER_GUIDE
   ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /data source/.test(visual) && /skill visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')
