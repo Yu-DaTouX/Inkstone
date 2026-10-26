@@ -119,7 +119,8 @@ export type SessionTextKey =
   | 'stepListDenied'
   | 'stepWebSearchDenied'
   | 'errViewDetails'
-  | 'errRecovered'
+  | 'errStatus'
+  | 'errRecoveredStatus'
   | 'errCopyDetails'
   | 'workStopping'
   | 'workWaiting'
@@ -129,11 +130,8 @@ export type SessionTextKey =
   | 'workWorking'
   | 'workTool'
   | 'workResponding'
-  | 'workThink0'
-  | 'workThink15'
-  | 'workThink30'
-  | 'workThink45'
-  | 'workThink60'
+  | 'workThinking'
+  | 'workActive'
   | 'workThought'
   | 'workTokens'
   | 'msgCopy'
@@ -159,7 +157,26 @@ export type SessionTextKey =
   | 'questionPending'
   | 'questionSkipped'
   | 'questionFailed'
+  | 'questionAnswered'
+  | 'awaitAnswer'
+  | 'awaitApproval'
+  | 'awaitAction'
   | 'questionAnswer'
+  | 'approvalAllowedOnce'
+  | 'approvalAllowedSession'
+  | 'approvalAllowedRemember'
+  | 'approvalDenied'
+  | 'approvalDeniedReason'
+  | 'processLabel'
+  | 'processThinking1'
+  | 'processThinking'
+  | 'processActions1'
+  | 'processActions'
+  | 'thinkingEmptyRecord'
+  | 'thinkingUnavailable'
+  | 'asideStacked'
+  | 'detailArgs'
+  | 'detailOutput'
   | 'wrapUpLabel'
   | 'wrapUpDismiss'
   | 'wrapUpDone'
@@ -290,7 +307,8 @@ const ZH: Record<SessionTextKey, string> = {
   stepListDenied: '已拒绝列出',
   stepWebSearchDenied: '已拒绝联网搜索',
   errViewDetails: '查看详情',
-  errRecovered: '{title}，已自动恢复',
+  errStatus: '出错',
+  errRecoveredStatus: '已恢复',
   errCopyDetails: '复制详情',
   workStopping: '正在停止…',
   workWaiting: '等你处理',
@@ -300,11 +318,8 @@ const ZH: Record<SessionTextKey, string> = {
   workWorking: '处理中…',
   workTool: '正在执行工具…',
   workResponding: '正在作答…',
-  workThink0: '思考中…',
-  workThink15: '仍在思考…',
-  workThink30: '正在细想…',
-  workThink45: '正在权衡细节…',
-  workThink60: '思路快理清了…',
+  workThinking: '思考中…',
+  workActive: '进行中',
   workThought: '已思考 {n} 秒',
   workTokens: '{n} token',
   msgCopy: '复制',
@@ -329,8 +344,27 @@ const ZH: Record<SessionTextKey, string> = {
   questionLabel: '提问',
   questionPending: '等待回答',
   questionSkipped: '未回答',
-  questionFailed: '提问未完成',
+  questionFailed: '未完成',
+  questionAnswered: '已回答',
+  awaitAnswer: '等你回答',
+  awaitApproval: '等你确认',
+  awaitAction: '等你操作',
   questionAnswer: '回答',
+  approvalAllowedOnce: '已允许一次',
+  approvalAllowedSession: '本会话内允许',
+  approvalAllowedRemember: '已允许并记住目录',
+  approvalDenied: '已拒绝',
+  approvalDeniedReason: '理由：{reason}',
+  processLabel: '过程',
+  processThinking1: '1 段思考',
+  processThinking: '{n} 段思考',
+  processActions1: '1 次操作',
+  processActions: '{n} 次操作',
+  thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
+  thinkingUnavailable: '{model} 不提供思考文字',
+  asideStacked: '窗口不够宽，推理暂时放在正文上方',
+  detailArgs: '参数',
+  detailOutput: '输出',
   wrapUpLabel: '下一步建议',
   wrapUpDismiss: '关闭建议',
   wrapUpDone: '本轮小结',
@@ -462,7 +496,8 @@ const EN: Record<SessionTextKey, string> = {
   stepListDenied: 'Denied',
   stepWebSearchDenied: 'Denied',
   errViewDetails: 'View details',
-  errRecovered: '{title}, recovered automatically',
+  errStatus: 'Error',
+  errRecoveredStatus: 'Recovered',
   errCopyDetails: 'Copy details',
   workStopping: 'Stopping…',
   workWaiting: 'Needs your input',
@@ -472,11 +507,8 @@ const EN: Record<SessionTextKey, string> = {
   workWorking: 'Working…',
   workTool: 'Running tools…',
   workResponding: 'Writing the reply…',
-  workThink0: 'Thinking…',
-  workThink15: 'Still on it…',
-  workThink30: 'Thinking it through…',
-  workThink45: 'Weighing the details…',
-  workThink60: 'Nearly worked out…',
+  workThinking: 'Thinking…',
+  workActive: 'In progress',
   workThought: 'Thought for {n}s',
   workTokens: '{n} tokens',
   msgCopy: 'Copy',
@@ -501,8 +533,27 @@ const EN: Record<SessionTextKey, string> = {
   questionLabel: 'Question',
   questionPending: 'Waiting for an answer',
   questionSkipped: 'No answer',
-  questionFailed: 'Question not completed',
+  questionFailed: 'Not completed',
+  questionAnswered: 'Answered',
+  awaitAnswer: 'Needs your answer',
+  awaitApproval: 'Needs approval',
+  awaitAction: 'Your turn',
   questionAnswer: 'Answer',
+  approvalAllowedOnce: 'Allowed once',
+  approvalAllowedSession: 'Allowed for this session',
+  approvalAllowedRemember: 'Allowed, folder remembered',
+  approvalDenied: 'Denied',
+  approvalDeniedReason: 'Reason: {reason}',
+  processLabel: 'Process',
+  processThinking1: '1 thought',
+  processThinking: '{n} thoughts',
+  processActions1: '1 action',
+  processActions: '{n} actions',
+  thinkingEmptyRecord: 'This turn left no reasoning text',
+  thinkingUnavailable: '{model} does not return reasoning text',
+  asideStacked: 'Not enough width; reasoning is shown above the reply for now',
+  detailArgs: 'Arguments',
+  detailOutput: 'Output',
   wrapUpLabel: 'Next step',
   wrapUpDismiss: 'Dismiss suggestion',
   wrapUpDone: 'Turn recap',

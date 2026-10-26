@@ -37,10 +37,10 @@ export type {
   GitFailureCode
 } from './git-actions'
 import type { GitActionExpected, GitActionRequest, GitActionResult } from './git-actions'
-import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
+import type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalReceipt, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
 export type { GitInstallProgress, GitRuntimeStatus } from './git-runtime'
-export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
+export type { ApprovalAnswerIdentity, ApprovalChoice, ApprovalKind, ApprovalReceipt, ApprovalRequest, ApprovalSnapshot, PermissionMode } from './approval'
 import type { WorkspaceMode } from './workspace-mode'
 import type { BrowserLoadFailure } from './browser-navigation'
 import type { UsageRange, UsageStatsView } from './usage-stats'
@@ -102,6 +102,7 @@ export interface UIToolCall {
   status: 'pending' | 'running' | 'ok' | 'error'
   cancelled?: boolean
   denied?: boolean
+  approval?: ApprovalReceipt
   output?: string
   images?: UIMessageImage[]
   details?: unknown
@@ -140,6 +141,7 @@ export interface UIMessage {
   thinking?: string
   thinkingMs?: number
   thinkingLive?: boolean
+  thinkingEmpty?: boolean
   toolCalls?: UIToolCall[]
   artifacts?: AssistantArtifact[]
   imageProgress?: ImageGenerationProgress[]
@@ -1240,6 +1242,7 @@ export type MainPushBody =
   | { ch: 'ui-deadline'; payload: { id: string; timeout: number; deadline: number } }
   | { ch: 'ui-resolved'; payload: { id: string; by: 'desktop' | 'remote' | 'timeout' } }
   | { ch: 'question-log'; payload: { sessionId: string; entries: QuestionLogEntry[] } }
+  | { ch: 'approval-log'; payload: { sessionId: string; entries: ApprovalReceipt[] } }
   | { ch: 'notify'; payload: ExtensionUiRequest }
   | { ch: 'agent-error'; payload: { message: string; text: string; source: 'auto-retry' | 'stop-reason' } }
   | { ch: 'quota-wait'; payload: { provider?: string } }
@@ -1628,6 +1631,7 @@ export type DeepLinkIntent =
 
 export interface YanBridge {
   readonly probeMode: boolean
+  readonly windowMaterial: string
   appUpdate: {
     status(): Promise<import('./app-update').AppUpdateStatus>
     check(): Promise<import('./app-update').AppUpdateStatus>

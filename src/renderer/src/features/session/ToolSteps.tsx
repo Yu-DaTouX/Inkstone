@@ -12,6 +12,7 @@ import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
 import { QuestionReceipt } from './QuestionReceipt'
+import { ApprovalReceipt } from './ApprovalReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
 import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
@@ -59,6 +60,7 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
   const askedCalls = useStore((s) => s.uiRequests)
   if (!tools.length) return null
   const rows = buildToolRows(tools, approvalIds)
+  if (!rows.length) return null
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
@@ -151,7 +153,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
         {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
-      {asking ? <ApprovalCard inline /> : null}
+      {asking ? <ApprovalCard inline /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
       {open ? <StepDetail call={call} /> : null}
       {nested.shown.length ? (
         <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
@@ -201,6 +203,7 @@ function commandOf(call: UIToolCall): string {
 
 function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const t = useT()
+  const tt = useSessionText()
   const [copied, setCopied] = useState(false)
   const kind = detailKind(call.name)
   const diff = readFileDiff(call.details)
@@ -220,10 +223,9 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   return (
     <div className="v3-step-detail" data-kind={kind}>
       <div className="v3-step-detail-bar">
-        {call.historySummary ? <span className="v3-step-note">{t('tool2.historySummary')}</span> : null}
-        <span className="v3-code-sp" />
         <IconButton size="sm" aria-label={t('tool.copyDetail')} onPress={copy}><Icon name={copied ? 'check' : 'copy'} size={14} /></IconButton>
       </div>
+      {call.historySummary ? <div className="v3-step-note">{t('tool2.historySummary')}</div> : null}
       {call.nestedCallsIncomplete ? <div className="v3-step-note">{t('tool2.nestedIncomplete')}</div> : null}
       {call.images?.length ? (
         <div className="v3-step-images">
@@ -235,13 +237,23 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
       ) : (
         <>
           {command ? (
-            <div className="v3-step-cmd">
-              <div className="v3-step-cmd-head">{shellTitle(call.name)}</div>
+            <section className="v3-step-sec" data-sec="command">
+              <div className="v3-step-sec-head">{shellTitle(call.name)}</div>
               <pre className="v3-step-cmd-line"><span className="v3-step-cmd-prompt" aria-hidden>$ </span>{command}</pre>
-            </div>
+            </section>
           ) : null}
-          {onlyCommand ? null : argsText ? <pre className="v3-step-pre args">{argsText}</pre> : null}
-          {call.output ? <StepOutput text={call.output} error={failed || call.cancelled} /> : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
+          {onlyCommand || !argsText ? null : (
+            <section className="v3-step-sec" data-sec="args">
+              <div className="v3-step-sec-head">{tt('detailArgs')}</div>
+              <pre className="v3-step-pre args">{argsText}</pre>
+            </section>
+          )}
+          {call.output ? (
+            <section className="v3-step-sec" data-sec="output">
+              <div className="v3-step-sec-head">{tt('detailOutput')}</div>
+              <StepOutput text={call.output} error={failed || call.cancelled} />
+            </section>
+          ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
           {call.name.startsWith('mcp__') ? (
             <>
               <McpAppResult callId={call.id} title={call.name} />

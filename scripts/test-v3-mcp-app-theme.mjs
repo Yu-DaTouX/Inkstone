@@ -75,8 +75,8 @@ ok(
 const lightVars = resolveMcpAppThemeVariables('light')
 const darkVars = resolveMcpAppThemeVariables('dark')
 ok(lightVars['--color-background-primary'] === '#FFFFFF', '浅色主背景是具体值')
-ok(darkVars['--color-background-primary'] === '#1A1A19', '深色主背景是具体值')
-ok(lightVars['--color-text-primary'] === '#0B0B0B' && darkVars['--color-text-primary'] === '#F0EFEC', '文字主色按主题取值')
+ok(darkVars['--color-background-primary'] === '#1C1C1B', '深色主背景是具体值')
+ok(lightVars['--color-text-primary'] === '#20211F' && darkVars['--color-text-primary'] === '#E8E7E3', '文字主色按主题取值')
 ok(
   lightVars['--shadow-hairline'] === '0 0 0 1px rgba(11,11,11,.1)' &&
     darkVars['--shadow-hairline'] === '0 0 0 1px rgba(255,255,255,.1)',
@@ -117,7 +117,7 @@ ok(built.platform === 'desktop' && built.displayMode === 'fullscreen', '不覆�
 ok(built.locale === 'zh-CN' && built.timeZone === 'Asia/Shanghai', '保留 provider 的 locale / timeZone')
 ok(built.deviceCapabilities?.hover === true, '保留 provider 的 deviceCapabilities')
 ok(built.styles?.variables?.['--brand'] === '#123456', '合并 provider 自定义变量')
-ok(built.styles?.variables?.['--color-text-primary'] === '#0B0B0B', '标准主题变量覆盖 provider 同名值')
+ok(built.styles?.variables?.['--color-text-primary'] === '#20211F', '标准主题变量覆盖 provider 同名值')
 ok(!('css' in (built.styles ?? {})), '不透传 provider 的 styles.css（不放任任意样式注入）')
 
 const defaults = buildMcpAppHostContext({ theme: 'dark' })
@@ -229,7 +229,7 @@ await (async () => {
   ok(context?.theme === MCP_APP_DEFAULT_THEME, '缺省主题回退到宿主默认（非浅色）', String(context?.theme))
   ok(context?.platform === 'desktop' && context?.displayMode === 'inline', '缺省仍有 platform / displayMode')
   ok(
-    context?.styles?.variables?.['--color-text-primary'] === '#F0EFEC',
+    context?.styles?.variables?.['--color-text-primary'] === '#E8E7E3',
     '首次 initialize 带 hostContext.styles.variables（深色具体值）',
     JSON.stringify(context?.styles?.variables?.['--color-text-primary'])
   )
@@ -257,7 +257,7 @@ await (async () => {
   ok(providerContext?.locale === 'zh-CN', '保留 provider 的 locale')
   ok(providerContext?.styles?.variables?.['--brand'] === '#123456', '合并 provider 自定义变量')
   ok(
-    providerContext?.styles?.variables?.['--color-text-primary'] === '#F0EFEC',
+    providerContext?.styles?.variables?.['--color-text-primary'] === '#E8E7E3',
     '标准主题变量覆盖 provider 同名值'
   )
   ok(!('css' in (providerContext?.styles ?? {})), 'provider 的 styles.css 不透传')

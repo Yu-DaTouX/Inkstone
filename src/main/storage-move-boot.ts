@@ -60,7 +60,7 @@ function escapeHtml(value: string): string {
 }
 
 function progressPage(text: MoveText, dark: boolean): string {
-  const bg = dark ? '#151515' : '#fcfcfa'
+  const bg = dark ? '#171717' : '#fcfcfa'
   const fg = dark ? '#e8e6e1' : '#1f1e1c'
   const track = dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.10)'
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(text.title)}</title><style>
@@ -102,7 +102,7 @@ async function moveWithProgressWindow(): Promise<void> {
     roundedCorners: true,
     show: false,
     title: text.title,
-    backgroundColor: dark ? '#151515' : '#fcfcfa',
+    backgroundColor: dark ? '#171717' : '#fcfcfa',
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false }
   })
   window.on('close', (event) => {

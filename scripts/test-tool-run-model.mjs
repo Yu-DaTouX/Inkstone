@@ -132,9 +132,43 @@ async function run() {
       call('s2/1', 'edit', { path: 'b.ts' }, { parentToolCallId: 's2', details: diff('b.ts', 5, 2) })
     ])
     assert.equal(scripts.length, 1, '连续的 codemode 脚本与中间的单个工具合并成一行')
-    assert.equal(m.formatToolRun(scripts[0].summary, zh), '运行 1 条命令，读取 1 个文件，更新待办，编辑 1 个文件')
+    assert.equal(m.formatToolRun(scripts[0].summary, zh), '运行 1 条命令，读取 1 个文件，编辑 1 个文件', '成功的待办调用不进入分组计数，改由计划卡展示')
     assert.equal(scripts[0].summary.added, 5)
     assert.equal(scripts[0].summary.removed, 2)
+
+    const onlyTodo = m.buildToolRows([call('t1', 'todo_write')])
+    assert.equal(onlyTodo.length, 0, '只有成功的待办调用时，消息流里完全不出现工具分组/步骤')
+
+    const todoAmongTwo = m.buildToolRows([call('r1', 'read', { path: 'a.ts' }), call('t1', 'todos'), call('r2', 'read', { path: 'b.ts' })])
+    assert.equal(todoAmongTwo.length, 1, '待办调用被过滤后，前后两次读取仍按原规则合并成一组')
+    assert.equal(todoAmongTwo[0].kind, 'group')
+    assert.equal(todoAmongTwo[0].nodes.length, 2, '待办调用不计入分组的成员数')
+    assert.equal(m.formatToolRun(todoAmongTwo[0].summary, zh), '读取 2 个文件')
+
+    const failedTodo = m.buildToolRows([call('t1', 'update_todos', {}, { status: 'error', output: '写入失败' })])
+    assert.equal(failedTodo.length, 1, '待办调用出错时仍然显示')
+    assert.equal(failedTodo[0].kind, 'single')
+    assert.equal(failedTodo[0].node.call.id, 't1')
+
+    const failedTodoGrouped = m.buildToolRows([
+      call('r1', 'read', { path: 'a.ts' }),
+      call('t1', 'todo_write', {}, { status: 'error' }),
+      call('r2', 'read', { path: 'b.ts' })
+    ])
+    assert.equal(failedTodoGrouped.length, 1)
+    assert.equal(failedTodoGrouped[0].nodes.length, 3, '出错的待办调用仍计入分组成员与计数')
+    assert.equal(failedTodoGrouped[0].summary.failed, 1)
+
+    const nestedTodo = m.buildToolRows([
+      call('r1', 'read'),
+      call('p1', 'codemode'),
+      call('k1', 'read', {}, { parentToolCallId: 'p1' }),
+      call('k2', 'todo_write', {}, { parentToolCallId: 'p1' }),
+      call('r2', 'read'),
+      call('r3', 'read')
+    ])
+    assert.equal(nestedTodo[0].nodes[1].children.length, 1, '脚本内部成功的待办子调用也不出现在嵌套列表里')
+    assert.equal(m.formatToolRun(nestedTodo[0].summary, zh), '读取 4 个文件', '脚本内部成功的待办子调用不计入组的汇总')
 
     const liveScript = m.buildToolRows([
       call('d1', 'read', { path: 'a.ts' }),
@@ -216,7 +250,21 @@ async function run() {
     assert.equal(lone[0].blocked, true, '单行也带需要审批')
 
     const others = m.summarizeToolRun([call('m1', 'mcp__x__thing'), call('m2', 'mcp__x__thing'), call('t1', 'todo_write')])
-    assert.equal(m.formatToolRun(others, zh), '调用 mcp__x__thing 2 次，更新待办')
+    assert.equal(m.formatToolRun(others, zh), '调用 thing 2 次，更新待办', 'MCP 标识去掉 mcp__<server>__ 前缀，只保留可读的工具名')
+
+    const mcpFailures = m.summarizeToolRun([
+      call('b1', 'mcp__inkstone_minecraft__mc_build', {}, { status: 'error' }),
+      call('t1', 'mcp__inkstone_minecraft__mc_test', {}, { status: 'error' }),
+      call('t2', 'mcp__inkstone_minecraft__mc_test', {}, { status: 'error' }),
+      call('t3', 'mcp__inkstone_minecraft__mc_test', {})
+    ])
+    assert.equal(mcpFailures.failed, 3, '组的总失败数不受标题长度影响，始终可独立读出')
+    assert.equal(m.formatToolRun(mcpFailures, zh), '调用 mc_build（1 个失败），调用 mc_test 3 次（2 个失败）', '单行纯文本（气泡提示等场景）仍带失败数，没有独立失败状态可用')
+    const mcpParts = m.toolRunParts(mcpFailures, zh)
+    assert.equal(mcpParts[0].failed, true, '全部失败的分段仍标记失败')
+    assert.equal(mcpParts[1].failed, true, '部分失败（2/3）的分段也要标记失败，而不仅是全部失败才标记')
+    assert.ok(!mcpParts[0].text.includes('个失败') && !mcpParts[1].text.includes('个失败'), '分组标题的可见分段不再写失败数，避免和独立失败状态重复', mcpParts.map((p) => p.text))
+    assert.equal(mcpParts.map((p) => p.text).join(''), '调用 mc_build，调用 mc_test 3 次', '去掉失败数后分段文字仍可正常拼接')
 
     const coalesced = m.coalesceNodes([
       { call: call('r1', 'read', { path: 'a.ts' }), children: [] },

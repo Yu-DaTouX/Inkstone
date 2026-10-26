@@ -449,7 +449,7 @@ export function createPanePopoutWindow(deps: PanePopoutWindowDeps): PanePopoutWi
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: false,
-    backgroundColor: '#151515',
+    backgroundColor: '#171717',
     webPreferences: {
       preload: deps.preloadPath,
       sandbox: true,

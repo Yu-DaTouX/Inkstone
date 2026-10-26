@@ -12,6 +12,7 @@ import type {
   ExpectedRuntimeOwner,
   ExtensionUiRequest,
   QuestionLogEntry,
+  ApprovalReceipt,
   FilePreview,
   MainPush,
   MessagePatch,
@@ -200,6 +201,8 @@ export interface Store {
   uiRequests: ExtensionUiRequest[]
   questionLog: QuestionLogEntry[]
   questionLogSession: string | null
+  approvalLog: ApprovalReceipt[]
+  approvalLogSession: string | null
   uiCollapsed: boolean
   uiDrafts: Record<string, string>
   composerInsert: string | null
@@ -1121,6 +1124,8 @@ export const useStore = create<Store>((rawSet, get) => {
   uiRequests: [],
   questionLog: [],
   questionLogSession: null,
+  approvalLog: [],
+  approvalLogSession: null,
   uiCollapsed: false,
   uiDrafts: {},
   composerInsert: null,

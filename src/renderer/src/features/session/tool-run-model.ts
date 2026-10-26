@@ -1,5 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
+import { mcpTarget } from '../../../../shared/mcp-approval'
 import { searchStepOf } from './web-search/model'
 import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
@@ -35,8 +36,8 @@ type FileCategory = 'read' | 'edit' | 'create' | 'delete'
 export type ToolRunState = 'blocked' | 'running' | 'denied' | 'error' | 'cancelled' | 'ok'
 
 export type ToolRunSegment =
-  | { kind: 'category'; category: ToolCategory; name?: string; count: number; failed: number; allFailed: boolean }
-  | { kind: 'file'; path: string; base: string; verbs: FileCategory[]; reads: number; failed: number; allFailed: boolean }
+  | { kind: 'category'; category: ToolCategory; name?: string; count: number; failed: number }
+  | { kind: 'file'; path: string; base: string; verbs: FileCategory[]; reads: number; failed: number }
 
 export interface ToolRunSummary {
   state: ToolRunState
@@ -222,7 +223,7 @@ function buildSegments(calls: readonly UIToolCall[], failedIds: ReadonlySet<stri
       if (category === 'read') reads += 1
       if (failedIds.has(call.id)) failed += 1
     }
-    return [{ kind: 'file', path, base: baseName(path), verbs, reads, failed, allFailed: failed > 0 && failed === calls.length }]
+    return [{ kind: 'file', path, base: baseName(path), verbs, reads, failed }]
   }
 
   const order: string[] = []
@@ -248,8 +249,7 @@ function buildSegments(calls: readonly UIToolCall[], failedIds: ReadonlySet<stri
       category: bucket.category,
       ...(bucket.name ? { name: bucket.name } : null),
       count,
-      failed: bucket.failed,
-      allFailed: bucket.failed > 0 && bucket.failed === bucket.calls
+      failed: bucket.failed
     }
   })
 }
@@ -283,7 +283,15 @@ export function summarizeToolRun(
 }
 
 function isStandaloneNode(node: ToolCallNode): boolean {
-  return isStandaloneTool(node.call) || isWebTool(node.call)
+  return isStandaloneTool(node.call) || isWebTool(node.call) || !!node.call.approval
+}
+
+function isHiddenTodoCall(call: Pick<UIToolCall, 'name' | 'status' | 'cancelled' | 'denied' | 'output'>): boolean {
+  return TODO.has(bareName(call.name)) && !isFailure(call)
+}
+
+export function countedProcessCalls(calls: readonly UIToolCall[]): UIToolCall[] {
+  return calls.filter((call) => !call.parentToolCallId && !isHiddenTodoCall(call))
 }
 
 export function isWebTool(call: UIToolCall): boolean {
@@ -342,7 +350,7 @@ export function buildToolRows(
     }
     run = []
   }
-  for (const node of withVisibleWebNodes(toolCallForest([...tools]))) {
+  for (const node of withVisibleWebNodes(toolCallForest(tools.filter((call) => !isHiddenTodoCall(call))))) {
     if (isStandaloneNode(node)) {
       flush()
       rows.push(single(node, true))
@@ -411,6 +419,10 @@ function joinVerbs(verbs: readonly string[], tt: RunTextFn): string {
   return tt('runAnd', { a: head, b: verbs[verbs.length - 1] })
 }
 
+function mcpDisplayName(name: string): string {
+  return name.startsWith('mcp__') ? mcpTarget(name).tool || name : name
+}
+
 function toolRunSegmentText(segment: ToolRunSegment, tt: RunTextFn): string {
   if (segment.kind === 'file') {
     const verbs = joinVerbs(segment.verbs.map((verb) => tt(FILE_VERB[verb])), tt)
@@ -421,7 +433,7 @@ function toolRunSegmentText(segment: ToolRunSegment, tt: RunTextFn): string {
   }
   if (segment.category === 'todo') return tt('runTodo', { n: segment.count })
   if (segment.category === 'other') {
-    const name = segment.name ?? ''
+    const name = mcpDisplayName(segment.name ?? '')
     return segment.count === 1 ? tt('runOther1', { name }) : tt('runOther', { name, n: segment.count })
   }
   const [one, many] = CATEGORY_TEXT[segment.category]
@@ -437,23 +449,21 @@ interface ToolRunPart {
   failed: boolean
 }
 
-export function toolRunParts(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): ToolRunPart[] {
-  const attributed = summary.segments.reduce((sum, segment) => sum + segment.failed, 0)
-  const parts: ToolRunPart[] = summary.segments.map((segment, index) => {
-    const text = toolRunSegmentText(segment, tt)
-    return {
-      text: (index ? tt('runJoin') : '') + (segment.failed > 0 ? text + tt('runFailed', { n: segment.failed }) : text),
-      failed: segment.allFailed
-    }
-  })
+export function toolRunParts(summary: Pick<ToolRunSummary, 'segments'>, tt: RunTextFn): ToolRunPart[] {
+  const parts: ToolRunPart[] = summary.segments.map((segment, index) => ({
+    text: (index ? tt('runJoin') : '') + toolRunSegmentText(segment, tt),
+    failed: segment.failed > 0
+  }))
   if (parts.length) parts[0] = { ...parts[0], text: capitalize(parts[0].text) }
-  const rest = summary.failed - attributed
-  if (rest > 0) parts.push({ text: tt('runFailed', { n: rest }), failed: true })
   return parts
 }
 
-export function formatToolRun(summary: Pick<ToolRunSummary, 'segments' | 'failed'>, tt: RunTextFn): string {
-  return toolRunParts(summary, tt).map((part) => part.text).join('')
+export function formatToolRun(summary: Pick<ToolRunSummary, 'segments'>, tt: RunTextFn): string {
+  const parts = summary.segments.map((segment, index) => {
+    const text = toolRunSegmentText(segment, tt)
+    return (index ? tt('runJoin') : '') + (segment.failed > 0 ? text + tt('runFailed', { n: segment.failed }) : text)
+  })
+  return parts.length ? capitalize(parts[0]) + parts.slice(1).join('') : ''
 }
 
 export interface HeldRunLabel {

@@ -1,0 +1,59 @@
+@layer features {
+  .plan-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface-3);
+    color: var(--fg);
+    overflow: hidden;
+  }
+
+  .plan-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    width: 100%;
+    padding: var(--s-6) var(--s-8);
+    border: 0;
+    background: transparent;
+    color: var(--fg2);
+    font: inherit;
+    font-size: var(--t-footnote);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .plan-card-head:hover {
+    background: var(--hover);
+  }
+
+  .plan-card-head:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .plan-card-head > svg {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .plan-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .plan-card-scroll {
+    max-height: calc(6 * (var(--t-footnote-lh) + 2 * var(--s-2)));
+    padding: 0 var(--s-4) var(--s-4);
+    overflow-y: auto;
+  }
+
+  .plan-card-scroll[data-overflow='true'] {
+    mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent 100%);
+  }
+}

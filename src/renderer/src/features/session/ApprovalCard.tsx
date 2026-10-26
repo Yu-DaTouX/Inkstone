@@ -4,7 +4,8 @@ import { useStore } from '../../state/store'
 import { isModalOpen } from '../../lib/modalLayer'
 import { formatCountdown } from '../../../../shared/ui-timeout'
 import type { ApprovalChoice } from '../../../../shared/approval'
-import { Badge, Button, Kbd } from '../../ui'
+import { Button, Kbd } from '../../ui'
+import { Card, CardActions, CardBody, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { useApprovalSlotClaimed, useClaimApprovalSlot } from './approval-slot'
@@ -187,7 +188,10 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
   }
 
   return (
-    <div
+    <Card
+      ref={cardRef}
+      padding="md"
+      tone={risky ? 'ask' : undefined}
       className={`v3-approval ${risky ? 'risky' : ''}`}
       role="alertdialog"
       aria-label={current.title}
@@ -196,118 +200,127 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
       data-inline={inline ? '1' : undefined}
       data-armed={armed ? '1' : '0'}
       data-read={allowBlocked ? '0' : '1'}
-      ref={cardRef}
       onKeyDownCapture={onKeyDownCapture}
     >
-      <div className="v3-approval-head">
-        {risky ? <Icon name="alert" size={14} /> : null}
-        <span className="v3-approval-title">{current.title}</span>
-        {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} />{waited}</span> : null}
-        {approvals.length > 1 ? <Badge data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</Badge> : null}
-      </div>
+      <CardHead className="v3-approval-head">
+        <CardStatus tone="ask" icon={<Icon name={risky ? 'alert' : 'shield'} size={14} />}>{tt('awaitApproval')}</CardStatus>
+        <CardTitle className="v3-approval-title">{current.title}</CardTitle>
+        {waited || approvals.length > 1 ? (
+          <CardMeta>
+            {waited ? <span className="v3-approval-wait"><Icon name="clock" size={12} />{waited}</span> : null}
+            {approvals.length > 1 ? <span data-testid="v3-approval-count">{t('approval.more', { n: approvals.length - 1 })}</span> : null}
+          </CardMeta>
+        ) : null}
+      </CardHead>
 
-      {showSource ? (
-        <div className="v3-approval-source" data-testid="v3-approval-source">
-          <span>{t('approval.source', { name: sourceName })}</span>
-          {current.subagentId ? <span>{t('approval.childSource', { name: child?.model || current.subagentId })}</span> : null}
-          {sourcePath && !isCurrent ? <Button size="sm" variant="ghost" data-testid="v3-approval-view-source" onPress={() => void viewSource()}>{t('approval.viewSource')}</Button> : null}
-        </div>
-      ) : null}
-
-      {child?.task ? (
-        <div className="v3-approval-why" data-testid="v3-approval-task" title={child.task}>
-          <span className="v3-approval-why-label">{zh ? '子 Agent 任务' : 'Subagent task'}</span>
-          <span>{child.task.split('\n').find((line) => line.trim())?.trim() ?? child.task}</span>
-        </div>
-      ) : null}
-
-      {current.reasons.length ? (
-        <ul className="v3-approval-reasons" data-testid="v3-approval-reasons" aria-label={zh ? '为什么需要确认' : 'Why this needs approval'}>
-          {current.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
-        </ul>
-      ) : null}
-
-      {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: current.cwd })}</div> : null}
-
-      {current.detail ? (
-        <pre
-          ref={detailRef}
-          className="v3-approval-detail"
-          data-testid="v3-approval-detail"
-          title={current.detail}
-          tabIndex={allowBlocked ? 0 : undefined}
-          onScroll={onDetailScroll}
-        >
-          {current.detail}
-        </pre>
-      ) : null}
-
-      {allowBlocked ? (
-        <p className="v3-approval-read-hint" role="status" data-testid="v3-approval-read-hint">
-          {t('approval.readHint')}
-        </p>
-      ) : null}
-
-      {current.rememberDirs?.length ? <div className="v3-approval-dirs" title={current.rememberDirs.join('\n')}>{current.rememberDirs.join('  ·  ')}</div> : null}
-
-      {feedbackOpen ? (
-        <div className="v3-approval-feedback" data-testid="v3-approval-feedback">
-          <textarea
-            ref={feedbackRef}
-            autoFocus
-            className="v3-approval-feedback-input"
-            value={feedback}
-            rows={3}
-            spellCheck={false}
-            aria-label={t('approval.feedbackLabel')}
-            placeholder={t('approval.feedbackPh')}
-            data-testid="v3-approval-feedback-input"
-            onChange={(event) => setFeedback(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
-              if (event.key === 'Escape') {
-                event.preventDefault()
-                event.stopPropagation()
-                setFeedbackOpen(false)
-                return
-              }
-              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault()
-                event.stopPropagation()
-                denyWithFeedback()
-              }
-            }}
-          />
-          <div className="v3-approval-feedback-actions">
-            <Button data-testid="v3-approval-feedback-deny" onPress={clickOnly(denyWithFeedback)}>{t('approval.feedbackDeny')}</Button>
-            <Button
-              variant="ghost"
-              data-testid="v3-approval-feedback-cancel"
-              onPress={() => {
-                setFeedback('')
-                setFeedbackOpen(false)
-              }}
-            >
-              {t('approval.feedbackCancel')}
-            </Button>
+      <CardBody className="v3-approval-body">
+        {showSource ? (
+          <div className="v3-approval-source" data-testid="v3-approval-source">
+            <span>{t('approval.source', { name: sourceName })}</span>
+            {current.subagentId ? <span>{t('approval.childSource', { name: child?.model || current.subagentId })}</span> : null}
+            {sourcePath && !isCurrent ? <Button size="sm" variant="ghost" data-testid="v3-approval-view-source" onPress={() => void viewSource()}>{t('approval.viewSource')}</Button> : null}
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      <div className="v3-approval-foot">
-        <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(denyWithFeedback)}>{t('approval.deny')}</Button>
-        {feedbackOpen ? null : (
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="v3-approval-feedback-open"
-            title={t('approval.feedbackTip')}
-            onPress={() => setFeedbackOpen(true)}
+        {child?.task ? (
+          <div className="v3-approval-why" data-testid="v3-approval-task" title={child.task}>
+            <span className="v3-approval-why-label">{zh ? '子 Agent 任务' : 'Subagent task'}</span>
+            <span>{child.task.split('\n').find((line) => line.trim())?.trim() ?? child.task}</span>
+          </div>
+        ) : null}
+
+        {current.reasons.length ? (
+          <ul className="v3-approval-reasons" data-testid="v3-approval-reasons" aria-label={zh ? '为什么需要确认' : 'Why this needs approval'}>
+            {current.reasons.map((reason, i) => <li key={i}>{reason}</li>)}
+          </ul>
+        ) : null}
+
+        {current.cwd ? <div className="v3-approval-cwd" title={current.cwd}>{tt('approvalCwd', { cwd: current.cwd })}</div> : null}
+
+        {current.detail ? (
+          <pre
+            ref={detailRef}
+            className="v3-approval-detail"
+            data-testid="v3-approval-detail"
+            title={current.detail}
+            tabIndex={allowBlocked ? 0 : undefined}
+            onScroll={onDetailScroll}
           >
-            {t('approval.feedback')}
-          </Button>
-        )}
-        <span className="v3-approval-sp" />
+            {current.detail}
+          </pre>
+        ) : null}
+
+        {allowBlocked ? (
+          <p className="v3-approval-read-hint" role="status" data-testid="v3-approval-read-hint">
+            {t('approval.readHint')}
+          </p>
+        ) : null}
+
+        {current.rememberDirs?.length ? <div className="v3-approval-dirs" title={current.rememberDirs.join('\n')}>{current.rememberDirs.join('  ·  ')}</div> : null}
+
+        {feedbackOpen ? (
+          <div className="v3-approval-feedback" data-testid="v3-approval-feedback">
+            <textarea
+              ref={feedbackRef}
+              autoFocus
+              className="v3-approval-feedback-input"
+              value={feedback}
+              rows={3}
+              spellCheck={false}
+              aria-label={t('approval.feedbackLabel')}
+              placeholder={t('approval.feedbackPh')}
+              data-testid="v3-approval-feedback-input"
+              onChange={(event) => setFeedback(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setFeedbackOpen(false)
+                  return
+                }
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  denyWithFeedback()
+                }
+              }}
+            />
+            <div className="v3-approval-feedback-actions">
+              <Button data-testid="v3-approval-feedback-deny" onPress={clickOnly(denyWithFeedback)}>{t('approval.feedbackDeny')}</Button>
+              <Button
+                variant="ghost"
+                data-testid="v3-approval-feedback-cancel"
+                onPress={() => {
+                  setFeedback('')
+                  setFeedbackOpen(false)
+                }}
+              >
+                {t('approval.feedbackCancel')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </CardBody>
+
+      <CardActions
+        className="v3-approval-foot"
+        lead={
+          <>
+            <Button data-testid="v3-approval-deny" aria-keyshortcuts="Alt+N" onPress={clickOnly(denyWithFeedback)}>{t('approval.deny')}</Button>
+            {feedbackOpen ? null : (
+              <Button
+                variant="ghost"
+                data-testid="v3-approval-feedback-open"
+                title={t('approval.feedbackTip')}
+                onPress={() => setFeedbackOpen(true)}
+              >
+                {t('approval.feedback')}
+              </Button>
+            )}
+          </>
+        }
+      >
         {current.canRemember && rememberLabel ? (
           <Button data-testid="v3-approval-remember" isDisabled={allowBlocked} onPress={clickOnly(() => answer('remember'))}>{rememberLabel}</Button>
         ) : null}
@@ -318,7 +331,7 @@ export function ApprovalCard({ inline = false }: { inline?: boolean } = {}): JSX
           {t('approval.once')}
           <Kbd className="v3-approval-kbd">Ctrl ↵</Kbd>
         </Button>
-      </div>
-    </div>
+      </CardActions>
+    </Card>
   )
 }

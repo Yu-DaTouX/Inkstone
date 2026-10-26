@@ -17,8 +17,6 @@ import { selectSubagentRuns, subagentScopeForView } from '../../state/subagent-v
 import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
 import { useSubagentStopping } from '../../state/subagent-stopping'
-import { buildTodoTileModel, hasTodoTileContent } from '../todos/todo-tile-model'
-import { TodoTileRows, todoTileText } from '../todos/TodoTileView'
 import { QuotaWindowRow, quotaReadAgo, quotaShortLabel, quotaWindowTone } from '../../patterns/QuotaWindowRow'
 import type { AccountQuotaCard } from '../../../../shared/account-quota'
 import type { RunSnapshot } from '../../../../shared/runs'
@@ -498,14 +496,12 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const t = useT()
   const text = useMemo(() => workbenchText(lang).overview, [lang])
   const rail = useMemo(() => railText(lang), [lang])
-  const todoText = useMemo(() => todoTileText(lang), [lang])
 
   const cwd = owner?.cwd || ''
   const session = useStore((s) => s.session)
   const stats = useStore((s) => s.stats)
   const settings = useStore((s) => s.settings)
   const messages = useStreamingThrottledStore((s) => s.messages)
-  const todos = useStore((s) => s.todos)
   const subagents = useStore((s) => s.subagents)
   const runners = useStore((s) => s.runners)
   const widgets = useStore((s) => s.widgets)
@@ -569,9 +565,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       digits={4}
     />
   )
-
-  const hasTodos = hasTodoTileContent(todos)
-  const todoModel = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
 
   const outputPool = useMemo(() => outputCandidates(messages, cwd || undefined), [messages, cwd])
   const outputPaths = useMemo(() => outputPool.map((output) => output.path), [outputPool])
@@ -645,7 +638,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     }
   }
 
-  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; onOpenView?: () => void; body: ReactNode }>> = {
+  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; onOpenView?: () => void; tone?: RailTone; body: ReactNode }>> = {
     environment: {
       summary: environmentSummary,
       body: (
@@ -692,12 +685,13 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             ) : (
               <StatsGlance model={statsModel} text={rail} />
             ),
-            body: <RailStatsBody model={statsModel} />
+            body: <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} />
           }
         }
       : {}),
     context: {
       summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
+      tone: contextKnown ? glyphTone(usage.tone) : undefined,
       onOpenView: () => onOpenView('context'),
       body: contextData && usage.known ? (
         <ContextDetail data={contextData} last={session?.lastCompaction} text={text} />
@@ -709,6 +703,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
       ? {
           usage: {
             summary: quotaSummary,
+            tone: quotaModel.problem?.tone ?? glyphTone(bindingTone),
             onOpenView: () => onOpenView('quota'),
             body: <QuotaDetail model={quotaModel} now={quota.now} />
           }
@@ -719,20 +714,6 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
           connectors: {
             summary: mcp.summary,
             body: mcp.body
-          }
-        }
-      : {}),
-    ...(hasTodos
-      ? {
-          progress: {
-            summary: (
-              <RailValue
-                glyph={{ kind: 'tasks', states: todoModel.rows.map((row) => row.kind) }}
-                tone={todoModel.total > 0 && todoModel.done >= todoModel.total ? 'ok' : undefined}
-                value={rail.progress(todoModel.done, todoModel.total)}
-              />
-            ),
-            body: <TodoTileRows model={todoModel} text={todoText} />
           }
         }
       : {}),
@@ -816,6 +797,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
               onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
               onOpenView={section.onOpenView}
               openLabel={`${text.openFull} ${rail.sections[id]}`}
+              tone={section.tone}
               grip={reorder.gripFor(id)}
               dragging={reorder.dragging === id}
               onHeaderMenu={(anchor) => {

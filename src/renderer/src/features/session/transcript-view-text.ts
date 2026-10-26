@@ -14,12 +14,12 @@ interface TranscriptViewText {
 const zh: TranscriptViewText = {
   menu: '显示方式',
   label: '对话显示方式',
-  description: '简洁只显示操作分组；侧边推理把推理放在消息左侧并行显示；思考模式推理时展开，结束后收进工具条。每个会话可单独切换（Ctrl+O）。',
+  description: '简洁：思考进行时实时可见，结束后折叠进每轮的「过程」，展开即可回看，历史不会被删掉。侧边推理：推理在正文左侧并排；窗口不够宽时临时放到正文上方，并在消息旁注明。思考模式：每轮「过程」默认展开，思考和操作按原顺序逐段显示。没有思考文字的轮次会注明是记录为空，还是模型不提供。每个会话可单独切换（Ctrl+O）。',
   views: { concise: '简洁', side: '侧边推理', thinking: '思考模式' },
   viewHints: {
-    concise: '隐藏推理，连续操作合成一组',
-    side: '推理显示在消息左侧，与正文并行',
-    thinking: '推理时展开，历史推理收进工具条'
+    concise: '思考实时可见，结束后折叠进「过程」，可展开回看',
+    side: '推理在正文左侧并排，窗口不够宽时放到正文上方',
+    thinking: '「过程」默认展开，思考和操作按原顺序显示'
   },
   makeDefault: (view) => `将「${view}」设为默认`,
   switched: (view) => `显示方式：${view}`
@@ -28,12 +28,12 @@ const zh: TranscriptViewText = {
 const en: TranscriptViewText = {
   menu: 'Display',
   label: 'Conversation display',
-  description: 'Concise shows grouped actions only; Side reasoning shows reasoning beside the reply; Thinking expands reasoning while it runs, then folds it into the tool strip. Each session can switch on its own (Ctrl+O).',
+  description: 'Concise: reasoning is visible while it runs, then folds into each turn\'s Process entry; expand it to read again, nothing is discarded. Side reasoning: reasoning sits left of the reply; when the window is too narrow it moves above the reply for now, with a note beside the message. Thinking: each turn\'s Process entry starts expanded, with reasoning and actions in their original order. Turns without reasoning text say whether the record is empty or the model does not return it. Each session can switch on its own (Ctrl+O).',
   views: { concise: 'Concise', side: 'Side reasoning', thinking: 'Thinking' },
   viewHints: {
-    concise: 'Hide reasoning, group consecutive actions',
-    side: 'Reasoning beside the reply, in parallel',
-    thinking: 'Expanded while reasoning, past reasoning in the tool strip'
+    concise: 'Reasoning visible while it runs, then folded into Process',
+    side: 'Reasoning left of the reply, above it when too narrow',
+    thinking: 'Process starts expanded, in original order'
   },
   makeDefault: (view) => `Make ${view} the default`,
   switched: (view) => `Display: ${view}`

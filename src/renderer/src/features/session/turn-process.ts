@@ -1,6 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { TurnSegment, TurnThinking } from '../../../../shared/turns'
-import { isWebTool } from './tool-run-model'
+import { countedProcessCalls, isWebTool, summarizeToolRun } from './tool-run-model'
 
 const LIVE_SEGMENTS = 3
 
@@ -23,11 +23,12 @@ function inProcess(segment: TurnSegment): boolean {
   return hasWork(segment) || hasThinking(segment)
 }
 
-function withWork(process: TurnSegment[]): TurnSegment[] {
-  return process.some(hasWork) ? process : []
+function withWork(process: TurnSegment[], keepThinking: boolean): TurnSegment[] {
+  return keepThinking || process.some(hasWork) ? process : []
 }
 
-export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessSplit {
+export function splitTurnProcess(segments: readonly TurnSegment[], options: { keepThinking?: boolean } = {}): TurnProcessSplit {
+  const keepThinking = options.keepThinking === true
   let at = -1
   for (let i = segments.length - 1; i >= 0; i -= 1) {
     if (segments[i].response) {
@@ -36,7 +37,7 @@ export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessS
     }
   }
   if (at < 0) {
-    return { process: withWork(segments.filter(inProcess)), reply: null, earlierReplies: [], tail: [] }
+    return { process: withWork(segments.filter(inProcess), keepThinking), reply: null, earlierReplies: [], tail: [] }
   }
 
   const replySource = segments[at]
@@ -45,7 +46,7 @@ export function splitTurnProcess(segments: readonly TurnSegment[]): TurnProcessS
   if (inProcess(replySource)) {
     candidates.push({ ...replySource, response: null, responseParts: undefined })
   }
-  const process = withWork(candidates)
+  const process = withWork(candidates, keepThinking)
   const reply: TurnSegment = {
     ...replySource,
     thinking: '',
@@ -144,6 +145,23 @@ export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment
     }
   }
   return merged
+}
+
+export interface ProcessSummary {
+  thinking: number
+  actions: number
+  failed: number
+}
+
+export function processSummary(process: readonly TurnSegment[]): ProcessSummary {
+  let thinking = 0
+  const calls: UIToolCall[] = []
+  for (const segment of mergeQuietSegments(process)) {
+    thinking += segmentThinking(segment).length
+    calls.push(...segment.tools)
+  }
+  const counted = countedProcessCalls(calls)
+  return { thinking, actions: counted.length, failed: summarizeToolRun(counted).failed }
 }
 
 export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {

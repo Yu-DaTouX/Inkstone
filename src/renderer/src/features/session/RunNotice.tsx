@@ -41,12 +41,10 @@ export function LiveRunNotice(): JSX.Element | null {
       data-kind={ACT_KIND[line.kind]}
       data-working={line.kind}
       data-quiet={line.quiet || undefined}
-      aria-hidden={line.quiet || undefined}
-      style={line.quiet ? { visibility: 'hidden' } : undefined}
       data-testid="v3-turn-activity"
     >
       <span className="v3-act-text" role="status" aria-live="polite" title={line.error}>
-        <ShimmerText active={SHIMMER.has(line.kind)}>{text}</ShimmerText>
+        <ShimmerText active={!line.quiet && SHIMMER.has(line.kind)}>{text}</ShimmerText>
       </span>
       {line.elapsedMs !== null ? <span className="v3-act-time">{formatDuration(line.elapsedMs)}</span> : null}
       {line.tokens !== null ? <span className="v3-act-time" data-testid="v3-working-tokens">{tt('workTokens', { n: formatTokenCount(line.tokens) })}</span> : null}

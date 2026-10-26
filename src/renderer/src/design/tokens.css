@@ -2,9 +2,10 @@
 @layer tokens {
   :root {
     color-scheme: light dark;
-    --bg: light-dark(#FCFCFB, #151515);
-    --side: light-dark(#FAFAF9, #101010);
-    --surface: light-dark(#FFFFFF, #1A1A19);
+    --bg: light-dark(#FCFCFB, #171717);
+    --side: light-dark(#F6F9FC, #1C2027);
+    --sidebar-tint: light-dark(rgba(246,249,252,.85), rgba(28,32,39,.85));
+    --surface: light-dark(#FFFFFF, #1C1C1B);
     --surface-0: light-dark(#F9F9F7, #0B0B0B);
     --surface-3: light-dark(#FFFFFF, #20201F);
     --hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.075));
@@ -13,10 +14,10 @@
     --field: light-dark(rgba(255,255,255,.5), rgba(255,255,255,.05));
     --field-hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.14));
     --bubble: light-dark(#F0F0EE, #222221);
-    --sunken: light-dark(#F4F4F2, #0B0B0B);
-    --fg: light-dark(#0B0B0B, #F0EFEC);
-    --fg2: light-dark(#52514E, #C3C2B7);
-    --fg3: light-dark(#6B6A64, #9D9C95);
+    --sunken: light-dark(#F4F4F2, #131313);
+    --fg: light-dark(#20211F, #E8E7E3);
+    --fg2: light-dark(#555750, #B5B4AE);
+    --fg3: light-dark(#6B6A64, #999892);
     --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1));
     --line2: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
     --line-ctl: light-dark(rgba(11,11,11,.48), rgba(255,255,255,.34));

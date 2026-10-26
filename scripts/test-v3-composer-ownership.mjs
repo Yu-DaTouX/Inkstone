@@ -201,7 +201,13 @@ export function translate(_lang, k){ return String(k) }`,
   lucide: `export function ArrowUp(){ return null }
 export function GitMerge(){ return null }
 export function Square(){ return null }
-export function Hourglass(){ return null }`
+export function Hourglass(){ return null }
+export function ChevronDown(){ return null }
+export function ChevronUp(){ return null }
+export function CircleAlert(){ return null }
+export function CircleCheck(){ return null }
+export function CircleDashed(){ return null }
+export function CircleEllipsis(){ return null }`
 }
 
 function makeStubMap() {

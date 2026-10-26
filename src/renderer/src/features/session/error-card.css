@@ -1,0 +1,6 @@
+@layer features {
+  .v3-errorcard-details { display: flex; flex-direction: column; gap: var(--s-6); }
+  .v3-errorcard-detail-foot { display: flex; align-items: center; gap: var(--s-6); }
+  .v3-errorcard-status { color: var(--fg3); font-size: var(--t-footnote); }
+  .v3-errorcard-body { margin: 0; color: var(--fg2); font-size: var(--t-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+}

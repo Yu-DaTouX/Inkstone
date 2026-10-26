@@ -157,7 +157,7 @@ async function buildComposer(outdir) {
           })
           b.onLoad({ filter: /.*/, namespace: 'a2' }, (args) => {
             if (args.path === 'a2:lucide') {
-              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}\nexport function GitMerge(){return null}', loader: 'js' }
+              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}\nexport function GitMerge(){return null}\nexport function ChevronDown(){return null}\nexport function ChevronUp(){return null}\nexport function CircleAlert(){return null}\nexport function CircleCheck(){return null}\nexport function CircleDashed(){return null}\nexport function CircleEllipsis(){return null}', loader: 'js' }
             }
             return { contents: stubMap.get(args.path.slice('a2:'.length)) ?? 'export {}', loader: 'js' }
           })
@@ -321,8 +321,8 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'IsolationMergeBar')
-    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（合入确认条除外）')
+    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'IsolationMergeBar' && nameOf(child) !== 'PlanCard')
+    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（合入确认条与计划卡除外）')
     ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟队列')
     ok(byClass(wrap, 'composer') === children(wrap)[children(wrap).length - 1], '输入框卡片在根末尾，下方不再有会话统计行（统计改到会话栏卡片）')
 

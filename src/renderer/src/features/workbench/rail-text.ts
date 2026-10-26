@@ -22,7 +22,6 @@ export interface RailText {
   copyBranch: string
   openChanges: string
   resizeTiles: string
-  progress: (done: number, total: number) => string
   outputsEmpty: string
   outputCreated: string
   outputModified: string
@@ -39,6 +38,7 @@ export interface RailText {
   dirty: string
   cacheHit: string
   hitShort: string
+  statsBreakdown: string
   linesChanged: (added: number, removed: number) => string
 }
 
@@ -50,7 +50,6 @@ const ZH: RailText = {
     context: '上下文',
     usage: '用量',
     connectors: '连接器',
-    progress: '进度',
     outputs: '产出',
     changes: '更改',
     backgroundTasks: '后台任务',
@@ -74,7 +73,6 @@ const ZH: RailText = {
   copyBranch: '复制分支名',
   openChanges: '在变更面板打开',
   resizeTiles: '调整磁贴宽度',
-  progress: (done, total) => `${done} / ${total}`,
   outputsEmpty: '本会话还没有写入文件',
   outputCreated: '新建',
   outputModified: '修改',
@@ -91,6 +89,7 @@ const ZH: RailText = {
   dirty: '工作区有未提交的改动',
   cacheHit: '缓存命中率',
   hitShort: '命中',
+  statsBreakdown: '分布',
   linesChanged: (added, removed) => `新增 ${added} 行，删除 ${removed} 行`
 }
 
@@ -102,7 +101,6 @@ const EN: RailText = {
     context: 'Context',
     usage: 'Usage',
     connectors: 'Connectors',
-    progress: 'Progress',
     outputs: 'Outputs',
     changes: 'Changes',
     backgroundTasks: 'Background tasks',
@@ -126,7 +124,6 @@ const EN: RailText = {
   copyBranch: 'Copy branch name',
   openChanges: 'Open in Changes',
   resizeTiles: 'Resize tiles',
-  progress: (done, total) => `${done} / ${total}`,
   outputsEmpty: 'No files written in this session yet',
   outputCreated: 'Created',
   outputModified: 'Modified',
@@ -143,6 +140,7 @@ const EN: RailText = {
   dirty: 'Uncommitted changes in the working tree',
   cacheHit: 'Cache hit rate',
   hitShort: 'Hit',
+  statsBreakdown: 'Breakdown',
   linesChanged: (added, removed) => `${added} lines added, ${removed} lines removed`
 }
 

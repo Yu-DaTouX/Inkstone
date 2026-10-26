@@ -8,6 +8,7 @@ import { unsavedFiles } from './unsaved-files'
 import { disposeFileNameSearch } from './file-name-search'
 import { disposeContentSearch } from './file-content-search'
 import { join, dirname, basename, extname, isAbsolute, resolve } from 'node:path'
+import { release as osRelease } from 'node:os'
 import { constants as fsConstants, appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { access, appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -137,6 +138,7 @@ import { migrateLegacyPlaybooks, userSkillPaths } from './user-skills'
 import { extensionDiagnostics } from './extensions-inventory'
 import { projectIdForCwd as deriveProjectId } from './project-id'
 import { ApprovalBroker } from './approval-broker'
+import { approvalLog } from './approval-log'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
@@ -687,7 +689,11 @@ const approvals = new ApprovalBroker({
     push({ ch: 'approval-close', payload: { id } })
     refreshTaskbar()
   },
-  publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot })
+  publish: (snapshot) => push({ ch: 'approval-snapshot', payload: snapshot }),
+  record: (request, answer) => {
+    const update = approvalLog.record(request, answer)
+    if (update) push({ ch: 'approval-log', payload: update })
+  }
 })
 
 async function askLargeDownloadApproval(download: LargeDownload): Promise<boolean> {
@@ -2724,6 +2730,9 @@ function registerIpc(): void {
       reportMainError('设置', e)
       throw e
     }
+    if (typeof patch.theme === 'string' && patch.theme !== before.theme) {
+      syncNativeThemeSource(next.theme)
+    }
     if (typeof patch.lang === 'string' && patch.lang !== before.lang) {
       trayLanguage = next.lang
       refreshTrayMenu()
@@ -3148,12 +3157,37 @@ async function setUiScale(v: unknown): Promise<ReturnType<typeof zoomState>> {
   return st
 }
 
+function windowsBuildNumber(): number {
+  const build = Number(osRelease().split('.')[2])
+  return Number.isFinite(build) ? build : 0
+}
+
+const WIN11_MATERIAL_MIN_BUILD = 22621
+
+let windowMaterialActive = false
+
+function syncNativeThemeSource(theme: 'light' | 'dark'): void {
+  if (!windowMaterialActive) return
+  nativeTheme.themeSource = theme
+}
+
+function resolveWindowMaterial(): 'mica' | 'acrylic' | 'none' {
+  const forced = process.env.YAN_WINDOW_MATERIAL
+  if (forced === 'mica' || forced === 'acrylic' || forced === 'none') return forced
+  if (process.platform !== 'win32') return 'none'
+  if (windowsBuildNumber() < WIN11_MATERIAL_MIN_BUILD) return 'none'
+  return 'acrylic'
+}
+
 function createWindow(): void {
   const [winW, winH] = (process.env.YAN_WIN ?? '')
     .split("x")
     .map((x) => Number(x))
   const useW = Number.isFinite(winW) && winW > 0 ? winW : 1440
   const useH = Number.isFinite(winH) && winH > 0 ? winH : 900
+  const material = resolveWindowMaterial()
+  const useMaterial = material !== 'none'
+  windowMaterialActive = useMaterial
 
   win = new BrowserWindow({
     icon: shellIconPath(),
@@ -3164,11 +3198,14 @@ function createWindow(): void {
     show: false,
     frame: false,
     roundedCorners: true,
-    backgroundColor: '#151515',
+    backgroundColor: useMaterial ? '#00000000' : '#171717',
+    transparent: useMaterial,
+    ...(useMaterial ? { backgroundMaterial: material } : {}),
     webPreferences: {
       preload: join(__dirname_, '../preload/index.cjs'),
       additionalArguments: [
-        ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : [])
+        ...(process.env.YAN_PROBE && !app.isPackaged ? ['--yan-isolated-probe'] : []),
+        ...(useMaterial ? [`--yan-window-material=${material}`] : [])
       ],
       sandbox: true,
       nodeIntegration: false,
@@ -3194,7 +3231,8 @@ function createWindow(): void {
 
   void getSettings().then((s) => {
     if (!win) return
-    if (s.theme === 'light') win.setBackgroundColor('#fcfcfa')
+    if (s.theme === 'light' && !useMaterial) win.setBackgroundColor('#fcfcfa')
+    syncNativeThemeSource(s.theme)
     if (s.alwaysOnTop) {
       win.setAlwaysOnTop(true)
       pushWinState()

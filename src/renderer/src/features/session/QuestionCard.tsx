@@ -4,10 +4,13 @@ import { useStore } from '../../state/store'
 import { formatCountdown, UI_TIMEOUT_EXTEND } from '../../../../shared/ui-timeout'
 import type { ExtensionUiRequest } from '../../../../shared/ipc'
 import type { QuestionField } from '../../../../shared/question-form'
-import { Badge, Button, IconButton, TextArea, TextField } from '../../ui'
+import { Button, IconButton, TextArea, TextField } from '../../ui'
+import { Card, CardActions, CardChevron, CardControl, CardHead, CardMeta, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { QuestionForm } from './QuestionForm'
+import { useSessionText } from './text'
 import { approvalSlotClaimed, useApprovalSlotVersion, useClaimApprovalSlot } from './approval-slot'
+import './question.css'
 
 const INTERACTIVE = new Set(['select', 'confirm', 'input', 'editor'])
 
@@ -64,6 +67,7 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
   onNext: () => void
 }): JSX.Element | null {
   const t = useT()
+  const tt = useSessionText()
   const reqId = req.id
   const draft = useStore((s) => s.uiDrafts[reqId] ?? '')
   const setUiDraft = useStore((s) => s.setUiDraft)
@@ -140,49 +144,70 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
     if (canSubmit) answer({ value: trimmed })
   }
 
+  const needsApproval = req.purpose === 'approval' || req.sensitive === true
+
   return (
-    <div className={`v3-qcard ${collapsed ? 'collapsed' : ''}`} data-testid="v3-question" data-sensitive={req.sensitive === true || undefined} role="alertdialog" aria-labelledby={titleId} tabIndex={-1} ref={cardRef}>
-      <div className="v3-qhead">
-        <Badge tone="accent" data-purpose={req.purpose} data-testid="v3-question-badge">
-          <Icon name={req.purpose === 'approval' ? 'shield' : req.method === 'confirm' ? 'alert' : 'message'} size={12} />
-          {req.purpose === 'approval' ? t('chat.approvalTag') : t('chat.questionTag')}
-        </Badge>
-        <span className="v3-qtitle" id={titleId}>{title}</span>
-        {req.sensitive === true ? <Badge tone="ask">!</Badge> : null}
-        <span className="v3-code-sp" />
-        {deadline ? (
-          <span className="v3-qtimer-wrap">
-            {bump > 0 ? <span className="v3-qbump" key={bump} role="status">{t('q.extendBump')}</span> : null}
-            <button
-              type="button"
-              className={`v3-qtimer ${remaining <= 30_000 ? 'low' : ''}`}
-              data-testid="v3-question-timer"
-              data-remaining={Math.ceil(remaining / 1000)}
-              title={t('q.extendHint')}
-              aria-label={t('q.timeLeft', { time: formatCountdown(remaining) })}
-              onClick={extend}
-            >
-              <Icon name="clock" size={12} />
-              {formatCountdown(remaining)}
-            </button>
-          </span>
-        ) : null}
-        {page.total > 1 ? (
-          <span className="v3-qpage" data-testid="v3-question-page">
-            <IconButton size="sm" aria-label={t('q.prev')} isDisabled={page.index === 0} onPress={onPrev} data-testid="v3-question-prev"><Icon name="chevron-left" size={14} /></IconButton>
-            <span className="v3-qpage-n">{t('q.page', { i: page.index + 1, n: page.total })}</span>
-            <IconButton size="sm" aria-label={t('q.nextPage')} isDisabled={page.index >= page.total - 1} onPress={onNext} data-testid="v3-question-next"><Icon name="chevron-right" size={14} /></IconButton>
-          </span>
-        ) : null}
-        <IconButton
-          size="sm"
-          aria-label={collapsed ? t('q.expand') : t('q.collapse')}
-          onPress={() => setCollapsed(!collapsed)}
-          data-testid="v3-question-toggle"
+    <Card
+      ref={cardRef}
+      padding="none"
+      tone={req.sensitive === true ? 'ask' : undefined}
+      className={`v3-qcard ${collapsed ? 'collapsed' : ''}`}
+      data-testid="v3-question"
+      data-sensitive={req.sensitive === true || undefined}
+      role="alertdialog"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+    >
+      <CardHead className="v3-qhead">
+        <CardStatus
+          tone={needsApproval ? 'ask' : 'accent'}
+          icon={<Icon name={req.purpose === 'approval' ? 'shield' : req.method === 'confirm' ? 'alert' : 'message'} size={14} />}
+          data-purpose={req.purpose}
+          data-testid="v3-question-badge"
         >
-          <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={14} />
-        </IconButton>
-      </div>
+          {needsApproval ? tt('awaitApproval') : tt('awaitAnswer')}
+        </CardStatus>
+        <CardTitle className="v3-qtitle" id={titleId}>{title}</CardTitle>
+        {deadline || page.total > 1 ? (
+          <CardMeta>
+            {deadline ? (
+              <span className="v3-qtimer-wrap">
+                {bump > 0 ? <span className="v3-qbump" key={bump} role="status">{t('q.extendBump')}</span> : null}
+                <button
+                  type="button"
+                  className={`v3-qtimer ${remaining <= 30_000 ? 'low' : ''}`}
+                  data-testid="v3-question-timer"
+                  data-remaining={Math.ceil(remaining / 1000)}
+                  title={t('q.extendHint')}
+                  aria-label={t('q.timeLeft', { time: formatCountdown(remaining) })}
+                  onClick={extend}
+                >
+                  <Icon name="clock" size={12} />
+                  {formatCountdown(remaining)}
+                </button>
+              </span>
+            ) : null}
+            {page.total > 1 ? (
+              <span className="v3-qpage" data-testid="v3-question-page">
+                <IconButton size="sm" aria-label={t('q.prev')} isDisabled={page.index === 0} onPress={onPrev} data-testid="v3-question-prev"><Icon name="chevron-left" size={14} /></IconButton>
+                <span className="v3-qpage-n">{t('q.page', { i: page.index + 1, n: page.total })}</span>
+                <IconButton size="sm" aria-label={t('q.nextPage')} isDisabled={page.index >= page.total - 1} onPress={onNext} data-testid="v3-question-next"><Icon name="chevron-right" size={14} /></IconButton>
+              </span>
+            ) : null}
+          </CardMeta>
+        ) : null}
+        <CardControl>
+          <IconButton
+            size="sm"
+            aria-label={collapsed ? t('q.expand') : t('q.collapse')}
+            aria-expanded={!collapsed}
+            onPress={() => setCollapsed(!collapsed)}
+            data-testid="v3-question-toggle"
+          >
+            <CardChevron />
+          </IconButton>
+        </CardControl>
+      </CardHead>
 
       {collapsed ? (
         <div className="v3-qmini">{t('q.collapsed', { n: page.total })}</div>
@@ -240,9 +265,10 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
           {!known ? <div className="v3-qmsg" data-testid="v3-question-unknown">{t('q.input')}</div> : null}
 
           {req.form?.length ? null : (
-            <div className="v3-qfoot">
-              <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>
-              <span className="v3-code-sp" />
+            <CardActions
+              className="v3-qfoot"
+              lead={<Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-skip">{t('q.skip')}</Button>}
+            >
               {req.method === 'confirm' ? (
                 <>
                   <Button isDisabled={busy} onPress={() => answer({ confirmed: false })}>{t('ui.no')}</Button>
@@ -255,10 +281,10 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
                 </Button>
               ) : null}
               {!known ? <Button isDisabled={busy} onPress={() => answer({ cancelled: true })} data-testid="v3-question-dismiss">{t('q.skip')}</Button> : null}
-            </div>
+            </CardActions>
           )}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

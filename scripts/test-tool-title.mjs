@@ -137,7 +137,7 @@ async function run() {
       ok(redact('') === '', '空命令原样返回', redact(''))
     }
 
-    group('组摘要分段带失败标记，失败只标整类都失败的那段，计数照旧')
+    group('组摘要分段带失败标记（含部分失败），分段文字不带失败数，失败数只在扁平字符串里保留')
     {
       const tools = [
         call('read', { path: 'a.ts' }),
@@ -147,15 +147,26 @@ async function run() {
       const summary = m.summarizeToolRun(tools)
       const parts = m.toolRunParts(summary, zh)
       ok(parts.some((part) => part.text.includes('读取 1 个文件')), '摘要含读取段', parts)
-      ok(parts.some((part) => part.text.includes('运行 2 条命令（2 个失败）') && part.failed === true), '整类失败的命令段标红并带计数', parts)
-      ok(m.formatToolRun(summary, zh) === parts.map((part) => part.text).join(''), '字符串摘要与分段拼回一致')
+      ok(
+        parts.some((part) => part.text.includes('运行 2 条命令') && !part.text.includes('个失败') && part.failed === true),
+        '整类失败的命令段标红，但分段文字不带失败数',
+        parts
+      )
+      const plainJoined = parts.map((part) => part.text).join('')
+      const flatWithoutCounts = m.formatToolRun(summary, zh).replace(/（\d+ 个失败）/g, '')
+      ok(flatWithoutCounts === plainJoined, '去掉失败数后，字符串摘要与分段拼回一致', { flatWithoutCounts, plainJoined })
+      ok(m.formatToolRun(summary, zh).includes('（2 个失败）'), '扁平字符串摘要仍带失败数')
       const mixed = m.summarizeToolRun([
         call('read', { path: 'a.ts' }),
         call('read', { path: 'b.ts' }, 'error'),
         call('bash', { command: 'ls' })
       ])
       const mixedParts = m.toolRunParts(mixed, zh)
-      ok(mixedParts.some((part) => part.text.includes('（1 个失败）') && part.failed === false), '部分失败只留计数、不整段标红', mixedParts)
+      ok(
+        mixedParts.some((part) => part.text.includes('读取 2 个文件') && !part.text.includes('个失败') && part.failed === true),
+        '部分失败的分段也标红，但文字不带失败数',
+        mixedParts
+      )
     }
 
     group('高危操作被拒绝：标题换成「已拒绝」，不算失败，展开仍保留原因原文')

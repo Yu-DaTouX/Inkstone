@@ -207,7 +207,8 @@ async function cardMarkupTests(dir) {
   const pending = render({ callId: 'm2', recap: 'Edited `wrap-up.js`; tests pass.', ask: 'Restart `yan`?', actions: [{ label: 'Restart', message: 'Restart it' }, { label: 'Later', message: 'Wait' }] })
   ok(pending.includes('<code class="v3-wrapup-code">wrap-up.js</code>') && !pending.includes('`'), 'backticks in decision recap render as inline code')
   ok(pending.includes('data-pending=""') && pending.includes('data-testid="v3-wrap-up-question"'), 'card with ask is marked pending and shows the question')
-  ok(pending.indexOf('v3-wrap-up-recap') < pending.indexOf('v3-wrap-up-question') && pending.indexOf('v3-wrap-up-question') < pending.indexOf('v3-wrap-up-action'), 'order: recap, question, then buttons')
+  ok(pending.indexOf('v3-wrap-up-question') < pending.indexOf('v3-wrap-up-dismiss') && pending.indexOf('v3-wrap-up-dismiss') < pending.indexOf('v3-wrap-up-recap') && pending.indexOf('v3-wrap-up-recap') < pending.indexOf('v3-wrap-up-action'), 'order: question as card title with the dismiss control, then recap, then buttons')
+  ok(pending.indexOf('>Later<') < pending.indexOf('>Restart<') && /ui-btn--primary[^>]*>(?:<[^>]+>)*Restart</.test(pending), 'the recommended first action is the primary button, placed last')
   ok((pending.match(/data-testid="v3-wrap-up-action"/g) ?? []).length === 2 && pending.includes('<code class="v3-wrapup-code">yan</code>'), 'two buttons and inline code in the question')
 }
 

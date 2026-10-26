@@ -6,7 +6,6 @@ export const RAIL_SECTION_IDS = [
   'context',
   'usage',
   'connectors',
-  'progress',
   'outputs',
   'changes',
   'backgroundTasks',

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type JSX } from 'react'
 import { useT } from '../../i18n'
-import { Button, Card } from '../../ui'
+import { Button } from '../../ui'
+import { Card, CardActions, CardBody, CardHead, CardStatus, CardTitle } from '../../ui/Card'
 import { sendAsComposerMessage } from '../../lib/composer-store-send'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
@@ -29,27 +30,25 @@ export function BrowserHandoffCard({ sessionId }: { sessionId: string | null }):
     await sendAsComposerMessage(tt('browserHandoffMessage'), t)
   }
   return (
-    <Card as="section" padding="sm" className="v3-wrapup" data-pending="" aria-label={tt('browserHandoffTitle')} data-testid="v3-browser-handoff">
-      <div className="v3-wrapup-head">
-        <span className="v3-wrapup-kicker">
-          <Icon name="help" size={13} />
-          {tt('browserHandoffTitle')}
-        </span>
-      </div>
-      <p className="v3-wrapup-recap" data-testid="v3-browser-handoff-reason">{request.reason || tt('browserHandoffReason')}</p>
-      <div className="v3-wrapup-ask">
-        <p className="v3-wrapup-question">{tt('browserHandoffHint')}</p>
-        <div className="v3-wrapup-actions">
-          <Button size="sm" variant="primary" onPress={() => void done()} data-testid="v3-browser-handoff-done">
-            {tt('browserHandoffDone')}
+    <Card as="section" padding="md" className="v3-wrapup" data-pending="" aria-label={tt('browserHandoffTitle')} data-testid="v3-browser-handoff">
+      <CardHead>
+        <CardStatus tone="accent" icon={<Icon name="help" size={14} />}>{tt('awaitAction')}</CardStatus>
+        <CardTitle>{tt('browserHandoffTitle')}</CardTitle>
+      </CardHead>
+      <CardBody className="v3-wrapup-body">
+        <p className="v3-wrapup-recap" data-testid="v3-browser-handoff-reason">{request.reason || tt('browserHandoffReason')}</p>
+        <p className="v3-wrapup-recap">{tt('browserHandoffHint')}</p>
+      </CardBody>
+      <CardActions className="v3-wrapup-actions">
+        {embedded ? (
+          <Button variant="secondary" onPress={() => void openBrowser(browser.url)} data-testid="v3-browser-handoff-show">
+            {tt('browserHandoffShow')}
           </Button>
-          {embedded ? (
-            <Button size="sm" variant="secondary" onPress={() => void openBrowser(browser.url)} data-testid="v3-browser-handoff-show">
-              {tt('browserHandoffShow')}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+        ) : null}
+        <Button variant="primary" onPress={() => void done()} data-testid="v3-browser-handoff-done">
+          {tt('browserHandoffDone')}
+        </Button>
+      </CardActions>
     </Card>
   )
 }

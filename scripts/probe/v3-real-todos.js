@@ -18,7 +18,6 @@
     return false
   }
   const q = (testId) => document.querySelector(`[data-testid="${testId}"]`)
-  const qa = (testId) => [...document.querySelectorAll(`[data-testid="${testId}"]`)]
   const store = window.__yanStore
 
   const composer = window.__yanComposer
@@ -35,7 +34,7 @@
   let pollTimer = null
 
   try {
-    out.push('=== v3 Agent 实时待办磁贴（真实模型）===')
+    out.push('=== v3 Agent 实时计划卡（停靠在输入框上方，真实模型）===')
     check(
       await until(() => document.documentElement.dataset.ui === 'v3' && q('v3-sidebar'), 10000),
       'v3 外壳已挂载'
@@ -93,12 +92,12 @@
 
     pollTimer = setInterval(() => {
       if (!recording) return
-      domLog.push({ t: Date.now(), tile: !!q('wb-rail-progress'), running: runningNow(store.getState()) })
+      domLog.push({ t: Date.now(), tile: !!q('plan-card'), running: runningNow(store.getState()) })
     }, 100)
 
     check(await until(() => runningNow(store.getState()), 45000), '回合进入运行中')
-    const tileWhileRunning = await until(() => !!q('wb-rail-progress') && runningNow(store.getState()), 240000)
-    check(tileWhileRunning, '运行中会话栏「进度」卡实时出现（wb-rail-progress）')
+    const tileWhileRunning = await until(() => !!q('plan-card') && runningNow(store.getState()), 240000)
+    check(tileWhileRunning, '运行中输入框上方实时出现计划卡（plan-card）')
 
     const finished = await until(() => !runningNow(store.getState()), 300000)
     recording = false
@@ -122,18 +121,13 @@
     const monotonic = seq.every((s, i) => i === 0 || s.done >= seq[i - 1].done)
     check(monotonic, '完成数单调不减（没有回退）')
 
-    const railCount = () => (q('wb-rail-progress')?.querySelector('.wb-tile-summary')?.textContent ?? '').replace(/\s+/g, '')
-    check(await until(() => railCount() === '3/3', 10000), `进度卡计数显示 3 / 3（实际 ${JSON.stringify(railCount())}）`)
-    const rows = qa('v3-todo-row')
-    check(rows.length === 3, `磁贴渲染 3 行（实际 ${rows.length}）`)
-    check(rows.length > 0 && rows.every((r) => r.getAttribute('data-kind') === 'done'), '三行状态都是 done（全勾）')
-    check(rows.length > 0 && rows.every((r) => !!r.querySelector('.v3-todo-mark svg')), '每行状态槽都有勾图标')
+    check(await until(() => !q('plan-card'), 10000), '全部完成后计划卡整块隐藏（不残留已完成清单）')
 
     const statsAfter = store.getState().stats?.tokens?.total ?? 0
     note(`会话统计 token：${statsBefore} → ${statsAfter}`)
     const cost = store.getState().stats?.cost
     if (typeof cost === 'number') note(`会话累计费用（pi 口径）≈ $${cost.toFixed(6)}`)
-    out.push('证据范围：真实模型驱动的任务工具写入 → 宿主推送 → v3 磁贴；模型固定 commandcode/deepseek/deepseek-v4.1-flash。')
+    out.push('证据范围：真实模型驱动的任务工具写入 → 宿主推送 → 输入框上方的计划卡；模型固定 commandcode/deepseek/deepseek-v4.1-flash。')
   } catch (error) {
     out.push(`  ✗ 场景异常：${error?.stack ?? error}`)
   } finally {

@@ -422,9 +422,14 @@ async function main() {
 
   const resetPanes = () => lib.useUiV3.setState({ workspaceOpen: false, workspaceTab: 'files', workspacePanes: [] })
 
-  const kind = (name) => (el) => typeof el.type === 'function' && el.type.name === name
+  const kind = (name) => (el) => typeof el.type === 'function' && (el.type.name === name || new RegExp('^' + name + '[0-9]+$').test(el.type.name))
   const stub = (name) => (el) => typeof el.type === 'function' && el.type.__stub === name
   const rowsOf = (line) => collect(line, kind('SubagentRow'))
+  const summaryOf = (sum) => {
+    const status = collect(sum, kind('CardStatus'))[0]
+    const meta = collect(sum, kind('CardMeta'))[0]
+    return { tone: status?.props.tone, status: flattenText(status?.props.children), title: flattenText(collect(sum, kind('CardTitle'))[0]?.props.children), meta: meta ? flattenText(meta.props.children) : null }
+  }
   const renderRowEl = (el) => {
     const saved = rt.cells
     rt.cells = []
@@ -445,7 +450,8 @@ async function main() {
     const line = rt.render(bundle.SubagentLine, { turn })
     ok(line && byTestId(line, 'v3-subagents').length === 1 && line.props['data-layout'] === 'single', '挂在这一轮上的子 Agent 渲染成单行', line?.props['data-layout'])
     ok(byTestId(line, 'v3-subagents-sum').length === 0 && byTestId(line, 'v3-subagents-progress').length === 0, '只有一条时不加组头与进度条')
-    ok(collect(line, stub('ui-card')).length === 1 && byTestId(line, 'v3-subagent-list').length === 1, '行放在 ui/Card 里的列表中')
+    ok(collect(line, kind('Card')).length === 1 && byTestId(line, 'v3-subagent-list').length === 1, '行放在 ui/Card 里的列表中')
+    ok(collect(line, kind('Card'))[0].props.receipt === true, '已结束的子 Agent 卡片用历史回执外观')
     const rowEl = rowsOf(line)[0]
     ok(!!rowEl, '行组件存在')
     const row = renderRowEl(rowEl)
@@ -543,8 +549,12 @@ async function main() {
     ok(textOf(more) === 'subagentShowMore' && more.type.__stub === 'ui-button', '其余折叠为「再显示 N 个」按钮')
     ok(bundle.subagentListSlice(bundle.orderSubagentRuns(many), false, null).hidden === 2, '「再显示」的数目是被折叠的行数')
     const sum = byTestId(line, 'v3-subagents-sum')[0]
-    ok(textOf(sum) === 'subagentCount · subagentLiveCount · subagentFailedCount · subagentDoneCount · subagentStoppedCount', '组头写总数与各状态计数', textOf(sum))
-    ok(sum.props['aria-expanded'] === true && sum.props.trailingIcon && sum.props['data-failed'] === '1', '组头是可折叠按钮，有失败时带失败标记')
+    const live = summaryOf(sum)
+    ok(live.status === 'subagentFailedCount' && live.tone === 'fail', '组头状态在前：有失败时失败优先、红色', JSON.stringify(live))
+    ok(live.title === 'subagentCount · subagentLiveCount · subagentDoneCount · subagentStoppedCount', '标题写总数与其余状态计数', live.title)
+    ok(live.meta === null, '运行中不写用量元信息', live.meta)
+    ok(kind('CardSummary')(sum) && sum.props.expanded === true && sum.props['data-failed'] === '1', '组头是卡片摘要行（展开箭头），有失败时带失败标记')
+    ok(!collect(line, kind('Card'))[0].props.receipt, '运行中的列表是普通卡片，不是历史回执')
     ok(byTestId(line, 'v3-subagents-progress').length === 1, '有运行中的项时显示进度条')
     ok(['v3-subagent-deck', 'v3-subagent-slot', 'v3-subagent-strip', 'v3-subagent-dots', 'v3-subagent-pos', 'v3-subagent-nav'].every((id) => byTestId(line, id).length === 0), '没有卡组、翻张、点点分页与滚轮提示')
     const list = byTestId(line, 'v3-subagent-list')[0]
@@ -574,21 +584,27 @@ async function main() {
     rt.cells = []
     store({ subagents: ended, models: [] })
     const summary = rt.render(bundle.SubagentLine, { turn })
-    const sumText = textOf(byTestId(summary, 'v3-subagents-sum')[0])
+    const ended1 = summaryOf(byTestId(summary, 'v3-subagents-sum')[0])
     ok(summary.props['data-layout'] === 'summary' && rowsOf(summary).length === 0, '全部结束后自动收成一行摘要')
-    ok(sumText === 'subagentCount · subagentFailedCount · subagentDoneCount · 21 个工具 · 7.0k tokens · 4s', '摘要写计数（含失败）、工具、tokens、整组用时', sumText)
+    ok(ended1.status === 'subagentFailedCount' && ended1.title === 'subagentCount · subagentDoneCount', '摘要状态写失败数，标题写总数与完成数', JSON.stringify(ended1))
+    ok(ended1.meta === null, '组头只写状态与计数，窄屏不和用量争宽度', ended1.meta)
+    ok(byTestId(summary, 'v3-subagents-sum')[0].props.title === '21 个工具 · 7.0k tokens · 4s', '收起时悬停组头可看用量', byTestId(summary, 'v3-subagents-sum')[0].props.title)
+    ok(byTestId(summary, 'v3-subagents-usage').length === 0, '收起时不渲染列表里的用量行')
+    ok(collect(summary, kind('Card'))[0].props.receipt === true, '全部结束后整组转为历史回执外观')
     ok(byTestId(summary, 'v3-subagents-progress').length === 0, '结束后不显示进度条')
     byTestId(summary, 'v3-subagents-sum')[0].props.onPress()
     rt.cells = []
     const reopened = rt.render(bundle.SubagentLine, { turn })
     ok(reopened.props['data-layout'] === 'list' && rowsOf(reopened).length === 5, '点击摘要展开，用户展开过的状态保持', reopened.props['data-layout'])
+    ok(textOf(byTestId(reopened, 'v3-subagents-usage')[0]) === '21 个工具 · 7.0k tokens · 4s', '展开后在列表末尾写工具、tokens、整组用时', textOf(byTestId(reopened, 'v3-subagents-usage')[0]))
+    ok(byTestId(reopened, 'v3-subagents-sum')[0].props.title === undefined, '展开后组头不再重复用量提示')
 
     resetExpansion()
     rt.cells = []
     store({ subagents: ended.map((run) => ({ ...run, status: 'done' })), models: [] })
-    const clean = textOf(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0])
-    ok(clean.startsWith('subagentCount · subagentAllDone · '), '没有失败时摘要写「全部完成」', clean)
-    ok(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0].props.trailingIcon === undefined, '没有失败时不带失败标记')
+    const clean = summaryOf(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0])
+    ok(clean.status === 'subagentAllDone' && clean.tone === 'ok' && clean.title === 'subagentCount', '没有失败时状态写「全部完成」', JSON.stringify(clean))
+    ok(byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-sum')[0].props['data-failed'] === undefined, '没有失败时不带失败标记')
 
     resetExpansion()
     rt.cells = []
@@ -663,12 +679,25 @@ async function main() {
     const opened = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('429 rate limit exceeded') })
     ok(flattenText(byTestId(opened, 'v3-error-body')[0]).includes('原因：'), '展开后正文含脱敏原因')
     ok(byTestId(opened, 'v3-error-copy').length === 1, '展开后可复制详情')
+    const actionIds = collect(opened, (el) => /^v3-error-(retry|model|compact|wait)$/.test(el.props?.['data-testid'] ?? '')).map((el) => el.props['data-testid'])
+    ok(actionIds[actionIds.length - 1] === 'v3-error-retry' && actionIds.length > 1, '主操作（重试）排在动作行最右', actionIds.join())
+    const errorStatus = collect(opened, kind('CardStatus'))[0]
+    ok(collect(opened, kind('Card'))[0]?.props.tone === 'fail' && errorStatus?.props.tone === 'fail' && flattenText(errorStatus.props.children) === 'errStatus', '阻塞错误用失败色描边与「出错」状态，不再整块红底')
 
     const auth = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('401 unauthorized') })
     ok(byTestId(auth, 'v3-error-retry').length === 0 && byTestId(auth, 'v3-error-model').length === 1, '认证失败不给重试，只给换模型')
 
     const aborted = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('Request aborted by user') })
     ok(byTestId(aborted, 'v3-error-retry').length === 0 && byTestId(aborted, 'v3-error-model').length === 0 && byTestId(aborted, 'v3-error-compact').length === 0, '取消不给任何动作按钮')
+
+    rt.cells = []
+    const recovered = rt.render(bundle.ErrorCard, { sourceIds: ['a2'], error: notice('503 service unavailable'), recovered: true })
+    const recoveredToggle = byTestId(recovered, 'v3-error-toggle')[0]
+    ok(collect(recovered, kind('Card'))[0]?.props.receipt === true && recovered.props?.receipt === true, '已恢复的错误退为历史回执', JSON.stringify(recovered.props?.receipt))
+    ok(kind('CardSummary')(recoveredToggle) && recoveredToggle.props.expanded === false, '已恢复的错误整行可展开详情（折叠箭头，不是关闭）')
+    ok(flattenText(collect(recovered, kind('CardStatus'))[0]?.props.children) === 'errRecoveredStatus', '状态写「已恢复」')
+    ok(byTestId(recovered, 'v3-error-retry').length === 0 && byTestId(recovered, 'v3-error-model').length === 0, '已恢复的错误不给动作')
+    rt.cells = []
 
     store({
       messages: [{ id: 'u1', role: 'user', text: '跑一下' }, { id: 'a2', role: 'assistant', text: 'x' }],

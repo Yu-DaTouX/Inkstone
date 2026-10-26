@@ -561,10 +561,17 @@ async function main() {
     const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: false })
     const proc = byTypeName(tree, 'TurnProcess')[0]
     ok(!!proc, '带工具的回合把解说收进 TurnProcess')
+    const isToggle = (el) => el.props?.['data-testid'] === 'v3-process-toggle'
+    const folded = proc ? rt.render(proc.type, proc.props) : null
+    const toggle = folded ? collect(folded, isToggle)[0] : null
+    ok(!!toggle && toggle.props['aria-expanded'] === false, '完成后过程在原位收成一行入口（简洁视图默认收起）', toggle?.props['aria-expanded'])
+    ok(folded ? byTypeName(folded, 'ProcessSegment').length === 0 : false, '收起时不铺开过程内容')
+    toggle?.props.onClick()
     const expanded = proc ? rt.render(proc.type, proc.props) : null
-    ok(expanded ? collect(expanded, (el) => el.props?.['data-testid'] === 'v3-process-toggle').length === 0 : false, '不再有「过程」外壳与展开按钮')
-    ok(expanded ? byStub(expanded, 'markdown').length > 0 : false, '解说不折叠，直接在工具组旁铺开')
-    const mds = [...byStub(tree, 'markdown'), ...(expanded ? byStub(expanded, 'markdown') : [])]
+    ok(expanded ? collect(expanded, isToggle)[0]?.props['aria-expanded'] === true : false, '点开入口后展开，阅读状态存在展开存储里')
+    const segments = expanded ? byTypeName(expanded, 'ProcessSegment').map((el) => rt.render(el.type, el.props)) : []
+    ok(segments.some((seg) => byStub(seg, 'markdown').length > 0), '展开后解说在工具组旁按原顺序铺开')
+    const mds = [...byStub(tree, 'markdown'), ...segments.flatMap((seg) => byStub(seg, 'markdown'))]
     const commentary = mds.find((el) => el.props.messageId === turn.commentary[0].id)
     const response = mds.find((el) => el.props.messageId === turn.response.id)
     ok(!!commentary, '解说段落拿到自己的消息身份', mds.map((el) => el.props.messageId))

@@ -1,32 +1,13 @@
 @layer features {
   .v3-wrapup {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
     margin-top: var(--s-8);
     min-width: 0;
   }
 
-  .v3-wrapup-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--s-8);
-    margin-block: calc(var(--s-4) * -1);
-  }
-
-  .v3-wrapup-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-6);
-    min-width: 0;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-weight: 600;
-  }
-
-  .v3-wrapup[data-pending] .v3-wrapup-kicker {
-    color: var(--accent-t);
+  .v3-wrapup-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
   }
 
   .v3-wrapup-recap,
@@ -38,35 +19,7 @@
     text-wrap: pretty;
   }
 
-  .v3-wrapup-recap {
-    color: var(--fg2);
-  }
-
-  .v3-wrapup-ask {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-8) var(--s-12);
-    min-width: 0;
-    padding-top: var(--s-8);
-    border-top: 1px solid var(--line);
-  }
-
-  .v3-wrapup-question {
-    flex: 1 1 240px;
-    color: var(--fg);
-    font-weight: 600;
-  }
-
-  .v3-wrapup-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-8);
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .v3-wrapup-actions > * {
+  .v3-wrapup-actions > .ui-card__actions-main > * {
     max-width: 100%;
   }
 
@@ -77,6 +30,7 @@
     background: var(--alpha-1);
     font-family: var(--font-mono);
     font-size: var(--t-code);
+    font-weight: var(--w-regular);
     overflow-wrap: anywhere;
   }
 }

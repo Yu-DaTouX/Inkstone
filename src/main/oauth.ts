@@ -38,7 +38,7 @@ function resultPage(heading: string, message: string, details?: string): string 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${esc(heading)}</title>
   <style>
-    :root { color-scheme: dark; --bg: #151515; --bg2: #1b1b1a; --border: rgba(255,255,255,.1);
+    :root { color-scheme: dark; --bg: #171717; --bg2: #1b1b1a; --border: rgba(255,255,255,.1);
             --fg: #ecece8; --dim: #b4b4ac; --mute: #92928a; --accent: #93a4f4;
             --mono: "Maple Mono CN", ui-monospace, Consolas, monospace;
             --sans: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; }

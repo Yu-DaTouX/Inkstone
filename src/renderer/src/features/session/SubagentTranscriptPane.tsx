@@ -6,6 +6,8 @@ import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
 import { Button, EmptyState, IconButton, Notice } from '../../ui'
 import { groupIntoTurns, type Turn } from '../../../../shared/turns'
+import { mergeApprovalLog } from '../../../../shared/approval-log'
+import type { ApprovalReceipt } from '../../../../shared/approval'
 import { briefPrompt } from '../../../../shared/subagent-brief'
 import { subagentRowLabel } from '../../../../shared/subagent-task-rows'
 import type { SubagentRun } from '../../../../shared/ipc'
@@ -35,11 +37,13 @@ function subagentBriefText(run: Pick<SubagentRun, 'task' | 'brief'>): string {
   return run.brief ? briefPrompt(run.brief, run.task) : run.task
 }
 
-function subagentTranscriptTurns(run: Pick<SubagentRun, 'task' | 'brief' | 'transcript' | 'cwd'>): Turn[] {
+const NO_APPROVAL_RECEIPTS: ApprovalReceipt[] = []
+
+function subagentTranscriptTurns(run: Pick<SubagentRun, 'id' | 'task' | 'brief' | 'transcript' | 'cwd'>, approvals: readonly ApprovalReceipt[]): Turn[] {
   const brief = subagentBriefText(run).trim()
   const task = run.task.trim()
   return groupIntoTurns(
-    run.transcript
+    mergeApprovalLog(run.transcript, approvals, run.id)
       .filter((item) => item.role !== 'user' || (item.text.trim() !== brief && item.text.trim() !== task))
       .map((item) => ({ ...item, ...(item.role === 'user' ? { text: forwardedText(item.text).text } : {}), sourceCwd: item.sourceCwd ?? run.cwd }))
   )
@@ -139,6 +143,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const row = useSubagentRow(run)
   const models = useStore((s) => s.models)
   const currentSessionId = useStore((s) => s.session?.sessionId ?? null)
+  const approvalLog = useStore((s) => s.approvalLogSession && s.approvalLogSession === run.parentSessionId ? s.approvalLog : NO_APPROVAL_RECEIPTS)
   const [retrying, setRetrying] = useState(false)
   const [gone, setGone] = useState(false)
 
@@ -154,7 +159,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
   const canRetry = model.terminal && RETRYABLE.has(model.outcomeKey) && !!currentSessionId && run.parentSessionId === currentSessionId && !run.fork && !run.brief
   const brief = subagentBriefText(run)
   const shown = useFullTranscript(run)
-  const turns = useMemo(() => subagentTranscriptTurns(shown), [shown])
+  const turns = useMemo(() => subagentTranscriptTurns(shown, approvalLog), [shown, approvalLog])
   const scope = useMemo<TurnSubagentScope>(() => ({ sessionIds: [], parentRunIds: [run.id] }), [run.id])
 
   const scrollRef = useRef<HTMLDivElement>(null)

@@ -4,7 +4,7 @@
     flex-direction: column;
     gap: 1px;
     margin: 0;
-    padding: 0 4px 4px;
+    padding: 0;
     list-style: none;
   }
 
@@ -12,16 +12,15 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    padding: 2px 6px;
+    padding: var(--s-2) var(--s-8);
     border-radius: var(--r-xs);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
-    color: var(--fg2);
+    color: var(--fg);
   }
 
   .v3-todo-mark {
     flex: none;
-    width: 14px;
     display: grid;
     place-items: center;
     color: var(--fg3);
@@ -35,31 +34,28 @@
     white-space: nowrap;
   }
 
-  .v3-todo-row[data-kind='done'] {
-    color: var(--fg3);
-  }
-
-  .v3-todo-row[data-kind='done'] .v3-todo-text {
-    text-decoration: line-through;
-  }
-
   .v3-todo-row[data-kind='done'] .v3-todo-mark {
     color: var(--ok);
   }
 
-  .v3-todo-row[data-kind='running'] {
-    color: var(--fg);
+  .v3-todo-row[data-kind='running'] .v3-todo-mark {
+    color: var(--run);
+    animation: v3-todo-pulse var(--dur-breathe) var(--ease) infinite;
   }
 
   .v3-todo-row[data-kind='blocked'] .v3-todo-mark {
     color: var(--fail);
   }
 
-  .v3-todo-state {
-    flex: none;
-    margin-left: auto;
-    padding-left: 6px;
-    color: var(--fail-t);
-    font-weight: 600;
+  @keyframes v3-todo-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-todo-row[data-kind='running'] .v3-todo-mark {
+      animation: none;
+    }
   }
 }

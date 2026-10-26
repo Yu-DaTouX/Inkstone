@@ -157,6 +157,7 @@ type Ok = { ok: boolean; error?: string }
 
 const api: YanBridge = {
   probeMode: process.argv.includes('--yan-isolated-probe'),
+  windowMaterial: (process.argv.find((a) => a.startsWith('--yan-window-material=')) ?? '').slice('--yan-window-material='.length),
   appUpdate: {
     status: () => invoke('yan:update:status'),
     check: () => invoke('yan:update:check'),

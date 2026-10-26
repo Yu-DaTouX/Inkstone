@@ -28,8 +28,10 @@ import {
   type SubagentListTotals
 } from './subagent-list'
 import { useToolExpansion } from './use-tool-run'
+import './subagents.css'
 import { turnModelLabel } from './turn-model-label'
-import { Button, Card, ProgressBar, ShimmerText } from '../../ui'
+import { Button, ProgressBar, ShimmerText } from '../../ui'
+import { Card, CardStatus, CardSummary, CardTitle, type CardStatusTone } from '../../ui/Card'
 import { ContextGauge } from '../../patterns/ContextGauge'
 
 const OUTCOME_KEY: Record<SubagentOutcomeKey, MessageKey> = {
@@ -92,16 +94,36 @@ function subagentCountsText(totals: SubagentListTotals, tt: SessionText): string
   ].filter(Boolean).join(' · ')
 }
 
-function subagentCollapsedText(totals: SubagentListTotals, tt: SessionText, lang: string): string {
-  if (!totals.ended) return subagentCountsText(totals, tt)
-  const outcome = totals.failed || totals.stopped
-    ? subagentCountsText(totals, tt)
-    : `${tt('subagentCount', { n: totals.total })} · ${tt('subagentAllDone')}`
-  const usage = subagentSummaryLine(
-    { toolCalls: totals.toolCalls, tokens: totals.tokens || null, durationMs: totals.spanMs },
-    rowLang(lang)
-  )
-  return `${outcome} · ${usage}`
+type SubagentCount = 'live' | 'failed' | 'done' | 'stopped'
+
+const COUNT_KEY: Record<SubagentCount, SessionTextKey> = {
+  live: 'subagentLiveCount',
+  failed: 'subagentFailedCount',
+  done: 'subagentDoneCount',
+  stopped: 'subagentStoppedCount'
+}
+
+const COUNT_ORDER: readonly SubagentCount[] = ['live', 'failed', 'done', 'stopped']
+
+const LEAD_TONE: Record<SubagentCount, CardStatusTone> = { failed: 'fail', live: 'run', stopped: 'muted', done: 'ok' }
+
+function subagentSummary(totals: SubagentListTotals, tt: SessionText, lang: string): {
+  tone: CardStatusTone
+  status: string
+  title: string
+  usage: string | null
+} {
+  const lead: SubagentCount | null = totals.failed ? 'failed' : totals.live ? 'live' : totals.stopped ? 'stopped' : null
+  const rest = lead ? COUNT_ORDER.filter((key) => key !== lead && totals[key] > 0).map((key) => tt(COUNT_KEY[key], { n: totals[key] })) : []
+  const usage = totals.ended
+    ? subagentSummaryLine({ toolCalls: totals.toolCalls, tokens: totals.tokens || null, durationMs: totals.spanMs }, rowLang(lang))
+    : null
+  return {
+    tone: lead ? LEAD_TONE[lead] : 'ok',
+    status: lead ? tt(COUNT_KEY[lead], { n: totals[lead] }) : tt('subagentAllDone'),
+    title: [tt('subagentCount', { n: totals.total }), ...rest].join(' · '),
+    usage
+  }
 }
 
 function subagentRowUsage(
@@ -180,21 +202,22 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
     focusRow(event.currentTarget, target)
   }
 
+  const summary = subagentSummary(totals, tt, lang)
   const head = many ? (
-    <div className="v3-subagents-top">
-      <Button
-        variant="ghost"
-        size="sm"
+    <>
+      <CardSummary
         className="v3-subagents-head"
-        aria-expanded={open}
+        expanded={open}
         onPress={() => setStoredOpen(!open)}
-        icon={<Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} />}
-        trailingIcon={totals.failed ? <SubagentStateIcon state="failed" /> : undefined}
+        title={open ? undefined : summary.usage ?? undefined}
         data-failed={totals.failed ? '1' : undefined}
         data-testid="v3-subagents-sum"
       >
-        {subagentCollapsedText(totals, tt, lang)}
-      </Button>
+        <CardStatus tone={summary.tone} icon={summary.tone === 'fail' ? <Icon name="warn" size={14} /> : summary.tone === 'ok' ? <Icon name="check" size={14} /> : undefined}>
+          {summary.status}
+        </CardStatus>
+        <CardTitle clamp>{summary.title}</CardTitle>
+      </CardSummary>
       {totals.live ? (
         <ProgressBar
           className="v3-subagents-progress"
@@ -204,14 +227,14 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
           data-testid="v3-subagents-progress"
         />
       ) : null}
-    </div>
+    </>
   ) : null
 
   return (
     <div className="v3-subagents" data-testid="v3-subagents" data-layout={many ? (open ? 'list' : 'summary') : 'single'}>
-      {head}
-      {open ? (
-        <Card padding="none" className="v3-sa-card">
+      <Card padding="none" receipt={totals.ended} className="v3-sa-card">
+        {head}
+        {open ? (
           <div className="v3-sa-list" role="group" aria-label={tt('subagentListLabel')} onKeyDown={onKeyDown} data-testid="v3-subagent-list">
             {shown.map((run, index) => (
               <SubagentRow key={run.id} run={run} snapshot={snapshots[run.id]} index={index} />
@@ -227,9 +250,10 @@ export function SubagentLine({ turn, scope }: { turn: AssistantTurn; scope?: Tur
                 {hidden ? tt('subagentShowMore', { n: hidden }) : tt('subagentShowLess')}
               </Button>
             ) : null}
+            {many && summary.usage ? <p className="v3-sa-totals" data-testid="v3-subagents-usage">{summary.usage}</p> : null}
           </div>
-        </Card>
-      ) : null}
+        ) : null}
+      </Card>
     </div>
   )
 }

@@ -138,8 +138,8 @@ export function normalizeMessage(
       .filter((c) => c.type === 'text')
       .map((c) => c.text ?? '')
       .join('')
-    const thinking = blocks
-      .filter((c) => c.type === 'thinking')
+    const thinkingBlocks = blocks.filter((c) => c.type === 'thinking')
+    const thinking = thinkingBlocks
       .map((c) => c.thinking ?? '')
       .join('')
 
@@ -158,6 +158,7 @@ export function normalizeMessage(
       role: 'assistant',
       text,
       thinking: thinking || undefined,
+      ...(thinkingBlocks.length && !thinking.trim() ? { thinkingEmpty: true } : {}),
       toolCalls: toolCalls.length ? toolCalls : undefined,
       usage: toUsage(m.usage, m.model),
       model: assistantModelIdentity(m),

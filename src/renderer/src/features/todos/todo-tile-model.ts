@@ -8,13 +8,10 @@ export interface TodoTileRow {
   kind: TodoRowKind
 }
 
-export const TODO_TILE_VISIBLE_LIMIT = 6
-
 export interface TodoTileModel {
   total: number
   done: number
   rows: TodoTileRow[]
-  visibleRows: TodoTileRow[]
   activeIndex: number
 }
 
@@ -47,9 +44,10 @@ export function buildTodoTileModel(todos: readonly SessionTodo[], agentRunning: 
           ? 'running'
           : 'pending'
   }))
-  const focusIndex = activeIndex >= 0 ? activeIndex : rows.findIndex((row) => row.kind !== 'done')
-  const start = Math.max(0, Math.min(focusIndex - 1, rows.length - TODO_TILE_VISIBLE_LIMIT))
-  const visibleRows = rows.slice(start, start + TODO_TILE_VISIBLE_LIMIT)
-  return { total: todos.length, done: todos.filter(isDone).length, rows, visibleRows, activeIndex }
+  return { total: todos.length, done: todos.filter(isDone).length, rows, activeIndex }
+}
+
+export function activeTodoRow(model: TodoTileModel): TodoTileRow | undefined {
+  return model.activeIndex >= 0 ? model.rows[model.activeIndex] : undefined
 }
 

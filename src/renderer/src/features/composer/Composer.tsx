@@ -34,6 +34,7 @@ import { PlusMenu } from './PlusMenu'
 import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
 import { IsolationMergeBar } from './IsolationMergeBar'
+import { PlanCard } from './PlanCard'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
@@ -512,6 +513,7 @@ export function Composer({ className }: { className?: string } = {}) {
       }}
       onDrop={onDrop}
     >
+      <PlanCard />
       <IsolationMergeBar />
       <QueueEditor />
       <div className="composer">

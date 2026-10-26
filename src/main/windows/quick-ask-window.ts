@@ -32,7 +32,7 @@ export function createQuickAskWindow(deps: QuickAskWindowDeps): QuickAskWindow {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: true,
-    backgroundColor: '#151515',
+    backgroundColor: '#171717',
     webPreferences: {
       preload: deps.preloadPath,
       sandbox: true,

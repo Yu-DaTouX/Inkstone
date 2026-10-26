@@ -341,7 +341,7 @@ async function main() {
     ok(byTypeName(one.tree, 'ToolGroupRow').length === 0 && byTypeName(one.tree, 'StepNode').length === 1, '只有 1 条时保持单行')
   }
 
-  group('失败：组头写失败数，失败只留红字，不再自动展开')
+  group('失败：组头可见文字不写失败数（避免和独立失败状态重复），分段只留红字，不再自动展开')
   {
     const { tree } = renderSteps([
       tool({ id: 'read-3', name: 'read' }),
@@ -350,7 +350,11 @@ async function main() {
     const g = renderSub(tree, 'ToolGroupRow')
     const head = byTestId(g.tree, 'v3-step-group')
     ok(head.props['aria-expanded'] === false, '有失败也保持折叠', head.props['aria-expanded'])
-    ok(textOf(head).includes('（1 个失败）'), '摘要写失败数', textOf(head))
+    ok(!textOf(head).includes('个失败'), '组头可见文字不再写失败数，失败数改由独立状态展示', textOf(head))
+    const failedPart = collect(head, (el) => el.props && el.props['data-failed'] !== undefined)
+    ok(failedPart.length === 1, '失败的分段仍单独标红', failedPart.length)
+    const stats = byTypeName(g.tree, 'ToolRunStats')[0]
+    ok(stats && stats.props.summary.failed === 1, '失败总数仍挂在 summary 上，交给独立状态展示', stats && stats.props.summary.failed)
     ok(collect(g.tree, (el) => el.type && el.type.__stub === 'ui-badge' && el.props.tone === 'fail').length === 0, '组头不再挂失败徽标')
     head.props.onClick()
     const opened = renderComponent(g.rt, g.el.type, g.el.props)
@@ -358,6 +362,39 @@ async function main() {
     ok(byTestId(failedNode.tree, 'v3-step').props['aria-expanded'] === false, '失败那一步默认折叠')
     ok(collect(failedNode.tree, (el) => el.type && el.type.__stub === 'ui-badge').length === 0, '失败那一步不挂徽标')
     ok(textOf(byTestId(failedNode.tree, 'v3-step')).includes('运行失败'), '失败那一步的标题用失败时态的动词', textOf(byTestId(failedNode.tree, 'v3-step')))
+  }
+
+  group('F02：部分失败也标红，失败数独立于标题省略显示')
+  {
+    toolExpansion.clear()
+    const { tree } = renderSteps([
+      tool({ id: 'c1', name: 'bash', args: { command: 'a' }, status: 'error' }),
+      tool({ id: 'c2', name: 'bash', args: { command: 'b' }, status: 'error' }),
+      tool({ id: 'c3', name: 'bash', args: { command: 'c' } })
+    ])
+    const g = renderSub(tree, 'ToolGroupRow')
+    const head = byTestId(g.tree, 'v3-step-group')
+    const failedParts = collect(head, (el) => el.props && el.props['data-failed'] !== undefined)
+    ok(failedParts.length === 1, '部分失败（2/3）的分段也带 data-failed，不再要求整段全部失败', failedParts.length)
+    ok(!textOf(head).includes('个失败'), '部分失败的分段文字里也不再写失败数，只留红字', textOf(head))
+    const stats = byTypeName(g.tree, 'ToolRunStats')[0]
+    ok(stats && stats.props.summary.failed === 2, 'ToolRunStats 拿到与分组一致的失败总数', stats && stats.props.summary.failed)
+    const statsTree = renderComponent(makeHookRuntime(), stats.type, stats.props)
+    const failedStat = collect(statsTree, (el) => el.props && el.props['data-kind'] === 'failed')
+    ok(failedStat.length === 1, '失败数作为独立状态渲染，不和标题共用同一个会被省略的节点', failedStat.length)
+    ok(textOf(failedStat[0]).includes('tool.wsFailed') && textOf(failedStat[0]).includes('n=2'), '独立失败状态带上失败总数', textOf(failedStat[0]))
+  }
+
+  group('F04：待办调用默认不进入消息流，出错时仍显示')
+  {
+    toolExpansion.clear()
+    const onlyTodo = renderSteps([tool({ id: 't1', name: 'todo_write' })])
+    ok(onlyTodo.tree === null, '只有成功的待办调用时，ToolSteps 整段不渲染', onlyTodo.tree)
+    const mixed = renderSteps([tool({ id: 'r1', name: 'read' }), tool({ id: 't1', name: 'todos' }), tool({ id: 'r2', name: 'read' })])
+    ok(byTypeName(mixed.tree, 'ToolGroupRow').length === 1, '成功的待办调用被过滤后，前后两次读取仍合并成组', byTypeName(mixed.tree, 'ToolGroupRow').length)
+    ok(byTypeName(mixed.tree, 'StepNode').length === 0, '待办调用不单独占一行')
+    const failedTodo = renderSteps([tool({ id: 't1', name: 'update_todos', status: 'error', output: '写入失败' })])
+    ok(byTypeName(failedTodo.tree, 'StepNode').length === 1, '出错的待办调用仍然显示')
   }
 
   group('展开状态存在会话级存储：重挂载不丢，重试时清除')
@@ -400,6 +437,25 @@ async function main() {
     const lone = renderSteps([tools[1]], new Set(['b-a']))
     const node = renderStepNode(lone.tree, 'b-a')
     ok(byTestId(node.tree, 'v3-step-approval') !== null, '单行带「需要审批」')
+  }
+
+  group('审批回执：已决定的调用单独成行，在原位置显示决定与时间')
+  {
+    toolExpansion.clear()
+    const receipt = { id: 'ap-1', toolCallId: 'b-r', kind: 'danger', tool: 'bash', title: '难以撤销的操作', choice: 'deny', feedback: '先别删', askedAt: 1, at: 2 }
+    const tools = [tool({ id: 'r-r', name: 'read' }), tool({ id: 'b-r', name: 'bash', args: { command: 'rm -rf x' }, status: 'error', denied: true, approval: receipt }), tool({ id: 'r-r2', name: 'read' })]
+    const { tree } = renderSteps(tools)
+    ok(byTypeName(tree, 'ToolGroupRow').length === 0 && byTypeName(tree, 'StepNode').length === 3, '带回执的调用不并进操作组，前后各自成行', byTypeName(tree, 'StepNode').length)
+    const node = renderStepNode(tree, 'b-r')
+    const receipts = byTypeName(node.tree, 'ApprovalReceipt')
+    ok(receipts.length === 1 && receipts[0].props.approval === receipt, '单行下方挂上审批回执', receipts.length)
+    const card = renderComponent(makeHookRuntime(), receipts[0].type, receipts[0].props)
+    ok(card.props['data-choice'] === 'deny' && card.props['data-testid'] === 'v3-approval-receipt' && card.props.receipt === true, '回执用卡片的回执外观并标出决定', card.props['data-choice'])
+    ok(textOf(card).includes('已拒绝') && textOf(card).includes('先别删'), '拒绝回执写出决定与反馈', textOf(card))
+    const once = renderComponent(makeHookRuntime(), receipts[0].type, { approval: { ...receipt, choice: 'session', feedback: undefined } })
+    ok(textOf(once).includes('本会话内允许') && !textOf(once).includes('先别删'), '会话内允许写出范围，不带反馈', textOf(once))
+    const pending = renderComponent(makeHookRuntime(), node.el.type, { ...node.el.props, asking: true })
+    ok(byTypeName(pending, 'ApprovalReceipt').length === 0 && byTypeName(pending, 'ApprovalCard').length === 1, '仍在等待审批时显示审批卡而不是回执')
   }
 
   group('并行大量调用：不同类别连续也合成一组；独立工具断开分组；同路径相邻折成一行')

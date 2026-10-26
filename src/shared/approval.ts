@@ -82,6 +82,19 @@ export interface ApprovalRequest {
   createdAt: number
 }
 
+export interface ApprovalReceipt {
+  id: string
+  toolCallId: string
+  subagentId?: string
+  kind: ApprovalKind
+  tool: string
+  title: string
+  choice: ApprovalChoice
+  feedback?: string
+  askedAt: number
+  at: number
+}
+
 export function isApprovalChoice(value: unknown): value is ApprovalChoice {
   return value === 'deny' || value === 'once' || value === 'session' || value === 'remember'
 }

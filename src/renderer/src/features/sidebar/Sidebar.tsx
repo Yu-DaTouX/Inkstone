@@ -281,7 +281,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverridesFromSettings(settings)))
 
   return (
-    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="compact">
+    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable">
       <div className="v3-side-top">
         <span className="v3-side-brand">
           <BrandMark size={16} decorative />

@@ -94,8 +94,9 @@ async function main() {
     )
 
   const empty = Model.buildTodoTileModel([], true)
-  ok(!Model.hasTodoTileContent([]), '空清单 hasTodoTileContent=false（整块不渲染）')
+  ok(!Model.hasTodoTileContent([]), '空清单 hasTodoTileContent=false（计划卡不渲染）')
   ok(empty.total === 0 && empty.done === 0 && empty.rows.length === 0 && empty.activeIndex === -1, '空清单模型全为零、没有进行中', empty)
+  ok(Model.activeTodoRow(empty) === undefined, '空清单没有当前项')
 
   const partial = Model.buildTodoTileModel(
     [todo('a', { done: true }), todo('b'), todo('c')],
@@ -104,9 +105,11 @@ async function main() {
   ok(partial.total === 3 && partial.done === 1, '部分完成：完成数/总数正确', { done: partial.done, total: partial.total })
   ok(JSON.stringify(kinds(partial)) === JSON.stringify(['done', 'pending', 'pending']), '无 status 且回合未跑：没人被猜成进行中', kinds(partial))
   ok(partial.activeIndex === -1, '回合未跑时 activeIndex=-1（不猜永远在转的项）', partial.activeIndex)
+  ok(Model.activeTodoRow(partial) === undefined, '没有进行中项时 activeTodoRow 为空')
 
   const runningInferred = Model.buildTodoTileModel([todo('a', { done: true }), todo('b'), todo('c')], true)
   ok(runningInferred.activeIndex === 1 && kinds(runningInferred)[1] === 'running', '无 status 但回合在跑：第一个未完成算进行中', { activeIndex: runningInferred.activeIndex, kinds: kinds(runningInferred) })
+  ok(Model.activeTodoRow(runningInferred)?.text === 'b', 'activeTodoRow 取到当前项文字')
 
   const explicit = Model.buildTodoTileModel(
     [todo('a', { done: true, status: 'done' }), todo('b', { status: 'running' }), todo('c', { status: 'blocked' }), todo('d', { status: 'pending' })],
@@ -132,33 +135,32 @@ async function main() {
     Array.from({ length: 250 }, (_, i) => todo(`t${i}`, { done: i % 2 === 0 })),
     false
   )
-  ok(long.total === 250 && long.rows.length === 250 && long.done === 125, '超长列表：完整清单与统计不丢', { total: long.total, done: long.done, rows: long.rows.length })
-  ok(Model.TODO_TILE_VISIBLE_LIMIT === 6 && long.visibleRows.length === 6, '进度卡最多显示六条')
-  const late = Model.buildTodoTileModel(Array.from({ length: 20 }, (_, i) => todo(`late${i}`, { status: i === 17 ? 'running' : 'done' })), true)
-  ok(late.visibleRows.length === 6 && late.visibleRows.some((row) => row.index === 17), '清单较长时仍显示当前进行项')
-  ok(empty.visibleRows.length === 0 && allDone.visibleRows.length === 2, '空清单和短清单不填充占位行')
+  ok(long.total === 250 && long.rows.length === 250 && long.done === 125, '超长列表：完整清单与统计不丢、不做窗口截断（卡内滚动代替截断）', { total: long.total, done: long.done, rows: long.rows.length })
 
   const emptyHtml = render({ todos: [] })
   ok(!emptyHtml.includes('data-testid="v3-todo-row"'), '无待办时没有任何清单行', emptyHtml)
 
   const partialHtml = render({ todos: [todo('写模型'), todo('做磁贴', { done: true }), todo('跑测试')] })
-  ok(partialHtml.includes('data-testid="v3-todo-scroll"'), '有待办时有进度清单容器')
   ok((partialHtml.match(/data-testid="v3-todo-row"/g) ?? []).length === 3, '逐行渲染清单')
-  ok(partialHtml.includes('data-kind="done"') && partialHtml.includes('lucide-check'), '完成项打勾')
-  ok(!partialHtml.includes('ui-spinner'), '没有 status 且回合未跑：不画进行中')
+  ok(partialHtml.includes('data-kind="done"') && partialHtml.includes('lucide-circle-check'), '完成项打勾（实心圆勾）')
+  ok(!partialHtml.includes('text-decoration'), '完成项不加删除线')
+  ok(!partialHtml.includes('data-kind="running"'), '没有 status 且回合未跑：不画进行中')
 
   const runningHtml = render({ todos: [todo('跑起来'), todo('收尾')], agentRunning: true })
-  ok(runningHtml.includes('data-kind="running"') && runningHtml.includes('ui-spinner') && runningHtml.includes('aria-label="正在进行"'), '无 status 且回合在跑：进行中项有明确标识（ui Spinner + 读屏名）')
+  ok(
+    runningHtml.includes('data-kind="running"') && runningHtml.includes('lucide-circle-ellipsis') && runningHtml.includes('aria-label="进行中"'),
+    '无 status 且回合在跑：进行中项画省略号圆，并带读屏名'
+  )
 
   const runningStatusHtml = render({ todos: [todo('甲乙', { status: 'running' }), todo('丙', { status: 'pending' })], agentRunning: false })
-  ok(runningStatusHtml.includes('data-kind="running"') && runningStatusHtml.includes('ui-spinner'), '有显式 running 时即使回合未标记也显示进行中')
+  ok(
+    runningStatusHtml.includes('data-kind="running"') && runningStatusHtml.includes('lucide-circle-ellipsis'),
+    '有显式 running 时即使回合未标记也显示进行中'
+  )
+  ok(runningStatusHtml.includes('data-kind="pending"') && runningStatusHtml.includes('lucide-circle-dashed'), '待做项画虚线圆')
 
   const blockedHtml = render({ todos: [todo('受阻项', { status: 'blocked' }), todo('普通项')] })
-  ok(blockedHtml.includes('data-kind="blocked"') && blockedHtml.includes('lucide-circle-alert') && blockedHtml.includes('受阻'), 'blocked 行有图标与文字，可与待办区分')
-
-  const longHtml = render({ todos: Array.from({ length: 250 }, (_, i) => todo(`任务 ${i}`, { done: i % 2 === 0 })) })
-  ok((longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length === 6, '超长列表只渲染六行，不嵌套滚动', (longHtml.match(/data-testid="v3-todo-row"/g) ?? []).length)
-  ok(Model.buildTodoTileModel(Array.from({ length: 250 }, (_, i) => todo(`t${i}`, { done: i % 2 === 0 })), false).done === 125, '超长列表完成数正确')
+  ok(blockedHtml.includes('data-kind="blocked"') && blockedHtml.includes('lucide-circle-alert') && blockedHtml.includes('受阻'), 'blocked 行有警示色图标，可与待办区分')
 
   const enHtml = render({ todos: [todo('blocked', { status: 'blocked' })], lang: 'en-US' })
   ok(enHtml.includes('Blocked'), '英文语言走自有常量', { blocked: enHtml.includes('Blocked') })
@@ -166,27 +168,63 @@ async function main() {
   const sidebar = await readFile(join(ROOT, 'src/renderer/src/features/sidebar/Sidebar.tsx'), 'utf8')
   ok(!sidebar.includes('TodoTile'), '待办磁贴已不在左侧栏')
   const panel = await readFile(join(ROOT, 'src/renderer/src/features/workbench/WorkbenchPanel.tsx'), 'utf8')
-  const overview = await readFile(join(ROOT, 'src/renderer/src/features/workbench/OverviewPane.tsx'), 'utf8')
   ok(!panel.includes('<TodoTile />'), '待办不再固定在页签栏下方')
-  ok(overview.includes("import { TodoTileRows, todoTileText } from '../todos/TodoTileView'") && overview.includes('useStore((s) => s.todos)'), '概览的待办磁贴复用 TodoTileRows，数据来自 store.todos')
-  ok(!panel.includes('v3-todo-overlay') && !panel.includes('createPortal') && !overview.includes('createPortal'), '不另开浮层')
+
+  const overview = await readFile(join(ROOT, 'src/renderer/src/features/workbench/OverviewPane.tsx'), 'utf8')
+  ok(!overview.includes('todo-tile-model') && !overview.includes('TodoTileView'), '总览已不再引用待办模型/视图')
+  ok(!/progress:\s*{/.test(overview), '总览的「进度」分区已删除')
+
+  const railSections = await readFile(join(ROOT, 'src/renderer/src/features/workbench/rail-sections.ts'), 'utf8')
+  ok(!railSections.includes("'progress'"), 'rail 分区列表不再含 progress')
+  const railTextSrc = await readFile(join(ROOT, 'src/renderer/src/features/workbench/rail-text.ts'), 'utf8')
+  ok(!railTextSrc.includes('progress'), 'rail 文案不再含 progress 字段')
+
+  const composer = await readFile(join(ROOT, 'src/renderer/src/features/composer/Composer.tsx'), 'utf8')
+  ok(composer.includes("import { PlanCard } from './PlanCard'"), 'Composer 引入计划卡')
+  const planIdx = composer.indexOf('<PlanCard')
+  const isolationIdx = composer.indexOf('<IsolationMergeBar')
+  const queueIdx = composer.indexOf('<QueueEditor')
+  ok(planIdx >= 0 && planIdx < isolationIdx && isolationIdx < queueIdx, '计划卡停靠在 IsolationMergeBar / QueueEditor 之上')
+
+  const planCard = await readFile(join(ROOT, 'src/renderer/src/features/composer/PlanCard.tsx'), 'utf8')
+  ok(planCard.includes("s.todos") && !planCard.includes('peekedSessionId'), '计划卡只读当前会话的 store.todos（不自行跨会话取数据）')
+  ok(planCard.includes('hasTodoTileContent(todos)') && planCard.includes('model.done >= model.total'), '清单为空或全部完成时卡片隐藏')
+  ok(planCard.includes('todoHistory') && planCard.includes('userMessageCount') && planCard.includes('round'), '标题的「早于上一条消息」判断比较 todoHistory 的 round 与当前用户消息数')
+  ok(planCard.includes("t('plan.stale')") && planCard.includes("t('plan.title'"), '按是否过期在两种标题间切换')
+  ok(planCard.includes('aria-expanded') && planCard.includes("type=\"button\""), '收起/展开用 button + aria-expanded，键盘可用')
+  ok(planCard.includes('scrollIntoView'), '自动滚动到当前进行中的那一项')
+  ok(planCard.includes('ResizeObserver') && planCard.includes('NARROW_WIDTH'), '窄屏时有默认收起的测量逻辑')
 
   const view = await readFile(join(ROOT, 'src/renderer/src/features/todos/TodoTileView.tsx'), 'utf8')
-  ok(view.includes("import { Spinner } from '../../ui'"), '进行中标记来自 ui/ 原语')
-  ok(view.includes("from 'lucide-react'"), '勾 / 受阻图标来自 lucide（并非自绘控件外观）')
+  ok(view.includes("from 'lucide-react'"), '勾 / 省略号 / 虚线圆 / 受阻图标都来自 lucide（并非自绘控件外观）')
 
   const css = await readFile(join(ROOT, 'src/renderer/src/features/todos/todo-tile.css'), 'utf8')
   const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
   ok(cssCode.includes('@layer features'), '专属 CSS 落在 features 层')
-  ok(!cssCode.includes('overflow-y: auto') && !cssCode.includes('overscroll-behavior: contain'), '不截住滚轮，会话栏统一滚动')
+  ok(!cssCode.includes('text-decoration'), '完成项不加删除线')
   ok(!cssCode.includes('@import') && !cssCode.includes('.rp-') && !/styles\/|chat\.css/.test(cssCode), 'CSS 只做版面，不引 v2 样式、不回写 v2 类名')
+
+  const planCss = await readFile(join(ROOT, 'src/renderer/src/features/composer/plan-card.css'), 'utf8')
+  ok(planCss.includes('@layer features'), '计划卡外壳 CSS 落在 features 层')
+  ok(planCss.includes('max-height') && planCss.includes('overflow-y: auto'), '最多约六行高度，超出卡内滚动')
+  ok(planCss.includes('mask-image'), '底部渐隐用 mask-image')
+
+  const zhI18n = JSON.parse(await readFile(join(ROOT, 'src/renderer/src/i18n/zh-CN.json'), 'utf8'))
+  const enI18n = JSON.parse(await readFile(join(ROOT, 'src/renderer/src/i18n/en-US.json'), 'utf8'))
+  for (const key of ['plan.title', 'plan.stale', 'plan.workingOn', 'plan.expand', 'plan.collapse']) {
+    ok(typeof zhI18n[key] === 'string' && typeof enI18n[key] === 'string', `i18n 两份词典都有 ${key}`)
+  }
+  ok(enI18n['plan.stale'] === 'Plan from before your last message', 'plan.stale 英文文案与约定一致')
+
+  const agentSrc = await readFile(join(ROOT, 'src/main/agent.ts'), 'utf8')
+  ok(!agentSrc.includes('panel_todos'), '死分支 panel_todos 已删除（真正的工具叫 todos，tasks.apply 已即时刷新）')
 
   const pushConsumers = await readFile(join(ROOT, 'src/renderer/src/state/push-consumers.ts'), 'utf8')
   ok(pushConsumers.includes("case 'todos':") && pushConsumers.includes('set({ todos: m.payload })'), 'store.todos 只由 todos 推送套用')
   const routing = await readFile(join(ROOT, 'src/renderer/src/state/push-routing.ts'), 'utf8')
   ok(routing.includes('viewingSessionId') && routing.includes('belongsToView'), '后台会话的待办只进 sessionRuntimes，不覆盖当前视图')
   const splitActions = await readFile(join(ROOT, 'src/renderer/src/features/split/split-actions.ts'), 'utf8')
-  ok(splitActions.includes('void store.switchSession(target.path)'),'并排切焦点列走正式 switchSession（随之重投影 store.todos）')
+  ok(splitActions.includes('void store.switchSession(target.path)'), '并排切焦点列走正式 switchSession（随之重投影 store.todos）')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`\nv3-todo-tile: ${checks} checks passed`)

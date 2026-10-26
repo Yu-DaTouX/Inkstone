@@ -132,6 +132,9 @@ export function consumeQuestionPush(m: MainPush, s: Store, ctx: PushContext): bo
     case 'question-log':
       set({ questionLog: m.payload.entries, questionLogSession: m.payload.sessionId })
       break
+    case 'approval-log':
+      set({ approvalLog: m.payload.entries, approvalLogSession: m.payload.sessionId })
+      break
     case 'ui-request': {
       const duplicate = s.uiRequests.some((request) => request.id === m.payload.id)
       set({

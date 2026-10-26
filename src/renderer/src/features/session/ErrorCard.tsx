@@ -3,11 +3,15 @@ import { useStore } from '../../state/store'
 import { refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
 import { blockedQuotaWindows } from '../../../../shared/quota-resume'
 import { viewMatchesProjectedSession, sessionViewIdentity } from './view-state'
-import { Button } from '../../ui'
+import { Button, IconButton } from '../../ui'
+import { Card, CardActions, CardBody, CardChevron, CardControl, CardHead, CardStatus, CardSummary, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { forgetToolExpansion } from './tool-expansion'
 import { errorCardModel, errorTitleKey, promptForTurn, type ErrorCardAction } from './turn-lines'
+import './error-card.css'
+
+const PRIMARY_ACTIONS: ReadonlySet<ErrorCardAction> = new Set<ErrorCardAction>(['retry', 'wait'])
 
 export function ErrorCard({ sourceIds, error, readOnly = false, recovered = false }: { sourceIds: readonly string[]; error: string; readOnly?: boolean; recovered?: boolean }): JSX.Element | null {
   const tt = useSessionText()
@@ -76,58 +80,68 @@ export function ErrorCard({ sourceIds, error, readOnly = false, recovered = fals
     wait: tt('errorWaitQuota')
   }
 
-  return (
-    <div className="v3-errorcard" role={recovered ? 'status' : 'alert'} data-testid="v3-error-card" data-kind={model.kind} data-recovered={recovered || undefined}>
-      <div className="v3-errorcard-head">
-        <Icon name="warn" size={14} />
-        <span className="v3-errorcard-title" data-testid="v3-error-title">{recovered ? tt('errRecovered', { title: tt(errorTitleKey(model)) }) : tt(errorTitleKey(model))}</span>
-        <span className="v3-code-sp" />
+  const title = tt(errorTitleKey(model))
+  const toggle = (): void => setDetailsOpen((open) => !open)
+  const details = detailsOpen ? (
+    <CardBody className="v3-errorcard-details" data-testid="v3-error-body">
+      {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
+      <p className="v3-errorcard-body">{model.body}</p>
+      <div className="v3-errorcard-detail-foot">
         <Button
           size="sm"
           variant="ghost"
-          aria-expanded={detailsOpen}
-          data-testid="v3-error-toggle"
-          trailingIcon={<Icon name={detailsOpen ? 'chevron-down' : 'chevron-right'} size={14} />}
-          onPress={() => setDetailsOpen((open) => !open)}
+          icon={<Icon name={copied ? 'check' : 'copy'} size={14} />}
+          data-testid="v3-error-copy"
+          onPress={copy}
         >
-          {tt('errViewDetails')}
+          {copied ? tt('msgCopied') : tt('errCopyDetails')}
         </Button>
+        <span className="v3-errorcard-status" role="status" aria-live="polite">
+          {copied ? tt('msgCopied') : ''}
+        </span>
       </div>
-      {detailsOpen ? (
-        <div className="v3-errorcard-details" data-testid="v3-error-body">
-          {windowFull ? <p className="v3-errorcard-body">{tt('errorQuotaWindowFull')}</p> : null}
-          <p className="v3-errorcard-body">{model.body}</p>
-          <div className="v3-errorcard-detail-foot">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Icon name={copied ? 'check' : 'copy'} size={14} />}
-              data-testid="v3-error-copy"
-              onPress={copy}
-            >
-              {copied ? tt('msgCopied') : tt('errCopyDetails')}
-            </Button>
-            <span className="v3-errorcard-status" role="status" aria-live="polite">
-              {copied ? tt('msgCopied') : ''}
-            </span>
-          </div>
-        </div>
-      ) : null}
-      {actions.length ? (
-        <div className="v3-errorcard-actions">
-          {actions.map((action) => (
+    </CardBody>
+  ) : null
+
+  if (recovered) {
+    return (
+      <Card receipt padding="none" className="v3-errorcard" role="status" data-testid="v3-error-card" data-kind={model.kind} data-recovered>
+        <CardSummary expanded={detailsOpen} onPress={toggle} title={tt('errViewDetails')} data-testid="v3-error-toggle">
+          <CardStatus tone="muted" icon={<Icon name="refresh" size={14} />}>{tt('errRecoveredStatus')}</CardStatus>
+          <CardTitle clamp data-testid="v3-error-title">{title}</CardTitle>
+        </CardSummary>
+        {details}
+      </Card>
+    )
+  }
+
+  const ordered = [...actions.filter((action) => !PRIMARY_ACTIONS.has(action)), ...actions.filter((action) => PRIMARY_ACTIONS.has(action))]
+  return (
+    <Card tone="fail" padding="md" className="v3-errorcard" role="alert" data-testid="v3-error-card" data-kind={model.kind}>
+      <CardHead>
+        <CardStatus tone="fail" icon={<Icon name="warn" size={14} />}>{tt('errStatus')}</CardStatus>
+        <CardTitle data-testid="v3-error-title">{title}</CardTitle>
+        <CardControl>
+          <IconButton size="sm" aria-label={tt('errViewDetails')} aria-expanded={detailsOpen} onPress={toggle} data-testid="v3-error-toggle">
+            <CardChevron />
+          </IconButton>
+        </CardControl>
+      </CardHead>
+      {details}
+      {ordered.length ? (
+        <CardActions className="v3-errorcard-actions">
+          {ordered.map((action) => (
             <Button
               key={action}
-              size="sm"
-              variant={action === 'retry' || action === 'wait' ? 'primary' : 'ghost'}
+              variant={PRIMARY_ACTIONS.has(action) ? 'primary' : 'ghost'}
               data-testid={`v3-error-${action}`}
               onPress={() => run(action)}
             >
               {LABEL[action]}
             </Button>
           ))}
-        </div>
+        </CardActions>
       ) : null}
-    </div>
+    </Card>
   )
 }

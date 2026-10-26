@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { ShimmerText } from '../../ui'
 import { Icon } from './Icon'
+import { useSessionText } from './text'
 import { showsThinkingInline } from './transcript-view-model'
-import { useTranscriptViewScope } from './use-tool-run'
+import { useToolExpansion, useTranscriptViewScope } from './use-tool-run'
 
 function peekText(text: string): string {
   const lines = text.trimEnd().split('\n')
@@ -14,8 +15,9 @@ function peekText(text: string): string {
   return ''
 }
 
-export function ThinkingAside({ text, ms, live }: { text: string; ms?: number; live?: boolean }): JSX.Element | null {
+export function ThinkingAside({ text, ms, live, stacked = false }: { text: string; ms?: number; live?: boolean; stacked?: boolean }): JSX.Element | null {
   const t = useT()
+  const tt = useSessionText()
   const followRef = useRef(true)
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -33,6 +35,7 @@ export function ThinkingAside({ text, ms, live }: { text: string; ms?: number; l
       <div className="v3-think-aside-head">
         <Icon name="brain" size={13} />
         <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
+        {stacked ? <span className="v3-think-aside-hint" data-testid="v3-thinking-aside-stacked">{tt('asideStacked')}</span> : null}
       </div>
       <div
         ref={bodyRef}
@@ -49,11 +52,18 @@ export function ThinkingAside({ text, ms, live }: { text: string; ms?: number; l
   )
 }
 
-export function ThinkingLine({ text, ms, live, defaultOpen = false }: { text: string; ms?: number; live?: boolean; defaultOpen?: boolean }): JSX.Element | null {
+export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expansionId }: { text: string; ms?: number; live?: boolean; defaultOpen?: boolean; step?: boolean; expansionId?: string }): JSX.Element | null {
   const t = useT()
-  const asStep = showsThinkingInline(useTranscriptViewScope()) && !live
-  const [open, setOpen] = useState(defaultOpen || !!live)
+  const inlineView = showsThinkingInline(useTranscriptViewScope())
+  const asStep = (step ?? inlineView) && !live
   const touchedRef = useRef(false)
+  const [localOpen, setLocalOpen] = useState(defaultOpen || !!live)
+  const [stored, setStored] = useToolExpansion(expansionId ? `think:${expansionId}` : '')
+  const open = expansionId && stored !== undefined ? stored : localOpen
+  const setOpen = (next: boolean): void => {
+    setLocalOpen(next)
+    if (expansionId && touchedRef.current) setStored(next)
+  }
   const followRef = useRef(true)
   const wasLiveRef = useRef(!!live)
   const rootRef = useRef<HTMLDivElement>(null)

@@ -6,9 +6,10 @@ import { streamingMessageId, useStore } from '../../state/store'
 import { useThrottledValue } from '../../state/streaming-throttle'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
+import { mergeApprovalLog } from '../../../../shared/approval-log'
 import { TurnView } from './TurnView'
 import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
-import { ToolExpansionScope } from './use-tool-run'
+import { AsideFitScope, ToolExpansionScope } from './use-tool-run'
 import { PendingRunNotice } from './RunNotice'
 import { BrowserHandoffCard } from './BrowserHandoffCard'
 import { ApprovalCard } from './ApprovalCard'
@@ -82,6 +83,8 @@ export function SessionView(): JSX.Element {
   const session = useStore((s) => s.session)
   const questionLog = useStore((s) => s.questionLog)
   const questionLogSession = useStore((s) => s.questionLogSession)
+  const approvalLog = useStore((s) => s.approvalLog)
+  const approvalLogSession = useStore((s) => s.approvalLogSession)
   const runTail = useStore((s) => s.runTail)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -210,8 +213,11 @@ export function SessionView(): JSX.Element {
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const streamingId = viewActive ? streamingMessageId({ session, messages, runTail }) : undefined
   const effectiveMessages = useMemo(
-    () => mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => sameComposerView(useStore.getState(), item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
-    [messages, submittingMessages, questionLog, questionLogSession, view.key, session]
+    () => mergeApprovalLog(
+      mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => sameComposerView(useStore.getState(), item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
+      approvalLogSession && approvalLogSession === view.sessionId ? approvalLog : []
+    ),
+    [messages, submittingMessages, questionLog, questionLogSession, approvalLog, approvalLogSession, view.key, session]
   )
   const projectedMessages = useMemo(() => withoutWrapUpMessages(effectiveMessages), [effectiveMessages])
   const turns = useMemo(() => projectTurns(projectedMessages, streamingId), [projectedMessages, streamingId, projectTurns])
@@ -238,6 +244,8 @@ export function SessionView(): JSX.Element {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
+  const asideProbeRef = useRef<HTMLDivElement | null>(null)
+  const [asideFits, setAsideFits] = useState(false)
   const vlistRef = useRef<VListHandle>(null)
   const settlingRef = useRef(false)
   const renderTurnsRef = useRef(renderTurns)
@@ -364,6 +372,16 @@ export function SessionView(): JSX.Element {
     observer.observe(inner)
     observer.observe(node)
     observerRef.current = observer
+  }, [])
+
+  useLayoutEffect(() => {
+    const probe = asideProbeRef.current
+    if (!probe) return undefined
+    const check = (): void => setAsideFits(probe.getBoundingClientRect().width > 0.5)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(probe)
+    return () => observer.disconnect()
   }, [])
 
   useLayoutEffect(() => {
@@ -494,7 +512,9 @@ export function SessionView(): JSX.Element {
     <div className="v3-session" data-view-key={view.key} data-view-active={viewActive ? '1' : '0'}>
       <AsciiField active={turns.length === 0 && !switchLoading} enabled={asciiBackgroundEnabled(settings)} />
       <ToolExpansionScope.Provider value={identity}>
+      <AsideFitScope.Provider value={asideFits}>
       <div className="v3-stream-host" ref={hostRef}>
+        <div className="v3-aside-fit-probe" ref={asideProbeRef} aria-hidden />
         {virtual ? (
           <VList
             key={`${identity}|${remountKey}`}
@@ -530,6 +550,7 @@ export function SessionView(): JSX.Element {
 
         <OutlineRail messages={outlineMessages} streamingId={streamingId} onJump={jumpToTurn} />
       </div>
+      </AsideFitScope.Provider>
       </ToolExpansionScope.Provider>
 
       <div className="v3-asks">

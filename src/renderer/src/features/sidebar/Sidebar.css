@@ -5,9 +5,13 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: color-mix(in srgb, var(--surface-0) 50%, var(--bg));
+    background: var(--side);
     border-right: 0.5px solid var(--line);
     color: var(--fg);
+  }
+
+  :root[data-material] .v3-side {
+    background: var(--sidebar-tint);
   }
 
   .v3-side {
@@ -103,7 +107,7 @@
     flex: none;
     display: flex;
     flex-direction: column;
-    gap: 0.5px;
+    gap: var(--s-2);
     padding: 0 var(--s-8) var(--s-8);
   }
 
@@ -123,8 +127,8 @@
     display: flex;
     align-items: center;
     gap: var(--s-4);
-    min-height: calc(var(--s-12) + var(--d-row) - var(--s-8) + var(--s-4));
-    padding: var(--s-12) 1px var(--s-4) var(--s-10);
+    min-height: calc(var(--s-16) + var(--d-row) - var(--s-8) + var(--s-4));
+    padding: var(--s-16) 1px var(--s-4) var(--s-10);
     color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--s-16);
@@ -217,7 +221,7 @@
   }
 
   .v3-srow + .v3-srow {
-    margin-top: 1px;
+    margin-top: var(--s-2);
   }
 
   .v3-row-title {

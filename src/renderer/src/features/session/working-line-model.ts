@@ -3,7 +3,6 @@ import type { SessionTextKey } from './text'
 
 const THOUGHT_HOLD_MS = 2000
 const WORKING_SECONDS_FROM_MS = 2000
-const THINKING_STEPS_S = [15, 30, 45, 60] as const
 
 export type WorkingKind =
   | 'stopping'
@@ -53,15 +52,7 @@ export interface WorkingLine {
 
 const TOKEN_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'thought', 'responding', 'working'])
 const TIMED_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'thought', 'responding', 'working', 'sending', 'retrying', 'compacting'])
-
-export function thinkingTextKey(elapsedMs: number): SessionTextKey {
-  const s = Math.max(0, elapsedMs) / 1000
-  if (s < THINKING_STEPS_S[0]) return 'workThink0'
-  if (s < THINKING_STEPS_S[1]) return 'workThink15'
-  if (s < THINKING_STEPS_S[2]) return 'workThink30'
-  if (s < THINKING_STEPS_S[3]) return 'workThink45'
-  return 'workThink60'
-}
+const QUIET_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'responding', 'working'])
 
 export function trackThinking(
   previous: ThinkingClock | null,
@@ -104,7 +95,9 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
   if (!kind) return null
   const elapsedMs = TIMED_KINDS.has(kind) ? wholeSecondsMs(input.elapsedMs) : null
   const tokens = TOKEN_KINDS.has(kind) && typeof input.tokens === 'number' && input.tokens > 0 ? input.tokens : null
-  const base = { kind, elapsedMs, tokens, quiet: ['tool', 'thinking', 'responding', 'working'].includes(kind) && !!input.quiet }
+  const quiet = QUIET_KINDS.has(kind) && !!input.quiet
+  const base = { kind, elapsedMs, tokens, quiet }
+  if (quiet) return { ...base, textKey: 'workActive' }
   switch (kind) {
     case 'stopping':
       return { ...base, textKey: 'workStopping' }
@@ -125,10 +118,8 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
       return { ...base, textKey: null }
     case 'tool':
       return { ...base, textKey: 'workTool' }
-    case 'thinking': {
-      const started = input.thinking?.startedAt ?? input.now
-      return { ...base, textKey: thinkingTextKey(input.now - started) }
-    }
+    case 'thinking':
+      return { ...base, textKey: 'workThinking' }
     case 'thought': {
       const ms = input.thinking?.ms ?? 0
       return { ...base, textKey: 'workThought', vars: { n: Math.max(1, Math.round(ms / 1000)) } }

@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import type { QuestionField } from '../../../../shared/question-form'
 import { Button, Input, Slider, TextArea, TextField } from '../../ui'
+import { CardActions } from '../../ui/Card'
 
 type Value = string | string[]
 
@@ -141,11 +142,9 @@ export function QuestionForm({ fields, busy, submitLabel, onSubmit, onSkip }: {
           </div>
         )
       })}
-      <div className="v3-qfoot">
-        <Button isDisabled={busy} onPress={onSkip} data-testid="v3-question-form-skip">{t('q.skip')}</Button>
-        <span className="v3-code-sp" />
+      <CardActions className="v3-qfoot" lead={<Button isDisabled={busy} onPress={onSkip} data-testid="v3-question-form-skip">{t('q.skip')}</Button>}>
         <Button variant="primary" isDisabled={busy} onPress={submit} data-testid="v3-question-form-submit">{submitLabel}</Button>
-      </div>
+      </CardActions>
     </div>
   )
 }

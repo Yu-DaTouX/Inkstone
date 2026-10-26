@@ -2,7 +2,8 @@ import { useEffect, useState, type JSX } from 'react'
 import { QUOTA_RESUME_PROMPT } from '../../../../shared/quota-resume'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Card } from '../../ui'
+import { Button } from '../../ui'
+import { Card, CardActions, CardBody, CardHead, CardStatus, CardTitle } from '../../ui/Card'
 import { Icon } from './Icon'
 import './wrap-up.css'
 
@@ -44,27 +45,27 @@ export function QuotaResumeNotice({ sessionId }: { sessionId: string | null | un
   }
 
   return (
-    <Card as="section" padding="sm" className="v3-wrapup" data-pending="" aria-label={t('quota.resume.kicker')} data-testid="quota-resume-bar">
-      <div className="v3-wrapup-head">
-        <span className="v3-wrapup-kicker">
-          <Icon name="clock" size={13} />
-          {t('quota.resume.kicker')}
-        </span>
-      </div>
-      <p className="v3-wrapup-recap" role="status" aria-live="polite">
-        {t('quota.resume.title')} · {eta}
-      </p>
-      <div className="v3-wrapup-ask">
-        <p className="v3-wrapup-question">{t('quota.resume.hint')}</p>
-        <div className="v3-wrapup-actions">
-          <Button size="sm" variant="secondary" onPress={resumeNow} data-testid="quota-resume-now">
-            {t('quota.resume.now')}
-          </Button>
-          <Button size="sm" variant="secondary" onPress={cancel} data-testid="quota-resume-cancel">
+    <Card as="section" padding="md" className="v3-wrapup" data-pending="" aria-label={t('quota.resume.kicker')} data-testid="quota-resume-bar">
+      <CardHead>
+        <CardStatus tone="run" icon={<Icon name="clock" size={14} />}>{t('quota.resume.kicker')}</CardStatus>
+        <CardTitle>{t('quota.resume.title')}</CardTitle>
+      </CardHead>
+      <CardBody className="v3-wrapup-body">
+        <p className="v3-wrapup-recap" role="status" aria-live="polite">{eta}</p>
+        <p className="v3-wrapup-recap">{t('quota.resume.hint')}</p>
+      </CardBody>
+      <CardActions
+        className="v3-wrapup-actions"
+        lead={
+          <Button variant="secondary" onPress={cancel} data-testid="quota-resume-cancel">
             {t('quota.resume.cancelAuto')}
           </Button>
-        </div>
-      </div>
+        }
+      >
+        <Button variant="secondary" onPress={resumeNow} data-testid="quota-resume-now">
+          {t('quota.resume.now')}
+        </Button>
+      </CardActions>
     </Card>
   )
 }

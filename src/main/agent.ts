@@ -18,6 +18,7 @@ import { PiRpc, resolvePi } from './protocol'
 import { assistantModelIdentity } from '../shared/assistant-model'
 import { NativeSessionRuntime, type NavigateTreeResult, type ScopedModelsSnapshot, type ProjectTrustSnapshot } from './native-session-runtime'
 import { nativeActiveBranch } from './native-session-history'
+import { capNativeTreeDepth, type NativeTreeNode } from '../shared/native-session'
 import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
@@ -66,6 +67,7 @@ import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStore
 import { isSafeSessionId } from './session-id'
 
 import { questionLog } from './question-log'
+import { approvalLog } from './approval-log'
 import { parseQuestionAnswers, parseQuestionFields, QuestionFormError, summarizeAnswers, type QuestionField } from '../shared/question-form'
 
 import { requestedTimeout } from '../shared/ui-timeout'
@@ -1098,6 +1100,7 @@ export class AgentController extends EventEmitter {
 
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
+    this.pushApprovalLog()
     const stats = await this.requireRpc().command('get_session_stats').catch(() => null)
     if (stats?.success) {
       const counted = this.statsForCurrentModel(stats.data as SessionStats)
@@ -1265,6 +1268,19 @@ export class AgentController extends EventEmitter {
       if (messages[i].role === 'assistant') return messages[i].id
     }
     return `artifact-${Date.now().toString(36)}`
+  }
+
+  private pushApprovalLog(): void {
+    const sessionId = this.state?.sessionId
+    if (!isSafeSessionId(sessionId)) return
+    let entries
+    try {
+      entries = approvalLog.list(sessionId)
+    } catch (error) {
+      console.warn('[approval-log] 读取失败：', error instanceof Error ? error.message : error)
+      return
+    }
+    this.push({ ch: 'approval-log', payload: { sessionId, entries } })
   }
 
   private pushQuestionLog(): void {
@@ -2476,10 +2492,6 @@ export class AgentController extends EventEmitter {
         }
         this.pushTool(call)
         if (isShellTool(call.name)) this.attachWorkspaceChanges(call)
-
-        if (call.name === 'panel_todos') {
-          void this.refreshTodos()
-        }
         break
       }
 
@@ -4133,7 +4145,7 @@ export class AgentController extends EventEmitter {
 
   async sessionTree(): Promise<{
     ok: boolean
-    tree?: Record<string, unknown>[]
+    tree?: NativeTreeNode[]
     leafId?: string | null
     error?: string
   }> {
@@ -4144,7 +4156,7 @@ export class AgentController extends EventEmitter {
         leafId?: string | null
       }>('get_tree')
       if (!res.success) return { ok: false, error: res.error }
-      return { ok: true, tree: res.data?.tree ?? [], leafId: res.data?.leafId ?? null }
+      return { ok: true, tree: capNativeTreeDepth(res.data?.tree ?? []), leafId: res.data?.leafId ?? null }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

@@ -3,9 +3,7 @@ import type { TFunc } from '../../i18n'
 import { useStore } from '../../state/store'
 import { deriveRunProgress, resolveRunClock, type RunClock, type RunProgress } from '../../../../shared/run-progress'
 import { compactionRunningText } from '../../state/compaction-view'
-import { useTranscriptView } from '../../state/transcript-view'
 import { isStopRequested, stopIntent, subscribeStopIntent } from './stop-intent'
-import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
 import { trackThinking, turnOutputTokens, workingLine, type ThinkingClock, type WorkingLine } from './working-line-model'
 
 const ASKING_METHODS = new Set(['select', 'confirm', 'input', 'editor'])
@@ -36,8 +34,6 @@ export function useWorkingLine(): WorkingLine | null {
     }
   }
   const sessionId = session?.sessionId ?? null
-  const view = useTranscriptView(sessionId)
-  const thinkingVisible = showsThinkingInline(view) || showsThinkingAside(view)
   const thinking = trackThinking(thinkingRef.current, {
     identity: `${sessionId ?? ''}|${userId ?? ''}`,
     live: !!assistant?.thinkingLive,
@@ -65,7 +61,7 @@ export function useWorkingLine(): WorkingLine | null {
     elapsedMs,
     now,
     tokens: turnOutputTokens(messages, userId),
-    quiet: messages.slice(lastUser + 1).some((message) => message.role === 'assistant' && message.toolCalls?.some((call) => call.status === 'running' || call.status === 'pending')) || thinkingVisible && !!assistant?.thinkingLive && !!assistant.thinking?.trim()
+    quiet: messages.slice(lastUser + 1).some((message) => message.role === 'assistant' && message.toolCalls?.some((call) => call.status === 'running' || call.status === 'pending')) || !!assistant?.thinkingLive && !!assistant.thinking?.trim()
   })
 }
 

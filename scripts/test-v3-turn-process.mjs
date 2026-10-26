@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps } = mod
+const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -204,6 +204,25 @@ group('运行中默认展开：只留最近几段，其余收进「另外 N 项�
   ok(pinned.hidden === 1, '被收起的只剩已取消的那段', pinned.hidden)
   const quiet = pickLiveSegments(Array.from({ length: 5 }, (_, i) => seg('n' + i, { commentary: [text('k' + i, '想法')] })))
   ok(quiet.shown.length === 3 && quiet.hidden === 2, '只有旁白的段按段数计', quiet)
+}
+
+group('每轮过程入口：摘要只数已有思考段与操作')
+{
+  const keep = splitTurnProcess([seg('k0', { thinking: '先想', response: text('r1', '回答', false) })], { keepThinking: true })
+  ok(keep.process.length === 1 && keep.process[0].response === null && keep.reply?.response?.id === 'r1', '保留思考时，只有推理的回合也有过程入口，回复不进入口', keep.process)
+  const plain = splitTurnProcess([seg('k1', { thinking: '先想', response: text('r1', '回答', false) })])
+  ok(plain.process.length === 0, '默认仍不因推理单独生成过程行', plain.process)
+  const turn = [
+    seg('t0', { thinking: '读文件前', tools: [tool('a', 'read'), tool('b', 'bash', 'error')] }),
+    { ...seg('t1', { commentary: [text('c1', '再看看')], tools: [tool('c', 'todo_write'), tool('d', 'read', 'ok', { parentToolCallId: 'a' })] }), thinkingParts: [{ text: '一', at: 0 }, { text: '二', at: 1 }] },
+    seg('t2', { tools: [tool('e', 'grep')] })
+  ]
+  const summary = processSummary(turn)
+  ok(summary.thinking === 3, '思考按段计数，同一段多次推理分开计', summary)
+  ok(summary.actions === 3, '操作数不含待办调用与子调用', summary)
+  ok(summary.failed === 1, '失败数来自已有工具状态', summary)
+  const none = processSummary([seg('n0', { commentary: [text('c', '只有旁白')] })])
+  ok(none.thinking === 0 && none.actions === 0 && none.failed === 0, '只有旁白时摘要为空，入口退回无标题的铺开', none)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

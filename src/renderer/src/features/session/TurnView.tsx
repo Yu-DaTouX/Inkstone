@@ -11,7 +11,7 @@ import { TurnProcess } from './TurnProcess'
 import { conciseSegment, splitTurnProcess, withoutThinking } from './turn-process'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
-import { TranscriptViewScope } from './use-tool-run'
+import { TranscriptViewScope, useAsideFit } from './use-tool-run'
 import { useTranscriptView } from '../../state/transcript-view'
 import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
@@ -25,7 +25,7 @@ import { formatDuration } from '../../../../shared/duration'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import { forkAt } from '../../lib/fork'
 import { isSubagentNotice } from '../../../../shared/subagent-notice'
-import { turnModelLabel } from './turn-model-label'
+import { findTurnModel, turnModelLabel } from './turn-model-label'
 import { ErrorCard } from './ErrorCard'
 import { LiveRunNotice } from './RunNotice'
 import { QuotaResumeNotice } from './QuotaResumeNotice'
@@ -37,7 +37,7 @@ import { TurnChanges } from './TurnChanges'
 import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
-import type { AssistantTurn, BashTurn, NoteTurn, Turn, UserTurn } from '../../../../shared/turns'
+import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 
@@ -218,9 +218,11 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
   const aside = showsThinkingAside(view)
-  const turn = inline ? sourceTurn : { ...sourceTurn, segments: sourceTurn.segments.map(aside ? withoutThinking : conciseSegment) }
+  const strip = inline ? keepSegment : aside ? withoutThinking : conciseSegment
+  const turn = inline ? sourceTurn : { ...sourceTurn, segments: sourceTurn.segments.map(strip) }
   const turnThinking = aside || (!inline && !turn.thinkingLive) ? '' : turn.thinking ?? ''
   const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
+  const asideFits = useAsideFit()
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
   const showCompaction = useStore((s) => {
     if (s.session?.compaction) return edge.last
@@ -235,19 +237,22 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const liveImageProgress = turn.imageProgress.filter((item) => item.stage !== 'done')
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
   if (!hasBody && !streaming) return null
-  const flow = flowSegments(turn, commentary)
-  const split = flow ? splitTurnProcess(flow) : null
+  const flow = flowSegments(sourceTurn, commentary)
+  const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
   const processSegs = split?.process ?? []
+  const tailSegments = split ? split.tail.map(strip) : []
+  const thinkingNote = !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
 
   return (
     <TranscriptViewScope.Provider value={view}>
-      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view} data-aside={asideThinking ? '' : undefined}>
-        {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} /> : null}
+      <article className={`v3-msg assistant ${streaming ? 'streaming' : ''}`} data-turn-id={turn.id} data-tools={turn.tools.length} data-transcript-view={view} data-aside={asideThinking ? '' : undefined} data-aside-fit={asideThinking && asideFits ? '' : undefined}>
+        {asideThinking ? <ThinkingAside text={asideThinking} ms={sourceTurn.thinkingMs} live={sourceTurn.thinkingLive} stacked={!asideFits} /> : null}
         <WebSearchTurnProvider tools={turn.tools}>
         <div className="v3-assistant-body">
           {edge.first ? <BranchSummary /> : null}
+          {thinkingNote ? <ThinkingAvailability empty={!!sourceTurn.thinkingEmpty} model={sourceTurn.model} /> : null}
           {thinkingBySegment ? null : <ThinkingLine text={turnThinking} ms={turn.thinkingMs} live={turn.thinkingLive} />}
   
           {turn.error ? <ErrorCard sourceIds={turn.sourceIds} error={turn.error} readOnly={readOnly} recovered={!!turn.errorRecovered} /> : null}
@@ -258,6 +263,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                 <TurnProcess
                   process={processSegs}
                   live={!!streaming && !split.reply}
+                  view={view}
                   sessionId={sessionId}
                   turnId={turn.id}
                   approvalIds={approvalIds}
@@ -278,8 +284,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   </div>
                 </div>
               ) : null}
-              {split.tail.map((seg, si) => {
-                const last = si === split.tail.length - 1
+              {tailSegments.map((seg, si) => {
+                const last = si === tailSegments.length - 1
                 return (
                   <div key={seg.id} className="v3-seg" data-testid="v3-seg">
                     {thinkingBySegment ? <ThinkingLine text={seg.thinking} ms={seg.thinkingMs} live={seg.thinkingLive} /> : null}
@@ -344,6 +350,24 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
         </WebSearchTurnProvider>
       </article>
     </TranscriptViewScope.Provider>
+  )
+}
+
+function keepSegment(segment: TurnSegment): TurnSegment {
+  return segment
+}
+
+function ThinkingAvailability({ empty, model }: { empty: boolean; model?: string }): JSX.Element | null {
+  const tt = useSessionText()
+  const models = useStore((s) => s.models)
+  const info = !empty && model ? findTurnModel(model, models) : undefined
+  const unavailable = !!info && info.reasoning === false && info.reasoningStatus !== 'unknown'
+  if (!empty && !unavailable) return null
+  return (
+    <div className="v3-think-note" role="note" data-state={empty ? 'empty' : 'unavailable'} data-testid="v3-thinking-note">
+      <Icon name="brain" size={13} />
+      <span>{empty ? tt('thinkingEmptyRecord') : tt('thinkingUnavailable', { model: info?.name || info?.id || '' })}</span>
+    </div>
   )
 }
 

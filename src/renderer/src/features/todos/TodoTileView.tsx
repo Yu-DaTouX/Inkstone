@@ -1,39 +1,56 @@
 import type { ReactElement } from 'react'
-import { Check, CircleAlert } from 'lucide-react'
-import { Spinner } from '../../ui'
+import { CircleAlert, CircleCheck, CircleDashed, CircleEllipsis } from 'lucide-react'
 import type { Lang } from '../../i18n'
-import type { TodoTileModel } from './todo-tile-model'
+import type { TodoRowKind, TodoTileModel } from './todo-tile-model'
 import './todo-tile.css'
 
 export interface TodoTileText {
-  title: string
+  done: string
   running: string
   blocked: string
+  pending: string
 }
 
-const ZH: TodoTileText = { title: '待办', running: '正在进行', blocked: '受阻' }
-const EN: TodoTileText = { title: 'Todos', running: 'In progress', blocked: 'Blocked' }
+const ZH: TodoTileText = { done: '已完成', running: '进行中', blocked: '受阻', pending: '待做' }
+const EN: TodoTileText = { done: 'Done', running: 'In progress', blocked: 'Blocked', pending: 'Pending' }
 
 export function todoTileText(lang: Lang): TodoTileText {
   return lang === 'en-US' ? EN : ZH
 }
 
-export function TodoTileRows({ model, text }: { model: TodoTileModel; text: TodoTileText }): ReactElement {
+function RowMark({ kind }: { kind: TodoRowKind }): ReactElement {
+  if (kind === 'done') return <CircleCheck size={14} aria-hidden />
+  if (kind === 'running') return <CircleEllipsis size={14} aria-hidden />
+  if (kind === 'blocked') return <CircleAlert size={14} aria-hidden />
+  return <CircleDashed size={14} aria-hidden />
+}
+
+export function TodoTileRows({
+  model,
+  text,
+  markActiveRow
+}: {
+  model: TodoTileModel
+  text: TodoTileText
+  markActiveRow?: (el: HTMLLIElement | null) => void
+}): ReactElement {
   return (
-    <div className="v3-todo-scroll" data-testid="v3-todo-scroll">
-      <ul className="v3-todo-list">
-        {model.visibleRows.map((row) => (
-          <li key={row.index} className="v3-todo-row" data-kind={row.kind} data-testid="v3-todo-row" title={row.text}>
-            <span className="v3-todo-mark">
-              {row.kind === 'done' ? <Check size={12} aria-hidden /> : null}
-              {row.kind === 'running' ? <Spinner size={12} label={text.running} /> : null}
-              {row.kind === 'blocked' ? <CircleAlert size={12} aria-hidden /> : null}
-            </span>
-            <span className="v3-todo-text">{row.text}</span>
-            {row.kind === 'blocked' ? <span className="v3-todo-state">{text.blocked}</span> : null}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="v3-todo-list">
+      {model.rows.map((row) => (
+        <li
+          key={row.index}
+          ref={row.index === model.activeIndex ? markActiveRow : undefined}
+          className="v3-todo-row"
+          data-kind={row.kind}
+          data-testid="v3-todo-row"
+          title={row.text}
+        >
+          <span className="v3-todo-mark" title={text[row.kind]} aria-label={text[row.kind]}>
+            <RowMark kind={row.kind} />
+          </span>
+          <span className="v3-todo-text">{row.text}</span>
+        </li>
+      ))}
+    </ul>
   )
 }

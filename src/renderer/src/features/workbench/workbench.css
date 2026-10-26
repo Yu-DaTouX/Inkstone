@@ -804,6 +804,21 @@
     padding-bottom: var(--s-8);
   }
 
+  .wb-tile + .wb-tile::before {
+    content: '';
+    position: absolute;
+    top: calc(-1 * var(--s-4) - 0.5px);
+    left: var(--s-12);
+    right: var(--s-12);
+    height: 1px;
+    pointer-events: none;
+  }
+
+  .wb-tile:is([data-dragging='1'], [data-picked='1'])::before,
+  .wb-tile:is([data-dragging='1'], [data-picked='1']) + .wb-tile::before {
+    display: none;
+  }
+
   .wb-tile-head {
     display: flex;
     align-items: center;
@@ -1184,9 +1199,19 @@
 
 @layer patterns {
   .wb-tile {
-    border: 1px solid var(--line);
     border-radius: var(--r-md);
-    background: var(--surface);
+  }
+
+  .wb-tile + .wb-tile::before {
+    background: var(--line);
+  }
+
+  .wb-tile[data-tone='fail'] .wb-tile-title {
+    color: var(--fail-t);
+  }
+
+  .wb-tile[data-tone='ask'] .wb-tile-title {
+    color: var(--ask-t);
   }
 
   .wb-tile-chevron,
@@ -1242,10 +1267,11 @@
   }
 
   .wb-tile:is([data-dragging='1'], [data-picked='1']) {
-    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
 
   .wb-tile[data-dragging='1'] {
-    box-shadow: var(--shadow-pop);
+    box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-pop);
   }
 }

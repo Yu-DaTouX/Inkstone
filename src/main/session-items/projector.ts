@@ -513,6 +513,7 @@ export class SessionItemProjector {
     return assignContent(h, {
       text: content.text ?? h.text,
       thinking: content.thinking === undefined ? h.thinking : content.thinking || undefined,
+      thinkingEmpty: content.thinking !== undefined && !content.thinking.trim() && !h.thinking?.trim() ? true : undefined,
       toolCalls: content.calls.length ? content.calls : h.toolCalls,
       error: content.error ?? h.error
     })

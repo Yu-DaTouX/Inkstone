@@ -44,7 +44,8 @@ const inProcessScripts = [
   'test-mobile-model-url', 'test-open-path-boundary',
   'test-package-sources-fixture', 'test-package-timeout-fallback',
   'test-session-restore-rollback', 'test-subagent-stop-intent',
-  'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory'
+  'test-title-lifecycle', 'test-write-file-durable', 'test-project-directory',
+  'test-pi-settings-eperm-retry'
 ]
 for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
@@ -60,7 +61,7 @@ const spawnedScripts = [
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-split-drop-model', 'test-sidebar-content-search',
   'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-composer', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-user-text', 'test-session-find', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-session-operation-gate', 'test-host-tools', 'test-write-line-endings', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-approval-receipts', 'test-session-operation-gate', 'test-host-tools', 'test-write-line-endings', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
   'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-v3-browser-header', 'test-remote-image', 'test-preload-renderer-ready', 'test-browser-observe-live', 'test-browser-screenshot-timeout', 'test-subagent-fork', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-changes-pane-actions', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf', 'test-html-canvas-model', 'test-html-canvas-bridge', 'test-html-source-map', 'test-canvas-share', 'test-canvas-comments', 'test-canvas-draw', 'test-canvas-timeline', 'test-canvas-dock', 'test-live-html-calls', 'test-artifact-style', 'test-video-composition', 'test-video-export', 'test-artifact-preview-video', 'test-artifact-lint', 'test-artifact-libs',
   'test-prompt-directories', 'test-prompt-template-form',
   'test-session-reattach',
@@ -1596,8 +1597,9 @@ const workspaceChanges = await import('../node_modules/esbuild/lib/main.js').the
     logLevel: 'silent'
   }).then(() => import('../out/test/snapshots.mjs'))
 )
-const { runWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
+const { runWorkspaceChangesTests, runGitWorkspaceChangesTests } = await import('./test-workspace-changes.mjs')
 await runWorkspaceChangesTests(ok, workspaceChanges)
+await runGitWorkspaceChangesTests(ok, workspaceChanges)
 
 {
   const { runRunnerTests } = await import('./test-runners.mjs')

@@ -254,6 +254,13 @@ try {
     older.appendPersisted({ role: 'assistant', model: 'claude-opus-4-6', content: progressBlocks, timestamp: 301 })
     assert.equal(older.items().find((item) => item.id === 'm0:0:1').kind, 'reasoning', '其他模型的交错思考不改')
   }
+
+  {
+    const replyOf = (content) => m.projectHistory([{ role: 'user', content: 'q', timestamp: 1 }, { role: 'assistant', content, timestamp: 2 }]).find((msg) => msg.role === 'assistant')
+    assert.equal(replyOf([{ type: 'thinking', thinking: '  ' }, { type: 'text', text: 'A' }]).thinkingEmpty, true, '有思考块但没有文字：标记为空记录')
+    assert.equal(replyOf([{ type: 'thinking', thinking: 'plan' }, { type: 'text', text: 'A' }]).thinkingEmpty, undefined, '有思考文字时不标记')
+    assert.equal(replyOf([{ type: 'text', text: 'A' }]).thinkingEmpty, undefined, '没有思考块时不标记，交给模型能力判断')
+  }
   const pick = (msg) => ({ id: msg.id, role: msg.role, text: msg.text, thinking: msg.thinking, calls: (msg.toolCalls ?? []).map((call) => [call.id, call.status, call.output]) })
   assert.deepEqual(replay.uiMessages().map(pick), liveMessages.slice(0, 2).map(pick).map((msg) => ({ ...msg, calls: msg.calls.filter(([id]) => id === 'call_live') })), '映射回 UIMessage 后直播与回放结构一致')
 

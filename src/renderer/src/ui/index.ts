@@ -170,4 +170,23 @@ export { Notice, type NoticeProps, type NoticeTone } from './Notice'
 export { EmptyState, type EmptyStateProps } from './EmptyState'
 export { PageHeader, type PageHeaderProps } from './PageHeader'
 export { PaneHeader, type PaneHeaderProps } from './PaneHeader'
-export { Card, type CardProps } from './Card'
+export {
+  Card,
+  CardActions,
+  CardBody,
+  CardChevron,
+  CardControl,
+  CardHead,
+  CardMeta,
+  CardStatus,
+  CardSummary,
+  CardTime,
+  CardTitle,
+  type CardActionsProps,
+  type CardProps,
+  type CardStatusProps,
+  type CardStatusTone,
+  type CardSummaryProps,
+  type CardTitleProps,
+  type CardTone
+} from './Card'

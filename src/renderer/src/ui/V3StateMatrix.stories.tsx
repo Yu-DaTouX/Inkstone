@@ -6,6 +6,16 @@ import {
   Badge,
   Button,
   Card,
+  CardActions,
+  CardBody,
+  CardChevron,
+  CardControl,
+  CardHead,
+  CardMeta,
+  CardStatus,
+  CardSummary,
+  CardTime,
+  CardTitle,
   EmptyState,
   Notice,
   PageHeader,
@@ -240,6 +250,74 @@ export const HeaderCardStates: Story = {
       <Card interactive padding="sm">可交互卡片：悬停时边框加深。</Card>
     </div>
   )
+}
+
+const CARD_DEMO_AT = Date.UTC(2026, 9, 27, 8, 30)
+
+function CardGrammarDemo(): ReactNode {
+  const [expanded, setExpanded] = useState(true)
+  return (
+    <div style={{ display: 'grid', gap: 'var(--s-12)', maxWidth: 480 }}>
+      <Card padding="none">
+        <CardSummary expanded={expanded} onPress={() => setExpanded(!expanded)}>
+          <CardStatus tone="accent">提问</CardStatus>
+          <CardTitle clamp>要先运行哪一组测试？</CardTitle>
+          <CardMeta>剩余 2 分钟</CardMeta>
+        </CardSummary>
+        {expanded ? (
+          <>
+            <CardBody>展开后显示正文；折叠只收起内容，不表示关闭。</CardBody>
+            <CardActions lead={<Button size="sm" variant="ghost">跳过</Button>}>
+              <Button size="sm" variant="primary">提交</Button>
+            </CardActions>
+          </>
+        ) : null}
+      </Card>
+      <Card padding="none" tone="ask">
+        <CardHead>
+          <CardStatus tone="ask">等待审批</CardStatus>
+          <CardTitle>Agent 想写入项目外的文件</CardTitle>
+          <CardMeta>已等 12 秒</CardMeta>
+          <CardControl><IconButton size="sm" variant="plain" aria-label="收起"><CardChevron /></IconButton></CardControl>
+        </CardHead>
+      </Card>
+      <Card padding="none" receipt>
+        <CardHead>
+          <CardStatus tone="ok">已允许一次</CardStatus>
+          <CardTitle>Agent 想执行一个难以撤销的操作</CardTitle>
+          <CardMeta><CardTime at={CARD_DEMO_AT} /></CardMeta>
+        </CardHead>
+      </Card>
+      <Card padding="none" receipt>
+        <CardHead>
+          <CardStatus tone="run">运行中</CardStatus>
+          <CardTitle>子 Agent · 整理测试</CardTitle>
+          <CardMeta>1 分 20 秒</CardMeta>
+        </CardHead>
+      </Card>
+      <Card padding="none" tone="fail">
+        <CardHead>
+          <CardStatus tone="fail">失败</CardStatus>
+          <CardTitle>pi 进程已退出</CardTitle>
+        </CardHead>
+        <CardBody>阻塞错误保持醒目，主操作放在右侧。</CardBody>
+        <CardActions>
+          <Button size="sm">重试</Button>
+        </CardActions>
+      </Card>
+    </div>
+  )
+}
+
+export const CardGrammarStates: Story = {
+  name: 'Card · 头部语法与回执',
+  parameters: {
+    stateMatrix: {
+      components: ['Card', 'CardHead', 'CardSummary', 'CardStatus', 'CardTitle', 'CardMeta', 'CardControl', 'CardBody', 'CardActions', 'CardChevron', 'CardTime'],
+      states: STATES('default', 'open', 'tone-accent', 'tone-run', 'tone-ask', 'tone-ok', 'tone-fail')
+    }
+  },
+  render: () => <CardGrammarDemo />
 }
 
 export const ProgressSkeletonStates: Story = {

@@ -35,6 +35,7 @@ export interface AssistantTurn {
   thinking: string
   thinkingMs?: number
   thinkingLive: boolean
+  thinkingEmpty?: boolean
   commentary: TurnText[]
   segments: TurnSegment[]
   tools: NonNullable<UIMessage['toolCalls']>
@@ -175,6 +176,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     thinking: string[]
     thinkingMs: number
     thinkingLive: boolean
+    thinkingEmpty: boolean
     texts: TurnText[]
     segments: SegmentAccumulator[]
     tools: NonNullable<UIMessage['toolCalls']>
@@ -252,6 +254,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       thinking: cur.thinking.join('\n\n'),
       thinkingMs: cur.thinkingMs || undefined,
       thinkingLive: cur.thinkingLive,
+      ...(cur.thinkingEmpty && !cur.thinking.length ? { thinkingEmpty: true } : {}),
       commentary,
       segments,
       tools: cur.tools,
@@ -316,6 +319,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
         thinking: [],
         thinkingMs: 0,
         thinkingLive: false,
+        thinkingEmpty: false,
         texts: [],
         segments: [],
         tools: [],
@@ -357,6 +361,7 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
       target.thinkingMs += m.thinkingMs ?? 0
       target.thinkingParts.push({ text: m.thinking!.trim(), at: target.tools.length, ...(m.thinkingMs ? { ms: m.thinkingMs } : {}) })
     }
+    if (m.thinkingEmpty) cur.thinkingEmpty = true
     if (m.thinkingLive !== undefined) {
       cur.thinkingLive = m.thinkingLive
       seg().thinkingLive = m.thinkingLive

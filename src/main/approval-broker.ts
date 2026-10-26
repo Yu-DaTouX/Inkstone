@@ -24,6 +24,7 @@ export interface ApprovalBrokerDeps {
   open(request: ApprovalRequest): void
   close(id: string): void
   publish?(snapshot: ApprovalSnapshot): void
+  record?(request: ApprovalRequest, answer: ApprovalAnswer): void
 }
 
 export type ApprovalAskInput = Omit<ApprovalRequest, 'id' | 'createdAt' | 'revision' | 'phase'>
@@ -64,12 +65,11 @@ export class ApprovalBroker {
       return false
     }
     this.publish()
-    if (choice === 'session') {
-      this.grants.grant(scopeOf(begun.request), begun.request)
-      return this.settle(id, { choice: 'once' })
-    }
+    if (choice === 'session') this.grants.grant(scopeOf(begun.request), begun.request)
     const reason = choice === 'deny' ? normalizeApprovalFeedback(feedback) : undefined
-    return this.settle(id, reason ? { choice, feedback: reason } : { choice })
+    const settled = this.settle(id, choice === 'session' ? { choice: 'once' } : reason ? { choice, feedback: reason } : { choice })
+    if (settled) this.record(begun.request, reason ? { choice, feedback: reason } : { choice })
+    return settled
   }
 
   cancel(match: (request: ApprovalRequest) => boolean): number {
@@ -114,6 +114,14 @@ export class ApprovalBroker {
     this.publish()
     waiter.resolve(answer)
     return true
+  }
+
+  private record(request: ApprovalRequest, answer: ApprovalAnswer): void {
+    try {
+      this.deps.record?.(request, answer)
+    } catch (error) {
+      console.warn('[approval] 记录审批决定失败：', error instanceof Error ? error.message : error)
+    }
   }
 
   private publish(): void {
