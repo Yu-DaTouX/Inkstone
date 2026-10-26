@@ -170,4 +170,36 @@ assert.equal(
   const result = await h.run()
   assert.ok(!result.compaction.summary.includes('<history-snapshot>') && !result.compaction.details.snapshot, '没有会话文件时不写快照也不给路径')
 }
+{
+  const h = harness(() => ok('摘要'))
+  const result = await h.run()
+  assert.ok(result.compaction.summary.includes("<user-messages>\nThe user's own messages from the compacted part, verbatim, oldest first:\n[#1.1] 读完整本书\n</user-messages>"), '被压缩部分的用户原话由代码原样附上')
+  const prompt = h.calls[0].context.messages[0].content[0].text
+  assert.ok(/priorities, highest first/i.test(prompt) && /\[ruled out\]/.test(prompt) && /Never estimate a line number/.test(prompt) && /\[external\]/.test(prompt), '提示词按优先级保留、区分状态、只照抄观测到的位置、外部内容标来源')
+  assert.ok(!/Be exhaustive/.test(prompt), '不再要求穷举')
+  assert.ok(/under about 16000 tokens/.test(prompt), '给出篇幅目标（输出上限的一半）')
+}
+{
+  const previous = "旧摘要\n\n<user-messages>\nThe user's own messages from the compacted part, verbatim, oldest first:\n[#1.1] 第一条\n多行\n[#1.5] 第二条\n</user-messages>"
+  const block = mod.userMessagesBlock(previous, [{ role: 'user', content: '第三条' }, { role: 'assistant', content: [] }], 2, 1_000)
+  assert.ok(block.includes('[#1.1] 第一条\n多行\n[#1.5] 第二条\n[#2.1] 第三条'), '上次附的原话加上这次的，按时间顺序')
+  const capped = mod.userMessagesBlock(previous, [{ role: 'user', content: '第三条' }], 2, 12)
+  assert.ok(capped.includes('(2 older ones omitted)') && capped.includes('[#2.1] 第三条') && !capped.includes('第一条'), '超出上限时从最早的丢，并注明丢了几条')
+}
+{
+  let n = 0
+  const h = harness(() => (++n === 1 ? { stopReason: 'length', content: [{ type: 'text', text: '太长' }], usage: { input: 1 } } : ok('短摘要', { input: 1 })))
+  const result = await h.run()
+  assert.equal(h.calls.length, 2, '输出顶到上限时同一块重试一次')
+  assert.ok(/ran past the output limit/.test(h.calls[1].context.messages[0].content[0].text), '重试时要求写短一些')
+  assert.equal(result.compaction.details.lengthRetries, 1)
+  assert.equal(result.compaction.usage.input, 2)
+}
+{
+  const h = harness(() => ({ stopReason: 'length', content: [], usage: { input: 1 } }))
+  assert.equal(await h.run(), undefined, '重试后仍然太长就退回 pi')
+  assert.equal(h.calls.length, 2)
+  h.compacted(false)
+  assert.equal(h.entries[0].data.category, 'length')
+}
 console.log('context-compact 测试通过')
