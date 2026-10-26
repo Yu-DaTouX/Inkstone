@@ -61,14 +61,14 @@
     ok(stack.dataset.count === '3', '计数条记录总条数', `data-count=${stack.dataset.count}`)
     const composer = q('.composer')
     if (composer) {
-      const sb = stack.getBoundingClientRect()
-      const cb = composer.getBoundingClientRect()
-      ok(sb.bottom <= cb.top + 2, '在输入框上方', `stack.bottom=${Math.round(sb.bottom)} composer.top=${Math.round(cb.top)}`)
+      const line = composer.querySelector('.composer-line')
+      ok(stack.parentElement === composer, '排队是输入框里的一行')
+      ok(!!line && stack.getBoundingClientRect().bottom <= line.getBoundingClientRect().top + 2, '在输入行上方', `stack.bottom=${Math.round(stack.getBoundingClientRect().bottom)} line.top=${Math.round(line?.getBoundingClientRect().top ?? 0)}`)
     }
     const toggle = () => q('[data-testid="queue-toggle"]')
     ok(!!toggle(), '多条时显示折叠计数条')
     ok(toggle()?.getAttribute('aria-expanded') === 'false', '默认是折叠状态')
-    ok(/3/.test(toggle()?.textContent ?? ''), '计数条显示条数', JSON.stringify(toggle()?.textContent))
+    ok(/^(排队|Queued) · 3$/.test(toggle()?.querySelector('.cq-pill')?.textContent ?? ''), '计数条行首是「排队 · 3」胶囊', JSON.stringify(toggle()?.textContent))
     ok(qa('[data-testid="queue-row"]').length === 0, '折叠时不渲染消息行')
     note(`折叠条 = ${JSON.stringify(toggle()?.textContent ?? '')}`)
 

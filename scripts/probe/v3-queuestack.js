@@ -67,12 +67,16 @@
     const composer = document.querySelector('.composer')
     check(!!composer, '输入框 .composer 存在')
     if (stack && composer) {
-      const sb = stack.getBoundingClientRect()
-      const cb = composer.getBoundingClientRect()
-      check(sb.bottom <= cb.top + 2, '队列在输入框上方', `stack.bottom=${Math.round(sb.bottom)} composer.top=${Math.round(cb.top)}`)
+      const line = composer.querySelector('.composer-line')
+      check(stack.parentElement === composer, '排队是输入框里的一行')
+      check(!!line && stack.getBoundingClientRect().bottom <= line.getBoundingClientRect().top + 2, '排队行在输入行上方')
+      const plan = composer.querySelector('[data-testid="plan-card"]')
+      if (plan) check(plan.compareDocumentPosition(stack) & Node.DOCUMENT_POSITION_FOLLOWING, '排队行在计划行下面')
+      check(getComputedStyle(stack.querySelector('.cq-row')).backgroundColor === 'rgba(0, 0, 0, 0)', '排队行无底色，和计划行同款')
     }
     check(stack?.dataset.count === '3', '计数条记录总条数', `data-count=${stack?.dataset.count}`)
     check(q('queue-toggle')?.getAttribute('aria-expanded') === 'false', '多条时默认折叠成计数条')
+    check(/^(排队|Queued) · 3$/.test(q('queue-toggle')?.querySelector('.cq-pill')?.textContent ?? ''), '计数条行首是「排队 · 3」胶囊')
     check(qa('queue-row').length === 0, '折叠时不渲染消息行')
 
     out.push('')

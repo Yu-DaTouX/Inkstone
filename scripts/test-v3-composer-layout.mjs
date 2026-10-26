@@ -279,10 +279,10 @@ async function main() {
     const bundle = await import(pathToFileURL(await buildComposer(outdir)).href)
     const { Composer, __state, layout } = bundle
 
-    ok(layout.COMPOSER_LEFT_ORDER.join('>') === 'mode>permission>plus', '底栏左侧顺序：模式徽标→权限→＋')
-    ok(layout.COMPOSER_RIGHT_ORDER.join('>') === 'voice>context>model-thinking>run>send', '底栏右侧顺序：语音→上下文环→模型+思考→运行位→发送')
+    ok(layout.COMPOSER_LINE_ORDER.join('>') === 'plus>mode>input>voice>send', '输入行顺序：＋→模式徽标→输入→语音→发送')
+    ok(layout.COMPOSER_STATUS_ORDER.join('>') === 'permission>project>context>model-thinking', '状态行顺序：权限→项目→上下文环→模型+思考')
     ok(layout.composerMode('!ls') === 'bash' && layout.composerMode('/model') === 'cmd' && layout.composerMode('你好') === null, '模式徽标判据与 v3 现有 bash/ slash 一致')
-    ok(layout.composerPrompt('!ls') === '$' && layout.composerPrompt('普通') === '›', '提示符：直执行 $、普通 ›')
+    ok(!('composerPrompt' in layout), '输入行不再有 › / $ 提示符，直执行改由模式徽标表示')
     ok(layout.composerLocalCommand('!ls', []) === true, '! 前缀是本地命令')
     ok(layout.composerLocalCommand('/ultracode', [{ source: 'yan', name: 'ultracode' }]) === true, '单独的 /ultracode 走本地提示用法')
     ok(layout.composerLocalCommand('/ultracode 审一遍接口', [{ source: 'yan', name: 'ultracode' }]) === false, '/ultracode 带任务按普通消息发送')
@@ -321,20 +321,28 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'IsolationMergeBar' && nameOf(child) !== 'PlanCard')
-    ok(nameOf(wrapChildren[0]) === 'QueueEditor', '队列紧挨根、在输入框卡片外上方（合入确认条与计划卡除外）')
-    ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟队列')
+    const wrapChildren = children(wrap)
+    ok(nameOf(wrapChildren[0]) === 'IsolationMergeBar', '合入确认条留在输入框卡片外上方')
+    ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟合入确认条')
+    ok(!wrapChildren.some((child) => nameOf(child) === 'QueueEditor'), '排队不再挂在输入框外')
     ok(byClass(wrap, 'composer') === children(wrap)[children(wrap).length - 1], '输入框卡片在根末尾，下方不再有会话统计行（统计改到会话栏卡片）')
+    ok(!children(wrap).some((child) => nameOf(child) === 'PlanCard'), '计划卡不再是输入框外的独立卡片')
 
     const card = byClass(wrap, 'composer')
     ok(nameOf(children(card)[0]) === 'ComposerBorder', '卡片首行是输入框顶边')
-    ok(nameOf(children(card)[1]) === 'AttachmentStrip', '附件条在卡片内、输入行之前')
+    ok(nameOf(children(card)[1]) === 'PlanCard', '计划卡是输入框卡片内的第一行，和输入框连成一体')
+    ok(nameOf(children(card)[2]) === 'QueueEditor', '排队是框内一行：在计划行下面')
+    ok(nameOf(children(card)[3]) === 'AttachmentStrip', '附件条在卡片内、排队行之后、输入行之前')
 
     const line = byClass(card, 'composer-line')
     const lineChildren = children(line)
-    ok(nameOf(lineChildren[0]) === 'span' && lineChildren[0].props['aria-hidden'] === true, '提示符在最左且 aria-hidden')
-    ok(typeof lineChildren[1].type === 'function' && lineChildren[1].props['data-testid'] === 'composer-input', '提示符之后是编辑器门面，testid 保留')
-    ok(typeof lineChildren[1].props.onChange === 'function' && typeof lineChildren[1].props.onKeyDown === 'function', '门面仍以 onChange / onKeyDown 回调上层')
+    ok(controlNames(line).join('>') === 'PlusMenu>#composer-input>div', '输入行：＋在最左，随后编辑器，行尾一组按钮；无模式时不显示徽标', controlNames(line))
+    const editorNode = lineChildren.find((child) => child?.props?.['data-testid'] === 'composer-input')
+    ok(typeof editorNode?.type === 'function', '编辑器门面 testid 保留')
+    ok(typeof editorNode?.props.onChange === 'function' && typeof editorNode?.props.onKeyDown === 'function', '门面仍以 onChange / onKeyDown 回调上层')
+    ok(byClass(line, 'composer-prompt') === null, '输入行不再渲染 › 提示符')
+    const lineEnd = byClass(line, 'composer-line-end')
+    ok(controlNames(lineEnd).join('>') === 'VoiceButton>#composer-send', '行尾：语音→发送', controlNames(lineEnd))
 
     const editorText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerEditor.tsx'), 'utf8')
     ok(!/<textarea/.test(editorText), '编辑器门面不再渲染 textarea')
@@ -350,15 +358,13 @@ async function main() {
     ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'PermissionToggle>ProjectPicker>PlusMenu', '左侧控件：权限在最左、新会话项目选择次之、＋随后；无模式/提示时不显示')
+    ok(controlNames(tools).join('>') === 'PermissionToggle>ProjectPicker', '状态行左侧：权限在最左、新会话项目选择次之')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)
-    ok(
-      barControls.join('>') === 'div>div>ModelThinkingPicker>#composer-send',
-      '底栏右侧顺序：语音与上下文一组→模型+思考→发送（运行中只换成停止键，不另显标注）',
-      barControls
-    )
-    ok(controlNames(byClass(card, 'composer-aux')).join('>') === 'VoiceButton>ContextRing', '语音与上下文环收在右侧同一组')
+    ok(barControls.join('>') === 'div>div>ModelThinkingPicker', '状态行：左组→上下文环→模型+思考，发送不在状态行', barControls)
+    ok(controlNames(byClass(card, 'composer-aux')).join('>') === 'ContextRing', '上下文环单独在状态行右侧')
+    const inputChildren = children(byClass(card, 'composer-input'))
+    ok(inputChildren.indexOf(line) >= 0 && inputChildren.indexOf(line) < inputChildren.indexOf(bar), '状态行在输入行下方、框内最底部')
     ok(byTestId(card, 'composer-send').props.size === 'sm', '发送键用小号按钮')
     ok(byTestId(card, 'composer-send') !== null && byTestId(card, 'composer-stop') === null, '空闲时发送键在发送位')
 
@@ -386,9 +392,8 @@ async function main() {
     const ta4 = byTestId(tree, 'composer-input')
     ta4.props.onChange({ text: '!npm test', cursor: 9 })
     tree = rt.render(Composer, {})
-    const tools2 = byClass(tree, 'composer-tools')
-    ok(controlNames(tools2)[0] === '#composer-mode', '输入 `!` 时模式徽标排在最左')
-    ok(byClass(tree, 'composer-prompt').props.children === '$', '直执行模式提示符为 $')
+    const line2 = byClass(tree, 'composer-line')
+    ok(controlNames(line2).slice(0, 3).join('>') === 'PlusMenu>#composer-mode>#composer-input', '输入 `!` 时模式徽标作为输入前缀，紧跟＋', controlNames(line2))
 
     __state.settings = { sendKey: 'ctrlEnter' }
     tree = rt.render(Composer, {})
@@ -401,7 +406,29 @@ async function main() {
     ok(/\n\s*\.cborder\s*\{[^}]*opacity:\s*0/.test(composerCssText), '空闲时顶边完全不可见')
     ok(/\n\s*\.cborder\[data-state='working'\]\s*\{\s*opacity:\s*1/.test(composerCssText), '只有运行中才亮起顶边')
     ok(/\n\s*\.cborder\s*\{[^}]*border-radius:\s*inherit/.test(composerCssText), '顶边继承卡片圆角，不在圆角外露直角')
-    ok(/\.cborder\[data-level='max'\]\s*\{\s*border-top-color:/.test(composerCssText), '顶边只染上边且颜色取档位')
+    ok(/\.cborder\[data-level='max'\]\s*\{\s*border-color:\s*var\(--think-max/.test(composerCssText), '档位色描整圈轮廓，颜色取档位')
+    ok(!/\n\s*\.cborder[^{]*\{[^}]*border-top-color/.test(composerCssText), '不再只染上边（圆角处会变细斜切）')
+    ok(/\n\s*\.cborder\s*\{[^}]*(?<!-webkit-)mask-image:\s*linear-gradient\(to bottom,[^;]*transparent var\(--cborder-fade\)/.test(composerCssText), '描边自顶部沿圆角向下渐隐')
+    ok(/\n\s*\.composer\s*\{[^}]*--cborder-fade:\s*calc\(2 \* var\(--r-side\)\)/.test(composerCssText), '默认在两倍圆角内消失，不碰计划行分隔线')
+    ok(/\.composer:has\(> \.plan-card \+ \.composer-queue\)\s*\{\s*--cborder-fade:/.test(composerCssText), '计划行加排队行时渐隐延伸到排队行，两行之间不断层')
+    ok(/\n\s*\.composer\s*\{[^}]*border-radius:\s*var\(--r-side\)/.test(composerCssText) && /\n\s*\.composer\s*\{[^}]*box-shadow:\s*var\(--shadow-comp-float\)/.test(composerCssText), '外框用左栏同款 12px 圆角与浮起阴影令牌')
+    ok(/\n\s*\.composer::after\s*\{[^}]*var\(--comp-rim-hi\)[^}]*var\(--comp-rim-lo\)/.test(composerCssText), '外框 135° 高光描边取 comp-rim 令牌')
+    ok(!/cp-label\s*\{[^}]*clip-path/.test(composerCssText), '窄屏下权限文字不再隐藏')
+    ok(/\n\s*\.composer-line\s*\{[^}]*align-items:\s*flex-end/.test(composerCssText), '多行时输入行按钮贴底对齐')
+    ok(/\n\s*\.composer-queue\s*\{[^}]*border-bottom:\s*1px solid var\(--line\)/.test(composerCssText) && !/\.cq-pending\s*\{/.test(composerCssText), '排队行和计划行同款分隔线，去掉蓝色底')
+    const queueSource = await readFile(join(ROOT, 'src/renderer/src/features/composer/QueueEditor.tsx'), 'utf8')
+    const queueCssText = await readFile(join(ROOT, 'src/renderer/src/features/composer/queue-editor.css'), 'utf8')
+    ok(/<Badge tone="accent" className="cq-pill">\s*\{t\('queue\.pill', \{ n: total \}\)\}/.test(queueSource), '排队行首是强调色「排队 · N」胶囊')
+    ok(/\{!collapsible \? \(\s*pill/.test(queueSource) && /<span className="cq-text">\{item\.text\}<\/span>/.test(queueSource), '单条行首放胶囊，正文不带「下一条」前缀')
+    ok(/data-testid="queue-toggle"[\s\S]*?\{pill\}[\s\S]*?cq-preview/.test(queueSource), '折叠条行首也是胶囊')
+    ok(/\n\s*\.cq-text\s*\{[^}]*color:\s*var\(--fg\);/.test(composerCssText) && /\n\s*\.cq-preview\s*\{[^}]*color:\s*var\(--fg\);/.test(queueCssText), '排队正文用主色 --fg')
+    ok(/\n\s*\.cq-pill\s*\{[^}]*flex:\s*none/.test(composerCssText) && /\n\s*\.cq-tag-steer\s*\{\s*color:\s*var\(--accent-t\)/.test(composerCssText), '胶囊不被压缩，「插话中」用 --accent-t')
+    for (const lang of ['zh-CN', 'en-US']) {
+      const dict = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
+      ok(/\{n\}/.test(dict['queue.pill'] ?? ''), `${lang} 有 queue.pill 文案`)
+    }
+    ok(/\n\s*\.cborder\s*\{[^}]*-webkit-mask-image:/.test(composerCssText), '渐隐遮罩带 -webkit- 前缀')
+    ok(/\n\s*\.composer-wrap\.is-dropping \.cborder\s*\{\s*opacity:\s*0/.test(composerCssText), '拖放时让位给强调色边框，档位描边隐藏')
     ok(/\n\s*\.composer-text\s*\{[^}]*white-space:\s*pre-wrap/.test(composerCssText), '编辑器宿主保留连续空白与手动换行（pre-wrap）')
     ok(/\n\s*\.composer-text\s*\{[^}]*max-height:/.test(composerCssText), '编辑器宿主自增高到上限后内部滚动')
     ok(
@@ -463,7 +490,12 @@ async function main() {
     typeInto('')
     __state.runners = [{ runId: 'r1', running: true }]
     __state.activeRunnerId = 'r1'
-    ok(String(placeholderOf()).includes('Enter') && String(placeholderOf()).includes('queue.queueIt'), '回合运行中 → 保留发送/排队两条车道提示')
+    ok(placeholderOf() === 'composer.phRunning', '回合运行中 → 单独一条占位文案，不拼接插话/排队词条')
+    for (const [lang, label] of [['zh-CN', 'Enter 插话 · Ctrl+Q 排队'], ['en-US', 'Enter to cut in · Ctrl+Q to queue']]) {
+      const messages = JSON.parse(await readFile(join(ROOT, `src/renderer/src/i18n/${lang}.json`), 'utf8'))
+      ok(messages['composer.phRunning'] === label, `${lang} 运行中占位为「${label}」`)
+    }
+    ok(!String(placeholderOf()).includes('Alt+Enter'), '运行中占位不再写 Alt+Enter（按键本身不变）')
     __state.runners = []
     __state.activeRunnerId = null
 

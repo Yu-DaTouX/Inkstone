@@ -81,13 +81,13 @@ assert.equal(clockText(3_725_000), '1h 02m')
 assert.equal(spanText(1240), '1.2s')
 assert.equal(spanText(850), '850ms')
 assert.equal(spanText(12_000), '12s')
-assert.equal(sumTime(null, true), '—')
-assert.equal(sumTime(450, true), '≥450ms')
+assert.equal(sumTime(null), '—')
+assert.equal(sumTime(450), '450ms')
 assert.equal(hitText(80.99), '80%')
 assert.equal(hitText(140), '100%')
 assert.equal(hitText(null), null)
-assert.equal(countText(5, true), '≥5')
-assert.equal(tokenText(1234, true, 'tok'), `≥${(1234).toLocaleString()} tok`)
+assert.equal(countText(5), '5')
+assert.equal(tokenText(1234, 'tok'), `${(1234).toLocaleString()} tok`)
 assert.equal(tpsText(123.6, 'tok/s'), '124 tok/s')
 assert.equal(tpsNumber(42.345), '42.3')
 
@@ -146,6 +146,7 @@ assert.equal(liveUnknown.speed.value, '—', '不能拿过去均速冒充当前�
 assert.equal(build1({ tps: null }, { speeds: [], liveSpeed: 60 }).speed.value, '60.0', '首步没有历史样本时也能显示当前输出速度')
 assert.equal(build1({ tps: null }, { speeds: [], liveSpeed: null }).speed.value, '—', '首步等待可靠输出计时时不估算')
 assert.equal(build1({ tps: null }, { speeds: [] }).speed, null)
+assert.equal(build1({ tps: null }, { speeds: [], latestSpeed: null }).speed, null, '未运行且无实测速度时整行隐藏，不显示占位的 —')
 
 const extras = build1({ cost: 0.42, costEstimated: 0.05 }, { subagentTokens: 120_000 })
 assert.equal(extras.extras, 'sm.withSubagents +120.0K · sm.costLine(cost=≈$0.42)')
@@ -168,13 +169,13 @@ assert.deepEqual(noTools.time.segments.map((s) => s.key), ['model'])
 assert.equal(noTools.time.detail, 'sm.modelShort 3m 12s · sm.ttftShort 1.2s')
 
 const partial = build1({ partial: true, toolPartial: true }, { historyPartial: true })
-assert.equal(partial.headline, 'sm.headline(turns=≥3,steps=≥7)')
+assert.equal(partial.headline, 'sm.headline(turns=3,steps=7)', '≥ 去掉后头部轮数步数不再带符号')
 assert.equal(partial.headlineTitle, 'sm.historyPartialTip')
-assert.equal(partial.tokens.total, '≥12.3K')
+assert.equal(partial.tokens.total, '12.3K', '≥ 去掉后总量不再带符号，语义已在 tokens.title 的提示行里')
 assert.deepEqual(partial.tokens.title.split('\n').slice(1), ['sm.historyPartialTip', 'sm.partialTip'])
 assert.equal(partial.time.partial, true)
-assert.equal(railTimeText(partial.time), '≥4m 17s')
-assert.equal(partial.time.detail, 'sm.modelShort 3m 12s · sm.toolShort ≥1m 05s · sm.ttftShort 1.2s')
+assert.equal(railTimeText(partial.time), '4m 17s', '≥ 去掉后用时不再带符号，语义已在 time.title 的提示里')
+assert.equal(partial.time.detail, 'sm.modelShort 3m 12s · sm.toolShort 1m 05s · sm.ttftShort 1.2s')
 assert.equal(partial.time.title, 'sm.timingPartialTip')
 assert.equal(build1({ toolMs: null }).time.partial, true, '有工具但无计时也算缺数据')
 
@@ -205,6 +206,12 @@ assert.equal(build1({}, { speeds: [10, 20, 76.6] }).glance.metric.value, '76.6',
 assert.ok(build1({}, { speeds: [76.6] }).glance.title.includes('76.6 tok.perSec'))
 assert.ok(!glanceLive.glance.title.includes('42.3'), '当前步 tooltip 不再混入旧会话均速')
 assert.equal(GLANCE_BARS, 3)
+
+const glancePartialNotes = build1({ partial: true }, { historyPartial: true })
+assert.ok(
+  glancePartialNotes.glance.title.endsWith('sm.historyPartialTip\nsm.partialTip'),
+  '≥ 去掉后，至少的语义仍留在收起行的提示里'
+)
 
 const latestUnknown = build1({}, { speeds: [200, 1387], latestSpeed: null })
 assert.equal(latestUnknown.glance.metric.value, '—', '最新一步缺可靠计时，不回退为较早步骤的高速样本')

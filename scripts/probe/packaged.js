@@ -20,9 +20,9 @@
     }
     throw new Error(`界面控件未出现：${selector}`)
   }
-  const settingsOpen = () => q('[data-testid="v3-header-settings"]')?.dataset.active === '1'
+  const settingsOpen = () => !!q('[data-testid="settings-root"]')
   const openSettings = async (section) => {
-    if (!settingsOpen()) (await waitElement('[data-testid="v3-header-settings"]')).click()
+    if (!settingsOpen()) (await waitElement('[data-testid="v3-side-settings"]')).click()
     await waitElement('[data-testid="settings-root"]')
     const nav = section === 'capabilities' ? 'caps-tab-skills' : `v3-settings-nav-${section}`
     ;(await waitElement(`[data-testid="${nav}"]`)).click()

@@ -53,7 +53,7 @@
     }
     const openAppearance = async () => {
       if (!query('settings-root')) {
-        query('v3-header-settings')?.click()
+        query('v3-side-settings')?.click()
         await until(() => !!query('settings-root'), 6000)
       }
       if (!label()) {

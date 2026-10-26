@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -17,6 +17,7 @@ async function run() {
     const model = await compile('src/renderer/src/features/sidebar/sidebar-model.ts', join(dir, 'model.mjs'))
     const status = await compile('src/renderer/src/features/sidebar/session-status.ts', join(dir, 'status.mjs'))
     const terminal = await compile('src/renderer/src/features/terminal/terminal-running.ts', join(dir, 'terminal.mjs'))
+    const more = await compile('src/renderer/src/features/sidebar/side-more.ts', join(dir, 'more.mjs'))
 
     assert.equal(layout.SIDEBAR_WIDTH_DEFAULT, 288)
 
@@ -36,10 +37,10 @@ async function run() {
     assert.equal(layout.clampSidebarWidth('abc'), 288)
     assert.equal(layout.clampSidebarWidth('0'), 288)
     assert.equal(layout.clampSidebarWidth('264'), 264, '旧默认宽仍在范围内')
-    assert.equal(layout.clampSidebarWidth('150'), 200, '旧存储值过窄夹到下限')
+    assert.equal(layout.clampSidebarWidth('150'), 240, '旧存储值过窄夹到下限')
     assert.equal(layout.clampSidebarWidth('900'), 420, '过宽夹到上限')
     assert.equal(layout.clampSidebarWidth(333.6), 334)
-    assert.equal(layout.readSidebarWidth({ getItem: () => '180' }), 200)
+    assert.equal(layout.readSidebarWidth({ getItem: () => '180' }), 240)
     assert.equal(layout.readSidebarWidth({ getItem: () => { throw new Error('denied') } }), 288, '读取存储失败时用默认宽')
     assert.equal(layout.readSidebarWidth(null), 288)
 
@@ -51,10 +52,10 @@ async function run() {
     assert.equal(layout.shouldAutoCollapseSidebar(1324, 420), false)
     assert.equal(layout.SIDEBAR_WIDTH_STEP, 8, '键盘普通步进 8')
     assert.equal(layout.SIDEBAR_WIDTH_STEP_LARGE, 32, 'Shift 步进 32')
-    assert.equal(layout.SIDEBAR_DRAG_COLLAPSE, 100, '拖动原始宽小于最小宽一半时收起')
+    assert.equal(layout.SIDEBAR_DRAG_COLLAPSE, 120, '拖动原始宽小于最小宽一半时收起')
     assert.equal(layout.sidebarMaxForWindow(1324), 420)
     assert.equal(layout.sidebarMaxForWindow(650), 320, '停靠时给主区至少留 330')
-    assert.equal(layout.sidebarMaxForWindow(400), 200)
+    assert.equal(layout.sidebarMaxForWindow(400), 240)
     for (const width of [701, 760, 900]) {
       const max = layout.sidebarMaxForWindow(width)
       assert.equal(layout.shouldAutoCollapseSidebar(width, max), false, `拖到上限 ${max} 不会在 ${width} 宽时触发自动折叠`)
@@ -153,6 +154,42 @@ async function run() {
     assert.equal(terminal.ownerTerminalRunning(entries, 'owner-c', ownerOf), false, '已退出的终端不算')
     assert.equal(terminal.ownerTerminalRunning(entries, 'owner-d', ownerOf), false)
     assert.equal(terminal.isTerminalCommandRunning({ id: 'x', alive: true }), false, '没有状态上报不算在跑')
+
+    const all = new Set(['schedule', 'collab', 'artifacts'])
+    const signals = (extra = {}) => ({ available: all, schedulePendingApproval: false, pairInvitePending: false, runs: [], ...extra })
+    const quiet = more.sideMoreEntries(signals())
+    assert.deepEqual(quiet.map((entry) => entry.id), ['schedule', 'collab', 'artifacts'], '「更多」按固定顺序列出低频入口')
+    assert.ok(quiet.every((entry) => entry.attention === null), '没有待处理时全部安静')
+    const quietLayout = more.sideMoreLayout(quiet, 'chat')
+    assert.equal(quietLayout.shown.length, 0, '安静时不单独露出任何入口')
+    assert.equal(quietLayout.folded.length, 3)
+    assert.equal(quietLayout.foldedCurrent, false)
+    assert.equal(more.sideMoreLayout(quiet, 'schedule').foldedCurrent, true, '停在收起的页面时「更多」显示选中')
+    const scheduledRun = { kind: 'scheduled', phase: phase('running', { since: 1 }) }
+    const sessionRun = { kind: 'session', phase: phase('running', { since: 1 }) }
+    assert.equal(more.sideMoreEntries(signals({ runs: [sessionRun] }))[0].attention, null, '普通会话在跑不算定时任务进行中')
+    assert.equal(more.sideMoreEntries(signals({ runs: [scheduledRun] }))[0].attention, 'running', '定时运行进行中时定时任务有提示')
+    assert.equal(more.sideMoreEntries(signals({ runs: [{ kind: 'scheduled', phase: phase('done', { at: 2, seen: false }) }] }))[0].attention, null, '定时运行结束后不再提示')
+    assert.equal(more.sideMoreEntries(signals({ schedulePendingApproval: true, runs: [scheduledRun] }))[0].attention, 'awaiting', '待确认优先于进行中')
+    const invite = more.sideMoreLayout(more.sideMoreEntries(signals({ pairInvitePending: true })), 'chat')
+    assert.deepEqual(invite.shown.map((entry) => entry.id), ['collab'], '有待处理的配对邀请时多人协作临时露出')
+    assert.deepEqual(invite.folded.map((entry) => entry.id), ['schedule', 'artifacts'])
+    const twoLoud = more.sideMoreLayout(more.sideMoreEntries(signals({ pairInvitePending: true, schedulePendingApproval: true })), 'artifacts')
+    assert.deepEqual(twoLoud.shown.map((entry) => entry.id), ['schedule', 'collab', 'artifacts'], '只剩一项可收时不再折成「更多」')
+    assert.equal(twoLoud.folded.length, 0)
+    assert.equal(twoLoud.foldedCurrent, false)
+    const partial = more.sideMoreEntries(signals({ available: new Set(['artifacts']) }))
+    assert.deepEqual(more.sideMoreLayout(partial, 'chat').shown.map((entry) => entry.id), ['artifacts'], '只有一个入口时直接显示')
+    assert.equal(more.activeRunCount([scheduledRun, sessionRun, { phase: phase('needs-you') }, { phase: phase('stalled') }, { phase: phase('queued') }, { phase: phase('done') }, { phase: phase('failed') }]), 5, '排队、运行、等待与停滞都算进行中')
+
+    const shell = await readFile('src/renderer/src/app/ShellV3.tsx', 'utf8')
+    assert.match(shell, /const drawerOpen = sidebarCompact && sidebarOpen/, '抽屉状态只在窄屏且左栏打开时成立')
+    assert.match(shell, /<main className="v3-main" inert=\{drawerOpen\}>/, '抽屉打开时主界面退出交互')
+    assert.match(shell, /<FocusScope contain=\{drawerOpen\}>\s*<Sidebar [^>]*\/>\s*<\/FocusScope>/, '抽屉打开时 Tab 约束在左栏内')
+    assert.match(shell, /<div className="v3-scrim" onClick=\{\(\) => useUiV3\.getState\(\)\.setSidebarOpen\(false\)\}/, '点击遮罩仍关闭抽屉')
+    assert.match(shell, /else if \(sidebarCompact && ui\.sidebarOpen\) ui\.setSidebarOpen\(false\)/, 'Esc 仍关闭抽屉')
+    assert.match(shell, /if \(drawerOpen\) \{\s*document\.querySelector<HTMLElement>\('\.v3-side'\)/, '打开抽屉时焦点移进左栏')
+    assert.match(shell, /\[data-testid="v3-rail-toggle"\]'\)\?\.focus/, '关闭抽屉后焦点回到顶栏左栏开关')
 
     console.log('sidebar-shell: 通过')
   } finally {

@@ -131,6 +131,11 @@ async function main() {
   const allDone = Model.buildTodoTileModel([todo('a', { done: true }), todo('b', { status: 'done' })], true)
   ok(allDone.done === 2 && allDone.total === 2 && allDone.activeIndex === -1, '全部完成：done=total 且无进行中', allDone)
 
+  ok(Model.anchorTodoIndex(runningInferred) === 1, '展开时对准进行中项', Model.anchorTodoIndex(runningInferred))
+  ok(Model.anchorTodoIndex(partial) === 1, '没有进行中项时对准第一个未完成项', Model.anchorTodoIndex(partial))
+  ok(Model.anchorTodoIndex(explicitNoRunning) === 0, '有 status 无 running 时对准第一个未完成项（受阻也算未完成）', Model.anchorTodoIndex(explicitNoRunning))
+  ok(Model.anchorTodoIndex(allDone) === -1 && Model.anchorTodoIndex(empty) === -1, '全部完成或空清单没有对准目标')
+
   const long = Model.buildTodoTileModel(
     Array.from({ length: 250 }, (_, i) => todo(`t${i}`, { done: i % 2 === 0 })),
     false
@@ -182,9 +187,14 @@ async function main() {
   const composer = await readFile(join(ROOT, 'src/renderer/src/features/composer/Composer.tsx'), 'utf8')
   ok(composer.includes("import { PlanCard } from './PlanCard'"), 'Composer 引入计划卡')
   const planIdx = composer.indexOf('<PlanCard')
-  const isolationIdx = composer.indexOf('<IsolationMergeBar')
   const queueIdx = composer.indexOf('<QueueEditor')
-  ok(planIdx >= 0 && planIdx < isolationIdx && isolationIdx < queueIdx, '计划卡停靠在 IsolationMergeBar / QueueEditor 之上')
+  const cardIdx = composer.indexOf('<div className="composer">')
+  const borderIdx = composer.indexOf('<ComposerBorder')
+  const attachIdx = composer.indexOf('<AttachmentStrip')
+  ok(
+    planIdx >= 0 && cardIdx < borderIdx && borderIdx < planIdx && planIdx < queueIdx && queueIdx < attachIdx,
+    '计划卡挂在输入框卡片内顶边之后，排队行紧随其后，都在附件条之前（和输入框连成一体，不再是框外独立卡片）'
+  )
 
   const planCard = await readFile(join(ROOT, 'src/renderer/src/features/composer/PlanCard.tsx'), 'utf8')
   ok(planCard.includes("s.todos") && !planCard.includes('peekedSessionId'), '计划卡只读当前会话的 store.todos（不自行跨会话取数据）')
@@ -192,8 +202,11 @@ async function main() {
   ok(planCard.includes('todoHistory') && planCard.includes('userMessageCount') && planCard.includes('round'), '标题的「早于上一条消息」判断比较 todoHistory 的 round 与当前用户消息数')
   ok(planCard.includes("t('plan.stale')") && planCard.includes("t('plan.title'"), '按是否过期在两种标题间切换')
   ok(planCard.includes('aria-expanded') && planCard.includes("type=\"button\""), '收起/展开用 button + aria-expanded，键盘可用')
-  ok(planCard.includes('scrollIntoView'), '自动滚动到当前进行中的那一项')
-  ok(planCard.includes('ResizeObserver') && planCard.includes('NARROW_WIDTH'), '窄屏时有默认收起的测量逻辑')
+  ok(planCard.includes('useState(readExpanded)') && planCard.includes("=== '1'"), '默认收成一行，只有记住的展开偏好才展开')
+  ok(planCard.includes('localStorage.setItem(PLAN_EXPANDED_STORAGE_KEY'), '展开状态记在 localStorage')
+  ok(planCard.includes('el.scrollTop =') && !planCard.includes('scrollIntoView'), '展开时只在卡内滚动对准当前项，不带动外层滚动')
+  ok(planCard.includes('onScroll') && planCard.includes('hidesRowsBelow'), '滚到底后取消底部渐隐')
+  ok(!planCard.includes('ResizeObserver') && !planCard.includes('NARROW_WIDTH'), '不再按宽度测量：任何宽度都默认收起')
 
   const view = await readFile(join(ROOT, 'src/renderer/src/features/todos/TodoTileView.tsx'), 'utf8')
   ok(view.includes("from 'lucide-react'"), '勾 / 省略号 / 虚线圆 / 受阻图标都来自 lucide（并非自绘控件外观）')
@@ -203,11 +216,19 @@ async function main() {
   ok(cssCode.includes('@layer features'), '专属 CSS 落在 features 层')
   ok(!cssCode.includes('text-decoration'), '完成项不加删除线')
   ok(!cssCode.includes('@import') && !cssCode.includes('.rp-') && !/styles\/|chat\.css/.test(cssCode), 'CSS 只做版面，不引 v2 样式、不回写 v2 类名')
+  ok(!cssCode.includes('var(--ok)'), '完成勾不再用成功绿')
+  ok(/\[data-kind='done'\] \.v3-todo-mark \{\s*color: var\(--fg2\)/.test(cssCode) && /\[data-kind='done'\] \.v3-todo-mark circle \{\s*fill: currentColor/.test(cssCode), '完成勾是次级灰的单色实心勾')
+  ok(/\[data-kind='running'\] \.v3-todo-mark \{\s*color: var\(--run\);\s*\}/.test(cssCode) && !cssCode.includes('animation'), '进行中保留运行蓝、不加呼吸动画')
+  ok(/\[data-kind='blocked'\] \.v3-todo-mark \{\s*color: var\(--fail\)/.test(cssCode), '受阻仍用警示色')
 
   const planCss = await readFile(join(ROOT, 'src/renderer/src/features/composer/plan-card.css'), 'utf8')
   ok(planCss.includes('@layer features'), '计划卡外壳 CSS 落在 features 层')
-  ok(planCss.includes('max-height') && planCss.includes('overflow-y: auto'), '最多约六行高度，超出卡内滚动')
+  ok(/\.plan-card \{[^}]*margin: calc\(-1 \* var\(--s-8\)\) calc\(-1 \* var\(--s-8\)\)/.test(planCss), '计划行铺满输入框卡片的上沿和两侧')
+  ok(/\.plan-card \{[^}]*border-bottom: 1px solid var\(--line\)/.test(planCss), '计划行和输入区之间只有一条细分隔线')
+  ok(!/\.plan-card \{[^}]*(background|border-radius|border:)/.test(planCss), '计划行没有自己的底色、外框和圆角（沿用输入框的）')
+  ok(/max-height: calc\(4\.5 \*/.test(planCss) && planCss.includes('overflow-y: auto'), '展开时最多约四行高度，超出卡内滚动')
   ok(planCss.includes('mask-image'), '底部渐隐用 mask-image')
+  ok(!planCss.includes('animation') && !planCss.includes('transition'), '计划行没有动效，不需要另做 reduced-motion 分支')
 
   const zhI18n = JSON.parse(await readFile(join(ROOT, 'src/renderer/src/i18n/zh-CN.json'), 'utf8'))
   const enI18n = JSON.parse(await readFile(join(ROOT, 'src/renderer/src/i18n/en-US.json'), 'utf8'))

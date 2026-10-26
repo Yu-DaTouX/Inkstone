@@ -12,7 +12,7 @@
   const retrying = () => q('[data-testid="v3-turn-activity"][data-kind="retry"]')
   const border = () => q('[data-testid="composer-border"]')
   const runningTool = (tool, target) =>
-    [q(`.v3-step[data-state="running"][data-tool="${tool}"]`), q('[data-testid="v3-process"] .v3-process-label')]
+    [q(`.v3-step[data-state="running"][data-tool="${tool}"]`), q('[data-testid="v3-process-toggle"]')]
       .find((el) => (el?.textContent ?? '').includes(target))
   const user = { id: 'working-probe-u', role: 'user', text: '跑一下', timestamp: Date.now() - 3000 }
   const setState = (sessionPatch, assistant) => {
@@ -42,6 +42,12 @@
     setState({ isStreaming: true, isAgentRunning: true }, { text: '流式输出' })
     ok(await until(() => border()?.dataset.state === 'working'), '正文流时输入框顶边处于忙碌态', border()?.dataset.phase ?? '')
     ok(await until(() => working()?.dataset.working === 'responding'), '正文流时工作行显示作答阶段', working()?.textContent ?? '')
+    const placeholder = () => q('[data-testid="composer-input"]')?.getAttribute('data-placeholder') ?? ''
+    ok(await until(() => placeholder().includes('Ctrl+Q') && !placeholder().includes('Alt+Enter')), '运行中占位只写「Enter 插话 · Ctrl+Q 排队」', placeholder())
+    const picker = q('[data-testid="model-picker"]')
+    ok(!!picker && getComputedStyle(picker).opacity === '1', '运行中模型名保持常态，不变灰', picker ? getComputedStyle(picker).opacity : '')
+    const arc = q('.composer .ctx-ring-arc')
+    ok(!arc || (getComputedStyle(arc).animationName === 'none' && getComputedStyle(arc.closest('svg')).animationName === 'none'), '运行中上下文环不转动')
 
     setState({ isStreaming: false, isAgentRunning: true }, {
       toolCalls: [{ id: 'working-probe', name: 'bash', args: { command: 'echo probe' }, status: 'running' }]

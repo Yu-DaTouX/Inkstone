@@ -385,6 +385,36 @@ async function main() {
     ok(textOf(failedStat[0]).includes('tool.wsFailed') && textOf(failedStat[0]).includes('n=2'), '独立失败状态带上失败总数', textOf(failedStat[0]))
   }
 
+  group('R02：已恢复的轮次不再警示，分组汇总跟着转灰，单条失败命令仍标红')
+  {
+    toolExpansion.clear()
+    const tools = [
+      tool({ id: 'r1', name: 'bash', args: { command: 'a' } }),
+      tool({ id: 'r2', name: 'bash', args: { command: 'b' }, status: 'error', output: 'TS2322' }),
+      tool({ id: 'r3', name: 'bash', args: { command: 'c' } })
+    ]
+    const render = (props) => {
+      const rt = makeHookRuntime()
+      const tree = renderComponent(rt, ToolSteps, { tools, ...props })
+      const g = renderSub(tree, 'ToolGroupRow')
+      const head = byTestId(g.tree, 'v3-step-group')
+      const stats = byTypeName(g.tree, 'ToolRunStats')[0]
+      const statsTree = renderComponent(makeHookRuntime(), stats.type, stats.props)
+      return { g, head, failedParts: collect(head, (el) => el.props && el.props['data-failed'] !== undefined), failedStat: collect(statsTree, (el) => el.props && el.props['data-kind'] === 'failed')[0] }
+    }
+    const alerting = render({})
+    ok(alerting.failedParts.length === 1, '默认仍警示：失败分段带 data-failed', alerting.failedParts.length)
+    ok(String(alerting.failedStat.props.className).includes('err'), '默认仍警示：失败数标红', alerting.failedStat.props.className)
+    const recovered = render({ alertFailures: false })
+    ok(recovered.failedParts.length === 0, '已恢复：汇总分段不带 data-failed', recovered.failedParts.length)
+    ok(recovered.failedStat && !String(recovered.failedStat.props.className).includes('err'), '已恢复：失败数仍显示但不标红', recovered.failedStat && recovered.failedStat.props.className)
+    ok(textOf(recovered.failedStat).includes('n=1'), '已恢复：失败数保留事实', textOf(recovered.failedStat))
+    recovered.head.props.onClick()
+    const opened = renderComponent(recovered.g.rt, recovered.g.el.type, recovered.g.el.props)
+    const failedNode = renderStepNode(opened, 'r2')
+    ok(failedNode.tree.props['data-state'] === 'error', '已恢复：单条失败命令仍带 error 状态，红字保留', failedNode.tree.props['data-state'])
+  }
+
   group('F04：待办调用默认不进入消息流，出错时仍显示')
   {
     toolExpansion.clear()
@@ -519,6 +549,29 @@ async function main() {
     const shortView = renderSub(renderSub(shortOpen, 'StepDetail').tree, 'StepOutput')
     ok(textOf(byTestId(shortView.tree, 'v3-step-output')).includes('one'), '短输出正常显示')
     ok(byTestId(shortView.tree, 'v3-step-output-toggle') === null, '短输出不给展开控件')
+  }
+
+  group('详情分节：bash 不重复写 Bash / 输出 小标题，有参数段时才分节标注')
+  {
+    const sectionHeads = (call) => {
+      const { tree } = renderStepsOpen([call])
+      const node = renderStepNode(tree, call.id)
+      byTestId(node.tree, 'v3-step').props.onClick()
+      const nodeOpen = renderComponent(node.rt, node.el.type, node.el.props)
+      const detail = renderSub(nodeOpen, 'StepDetail')
+      const heads = collect(detail.tree, (el) => el.props && el.props.className === 'v3-step-sec-head').map(textOf)
+      const secs = collect(detail.tree, (el) => el.props && el.props.className === 'v3-step-sec').map((el) => el.props['data-sec'])
+      return { heads, secs }
+    }
+    const bash = sectionHeads(tool({ id: 'sh-only', name: 'bash', args: { command: 'npm run typecheck' }, status: 'error', output: 'TS2322' }))
+    ok(bash.heads.length === 0, 'bash 只有命令与输出：两段都不写小标题', bash.heads)
+    ok(bash.secs.join() === 'command,output', 'bash 仍按命令、输出两段排列', bash.secs)
+    const extra = sectionHeads(tool({ id: 'sh-cwd', name: 'bash', args: { command: 'ls', cwd: 'C:/a' }, output: 'a.txt' }))
+    ok(extra.heads.join() === '参数,输出', 'bash 带额外参数：参数段与输出段保留小标题', extra.heads)
+    const read = sectionHeads(tool({ id: 'read-args', name: 'read', args: { path: 'a.md' }, output: 'hello' }))
+    ok(read.heads.join() === '参数,输出', '非 bash 工具有参数时仍分「参数 / 输出」', read.heads)
+    const bare = sectionHeads(tool({ id: 'bare-out', name: 'mystery', args: {}, output: 'only output' }))
+    ok(bare.heads.length === 0 && bare.secs.join() === 'output', '只有输出一段时不写小标题', bare)
   }
 
   group('英文文案同步（会话模块自有文案表）')

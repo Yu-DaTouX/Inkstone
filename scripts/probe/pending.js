@@ -188,11 +188,15 @@
     ok(await until(() => pendingRows().length === 1), '待定消息渲染成一行')
     const row = pendingRows()[0]
     ok((row?.textContent ?? '').includes('YAN-PENDING-HOLD'), '行里显示待投递文本')
+    const pillText = row?.querySelector('.cq-pill')?.textContent ?? ''
+    ok(/^(排队|Queued) · 1$/.test(pillText), '单条行首是「排队 · 1」胶囊', JSON.stringify(pillText))
+    ok(!/下一条|Next:/.test(row?.textContent ?? ''), '单条时不带「下一条」前缀')
     ok(!!q('[data-testid="queue-toggle"]') === false, '只有一条时不折叠成计数条')
-    ok(!!q('[data-testid="queue-clear-all"]'), '待定区带「全部清除」')
+    ok(!q('[data-testid="queue-clear-all"]'), '只有一条时不另起「全部清除」行，删除收在行菜单里')
     const idleMenu = await openPendingMenu()
     note(`空闲时行菜单 = ${JSON.stringify(idleMenu)}`)
     ok(idleMenu.includes('pending-follow') && idleMenu.includes('pending-restore'), '行菜单有「发送」与「撤回」')
+    ok(idleMenu.includes('pending-discard'), '行菜单有「删除」（直接丢弃，不回填草稿）')
     ok(!idleMenu.includes('pending-steer'), '回合没跑时没有「插话」项')
 
     out.push('')
@@ -255,11 +259,12 @@
     sent.length = 0
     store.getState().holdSend('YAN-PENDING-CLEAR')
     await until(() => pendingRows().length === 1)
-    q('[data-testid="queue-clear-all"]')?.click()
-    ok(await until(() => pending().length === 0 && pendingRows().length === 0), '全部清除直接丢弃待定条目')
+    await openPendingMenu()
+    clickMenuItem('pending-discard')
+    ok(await until(() => pending().length === 0 && pendingRows().length === 0), '行菜单「删除」直接丢弃待定条目')
     await sleep(200)
-    ok(!composer.text(editor()).includes('YAN-PENDING-CLEAR'), '全部清除不把文字放回输入框', JSON.stringify(composer.text(editor())))
-    ok(sent.length === 0, '全部清除不投递')
+    ok(!composer.text(editor()).includes('YAN-PENDING-CLEAR'), '删除不把文字放回输入框', JSON.stringify(composer.text(editor())))
+    ok(sent.length === 0, '删除不投递')
     for (const item of [...pending()]) store.getState().restoreSend(item.id)
     ok(await until(() => pending().length === 0 && pendingRows().length === 0), '待定区清空')
     composer.set('', editor())

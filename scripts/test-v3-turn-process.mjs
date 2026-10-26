@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary } = mod
+const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -223,6 +223,18 @@ group('每轮过程入口：摘要只数已有思考段与操作')
   ok(summary.failed === 1, '失败数来自已有工具状态', summary)
   const none = processSummary([seg('n0', { commentary: [text('c', '只有旁白')] })])
   ok(none.thinking === 0 && none.actions === 0 && none.failed === 0, '只有旁白时摘要为空，入口退回无标题的铺开', none)
+}
+
+group('过程行失败计数：只按回合最终状态决定是否标红')
+{
+  ok(processFailuresAlert({ terminalReason: 'completed' }, false) === false, '正常收尾：失败计数不标红')
+  ok(processFailuresAlert({}, false) === false, '没有终止记录且没有错误：按正常收尾处理')
+  ok(processFailuresAlert({ terminalReason: 'completed', error: '临时错误', errorRecovered: true }, false) === false, '中途报错后恢复并正常收尾：不标红')
+  ok(processFailuresAlert({ terminalReason: 'failed' }, false) === true, '以失败结束：标红')
+  ok(processFailuresAlert({ terminalReason: 'stopped' }, false) === true, '被中止：标红')
+  ok(processFailuresAlert({ terminalReason: 'interrupted' }, false) === true, '被中断：标红')
+  ok(processFailuresAlert({ error: '模型报错' }, false) === true, '以错误结束：标红')
+  ok(processFailuresAlert({ terminalReason: 'completed' }, true) === true, '运行中保持现状：失败计数仍标红')
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

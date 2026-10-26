@@ -75,7 +75,7 @@
       assistant({ thinking: '先看一下', thinkingLive: true })
     ])
     ok(await waitKind('thinking'), '工作行为 thinking', kind())
-    ok(/思考|Thinking/.test(text()), '文案写思考中', text())
+    ok(line()?.getAttribute('data-quiet') === 'true' && /进行中|In progress/.test(text()), '推理文字已在每轮过程里显示，工作行转为安静的「进行中」', text())
 
     out.push('')
     out.push('=== 4. 没有可见 thinking 就不假装在推理 ===')

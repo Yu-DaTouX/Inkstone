@@ -63,20 +63,28 @@
     await wait(350)
 
     out.push('')
-    out.push('--- 1. 底栏控件顺序 ---')
+    out.push('--- 1. 输入行与状态行控件顺序 ---')
+    const line = document.querySelector('.composer-line')
+    check(!!line, '输入行 .composer-line 存在')
+    const lineIds = () =>
+      [...(line?.querySelectorAll('[data-testid]') ?? [])]
+        .map((el) => el.getAttribute('data-testid'))
+        .filter((id) => ['composer-plus', 'composer-mode', 'composer-input', 'voice-start', 'composer-send', 'composer-stop'].includes(id))
+    check(lineIds()[0] === 'composer-plus' && lineIds()[1] === 'composer-input', `输入行：＋ → 输入（实际 ${JSON.stringify(lineIds())}）`)
+    check(['composer-send', 'composer-stop'].includes(lineIds().at(-1)), '发送 / 停止在输入行最末位')
+    check(!document.querySelector('.composer-prompt'), '输入行不再有 › 提示符')
     const bar = document.querySelector('.composer-bar')
-    check(!!bar, '底栏 .composer-bar 存在')
+    check(!!bar, '状态行 .composer-bar 存在')
+    check(bar?.parentElement?.lastElementChild === bar, '状态行在框内最底部')
     const tools = bar?.querySelector('.composer-tools')
-    check(!!tools, '左侧控件组 .composer-tools 存在')
-    check(bar?.firstElementChild === tools, '左侧控件组是底栏第一个子元素')
+    check(bar?.firstElementChild === tools, '左侧控件组是状态行第一个子元素')
     const leftIds = () =>
       [...(tools?.querySelectorAll('[data-testid]') ?? [])]
         .map((el) => el.getAttribute('data-testid'))
-        .filter((id) => ['composer-mode', 'permission-picker', 'composer-plus'].includes(id))
-    check(
-      JSON.stringify(leftIds()) === JSON.stringify(['permission-picker', 'composer-plus']),
-      `默认左侧顺序：权限 → ＋（实际 ${JSON.stringify(leftIds())}）`
-    )
+        .filter((id) => ['permission-picker', 'composer-project'].includes(id))
+    check(leftIds()[0] === 'permission-picker', `状态行左侧以权限开头（实际 ${JSON.stringify(leftIds())}）`)
+    const permLabel = document.querySelector('.composer-permission .cp-label')
+    check(!!permLabel && permLabel.getBoundingClientRect().width > 8, '权限文字可见')
     if (store.getState().messages.length === 0) {
       const peeked = store.getState().peekedSessionId
       store.setState({ peekedSessionId: null })
@@ -95,8 +103,8 @@
       '输入 ! 后出现 bash 模式徽标'
     )
     check(
-      JSON.stringify(leftIds()) === JSON.stringify(['composer-mode', 'permission-picker', 'composer-plus']),
-      `模式徽标排在最左（实际 ${JSON.stringify(leftIds())}）`
+      lineIds()[0] === 'composer-plus' && lineIds()[1] === 'composer-mode' && lineIds()[2] === 'composer-input',
+      `模式徽标作为输入前缀，紧跟＋（实际 ${JSON.stringify(lineIds())}）`
     )
     setValue(textarea, '')
 
@@ -105,18 +113,16 @@
         .filter((el) => el !== tools)
         .flatMap((el) => (el.matches('.composer-aux') ? [...el.children] : [el]))
         .map((el) => {
-          if (el.matches('.composer-voice')) return 'voice'
           if (el.matches('.ctx-ring-wrap')) return 'context'
           if (el.matches('.mtp-wrap')) return 'model'
-          if (el.matches('.composer-run')) return 'run'
-          if (el.matches('[data-testid="composer-send"]') || el.matches('[data-testid="composer-stop"]')) return 'send'
           return 'other:' + el.className
         })
     const right = rightLabels()
-    note(`右侧顺序：${right.join(' → ')}`)
-    check(right[0] === 'voice' && right[1] === 'context' && right[2] === 'model', '右侧前三位是 语音 → 上下文 → 模型+思考')
-    check(right.at(-1) === 'send', '发送 / 停止在右侧最末位')
-    check(!right.includes('run') || right.indexOf('run') === right.length - 2, '运行位（若显示）在模型与发送之间')
+    note(`状态行右侧顺序：${right.join(' → ')}`)
+    check(right.at(-1) === 'model', '模型+思考在状态行最右')
+    check(!right.includes('context') || right.indexOf('context') === right.length - 2, '上下文环（若显示）紧挨模型左侧')
+    const voice = line?.querySelector('.composer-line-end .composer-voice')
+    check(!!voice, '语音在输入行行尾、发送左侧')
 
     out.push('')
     out.push('--- 2. 发送 · 停止切换 ---')
@@ -150,6 +156,8 @@
         ...(snap.session ?? {}),
         sessionId: snap.session?.sessionId ?? '__v3-composer-probe__',
         thinkingLevel: 'medium',
+        thinkingLevelsStatus: 'known',
+        availableThinkingLevels: LEVELS,
         isAgentRunning: false,
         isCompacting: false,
         isStreaming: false

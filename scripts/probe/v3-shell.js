@@ -59,7 +59,7 @@
     check(document.querySelectorAll('.wb-pane').length === 0, '默认关闭的工作区没有提前挂载叶子')
     const runsSnapshot = await window.yan.runs.snapshot()
     check(Number.isInteger(runsSnapshot.revision) && Array.isArray(runsSnapshot.runs), '正式运行快照 IPC 可用，未以渲染端伪造状态替代')
-    const sidebarWidth = query('v3-sidebar').getBoundingClientRect().width
+    const sidebarWidth = document.querySelector('.v3-main').getBoundingClientRect().left
     check(Math.abs(sidebarWidth - 288) <= 2, `默认侧栏宽度 ${sidebarWidth.toFixed(1)}px（参考默认 288）`)
     check(document.documentElement.scrollWidth <= innerWidth + 1, '默认宽度无页面横向溢出')
     check(!getComputedStyle(document.body).fontFamily.toLowerCase().includes('maple'), 'v3 不以随包 Maple 字体排版')
@@ -74,18 +74,22 @@
     check(aligned(document.querySelector('.mtp-trigger'), '.mtp-model'), '模型按钮图标与标签在同一行')
     check(aligned(document.querySelector('.composer-permission'), '.cp-label'), '权限按钮图标与标签在同一行')
 
-    const headerSettings = query('v3-header-settings')
-    check(!!headerSettings, '设置入口存在')
-    headerSettings?.click()
+    check(!query('v3-header-settings') && !document.querySelector('.v3-head-sep'), '顶栏不再单放设置按钮，也没有分隔线')
+    const headIcons = document.querySelectorAll('.v3-head-actions .ui-icon-btn').length
+    check(headIcons <= 7, `顶栏除窗口控件外 ${headIcons} 个图标（不超过 7）`)
+    check(!query('v3-nav-new-chat') && !!query('v3-new-chat') && !!query('v3-nav-new-chat-folder'), '左栏没有重复的「新建会话」行，保留顶部新建图标与「打开项目…」')
+    const sideSettings = query('v3-side-settings')
+    check(!!sideSettings, '左栏页脚设置入口存在')
+    sideSettings?.click()
     check(await until(() => query('settings-root')), '设置弹层打开')
     query('v3-settings-nav-appearance')?.click()
     check(await until(() => query('v3-theme-light')), '设置导航进入外观分区')
     query('v3-theme-light')?.click()
     check(await until(() => document.documentElement.dataset.theme === 'light'), '可切换浅色主题')
-    const lightBg = getComputedStyle(document.body).backgroundColor
+    const lightBg = getComputedStyle(document.querySelector('.v3-main') ?? document.body).backgroundColor
     query('v3-theme-dark')?.click()
     check(await until(() => document.documentElement.dataset.theme === 'dark'), '可切换深色主题')
-    check(lightBg !== getComputedStyle(document.body).backgroundColor, '亮暗主题实际背景不同')
+    check(lightBg !== getComputedStyle(document.querySelector('.v3-main') ?? document.body).backgroundColor, '亮暗主题实际背景不同')
     const asciiToggle = query('v3-ascii-background-toggle')
     check(!!asciiToggle, '外观分区有动态背景开关')
     const asciiSwitch = () => query('v3-ascii-background-toggle')?.querySelector('input[role="switch"]')
@@ -96,13 +100,22 @@
     check(asciiSwitch()?.checked === false, '关闭后内部输入不再选中')
     check(await closeSettings(), '可返回会话')
     check(await until(() => !query('v3-ascii-field')), '关掉开关后空态不再挂载 ASCII 背景')
-    query('v3-header-settings')?.click()
+    query('wb-more-tools')?.click()
+    check(await until(() => !!query('v3-menu-settings') && !!query('v3-always-on-top')), '顶栏 ⋮ 菜单含窗口置顶与设置')
+    query('v3-menu-settings')?.click()
     check(await until(() => query('v3-ascii-background-toggle')), '再次打开设置回到上次的外观分区')
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === false, 2000), '恢复前确认开关实际已关闭（主进程回显 false）')
     asciiSwitch()?.click()
     check(await untilAsync(async () => (await window.yan.getSettings()).asciiBackground === undefined), '开回来只回落缺省，不写 true')
     check(await closeSettings(), '返回会话')
     check(await until(() => !!query('v3-ascii-field')), '恢复缺省后空态重新挂载 ASCII 背景')
+    if (!query('v3-schedule-entry')) query('v3-side-more')?.click()
+    check(await until(() => ['v3-schedule-entry', 'v3-collab-entry', 'v3-artifacts-entry'].every((id) => !!query(id))), '左栏「更多」收着定时任务、多人协作与 Artifact')
+    query('v3-schedule-entry')?.click()
+    check(await until(() => !!query('v3-back') && !query('v3-side-more-menu')), '从「更多」进入定时任务页')
+    check(!query('v3-side-more') || query('v3-side-more').hasAttribute('data-selected'), '在收起的页面里时「更多」行呈选中态')
+    query('v3-back')?.click()
+    check(await until(() => !!query('composer-input')), '定时任务页可返回会话')
     const focusTrail = []
     const onFocusIn = (event) => focusTrail.push(`${event.target?.tagName}:${event.target?.getAttribute?.('data-testid') ?? ''}`)
     document.addEventListener('focusin', onFocusIn, true)
@@ -328,7 +341,7 @@
     }
 
     {
-      const shotSettings = query('v3-header-settings')
+      const shotSettings = query('v3-side-settings')
       shotSettings?.click()
       await until(() => !!query('settings-root'), 5000)
       query('v3-settings-nav-appearance')?.click()

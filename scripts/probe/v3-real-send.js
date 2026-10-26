@@ -110,8 +110,8 @@
     check(await until(() => runningNow(store.getState()), 45000), '第二条进入运行中')
     const stopShown = await until(() => !!q('composer-stop') && !q('composer-send'), 45000)
     check(stopShown, '运行中 + 空输入 → 同位显示停止')
-    const bar = document.querySelector('.composer-bar')
-    check(!!bar && bar.lastElementChild === q('composer-stop'), '停止键位于底栏最右侧（与发送同位置）')
+    const lineEnd = document.querySelector('.composer-line-end')
+    check(!!lineEnd && lineEnd.lastElementChild === q('composer-stop'), '停止键位于输入行最右侧（与发送同位置）')
     check(sessionRunning(store.getState()) && runnerRunning(store.getState()), '点击停止前 runner 与 session 都为运行中')
 
     q('composer-stop')?.click()

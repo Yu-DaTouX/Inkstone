@@ -591,6 +591,68 @@ async function main() {
     ok(nullMds.every((el) => typeof el.props.messageId === 'string' && el.props.messageId.length > 0), '身份未知时仍传真实 messageId', nullMds.map((el) => el.props.messageId))
   }
 
+  group('TurnView 元信息：最后一轮常亮，历史轮只在悬停或聚焦时显示')
+  {
+    const turn = assistantOf(baseMessages())
+    const metaOf = (props) => {
+      const tree = renderTurn(turn, { sessionId: 'sess-a', streaming: false, ...props })
+      const el = byTypeName(tree, 'TurnMeta')[0]
+      return { el, root: el ? rt.render(el.type, el.props) : null }
+    }
+    const last = metaOf({ tail: true })
+    ok(last.el?.props.pinned === true && last.root?.props['data-testid'] === 'v3-turn-meta' && last.root.props['data-reveal'] === undefined, '最后一轮：元信息常亮', last.root?.props['data-reveal'])
+    const history = metaOf({ tail: false })
+    ok(history.el?.props.pinned === false && history.root?.props['data-reveal'] === 'hover', '历史轮：元信息改为悬停显示（仍渲染，占位保留）', history.root?.props['data-reveal'])
+    const unordered = metaOf({})
+    ok(unordered.el?.props.pinned === true, '调用方不区分末轮时：保持常亮', unordered.el?.props.pinned)
+    for (const reason of ['stopped', 'interrupted']) {
+      const tree = renderTurn({ ...turn, terminalReason: reason }, { sessionId: 'sess-a', streaming: false, tail: false })
+      const el = byTypeName(tree, 'TurnMeta')[0]
+      const root = el ? rt.render(el.type, el.props) : null
+      ok(root?.props['data-reveal'] === undefined, `历史轮以 ${reason} 结束：元信息带终止状态，保持常亮`, root?.props['data-reveal'])
+    }
+    const completed = renderTurn({ ...turn, terminalReason: 'completed' }, { sessionId: 'sess-a', streaming: false, tail: false })
+    const completedEl = byTypeName(completed, 'TurnMeta')[0]
+    ok((completedEl ? rt.render(completedEl.type, completedEl.props) : null)?.props['data-reveal'] === 'hover', '历史轮正常收尾：仍然悬停才显示')
+    const live = renderTurn(turn, { sessionId: 'sess-a', streaming: true, tail: true })
+    ok(byTypeName(live, 'TurnMeta').length === 0, '运行中的回合不渲染元信息行（保持现状）')
+  }
+
+  group('过程行：不写「过程」前缀，失败计数按回合最终状态着色')
+  {
+    const failedMessages = () => [
+      msg('u1', 'user', '跑检查', { timestamp: 1 }),
+      msg('a1', 'assistant', '先跑类型检查', {
+        timestamp: 2,
+        toolCalls: [
+          { id: 'f1', name: 'bash', args: { command: 'npm run typecheck' }, status: 'error', output: 'TS2322' },
+          { id: 'f2', name: 'bash', args: { command: 'npm run typecheck' }, status: 'done', output: 'ok' }
+        ]
+      }),
+      msg('a2', 'assistant', '改好了', { timestamp: 3 })
+    ]
+    const base = assistantOf(failedMessages())
+    const processOf = (turn, streaming = false) => {
+      const tree = renderTurn(turn, { sessionId: 'sess-a', streaming, tail: true })
+      const el = byTypeName(tree, 'TurnProcess')[0]
+      const body = el ? rt.render(el.type, el.props) : null
+      const failed = body ? collect(body, (node) => node.props?.['data-testid'] === 'v3-process-failed')[0] : null
+      const toggle = body ? collect(body, (node) => node.props?.['data-testid'] === 'v3-process-toggle')[0] : null
+      return { el, body, failed, toggle }
+    }
+    const done = processOf({ ...base, terminalReason: 'completed' })
+    ok(!!done.toggle && collect(done.toggle, (node) => String(node.props?.className ?? '').includes('v3-process-label')).length === 0, '过程入口不再带「过程」前缀')
+    const firstPart = done.toggle ? [].concat(done.toggle.props.children).flat().find((child) => child && typeof child === 'object') : null
+    ok(firstPart?.props?.className === 'v3-process-count', '入口第一项就是计数', firstPart?.props?.className)
+    ok(done.el?.props.alertFailures === false && !!done.failed && !String(done.failed.props.className).includes('err'), '正常收尾：失败计数用次级文字色，不标红', done.failed?.props.className)
+    const failed = processOf({ ...base, terminalReason: 'failed' })
+    ok(failed.el?.props.alertFailures === true && String(failed.failed?.props.className).includes('err'), '以失败结束：失败计数标红', failed.failed?.props.className)
+    const stopped = processOf({ ...base, terminalReason: 'stopped' })
+    ok(String(stopped.failed?.props.className).includes('err'), '被中止：失败计数标红', stopped.failed?.props.className)
+    const errored = processOf({ ...base, error: '模型报错' })
+    ok(String(errored.failed?.props.className).includes('err'), '以错误结束：失败计数标红', errored.failed?.props.className)
+  }
+
   group('TurnView 生图进度：只有仍在生成的图片用回退提示')
   {
     const live = baseMessages()

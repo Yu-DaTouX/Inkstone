@@ -70,7 +70,7 @@
     queued.length + enteredEarly.length >= 1,
     `消息在排队通道里（队列 ${queued.length} 条 / 已进对话 ${enteredEarly.length} 条）`
   )
-  ok(!!q('[data-testid="queue-stack"]') || enteredEarly.length > 0, '队列行显示在输入框上方（或已被取走）')
+  ok(!!q('[data-testid="queue-stack"]') || enteredEarly.length > 0, '队列行显示在输入框里（或已被取走）')
 
   out.push('')
   out.push('=== 被接收的插话从“排队中”消失（D9）===')

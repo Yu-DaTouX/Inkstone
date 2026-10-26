@@ -57,8 +57,24 @@ function tokenColor(name, mode, base) {
   return over(raw, tokenColor(base, mode))
 }
 
+function rawToken(name, mode) {
+  const alpha = /^alpha-(\d+)$/.exec(name)
+  if (alpha) return parseColor(`rgba(${tokens.alphaInk[mode === 'light' ? 0 : 1]},${tokens.alpha[Number(alpha[1])]})`)
+  return parseColor(tokens.color[name][mode === 'light' ? 0 : 1])
+}
+
 function bgColor(spec, mode) {
-  return typeof spec === 'string' ? tokenColor(spec, mode) : tokenColor(spec.tint, mode, spec.over)
+  if (typeof spec === 'string') return tokenColor(spec, mode)
+  if (spec.backdrop) return parseColor(spec.backdrop[mode])
+  if (typeof spec.over === 'string') return tokenColor(spec.tint, mode, spec.over)
+  const raw = rawToken(spec.tint, mode)
+  return raw.a >= 1 ? raw : over(raw, bgColor(spec.over, mode))
+}
+
+function bgLabel(spec) {
+  if (typeof spec === 'string') return spec
+  if (spec.backdrop) return spec.name
+  return `${spec.tint}@${bgLabel(spec.over)}`
 }
 
 const MAIN_BASES = [
@@ -99,9 +115,32 @@ const SEL_BASES = [
   { tint: 'sel', over: 'bg' },
   { tint: 'sel', over: 'side' }
 ]
+const GLASS_BASES = [
+  { tint: 'side-glass', over: 'bg' },
+  { tint: 'side-glass', over: 'ink' }
+]
+add('fg', GLASS_BASES, 4.5, true, '正文·悬停预览玻璃')
+add('fg2', GLASS_BASES, 4.5, true, '次要文字·悬停预览玻璃')
+add('fg3', GLASS_BASES, 4.5, true, '元信息·悬停预览玻璃')
+add('accent-t', GLASS_BASES, 4.5, true, '链接·悬停预览玻璃')
+
+const ACRYLIC_WORST = { backdrop: { light: '#828282', dark: '#939393' }, name: '亚克力最坏' }
+const ACRYLIC_PANEL = { tint: 'side-tint', over: ACRYLIC_WORST }
+const ACRYLIC_ROWS = [
+  { tint: 'alpha-1', over: ACRYLIC_PANEL },
+  { tint: 'alpha-2', over: ACRYLIC_PANEL },
+  { tint: 'hover', over: ACRYLIC_PANEL }
+]
+add('fg', [ACRYLIC_PANEL, ...ACRYLIC_ROWS], 4.5, true, '正文·左栏亚克力最坏背景')
+add('fg2', [ACRYLIC_PANEL, ...ACRYLIC_ROWS], 4.5, true, '次要文字·左栏亚克力最坏背景')
+add('fg3', [ACRYLIC_PANEL], 4.5, true, '元信息·左栏亚克力最坏背景')
+add('fg3', ACRYLIC_ROWS, 4.5, false, '元信息·左栏亚克力最坏背景·选中行')
+add('accent-t', [ACRYLIC_PANEL, ACRYLIC_ROWS[0]], 4.5, true, '链接·左栏亚克力最坏背景')
+
 add('fg', SEL_BASES, 4.5, true, '正文·选中')
 add('fg2', SEL_BASES, 4.5, true, '次要文字·选中')
 add('accent-t', SEL_BASES, 4.5, true, '链接·选中')
+add('fg', [{ tint: 'press', over: 'bg' }, { tint: 'press', over: 'side' }], 4.5, true, '图标·中性按下')
 
 add('accent', ['bg', 'side', 'surface', 'surface-3', 'bubble'], 3, true, '焦点环', 'nontext')
 add('git-add', ['bg', 'side', 'surface'], 3, true, 'git 新增计数', 'nontext')
@@ -127,7 +166,7 @@ for (const mode of MODES) {
     const fg = raw.a < 1 ? over(raw, bg) : raw
     const ratio = contrast(fg, bg)
     const pass = ratio >= c.min
-    const bgName = typeof c.bg === 'string' ? c.bg : `${c.bg.tint}@${c.bg.over}`
+    const bgName = bgLabel(c.bg)
     results.push({
       mode,
       id: c.kind === 'nontext' ? `${c.note} [${c.fg} on ${bgName}]` : `${c.fg} on ${bgName}`,

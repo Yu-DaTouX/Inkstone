@@ -58,6 +58,8 @@
     await stage('picker')
     q('model-picker').click();await wait(100)
     if(document.querySelector('.mtp-pop'))out.push('    诊断：再点模型按钮后浮层仍在')
+    if(!q('v3-schedule-entry'))q('v3-side-more')?.click()
+    await until(()=>!!q('v3-schedule-entry'),2000)
     q('v3-schedule-entry').click()
     await until(()=>!!document.querySelector('.sched-page-head')&&!!document.querySelector('.sched-page-notice'),4000)
     const head=document.querySelector('.sched-page-head'),notice=document.querySelector('.sched-page-notice')
@@ -65,6 +67,8 @@
     check(aligned,'定时任务标题与说明对齐')
     if(!aligned)out.push(`    诊断：head=${head?.getBoundingClientRect().left} notice=${notice?.getBoundingClientRect().left} hash=${location.hash} page=${!!q('v3-schedule-page')}`)
     await stage('schedule')
+    q('wb-more-tools')?.click()
+    await until(()=>!!q('v3-always-on-top'),2000)
     const pin=q('v3-always-on-top'),wasTop=(await window.yan.getSettings()).alwaysOnTop===true
     pin.click()
     const toggled=await untilAsync(async()=>((await window.yan.getSettings()).alwaysOnTop===true)!==wasTop,3000)

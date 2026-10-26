@@ -184,6 +184,8 @@ async function main() {
   ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?scale:\s*none/.test(pickerCss), 'reduced-motion 下光标不放大')
   ok(pickerCss.includes('prefers-reduced-motion: reduce') && /\.mtp-step-value\s*\{\s*animation:\s*none;/.test(pickerCss), 'reduced-motion 下关闭档位切换动画')
   ok(pickerCss.includes('var(--think-'), '档位色引用 --think-*')
+  ok(/\n\s*\.mtp-level\s*\{[^}]*color:\s*var\(--fg2\)/.test(pickerCss) && !/\.mtp-level\[data-level/.test(pickerCss), '输入框里的档位字是次级灰，不按档位染色（档位色只留在输入框顶边）')
+  ok(/\.mtp-trigger\[data-disabled\]\s*\{\s*opacity:\s*1;/.test(pickerCss), '运行中模型名保持常态，不变灰')
   ok(!pickerCss.includes('@import'), '选择器 CSS 不 @import（尤其不引 v2 样式）')
   ok(composerCss.includes('--think-max') && composerCss.includes('.cborder'), '输入框顶边与档位色在 composer 专属 CSS 里派生')
   ok(composerCss.includes('prefers-reduced-motion: reduce') && /\.cborder\s*\{\s*transition:\s*none;/.test(composerCss), 'reduced-motion 下顶边换色无过渡')

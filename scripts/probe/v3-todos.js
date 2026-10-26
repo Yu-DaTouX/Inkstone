@@ -23,6 +23,27 @@
   const planTitle = () => planCard()?.querySelector('.plan-card-title')
   const planToggle = () => q('plan-card-toggle')
   const store = window.__yanStore
+  const PREF_KEY = 'inkstone.v3.planCard.expanded'
+  const readPref = () => {
+    try {
+      return localStorage.getItem(PREF_KEY)
+    } catch {
+      return null
+    }
+  }
+  const savedPref = readPref()
+  const tokenColor = (name) => {
+    const el = document.createElement('span')
+    el.style.color = `var(${name})`
+    document.body.appendChild(el)
+    const color = getComputedStyle(el).color
+    el.remove()
+    return color
+  }
+  const ensureExpanded = async (want) => {
+    if ((planToggle()?.getAttribute('aria-expanded') === 'true') !== want) planToggle()?.click()
+    return until(() => planToggle()?.getAttribute('aria-expanded') === String(want))
+  }
 
   const FIXTURE_TODOS = [
     { text: '读 spec 并确认范围', done: true },
@@ -33,7 +54,7 @@
   const PROBE_SID = '__v3-todos-probe__'
 
   try {
-    out.push('=== v3 计划卡（停靠在输入框上方，隔离探针）===')
+    out.push('=== v3 计划行（输入框卡片内第一行，隔离探针）===')
     check(
       await until(() => document.documentElement.dataset.ui === 'v3' && q('v3-sidebar'), 8000),
       'v3 外壳已挂载'
@@ -88,11 +109,38 @@
     }
 
     out.push('')
-    out.push('--- 1. 计划卡出现 / 标题计数 / 四态图标 ---')
+    out.push('--- 1. 计划行与输入框连成一体 / 默认一行 / 四态图标 ---')
     setPlan(FIXTURE_TODOS, { running: true })
-    check(await until(() => !!planCard()), '有待办时输入框上方出现计划卡（plan-card）')
-    check((planTitle()?.textContent ?? '').replace(/\s+/g, '') === '计划2/4', `标题「计划 2/4」（实际 ${JSON.stringify(planTitle()?.textContent)}）`)
-    check(planToggle()?.getAttribute('aria-expanded') === 'true', '默认展开（aria-expanded=true）')
+    check(await until(() => !!planCard()), '有待办时输入框顶部出现计划行（plan-card）')
+    const card = planCard()?.closest('.composer')
+    check(!!card && planCard()?.parentElement === card, '计划行在输入框卡片内（不是框外独立卡片）')
+    check(planCard()?.previousElementSibling?.classList.contains('cborder') === true, '计划行是卡片内第一行（只在顶边之后）')
+    if (card) {
+      const cardBox = card.getBoundingClientRect()
+      const planBox = planCard().getBoundingClientRect()
+      const edge = parseFloat(getComputedStyle(card).borderTopWidth) || 0
+      check(Math.abs(planBox.top - (cardBox.top + edge)) <= 1, `计划行贴住卡片上沿、没有缝（差 ${(planBox.top - cardBox.top - edge).toFixed(1)}px）`)
+      check(Math.abs(planBox.left - (cardBox.left + edge)) <= 1 && Math.abs(cardBox.right - edge - planBox.right) <= 1, '计划行铺满卡片宽度，分隔线左右到边')
+      check(getComputedStyle(planCard()).backgroundColor === 'rgba(0, 0, 0, 0)', '计划行没有自己的底色（沿用输入框底色）')
+      const planBorder = parseFloat(getComputedStyle(planCard()).borderBottomWidth)
+      check(Math.abs(planBorder - 1) < 0.01 || Math.abs(planBorder - 1 / devicePixelRatio) < 0.01, `计划行与输入区之间只有一条 1px 分隔线（按设备像素取整，实际 ${planBorder.toFixed(3)}px）`)
+    }
+    if (savedPref === null) {
+      check(planToggle()?.getAttribute('aria-expanded') === 'false', '没有记住的偏好时默认收成一行（aria-expanded=false）')
+    } else {
+      note(`已有记住的展开偏好 ${savedPref}，跳过默认收起断言`)
+    }
+    check(await ensureExpanded(false), '收起态可达')
+    check(!q('plan-card-scroll'), '收起时没有清单滚动容器（只剩一行）')
+    check(
+      await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && (planTitle()?.textContent ?? '').includes('正在：把渲染端')),
+      `收起态一行为「计划 2/4 · 正在：<当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
+    )
+    const head = planToggle()
+    check(head?.tagName === 'BUTTON' && head.getAttribute('type') === 'button', '标题行是原生按钮，可 Tab 聚焦，Enter/Space 切换')
+    check(await ensureExpanded(true), '点标题展开')
+    check(readPref() === '1', '展开状态写入 localStorage')
+    check((planTitle()?.textContent ?? '').replace(/\s+/g, '') === '计划2/4', `展开后标题只剩「计划 2/4」（实际 ${JSON.stringify(planTitle()?.textContent)}）`)
     check(!!q('plan-card-scroll'), '展开时有清单滚动容器（plan-card-scroll）')
     const rows = qa('v3-todo-row')
     check(rows.length === 4, `渲染 4 行（实际 ${rows.length}）`)
@@ -110,6 +158,12 @@
       !!doneText && !!pendingText && getComputedStyle(doneText).color === getComputedStyle(pendingText).color,
       '各状态行文字颜色统一（只靠图标区分状态）'
     )
+    const doneMark = rows[0]?.querySelector('.v3-todo-mark')
+    const runningMark = rows[2]?.querySelector('.v3-todo-mark')
+    check(!!doneMark && getComputedStyle(doneMark).color === tokenColor('--fg2'), '完成勾是次级灰（不再是成功绿）')
+    check(!!doneMark && getComputedStyle(doneMark.querySelector('circle')).fill !== 'none', '完成勾是实心勾')
+    check(!!runningMark && getComputedStyle(runningMark).color === tokenColor('--run'), '进行中保留运行蓝')
+    check(!!runningMark && getComputedStyle(runningMark).animationName === 'none', '进行中图标不呼吸')
 
     out.push('')
     out.push('--- 2. 受阻行 ---')
@@ -155,10 +209,13 @@
     planToggle()?.click()
     check(await until(() => planToggle()?.getAttribute('aria-expanded') === 'false'), '点标题收起（aria-expanded=false）')
     check(!q('plan-card-scroll'), '收起后清单滚动容器不存在（只剩标题行）')
+    check(readPref() === '0', '收起状态写入 localStorage')
     check(
       await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && (planTitle()?.textContent ?? '').includes('正在：')),
       `收起态标题为「计划 2/4 · 正在：<当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
     )
+    const collapsedHeight = planCard()?.getBoundingClientRect().height ?? 0
+    check(collapsedHeight > 0 && collapsedHeight <= 36, `收起态只占一行（${collapsedHeight.toFixed(1)}px）`)
     planToggle()?.click()
     check(await until(() => planToggle()?.getAttribute('aria-expanded') === 'true'), '再点可展开')
     check(!!q('plan-card-scroll'), '展开后清单滚动容器恢复')
@@ -174,8 +231,19 @@
     const scroll = q('plan-card-scroll')
     check(!!scroll && scroll.scrollHeight > scroll.clientHeight + 4, `内部可滚动（${scroll?.scrollHeight} > ${scroll?.clientHeight}）`)
     const maxHeight = scroll ? parseFloat(getComputedStyle(scroll).maxHeight) : NaN
-    check(Number.isFinite(maxHeight) && maxHeight <= 160, `高度上限约六行（${Number.isFinite(maxHeight) ? maxHeight + 'px' : 'n/a'}，不无限长高）`)
+    check(Number.isFinite(maxHeight) && maxHeight <= 120, `高度上限约四行（${Number.isFinite(maxHeight) ? maxHeight + 'px' : 'n/a'}，不无限长高）`)
     check(scroll?.getAttribute('data-overflow') === 'true', '超长清单标记 data-overflow=true（驱动底部渐隐）')
+    const activeRow = qa('v3-todo-row').find((r) => r.getAttribute('data-kind') === 'running')
+    if (scroll && activeRow) {
+      const top = activeRow.offsetTop - scroll.scrollTop
+      check(top >= 0 && top + activeRow.offsetHeight <= scroll.clientHeight, `展开时卡内对准当前项（相对顶部 ${top}px）`)
+    } else {
+      check(false, '超长清单里找到进行中项')
+    }
+    if (scroll) {
+      scroll.scrollTop = scroll.scrollHeight
+      check(await until(() => scroll.getAttribute('data-overflow') === 'false'), '滚到底后取消底部渐隐')
+    }
     check(await until(() => !!q('composer-input')), '超长清单下输入框仍挂载、未被顶飞')
     check(document.documentElement.scrollWidth <= innerWidth + 1, '无页面横向溢出')
 
@@ -202,7 +270,7 @@
     check(!document.querySelector('.v3-scrim'), '收起后没有浮层遮罩（宽窗不另开浮层）')
     const side = q('v3-sidebar')
     const gone = () => !side || getComputedStyle(side).display === 'none' || (getComputedStyle(side).visibility === 'hidden' && side.getBoundingClientRect().width < 1)
-    check(await until(gone, 3000), '收起动画结束后侧栏不占布局（隐藏且宽度 < 1px）')
+    check(await until(gone, 12000), '收起动画结束后侧栏不占布局（隐藏且宽度 < 1px）')
     if (!gone() && side) out.push(`    诊断：width=${side.getBoundingClientRect().width} visibility=${getComputedStyle(side).visibility}`)
     if (!collapsed) {
       out.push(`    诊断：data-side=${root()?.getAttribute('data-side')} narrow=${root()?.getAttribute('data-narrow')}`)
@@ -211,6 +279,12 @@
     out.push('证据范围：隔离注入的计划卡 DOM + 真实 Ctrl+B 按键；不代表真实模型或完整 v3 验收。')
   } catch (error) {
     out.push(`  ✗ 场景异常：${error?.stack ?? error}`)
+  } finally {
+    try {
+      if (savedPref === null) localStorage.removeItem(PREF_KEY)
+      else localStorage.setItem(PREF_KEY, savedPref)
+    } catch {
+    }
   }
   return out.join('\n')
 })()
