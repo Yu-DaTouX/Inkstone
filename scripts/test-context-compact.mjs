@@ -324,4 +324,18 @@ for (const [label, opts, expected] of [
   const again = await h.run()
   assert.equal(again.compaction.details.fastError, 'no-request', '压缩之后旧请求作废')
 }
+{
+  const tail = [{ role: 'assistant', content: [], usage: { input: 1_000, cacheRead: 362_000, cacheWrite: 0, output: 80 } }, { role: 'toolResult', content: [] }]
+  const est = mod.fastInputTokens(tail, '章'.repeat(30_000), 0.7, 370_000)
+  assert.ok(est > 363_000 + 21_000 && est < 363_000 + 25_000, '请求体按实际用量、新消息按会话比例估，不用 pi 偏低的估算')
+  assert.equal(mod.fastInputTokens([{ role: 'toolResult', content: [] }], 'x', 0.7, 370_000), 370_000, '没有实际用量时退回 tokensBefore')
+}
+{
+  const h = fastHarness(() => ok('摘要'), { tokensBefore: 300_000 })
+  tailMessage.usage = { input: 10_000, cacheRead: 380_000 }
+  h.request()
+  const result = await h.run()
+  delete tailMessage.usage
+  assert.equal(result.compaction.details.fastError, 'no-room', '实际请求已接近窗口时不走快速路径，哪怕 pi 估得偏低')
+}
 console.log('context-compact 测试通过')

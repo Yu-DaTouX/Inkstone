@@ -404,6 +404,15 @@ export function messagesAfter(branchEntries, mark) {
   return branchEntries.slice(at + 1).filter((e) => e?.type === 'message' && e.message).map((e) => e.message)
 }
 
+// 快速路径请求有多大：截到的请求体用紧随其后那条助手回复的实际用量，之后的新消息和指令按本会话的 token/字符比例估。
+// pi 的 tokensBefore 对新消息按 4 字符 1 token 估，中文会估低一截，不能直接用
+export function fastInputTokens(tail, tailText, ratio, tokensBefore) {
+  const u = tail?.find((m) => m?.role === 'assistant' && m.usage)?.usage
+  const sent = u ? (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) : 0
+  if (!(sent > 0)) return tokensBefore ?? Infinity
+  return sent + Math.ceil((tailText.length + FAST_PROMPT.length) * ratio)
+}
+
 const FAST_MIN_OUTPUT_TOKENS = 8_000
 const FAST_MARGIN_TOKENS = 4_000
 
@@ -486,13 +495,14 @@ export default function contextCompactExtension(pi) {
         : request.provider !== model.provider || request.id !== model.id ? 'model-changed'
         : !tail ? 'stale'
         : undefined
-      const fastMax = Math.min(maxTokens, window - (preparation.tokensBefore ?? window) - FAST_MARGIN_TOKENS)
+      const tailText = tail ? tail.map((m) => serializeMessage(m)).filter(Boolean).join('\n\n') : ''
+      const fastInput = fastInputTokens(tail, tailText, ratio, preparation.tokensBefore)
+      const fastMax = Math.min(maxTokens, window - fastInput - FAST_MARGIN_TOKENS)
       if (!fastError && fastMax < FAST_MIN_OUTPUT_TOKENS) fastError = 'no-room'
       if (!fastError) {
         const fastStart = Date.now()
         calls++
         try {
-          const tailText = tail.map((m) => serializeMessage(m)).filter(Boolean).join('\n\n')
           const result = await summarizeFast(ctx, model, request, tailText, customInstructions, fastMax, signal)
           usage = addUsage(usage, result.usage)
           summary = result.summary
