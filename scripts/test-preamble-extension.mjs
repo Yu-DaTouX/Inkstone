@@ -36,7 +36,7 @@ export async function runPreambleExtensionTests(ok, mod) {
   {
     const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
     const sections = {}
-    const promptGuidelines = ['Existing rule', WORK_RULES[1]]
+    const promptGuidelines = ['Existing rule', WORK_RULES[0]]
     const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections, promptGuidelines } }, {})
     ok(result === undefined, '有具名分区时不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
     ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs?.includes('C:\\pi\\README.md'), '进展约定与压缩文档写进具名分区')
@@ -52,6 +52,7 @@ export async function runPreambleExtensionTests(ok, mod) {
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
   }
   ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('Work quietly') && PROGRESS_GUIDANCE.includes('Do not narrate routine steps') && PROGRESS_GUIDANCE.includes('Inkstone internals') && !PROGRESS_GUIDANCE.includes('After each batch of tool calls'), '进展约定：安静干活，只在关键节点说话，不讲砚内部机制，尊重静默要求')
-  ok(/requested change is made and the relevant tests or checks pass, stop and report; do not re-read, refactor or re-verify unchanged code/.test(WORK_RULES[0]) && !PROGRESS_GUIDANCE.includes('stop and report') && !PROGRESS_GUIDANCE.includes('editing to verifying') && PROGRESS_GUIDANCE.includes('claiming only what you observed'), '改完且检查通过就收尾单独成一条规则，进展约定仍只声称观察到的结果')
-  ok(/every case.*exit non-zero.*first failure/.test(WORK_RULES[1]) && /\| tail.*\| head.*exit code/.test(WORK_RULES[2]) && /whole files or large ranges.*parallel/.test(WORK_RULES[3]), '工作规则：检查脚本跑完全部用例、测试不接 tail/head、整段读取并行发出')
+  ok(PROGRESS_GUIDANCE.includes('claiming only what you observed'), '进展约定只声称观察到的结果')
+  ok(WORK_RULES.length === 1 && /whole files or large ranges.*parallel/.test(WORK_RULES[0]), '工作规则只留整段读取、并行发出；测试怎么跑交给模型')
+  ok(!WORK_RULES.some((rule) => /stop and report|every case|\| tail/.test(rule)), '不再规定测试通过即停、检查脚本跑全、测试不接 tail/head')
 }

@@ -1,17 +1,17 @@
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
 const WHEN_TO_ASK = [
-  'Ask when a materially different reading would change the result and you cannot settle it from the files, the conversation or a quick check; do not ask what you can verify yourself. When you ask, stop and wait for the answer instead of guessing it.',
+  'Ask only when a materially different reading would change the result and you cannot settle it from the files, the conversation or a quick check; do not ask what you can verify yourself. When you ask, wait for the answer instead of guessing it.',
   'Asking never relaxes approvals, permissions or high-risk confirmations; an explicit user instruction to ask (or not to ask) wins without widening the granted scope.'
 ]
 
 export const TOOL_GUIDANCE = [
-  'Interactive questions use the `question` tool. Give at most 3 concrete options (the panel adds a free-text row); one question at a time unless several are truly independent.',
+  'Interactive questions use the `question` tool: at most 3 concrete options, one question at a time.',
   ...WHEN_TO_ASK
 ].join('\n')
 
 export const CLI_GUIDANCE = [
-  'Interactive questions use `yan question ask`. Give at most 3 concrete options (the panel adds a free-text row); one question at a time unless several are truly independent.',
+  'Interactive questions use `yan question ask`: at most 3 concrete options, one question at a time.',
   ...WHEN_TO_ASK
 ].join('\n')
 
@@ -28,18 +28,18 @@ const QUESTION_TOOL = {
       options: { type: 'array', items: { type: 'string' }, maxItems: 3 },
       fields: {
         type: 'array',
-        description: 'A form with 1-5 fields instead of top-level options. choice and multi require field options; range requires min and max.',
+        description: 'A 1-5 field form instead of options.',
         maxItems: 5,
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Unique within the form; 1-40 characters after trimming. Start with an ASCII letter; use only ASCII letters, digits, underscores or hyphens.' },
-            label: { type: 'string', description: 'Non-empty field label, at most 200 characters after trimming.' },
+            name: { type: 'string', description: 'Unique id, at most 40 characters: an ASCII letter, then letters, digits, _ or -.' },
+            label: { type: 'string', description: 'At most 200 characters.' },
             kind: { type: 'string', enum: FIELD_KINDS },
-            options: { type: 'array', items: { type: 'string' }, description: 'Required for choice (2-3 options) and multi (2-6 options); ignored for other kinds. Each option must be non-empty and at most 80 characters after trimming.' },
-            min: { type: 'number', description: 'Required for range, optional for number; ignored for other kinds. Must be finite and less than max when both bounds are provided.' },
-            max: { type: 'number', description: 'Required for range, optional for number; ignored for other kinds. Must be finite and greater than min when both bounds are provided.' },
-            step: { type: 'number', description: 'Optional finite numeric step for number or range; ignored for other kinds.' },
+            options: { type: 'array', items: { type: 'string' }, description: 'Required for choice (2-3) and multi (2-6); ignored for other kinds. Each at most 80 characters.' },
+            min: { type: 'number', description: 'Required for range, optional for number; below max.' },
+            max: { type: 'number', description: 'Required for range, optional for number; above min.' },
+            step: { type: 'number', description: 'For number or range.' },
             optional: { type: 'boolean' }
           },
           required: ['name', 'label', 'kind']
