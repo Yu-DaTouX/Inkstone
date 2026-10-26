@@ -11,8 +11,6 @@ export const SYNC_SETTINGS_WHITELIST = [
   'keepAwakeOnBattery',
   'visualAnswers',
   'wrapUpCard',
-  'contextTrim',
-  'contextTrimTokens',
   'autoCompactTokens',
   'fontUi',
   'fontUiCustom',

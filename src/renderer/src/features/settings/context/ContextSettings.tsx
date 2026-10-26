@@ -4,13 +4,7 @@ import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { Button, Switch } from '../../../ui'
 import { contextUsageSummary } from '../../workbench/context-pane-view'
-import {
-  AUTO_COMPACT_STEPS,
-  autoCompactAt,
-  CONTEXT_TRIM_STEPS,
-  DEFAULT_AUTO_COMPACT_TOKENS,
-  DEFAULT_CONTEXT_TRIM_TOKENS
-} from '../../../../../shared/context-limits'
+import { AUTO_COMPACT_STEPS, autoCompactAt, DEFAULT_AUTO_COMPACT_TOKENS } from '../../../../../shared/context-limits'
 import { settingsText } from '../settings-text'
 import { Segmented, SettingsGroup, SettingsReveal, SettingsRow } from '../root/controls'
 import { useTweenedNumber } from '../root/use-tweened-number'
@@ -22,11 +16,6 @@ const COMPACT_OPTIONS = AUTO_COMPACT_STEPS.map((value) => ({
   value: String(value),
   label: kTokens(value),
   testId: `v3-ctx-compact-${value}`
-}))
-const TRIM_OPTIONS = CONTEXT_TRIM_STEPS.map((value) => ({
-  value: String(value),
-  label: kTokens(value),
-  testId: `v3-ctx-trim-${value}`
 }))
 
 const percentOf = (value: number, total: number): number => Math.max(0, Math.min(100, (value / total) * 100))
@@ -143,12 +132,9 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
   ].filter(Boolean)
   const compactAtDescription = compactionNotes.length ? [compactAtText, ...compactionNotes].join(text.contextNoteJoin) : compactAtText
 
-  const trimOn = settings?.contextTrim !== false
-  const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
   const windowText = contextWindow > 0 ? `${usage.windowAssumed ? '~' : ''}${kTokens(contextWindow)}` : text.contextUnknown
 
   const markers: UsageMarker[] = []
-  if (trimOn) markers.push({ key: 'trim', at: trimAtValue, label: text.contextTrimAt })
   if (autoEnabled) markers.push({ key: 'compact', at: effective, label: text.contextCompactAt })
 
   return (
@@ -192,40 +178,6 @@ export function ContextSettings({ piNative, lede }: { piNative: PiNativeSettings
           />
         </SettingsRow>
       </SettingsReveal>
-
-      <ContextTrimRows />
     </SettingsGroup>
-  )
-}
-
-function ContextTrimRows(): ReactElement {
-  const { lang } = useI18n()
-  const text = settingsText(lang)
-  const settings = useStore((s) => s.settings)
-  const patchSettings = useStore((s) => s.patchSettings)
-  const trimOn = settings?.contextTrim !== false
-  const trimAtValue = settings?.contextTrimTokens ?? DEFAULT_CONTEXT_TRIM_TOKENS
-
-  return (
-    <>
-      <SettingsRow settingId="session-context-trim" label={text.contextTrim} description={text.contextTrimDesc}>
-        <Switch
-          aria-label={text.contextTrim}
-          isSelected={trimOn}
-          onChange={(on) => void patchSettings({ contextTrim: on })}
-          data-testid="v3-ctx-trim"
-        />
-      </SettingsRow>
-      <SettingsReveal open={trimOn}>
-        <SettingsRow nested settingId="session-context-trim-at" label={text.contextTrimAt}>
-          <Segmented
-            label={text.contextTrimAt}
-            value={String(trimAtValue)}
-            options={TRIM_OPTIONS}
-            onChange={(value) => void patchSettings({ contextTrimTokens: Number(value) })}
-          />
-        </SettingsRow>
-      </SettingsReveal>
-    </>
   )
 }

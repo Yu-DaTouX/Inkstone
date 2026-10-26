@@ -66,7 +66,7 @@ try {
     preambleExtension: ext('preamble.js'),
     languageExtension: ext('language.js'),
     capabilityGuideExtension: ext('capability-guide.js'),
-    contextTrimExtension: ext('context-trim.js'),
+    autoCompactExtension: ext('auto-compact.js'),
     nativeSessionExtension: ext('native-session-bridge.js'),
     mcpAppProxyExtension: ext('mcp-app-proxy.js'),
     repeatGuardExtension: ext('repeat-guard.js'),

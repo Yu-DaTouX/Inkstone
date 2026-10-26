@@ -774,8 +774,6 @@ export interface AppSettings {
   autoArchiveDays?: number
   keepAwakeWhileWorking?: boolean
   visualAnswers?: boolean
-  contextTrim?: boolean
-  contextTrimTokens?: number
   autoCompactTokens?: number
   fontUi?: 'sans' | 'serif' | 'maple' | 'custom'
   fontUiCustom?: string

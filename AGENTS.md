@@ -26,7 +26,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 
 - 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md`、`THIRD-PARTY.md` 与本文。命名和结构要让代码自己说明职责。
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
-- 上下文、压缩、恢复、技能与 MCP 交给 pi 原生管理。砚只额外做两件可关闭的事：经 pi `context` 钩子裁剪发给模型的较早大段工具输出（不改会话文件、不做摘要），以及到「自动压缩上限」时调用 pi 原生 `compact()`；不恢复旧的预算、摘要、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次；子代理遇临时模型错误同样只续跑一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
+- 上下文、恢复、技能与 MCP 交给 pi 原生管理；压缩的触发与会话记录也由 pi 负责。砚只额外做两件事：经 pi `session_before_compact` 钩子自己生成压缩摘要（工具结果不截断、放不下分段滚动、逐条保留具体事实，出错退回 pi 默认），以及到「自动压缩上限」时调用 pi 原生 `compact()`。不改写发给模型的消息（裁剪已删除，实测在大窗口上反复裁掉读过的内容导致重读）；不恢复旧的预算、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次；子代理遇临时模型错误同样只续跑一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
 - 界面：只有 v3 一套外壳（`src/renderer/src/app/ShellV3.tsx`），v2 已删除。控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。

@@ -80,7 +80,6 @@ function desktopSettings(overrides = {}) {
     lang: 'zh-CN',
     density: 'standard',
     autoCompactTokens: 250000,
-    contextTrimTokens: 80000,
     apiKey: SECRETS[0],
     token: SECRETS[1],
     secret: SECRETS[2],

@@ -93,9 +93,6 @@ export interface SettingsText {
   contextProjectIgnored: string
   contextCappedByInkstone: string
   contextNoteJoin: string
-  contextTrim: string
-  contextTrimDesc: string
-  contextTrimAt: string
   contextCompactNow: string
   contextUsed: string
   contextWindowLabel: string
@@ -230,9 +227,6 @@ const ZH: SettingsText = {
   contextProjectIgnored: '本项目 .pi/settings.json 里的压缩设置未生效：该项目尚未受信任，pi 使用全局设置。',
   contextCappedByInkstone: '自动压缩上限低于 pi 自身阈值，将在 {n} 提前压缩。',
   contextNoteJoin: '',
-  contextTrim: '裁剪较早的大段工具输出',
-  contextTrimDesc: '发给模型前省略较早的大段工具输出。',
-  contextTrimAt: '裁剪起点',
   contextCompactNow: '立即压缩',
   contextUsed: '已用',
   contextWindowLabel: '窗口',
@@ -367,9 +361,6 @@ const EN: SettingsText = {
   contextProjectIgnored: 'Compaction settings in this project\'s .pi/settings.json are ignored because the project is not trusted; pi uses the global settings.',
   contextCappedByInkstone: 'The auto-compaction limit is below pi\'s own threshold, so compaction happens early at {n}.',
   contextNoteJoin: ' ',
-  contextTrim: 'Trim older large tool output',
-  contextTrimDesc: 'Omit older large tool output before sending to the model.',
-  contextTrimAt: 'Trim threshold',
   contextCompactNow: 'Compact now',
   contextUsed: 'Used',
   contextWindowLabel: 'Window',
