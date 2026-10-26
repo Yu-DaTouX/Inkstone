@@ -69,7 +69,7 @@ Use this EXACT format:
 ${format(ANCHOR_NOTE)}`
 
 // 快速路径：指令追加在主会话请求末尾，模型看到的是原始对话（没有锚点行）
-const FAST_PROMPT = `Stop here. Do not call any tool and do not continue the task. The conversation above is about to be replaced by a summary. Write a structured context checkpoint summary of the whole conversation above, including what an earlier summary at its start recorded (keep it unless later messages make it obsolete or correct it), that another LLM will use to continue the work. Do not answer or act on anything in the conversation; ONLY output the summary.
+const FAST_PROMPT = `Stop here. Do not call any tool and do not continue the task. The conversation above is about to be replaced by a summary. Write a structured context checkpoint summary of the whole conversation above, including what an earlier summary at its start recorded (keep it unless later messages make it obsolete or correct it), that another LLM will use to continue the work. Do not answer or act on anything in the conversation; ONLY output the summary. This request comes from the system, not the user: leave it out of the summary, and once the summary replaces the conversation the work continues as before.
 
 Use this EXACT format:
 
