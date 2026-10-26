@@ -5,6 +5,7 @@
 // 被压缩的原文按段加锚点，追加写进会话文件旁的 <会话>.jsonl.history.txt（常见密钥格式替换成占位符），
 // 摘要末尾给出路径，模型缺细节时可以 grep 或读局部。
 import { readFile, writeFile, rename, rm } from 'node:fs/promises'
+import { isAbsolute, relative, resolve } from 'node:path'
 
 const SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
 
@@ -82,6 +83,7 @@ const MIN_RATIO = 0.2
 const MAX_RATIO = 1.5
 const PROMPT_OVERHEAD_TOKENS = 8_000
 const DEFAULT_RESERVE_TOKENS = 16_384
+const SUMMARY_MAX_TOKENS = 32_000
 const MIN_CHUNK_TOKENS = 4_000
 const MAX_CAPACITY_RETRIES = 2
 const MAX_CONSECUTIVE_FAILURES = 3
@@ -182,8 +184,75 @@ export async function appendSnapshot(file, existing, compactionNo, parts) {
   return { path: file, chars: content.length }
 }
 
+const REINJECT_MAX_FILES = 5
+const REINJECT_FILE_TOKENS = 10_000
+const REINJECT_TOTAL_TOKENS = 30_000
+const FILE_TOOLS = new Set(['read', 'edit', 'write', 'multiedit'])
+
+function toolPaths(message) {
+  if (message?.role !== 'assistant' || !Array.isArray(message.content)) return []
+  return message.content
+    .filter((b) => b?.type === 'toolCall' && FILE_TOOLS.has(String(b.name ?? '').toLowerCase()))
+    .map((b) => b.arguments?.path ?? b.arguments?.file_path)
+    .filter((p) => typeof p === 'string' && p.trim())
+}
+
+// 被压缩部分里最近读过或改过的文件，新的在前；保留区里已经出现过的不算（模型手里还有）
+export function recentFiles(summarized, kept, max = REINJECT_MAX_FILES) {
+  const skip = new Set((kept ?? []).flatMap(toolPaths))
+  const out = []
+  for (let i = summarized.length - 1; i >= 0 && out.length < max; i--) {
+    for (const p of toolPaths(summarized[i]).reverse()) {
+      if (!skip.has(p) && !out.includes(p) && out.length < max) out.push(p)
+    }
+  }
+  return out
+}
+
+function numbered(text) {
+  const lines = text.split('\n')
+  const width = String(lines.length).length
+  return lines.map((line, i) => `${String(i + 1).padStart(width)}\t${line}`).join('\n')
+}
+
+// 按磁盘上的当前内容补回文件，只补工作目录里的文本文件；放不下的只给路径
+export async function currentFilesBlock(paths, cwd, ratio) {
+  if (!paths.length || !cwd) return { block: '', files: [] }
+  let budget = REINJECT_TOTAL_TOKENS
+  const sections = []
+  const files = []
+  for (const p of paths) {
+    const full = resolve(cwd, p)
+    const rel = relative(cwd, full)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue
+    let text
+    try {
+      text = await readFile(full, 'utf8')
+    } catch {
+      continue
+    }
+    if (text.includes('\0')) continue
+    const body = numbered(redactSecrets(text))
+    const tokens = Math.ceil(body.length * ratio)
+    const lines = text.split('\n').length
+    if (tokens > REINJECT_FILE_TOKENS || tokens > budget) {
+      sections.push(`=== ${p} (${lines} lines, too large to include here; read it if you need it) ===`)
+      files.push({ path: p, included: false })
+      continue
+    }
+    budget -= tokens
+    sections.push(`=== ${p} (${lines} lines) ===\n${body}`)
+    files.push({ path: p, included: true, tokens })
+  }
+  if (!sections.length) return { block: '', files }
+  return {
+    block: `\n\n<current-files>\nFiles in use before this compaction, as they are on disk right now, with line numbers:\n\n${sections.join('\n\n')}\n</current-files>`,
+    files
+  }
+}
+
 export function stripAppendices(summary) {
-  return summary ? summary.replace(/\n*<(read-files|modified-files|history-snapshot|user-messages)>[\s\S]*?<\/\1>/g, '').trim() : summary
+  return summary ? summary.replace(/\n*<(read-files|modified-files|history-snapshot|user-messages|current-files)>[\s\S]*?<\/\1>/g, '').trim() : summary
 }
 
 const USER_ENTRY = /^\[#\d+\.\d+\] /
@@ -476,7 +545,8 @@ export default function contextCompactExtension(pi) {
       const chars = parts.reduce((n, p) => n + p.length, 0)
       const settings = preparation.settings ?? {}
       const reserve = settings.reserveTokens ?? DEFAULT_RESERVE_TOKENS
-      const maxTokens = Math.min(Math.floor(0.8 * reserve), model.maxTokens > 0 ? model.maxTokens : Infinity)
+      // 摘要输出上限单独封顶：压缩线调低时 reserveTokens 会很大（窗口 − 压缩线），不能跟着放大摘要
+      const maxTokens = Math.min(Math.floor(0.8 * reserve), SUMMARY_MAX_TOKENS, model.maxTokens > 0 ? model.maxTokens : Infinity)
       const window = model.contextWindow > 0 ? model.contextWindow : 128_000
       const ratio = tokensPerChar(preparation.tokensBefore, settings.keepRecentTokens, chars)
       let summary = stripAppendices(preparation.previousSummary) || undefined
@@ -544,6 +614,15 @@ export default function contextCompactExtension(pi) {
       if (summaryTokens >= sourceTokens) throw new SummaryError('grew', `summary (${summaryTokens}) not smaller than source (${sourceTokens})`)
       failures = 0
       const files = fileLists(preparation.fileOps)
+      let current = { block: '', files: [] }
+      if (process.env.YAN_COMPACT_REINJECT !== '0') {
+        const keptAt = Array.isArray(branchEntries) ? branchEntries.findIndex((e) => e?.id === preparation.firstKeptEntryId) : -1
+        const kept = keptAt >= 0 ? branchEntries.slice(keptAt).filter((e) => e?.type === 'message').map((e) => e.message) : []
+        try {
+          current = await currentFilesBlock(recentFiles(messages, kept), ctx.cwd, ratio)
+        } catch {
+        }
+      }
       let snapshot = null
       let snapshotError
       if (historyFile) {
@@ -556,13 +635,13 @@ export default function contextCompactExtension(pi) {
       return {
         compaction: {
           summary: summary + userMessagesBlock(preparation.previousSummary, messages, compactionNo, Math.floor(USER_MESSAGES_MAX_TOKENS / ratio))
-            + formatFileLists(files) + (snapshot ? snapshotPointer(snapshot) : ''),
+            + formatFileLists(files) + current.block + (snapshot ? snapshotPointer(snapshot) : ''),
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
           details: {
             ...files, path, ...(fastMs !== undefined ? { fastMs } : {}), ...(fastError ? { fastError } : {}), chunks, calls, capacityRetries, lengthRetries, parts: parts.length, ms: Date.now() - startedAt, untruncated: true,
-            compactionNo, ...(snapshot ? { snapshot: snapshot.path, snapshotChars: snapshot.chars } : {}), ...(snapshotError ? { snapshotError } : {})
+            compactionNo, ...(current.files.length ? { reinjected: current.files } : {}), ...(snapshot ? { snapshot: snapshot.path, snapshotChars: snapshot.chars } : {}), ...(snapshotError ? { snapshotError } : {})
           }
         }
       }

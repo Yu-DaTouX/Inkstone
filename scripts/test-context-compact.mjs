@@ -338,4 +338,48 @@ for (const [label, opts, expected] of [
   delete tailMessage.usage
   assert.equal(result.compaction.details.fastError, 'no-room', '实际请求已接近窗口时不走快速路径，哪怕 pi 估得偏低')
 }
+{
+  const call = (name, path) => ({ role: 'assistant', content: [{ type: 'toolCall', id: path, name, arguments: { path } }] })
+  const summarized = [call('read', 'a.js'), call('read', 'b.js'), call('edit', 'a.js'), call('bash', 'x'), call('read', 'c.js'), call('read', 'd.js')]
+  assert.deepEqual(mod.recentFiles(summarized, [call('read', 'd.js')]), ['c.js', 'a.js', 'b.js'], '新的在前、去重、保留区里已有的不补')
+  assert.equal(mod.recentFiles(Array.from({ length: 9 }, (_, i) => call('read', `f${i}.js`)), []).length, 5, '最多 5 个')
+}
+{
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'yan-reinject-'))
+  mkdirSync(join(dir, 'src'))
+  writeFileSync(join(dir, 'src/a.js'), 'const x = 1\nconst key = "sk-abcdefghijklmnopqrstuvwx"\n')
+  writeFileSync(join(dir, 'big.txt'), 'y'.repeat(200_000))
+  writeFileSync(join(dir, 'bin.dat'), 'a\0b')
+  const { block, files } = await mod.currentFilesBlock(['src/a.js', 'big.txt', 'bin.dat', '../outside.txt', 'missing.js'], dir, 0.3)
+  assert.ok(block.includes('=== src/a.js (3 lines) ===\n1\tconst x = 1\n2\tconst key = "sk-[REDACTED]"'), '按磁盘当前内容带行号补回，密钥替换成占位符')
+  assert.ok(block.includes('=== big.txt (1 lines, too large to include here; read it if you need it) ==='), '超过单个上限的只给路径')
+  assert.ok(!block.includes('bin.dat') && !block.includes('outside') && !block.includes('missing'), '不补二进制、工作目录外和不存在的文件')
+  assert.deepEqual(files.map((f) => [f.path, f.included]), [['src/a.js', true], ['big.txt', false]])
+  assert.equal(mod.stripAppendices(`摘要${block}`), '摘要', '下次压缩前去掉上次补回的文件')
+
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  const ctx = { cwd: dir, model: { contextWindow: 400_000, maxTokens: 64_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async () => ok('摘要') } }
+  const summarized = [...messages, { role: 'assistant', content: [{ type: 'toolCall', id: 'c5', name: 'read', arguments: { path: 'src/a.js' } }] }]
+  const event = { preparation: { messagesToSummarize: summarized, turnPrefixMessages: [], firstKeptEntryId: 'k1', tokensBefore: 30_000, settings: { reserveTokens: 40_000 }, fileOps: {} }, branchEntries: [{ id: 'k1', type: 'message', message: { role: 'user', content: '继续' } }], signal: new AbortController().signal }
+  const result = await handlers.session_before_compact(event, ctx)
+  assert.ok(result.compaction.summary.includes('<current-files>') && result.compaction.summary.includes('1\tconst x = 1'), '压缩后补回最近用过的文件')
+  assert.deepEqual(result.compaction.details.reinjected.map((f) => f.path), ['src/a.js'], 'details 记下补回了哪些')
+  process.env.YAN_COMPACT_REINJECT = '0'
+  const off = await handlers.session_before_compact(event, ctx)
+  delete process.env.YAN_COMPACT_REINJECT
+  assert.ok(!off.compaction.summary.includes('<current-files>') && !off.compaction.details.reinjected, 'YAN_COMPACT_REINJECT=0 时不补回（对照实验用）')
+}
+{
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  const seen = []
+  const ctx = { model: { contextWindow: 400_000, maxTokens: 384_000, reasoning: false }, thinkingLevel: 'off', modelRegistry: { complete: async (m, c, options) => { seen.push(options.maxTokens); return ok('摘要') } } }
+  const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore: 30_000, settings: { reserveTokens: 300_000 } , fileOps: {} }, signal: new AbortController().signal }
+  await handlers.session_before_compact(event, ctx)
+  assert.equal(seen[0], 32_000, '压缩线调低、reserveTokens 很大时，摘要输出上限仍封顶 32k')
+}
 console.log('context-compact 测试通过')
