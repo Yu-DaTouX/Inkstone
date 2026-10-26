@@ -82,6 +82,12 @@ export class BrowserWindow {
   destroy() { this.__destroyed = true }
   static getAllWindows() { return globalThis.__mockWindows || [] }
 }
+export class View {
+  constructor() { this.children = [] }
+  setBounds() {}
+  addChildView(view) { this.children.push(view) }
+  removeChildView(view) { const i = this.children.indexOf(view); if (i >= 0) this.children.splice(i, 1) }
+}
 export class WebContentsView {
   constructor(options = {}) {
     this.__options = options

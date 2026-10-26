@@ -171,6 +171,7 @@ const STUBS = {
   ui: `export function Button(){ return null }
 export const cx = (...a) => a.filter(Boolean).join(' ')
 export function IconButton(){ return null }
+export function Notice(){ return null }
 export function TextField(){ return null }
 export function Dialog(){ return null }
 export function Popover(){ return null }

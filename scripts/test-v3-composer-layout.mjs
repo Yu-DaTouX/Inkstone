@@ -100,7 +100,7 @@ const STUBS = {
   'src/renderer/src/lib/composer-submit.ts': 'export async function submitComposerInput(){ return undefined }',
   'src/renderer/src/lib/v3-submit-ownership.ts': 'export function attachmentsAfterSubmit(a){ return a }\nexport async function runLocalCommandGuarded(){ return "ran" }',
   'src/renderer/src/features/composer/attachment-files.ts': 'export async function readFiles(){ return [] }',
-  'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function cx(){ return "" }',
+  'src/renderer/src/ui/index.ts': 'export function Button(){ return null }\nexport function Notice(){ return null }\nexport function cx(){ return "" }',
   'src/renderer/src/patterns/ModelThinkingPicker.tsx': 'export function ModelThinkingPicker(){ return null }',
   'src/renderer/src/patterns/ContextRing.tsx': 'export function ContextRing(){ return null }',
   'src/renderer/src/features/composer/AttachmentStrip.tsx': 'export function AttachmentStrip(){ return null }\nexport function ImageRefWarning(){ return null }',

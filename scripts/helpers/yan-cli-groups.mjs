@@ -44,5 +44,7 @@ export function commandsOf(group, action) {
   if (group === 'image' && action === 'local') return ['image.local.status', 'image.local.start', 'image.local.stop']
   if (group === 'artifact' && action === 'style') return []
   if (group === 'artifact' && action === 'export-video') return ['artifact.exportVideo']
+  if (group === 'artifact' && action === 'export-image') return ['artifact.exportImage']
+  if (group === 'subagent' && action === 'status') return ['subagent.get']
   return [`${group}.${action}`]
 }

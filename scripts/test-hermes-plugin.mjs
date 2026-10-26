@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
+import { resolvePython } from './lib/python.mjs'
 
 const temp = await mkdtemp(join(tmpdir(), 'inkstone-hermes-test-'))
 let server
@@ -37,7 +38,7 @@ try {
   const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1', INKSTONE_CONNECTION_FILE: config, INKSTONE_TEST_URL: `http://127.0.0.1:${info.port}`, INKSTONE_TEST_PAIR_CODE: pairing.code, PYTHONIOENCODING: 'utf-8' }
   delete env.INKSTONE_URL; delete env.INKSTONE_TOKEN
   const exit = await new Promise((resolveExit, reject) => {
-    const child = spawn(process.env.YAN_TEST_PYTHON || 'python', ['scripts/test-hermes-plugin.py'], { env, stdio: 'inherit', windowsHide: true })
+    const child = spawn(resolvePython(), ['scripts/test-hermes-plugin.py'], { env, stdio: 'inherit', windowsHide: true })
     child.once('error', reject); child.once('exit', resolveExit)
   })
   if (exit !== 0) throw Error(`Python plugin checks failed (${exit})`)
