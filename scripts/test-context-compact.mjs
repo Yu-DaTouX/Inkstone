@@ -202,4 +202,119 @@ assert.equal(
   h.compacted(false)
   assert.equal(h.entries[0].data.category, 'length')
 }
+{
+  const payload = { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }], tools: [{ type: 'function', name: 'read' }], prompt_cache_key: 'k', reasoning: { effort: 'medium' }, max_output_tokens: 1_000 }
+  const next = mod.appendInstruction('openai-responses', payload, '写摘要', 9_000)
+  assert.equal(next.input.length, 2)
+  assert.equal(next.input[0], payload.input[0], '原有输入原样保留（同一对象，字节不变）')
+  assert.deepEqual(next.input[1], { role: 'user', content: [{ type: 'input_text', text: '写摘要' }] }, '指令追加在最后')
+  assert.equal(next.tool_choice, 'none', '有工具时用 tool_choice none 禁止调用，不删工具')
+  assert.equal(next.tools, payload.tools)
+  assert.deepEqual([next.prompt_cache_key, next.reasoning, next.max_output_tokens], ['k', payload.reasoning, 9_000], '缓存键、思考档位不变，只改输出上限')
+  assert.equal(payload.input.length, 1, '不改动原请求体')
+}
+{
+  const toolResult = { type: 'tool_result', tool_use_id: 't1', content: 'x', cache_control: { type: 'ephemeral' } }
+  const payload = {
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'read', input: {} }] },
+      { role: 'user', content: [toolResult] },
+      { role: 'system', content: [], output_config: { effort: 'high' } }
+    ],
+    tools: [{ name: 'read' }], max_tokens: 64_000
+  }
+  const next = mod.appendInstruction('anthropic-messages', payload, '写摘要', 9_000)
+  assert.equal(next.messages.length, 4, '不新增消息，保持角色交替')
+  assert.deepEqual(next.messages[2].content, [toolResult, { type: 'text', text: '写摘要' }], '指令并进最后一条用户消息、排在带缓存标记的 tool_result 之后')
+  assert.equal(next.messages[3], payload.messages[3], '末尾只带 effort 的 system 消息原样留在最后')
+  assert.deepEqual(next.tool_choice, { type: 'none' })
+  assert.equal(next.max_tokens, 9_000)
+  assert.equal(payload.messages[2].content.length, 1, '不改动原请求体')
+  const budget = mod.appendInstruction('anthropic-messages', { messages: [{ role: 'assistant', content: 'a' }], thinking: { type: 'enabled', budget_tokens: 4_000 } }, '写摘要', 9_000)
+  assert.deepEqual(budget.messages.at(-1), { role: 'user', content: [{ type: 'text', text: '写摘要' }] }, '最后是助手消息时另起一条用户消息')
+  assert.equal(budget.max_tokens, 13_000, '固定思考预算时输出上限要加上预算')
+  assert.ok(!('tool_choice' in budget), '没有工具就不设 tool_choice')
+}
+{
+  const next = mod.appendInstruction('openai-completions', { messages: [{ role: 'user', content: 'hi' }], tools: [{}], max_completion_tokens: 100 }, '写摘要', 9_000)
+  assert.deepEqual(next.messages.at(-1), { role: 'user', content: '写摘要' })
+  assert.deepEqual([next.tool_choice, next.max_completion_tokens, 'max_tokens' in next], ['none', 9_000, false], '沿用请求体原有的上限字段名')
+  assert.equal(mod.appendInstruction('google-gemini', { contents: [] }, 'x', 1), null, '认不出的格式不走快速路径')
+}
+
+const tailMessage = { role: 'assistant', content: [{ type: 'text', text: '最后的回复 ZZ-9' }] }
+function fastHarness(complete, { reason = 'manual', tokensBefore = 300_000, leafAtRequest = 'L1', modelAtRequest = 'm' } = {}) {
+  const handlers = {}
+  mod.default({ on: (name, fn) => { handlers[name] = fn }, appendEntry: () => {} })
+  const calls = []
+  const model = { provider: 'p', id: 'm', api: 'openai-responses', contextWindow: 400_000, maxTokens: 64_000, reasoning: false }
+  const ctx = {
+    model, thinkingLevel: 'off',
+    sessionManager: { getLeafId: () => leafAtRequest, getSessionId: () => 'S1' },
+    modelRegistry: { complete: async (m, context, options) => { calls.push({ context, options }); return complete(calls.length, options) } }
+  }
+  const payload = { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: '读完整本书' }] }], tools: [{ type: 'function', name: 'read' }] }
+  const branchEntries = [
+    { id: 'L0', type: 'message', message: messages[0] },
+    { id: 'L1', type: 'message', message: messages[2] },
+    { id: 'L2', type: 'message', message: tailMessage }
+  ]
+  const event = { preparation: { messagesToSummarize: messages, turnPrefixMessages: [], firstKeptEntryId: 'e9', tokensBefore, settings: { reserveTokens: 40_000, keepRecentTokens: 2_000 }, fileOps: { read: new Set(['book/ch01.md']) } }, branchEntries, reason, signal: new AbortController().signal }
+  return {
+    request: () => handlers.before_provider_request({ payload }, { ...ctx, model: { ...model, id: modelAtRequest } }),
+    run: () => handlers.session_before_compact(event, ctx),
+    compacted: () => handlers.session_compact({ fromExtension: true }),
+    calls, payload
+  }
+}
+{
+  const h = fastHarness(() => ok('## Goal\n读书\n\n<read-files>\n旧清单\n</read-files>', { input: 300_000, cacheRead: 299_000 }))
+  assert.equal(h.request(), undefined, '截取请求体但不改它')
+  const result = await h.run()
+  assert.equal(h.calls.length, 1, '快速路径一次调用')
+  const sent = h.calls[0].options.onPayload()
+  assert.equal(sent.input[0], h.payload.input[0], '重发的是主会话最后一次请求的原样前缀')
+  const instruction = sent.input.at(-1).content[0].text
+  assert.ok(/^Stop here\. Do not call any tool/.test(instruction) && instruction.includes('最后的回复 ZZ-9'), '指令追加在末尾，并带上请求之后的消息')
+  assert.ok(/source tag naming the tool/.test(instruction) && !/anchor line such as/.test(instruction), '模型看不到锚点行，改用工具和路径做来源标记')
+  assert.equal(sent.tool_choice, 'none')
+  assert.equal(h.calls[0].options.maxTokens, 32_000)
+  assert.equal(h.calls[0].options.sessionId, 'S1', '带上会话 ID，路由和主会话一致')
+  assert.equal(result.compaction.details.path, 'prefix')
+  assert.ok(result.compaction.details.fastMs >= 0 && !result.compaction.details.fastError)
+  assert.ok(!result.compaction.summary.includes('旧清单') && result.compaction.summary.includes('<read-files>\nbook/ch01.md'), '模型抄来的附录去掉，由代码重新附上')
+  assert.equal(result.compaction.usage.cacheRead, 299_000)
+}
+{
+  const h = fastHarness((n) => (n === 1 ? { stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'x', name: 'read', arguments: {} }], usage: { input: 5 } } : ok('分块摘要', { input: 1 })))
+  h.request()
+  const result = await h.run()
+  assert.equal(h.calls.length, 2, '快速路径调了工具就退回分块')
+  assert.equal(result.compaction.details.path, 'chunked')
+  assert.ok(result.compaction.details.fastError.startsWith('tool-call'), '记下快速路径失败原因')
+  assert.equal(result.compaction.usage.input, 6, '失败那次的用量也计入')
+}
+for (const [label, opts, expected] of [
+  ['溢出触发的压缩不走快速路径（原请求本身就放不下）', { reason: 'overflow' }, 'overflow'],
+  ['输出空间不够时不走快速路径', { tokensBefore: 392_000 }, 'no-room'],
+  ['请求之后会话分支变了就不用旧请求', { leafAtRequest: 'gone' }, 'stale'],
+  ['换过模型就不用旧请求', { modelAtRequest: 'other' }, 'model-changed']
+]) {
+  const h = fastHarness(() => ok('分块摘要'), opts)
+  h.request()
+  const result = await h.run()
+  assert.equal(result.compaction.details.path, 'chunked', label)
+  assert.equal(result.compaction.details.fastError, expected, label)
+  assert.ok(!h.calls[0].options.onPayload, label)
+}
+{
+  const h = fastHarness(() => ok('摘要'), { tokensBefore: 380_000 })
+  h.request()
+  await h.run()
+  assert.equal(h.calls[0].options.maxTokens, 16_000, '输出上限不超过窗口剩余空间')
+  h.compacted()
+  const again = await h.run()
+  assert.equal(again.compaction.details.fastError, 'no-request', '压缩之后旧请求作废')
+}
 console.log('context-compact 测试通过')

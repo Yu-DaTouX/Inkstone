@@ -876,12 +876,13 @@ export class AgentController extends EventEmitter {
           ? ['--extension', this.capabilityGuideExtension]
           : []),
         ...(this.autoCompactExtension ? ['--extension', this.autoCompactExtension] : []),
-        ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
         ...(this.imageLabelsExtension ? ['--extension', this.imageLabelsExtension] : []),
         ...(this.repeatGuardExtension ? ['--extension', this.repeatGuardExtension] : []),
         ...(this.mcpAppProxyExtension ? ['--extension', this.mcpAppProxyExtension] : []),
         ...(this.dangerGuardExtension ? ['--extension', this.dangerGuardExtension] : []),
         ...this.providerExtensions.flatMap((path) => ['--extension', path]),
+        // 压缩扩展要截取最终发出的请求体，必须排在所有 before_provider_request 改写者之后
+        ...(this.contextCompactExtension ? ['--extension', this.contextCompactExtension] : []),
         ...this.bundledSkills.flatMap((skill) => ['--skill', skill]),
         ...userSkillArgs.flatMap((skill) => ['--skill', skill]),
         ...projectPackageArgs,
