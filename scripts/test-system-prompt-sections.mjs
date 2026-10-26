@@ -92,6 +92,8 @@ try {
     ['Today: ', 1, 'local date appears once'],
     ['Interactive questions use `yan question ask`', 1, 'question guidance appears once'],
     ['Work quietly. Before substantive tool work', 1, 'progress guidance appears once'],
+    ['\n- Once the requested change is made and the relevant tests or checks pass, stop and report;', 1, 'finish rule is its own pi rule'],
+    ['\n- When exploring code, read whole files or large ranges', 1, 'work rules are added to pi rules once'],
     ['its SDK, extensions, skills or models): ', 1, 'pi docs block is compacted'],
     ['- Additional docs: ', 0, 'full pi docs block is not sent']
   ]

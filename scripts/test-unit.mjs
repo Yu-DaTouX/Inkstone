@@ -60,7 +60,7 @@ const spawnedScripts = [
   'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-split-drop-model', 'test-sidebar-content-search',
   'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-composer', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-user-text', 'test-session-find', 'test-session-visual-logic',
   'test-runs-registry', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-session-operation-gate', 'test-host-tools', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
+  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-session-operation-gate', 'test-host-tools', 'test-write-line-endings', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
   'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-v3-browser-header', 'test-remote-image', 'test-preload-renderer-ready', 'test-browser-observe-live', 'test-browser-screenshot-timeout', 'test-subagent-fork', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-changes-pane-actions', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf', 'test-html-canvas-model', 'test-html-canvas-bridge', 'test-html-source-map', 'test-canvas-share', 'test-canvas-comments', 'test-canvas-draw', 'test-canvas-timeline', 'test-canvas-dock', 'test-live-html-calls', 'test-artifact-style', 'test-video-composition', 'test-video-export', 'test-artifact-preview-video', 'test-artifact-lint', 'test-artifact-libs',
   'test-prompt-directories', 'test-prompt-template-form',
   'test-session-reattach',
@@ -2195,18 +2195,16 @@ await runGitRepoTests(ok)
     const tool = { role: 'tool', content: 'out' }
     const payload = { messages: [{ role: 'user', content: 'go' }, tool] }
     fire('message_end', { message: { role: 'user' } })
-    for (let i = 1; i < mod.TASK_REMINDER_AFTER; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
-    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：工具调用未到阈值不提醒')
-    fire('tool_call', { toolName: 'read', input: { path: 'a' } })
+    for (let i = 0; i < 40; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
+    ok(fire('before_provider_request', { payload }) === undefined, '待办：长回合没有待办也不追加催办提醒')
+    fire('tool_call', { toolName: 'todos', input: { action: 'set', items: [{ text: 'a' }] } })
+    for (let i = 0; i < 40; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
+    ok(fire('before_provider_request', { payload }) === undefined, '待办：久未更新也不追加催办提醒')
+    fire('tool_call', { toolName: 'edit', input: { path: 'a' } })
+    fire('tool_result', { toolName: 'bash', input: { command: 'npm test' }, details: { exit_code: 0 }, isError: false })
+    for (let i = 0; i < 4; i++) fire('before_provider_request', { payload })
     const reminded = fire('before_provider_request', { payload })
-    ok(reminded?.messages.length === 3 && reminded.messages[2].role === 'user' && reminded.messages[2].content === mod.TASK_REMINDER && reminded.messages[1] === tool, '待办提醒：到阈值时追加在请求末尾，不改前面的消息')
-    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：一个用户回合只提醒一次')
-    const anthropic = mod.withTaskReminder({ messages: [{ role: 'user', content: [{ type: 'tool_result', content: 'x' }] }] })
-    ok(anthropic.messages.length === 1 && anthropic.messages[0].content[1]?.text === mod.TASK_REMINDER, '待办提醒：末条是用户内容块时并进同一条，不产生连续两条用户消息')
-    fire('message_end', { message: { role: 'user' } })
-    fire('tool_call', { toolName: 'bash', input: { command: "yan tasks apply --request-file - <<'EOF'" } })
-    for (let i = 0; i < mod.TASK_REMINDER_AFTER + 2; i++) fire('tool_call', { toolName: 'bash', input: { command: 'ls' } })
-    ok(fire('before_provider_request', { payload }) === undefined, '待办提醒：会话里用过 yan tasks 后不再提醒')
+    ok(reminded?.messages.length === 3 && reminded.messages[1] === tool && /tests passed after your last code change/.test(reminded.messages[2].content), '收尾提醒：能力扩展注册，测试通过后 4 步没改代码时追加在请求末尾')
   }
   const visual = mod.VISUAL_ANSWER_GUIDE
   ok(/yan-chart/.test(visual) && /yan-cards/.test(visual) && /yan-flow/.test(visual) && /data source/.test(visual) && /skill visual-answer/.test(visual), '能力说明：常驻列出结构化回答块与数据来源要求，字段格式指向技能')

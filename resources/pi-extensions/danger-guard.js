@@ -10,7 +10,7 @@ const MAX_SHELL_DEPTH = 6
 export function isBroadTarget(raw) {
   let target = String(raw ?? '').trim().replace(/^["']+|["']+$/g, '')
   if (!target) return false
-  target = target.replace(/\\/g, '/').toLowerCase()
+  target = msysDrivePath(target.replace(/\\/g, '/').toLowerCase())
   if (['/', '/*', '~', '~/', '~/*', '.', './', './*', '*', '*.*', '..', '../', '../*'].includes(target)) return true
   if (/^(\$home|\$\{home\}|%userprofile%|%homepath%|\$env:userprofile)\/?$/.test(target)) return true
   if (target.split('/').includes('..')) return true
@@ -54,7 +54,8 @@ function recursiveDeleteTarget({ head, args }, cwd) {
     return null
   }
   if (!recursive) return null
-  const targets = args.filter((a) => !/^(-|\/[a-z]$)/i.test(a) && !/^-{1,2}\w/.test(a))
+  const cmdFlag = head === 'rm' ? /^-/ : /^(-|\/[a-z]$)/i
+  const targets = args.filter((a) => !cmdFlag.test(a) && !/^-{1,2}\w/.test(a))
   return targets.find((target) => isBroadTarget(target) || deletesOutsideProject(target, cwd)) ?? null
 }
 
@@ -79,8 +80,14 @@ const COMMAND_RULES = [
 const SENSITIVE_PATH =
   /\/(?:\.ssh|\.aws|\.gnupg|\.kube)(?:\/|$)|^\/(?:etc|usr|bin|sbin|boot|lib)(?:\/|$)|^[a-z]:\/windows(?:\/|$)|^[a-z]:\/program files|\/\.(?:bashrc|zshrc|profile|gitconfig|npmrc)$|\/start menu\/programs\/startup/i
 
+const MSYS_DRIVE = /^\/(?:cygdrive\/)?([a-z])(?:\/|$)/
+
+function msysDrivePath(text) {
+  return process.platform === 'win32' ? text.replace(MSYS_DRIVE, '$1:/') : text
+}
+
 function normalizePath(p) {
-  const text = String(p ?? '').replace(/\\/g, '/').toLowerCase().replace(/^\/\/[?.]\/unc\//, '//').replace(/^\/\/[?.]\//, '')
+  const text = msysDrivePath(String(p ?? '').replace(/\\/g, '/').toLowerCase().replace(/^\/\/[?.]\/unc\//, '//').replace(/^\/\/[?.]\//, ''))
   const match = /^([a-z]:)?(.*)$/.exec(text)
   const drive = match?.[1] ?? ''
   const rest = match?.[2] ?? ''

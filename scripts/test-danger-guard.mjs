@@ -109,4 +109,29 @@ export function runDangerGuardTests(ok, mod) {
   ok(outside('powershell', { command: 'Get-ChildItem D:/other' }).length === 0, 'PowerShell 读取不问')
   ok(outside('bash', { command: 'echo hi > ~/notes.txt' }, 'C:/proj').length === 1, '写家目录要问')
   ok(outside('bash', { command: 'echo hi > /tmp/x.txt' }).length === 0, '写临时目录不问')
+
+  if (process.platform === 'win32') {
+    const work = 'C:/Users/me/bench/proj'
+    ok(outside('bash', { command: "cat > /c/Users/me/bench/proj/check.mjs <<'EOF'" }, work).length === 0, 'Git Bash 盘符路径 /c/... 在工作目录内不算越界')
+    ok(outside('bash', { command: 'echo hi > /C/Users/me/bench/proj/a.txt' }, work).length === 0, '大写盘符 /C/... 同样换算')
+    ok(outside('write', { path: '/c/Users/me/bench/proj/src/a.ts' }, work).length === 0, 'write 工具的 /c/... 路径同样换算')
+    ok(outside('bash', { command: 'echo hi > /cygdrive/c/Users/me/bench/proj/a.txt' }, work).length === 0, '/cygdrive/c/... 换算成 C 盘')
+    ok(outside('bash', { command: 'echo hi > /c/Users/me/bench/proj/a.txt' }, '/c/Users/me/bench/proj').length === 0, '工作目录本身写成 /c/... 也能匹配')
+    const other = outside('bash', { command: 'echo hi > /d/other/a.txt' }, work)
+    ok(other.length === 1 && other[0] === 'd:/other/a.txt', '/d/other/... 换算成 D 盘后仍算越界')
+    ok(outside('bash', { command: 'echo hi > /c/Users/me/bench/proj2/a.txt' }, work).length === 1, '/c/... 前缀相同但不是子目录仍算越界')
+    ok(outside('bash', { command: 'echo hi > /c/Users/me/bench/proj/../other.txt' }, work).length === 1, '/c/... 里的 .. 先归一化再判定')
+    ok(outside('bash', { command: 'echo hi > /cygdrive/d/x.txt' }, work).length === 1, '/cygdrive/d/... 仍算越界')
+    ok(outside('bash', { command: 'echo hi > /c' }, work).length === 1, '单独的盘根 /c 算越界')
+    ok(outside('bash', { command: 'echo hi > /tmp/x.txt' }, work).length === 0 && outside('bash', { command: 'echo hi > /var/tmp/x.txt' }, work).length === 0, '/tmp、/var/tmp 不当盘符，行为不变')
+    ok(outside('bash', { command: 'echo hi > /usr/local/x' }, work).length === 1 && outside('bash', { command: 'cmd > /dev/null' }, work).length === 0, '/usr、/dev/null 不当盘符，行为不变')
+    const winBash = (command) => detectDanger('bash', { command }, work)
+    ok(winBash('rm -rf /c/Users/me/bench/proj/build').length === 0, '递归删除工作目录内的 /c/... 不问')
+    ok(winBash('rm -rf /c/Users/me/Documents').some((r) => r.includes('递归删除')), '递归删除工作目录外的 /c/... 要问')
+    ok(winBash('rm -rf /c/Users').some((r) => r.includes('大范围')), '递归删除 /c/Users 识别为大范围目录')
+    ok(winBash('rm -rf /c').some((r) => r.includes('大范围')) && winBash('rm -rf /cygdrive/d').some((r) => r.includes('大范围')), '递归删除整个盘 /c、/cygdrive/d 识别为大范围目录')
+    ok(winBash('rm -rf /d/data/old/cache').some((r) => r.includes('项目之外')), '递归删除其他盘的 /d/... 要问')
+    ok(detectDanger('write', { path: '/c/Windows/System32/drivers/etc/hosts' }, work).length > 0, '写 /c/Windows 按 Windows 系统目录要问')
+    ok(isBroadTarget('/c') && isBroadTarget('/c/users/me') && !isBroadTarget('/c/users/me/bench/proj') && !isBroadTarget('/tmp/build/cache'), 'Git Bash 盘符按 Windows 盘计算范围')
+  }
 }

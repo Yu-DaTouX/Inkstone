@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { appendReminder } from './request-reminder.js'
+import { registerWriteLineEndings } from './write-line-endings.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with `yan tasks apply` before the first change, tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
-const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change (at most 8 steps, each a short title of 32 characters or fewer; put details in your messages, not in the title), tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
+const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: write the steps with the `todos` tool before the first change (at most 20 steps, each a short title of 80 characters or fewer; put details in your messages, not in the title), tick them off as they finish and update the list if the plan changes; the user follows progress in that panel.'
 const CLI_ONLY_GROUPS = [
   '- question: ask the user when information or a decision is missing',
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
@@ -128,40 +128,18 @@ export function environmentGuide(now = new Date(), platform = process.platform, 
 }
 const ENVIRONMENT_SECTION = 'inkstone_environment'
 
-export const TASK_REMINDER_AFTER = 8
-export function taskReminder(tools = false) {
-  const how = tools ? 'with the `todos` tool' : 'with `yan tasks apply`'
-  return `<system-reminder>This turn has run many tool calls without a to-do list. If the work has 3+ distinct steps, write them ${how} now and tick them off as they finish, so the user can follow progress. Otherwise, keep working quietly; tool-call count alone is not a reason to speak. Only add a short status line in your reply language at a substantive point allowed by the existing progress guidance: a failed step, a change of approach, a need for user input, a finding that would change the user's decision, or a long run without to-dos entering a new phase. Always honor a user request for silence or only a final answer.</system-reminder>`
-}
-export const TASK_REMINDER = taskReminder(false)
-
-export const TASK_STALE_AFTER = 20
-export function staleTaskReminder(tools = false) {
-  const how = tools ? 'the `todos` tool' : '`yan tasks apply`'
-  return `<system-reminder>The to-do list has not been updated for ${TASK_STALE_AFTER}+ tool calls, so the user's progress panel may be out of date. If steps have finished, tick them off with ${how} now; if the plan changed, rewrite the list. Do not mention this reminder.</system-reminder>`
-}
-
-export function touchesTasks(toolName, input) {
-  if (toolName === TODOS_TOOL.name) return true
-  return toolName === 'bash' && /\byan\s+tasks\b/.test(String(input?.command ?? ''))
-}
-
-export function withTaskReminder(payload, tools = false) {
-  return appendReminder(payload, taskReminder(tools))
-}
-
 const TODOS_TOOL = {
   name: 'todos',
   label: 'To-dos',
-  description: 'Update the user\'s to-do panel. action: "set" replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 8 items; each text is a short title of 32 characters or fewer.',
+  description: 'Update the user\'s to-do panel. action: "set" replaces the whole list with items; "add" appends items; "complete"/"uncomplete"/"remove" take a 1-based index; "clear" empties it. At most 20 items; each text is a short title of 80 characters or fewer.',
   parameters: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['set', 'add', 'complete', 'uncomplete', 'remove', 'clear'] },
       items: {
         type: 'array',
-        maxItems: 8,
-        items: { type: 'object', properties: { text: { type: 'string', maxLength: 32 }, done: { type: 'boolean' } }, required: ['text'] }
+        maxItems: 20,
+        items: { type: 'object', properties: { text: { type: 'string', maxLength: 80 }, done: { type: 'boolean' } }, required: ['text'] }
       },
       index: { type: 'integer', minimum: 1 }
     },
@@ -194,53 +172,13 @@ export function createTodosTool(call = callHostTool) {
   }
 }
 
-function registerTaskReminder(pi, tools) {
-  let calls = 0
-  let planned = false
-  let reminded = false
-  let sincePlan = 0
-  let staleReminded = false
-  pi.on('message_end', (event) => {
-    if (String(event?.message?.role ?? '') !== 'user') return
-    calls = 0
-    planned = false
-    reminded = false
-    sincePlan = 0
-    staleReminded = false
-  })
-  pi.on('tool_call', (event) => {
-    calls += 1
-    sincePlan += 1
-    if (touchesTasks(String(event?.toolName ?? ''), event?.input)) {
-      planned = true
-      sincePlan = 0
-      staleReminded = false
-    }
-    return undefined
-  })
-  pi.on('before_provider_request', (event) => {
-    if (planned) {
-      if (staleReminded || sincePlan < TASK_STALE_AFTER) return undefined
-      const next = appendReminder(event?.payload, staleTaskReminder(tools))
-      if (!next) return undefined
-      staleReminded = true
-      return next
-    }
-    if (reminded || calls < TASK_REMINDER_AFTER) return undefined
-    const next = withTaskReminder(event?.payload, tools)
-    if (!next) return undefined
-    reminded = true
-    return next
-  })
-}
-
 const MARKER = 'Inkstone provides local capabilities through the `yan` CLI'
 
 export default function capabilityGuideExtension(pi) {
   const tools = hostToolsAvailable() && typeof pi.registerTool === 'function'
   if (tools) pi.registerTool(createTodosTool())
   const guideText = capabilityGuide(tools)
-  registerTaskReminder(pi, tools)
+  registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {
     const base = String(event?.systemPrompt ?? '')
     if (base.includes(MARKER)) return

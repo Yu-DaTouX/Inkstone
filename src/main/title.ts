@@ -128,6 +128,13 @@ export interface TitleResult {
   fromCache?: boolean
 }
 
+export async function fallbackTitle(sessionId: string, firstMessage: string): Promise<TitleResult | null> {
+  const title = cleanTitle(firstMessage)
+  if (!title) return null
+  await saveTitle(sessionId, title)
+  return { title }
+}
+
 export async function generateTitle(opts: {
   sessionId: string
   samples: string[]
@@ -162,6 +169,7 @@ export async function generateTitle(opts: {
       '--no-context-files',
       '--no-skills',
       '--no-prompt-templates',
+      '--no-tools',
       ...(process.env.YAN_TEST_MODEL ? ['--model', process.env.YAN_TEST_MODEL] : [])
     ],
     env: { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }

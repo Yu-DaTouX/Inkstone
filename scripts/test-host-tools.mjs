@@ -75,20 +75,17 @@ try {
   assert.match(todoResult.content[0].text, /\[x\] 1\. read/)
   assert.equal(todoResult.details.revision, 2)
   const todoFail = guide.todosResult({ ok: false, error: 'index out of range', data: { todos: [{ text: 'x', done: false }] } })
-  assert.match(todos.description, /action: "set" replaces the whole list with items; "add" appends items; "complete"\/"uncomplete"\/"remove" take a 1-based index; "clear" empties it\..*At most 8 items.*32 characters/)
+  assert.match(todos.description, /action: "set" replaces the whole list with items; "add" appends items; "complete"\/"uncomplete"\/"remove" take a 1-based index; "clear" empties it\..*At most 20 items.*80 characters/)
+  assert.equal(todos.parameters.properties.items.maxItems, 20)
+  assert.equal(todos.parameters.properties.items.items.properties.text.maxLength, 80)
   assert.equal(todoFail.isError, true)
   assert.match(todoFail.content[0].text, /\[ \] 1\. x/)
 
-  assert.equal(guide.touchesTasks('todos', {}), true)
-  assert.equal(guide.touchesTasks('bash', { command: 'yan tasks apply' }), true)
-  assert.equal(guide.touchesTasks('bash', { command: 'ls' }), false)
   assert.equal(guide.CAPABILITY_GUIDE, guide.capabilityGuide(false))
   const withTools = guide.capabilityGuide(true)
   assert.match(withTools, /the `todos` tool/)
   assert.doesNotMatch(withTools, /yan tasks apply|- question: |- tasks: /)
   assert.match(guide.CAPABILITY_GUIDE, /yan tasks apply/)
-  assert.match(guide.taskReminder(true), /`todos` tool/)
-  assert.equal(guide.TASK_REMINDER, guide.taskReminder(false))
   assert.match(guide.environmentGuide(new Date(2026, 9, 26), 'win32', undefined), /Git Bash.*edit\/write tools; Python text-mode writes on Windows turn \\n into \\r\\n\./)
   assert.match(question.TOOL_GUIDANCE, /`question` tool/)
   assert.match(question.CLI_GUIDANCE, /yan question ask/)
@@ -111,15 +108,9 @@ try {
     assert.equal(definition.parameters.type, 'object')
   }
 
-  const payloadFor = (text = '继续') => ({ messages: [{ role: 'user', content: text }] })
-  hooks.tool_call({ toolName: 'todos', input: { action: 'set', items: [{ text: 'a' }] } })
-  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
-  assert.equal(hooks.before_provider_request({ payload: payloadFor() }), undefined, '写过计划后长回合不再提醒写计划')
-  hooks.message_end({ message: { role: 'user' } })
-  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
-  const reminded = hooks.before_provider_request({ payload: payloadFor() })
-  assert.ok(reminded, '用户提出新要求后计划标记归零，长回合又会提醒写计划')
-  assert.match(JSON.stringify(reminded.messages.at(-1)), /many tool calls without a to-do list/)
+  // 催办和收尾提醒都已去掉：提问与能力指引不再往请求里追加任何提醒
+  assert.equal(hooks.before_provider_request, undefined, '提问与能力指引不注册 before_provider_request')
+  assert.equal(hooks.message_end, undefined, '提问与能力指引不跟踪回合')
 
   const { appendReminder } = await import(new URL('../resources/pi-extensions/request-reminder.js', import.meta.url))
   const userItem = { role: 'user', content: [{ type: 'input_text', text: '继续' }] }
@@ -131,10 +122,6 @@ try {
   assert.deepEqual(appendReminder({ input: [{ type: 'message', role: 'user', content: 'hi' }] }, 'R').input.at(-1).content, [{ type: 'input_text', text: 'hi' }, { type: 'input_text', text: 'R' }])
   assert.equal(appendReminder({ input: [] }, 'R'), undefined)
   assert.equal(appendReminder({}, 'R'), undefined)
-  hooks.message_end({ message: { role: 'user' } })
-  for (let i = 0; i < guide.TASK_REMINDER_AFTER; i++) hooks.tool_call({ toolName: 'bash', input: { command: 'ls' } })
-  const responsesReminded = hooks.before_provider_request({ payload: { input: [userItem, toolOutput] } })
-  assert.match(JSON.stringify(responsesReminded?.input?.at(-1)), /many tool calls without a to-do list/, 'Responses 接口也能收到写计划提醒')
 
   const sizes = registered.map((definition) => JSON.stringify({ name: definition.name, description: definition.description, parameters: definition.parameters }).length)
   const removed = guide.CAPABILITY_GUIDE.length - withTools.length + (question.CLI_GUIDANCE.length - question.TOOL_GUIDANCE.length)
