@@ -81,6 +81,15 @@ export function fingerprint(toolName, input) {
   return `${String(toolName ?? '')}\n${stableJson(input ?? {})}`
 }
 
+export function resultFingerprint(event) {
+  return stableJson({
+    content: event?.content,
+    details: event?.details,
+    structuredContent: event?.structuredContent,
+    isError: event?.isError
+  })
+}
+
 export function isSubagentPollLoop(toolName, input) {
   if (toolName !== 'bash') return false
   const command = String(input?.command ?? '')
@@ -90,7 +99,7 @@ export function isSubagentPollLoop(toolName, input) {
 
 function remindText(toolName, run) {
   return (
-    `Repeat guard: you have called \`${toolName}\` ${run} times in a row with **byte-identical arguments**.\n` +
+    `Repeat guard: you have called \`${toolName}\` ${run} times in a row with **byte-identical arguments and results**.\n` +
     'Running the same call again will very likely return the same result. Either\n' +
     '(a) explain what you are still missing and change the arguments, or\n' +
     '(b) if you are stuck because of a blocker, say so and stop.\n' +
@@ -100,13 +109,15 @@ function remindText(toolName, run) {
 
 export default function repeatGuard(pi) {
   let lastKey = null
-  let run = 0
+  let lastResultKey = null
+  let streak = 0
   let warned = false
 
   const reset = (reason) => {
-    if (run > 0) note('reset', { reason, run })
+    if (streak > 0) note('reset', { reason, run: streak })
     lastKey = null
-    run = 0
+    lastResultKey = null
+    streak = 0
     warned = false
   }
 
@@ -144,34 +155,44 @@ export default function repeatGuard(pi) {
       }
     }
     const key = fingerprint(toolName, event?.input)
-    if (key === lastKey) {
-      run += 1
-    } else {
-      lastKey = key
-      run = 1
-      warned = false
-    }
-    if (run >= BLOCK_AT) {
+    if (key === lastKey && streak + 1 >= BLOCK_AT) {
       const blocks = writeCounter(toolName)
-      note('repeat_blocked', { tool: toolName, run, blocks, key: key.slice(0, 200) })
+      note('repeat_blocked', { tool: toolName, run: streak + 1, blocks, key: key.slice(0, 200) })
       return {
         block: true,
         reason:
-          `Blocked by the repeat guard: \`${toolName}\` was called ${run} times in a row with identical arguments. ` +
+          `Blocked by the repeat guard: \`${toolName}\` was called ${streak + 1} times in a row with identical arguments and identical results. ` +
           'Do not retry it. Either change the arguments, or report that you are blocked.'
       }
     }
-    if (run >= WARN_AT) note('repeat_detected', { tool: toolName, run, warned })
+    return undefined
+  })
+
+  pi.on('tool_result', (event) => {
+    const toolName = String(event?.toolName ?? '')
+    if (!toolName) return undefined
+    const key = fingerprint(toolName, event?.input)
+    const resKey = resultFingerprint(event)
+    if (key === lastKey && resKey === lastResultKey) {
+      streak += 1
+    } else {
+      if (streak > 0) note('reset', { reason: key === lastKey ? 'result_changed' : 'args_changed', run: streak })
+      streak = 1
+      warned = false
+    }
+    lastKey = key
+    lastResultKey = resKey
+    if (streak >= WARN_AT) note('repeat_detected', { tool: toolName, run: streak, warned })
     return undefined
   })
 
   pi.on('before_provider_request', (event) => {
-    if (run < WARN_AT || warned) return undefined
+    if (streak < WARN_AT || warned) return undefined
     const toolName = String(lastKey ?? '').split('\n')[0] || 'the same tool'
-    const next = appendReminder(event?.payload, `<system-reminder>${remindText(toolName, run)}</system-reminder>`)
+    const next = appendReminder(event?.payload, `<system-reminder>${remindText(toolName, streak)}</system-reminder>`)
     if (!next) return undefined
     warned = true
-    note('repeat_warn', { tool: toolName, run })
+    note('repeat_warn', { tool: toolName, run: streak })
     return next
   })
 

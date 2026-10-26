@@ -6,11 +6,87 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 import { bashQuotedPath, fileTransportOperations } from '../resources/pi-extensions/shell-transport.js'
-import { registerBashFileTransport } from '../resources/pi-extensions/shell-fallback.js'
+import { registerBashFileTransport, createUtf8ConsolePreamble, needsUtf8Console } from '../resources/pi-extensions/shell-fallback.js'
 import { planPythonPath } from '../resources/pi-extensions/windows-python.js'
 
 assert.equal(bashQuotedPath('C:\\Users\\a b\\x.sh'), `'C:/Users/a b/x.sh'`)
 assert.equal(bashQuotedPath("C:\\Users\\o'neil\\x.sh"), `'C:/Users/o'\\''neil/x.sh'`)
+
+const skippable = [
+  'git status',
+  'cd src && rg -n "a|b" . | head -20',
+  'ls -la 2>&1 | wc -l',
+  'FOO=1 git log -1',
+  'timeout 30 git fetch',
+  '# 注释\ngit diff',
+  'xargs -n 1 rm < list.txt',
+  'yan subagent list'
+]
+for (const command of skippable) assert.equal(needsUtf8Console(command), false, `应可跳过 chcp: ${command}`)
+
+const needsChcp = [
+  'node x.mjs',
+  'npm test',
+  'powershell -NoProfile -c "Get-Date"',
+  'git log $(cat ref)',
+  'echo `date`',
+  '(cd x; ls)',
+  'cat <<EOF\nhi\nEOF',
+  'source env.sh',
+  './run.sh',
+  'find . -name "*.ps1" -exec powershell -File {} \\;',
+  'echo "unterminated'
+]
+for (const command of needsChcp) assert.equal(needsUtf8Console(command), true, `应需要 chcp: ${command}`)
+
+{
+  const preamble = createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(false) })
+  assert.equal(await preamble('git status'), '', '代码页非 65001 时，可跳过命令不带前置')
+  assert.match(await preamble('node x.mjs'), /chcp\.com 65001/, '代码页非 65001 时，需要的命令带前置')
+}
+
+{
+  const preamble = createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(true) })
+  assert.equal(await preamble('node x.mjs'), '', '代码页已是 65001 时，即便命令需要也不带前置')
+}
+
+{
+  const previous = process.env.YAN_BASH_UTF8_CONSOLE
+  process.env.YAN_BASH_UTF8_CONSOLE = 'always'
+  try {
+    const preamble = createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(true) })
+    assert.match(await preamble('git status'), /chcp\.com 65001/, 'YAN_BASH_UTF8_CONSOLE=always 时总是带前置')
+  } finally {
+    if (previous === undefined) delete process.env.YAN_BASH_UTF8_CONSOLE
+    else process.env.YAN_BASH_UTF8_CONSOLE = previous
+  }
+}
+
+{
+  let seen
+  const ops = fileTransportOperations({
+    async exec(command) {
+      seen = command
+      return 'ok'
+    }
+  }, { preamble: (command) => (command.includes('skip') ? '' : 'PRE') })
+  await ops.exec('skip me', tmpdir())
+  assert.ok(!seen.startsWith('PRE'), 'preamble 为函数时，可跳过的命令不带前置')
+  await ops.exec('need it', tmpdir())
+  assert.ok(seen.startsWith('PRE; .'), 'preamble 为函数时，需要的命令带前置')
+}
+
+{
+  let seen
+  const ops = fileTransportOperations({
+    async exec(command) {
+      seen = command
+      return 'ok'
+    }
+  }, { preamble: 'PRE' })
+  await ops.exec('anything', tmpdir())
+  assert.ok(seen.startsWith('PRE; .'), 'preamble 为字符串时行为不变')
+}
 
 const deadPid = await new Promise((resolvePid, rejectPid) => {
   const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' })

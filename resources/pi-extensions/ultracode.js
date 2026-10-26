@@ -57,6 +57,7 @@ export function readEnabled(file, sessionId) {
 }
 
 export function isPrimaryRunner(env = process.env) {
+  if (env.YAN_RUNNER_KIND === 'fork') return false
   const runner = env.YAN_RUNNER_ID
   return !runner || runner === 'primary' || runner === env.YAN_SESSION_ID
 }

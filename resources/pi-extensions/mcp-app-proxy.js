@@ -86,7 +86,7 @@ function buildToolDefinitions(tools, projectId) {
 export function hostedServersNote(definitions) {
   const servers = [...new Set(definitions.map((definition) => definition.namespace?.name).filter(Boolean))].sort()
   if (servers.length === 0) return ''
-  return `Inkstone-hosted MCP servers: ${servers.join(', ')}. Their tools are not declared to you upfront; load them with \`tool_search\` or call them from codemode scripts.`
+  return `Inkstone-hosted MCP servers: ${servers.join(', ')}. Their tools are not declared to you upfront; load them with \`tool_search\` (it matches English words and tool names, not Chinese) or call them from codemode scripts.`
 }
 
 const HOSTED_SERVERS_SECTION = 'inkstone_hosted_mcp'

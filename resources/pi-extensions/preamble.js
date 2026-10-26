@@ -17,12 +17,13 @@ function addWorkRules(guidelines) {
   for (const rule of WORK_RULES) if (!guidelines.includes(rule)) guidelines.push(rule)
 }
 
-const DOCS_BLOCK =/<docs>\n([\s\S]*?)\n<\/docs>/
+const DOCS_BLOCK = /<docs>\n([\s\S]*?)\n<\/docs>/
+const NATIVE_DOCS_MARKER = 'Main documentation:'
 
-function compactDocs(body) {
-  const main = /Main documentation:\s*(.+)/.exec(body)?.[1]?.trim()
-  if (!main) return undefined
-  return `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, skills or models): ${main}; docs/ and examples/ sit next to it.`
+function stripNativeDocsBlock(text) {
+  const match = DOCS_BLOCK.exec(text)
+  if (!match || !match[1].includes(NATIVE_DOCS_MARKER)) return text
+  return text.replace(DOCS_BLOCK, '').replace(/\n{3,}/g, '\n\n')
 }
 
 const PROGRESS_SECTION = 'inkstone_progress'
@@ -31,10 +32,18 @@ function withInkstonePreamble(messages) {
   if (!Array.isArray(messages)) return undefined
   let changed = false
   const next = messages.map((message) => {
-    const preamble = message?.role === 'system' ? message.sections?.preamble : undefined
-    if (typeof preamble !== 'string' || !preamble.includes(NATIVE_PREAMBLE)) return message
+    if (message?.role !== 'system') return message
+    const sections = message.sections
+    const preamble = sections?.preamble
+    const hasNativePreamble = typeof preamble === 'string' && preamble.includes(NATIVE_PREAMBLE)
+    const docs = sections?.docs
+    const hasNativeDocs = typeof docs === 'string' && docs.includes(NATIVE_DOCS_MARKER)
+    if (!hasNativePreamble && !hasNativeDocs) return message
     changed = true
-    return { ...message, sections: { ...message.sections, preamble: preamble.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) } }
+    const nextSections = { ...sections }
+    if (hasNativePreamble) nextSections.preamble = preamble.replace(NATIVE_PREAMBLE, YAN_PREAMBLE)
+    if (hasNativeDocs) nextSections.docs = null
+    return { ...message, sections: nextSections }
   })
   return changed ? next : undefined
 }
@@ -48,18 +57,13 @@ export default function preambleExtension(pi) {
     const base = String(event?.systemPrompt ?? '')
     const sections = event?.systemPromptOptions?.sections
     if (sections && typeof sections === 'object') {
-      const docs = DOCS_BLOCK.exec(base)
-      const short = docs ? compactDocs(docs[1]) : undefined
-      if (short) sections.docs = short
       sections[PROGRESS_SECTION] = PROGRESS_GUIDANCE
       addWorkRules(event.systemPromptOptions.promptGuidelines)
       return
     }
     const identity = base.includes(YAN_PREAMBLE) ? base : base.includes(NATIVE_PREAMBLE) ? base.replace(NATIVE_PREAMBLE, YAN_PREAMBLE) : `${base}\n\n${YAN_PREAMBLE}`
-    const docs = DOCS_BLOCK.exec(identity)
-    const short = docs ? compactDocs(docs[1]) : undefined
-    const compacted = short ? identity.replace(DOCS_BLOCK, `<docs>\n${short}\n</docs>`) : identity
-    const updated = compacted.includes(FALLBACK_GUIDANCE) ? compacted : `${compacted}\n\n${FALLBACK_GUIDANCE}`
+    const stripped = stripNativeDocsBlock(identity)
+    const updated = stripped.includes(FALLBACK_GUIDANCE) ? stripped : `${stripped}\n\n${FALLBACK_GUIDANCE}`
     if (updated === base) return
     return { systemPrompt: updated }
   })

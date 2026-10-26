@@ -187,6 +187,19 @@ assert.equal(
   assert.ok(capped.includes('(2 older ones omitted)') && capped.includes('[#2.1] 第三条') && !capped.includes('第一条'), '超出上限时从最早的丢，并注明丢了几条')
 }
 {
+  const hostMessages = [
+    { role: 'user', content: '<subagent-notification id="a1" status="done">\n子代理 a1（可修改）已完成：改一下\n这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。\n</subagent-notification>' },
+    { role: 'user', content: '[循环恢复 · 自动继续 1/1]\n上一轮因输出重复被安全中止。请核对已完成的工具结果，在当前会话继续尚未完成的原任务。' },
+    { role: 'user', content: '[模型错误恢复 · 自动继续 1/1]\n上一轮模型请求因暂时性错误中断。' },
+    { role: 'user', content: '[砚宿主通知：用户批准的会话移动已完成]\n当前工作目录（路径数据）："/a/b"' },
+    { role: 'user', content: '额度已恢复，请从上一轮中断的地方继续完成任务。' },
+    { role: 'user', content: '真正的用户消息：继续改' }
+  ]
+  const block = mod.userMessagesBlock(undefined, hostMessages, 3, 10_000)
+  assert.ok(block.includes('[#3.6] 真正的用户消息：继续改'), '真实用户输入仍保留')
+  assert.ok(!/subagent-notification|循环恢复|模型错误恢复|砚宿主通知|额度已恢复/.test(block), '子代理通知、循环与模型错误自动续跑、会话移动续跑、额度恢复续跑都不计入用户原话附录')
+}
+{
   let n = 0
   const h = harness(() => (++n === 1 ? { stopReason: 'length', content: [{ type: 'text', text: '太长' }], usage: { input: 1 } } : ok('短摘要', { input: 1 })))
   const result = await h.run()

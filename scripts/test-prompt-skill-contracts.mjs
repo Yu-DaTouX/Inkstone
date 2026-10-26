@@ -23,7 +23,8 @@ export async function runPromptSkillContractTests(ok) {
   for (const tools of [false, true]) {
     const guide = capabilityGuide(tools)
     ok(!/Batch independent reads|Promise\.allSettled/.test(guide), '能力指引不重复 pi 原生 <rules> 里的 codemode 批量规则')
-    match(guide, /When direct tools are available, use `write`\/`edit` directly for large file content.*context trimming/, '能力指引让大段写入保留可裁剪参数且兼容仅 codemode 模式')
+    match(guide, /When direct tools are available, use `write`\/`edit` directly for large file content.*escaping/, '能力指引让大段写入走直调而非 codemode 转义，且兼容仅 codemode 模式')
+    ok(!/context trimming/.test(guide), '不再引用已删除的上下文裁剪功能（F07）')
   }
   let request
   const todos = createTodosTool(async input => { request = input; return { ok: true, data: { action: 'set', revision: 1, todos: input.params.items } } })

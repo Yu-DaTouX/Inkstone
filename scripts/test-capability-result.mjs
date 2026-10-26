@@ -171,6 +171,18 @@ export async function runCapabilityResultTests(ok, mod) {
       const noResult = await call({ command: 'operations.status' })
       ok(noResult.status === 200 && typeof noResult.body.resultFile === 'string', 'operations.status 自带结果文件')
 
+      const byId = await call({ command: 'operations.status', params: { id: good.body.operationId } })
+      ok(byId.status === 200 && byId.body.ok === true, '传 id 查某一次操作', JSON.stringify(byId.body))
+      const opFile = JSON.parse(readFileSync(byId.body.resultFile, 'utf8'))
+      ok(
+        opFile?.op?.id === good.body.operationId && opFile.op.command === 'capabilities.search' && opFile.op.resultFile === good.body.resultFile,
+        'F10：operations.status 传 id 时真的按 id 返回那一条（而不是忽略 id 回最近列表）',
+        JSON.stringify(opFile)
+      )
+
+      const missingId = await call({ command: 'operations.status', params: { id: 'no-such-op' } })
+      ok(missingId.status === 200 && missingId.body.ok === false && missingId.body.code === 'operation_not_found', 'F10：传了不存在的 id 要明确报错', JSON.stringify(missingId.body))
+
       const raw = await fetch(started.url + '/rpc', {
         method: 'POST',
         headers: { authorization: 'Bearer ' + started.token, 'content-type': 'application/json', connection: 'close' },

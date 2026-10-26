@@ -50,7 +50,8 @@ export function fileTransportOperations(base, { dir = tmpdir(), preamble = '' } 
       const file = join(dir, `yan-bash-${process.pid}-${randomBytes(8).toString('hex')}.sh`)
       await writeFile(file, command, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
       try {
-        return await base.exec(`${preamble ? `${preamble}; ` : ''}. ${bashQuotedPath(file)}`, cwd, options)
+        const resolvedPreamble = typeof preamble === 'function' ? await preamble(command) : preamble
+        return await base.exec(`${resolvedPreamble ? `${resolvedPreamble}; ` : ''}. ${bashQuotedPath(file)}`, cwd, options)
       } finally {
         await rm(file, { force: true }).catch(() => {})
       }

@@ -24,14 +24,14 @@ export async function runPreambleExtensionTests(ok, mod) {
   ok(run(`${YAN_PREAMBLE}\n\n<tools>`).systemPrompt.endsWith(GUIDANCE),'旧身份提示补齐进展约定')
   {
     const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
-    const withDocs = run(`${NATIVE_PREAMBLE}\n\n${docs}\n\n<cwd>\nC:/x\n</cwd>`)
-    ok(withDocs.systemPrompt.includes('<docs>\nPi documentation') && withDocs.systemPrompt.includes('C:\\pi\\README.md') && !withDocs.systemPrompt.includes('Additional docs'), 'pi 文档段压成一行，保留主文档路径')
-    ok(withDocs.systemPrompt.includes('<cwd>\nC:/x\n</cwd>'), '压缩文档段不影响后面的段落')
-    ok(run(withDocs.systemPrompt) === undefined, '幂等：已压缩的文档段不再改动')
+    const withoutDocs = run(`${NATIVE_PREAMBLE}\n\n${docs}\n\n<cwd>\nC:/x\n</cwd>`)
+    ok(!withoutDocs.systemPrompt.includes('<docs>') && !withoutDocs.systemPrompt.includes('C:\\pi\\README.md'), 'pi 文档段整段删除，不再提示随包运行时里不存在的路径')
+    ok(withoutDocs.systemPrompt.includes('<cwd>\nC:/x\n</cwd>'), '删除文档段不影响后面的段落')
+    ok(run(withoutDocs.systemPrompt) === undefined, '幂等：已删除文档段的提示不再改动')
     const sections = {}
     handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections } }, {})
-    ok(typeof sections.docs === 'string' && sections.docs.includes('C:\\pi\\README.md'), '同名分区 docs 写入压缩版')
-    ok(run(`${NATIVE_PREAMBLE}\n\n<docs>\nsomething else\n</docs>`).systemPrompt.includes('something else'), '认不出的文档段原样保留')
+    ok(sections.docs === undefined, '具名分区模式不再写入压缩文档，交给 context_with_system 整段去掉')
+    ok(run(`${NATIVE_PREAMBLE}\n\n<docs>\nsomething else\n</docs>`).systemPrompt.includes('something else'), '认不出的文档段（不含原生标记）原样保留')
   }
   {
     const docs = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n- Additional docs: C:\\pi\\docs\n</docs>'
@@ -39,16 +39,18 @@ export async function runPreambleExtensionTests(ok, mod) {
     const promptGuidelines = ['Existing rule', WORK_RULES[0]]
     const result = handlers.before_agent_start({ systemPrompt: `${NATIVE_PREAMBLE}\n\n${docs}`, systemPromptOptions: { sections, promptGuidelines } }, {})
     ok(result === undefined, '有具名分区时不返回整段提示（否则 pi 会固定整段提示，其他扩展的分区失效）')
-    ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs?.includes('C:\\pi\\README.md'), '进展约定与压缩文档写进具名分区')
+    ok(sections.inkstone_progress === PROGRESS_GUIDANCE && sections.docs === undefined, '进展约定写进具名分区，文档分区不在此处处理（交给 context_with_system 整段去掉）')
     ok(promptGuidelines.length === 1 + WORK_RULES.length && promptGuidelines[0] === 'Existing rule' && WORK_RULES.every((rule) => promptGuidelines.filter((item) => item === rule).length === 1), '工作规则逐条加进 pi 原生 <rules>，不重复')
 
     ok(typeof handlers.context_with_system === 'function', '扩展注册了 context_with_system')
-    const system = { role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLE, tools: '<tools>\n- read\n</tools>' } }
+    const nativeDocsSection = '<docs>\nPi documentation (read only when the user asks about pi itself):\n- Main documentation: C:\\pi\\README.md\n</docs>'
+    const system = { role: 'system', content: '', sections: { preamble: NATIVE_PREAMBLE, tools: '<tools>\n- read\n</tools>', docs: nativeDocsSection } }
     const user = { role: 'user', content: 'hi' }
     const replaced = handlers.context_with_system({ type: 'context_with_system', messages: [system, user] }, {})
     ok(replaced?.messages?.[0]?.sections?.preamble === YAN_PREAMBLE && replaced.messages[0].sections.tools === system.sections.tools, '发出请求前把系统消息里的 pi 开场白换成砚的，其他分区不动')
-    ok(system.sections.preamble === NATIVE_PREAMBLE && replaced.messages[1] === user, '不改原消息对象，非系统消息原样保留')
-    ok(handlers.context_with_system({ type: 'context_with_system', messages: replaced.messages }, {}) === undefined, '幂等：已是砚开场白时不再改动')
+    ok(replaced.messages[0].sections.docs === null, '发出请求前把原生文档分区整段去掉（置 null，pi 据此从最终提示里剔除）')
+    ok(system.sections.preamble === NATIVE_PREAMBLE && system.sections.docs === nativeDocsSection && replaced.messages[1] === user, '不改原消息对象，非系统消息原样保留')
+    ok(handlers.context_with_system({ type: 'context_with_system', messages: replaced.messages }, {}) === undefined, '幂等：已换成砚开场白且文档分区已置空时不再改动')
     ok(handlers.context_with_system({ type: 'context_with_system', messages: [user] }, {}) === undefined, '没有系统消息时不改动')
   }
   ok(PROGRESS_GUIDANCE.includes('requests silence') && PROGRESS_GUIDANCE.includes('Work quietly') && PROGRESS_GUIDANCE.includes('Do not narrate routine steps') && PROGRESS_GUIDANCE.includes('Inkstone internals') && !PROGRESS_GUIDANCE.includes('After each batch of tool calls'), '进展约定：安静干活，只在关键节点说话，不讲砚内部机制，尊重静默要求')

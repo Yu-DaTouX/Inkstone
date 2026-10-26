@@ -17,7 +17,9 @@ export async function runUltracodeExtensionTests(ok, mod) {
 
   ok(isPrimaryRunner({ YAN_RUNNER_ID: 'primary' }), 'primary 是主会话')
   ok(isPrimaryRunner({ YAN_RUNNER_ID: 's1', YAN_SESSION_ID: 's1' }), '运行 ID 等于会话 ID 时是主会话')
-  ok(!isPrimaryRunner({ YAN_RUNNER_ID: 'sub-1', YAN_SESSION_ID: 's1' }), 'fork 子代理不加载深度模式')
+  ok(!isPrimaryRunner({ YAN_RUNNER_ID: 'sub-1', YAN_SESSION_ID: 's1' }), '子代理运行 ID 与会话 ID 不同时不是主会话')
+  ok(!isPrimaryRunner({ YAN_RUNNER_ID: 'f1', YAN_SESSION_ID: 'f1', YAN_RUNNER_KIND: 'fork' }), 'fork 子代理的运行 ID 与会话 ID 相同也不算主会话')
+  ok(isPrimaryRunner({ YAN_RUNNER_ID: 'f1', YAN_SESSION_ID: 'f1' }), '没有 YAN_RUNNER_KIND 标记时保留原判定（兼容旧环境）')
 
   ok(lastAnnouncement([]).mode === 'off', '没有记录时视为关闭')
   const afterOn = lastAnnouncement([userEntry(), marker('on'), userEntry(), userEntry()])
@@ -102,7 +104,15 @@ export async function runUltracodeExtensionTests(ok, mod) {
     process.env.YAN_SESSION_ID = 's1'
     const forkHandlers = {}
     extension({ on: (name, fn) => (forkHandlers[name] = fn) })
-    ok(!forkHandlers.before_agent_start, 'fork 子代理里扩展不注册')
+    ok(!forkHandlers.before_agent_start, '子代理里扩展不注册')
+
+    process.env.YAN_RUNNER_ID = 'f1'
+    process.env.YAN_SESSION_ID = 'f1'
+    process.env.YAN_RUNNER_KIND = 'fork'
+    const forkHandlers2 = {}
+    extension({ on: (name, fn) => (forkHandlers2[name] = fn) })
+    ok(!forkHandlers2.before_agent_start, 'fork 子代理（运行 ID 等于会话 ID）里扩展也不注册，不会误触发复核闸门')
+    delete process.env.YAN_RUNNER_KIND
   } finally {
     if (prevData === undefined) delete process.env.YAN_DATA_DIR
     else process.env.YAN_DATA_DIR = prevData

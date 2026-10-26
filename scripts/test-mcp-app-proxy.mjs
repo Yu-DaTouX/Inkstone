@@ -380,6 +380,7 @@ try {
     const sections = {}
     ok(startHooks[0]({ systemPrompt: 'BASE', systemPromptOptions: { sections } }) === undefined, '扩展：有具名分区时只写分区、不返回整段提示')
     ok((sections.inkstone_hosted_mcp ?? '').includes('app-stdio') && sections.inkstone_hosted_mcp.includes('tool_search'), '扩展：分区写明托管服务器名与 tool_search 用法', sections.inkstone_hosted_mcp)
+    ok(/tool_search.*not Chinese/.test(sections.inkstone_hosted_mcp ?? ''), '扩展：说明 tool_search 不匹配中文检索词（F06）', sections.inkstone_hosted_mcp)
     ok(/^[\x20-\x7e]+$/.test(sections.inkstone_hosted_mcp ?? ''), '扩展：分区内容为英文')
     const injected = startHooks[0]({ systemPrompt: 'BASE' })
     ok(injected?.systemPrompt?.startsWith('BASE\n\n') && injected.systemPrompt.includes('app-stdio') && injected.systemPrompt.includes('tool_search'), '扩展：旧版 pi 没有分区时追加到系统提示末尾', injected?.systemPrompt)

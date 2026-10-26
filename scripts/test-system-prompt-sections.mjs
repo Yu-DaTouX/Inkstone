@@ -94,8 +94,8 @@ try {
     ['Work quietly. Before substantive tool work', 1, 'progress guidance appears once'],
     ['\n- Once the requested change is made and the relevant tests or checks pass, stop and report;', 0, 'no finish rule is added'],
     ['\n- When exploring code, read whole files or large ranges', 1, 'work rules are added to pi rules once'],
-    ['its SDK, extensions, skills or models): ', 1, 'pi docs block is compacted'],
-    ['- Additional docs: ', 0, 'full pi docs block is not sent']
+    ['<docs>', 0, 'pi docs section is dropped entirely, not just compacted'],
+    ['Main documentation', 0, 'docs block content is not sent either']
   ]
   for (const [needle, expected, label] of expectations) equal(count(second, needle), expected, label)
   equal(first, second, 'system prompt is identical across turns')

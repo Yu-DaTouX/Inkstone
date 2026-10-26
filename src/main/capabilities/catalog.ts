@@ -39,14 +39,14 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.list',
     '子代理列表',
-    '列出当前所有子代理及其状态与耗时。',
+    '列出本会话派出的子代理及其状态与耗时（不含其他会话派出的）。',
     'read',
     'yan subagent list'
   ),
   builtin(
     'subagent.get',
-    '子代理转录',
-    '读取某个子代理的转录与活动，用于审阅它做了什么。',
+    '子代理结果',
+    '读取某个子代理当前的状态、最终消息与改动文件；默认不含完整转录，要完整过程加 --transcript。',
     'read',
     'yan subagent get --id <id>'
   ),
@@ -60,7 +60,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'subagent.stop',
     '停止子代理',
-    '停止一个正在运行的子代理（其工作树改动保留，由用户决定合并或放弃）。',
+    '停止一个正在运行的子代理；用 worktree 隔离时改动保留在工作树里，由用户决定合并或放弃，其他隔离方式直接停止、不额外保留改动。',
     'external-action',
     'yan subagent stop --id <id>'
   ),
@@ -75,7 +75,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
   builtin(
     'operations.status',
     '操作状态查询',
-    '按操作 ID 取回之前一次命令的完整结果文件（stdout 只有摘要，细节在这里）。',
+    '传 --id 查某一次操作的完整结果（stdout 只有摘要，细节在这里），找不到会报错；不传 id 则列出最近若干次操作。',
     'read',
     'yan operations status --id <id>'
   ),

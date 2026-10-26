@@ -198,7 +198,7 @@ export class CapabilityServer {
   private token = ''
   private port = 0
   private ctx: CapabilityContext | null = null
-  private ops: Array<{ id: string; command: string; at: number; ok: boolean; error?: string }> = []
+  private ops: Array<{ id: string; command: string; at: number; ok: boolean; error?: string; resultFile?: string; resultBytes?: number }> = []
   private readonly opsDir: string
   private readonly handlers: CapabilityHandlers
   private readonly allowCommands: Set<string>
@@ -354,7 +354,7 @@ export class CapabilityServer {
           ? this.describeOps(params)
           : await this.handlers.run(command, params, bound, cancel.signal)
       const file = this.writeResult(opId, out)
-      this.remember({ id: opId, command, at: Date.now(), ok: true })
+      this.remember({ id: opId, command, at: Date.now(), ok: true, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })
       reply(200, {
         ok: true,
         operationId: opId,
@@ -367,7 +367,7 @@ export class CapabilityServer {
       const code = err instanceof CapabilityCommandError ? err.code : undefined
       const data = err instanceof CapabilityCommandError ? err.data : undefined
       const file = data === undefined ? null : this.writeResult(opId, { data })
-      this.remember({ id: opId, command, at: Date.now(), ok: false, error: message })
+      this.remember({ id: opId, command, at: Date.now(), ok: false, error: message, ...(file ? { resultFile: file.path, resultBytes: file.bytes } : {}) })
       reply(200, {
         ok: false,
         operationId: opId,
@@ -444,7 +444,7 @@ export class CapabilityServer {
     if (this.ops.length > 50) this.ops.splice(0, this.ops.length - 50)
   }
 
-  recentOps(limit: number): Array<{ id: string; command: string; at: number; ok: boolean; error?: string }> {
+  recentOps(limit: number): Array<{ id: string; command: string; at: number; ok: boolean; error?: string; resultFile?: string; resultBytes?: number }> {
     return this.ops.slice(-Math.max(1, Math.min(limit, 50)))
   }
 
@@ -452,6 +452,17 @@ export class CapabilityServer {
     data: unknown
     summary: Record<string, unknown>
   } {
+    const id = typeof params.id === 'string' ? params.id.trim() : ''
+    if (id) {
+      const op = this.ops.find((o) => o.id === id)
+      if (!op) {
+        throw new CapabilityCommandError('operation_not_found', `找不到这次操作：${id}（本机最近 50 次操作内才能查到）`)
+      }
+      return {
+        data: { op },
+        summary: { kind: 'operations', id: op.id, command: op.command, ok: op.ok }
+      }
+    }
     const raw = Number(params.limit)
     const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 50) : 10
     const ops = this.recentOps(limit)

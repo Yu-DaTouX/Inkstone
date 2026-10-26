@@ -257,6 +257,19 @@ export function stripAppendices(summary) {
 
 const USER_ENTRY = /^\[#\d+\.\d+\] /
 
+const HOST_MESSAGE_PREFIXES = [
+  /^<subagent-notification\b/,
+  /^\[循环恢复 · 自动继续/,
+  /^\[模型错误恢复 · 自动继续/,
+  /^\[砚宿主通知：/
+]
+const QUOTA_RESUME_EXACT_TEXT = '额度已恢复，请从上一轮中断的地方继续完成任务。'
+
+function isHostAutomatedMessage(text) {
+  if (text === QUOTA_RESUME_EXACT_TEXT) return true
+  return HOST_MESSAGE_PREFIXES.some((re) => re.test(text))
+}
+
 // 用户原话由代码逐条保留：上次附的加上这次被压缩的，超出上限时从最早的丢
 export function userMessagesBlock(previousSummary, messages, compactionNo, maxChars) {
   const previous = previousSummary?.match(/<user-messages>\n[^\n]*\n([\s\S]*?)\n<\/user-messages>/)?.[1] ?? ''
@@ -264,7 +277,7 @@ export function userMessagesBlock(previousSummary, messages, compactionNo, maxCh
   messages.forEach((m, i) => {
     if (m?.role !== 'user') return
     const text = textOf(m.content).trim()
-    if (text) entries.push(`[#${compactionNo}.${i + 1}] ${text}`)
+    if (text && !isHostAutomatedMessage(text)) entries.push(`[#${compactionNo}.${i + 1}] ${text}`)
   })
   let size = entries.reduce((n, e) => n + e.length + 1, 0)
   let dropped = 0
