@@ -538,6 +538,11 @@
     color: var(--fg);
   }
 
+  .composer-permission-pop {
+    width: min(280px, calc(100vw - 16px));
+    min-width: 0;
+  }
+
   .composer-plus-menu,
   .composer-permission-menu {
     display: flex;

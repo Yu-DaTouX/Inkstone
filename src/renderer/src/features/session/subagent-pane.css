@@ -30,7 +30,7 @@
 
   .sa-pane-name {
     flex: 0 1 auto;
-    min-width: 3em;
+    min-width: 0;
     overflow: hidden;
     color: var(--fg);
     font-weight: var(--w-medium);
@@ -74,6 +74,18 @@
 
   @container sa-pane-head (max-width: 320px) {
     .sa-pane-role {
+      display: none;
+    }
+  }
+
+  @container sa-pane-head (max-width: 220px) {
+    .sa-pane-state-label {
+      display: none;
+    }
+  }
+
+  @container sa-pane-head (max-width: 120px) {
+    .sa-pane-state {
       display: none;
     }
   }

@@ -13,7 +13,7 @@ import {
   compactionTokensText
 } from '../../state/compaction-view'
 import { LIVE_QUOTA_MIN_GAP_MS, LIVE_QUOTA_POLL_MS, liveQuotaSupported, refreshLiveQuota, useLiveQuota } from '../../state/live-quota'
-import { visibleSubagentRuns } from '../../state/subagent-view'
+import { selectSubagentRuns, subagentScopeForView } from '../../state/subagent-view'
 import { useRunsV3 } from '../../state/runs-v3'
 import { sessionViewIdentity } from '../session/view-state'
 import { useSubagentStopping } from '../../state/subagent-stopping'
@@ -55,7 +55,6 @@ import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
 import { showPreview } from './tool-tiles'
 import { BackgroundTasks, backgroundTaskCount } from './BackgroundTasks'
-import { isSettledPhase, runEndedAt } from './background-tasks'
 import './workbench.css'
 
 export interface OverviewPaneProps {
@@ -289,15 +288,8 @@ const CATEGORY_LABEL: Record<ContextCategory | 'free', MessageKey> = {
   free: 'ctx.cat.free'
 }
 
-const MAX_FINISHED_SCHEDULED = 5
-
 function scheduledRuns(runs: readonly RunSnapshot[]): RunSnapshot[] {
-  const scheduled = runs.filter((run) => run.kind === 'scheduled')
-  const finished = scheduled
-    .filter((run) => isSettledPhase(run.phase))
-    .sort((a, b) => (runEndedAt(b.phase) ?? b.startedAt) - (runEndedAt(a.phase) ?? a.startedAt))
-    .slice(0, MAX_FINISHED_SCHEDULED)
-  return [...scheduled.filter((run) => !isSettledPhase(run.phase)), ...finished]
+  return runs.filter((run) => run.kind === 'scheduled')
 }
 
 type RowMenuKey = 'reveal' | 'copyPath' | 'openFiles' | 'copyBranch' | 'openChanges'
@@ -558,6 +550,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const messages = useStreamingThrottledStore((s) => s.messages)
   const todos = useStore((s) => s.todos)
   const subagents = useStore((s) => s.subagents)
+  const runners = useStore((s) => s.runners)
   const widgets = useStore((s) => s.widgets)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
   const peekedPath = useStore((s) => s.peekedPath)
@@ -629,8 +622,8 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const [dismissedOutputs, dismissOutput] = useDismissedOutputs(view.sessionId || view.key || '')
   const outputs = useMemo(() => visibleOutputs(outputPool, outputScreen, dismissedOutputs), [outputPool, outputScreen, dismissedOutputs])
 
-  const sessionIds = view.sessionId ? [view.sessionId] : []
-  const runs: SubagentRun[] = visibleSubagentRuns(subagents, { sessionIds })
+  const scope = subagentScopeForView({ peekedSessionId, peekedPath, session, runners })
+  const runs: SubagentRun[] = selectSubagentRuns(subagents, scope).all
   const allRuns = useRunsV3((s) => s.runs)
   const backgroundRuns = useMemo(() => scheduledRuns(allRuns), [allRuns])
   const stoppingIds = useSubagentStopping((s) => s.ids)

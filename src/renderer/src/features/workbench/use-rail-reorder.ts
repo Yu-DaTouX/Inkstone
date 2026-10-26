@@ -108,6 +108,7 @@ export function useRailReorder(
       const startY = event.clientY
       let pointerY = startY
       let startScroll = host.scrollTop
+      let maxScroll = 0
       let slots: Slot[] = []
       let from = -1
       let to = -1
@@ -119,8 +120,13 @@ export function useRailReorder(
       const restoreSelect = body.style.userSelect
 
       const layout = (): void => {
-        const dy = pointerY - startY + host.scrollTop - startScroll
         const dragged = slots[from]
+        const first = slots[0]
+        const last = slots[slots.length - 1]
+        const dy = Math.max(
+          first.top - dragged.top,
+          Math.min(last.top + last.height - dragged.top - dragged.height, pointerY - startY + host.scrollTop - startScroll)
+        )
         dragged.el.style.transform = `translate3d(0, ${dy}px, 0)`
         const next = targetIndex(slots, from, dragged.top + dragged.height / 2 + dy)
         if (next === to) return
@@ -141,7 +147,7 @@ export function useRailReorder(
         else if (pointerY > rect.bottom - EDGE_SCROLL_PX) step = EDGE_SCROLL_STEP
         if (!step) return
         const before = host.scrollTop
-        host.scrollTop = before + step
+        host.scrollTop = Math.max(0, Math.min(maxScroll, before + step))
         if (host.scrollTop === before) return
         layout()
         frame = window.requestAnimationFrame(edgeScroll)
@@ -153,6 +159,7 @@ export function useRailReorder(
         if (from < 0) return false
         to = from
         startScroll = host.scrollTop
+        maxScroll = Math.max(0, host.scrollHeight - host.clientHeight)
         active = true
         suppressPressRef.current = true
         host.dataset.sorting = '1'

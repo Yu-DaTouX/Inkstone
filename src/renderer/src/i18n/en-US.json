@@ -524,6 +524,8 @@
   "permission.badge.all": "Native",
   "permission.desc.all": "No additional Inkstone approvals or interception; tools retain native behavior",
   "permission.desc.danger": "Routine operations run directly; dangerous operations require approval. This is a guardrail, not a sandbox.",
+  "permission.hint.all": "Run tools without extra approval",
+  "permission.hint.danger": "Approve routine actions; ask before risky ones",
   "permission.label.all": "Unrestricted",
   "permission.label.danger": "Auto approve",
   "permission.title": "Permissions",

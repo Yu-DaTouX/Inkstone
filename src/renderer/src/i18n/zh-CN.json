@@ -524,6 +524,8 @@
   "permission.badge.all": "原生模式",
   "permission.desc.all": "砚不审批也不拦截，工具按原生行为执行",
   "permission.desc.danger": "常规操作直接执行，危险操作先问你；是提醒，不是沙箱",
+  "permission.hint.all": "直接执行工具，不额外审批",
+  "permission.hint.danger": "常规操作自动执行，危险操作先确认",
   "permission.label.all": "不受限制",
   "permission.label.danger": "自动批准",
   "permission.title": "权限",
