@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { realpath, stat, open } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { basename, resolve } from 'node:path'
 import type { GitActionExpected } from '../shared/git-actions'
@@ -414,51 +414,4 @@ export function safeRepoPath(path: string): string | null {
   if (/^[A-Za-z]:/.test(cleaned)) return null
   if (cleaned.split('/').includes('..')) return null
   return cleaned
-}
-
-const UNTRACKED_READ_LIMIT = 512 * 1024
-
-export interface UntrackedMeta {
-  size: number
-  mtimeMs: number
-  lines: number
-  truncated: boolean
-  lfs: boolean
-  binary: boolean
-}
-
-export async function readUntrackedMeta(absPath: string): Promise<UntrackedMeta | null> {
-  try {
-    const s = await stat(absPath)
-    if (!s.isFile()) return null
-    const meta: UntrackedMeta = {
-      size: s.size,
-      mtimeMs: s.mtimeMs,
-      lines: 0,
-      truncated: false,
-      lfs: false,
-      binary: false
-    }
-    if (s.size === 0) return meta
-    const handle = await open(absPath, 'r')
-    let buf: Buffer
-    try {
-      buf = Buffer.alloc(Math.min(s.size, UNTRACKED_READ_LIMIT))
-      const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
-      buf = buf.subarray(0, bytesRead)
-    } finally {
-      await handle.close()
-    }
-    meta.binary = buf.subarray(0, 8000).includes(0)
-    const text = buf.toString('utf8')
-    meta.lfs = text.startsWith('version https://git-lfs.github.com/spec')
-    let count = 0
-    for (let i = 0; i < text.length; i++) if (text[i] === '\n') count++
-    if (text.length && !text.endsWith('\n')) count++
-    meta.lines = count
-    meta.truncated = s.size > UNTRACKED_READ_LIMIT
-    return meta
-  } catch {
-    return null
-  }
 }

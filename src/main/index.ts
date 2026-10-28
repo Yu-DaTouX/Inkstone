@@ -1262,12 +1262,7 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
     }
   } catch {
   }
-  void ag
-    .refreshStats({ expectGeneration: expected.generation })
-    .then((stats) => {
-      if (stats) pushFrom(id, { ch: 'stats', payload: stats }, expected)
-    })
-    .catch(() => {})
+  void ag.refreshStats({ expectGeneration: expected.generation }).catch(() => {})
   void ag.refreshTodos().catch(() => {})
   pushRunners()
 }
