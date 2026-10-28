@@ -64,6 +64,7 @@
     "probe:chrome": "node scripts/probe/chrome-cdp.mjs",
     "launch": "node scripts/launch.mjs",
     "launch:dev": "node scripts/launch.mjs --dev",
+    "debug": "node debug/cli.mjs",
     "control": "node scripts/yan-control.mjs --server",
     "dist:dir": "npm run build && electron-builder --dir --publish never",
     "dist": "npm run build && electron-builder --win --publish never",

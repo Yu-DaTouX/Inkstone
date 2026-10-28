@@ -20,6 +20,7 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 共享信息只写进 `.local-docs/`：现状写 `STATUS.md`，用户决定追加到 `DECISIONS.md`，交接写 `handoffs/`。agent 的私有记忆别人看不到，只放个人沟通偏好和指向这些文件的指针。
 - 任务预计跨会话或跨 agent 时，在 STATUS「进行中」登记主题与文件范围；收尾时改写或删除自己的条目，没做完就写交接。STATUS 是现状板不是日志：一句结论加链接，全文 150 行以内。
 - 本地产物归位：日志、截图、清单放 `.local-docs/evidence/<日期>-<主题>/`，一次性脚本放 `.tmp/<任务>/`（已被 Git 忽略）；`.local-docs/` 根目录只留 README、STATUS、DECISIONS 三个文件，其余放进 `handoffs/`、`evidence/`、`archive/`（已结束的主题整目录移入，只移不删）。
+- 隔离调试用 `npm run debug -- help`（源码在 `debug/`）：隔离实例、假模型、CDP 求值截图、回归场景；大会话样本与运行产物在被忽略的 `debug/data/`、`debug/runs/`，要留证的再拷到 `.local-docs/evidence/`。可复用的调试场景写进 `debug/scenarios/`，不再散落在 `.tmp/`。
 - 可以用 worktree 隔离长任务，分支名写明 agent 与主题。不删除、不重置其他 agent 的 worktree 与分支，清理由用户决定。
 
 ## 实现约定
