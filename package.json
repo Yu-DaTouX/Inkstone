@@ -60,6 +60,7 @@
     "vendor:pi": "node scripts/vendor-pi.mjs",
     "vendor:pi:check": "node scripts/vendor-pi.mjs --check",
     "upgrade:pi": "node scripts/upgrade-pi.mjs",
+    "vendor:search-tools": "node scripts/vendor-search-tools.mjs",
     "probe:chrome": "node scripts/probe/chrome-cdp.mjs",
     "launch": "node scripts/launch.mjs",
     "launch:dev": "node scripts/launch.mjs --dev",

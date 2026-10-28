@@ -54,6 +54,9 @@ extraResources:
   - from: resources/yan-cli
     to: yan-cli
     filter: ['**/*']
+  - from: resources/search-tools
+    to: search-tools
+    filter: ['rg.exe', 'fd.exe', 'rg', 'fd']
   - from: resources/bot-icons
     to: bot-icons
     filter: ['*.png']

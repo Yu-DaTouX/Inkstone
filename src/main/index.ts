@@ -141,6 +141,7 @@ import { ApprovalBroker } from './approval-broker'
 import { approvalLog } from './approval-log'
 import { approvalIdentityFrom } from './approval-ledger'
 import { refreshManagedGit } from './git-runtime'
+import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
 import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
@@ -1947,6 +1948,7 @@ async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: b
 
   const settings = await getSettings()
   await refreshManagedGit().catch(() => undefined)
+  applyBundledSearchTools()
   agentResponseDetail = settings.responseDetail
 
   runners = new RunnerRegistry({

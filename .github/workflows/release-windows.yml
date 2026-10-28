@@ -75,6 +75,8 @@ jobs:
           npm install -g "@earendil-works/pi-coding-agent@$PI_VERSION"
           YAN_PI_SRC="$(npm root -g)/@earendil-works/pi-coding-agent" npm run vendor:pi
 
+      - run: npm run vendor:search-tools
+
       - name: Build companion mod jars
         working-directory: integrations/inkstone-minecraft/companion-mod
         run: |

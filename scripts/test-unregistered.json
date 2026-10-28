@@ -90,6 +90,7 @@
     "test-remote-session-boundary",
     "test-remote-unsaved-session",
     "test-rpc-lifecycle",
+    "test-search-tools",
     "test-session-cleanup",
     "test-session-ipc",
     "test-session-list-parallel",

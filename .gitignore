@@ -61,6 +61,7 @@ auth.json
 
 # ---- 内置 pi 运行时（20MB，由 `npm run vendor:pi` 从本地已装 pi 生成，不入库）----
 resources/pi-runtime/
+resources/search-tools/
 
 # ---- 一次性审计工具的中间产物（脚本本身纳管，见scripts/audit/）----
 .audit-*.json
