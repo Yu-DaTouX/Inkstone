@@ -13,6 +13,15 @@ export async function runRepeatGuardTests(ok) {
   const counterFile = join(root, 'repeat-guard', 'r1.json')
   const logFile = process.env.YAN_REPEAT_EXT_LOG
 
+  const { editEscapeHint } = await import('../resources/pi-extensions/repeat-guard.js')
+  const editError = [{ type: 'text', text: 'Could not find edits[0] in a.ts.' }]
+  const escapeHint = editEscapeHint({ toolName: 'edit', isError: true, input: { path: 'a.ts', edits: [{ oldText: '"\\u4e2d\\u6587"', newText: 'x' }] }, content: editError })
+  ok(escapeHint?.content.length === 2 && escapeHint.content[0] === editError[0] && escapeHint.content[1].text.includes('\\uXXXX'), 'edit 失败且 oldText 含字面 \\u 转义：在原错误后追加提示')
+  ok(editEscapeHint({ toolName: 'edit', isError: true, input: { path: 'a.ts', oldText: '\\u4e2d', newText: 'x' }, content: editError })?.content.length === 2, '旧版单个 oldText 也识别转义')
+  ok(editEscapeHint({ toolName: 'edit', isError: true, input: { edits: [{ oldText: '中文', newText: 'x' }] }, content: editError }) === undefined, '写原字符的失败不追加提示')
+  ok(editEscapeHint({ toolName: 'edit', isError: false, input: { edits: [{ oldText: '\\u4e2d', newText: 'x' }] }, content: editError }) === undefined, 'edit 成功不追加提示')
+  ok(editEscapeHint({ toolName: 'write', isError: true, input: { oldText: '\\u4e2d' }, content: editError }) === undefined, '其他工具不追加提示')
+
   const readLog = async () => {
     try {
       return (await readFile(logFile, 'utf8'))

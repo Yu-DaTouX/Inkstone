@@ -10,10 +10,10 @@ export function subagentModelError(model: string | undefined, readOnly: boolean)
 export const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls']
 export const READ_ONLY_EXTENSION_TOOLS = ['git_inspect', 'web_search', 'web_fetch']
 
-export function subagentPiArgs(options: { sessionDir: string; sessionFile?: string; native: boolean; readOnly: boolean; model?: string; systemPrompt?: string; extensions?: string[]; readOnlyExtension?: string }): string[] {
+export function subagentPiArgs(options: { sessionDir: string; sessionFile?: string; native: boolean; readOnly: boolean; model?: string; systemPrompt?: string; extensions?: string[]; readOnlyExtension?: string; thinkingLevel?: string }): string[] {
   const error = subagentModelError(options.model, options.readOnly)
   if (error) throw new Error(error)
-  const base = ['--session-dir', options.sessionDir, ...(options.sessionFile ? ['--session', options.sessionFile] : []), '--no-extensions', ...(options.extensions?.flatMap(path => ['--extension', path]) ?? []), ...(options.systemPrompt ? ['--append-system-prompt', options.systemPrompt] : []), ...(options.model ? ['--model', options.model] : [])]
+  const base = ['--session-dir', options.sessionDir, ...(options.sessionFile ? ['--session', options.sessionFile] : []), '--no-extensions', ...(options.extensions?.flatMap(path => ['--extension', path]) ?? []), ...(options.systemPrompt ? ['--append-system-prompt', options.systemPrompt] : []), ...(options.model ? ['--model', options.model] : []), ...(options.thinkingLevel ? ['--thinking', options.thinkingLevel] : [])]
   if (!options.readOnly) return agentOwnedPiArgs(base, options.native)
   const tools = options.readOnlyExtension ? [...READ_ONLY_TOOLS, ...READ_ONLY_EXTENSION_TOOLS] : READ_ONLY_TOOLS
   return [...base, ...(options.readOnlyExtension ? ['--extension', options.readOnlyExtension] : []), '--no-skills', '--tools', tools.join(',')]

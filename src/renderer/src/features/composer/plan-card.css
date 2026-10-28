@@ -52,7 +52,7 @@
 
   .plan-card-scroll {
     position: relative;
-    max-height: calc(4.5 * (var(--t-footnote-lh) + 2 * var(--s-2)) + var(--s-6));
+    max-height: min(40svh, calc(10.5 * (var(--t-footnote-lh) + 2 * var(--s-2)) + var(--s-6)));
     padding-bottom: var(--s-6);
     overflow-y: auto;
     overscroll-behavior: contain;

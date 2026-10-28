@@ -220,6 +220,7 @@ export interface SubagentContext {
   parentGeneration?: number
   parentMessageId?: string
   projectId?: string
+  thinkingLevel?: string
 }
 
 export type SubagentSendMode = 'steer' | 'followUp'
@@ -229,6 +230,7 @@ export interface SubagentSendResult { ok: boolean; error?: string; run?: Subagen
 export interface SubagentOptions {
   cwd: string
   piBin?: string
+  thinkingLevel?: string
   parentSessionId?: string
   parentRunId?: string
   parentGeneration?: number
@@ -749,7 +751,7 @@ export class SubagentController {
     if (fork) return this.createForkRpc(ctx, id, fork, sessionFile)
     let version: string | undefined
     try { const probe = resolvePi({ override: ctx.piBin }); if (probe.home) version = JSON.parse(readFileSync(join(probe.home, 'package.json'), 'utf8')).version } catch { }
-    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension })
+    const args = subagentPiArgs({ sessionDir: join(ctx.archiveDir ?? join(YAN_DIR, 'subagents'), 'sessions', id), sessionFile, native: nativePiToolsSupported(version), readOnly: isolation === 'controlled-cwd', model: model ?? process.env.YAN_TEST_MODEL, systemPrompt: ctx.appendSystemPrompt, extensions: ctx.extensions, readOnlyExtension: ctx.readOnlyExtension, thinkingLevel: ctx.thinkingLevel })
     if (ctx.createRpc) return ctx.createRpc({ cwd, piBin: ctx.piBin, args })
     return this.spawnWithApproval(ctx, id, cwd, ctx.piBin, args, { PI_CODING_AGENT_DIR: PI_AGENT_DIR, YAN_DATA_DIR: YAN_DIR }, ctx.runReadOnlyCommand)
   }
@@ -900,7 +902,7 @@ export class SubagentController {
 
       const rootCwd = previous?.workspace.rootCwd ?? record?.rootCwd ?? snapshot.cwd
       const workspace: PreparedWorkspace = previous?.workspace ?? { isolation: snapshot.isolation, rootCwd, cwd: snapshot.cwd }
-      const ctx: SubagentOptions = { ...this.opts, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId }
+      const ctx: SubagentOptions = { ...this.opts, parentSessionId: snapshot.parentSessionId, parentRunId: snapshot.parentRunId, parentGeneration: snapshot.parentGeneration, parentMessageId: snapshot.parentMessageId, projectId: snapshot.projectId, thinkingLevel: snapshot.thinkingLevel }
       let brief: SubagentBrief
       let rpc: SubagentRpc
       try {

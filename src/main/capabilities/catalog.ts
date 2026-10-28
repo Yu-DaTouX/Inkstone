@@ -34,7 +34,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     '委派子代理',
     '指定模型执行独立子任务并返回结果；默认当前文件夹，代码任务可显式选择 worktree 隔离。',
     'external-action',
-    'yan subagent start --task <text> --model <provider/model>'
+    'yan subagent start --task <text> --model <provider/model> [--thinking low|medium|high]'
   ),
   builtin(
     'subagent.list',
@@ -48,7 +48,7 @@ export const BUILTIN_CAPABILITIES: readonly Capability[] = [
     '子代理结果',
     '读取某个子代理当前的状态、最终消息与改动文件；默认不含完整转录，要完整过程加 --transcript。',
     'read',
-    'yan subagent get --id <id>'
+    'yan subagent get --id <id> [--final]'
   ),
   builtin(
     'subagent.send',

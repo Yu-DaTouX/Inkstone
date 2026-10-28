@@ -328,7 +328,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   subagent: `yan subagent <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
-  start --task <任务> [--title <短标题>] [--model <模型>] [--read-only] [--isolation worktree] [--fork]
+  start --task <任务> [--title <短标题>] [--model <模型>] [--thinking <档位>] [--read-only] [--isolation worktree] [--fork]
        或 --request-file subagent.json
        请求文件示例：{"task":"检查当前项目的测试入口","title":"查测试入口","readOnly":true}
        带上任务输入（并行的子任务建议都带，免得跑偏）：
@@ -338,9 +338,10 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                   "sources":["src/main/agent.ts","src/main/index.ts"],
                   "boundary":"只读，不要改代码",
                   "timeoutMinutes":10}}
-  list                         查看所有子代理的状态与活动摘要
-  get    --id <子代理ID> [--transcript]
-                               查看状态、最终结论全文、改动过的文件与审阅状态；
+  list   [--transcript]          stdout 每个子代理一行 id / 状态 / 最新活动；结果文件默认不含转录
+  get    --id <子代理ID> [--final] [--transcript]
+                               查看状态、最终结论、改动过的文件与审阅状态；stdout 摘要里的结论只取前 400 字，
+                               --final 直接把最终结论全文打到 stdout；
                                --transcript 额外附上完整转录（体积大，一般不需要）
   status --id <子代理ID>        get 的别名
   send   --id <子代理ID> --message <信息> [--mode steer|follow-up]
@@ -354,6 +355,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 说明：
   · title 是界面上显示的 2–8 字短标题，并行派多个时每个都写，互相区分；
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
+  · --thinking（请求文件 "thinkingLevel"）取 off / minimal / low / medium / high / xhigh；不传时用 pi 对该模型的默认档（pi 设置里的 defaultThinkingLevel），fork 沿用当前会话的档位、不能再传；
   · start 默认在当前目录执行，可能直接改文件；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
     readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；
@@ -767,6 +769,18 @@ if (payload?.ok && typeof flags.output === 'string' && typeof payload.resultFile
     payload.copiedTo = flags.output
   } catch (err) {
     payload.copyError = String(err?.message ?? err)
+  }
+}
+
+if (payload?.ok && command === 'subagent.get' && flags.final === true && typeof payload.resultFile === 'string') {
+  try {
+    const { readFileSync } = await import('node:fs')
+    const final = JSON.parse(readFileSync(payload.resultFile, 'utf8'))?.finalMessage
+    if (typeof final === 'string') {
+      process.stdout.write(final.endsWith('\n') ? final : `${final}\n`)
+      process.exit(EXIT.ok)
+    }
+  } catch {
   }
 }
 
