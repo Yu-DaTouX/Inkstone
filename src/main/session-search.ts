@@ -152,20 +152,26 @@ export function warmSessionSearch(): void {
 }
 
 let scanning: Promise<unknown> = Promise.resolve()
+let searchSerial = 0
+const latestSearchOf = new Map<string, number>()
 
-export function searchSessionText(query: string, limit = 30): Promise<SessionSearchResult> {
-  const run = scanning.then(() => searchNow(query, limit), () => searchNow(query, limit))
+export function searchSessionText(query: string, limit = 30, requester?: string): Promise<SessionSearchResult> {
+  const serial = ++searchSerial
+  if (requester !== undefined) latestSearchOf.set(requester, serial)
+  const superseded = (): boolean => requester !== undefined && latestSearchOf.get(requester) !== serial
+  const run = scanning.then(() => searchNow(query, limit, superseded), () => searchNow(query, limit, superseded))
   scanning = run.catch(() => undefined)
   return run
 }
 
-async function searchNow(query: string, limit: number): Promise<SessionSearchResult> {
+async function searchNow(query: string, limit: number, superseded: () => boolean = () => false): Promise<SessionSearchResult> {
   const tokens = queryTokens(query)
-  if (!tokens.length) return { hits: [], indexed: index.size, total: knownFiles.length }
+  if (!tokens.length || superseded()) return { hits: [], indexed: index.size, total: knownFiles.length }
   await ensureIndex()
   const hits: SessionSearchHit[] = []
   const visited = new Set<string>()
   for (const file of knownFiles) {
+    if (superseded()) return { hits: [], indexed: index.size, total: knownFiles.length }
     const path = file.path
     visited.add(path)
     let entry = index.get(path)

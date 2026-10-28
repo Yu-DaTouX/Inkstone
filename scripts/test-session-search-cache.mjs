@@ -139,6 +139,20 @@ export async function runSessionSearchCacheTests(ok) {
     ok(fourth.result.indexed === first.result.indexed, '已删除文件从索引移除，腾出的额度被未入索引的会话复用')
     ok(fourth.result.indexed * ENTRY_BYTES <= MAX_INDEX_BYTES, '删除后索引字节仍不超过上限')
     ok(fourth.opened.length <= missBudget, `删除后仍只读未入索引的会话（打开 ${fourth.opened.length} ≤ ${missBudget}）`)
+
+    const [stale, latest, otherWindow, anonymous] = await Promise.all([
+      mod.searchSessionText('inkstone-hit', 100, 'sender:1'),
+      mod.searchSessionText('inkstone-hit', 100, 'sender:1'),
+      mod.searchSessionText('inkstone-hit', 100, 'sender:2'),
+      mod.searchSessionText('inkstone-hit', 100)
+    ])
+    const expected = fourth.result.hits.length
+    ok(stale.hits.length === 0, `同一窗口被新查询取代的旧查询不再扫描（命中 ${stale.hits.length}）`)
+    ok(latest.hits.length === expected, `同一窗口的最新查询完整返回（${latest.hits.length}/${expected}）`)
+    ok(otherWindow.hits.length === expected, `其他窗口的查询不被取消（${otherWindow.hits.length}/${expected}）`)
+    ok(anonymous.hits.length === expected, `不带发起方的查询不参与取消（${anonymous.hits.length}/${expected}）`)
+    const after = await mod.searchSessionText('inkstone-hit', 100, 'sender:1')
+    ok(after.hits.length === expected && after.indexed === fourth.result.indexed, '取消后共享索引完好，后续查询结果不变')
   } finally {
     counter.restore()
     if (root) rmSync(root, { recursive: true, force: true })

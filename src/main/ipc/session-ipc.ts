@@ -296,8 +296,8 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
     return { ok: true, title: result.title }
   })
   handle('yan:refreshTodos', async () => host.ac()?.refreshTodos() ?? [])
-  handle('yan:searchSessions', async (query: unknown, limit?: unknown) =>
-    searchSessionText(typeof query === 'string' ? query.slice(0, 200) : '', typeof limit === 'number' ? limit : 30))
+  ipc.rawHandle('yan:searchSessions', async (event, query: unknown, limit?: unknown) =>
+    searchSessionText(typeof query === 'string' ? query.slice(0, 200) : '', typeof limit === 'number' ? limit : 30, `sender:${event.sender.id}`))
   handle('yan:listSessions', async () => {
     warmSessionSearch()
     const settings = await getSettings()
