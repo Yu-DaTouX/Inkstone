@@ -1,5 +1,5 @@
 import { useState, type JSX, type RefObject } from 'react'
-import { Columns2, Eye, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { Columns2, Eye, FolderInput, FolderOpen, Globe, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { indexOfSession, useSplitView } from '../../state/split-view'
@@ -67,7 +67,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
         void store.setSessionPinned(item.id, !item.pinned)
         return
       case 'archive':
-        void store.setSessionArchived(item.id, true)
+        void store.setSessionArchived(item.id, !item.archivedAt)
         return
       case 'title':
         void store.regenerateTitle(item.id)
@@ -174,9 +174,9 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
             <Sparkles size={14} aria-hidden />
             {t('rail.regenerateTitle')}
           </MenuItem>
-          <MenuItem id="archive" textValue={t('rail.archive')}>
-            <Archive size={14} aria-hidden />
-            {t('rail.archive')}
+          <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}>
+            {item.archivedAt ? <ArchiveRestore size={14} aria-hidden /> : <Archive size={14} aria-hidden />}
+            {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
           </MenuItem>
           {item.scope !== 'global' ? (
             <MenuItem id="move:global" textValue={`${t('rail.moveSession')} ${t('rail.global')}`}>

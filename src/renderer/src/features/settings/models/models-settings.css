@@ -59,6 +59,99 @@
     padding: var(--s-8) 0;
   }
 
+  .ms-vis {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-12);
+  }
+
+  .ms-vis-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8) var(--s-16);
+  }
+
+  .ms-vis-filter {
+    width: min(100%, 240px);
+  }
+
+  .ms-vis-count {
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ms-vis-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ms-vis-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-8);
+    padding-bottom: var(--s-4);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+  }
+
+  .ms-vis-provider {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-vis-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-8);
+    min-height: var(--size-btn);
+    padding: 0 var(--s-4);
+    border-radius: var(--r-sm);
+  }
+
+  .ms-vis-row:hover {
+    background: var(--alpha-1);
+  }
+
+  .ms-vis-row[data-hidden='1'] .ms-vis-name {
+    opacity: 0.5;
+  }
+
+  .ms-vis-star[data-on='1'] {
+    color: var(--accent-t);
+  }
+
+  .ms-vis-name {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+
+  .ms-vis-label,
+  .ms-vis-id {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-vis-label {
+    flex: 0 1 auto;
+  }
+
+  .ms-vis-id {
+    flex: 0 2 auto;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-footnote);
+  }
+
   .ms-rows-foot__chevron {
     transition: transform var(--dur-base) var(--ease);
   }

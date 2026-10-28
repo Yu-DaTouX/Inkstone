@@ -44,3 +44,24 @@ export function useWorkspaceOwner(): WorkspaceOwner {
     [peekedSessionId, peekedPath, session, pendingActivation, activeRunnerId, runners, sessions]
   )
 }
+
+export function currentWorkspaceOwner(): WorkspaceOwner {
+  const s = useStore.getState()
+  return deriveWorkspaceOwner({
+    peekedSessionId: s.peekedSessionId,
+    peekedPath: s.peekedPath,
+    session: s.session
+      ? {
+          sessionId: s.session.sessionId,
+          sessionFile: s.session.sessionFile,
+          conversationId: s.session.conversationId,
+          conversationFile: s.session.conversationFile,
+          cwd: s.session.cwd
+        }
+      : null,
+    pendingActivation: s.pendingActivation,
+    activeRunnerId: s.activeRunnerId,
+    runners: s.runners,
+    sessions: s.sessions
+  })
+}

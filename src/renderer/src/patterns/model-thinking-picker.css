@@ -212,6 +212,37 @@
     color: var(--accent-t);
   }
 
+  .mtp-hide {
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+
+  .mtp-item:is([data-hovered], [data-focused]) .mtp-hide,
+  .mtp-hide:focus-visible {
+    opacity: 1;
+  }
+
+  .mtp-group[data-kind='hidden'] .mtp-item:not(.mtp-hidden-toggle) .mtp-item-name {
+    color: var(--fg2);
+  }
+
+  .mtp-hidden-toggle {
+    color: var(--fg3);
+  }
+
+  .mtp-hidden-toggle .mtp-item-name {
+    font-size: var(--t-footnote);
+  }
+
+  .mtp-hidden-chev {
+    flex: none;
+    transition: transform var(--dur-snap) var(--ease);
+  }
+
+  .mtp-hidden-chev[data-open='1'] {
+    transform: rotate(90deg);
+  }
+
   .mtp-tag-price {
     font-variant-numeric: tabular-nums;
   }

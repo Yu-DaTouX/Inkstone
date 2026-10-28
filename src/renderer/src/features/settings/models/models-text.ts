@@ -29,6 +29,24 @@ export type ModelsTextKey =
   | 'addAccount'
   | 'accountList'
   | 'removeBodyAccounts'
+  | 'pickerHidden'
+  | 'pickerHide'
+  | 'pickerShow'
+  | 'pickerManage'
+  | 'pickerHiddenTag'
+  | 'pickerUnhidden'
+  | 'visTitle'
+  | 'visDesc'
+  | 'visFilter'
+  | 'visCount'
+  | 'visCountFav'
+  | 'visCountHidden'
+  | 'visShowAll'
+  | 'visHideAll'
+  | 'visEmpty'
+  | 'visNoModels'
+  | 'visToggle'
+  | 'visGroupHidden'
 
 const ZH: Record<ModelsTextKey, string> = {
   title: '模型与服务',
@@ -60,7 +78,25 @@ const ZH: Record<ModelsTextKey, string> = {
   removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。",
   addAccount: '添加账号',
   accountList: '已保存的 {provider} 账号',
-  removeBodyAccounts: '将移除本机保存的全部 {n} 个订阅账号和 {keys} 个 key；之后需重新登录或配置 key。'
+  removeBodyAccounts: '将移除本机保存的全部 {n} 个订阅账号和 {keys} 个 key；之后需重新登录或配置 key。',
+  pickerHidden: '已隐藏的模型 · {n}',
+  pickerHide: '在选择器中隐藏',
+  pickerShow: '恢复显示',
+  pickerManage: '管理显示的模型',
+  pickerHiddenTag: '已隐藏',
+  pickerUnhidden: '已收藏并恢复显示 {name}',
+  visTitle: '选择器里的模型',
+  visDesc: '隐藏不常用或旧的模型，让选择器更清爽。隐藏只影响列表显示：不删配置、不清凭证、不换当前模型，会随同步文件夹同步。',
+  visFilter: '筛选模型',
+  visCount: '{n} 个模型',
+  visCountFav: '{n} 个收藏',
+  visCountHidden: '{n} 个已隐藏',
+  visShowAll: '全部显示',
+  visHideAll: '全部隐藏',
+  visEmpty: '没有匹配的模型',
+  visNoModels: '还没有读到可用模型',
+  visToggle: '在选择器中显示 {name}',
+  visGroupHidden: '已隐藏'
 }
 
 const EN: Record<ModelsTextKey, string> = {
@@ -93,7 +129,25 @@ const EN: Record<ModelsTextKey, string> = {
   removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models.",
   addAccount: 'Add account',
   accountList: 'Saved {provider} accounts',
-  removeBodyAccounts: 'Removes all {n} subscription accounts and {keys} keys saved locally; sign in or configure a key again.'
+  removeBodyAccounts: 'Removes all {n} subscription accounts and {keys} keys saved locally; sign in or configure a key again.',
+  pickerHidden: 'Hidden models · {n}',
+  pickerHide: 'Hide from picker',
+  pickerShow: 'Show in picker',
+  pickerManage: 'Manage shown models',
+  pickerHiddenTag: 'Hidden',
+  pickerUnhidden: 'Favorited and showing {name} again',
+  visTitle: 'Models in the picker',
+  visDesc: 'Hide models you rarely use or old ones to keep the picker tidy. Hiding only affects the list: config, credentials and the current model stay as they are. Synced with your sync folder.',
+  visFilter: 'Filter models',
+  visCount: '{n} models',
+  visCountFav: '{n} favorites',
+  visCountHidden: '{n} hidden',
+  visShowAll: 'Show all',
+  visHideAll: 'Hide all',
+  visEmpty: 'No models match',
+  visNoModels: 'No models reported yet',
+  visToggle: 'Show {name} in the model picker',
+  visGroupHidden: 'Hidden from picker'
 }
 
 export function modelsText(lang: string, key: ModelsTextKey): string {

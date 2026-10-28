@@ -32,7 +32,32 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--c3', '--data-3'],
   ['--c4', '--data-4'],
   ['--c5', '--data-5'],
-  ['--c6', '--data-6']
+  ['--c6', '--data-6'],
+  ['--background', '--bg'],
+  ['--foreground', '--fg'],
+  ['--muted', '--sunken'],
+  ['--muted-foreground', '--fg3'],
+  ['--card', '--surface'],
+  ['--card-foreground', '--fg'],
+  ['--popover', '--surface'],
+  ['--popover-foreground', '--fg'],
+  ['--secondary', '--hover'],
+  ['--secondary-foreground', '--fg'],
+  ['--input', '--line2'],
+  ['--ring', '--accent'],
+  ['--primary', '--accent'],
+  ['--primary-foreground', '--on-ink'],
+  ['--destructive', '--fail'],
+  ['--warning', '--ask'],
+  ['--success', '--ok'],
+  ['--chart-1', '--data-1'],
+  ['--chart-2', '--data-2'],
+  ['--chart-3', '--data-3'],
+  ['--chart-4', '--data-4'],
+  ['--chart-5', '--data-5'],
+  ['--chart-6', '--data-6'],
+  ['--font-sans', '--font-ui'],
+  ['--font-mono', '--font-mono']
 ]
 
 const BASE_STYLE = `:root{color-scheme:light dark}
@@ -45,9 +70,12 @@ button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible
 function bridgeScript(generation: number): string {
   return `(function(){var p=parent,last=0;window.__inkGen=${generation};
 function post(m){m.yanGeneration=window.__inkGen;p.postMessage(m,'*')}
-function h(){var v=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(v!==last){last=v;post({method:'ui/notifications/size-changed',params:{height:v}})}}
-addEventListener('load',h);if(window.ResizeObserver)new ResizeObserver(h).observe(document.documentElement);setTimeout(h,0);
-document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;e.preventDefault();post({method:'ui/open-link',params:{url:a.href}})},true);
+function h(){var r=document.documentElement;var v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v>0&&v!==last){last=v;post({method:'ui/notifications/size-changed',params:{height:v}})}}
+var ro=window.ResizeObserver?new ResizeObserver(h):null;if(ro)ro.observe(document.documentElement);
+addEventListener('DOMContentLoaded',function(){if(ro&&document.body)ro.observe(document.body);h()});addEventListener('load',h);setTimeout(h,0);
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var u;try{u=new URL(a.href,location.href)}catch(_){return}
+if(u.protocol!=='http:'&&u.protocol!=='https:'){if(u.hash&&u.href.split('#')[0]===location.href.split('#')[0])return;e.preventDefault();return}
+e.preventDefault();post({method:'ui/open-link',params:{url:u.href}})},true);
 window.askInkstone=function(t){post({method:'ui/message',params:{content:String(t||'').slice(0,2000)}})};window.sendPrompt=window.askInkstone;
 window.inkstoneSaveState=function(v){var s;try{s=JSON.stringify(v)}catch(_){return}if(typeof s==='string')post({method:'x-inkstone/state-save',params:{state:s}});};
 addEventListener('message',function(e){if(e.source!==p)return;var d=e.data;if(!d||typeof d!=='object')return;

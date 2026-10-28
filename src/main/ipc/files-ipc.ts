@@ -16,6 +16,7 @@ import { attachmentsUsage, listSessionFiles, pruneAttachments, referencedAttachm
 import { clearSessionReadCache } from '../session-reader'
 import { PI_AGENT_DIR, YAN_DIR } from '../paths'
 import { htmlArtifactPreviews } from '../html-artifact-preview'
+import { savePastedText } from '../pasted-text'
 import type {
   FileContentSearchRequest,
   FileRequestContext,
@@ -110,6 +111,7 @@ export function registerFilesIpc(ipc: IpcRegistrar, deps: FilesIpcDeps): void {
   })
 
   handle('yan:describeFiles', async (paths: string[]) => grantFiles(paths))
+  handle('yan:savePastedText', async (text: unknown, name: unknown) => savePastedText(text, name))
   handle('yan:readFileText', async (p: string) => readGrantedText(String(p ?? '')))
   handle('yan:prepareHtmlArtifact', async (path: string, requestedCwd?: string) => {
     if (typeof requestedCwd !== 'string' || !requestedCwd.trim()) return htmlArtifactPreviews.prepare(String(path ?? ''))

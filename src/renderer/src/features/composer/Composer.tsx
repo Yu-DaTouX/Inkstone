@@ -36,6 +36,7 @@ import { QueueEditor } from './QueueEditor'
 import { IsolationMergeBar } from './IsolationMergeBar'
 import { PlanCard } from './PlanCard'
 import { FileDropOverlay, useFileDropZone } from './FileDropZone'
+import { usePastedTextAttach } from './use-pasted-text'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
@@ -349,17 +350,21 @@ export function Composer({ className }: { className?: string } = {}) {
     [value, roundRunning, runCommandPath, notify, send, t, lang, runtimeKey]
   )
 
+  const attachPastedText = usePastedTextAttach(wrapRef)
   const onPaste = useCallback(
     (e: ComposerPasteEvent) => {
       const files = [...e.clipboardData.items]
         .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
         .map((it) => it.getAsFile())
         .filter((f): f is File => !!f)
-      if (files.length === 0) return
+      if (files.length === 0) {
+        if (attachPastedText(e.clipboardData.getData('text/plain'))) e.preventDefault()
+        return
+      }
       e.preventDefault()
       void readFiles(files, addAttachments, (names) => notify('error', t('attachment.skipped', { names: names.join(', ') })))
     },
-    [addAttachments, notify, t]
+    [addAttachments, attachPastedText, notify, t]
   )
 
   const onDrop = useCallback(
