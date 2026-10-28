@@ -67,7 +67,7 @@ async function main() {
   group('页签注册：上下文进入固定页签与恢复白名单（W0）')
   {
     ok(WORKBENCH_TABS.includes('context'), '上下文在固定页签里', WORKBENCH_TABS)
-    ok(WORKBENCH_TABS.slice(-3).join('>') === 'branch>logs>quota', '分支页之后依次是日志、额度（日志 / 额度页签追加在末尾）', WORKBENCH_TABS)
+    ok(WORKBENCH_TABS.slice(-4).join('>') === 'branch>logs>quota>device', '分支页之后依次是日志、额度、设备（新页签追加在末尾）', WORKBENCH_TABS)
     ok(!WORKBENCH_ACTIVE_TABS.has('context'), '上下文是只读页签，不需要会话激活')
     ok(restorableWorkbenchTab('context') === 'context', '只读的上下文页签原样恢复')
     ok(restorableWorkbenchTab('terminal') === 'overview', '终端降级到概览，不隐式起 PTY')

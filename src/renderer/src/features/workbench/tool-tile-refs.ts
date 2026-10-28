@@ -3,7 +3,7 @@ import type { WorkbenchTabId } from './types'
 
 export const TOOL_TILE_PREFIX = 'tool:'
 
-export const TILE_TOOLS: readonly WorkbenchTabId[] = ['changes', 'terminal', 'files', 'browser', 'preview', 'logs', 'branch']
+export const TILE_TOOLS: readonly WorkbenchTabId[] = ['changes', 'terminal', 'files', 'browser', 'preview', 'logs', 'branch', 'device']
 
 export const TOOL_TILE_MIN_WIDTH = 280
 

@@ -9,14 +9,15 @@ import { VoiceSetupPanel, VoiceStatusPanel, useVoiceSetup } from './VoiceSection
 import { ComputerUseSection } from './ComputerUseSection'
 import { SearchApiSection } from './SearchSection'
 import { GitRuntimeSection } from './GitRuntimeSection'
+import { AndroidSection } from './AndroidSection'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import { getSettingReveal, requestSettingReveal, subscribeSettingReveal } from '../search/search-model'
 import { CAPABILITIES_TABS, type CapabilitiesTabId } from '../types'
 import './capabilities.css'
 
 export type { CapabilitiesTabId }
-const LEGACY_TAB: Record<string, CapabilitiesTabId> = { skills: 'skills', mcp: 'mcp', tools: 'tools', voice: 'tools', market: 'market', git: 'tools' }
-const LEGACY_SETTING: Record<string, string> = { tools: 'caps-tools-computer-use', voice: 'caps-tools-voice-setup', git: 'caps-tools-git' }
+const LEGACY_TAB: Record<string, CapabilitiesTabId> = { skills: 'skills', mcp: 'mcp', tools: 'tools', voice: 'tools', market: 'market', git: 'tools', android: 'tools' }
+const LEGACY_SETTING: Record<string, string> = { tools: 'caps-tools-computer-use', voice: 'caps-tools-voice-setup', git: 'caps-tools-git', android: 'caps-tools-android' }
 
 let handledRevealRevision = 0
 let handledRequestRevision: number | null = null
@@ -78,6 +79,7 @@ function ToolsTab(): ReactElement {
       <ComputerUseSection />
       <VoiceStatusPanel voice={voice} />
       <SearchApiSection />
+      <AndroidSection />
       <div data-setting-id="caps-tools-git">
         <GitRuntimeSection />
       </div>

@@ -38,7 +38,7 @@ const TITLEBAR_PANES = [
   { tab: 'files', Icon: Folder }
 ] as const
 
-const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs']
+const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs', 'device']
 const MENU_KEEP_ON_TOP = 'head:keep-on-top'
 const MENU_SETTINGS = 'head:settings'
 

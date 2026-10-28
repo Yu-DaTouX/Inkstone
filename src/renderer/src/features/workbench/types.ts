@@ -2,9 +2,9 @@ import type { ComponentType } from 'react'
 import type { PreviewOpenOptions } from './preview-state'
 import type { PanePopoutTabId } from '../../../../shared/pane-popout'
 
-export type WorkbenchTabId = 'changes' | 'terminal' | 'files' | 'browser' | 'preview' | 'context' | 'branch' | 'logs' | 'quota'
+export type WorkbenchTabId = 'changes' | 'terminal' | 'files' | 'browser' | 'preview' | 'context' | 'branch' | 'logs' | 'quota' | 'device'
 
-export const WORKBENCH_TABS: readonly WorkbenchTabId[] = ['changes', 'terminal', 'files', 'browser', 'preview', 'context', 'branch', 'logs', 'quota']
+export const WORKBENCH_TABS: readonly WorkbenchTabId[] = ['changes', 'terminal', 'files', 'browser', 'preview', 'context', 'branch', 'logs', 'quota', 'device']
 
 export type WorkbenchView = WorkbenchTabId | 'overview'
 
@@ -73,6 +73,11 @@ export interface QuotaPaneProps {
   owner: WorkspaceOwner
 }
 
+export interface DevicePaneProps {
+  owner: WorkspaceOwner
+  visible?: boolean
+}
+
 export interface WorkbenchPaneComponents {
   changes?: ComponentType<ChangesPaneProps>
   terminal?: ComponentType<TerminalPaneProps>
@@ -83,4 +88,5 @@ export interface WorkbenchPaneComponents {
   branch?: ComponentType<BranchPaneProps>
   logs?: ComponentType<LogsPaneProps>
   quota?: ComponentType<QuotaPaneProps>
+  device?: ComponentType<DevicePaneProps>
 }

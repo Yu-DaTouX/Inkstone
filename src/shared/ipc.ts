@@ -2007,6 +2007,18 @@ export interface YanBridge {
     transcribe(wav: Uint8Array, language?: import('./voice-input').VoiceLanguage): Promise<import('./voice-input').VoiceTranscribeResult>
   }
 
+  android: {
+    status(): Promise<import('./android-sdk').AndroidSdkStatus>
+    install(ids: import('./android-sdk').AndroidComponentId[]): Promise<{ ok: boolean; error?: string }>
+    cancel(): Promise<void>
+    openSdkDir(): Promise<string>
+    devices(): Promise<import('./android-sdk').AndroidDevice[]>
+    boot(avd: string): Promise<void>
+    watch(serial: string | null): Promise<void>
+    control(serial: string, action: import('./android-sdk').AndroidControl): Promise<void>
+    onFrame(cb: (frame: import('./android-sdk').AndroidFrame) => void): () => void
+  }
+
   remote: {
     status(): Promise<import('./remote-protocol').RemoteAccessStatus | null>
     configure(settings: import('./remote-protocol').RemoteAccessSettings): Promise<import('./remote-protocol').RemoteAccessStatus | null>

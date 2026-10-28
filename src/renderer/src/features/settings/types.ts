@@ -127,6 +127,7 @@ const LEGACY_VIEW_TO_SECTION: Record<string, SettingsSectionId> = {
   packages: 'capabilities',
   market: 'capabilities',
   git: 'capabilities',
+  android: 'capabilities',
   usage: 'usage',
   ...GENERAL_LEGACY_MAP
 }

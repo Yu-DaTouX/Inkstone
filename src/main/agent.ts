@@ -56,6 +56,7 @@ import { applyQueueRewrite, type QueueRewritePort, type QueueRewriteResult } fro
 import { contextWindowAssumed } from './custom-providers'
 import { clearStaleRunning, contextFromEntry, contextFromRun, EMPTY_COMPACTION_STATE, measuredAfterCompaction, projectTrustedFrom, reduceCompaction, type CompactionState } from './compaction'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
+import { androidAgentEnv } from './android/android-paths'
 import { projectPackageDirs } from './packages'
 import { generationTiming, turnTiming } from '../shared/turn-timing'
 import { applyTurnTimings, readTurnTimings, timingKey } from './turn-timing-store'
@@ -873,6 +874,7 @@ export class AgentController extends EventEmitter {
     const nativeTools = nativePiToolsSupported(version)
     const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)
     const shellFallback = !bashAvailable
+    const androidEnv = androidAgentEnv()
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -926,11 +928,12 @@ export class AgentController extends EventEmitter {
         ...(this.capabilityOpts?.projectId
           ? { YAN_PROJECT_ID: this.capabilityOpts.projectId }
           : {}),
+        ...androidEnv,
         ...(this.yanCliEnv
           ? {
               YAN_CLI_URL: this.yanCliEnv.url,
               YAN_CLI_TOKEN: this.yanCliEnv.token,
-              PATH: `${this.yanCliEnv.binDir}${delimiter}${process.env.PATH ?? ''}`
+              PATH: `${this.yanCliEnv.binDir}${delimiter}${androidEnv.PATH ?? process.env.PATH ?? ''}`
             }
           : {})
       }

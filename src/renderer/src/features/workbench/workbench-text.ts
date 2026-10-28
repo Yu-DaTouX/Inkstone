@@ -131,7 +131,8 @@ const ZH: WorkbenchText = {
     context: '上下文',
     branch: '分支',
     logs: '日志',
-    quota: '额度'
+    quota: '额度',
+    device: '设备'
   },
   overview: {
     title: '概览',
@@ -228,7 +229,8 @@ const EN: WorkbenchText = {
     context: 'Context',
     branch: 'Branches',
     logs: 'Logs',
-    quota: 'Quota'
+    quota: 'Quota',
+    device: 'Device'
   },
   overview: {
     title: 'Overview',

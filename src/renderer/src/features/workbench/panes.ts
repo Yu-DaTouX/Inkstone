@@ -6,6 +6,7 @@ import { ContextPane } from './ContextPane'
 import { BranchPane } from './BranchPane'
 import { LogsPane } from './LogsPane'
 import { QuotaPane } from './QuotaPane'
+import { DevicePane } from '../device/DevicePane'
 import type { PreviewPaneProps, TerminalPaneProps, WorkbenchPaneComponents } from './types'
 
 const LazyTerminalPane = lazy(() => import('../terminal/TerminalPane').then((mod) => ({ default: mod.TerminalPane })))
@@ -28,5 +29,6 @@ export const WORKBENCH_PANES: WorkbenchPaneComponents = {
   context: ContextPane,
   branch: BranchPane,
   logs: LogsPane,
-  quota: QuotaPane
+  quota: QuotaPane,
+  device: DevicePane
 }

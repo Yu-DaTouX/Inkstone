@@ -122,6 +122,7 @@ import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, Work
 import type { RemoteAccessStatus } from '../shared/remote-protocol'
 import type { OfficeDocumentView } from '../shared/office'
 import type { VoiceDownloadPlan, VoiceInputStatus, VoiceTranscribeResult } from '../shared/voice-input'
+import type { AndroidDevice, AndroidFrame, AndroidSdkStatus } from '../shared/android-sdk'
 import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
@@ -640,6 +641,24 @@ const api: YanBridge = {
     cancel: () => invoke<void>('yan:voice:cancel'),
     pick: (kind) => invoke<VoiceInputStatus | null>('yan:voice:pick', kind),
     transcribe: (wav, language) => invoke<VoiceTranscribeResult>('yan:voice:transcribe', wav, language)
+  },
+
+  android: {
+    status: () => invoke<AndroidSdkStatus>('yan:android:status'),
+    install: (ids) => invoke<Ok>('yan:android:install', ids),
+    cancel: () => invoke<void>('yan:android:cancel'),
+    openSdkDir: () => invoke<string>('yan:android:openSdkDir'),
+    devices: () => invoke<AndroidDevice[]>('yan:android:devices'),
+    boot: (avd) => invoke<void>('yan:android:boot', avd),
+    watch: (serial) => invoke<void>('yan:android:watch', serial),
+    control: (serial, action) => invoke<void>('yan:android:control', serial, action),
+    onFrame: (cb) => {
+      const listener = (_e: Electron.IpcRendererEvent, frame: AndroidFrame): void => cb(frame)
+      ipcRenderer.on('yan:android-frame', listener)
+      return () => {
+        ipcRenderer.removeListener('yan:android-frame', listener)
+      }
+    }
   },
 
   remote: {

@@ -119,6 +119,14 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     more: true
   },
   {
+    id: 'caps-tools-android',
+    section: 'capabilities',
+    tab: 'tools',
+    zh: '安卓开发',
+    en: 'Android development',
+    keywords: ['android', 'adb', '安卓', '模拟器', 'emulator', 'SDK', 'JDK', 'Gradle', '真机', '手机调试']
+  },
+  {
     id: 'caps-tools-git',
     section: 'capabilities',
     tab: 'tools',
