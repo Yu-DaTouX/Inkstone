@@ -1508,7 +1508,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({ entryPoints: ['src/shared/quota-resume.ts'], outfile: 'out/test/quota-resume.mjs',
     bundle: true, format: 'esm', platform: 'neutral', logLevel: 'silent' })
 )
-const { runQuotaResumeTests } = await import('./test-quota-resume.mjs')
+const { runQuotaResumeTests } = await import('./test-quota.mjs')
 await runQuotaResumeTests(ok)
 await runTodoHistoryTests(ok)
 await runTaskPlanTests(ok)
@@ -1786,7 +1786,7 @@ const quotaMini = await import('../node_modules/esbuild/lib/main.js').then(({ bu
     logLevel: 'silent'
   }).then(() => import('../out/test/quota-mini.mjs'))
 )
-const { runQuotaMiniTests } = await import('./test-quota-mini.mjs')
+const { runQuotaMiniTests } = await import('./test-quota.mjs')
 await runQuotaMiniTests(ok, quotaMini)
 
 const runProgress = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
