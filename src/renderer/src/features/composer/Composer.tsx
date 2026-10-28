@@ -35,6 +35,7 @@ import { ProjectPicker } from './ProjectPicker'
 import { QueueEditor } from './QueueEditor'
 import { IsolationMergeBar } from './IsolationMergeBar'
 import { PlanCard } from './PlanCard'
+import { FileDropOverlay, useFileDropZone } from './FileDropZone'
 import { VoiceButton } from './VoiceButton'
 import { useCompletion } from './useCompletion'
 import {
@@ -61,7 +62,7 @@ export function Composer({ className }: { className?: string } = {}) {
   const [value, setValue] = useState('')
   const valueRef = useRef(value)
   valueRef.current = value
-  const [dragging, setDragging] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<ComposerEditorHandle>(null)
   const [cursor, setCursor] = useState<number | null>(null)
   const [composing, setComposing] = useState(false)
@@ -362,12 +363,10 @@ export function Composer({ className }: { className?: string } = {}) {
   )
 
   const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      const internalPaths = e.dataTransfer.getData('application/x-yan-file-paths').trim()
-      const internalPath = e.dataTransfer.getData('application/x-yan-file-path').trim()
+    (data: DataTransfer) => {
+      const internalPaths = data.getData('application/x-yan-file-paths').trim()
+      const internalPath = data.getData('application/x-yan-file-path').trim()
       if (internalPaths || internalPath) {
-        e.preventDefault()
-        setDragging(false)
         let paths = [internalPath]
         if (internalPaths) {
           try {
@@ -381,10 +380,8 @@ export function Composer({ className }: { className?: string } = {}) {
         if (paths.length) void addFileRefPaths(paths)
         return
       }
-      if (!e.dataTransfer.types.includes('Files')) return
-      e.preventDefault()
-      setDragging(false)
-      const files = [...e.dataTransfer.files]
+      if (!data.types.includes('Files')) return
+      const files = [...data.files]
       if (files.length === 0) return
       const images = files.filter((f) => f.type.startsWith('image/'))
       const others = files.filter((f) => !f.type.startsWith('image/'))
@@ -393,6 +390,7 @@ export function Composer({ className }: { className?: string } = {}) {
     },
     [addAttachments, addFileRefs, addFileRefPaths, notify, t]
   )
+  const fileDrop = useFileDropZone(wrapRef, onDrop)
 
   const recallHistory = (e: ComposerKeyEvent): boolean => {
     const arrow = e.key === 'ArrowUp' || e.key === 'ArrowDown'
@@ -498,19 +496,10 @@ export function Composer({ className }: { className?: string } = {}) {
   })
   return (
     <div
-      className={`composer-wrap ${dragging ? 'is-dropping' : ''} ${className ?? ''}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-yan-file-path') || e.dataTransfer.types.includes('application/x-yan-file-paths')) {
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'copy'
-          setDragging(true)
-        }
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
-      }}
-      onDrop={onDrop}
+      ref={wrapRef}
+      className={`composer-wrap ${fileDrop && !fileDrop.dropped ? 'is-dropping' : ''} ${className ?? ''}`}
     >
+      <FileDropOverlay state={fileDrop} />
       <IsolationMergeBar />
       <div className="composer">
         <ComposerBorder />

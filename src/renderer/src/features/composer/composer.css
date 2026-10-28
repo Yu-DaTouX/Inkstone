@@ -186,7 +186,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--s-4);
-    padding: var(--s-4) var(--s-4) var(--s-10);
+    padding: var(--s-4) var(--s-4) var(--s-10) calc(var(--size-btn) + var(--s-4));
   }
 
   .ca-tile {
@@ -900,5 +900,125 @@
     .composer-bar .ctx-ring-wrap {
       display: none;
     }
+  }
+}
+
+@layer features {
+  .file-drop {
+    position: fixed;
+    z-index: var(--z-drop);
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--bg) 45%, transparent);
+    animation: file-drop-in var(--dur-base) var(--ease) both;
+  }
+
+  .file-drop[data-state='drop'] {
+    animation: file-drop-out var(--dur-base) var(--ease) both;
+  }
+
+  .file-drop-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-12);
+    padding: var(--s-20) var(--s-32) var(--s-16);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--surface-3);
+    box-shadow: var(--shadow-pop);
+    color: var(--accent);
+    animation: file-drop-card-in var(--dur-sheet) var(--ease-overshoot) both;
+  }
+
+  .file-drop[data-state='drop'] .file-drop-card {
+    animation: file-drop-card-out var(--dur-base) var(--ease) both;
+  }
+
+  .file-drop-icons {
+    position: relative;
+    width: 112px;
+    height: 48px;
+  }
+
+  .file-drop-icon {
+    position: absolute;
+    top: 8px;
+    left: calc(50% - 16px);
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    transition: scale var(--dur-base) var(--ease-overshoot), opacity var(--dur-base) var(--ease);
+  }
+
+  .file-drop-icon svg {
+    width: 30px;
+    height: 30px;
+    stroke-width: 1.6;
+  }
+
+  .file-drop-icon[data-icon='image'] {
+    animation: file-drop-fan-left var(--dur-sheet) var(--ease-overshoot) both, file-drop-float var(--dur-breathe) var(--ease) var(--dur-sheet) infinite;
+  }
+
+  .file-drop-icon[data-icon='file'] {
+    animation: file-drop-fan-mid var(--dur-sheet) var(--ease-overshoot) both, file-drop-float var(--dur-breathe) var(--ease) calc(var(--dur-sheet) + 400ms) infinite;
+  }
+
+  .file-drop-icon[data-icon='folder'] {
+    animation: file-drop-fan-right var(--dur-sheet) var(--ease-overshoot) both, file-drop-float var(--dur-breathe) var(--ease) calc(var(--dur-sheet) + 800ms) infinite;
+  }
+
+  .file-drop[data-kind='image'] .file-drop-icon:not([data-icon='image']),
+  .file-drop[data-kind='file'] .file-drop-icon[data-icon='image'] {
+    opacity: 0.45;
+  }
+
+  .file-drop[data-kind='image'] .file-drop-icon[data-icon='image'],
+  .file-drop[data-kind='file'] .file-drop-icon:not([data-icon='image']) {
+    scale: 1.15;
+  }
+
+  .file-drop-label {
+    font-size: var(--t-prose);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  @keyframes file-drop-in {
+    from { opacity: 0; }
+  }
+
+  @keyframes file-drop-out {
+    to { opacity: 0; }
+  }
+
+  @keyframes file-drop-card-in {
+    from { opacity: 0; scale: 0.92; }
+  }
+
+  @keyframes file-drop-card-out {
+    to { opacity: 0; scale: 0.9; translate: 0 24px; }
+  }
+
+  @keyframes file-drop-fan-left {
+    from { translate: 0 6px; rotate: 0deg; }
+    to { translate: -38px 4px; rotate: -14deg; }
+  }
+
+  @keyframes file-drop-fan-mid {
+    from { translate: 0 6px; }
+    to { translate: 0 -6px; }
+  }
+
+  @keyframes file-drop-fan-right {
+    from { translate: 0 6px; rotate: 0deg; }
+    to { translate: 38px 4px; rotate: 14deg; }
+  }
+
+  @keyframes file-drop-float {
+    50% { transform: translateY(-3px); }
   }
 }
