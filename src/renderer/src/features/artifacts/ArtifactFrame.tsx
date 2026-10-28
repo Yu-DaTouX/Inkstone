@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CS
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from 'lucide-react'
 import { useT, type MessageKey } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
-import { HTML_ARTIFACT_SCHEME } from '../../../../shared/html-artifact-preview'
+import { HTML_ARTIFACT_SCHEME, HTML_PREVIEW_CHANNEL } from '../../../../shared/html-artifact-preview'
+import { HTML_CANVAS_CHANNEL } from '../../../../shared/html-canvas-bridge'
 import {
   BridgeRateLimiter,
   MAX_ACTIVE_FRAMES,
@@ -117,6 +118,10 @@ const ERROR_KEYS: Record<BridgeError, MessageKey> = {
   url: 'artifact.htmlOutside'
 }
 
+function isPreviewRuntimeMessage(data: unknown): boolean {
+  return !!data && typeof data === 'object' && (HTML_PREVIEW_CHANNEL in data || HTML_CANVAS_CHANNEL in data)
+}
+
 export function ArtifactFrame({
   identity,
   title,
@@ -213,6 +218,7 @@ export function ArtifactFrame({
     const onMessageEvent = (event: MessageEvent): void => {
       const frame = iframeRef.current
       if (!frame || event.source !== frame.contentWindow) return
+      if (isPreviewRuntimeMessage(event.data)) return
       if (!limiter.current.allow(Date.now())) return
       const decoded = decodeBridgeMessage(event.data, { sourceOk: true, frameGeneration: bridgeGeneration })
       if (!decoded.ok) {
