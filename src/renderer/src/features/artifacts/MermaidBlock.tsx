@@ -18,6 +18,7 @@ let queue: Promise<unknown> = Promise.resolve()
 let seq = 0
 const svgCache = new Map<string, string>()
 const SVG_CACHE_LIMIT = 40
+const MERMAID_MIN_SCALE = 0.8
 
 function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -62,7 +63,8 @@ async function renderMermaid(source: string): Promise<string> {
       theme: 'base',
       fontFamily: tokens.font || 'sans-serif',
       htmlLabels: false,
-      flowchart: { htmlLabels: false, useMaxWidth: true },
+      flowchart: { htmlLabels: false, useMaxWidth: true, nodeSpacing: 32, rankSpacing: 36, padding: 8 },
+      sequence: { useMaxWidth: true, mirrorActors: false, width: 110, height: 34, actorMargin: 48, boxMargin: 6, messageMargin: 28, noteMargin: 8 },
       themeVariables: mermaidThemeVariables(tokens)
     })
     await mermaid.parse(source)
@@ -76,9 +78,10 @@ async function renderMermaid(source: string): Promise<string> {
 function naturalWidth(svg: string): string {
   const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"/.exec(svg)
   if (!box) return svg
+  const width = Math.ceil(Number(box[1]))
   return svg
-    .replace(/<svg([^>]*?)\swidth="100%"/, `<svg$1 width="${Math.ceil(Number(box[1]))}"`)
-    .replace(/max-width:\s*[\d.]+px;?/, '')
+    .replace(/<svg([^>]*?)\swidth="100%"/, `<svg$1 width="${width}"`)
+    .replace(/max-width:\s*[\d.]+px;?/, `min-width:${Math.ceil(width * MERMAID_MIN_SCALE)}px;`)
 }
 
 export interface MermaidBlockProps {

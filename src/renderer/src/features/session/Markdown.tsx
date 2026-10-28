@@ -412,9 +412,12 @@ const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
   const plugins = pluginsFor(highlight, math)
   const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
+  const live = useContext(MarkdownLive)
   return (
     <MarkdownOffset.Provider value={offset}>
-      <MarkdownBody remark={plugins.remark} rehype={rehype} text={text} />
+      <MarkdownLive.Provider value={live && hasUnclosedFence(text)}>
+        <MarkdownBody remark={plugins.remark} rehype={rehype} text={text} />
+      </MarkdownLive.Provider>
     </MarkdownOffset.Provider>
   )
 })
@@ -511,7 +514,8 @@ export const Markdown = memo(function Markdown({
     )
   }
 
-  if (live) {
+  const unclosed = hasUnclosedFence(renderedText)
+  if (live || unclosed) {
     return (
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
@@ -523,7 +527,6 @@ export const Markdown = memo(function Markdown({
     )
   }
 
-  const unclosed = hasUnclosedFence(renderedText)
   if (settling && !CROSS_BLOCK_REFERENCE.test(renderedText)) {
     return (
       <WidgetIdentityContext.Provider value={identity}>

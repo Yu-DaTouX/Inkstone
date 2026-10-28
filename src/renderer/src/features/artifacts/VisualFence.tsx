@@ -1,7 +1,7 @@
-import { useMemo, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { useMemo, type JSX, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Notice } from '../../ui'
+import { Badge, Meter, Notice, Stat, StatGrid } from '../../ui'
 import {
   isVisualDataLang,
   parseVisualBlock,
@@ -86,16 +86,21 @@ function Sparkline({ values, tone }: { values: number[]; tone: 'ok' | 'err' | ''
   const min = Math.min(...values)
   const max = Math.max(...values)
   const span = max - min || 1
-  const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${28 - ((value - min) / span) * 24}`).join(' ')
+  const points = values.map((value, index) => `${(index / (values.length - 1)) * 64},${18 - ((value - min) / span) * 16}`).join(' ')
   return (
-    <svg className={`v3-visual-spark ${tone}`} viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden>
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+    <svg className={`v3-visual-spark ${tone}`} width="64" height="20" viewBox="0 0 64 20" aria-hidden>
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   )
 }
 
+function meterTone(ratio: number): 'ink' | 'ask' | 'fail' {
+  return ratio >= 0.95 ? 'fail' : ratio >= 0.85 ? 'ask' : 'ink'
+}
+
 function Stats({ block }: { block: StatsBlock }): JSX.Element {
   const t = useT()
+  const columns = block.items.length > 4 ? 3 : block.items.length
   return (
     <section className="v3-visual v3-visual-stats-block" data-testid="v3-visual-stats">
       {block.title ? (
@@ -103,38 +108,33 @@ function Stats({ block }: { block: StatsBlock }): JSX.Element {
           <span className="v3-visual-title">{block.title}</span>
         </header>
       ) : null}
-      <div className="v3-visual-tiles">
+      <StatGrid columns={columns} className="v3-visual-statgrid">
         {block.items.map((item, index) => {
           const good = item.good ?? 'up'
           const tone: 'ok' | 'err' | '' = !item.trend || item.trend === 'flat' ? '' : item.trend === good ? 'ok' : 'err'
+          const arrow = item.trend === 'up' ? '↑' : item.trend === 'down' ? '↓' : item.trend === 'flat' ? '→' : ''
           const ratio = item.meter ? Math.min(1, item.meter.value / item.meter.max) : 0
           return (
-            <div className="v3-visual-tile" key={index}>
-              <span className="v3-visual-stat-label">{item.label}</span>
-              <span className="v3-visual-stat-value">{item.value}</span>
-              {item.delta || item.trend ? (
-                <span className={`v3-visual-delta ${tone}`}>
-                  {item.trend === 'up' ? '↑' : item.trend === 'down' ? '↓' : item.trend === 'flat' ? '→' : ''} {item.delta ?? ''}
-                </span>
-              ) : null}
-              {item.spark ? <Sparkline values={item.spark} tone={tone} /> : null}
-              {item.meter ? (
-                <div
-                  className={`v3-visual-meter${ratio >= 0.95 ? ' err' : ratio >= 0.85 ? ' warn' : ''}`}
-                  role="meter"
-                  aria-valuemin={0}
-                  aria-valuemax={item.meter.max}
-                  aria-valuenow={item.meter.value}
-                  aria-label={item.label}
-                >
-                  <span style={{ width: `${Math.round(ratio * 100)}%` } as CSSProperties} />
-                </div>
-              ) : null}
-              {item.detail ? <span className="v3-visual-stat-detail">{item.detail}</span> : null}
-            </div>
+            <Stat
+              key={index}
+              label={item.label}
+              value={item.value}
+              unit={item.delta || arrow ? <span className={`v3-visual-delta ${tone}`}>{`${arrow}${item.delta ?? ''}`}</span> : undefined}
+              aside={item.spark && item.spark.length > 1 ? <Sparkline values={item.spark} tone={tone} /> : undefined}
+              footer={
+                item.meter || item.detail ? (
+                  <>
+                    {item.meter ? (
+                      <Meter value={item.meter.value} maxValue={item.meter.max} tone={meterTone(ratio)} aria-label={item.label} className="v3-visual-meter" />
+                    ) : null}
+                    {item.detail ? <span className="v3-visual-stat-detail">{item.detail}</span> : null}
+                  </>
+                ) : undefined
+              }
+            />
           )
         })}
-      </div>
+      </StatGrid>
       {block.source ? <span className="v3-visual-source">{t('vb.source')}：{block.source}</span> : null}
       <VisualSources items={block.sources} />
     </section>
@@ -154,12 +154,12 @@ function Cards({ block }: { block: CardsBlock }): JSX.Element {
       <div className="v3-visual-card-list" role="list">
         {block.items.map((item, index) => (
           <div className={`v3-visual-card${item.recommended ? ' recommended' : ''}`} role="listitem" key={index}>
-            {item.recommended ? <Badge tone="accent">{t('vb.recommended')}</Badge> : null}
             <div className="v3-visual-card-title">
               {block.layout === 'list' ? <span className="v3-visual-card-index">{index + 1}</span> : null}
               <BlockIcon name={item.icon} />
               <span className="v3-visual-card-name">{item.title}</span>
-              {item.badge ? <Badge tone="accent">{item.badge}</Badge> : null}
+              {item.recommended ? <Badge tone="accent">{t('vb.recommended')}</Badge> : null}
+              {item.badge ? <Badge tone="neutral">{item.badge}</Badge> : null}
             </div>
             {item.description ? <p className="v3-visual-card-desc">{item.description}</p> : null}
             {item.meta ? <div className="v3-visual-card-meta">{item.meta}</div> : null}
@@ -189,19 +189,13 @@ function Cards({ block }: { block: CardsBlock }): JSX.Element {
 
 function Record({ block }: { block: RecordBlock }): JSX.Element {
   const link = useOpenLink()
-  const initials = block.title.replace(/\s+/g, '').slice(0, 2)
   return (
     <section className="v3-visual v3-visual-record" data-testid="v3-visual-record">
-      <div className="v3-visual-record-head">
-        <span className="v3-visual-avatar" aria-hidden>
-          {initials}
-        </span>
-        <div className="v3-visual-head">
-          <span className="v3-visual-title">{block.title}</span>
-          {block.subtitle ? <span className="v3-visual-sub">{block.subtitle}</span> : null}
-        </div>
-        {block.badge ? <Badge tone="accent">{block.badge}</Badge> : null}
-      </div>
+      <header className="v3-visual-head">
+        <span className="v3-visual-title">{block.title}</span>
+        {block.subtitle ? <span className="v3-visual-sub">{block.subtitle}</span> : null}
+        {block.badge ? <Badge tone="neutral">{block.badge}</Badge> : null}
+      </header>
       <dl className="v3-visual-fields">
         {block.fields.map((field, index) => (
           <div className="v3-visual-field" key={index}>
@@ -227,8 +221,6 @@ function Record({ block }: { block: RecordBlock }): JSX.Element {
   )
 }
 
-const TONE_GLYPH = { ok: '✓', warn: '!', err: '✕', info: 'i' } as const
-
 function Flow({ block }: { block: FlowBlock }): JSX.Element {
   return (
     <section className="v3-visual v3-visual-flow" data-testid="v3-visual-flow">
@@ -248,18 +240,16 @@ function Flow({ block }: { block: FlowBlock }): JSX.Element {
             </div>
           </div>
         ))}
+        {block.result ? (
+          <div className="v3-visual-step-wrap">
+            <span className="v3-visual-join" aria-hidden>{block.join === 'plus' ? '=' : '→'}</span>
+            <div className={`v3-visual-result ${block.result.tone}`}>
+              <i className="v3-visual-result-dot" aria-hidden />
+              <span>{block.result.text}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
-      {block.result ? (
-        <>
-          <div className="v3-visual-flow-down" aria-hidden>
-            ↓
-          </div>
-          <div className={`v3-visual-result ${block.result.tone}`}>
-            <span aria-hidden>{TONE_GLYPH[block.result.tone]}</span>
-            <span>{block.result.text}</span>
-          </div>
-        </>
-      ) : null}
       {block.note ? <p className="v3-visual-note">{block.note}</p> : null}
       <VisualSources items={block.sources} />
     </section>
@@ -268,62 +258,30 @@ function Flow({ block }: { block: FlowBlock }): JSX.Element {
 
 function Steps({ block }: { block: StepsBlock }): JSX.Element {
   const t = useT()
-  const [at, setAt] = useState(0)
-  const last = block.steps.length - 1
-  const step = block.steps[at]
-  const go = (next: number): void => setAt(block.loop ? (next + block.steps.length) % block.steps.length : Math.max(0, Math.min(last, next)))
   return (
-    <section
-      className="v3-visual v3-visual-stepper"
-      data-testid="v3-visual-steps"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === 'ArrowRight') {
-          event.preventDefault()
-          go(at + 1)
-        } else if (event.key === 'ArrowLeft') {
-          event.preventDefault()
-          go(at - 1)
-        }
-      }}
-    >
+    <section className="v3-visual v3-visual-stepper" data-testid="v3-visual-steps">
       {block.title ? (
         <header className="v3-visual-head">
           <span className="v3-visual-title">{block.title}</span>
         </header>
       ) : null}
-      <div className="v3-visual-stepper-dots" role="tablist" aria-label={block.title ?? t('vb.steps')}>
-        {block.steps.map((s, index) => (
-          <button
-            key={index}
-            type="button"
-            role="tab"
-            aria-selected={index === at}
-            className={`v3-visual-step-dot${index === at ? ' on' : ''}${index < at ? ' done' : ''}`}
-            onClick={() => setAt(index)}
-            title={s.title}
-          >
-            <span className="v3-visual-step-n">{index + 1}</span>
-            <span className="v3-visual-step-t">{s.title}</span>
-          </button>
+      <ol className="v3-visual-timeline" aria-label={block.title ?? t('vb.steps')}>
+        {block.steps.map((step, index) => (
+          <li className="v3-visual-tl-item" key={index}>
+            <span className="v3-visual-tl-n" aria-hidden>
+              {index + 1}
+            </span>
+            <div className="v3-visual-tl-body">
+              <span className="v3-visual-tl-title">
+                <BlockIcon name={step.icon} />
+                {step.title}
+              </span>
+              {step.body ? <span className="v3-visual-tl-text">{step.body}</span> : null}
+            </div>
+          </li>
         ))}
-      </div>
-      <div className="v3-visual-stepper-panel" role="tabpanel">
-        <BlockIcon name={step.icon} />
-        <p className="v3-visual-note">{step.body}</p>
-      </div>
-      <div className="v3-visual-stepper-nav">
-        <button type="button" disabled={!block.loop && at === 0} onClick={() => go(at - 1)}>
-          {t('vb.prev')}
-        </button>
-        <span className="v3-visual-stepper-count">
-          {at + 1} / {block.steps.length}
-          {block.loop ? ` · ${t('vb.loop')}` : ''}
-        </span>
-        <button type="button" disabled={!block.loop && at === last} onClick={() => go(at + 1)}>
-          {t('vb.next')}
-        </button>
-      </div>
+      </ol>
+      {block.loop ? <p className="v3-visual-note">↻ {t('vb.loop')}</p> : null}
     </section>
   )
 }

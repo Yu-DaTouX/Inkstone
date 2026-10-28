@@ -102,7 +102,8 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   assert.equal(light.background, 'bg-light')
   assert.equal(light.primaryColor, 'surface-light')
   assert.equal(light.primaryTextColor, 'fg-light')
-  assert.equal(light.primaryBorderColor, 'accent-light')
+  assert.equal(light.primaryBorderColor, 'line2-light', '节点描边用细线色，不用强调色')
+  assert.equal(light.actorBorder, 'line2-light')
   assert.equal(light.secondaryColor, 'hover-light')
   assert.equal(light.tertiaryColor, 'sunken-light')
   assert.equal(light.lineColor, 'fg3-light', '连线/网格用 fg3')
@@ -124,7 +125,7 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
   })
   assert.equal(dark.darkMode, true, '深色主题随 data-theme 报告')
   assert.equal(dark.background, 'bg-dark')
-  assert.equal(dark.primaryBorderColor, 'accent-dark')
+  assert.equal(dark.primaryBorderColor, 'line2-dark')
   for (const value of Object.values(dark)) {
     if (typeof value === 'string' && value !== '13px') {
       assert.ok(!/^#|^rgb/.test(value), '不出现硬编码色值：' + value)

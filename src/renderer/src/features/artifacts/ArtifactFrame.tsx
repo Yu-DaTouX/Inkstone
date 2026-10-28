@@ -106,6 +106,8 @@ export interface ArtifactFrameProps {
   onStateSave?: (text: string) => void
   onFrameReady?: (frame: HTMLIFrameElement) => void
   onClose?: () => void
+  initialHeight?: number
+  onHeightChange?: (height: number) => void
 }
 
 const ERROR_KEYS: Record<BridgeError, MessageKey> = {
@@ -139,7 +141,9 @@ export function ArtifactFrame({
   onOpenLink,
   onStateSave,
   onFrameReady,
-  onClose
+  onClose,
+  initialHeight,
+  onHeightChange
 }: ArtifactFrameProps): JSX.Element {
   const t = useT()
   const at = useArtifactText()
@@ -150,7 +154,9 @@ export function ArtifactFrame({
   const interactionRef = useRef<{ mode: 'drag' | 'resize'; pointerId: number; startX: number; startY: number; origin: FrameRect } | null>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
   const [observedNear, setObservedNear] = useState(false)
-  const [height, setHeight] = useState(160)
+  const [height, setHeight] = useState(initialHeight ?? 160)
+  const onHeightRef = useRef(onHeightChange)
+  onHeightRef.current = onHeightChange
   const [rawHeight, setRawHeight] = useState<number | null>(null)
   const [reload, setReload] = useState(0)
   const [bridgeError, setBridgeError] = useState<BridgeError | null>(null)
@@ -235,6 +241,7 @@ export function ArtifactFrame({
         case 'size-changed':
           setRawHeight((current) => (current === null || Math.abs(current - action.height) > 1 ? action.height : current))
           setHeight(clampInlineHeight(action.height, viewportHeight))
+          onHeightRef.current?.(action.height)
           break
         case 'request-display-mode':
           requestForm(action.form)

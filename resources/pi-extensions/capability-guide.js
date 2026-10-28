@@ -44,7 +44,7 @@ export function capabilityGuide(tools = false) {
 export const CAPABILITY_GUIDE = capabilityGuide(false)
 
 export const VISUAL_ANSWER_GUIDE = [
-  'Answer format: short plain prose, conclusion first; no headings or long lists for looks. When a picture explains better than words (a trend, options compared side by side, a mechanism or process), show it as an Inkstone block (yan-chart, yan-stats, yan-cards, yan-record, yan-flow, yan-steps, yan-widget, mermaid), even unasked, placed where it belongs in the reply, and do not restate what it shows. Summaries of coding work, change lists and test results stay plain text. Read skill visual-answer for their fields first.',
+  'Answer format: short plain prose, conclusion first; no headings or long lists for looks. When a picture explains better than words (a trend, options compared side by side, a mechanism or process), show it as an Inkstone block: a fenced code block whose language is yan-chart, yan-stats, yan-cards, yan-record, yan-flow, yan-steps, yan-widget or mermaid (```yan-chart, not an XML-style tag), even unasked, placed where it belongs in the reply, and do not restate what it shows. Summaries of coding work, change lists and test results stay plain text. Read skill visual-answer for their fields first.',
   'Charts must cite their data source and use only numbers from sources or the user; at most one or two blocks per answer.'
 ].join('\n')
 const VISUAL_SECTION = 'inkstone_visual_answer'

@@ -33,7 +33,7 @@ export function mermaidThemeVariables(tokens: MermaidTokenSet): MermaidThemeVari
     background: tokens.bg,
     primaryColor: tokens.surface,
     primaryTextColor: tokens.fg,
-    primaryBorderColor: tokens.accent,
+    primaryBorderColor: tokens.line2,
     secondaryColor: tokens.surfaceAlt,
     tertiaryColor: tokens.sunken,
     lineColor: tokens.fgMute,
@@ -43,6 +43,14 @@ export function mermaidThemeVariables(tokens: MermaidTokenSet): MermaidThemeVari
     noteBorderColor: tokens.line2,
     edgeLabelBackground: tokens.bg,
     clusterBkg: tokens.surface,
-    clusterBorder: tokens.line2
+    clusterBorder: tokens.line2,
+    actorBkg: tokens.surface,
+    actorBorder: tokens.line2,
+    actorTextColor: tokens.fg,
+    actorLineColor: tokens.line2,
+    signalColor: tokens.fgMute,
+    signalTextColor: tokens.fg,
+    activationBorderColor: tokens.line2,
+    activationBkgColor: tokens.surfaceAlt
   }
 }

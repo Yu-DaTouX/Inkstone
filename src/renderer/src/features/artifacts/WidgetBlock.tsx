@@ -8,7 +8,7 @@ import { VISUAL_WIDGET_MAX_CHARS } from '../../../../shared/visual-blocks'
 import { ArtifactFrame } from './ArtifactFrame'
 import { SaveAsArtifactButton, shortHash } from './SaveAsArtifact'
 import { deriveWidgetIdentityKey, useNearViewport, usePreviewSnapshot, useWidgetIdentity } from './widget-lifecycle'
-import type { ArtifactForm } from './model'
+import { clampInlineHeight, type ArtifactForm } from './model'
 
 const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--bg', '--bg'],
@@ -125,6 +125,19 @@ function rememberWidgetState(key: string, text: string): void {
   }
 }
 
+const widgetHeights = new Map<string, number>()
+const WIDGET_HEIGHTS_MAX = 64
+
+function rememberWidgetHeight(key: string, height: number): void {
+  widgetHeights.delete(key)
+  widgetHeights.set(key, height)
+  while (widgetHeights.size > WIDGET_HEIGHTS_MAX) {
+    const oldest = widgetHeights.keys().next()
+    if (oldest.done) break
+    widgetHeights.delete(oldest.value)
+  }
+}
+
 export interface WidgetBlockProps {
   html: string
   fallback: React.ReactNode
@@ -142,6 +155,8 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
   const markdownIdentity = useWidgetIdentity()
   const tooLarge = html.length > VISUAL_WIDGET_MAX_CHARS
   const frameRef = useRef<HTMLIFrameElement | null>(null)
+  const heightKey = useMemo(() => shortHash(html), [html])
+  const reserved = clampInlineHeight(widgetHeights.get(heightKey) ?? 160, window.innerHeight)
 
   const build = useMemo(() => {
     if (tooLarge) return null
@@ -214,6 +229,8 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
             />
           }
           src={snapshot.url}
+          initialHeight={widgetHeights.get(heightKey)}
+          onHeightChange={(height) => rememberWidgetHeight(heightKey, height)}
           form={form}
           near={near}
           sandbox={HTML_ARTIFACT_SANDBOX}
@@ -235,14 +252,14 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
           }}
         />
       ) : snapshot.status === 'paused' ? (
-        <div className="v3-visual-pending" role="status" data-testid="v3-visual-widget-paused">
+        <div className="v3-visual-pending" role="status" data-testid="v3-visual-widget-paused" style={{ minHeight: reserved }}>
           <span>{t('artifact.htmlBusy')}</span>
           <Button size="sm" variant="ghost" onPress={snapshot.resume}>
             {t('artifact.htmlRetry')}
           </Button>
         </div>
       ) : (
-        <div className="v3-visual-pending" role="status">
+        <div className="v3-visual-pending" role="status" style={{ minHeight: reserved }}>
           {t('vb.pending')}
         </div>
       )}
