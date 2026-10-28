@@ -116,6 +116,7 @@ import type { ModelRef } from '../shared/model-brand'
 import { APPROVAL_DETAIL_MAX, withDenyFeedback, type ApprovalDecision, type ApprovalRequest } from '../shared/approval'
 import { configureRemoteHost, remoteSnapshot, remoteHistory, remoteModels, executeRemoteCommand, remoteQuestions, remoteAnswer, remoteHumanApproval, remoteArtifact, remoteMessageImage, peerClient, peerGrants, peerHostHandlers } from './remote-host'
 import { registerVoiceIpc } from './ipc/voice-ipc'
+import { registerAndroidIpc } from './ipc/android-ipc'
 import { registerAppUpdate } from './app-update'
 import { VoiceService } from './voice/voice-service'
 import { registerPeerIpc } from './ipc/peer-ipc'
@@ -1384,6 +1385,13 @@ function controlStatus(): Record<string, unknown> {
 }
 
 
+let sharedVoiceService: VoiceService | null = null
+
+function voiceService(): VoiceService {
+  sharedVoiceService ??= new VoiceService(async () => (await getSettings()).voiceInput)
+  return sharedVoiceService
+}
+
 async function startRemoteServer(): Promise<void> {
   if (!remoteAccess) {
     remoteAccess = new RemoteAccess(
@@ -1397,7 +1405,11 @@ async function startRemoteServer(): Promise<void> {
         questions: remoteQuestions,
         answer: remoteAnswer,
         humanApproval: remoteHumanApproval,
-        artifact: remoteArtifact
+        artifact: remoteArtifact,
+        transcribe: async (wav) => {
+          const result = await voiceService().transcribe(wav)
+          return result.ok ? { ok: true, data: { text: result.text } } : { ok: false, status: 409, error: result.error }
+        }
       },
       (text, level) => {
         if (level === 'error') console.error(`[remote] ${text}`)
@@ -3133,13 +3145,14 @@ function registerIpc(): void {
 
   registerAppUpdate(ipc, () => (runners?.statuses() ?? []).some((status) => status.running))
   registerVoiceIpc(ipc, {
-    service: new VoiceService(async () => (await getSettings()).voiceInput),
+    service: voiceService(),
     window: () => win,
     settings: async () => (await getSettings()).voiceInput,
     saveSettings: async (voiceInput) => {
       await patchSettings({ voiceInput })
     }
   })
+  registerAndroidIpc(ipc, () => win)
 
   registerRemoteIpc(ipc, {
     access: () => remoteAccess,

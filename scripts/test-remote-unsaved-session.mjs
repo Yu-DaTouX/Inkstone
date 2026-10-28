@@ -119,7 +119,12 @@ try {
   assert.equal(models.data.models[0].id, 'm', '模型列表来自该会话的运行实例')
 
   const history = await host.remoteHistory('pending-2', 10)
-  assert.equal(history.status, 404, '历史接口仍只读已落盘的会话')
+  assert.equal(history.ok, true, '未落盘的新会话历史返回空页，手机端可直接打开')
+  assert.equal(history.data.session.id, 'pending-2', '空页带上会话摘要')
+  assert.equal(history.data.messages.length, 0, '未落盘会话没有历史消息')
+
+  const missingHistory = await host.remoteHistory('nowhere', 10)
+  assert.equal(missingHistory.status, 404, '不存在的会话历史仍然 404')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

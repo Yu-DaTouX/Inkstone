@@ -35,7 +35,8 @@ export const FAKE_TRIGGERS = {
   LONGTEXT: '约 20KB markdown 长文本，慢速逐块流出',
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
-  FAIL: '返回 502，用来看模型错误与重试'
+  FAIL: '返回 502，用来看模型错误与重试',
+  APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批'
 }
 
 async function respond(res, text, done, requestNo) {
@@ -81,6 +82,9 @@ async function respond(res, text, done, requestNo) {
     } else if (text.includes('BIGOUT')) {
       if (done < 1) await callTool('bash', { command: 'for i in $(seq 1 6000); do echo "line $i ................................................................"; if [ $((i % 400)) -eq 0 ]; then sleep 0.25; fi; done', description: 'long output' })
       else await streamText('长输出结束。', 20, 10)
+    } else if (text.includes('APPROVAL')) {
+      if (done < 1) await callTool('bash', { command: 'reg delete "HKCU\\Software\\InkstoneApprovalTest" /f', description: 'approval probe' })
+      else await streamText('审批测试结束。', 20, 10)
     } else await streamText('好的，收到。', 20, 10)
   } catch {}
   send({ type: 'response.completed', response: { id, status: 'completed', output, usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150, input_tokens_details: { cached_tokens: 0 } } } })

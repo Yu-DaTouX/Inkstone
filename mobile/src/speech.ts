@@ -2,6 +2,7 @@ import { Alert, NativeEventEmitter, NativeModules, PermissionsAndroid, Platform 
 
 interface SpeechInputNative {
   recognize(): Promise<string | null>
+  record(): Promise<string | null>
   stop(): void
   cancel(): void
   openServiceSettings(): Promise<boolean>
@@ -20,7 +21,15 @@ export function stopSpeech() { native?.stop() }
 export function isSpeechActive() { return active }
 export function cancelSpeech() { cancelled = true; native?.cancel() }
 
-export async function recognizeSpeech(isCancelled: () => boolean = () => false): Promise<string | null> {
+export function recordSpeech(isCancelled: () => boolean = () => false): Promise<string | null> {
+  return runNative((module) => module.record(), isCancelled)
+}
+
+export function recognizeSpeech(isCancelled: () => boolean = () => false): Promise<string | null> {
+  return runNative((module) => module.recognize(), isCancelled)
+}
+
+async function runNative(start: (module: SpeechInputNative) => Promise<string | null>, isCancelled: () => boolean): Promise<string | null> {
   if (Platform.OS !== 'android') throw new Error('当前只支持 Android 语音输入')
   if (!native) throw new Error('语音输入模块不可用，请重新安装完整的 Android 应用')
   if (active) throw new Error('已有语音输入正在进行')
@@ -29,7 +38,7 @@ export async function recognizeSpeech(isCancelled: () => boolean = () => false):
   try {
     try {
       if (cancelled || isCancelled()) return null
-      return await native.recognize()
+      return await start(native)
     } catch (error) {
       if ((error as { code?: string })?.code === 'speech_service_permission') {
         Alert.alert('识别服务缺少麦克风权限', (error as Error).message, [
@@ -46,7 +55,7 @@ export async function recognizeSpeech(isCancelled: () => boolean = () => false):
       })
       if (result !== PermissionsAndroid.RESULTS.GRANTED) throw new Error('未获得麦克风权限，可改用键盘语音输入')
       if (cancelled || isCancelled()) return null
-      return await native.recognize()
+      return await start(native)
     }
   } finally { active = false }
 }

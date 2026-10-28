@@ -21,7 +21,11 @@ import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
 import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
-import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary } from '../shared/ipc'
+import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo } from '../shared/ipc'
+import { SessionEntriesLite } from './session-entries-lite'
+import { readTaskPlanLog } from './task-plan-store'
+import { taskPlanLogEntry } from '../shared/task-plan'
+import { todoSnapshotsFromEntries } from './todo-snapshots'
 import type { RemoteAccess } from './remote-access'
 import type { SessionHost } from './session-host'
 import type { AgentController } from './agent'
@@ -152,8 +156,13 @@ export async function remoteSnapshot(): Promise<Record<string, unknown>> {
   const connection = host.ac()?.getConn() ?? { state: 'exited' as const, detail: 'pi 未运行' }
   const win = host.win()
   const windowReady = !!win && !win.isDestroyed()
+  const settings = await getSettings()
   return {
     apiVersion: 1,
+    projects: settings.projects
+      .filter((project) => !project.archived)
+      .map((project) => ({ id: project.id, name: peerProjectName(project, settings.projectNames), cwd: project.cwd })),
+    currentProjectId: host.projectIdForCwd(settings, settings.cwd) ?? null,
     generatedAt: Date.now(),
     desktop: {
       ready: windowReady,
@@ -192,11 +201,10 @@ export async function filterChainRepresentatives(list: SessionSummary[]): Promis
 function unsavedSessionSummary(sessionId: string): SessionSummary | null {
   const status = host.runners()?.statuses().find((item) => item.sessionId === sessionId)
   if (!status?.cwd) return null
-  if (status.sessionFile) return null
   const at = status.lastActiveAt ?? Date.now()
   return {
     id: sessionId,
-    path: '',
+    path: status.sessionFile ?? '',
     cwd: status.cwd,
     title: '',
     named: false,
@@ -233,9 +241,23 @@ async function resolveChainSession(sessionId: string, options: { allowUnsaved?: 
   return { ok: true, summary: representative }
 }
 
+async function remotePlan(sessionFile: string, sessionId: string): Promise<{ todos: SessionTodo[]; stale: boolean } | undefined> {
+  const entries = await new SessionEntriesLite().entries(sessionFile).catch(() => null)
+  if (!entries) return undefined
+  const logged = await readTaskPlanLog(sessionId).catch(() => [])
+  const latest = todoSnapshotsFromEntries([...entries, ...logged.map(taskPlanLogEntry)]).at(-1)
+  if (!latest?.todos.length) return undefined
+  const rounds = entries.filter((entry) => entry.type === 'message' && (entry.message as { role?: unknown } | undefined)?.role === 'user').length
+  return { todos: latest.todos, stale: rounds > latest.round }
+}
+
 export async function remoteHistory(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult> {
   const summary = (await remoteSessions(500)).find((item) => item.id === sessionId)
-  if (!summary) return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  if (!summary) {
+    const unsaved = unsavedSessionSummary(sessionId)
+    if (unsaved) return { ok: true, data: { session: remoteSessionSummary(unsaved), messages: [], total: 0, returned: 0, hasMore: false, truncated: false, truncatedBytes: 0, bytes: 0 } }
+    return { ok: false, status: 404, error: '找不到目标会话，可能已被删除' }
+  }
 
   const result = await host.readHistoryWithArtifacts(summary.path)
   if (!result) return { ok: false, status: 502, error: '无法读取该会话历史' }
@@ -247,11 +269,13 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
     ...(message.toolCalls ? { toolCalls: message.toolCalls.map((tool) => ({ ...tool, images: undefined })) } : {}),
     ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
   }))
+  const plan = before ? undefined : await remotePlan(summary.path, summary.id)
   return {
     ok: true,
     data: {
       session: remoteSessionSummary(summary),
       messages,
+      ...(plan ? { plan } : {}),
       total: result.total,
       returned: messages.length,
       hasMore: page.hasMore,
@@ -290,17 +314,19 @@ export async function remoteSelectSession(sessionId: string): Promise<RemoteOper
   return result.ok ? { ok: true, data: result } : { ok: false, status: 409, error: result.error }
 }
 
-export async function remoteNewSession(): Promise<RemoteOperationResult> {
+export async function remoteNewSession(requestedProjectId?: string): Promise<RemoteOperationResult> {
   const settings = await getSettings()
+  const project = requestedProjectId ? settings.projects.find((item) => item.id === requestedProjectId && !item.archived) : undefined
+  if (requestedProjectId && !project) return { ok: false, status: 404, error: '找不到这个项目' }
   if (!host.runners()) {
     const started = await host.startAgent()
     if (!started.ok) return { ok: false, status: 503, error: started.error ?? 'pi 未运行' }
   }
-  const cwdResult = await host.validateCwd(settings.cwd)
+  const cwdResult = await host.validateCwd(project?.cwd ?? settings.cwd)
   if (!cwdResult.ok) return { ok: false, status: 409, error: cwdResult.error }
-  const projectId = host.projectIdForCwd(settings, cwdResult.cwd)
+  const projectId = project?.id ?? host.projectIdForCwd(settings, cwdResult.cwd)
   const scope = projectId ? 'project' as const : 'global' as const
-  const result = await host.runners()!.select({ cwd: cwdResult.cwd, projectId, scope })
+  const result = await host.runners()!.select({ cwd: cwdResult.cwd, projectId, scope, activate: false })
   await host.rememberRunnerSession(result, { cwd: cwdResult.cwd, projectId, scope })
   if (result.ok && result.id) void host.pushRunnerSnapshot(result.id)
   host.pushRunners()
@@ -376,7 +402,7 @@ export async function remoteModels(sessionId: string): Promise<RemoteOperationRe
 
 export async function executeRemoteCommand(command: RemoteCommand): Promise<RemoteOperationResult> {
   if (command.action === 'select') return remoteSelectSession(command.sessionId)
-  if (command.action === 'new') return remoteNewSession()
+  if (command.action === 'new') return remoteNewSession(command.projectId)
 
   if (command.action === 'send') {
     if (command.images?.some((image) => nativeImage.createFromBuffer(Buffer.from(image.data, 'base64')).isEmpty())) return { ok: false, status: 400, error: '图片无法解码，请重新选择' }

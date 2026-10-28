@@ -1,7 +1,7 @@
 import { v3Dark, v3Light } from './theme.v3.generated'
 import type { Palette } from './theme'
 
-export const THEME_V3_ENABLED = false
+export const THEME_V3_ENABLED = true
 
 export interface PaletteV3 extends Palette {
   ink: string
@@ -15,6 +15,10 @@ function mapPalette(c: typeof v3Light | typeof v3Dark): PaletteV3 {
     bg1: c.side,
     bg2: c.surface,
     bg3: c.hover,
+    bubble: c.bubble,
+    field: c.field,
+    surface: c.surface,
+    sunken: c.sunken,
     border: c.line2,
     borderSoft: c.line,
     borderStr: c.line2,

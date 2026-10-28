@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RemoteEventEnvelope, RemotePendingQuestion, RemoteInfo, RemoteModel } from '../../src/shared/remote-protocol'
-import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type SessionListItem, type StreamState } from './api/client'
+import { RemoteClient, RemoteEventStream, RemoteHttpError, type Connection, type RemoteProject, type SessionListItem, type StreamState } from './api/client'
 import { deviceInfo, readMarks, writeMarks, type ReadMark } from './device'
 import { saveConnection } from './storage'
 
@@ -18,6 +18,7 @@ interface RemoteState {
   client: RemoteClient
   stream: StreamState
   sessions: SessionListItem[]
+  projects: RemoteProject[]
   questions: RemotePendingQuestion[]
   runners: RunnerInfo[]
   activeSessionId: string | null
@@ -62,6 +63,7 @@ export function RemoteProvider({
   const client = useMemo(() => new RemoteClient(connection), [connection])
   const [stream, setStream] = useState<StreamState>('connecting')
   const [sessions, setSessions] = useState<SessionListItem[]>([])
+  const [projects, setProjects] = useState<RemoteProject[]>([])
   const [questions, setQuestions] = useState<RemotePendingQuestion[]>([])
   const [runners, setRunners] = useState<RunnerInfo[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -117,6 +119,7 @@ export function RemoteProvider({
         setActiveSessionId(agent?.activeSessionId ?? null)
         const list = snapshot.sessions as SessionListItem[] | undefined
         if (list) setSessions(list)
+        if (Array.isArray(snapshot.projects)) setProjects(snapshot.projects as RemoteProject[])
       }),
     [client, guard]
   )
@@ -226,8 +229,8 @@ export function RemoteProvider({
     return marksReady && !!reply && reply.at > readAt
   }).map((session) => session.id)), [sessions, previews, marks, marksReady, activeSessionId])
   const value = useMemo<RemoteState>(
-    () => ({ client, stream, sessions, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent }),
-    [client, stream, sessions, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent]
+    () => ({ client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent }),
+    [client, stream, sessions, projects, questions, runners, activeSessionId, info, unread, marksReady, markRead, previews, error, refresh, onSessionEvent]
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Animated, BackHandler, Easing, Keyboard, Pressable, Text, View } from 'react-native'
-import { cancelSpeech, recognizeSpeech, stopSpeech, subscribeSpeech, type SpeechPhase } from '../speech'
+import { cancelSpeech, recognizeSpeech, recordSpeech, stopSpeech, subscribeSpeech, type SpeechPhase } from '../speech'
 import { font, icon, radius, space, touch, usePalette } from '../theme'
 import { IconButton } from '../ui'
 import { Icon } from '../icons'
@@ -20,11 +20,12 @@ function VoiceWave({ level }: { level: number }) {
   </View>
 }
 
-export function SpeechInputButton({ onText, onError, onStateChange, disabled }: {
+export function SpeechInputButton({ onText, onError, onStateChange, disabled, transcribe }: {
   onText: (text: string) => void
   onError?: (message: string | null) => void
   onStateChange?: (state: SpeechPhase) => void
   disabled?: boolean
+  transcribe?: (wavBase64: string) => Promise<string>
 }) {
   const p = usePalette()
   const [busy, setBusy] = useState(false)
@@ -74,7 +75,17 @@ export function SpeechInputButton({ onText, onError, onStateChange, disabled }: 
     callbacks.current.onError?.(null)
     callbacks.current.onStateChange?.('starting')
     try {
-      const text = await recognizeSpeech(() => cancelled.current || !mounted.current)
+      const isCancelled = () => cancelled.current || !mounted.current
+      let text: string | null
+      if (transcribe) {
+        const wav = await recordSpeech(isCancelled)
+        if (wav && !isCancelled()) {
+          setPhase('processing')
+          callbacks.current.onStateChange?.('processing')
+        }
+        text = wav && !isCancelled() ? (await transcribe(wav)).trim() : null
+        if (wav && !text && !isCancelled()) throw new Error('没有听清，请再试一次')
+      } else text = await recognizeSpeech(isCancelled)
       if (text && !cancelled.current && mounted.current) callbacks.current.onText(text)
     } catch (err) {
       if (!cancelled.current && mounted.current) {
@@ -100,7 +111,7 @@ export function SpeechInputButton({ onText, onError, onStateChange, disabled }: 
           {phase === 'listening' ? <><VoiceWave level={level} /><Icon name="stop" size={icon.sm} color={p.accent} /></> : <RunDot />}
         </Pressable>
         <IconButton name="close" label="取消语音输入" onPress={cancel} />
-      </> : <IconButton name="audio" label="语音转文字，核对后发送" disabled={disabled} onPress={() => void start()} />}
+      </> : <IconButton name="mic" label="语音转文字，核对后发送" disabled={disabled} onPress={() => void start()} />}
     </View>
     {error && !onError ? <Text accessibilityLiveRegion="polite" style={{ color: p.err, fontSize: font.xs }}>{error}</Text> : null}
   </View>

@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -13,6 +16,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Base64
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
@@ -21,6 +25,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 
 /** Recognizes through the installed service while the composer owns the recording UI. */
@@ -49,13 +56,83 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
   }
 
   @ReactMethod
+  fun record(promise: Promise) {
+    main.post {
+      if (pending != null) return@post promise.reject("speech_busy", "已有语音输入正在进行")
+      if (ContextCompat.checkSelfPermission(reactApplicationContext, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        return@post promise.reject("speech_permission_required", "需要麦克风权限才能使用语音输入")
+      }
+      pending = promise
+      startRecording()
+    }
+  }
+
+  @ReactMethod
   fun stop() {
     main.post {
       if (pending != null && phase != "processing") {
         emit("processing")
+        recording = false
         recognizer?.stopListening()
       }
     }
+  }
+
+  @Volatile private var recording = false
+  private var recorder: Thread? = null
+
+  private fun startRecording() {
+    val rate = 16_000
+    val minSize = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+    val audio = try {
+      AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minSize, rate))
+    } catch (error: Exception) { return reject("speech_unavailable", error.message ?: "无法打开麦克风") }
+    if (audio.state != AudioRecord.STATE_INITIALIZED) { audio.release(); return reject("speech_unavailable", "无法打开麦克风") }
+    recording = true
+    emit("listening")
+    recorder = Thread {
+      val pcm = ByteArrayOutputStream()
+      val buffer = ShortArray(rate / 10)
+      val limit = rate * 2 * 120
+      var loudest = 0
+      try {
+        audio.startRecording()
+        while (recording && pcm.size() < limit) {
+          val read = audio.read(buffer, 0, buffer.size)
+          if (read <= 0) continue
+          var peak = 0
+          for (i in 0 until read) {
+            val sample = buffer[i].toInt()
+            peak = maxOf(peak, kotlin.math.abs(sample))
+            pcm.write(sample and 0xff)
+            pcm.write((sample shr 8) and 0xff)
+          }
+          loudest = maxOf(loudest, peak)
+          val level = (peak / 12000f).coerceIn(0f, 1f)
+          main.post { if (phase == "listening") emit("listening", level) }
+        }
+      } catch (_: Exception) {
+      } finally {
+        try { audio.stop() } catch (_: Exception) {}
+        audio.release()
+      }
+      val wav = wavOf(pcm.toByteArray(), rate)
+      main.post {
+        if (pending == null) return@post
+        if (pcm.size() < rate / 2) reject("speech_empty", "录音太短，请再试一次")
+        else if (loudest < 1500) reject("speech_empty", "没有听到声音，请靠近麦克风再试一次")
+        else resolve(Base64.encodeToString(wav, Base64.NO_WRAP))
+      }
+    }.also { it.start() }
+  }
+
+  private fun wavOf(pcm: ByteArray, rate: Int): ByteArray {
+    val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+      put("RIFF".toByteArray()); putInt(36 + pcm.size); put("WAVE".toByteArray())
+      put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(1); putInt(rate); putInt(rate * 2); putShort(2); putShort(16)
+      put("data".toByteArray()); putInt(pcm.size)
+    }
+    return header.array() + pcm
   }
 
   @ReactMethod fun cancel() { main.post { resolve(null) } }
@@ -188,6 +265,8 @@ class SpeechInputModule(context: ReactApplicationContext) : ReactContextBaseJava
   private fun cleanup() {
     timeout?.let(main::removeCallbacks)
     timeout = null
+    recording = false
+    recorder = null
     val speech = recognizer
     recognizer = null
     speech?.cancel()

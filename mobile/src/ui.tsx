@@ -15,8 +15,9 @@ export const STATUS_TEXT = {
 
 export function IconButton({ name, label, onPress, disabled, busy, primary = false, back = false }: { name: IconName; label: string; onPress: () => void; disabled?: boolean; busy?: boolean; primary?: boolean; back?: boolean }) {
   const p = usePalette()
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? (p.ink ?? p.accent) : 'transparent', opacity: disabled ? 0.4 : pressed ? 0.65 : 1 })}>
-    {busy ? <RunDot color={primary ? (p.onInk ?? p.onAccent) : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={icon.md} color={primary ? (p.onInk ?? p.onAccent) : p.fgDim} /></View>}
+  const glyph = busy ? <RunDot color={primary ? (p.onInk ?? p.onAccent) : undefined} /> : <View style={back ? { transform: [{ rotate: '180deg' }] } : undefined}><Icon name={name} size={primary ? icon.sm : icon.md} color={primary ? (p.onInk ?? p.onAccent) : p.fgDim} /></View>
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled || !!busy, busy: !!busy }} onPress={onPress} disabled={disabled || busy} style={({ pressed }) => ({ minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : pressed ? 0.65 : 1 })}>
+    {primary ? <View style={[styles.primaryDot, { backgroundColor: p.ink ?? p.accent }]}>{glyph}</View> : glyph}
   </Pressable>
 }
 
@@ -45,10 +46,10 @@ export function Button({
 }) {
   const p = usePalette()
   const colors = {
-    secondary: { bg: p.bg2, border: p.border, fg: p.fg },
+    secondary: { bg: p.field, border: p.border, fg: p.fg },
     primary: { bg: p.ink ?? p.accent, border: p.ink ?? p.accent, fg: p.onInk ?? p.onAccent },
     ghost: { bg: 'transparent', border: 'transparent', fg: p.fgDim },
-    danger: { bg: p.bg2, border: p.border, fg: p.err }
+    danger: { bg: p.field, border: p.border, fg: p.err }
   }[variant]
   return (
     <Pressable
@@ -90,7 +91,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
 export function Header({ title, subtitle, left, right }: { title: string; subtitle?: ReactNode; left?: ReactNode; right?: ReactNode }) {
   const p = usePalette()
   return (
-    <View style={[styles.header, { borderBottomColor: p.borderSoft, backgroundColor: p.bg1 }, !left && styles.headerBare]}>
+    <View style={[styles.header, { backgroundColor: p.bg0 }, !left && styles.headerBare]}>
       {left}
       <View style={styles.headerMain}>
         <Text numberOfLines={1} style={[styles.headerTitle, subtitle ? styles.headerTitleTwoLine : null, { color: p.fg }]} accessibilityRole="header">
@@ -120,7 +121,7 @@ export const Input = forwardRef<TextInput, TextInputProps & { code?: boolean; in
     disableFullscreenUI
     placeholderTextColor={p.fgMute}
     {...props}
-    style={[styles.input, { backgroundColor: inset ? p.bg0 : p.bg2, borderColor: p.border, color: p.fg }, code && styles.inputCode, style]}
+    style={[styles.input, { backgroundColor: inset ? p.bg0 : p.field, borderColor: p.border, color: p.fg }, code && styles.inputCode, style]}
   />
 })
 
@@ -162,24 +163,24 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: font.xs, fontWeight: weight.medium },
   empty: { fontSize: font.sm, paddingVertical: space[4], textAlign: 'center' },
   header: {
-    minHeight: 60,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[2],
-    paddingHorizontal: space[2],
-    borderBottomWidth: StyleSheet.hairlineWidth
+    gap: space[1],
+    paddingHorizontal: space[2]
   },
   headerBare: { paddingLeft: space[4] },
-  headerMain: { flex: 1, minWidth: 0, gap: 2 },
+  headerMain: { flex: 1, minWidth: 0, gap: 1 },
   headerTitle: { fontSize: font.lg, fontWeight: weight.strong },
   headerTitleTwoLine: { fontSize: font.body },
   headerSub: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
-  section: { fontFamily: mono, fontSize: font.xs, marginTop: space[5], marginBottom: space[1] },
-  meta: { fontFamily: mono, fontSize: font.xs, fontVariant: ['tabular-nums'] },
+  section: { fontSize: font.xs, marginTop: space[4], marginBottom: space[1], paddingHorizontal: space[2] },
+  meta: { fontSize: font.xs, fontVariant: ['tabular-nums'] },
+  primaryDot: { width: 32, height: 32, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: touch.min, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space[3], fontSize: font.base },
   inputCode: { fontFamily: mono },
   activityLine: { minHeight: lineHeight.row, flexDirection: 'row', alignItems: 'center', gap: space[2] },
   glyph: { width: 14, textAlign: 'center', fontFamily: mono, fontSize: font.sm },
-  activityText: { flex: 1, minWidth: 0, fontFamily: mono, fontSize: font.sm },
+  activityText: { flex: 1, minWidth: 0, fontSize: font.sm },
   dot: { width: 6, height: 6, borderRadius: 3 }
 })

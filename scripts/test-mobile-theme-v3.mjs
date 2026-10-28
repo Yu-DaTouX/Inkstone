@@ -15,7 +15,7 @@ async function loadTs(entry) {
 const v3 = await loadTs(themeV3Path)
 const gen = await loadTs(generatedPath)
 
-assert.equal(v3.THEME_V3_ENABLED, false, 'THEME_V3_ENABLED 必须默认 false，手机端保持旧色板')
+assert.equal(v3.THEME_V3_ENABLED, true, '手机端使用与电脑端同源的 v3 色板')
 assert.equal(v3.v3Palette('light'), v3.v3PaletteLight, "v3Palette('light') 应返回浅色 v3 色板")
 assert.equal(v3.v3Palette('dark'), v3.v3PaletteDark, "v3Palette('dark') 应返回深色 v3 色板")
 
@@ -41,6 +41,10 @@ const mapping = (c) => ({
   bg1: c.side,
   bg2: c.surface,
   bg3: c.hover,
+  bubble: c.bubble,
+  field: c.field,
+  surface: c.surface,
+  sunken: c.sunken,
   border: c.line2,
   borderSoft: c.line,
   borderStr: c.line2,
@@ -126,4 +130,4 @@ for (const [label, palette] of [
   }
 }
 
-console.log(`✓ 手机端 v3 令牌映射检查通过 · ${declared.length} 个 Palette 键 × 2 主题，${checked} 组对比度 ≥4.5:1（默认开关 false，外观不变）`)
+console.log(`✓ 手机端 v3 令牌映射检查通过 · ${declared.length} 个 Palette 键 × 2 主题，${checked} 组对比度 ≥4.5:1`)

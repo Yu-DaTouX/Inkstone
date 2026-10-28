@@ -28,7 +28,7 @@ export const REMOTE_API_VERSION = REMOTE_PROTOCOL_VERSION
 
 export type RemoteCommand =
   | { action: 'select'; sessionId: string }
-  | { action: 'new' }
+  | { action: 'new'; projectId?: string }
   | { action: 'send'; sessionId: string; text: string; images?: RemoteImageInput[]; mode?: 'steer' | 'followUp'; authorize?: (targetSessionId?: string) => Promise<RemoteOperationResult | null> }
   | { action: 'model'; sessionId: string; provider: string; modelId: string }
   | { action: 'thinking'; sessionId: string; level: string }
@@ -60,7 +60,10 @@ export interface RemoteServerHandlers {
   answer?(questionId: string, answer: RemoteAnswer): Promise<RemoteOperationResult>
   humanApproval?(questionId: string, answer: RemoteHumanApproval): Promise<RemoteOperationResult>
   artifact?(sessionId: string, artifactId: string): Promise<RemoteArtifactFile | RemoteOperationResult>
+  transcribe?(wav: Uint8Array): Promise<RemoteOperationResult>
 }
+
+const VOICE_MAX_BODY_BYTES = 6 * 1024 * 1024
 
 export interface PeerHostHandlers {
   projects(): Promise<PeerProjectRef[]>
@@ -566,9 +569,10 @@ export class RemoteServer {
         ...(this.options.handlers.humanApproval && caller.device && (caller.device.kind ?? 'phone') === 'phone' ? ['human-approval'] : []),
         ...(this.options.handlers.artifact ? ['artifacts'] : []),
         ...(this.options.devices ? ['device-name', 'device-revoke'] : []),
-        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : [])
+        ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
+        ...(this.options.handlers.transcribe ? ['voice-transcribe'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -609,6 +613,18 @@ export class RemoteServer {
     const parts = url.pathname.split('/').filter(Boolean)
     if (parts[0] !== 'remote' || parts[1] !== 'v1') {
       writeError(res, 404, '远程 API 路径不存在')
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/remote/v1/voice/transcribe') {
+      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone') return writeError(res, 403, '语音转写需要配对的手机', 'paired_user_required')
+      const handler = this.options.handlers.transcribe
+      if (!handler) return writeError(res, 404, '请更新电脑端')
+      let body: Record<string, unknown>
+      try { body = await this.readJson(req, VOICE_MAX_BODY_BYTES) }
+      catch { writeError(res, 413, '录音太长，请分段说'); return }
+      if (typeof body.wav !== 'string' || !body.wav) return writeError(res, 400, '录音为空')
+      this.writeOperation(res, await handler(new Uint8Array(Buffer.from(body.wav, 'base64'))))
       return
     }
 
@@ -682,7 +698,10 @@ export class RemoteServer {
     }
 
     if (parts[2] === 'sessions' && parts.length === 4 && parts[3] === 'new' && req.method === 'POST') {
-      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new' }))
+      const body = await this.readJson(req)
+      if (body.projectId !== undefined && !validText(body.projectId, 200)) return writeError(res, 400, '项目 id 无效')
+      const projectId = typeof body.projectId === 'string' ? body.projectId : undefined
+      await this.idempotent(req, res, caller, false, () => this.options.handlers.command({ action: 'new', ...(projectId ? { projectId } : {}) }))
       return
     }
 

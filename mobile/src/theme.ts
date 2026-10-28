@@ -6,6 +6,10 @@ export interface Palette {
   bg1: string
   bg2: string
   bg3: string
+  bubble: string
+  field: string
+  surface: string
+  sunken: string
   border: string
   borderSoft: string
   borderStr: string
@@ -31,6 +35,10 @@ const dark: Palette = {
   bg1: '#1f2228',
   bg2: '#282c34',
   bg3: '#2d3340',
+  bubble: '#282c34',
+  field: 'rgba(255,255,255,0.05)',
+  surface: '#1f2228',
+  sunken: '#131518',
   border: 'rgba(255,255,255,0.11)',
   borderSoft: 'rgba(255,255,255,0.07)',
   borderStr: 'rgba(255,255,255,0.18)',
@@ -53,6 +61,10 @@ const light: Palette = {
   bg1: '#eef0f3',
   bg2: '#ffffff',
   bg3: '#e3e7ee',
+  bubble: '#eef0f3',
+  field: 'rgba(255,255,255,0.5)',
+  surface: '#ffffff',
+  sunken: '#f1f2f4',
   border: 'rgba(20,30,50,0.13)',
   borderSoft: 'rgba(20,30,50,0.07)',
   borderStr: 'rgba(20,30,50,0.2)',
@@ -71,9 +83,9 @@ const light: Palette = {
 }
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const
-export const radius = { xs: 3, sm: 4, md: 6, lg: 8 } as const
+export const radius = { xs: 4, sm: 6, md: 8, lg: 10, bubble: 12, xl: 14, full: 999 } as const
 export const font = { xs: 12, sm: 13, base: 14, body: 16, lg: 17, title: 20 } as const
-export const weight = { regular: '400', medium: '400', strong: '400' } as const
+export const weight = { regular: '400', medium: '500', strong: '600' } as const
 export const lineHeight = { row: 24, body: 26 } as const
 export const icon = { sm: 16, md: 20, lg: 24 } as const
 export const touch = { min: 44, compact: 36 } as const

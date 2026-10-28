@@ -149,19 +149,48 @@ export interface SessionListItem {
   model?: string
 }
 
+export interface HistoryToolCall {
+  id: string
+  name: string
+  status?: string
+  denied?: boolean
+  cancelled?: boolean
+  args?: unknown
+  output?: string
+  parentToolCallId?: string
+  startedAt?: number
+  endedAt?: number
+}
+
 export interface HistoryMessage {
   id: string
-  role: 'user' | 'assistant' | 'system' | 'bashExecution' | string
+  role: 'user' | 'assistant' | 'bash' | 'note' | string
   text?: string
   timestamp?: number
   error?: string
+  thinking?: string
+  thinkingMs?: number
+  bash?: { command: string; exitCode: number | null; cancelled: boolean }
   images?: Array<{ mimeType: string }>
-  toolCalls?: Array<{ id: string; name: string; status?: string; denied?: boolean }>
+  toolCalls?: HistoryToolCall[]
   artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; version?: number; unavailable?: boolean }>
+}
+
+export interface RemoteProject {
+  id: string
+  name: string
+  cwd: string
+}
+
+export interface PlanTodo {
+  text: string
+  done: boolean
+  status?: 'pending' | 'running' | 'done' | 'blocked'
 }
 
 export interface HistoryPage {
   messages: HistoryMessage[]
+  plan?: { todos: PlanTodo[]; stale: boolean }
   truncated?: number | boolean
   total?: number
   hasMore?: boolean
@@ -208,6 +237,10 @@ export class RemoteClient {
     return this.post(`/remote/v1/questions/${encodeURIComponent(questionId)}/answer`, answer, key)
   }
 
+  approve(question: RemotePendingQuestion, confirmed: boolean, key = idempotencyKey()): Promise<unknown> {
+    return this.post(`/remote/v1/questions/${encodeURIComponent(question.id)}/approval`, { sessionId: question.sessionId, runId: question.runId, digest: question.approvalDigest, confirmed }, key)
+  }
+
   send(sessionId: string, text: string, key = idempotencyKey(), images?: RemoteImageInput[]): Promise<unknown> {
     return this.post(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text, images }, key)
   }
@@ -240,8 +273,12 @@ export class RemoteClient {
     return this.post('/remote/v1/runs/abort', { runId }, key)
   }
 
-  async newSession(key = idempotencyKey()): Promise<{ sessionId?: string }> {
-    return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', {}, key)).data
+  async transcribe(wav: string): Promise<string> {
+    return (await this.post<{ data: { text: string } }>('/remote/v1/voice/transcribe', { wav }, idempotencyKey())).data.text
+  }
+
+  async newSession(projectId?: string, key = idempotencyKey()): Promise<{ sessionId?: string }> {
+    return (await this.post<{ data: { sessionId?: string } }>('/remote/v1/sessions/new', projectId ? { projectId } : {}, key)).data
   }
 
   artifactSource(sessionId: string, artifactId: string): { uri: string; headers: Record<string, string> } {
