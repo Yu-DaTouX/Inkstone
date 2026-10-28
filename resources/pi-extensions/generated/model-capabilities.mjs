@@ -1,5 +1,5 @@
 /* 由 scripts/build-model-capabilities.mjs 生成，不要手改。 */
-/* source-sha256: 67be2920e5a7e6a4b1a0ca9e7770ad072f4600f2bdac7aab1b76f7741779d3ed */
+/* source-sha256: 05f13edd5ff754d36bdbf9da32321c80d0db1cf05e390ab444ce5a8ad794cb50 */
 var PI_API_IDS = [
   "openai-completions",
   "openai-responses",
@@ -195,6 +195,31 @@ function mergeCustomProviders(modelsJson, updates, removals = []) {
   base.providers = providers;
   return { next: base, changed: true };
 }
+function providerModelCounts(json) {
+  const counts = /* @__PURE__ */ new Map();
+  const providers = json && typeof json === "object" ? json.providers : void 0;
+  if (!providers || typeof providers !== "object") return counts;
+  for (const [id, entry] of Object.entries(providers)) {
+    const models = entry && typeof entry === "object" ? entry.models : void 0;
+    counts.set(id, Array.isArray(models) ? models.length : 0);
+  }
+  return counts;
+}
+function modelsWriteRisk(before, next, removals = []) {
+  const prior = providerModelCounts(before);
+  const after = providerModelCounts(next);
+  const dropped = [];
+  const shrink = [];
+  for (const [id, count] of prior) {
+    if (!after.has(id)) {
+      if (!removals.includes(id)) dropped.push(id);
+      continue;
+    }
+    const now = after.get(id) ?? 0;
+    if (count >= 3 && now * 2 <= count) shrink.push({ provider: id, before: count, after: now });
+  }
+  return { dropped, shrink };
+}
 function maskCustomProvider(view) {
   return { ...view, apiKeyLabel: view.hasApiKey ? "\u2022\u2022\u2022\u2022\u2022\u2022" : "" };
 }
@@ -286,6 +311,7 @@ export {
   isYanProviderId,
   maskCustomProvider,
   mergeCustomProviders,
+  modelsWriteRisk,
   parseModelEntries,
   parseModelList,
   readCustomProviders,
