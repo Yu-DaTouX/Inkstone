@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 
 export const REVEAL_SNAP_CHARS = 22
-export const REVEAL_DRAIN_MS = 550
-const REVEAL_FLOOR_CHARS = 150
+export const REVEAL_DRAIN_MS = 150
+const REVEAL_FLOOR_CHARS = 60
 
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff
