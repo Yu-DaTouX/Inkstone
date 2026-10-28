@@ -1,13 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
-import {
-  constants as fsConstants,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync
-} from 'node:fs'
+import { constants as fsConstants, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { basename, dirname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PI_AGENT_DIR } from './paths'
@@ -19,8 +12,6 @@ export const DEFAULT_SHARE_VIEWER_URL = 'https://pi.dev/session/'
 export const DEFAULT_MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
 export const DEFAULT_GH_TIMEOUT_MS = 20_000
-
-export const DEFAULT_PI_EXPORT_TIMEOUT_MS = 120_000
 
 export type SessionIoErrorCode =
   | 'not_found'
@@ -93,7 +84,6 @@ export type CommandRunner = (
 
 export interface NativeSessionIoContext {
   agentDir?: () => string
-  piCommand?: () => { command: string; args: string[] } | null
   runCommand?: CommandRunner
   now?: () => Date
   newId?: () => string
@@ -624,116 +614,6 @@ export async function checkGhStatus(options: CommandRunOptions = {}): Promise<Gh
   }
 }
 
-export interface ShareAvailability {
-  gh: GhStatus
-  radius: { available: false; reason: string }
-  canShareViaGist: boolean
-  piAvailable: boolean
-}
-
-export async function shareAvailability(options: CommandRunOptions = {}): Promise<ShareAvailability> {
-  const gh = await checkGhStatus(options)
-  const piAvailable = !!ctx.piCommand?.()
-  return {
-    gh,
-    radius: {
-      available: false,
-      reason:
-        '主机侧未接入 Radius 上传：pi 交互式 /share 的 Radius 路径需要 pi 进程内的 provider 凭证；主机不猜测凭证，也不自建上传后端。'
-    },
-    canShareViaGist: gh.installed && gh.authenticated && piAvailable,
-    piAvailable
-  }
-}
-
-export interface ExportHtmlRequest {
-  sessionFile: string
-  outputPath: string
-  timeoutMs?: number
-  signal?: AbortSignal
-}
-
-export async function exportSessionHtml(
-  request: ExportHtmlRequest
-): Promise<{ ok: true; outputPath: string } | SessionIoFailure> {
-  const pi = ctx.piCommand?.()
-  if (!pi) return fail('unavailable', '没有解析到 pi 入口，无法生成分享用 HTML')
-  const sessionFile = resolve(String(request.sessionFile ?? ''))
-  if (!existsSync(sessionFile)) return fail('not_found', `找不到会话文件：${sessionFile}`)
-  const outputPath = resolve(String(request.outputPath ?? ''))
-  try {
-    mkdirSync(dirname(outputPath), { recursive: true })
-  } catch (error) {
-    return fail('invalid_path', `无法创建输出目录：${error instanceof Error ? error.message : String(error)}`)
-  }
-  const result = await run(pi.command, [...pi.args, '--export', sessionFile, outputPath], {
-    timeoutMs: request.timeoutMs ?? DEFAULT_PI_EXPORT_TIMEOUT_MS,
-    ...(request.signal ? { signal: request.signal } : {}),
-    env: {
-      ELECTRON_RUN_AS_NODE: '1',
-      PI_CODING_AGENT_DIR: agentDirNow()
-    }
-  })
-  if (result.aborted) return fail('aborted', '导出已取消')
-  if (result.timedOut) return fail('timeout', '导出 HTML 超时')
-  if (result.code !== 0 || !existsSync(outputPath)) {
-    return fail(
-      'command_failed',
-      `pi --export 失败：${result.stderr.trim() || result.error || `退出码 ${result.code}`}`
-    )
-  }
-  return { ok: true, outputPath }
-}
-
-export interface PrepareShareRequest {
-  sessionFile: string
-  outputDir?: string
-  timeoutMs?: number
-  signal?: AbortSignal
-}
-
-export interface PrepareShareSuccess {
-  ok: true
-  htmlPath: string
-  tempDir?: string
-  availability: ShareAvailability
-}
-
-export async function prepareShare(
-  request: PrepareShareRequest
-): Promise<PrepareShareSuccess | SessionIoFailure> {
-  let outputDir = request.outputDir ? resolve(String(request.outputDir)) : undefined
-  let tempDir: string | undefined
-  if (!outputDir) {
-    try {
-      tempDir = mkdtempSync(join(tmpdir(), 'pi-share-'))
-      outputDir = tempDir
-    } catch (error) {
-      return fail('invalid_path', `无法创建分享临时目录：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const htmlPath = join(outputDir, 'session.html')
-  const exported = await exportSessionHtml({
-    sessionFile: request.sessionFile,
-    outputPath: htmlPath,
-    ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
-    ...(request.signal ? { signal: request.signal } : {})
-  })
-  if (!exported.ok) {
-    if (tempDir) {
-      try {
-        rmSync(tempDir, { recursive: true, force: true })
-      } catch {
-      }
-    }
-    return exported
-  }
-  const availability = await shareAvailability(
-    request.signal ? { signal: request.signal } : {}
-  )
-  return { ok: true, htmlPath, ...(tempDir ? { tempDir } : {}), availability }
-}
-
 export function shareViewerUrl(gistId: string): string {
   const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL
   return `${baseUrl}#${gistId}`
@@ -783,35 +663,4 @@ export async function shareViaGist(
   const gistId = gistUrl.split('/').filter(Boolean).pop() ?? ''
   if (!gistUrl || !gistId) return fail('invalid_state', '无法从 gh 输出解析 gist 链接')
   return { ok: true, gistUrl, gistId, viewerUrl: shareViewerUrl(gistId) }
-}
-
-export async function shareSession(
-  request: PrepareShareRequest
-): Promise<ShareViaGistSuccess | SessionIoFailure> {
-  const prepared = await prepareShare(request)
-  if (!prepared.ok) return prepared
-  try {
-    const shared = await shareViaGist({
-      htmlPath: prepared.htmlPath,
-      ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
-      ...(request.signal ? { signal: request.signal } : {})
-    })
-    return shared
-  } finally {
-    if (prepared.tempDir) {
-      try {
-        rmSync(prepared.tempDir, { recursive: true, force: true })
-      } catch {
-      }
-    }
-  }
-}
-
-export function disposeShareArtifacts(dir: string): void {
-  if (!String(dir ?? '').trim()) return
-  const target = resolve(String(dir))
-  try {
-    rmSync(target, { recursive: true, force: true })
-  } catch {
-  }
 }

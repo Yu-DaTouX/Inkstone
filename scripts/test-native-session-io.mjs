@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { build } from '../node_modules/esbuild/lib/main.js'
 
 let failed = 0
@@ -56,17 +56,8 @@ const runner = async (command, args, options) => {
 }
 const pushResult = (result) => queue.push(() => result)
 
-const piOuts = []
-const fakePi = (command, args) => {
-  const piOut = args[args.length - 1]
-  piOuts.push(piOut)
-  writeFileSync(piOut, '<html>fake</html>', 'utf8')
-  return { code: 0, stdout: 'Exported to: ' + piOut, stderr: '', timedOut: false, aborted: false }
-}
-
 io.configureNativeSessionIo({
   agentDir: () => agentDir,
-  piCommand: () => ({ command: process.execPath, args: ['/fake/pi/cli.js'] }),
   runCommand: runner,
   now: () => new Date('2025-01-01T00:00:00.000Z'),
   newId: () => 'deadbeef'
@@ -220,11 +211,6 @@ console.log('\n--- gh / 分享探测与执行 ---')
   ok(logged.installed === true && logged.authenticated === true, 'gh 已登录 → authenticated:true')
   eq(calls[0].args, ['auth', 'status'], 'gh 探测用参数数组，不过 shell')
 
-  pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
-  const availability = await io.shareAvailability()
-  ok(availability.canShareViaGist === true && availability.piAvailable === true, 'gh 可用 + pi 入口可用 → 可分享')
-  ok(availability.radius.available === false && !!availability.radius.reason, 'Radius 明确 unavailable')
-
   process.env.PI_SHARE_VIEWER_URL = 'https://example.test/s/'
   const htmlPath = join(work, 'share.html')
   writeFileSync(htmlPath, '<html></html>', 'utf8')
@@ -260,31 +246,6 @@ console.log('\n--- gh / 分享探测与执行 ---')
   pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
   pushResult({ code: null, stdout: '', stderr: '', timedOut: false, aborted: true })
   eq((await io.shareViaGist({ htmlPath })).code, 'aborted', 'gist 取消 → aborted')
-}
-
-console.log('\n--- 分享准备（pi --export，不真实上传）---')
-{
-  queue = [fakePi]
-  pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
-  const prepared = await io.prepareShare({ sessionFile: sessionPath })
-  ok(prepared.ok && existsSync(prepared.htmlPath), 'pi --export 生成 HTML')
-  eq(calls[calls.length - 2].args.slice(-3), ['--export', sessionPath, prepared.htmlPath], 'pi --export 参数数组正确')
-  ok(!!prepared.tempDir && prepared.htmlPath.startsWith(prepared.tempDir), '未指定输出目录时用临时目录')
-
-  io.disposeShareArtifacts(prepared.tempDir)
-  ok(!existsSync(prepared.tempDir), 'disposeShareArtifacts 清理临时目录')
-
-  queue = [fakePi]
-  pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
-  pushResult({ code: 0, stdout: 'ok', stderr: '', timedOut: false, aborted: false })
-  pushResult({ code: 0, stdout: 'https://gist.github.com/u/step9\n', stderr: '', timedOut: false, aborted: false })
-  const oneShot = await io.shareSession({ sessionFile: sessionPath })
-  ok(oneShot.ok && oneShot.gistId === 'step9', 'shareSession 完成准备与 gist 创建')
-  const oneShotHtml = piOuts[piOuts.length - 1]
-  ok(!existsSync(dirname(oneShotHtml)), 'shareSession 结束后清理临时目录')
-
-  io.disposeShareArtifacts('')
-  ok(true, 'disposeShareArtifacts 对空路径安全返回')
 }
 
 await rm(work, { recursive: true, force: true })
