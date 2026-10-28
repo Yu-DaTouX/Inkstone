@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { Maximize2, Minimize2, MoveDiagonal2, PictureInPicture2, RefreshCw, X } from 'lucide-react'
 import { useT, type MessageKey } from '../../i18n'
 import { Button, IconButton, Notice } from '../../ui'
@@ -98,6 +98,7 @@ export interface ArtifactFrameProps {
   viewportHeight?: number
   near?: boolean
   className?: string
+  tools?: ReactNode
   onDisplayModeRequest?: (form: ArtifactForm) => void
   onMessage?: (text: string) => void
   onOpenLink?: (url: string) => void
@@ -127,6 +128,7 @@ export function ArtifactFrame({
   viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight,
   near: nearProp,
   className,
+  tools,
   onDisplayModeRequest,
   onMessage,
   onOpenLink,
@@ -426,6 +428,7 @@ export function ArtifactFrame({
           </div>
         ) : (
           <div className="v3-artifact-frame-tools" data-testid="v3-artifact-frame-tools">
+            {tools}
             <IconButton
               aria-label={at('fullscreen')}
               title={at('fullscreen')}

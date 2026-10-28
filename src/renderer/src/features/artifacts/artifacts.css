@@ -154,10 +154,6 @@
 
   .v3-visual {
     margin: var(--s-12) 0;
-    padding: var(--s-12);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
     font-size: var(--t-prose);
     color: var(--fg);
   }
@@ -775,15 +771,16 @@
     font-size: var(--t-footnote);
   }
 
-  .v3-visual-widget-head {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    margin-bottom: var(--s-6);
+  .v3-artifact-frame--inline.v3-visual-widget-frame {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
-  .v3-visual-widget-sp {
-    flex: 1 1 auto;
+  @media (hover: none), (pointer: coarse) {
+    .v3-visual-widget-frame .v3-artifact-frame-tools {
+      opacity: 1;
+    }
   }
 
   .v3-visual-actions {

@@ -57,11 +57,13 @@ const THEME_VARS: ReadonlyArray<readonly [string, string]> = [
   ['--chart-5', '--data-5'],
   ['--chart-6', '--data-6'],
   ['--font-sans', '--font-ui'],
-  ['--font-mono', '--font-mono']
+  ['--font-mono', '--font-mono'],
+  ['--text-size', '--t-prose'],
+  ['--text-lh', '--t-prose-lh']
 ]
 
 const BASE_STYLE = `:root{color-scheme:light dark}
-*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font:13px/1.7 var(--font);font-synthesis:none}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent;color:var(--text);font:var(--text-size,13px)/var(--text-lh,1.7) var(--font);font-synthesis:none}
 body{padding:2px}svg{max-width:100%;height:auto}a{color: var(--accent-t)}
 button{font:inherit;color:inherit;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:6px;padding:2px 12px;cursor:pointer}
 button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -199,22 +201,18 @@ export function WidgetBlock({ html, fallback, blockId }: WidgetBlockProps): JSX.
 
   return (
     <figure ref={nearRef} className="v3-visual v3-visual-widget" data-testid="v3-visual-widget">
-      <figcaption className="v3-visual-widget-head">
-        <span className="v3-visual-title" title={t('vb.widgetNote')}>
-          {t('vb.widgetTitle')}
-        </span>
-        <span className="v3-visual-widget-sp" />
-        <span className="v3-visual-source">{t('vb.widgetNote')}</span>
-        <SaveAsArtifactButton
-          filename={`widget-${shortHash(html)}.html`}
-          sourceKey={`widget:${blockId ?? shortHash(html)}`}
-          content={() => standaloneDocument(html)}
-        />
-      </figcaption>
       {snapshot.url && build ? (
         <ArtifactFrame
           identity={{ sessionId: markdownIdentity?.sessionId ?? null, messageId: key, partIndex: 0 }}
           title={t('vb.widgetTitle')}
+          className="v3-visual-widget-frame"
+          tools={
+            <SaveAsArtifactButton
+              filename={`widget-${shortHash(html)}.html`}
+              sourceKey={`widget:${blockId ?? shortHash(html)}`}
+              content={() => standaloneDocument(html)}
+            />
+          }
           src={snapshot.url}
           form={form}
           near={near}

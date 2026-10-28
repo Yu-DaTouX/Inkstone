@@ -2193,7 +2193,6 @@
   "vb.askLabel": "追问",
   "vb.askFill": "填入输入框",
   "vb.askDismiss": "忽略",
-  "vb.widgetNote": "隔离运行，无网络；页面内操作不保存",
   "qf.title": "需要你填写",
   "qf.optional": "可选",
   "qf.required": "请先填写这一项",

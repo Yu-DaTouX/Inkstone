@@ -2193,7 +2193,6 @@
   "vb.askLabel": "Follow-up",
   "vb.askFill": "Put in input",
   "vb.askDismiss": "Dismiss",
-  "vb.widgetNote": "Isolated, offline; in-page changes aren't saved",
   "qf.title": "Please fill in",
   "qf.optional": "optional",
   "qf.required": "Fill this in first",

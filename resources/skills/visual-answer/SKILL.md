@@ -5,7 +5,7 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块或 mermaid 图�
 
 # 结构化回答块
 
-砚会把下面这些代码块画成图形，样式、配色和刻度都由砚决定，你只写数据与文字。先用一两句话给出结论，再放块；块之后可以继续写正文。
+砚会把下面这些代码块画成图形，嵌在回答正文里，样式、配色和刻度都由砚决定，你只写数据与文字。块放在正文里它所说明的位置，前后正文接着讲；不要预告「下面是一张图」，也不要把块里的内容再用文字复述一遍。
 
 要不要用块按系统提示里「回答呈现」那条判断；这里只说定了要用之后选哪一种：
 - 数值比较，或一组随时间变化的数 → `yan-chart`
@@ -126,7 +126,8 @@ description: 写 yan-chart、yan-stats、yan-cards 等回答块或 mermaid 图�
 写一段 HTML/SVG 片段（不需要 html/head/body），在隔离环境离线运行：不能加载任何外部资源，脚本只能用原生 JS。
 
 - 颜色只用变量：`var(--text)` `var(--text-dim)` `var(--text-mute)` `var(--surface)` `var(--surface-2)` `var(--border)` `var(--accent)` `var(--ok)` `var(--warn)` `var(--err)`，分类色 `var(--c1)`…`var(--c6)`；字体 `var(--font)` / `var(--mono)`。深浅主题自动适配。
-- SVG 用 `viewBox` 并让宽度自适应；高度由砚自动跟随内容。
+- 小部件直接铺在回答正文里，宽度等于正文宽度：最外层不要加背景色、卡片边框、横幅标题或左右留白；需要自己底色的局部框给 16px 内边距和 `var(--radius)` 圆角。shadcn 风格的 `--background` `--foreground` `--muted` `--primary` `--chart-1`…`--chart-6` 等变量也可用。
+- SVG 用 `viewBox` 并让宽度自适应；图表给固定像素高度。整体高度由内容决定，砚自动跟随；不要用 `vh`，也不要在 html、body 上写 `height:100%`。
 - 需要用户追问时调用 `askInkstone("问题")`：砚会在小部件下方显示这句话，用户确认后才填入输入框。
 - 需要保留状态时，由小部件主动调用 `inkstoneSaveState(可 JSON 序列化的值)`，并监听 `inkstone:restore` 事件，从 `detail` 恢复。当前实现没有 `inkstoneInitialState`、`setInkstoneState` 或宿主「保存状态」按钮，也不自动采集表单。状态仅缓存在内存中，不落盘，单份上限 64 KB，最多缓存 32 个小部件；被淘汰或应用重载后不保证恢复。图表、卡片这类有现成块的内容不要用小部件。
 
