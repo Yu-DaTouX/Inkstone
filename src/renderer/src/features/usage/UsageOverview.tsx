@@ -8,10 +8,10 @@ import { UsageOverviewView, type UsageOverviewTab, type UsageToggleRenderer } fr
 
 export { compactNumber, shareText } from './usage-format'
 
-export function useMoney(): (usd: number) => string {
+export function useMoney(): (usd: number, compact?: boolean) => string {
   const { lang } = useI18n()
   const currency = useStore((s) => s.settings?.usageCurrency)
-  return useCallback((usd: number) => formatMoney(usd, currency, lang), [currency, lang])
+  return useCallback((usd: number, compact = false) => formatMoney(usd, currency, lang, compact), [currency, lang])
 }
 
 export function useUsageStats(range: UsageRange): UsageStatsResult | null {

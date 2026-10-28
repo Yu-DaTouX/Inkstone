@@ -36,9 +36,13 @@ export function UsagePage() {
     : dimension === 'day'
       ? usageBars(dailyEntries(stats.heat, range)).reverse().map((bar) => ({ ...bar, cost: null as number | null, title: bar.key }))
       : usageBars(stats.models.map((item) => ({ key: item.key, label: usageModelName(item, models), value: item.tokens }))).map((bar, i) => ({ ...bar, cost: stats.models[i].cost, title: stats.models[i].sources?.join(' · ') }))
-  const tiles: Array<[string, string]> = [
-    [t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—'],
-    [t('usage.cost'), stats ? money(stats.cost) : '—'],
+  const costText = stats ? money(stats.cost, true) : '—'
+  const costUnitAt = costText.lastIndexOf(' ')
+  const tiles: Array<[string, string, string?]> = [
+    [t('usage.tokens'), stats ? compactNumber(stats.tokens) : '—', t('usage.tokensHint')],
+    costUnitAt > 0
+      ? [`${t('usage.cost')} · ${costText.slice(costUnitAt + 1)}`, costText.slice(0, costUnitAt), stats ? money(stats.cost) : undefined]
+      : [t('usage.cost'), costText, stats ? money(stats.cost) : undefined],
     [t('usage.sessions'), stats?.sessions.toLocaleString() ?? '—'],
     [t('usage.messages'), stats ? compactNumber(stats.messages) : '—'],
     [t('usage.activeDays'), stats?.activeDays.toString() ?? '—'],
@@ -54,7 +58,7 @@ export function UsagePage() {
         actions={renderUsageToggle({ kind: 'range', value: range, label: t('usage.range'), options: [{ value: 'all', label: t('usage.all') }, { value: '30d', label: t('usage.days', { n: 30 }) }, { value: '7d', label: t('usage.days', { n: 7 }) }], onChange: (value) => setRange(value as UsageRange) })}
       />
       <dl className="usage-page-stats">
-        {tiles.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={label === t('usage.tokens') ? t('usage.tokensHint') : undefined}>{value}</dd></div>)}
+        {tiles.map(([label, value, title]) => <div key={label}><dt>{label}</dt><dd title={title}>{value}</dd></div>)}
       </dl>
       <section className="usage-page-activity">
         <div className="usage-page-controls">

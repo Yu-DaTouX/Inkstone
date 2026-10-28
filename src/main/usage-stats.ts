@@ -10,8 +10,10 @@ import {
   type UsageSourceKind,
   type UsageSources
 } from './usage-sources'
+import { estimateCost } from '../shared/model-pricing'
+import { loadModelPricing } from './model-pricing'
 
-const CACHE_VERSION = 4
+const CACHE_VERSION = 6
 
 interface FileEntry {
   size: number
@@ -19,13 +21,21 @@ interface FileEntry {
   usage: FileUsage
   sourceKind: UsageSourceKind
   forkedAt?: number
+  provider?: string
+  model?: string
 }
 
 export interface UsageReader {
   (range: UsageRange): Promise<UsageStatsView & { userName: string }>
 }
 
-export function countLine(line: Buffer, usage: FileUsage, state: { forkedAt?: number } = {}): void {
+export interface UsageScanState {
+  forkedAt?: number
+  provider?: string
+  model?: string
+}
+
+export function countLine(line: Buffer, usage: FileUsage, state: UsageScanState = {}): void {
   let entry
   try {
     entry = JSON.parse(line.toString('utf8'))
@@ -37,19 +47,39 @@ export function countLine(line: Buffer, usage: FileUsage, state: { forkedAt?: nu
     state.forkedAt = typeof entry.parentSession === 'string' && entry.parentSession && Number.isFinite(ms) ? ms : undefined
     return
   }
-  if (entry?.type !== 'message' || !Number.isFinite(ms) || ms < (state.forkedAt ?? -Infinity)) return
+  if (entry?.type === 'model_change' && typeof entry.provider === 'string' && typeof entry.modelId === 'string') {
+    state.provider = entry.provider
+    state.model = entry.modelId
+    return
+  }
+  if (!Number.isFinite(ms) || ms < (state.forkedAt ?? -Infinity)) return
+  const day = localDay(ms)
+  if (entry?.type === 'compaction' || entry?.type === 'usage') {
+    const provider = typeof entry.provider === 'string' ? entry.provider : state.provider
+    const model = typeof entry.model === 'string' ? entry.model : state.model
+    addSpend(usage, day, entry.usage, provider, model)
+    return
+  }
+  if (entry?.type !== 'message') return
   const message = entry.message
   const role = message?.role
   if (role !== 'user' && role !== 'assistant') return
-  const day = localDay(ms)
   const u = (usage[day] ??= { m: 0, t: 0, h: {}, models: {} })
   u.m++
   const hour = String(new Date(ms).getHours())
   u.h[hour] = (u.h[hour] ?? 0) + 1
   if (role !== 'assistant') return
-  const recorded = message.usage
-  let tokens = recorded?.totalTokens
-  if (typeof tokens !== 'number' || !Number.isFinite(tokens)) {
+  if (typeof message.provider === 'string' && message.provider && typeof message.model === 'string' && message.model) {
+    state.provider = message.provider
+    state.model = message.model
+  }
+  addSpend(usage, day, message.usage, message.provider, message.model)
+}
+
+function addSpend(usage: FileUsage, day: string, recorded: Record<string, unknown> | undefined, provider: unknown, model: unknown): void {
+  const total = recorded?.totalTokens
+  let tokens = typeof total === 'number' ? total : NaN
+  if (!Number.isFinite(tokens)) {
     tokens = 0
     for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) {
       const part = recorded?.[key]
@@ -57,18 +87,33 @@ export function countLine(line: Buffer, usage: FileUsage, state: { forkedAt?: nu
     }
   }
   if (!Number.isFinite(tokens) || tokens <= 0) return
+  const u = (usage[day] ??= { m: 0, t: 0, h: {}, models: {} })
   u.t += tokens
-  const cost = recorded?.cost?.total
-  const spent = typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : 0
+  const spent = recordedCost(recorded as { cost?: { total?: unknown } } | undefined) || estimatedCost(model, recorded)
   if (spent) u.c = (u.c ?? 0) + spent
-  const key = typeof message.provider === 'string' && message.provider && typeof message.model === 'string' && message.model
-    ? `${message.provider}/${message.model}`
+  const key = typeof provider === 'string' && provider && typeof model === 'string' && model
+    ? `${provider}/${model}`
     : ''
   if (key) u.models[key] = (u.models[key] ?? 0) + tokens
   if (key && spent) (u.modelCost ??= {})[key] = (u.modelCost[key] ?? 0) + spent
 }
 
-function scan(path: string, offset: number, usage: FileUsage, state: { forkedAt?: number }): Promise<number> {
+function recordedCost(recorded: { cost?: { total?: unknown } } | undefined): number {
+  const cost = recorded?.cost?.total
+  return typeof cost === 'number' && Number.isFinite(cost) && cost > 0 ? cost : 0
+}
+
+function estimatedCost(model: unknown, recorded: Record<string, unknown> | undefined): number {
+  if (typeof model !== 'string' || !model) return 0
+  const part = (key: string): number => {
+    const value = recorded?.[key]
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+  }
+  const estimate = estimateCost(model, { input: part('input'), output: part('output'), cacheRead: part('cacheRead'), cacheWrite: part('cacheWrite') })
+  return estimate && Number.isFinite(estimate) && estimate > 0 ? estimate : 0
+}
+
+function scan(path: string, offset: number, usage: FileUsage, state: UsageScanState): Promise<number> {
   return new Promise((resolve, reject) => {
     let pos = offset
     let rest: Buffer | null = null
@@ -128,6 +173,7 @@ export function createUsageReader(sources: UsageSources = defaultUsageSources())
   }
 
   async function refresh(): Promise<void> {
+    await loadModelPricing()
     const map = await loadCache()
     const tagged = await collectRefs()
     const alive = new Set(tagged.map((item) => item.ref.path))

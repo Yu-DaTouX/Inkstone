@@ -31,6 +31,15 @@ export async function runUsageStatsTests(ok) {
   m.countLine(Buffer.from(JSON.stringify({ type: 'message', timestamp: at(0, 9), message: { role: 'assistant', provider: 'p', model: 'q', usage: { input: 3, output: 4, cacheRead: 5, cacheWrite: 0 } } })), noTotal)
   ok(noTotal[today]?.t === 12, '没有 totalTokens 时按各项相加')
 
+  const side = {}
+  const sideState = {}
+  m.countLine(Buffer.from(JSON.stringify({ type: 'model_change', timestamp: at(0, 9), provider: 'anthropic', modelId: 'claude-opus-5-5' })), side, sideState)
+  m.countLine(Buffer.from(JSON.stringify({ type: 'compaction', timestamp: at(0, 9), summary: 's', usage: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120, cost: { total: 0.5 } } })), side, sideState)
+  m.countLine(Buffer.from(JSON.stringify({ type: 'usage', kind: 'cache_warm', timestamp: at(0, 9), provider: 'openai', model: 'gpt-6-luna', usage: { input: 2, output: 1, cacheRead: 300, cacheWrite: 0, totalTokens: 303, cost: { total: 0.01 } } })), side, sideState)
+  ok(side[today]?.t === 423 && side[today]?.m === 0, '压缩与缓存预热的用量计入 token，不算消息')
+  ok(side[today]?.models['anthropic/claude-opus-5-5'] === 120 && side[today]?.models['openai/gpt-6-luna'] === 303, '压缩归到当前模型，usage 条目按自带模型归属')
+  ok(Math.abs(side[today]?.c - 0.51) < 1e-9, '压缩与预热的费用计入合计')
+
   const diagnosticReply = JSON.parse(reply(at(0, 10), 1234).toString())
   diagnosticReply.id = 'long-'.repeat(100)
   diagnosticReply.message.provider = 'anthropic'
