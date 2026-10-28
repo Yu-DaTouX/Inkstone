@@ -3,6 +3,7 @@ import type { SessionHost } from '../session-host'
 import type { ExpectedRuntimeOwner } from '../../shared/ipc'
 import { sessionActionAgent, SESSION_ACTION_CHANGED } from './session-action-target'
 import { shell } from 'electron'
+import { rememberSyncBaseline, takeSyncBaseline } from '../sync-baseline'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { YAN_DIR } from '../paths'
@@ -347,9 +348,12 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
   handle('yan:setSessionArchived', async (sessionId: string, archived: boolean) => setFlags(String(sessionId), { archived: archived === true }))
   handle('yan:setSessionPinned', async (sessionId: string, pinned: boolean) => setFlags(String(sessionId), { pinned: pinned === true }))
 
-  handle('yan:peekSession', async (path: string) => {
+  handle('yan:peekSession', async (path: string, opts?: { trackSync?: boolean }) => {
     if (typeof path !== 'string' || !path) return null
     if (!(await isSessionFileInSessionsDir(path))) return null
-    return host.readHistoryWithArtifacts(path)
+    const result = await host.readHistoryWithArtifacts(path)
+    if (result && opts?.trackSync === true) rememberSyncBaseline(path, result.messages)
+    else takeSyncBaseline(path)
+    return result
   })
 }

@@ -280,7 +280,7 @@ const api: YanBridge = {
   },
   searchSessions: (query, limit) => invoke<SessionSearchResult>('yan:searchSessions', query, limit),
   usageStats: (range) => invoke<UsageStatsResult>('yan:usageStats', range),
-  peekSession: (path) => invoke<PeekResult | null>('yan:peekSession', path),
+  peekSession: (path, opts) => invoke<PeekResult | null>('yan:peekSession', path, opts),
 
   authProviders: (deep) => invoke<AuthProviderInfo[]>('yan:authProviders', deep),
   codexLogin: () => invoke<CodexLoginResult>('yan:codexLogin'),

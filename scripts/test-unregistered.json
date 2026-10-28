@@ -109,6 +109,7 @@
     "test-subagent-native-retry",
     "test-subagent-stream-performance",
     "test-sync-atomic",
+    "test-sync-baseline",
     "test-terminal-native-protocol",
     "test-terminal-sessions",
     "test-usage-stats-subagents",

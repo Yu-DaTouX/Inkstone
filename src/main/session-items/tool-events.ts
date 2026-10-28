@@ -97,3 +97,8 @@ export function mergeToolDetails(call: UIToolCall, patch: Record<string, unknown
       : {}
   call.details = { ...base, ...patch }
 }
+
+export function toolOutputPushMode(previous: string | undefined, pushed: number, out: string): 'skip' | 'delta' | 'replace' {
+  if (previous !== undefined && out !== previous && !out.startsWith(previous)) return 'replace'
+  return out.length <= pushed ? 'skip' : 'delta'
+}

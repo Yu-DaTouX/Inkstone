@@ -23,9 +23,11 @@ import { allowTrust, revokeTrust } from './project-trust'
 import { workspaceMutationInProgress } from './workspace-mutation'
 import type { ExecuteAdmissionPort } from './session-send-guard'
 import { SessionItemProjector, projectHistory } from './session-items/projector'
-import { planSessionSync } from './session-sync-plan'
+import { planSessionSync, planSessionSyncAgainst } from './session-sync-plan'
+import { rememberSyncBaseline, takeSyncBaseline } from './sync-baseline'
+import { messageSyncSignature } from '../shared/session-sync'
 import { clearQueueFile, loadQueue, saveQueue } from './queue-persistence'
-import { mergeToolDetails, streamsHtmlWriteArgs, type ToolResultPayload } from './session-items/tool-events'
+import { mergeToolDetails, streamsHtmlWriteArgs, toolOutputPushMode, type ToolResultPayload } from './session-items/tool-events'
 import { GENERATION_MISMATCH_ERROR, SessionOperationGate, generationMatches, type SessionOperation } from './session-operation-gate'
 import { isTransientModelError, modelErrorNotice, modelErrorText } from '../shared/model-errors'
 import { settledTurnOutcome } from '../shared/turn-outcome'
@@ -593,6 +595,7 @@ export class AgentController extends EventEmitter {
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private dirtyTools = new Set<string>()
   private pushedOut = new Map<string, number>()
+  private pushedOutText = new Map<string, string>()
   private htmlArgsPushedAt = new Map<string, number>()
 
   private state: SessionState | null = null
@@ -859,14 +862,16 @@ export class AgentController extends EventEmitter {
     this.loopGuardHit = undefined
     this.setConn('starting')
 
-    await this.ensureCapability()
-
-    const userSkillArgs = this.userSkills ? await this.userSkills().catch(() => [] as string[]) : []
     const probe = resolvePi({ override: this.piBin })
-    const version = probe.home ? await readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : undefined
+    const [, userSkillArgs, version, bashAvailable] = await Promise.all([
+      this.ensureCapability(),
+      this.userSkills ? this.userSkills().catch(() => [] as string[]) : Promise.resolve([] as string[]),
+      probe.home ? readFile(join(probe.home, 'package.json'), 'utf8').then(text => JSON.parse(text).version as string).catch(() => undefined) : Promise.resolve(undefined),
+      hasBash()
+    ])
     const nativeTools = nativePiToolsSupported(version)
     const projectPackageArgs = nativeTools ? [] : await projectPiPackageArgs(this.cwd)
-    const shellFallback = !(await hasBash())
+    const shellFallback = !bashAvailable
     const rpc = new PiRpc({
       cwd: this.cwd,
       piBin: this.piBin,
@@ -1104,6 +1109,7 @@ export class AgentController extends EventEmitter {
     }
 
     this.pushedOut.clear()
+    this.pushedOutText.clear()
 
     this.pushSessionSync(scopeBefore, syncedBefore)
     this.pushQuestionLog()
@@ -1128,8 +1134,17 @@ export class AgentController extends EventEmitter {
     const next = this.messages
     const sameSession =
       this.state?.sessionId === scopeBefore.sessionId && this.state?.sessionFile === scopeBefore.sessionFile
-    const plan = sameSession ? planSessionSync(syncedBefore, next) : { kind: 'full' as const }
-    if (plan.kind === 'none') return
+    const plan = sameSession
+      ? planSessionSync(syncedBefore, next)
+      : planSessionSyncAgainst(takeSyncBaseline(this.state?.sessionFile), next)
+    rememberSyncBaseline(this.state?.sessionFile, next)
+    if (plan.kind === 'none') {
+      if (!sameSession && next.length) {
+        const anchor = next[next.length - 1]
+        this.push({ ch: 'sync-delta', payload: { anchorId: anchor.id, anchorIndex: next.length - 1, anchorSignature: messageSyncSignature(anchor), messages: [] } })
+      }
+      return
+    }
     if (plan.kind === 'full') {
       this.push({ ch: 'sync', payload: next })
       return
@@ -2771,6 +2786,7 @@ export class AgentController extends EventEmitter {
     const msgId = this.ownerOf(call)
     if (!msgId) return
     this.pushedOut.set(call.id, call.output?.length ?? 0)
+    this.pushedOutText.set(call.id, call.output ?? '')
     this.dirtyTools.delete(call.id)
     this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
   }
@@ -2790,6 +2806,7 @@ export class AgentController extends EventEmitter {
         const owner = this.ownerOf(call) ?? msgId
         if (!owner) return
         this.pushedOut.set(call.id, call.output?.length ?? 0)
+        this.pushedOutText.set(call.id, call.output ?? '')
         this.dirtyTools.delete(call.id)
         this.push({ ch: 'tool', payload: { msgId: owner, call: { ...call } } })
       })
@@ -2811,14 +2828,22 @@ export class AgentController extends EventEmitter {
       const call = this.items.call(id)
       if (!call) {
         this.pushedOut.delete(id)
+        this.pushedOutText.delete(id)
         continue
       }
       const pushed = this.pushedOut.get(id) ?? 0
       const out = call.output ?? ''
-      if (out.length <= pushed) continue
+      const previous = this.pushedOutText.get(id)
+      const mode = toolOutputPushMode(previous, pushed, out)
+      if (mode === 'skip') continue
       const msgId = this.ownerOf(call)
       if (!msgId) continue
       this.pushedOut.set(id, out.length)
+      this.pushedOutText.set(id, out)
+      if (mode === 'replace') {
+        this.push({ ch: 'tool', payload: { msgId, call: { ...call } } })
+        continue
+      }
       this.push({
         ch: 'tool',
         payload: {
@@ -3527,7 +3552,7 @@ export class AgentController extends EventEmitter {
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
       if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
-      await this.refreshState()
+      void this.refreshState().catch(() => undefined)
       return { ok: true }
     })
   }
@@ -3798,6 +3823,7 @@ export class AgentController extends EventEmitter {
       })
       for (const c of msg.toolCalls ?? []) {
         this.pushedOut.set(c.id, c.output?.length ?? 0)
+        this.pushedOutText.delete(c.id)
         this.dirtyTools.delete(c.id)
       }
       this.push({ ch: 'msg-update', payload: { id: s.id, patch: msg } })
@@ -4783,6 +4809,7 @@ export class AgentController extends EventEmitter {
     this.dirty = false
     this.dirtyTools.clear()
     this.pushedOut.clear()
+    this.pushedOutText.clear()
     this.ui.rejectPendingHostUi('会话已关闭，问题请求已取消')
     this.ui.pending.clear()
     await this.rpc?.close()

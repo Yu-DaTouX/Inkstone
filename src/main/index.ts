@@ -144,6 +144,9 @@ import { refreshManagedGit } from './git-runtime'
 import { applyBundledSearchTools } from './search-tools'
 import { registerGitRuntimeIpc } from './ipc/git-runtime-ipc'
 import { cachedTitlesSync, primeCachedTitles } from './title'
+import { planSessionSyncAgainst } from './session-sync-plan'
+import { takeSyncBaseline } from './sync-baseline'
+import { messageSyncSignature } from '../shared/session-sync'
 import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
 import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
@@ -1248,7 +1251,15 @@ async function pushRunnerSnapshot(id: string, opts: { chainHistory?: boolean } =
       if (runners?.agentOf(id) !== ag || !sameRuntimeEnvelope(runners?.runtimeOf(id), expected)) return
       if (chain?.messages?.length && chain.messages.length >= payload.length) payload = chain.messages
     }
-    pushFrom(id, { ch: 'sync', payload }, expected)
+    const plan = planSessionSyncAgainst(takeSyncBaseline(st?.sessionFile), payload)
+    if (plan.kind === 'delta') {
+      pushFrom(id, { ch: 'sync-delta', payload: { anchorId: plan.anchorId, anchorIndex: plan.anchorIndex, anchorSignature: plan.anchorSignature, messages: plan.messages } }, expected)
+    } else if (plan.kind === 'none') {
+      const anchor = payload[payload.length - 1]
+      pushFrom(id, { ch: 'sync-delta', payload: { anchorId: anchor.id, anchorIndex: payload.length - 1, anchorSignature: messageSyncSignature(anchor), messages: [] } }, expected)
+    } else {
+      pushFrom(id, { ch: 'sync', payload }, expected)
+    }
   } catch {
   }
   void ag
@@ -1938,6 +1949,7 @@ function startAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; 
 
 async function doStartAgent(restore?: { sessionFile?: string }): Promise<{ ok: boolean; error?: string }> {
   if (runners?.active()?.running) return { ok: true }
+  if (restore?.sessionFile) void readHistoryWithArtifacts(restore.sessionFile).catch(() => undefined)
   const crashedId = runners?.activeRunnerId
   if (runners && crashedId && !restore?.sessionFile && runners.statuses().some((status) => status.id !== crashedId && (status.running || status.waiting))) {
     const restarted = await runners.restartOne(crashedId)
@@ -3785,12 +3797,14 @@ app.whenReady().then(async () => {
     reportMainError('mcp-app-view', error)
   }
 
-  await migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error))
-
-  const restore = await restorePreviousSession()
-  const started = await startAgent(restore ? { sessionFile: restore.sessionFile } : undefined)
-
-  await startRemoteServer()
+  const [, restore] = await Promise.all([
+    migrateLegacyPlaybooks().catch((error) => console.error('[yan] 办事模板导出失败：', error)),
+    restorePreviousSession()
+  ])
+  const [started] = await Promise.all([
+    startAgent(restore ? { sessionFile: restore.sessionFile } : undefined),
+    startRemoteServer()
+  ])
 
   const initialControl = decodeControlCommand(process.argv)
   if (initialControl) void dispatchControlCommand(initialControl)

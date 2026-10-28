@@ -782,17 +782,18 @@ async function imageFingerprint(base64: string): Promise<string | null> {
 }
 
 async function collectSourceIds(attachments: Attachment[], sessionId: string): Promise<string[]> {
-  const out: string[] = []
   const files: string[] = []
+  const prints: Promise<string | null>[] = []
   for (const a of attachments) {
     if (a.kind === 'file') {
       if (a.path && !a.isDirectory) files.push(a.path)
       continue
     }
     if (!a.data) continue
-    const fp = await imageFingerprint(a.data)
-    if (fp) out.push(`image:${fp}`)
+    prints.push(imageFingerprint(a.data))
   }
+  const out: string[] = []
+  for (const fp of await Promise.all(prints)) if (fp) out.push(`image:${fp}`)
   if (files.length) {
     try {
       const refs = await window.yan.sources.verifyFiles({
@@ -1161,10 +1162,9 @@ export const useStore = create<Store>((rawSet, get) => {
     const timedBoot = <T,>(name: string, p: Promise<T>): Promise<T> => p.finally(() => { try { performance.measure('yan:boot:' + name, 'yan:bootstrap-start') } catch { } })
     const api = window.yan
     performance.mark('yan:bootstrap-start')
-    const [loadedSettings, sessions, session, messages, stats, todos, titles, manualTitles, browserState] =
+    const [loadedSettings, session, messages, stats, todos, titles, manualTitles, browserState] =
       await Promise.all([
         timedBoot('settings', api.getSettings()),
-        timedBoot('listSessions', api.listSessions()),
         timedBoot('getState', api.getState()),
         timedBoot('getMessages', api.getMessages()),
         timedBoot('getStats', api.getStats()),
@@ -1179,7 +1179,6 @@ export const useStore = create<Store>((rawSet, get) => {
 
     set({
       settings,
-      sessions,
       session: session ?? get().session,
       messages: messages.length ? messages : get().messages,
       stats: stats ?? get().stats,
@@ -1191,6 +1190,7 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!browserState.open) releaseResource('browser')
 
     performance.mark('yan:bootstrap-set')
+    void timedBoot('listSessions', get().refreshSessions())
     void timedBoot('piInfo', api.piInfo().catch(() => null)).then((info) => {
       if (info) set({ piInfo: info })
     })
@@ -1666,10 +1666,16 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ submittingMessages: [...get().submittingMessages, submission] })
     try {
       const guardView = hasComposerIdentity(target)
+      const earlySessionId = attachments.length && !get().pendingActivation ? get().session?.sessionId : undefined
+      const earlySourceIds = earlySessionId ? collectSourceIds(attachments, earlySessionId) : null
       if (!(await get().ensureActivated(target))) return false
       if (guardView && !sameComposerView(get(), target)) return false
       const sessionId = get().session?.sessionId
-      const sourceIds = sessionId ? await collectSourceIds(attachments, sessionId) : []
+      const sourceIds = !sessionId
+        ? []
+        : earlySourceIds && sessionId === earlySessionId
+          ? await earlySourceIds
+          : await collectSourceIds(attachments, sessionId)
       if (guardView && !sameComposerView(get(), target)) return false
       if (sourceIds.length) {
         set({ pendingSourceLinks: [...get().pendingSourceLinks, { sessionId: sessionId!, sourceIds }] })
@@ -1977,7 +1983,7 @@ export const useStore = create<Store>((rawSet, get) => {
 
     performance.mark('yan:switch-start')
     try {
-      const peek = await window.yan.peekSession(path)
+      const peek = await window.yan.peekSession(path, { trackSync: !cachedMessages?.length })
       if (gate !== sessionSwitchGate) return
       performance.mark('yan:switch-peeked')
       if (peek) {

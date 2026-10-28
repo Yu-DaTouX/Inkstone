@@ -1778,7 +1778,7 @@ export interface YanBridge {
   searchSessions(query: string, limit?: number): Promise<SessionSearchResult>
   usageStats(range: UsageRange): Promise<UsageStatsResult>
 
-  peekSession(path: string): Promise<PeekResult | null>
+  peekSession(path: string, opts?: { trackSync?: boolean }): Promise<PeekResult | null>
 
   authProviders(deep?: boolean): Promise<AuthProviderInfo[]>
   codexLogin(): Promise<CodexLoginResult>
