@@ -50,14 +50,6 @@ export interface ShellItem extends SessionItemBase {
   call?: UIToolCall
 }
 
-export interface CompactionItem extends SessionItemBase {
-  kind: 'compaction'
-  reason?: string
-  status: 'running' | 'ok' | 'error' | 'cancelled'
-  tokensBefore?: number
-  error?: string
-}
-
 export interface NoteItem extends SessionItemBase {
   kind: 'note'
   note: NonNullable<UIMessage['note']>
@@ -78,14 +70,8 @@ export type SessionItem =
   | ReasoningItem
   | ToolItem
   | ShellItem
-  | CompactionItem
   | NoteItem
   | StatusItem
-
-export interface SessionTurn {
-  id: string
-  items: SessionItem[]
-}
 
 export const PRELUDE_TURN_ID = 'prelude'
 
@@ -116,19 +102,4 @@ export function toolItemStatus(call: Pick<UIToolCall, 'status' | 'cancelled'>): 
   if (call.cancelled) return 'cancelled'
   if (call.status === 'pending') return 'running'
   return call.status
-}
-
-export function groupTurns(items: readonly SessionItem[]): SessionTurn[] {
-  const turns: SessionTurn[] = []
-  const byId = new Map<string, SessionTurn>()
-  for (const item of items) {
-    let turn = byId.get(item.turnId)
-    if (!turn) {
-      turn = { id: item.turnId, items: [] }
-      byId.set(item.turnId, turn)
-      turns.push(turn)
-    }
-    turn.items.push(item)
-  }
-  return turns
 }

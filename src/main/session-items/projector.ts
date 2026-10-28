@@ -2,15 +2,12 @@ import type { UIMessage, UIToolCall } from '../../shared/ipc'
 import {
   PRELUDE_TURN_ID,
   assistantBlockId,
-  groupTurns,
   type AssistantTextItem,
   statusItemId,
   toolItemKind,
   toolItemStatus,
-  type CompactionItem,
   type ReasoningItem,
   type SessionItem,
-  type SessionTurn,
   type ToolItem
 } from '../../shared/session-items'
 import { normalizeMessage, restoreNestedCalls, type PiContentBlock, type PiMessage } from '../normalize'
@@ -54,14 +51,6 @@ export interface LiveToolStart {
   parentToolCallId?: string
 }
 
-export interface LiveCompactionEvent {
-  type: 'compaction_start' | 'compaction_end'
-  reason?: unknown
-  aborted?: unknown
-  errorMessage?: unknown
-  result?: unknown
-}
-
 export interface LiveToolStarted {
   call: UIToolCall
   ownerId: string
@@ -74,8 +63,6 @@ export interface StreamingContent {
   thinking: string
   calls: UIToolCall[]
 }
-
-type Timeline = { slot: MessageSlot } | { item: CompactionItem }
 
 function assignContent(header: UIMessage, content: Partial<UIMessage>): UIMessage {
   const target = header as unknown as Record<string, unknown>
@@ -101,13 +88,11 @@ function slotContent(slot: MessageSlot): { text?: string; thinking?: string; cal
 }
 
 export class SessionItemProjector {
-  private readonly timeline: Timeline[] = []
   private readonly slots: MessageSlot[] = []
   private readonly callIndex = new Map<string, CallEntry>()
   private turnId = PRELUDE_TURN_ID
   private step = -1
   private seq = 0
-  private compactions = 0
   private streaming: MessageSlot | null = null
 
   constructor(private readonly localizeImage?: LocalizeImage) {}
@@ -138,25 +123,6 @@ export class SessionItemProjector {
     if (m.role === 'toolResult' && first) this.restoreNested(m, { msg: slot.header, call: first, slot })
   }
 
-  appendPersistedEntry(entry: { id?: unknown; type?: unknown; message?: unknown; tokensBefore?: unknown }, message: unknown): void {
-    const entryId = typeof entry.id === 'string' ? entry.id : undefined
-    if (message) {
-      this.appendPersisted(message, entryId)
-      return
-    }
-    if (entry.type !== 'compaction') return
-    const item: CompactionItem = {
-      kind: 'compaction',
-      id: entryId ? `compaction:${entryId}` : `compaction:${++this.compactions}`,
-      turnId: this.turnId,
-      messageId: '',
-      ...(entryId ? { entryId } : {}),
-      status: 'ok',
-      ...(typeof entry.tokensBefore === 'number' ? { tokensBefore: entry.tokensBefore } : {})
-    }
-    this.timeline.push({ item })
-  }
-
   load(messages: readonly UIMessage[]): void {
     const live = this.streaming
     this.reset()
@@ -164,14 +130,12 @@ export class SessionItemProjector {
     this.seq = this.slots.length
     if (!live) return
     this.slots.push(live)
-    this.timeline.push({ slot: live })
     for (const item of live.items) if (item.kind === 'tool') this.callIndex.set(item.call.id, { msg: live.header, call: item.call, slot: live })
     if (live.turnId === this.turnId) this.step = Math.max(this.step, live.step)
     this.streaming = live
   }
 
   reset(): void {
-    this.timeline.length = 0
     this.slots.length = 0
     this.callIndex.clear()
     this.turnId = PRELUDE_TURN_ID
@@ -186,8 +150,6 @@ export class SessionItemProjector {
     this.streaming = null
     const at = this.slots.indexOf(slot)
     if (at >= 0) this.slots.splice(at, 1)
-    const entry = this.timeline.findIndex((candidate) => 'slot' in candidate && candidate.slot === slot)
-    if (entry >= 0) this.timeline.splice(entry, 1)
   }
 
   appendMessage(message: UIMessage): UIMessage {
@@ -340,37 +302,6 @@ export class SessionItemProjector {
     return cancelled
   }
 
-  liveCompaction(evt: LiveCompactionEvent): CompactionItem | null {
-    if (evt.type === 'compaction_start') {
-      const item: CompactionItem = {
-        kind: 'compaction',
-        id: `compaction:${++this.compactions}`,
-        turnId: this.turnId,
-        messageId: '',
-        status: 'running',
-        ...(typeof evt.reason === 'string' ? { reason: evt.reason } : {})
-      }
-      this.timeline.push({ item })
-      return item
-    }
-    const running = [...this.timeline].reverse().find((entry): entry is { item: CompactionItem } => 'item' in entry && entry.item.status === 'running')?.item
-    if (!running) return null
-    const error = typeof evt.errorMessage === 'string' && evt.errorMessage ? evt.errorMessage : undefined
-    running.status = evt.aborted === true ? 'cancelled' : error ? 'error' : 'ok'
-    if (error) running.error = error
-    const tokensBefore = (evt.result as { tokensBefore?: unknown } | undefined)?.tokensBefore
-    if (typeof tokensBefore === 'number') running.tokensBefore = tokensBefore
-    return running
-  }
-
-  items(): SessionItem[] {
-    return this.timeline.flatMap((entry) => ('slot' in entry ? entry.slot.items : [entry.item]))
-  }
-
-  turns(): SessionTurn[] {
-    return groupTurns(this.items())
-  }
-
   uiMessages(): UIMessage[] {
     const out: UIMessage[] = []
     for (const slot of this.slots) if (slot !== this.streaming) out.push(this.compose(slot))
@@ -401,7 +332,6 @@ export class SessionItemProjector {
     this.decompose(slot, raw)
     for (const call of header.toolCalls ?? []) this.callIndex.set(call.id, { msg: header, call, slot })
     this.slots.push(slot)
-    this.timeline.push({ slot })
     return slot
   }
 

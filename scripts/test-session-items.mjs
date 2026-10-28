@@ -79,31 +79,8 @@ try {
 
   const projector = new m.SessionItemProjector(localize)
   history.forEach((raw, index) => projector.appendPersisted(structuredClone(raw), entryIds[index]))
-  const items = projector.items()
-  const user = items.find((item) => item.kind === 'user')
-  assert.equal(user.id, 'm1')
-  assert.equal(user.turnId, 'm1', 'turn id 取首条用户消息 id')
-  assert.equal(items[0].kind, 'note')
-  assert.equal(items[0].turnId, m.PRELUDE_TURN_ID)
-  const firstTurn = items.filter((item) => item.turnId === 'm1')
-  assert.deepEqual(firstTurn.filter((item) => item.kind === 'reasoning').map((item) => item.id), ['m1:0:0', 'm1:0:3'], '思考块 id = turn + 步 + 块序')
-  assert.deepEqual(firstTurn.filter((item) => item.kind === 'assistant-text').map((item) => item.id), ['m1:0:1', 'm1:0:4', 'm1:3:0'])
-  const tools = firstTurn.filter((item) => item.kind === 'tool')
-  assert.deepEqual(tools.map((item) => item.id), ['call_a', 'call_b', 'orphan', 'call_c', 'call_c/1', 'call_c/1/2'], '工具沿用 toolCallId')
-  assert.deepEqual(tools.map((item) => item.tool), ['bash', 'file-change', 'mcp', 'subagent', 'tool', 'bash'])
-  assert.deepEqual(tools.map((item) => item.status), ['cancelled', 'error', 'ok', 'ok', 'ok', 'error'])
-  assert.deepEqual(tools.map((item) => item.step), [0, 0, 1, 2, 2, 2])
-  const status = firstTurn.find((item) => item.kind === 'status')
-  assert.deepEqual([status.id, status.text], ['m1:3:status', legacy.find((msg) => msg.error)?.error])
-  assert.equal(firstTurn.find((item) => item.kind === 'shell').command, 'git status')
-  assert.equal(tools[0].entryId, undefined)
-  assert.equal(tools[3].entryId, 'e7')
-  const turns = projector.turns()
-  assert.deepEqual(turns.map((turn) => turn.id), [m.PRELUDE_TURN_ID, 'm1', 'm7'])
-  assert.equal(turns[2].items.at(-1).kind, 'note')
-
-  projector.appendPersistedEntry({ id: 'c1', type: 'compaction', tokensBefore: 900 }, null)
-  assert.deepEqual(projector.items().at(-1), { kind: 'compaction', id: 'compaction:c1', turnId: 'm7', messageId: '', entryId: 'c1', status: 'ok', tokensBefore: 900 })
+  assert.deepStrictEqual(projector.uiMessages(), projected, '逐条追加与整段回放得到相同的 UIMessage')
+  assert.equal(projected.find((msg) => msg.role === 'user').id, 'm1')
 
   const legacyStart = (call, now) => { call.status = 'running'; call.startedAt = now }
   const legacyUpdate = (call, partial) => {
@@ -149,9 +126,6 @@ try {
   const userMessage = { role: 'user', content: [{ type: 'text', text: 'go' }], timestamp: 100 }
   const liveUser = live.liveMessageStart(userMessage, 100)
   assert.equal(liveUser.id, 'm0')
-  live.liveCompaction({ type: 'compaction_start', reason: 'threshold' })
-  const compaction = live.liveCompaction({ type: 'compaction_end', aborted: false, result: { tokensBefore: 1234 } })
-  assert.deepEqual([compaction.status, compaction.reason, compaction.tokensBefore, compaction.turnId], ['ok', 'threshold', 1234, 'm0'])
   live.liveMessageStart({ role: 'assistant' }, 101)
   live.liveAssistantDelta({ type: 'thinking_start', contentIndex: 0 }, 101)
   live.liveAssistantDelta({ type: 'thinking_delta', contentIndex: 0, delta: 'hmm' }, 101)
@@ -190,8 +164,6 @@ try {
   const liveMessages = live.uiMessages()
   assert.deepEqual(liveMessages.map((msg) => msg.id), ['m0', 'm1', `t${(105).toString(36)}`], '直播 id 与旧路径相同：用户/助手按位置编号，无主工具单独成条')
   assert.ok(liveMessages[1].toolCalls.includes(nested), '带父调用的工具挂到父调用所在消息')
-  const liveItems = live.items()
-  assert.deepEqual(liveItems.map((item) => item.id), ['m0', 'compaction:1', 'm0:0:0', 'm0:0:1', 'call_live', 'call_live/1', 'late'])
 
   {
     const stopping = new m.SessionItemProjector()
@@ -214,7 +186,6 @@ try {
       assert.equal(call.status, 'ok')
       assert.equal(call.cancelled, true)
       assert.equal(call.endedAt, 500)
-      assert.equal(stopping.items().find(item => item.id === call.id).status, 'cancelled', '语义投影与 UI 调用状态同步')
     }
     assert.equal(stopping.call('older-call').status, 'running', '不改历史轮次')
     assert.equal(stopping.call('independent-call').status, 'running', '独立命令由其自己的终止通道收尾')
@@ -233,10 +204,6 @@ try {
   ]
   const replay = new m.SessionItemProjector()
   for (const raw of persisted) replay.appendPersisted(raw)
-  const shape = (item) => ({ kind: item.kind, id: item.id, turnId: item.turnId, ...(item.kind === 'tool' ? { status: item.status, output: item.call.output } : { text: item.text }) })
-  const liveCore = liveItems.filter((item) => item.kind !== 'compaction' && !['late', 'call_live/1'].includes(item.id)).map(shape)
-  assert.deepEqual(replay.items().map(shape), liveCore, '直播与回放走同一个投影器，得到相同的 turn/item id 与内容')
-
   {
     const progressUser = { role: 'user', content: 'go', timestamp: 300 }
     const progress = new m.SessionItemProjector()
@@ -256,13 +223,13 @@ try {
     const progressReplay = new m.SessionItemProjector()
     progressReplay.appendPersisted(progressUser)
     progressReplay.appendPersisted({ role: 'assistant', model: 'claude-opus-5-5', content: progressBlocks, timestamp: 301 })
-    const kinds = (p) => p.items().filter((item) => item.kind !== 'user').map((item) => [item.kind, item.id, item.kind === 'tool' ? item.call.id : item.text])
-    assert.deepEqual(kinds(progressReplay), [['reasoning', 'm0:0:0', ''], ['assistant-text', 'm0:0:1', 'Found it, checking config next.'], ['tool', 'p1', 'p1']], '回放时进度更新为正文，空推理块保持推理')
-    assert.deepEqual(kinds(progress), kinds(progressReplay), '直播与回放一致')
+    const progressView = (p) => p.uiMessages().filter((msg) => msg.role === 'assistant').map((msg) => [msg.text, msg.thinking, msg.thinkingEmpty, msg.toolCalls.map((call) => call.id)])
+    assert.deepEqual(progressView(progressReplay), [['Found it, checking config next.', undefined, undefined, ['p1']]], '回放时进度更新为正文，不再显示为思考')
+    assert.deepEqual(progressView(progress), progressView(progressReplay), '直播与回放一致')
     const older = new m.SessionItemProjector()
     older.appendPersisted(progressUser)
     older.appendPersisted({ role: 'assistant', model: 'claude-opus-4-6', content: progressBlocks, timestamp: 301 })
-    assert.equal(older.items().find((item) => item.id === 'm0:0:1').kind, 'reasoning', '其他模型的交错思考不改')
+    assert.deepEqual(older.uiMessages().filter((msg) => msg.role === 'assistant').map((msg) => [msg.text, msg.thinking]), [['', 'Found it, checking config next.']], '其他模型的交错思考不改')
   }
 
   {
@@ -306,8 +273,6 @@ try {
     projector.liveToolStart({ toolCallId: 'e1', toolName: 'edit', args: { path: 'a.ts' } }, 203)
     projector.liveToolEnd('e1', { result: { content: [{ type: 'text', text: 'stopped' }], details: { d: 1 } }, isError: true, cancelled: true }, 203)
     added.push(projector.liveMessageStart(turnRaw[4], 204))
-    projector.liveCompaction({ type: 'compaction_start', reason: 'threshold' })
-    projector.liveCompaction({ type: 'compaction_end', result: { tokensBefore: 77 } })
     projector.liveMessageStart({ role: 'assistant' }, 205)
     projector.liveAssistantDelta({ type: 'text_delta', contentIndex: 0, delta: 'partial' }, 205)
     projector.liveMessageEnd({ timestamp: 205, error: m.assistantError(turnRaw[5]) })
@@ -321,22 +286,12 @@ try {
   const liveTurn = new m.SessionItemProjector(localize)
   const liveAdded = feedLive(liveTurn)
   const replayTurn = new m.SessionItemProjector(localize)
-  turnRaw.forEach((raw, index) => replayTurn.appendPersistedEntry({ id: `x${index}` }, raw))
-  replayTurn.appendPersistedEntry({ id: 'cmp', type: 'compaction', tokensBefore: 77 }, null)
+  turnRaw.forEach((raw, index) => replayTurn.appendPersisted(raw, `x${index}`))
   const imageView = (images) => images?.map((image) => image.mimeType)
   const callView = (call) => ({ id: call.id, name: call.name, args: call.args, status: call.status, output: call.output, cancelled: call.cancelled, details: call.details, images: imageView(call.images) })
   const messageView = (msg) => ({ id: msg.id, role: msg.role, text: msg.text, thinking: msg.thinking, images: imageView(msg.images), note: msg.note, error: msg.error, calls: (msg.toolCalls ?? []).map(callView) })
   assert.deepEqual(liveTurn.uiMessages().map(messageView), replayTurn.uiMessages().map(messageView), '多步回合：直播与回放的 UIMessage（id、正文、思考、工具、错误、附注）一致')
   assert.equal(liveAdded[0].role, 'note')
-  const itemView = (item) => ({ kind: item.kind, id: item.kind === 'compaction' ? 'compaction' : item.id, turnId: item.turnId, status: item.status, text: item.text, tokensBefore: item.tokensBefore })
-  const liveItemsTurn = liveTurn.items().map(itemView)
-  const replayItemsTurn = replayTurn.items().map(itemView)
-  const replayCompaction = replayItemsTurn.pop()
-  const liveCompactionAt = liveItemsTurn.findIndex((item) => item.kind === 'compaction')
-  const [liveCompactionItem] = liveItemsTurn.splice(liveCompactionAt, 1)
-  assert.deepEqual(liveItemsTurn, replayItemsTurn, '多步回合：直播与回放的条目（turn/块/工具 id、状态）一致')
-  assert.deepEqual({ ...liveCompactionItem, turnId: 'm0' }, { ...replayCompaction, turnId: 'm0' }, '压缩条目状态与压缩前 token 一致')
-  assert.deepEqual(liveTurn.turns().map((turn) => turn.id), ['m0', 'm4'])
 
   const projectTurn = () => m.projectHistory(structuredClone(turnRaw), localize)
   const frozen = Object.freeze(projectTurn().map((msg) => Object.freeze(msg)))
@@ -369,7 +324,7 @@ try {
   assert.equal(loaded.ownerOf('bash-1'), 'bash-1')
   assert.equal(loaded.ownerOf('r1'), 'm1')
   loaded.reset()
-  assert.deepEqual([loaded.uiMessages(), loaded.items(), loaded.call('r1')], [[], [], undefined])
+  assert.deepEqual([loaded.uiMessages(), loaded.call('r1')], [[], undefined])
 
   const noIndex = new m.SessionItemProjector()
   noIndex.liveMessageStart({ role: 'assistant' }, 1)
@@ -378,7 +333,7 @@ try {
   noIndex.liveAssistantDelta({ type: 'thinking_delta', delta: 'x' }, 1)
   noIndex.liveAssistantDelta({ type: 'thinking_end' }, 1)
   noIndex.liveAssistantDelta({ type: 'text_delta', delta: 'c' }, 1)
-  assert.deepEqual(noIndex.items().map((item) => [item.kind, item.id, item.text]), [['assistant-text', 'prelude:0:0', 'ab'], ['reasoning', 'prelude:0:1', 'x'], ['assistant-text', 'prelude:0:2', 'c']], '缺 contentIndex 时连续增量并入同一块')
+  assert.deepEqual(noIndex.streamingContent(), { id: 'm0', text: 'abc', thinking: 'x', calls: [] }, '缺 contentIndex 时连续增量不丢内容')
 
   const interleaved = new m.SessionItemProjector()
   interleaved.liveMessageStart({ role: 'user', content: 'go' }, 1)
