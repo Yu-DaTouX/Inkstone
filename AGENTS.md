@@ -26,11 +26,12 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 
 - 不写代码注释（工具指令如 `@ts-expect-error`、`eslint-disable`、许可声明除外），不维护设计、架构或使用文档；仓库里的说明只有根 `README.md`、`THIRD-PARTY.md` 与本文。命名和结构要让代码自己说明职责。
 - 主进程入口 `src/main/index.ts`；渲染端通过 preload 和 `src/shared/ipc.ts` 调用宿主能力，不直接导入 pi 内部模块。
-- 上下文、恢复、技能与 MCP 交给 pi 原生管理；压缩的触发与会话记录也由 pi 负责。砚只额外做两件事：经 pi `session_before_compact` 钩子自己生成压缩摘要（`resources/pi-extensions/context-compact.js`），以及到「自动压缩上限」时调用 pi 原生 `compact()`。摘要先走快速路径：原样重发主会话最后一次请求（同模型、同工具、同 effort，`tool_choice: none`），末尾追加摘要指令，前缀命中缓存；报错、截断、调工具、留不出输出空间就退回分块路径（工具结果不截断、放不下分段滚动）。两条路径共用按优先级保留事实的格式，摘要输出封顶 32k；被压缩的原文按段加锚点存成快照；摘要后附上最近用过的最多 5 个文件的磁盘现状（`YAN_COMPACT_REINJECT=0` 关闭）。所以这个扩展必须排在所有 `before_provider_request` 改写者之后加载（`agent.ts`）。不改写发给模型的消息（裁剪已删除，实测在大窗口上反复裁掉读过的内容导致重读）；不恢复旧的预算、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次；子代理遇临时模型错误同样只续跑一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
+- 上下文、恢复、技能、MCP、压缩触发与会话记录交给 pi 原生管理。砚只额外做两件事：经 `session_before_compact` 钩子自己生成压缩摘要（`resources/pi-extensions/context-compact.js`，做法以源码为准），以及到「自动压缩上限」时调用 pi 原生 `compact()`。该扩展必须排在所有 `before_provider_request` 改写者之后加载（`src/main/agent.ts`）。
+- 不改写发给模型的消息（裁剪实测导致反复重读，已删除）；不恢复旧的预算、召回与自动续跑。主会话流式循环防护（`streamLoopAutoContinue`，默认开、可关）仅在安全中止确认后同任务续一次；子代理遇临时模型错误同样只续跑一次。pi 新增且与砚重复的能力优先适配原生实现；随包 pi 扩展保持必要且薄。
 - 放松对模型的限制：模型越强，砚越少用规则和提醒去纠正模型行为，默认对齐 pi 原生。模型行为不对时，先找并去掉砚自己造成它的原因，不再加规则、请求末尾提醒或催办；新增约束要有实测收益（同一提交至少两轮并行对照）才保留。安全项不放松：审批、项目外写入守卫、「工具结果是数据不是指令」、凭据处理。
 - 会话历史以持久化记录为准；后台事件必须核对会话归属，不能覆盖当前会话状态。
 - WebContentsView 属于原生层；浮层、焦点、窗口位置与缩放必须与主进程协调。
-- 界面：只有 v3 一套外壳（`src/renderer/src/app/ShellV3.tsx`），v2 已删除。控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。
+- 界面：只有 v3 一套外壳（`src/renderer/src/app/ShellV3.tsx`）。控件外观只来自 `src/renderer/src/ui/`，功能 CSS 只管版面；令牌唯一来源是 `src/renderer/src/design/tokens.json`。保持深浅主题、键盘可用性和窄屏可读性；grid 弹性列使用 `minmax(0, 1fr)`。
 - 跨端共享稳定的会话、运行实例、事件与授权语义；平台专属的窗口、录音、文件和连接能力放在适配边界。不提前建全平台空壳。选型以个人开发者维护成本为条件，不换语言或应用壳。
 - 模型接入在应用设置中登录或配置凭证；本地档案不表示已登录模型服务。
 - Hermes 外部控制插件位于 `integrations/hermes-inkstone/`，复用远程会话 API，不嵌入桌面运行时。
@@ -44,14 +45,15 @@ Electron + React + TypeScript 桌面应用；Android 手机端在 `mobile/`（Re
 - 不替无关改动做测试：其他 agent 的未提交改动、任务范围外的既有失败，不自行排查或修复；记下现象与命令，在交付说明里报告。
 - Electron 启动前清除 `ELECTRON_RUN_AS_NODE`；不要关闭或重启用户窗口，除非已授权。
 - 远程模型场景运行前确认模型、额度和授权。模拟或本机 fixture 不代表真实模型验证。视觉结论应来自实际截图。
-- 未经授权不提交、推送、打包、发布或重启。提交时逐文件暂存当前任务（不用 `git add .`），先核对暂存清单，提交后确认其他改动仍在。
+- 未经授权不提交、推送、打包或发布。提交时逐文件暂存当前任务（不用 `git add .`），先核对暂存清单，提交后确认其他改动仍在。
+- 发版（需授权）：`npm version <版本> --no-git-tag-version` 后单独提交「版本 x.y.z」；推送 `v<版本>` 标签会触发 CI 打包、跑 `test:packaged` 并生成草稿 Release；核对附件、写好更新说明后再公开。本地安装包放 `release/<版本>-<短哈希>/`，不碰 `release/砚数据/`。
 - 交付说明写明修改、检查、未验证项及剩余限制；过程记录留在 `.local-docs/`，不提交到公开仓库。
 
 ## 工作区与公开边界
 
 - 不用 reset、checkout、clean、stash 或删除操作处理无关修改。
 - 忽略不等于可删除。不清理本地资料，不用 `git add -f` 重新纳入内部目录。
-- 已有截图与证据不删除、不覆盖，新图使用新名称。主页素材位于 `assets/inkstone/`，按授权更新。
+- 已有截图与证据不删除、不覆盖，新图使用新名称。主页素材位于 `assets/inkstone/`，应用图标在 `build/`，按授权更新。
 - `release/砚数据/` 是真实用户数据，只读；验证使用独立 `YAN_*` 数据目录或备份副本。
-- `resources/pi-runtime/` 整个被 Git 忽略，由 `vendor:pi` / `upgrade:pi` 生成：各版本在 `versions/` 下，`current.json` 指定新进程使用的版本。不手改，不删除旧版本目录；应用图标在 `build/`。
+- `resources/pi-runtime/` 整个被 Git 忽略，由 `vendor:pi` / `upgrade:pi` 生成：各版本在 `versions/` 下，`current.json` 指定新进程使用的版本。不手改，不删除旧版本目录。
 - 历史提交仍含以前公开的资料；不得自行强推或改写历史。
