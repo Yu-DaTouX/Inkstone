@@ -163,6 +163,16 @@ try {
   assert.deepEqual(started.args, { command: 'ls' })
   live.liveAssistantDelta({ type: 'toolcall_end', contentIndex: 2, toolCall: { type: 'toolCall', id: 'call_live', name: 'bash', arguments: { command: 'ls' } } }, 102)
   assert.equal(started.id, 'call_live')
+  {
+    const big = { id: 'big', name: 'write', args: undefined, argsRaw: '', status: 'running', startedAt: 0 }
+    const body = 'x}'.repeat(m.LIVE_ARGS_PARSE_LIMIT)
+    m.appendToolCallArgs(big, `{"path":"big.txt","content":"${body.slice(0, 100)}`)
+    for (let i = 0; i < body.length; i += 4096) m.appendToolCallArgs(big, body.slice(i, i + 4096))
+    m.appendToolCallArgs(big, '"}')
+    assert.equal(big.args, undefined, '超长参数在流式中不反复整串解析')
+    m.finishToolCallArgs(big, undefined)
+    assert.equal(big.args?.path, 'big.txt', '结束时没有 toolCall 也从原文解析一次')
+  }
   const ended = live.liveMessageEnd({ usage: { input: 1, output: 2 }, model: 'p/m', text: 'ignored' })
   assert.deepEqual([ended.text, ended.thinking, ended.toolCalls.map((call) => call.id), ended.usage.output], ['Hi there', 'hmm', ['call_live'], 2])
   live.liveToolStart({ toolCallId: 'call_live', toolName: 'bash', args: { command: 'ls' } }, 103)

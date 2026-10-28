@@ -37,19 +37,35 @@ export function streamsHtmlWriteArgs(call: UIToolCall): boolean {
   return call.name.toLowerCase() === 'write' && HTML_WRITE_PATH.test(call.argsRaw?.slice(0, 600) ?? '')
 }
 
-export function appendToolCallArgs(call: UIToolCall, delta: unknown): void {
-  call.argsRaw = (call.argsRaw ?? '') + String(delta ?? '')
+export const LIVE_ARGS_PARSE_LIMIT = 16_384
+
+function lastNonSpace(text: string): string {
+  for (let i = text.length - 1; i >= 0; i--) {
+    const ch = text[i]
+    if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return ch
+  }
+  return ''
+}
+
+function parseArgsRaw(call: UIToolCall): void {
+  const end = lastNonSpace(call.argsRaw ?? '')
+  if (end !== '}' && end !== ']') return
   try {
-    if (/[}\]]\s*$/.test(call.argsRaw)) call.args = JSON.parse(call.argsRaw)
+    call.args = JSON.parse(call.argsRaw ?? '')
   } catch {
   }
 }
 
+export function appendToolCallArgs(call: UIToolCall, delta: unknown): void {
+  call.argsRaw = (call.argsRaw ?? '') + String(delta ?? '')
+  if (call.argsRaw.length <= LIVE_ARGS_PARSE_LIMIT) parseArgsRaw(call)
+}
+
 export function finishToolCallArgs(call: UIToolCall, toolCall: PiContentBlock | undefined): void {
-  if (!toolCall) return
-  if (toolCall.id) call.id = toolCall.id
-  if (toolCall.name) call.name = toolCall.name
-  if (toolCall.arguments !== undefined) call.args = toolCall.arguments
+  if (toolCall?.id) call.id = toolCall.id
+  if (toolCall?.name) call.name = toolCall.name
+  if (toolCall?.arguments !== undefined) call.args = toolCall.arguments
+  else if (call.args === undefined) parseArgsRaw(call)
 }
 
 export function startToolExecution(call: UIToolCall, now: number): void {
