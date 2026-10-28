@@ -1074,6 +1074,7 @@ export class AgentController extends EventEmitter {
     const sessionFile = this.state?.sessionFile
 
     const fromFile = sessionFile ? await this.readHistoryOf(sessionFile) : null
+    let presentationReady = false
     if (this.nativeBranchView) {
       const snapshot = await this.sessionEntries()
       if (!snapshot.ok) throw new Error(snapshot.error ?? '无法读取当前原生分支')
@@ -1091,6 +1092,7 @@ export class AgentController extends EventEmitter {
     } else if (fromFile?.messages.length) {
       this.messages = fromFile.messages
       this.setContextFrom(fromFile.contextFrom ?? contextFromRun(this.compactionState.last))
+      presentationReady = this.readHistory !== undefined
     } else {
       const msgs = await this.requireRpc().command('get_messages').catch(() => null)
       const raw = (msgs?.data as { messages?: unknown[] } | undefined)?.messages
@@ -1098,12 +1100,12 @@ export class AgentController extends EventEmitter {
         ? projectHistory(raw, this.localizeHistoryImage)
         : []
     }
-    if (sessionFile) {
+    if (sessionFile && !presentationReady) {
       this.messages = await new ArtifactStore(this.capabilityOpts?.artifactDir ?? join(YAN_DIR, 'artifacts'))
         .hydrateMessages(sessionFile, this.messages)
     }
 
-    const timingBucket = timingKey(this.state?.sessionFile)
+    const timingBucket = presentationReady ? undefined : timingKey(this.state?.sessionFile)
     if (timingBucket) {
       const records = await readTurnTimings(YAN_DIR, timingBucket).catch(() => [])
       if (records.length) this.messages = applyTurnTimings(this.messages, records)
