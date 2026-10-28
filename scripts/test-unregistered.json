@@ -67,6 +67,7 @@
     "test-package-load-authorization",
     "test-package-scope",
     "test-peer-approval-model",
+    "test-parallel-tool-calls",
     "test-peer-client",
     "test-personal-state",
     "test-pi-bolt-native-adapter",

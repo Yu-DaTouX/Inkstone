@@ -110,6 +110,7 @@ export const THIN_EXTENSION_FILES = [
   'commandcode.js',
   'provider-diagnostics.js',
   'anthropic-progress-updates.js',
+  'parallel-tool-calls.js',
   'mcp-app-proxy.js'
 ]
 

@@ -604,7 +604,7 @@ const YAN_THIN_EXTENSION_FILES = {
   dangerGuardExtension: 'danger-guard.js'
 } as const
 
-const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js'] as const
+const PROVIDER_EXTENSION_FILES = ['commandcode.js', 'provider-diagnostics.js', 'anthropic-progress-updates.js', 'parallel-tool-calls.js'] as const
 
 function yanThinExtensions(): { -readonly [K in keyof typeof YAN_THIN_EXTENSION_FILES]: string | undefined } {
   const entries = Object.entries(YAN_THIN_EXTENSION_FILES).map(([key, file]) => [key, yanThinResourcePath(file)])
