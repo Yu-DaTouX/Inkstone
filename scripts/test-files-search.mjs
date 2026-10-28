@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { runFileContentSearchTests } from './test-file-content-search.mjs'
 
 async function load(rel) {
   const source = fileURLToPath(new URL(`../src/${rel}`, import.meta.url))
@@ -92,14 +91,5 @@ assert.equal(main.compileContentMatcher('[', { regexp: true }), null, '非法正
 assert.equal(main.compileContentMatcher('a\nb', {}), null, '字面量不跨行')
 assert.equal(main.compileContentMatcher('a', { regexp: true }).skips('a'.repeat(1001)), true, '正则模式跳过超长行')
 assert.equal(main.compileContentMatcher('a', {}).skips('a'.repeat(5000)), false)
-
-let failures = 0
-await runFileContentSearchTests((condition, label) => {
-  if (!condition) {
-    failures += 1
-    console.error(`  ✗ ${label}`)
-  }
-}, main)
-assert.equal(failures, 0, '主进程内容搜索用例全部通过')
 
 console.log('✓ files-search：? 解析、片段、分组、键盘与主进程搜索选项')

@@ -2,9 +2,6 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { build } from 'esbuild'
-import { runPiPackageSchedulerTests } from './test-pi-package-scheduler.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'inkstone-package-authorization-'))
 let passed = 0
@@ -61,20 +58,7 @@ try {
   ok(/if \(choice !== 'deny'\)\s*\{\s*packageGrant =/.test(grant), '拒绝时不保存授权')
   ok(grant.includes("allowLifecycleScripts: choice === 'allow-with-lifecycle-scripts'"), 'lifecycle 仍需独立明确选择')
 
-  const modules = {}
-  for (const [name, entry] of [
-    ['service', 'src/main/capabilities/acquisition-service.ts'],
-    ['scheduler', 'src/main/capabilities/pi-package-scheduler.ts']
-  ]) {
-    const outfile = join(root, `${name}.mjs`)
-    await build({ entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm' })
-    modules[name] = await import(pathToFileURL(outfile).href)
-  }
-  await runPiPackageSchedulerTests(ok, {
-    AcquisitionService: modules.service.AcquisitionService,
-    PiPackageActivationScheduler: modules.scheduler.PiPackageActivationScheduler
-  })
-  console.log(`PASS ${passed} native authorization source-boundary and scheduler checks`)
+  console.log(`PASS ${passed} native authorization source-boundary checks`)
 } finally {
   await rm(root, { recursive: true, force: true })
 }

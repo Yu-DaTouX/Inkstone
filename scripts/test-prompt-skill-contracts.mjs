@@ -42,7 +42,7 @@ export async function runPromptSkillContractTests(ok) {
   const widget = await read('resources/skills/visual-answer/SKILL.md')
   match(widget, /askInkstone.*用户确认后才填入输入框/s, 'widget 提问须用户确认')
   match(widget, /inkstoneSaveState.*inkstone:restore.*detail/s, 'widget 使用真实保存/恢复接口')
-  match(widget, /仅缓存在内存.*64 KB.*32 个/s, 'widget 状态容量和非持久化边界')
+  match(widget, /只缓存在内存.*64 KB.*不保证恢复/s, 'widget 状态容量和非持久化边界')
   const artifact = await read('resources/skills/artifact/SKILL.md')
   match(artifact, /视频合成.*`sheet`.*总览图.*普通页面/s, 'artifact 自检区分视频 sheet 和网页截图')
   const video = await read('resources/skills/artifact/guides/video.md')

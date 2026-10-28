@@ -6,8 +6,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
-import { runCapabilityResultTests } from './test-capability-result.mjs'
-import { runLanguageExtensionTests } from './test-language-extension.mjs'
 
 await mkdir('.tmp/backend-boundaries', { recursive: true })
 const root = await mkdtemp(resolve('.tmp/backend-boundaries/run-'))
@@ -293,7 +291,4 @@ await test('技能索引写失败明确保留恢复路径，失败后队列仍�
   assert.equal((await mod.listSessionSkills(skillRoot, 'broken')).length, 1)
 })
 
-const language = await import(pathToFileURL(resolve('resources/pi-extensions/language.js')).href)
-await runLanguageExtensionTests(ok, language)
-await runCapabilityResultTests(ok, mod)
 console.log(`backend capability boundaries: ${passed} assertions/groups passed (local fixtures only)`)

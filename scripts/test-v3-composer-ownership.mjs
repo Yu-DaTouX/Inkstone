@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { lucideStubSource } from './lib/lucide-stub.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -197,17 +198,7 @@ export function Toast(){ return null }`,
 export function useT(){ return (k) => String(k) }
 export function useI18n(){ return { lang: 'zh-CN', setLang(){}, toggleLang(){}, t: (k) => String(k) } }
 export function translate(_lang, k){ return String(k) }`,
-  attachmentFiles: `export async function readFiles(){ return [] }`,
-  lucide: `export function ArrowUp(){ return null }
-export function GitMerge(){ return null }
-export function Square(){ return null }
-export function Hourglass(){ return null }
-export function ChevronDown(){ return null }
-export function ChevronUp(){ return null }
-export function CircleAlert(){ return null }
-export function CircleCheck(){ return null }
-export function CircleDashed(){ return null }
-export function CircleEllipsis(){ return null }`
+  attachmentFiles: `export async function readFiles(){ return [] }`
 }
 
 function makeStubMap() {
@@ -279,7 +270,7 @@ export * as activation from '${posix(resolve(ROOT, 'src/renderer/src/state/sessi
         return undefined
       })
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
-        if (args.path === 'v3stub:lucide') return { contents: STUBS.lucide, loader: 'js' }
+        if (args.path === 'v3stub:lucide') return { contents: lucideStubSource(), loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
         return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
       })
@@ -401,6 +392,8 @@ function findByTestId(node, id) {
   return null
 }
 
+const pastStrayEnterWindow = () => new Promise((done) => setTimeout(done, 520))
+
 function enterEvent() {
   return {
     key: 'Enter',
@@ -421,6 +414,8 @@ function resetStore(store, activation, overrides = {}) {
     session: null,
     messages: [],
     attachments: [],
+    commands: [],
+    conn: 'ready',
     peekedPath: null,
     peekedSessionId: null,
     pendingActivation: null,
@@ -481,24 +476,24 @@ async function main() {
     pending.peek = defer()
     const switching = useStore.getState().switchSession('A')
     ok(activation.isSessionSwitchInFlight(), 'switchSession 在首 await 前登记了「切换在途」')
-    const allowed = await useStore.getState().ensureActivated()
-    ok(allowed === false, '切换在途 ensureActivated 返回 false（不放行发送）')
-    const sent = await useStore.getState().send('会落错会话吗', undefined)
-    ok(sent === false, '切换在途 store.send 返回 false')
+    let allowedSettled = false
+    const allowedPromise = useStore.getState().ensureActivated().then((value) => { allowedSettled = true; return value })
+    const sendPromise = useStore.getState().send('会落错会话吗', undefined)
+    await flush()
+    ok(!allowedSettled, '切换在途 ensureActivated 等待切换结束，不提前放行')
     ok(calls.send.length === 0, '切换在途 yan.send 未被调用', calls.send.length)
-    ok(
-      useStore.getState().notices.some((n) => String(n.text).includes('正在切换会话')),
-      '给出了「正在切换会话」的提示'
-    )
     pending.peek.resolve()
     await switching
+    await flush()
+    await allowedPromise
+    await sendPromise
     await flush()
     ok(!activation.isSessionSwitchInFlight(), '切换结束后闸门释放')
     ok((await useStore.getState().ensureActivated()) === true, '切换完成后正路径 ensureActivated 放行')
     pending.peek = null
   }
 
-  group('D3 切换失败：不遗留 pendingActivation，下一次激活不落回旧目标')
+  group('D3 切换失败：视图回到 B，待激活目标仍是 B，不落到失败的 C')
   {
     const { yan: y2, calls, pending } = makeYan()
     globalThis.window.yan = y2
@@ -522,15 +517,18 @@ async function main() {
     pending.select.resolve({ ok: false, error: 'cwd 校验失败' })
     await openC
     await flush()
-    ok(useStore.getState().pendingActivation === null, '切换失败后 pendingActivation 被清空', useStore.getState().pendingActivation)
-    ok(useStore.getState().peekedSessionId === null, '切换失败后不再冒充新会话的视图身份', useStore.getState().peekedSessionId)
+    ok(useStore.getState().pendingActivation?.sessionFile === 'B', '切换失败后视图回到 B，待激活目标仍是 B', useStore.getState().pendingActivation)
+    ok(useStore.getState().peekedSessionId === 'sess-b', '切换失败后视图身份是正在看的 B', useStore.getState().peekedSessionId)
 
     calls.selectSession.length = 0
-    const allowed = await useStore.getState().ensureActivated()
-    ok(allowed === true, '失败后无待激活目标，ensureActivated 放行')
+    pending.select = defer()
+    const activating = useStore.getState().ensureActivated()
+    await flush()
+    pending.select.resolve({ ok: true, sessionId: 'sess-b', runId: 'run-b' })
+    ok((await activating) === true, '激活正在看的 B')
     ok(
-      !calls.selectSession.some((t) => t.sessionFile === 'B' || t.sessionId === 'sess-b'),
-      '失败后的激活不会错误地落到 B',
+      calls.selectSession.length === 1 && calls.selectSession[0].sessionFile === 'B' && !calls.selectSession.some((t) => t.sessionFile === 'C'),
+      '激活落到 B，不落到切换失败的 C',
       calls.selectSession
     )
     pending.select = null
@@ -543,7 +541,7 @@ async function main() {
     const fileAttachment = { id: 'f1', name: 'x.txt', mimeType: '', size: 1, data: '', preview: '', kind: 'file', path: 'C:/x.txt' }
 
     resetStore(useStore, activation, {
-      session: null,
+      session: { sessionId: 'sess-b', cwd: 'C:/proj' },
       peekedSessionId: 'sess-b',
       activeRunnerId: null,
       attachments: [fileAttachment]
@@ -567,7 +565,7 @@ async function main() {
     )
 
     resetStore(useStore, activation, {
-      session: null,
+      session: { sessionId: 'sess-b', cwd: 'C:/proj' },
       peekedSessionId: 'sess-b',
       activeRunnerId: null,
       attachments: [fileAttachment]
@@ -650,7 +648,7 @@ async function main() {
     return rt
   }
 
-  group('D4 Composer 接线：切换在途发送被挡，输入框草稿原样保留')
+  group('D4 Composer 接线：切换在途先不发送，切换完成后发往提交时所看的会话')
   {
     const { yan: yc, calls, pending } = makeYan()
     globalThis.window.yan = yc
@@ -671,15 +669,17 @@ async function main() {
     pending.peek = defer()
     const switching = composerStore.getState().switchSession('A')
     ok(composerActivation.isSessionSwitchInFlight(), 'Composer 场景下切换确实在途')
+    await pastStrayEnterWindow()
     ta.props.onKeyDown(enterEvent())
     await flush()
     ok(calls.send.length === 0, '切换在途时 Composer 没有调用 yan.send', calls.send.length)
     tree = rt.render(Composer, {})
     ta = findByTestId(tree, 'composer-input')
-    ok(ta.props.value === '保留这段草稿', '被挡下后草稿原样保留', ta.props.value)
     pending.peek.resolve()
     await switching
     await flush()
+    await flush()
+    ok(calls.send.length === 1, '切换完成后这次发送只发出一次', calls.send.length)
     pending.peek = null
   }
 
@@ -701,10 +701,11 @@ async function main() {
     ta = findByTestId(tree, 'composer-input')
 
     pending.send = defer()
+    await pastStrayEnterWindow()
     ta.props.onKeyDown(enterEvent())
     ok(await waitFor(() => calls.send.length === 1), '发送请求已到达 yan.send（在途）')
     composerStore.getState().addAttachments([attachment('a2', 'two.png', 2)])
-    ok(composerStore.getState().attachments.length === 2, '在途期间成功加入第二个附件', composerStore.getState().attachments.map((a) => a.id))
+    ok(JSON.stringify(composerStore.getState().attachments.map((a) => a.id)) === '["a2"]', '提交时已发出的 a1 立即移走，在途新加的 a2 留在输入框', composerStore.getState().attachments.map((a) => a.id))
     pending.send.resolve({ ok: true })
     await flush()
     const ids = composerStore.getState().attachments.map((a) => a.id)
@@ -769,6 +770,7 @@ async function main() {
     ta = findByTestId(tree, 'composer-input')
 
     pending.select = defer()
+    await pastStrayEnterWindow()
     ta.props.onKeyDown(enterEvent())
     ok(await waitFor(() => calls.selectSession.some((t) => t.sessionId === 'sess-b')), '本地命令前先尝试激活 peek 目标')
     pending.select.resolve({ ok: false, error: '切换失败' })
@@ -782,6 +784,7 @@ async function main() {
 
     composerStore.setState({ pendingActivation: null, notices: [] })
     calls.runBash.length = 0
+    await pastStrayEnterWindow()
     ta.props.onKeyDown(enterEvent())
     await flush()
     await flush()

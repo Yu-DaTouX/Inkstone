@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from '../node_modules/esbuild/lib/main.js'
-import { runComposerDraftOwnershipTests } from './test-composer-draft-ownership.mjs'
 
 export async function runSessionConcurrencyFinalEdgesTests(ok) {
   const section = (name) => console.log(`\n## ${name}`)
@@ -161,9 +160,6 @@ export async function runSessionConcurrencyFinalEdgesTests(ok) {
     ok(outcome === 'empty', '空命令返回 empty', outcome)
     ok(calls.runBash.length === 0 && calls.clearText === 0, '空命令不调用 runBash、不清草稿', JSON.stringify(calls))
   }
-
-  section('composer 草稿归属：真实 store 驱动 A→B→失败→回 A 等场景')
-  await runComposerDraftOwnershipTests(ok)
 }
 
 async function main() {

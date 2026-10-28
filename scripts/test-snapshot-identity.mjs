@@ -3,7 +3,7 @@ import path from 'node:path'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { build } from 'esbuild'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export async function runSnapshotIdentityTests(ok) {
   const indexFile = fileURLToPath(new URL('../src/main/index.ts', import.meta.url))
@@ -37,6 +37,22 @@ export async function runSnapshotIdentityTests(ok) {
   })
   const { sameRuntimeEnvelope } = await import(
     `data:text/javascript;base64,${Buffer.from(runState.outputFiles[0].text).toString('base64')}`
+  )
+
+  const syncDeps = await build({
+    stdin: {
+      contents: "export { planSessionSyncAgainst } from './src/main/session-sync-plan'\nexport { takeSyncBaseline } from './src/main/sync-baseline'\nexport { messageSyncSignature } from './src/shared/session-sync'",
+      resolveDir: fileURLToPath(new URL('..', import.meta.url)),
+      sourcefile: 'snapshot-sync-deps.ts',
+      loader: 'ts'
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    write: false
+  })
+  const { planSessionSyncAgainst, takeSyncBaseline, messageSyncSignature } = await import(
+    `data:text/javascript;base64,${Buffer.from(syncDeps.outputFiles[0].text).toString('base64')}`
   )
 
   const noop = () => {}
@@ -95,7 +111,10 @@ export async function runSnapshotIdentityTests(ok) {
         return opts.chain ?? null
       },
       emptyGoal: () => ({}),
-      sameRuntimeEnvelope
+      sameRuntimeEnvelope,
+      planSessionSyncAgainst,
+      takeSyncBaseline,
+      messageSyncSignature
     }
     vm.createContext(context)
     vm.runInContext(code, context)
@@ -127,7 +146,7 @@ export async function runSnapshotIdentityTests(ok) {
     const { frames, registry, firstId } = await runCase({
       switchDuring: (reg) => reg.select({ cwd: 'C:/fixture', sessionFile: 'C:/fixture/B.jsonl' })
     })
-    const syncs = frames.filter((f) => f.ch === 'sync')
+    const syncs = frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta'))
     ok(syncs.length === 0, '换会话后旧 A 消息不贴新 B 封套（不推 sync）', JSON.stringify(syncs))
     ok(registry.runtimeOf(firstId)?.sessionId === 'session-B', '前置：实例确实复用到 B')
   }
@@ -139,7 +158,7 @@ export async function runSnapshotIdentityTests(ok) {
       chain: { messages: [{ id: 'A-chain', role: 'user', text: 'old A chain history', sourceFile: 'C:/fixture/A.jsonl' }] },
       chainRead: (reg) => reg.select({ cwd: 'C:/fixture', sessionFile: 'C:/fixture/B.jsonl' })
     })
-    const syncs = frames.filter((f) => f.ch === 'sync')
+    const syncs = frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta'))
     ok(syncs.length === 0, 'chainHistory 读盘期间换会话也不贴新封套', JSON.stringify(syncs))
   }
 
@@ -149,7 +168,7 @@ export async function runSnapshotIdentityTests(ok) {
       duringRead: (agent) => { agent.state = { ...agent.state, sessionId: 'session-real-1' } },
       messages: [{ id: 'A-pending', role: 'user', text: 'pending migrated' }]
     })
-    ok(frames.some((f) => f.ch === 'sync'), 'pending→uuid 同代次迁移不拦 sync', JSON.stringify(frames.filter((f) => f.ch === 'sync')))
+    ok(frames.some((f) => (f.ch === 'sync' || f.ch === 'sync-delta')), 'pending→uuid 同代次迁移不拦 sync', JSON.stringify(frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta'))))
   }
 
   {
@@ -157,27 +176,13 @@ export async function runSnapshotIdentityTests(ok) {
       sessionId: 'session-A',
       duringRead: (agent) => { agent.state = { ...agent.state, sessionId: 'session-A2' } }
     })
-    ok(frames.filter((f) => f.ch === 'sync').length === 0, '同代次两个真实 SID 不能当成同一身份（丢弃 sync）', JSON.stringify(frames.filter((f) => f.ch === 'sync')))
+    ok(frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta')).length === 0, '同代次两个真实 SID 不能当成同一身份（丢弃 sync）', JSON.stringify(frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta'))))
   }
 
   {
     const { frames } = await runCase({ sessionId: 'session-A' })
-    const syncs = frames.filter((f) => f.ch === 'sync')
+    const syncs = frames.filter((f) => (f.ch === 'sync' || f.ch === 'sync-delta'))
     ok(syncs.length === 1, '没有切换时 sync 正常推送且只推一次', JSON.stringify(syncs))
     ok(syncs[0].runtime?.sessionId === 'session-A', 'sync 贴的是采集时的封套', JSON.stringify(syncs[0].runtime))
   }
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let passed = 0
-  let failed = 0
-  await runSnapshotIdentityTests((condition, label, detail) => {
-    if (condition) passed++
-    else {
-      failed++
-      console.error(`FAIL: ${label}`, detail ?? '')
-    }
-  })
-  console.log(`Snapshot identity tests: ${passed} passed, ${failed} failed`)
-  if (failed) process.exitCode = 1
 }

@@ -6,8 +6,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { comparePiVersions, requirePiUpgrade } from './lib/pi-upgrade-policy.mjs'
-import * as danger from '../resources/pi-extensions/danger-guard.js'
-import { runDangerGuardTests } from './test-danger-guard.mjs'
 
 let checks = 0
 const check = (condition, message) => { assert(condition, message); checks++ }
@@ -24,7 +22,6 @@ for (const [name, file] of Object.entries({ normalize: 'src/main/normalize.ts', 
   await build({ entryPoints: [resolve(file)], outfile, bundle: true, packages: 'external', platform: 'node', format: 'esm', logLevel: 'silent' })
   modules[name] = await import(pathToFileURL(outfile))
 }
-runDangerGuardTests(check, danger)
 check(comparePiVersions('0.99.10', '0.99.2') > 0, 'numeric patch ordering')
 check(comparePiVersions('1.0.0', '0.99.2') > 0, 'major release ordering')
 check(comparePiVersions('0.99.2-rc.10', '0.99.2-rc.2') > 0, 'numeric prerelease ordering')

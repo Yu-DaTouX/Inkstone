@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { pathToFileURL } from 'node:url'
-import { runAppearanceTests } from './test-appearance.mjs'
 
 await build({ entryPoints: ['src/renderer/src/state/push-consumers.ts', 'src/renderer/src/lib/native-mcp-status.ts'], outdir: 'out/test/settings-native-mcp', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
 const { consumeQuestionPush } = await import(pathToFileURL('out/test/settings-native-mcp/state/push-consumers.js'))
@@ -25,5 +24,4 @@ check(deliver({ sessionId: 's2' }).nativeMcpStatus.pending, '其它会话不能�
 check(deliver({ text: 'Unrelated notification' }).nativeMcpStatus.pending, '其它通知不能结束查询')
 check(deliver({ pending: false, startupPhase: false }).notices.length === 1, '没有待查询时保留原通知行为')
 check(deliver().nativeMcpStatus.text === deliver().nativeMcpStatus.text, '重复查询同一状态仍能显示，不受通知去重影响')
-await runAppearanceTests(check)
 console.log(`${count} checks passed`)

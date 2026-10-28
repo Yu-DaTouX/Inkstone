@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { build } from 'esbuild'
-import { runArtifactTests } from './test-artifacts.mjs'
 
 const root = await mkdtemp(join(tmpdir(), 'yan-image-boundaries-'))
 const compiled = await mkdtemp(resolve('node_modules/.inkstone-image-boundaries-'))
@@ -42,7 +41,6 @@ try {
   })
   const mod = await import(pathToFileURL(outfile))
   const { generateImage, defaultImageModel, ArtifactStore, AgentController } = mod
-  await runArtifactTests({ artifacts: mod, images: mod, agent: mod })
 
   const project = join(root, 'project'), artifactDir = join(root, 'artifacts')
   await mkdir(project, { recursive: true })
@@ -259,7 +257,7 @@ try {
     const status = await mod.comfyStatus()
     ok(status.installDir === installDir && status.launchable, 'a status refresh picks up the folder that became launchable')
   }
-  console.log(`image-generation-boundaries: ${checks} checks passed; existing artifact/adapters also passed (no real network/model, no app build)`)
+  console.log(`image-generation-boundaries: ${checks} checks passed (no real network/model, no app build)`)
 } finally {
   globalThis.fetch = originalFetch
   for (const name of Object.keys(process.env)) if (!(name in originalEnv)) delete process.env[name]

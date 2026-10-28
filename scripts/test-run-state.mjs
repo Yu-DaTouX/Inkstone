@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { runRunnerTests } from './test-runners.mjs'
 
 export async function runRunStateTests() {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-run-state-'))
@@ -35,10 +34,7 @@ export async function runRunStateTests() {
   assert.deepEqual(observation, before)
   assert.equal(runStatus({ ...observation, state: null, isolation: undefined }).cwd, 'registered-cwd')
   assert.equal('isolation' in runStatus({ ...observation, isolation: undefined }), false)
-  const { RunnerRegistry } = await load('src/main/runners.ts', 'runners')
-  let checks = 0
-  await runRunnerTests((condition, message) => { assert.ok(condition, message); checks++ }, RunnerRegistry)
-  console.log(`run-state: core boundary and projection checks passed; ${checks} existing runner checks passed`)
+  console.log('run-state: core boundary and projection checks passed')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runRunStateTests()

@@ -115,7 +115,7 @@ try {
       build.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export class BrowserWindow { constructor() { throw new Error("Browser search is outside this fixture"); } } export const session = { fromPartition() { throw new Error("Browser search is outside this fixture"); } };', loader: 'js' }))
     } }] })
     const { AgentController } = await import(pathToFileURL(resolve('out/test/native-context-controller.mjs')))
-    controller = new AgentController({ cwd: root, piBin: cli, push: event => pushes.push(structuredClone(event)), ...(desktopCodemode ? { codemodeExtension: resolve('resources/pi-extensions/codemode-policy.js') } : {}), ...(guardProbe ? { dangerGuardExtension: resolve('resources/pi-extensions/danger-guard.js') } : {}), contextExtension: resolve('resources/pi-extensions/context.js'), contextBudgetObserverExtension: resolve('resources/pi-extensions/context-budget-observer.js'), contextBudgetMaintenanceExtension: resolve('resources/pi-extensions/context-budget-maintenance.js'), projectKnowledgeExtension: resolve('resources/pi-extensions/project-knowledge.js'), goalResumeExtension: resolve('resources/pi-extensions/goal-resume.js'), handoffsExtension: resolve('resources/pi-extensions/handoffs.js') })
+    controller = new AgentController({ cwd: root, piBin: cli, push: event => pushes.push(structuredClone(event)), ...(desktopCodemode ? { codemodeExtension: resolve('resources/pi-extensions/codemode-policy.js') } : {}), ...(guardProbe ? { dangerGuardExtension: resolve('resources/pi-extensions/danger-guard.js') } : {}) })
     controller.maybeGenerateTitle = async () => null
     assert.equal((await controller.start()).ok, true)
     controller.rpc.on('event', event => frames.push(event))

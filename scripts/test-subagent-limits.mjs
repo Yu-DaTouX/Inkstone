@@ -21,16 +21,6 @@ try {
     return import(pathToFileURL(outfile).href)
   }
   const controller = await compile('src/main/subagents.ts', 'controller')
-  const brief = await compile('src/shared/subagent-brief.ts', 'brief')
-  const outcome = await compile('src/shared/subagent-outcome.ts', 'outcome')
-  const notice = await compile('src/shared/subagent-notice.ts', 'notice')
-  const { runSubagentControllerTests } = await import('./test-subagents.mjs')
-  const { runSubagentBriefTests } = await import('./test-subagent-brief.mjs')
-  const { runSubagentOutcomeTests } = await import('./test-subagent-outcome.mjs')
-  const repeatGuard = await import('../resources/pi-extensions/repeat-guard.js')
-  runSubagentBriefTests(ok, brief)
-  runSubagentOutcomeTests(ok, { brief, outcome, notice, repeatGuard })
-  await runSubagentControllerTests(ok, controller.SubagentController)
   const summary = controller.dangerConfirmSummary
   ok(summary(true).allowed === true && summary(true).decision === 'allow', '\u65e7\u5e03\u5c14\u5141\u8bb8\u4ecd\u653e\u884c')
   ok(summary(undefined).decision === 'no-answer' && summary(undefined).allowed === false, '\u6ca1\u6709\u5ba1\u6279\u901a\u9053\u65f6\u7b97\u672a\u7b54\u590d')

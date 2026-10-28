@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, normalize } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { lucideStubSource } from './lib/lucide-stub.mjs'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const posix = (p) => p.replace(/\\/g, '/')
@@ -157,7 +158,7 @@ async function buildComposer(outdir) {
           })
           b.onLoad({ filter: /.*/, namespace: 'a2' }, (args) => {
             if (args.path === 'a2:lucide') {
-              return { contents: 'export function ArrowUp(){return null}\nexport function Square(){return null}\nexport function Hourglass(){return null}\nexport function GitMerge(){return null}\nexport function ChevronDown(){return null}\nexport function ChevronUp(){return null}\nexport function CircleAlert(){return null}\nexport function CircleCheck(){return null}\nexport function CircleDashed(){return null}\nexport function CircleEllipsis(){return null}', loader: 'js' }
+              return { contents: lucideStubSource(), loader: 'js' }
             }
             return { contents: stubMap.get(args.path.slice('a2:'.length)) ?? 'export {}', loader: 'js' }
           })
@@ -321,7 +322,7 @@ async function main() {
     let tree = rt.render(Composer, {})
     const wrap = tree
     ok(typeof wrap.props.className === 'string' && wrap.props.className.includes('composer-wrap'), '根是框外的 composer-wrap')
-    const wrapChildren = children(wrap)
+    const wrapChildren = children(wrap).filter((child) => nameOf(child) !== 'FileDropOverlay')
     ok(nameOf(wrapChildren[0]) === 'IsolationMergeBar', '合入确认条留在输入框卡片外上方')
     ok(byClass(wrap, 'composer') === wrapChildren[1], '输入框卡片紧跟合入确认条')
     ok(!wrapChildren.some((child) => nameOf(child) === 'QueueEditor'), '排队不再挂在输入框外')

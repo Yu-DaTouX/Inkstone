@@ -49,43 +49,6 @@ const inProcessScripts = [
 ]
 for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
-const spawnedScripts = [
-  'test-browser-driver',
-  'test-cookie-bridge',
-  'test-browser-script',
-  'test-browser-agent-reveal',
-  'test-session-actions', 'test-context-compact',
-  'test-mcp-annotations-guard', 'test-backend-capability-boundaries', 'test-terminal-status', 'test-taskbar-status',
-  'test-mcp-native-import', 'test-mcp-service-settings', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
-  'test-readonly-model-registration', 'test-mcp-image-results',
-  'test-stream-loop-detector', 'test-stream-loop-settings', 'test-smooth-text-settings',
-  'test-native-session-export-alias', 'test-session-list-reuse', 'test-schedule-safety', 'test-subagent-terminal-races',
-  'test-provider-probe-protocol', 'test-remote-chain-target', 'test-retired-hub-cli',
-  'test-session-move-continuation', 'test-subagent-dismiss', 'test-subagent-dismiss-ui',
-  'test-v3-quota-card', 'test-v3-turn-changes', 'test-model-bot', 'test-notification-bot-icon', 'test-v3-tool-tiles', 'test-split-drop-model', 'test-sidebar-content-search',
-  'test-turn-outcome-title-text', 'test-subagent-model-label', 'test-subagent-task-rows', 'test-subagent-composer', 'test-subagent-panes', 'test-background-tasks','test-system-prompt-sections', 'test-session-message-count', 'test-markdown-blocks', 'test-smooth-reveal', 'test-user-text', 'test-session-find', 'test-session-visual-logic',
-  'test-runs-registry', 'test-runs-history', 'test-v3-runs-subagent',
-  'test-skill-manager', 'test-sync-resolve', 'test-command-params', 'test-quit-guard', 'test-approval-ledger', 'test-approval-feedback', 'test-approval-receipts', 'test-session-operation-gate', 'test-host-tools', 'test-write-line-endings', 'test-session-items', 'test-tool-run-model', 'test-danger-block', 'test-tool-title', 'test-v3-splitter', 'test-v3-confirm-action', 'test-working-line-model',
-  'test-rail-stats', 'test-file-services', 'test-git-services', 'test-file-name-search', 'test-terminal-registry', 'test-v3-terminal-tabs', 'test-preview-site-access', 'test-browser-allowed-sites', 'test-v3-browser-header', 'test-remote-image', 'test-preload-renderer-ready', 'test-browser-observe-live', 'test-browser-screenshot-timeout', 'test-subagent-fork', 'test-sidebar-shell', 'test-v3-changes-scope', 'test-v3-changes-pane-actions', 'test-v3-files-panel', 'test-changes-file-list', 'test-diff-separators', 'test-files-search', 'test-file-type-icons', 'test-evidence-dir', 'test-preview-code-view', 'test-preview-formats', 'test-preview-pdf', 'test-html-canvas-model', 'test-html-canvas-bridge', 'test-html-source-map', 'test-canvas-share', 'test-canvas-comments', 'test-canvas-draw', 'test-canvas-timeline', 'test-canvas-dock', 'test-live-html-calls', 'test-artifact-style', 'test-video-composition', 'test-video-export', 'test-artifact-preview-video', 'test-artifact-lint', 'test-artifact-libs',
-  'test-prompt-directories', 'test-prompt-template-form',
-  'test-session-reattach',
-  'test-session-reopen-ownership',
-  'test-session-switcher',
-  'test-subagent-notice-timing',
-  'test-composer-draft-store',
-  'test-composer-text',
-  'test-composer-edit',
-  'test-transcript-view',
-  'test-web-search-view',
-  'test-search-op-store',
-  'test-composer-menu-layout',
-  'test-tile-fit',
-  'test-tile-layouts',
-  'test-composer-keys',
-  'test-prompt-history',
-  'test-v3-approval-card'
-]
-
 const spawnFailures = []
 
 function runScript(script, timeoutMs) {
@@ -114,8 +77,6 @@ function runScript(script, timeoutMs) {
   spawnFailures.push({ script, detail, tail, logPath })
 }
 
-for (const script of spawnedScripts) runScript(script, 60_000)
-
 const scriptsOutsideUnitRun = {
   'test-unit': 'the-harness-itself',
   'test-live': 'live-harness',
@@ -131,6 +92,10 @@ const scriptsOutsideUnitRun = {
   'test-luna-progress-live': 'needs-real-luna-account'
 }
 
+const scriptTimeouts = {
+  'test-collab': 300_000
+}
+
 async function pendingScripts() {
   const files = (await readdir('scripts'))
     .filter((name) => /^test-.*\.mjs$/.test(name))
@@ -138,13 +103,12 @@ async function pendingScripts() {
   const ownSource = await readFile(new URL(import.meta.url), 'utf8')
   const referenced = new Set([...ownSource.matchAll(/\.\/(test-[a-z0-9-]+)\.mjs/g)].map((match) => match[1]))
   for (const name of inProcessScripts) referenced.add(name)
-  for (const name of spawnedScripts) referenced.add(name)
   return files.filter((name) => !referenced.has(name) && !Object.hasOwn(scriptsOutsideUnitRun, name)).sort()
 }
 
 const scannedScripts = await pendingScripts()
-if (scannedScripts.length) console.log(`目录扫描新增 ${scannedScripts.length} 个：${scannedScripts.join(', ')}`)
-for (const script of scannedScripts) runScript(script, 120_000)
+console.log(`目录扫描运行 ${scannedScripts.length} 个脚本`)
+for (const script of scannedScripts) runScript(script, scriptTimeouts[script] ?? 120_000)
 
 const dir = await mkdtemp(join(tmpdir(), 'yan-sessions-'))
 const dataDir = await mkdtemp(join(tmpdir(), 'yan-data-'))

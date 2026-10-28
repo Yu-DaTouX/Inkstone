@@ -1,6 +1,6 @@
 export function runRunnerTests(ok, RunnerRegistry) {
   const mkAgent = () => {
-    const calls = { start: 0, stop: 0, switchSession: [], newSession: 0, contextBudgetInitializations: 0, restoredQueues: [] }
+    const calls = { start: 0, stop: 0, switchSession: [], newSession: 0, restoredQueues: [] }
     return {
       calls,
       state: { sessionId: 's', sessionFile: undefined, isAgentRunning: false, isStreaming: false, isCompacting: false, cwd: 'C:/p' },
@@ -43,10 +43,6 @@ export function runRunnerTests(ok, RunnerRegistry) {
       async newSession() {
         calls.newSession++
         this.state = { ...this.state, sessionFile: undefined }
-        return { ok: true }
-      },
-      async initializeContextBudgetV1Default() {
-        calls.contextBudgetInitializations++
         return { ok: true }
       },
       queueSnapshot() {
@@ -365,7 +361,6 @@ export function runRunnerTests(ok, RunnerRegistry) {
         const { reg: cwdReg } = make()
         const created = await cwdReg.select({ cwd: 'C:/same/project/' })
         const runner = cwdReg.agentOf(created.id)
-        ok(runner?.calls.contextBudgetInitializations === 0, '宿主新建会话不再初始化已退役的上下文预算')
         const stopped = await cwdReg.stopByCwd('c:\\same\\project')
         ok(stopped === 1, 'stopByCwd 会识别大小写、斜杠和尾部斜杠差异', `stopped=${stopped}`)
         ok(cwdReg.size === 0, '规范化路径停止后实例已移除')
