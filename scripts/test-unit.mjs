@@ -7,11 +7,9 @@ import { applyTestEnv, isIsolatedTestEnv } from './lib/test-env.mjs'
 import { runHtmlArtifactPreviewTests } from './test-html-artifact-preview.mjs'
 import { runRunStateTests } from './test-run-state.mjs'
 import { runCapabilityNegotiationTests } from './test-capability-negotiation.mjs'
-import { runSessionConcurrencyConflictTests } from './test-session-concurrency-conflict.mjs'
-import { runSessionConcurrencyFrontendTests } from './test-session-concurrency-frontend.mjs'
+import { runSessionConcurrencyConflictTests, runSessionConcurrencySendGuardTests } from './test-session-concurrency-runners.mjs'
+import { runSessionConcurrencyFrontendTests, runSessionConcurrencyFinalEdgesTests } from './test-session-concurrency-frontend.mjs'
 import { runSessionStatsIsolationTests } from './test-session-stats-isolation.mjs'
-import { runSessionConcurrencySendGuardTests } from './test-session-concurrency-send-guard.mjs'
-import { runSessionConcurrencyFinalEdgesTests } from './test-session-concurrency-final-edges.mjs'
 import { runCommandCodeQuotaDisplayTests } from './test-commandcode-quota-display.mjs'
 import { runSubagentActiveVisibilityTests } from './test-subagent-active-visibility.mjs'
 import { runSubagentParentOwnershipTests } from './test-subagent-parent-ownership.mjs'
@@ -28,7 +26,6 @@ applyTestEnv()
 const isolatedEnv = isIsolatedTestEnv()
 
 await import('./test-live-synthetic-isolation.mjs')
-await import('./test-ui-survey-regressions.mjs')
 await import('./test-light-client.mjs')
 await import('./test-light-hotpaths.mjs')
 await import('./test-model-selection.mjs')
@@ -290,7 +287,7 @@ await import('./test-image-generation-boundaries.mjs')
 const { runTurnTests } = await import('./test-turns.mjs')
 const { runTurnTimingTests } = await import('./test-turn-timing.mjs')
 const { runDurationTests } = await import('./test-duration.mjs')
-const { runTurnTimingStoreTests } = await import('./test-turn-timing-store.mjs')
+const { runTurnTimingStoreTests } = await import('./test-turn-timing.mjs')
 const { runZoomTests } = await import('./test-zoom.mjs')
 const { runFileRefTests } = await import('./test-filerefs.mjs')
 const { runLinkTests } = await import('./test-links.mjs')
@@ -1825,7 +1822,7 @@ const gitState = await import('../node_modules/esbuild/lib/main.js').then(({ bui
     logLevel: 'silent'
   }).then(() => import('../out/test/git.mjs'))
 )
-const { runGitStateTests } = await import('./test-git-state.mjs')
+const { runGitStateTests } = await import('./test-git-lib.mjs')
 await runGitStateTests(ok, gitState)
 
 const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1838,7 +1835,7 @@ const gitActions = await import('../node_modules/esbuild/lib/main.js').then(({ b
     logLevel: 'warning'
   }).then(() => import('../out/test/git-actions.mjs'))
 )
-const { runGitActionTests } = await import('./test-git-actions.mjs')
+const { runGitActionTests } = await import('./test-git-lib.mjs')
 await runGitActionTests(ok)
 
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
@@ -1917,7 +1914,7 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     })
   ])
 )
-const { runGitRepoTests } = await import('./test-git-repo.mjs')
+const { runGitRepoTests } = await import('./test-git-lib.mjs')
 const { runPackagesTests } = await import('./test-packages.mjs')
 const { runSourcesTests } = await import('./test-sources.mjs')
 const { runWorktreeLinkTests } = await import('./test-worktree-links.mjs')

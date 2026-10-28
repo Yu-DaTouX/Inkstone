@@ -122,6 +122,7 @@ try {
   assert.equal(summary.projectCandidateCount, 2, '项目候选只留数量')
   assert.ok(summary.branchOriginTitle.length <= 120, '分叉来源文案有长度上限')
   assert.equal(summary.cwdName, 'private-project', '会话摘要只留目录名')
+  assert.equal(summary.cwd, undefined, '会话摘要不带工作目录绝对路径')
 
   const cached = await Promise.all([host.remoteHistory('s-branch', 10), host.remoteHistory('s-branch', 10)])
   assert.equal(cached[0].ok, true, '远程历史能按稳定 id 读取')

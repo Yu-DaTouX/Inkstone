@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import vm from 'node:vm'
+import ts from 'typescript'
 import { build } from 'esbuild'
 
 const temp = await mkdtemp(join(tmpdir(), 'yan-subagent-notice-'))
@@ -751,6 +754,20 @@ try {
       globalThis.setTimeout = realSetTimeout
       globalThis.clearTimeout = realClearTimeout
     }
+  }
+
+  console.log('\n--- 12. 会话标题取通知首行 ---')
+  {
+    const sessionsSource = readFileSync('src/main/sessions.ts', 'utf8')
+    const sessionsFile = ts.createSourceFile('sessions.ts', sessionsSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const userText = sessionsFile.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'userMessageText')
+    check(userText, '找得到 sessions.ts 的 userMessageText')
+    const context = vm.createContext({ parseSubagentNotice })
+    vm.runInContext(ts.transpileModule(userText.getText(sessionsFile), {}).outputText, context)
+    check(
+      context.userMessageText({ role: 'user', content: '<subagent-notification id="long-fixture-id" status="done">\n子任务已完成：检查通过\n正文\n</subagent-notification>' }) === '子任务已完成：检查通过',
+      '通知消息作会话标题文本时只取首行摘要'
+    )
   }
 
   console.log(`\n子代理通知计时定向检查：${checks} 项通过（现场编译 / 临时目录，不代替真实模型验收）`)
