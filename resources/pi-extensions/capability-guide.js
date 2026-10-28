@@ -5,7 +5,7 @@ import { registerWriteLineEndings } from './write-line-endings.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with `yan tasks apply` before the first change and tick them off as they finish; chain each update into a command you are running anyway, never a step of its own.'
-const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change (at most 20 steps, each a short title of 80 characters or fewer) and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
+const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
 const CLI_ONLY_GROUPS = [
   '- question: ask the user when information or a decision is missing',
   '- tasks: the user\'s to-do panel (see above); skip it for one- or two-step work'
@@ -33,7 +33,7 @@ const GUIDE_LINES = [
   '',
   '`yan` results: stdout holds only a summary and a `resultFile` path; read the parts you need, never the whole result file. Let Inkstone attach artifacts to the reply instead of only giving a path.',
   '',
-  'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI / API → MCP only when needed; follow the user when they choose.'
+  'Prefer, in order: existing local tools or scripts → a fitting skill → the publisher\'s CLI / API → MCP only when needed.'
 ]
 
 export function capabilityGuide(tools = false) {

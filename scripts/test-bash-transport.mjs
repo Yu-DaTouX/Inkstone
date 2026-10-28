@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
 import { bashQuotedPath, fileTransportOperations } from '../resources/pi-extensions/shell-transport.js'
-import { registerBashFileTransport, createUtf8ConsolePreamble, needsUtf8Console } from '../resources/pi-extensions/shell-fallback.js'
+import { registerBashFileTransport, createUtf8ConsolePreamble, needsUtf8Console, needsPipefail, withPipefail } from '../resources/pi-extensions/shell-fallback.js'
 import { planPythonPath } from '../resources/pi-extensions/windows-python.js'
 
 assert.equal(bashQuotedPath('C:\\Users\\a b\\x.sh'), `'C:/Users/a b/x.sh'`)
@@ -20,12 +20,14 @@ const skippable = [
   'timeout 30 git fetch',
   '# 注释\ngit diff',
   'xargs -n 1 rm < list.txt',
-  'yan subagent list'
+  'yan subagent list',
+  'node x.mjs',
+  'python -c "print(1)"',
+  'node --test 2>&1 | tail -20'
 ]
 for (const command of skippable) assert.equal(needsUtf8Console(command), false, `应可跳过 chcp: ${command}`)
 
 const needsChcp = [
-  'node x.mjs',
   'npm test',
   'powershell -NoProfile -c "Get-Date"',
   'git log $(cat ref)',
@@ -39,15 +41,46 @@ const needsChcp = [
 ]
 for (const command of needsChcp) assert.equal(needsUtf8Console(command), true, `应需要 chcp: ${command}`)
 
+const pipefailCommands = [
+  'npm test 2>&1 | tail -20',
+  'node --test test/*.mjs |& tail -n 30',
+  'cd lib && node probe.mjs 2>&1 | tee out.log | tail -5',
+  'FOO=1 timeout 60 npm run check | tail'
+]
+for (const command of pipefailCommands) assert.equal(needsPipefail(command), true, `管道只接读完输入的命令时保留上游退出码: ${command}`)
+
+const plainCommands = [
+  'npm test',
+  'git log | head -5',
+  'node x.mjs | grep ok',
+  'grep -rn foo src | tail -5',
+  'rg foo | tail',
+  'git grep foo | tail',
+  'diff a b | tail',
+  'ls | wc -l',
+  'npm test | tail -5; git log | head -1',
+  'for f in *.js; do node $f; done | tail',
+  'node $(cat entry) | tail',
+  'false || true'
+]
+for (const command of plainCommands) assert.equal(needsPipefail(command), false, `不开 pipefail: ${command}`)
+
+{
+  const preamble = withPipefail(createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(false) }))
+  assert.equal(await preamble('node --test | tail -5'), 'set -o pipefail', 'pipefail 与 chcp 分别判断')
+  assert.equal(await preamble('npm test | tail -5'), 'set -o pipefail; chcp.com 65001 >/dev/null 2>&1')
+  assert.equal(await preamble('git status'), '')
+}
+
 {
   const preamble = createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(false) })
   assert.equal(await preamble('git status'), '', '代码页非 65001 时，可跳过命令不带前置')
-  assert.match(await preamble('node x.mjs'), /chcp\.com 65001/, '代码页非 65001 时，需要的命令带前置')
+  assert.match(await preamble('npm test'), /chcp\.com 65001/, '代码页非 65001 时，需要的命令带前置')
 }
 
 {
   const preamble = createUtf8ConsolePreamble({ queryUtf8CodePage: () => Promise.resolve(true) })
-  assert.equal(await preamble('node x.mjs'), '', '代码页已是 65001 时，即便命令需要也不带前置')
+  assert.equal(await preamble('npm test'), '', '代码页已是 65001 时，即便命令需要也不带前置')
 }
 
 {
@@ -187,6 +220,11 @@ const failed = async (tool) => {
 const nativeFailure = await failed(native)
 assert.match(nativeFailure, /3/)
 assert.equal(await failed(registered), nativeFailure)
+
+const piped = await failed({ execute: (id, params, ...rest) => registered.execute(id, { command: 'node -e "console.log(1); process.exit(3)" 2>&1 | tail -5' }, ...rest) })
+assert.match(piped, /exited with code 3/, '测试命令接 tail 时失败不再被吞')
+assert.equal(await run("printf 'a\\nb\\n' | head -1"), 'a', '接 head 的管道语义不变')
+assert.equal(await run('grep nomatch-xyz /dev/null | wc -l'), '0', '接 wc 的管道语义不变')
 
 const odd = await mkdtemp(join(scratch, "it's here "))
 const ops = fileTransportOperations(core.createLocalBashOperations(), { dir: odd })

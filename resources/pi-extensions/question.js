@@ -6,7 +6,7 @@ const WHEN_TO_ASK = [
 ]
 
 export const TOOL_GUIDANCE = [
-  'Interactive questions use the `question` tool: at most 3 concrete options, one question at a time.',
+  'Interactive questions use the `question` tool, one question at a time.',
   ...WHEN_TO_ASK
 ].join('\n')
 

@@ -18,7 +18,15 @@ const UTF8_CONSOLE ='chcp.com 65001 >/dev/null 2>&1'
 const UTF8_CONSOLE_WHITELIST = new Set(('git rg grep egrep fgrep sed awk gawk cat head tail ls find wc sort uniq cut tr diff cmp comm paste join ' +
   'echo printf cd pwd mkdir rmdir rm cp mv touch ln chmod stat du df file basename dirname realpath readlink cygpath tee ' +
   'date sleep true false test [ jq tar gzip gunzip unzip sha1sum sha256sum md5sum base64 od xxd nl column which type export set gh curl ' +
-  'unset pushd popd local return exit read shopt wait kill alias yan').split(' '))
+  'unset pushd popd local return exit read shopt wait kill alias yan node python python3').split(' '))
+
+const PIPEFAIL = 'set -o pipefail'
+
+const DRAINING_SINKS = new Set(['tail', 'tee', 'cat'])
+
+const STATUS_PRODUCERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'diff', 'cmp', 'test', '['])
+
+const COMPOUND_WORDS = new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'select', 'function', '{', '}'])
 
 const WRAPPER_ARGS = {
   timeout: new Set(['-s', '--signal', '-k', '--kill-after']),
@@ -30,11 +38,22 @@ const WRAPPER_ARGS = {
   nice: new Set(['-n'])
 }
 
-function simpleCommands(script) {
-  const commands = []
+function scriptStatements(script) {
+  const statements = []
+  let stages = []
   let current = ''
   let quote = ''
   let atWordStart = true
+  const endStage = () => {
+    stages.push(current.trim())
+    current = ''
+  }
+  const endStatement = () => {
+    endStage()
+    const kept = stages.filter(Boolean)
+    if (kept.length) statements.push(kept)
+    stages = []
+  }
   for (let i = 0; i < script.length; i++) {
     const c = script[i]
     if (quote === "'") {
@@ -75,9 +94,15 @@ function simpleCommands(script) {
       atWordStart = false
       continue
     }
+    if (c === '|' && script[i + 1] !== '|') {
+      endStage()
+      if (script[i + 1] === '&') i++
+      atWordStart = true
+      continue
+    }
     if (c === '|' || c === '&' || c === ';' || c === '\n') {
-      commands.push(current)
-      current = ''
+      if ((c === '|' || c === '&') && script[i + 1] === c) i++
+      endStatement()
       atWordStart = true
       continue
     }
@@ -90,8 +115,12 @@ function simpleCommands(script) {
     atWordStart = false
   }
   if (quote) return null
-  commands.push(current)
-  return commands.map((s) => s.trim()).filter(Boolean)
+  endStatement()
+  return statements
+}
+
+function simpleCommands(script) {
+  return scriptStatements(script)?.flat() ?? null
 }
 
 function wrappedPrograms(command) {
@@ -129,6 +158,37 @@ export function needsUtf8Console(command) {
     }
   }
   return false
+}
+
+function firstWord(stage) {
+  return stage.split(/\s+/).find((word) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word))
+}
+
+function reportsStatusThroughExitCode(stage) {
+  const program = wrappedPrograms(stage)[0]
+  if (STATUS_PRODUCERS.has(program)) return true
+  return program === 'git' && /\s(grep|--exit-code|--quiet)\b/.test(stage)
+}
+
+export function needsPipefail(command) {
+  const statements = scriptStatements(typeof command === 'string' ? command : '')
+  if (!statements) return false
+  let piped = false
+  for (const stages of statements) {
+    if (stages.some((stage) => COMPOUND_WORDS.has(firstWord(stage)))) return false
+    if (stages.length < 2) continue
+    if (reportsStatusThroughExitCode(stages[0])) return false
+    if (!stages.slice(1).every((stage) => DRAINING_SINKS.has(wrappedPrograms(stage)[0]))) return false
+    piped = true
+  }
+  return piped
+}
+
+export function withPipefail(preamble) {
+  return async function pipefailPreamble(command) {
+    const base = typeof preamble === 'function' ? await preamble(command) : preamble
+    return [needsPipefail(command) ? PIPEFAIL : '', base].filter(Boolean).join('; ')
+  }
 }
 
 function defaultQueryUtf8CodePage() {
@@ -192,7 +252,7 @@ export function registerBashFileTransport(pi, core, { fixEnv = createPythonEnvFi
       shellPath,
       commandPrefix: settings.getShellCommandPrefix(),
       spawnHook,
-      operations: fileTransportOperations(core.createLocalBashOperations({ shellPath }), { preamble: utf8ConsolePreamble })
+      operations: fileTransportOperations(core.createLocalBashOperations({ shellPath }), { preamble: withPipefail(utf8ConsolePreamble) })
     })
   }
   const template = core.createBashToolDefinition(process.cwd())
