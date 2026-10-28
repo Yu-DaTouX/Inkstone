@@ -39,6 +39,9 @@ export function compactSubagentRun(run: SubagentRun): Record<string, unknown> {
   }
 }
 
+const SUBAGENT_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const SUMMARY_TASK_CHARS = 80
+
 function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<string, unknown> } {
   return {
     data: run,
@@ -50,7 +53,8 @@ function startSummary(run: SubagentRun): { data: SubagentRun; summary: Record<st
       model: run.model,
       isolation: run.isolation,
       ...(run.fork ? { fork: true } : {}),
-      task: run.task,
+      task: typeof run.task === 'string' && run.task.length > SUMMARY_TASK_CHARS ? `${run.task.slice(0, SUMMARY_TASK_CHARS)}…` : run.task,
+      ...(run.thinkingLevel ? { thinkingLevel: run.thinkingLevel } : {}),
       latestActivity: run.latestActivity,
       deliverables: run.brief?.deliverables.length ?? 0,
       sources: run.brief?.sources.length ?? 0
@@ -179,6 +183,14 @@ export class SubagentService {
       const readOnly = readOnlyArgs.some((value) => value === true || value === 'true')
       const title = typeof params.title === 'string' ? params.title : undefined
       const briefInput = title && (!params.brief || typeof params.brief === 'object') ? { ...(params.brief as Record<string, unknown> | undefined), title } : params.brief
+      const thinkingParam = params.thinkingLevel ?? params.thinking
+      const thinkingLevel = typeof thinkingParam === 'string' && thinkingParam.trim() ? thinkingParam.trim().toLowerCase() : undefined
+      if (thinkingParam !== undefined && (!thinkingLevel || !SUBAGENT_THINKING_LEVELS.includes(thinkingLevel))) {
+        throw new CapabilityCommandError('subagent_thinking_invalid', `thinking 只能是 ${SUBAGENT_THINKING_LEVELS.join(' / ')}`)
+      }
+      if (params.fork === true && thinkingLevel) {
+        throw new CapabilityCommandError('subagent_fork_thinking', 'fork 子代理沿用当前会话的思考档，不能再传 --thinking；需要别的档位时改派普通子代理')
+      }
       if (params.fork === true) return this.startFork(ctrl, task, requested, readOnly, params.isolation, briefInput, context)
       let model = requested
       if (this.deps.resolveModelLabel) {
@@ -186,7 +198,7 @@ export class SubagentService {
         if (!resolved.ok) throw new CapabilityCommandError('subagent_model_ambiguous', resolved.error)
         model = resolved.label || undefined
       }
-      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, context)
+      const result = await ctrl.start(task, model ?? context.model, readOnly ? 'controlled-cwd' : params.isolation === 'worktree' ? 'worktree' : 'shared-cwd', briefInput, undefined, thinkingLevel ? { ...context, thinkingLevel } : context)
       if (!result.ok || !result.run) {
         throw new CapabilityCommandError(
           'subagent_start_failed',
@@ -199,14 +211,15 @@ export class SubagentService {
     if (command === 'subagent.list') {
       const runs = ctrl.list().filter((run) => !!context.parentSessionId && run.parentSessionId === context.parentSessionId)
       const active = runs.filter((run) => run.status === 'running' || run.status === 'starting')
+      const withTranscript = params.transcript === true || params.transcript === 'true'
       return {
-        data: runs,
+        data: withTranscript ? runs : runs.map(({ transcript, ...rest }) => ({ ...rest, transcriptMessages: transcript?.length ?? 0 })),
         summary: {
           kind: 'subagent',
           action: 'list',
           count: runs.length,
           active: active.length,
-          ids: runs.map((run) => run.id)
+          runs: runs.map((run) => ({ id: run.id, status: run.status, latestActivity: run.latestActivity }))
         }
       }
     }
@@ -248,6 +261,7 @@ export class SubagentService {
           transcript: run.transcript.length,
           changedFiles: compact.changedFiles,
           finalMessage: String(compact.finalMessage ?? '').slice(0, 400),
+          ...(String(compact.finalMessage ?? '').length > 400 ? { finalMessageTruncated: true, finalMessageFull: `全文在 resultFile 的 finalMessage；也可用 yan subagent get --id ${run.id} --final 直接输出` } : {}),
           review: run.review
         }
       }

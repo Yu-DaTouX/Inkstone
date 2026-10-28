@@ -769,6 +769,7 @@ export interface AppSettings {
   subagentDefaultModel?: import('./model-selection').ModelChoice | 'follow'
   subagentModelForce?: boolean
   modelFavorites?: import('./model-selection').ModelChoice[]
+  modelHidden?: import('./model-selection').ModelChoice[]
   modelProviderOrder?: string[]
   cwd: string
   theme: 'dark' | 'light'
@@ -1875,6 +1876,7 @@ export interface YanBridge {
   listDir(rel: string, showHidden?: boolean, context?: FileRequestContext): Promise<DirListing>
   pathForFile(file: File): string
   describeFiles(paths: string[]): Promise<FileRefInfo[]>
+  savePastedText(text: string, name: string): Promise<import('./pasted-text').SavedPastedText>
   readFileText(path: string): Promise<FileTextResult>
   readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
   readPreviewBytes(path: string, cwd?: string): Promise<PreviewBytes>

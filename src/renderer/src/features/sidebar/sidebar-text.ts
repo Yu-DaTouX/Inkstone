@@ -8,6 +8,10 @@ export interface SidebarText {
   archivedEmpty: string
   restoreProject: string
   restoreSession: string
+  archiveShelf: string
+  archiveShelfDrop: string
+  archiveShelfAll: string
+  restoreDrop: string
   projectSessionCount: string
   entryAwaiting: string
   entryRunning: string
@@ -47,6 +51,10 @@ const zh: SidebarText = {
   archivedEmpty: '没有归档的项目或会话',
   restoreProject: '恢复项目',
   restoreSession: '取消归档',
+  archiveShelf: '已归档',
+  archiveShelfDrop: '松开即可归档',
+  archiveShelfAll: '查看全部归档',
+  restoreDrop: '松开即可取消归档',
   projectSessionCount: '{n} 个会话',
   entryAwaiting: '需要你处理',
   entryRunning: '正在运行',
@@ -86,6 +94,10 @@ const en: SidebarText = {
   archivedEmpty: 'No archived projects or chats',
   restoreProject: 'Restore project',
   restoreSession: 'Unarchive',
+  archiveShelf: 'Archived',
+  archiveShelfDrop: 'Release to archive',
+  archiveShelfAll: 'View all archived',
+  restoreDrop: 'Release to unarchive',
   projectSessionCount: '{n} chats',
   entryAwaiting: 'Needs you',
   entryRunning: 'Running',

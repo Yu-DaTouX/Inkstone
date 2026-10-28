@@ -11,20 +11,23 @@ import {
   SliderThumb,
   SliderTrack
 } from 'react-aria-components'
-import { Check, ChevronDown, Search, Star } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Search, Star } from 'lucide-react'
 import { Button, Popover, Slider, Select, ListBoxItem as ProviderItem } from '../ui'
 import { PulseField, resolveColor } from './pulse-field'
 import { APPEARANCE_EVENT } from '../lib/appearance'
+import { requestSettingReveal } from '../features/settings/search/search-model'
 import { useT } from '../i18n'
 import { currentThinkingLevels, useStore } from '../state/store'
 import {
   buildPickerSections,
   isFavorite,
+  isHidden,
   parseRecentModels,
   recentModelsAfterPick,
   RECENT_STORAGE_KEY,
   shortWindow,
   toggleFavorite,
+  withHidden,
   type PickerSection
 } from '../features/settings/models/models-model'
 import { useModelsText } from '../features/settings/models/models-text'
@@ -57,6 +60,8 @@ function isDarkTheme(): boolean {
 const keyOf = (m: Pick<ModelInfo, 'provider' | 'id'>): string => `${m.provider}/${m.id}`
 
 const EMPTY: never[] = []
+
+const HIDDEN_TOGGLE = '__hidden'
 
 const ULTRACODE_OVERDRAG_PX = 28
 
@@ -329,8 +334,11 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
     if (open) void loadAuthProviders()
   }, [open, loadAuthProviders])
 
+  const [showHidden, setShowHidden] = useState(false)
+
   useEffect(() => {
     if (!open) setQuery('')
+    else setShowHidden(!!cur && isHidden(useStore.getState().settings?.modelHidden ?? [], cur))
   }, [open])
 
   const needsAuth = (provider: string): boolean => {
@@ -340,17 +348,39 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   }
 
   const favorites = settings?.modelFavorites ?? EMPTY
+  const hidden = settings?.modelHidden ?? EMPTY
   const providerOrder = settings?.modelProviderOrder ?? EMPTY
   const sections = useMemo(
-    () => buildPickerSections({ models: provider ? models.filter((m) => m.provider === provider) : models, favorites, recent, query, providerOrder }),
-    [models, favorites, recent, query, providerOrder, provider]
+    () => buildPickerSections({ models: provider ? models.filter((m) => m.provider === provider) : models, favorites, recent, query, providerOrder, hidden }),
+    [models, favorites, recent, query, providerOrder, provider, hidden]
   )
+  const hiddenOpen = showHidden || !!query.trim()
+
+  const setModelHidden = (m: ModelInfo, hide: boolean): void => {
+    const state = useStore.getState().settings
+    void patchSettings({ modelHidden: withHidden(state?.modelHidden ?? [], [m], hide) }).catch(() => notify('error', t('models.selectFailed')))
+  }
+
+  const toggleModelFavorite = (m: Pick<ModelInfo, 'provider' | 'id' | 'name'>): void => {
+    const state = useStore.getState().settings
+    const adding = !isFavorite(state?.modelFavorites ?? [], m)
+    const unhide = adding && isHidden(state?.modelHidden ?? [], m)
+    void patchSettings({
+      modelFavorites: toggleFavorite(state?.modelFavorites ?? [], m),
+      ...(unhide ? { modelHidden: withHidden(state?.modelHidden ?? [], [m], false) } : {})
+    })
+      .then(() => {
+        if (unhide) notify('info', text('pickerUnhidden').replace('{name}', m.name))
+      })
+      .catch(() => notify('error', t('models.selectFailed')))
+  }
 
   const selectedKey = cur ? keyOf(cur) : undefined
 
   const sectionTitle = (section: PickerSection): string => {
     if (section.kind === 'favorites') return t('models.favorites')
     if (section.kind === 'recent') return text('pickerRecent')
+    if (section.kind === 'hidden') return text('pickerHiddenTag')
     return section.id
   }
 
@@ -380,13 +410,8 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
   }
 
   const curFavorite = cur ? isFavorite(favorites, cur) : false
-  const toggleCurrentFavorite = async (): Promise<void> => {
-    if (!cur) return
-    try {
-      await patchSettings({ modelFavorites: toggleFavorite(favorites, cur) })
-    } catch {
-      notify('error', t('models.selectFailed'))
-    }
+  const toggleCurrentFavorite = (): void => {
+    if (cur) toggleModelFavorite(cur)
   }
 
   return (
@@ -451,14 +476,33 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 selectedKeys={selectedKey ? [selectedKey] : []}
                 onSelectionChange={(keys) => {
                   const selected = [...keys][0]
+                  if (selected === HIDDEN_TOGGLE) {
+                    setShowHidden((value) => !value)
+                    return
+                  }
                   const hit = models.find((model) => keyOf(model) === selected)
                   if (hit) void choose(hit)
                 }}
               >
                 {sections.map((section) => (
-                  <ListBoxSection key={section.id} className="mtp-group">
-                    <Header className="mtp-group-title">{sectionTitle(section)}</Header>
-                    {section.models.map((m) => {
+                  <ListBoxSection key={section.id} className="mtp-group" data-kind={section.kind}>
+                    {section.kind === 'hidden' ? (
+                      <ListBoxItem
+                        id={HIDDEN_TOGGLE}
+                        className="mtp-item mtp-hidden-toggle"
+                        textValue={text('pickerHidden').replace('{n}', String(section.models.length))}
+                        data-testid="model-picker-hidden-toggle"
+                      >
+                        <span className="mtp-item-main">
+                          <span className="mtp-item-name">{text('pickerHidden').replace('{n}', String(section.models.length))}</span>
+                        </span>
+                        <ChevronRight className="mtp-hidden-chev" data-open={hiddenOpen ? '1' : undefined} size={14} aria-hidden />
+                      </ListBoxItem>
+                    ) : (
+                      <Header className="mtp-group-title">{sectionTitle(section)}</Header>
+                    )}
+                    {(section.kind === 'hidden' && !hiddenOpen ? [] : section.models).map((m) => {
+                      const modelHidden = section.kind === 'hidden'
                       return (
                         <ListBoxItem
                           key={keyOf(m)}
@@ -470,7 +514,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                           <span className="mtp-item-main">
                             <span className="mtp-item-name">{m.name}</span>
                             <span className="mtp-tags">
-                              {section.kind === 'favorites' || section.kind === 'recent' ? (
+                              {section.kind === 'favorites' || section.kind === 'recent' || modelHidden ? (
                                 <span className="mtp-tag">{m.provider}</span>
                               ) : null}
                               {isFavorite(favorites, m) ? (
@@ -486,9 +530,19 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                               ) : null}
                             </span>
                           </span>
-                          <Button variant="ghost" size="sm" aria-label={`${isFavorite(favorites, m) ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`} onPress={() => {
-                            void patchSettings({ modelFavorites: toggleFavorite(useStore.getState().settings?.modelFavorites ?? [], m) }).catch(() => notify('error', t('models.selectFailed')))
-                          }}>
+                          {isFavorite(favorites, m) ? null : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="mtp-hide"
+                              aria-label={`${modelHidden ? text('pickerShow') : text('pickerHide')}: ${m.name}`}
+                              data-testid="model-picker-hide"
+                              onPress={() => setModelHidden(m, !modelHidden)}
+                            >
+                              {modelHidden ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" aria-label={`${isFavorite(favorites, m) ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}: ${m.name}`} onPress={() => toggleModelFavorite(m)}>
                             <Star size={14} fill={isFavorite(favorites, m) ? 'currentColor' : 'none'} aria-hidden />
                           </Button>
                           {cur && keyOf(cur) === keyOf(m) ? <Check size={14} aria-hidden /> : null}
@@ -548,7 +602,7 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
                 variant="ghost"
                 size="sm"
                 data-testid="model-picker-favorite"
-                onPress={() => void toggleCurrentFavorite()}
+                onPress={toggleCurrentFavorite}
               >
                 <Star size={13} fill={curFavorite ? 'currentColor' : 'none'} aria-hidden />
                 {curFavorite ? text('pickerUnfavoriteCurrent') : text('pickerFavoriteCurrent')}
@@ -557,12 +611,14 @@ export function ModelThinkingPicker({ className }: { className?: string } = {}) 
             <Button
               variant="ghost"
               size="sm"
+              data-testid="model-picker-manage"
               onPress={() => {
                 setOpen(false)
-                openSettings('auth')
+                openSettings('models')
+                requestSettingReveal({ section: 'models', id: 'models-visibility' })
               }}
             >
-              {t('picker.thinkOpenSettings')}
+              {text('pickerManage')}
             </Button>
           </div>
         </Dialog>

@@ -53,11 +53,14 @@ function decimals(value: number, currency: UsageCurrency): number {
   return abs > 0 && abs < 1 ? 3 : 2
 }
 
-export function formatMoney(usd: number, settings: UsageCurrencySettings | undefined, lang: string = 'zh-CN'): string {
+export function formatMoney(usd: number, settings: UsageCurrencySettings | undefined, lang: string = 'zh-CN', compact = false): string {
   const currency = settings?.currency ?? 'USD'
   const value = convertUsd(Number.isFinite(usd) ? usd : 0, settings)
+  const locale = lang === 'en-US' ? 'en-US' : 'zh-CN'
   const digits = decimals(value, currency)
-  const number = value.toLocaleString(lang === 'en-US' ? 'en-US' : 'zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  const number = compact && Math.abs(value) >= 10_000
+    ? new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+    : value.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })
   if (currency === YUANSHI) return `${number} ${lang === 'en-US' ? 'Primogems' : '原石'}`
   return `${SYMBOL[currency]}${number}`
 }

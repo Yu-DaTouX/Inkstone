@@ -5,7 +5,7 @@ import { basename, isAbsolute, parse, resolve } from 'node:path'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { cleanModelChoice, cleanModelFavorites, cleanProviderOrder } from '../shared/model-selection'
+import { cleanModelChoice, cleanModelFavorites, cleanModelHidden, cleanProviderOrder } from '../shared/model-selection'
 import {
   SOUND_VOLUME_MAX,
   SOUND_VOLUME_MIN,
@@ -236,6 +236,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.subagentDefaultModel = cleanModelChoice(settings.subagentDefaultModel)
   settings.subagentModelForce = settings.subagentDefaultModel && settings.subagentModelForce === true ? true : undefined
   settings.modelFavorites = cleanModelFavorites(settings.modelFavorites)
+  settings.modelHidden = cleanModelHidden(settings.modelHidden)
   settings.modelProviderOrder = cleanProviderOrder(settings.modelProviderOrder)
   settings.checkpointsEnabled = settings.checkpointsEnabled !== false
   settings.guardAllowRoots = cleanAllowRoots(settings.guardAllowRoots)
@@ -374,7 +375,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -406,6 +407,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.subagentDefaultModel = cleanModelChoice(next.subagentDefaultModel)
   next.subagentModelForce = next.subagentDefaultModel && next.subagentModelForce === true ? true : undefined
   next.modelFavorites = cleanModelFavorites(next.modelFavorites)
+  next.modelHidden = cleanModelHidden(next.modelHidden)
   next.modelProviderOrder = cleanProviderOrder(next.modelProviderOrder)
   next.checkpointsEnabled = next.checkpointsEnabled !== false
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)

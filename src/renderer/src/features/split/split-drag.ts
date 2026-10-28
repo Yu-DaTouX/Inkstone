@@ -251,15 +251,31 @@ function folderUnder(x: number, y: number, home: HTMLElement | null): HTMLElemen
   return null
 }
 
+function sidebarZoneUnder(x: number, y: number, selector: string): HTMLElement | null {
+  if (x > sidebarEdge()) return null
+  const zone = document.querySelector<HTMLElement>(`.v3-side ${selector}`)
+  if (!zone) return null
+  const rect = zone.getBoundingClientRect()
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom ? zone : null
+}
+
 export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElement }, item: SessionDragItem, onDragged: () => void): void {
   const row = event.currentTarget.closest<HTMLElement>('.v3-srow') ?? event.currentTarget
   const home = row.closest<HTMLElement>('.v3-group')
+  const archived = !!row.closest('[data-archive-shelf]')
   let folder: HTMLElement | null = null
+  let shelf: HTMLElement | null = null
   const markFolder = (next: HTMLElement | null): void => {
     if (next === folder) return
     folder?.removeAttribute('data-drop-over')
     next?.setAttribute('data-drop-over', '1')
     folder = next
+  }
+  const markShelf = (next: HTMLElement | null): void => {
+    if (next === shelf) return
+    shelf?.removeAttribute('data-drop-over')
+    next?.setAttribute('data-drop-over', '1')
+    shelf = next
   }
   const ref: SplitSessionRef = { sessionId: item.id, path: item.path }
   trackPointerDrag(
@@ -287,8 +303,9 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         ghost,
         blocksOverlay: !!ctx,
         hover: ({ x, y }) => {
-          markFolder(folderUnder(x, y, home))
-          if (folder) return { badge: null, over: false }
+          markShelf(sidebarZoneUnder(x, y, archived ? '[data-archive-restore]' : '[data-archive-shelf]'))
+          markFolder(shelf || archived ? null : folderUnder(x, y, home))
+          if (folder || shelf) return { badge: null, over: false }
           if (!ctx || !geometry) return { badge: null, over: false }
           const next = x > edge ? sessionDropTarget(ctx, geometry, x, y) : null
           if (!sameDropTarget(next, target)) {
@@ -298,6 +315,10 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
           return { badge, over: target !== null }
         },
         drop: () => {
+          if (shelf) {
+            void useStore.getState().setSessionArchived(item.id, !archived)
+            return
+          }
           if (folder) {
             const detail: SessionFolderDrop = {
               item,
@@ -310,7 +331,10 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
           }
           if (target) dropSessionInSplit(item, target)
         },
-        end: () => markFolder(null)
+        end: () => {
+          markFolder(null)
+          markShelf(null)
+        }
       }
     },
     onDragged

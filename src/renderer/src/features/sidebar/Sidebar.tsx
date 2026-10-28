@@ -17,6 +17,7 @@ import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { useSplitView } from '../../state/split-view'
 import { useNarrowLayout } from '../workbench/tool-tiles'
 import { ArchivedView } from './ArchivedView'
+import { ArchiveShelf, type ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
@@ -180,6 +181,22 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     setCollapsedKeys((prev) => (prev.has(group.slot) ? toggleKey(prev, group.slot) : prev))
   }, [currentKey, groups, session?.sessionId, session?.sessionFile])
 
+  const rowState = (item: SessionSummary): ArchiveShelfRow => {
+    const isCurrent = isCurrentItem(item)
+    const run = runIndex.latest({ id: item.id, path: item.path })
+    const paneSelected = isCurrent || paneShowsSession(paneSessions, item)
+    const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
+    return {
+      item,
+      title: manualTitles[item.id] ?? titles[item.id] ?? item.title,
+      isCurrent,
+      status: sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt }),
+      code: run?.code
+    }
+  }
+
+  const showShelf = !showArchived && archivedCount > 0
+
   const pageOf = (group: SidebarGroup): ReturnType<typeof groupPage> =>
     groupPage(
       group.list,
@@ -338,67 +355,66 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
             titleOf={(item) => manualTitles[item.id] ?? titles[item.id] ?? item.title}
             onOpen={openSession}
           />
-        ) : groups.length === 0 && !contentVisible ? (
-          <EmptyState size="sm" title={query ? t('rail.noMatch') : t('rail.empty')} />
         ) : (
-          groups.map((group) => {
-            const collapsed = collapsedKeys.has(group.slot)
-            const page = pageOf(group)
-            const rows = collapsed ? [] : page.rows
-            return (
-              <div
-                key={group.slot}
-                className="v3-group"
-                data-collapsed={collapsed ? '1' : undefined}
-                data-move-cwd={group.key !== 'pinned' && group.cwd ? group.cwd : undefined}
-                data-move-project={group.projectId}
-                data-move-label={group.label}
-              >
-                <ProjectHeader
-                  group={group}
-                  record={group.projectId ? projectRecords.find((project) => project.id === group.projectId) : undefined}
-                  collapsed={collapsed}
-                  onToggle={() => setCollapsedKeys((prev) => toggleKey(prev, group.slot))}
-                  onNew={(projectId) => createInProject(group, projectId)}
-                />
-                {rows.map((item) => {
-                  const isCurrent = isCurrentItem(item)
-                  const title = manualTitles[item.id] ?? titles[item.id] ?? item.title
-                  const run = runIndex.latest({ id: item.id, path: item.path })
-                  const paneSelected = isCurrent || paneShowsSession(paneSessions, item)
-                  const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
-                  const status = sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt })
-                  return (
-                    <SidebarRow
-                      key={item.path}
-                      item={item}
-                      title={title}
-                      isCurrent={isCurrent}
-                      status={status}
-                      code={run?.code}
-                      onOpen={() => openSession(item)}
-                    />
-                  )
-                })}
-                {!collapsed && group.list.length > GROUP_PAGE_SIZE ? (
-                  <button
-                    type="button"
-                    className="ui-row v3-show-more"
-                    aria-expanded={page.expanded}
-                    aria-label={
-                      page.expanded
-                        ? own.showLessLabel.replace('{group}', group.label)
-                        : own.showMoreLabel.replace('{n}', String(page.revealable)).replace('{group}', group.label)
-                    }
-                    onClick={(event) => showMore(group, event.detail === 0)}
-                    data-testid="v3-group-more"
-                  >
-                    {page.expanded ? own.showLess : own.showMore.replace('{n}', String(page.revealable))}
-                  </button>
-                ) : null}
-              </div>
-            )
-          })
+          <div className="v3-side-active" data-archive-restore data-drop-label={own.restoreDrop}>
+            {groups.length === 0 && !contentVisible ? (
+            <EmptyState size="sm" title={query ? t('rail.noMatch') : t('rail.empty')} />
+          ) : (
+            groups.map((group) => {
+              const collapsed = collapsedKeys.has(group.slot)
+              const page = pageOf(group)
+              const rows = collapsed ? [] : page.rows
+              return (
+                <div
+                  key={group.slot}
+                  className="v3-group"
+                  data-collapsed={collapsed ? '1' : undefined}
+                  data-move-cwd={group.key !== 'pinned' && group.cwd ? group.cwd : undefined}
+                  data-move-project={group.projectId}
+                  data-move-label={group.label}
+                >
+                  <ProjectHeader
+                    group={group}
+                    record={group.projectId ? projectRecords.find((project) => project.id === group.projectId) : undefined}
+                    collapsed={collapsed}
+                    onToggle={() => setCollapsedKeys((prev) => toggleKey(prev, group.slot))}
+                    onNew={(projectId) => createInProject(group, projectId)}
+                  />
+                  {rows.map((item) => {
+                    const row = rowState(item)
+                    return (
+                      <SidebarRow
+                        key={item.path}
+                        item={item}
+                        title={row.title}
+                        isCurrent={row.isCurrent}
+                        status={row.status}
+                        code={row.code}
+                        onOpen={() => openSession(item)}
+                      />
+                    )
+                  })}
+                  {!collapsed && group.list.length > GROUP_PAGE_SIZE ? (
+                    <button
+                      type="button"
+                      className="ui-row v3-show-more"
+                      aria-expanded={page.expanded}
+                      aria-label={
+                        page.expanded
+                          ? own.showLessLabel.replace('{group}', group.label)
+                          : own.showMoreLabel.replace('{n}', String(page.revealable)).replace('{group}', group.label)
+                      }
+                      onClick={(event) => showMore(group, event.detail === 0)}
+                      data-testid="v3-group-more"
+                    >
+                      {page.expanded ? own.showLess : own.showMore.replace('{n}', String(page.revealable))}
+                    </button>
+                  ) : null}
+                </div>
+              )
+            })
+          )}
+          </div>
         )}
         {showArchived ? null : (
           <ContentMatches
@@ -414,7 +430,16 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         <span className="v3-visually-hidden" role="status">{announcement}</span>
       </nav>
 
-      {archivedCount > 0 || showArchived ? (
+      {showShelf ? (
+        <ArchiveShelf
+          rows={archivedView.sessions.map(rowState)}
+          total={archivedCount}
+          onOpen={openSession}
+          onShowAll={() => setShowArchived(true)}
+        />
+      ) : null}
+
+      {showArchived ? (
         <button
           type="button"
           className="ui-row v3-archive-toggle"

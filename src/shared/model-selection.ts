@@ -14,12 +14,20 @@ export function cleanModelChoice(value: unknown): ModelChoice | undefined {
 }
 
 export function cleanModelFavorites(value: unknown): ModelChoice[] {
+  return cleanModelChoices(value, 256)
+}
+
+export function cleanModelHidden(value: unknown): ModelChoice[] {
+  return cleanModelChoices(value, 4096)
+}
+
+function cleanModelChoices(value: unknown, max: number): ModelChoice[] {
   if (!Array.isArray(value)) return []
   const seen = new Set<string>()
   return value.map(cleanModelChoice).filter((m): m is ModelChoice => {
     if (!m || seen.has(modelKey(m))) return false
     seen.add(modelKey(m)); return true
-  }).slice(0, 256)
+  }).slice(0, max)
 }
 
 export function cleanProviderOrder(value: unknown): string[] {

@@ -1,7 +1,7 @@
 import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { WrapText } from 'lucide-react'
+import { SquareTerminal, WrapText } from 'lucide-react'
 import { Button, IconButton } from '../../ui'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -24,6 +24,8 @@ import { fadeSpans, rehypeRevealFade, spansForBlock, trackReveal, type FadeSpan,
 import { openMessageMenu, type MessageMenuItem } from './message-menu'
 import { useSessionText } from './text'
 import { CitationLink, useCitation } from './web-search/citations'
+import { fillTerminalCommand, terminalCommandOf } from '../terminal/terminal-fill'
+import { currentWorkspaceOwner } from '../workbench/use-owner'
 import '../../patterns/highlighted-code.css'
 
 type PluginList = NonNullable<Options['rehypePlugins']>
@@ -261,11 +263,21 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
       () => { setFailed(true); window.setTimeout(() => setFailed(false), 2000) }
     )
   }
+  const command = live || typeof window.yan?.terminal?.write !== 'function' ? null : terminalCommandOf(lang, source)
+  const fillTerminal = (): void => {
+    if (!command) return
+    void fillTerminalCommand(currentWorkspaceOwner().key, command).then((result) => {
+      if (result === 'filled') return
+      copyText(command)
+      useStore.getState().notify('warning', t(result === 'busy' ? 'code.terminalBusy' : 'code.terminalFailed'))
+    })
+  }
   const onContextMenu = (event: React.MouseEvent): void => {
     const text = source.replace(/\n$/, '')
     openMessageMenu(event, tt('menuCode'), [
       { id: 'copy', label: tt('menuCopyCode'), run: () => copyText(text) },
-      { id: 'insert', label: tt('menuInsertCode'), run: () => insertIntoComposer(`\`\`\`${lang ?? ''}\n${text}\n\`\`\``) }
+      { id: 'insert', label: tt('menuInsertCode'), run: () => insertIntoComposer(`\`\`\`${lang ?? ''}\n${text}\n\`\`\``) },
+      ...(command ? [{ id: 'terminal', label: t('code.toTerminal'), run: fillTerminal }] : [])
     ])
   }
   return (
@@ -290,6 +302,19 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
         >
           <WrapText size={14} aria-hidden />
         </IconButton>
+        {command ? (
+          <IconButton
+            variant="ghost"
+            size="sm"
+            className="v3-code-act"
+            aria-label={t('code.toTerminal')}
+            title={t('code.toTerminalHint')}
+            onPress={fillTerminal}
+            data-testid="code-to-terminal"
+          >
+            <SquareTerminal size={14} aria-hidden />
+          </IconButton>
+        ) : null}
         <IconButton
           variant="ghost"
           size="sm"

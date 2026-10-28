@@ -248,14 +248,14 @@ export async function runUsageStatsSubagentTests(ok) {
   const restarted = reader()
   ok((await restarted('all')).tokens === 200, '新读取器从磁盘缓存重启后结果一致')
   const savedCache = JSON.parse(await readFile(cacheFile, 'utf8'))
-  ok(savedCache.version === 4, '缓存写出 v4 版本')
+  ok(savedCache.version === 6, '缓存写出 v6 版本')
   ok(Object.values(savedCache.files).every((entry) => entry.sourceKind === 'main' || entry.sourceKind === 'subagent'), '缓存条目带 sourceKind')
 
   const realKey = Object.keys(savedCache.files)[0]
   await writeFile(cacheFile, JSON.stringify({ version: 1, files: { [realKey]: { size: 1, offset: 0, usage: { '2020-01-01': { m: 1, t: 999999, h: {}, models: {} } } } } }))
   const migrated = await reader()('all')
   ok(migrated.tokens === 200, '旧 v1 缓存被丢弃重建，不把旧计数当权威')
-  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 4, '迁移后缓存升到 v4')
+  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 6, '迁移后缓存升到 v6')
 
   await writeMain('opus-long.jsonl', [replyLine(iso(now - DAY), { provider: 'anthropic', model: 'claude-opus-5-5', total: 300, cost: 0.3, diagnostics })])
   await reader()('all')
@@ -267,7 +267,7 @@ export async function runUsageStatsSubagentTests(ok) {
   await writeFile(cacheFile, JSON.stringify(staleV3))
   const rebuiltV3 = await reader()('all')
   ok(rebuiltV3.tokens === 500 && Math.abs(rebuiltV3.cost - 0.3) < 1e-9, 'v3 缓存即使文件大小和偏移没变也整份重算，补回长尾 Opus 用量与费用')
-  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 4 && (await reader()('all')).tokens === 500, 'v3 迁移自动保存 v4，重启后不重复累计')
+  ok(JSON.parse(await readFile(cacheFile, 'utf8')).version === 6 && (await reader()('all')).tokens === 500, 'v3 迁移自动保存 v6，重启后不重复累计')
 
   await reset()
   const partialFile = join(mainDir, 'partial.jsonl')

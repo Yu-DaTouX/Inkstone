@@ -12,6 +12,26 @@ const WARN_AT = Math.max(2, envInt('YAN_REPEAT_WARN_AT', 3))
 const BLOCK_AT = Math.max(WARN_AT + 1, envInt('YAN_REPEAT_BLOCK_AT', 5))
 const COUNTER_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
+const LITERAL_ESCAPE = /\\u[0-9a-fA-F]{4}/
+
+export function editEscapeHint(event) {
+  if (String(event?.toolName ?? '') !== 'edit' || !event?.isError) return undefined
+  const input = event?.input ?? {}
+  const edits = Array.isArray(input.edits) ? input.edits : [input]
+  const suspect = edits.some((edit) => typeof edit?.oldText === 'string' && LITERAL_ESCAPE.test(edit.oldText))
+  if (!suspect) return undefined
+  const content = Array.isArray(event.content) ? event.content : []
+  return {
+    content: [
+      ...content,
+      {
+        type: 'text',
+        text: 'Hint: oldText contains a literal \\uXXXX escape sequence. If the file stores the actual characters, write them directly (for example 中文) instead of escapes.'
+      }
+    ]
+  }
+}
+
 function dataDir() {
   return process.env.YAN_DATA_DIR?.trim() || join(homedir(), '.pi', 'agent', 'yan')
 }
@@ -183,7 +203,7 @@ export default function repeatGuard(pi) {
     lastKey = key
     lastResultKey = resKey
     if (streak >= WARN_AT) note('repeat_detected', { tool: toolName, run: streak, warned })
-    return undefined
+    return editEscapeHint(event)
   })
 
   pi.on('before_provider_request', (event) => {

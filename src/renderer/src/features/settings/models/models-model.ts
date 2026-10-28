@@ -57,6 +57,22 @@ export function toggleFavorite(
   return [...favorites, { provider: model.provider, id: model.id, ...(model.name ? { name: model.name } : {}) }]
 }
 
+export function isHidden(hidden: readonly ModelChoice[], model: Pick<ModelChoice, 'provider' | 'id'>): boolean {
+  const key = modelKey(model)
+  return hidden.some((m) => modelKey(m) === key)
+}
+
+export function withHidden(
+  hidden: readonly ModelChoice[],
+  models: readonly Pick<ModelChoice, 'provider' | 'id' | 'name'>[],
+  hide: boolean
+): ModelChoice[] {
+  const keys = new Set(models.map(modelKey))
+  const rest = hidden.filter((m) => !keys.has(modelKey(m)))
+  if (!hide) return rest
+  return [...rest, ...models.map((m) => ({ provider: m.provider, id: m.id, ...(m.name ? { name: m.name } : {}) }))]
+}
+
 export function mergeDiscoveredModels<T extends { id: string }>(
   current: T[],
   discovered: T[],
@@ -116,7 +132,7 @@ export function recentModelsAfterPick(
   return [choice, ...recent.filter((m) => modelKey(m) !== key)].slice(0, max)
 }
 
-export type PickerSectionKind = 'favorites' | 'recent' | 'provider'
+export type PickerSectionKind = 'favorites' | 'recent' | 'provider' | 'hidden'
 
 export interface PickerSection {
   id: string
@@ -124,7 +140,7 @@ export interface PickerSection {
   models: ModelInfo[]
 }
 
-function sortByProviderThenNewest(models: readonly ModelInfo[], providerOrder: readonly string[]): ModelInfo[] {
+export function sortByProviderThenNewest(models: readonly ModelInfo[], providerOrder: readonly string[]): ModelInfo[] {
   return [...models].sort(
     (a, b) =>
       providerRank(a.provider, providerOrder) - providerRank(b.provider, providerOrder) || newestFirst(a, b)
@@ -137,12 +153,14 @@ export function buildPickerSections(input: {
   recent: readonly ModelChoice[]
   query: string
   providerOrder: readonly string[]
+  hidden?: readonly ModelChoice[]
 }): PickerSection[] {
   const q = input.query.trim().toLowerCase()
   const matches = (m: ModelInfo): boolean => !q || `${m.name} ${m.id} ${m.provider}`.toLowerCase().includes(q)
   const shown = input.models.filter(matches)
   const byKey = new Map(shown.map((m) => [modelKey(m), m]))
   const favoriteKeys = new Set(input.favorites.map(modelKey))
+  const hiddenKeys = new Set((input.hidden ?? []).filter((m) => !favoriteKeys.has(modelKey(m))).map(modelKey))
 
   const favorites = sortByProviderThenNewest(
     input.models.filter((m) => favoriteKeys.has(modelKey(m)) && matches(m)),
@@ -151,9 +169,9 @@ export function buildPickerSections(input: {
   const pinned = new Set(favorites.map(modelKey))
   const recent = input.recent
     .map((choice) => byKey.get(modelKey(choice)))
-    .filter((m): m is ModelInfo => !!m && !pinned.has(modelKey(m)))
+    .filter((m): m is ModelInfo => !!m && !pinned.has(modelKey(m)) && !hiddenKeys.has(modelKey(m)))
 
-  const used = new Set([...pinned, ...recent.map(modelKey)])
+  const used = new Set([...pinned, ...recent.map(modelKey), ...hiddenKeys])
   const groups = new Map<string, ModelInfo[]>()
   for (const m of shown) {
     if (used.has(modelKey(m))) continue
@@ -171,5 +189,7 @@ export function buildPickerSections(input: {
   const sections: PickerSection[] = []
   if (favorites.length) sections.push({ id: 'favorites', kind: 'favorites', models: favorites })
   if (recent.length) sections.push({ id: 'recent', kind: 'recent', models: recent })
-  return [...sections, ...providerSections]
+  const hiddenModels = sortByProviderThenNewest(shown.filter((m) => hiddenKeys.has(modelKey(m))), input.providerOrder)
+  const tail: PickerSection[] = hiddenModels.length ? [{ id: 'hidden', kind: 'hidden', models: hiddenModels }] : []
+  return [...sections, ...providerSections, ...tail]
 }
