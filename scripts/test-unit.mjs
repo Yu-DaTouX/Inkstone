@@ -2683,6 +2683,7 @@ await runBrowserNetworkTests(ok, browserNetworkMod)
 const { runSessionReadEquivalenceTests } = await import('./test-session-read-equivalence.mjs')
 await runSessionReadEquivalenceTests(ok)
 await import('./test-session-reader-stream.mjs')
+await import('./test-session-reader-branch.mjs')
 
 console.log(`\n${pass}/${pass + fail} 通过`)
 if (spawnFailures.length) {

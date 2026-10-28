@@ -299,6 +299,19 @@ try {
   const compactPlan = planSessionSync(projected, projected.map((message) => ({ ...message })))
   assert.deepEqual(compactPlan, { kind: 'none' }, '压缩重放后完全一致时不发任何消息')
 
+  const branchB = [user('m0', '第一句'), assistant('m1', '好'), { ...user('m2', '第二句 B'), entryId: 'u2b' }, { ...assistant('m3', '好'), entryId: 'a2b' }]
+  const branchA = [{ ...user('m2', '第二句 A'), entryId: 'u2a' }, { ...assistant('m3', '好'), entryId: 'a2a' }]
+  const switched = applySyncDelta(branchB, { anchorId: 'm1', anchorIndex: 1, anchorSignature: messageSyncSignature(branchB[1]), messages: branchA })
+  assert.deepEqual(switched.map((message) => [message.text, message.entryId]), [['第一句', undefined], ['好', undefined], ['第二句 A', 'u2a'], ['好', 'a2a']], '切到等长的另一分支时以主进程的条目为准')
+
+  const { withTrailingEntryIds } = await bundle('src/main/live-entry-ids.ts', 'live-entry-ids')
+  const entry = (id, role) => ({ type: 'message', id, message: { role } })
+  const live = [{ ...user('m0'), entryId: 'e0' }, { ...assistant('m1'), entryId: 'e1' }, user('m2'), assistant('m3'), assistant('m4'), { id: 'm5', role: 'bash', text: 'ls' }]
+  const attached = withTrailingEntryIds(live, [entry('e0', 'user'), entry('e1', 'assistant'), { type: 'model_change', id: 'mc' }, entry('e2', 'user'), entry('e3', 'assistant'), entry('e4', 'toolResult'), entry('e5', 'assistant'), entry('e6', 'bashExecution')])
+  assert.deepEqual(attached?.map((message) => message.entryId), ['e0', 'e1', 'e2', 'e3', 'e5', 'e6'], '回合结束后从文件尾部按角色补上实时消息的条目 id')
+  assert.equal(withTrailingEntryIds(live.slice(0, 2), [entry('e0', 'user'), entry('e1', 'assistant')]), null, '都有条目 id 时不改')
+  assert.equal(withTrailingEntryIds([user('m0')], [entry('e0', 'assistant')]), null, '角色对不上时不猜')
+
   console.log(`\nPASS: test-session-sync-plan（${projected.length} 条消息/${(JSON.stringify(projected).length / 1024).toFixed(0)}KB 的形态数据）`)
 } finally {
   await rm(dir, { recursive: true, force: true })

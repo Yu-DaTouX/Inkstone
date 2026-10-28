@@ -63,7 +63,47 @@ function truncateDeep(v: unknown, depth = 0): { value: unknown; cut: number } {
 }
 
 
-type ReadOptions = { localizeImage?: (mimeType: string, data: string) => string }
+const LINE_HEAD_CHARS = 512
+
+interface LinkedEntry {
+  id?: string
+  parentId?: string | null
+  value?: unknown
+  meta?: boolean
+}
+
+const META_ENTRY = /^\{"type":"(session_info|label)"/
+
+function linkOf(entry: { id?: unknown; parentId?: unknown; type?: unknown }): LinkedEntry {
+  return {
+    ...(typeof entry.id === 'string' && entry.id ? { id: entry.id } : {}),
+    ...(entry.parentId === null || typeof entry.parentId === 'string' ? { parentId: entry.parentId } : {}),
+    ...(entry.type === 'session_info' || entry.type === 'label' ? { meta: true } : {})
+  }
+}
+
+function linkOfHead(head: string): LinkedEntry {
+  const id = /"id":"([^"]+)"/.exec(head)?.[1]
+  const parent = /"parentId":(null|"([^"]*)")/.exec(head)
+  return {
+    ...(id ? { id } : {}),
+    ...(parent ? { parentId: parent[1] === 'null' ? null : parent[2] } : {}),
+    ...(META_ENTRY.test(head) ? { meta: true } : {})
+  }
+}
+
+export function leafBranch(entries: readonly LinkedEntry[], linked = true): LinkedEntry[] {
+  const leaf = entries.findLast((entry) => !entry.meta) ?? entries.at(-1)
+  const all = entries.filter((entry) => entry.value !== undefined)
+  if (!linked || !leaf?.id) return all
+  const parents = new Map<string, string | null | undefined>()
+  for (const entry of entries) if (entry.id) parents.set(entry.id, entry.parentId)
+  const onPath = new Set<string>()
+  for (let id: string | null | undefined = leaf.id; id && !onPath.has(id); id = parents.get(id)) onPath.add(id)
+  return all.filter((entry) => entry.id !== undefined && onPath.has(entry.id))
+}
+
+type ReadOptions ={ localizeImage?: (mimeType: string, data: string) => string }
 const inFlight = new Map<string, Promise<ReadResult | null>>()
 const localizers = new WeakMap<NonNullable<ReadOptions['localizeImage']>, number>()
 let localizerSeq = 0
@@ -184,9 +224,12 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
       const projector = new SessionItemProjector(opts?.localizeImage)
       let total = 0, truncated = 0
       let sessionId: string | undefined, sourceCwd: string | undefined, contextFrom: ContextFrom | undefined
-      let parts: string[] = [], chars = 0, discarded = false, hasMessage = false, scanTail = ''
+      let parts: string[] = [], chars = 0, discarded = false, hasMessage = false, scanTail = '', lineHead = ''
+      const entries: LinkedEntry[] = []
+      let linked = true
       const piece = (text: string): void => {
         if (!text) return
+        if (lineHead.length < LINE_HEAD_CHARS) lineHead += text.slice(0, LINE_HEAD_CHARS - lineHead.length)
         chars += text.length
         const scan = scanTail + text
         hasMessage ||= scan.includes('"type":"message"') || scan.includes('"type":"custom_message"') || scan.includes('"type":"branch_summary"')
@@ -194,9 +237,16 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
         if (chars > MAX_LINE_BYTES) { discarded = true; parts = [] }
         if (!discarded) parts.push(text)
       }
+      const link = (entry: LinkedEntry): void => {
+        if (entry.parentId === undefined) linked = false
+        entries.push(entry)
+      }
       const flush = (): void => {
-        if (discarded) { if (hasMessage) truncated++ }
-        else if (chars) {
+        const isHeader = lineHead.startsWith('{"type":"session"')
+        if (discarded) {
+          if (hasMessage) truncated++
+          if (!isHeader) link(linkOfHead(lineHead))
+        } else if (chars) {
           const rawLine = parts.join('')
           if ((!sessionId || !sourceCwd) && rawLine.includes('"type":"session"')) {
             try {
@@ -209,21 +259,20 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
             try { contextFrom = contextFromEntry(JSON.parse(rawLine)) ?? contextFrom } catch { }
           }
           if (hasMessage) {
-            let value: unknown, entryId: string | undefined, parsed = false
+            let linkedEntry: LinkedEntry | undefined
             try {
-              const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown }
+              const entry = JSON.parse(rawLine) as { message?: unknown; id?: unknown; parentId?: unknown }
+              linkedEntry = linkOf(entry)
               const message = entryMessage(entry)
               if (message) {
                 const result = truncateDeep(message)
-                value = result.value; truncated += result.cut; total++
-                entryId = typeof entry.id === 'string' && entry.id ? entry.id : undefined
-                parsed = true
+                linkedEntry.value = result.value; truncated += result.cut; total++
               }
             } catch { }
-            if (parsed) projector.appendPersisted(value, entryId)
-          }
+            if (!isHeader) link(linkedEntry ?? linkOfHead(lineHead))
+          } else if (!isHeader) link(linkOfHead(lineHead))
         }
-        parts = []; chars = 0; discarded = false; hasMessage = false; scanTail = ''
+        parts = []; chars = 0; discarded = false; hasMessage = false; scanTail = ''; lineHead = ''
       }
       const decoder = new StringDecoder('utf8')
       const buffer = Buffer.allocUnsafe(64 * 1024)
@@ -249,6 +298,7 @@ async function readStable(path: string, opts?: ReadOptions): Promise<{ result: R
           (after.size === before.size && !sameVersion(before, after)) ||
           (current.size === before.size && !sameVersion(before, current))) continue
       if (after.size === before.size && current.size === before.size) flush()
+      for (const entry of leafBranch(entries, linked)) projector.appendPersisted(entry.value, entry.id)
       return { version: before, result: { messages: projector.uiMessages(), total, truncated, bytes: size,
         ...(sessionId ? { sessionId } : {}), ...(sourceCwd ? { sourceCwd } : {}), ...(contextFrom ? { contextFrom } : {}) } }
     } catch { if (attempt === 0) continue; return null }

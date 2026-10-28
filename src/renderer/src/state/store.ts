@@ -523,6 +523,10 @@ function projectRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store
   return projection
 }
 
+function switchToRuntimeSnapshot(snapshot: SessionRuntimeSnapshot): Partial<Store> {
+  return { ...projectRuntimeSnapshot(snapshot), session: snapshot.session }
+}
+
 function projectSnapshotKeepingHistory(state: Store, snapshot: SessionRuntimeSnapshot): Partial<Store> {
   const projection = projectRuntimeSnapshot(snapshot)
   if (projection.messages) projection.messages = reuseIfSame(state.messages, projection.messages) as typeof state.messages
@@ -1398,7 +1402,7 @@ export const useStore = create<Store>((rawSet, get) => {
             runId
           )
           set({
-            ...(snapshot ? projectRuntimeSnapshot(snapshot) : { messages: [], session: null }),
+            ...(snapshot ? switchToRuntimeSnapshot(snapshot) : { messages: [], session: null }),
             peekedPath: null,
             peekedSessionId: res.sessionId ?? target.sessionId ?? null,
             peekNote: null,
@@ -1908,7 +1912,7 @@ export const useStore = create<Store>((rawSet, get) => {
       pendingSends: [],
       ...(res.id || res.runId ? { activeRunnerId: res.runId ?? res.id } : {}),
       ...(arrived
-        ? projectRuntimeSnapshot(arrived)
+        ? switchToRuntimeSnapshot(arrived)
         : {
             messages: [],
             session: null,

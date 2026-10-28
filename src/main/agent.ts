@@ -63,6 +63,7 @@ import { mergeCommandDescriptors } from './command-registry'
 import { cachedTitles, fallbackTitle, generateTitle, manualTitleOf, setManualTitle } from './title'
 import { readSessionMessages, type ReadResult } from './session-reader'
 import { SessionEntriesLite } from './session-entries-lite'
+import { withTrailingEntryIds } from './live-entry-ids'
 import { localizeImage } from './image-store'
 import { todoSnapshotsFromEntries } from './todo-snapshots'
 import { applyTaskPlanOperation, currentTaskPlan, readTaskPlanLog, TaskPlanStoreError } from './task-plan-store'
@@ -1174,6 +1175,18 @@ export class AgentController extends EventEmitter {
     } catch {
       return []
     }
+  }
+
+  private async attachLiveEntryIds(): Promise<void> {
+    const scope = { sessionId: this.state?.sessionId, sessionFile: this.state?.sessionFile }
+    const entries = await this.sessionEntriesLite().catch(() => null)
+    if (!entries || this.agentRunning) return
+    if (this.state?.sessionId !== scope.sessionId || this.state?.sessionFile !== scope.sessionFile) return
+    const before = this.messages
+    const next = withTrailingEntryIds(before, entries)
+    if (!next) return
+    this.messages = next
+    this.pushSessionSync(scope, before)
   }
 
   async refreshTodos(): Promise<SessionTodo[]> {
@@ -2568,6 +2581,7 @@ export class AgentController extends EventEmitter {
         void this.refreshState()
         void this.refreshStats()
         void this.refreshTodos()
+        void this.attachLiveEntryIds()
         void this.maybeGenerateTitle()
         const task = continuation ? this.continueAfterLoopGuard(continuation)
           : errorContinuation ? this.continueAfterModelError(errorContinuation) : undefined
@@ -3552,7 +3566,7 @@ export class AgentController extends EventEmitter {
       if (!res.success) return { ok: false, error: res.error }
       if (this.rpc !== rpc || this.state?.sessionId !== sessionId || this.capabilityOpts?.runnerGeneration !== generation) return { ok: false, error: '会话已切换，发送结果未应用到当前会话' }
       if (titleOnSend) void this.maybeGenerateTitle({ prompt: { text, images } })
-      void this.refreshState().catch(() => undefined)
+      await this.refreshState()
       return { ok: true }
     })
   }

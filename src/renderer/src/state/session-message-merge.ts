@@ -16,6 +16,7 @@ export function messageContentWeight(message: UIMessage): number {
 }
 
 export function newerMessageVersion(snapshot: UIMessage, live: UIMessage): UIMessage {
+  if (snapshot.entryId && live.entryId && snapshot.entryId !== live.entryId) return snapshot
   const chosen = messageContentWeight(snapshot) > messageContentWeight(live) ? snapshot : live
   return chosen.entryId || !snapshot.entryId ? chosen : { ...chosen, entryId: snapshot.entryId }
 }
