@@ -1,13 +1,294 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createServer } from 'node:http'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, copyFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createServer } from 'node:http'
 import { build } from 'esbuild'
 import { selectedPiRuntime } from './lib/pi-runtime-location.mjs'
+import { createAccess, createFakeAppHost, createFakeLegacyManager, managedConfig, piConfig } from './fixtures/mcp-app-settings-boundary-fixture.mjs'
 
+async function isolated(run) {
+  const savedEnv = { ...process.env }
+  try {
+    await run()
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in savedEnv)) delete process.env[key]
+    Object.assign(process.env, savedEnv)
+  }
+}
+
+async function hostSuite() {
+const root = await mkdtemp(join(tmpdir(), 'yan-mcp-app-host-'))
+process.env.YAN_DATA_DIR = join(root, 'yan')
+process.env.YAN_MCP_SERVERS_FILE = join(root, 'yan', 'mcp-servers.json')
+
+let checks = 0
+const ok = (condition, message, detail) => {
+  assert.ok(condition, `${message}${detail !== undefined ? `（${detail}）` : ''}`)
+  checks++
+  console.log(`✓ ${message}`)
+}
+const fails = async (work, code, message) => {
+  let thrown
+  try {
+    await work()
+  } catch (error) {
+    thrown = error
+  }
+  ok(
+    Boolean(thrown) && thrown.code === code,
+    message,
+    thrown ? `${thrown.code}: ${thrown.message}` : '没有抛错'
+  )
+}
+const delay = (ms) => new Promise((done) => setTimeout(done, ms))
+
+const fixture = resolve('scripts/fixtures/mcp-app-server.mjs')
+
+const specOutfile = join(root, 'app-spec.mjs')
+await build({
+  entryPoints: [resolve('src/main/mcp/app-spec.ts')],
+  outfile: specOutfile,
+  bundle: true,
+  format: 'esm',
+  platform: 'neutral',
+  logLevel: 'silent'
+})
+
+const hostOutfile = join(process.cwd(), 'out', 'test', 'mcp-app-host-bundle.mjs')
+await build({
+  stdin: {
+    contents:
+      "export * from './src/main/mcp/app-spec';" +
+      "export * from './src/main/mcp/app-host';" +
+      "export * from './src/main/mcp/config';",
+    resolveDir: process.cwd(),
+    loader: 'ts'
+  },
+  outfile: hostOutfile,
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  external: ['@modelcontextprotocol/sdk', '@modelcontextprotocol/sdk/*'],
+  logLevel: 'silent'
+})
+const host = await import(pathToFileURL(hostOutfile).href)
+
+{
+  ok(host.isMcpAppMimeType(host.MCP_APP_MIME_TYPE), '规范：标准 App MIME 被接受')
+  ok(host.isMcpAppMimeType('text/html;profile=mcp-app;charset=utf-8'), '规范：带参数的 App MIME 被接受')
+  ok(!host.isMcpAppMimeType('text/html'), '规范：缺 profile 参数的 text/html 被拒')
+  ok(!host.isMcpAppMimeType('text/plain'), '规范：非 App MIME 被拒')
+  ok(!host.isMcpAppMimeType(undefined), '规范：缺 MIME 被拒')
+
+  const strict = host.mcpAppVisibilityOf(undefined)
+  ok(strict.length === 1 && strict[0] === 'model', '缺省最严：缺 _meta.ui 只给模型')
+  ok(host.mcpAppVisibilityOf({ ui: { visibility: 'app' } })[0] === 'model', '缺省最严：visibility 不是数组时退回只给模型')
+  ok(host.mcpAppVisibilityOf({ ui: { visibility: [] } })[0] === 'model', '缺省最严：空 visibility 退回只给模型')
+  const appOnly = host.mcpAppVisibilityOf({ ui: { visibility: ['app'] } })
+  ok(appOnly.length === 1 && appOnly[0] === 'app', 'visible：声明 app 才给 App')
+
+  const csp = host.mcpAppCspOf({ ui: { csp: { connectDomains: ['https://a.invalid'], frameDomains: ['https://b.invalid'] } } })
+  ok(csp?.connectDomains?.[0] === 'https://a.invalid' && csp?.frameDomains?.[0] === 'https://b.invalid', 'csp：从 _meta.ui.csp 读出域名列表')
+  ok(host.mcpAppCspOf({ ui: {} }) === null, 'csp：未声明时是 null（推导走严格默认档）')
+
+  ok(
+    host.isInkstoneManaged({ ownedBy: 'inkstone', appHost: { at: 'x', natives: [] } }),
+    '归属：ownedBy inkstone + appHost 才托管'
+  )
+  ok(!host.isInkstoneManaged({ ownedBy: 'inkstone' }), '归属：ownedBy inkstone 但缺 appHost 不算托管')
+  ok(!host.isInkstoneManaged({ ownedBy: 'pi', appHost: { at: 'x', natives: [] } }), '归属：ownedBy pi 不算托管')
+  ok(
+    !host.isInkstoneManaged({ ownedBy: 'inkstone', appHost: { at: 'x', natives: [] }, enabled: false }),
+    '归属：被禁用不算托管'
+  )
+}
+
+const net = await import('node:net')
+const port = 39400 + Math.floor(Math.random() * 500)
+const httpChild = spawn(process.execPath, [fixture, '--http'], {
+  stdio: 'ignore',
+  env: { ...process.env, YAN_MCP_APP_SPEC_MODULE: specOutfile, YAN_MCP_APP_HTTP_PORT: String(port) }
+})
+{
+  let up = false
+  for (let i = 0; i < 80; i++) {
+    up = await new Promise((done) => {
+      const socket = net.connect({ port, host: '127.0.0.1' })
+      socket.once('connect', () => { socket.destroy(); done(true) })
+      socket.once('error', () => { socket.destroy(); done(false) })
+    })
+    if (up) break
+    await delay(100)
+  }
+  ok(up, 'HTTP：合成服务器真监听上了')
+}
+
+const hostEntry = { command: 'original-node', args: ['orig.js'], custom: { keep: 'entry' } }
+const configFile = join(root, 'yan', 'mcp-servers.json')
+await mkdir(dirname(configFile), { recursive: true })
+const appHostMark = (name) => ({
+  at: '2026-10-16T00:00:00.000Z',
+  natives: [{ path: join(root, 'pi-agent', 'mcp.json'), name, entry: hostEntry, fingerprint: 'fp-' + name, extraNativeField: { keep: true } }]
+})
+await writeFile(
+  configFile,
+  JSON.stringify({
+    unknownTop: { keep: true },
+    servers: [
+      {
+        id: 'app-stdio',
+        title: '合成 App（stdio）',
+        transport: 'stdio',
+        command: process.execPath,
+        args: [fixture],
+        env: { YAN_MCP_APP_SPEC_MODULE: specOutfile },
+        ownedBy: 'inkstone',
+        appHost: appHostMark('app-stdio'),
+        customField: { keep: true }
+      },
+      {
+        id: 'app-http',
+        transport: 'http',
+        url: `http://127.0.0.1:${port}/mcp`,
+        ownedBy: 'inkstone',
+        appHost: appHostMark('app-http')
+      },
+      { id: 'native-stdio', transport: 'stdio', command: process.execPath, args: [fixture], ownedBy: 'pi' },
+      { id: 'missing-mark', transport: 'stdio', command: process.execPath, args: [fixture], ownedBy: 'inkstone' }
+    ]
+  }),
+  'utf8'
+)
+
+const ownership = new host.McpAppOwnershipGuard({
+  agentDir: join(root, 'pi-agent'),
+  projects: [],
+  readNativeConfig: async () => null,
+  holdersFor: async () => []
+})
+const env = { YAN_MCP_SERVERS_FILE: configFile }
+const appHost = new host.McpAppHost({ env, timeoutMs: 20_000, ownership })
+
+try {
+
+  {
+    const loaded = host.loadMcpServers(env)
+    const stdio = loaded.servers.find((server) => server.id === 'app-stdio')
+    ok(stdio?.ownedBy === 'inkstone' && stdio?.appHost?.natives?.[0]?.entry?.command === 'original-node', '配置：解析 ownedBy 与 appHost.natives[].entry')
+    ok(stdio?.appHost?.at === '2026-10-16T00:00:00.000Z', '配置：解析 appHost.at')
+    ok(JSON.stringify(stdio?.customField) === '{"keep":true}', '配置：顶层未知字段保留')
+    ok(JSON.stringify(stdio?.appHost?.natives?.[0]?.extraNativeField) === '{"keep":true}', '配置：appHost 内的未知字段保留')
+    ok(JSON.stringify(loaded.document?.unknownTop) === '{"keep":true}', '配置：文档级未知字段保留（导入/回写不抹）')
+    const missing = loaded.servers.find((server) => server.id === 'missing-mark')
+    ok(missing?.ownedBy === 'inkstone' && missing?.appHost === undefined, '配置：ownedBy inkstone 但缺 appHost 被如实解析为未托管')
+    ok(host.isInkstoneManaged(stdio) && !host.isInkstoneManaged(missing), '配置：托管资格与解析一致')
+    ok(appHost.listManagedServers().map((server) => server.id).join(',') === 'app-stdio,app-http', '连接前重读配置：只列托管服务')
+  }
+
+  {
+    const tools = await appHost.listToolsWithMeta('app-stdio')
+    ok(tools.length === 5, 'stdio：listToolsWithMeta 拿到全部工具', tools.map((tool) => tool.name).join(','))
+    const readOnly = tools.find((tool) => tool.name === 'read_only_note')
+    ok(readOnly?.modelVisible === true && readOnly?.appVisible === true, 'stdio：只读工具对模型与 App 都可见')
+    ok(readOnly?.resourceUri === 'ui://mcp-app/dashboard.html', 'stdio：工具 _meta.ui.resourceUri 保真')
+    ok(JSON.stringify(readOnly?.annotations) === '{"readOnlyHint":true,"destructiveHint":false}', 'stdio：原始 annotations 保真')
+    const appOnly = tools.find((tool) => tool.name === 'app_only_refresh')
+    ok(appOnly?.appVisible === true && appOnly?.modelVisible === false, 'stdio：app-only 工具对模型不可见')
+    const noVisibility = tools.find((tool) => tool.name === 'no_visibility_note')
+    ok(noVisibility?.modelVisible === true && noVisibility?.appVisible === false, 'stdio：缺 visibility 按最严只给模型')
+
+    const call = await appHost.callToolWithMeta('app-stdio', 'read_only_note', { text: 'hi' })
+    ok(call.text === 'note:hi' && call.isError === false, 'stdio：callToolWithMeta 返回模型可见文本')
+    ok(call.resourceUri === 'ui://mcp-app/dashboard.html', 'stdio：调用结果 _meta.ui.resourceUri 保真')
+    ok(call.structuredContent?.note === 'hi' && call.structuredContent?.app === true, 'stdio：structuredContent 保真（只给界面）')
+    ok(JSON.stringify(call.meta?.ui?.csp) === JSON.stringify({ connectDomains: ['https://api.example.invalid'], resourceDomains: ['https://cdn.example.invalid'], frameDomains: ['https://evil.invalid'], baseUriDomains: ['https://app.example.invalid'] }), 'stdio：原始 _meta 保真（含 csp）')
+
+    const caps = await appHost.callToolWithMeta('app-stdio', 'client_capabilities', {})
+    const declared = caps.structuredContent?.clientCapabilities
+    ok(
+      declared?.extensions?.[host.MCP_APP_EXTENSION_ID]?.mimeTypes?.includes(host.MCP_APP_MIME_TYPE) === true,
+      'stdio：initialize 声明了 MCP Apps 的 ui 能力',
+      JSON.stringify(declared)
+    )
+
+    const resource = await appHost.readResource('app-stdio', 'ui://mcp-app/dashboard.html')
+    ok(resource.mimeType === host.MCP_APP_MIME_TYPE && resource.text.includes('合成 App'), 'stdio：资源读取成功且 MIME 正确')
+    ok(resource.bytes === Buffer.byteLength(resource.text, 'utf8') && resource.bytes > 0, 'stdio：资源体积按字节如实回报')
+    ok(resource.uiCsp?.connectDomains?.[0] === 'https://api.example.invalid', 'stdio：资源 _meta.ui.csp 保真')
+
+    await fails(() => appHost.readResource('app-stdio', 'ui://mcp-app/plain.txt'), 'resource-invalid', 'stdio：MIME 不对的资源被拒')
+
+    const smallHost = new host.McpAppHost({ env, timeoutMs: 20_000, maxResourceBytes: 1024, ownership })
+    try {
+      await fails(() => smallHost.readResource('app-stdio', 'ui://mcp-app/huge.html'), 'resource-too-large', 'stdio：超过体积上限的资源被拒')
+      ok(smallHost.statusOf('app-stdio').status === 'ready', 'stdio：体积拒绝后连接仍可用（不是断线）')
+    } finally {
+      await smallHost.close()
+    }
+
+    await fails(() => appHost.callToolWithMeta('native-stdio', 'read_only_note', {}), 'not-managed', '拒绝连接：ownedBy pi 的服务')
+    await fails(() => appHost.listToolsWithMeta('missing-mark'), 'not-managed', '拒绝连接：ownedBy inkstone 但缺 appHost 声明')
+    await fails(() => appHost.listToolsWithMeta('nope'), 'not-managed', '拒绝连接：配置里没有的服务')
+    ok(appHost.statusOf('native-stdio').status === 'disconnected', '拒绝连接后不留连接状态')
+
+    const controller = new AbortController()
+    const pending = appHost.callToolWithMeta('app-stdio', 'slow', {}, { signal: controller.signal })
+    await delay(150)
+    ok(appHost.statusOf('app-stdio').status === 'ready', '取消：挂起调用期间连接是 ready')
+    const concurrent = await appHost.callToolWithMeta('app-stdio', 'no_visibility_note', {})
+    ok(concurrent.text === 'plain', '取消：A 挂起时同连接并发的 B 成功')
+    controller.abort()
+    const cancelled = await pending.then(() => null, (error) => error)
+    ok(cancelled instanceof Error, '取消：挂起的调用以错误结束')
+    ok(appHost.statusOf('app-stdio').status === 'ready', '取消：中止后共享连接仍 ready（没被拆掉）')
+    const after = await appHost.callToolWithMeta('app-stdio', 'no_visibility_note', {})
+    ok(after.text === 'plain', '取消：之后同一连接继续可用')
+  }
+
+  {
+    const tools = await appHost.listToolsWithMeta('app-http')
+    ok(tools.length === 5, 'HTTP：listToolsWithMeta 拿到全部工具', tools.map((tool) => tool.name).join(','))
+    const readOnly = tools.find((tool) => tool.name === 'read_only_note')
+    ok(readOnly?.resourceUri === 'ui://mcp-app/dashboard.html', 'HTTP：工具 _meta.ui.resourceUri 保真')
+    ok(tools.find((tool) => tool.name === 'no_visibility_note')?.appVisible === false, 'HTTP：缺 visibility 按最严只给模型')
+
+    const call = await appHost.callToolWithMeta('app-http', 'read_only_note', { text: 'h2' })
+    ok(call.resourceUri === 'ui://mcp-app/dashboard.html' && call.structuredContent?.note === 'h2', 'HTTP：调用结果 _meta 与 structuredContent 保真')
+
+    const resource = await appHost.readResource('app-http', 'ui://mcp-app/dashboard.html')
+    ok(resource.mimeType === host.MCP_APP_MIME_TYPE && resource.uiCsp?.resourceDomains?.[0] === 'https://cdn.example.invalid', 'HTTP：资源读取与 csp 保真')
+
+    const smallHttp = new host.McpAppHost({ env, timeoutMs: 20_000, maxResourceBytes: 1024, ownership })
+    try {
+      await fails(() => smallHttp.readResource('app-http', 'ui://mcp-app/huge.html'), 'resource-too-large', 'HTTP：超过体积上限的资源被拒')
+    } finally {
+      await smallHttp.close()
+    }
+  }
+
+  {
+    const first = host.mcpAppHost()
+    const second = host.mcpAppHost()
+    ok(first === second, '单例：mcpAppHost() 返回同一进程级实例')
+    ok(first.listManagedServers().length === 2, '单例：按当前配置列出托管服务')
+    await host.closeMcpAppHost()
+    ok(host.mcpAppHost() !== first, '单例：关闭后重新创建')
+  }
+} finally {
+  await appHost.close()
+  await host.closeMcpAppHost().catch(() => undefined)
+  httpChild.kill('SIGTERM')
+  await delay(200)
+  await rm(root, { recursive: true, force: true })
+}
+
+console.log(`\nMCP Apps 宿主连接层：${checks} 项检查通过`)
+}
+
+async function proxySuite() {
 const root = await mkdtemp(join(tmpdir(), 'yan-mcp-app-proxy-'))
 const yanDir = join(root, 'yan')
 process.env.YAN_DATA_DIR = yanDir
@@ -677,3 +958,545 @@ try {
   await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   await rm(bundleDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined)
 }
+}
+
+async function approvalParitySuite() {
+let checks = 0
+const failures = []
+const ok = (condition, message, detail) => {
+  checks += 1
+  if (!condition) {
+    failures.push(message)
+    console.log(`✗ ${message}${detail !== undefined ? `（${detail}）` : ''}`)
+  } else {
+    console.log(`✓ ${message}`)
+  }
+}
+
+const bundled = await build({
+  stdin: {
+    contents:
+      "export * from './src/shared/mcp-approval';" +
+      "export * from './src/main/mcp/app-view-approval';" +
+      "export * from './src/main/approval-broker';",
+    resolveDir: process.cwd(),
+    loader: 'ts'
+  },
+  bundle: true,
+  write: false,
+  platform: 'node',
+  format: 'esm',
+  logLevel: 'silent'
+})
+const shared = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`)
+
+const ext = await import(pathToFileURL(resolve('resources/pi-extensions/danger-guard.js')).href)
+ok(typeof shared.mcpApprovalNeeded === 'function', '加载共享 mcpApprovalNeeded')
+ok(typeof ext.mcpApprovalNeeded === 'function', '加载扩展 mcpApprovalNeeded')
+
+const CASES = [
+  { key: 'none', annotations: undefined },
+  { key: 'empty', annotations: {} },
+  { key: 'null', annotations: null },
+  { key: 'non-object', annotations: 42 },
+  { key: 'readOnly-true', annotations: { readOnlyHint: true } },
+  { key: 'readOnly-false', annotations: { readOnlyHint: false } },
+  { key: 'destructive-true', annotations: { destructiveHint: true } },
+  { key: 'destructive-false', annotations: { destructiveHint: false } },
+  { key: 'idempotent-true', annotations: { idempotentHint: true } },
+  { key: 'idempotent-false', annotations: { idempotentHint: false } },
+  { key: 'openWorld-true', annotations: { openWorldHint: true } },
+  { key: 'openWorld-false', annotations: { openWorldHint: false } },
+  { key: 'ro+destructive', annotations: { readOnlyHint: true, destructiveHint: true } },
+  { key: 'ro+openWorld', annotations: { readOnlyHint: true, openWorldHint: true } },
+  { key: 'destructive-false+openWorld-false', annotations: { destructiveHint: false, openWorldHint: false } },
+  { key: 'all-false', annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { key: 'all-true', annotations: { readOnlyHint: true, destructiveHint: true, idempotentHint: true, openWorldHint: true } },
+  { key: 'non-boolean-hints', annotations: { destructiveHint: 'yes', openWorldHint: 1, readOnlyHint: 0 } }
+]
+
+const toolNameOf = (key) => `mcp__srv__${key.replace(/[^a-zA-Z0-9]+/g, '_')}`
+
+for (const { key, annotations } of CASES) {
+  const name = toolNameOf(key)
+  ok(
+    ext.mcpApprovalNeeded(annotations) === shared.mcpApprovalNeeded(annotations),
+    `approval 一致：${key}`,
+    `${ext.mcpApprovalNeeded(annotations)} vs ${shared.mcpApprovalNeeded(annotations)}`
+  )
+  ok(
+    JSON.stringify(ext.mcpCallDanger(name, annotations)) === JSON.stringify(shared.mcpCallDanger(name, annotations)),
+    `理由一致：${key}`,
+    JSON.stringify(ext.mcpCallDanger(name, annotations))
+  )
+  ok(
+    JSON.stringify(ext.mcpTarget(name)) === JSON.stringify(shared.mcpTarget(name)),
+    `target 一致：${key}`
+  )
+}
+
+ok(shared.mcpCallDanger('bash', { destructiveHint: true }).length === 0, '非 mcp__ 工具不产生 MCP 理由')
+
+const requests = []
+let hostMode = 'danger'
+const server = createServer((req, res) => {
+  let body = ''
+  req.on('data', (chunk) => { body += chunk })
+  req.on('end', () => {
+    let payload = {}
+    try { payload = JSON.parse(body) } catch {}
+    requests.push(payload)
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(payload?.command === 'danger.confirm'
+      ? { ok: true, summary: { kind: 'danger-confirm', allowed: true, decision: 'allow' } }
+      : payload?.command === 'danger.prefs'
+        ? { ok: true, summary: { mode: hostMode, outsideWrites: true, allowRoots: [] } }
+        : { ok: true, summary: {} }))
+  })
+})
+await new Promise((ready) => server.listen(0, '127.0.0.1', ready))
+const hostUrl = `http://127.0.0.1:${server.address().port}`
+
+const dataDir = await mkdtemp(join(tmpdir(), 'yan-mcp-approval-parity-'))
+process.env.YAN_CLI_URL = hostUrl
+process.env.YAN_CLI_TOKEN = 'test-token'
+process.env.YAN_SESSION_ID = 'test-session'
+process.env.YAN_PROJECT_ID = 'test-project'
+process.env.YAN_DATA_DIR = dataDir
+delete process.env.YAN_DANGER_GUARD
+
+const writePrefs = async (mode) => { hostMode = mode }
+
+const tools = CASES.map(({ key, annotations }) => {
+  const entry = { name: toolNameOf(key) }
+  if (annotations !== undefined) entry.annotations = annotations
+  return entry
+})
+let handler
+const fakePi = {
+  on: (event, fn) => { if (event === 'tool_call') handler = fn },
+  getAllTools: () => tools
+}
+ext.default(fakePi)
+ok(typeof handler === 'function', '扩展注册了 tool_call 处理器')
+
+const observedAsk = async (name) => {
+  const before = requests.filter((request) => request?.command === 'danger.confirm').length
+  await handler({ toolName: name, toolCallId: 'call-1', input: { arg: 1 } }, { cwd: 'C:/proj' })
+  return requests.filter((request) => request?.command === 'danger.confirm').length > before
+}
+
+for (const mode of ['danger', 'all']) {
+  await writePrefs(mode)
+  for (const { key, annotations } of CASES) {
+    const name = toolNameOf(key)
+    const expected = (mode === 'all' ? [] : shared.mcpCallDanger(name, annotations)).length > 0
+    const asked = await observedAsk(name)
+    ok(
+      asked === expected,
+      `处理器口径一致（${mode}）：${key}`,
+      `asked=${asked} expected=${expected}`
+    )
+  }
+}
+
+await writePrefs('danger')
+
+const baseCall = { server: 'srv', tool: 't', visibility: ['app'], cwd: 'C:/proj' }
+const allowAsk = () => Promise.resolve({ choice: 'once' })
+const denyAsk = () => Promise.resolve({ choice: 'deny' })
+
+{
+  const tracker = { calls: 0 }
+  const result = await shared.approveAppViewCall(
+    { ...baseCall, annotations: { readOnlyHint: true } },
+    () => { tracker.calls += 1; return Promise.resolve({ choice: 'once' }) }
+  )
+  ok(result.allowed && result.asked && tracker.calls === 1 && result.recorded, '无宿主授权时只读调用先询问（不静默放行）')
+
+  const trustedTracker = { calls: 0 }
+  const now = Date.now()
+  const trusted = await shared.approveAppViewCall(
+    { ...baseCall, annotations: { readOnlyHint: true } },
+    () => { trustedTracker.calls += 1; return Promise.resolve({ choice: 'once' }) },
+    {
+      serverFingerprint: 'f'.repeat(64),
+      now,
+      grants: [{ serverFingerprint: 'f'.repeat(64), scope: 'server', authorizer: 'user', expiresAt: now + 60_000 }]
+    }
+  )
+  ok(trusted.allowed && !trusted.asked && trustedTracker.calls === 0, '有宿主 grant 的只读直接放行、不弹卡')
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, denyAsk)
+  ok(!result.allowed && result.asked && /拒绝/.test(result.reason ?? ''), '用户拒绝时视图调用被拒')
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve({ choice: 'once' }))
+  ok(result.allowed && result.asked && result.recorded, '用户允许一次时视图调用放行')
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve({ choice: 'remember' }))
+  ok(result.allowed, '允许并记住也视为放行')
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { openWorldHint: true } }, () => Promise.reject(new Error('broken')))
+  ok(!result.allowed && /没有得到用户确认/.test(result.reason ?? ''), '询问通道异常按无答复拒绝')
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => Promise.resolve(null))
+  ok(!result.allowed && /没有得到用户确认|拒绝/.test(result.reason ?? ''), 'ask 返回 null 判拒绝')
+}
+
+{
+  let asked = false
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: ['model'], annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve({ choice: 'once' }) })
+  ok(!result.allowed && !asked && /未向 App 视图开放/.test(result.reason ?? ''), 'visibility 不含 app 直接拒绝、不弹卡')
+}
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: undefined, annotations: { destructiveHint: true } }, allowAsk)
+  ok(!result.allowed && /缺少 visibility/.test(result.reason ?? ''), '缺 visibility 按最严处理（不对 App 开放）')
+}
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: 'app', annotations: { destructiveHint: true } }, allowAsk)
+  ok(!result.allowed && /缺少 visibility/.test(result.reason ?? ''), 'visibility 非数组按缺省处理')
+}
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: [], annotations: { destructiveHint: true } }, allowAsk)
+  ok(!result.allowed && /未向 App 视图开放/.test(result.reason ?? ''), 'visibility 空数组视为不含 app')
+}
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, visibility: ['model', 'app'], annotations: { destructiveHint: true } }, allowAsk)
+  ok(result.allowed, 'visibility 含 app 且获允许时放行')
+}
+
+{
+  let asked = false
+  const result = await shared.approveAppViewCall({ ...baseCall, permissionMode: 'all', annotations: { destructiveHint: true } }, () => { asked = true; return Promise.resolve({ choice: 'deny' }) })
+  ok(result.allowed && !asked && result.recorded && result.reasons.length > 0, 'all 档不拦截但仍记录风险')
+}
+
+{
+  let approvedRequest = null
+  const called = await shared.approveAppViewCall(
+    { server: 'a__b', tool: 'c', visibility: ['app'], cwd: 'C:/proj', annotations: { destructiveHint: true } },
+    (request) => {
+      approvedRequest = request
+      return Promise.resolve({ choice: 'once' })
+    }
+  )
+  ok(
+    called.allowed && approvedRequest?.title === 'App 视图请求调用 a__b / c',
+    '审批卡标题用真实 server / tool（名字含 __ 也不错位）',
+    approvedRequest?.title
+  )
+}
+
+{
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: undefined }, denyAsk)
+  ok(!result.allowed && result.asked, '缺注解按要问处理')
+}
+
+{
+  const broker = new shared.ApprovalBroker({ canAsk: () => true, open: () => {}, close: () => {} })
+  const realSetTimeout = globalThis.setTimeout
+  globalThis.setTimeout = (fn, _ms, ...rest) => realSetTimeout(fn, 0, ...rest)
+  try {
+    const choice = await broker.ask({ kind: 'danger', tool: 'mcp__srv__t', title: 't', detail: '{}', reasons: ['r'], cwd: '', canRemember: false })
+    ok(choice === null, 'ApprovalBroker 超时判为无答复（null）')
+
+    let askCalls = 0
+    const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, () => {
+      askCalls += 1
+      return broker.ask({ kind: 'danger', tool: 'mcp__srv__t', title: 't', detail: '{}', reasons: ['r'], cwd: '', canRemember: false })
+    })
+    ok(askCalls === 1 && !result.allowed, '真实 broker 超时后视图调用判拒绝')
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+  }
+}
+
+{
+  const broker = new shared.ApprovalBroker({ canAsk: () => false, open: () => {}, close: () => {} })
+  const result = await shared.approveAppViewCall({ ...baseCall, annotations: { destructiveHint: true } }, (request) => broker.ask(request))
+  ok(!result.allowed && result.asked, '无可用窗口时视图调用判拒绝')
+}
+
+await new Promise((ready) => server.close(ready))
+await rm(dataDir, { recursive: true, force: true })
+
+console.log(`\n${checks} 项，${failures.length} 项失败`)
+if (failures.length > 0) {
+  for (const name of failures) console.log(`  - ${name}`)
+  process.exit(1)
+}
+}
+
+async function settingsBoundarySuite() {
+const root = await mkdtemp(join(process.cwd(), '.tmp', 'mcp-settings-boundary-'))
+const configFile = join(root, 'mcp-servers.json')
+process.env.YAN_MCP_SERVERS_FILE = configFile
+process.env.YAN_DATA_DIR = join(root, 'yan')
+
+let checks = 0
+const ok = (condition, message, detail) => {
+  assert.ok(condition, `${message}${detail !== undefined ? `（${detail}）` : ''}`)
+  checks++
+  console.log(`✓ ${message}`)
+}
+const eq = (actual, expected, message) => {
+  assert.deepEqual(actual, expected, message)
+  checks++
+  console.log(`✓ ${message}`)
+}
+const throwsCode = (work, code, message) => {
+  let thrown
+  try {
+    work()
+  } catch (error) {
+    thrown = error
+  }
+  ok(Boolean(thrown) && thrown.code === code, message, thrown ? `${thrown.code}: ${thrown.message}` : '没有抛错')
+}
+const rejectsCode = async (work, code, message) => {
+  let thrown
+  try {
+    await work()
+  } catch (error) {
+    thrown = error
+  }
+  ok(Boolean(thrown) && thrown.code === code, message, thrown ? `${thrown.code}: ${thrown.message}` : '没有抛错')
+}
+
+async function bundle(contents, name) {
+  const outfile = join(root, name)
+  await build({
+    stdin: { contents, resolveDir: process.cwd(), sourcefile: `${name}.ts` },
+    outfile,
+    bundle: true,
+    packages: 'external',
+    platform: 'node',
+    format: 'esm',
+    logLevel: 'silent'
+  })
+  return import(pathToFileURL(outfile).href)
+}
+
+const ipcMod = await bundle(
+  "export { registerMcpAppIpc } from './src/main/ipc/mcp-app-ipc';",
+  'main-ipc.mjs'
+)
+const helper = await bundle(
+  "export * from './src/main/mcp/settings-safe-access';\nexport * from './src/shared/mcp-app-switch';",
+  'settings-safe-access.mjs'
+)
+const renderer = await bundle(
+  "export * from './src/renderer/src/features/settings/capabilities/mcp-app-ownership';",
+  'renderer-ownership.mjs'
+)
+
+const { registerMcpAppIpc } = ipcMod
+const {
+  disconnectManagedServer,
+  managedConfigOf,
+  managedRuntimeFacts,
+  probeManagedServer,
+  reconcileLegacyManaged,
+  verifyManagedServer
+} = helper
+const { parseMcpAppOwnershipResponse } = renderer
+
+function captureIpc() {
+  const handlers = new Map()
+  return {
+    handlers,
+    handle(channel, fn) {
+      handlers.set(channel, fn)
+    },
+    rawHandle(channel, fn) {
+      handlers.set(channel, fn)
+    }
+  }
+}
+
+function registerWithDeps({ agent = { capabilityProjectId: null }, registry = () => null } = {}) {
+  const ipc = captureIpc()
+  registerMcpAppIpc(ipc, {
+    currentAgent: () => agent,
+    registry,
+    settings: async () => ({ projects: [] }),
+    isProjectTrusted: async () => true
+  })
+  return ipc.handlers.get('yan:mcpApp:ownership')
+}
+
+await writeFile(
+  configFile,
+  JSON.stringify([{ id: 'svc-a', transport: 'stdio', command: 'node', args: ['x.js'] }])
+)
+const realHandler = registerWithDeps()
+const handlerOutput = await realHandler()
+ok(handlerOutput && !Array.isArray(handlerOutput) && Array.isArray(handlerOutput.servers), 'ownership handler 返回 { servers } 对象，不是数组')
+eq(handlerOutput.servers.length, 1, 'ownership handler 从真实砚配置产出 1 条视图')
+const parsedReal = parseMcpAppOwnershipResponse(handlerOutput)
+ok(parsedReal.ok === true, '真实 handler 输出经解析 helper 解包成功')
+eq(parsedReal.views.map((view) => view.serverId), ['svc-a'], '解析得到视图数组（serverId）')
+
+await writeFile(configFile, '{ not json')
+const brokenOutput = await registerWithDeps()()
+ok(typeof brokenOutput.error === 'string' && brokenOutput.error.length > 0, '配置损坏时 handler 返回可展示的 error')
+const parsedBroken = parseMcpAppOwnershipResponse(brokenOutput)
+ok(parsedBroken.ok === false && parsedBroken.code === 'backend_error', '后端 error 被解析为失败（backend_error）')
+
+for (const [label, payload] of [
+  ['null', null],
+  ['数组', [managedConfig('a')]],
+  ['缺 servers', { error: '' }],
+  ['servers 非数组', { servers: { 0: managedConfig('a') } }],
+  ['条目缺 serverId', { servers: [{ ownedBy: 'pi', managed: false }] }],
+  ['条目缺 ownedBy', { servers: [{ serverId: 'a', managed: false }] }]
+]) {
+  const parsed = parseMcpAppOwnershipResponse(payload)
+  ok(parsed.ok === false && parsed.code === 'ownership_response_invalid', `拒绝畸形响应：${label}`)
+}
+const parsedEmpty = parseMcpAppOwnershipResponse({ servers: [] })
+ok(parsedEmpty.ok === true && parsedEmpty.views.length === 0, 'servers:[] 无 error 是正常空状态')
+
+{
+  const log = []
+  const legacy = createFakeLegacyManager(['A'], log)
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A')], managers: [legacy], host, log })
+  const facts = await verifyManagedServer(access, 'A', 'proj-1')
+  eq(facts.toolCount, 2, '托管检查用 host.listToolsWithMeta 的工具数')
+  ok(log.includes('legacy.disconnect:A'), '托管检查前 await 断开旧 legacy 的该 server')
+  ok(log.includes('host.reconcile:A'), '托管检查先 host.reconcile')
+  ok(log.includes('host.listToolsWithMeta:A:proj-1'), '托管检查传真实 caller 项目身份')
+  ok(!log.some((line) => line.startsWith('legacy.listToolsCached')), '托管检查不走 legacy listToolsCached')
+}
+
+{
+  const log = []
+  const legacy = createFakeLegacyManager(['A'], log)
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A')], managers: [legacy], host, log })
+  await verifyManagedServer(access, 'A', 'proj-1')
+  ok(!log.includes('legacy.listToolsCached:A'), 'pi→inkstone 后旧 client 不再被用来连 A')
+  ok(log.filter((line) => line === 'legacy.disconnect:A').length === 1, '旧 client 的 A 恰好被断开一次')
+}
+
+{
+  const log = []
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A')], managers: [], host, log })
+  const status = managedRuntimeFacts(access, 'A')
+  eq(status.status, 'disconnected', '托管状态读 host.statusOf')
+  ok(!log.some((line) => line.startsWith('host.reconcile') || line.startsWith('host.listToolsWithMeta')), '只读 status 不 reconcile / 不连接')
+}
+
+{
+  const log = []
+  const host = createFakeAppHost(log, {
+    reconcile: async () => {
+      throw new Error('status must not reconcile')
+    },
+    listToolsWithMeta: async () => {
+      throw new Error('status must not connect')
+    },
+    disconnect: async () => {
+      throw new Error('status must not disconnect')
+    }
+  })
+  const access = createAccess({ servers: [managedConfig('A')], managers: [], host, log })
+  const status = managedRuntimeFacts(access, 'A')
+  ok(status.toolCount === null, '读状态不连接（host 连接方法未被调用）')
+}
+
+{
+  const log = []
+  const legacy = createFakeLegacyManager(['A', 'B'], log)
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A'), managedConfig('B')], managers: [legacy], host, log })
+  await disconnectManagedServer(access, 'A', 'proj-1')
+  ok(log.includes('host.disconnect:A'), '断开托管 A 只调用 host.disconnect:A')
+  ok(!log.includes('host.disconnect:B'), '断开 A 不碰 B')
+  ok(!log.includes('host.close'), '断开 A 不 close 整个连接池')
+  ok(!log.includes('legacy.disconnect:B'), '断 A 不误断 legacy B')
+}
+
+{
+  const log = []
+  const legacy = createFakeLegacyManager(['A'], log)
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [piConfig('A')], managers: [legacy], host, log })
+  ok(managedConfigOf(access, 'A', 'proj-1') === null, 'pi 原生配置判为非托管')
+  const decision = await reconcileLegacyManaged(access, 'A', 'proj-1')
+  ok(decision.managed === false && decision.legacyHeld === false, '非托管对账不动 legacy')
+  ok(log.length === 0, '非托管对账不产生任何连接 / 断开调用')
+  await rejectsCode(() => probeManagedServer(access, 'A', 'proj-1'), 'not-managed', '非托管 probe 不走托管路径')
+}
+
+{
+  const log = []
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A', { projectScope: 'proj-1' })], managers: [], host, log })
+  await rejectsCode(
+    () => probeManagedServer(access, 'A', undefined),
+    'managed-project-required',
+    '托管 probe 无调用者项目身份时明确拒绝'
+  )
+  const result = await probeManagedServer(access, 'A', 'proj-2')
+  eq(result.tools, ['toolA', 'toolB'], '跨项目 probe 仍从 host 拿工具表')
+  ok(
+    log.includes('host.listToolsWithMeta:A:proj-2') && !log.includes('host.listToolsWithMeta:A:proj-1'),
+    'probe 传真实 caller 身份（proj-2），不拿 config.projectScope（proj-1）冒充'
+  )
+}
+
+{
+  const log = []
+  const legacy = createFakeLegacyManager(['A'], log)
+  const host = createFakeAppHost(log)
+  const access = createAccess({ servers: [managedConfig('A')], managers: [legacy], host, log })
+  const result = await probeManagedServer(access, 'A', 'proj-1')
+  eq(result.tools, ['toolA', 'toolB'], '登记 probe 从 host 单例拿工具表')
+  ok(log.includes('legacy.disconnect:A') && !log.some((line) => line.startsWith('legacy.listToolsCached')), '登记 probe 不经旧 client 连接')
+}
+
+const read = (path) => readFile(resolve(path), 'utf8')
+const agentSrc = await read('src/main/agent.ts')
+ok(agentSrc.includes("from './mcp/settings-safe-access'"), 'agent.ts 导入 settings-safe-access helper')
+for (const symbol of ['reconcileLegacyForManaged(', 'verifyManagedServer(', 'disconnectManagedServer(', 'managedRuntimeFacts(']) {
+  ok(agentSrc.includes(symbol), `agent.ts 使用 helper：${symbol}`)
+}
+ok(agentSrc.includes('getLegacyMcpHolderSnapshot('), 'agent.ts 提供 getLegacyMcpHolderSnapshot 只读事实 getter')
+
+const preloadSrc = await read('src/preload/index.ts')
+ok(preloadSrc.includes("invoke<McpAppOwnershipResponse>('yan:mcpApp:ownership')"), 'preload ownership 按对象契约声明')
+
+const sharedSrc = await read('src/shared/mcp-app-switch.ts')
+ok(sharedSrc.includes('interface McpAppOwnershipResponse'), 'shared 定义 McpAppOwnershipResponse')
+ok(sharedSrc.includes('ownership(): Promise<McpAppOwnershipResponse>'), 'shared 桥 ownership 返回对象契约')
+
+const rendererComponent = await read('src/renderer/src/features/settings/capabilities/McpAppOwnership.tsx')
+ok(rendererComponent.includes('parseMcpAppOwnershipResponse('), 'McpAppOwnership 组件用解析 helper 解包')
+
+await rm(root, { recursive: true, force: true })
+console.log(`\n${checks} 项通过（mcp-app-settings-boundary）`)
+}
+
+console.log('\n=====mcp-app-host =====')
+await isolated(hostSuite)
+console.log('\n=====mcp-app-proxy =====')
+await isolated(proxySuite)
+console.log('\n=====mcp-approval-parity =====')
+await isolated(approvalParitySuite)
+console.log('\n=====mcp-app-settings-boundary =====')
+await isolated(settingsBoundarySuite)
+
+process.exit(0)
