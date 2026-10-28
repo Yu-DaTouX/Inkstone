@@ -619,6 +619,7 @@ async function main() {
         refreshCheckpoints: async () => {},
         refreshCount: 0,
         refreshSessions: async () => { state.refreshCount += 1 },
+        ensureActivated: async () => true,
         ...overrides
       }
       return state

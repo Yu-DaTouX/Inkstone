@@ -1337,7 +1337,8 @@ export const useStore = create<Store>((rawSet, get) => {
           break
         }
         const requestedFrom = { runnerId: s.activeRunnerId, sessionId: s.session?.sessionId, peeked: s.peekedSessionId }
-        if (requestedFrom.peeked) break
+        const activeSessionId = s.runners.find((runner) => (runner.runId ?? runner.id) === s.activeRunnerId)?.sessionId
+        if (requestedFrom.peeked && (requestedFrom.peeked !== incoming || activeSessionId !== incoming)) break
         void window.yan.getMessages().then((list) => {
           const latest = get()
           if (latest.activeRunnerId !== requestedFrom.runnerId) return
@@ -1347,7 +1348,8 @@ export const useStore = create<Store>((rawSet, get) => {
             messages: reuseIfSame(
               latest.messages,
               mergeSyncHistory(list, latest.messages, syncProtectedTail(latest, m.runtime))
-            ) as typeof latest.messages
+            ) as typeof latest.messages,
+            ...(requestedFrom.peeked ? { peekedPath: null, peekedSessionId: null, peekNote: null } : {})
           })
         })
         break

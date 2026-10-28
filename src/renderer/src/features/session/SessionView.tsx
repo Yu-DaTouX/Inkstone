@@ -193,6 +193,14 @@ export function SessionView(): JSX.Element {
     }
     setBranchPending(targetId)
     setBranchError('')
+    if (useStore.getState().pendingActivation) {
+      const activated = await useStore.getState().ensureActivated()
+      if (!branchAliveRef.current) return
+      if (!activated || useStore.getState().session?.sessionId !== pagerSessionId) {
+        setBranchPending(null)
+        return
+      }
+    }
     const run = branchRunRef.current
     const result = await navigatePagerBranch(request, pagerSessionId, targetId, uiText('state.error.branchSwitchFailed'))
     if (!branchAliveRef.current || run !== branchRunRef.current) return
