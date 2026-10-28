@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
 import { Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import type { UIMessage } from '../../../../shared/ipc'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { openSettingsDialog } from '../settings/root/deep-link'
@@ -71,6 +72,8 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement | null 
   return props.isOpen ? <CommandPaletteBody {...props} /> : null
 }
 
+const NO_MESSAGES: readonly UIMessage[] = []
+
 function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPaletteProps): ReactElement | null {
   const { lang } = useI18n()
   const text = commandText(lang)
@@ -91,7 +94,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
   const sessions = useStore((s) => s.sessions)
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
-  const messages = useStore((s) => s.messages)
+  const messageMode = parsePaletteQuery(query).mode === 'message'
+  const messages = useStore((s) => (messageMode ? s.messages : NO_MESSAGES))
 
   const view = useMemo(
     () => sessionViewIdentity({ peekedSessionId, peekedPath, session }),

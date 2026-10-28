@@ -6,7 +6,6 @@ import { streamingMessageId, useStore } from '../../state/store'
 import { useThrottledValue } from '../../state/streaming-throttle'
 import { createTurnProjector, type Turn } from '../../../../shared/turns'
 import { mergeQuestionLog } from '../../../../shared/question-log'
-import { mergeApprovalLog } from '../../../../shared/approval-log'
 import { TurnView } from './TurnView'
 import { sessionWrapUp, withoutWrapUpMessages } from './wrap-up'
 import { AsideFitScope, ToolExpansionScope } from './use-tool-run'
@@ -25,10 +24,12 @@ import {
   buildBranchPagerMap,
   loadPagerTree,
   navigatePagerBranch,
+  pagerTreeCurrent,
   treeHasEntryId,
   type BranchPagerModel,
   type BranchPagerRequest
 } from './branch-pager-model'
+import { countUserMessages, mergeApprovalLogCached } from './effective-messages'
 import { messageEntrySignature } from './turn-lines'
 import type { BranchPagerBinding } from './BranchPager'
 import type { NativeTreeNode } from '../../../../shared/native-session'
@@ -114,7 +115,7 @@ export function SessionView(): JSX.Element {
 
   const pagerSessionId = viewActive ? (session?.sessionId ?? null) : null
   const pagerBusy = viewActive && !!(session?.isAgentRunning || session?.isStreaming || session?.isCompacting)
-  const entrySignature = useMemo(() => messageEntrySignature(messages), [messages])
+  const entrySignature = useMemo(() => (pagerBusy ? '' : messageEntrySignature(messages)), [messages, pagerBusy])
   const [branchTree, setBranchTree] = useState<NativeTreeNode[] | null>(null)
   const [branchLeafId, setBranchLeafId] = useState<string | null>(null)
   const [branchPending, setBranchPending] = useState<string | null>(null)
@@ -124,6 +125,9 @@ export function SessionView(): JSX.Element {
   const branchAliveRef = useRef(true)
   const branchTreeRef = useRef<NativeTreeNode[] | null>(null)
   branchTreeRef.current = branchTree
+  const branchLeafRef = useRef<string | null>(null)
+  branchLeafRef.current = branchLeafId
+  const branchLoadedRef = useRef<{ sessionId: string; signature: string; reload: number } | null>(null)
 
   useEffect(() => {
     branchAliveRef.current = true
@@ -135,6 +139,7 @@ export function SessionView(): JSX.Element {
 
   useEffect(() => {
     if (!pagerSessionId) {
+      branchLoadedRef.current = null
       setBranchTree(null)
       setBranchLeafId(null)
       setBranchPending(null)
@@ -142,6 +147,11 @@ export function SessionView(): JSX.Element {
       return undefined
     }
     if (pagerBusy) return undefined
+    const loaded = branchLoadedRef.current
+    if (loaded && loaded.sessionId === pagerSessionId && loaded.reload === branchReload && pagerTreeCurrent({ tree: branchTreeRef.current, leafId: branchLeafRef.current, loadedSignature: loaded.signature, signature: entrySignature })) {
+      loaded.signature = entrySignature
+      return undefined
+    }
     const run = ++branchRunRef.current
     const timer = window.setTimeout(() => {
       const request = nativeSessionBridge()
@@ -159,6 +169,7 @@ export function SessionView(): JSX.Element {
           setBranchLeafId(null)
           return
         }
+        branchLoadedRef.current = { sessionId: pagerSessionId, signature: entrySignature, reload: branchReload }
         setBranchTree(result.tree)
         setBranchLeafId(result.leafId)
         setBranchError('')
@@ -215,7 +226,7 @@ export function SessionView(): JSX.Element {
   const projectTurns = useMemo(() => createTurnProjector(), [])
   const streamingId = viewActive ? streamingMessageId({ session, messages, runTail }) : undefined
   const effectiveMessages = useMemo(
-    () => mergeApprovalLog(
+    () => mergeApprovalLogCached(
       mergeQuestionLog(withSubmittingMessages(messages, submittingMessages.filter((item) => sameComposerView(useStore.getState(), item.identity))), questionLogSession && questionLogSession === view.sessionId ? questionLog : []),
       approvalLogSession && approvalLogSession === view.sessionId ? approvalLog : []
     ),
@@ -533,7 +544,7 @@ export function SessionView(): JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [setStickNow, virtual])
 
-  const userCount = useMemo(() => effectiveMessages.filter((message) => message.role === 'user' && !message.question).length, [effectiveMessages])
+  const userCount = useMemo(() => countUserMessages(effectiveMessages), [effectiveMessages])
   const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
   useEffect(() => {
     const prev = sentRef.current

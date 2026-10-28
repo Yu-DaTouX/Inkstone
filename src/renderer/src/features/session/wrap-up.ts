@@ -90,9 +90,12 @@ export function sessionWrapUp(input: {
 const strippedMessages = new WeakMap<UIMessage, UIMessage>()
 
 function stripMessage(message: UIMessage): UIMessage {
-  if (!message.toolCalls?.some(isWrapUpCall)) return message
   const cached = strippedMessages.get(message)
   if (cached) return cached
+  if (!message.toolCalls?.some(isWrapUpCall)) {
+    strippedMessages.set(message, message)
+    return message
+  }
   const toolCalls = message.toolCalls.filter((call) => !isWrapUpCall(call))
   const next: UIMessage = { ...message, toolCalls }
   strippedMessages.set(message, next)

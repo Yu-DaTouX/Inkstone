@@ -320,31 +320,50 @@ function countedRunCalls(nodes: readonly ToolCallNode[]): UIToolCall[] {
   })
 }
 
+export function toolNodesEqual(a: readonly ToolCallNode[], b: readonly ToolCallNode[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] === b[i]) continue
+    if (a[i].call !== b[i].call || !toolNodesEqual(a[i].children, b[i].children)) return false
+  }
+  return true
+}
+
 export function buildToolRows(
   tools: readonly UIToolCall[],
   approvalIds: ReadonlySet<string> = EMPTY_IDS,
-  options: { cwd?: string; min?: number } = {}
+  options: { cwd?: string; min?: number; previous?: readonly ToolRow[] } = {}
 ): ToolRow[] {
   const min = Math.max(2, options.min ?? TOOL_GROUP_MIN)
+  const previous = new Map<string, ToolRow>()
+  for (const row of options.previous ?? []) previous.set(row.id, row)
   const rows: ToolRow[] = []
   let run: ToolCallNode[] = []
-  const single = (node: ToolCallNode, standalone: boolean): ToolRow => ({
-    kind: 'single',
-    id: node.call.id,
-    node,
-    standalone,
-    blocked: isLive(node.call) && approvalIds.has(node.call.id)
-  })
+  const single = (node: ToolCallNode, standalone: boolean): ToolRow => {
+    const blocked = isLive(node.call) && approvalIds.has(node.call.id)
+    const before = previous.get(node.call.id)
+    if (before && before.kind === 'single' && before.standalone === standalone && before.blocked === blocked && toolNodesEqual([before.node], [node])) return before
+    return { kind: 'single', id: node.call.id, node, standalone, blocked }
+  }
   const flush = (): void => {
     if (run.length >= min) {
       const first = run[0].call.id
-      rows.push({
-        kind: 'group',
-        id: `group:${first}`,
-        firstId: first,
-        nodes: run,
-        summary: summarizeToolRun(countedRunCalls(run), approvalIds, options.cwd)
-      })
+      const id = `group:${first}`
+      const counted = countedRunCalls(run)
+      const before = previous.get(id)
+      const needsApproval = counted.some((call) => isLive(call) && approvalIds.has(call.id))
+      if (before && before.kind === 'group' && before.summary.needsApproval === needsApproval && toolNodesEqual(before.nodes, run)) {
+        rows.push(before)
+      } else {
+        rows.push({
+          kind: 'group',
+          id,
+          firstId: first,
+          nodes: run,
+          summary: summarizeToolRun(counted, approvalIds, options.cwd)
+        })
+      }
     } else {
       for (const node of run) rows.push(single(node, false))
     }
@@ -360,6 +379,31 @@ export function buildToolRows(
   }
   flush()
   return rows
+}
+
+export interface ToolRowsCache {
+  tools: readonly UIToolCall[]
+  approvalIds: ReadonlySet<string>
+  rows: ToolRow[]
+}
+
+function sameCalls(a: readonly UIToolCall[], b: readonly UIToolCall[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false
+  return true
+}
+
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a === b) return true
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
+}
+
+export function cachedToolRows(cache: ToolRowsCache | null, tools: readonly UIToolCall[], approvalIds: ReadonlySet<string>): ToolRowsCache {
+  if (cache && sameCalls(cache.tools, tools) && sameIds(cache.approvalIds, approvalIds)) return cache
+  return { tools, approvalIds, rows: buildToolRows(tools, approvalIds, { previous: cache?.rows }) }
 }
 
 function coalesceKey(node: ToolCallNode): string | null {

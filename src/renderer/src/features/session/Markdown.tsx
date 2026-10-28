@@ -1,4 +1,4 @@
-import { createContext, useContext, memo, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
+import { createContext, useContext, memo, startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SquareTerminal, WrapText } from 'lucide-react'
@@ -17,6 +17,7 @@ import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { splitMarkdownBlocks } from './markdown-blocks'
+import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
 import { useSmoothReveal } from './smooth-reveal'
 import { mathLoadState, mathPlugins, needsMath, requestMath, subscribeMath, type MathPlugins } from './markdown-math'
@@ -63,8 +64,9 @@ function copyText(text: string): void {
   void navigator.clipboard.writeText(text).catch(() => undefined)
 }
 
-const MD_CACHE_LIMIT = 60
-const MD_CACHE_TOTAL_CHARS = 100_000
+const MD_CACHE_LIMIT = 200
+const MD_CACHE_TOTAL_CHARS = 1_000_000
+const MD_CACHE_ENTRY_CHARS = 200_000
 const mdCache = new Map<string, React.ReactElement>()
 let mdCacheChars = 0
 function mdCacheSet(text: string, element: React.ReactElement): void {
@@ -422,8 +424,26 @@ const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highli
   )
 })
 
-function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[] }): JSX.Element {
-  const blocks = useMemo(() => splitMarkdownBlocks(text), [text])
+function LiveMarkdown({ text, highlight = false, math = null, fade = NO_FADE, throttle = false }: { text: string; highlight?: boolean; math?: MathPlugins | null; fade?: readonly FadeSpan[]; throttle?: boolean }): JSX.Element {
+  const split = useMemo(() => splitMarkdownBlocks(text), [text])
+  const hold = useRef<TailHold | null>(null)
+  const [, retry] = useState(0)
+  let blocks = split
+  let wait = 0
+  const tail = split[split.length - 1]
+  if (throttle && tail) {
+    const result = throttleTail(hold.current, tail, performance.now())
+    hold.current = result.hold
+    wait = result.wait
+    if (result.text !== tail.text) blocks = [...split.slice(0, -1), { ...tail, text: result.text }]
+  } else {
+    hold.current = null
+  }
+  useEffect(() => {
+    if (wait <= 0) return undefined
+    const id = window.setTimeout(() => retry((n) => n + 1), wait)
+    return () => window.clearTimeout(id)
+  }, [wait, text])
   return (
     <div className="v3-prose">
       {blocks.map((block) => {
@@ -482,8 +502,7 @@ export const Markdown = memo(function Markdown({
     : s.session?.cwd)
   sourceCwd = sourceCwd || sessionCwd
   const revealedText = useSmoothReveal(text, live)
-  const deferredText = useDeferredValue(revealedText)
-  const renderedText = live ? deferredText : text
+  const renderedText = live ? revealedText : text
   const { lang } = useI18n()
   const footnoteOptions = useFootnoteOptions()
   const fade = useRevealFade(renderedText, live)
@@ -520,7 +539,7 @@ export const Markdown = memo(function Markdown({
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value>
-            <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} />
+            <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={live} />
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
       </WidgetIdentityContext.Provider>
@@ -546,7 +565,7 @@ export const Markdown = memo(function Markdown({
       </ReactMarkdown>
     </div>
   )
-  const stable = !unclosed && !mathPending && renderedText.length <= 20_000
+  const stable = !unclosed && !mathPending && renderedText.length <= MD_CACHE_ENTRY_CHARS
   if (stable) mdCacheSet(cacheKey, element)
   return (
     <WidgetIdentityContext.Provider value={identity}>

@@ -175,6 +175,19 @@ function lastLeafOf(index: TreeIndex, id: string): string {
   return cursor
 }
 
+export function pagerTreeCurrent(input: {
+  tree: readonly NativeTreeNode[] | null
+  leafId: string | null
+  loadedSignature: string
+  signature: string
+}): boolean {
+  const { tree, leafId, loadedSignature, signature } = input
+  if (!tree || !leafId || !loadedSignature) return false
+  if (signature !== loadedSignature && !signature.startsWith(`${loadedSignature}\u0001`)) return false
+  const index = buildTreeIndex(tree, leafId)
+  return index.byId.has(leafId) && !index.childIdsOf.get(leafId)?.length
+}
+
 export function buildBranchPagerMap(
   tree: readonly NativeTreeNode[],
   leafId: string | null = null

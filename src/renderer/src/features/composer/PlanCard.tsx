@@ -36,7 +36,7 @@ export function PlanCard(): ReactElement | null {
   const todos = useStore((s) => s.todos)
   const todoHistory = useStore((s) => s.todoHistory)
   const agentRunning = useStore((s) => s.session?.isAgentRunning === true || s.session?.isStreaming === true)
-  const userMessageCount = useStore((s) => s.messages.reduce((n, m) => n + (m.role === 'user' ? 1 : 0), 0))
+  const userMessageCount = useStore((s) => (s.todoHistory.length ? s.messages.reduce((n, m) => n + (m.role === 'user' ? 1 : 0), 0) : 0))
 
   const model = useMemo(() => buildTodoTileModel(todos, agentRunning), [todos, agentRunning])
   const activeRow = activeTodoRow(model)

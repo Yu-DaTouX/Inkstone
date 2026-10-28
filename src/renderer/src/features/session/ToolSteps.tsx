@@ -1,4 +1,4 @@
-import { useState, type JSX } from 'react'
+import { memo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { InlineImage } from '../../ui/InlineImage'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -7,7 +7,7 @@ import { useSessionText } from './text'
 import { callPath, readFileDiff } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
 import { isDeniedCall, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
-import { approvalCallIds, buildToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolRunParts, type ToolRow } from './tool-run-model'
+import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolNodesEqual, toolRunParts, type ToolRow, type ToolRowsCache } from './tool-run-model'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -58,14 +58,16 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
   const t = useT()
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
+  const cache = useRef<ToolRowsCache | null>(null)
   if (!tools.length) return null
-  const rows = buildToolRows(tools, approvalIds)
+  cache.current = cachedToolRows(cache.current, tools, approvalIds)
+  const rows = cache.current.rows
   if (!rows.length) return null
   return (
     <section className="v3-steps" data-testid="v3-steps" aria-label={t('proc.title')}>
       <div className="v3-steps-list" data-testid="v3-steps-list">
         {rows.map((row) => {
-          if (row.kind === 'group') return <ToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
+          if (row.kind === 'group') return <MemoToolGroupRow key={row.id} row={row} glowId={glowId} alertFailures={alertFailures} asking={!!approvalCall && holdsCall(row.nodes, approvalCall)} />
           if (row.standalone && isQuestionCall(row.node.call)) {
             const callId = row.node.call.id
             const asked = askedCalls.find((request) => request.toolCallId === callId)
@@ -73,11 +75,17 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
               ? <QuestionCard key={row.id} requestId={asked.id} />
               : <QuestionReceipt key={row.id} call={row.node.call} />
           }
-          return <StepNode key={row.id} node={row.node} glowId={glowId} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
+          return <MemoStepNode key={row.id} node={row.node} glowId={glowId} depth={0} blocked={row.blocked} asking={!!approvalCall && holdsCall([row.node], approvalCall)} />
         })}
       </div>
     </section>
   )
+}
+
+type StepNodeProps = { node: ToolCallNode; depth: number; glowId: string | null; blocked?: boolean; repeat?: number; asking?: boolean }
+
+function sameStepProps(a: StepNodeProps, b: StepNodeProps): boolean {
+  return a.depth === b.depth && a.glowId === b.glowId && !a.blocked === !b.blocked && (a.repeat ?? 1) === (b.repeat ?? 1) && !a.asking === !b.asking && (a.node === b.node || toolNodesEqual([a.node], [b.node]))
 }
 
 function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<ToolRow, { kind: 'group' }>; asking: boolean; glowId: string | null; alertFailures: boolean }): JSX.Element {
@@ -111,14 +119,14 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
       {asking ? <ApprovalCard inline /> : null}
       {open ? (
         <div className="v3-step-nest" role="group" aria-label={label} data-testid="v3-step-group-list">
-          {members.map((member) => <StepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
+          {members.map((member) => <MemoStepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
         </div>
       ) : null}
     </div>
   )
 }
 
-function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = false }: { node: ToolCallNode; depth: number; glowId: string | null; blocked?: boolean; repeat?: number; asking?: boolean }): JSX.Element {
+function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = false }: StepNodeProps): JSX.Element {
   const t = useT()
   const tt = useSessionText()
   const [stored, setOpen] = useToolExpansion(`step:${node.call.id}`)
@@ -162,7 +170,7 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
               {t('tool2.nestEarlier', { n: nested.earlier })}
             </Button>
           ) : null}
-          {nested.shown.map((child) => <StepNode key={child.call.id} node={child} glowId={glowId} depth={depth + 1} />)}
+          {nested.shown.map((child) => <MemoStepNode key={child.call.id} node={child} glowId={glowId} depth={depth + 1} />)}
         </div>
       ) : null}
     </>
@@ -178,6 +186,9 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
     </div>
   )
 }
+
+const MemoToolGroupRow = memo(ToolGroupRow)
+const MemoStepNode = memo(StepNode, sameStepProps)
 
 export function collapsedNest<T>(nested: { shown: readonly T[]; earlier: number }, children: readonly T[], open: boolean, running: boolean): { shown: readonly T[]; earlier: number } {
   if (open) return nested

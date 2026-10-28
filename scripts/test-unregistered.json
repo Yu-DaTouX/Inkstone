@@ -95,6 +95,7 @@
     "test-session-ipc",
     "test-session-list-parallel",
     "test-session-metrics",
+    "test-session-render-perf",
     "test-session-search-files",
     "test-session-sync-plan",
     "test-session-tail",
