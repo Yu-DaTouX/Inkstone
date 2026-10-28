@@ -133,6 +133,8 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
         </h1>
       </div>
 
+      <div className="v3-head-drag" aria-hidden />
+
       <div className="v3-head-actions">
         {route === 'chat' ? (
           <>
