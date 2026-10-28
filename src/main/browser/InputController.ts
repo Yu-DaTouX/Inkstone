@@ -1,4 +1,5 @@
 import type { CdpChannel } from './CdpChannel'
+import { AgentCursor } from './AgentCursor'
 import {
   NotSelectElementError,
   SelectOptionNotFoundError,
@@ -6,49 +7,19 @@ import {
   type RegisteredElement
 } from './ElementRegistry'
 import { centerOf, elementBox } from './geometry'
+import { pressKey } from './driver/keyboard'
+import { dispatchWheelMotion } from './driver/scroll-motion'
 
 const MOD_CTRL = 2
 const MOD_META = 4
 
-const NAMED_KEYS: Record<string, { key: string; code: string; keyCode: number }> = {
-  enter: { key: 'Enter', code: 'Enter', keyCode: 13 },
-  tab: { key: 'Tab', code: 'Tab', keyCode: 9 },
-  escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
-  esc: { key: 'Escape', code: 'Escape', keyCode: 27 },
-  backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8 },
-  delete: { key: 'Delete', code: 'Delete', keyCode: 46 },
-  space: { key: ' ', code: 'Space', keyCode: 32 },
-  arrowup: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
-  arrowdown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
-  arrowleft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
-  arrowright: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
-  home: { key: 'Home', code: 'Home', keyCode: 36 },
-  end: { key: 'End', code: 'End', keyCode: 35 },
-  pageup: { key: 'PageUp', code: 'PageUp', keyCode: 33 },
-  pagedown: { key: 'PageDown', code: 'PageDown', keyCode: 34 },
-  '/': { key: '/', code: 'Slash', keyCode: 191 },
-  '.': { key: '.', code: 'Period', keyCode: 190 },
-  ',': { key: ',', code: 'Comma', keyCode: 188 },
-  ';': { key: ';', code: 'Semicolon', keyCode: 186 },
-  '-': { key: '-', code: 'Minus', keyCode: 189 },
-  '=': { key: '=', code: 'Equal', keyCode: 187 },
-  '[': { key: '[', code: 'BracketLeft', keyCode: 219 },
-  ']': { key: ']', code: 'BracketRight', keyCode: 221 },
-  '\\\\': { key: '\\\\', code: 'Backslash', keyCode: 220 },
-  "'": { key: "'", code: 'Quote', keyCode: 222 },
-  '`': { key: '`', code: 'Backquote', keyCode: 192 }
-}
+export class InvalidKeyError extends Error {
+  readonly code = 'INVALID_KEY'
 
-function keySpec(raw: string): { key: string; code: string; keyCode?: number } {
-  const named = NAMED_KEYS[raw.toLowerCase()]
-  if (named) return named
-  if (raw.length === 1 && /[a-z]/i.test(raw)) {
-    return { key: raw, code: `Key${raw.toUpperCase()}`, keyCode: raw.toUpperCase().charCodeAt(0) }
+  constructor(detail: string) {
+    super(`${detail}。支持 Enter、Tab、Escape、Backspace、方向键、Home/End、PageUp/PageDown、单个字符，以及 Control+A、Shift+Tab 这类组合键（修饰键 Control / Shift / Alt / Meta / ControlOrMeta）。`)
+    this.name = 'InvalidKeyError'
   }
-  if (raw.length === 1 && /[0-9]/.test(raw)) {
-    return { key: raw, code: `Digit${raw}`, keyCode: raw.charCodeAt(0) }
-  }
-  throw new Error(`不支持的按键：${raw}`)
 }
 
 function staleFromCdp(error: unknown, ref: string): StaleElementError | null {
@@ -74,10 +45,23 @@ export const SELECT_VALUE_FN = `function (wanted) {
   return { ok: true, value: el.value, label: String(hit.label || hit.text || '').trim() }
 }`
 
-export interface SelectOutcome {
-  value: string
-  label: string
-}
+const PICKER_VALUE_FN = `function (text) {
+  const el = this
+  const kinds = ['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']
+  if ((el.tagName || '').toLowerCase() !== 'input' || !kinds.includes(String(el.type).toLowerCase())) return { picker: false }
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  if (typeof el.focus === 'function') el.focus({ preventScroll: true })
+  setter.call(el, text)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  return { picker: true, type: String(el.type), value: String(el.value) }
+}`
+
+const READ_VALUE_FN = `function () {
+  if ('value' in this && typeof this.value === 'string') return this.value
+  if (this.isContentEditable) return String(this.innerText || '')
+  return null
+}`
 
 const DOM_CLICK_FN = `function () {
   const init = { bubbles: true, cancelable: true, composed: true, view: window, button: 0 }
@@ -90,37 +74,36 @@ const DOM_CLICK_FN = `function () {
   return true
 }`
 
+const SCROLL_POSITION_EXPR = `(() => { const s = document.scrollingElement || document.documentElement; return { x: Math.round(scrollX), y: Math.round(scrollY), maxY: Math.max(0, Math.round(s.scrollHeight - innerHeight)) } })()`
+
+export interface SelectOutcome {
+  value: string
+  label: string
+}
+
+export interface TypeOutcome {
+  value: string | null
+  picker?: string
+}
+
+export interface ScrollPosition {
+  x: number
+  y: number
+  maxY: number
+}
+
 export class InputController {
-  constructor(private readonly cdp: CdpChannel) {}
+  private readonly cursor: AgentCursor
+
+  constructor(private readonly cdp: CdpChannel) { this.cursor = new AgentCursor(cdp) }
+
+  showActivity(label: string): Promise<void> { return this.cursor.show(label) }
+  hideActivity(): Promise<void> { return this.cursor.hide() }
 
   async select(element: RegisteredElement, wanted: string): Promise<SelectOutcome> {
-    let objectId: string | undefined
-    try {
-      const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', {
-        backendNodeId: element.backendNodeId
-      }, element.sessionId)
-      objectId = resolved?.object?.objectId
-    } catch (error) {
-      throw staleFromCdp(error, element.ref) ?? error
-    }
-    if (!objectId) throw new StaleElementError(element.ref)
-
     type Raw = { ok?: boolean; reason?: string; tag?: string; value?: string; label?: string; options?: string[] }
-    let outcome: Raw | undefined
-    try {
-      const call = await this.cdp.send<{ result?: { value?: Raw } }>('Runtime.callFunctionOn', {
-        objectId,
-        functionDeclaration: SELECT_VALUE_FN,
-        arguments: [{ value: wanted }],
-        returnByValue: true
-      }, element.sessionId)
-      outcome = call?.result?.value
-    } catch (error) {
-      throw staleFromCdp(error, element.ref) ?? error
-    } finally {
-      await this.cdp.send('Runtime.releaseObject', { objectId }, element.sessionId).catch(() => undefined)
-    }
-
+    await this.pointAt(element, '选择')
+    const outcome = await this.callOn<Raw>(element, SELECT_VALUE_FN, [wanted])
     if (!outcome?.ok) {
       if (outcome?.reason === 'not_select') {
         throw new NotSelectElementError(element.ref, String(outcome.tag ?? ''))
@@ -131,9 +114,9 @@ export class InputController {
   }
 
   async click(element: RegisteredElement): Promise<void> {
-    const point = await this.bringIntoView(element)
+    const point = await this.pointAt(element, '点击')
     if (await this.pageHidden(element.sessionId)) {
-      await this.domClick(element)
+      await this.callOn(element, DOM_CLICK_FN)
       return
     }
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, element.sessionId)
@@ -141,7 +124,10 @@ export class InputController {
     await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, element.sessionId)
   }
 
-  async type(element: RegisteredElement, text: string): Promise<void> {
+  async type(element: RegisteredElement, text: string): Promise<TypeOutcome> {
+    await this.pointAt(element, '填写')
+    const picker = await this.callOn<{ picker?: boolean; type?: string; value?: string }>(element, PICKER_VALUE_FN, [text])
+    if (picker?.picker) return { value: String(picker.value ?? ''), picker: picker.type }
     try {
       await this.cdp.send('DOM.focus', { backendNodeId: element.backendNodeId }, element.sessionId)
     } catch (error) {
@@ -153,36 +139,64 @@ export class InputController {
     if (!text) {
       await this.key('keyDown', 'Backspace', 'Backspace', 0, 8, element.sessionId)
       await this.key('keyUp', 'Backspace', 'Backspace', 0, 8, element.sessionId)
-      return
+    } else {
+      await this.cdp.send('Input.insertText', { text }, element.sessionId)
     }
-    await this.cdp.send('Input.insertText', { text }, element.sessionId)
+    const value = await this.callOn<string | null>(element, READ_VALUE_FN).catch(() => null)
+    return { value: typeof value === 'string' ? value : null }
   }
 
-  async press(key: string): Promise<void> {
-    const normalized = String(key || '').trim()
-    if (!normalized) throw new Error('缺少按键')
-    const spec = keySpec(normalized)
-    await this.key('keyDown', spec.key, spec.code, 0, spec.keyCode)
-    await this.key('keyUp', spec.key, spec.code, 0, spec.keyCode)
+  async press(chord: string): Promise<void> {
+    const normalized = String(chord || '').trim()
+    if (!normalized) throw new InvalidKeyError('缺少按键')
+    await this.cursor.show('按键')
+    try {
+      await pressKey({
+        cdp: (method, params, sessionId) => this.cdp.send(method, params, sessionId),
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+      }, normalized)
+    } catch (error) {
+      if (error instanceof TypeError) throw new InvalidKeyError(error.message)
+      throw error
+    }
   }
 
-  async scroll(deltaX: number, deltaY: number): Promise<void> {
-    const metrics = await this.cdp
-      .send<{
-        cssLayoutViewport?: { clientWidth?: number; clientHeight?: number }
-        layoutViewport?: { clientWidth?: number; clientHeight?: number }
-      }>('Page.getLayoutMetrics')
-      .catch(() => null)
-    const viewport = metrics?.cssLayoutViewport ?? metrics?.layoutViewport
-    const x = Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2))
-    const y = Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2))
+  async scroll(deltaX: number, deltaY: number): Promise<ScrollPosition | null> {
     const dx = Number.isFinite(deltaX) ? deltaX : 0
     const dy = Number.isFinite(deltaY) ? deltaY : 0
     if (await this.pageHidden()) {
+      await this.cursor.show('滚动')
       await this.cdp.send('Runtime.evaluate', { expression: `window.scrollBy(${dx}, ${dy})`, returnByValue: true })
-      return
+    } else {
+      const metrics = await this.cdp
+        .send<{
+          cssLayoutViewport?: { clientWidth?: number; clientHeight?: number }
+          layoutViewport?: { clientWidth?: number; clientHeight?: number }
+        }>('Page.getLayoutMetrics')
+        .catch(() => null)
+      const viewport = metrics?.cssLayoutViewport ?? metrics?.layoutViewport
+      await this.cursor.show('滚动', {
+        x: Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2)),
+        y: Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2))
+      })
+      await dispatchWheelMotion({
+        cdp: (method, params) => this.cdp.send(method, params),
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+      }, {
+        x: Math.max(1, Math.round((viewport?.clientWidth ?? 800) / 2)),
+        y: Math.max(1, Math.round((viewport?.clientHeight ?? 600) / 2)),
+        deltaX: dx,
+        deltaY: dy
+      })
     }
-    await this.cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: dx, deltaY: dy })
+    return this.scrollPosition()
+  }
+
+  async scrollPosition(): Promise<ScrollPosition | null> {
+    const state = await this.cdp
+      .send<{ result?: { value?: ScrollPosition } }>('Runtime.evaluate', { expression: SCROLL_POSITION_EXPR, returnByValue: true })
+      .catch(() => null)
+    return state?.result?.value ?? null
   }
 
   private async pageHidden(sessionId?: string): Promise<boolean> {
@@ -192,7 +206,7 @@ export class InputController {
     return state?.result?.value === 'hidden'
   }
 
-  private async domClick(element: RegisteredElement): Promise<void> {
+  private async callOn<T>(element: RegisteredElement, functionDeclaration: string, args: unknown[] = []): Promise<T | undefined> {
     let objectId: string | undefined
     try {
       const resolved = await this.cdp.send<{ object?: { objectId?: string } }>('DOM.resolveNode', {
@@ -204,16 +218,25 @@ export class InputController {
     }
     if (!objectId) throw new StaleElementError(element.ref)
     try {
-      await this.cdp.send('Runtime.callFunctionOn', {
+      const call = await this.cdp.send<{ result?: { value?: T } }>('Runtime.callFunctionOn', {
         objectId,
-        functionDeclaration: DOM_CLICK_FN,
+        functionDeclaration,
+        arguments: args.map((value) => ({ value })),
         returnByValue: true
       }, element.sessionId)
+      return call?.result?.value
     } catch (error) {
       throw staleFromCdp(error, element.ref) ?? error
     } finally {
       await this.cdp.send('Runtime.releaseObject', { objectId }, element.sessionId).catch(() => undefined)
     }
+  }
+
+  private async pointAt(element: RegisteredElement, label: string): Promise<{ x: number; y: number }> {
+    const point = await this.bringIntoView(element)
+    const [offsetX, offsetY] = element.sessionId ? element.frameOffset ?? [0, 0] : [0, 0]
+    await this.cursor.show(label, { x: point.x + offsetX, y: point.y + offsetY })
+    return point
   }
 
   private async bringIntoView(element: RegisteredElement): Promise<{ x: number; y: number }> {

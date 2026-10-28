@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PiRpc } from './protocol'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
-import { findExecutableOnPath } from './search/opencli'
+import { findExecutableOnPath } from './executable-path'
 import { getSettings } from './settings'
 import { createPetEventTranslator } from './desktop-pet-events'
 import {

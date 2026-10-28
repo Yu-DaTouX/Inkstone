@@ -34,6 +34,7 @@ export function LiveRunNotice(): JSX.Element | null {
   const inlineApproval = useApprovalSlotClaimed(approvalId)
   if (!line) return null
   if (line.kind === 'waiting' && inlineApproval) return null
+  if (line.kind === 'compacting' && compaction?.status === 'running') return null
   const text = line.textKey ? tt(line.textKey, line.vars) : compactionRunningText(t, compaction)
   return (
     <div

@@ -70,8 +70,9 @@ export function PlanCard(): ReactElement | null {
     writeExpanded(next)
   }
 
-  const headline = stale ? t('plan.stale') : t('plan.title', { done: model.done, total: model.total })
-  const workingOn = !expanded && activeRow ? ` · ${t('plan.workingOn', { text: activeRow.text })}` : ''
+  const headline = t('plan.title', { done: model.done, total: model.total })
+  const nowText = !expanded && !stale && activeRow ? activeRow.text : ''
+  const hint = expanded ? t('plan.collapse') : nowText ? t('plan.workingOn', { text: nowText }) : t('plan.expand')
 
   return (
     <div className="plan-card" data-testid="plan-card" data-expanded={expanded}>
@@ -80,13 +81,14 @@ export function PlanCard(): ReactElement | null {
         className="plan-card-head"
         aria-expanded={expanded}
         aria-controls={expanded ? listId : undefined}
-        title={expanded ? t('plan.collapse') : t('plan.expand')}
+        title={hint}
         data-testid="plan-card-toggle"
         onClick={toggle}
       >
         <span className="plan-card-title">
-          {headline}
-          {workingOn ? <span className="plan-card-now">{workingOn}</span> : null}
+          <span className="plan-card-count">{headline}</span>
+          {stale ? <span className="plan-card-stale">{t('plan.stale')}</span> : null}
+          {nowText ? <span className="plan-card-now">{nowText}</span> : null}
         </span>
         {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
       </button>

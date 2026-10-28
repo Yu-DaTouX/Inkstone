@@ -378,7 +378,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   query   联网搜索。不写 --sources 时自动挑来源：有付费 key 时只用一个付费来源（中文 DeepSeek → Tavily → Brave，
           其余 Tavily → Brave → DeepSeek，按次计费）加 DuckDuckGo 兜底；付费来源出错才换下一个；
           没有 key 时只用 DuckDuckGo。DeepSeek 余额不足时暂停调用，充值后约 3 分钟内自动恢复。先到的来源已够用时，
-          慢的来源会被提前停止（状态 skipped）。维基百科 / arXiv / Hacker News 不默认查，需要时用 --sources 点名（需 OpenCLI）。
+          慢的来源会被提前停止（状态 skipped）。维基百科 / arXiv / Hacker News 不默认查，需要时用 --sources 点名。
           结果按各来源排名交错合并，多个来源都搜到的网址排前；10 分钟内同样的查询直接复用（cached）
             yan search query --query-text "flash attention"
             yan search query --query-text "Node.js 最新版本" --recent month
@@ -397,15 +397,14 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
           用 --library-id 指定
             yan search docs --library react --query-text "useEffect 清理函数"
             yan search docs --library-id /vercel/next.js --query-text "middleware matcher" [--max-chars 12000]
-  doctor  看后端在不在、版本、各来源依赖（未安装 OpenCLI 时也能读）
+  doctor  列出可点名的内置来源
 
 说明：
   · stdout 只给摘要和 resultFile 路径；用 read 读取结果文件中所需的 items / queries / sources，不能把摘要当完整搜索结果；
   · query / fetch 支持 --refresh 跳过 10 分钟结果缓存；同参数的进行中请求会合并，不重复发起；
   · 结果非空、来源评分高都不等于可信：核对相关性和发布日期，事实结论先读来源原网页；必须来自某些站点时用 --site；
     结果不相关时缩短或换查询 / 来源，要最新信息时加 --refresh；
-  · 网页引擎与付费来源都内置；只有维基百科 / arXiv / Hacker News 依赖用户自行安装的 OpenCLI，
-    没装时这几个来源报 unavailable，doctor 回可读提示 —— 不把「取不到」写成「没有结果」；
+  · 所有来源都内置，无需安装外部后端；来源取不到时单独报错，不把「取不到」写成「没有结果」；
   · 逐来源状态是分开的：ok / empty / timeout / unavailable / error / skipped（已够用、提前停止）；
   · 网页来源（ddg / brave / tavily / deepseek）的 --sources 可以点名；没配 key 的来源会单独报 api_key_missing；某个来源弹验证或连不上会单独报错，其余照常；
   · 要读结果正文先用 fetch；要登录、点击、交互的页面再用内置浏览器：yan browser navigate --url <结果里的 url>；
@@ -414,6 +413,10 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   browser: `yan browser <动作> [选项]
 
 动作（结果都落成 JSON 文件；stdout 只回一段摘要）：
+  api                           读取脚本里 page / task 的接口说明
+  run --file <路径>             执行 UTF-8 JavaScript 文件（async 函数体），提供 page、task、console、sleep
+                                 例如 await page.goto('https://example.com'); return await page.title()
+                                 return 的值和 console.log 都会带回；默认 120 秒超时
   navigate --url <地址>          打开 http(s) 页面（about:blank 也可以）
   navigate --file <路径>         打开本地 HTML（相对路径按当前目录；也接受 file:// 地址）：
                                  砚在 127.0.0.1 上临时托管它所在的项目目录，相对链接与样式照常加载
@@ -425,18 +428,23 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
                                  等条件成立（可叠加，是“且”）；--gone 配 --ref 等元素**消失**。
                                  默认 10000ms，上限 60000；超时回 code=wait_timeout +
                                  最后看到的样子（url / 元素数 / 文本片段）
-  click    --ref <ref>           点击一个元素（ref 来自 observe）
+  click    --ref <ref> [--dialog accept|dismiss]
+                                 点击一个元素（ref 来自 observe）；网页弹窗：alert 自动确认，confirm 默认取消，
+                                 --dialog accept 才确认；回执 dialogs 写明弹了什么、怎么处理；
+                                 window.prompt 不支持：页面拿到 null，回执里记为 unsupported
   type     --ref <ref> --text <文本>
+                                 清空后输入；回执 value 是写入后的实际值（日期 / 时间 / 颜色等控件直接写值）
   select   --ref <ref> --value <值>
                                  给下拉框选值（先按 value 匹配，再按可见文案）
-  press    --key <键>            Enter / Tab / Escape / ArrowDown …
-  scroll   --delta-y <像素> [--delta-x <像素>]
+  press    --key <键>            Enter / Tab / Escape / ArrowDown / 单个字符，或 Control+A、Shift+Tab 这类组合键
+  scroll   --delta-y <像素> [--delta-x <像素>]   回执 scroll 给出滚动后的位置 { x, y, maxY }
   back / forward / reload        历史与刷新
   new-tab  [--url <地址> | --file <路径>]  新标签页
   switch-tab  --id <标签id>      切到某个标签（id 从 state 里取）
-  close-tab   [--id <标签id>]    关闭标签
+  close-tab   [--id <标签id>]    关闭标签（不带 --id 关当前活动标签），回执 closed 是被关的标签 id
   screenshot                     截图（PNG 落盘，摘要里给路径，用 read 看图）；右侧面板收起时也能截
-  download                       最近一次完成的下载
+  download [--wait] [--timeout <毫秒>]
+                                 最近一次完成的下载；还在下载时回执 pending 列出文件名，--wait 等它下完（默认 30 秒）
   request-user-control [--reason <原因>]
                                  把浏览器交给用户处理密码 / 验证码 / 支付；之后结束本轮，用户发消息即交还
   connect-chrome [--url <地址>]  接入本机已安装的 Chrome（需要登录态时用）
@@ -444,16 +452,18 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
 
 说明：
   · 先用 state 看标签与当前状态，操作前用 observe 拿元素 ref，不猜 ref；
-  · 浏览器还没打开时，除 navigate / open 外的动作回 code=browser_not_open；
   · screenshot 只是落盘截图：要判断外观，得用读取工具真正打开那张图；
   · 关键操作后读回执里的页面观察，必要时再 observe 或截图核对；没确认上次提交的结果前，不要重复提交；
   · 页面是异步渲染时，点完不要立刻 observe（容易读到中间态）：用 wait 等 ref / 文本 / 地址就绪；
   · 原生下拉框展开的选项不是 DOM 元素（observe 看不到）→ 选值用 select，不要先 click 再点选项；
     目标不是下拉框回 code=NOT_SELECT，没有这个可选值回 code=OPTION_NOT_FOUND（并附上可选值）；
-  · 每个 click / type / select / press / scroll 的回执都是一次新观察，ref 随之换代：
-    连续填表时直接用上一条回执 resultFile 里的 elements[].ref，不必每步 observe；报 STALE_ELEMENT 时同理；
+  · 每个 click / type / select / press / scroll 的回执都是一次新观察；同一页面上没变的元素 ref 保持不变，
+    页面导航或换了文档后 ref 才失效（报 STALE_ELEMENT 时用回执里的 elements[].ref 或重新 observe）；
+  · 回执 openedTabs 表示点击打开了新标签（用 switch-tab 切过去），downloadStarted 表示开始下载（完成后用 download 取路径）；
+  · 动作超时会回 code=browser_action_timeout：结果未确认，先 observe / state 核对，不要直接重放；
+  · 浏览器还没打开时，除 navigate / open / run 外的动作回 code=browser_not_open；
   · type --text "" 清空输入框；
-  · 不提供「执行任意页面 JavaScript」的入口（那是被有意关掉的）。
+  · 多步操作或批量提取用 run --file；先用 api 查看 page / task 接口。
 `
 }
 
@@ -536,6 +546,8 @@ const GROUP_SPECS = {
   },
   browser: {
     actions: [
+      'api',
+      'run',
       'navigate',
       'open',
       'state',
@@ -564,7 +576,8 @@ const GROUP_SPECS = {
       type: ['ref', 'text'],
       press: ['key'],
       scroll: ['delta-y'],
-      'switch-tab': ['id']
+      'switch-tab': ['id'],
+      run: ['file']
     }
   }
 }
@@ -665,6 +678,10 @@ else if (typeof flags['request-file'] === 'string') params = { ...params, ...rea
 
 if (params.readOnly === undefined && params['read-only'] !== undefined) {
   params.readOnly = params['read-only']
+}
+
+if (positional[0] === 'browser' && positional[1] === 'run' && typeof params.file === 'string' && params.file.trim()) {
+  params.file = resolvePath(process.cwd(), params.file.trim())
 }
 
 if (positional[0] === 'browser' && ['navigate', 'open', 'new-tab'].includes(positional[1])) {

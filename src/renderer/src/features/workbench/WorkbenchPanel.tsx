@@ -286,7 +286,7 @@ export function WorkbenchPanel({
                 scope={tab === 'changes' && branch ? text.changesScope : undefined}
                 previewPath={previewPathFor(previewBindings, activeOwner.key)}
                 activating={activating}
-                canPopout={!!tool && POPOUT_TABS.has(tool) && !!onPopout}
+                canPopout={!!tool && tool !== 'browser' && POPOUT_TABS.has(tool) && !!onPopout}
                 canMoveBeside={mode !== 'full' && canTileTool(tab)}
                 moveBesideLabel={tileText2.tileOut}
                 onActivate={() => tool && attemptActivation(tool)}

@@ -4,7 +4,8 @@ import type {
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView,
-  LocalModelServer
+  LocalModelServer,
+  ModelsShrink
 } from '../../../../../shared/ipc'
 import { CUSTOM_API_CHOICES, type CustomProviderModel } from '../../../../../shared/custom-provider'
 import { useT } from '../../../i18n'
@@ -43,6 +44,7 @@ export function CustomEndpointSettings(): ReactElement {
   const [locals, setLocals] = useState<LocalModelServer[] | null>(null)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'fail'; text: string } | null>(null)
   const [pendingRemove, setPendingRemove] = useState<CustomProviderView | null>(null)
+  const [pendingShrink, setPendingShrink] = useState<ModelsShrink[] | null>(null)
   const [testId, setTestId] = useState<string | null>(null)
   const [testing, setTesting] = useState('')
   const [testResult, setTestResult] = useState<{ id: string; result: CustomProviderTestResult } | null>(null)
@@ -91,16 +93,22 @@ export function CustomEndpointSettings(): ReactElement {
     )
   }
 
-  const save = async (): Promise<void> => {
+  const save = async (confirmShrink = false): Promise<void> => {
     if (!draft) return
     setBusy(true)
     setMsg(null)
+    setPendingShrink(null)
     try {
       const result = await window.yan.saveCustomProvider({
         ...draft,
-        ...(draft.apiKey && draft.apiKey.trim() ? {} : { apiKey: undefined })
+        ...(draft.apiKey && draft.apiKey.trim() ? {} : { apiKey: undefined }),
+        ...(confirmShrink ? { confirmShrink: true } : {})
       })
       if (!alive.current) return
+      if (!result.ok && result.shrink?.length) {
+        setPendingShrink(result.shrink)
+        return
+      }
       if (!result.ok) {
         setMsg({ kind: 'fail', text: (result.errors ?? []).join('；') })
         return
@@ -530,6 +538,40 @@ export function CustomEndpointSettings(): ReactElement {
                   onPress={() => void remove(pendingRemove)}
                 >
                   {t('customApi.remove')}
+                </Button>
+              </div>
+            </Dialog>
+          </Modal>
+        </ModalOverlay>
+      ) : null}
+
+      {pendingShrink ? (
+        <ModalOverlay
+          className="ms-overlay"
+          isOpen
+          isDismissable
+          onOpenChange={(open) => {
+            if (!open) setPendingShrink(null)
+          }}
+        >
+          <Modal className="ms-modal">
+            <Dialog title={t('customApi.shrinkTitle')} closeLabel={t('ui.cancel')}>
+              {pendingShrink.map((item) => (
+                <p key={item.provider} className="ms-confirm-body">
+                  {t('customApi.shrinkConfirm', { provider: item.provider, before: item.before, after: item.after })}
+                </p>
+              ))}
+              <div className="ms-confirm-actions">
+                <Button variant="secondary" onPress={() => setPendingShrink(null)}>
+                  {t('ui.cancel')}
+                </Button>
+                <Button
+                  variant="danger"
+                  isDisabled={busy}
+                  data-testid="ms-custom-shrink-confirm"
+                  onPress={() => void save(true)}
+                >
+                  {t('customApi.shrinkSave')}
                 </Button>
               </div>
             </Dialog>

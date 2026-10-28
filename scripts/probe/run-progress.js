@@ -114,8 +114,9 @@
       },
       [user, assistant({ text: '上一轮的回复' })]
     )
-    ok(await waitKind('compacting'), '工作行为 compacting（没有 agent_start 也有运行条）', kind())
-    ok(/压缩|Compact/.test(text()) && !/作答|Writing/.test(text()), '文案写压缩，不是「正在作答」', text())
+    const marker = () => q('[data-testid="v3-compaction-marker"][data-running="1"]')
+    ok(await waitFor(() => !!marker()), '压缩进行中显示压缩标记（没有 agent_start 也有）')
+    ok(/压缩|Compact/.test(marker()?.textContent ?? '') && !line(), '只留压缩标记一条提示，工作行不再重复写压缩', `${kind()} ${marker()?.textContent ?? ''}`)
     ok(border() === 'compacting', '输入框边框 data-phase 为 compacting', border())
 
     out.push('')

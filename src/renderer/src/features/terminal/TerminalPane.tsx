@@ -396,16 +396,34 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
     }
   })
 
+  const strip =
+    tabs.length > 0 ? (
+      <TerminalTabStrip
+        tabs={items}
+        active={active}
+        bell={bell}
+        canAdd={canAddTerminalTab(tabs.length) && !inactive && !unavailable && !loadFailed}
+        inline={!!chrome}
+        text={text}
+        onSelect={selectTab}
+        onClose={closeTab}
+        onCloseOthers={closeOthers}
+        onNew={newTab}
+      />
+    ) : null
+
   return (
     <div className="term-pane" data-phase={activeState?.phase ?? (inactive ? 'inactive' : 'idle')} data-visible={visible ? '1' : '0'} data-testid="terminal-pane">
       {chrome ? (
         <>
-          <PaneTitle>
-            <span className="term-pane-chrome-title">
-              {barTitle}
-              {barStatus}
-            </span>
-          </PaneTitle>
+          {strip || badge || exited ? (
+            <PaneTitle>
+              <span className="term-pane-chrome-title">
+                {strip}
+                {barStatus}
+              </span>
+            </PaneTitle>
+          ) : null}
           <PaneTools>{barActions}</PaneTools>
         </>
       ) : (
@@ -420,19 +438,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         </PaneHeader>
       )}
 
-      {tabs.length > 0 ? (
-        <TerminalTabStrip
-          tabs={items}
-          active={active}
-          bell={bell}
-          canAdd={canAddTerminalTab(tabs.length) && !inactive && !unavailable && !loadFailed}
-          text={text}
-          onSelect={selectTab}
-          onClose={closeTab}
-          onCloseOthers={closeOthers}
-          onNew={newTab}
-        />
-      ) : null}
+      {chrome ? null : strip}
 
       <div className="term-pane-body" ref={bodyRef}>
         <div className="term-pane-hosts">

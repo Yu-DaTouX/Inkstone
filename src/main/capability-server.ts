@@ -102,6 +102,8 @@ export const KNOWN_COMMANDS = new Set([
   'subagent.get',
   'subagent.send',
   'subagent.stop',
+  'browser.api',
+  'browser.run',
   'browser.navigate',
   'browser.open',
   'browser.state',

@@ -1,8 +1,3 @@
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
-import { getEventListeners } from 'node:events'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
 export async function runSearchTests(ok, mod) {
   const {
     SEARCH_SOURCES,
@@ -15,13 +10,12 @@ export async function runSearchTests(ok, mod) {
     cleanText,
     summarizeSources,
     runSearch,
-    parseBackendError,
-    createOpencliRunner,
     searchSummary,
-    resolveJsRuntime,
-    resolveBackendTarget,
     searchDoctor,
-    findNodeOnPath
+    runWikipediaSearch,
+    runArxivSearch,
+    runHackerNewsSearch,
+    parseArxivFeed
   } = mod
 
   const T0 = 1_000_000
@@ -223,13 +217,6 @@ export async function runSearchTests(ok, mod) {
   }
 
   {
-    const e = parseBackendError('ok: false\nerror:\n  code: BROWSER_CONNECT\n  message: Browser Bridge extension not connected\n')
-    ok(e.code === 'BROWSER_CONNECT', '从 YAML 里抠出 code')
-    ok(/extension/.test(e.message ?? ''), '抠出 message')
-    ok(parseBackendError('纯文本错误').message === '纯文本错误', '抠不出来就原样给文本（不吞）')
-  }
-
-  {
     const calls = []
     const deps = {
       now: () => T0,
@@ -361,188 +348,50 @@ export async function runSearchTests(ok, mod) {
   }
 
   {
-    const missing = await createOpencliRunner('yan-opencli-does-not-exist')(SEARCH_SOURCES[0], 'q', {
-      limit: 2,
-      timeoutMs: 3000
-    })
-    ok(missing.unavailable === true, '可执行文件不存在 → unavailable')
-    ok(missing.error.code === 'backend_unavailable', '错误码是 backend_unavailable')
-    ok(/找不到/.test(missing.error.message ?? ''), '错误信息能读懂（说的是找不到后端）')
-    ok(!/ENOENT/i.test(missing.error.message ?? ''), 'ENOENT 不再原样丢出来（归一到可读文案）')
-    ok(/yan-opencli-does-not-exist/.test(missing.error.message ?? ''), '文案里带上是哪个命令找不到')
+    const requested = []
+    const reply = (body, init) => async (url, options) => {
+      requested.push({ url: String(url), options })
+      return new Response(typeof body === 'string' ? body : JSON.stringify(body), init)
+    }
+    const request = { limit: 2, timeoutMs: 3000 }
 
-    const bad = await createOpencliRunner('node')(SEARCH_SOURCES[0], 'q', { limit: 1, timeoutMs: 8000 })
-    ok(bad.rows === null && !!bad.error, '输出不是 JSON 数组 → 不当作空结果')
-    ok(bad.error.code !== 'timeout', '不是超时就不要写成超时')
+    const wiki = await runWikipediaSearch('注意力机制', request, reply({ query: { search: [{ title: 'Attention mechanism', snippet: 'An <span class="searchmatch">attention</span> layer', timestamp: '2026-01-02T00:00:00Z' }] } }))
+    ok(requested.at(-1).url.startsWith('https://zh.wikipedia.org/w/api.php?'), '中文查询走中文维基百科接口')
+    ok(/srlimit=2/.test(requested.at(-1).url), '维基百科按来源上限请求条数')
+    ok(/Inkstone/.test(requested.at(-1).options.headers['User-Agent']), '维基百科请求带明确的 User-Agent')
+    const wikiItem = normalizeRow('wikipedia', wiki.rows[0])
+    ok(wikiItem?.url === 'https://zh.wikipedia.org/wiki/Attention_mechanism' && wikiItem.snippet === 'An attention layer', '维基百科结果给出词条网址并去掉高亮标签')
+    await runWikipediaSearch('flash attention', request, reply({ query: { search: [] } }))
+    ok(requested.at(-1).url.startsWith('https://en.wikipedia.org/'), '英文查询走英文维基百科')
+
+    const feed = '<feed><entry><id>http://arxiv.org/abs/2205.14135v2</id><published>2022-05-27T17:53:09Z</published><title>FlashAttention: Fast &amp; Exact</title><summary> IO-aware attention. </summary><author><name>Tri Dao</name></author><author><name>Dan Fu</name></author><arxiv:primary_category term="cs.LG" scheme="x"/></entry></feed>'
+    const arxiv = await runArxivSearch('flash attention', request, reply(feed))
+    ok(/search_query=all%3Aflash\+attention/.test(requested.at(-1).url) && /max_results=2/.test(requested.at(-1).url), 'arXiv 按全文字段与条数查询')
+    const paper = normalizeRow('arxiv', arxiv.rows[0])
+    ok(paper?.url === 'https://arxiv.org/abs/2205.14135v2' && paper.title === 'FlashAttention: Fast & Exact', 'arXiv 结果改用 https 并解码实体')
+    ok(paper?.published === '2022-05-27' && paper.meta?.authors === 'Tri Dao, Dan Fu' && paper.meta?.category === 'cs.LG', 'arXiv 结果带发布日期、作者与分类')
+    ok(parseArxivFeed('<feed></feed>').length === 0, '没有条目的 arXiv 响应是空结果')
+
+    const hn = await runHackerNewsSearch('rust', request, reply({ hits: [{ objectID: '123', title: 'Rust 2.0', points: 42, num_comments: 7, author: 'pg' }] }))
+    ok(/tags=story/.test(requested.at(-1).url) && /hitsPerPage=2/.test(requested.at(-1).url), 'Hacker News 只查文章并按条数请求')
+    const story = normalizeRow('hackernews', hn.rows[0])
+    ok(story?.url === 'https://news.ycombinator.com/item?id=123' && story.meta?.score === 42 && story.meta?.comments === 7, 'Hacker News 结果指向讨论页并带分数与评论数')
+
+    const limited = await runHackerNewsSearch('rust', request, reply('busy', { status: 429 }))
+    ok(limited.rows === null && limited.error?.code === 'rate_limited', '限流如实报 rate_limited，不当作空结果')
+    const failing = await runArxivSearch('x', request, async () => { throw new TypeError('fetch failed') })
+    ok(failing.rows === null && failing.error?.code === 'network_error', '网络失败报 network_error')
+    const slow = await runWikipediaSearch('x', { limit: 2, timeoutMs: 20 }, (_url, options) => new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason))))
+    ok(slow.timedOut === true && slow.error?.code === 'timeout', '超过来源时限报 timeout')
+    const stop = new AbortController()
+    stop.abort()
+    const skipped = await runHackerNewsSearch('x', { ...request, signal: stop.signal }, () => { throw new Error('must not fetch') })
+    ok(skipped.skipped === true, '已取消时不发请求，直接 skipped')
   }
 
   {
-    const dir = mkdtempSync(join(tmpdir(), 'yan-opencli-wire-'))
-    const fake = (name, body) => {
-      const file = join(dir, name)
-      writeFileSync(file, body)
-      return file
-    }
-    const source = SEARCH_SOURCES[0]
-    const run = (file, timeoutMs = 15_000) => createOpencliRunner(file)(source, 'q', { limit: 2, timeoutMs })
-
-    const envelope = fake(
-      'envelope.mjs',
-      'console.log(JSON.stringify({ ok: true, data: [{ title: "W", url: "https://w/1", snippet: "s" }] }))\n'
-    )
-    const wrapped = await run(envelope)
-    ok(wrapped.rows?.length === 1 && wrapped.rows[0].title === 'W', 'opencli 2.0 的 {ok,data} 外壳能取出结果数组')
-    ok(!wrapped.error, '{ok:true,data:[…]} 不再被当成后端错误')
-
-    const nested = fake('nested.mjs', 'console.log(JSON.stringify({ ok: true, data: { results: [{ title: "R" }] } }))\n')
-    const nestedRun = await run(nested)
-    ok(nestedRun.rows?.length === 1 && nestedRun.rows[0].title === 'R', '外壳里的 results / items 容器也认')
-
-    const bare = fake('bare.mjs', 'console.log(JSON.stringify([{ title: "B" }]))\n')
-    const bareRun = await run(bare)
-    ok(bareRun.rows?.length === 1 && bareRun.rows[0].title === 'B', '直接输出数组的旧格式仍然可用')
-
-    const emptyData = fake('empty.mjs', 'console.log(JSON.stringify({ ok: true, data: [] }))\n')
-    const emptyRun = await run(emptyData)
-    ok(Array.isArray(emptyRun.rows) && emptyRun.rows.length === 0 && !emptyRun.error, '外壳里是空数组 → empty，不是错误')
-
-    const failed = fake(
-      'failed.mjs',
-      'console.log(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: "No articles found" } }))\nprocess.exitCode = 1\n'
-    )
-    const failure = await run(failed)
-    ok(failure.rows === null && failure.error?.code === 'NOT_FOUND', '外壳里的失败码照实上报（不是 backend_error）')
-    ok(/No articles found/.test(failure.error?.message ?? ''), '外壳里的失败说明照实上报（不是整段 JSON）')
-
-    const pidFile = join(dir, 'hanging.pid')
-    const hanging = fake('hanging.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)\n`)
-    const controller = new AbortController()
-    const pending = createOpencliRunner(hanging)(source, 'q', { limit: 2, timeoutMs: 10_000, signal: controller.signal })
-    const deadline = Date.now() + 5000
-    while (!existsSync(pidFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
-    ok(existsSync(pidFile), '取消夹具子进程已启动')
-    const pid = Number(readFileSync(pidFile, 'utf8'))
-    controller.abort()
-    const cancelled = await pending
-    ok(cancelled.skipped === true && !cancelled.timedOut, 'OpenCLI 外部取消返回 skipped，不等自身超时')
-    ok(getEventListeners(controller.signal, 'abort').length === 0, '取消后清理外部 signal 监听器')
-    let alive = true
-    for (let i = 0; i < 100 && alive; i++) {
-      try { process.kill(pid, 0) } catch { alive = false }
-      if (alive) await new Promise((resolve) => setTimeout(resolve, 20))
-    }
-    ok(!alive, '取消确实终止 OpenCLI 子进程')
-    const preCancelled = await createOpencliRunner('yan-should-not-spawn')(source, 'q', { limit: 2, timeoutMs: 1000, signal: controller.signal })
-    ok(preCancelled.skipped && !preCancelled.unavailable, '预先取消时不启动子进程')
-    const normal = new AbortController()
-    await createOpencliRunner(envelope)(source, 'q', { limit: 2, timeoutMs: 1000, signal: normal.signal })
-    ok(getEventListeners(normal.signal, 'abort').length === 0, '正常退出也清理外部 signal 监听器')
-
-    const huge = fake('huge.mjs', 'process.stdout.write("[" + "1,".repeat(400000))\n')
-    const hugeRun = await run(huge)
-    ok(hugeRun.rows === null && hugeRun.error?.code === 'output_too_large', '超出输出上限 → output_too_large')
-  }
-
-  {
-    const inElectronFound = resolveJsRuntime(() => 'C:\\nodejs\\node.exe', 'C:\\electron\\electron.exe', true)
-    ok(inElectronFound.file === 'C:\\nodejs\\node.exe', 'Electron 下跑 JS 入口改用 PATH 里的真实 node')
-    ok(!inElectronFound.error, '找到真实 node 时不报错')
-
-    const inElectronMissing = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true)
-    ok(!!inElectronMissing.error, 'Electron 下找不到真实 node → 如实报错（不拿 Electron 硬跑）')
-    ok(/commander|参数/.test(inElectronMissing.error ?? ''), '错误说明能指出 commander / 参数解析这个真实原因')
-    ok(!/YAN_OPENCLI_JS/.test(inElectronMissing.error ?? ''), '不再把 YAN_OPENCLI_JS 说成能指定 node（它指的是 OpenCLI 入口）')
-
-    const viaNodeBin = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, process.execPath)
-    ok(viaNodeBin.file === process.execPath && !viaNodeBin.error, 'YAN_NODE_BIN 指定存在文件时优先用它')
-    const badNodeBin = resolveJsRuntime(
-      () => 'C:\\nodejs\\node.exe',
-      'C:\\electron\\electron.exe',
-      true,
-      'C:\\definitely-missing\\node.exe'
-    )
-    ok(!!badNodeBin.error && /YAN_NODE_BIN/.test(badNodeBin.error), 'YAN_NODE_BIN 指向不存在的文件 → 如实报错')
-    const nodeBinOnlyWhenElectron = resolveJsRuntime(() => null, '/usr/bin/node', false, 'C:\\definitely-missing\\node.exe')
-    ok(nodeBinOnlyWhenElectron.file === '/usr/bin/node', '非 Electron 运行时不受 YAN_NODE_BIN 影响')
-
-    const plain = resolveJsRuntime(() => null, '/usr/bin/node', false)
-    ok(plain.file === '/usr/bin/node' && !plain.error, '非 Electron 运行时直接用自身 Node')
-
-    const targetFound = resolveBackendTarget('C:\\some\\main.js', inElectronFound)
-    ok(targetFound.file === 'C:\\nodejs\\node.exe', '显式 YAN_OPENCLI_JS 指向 .js 时也用真实 node 跑')
-    ok(targetFound.prefix[0] === 'C:\\some\\main.js' && !targetFound.error, '入口路径仍在参数数组里（不过 shell）')
-    const targetBlocked = resolveBackendTarget('C:\\some\\main.js', inElectronMissing)
-    ok(!!targetBlocked.error, '没有真实 node 时把不可用原因写进 target.error')
-
-    const healthy = await searchDoctor({
-      runner: async (args) =>
-        args[0] === '--version'
-          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
-          : { code: 0, stdout: 'opencli v1.8.8 doctor (node v24)\n[OK] Daemon: running\n', stderr: '' }
-    })
-    ok(healthy.available === true && healthy.version === '1.8.8', '--version 与 doctor 都正常 → available')
-    ok(healthy.sources.every((s) => s.ready === true), '后端可用 → 来源 ready')
-
-    const fakeGreen = await searchDoctor({
-      runner: async (args) =>
-        args[0] === '--version'
-          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
-          : { code: 2, stdout: "error: unknown command 'C:\\…\\main.js'\nUsage: opencli [options] [command]\n", stderr: '' }
-    })
-    ok(fakeGreen.available === false, '--version 成功但 doctor 跑不起来 → 不再报「已就绪」（假绿回归）')
-    ok(fakeGreen.code === 'backend_unusable', '假绿时的错误码是 backend_unusable')
-    ok(/unknown command/.test(fakeGreen.detail), '原始输出原样留在 detail 里（便于排查）')
-    ok(fakeGreen.sources.every((s) => s.ready === false), '后端不可用 → 来源不再报 ready（口径一致）')
-
-    const timedOut = await searchDoctor({
-      runner: async (args) =>
-        args[0] === '--version'
-          ? { code: 0, stdout: '1.8.8\n', stderr: '' }
-          : { code: -1, stdout: 'opencli v1.8.8 doctor (node v24.19.0)\n', stderr: '', timedOut: true }
-    })
-    ok(timedOut.available === false, 'doctor 探针超时（哪怕已打出头部）→ 不报「已就绪」')
-    ok(timedOut.code === 'backend_unusable', '超时也归入 backend_unusable')
-    ok(/超时/.test(timedOut.detail), 'detail 里写明是超时，而不是含糊的「跑不起来」')
-
-    const versionTimeout = await searchDoctor({
-      runner: async (args) =>
-        args[0] === '--version'
-          ? { code: -1, stdout: '', stderr: '', timedOut: true }
-          : { code: 0, stdout: 'opencli v1.8.8 doctor\n[OK] Daemon: running\n', stderr: '' }
-    })
-    ok(versionTimeout.available === false, '--version 探针超时 → 不报可用')
-    ok(/超时/.test(versionTimeout.detail), '--version 超时也说清是超时（不是「未安装」）')
-
-    const binDir = mkdtempSync(join(tmpdir(), 'yan-nodebin-'))
-    const fakeElectron = join(binDir, 'electron.exe')
-    writeFileSync(fakeElectron, 'not-really-electron')
-    const electronAsNode = resolveJsRuntime(() => null, 'C:\\electron\\electron.exe', true, fakeElectron)
-    ok(!!electronAsNode.error && /Electron/.test(electronAsNode.error), 'YAN_NODE_BIN 指向 Electron → 如实拦下')
-
-    const savedPath = process.env.PATH
-    try {
-      process.env.PATH = ''
-      const noBackend = await searchDoctor()
-      ok(noBackend.available === false, 'PATH 里没有 opencli → 不可用')
-      ok(/找不到/.test(noBackend.detail) && !/ENOENT/i.test(noBackend.detail), '未安装时的 detail 是可读中文，不是 ENOENT')
-    } finally {
-      process.env.PATH = savedPath
-    }
-  }
-
-  {
-    const shim = join('/fake/shim')
-    const real = join('/fake/real')
-    const files = {
-      [join(shim, 'node.cmd')]: { isFile: true, size: 40 },
-      [join(shim, 'node.exe')]: { isFile: true, size: 0 },
-      [join(real, 'node.exe')]: { isFile: true, size: 80_000_000 }
-    }
-    const probe = (p) => files[p] ?? { isFile: false, size: -1 }
-    ok(findNodeOnPath([shim], probe, 'win32') === null, 'Windows 上 .cmd shim 与 0 字节 node.exe 都不选')
-    ok(findNodeOnPath([shim, real], probe, 'win32') === join(real, 'node.exe'), '跳过坏候选，选到后面的正常 node.exe')
-    ok(findNodeOnPath([shim, real], probe, 'linux') === null, '非 Windows 不把 node.exe 当候选')
-    const dirProbe = () => ({ isFile: false, size: 0 })
-    ok(findNodeOnPath([shim], dirProbe, 'win32') === null, '目录不算可执行文件')
+    const status = await searchDoctor()
+    ok(status.available === true && status.sources.map((s) => s.id).join(',') === 'wikipedia,arxiv,hackernews', 'doctor 不再依赖外部后端，列出可点名的内置来源')
+    ok(status.sources.every((s) => s.ready), '内置来源都标 ready')
   }
 }

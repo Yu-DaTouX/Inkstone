@@ -17,6 +17,7 @@ export interface TerminalTabStripProps {
   active: string | null
   bell: string | null
   canAdd: boolean
+  inline?: boolean
   text: TerminalText
   onSelect: (key: string) => void
   onClose: (key: string) => void
@@ -29,6 +30,7 @@ export function TerminalTabStrip({
   active,
   bell,
   canAdd,
+  inline = false,
   text,
   onSelect,
   onClose,
@@ -93,7 +95,7 @@ export function TerminalTabStrip({
   }
 
   return (
-    <div className="term-tabbar">
+    <div className="term-tabbar" data-inline={inline ? '' : undefined}>
       <div className="term-tabs" role="tablist" aria-label={text.tabs} ref={stripRef} data-testid="terminal-tabs">
         {tabs.map((tab) => (
           <div

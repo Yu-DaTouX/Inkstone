@@ -295,7 +295,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           </IconTip>
           {onClose ? (
             <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={preview ? own.pin : text.toggleSidebar} onPress={preview ? onPin : onClose} data-testid="v3-side-close">
+              <IconButton aria-label={preview ? own.pin : text.toggleSidebar} onPress={preview ? onPin : onClose} className="v3-side-close" data-testid="v3-side-close">
                 <PanelLeftClose size={16} />
               </IconButton>
             </IconTip>

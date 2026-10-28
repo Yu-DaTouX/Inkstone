@@ -2,8 +2,6 @@ export type SearchSourceId = 'wikipedia' | 'arxiv' | 'hackernews' | 'brave' | 't
 
 export interface SearchSource {
   id: SearchSourceId
-  app: string
-  subcommand: string
   label: string
   needsBrowser: boolean
   urlKind: 'direct' | 'hackernews'
@@ -11,13 +9,13 @@ export interface SearchSource {
 }
 
 export const SEARCH_SOURCES: readonly SearchSource[] = [
-  { id: 'wikipedia', app: 'wikipedia', subcommand: 'search', label: '维基百科', needsBrowser: false, urlKind: 'direct' },
-  { id: 'arxiv', app: 'arxiv', subcommand: 'search', label: 'arXiv', needsBrowser: false, urlKind: 'direct' },
-  { id: 'hackernews', app: 'hackernews', subcommand: 'search', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' },
-  { id: 'brave', app: '', subcommand: '', label: 'Brave 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
-  { id: 'tavily', app: '', subcommand: '', label: 'Tavily 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
-  { id: 'deepseek', app: '', subcommand: '', label: 'DeepSeek 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
-  { id: 'ddg', app: '', subcommand: '', label: 'DuckDuckGo', needsBrowser: false, urlKind: 'direct', direct: true }
+  { id: 'wikipedia', label: '维基百科', needsBrowser: false, urlKind: 'direct' },
+  { id: 'arxiv', label: 'arXiv', needsBrowser: false, urlKind: 'direct' },
+  { id: 'hackernews', label: 'Hacker News', needsBrowser: false, urlKind: 'hackernews' },
+  { id: 'brave', label: 'Brave 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
+  { id: 'tavily', label: 'Tavily 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
+  { id: 'deepseek', label: 'DeepSeek 搜索', needsBrowser: false, urlKind: 'direct', direct: true },
+  { id: 'ddg', label: 'DuckDuckGo', needsBrowser: false, urlKind: 'direct', direct: true }
 ]
 
 export const DEFAULT_SEARCH_SOURCES: readonly SearchSourceId[] = SEARCH_SOURCES.filter((s) => !s.direct).map((s) => s.id)

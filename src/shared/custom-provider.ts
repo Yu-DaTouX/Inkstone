@@ -84,6 +84,13 @@ export interface CustomProviderInput {
   baseUrl: string
   models: CustomProviderModel[]
   apiKey?: string
+  confirmShrink?: boolean
+}
+
+export interface ModelsShrink {
+  provider: string
+  before: number
+  after: number
 }
 
 export const CUSTOM_PROVIDER_PREFIX = 'yan-'
@@ -263,6 +270,33 @@ export function mergeCustomProviders(
   if (!changed) return { next: base, changed: false }
   base.providers = providers
   return { next: base, changed: true }
+}
+
+function providerModelCounts(json: unknown): Map<string, number> {
+  const counts = new Map<string, number>()
+  const providers = json && typeof json === 'object' ? (json as Json).providers : undefined
+  if (!providers || typeof providers !== 'object') return counts
+  for (const [id, entry] of Object.entries(providers as Json)) {
+    const models = entry && typeof entry === 'object' ? (entry as Json).models : undefined
+    counts.set(id, Array.isArray(models) ? models.length : 0)
+  }
+  return counts
+}
+
+export function modelsWriteRisk(before: unknown, next: unknown, removals: readonly string[] = []): { dropped: string[]; shrink: ModelsShrink[] } {
+  const prior = providerModelCounts(before)
+  const after = providerModelCounts(next)
+  const dropped: string[] = []
+  const shrink: ModelsShrink[] = []
+  for (const [id, count] of prior) {
+    if (!after.has(id)) {
+      if (!removals.includes(id)) dropped.push(id)
+      continue
+    }
+    const now = after.get(id) ?? 0
+    if (count >= 3 && now * 2 <= count) shrink.push({ provider: id, before: count, after: now })
+  }
+  return { dropped, shrink }
 }
 
 export function maskCustomProvider(view: CustomProviderView): CustomProviderView & { apiKeyLabel: string } {

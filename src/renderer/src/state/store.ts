@@ -56,6 +56,7 @@ import { markStopRequested } from '../features/session/stop-intent'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
 import { MessagePatchBatch, createFrameFlush } from './push-coalesce'
 import { reuseSessionSummaries } from './session-list'
+import { cssQuoted, highlightMessageElement, locateMessageInView } from './message-locator'
 import { planQueueRecovery, mergeQueueAttachments, type QueueImageRef } from './queue-images'
 import {
   composerDraftForView,
@@ -190,6 +191,7 @@ export interface Store {
 
   alwaysOnTop: boolean
   browserState: BrowserState
+  browserStates: Record<string, BrowserState>
   browserNativeVisible: boolean
   terminals: TerminalSessionInfo[]
   filePreview: FilePreviewState | null
@@ -215,7 +217,7 @@ export interface Store {
   attachments: Attachment[]
   pendingSourceLinks: { sessionId: string; sourceIds: string[]; attempts?: number }[]
   submittingMessages: SubmittingMessage[]
-  locateMessage: (messageId: string) => boolean
+  locateMessage: (messageId: string) => Promise<boolean>
 
   peekedPath: string | null
   peekedSessionId: string | null
@@ -1007,24 +1009,28 @@ export const useStore = create<Store>((rawSet, get) => {
       return partial
     })
   }
+  const revealBrowserPane = (navigate: boolean): void => {
+    if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
+    const ui = useUiV3.getState()
+    if (navigate) ui.navigate({ name: 'chat' })
+    if (!revealToolTile('browser')) {
+      ui.setWorkspaceTab('browser')
+      ui.setWorkspaceOpen(true)
+    }
+    applyBrowserVisibility(get)
+  }
   const browserOpener = new BrowserOpener({
-    open: (url) => window.yan.browser.open(url),
+    open: (url) => window.yan.browser.open(url, get().peekedSessionId ?? get().session?.sessionId ?? 'workspace'),
     currentOwnerKey: () => currentViewOwnerKey(get()),
     resourceOwner: () => resourceOwner('browser'),
     claimResource: (owner) => claimResource('browser', owner),
     releaseResource: () => releaseResource('browser'),
     isBrowserOpen: () => get().browserState.open,
-    setBrowserState: (browserState) => set({ browserState }),
-    reveal: () => {
-      if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
-      const ui = useUiV3.getState()
-      ui.navigate({ name: 'chat' })
-      if (!revealToolTile('browser')) {
-        ui.setWorkspaceTab('browser')
-        ui.setWorkspaceOpen(true)
-      }
-      applyBrowserVisibility(get)
+    setBrowserState: (browserState) => {
+      if (browserState.sessionId && browserState.sessionId !== (get().peekedSessionId ?? get().session?.sessionId ?? 'workspace')) return
+      set({ browserState })
     },
+    reveal: () => revealBrowserPane(true),
     blocked: (reason) => {
       const text =
         reason === 'foreign-owner'
@@ -1116,6 +1122,7 @@ export const useStore = create<Store>((rawSet, get) => {
   maximized: false,
   alwaysOnTop: false,
   browserState: { open: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
+  browserStates: {},
   browserNativeVisible: false,
   terminals: [],
   filePreview: null,
@@ -1297,7 +1304,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
 
-    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), t: uiText }
+    const ctx = { get, set, alertAttention, pushNotice, applyBrowserVisibility: () => applyBrowserVisibility(get), revealBrowser: () => revealBrowserPane(false), t: uiText }
     if (consumeShellPush(m, s, ctx) || consumeQuestionPush(m, s, ctx) || consumeSubagentPush(m, s, ctx) || consumeTaskStatePush(m, s, ctx)) return
 
     switch (m.ch) {
@@ -1723,16 +1730,14 @@ export const useStore = create<Store>((rawSet, get) => {
     set({ quotaResume: null })
   },
 
-  locateMessage: (messageId) => {
+  locateMessage: async (messageId) => {
     const id = String(messageId ?? '')
     if (!id) return false
-    const quoted = id.replace(/["\\]/g, '\\$&')
+    if (await locateMessageInView(id)) return true
+    const quoted = cssQuoted(id)
     const el = document.querySelector(`[data-msg-id="${quoted}"], .v3-msg[data-turn-id="${quoted}"]`)
     if (!el) return false
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false
-    el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
-    el.classList.add('msg-located')
-    window.setTimeout(() => el.classList.remove('msg-located'), 1800)
+    highlightMessageElement(el)
     return true
   },
 
@@ -2431,7 +2436,7 @@ export const useStore = create<Store>((rawSet, get) => {
     const owner = target?.key ?? (view.peekedPath || view.peekedSessionId
       ? workspaceKeyFor(viewKeyRef(view))
       : conversationKeyOf(view.session))
-    await browserOpener.open({ owner, url, guard: target !== undefined })
+    await browserOpener.open({ owner, url, guard: true, takeover: target?.takeover ?? target === undefined })
   },
 
   openLink: async (url) => {
@@ -2449,7 +2454,7 @@ export const useStore = create<Store>((rawSet, get) => {
       return
     }
     if (currentViewOwnerKey(get()) !== owner) return
-    await get().openBrowser(url, { key: owner })
+    await get().openBrowser(url, { key: owner, takeover: true })
   },
 
   previewFile: async (path, line, cwd, lineEnd) => {

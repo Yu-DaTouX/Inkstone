@@ -262,8 +262,8 @@ export class Observer {
         })
       }
     }
-    const generationId = this.registry.refresh(candidates)
-    const refreshed = candidates.map((_, index) => this.registry.resolve(`${generationId}:e${index + 1}`))
+    const { generationId, refs } = this.registry.refresh(candidates)
+    const refreshed = refs.map((ref) => this.registry.resolve(ref))
     return {
       generationId,
       url: pageResult.result.value?.url || url,

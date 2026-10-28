@@ -39,20 +39,35 @@
   }
 
   .plan-card-title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
     flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .plan-card-now {
+  .plan-card-count {
+    flex: none;
     color: var(--fg2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .plan-card-stale {
+    flex: none;
+    color: var(--fg3);
+  }
+
+  .plan-card-now {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg);
   }
 
   .plan-card-scroll {
     position: relative;
-    max-height: calc(4.5 * (var(--t-footnote-lh) + 2 * var(--s-2)) + var(--s-6));
+    max-height: min(calc(6.5 * (var(--t-footnote-lh) + 2 * var(--s-2) + 1px) + var(--s-6)), 32svh);
     padding-bottom: var(--s-6);
     overflow-y: auto;
     overscroll-behavior: contain;

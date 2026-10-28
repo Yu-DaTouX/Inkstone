@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Plus, RotateCw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, LogIn, Plus, RotateCw, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, EmptyState, Input, IconButton, Notice, Tab, TabList, Tabs, TextField } from '../../ui'
-import { claimResource, resourceOwner } from '../../state/resource-owners'
+import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
 import { PaneTitle, usePaneChrome } from '../workbench/pane-chrome'
@@ -41,11 +41,14 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
 
   const browserOwnerKey = resourceOwner('browser')
   const adoptable = owner.active && state.open && browserOwnerKey === undefined
+  const driving = owner.active && state.open && !!state.agentSessionId && state.agentSessionId === owner.sessionId
+  const staleKey = browserOwnerKey !== undefined && browserOwnerKey !== owner.key && (driving || (!!owner.sessionId && browserOwnerKey === owner.sessionId))
   useEffect(() => {
-    if (adoptable) claimResource('browser', owner.key)
-  }, [adoptable, owner.key])
+    if (staleKey) releaseResource('browser')
+    if (adoptable || staleKey) claimResource('browser', owner.key)
+  }, [adoptable, staleKey, owner.key])
 
-  const owns = adoptable || browserOwnerKey === owner.key
+  const owns = adoptable || staleKey || browserOwnerKey === owner.key
   const control = browserControlAllowed({
     owner,
     visible,
@@ -65,7 +68,82 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [opening, setOpening] = useState(false)
+  const [importStarting, setImportStarting] = useState(false)
+  const [importId, setImportId] = useState<string | null>(null)
+  const [importPhase, setImportPhase] = useState<'waiting' | 'importing'>('waiting')
+  const [importNote, setImportNote] = useState<{ tone: 'ok' | 'fail'; text: string } | null>(null)
   const navSeq = useRef(0)
+
+  useEffect(() => {
+    if (!importNote) return
+    const timer = setTimeout(() => setImportNote(null), importNote.tone === 'ok' ? 5000 : 10000)
+    return () => clearTimeout(timer)
+  }, [importNote])
+
+  useEffect(() => {
+    if (!importId) return
+    let active = true
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async (): Promise<void> => {
+      try {
+        const status = await window.yan.browser.loginImportStatus(importId)
+        if (!active) return
+        if (status.phase === 'waiting' || status.phase === 'importing') {
+          setImportPhase(status.phase)
+          timer = setTimeout(() => void poll(), 500)
+          return
+        }
+        setImportId(null)
+        if (status.phase === 'done' && status.result) {
+          const { copied, failed, skipped } = status.result
+          setImportNote({ tone: failed ? 'fail' : 'ok', text: text.importDone(copied, failed, skipped) })
+        } else if (status.phase === 'failed') setImportNote({ tone: 'fail', text: text.importError(status.error) })
+      } catch {
+        if (active) { setImportId(null); setImportNote({ tone: 'fail', text: text.importFailed }) }
+      }
+    }
+    void poll()
+    return () => { active = false; clearTimeout(timer) }
+  }, [importId, text])
+
+  const importLogin = async (): Promise<void> => {
+    if (importStarting || (importId && importPhase === 'importing')) return
+    setImportStarting(true)
+    setImportNote(null)
+    try {
+      if (importId) {
+        const status = await window.yan.browser.cancelLoginImport(importId)
+        if (status.phase === 'cancelled') setImportId(null)
+        else if (status.phase === 'importing') setImportPhase('importing')
+      } else {
+        const { id } = await window.yan.browser.startLoginImport()
+        setImportPhase('waiting')
+        setImportId(id)
+      }
+    } catch { setImportNote({ tone: 'fail', text: text.importFailed }) }
+    finally { setImportStarting(false) }
+  }
+  const importButton = (
+    <Button variant="ghost" size="sm" title={text.importHint} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
+      <LogIn size={14} aria-hidden="true" />
+      {importId ? text.importCancel : text.importLogin}
+    </Button>
+  )
+  const importStatus = importId || importNote ? (
+    <Notice
+      tone={importId ? 'info' : importNote?.tone === 'ok' ? 'ok' : 'fail'}
+      compact
+      data-testid="browser-pane-import-note"
+      action={!importId && importNote ? (
+        <IconButton size="sm" aria-label={text.importDismiss} data-testid="browser-pane-import-dismiss" onPress={() => setImportNote(null)}>
+          <X size={14} aria-hidden="true" />
+        </IconButton>
+      ) : undefined}
+    >
+      {importId ? (importPhase === 'waiting' ? text.importWaiting : text.importing) : importNote?.text}
+    </Notice>
+  ) : null
+
 
   useEffect(() => {
     setDraft((prev) => nextAddressInput(shownUrl, prev, dirty))
@@ -74,6 +152,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   useEffect(() => {
     setDirty(false)
     setError('')
+    setImportNote(null)
   }, [owner.key])
 
   const navigate = async (target?: string): Promise<void> => {
@@ -102,7 +181,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     if (opening) return
     setOpening(true)
     try {
-      await openBrowser(undefined, { key: owner.key })
+      await openBrowser(undefined, { key: owner.key, takeover: true })
     } finally {
       setOpening(false)
     }
@@ -129,6 +208,8 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
               </Button>
             }
           />
+          {importButton}
+          {importStatus}
         </div>
       )
     }
@@ -249,7 +330,10 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
         >
           <ExternalLink size={14} aria-hidden="true" />
         </IconButton>
+        {importButton}
       </div>
+
+      {importStatus ? <div className="v3-browser__status">{importStatus}</div> : null}
 
       {state.loading || state.loadError || error ? (
         <div className="v3-browser__status" data-testid="browser-pane-status" role="status">

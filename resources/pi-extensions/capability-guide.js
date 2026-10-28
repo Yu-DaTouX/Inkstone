@@ -24,7 +24,7 @@ const GUIDE_LINES = [
   '',
   'Command groups (run `yan <group> --help` before first use; where a skill is named, read its SKILL.md once):',
   '- capabilities: search installed commands, skills and MCP tools when unsure a capability exists; skill capabilities covers missing ones',
-  '- browser: open or operate web pages; search: web search, page text, library docs',
+  '- browser: open or operate web pages in the built-in browser; browser run --file runs multi-step scripts; search: web search, page text, library docs',
   ...CLI_ONLY_GROUPS,
   '- subagent: only for independent parallel work or a model the user names; read skill subagent first; do not sleep-poll, the host notifies you',
   '- image: generate images; artifact: attach an existing file to this reply (pages, tools or designs the user will open: skill artifact)',

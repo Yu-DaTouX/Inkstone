@@ -12,7 +12,7 @@ const entry = [
   "export * from './src/renderer/src/features/browser/browser-text.ts'",
   "export { useStore } from './src/renderer/src/state/store.ts'",
   "export { useUiV3 } from './src/renderer/src/state/ui-v3.ts'",
-  "export { releaseResource } from './src/renderer/src/state/resource-owners.ts'"
+  "export { releaseResource, claimResource, resourceOwner } from './src/renderer/src/state/resource-owners.ts'"
 ].join('\n')
 
 const built = await build({
@@ -33,7 +33,7 @@ globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} 
 const mod = await import(
   `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`
 )
-const { BrowserOpener, browserControlAllowed, browserText, useStore, useUiV3, releaseResource } = mod
+const { BrowserOpener, browserControlAllowed, browserText, useStore, useUiV3, releaseResource, claimResource, resourceOwner } = mod
 
 let pass = 0
 let fail = 0
@@ -203,6 +203,29 @@ group('已有 A 的资源：B 不能控制（复用既有归属判定）')
   ok(allowed === true, 'browserControlAllowed：资源归 A 且 A 活动时可控制')
 }
 
+group('用户明确打开：旧归属可转交，进行中的打开不可抢占')
+{
+  const h = makeHarness()
+  h.state.resourceOwner = 'old-session'
+  h.state.browserOpen = true
+  const pending = h.opener.open({ owner: 'A', guard: true, takeover: true })
+  ok(h.calls.open.length === 1, '旧归属不再拦截用户的明确打开')
+  ok(h.state.resourceOwner === 'old-session', '宿主确认前不改旧归属')
+  h.state.currentKey = 'B'
+  await h.opener.open({ owner: 'B', guard: true, takeover: true })
+  ok(h.calls.open.length === 1 && h.calls.blocked[0] === 'opening-elsewhere', '另一个会话不能抢进行中的用户导航')
+  h.state.currentKey = 'A'
+  h.inflight[0].resolve(browserState({ agentSessionId: undefined }))
+  await pending
+  ok(h.state.resourceOwner === 'A' && h.calls.reveal === 1, '成功后归属转到点击者，面板可操作')
+
+  h.state.resourceOwner = 'old-session'
+  const failed = h.opener.open({ owner: 'A', guard: true, takeover: true })
+  h.inflight[1].reject(new Error('浏览器正在执行操作'))
+  await failed
+  ok(h.state.resourceOwner === 'old-session', '宿主拒绝时保留原归属')
+}
+
 group('v2 向后兼容：不传 guard 时保持原路径')
 {
   const h = makeHarness()
@@ -256,6 +279,14 @@ group('消息链接：成功加载后前台显示浏览器，拒绝及切换会�
   ok(calls.length === 1, '消息链接确实加载网页')
   ok(useUiV3.getState().workspaceTab === 'browser', '自动选中浏览器而非留在其他面板')
   ok(useUiV3.getState().workspaceOpen, '收起的工作区自动展开')
+
+  reset()
+  claimResource('browser', 'expired-conversation')
+  useStore.setState({ browserState: browserState({ agentSessionId: 'old-session' }) })
+  await useStore.getState().openLink('https://new.test/')
+  ok(calls.length === 1 && useUiV3.getState().workspaceOpen, '聊天链接能打开已被旧会话认领的浏览器')
+  ok(resourceOwner('browser') === 'A', '链接打开后面板归属同步到当前会话')
+  ok(useStore.getState().browserState.agentSessionId === undefined, '用户打开后的状态不残留旧 Agent 归属')
 
   reset()
   gate = async () => ({ decision: 'deny' })

@@ -3164,7 +3164,7 @@ async function main() {
   }
 
   console.log(`将运行：${names.join(', ')}`)
-  console.log(`测试模型：${TEST_MODEL}（可用 YAN_TEST_MODEL 覆盖）`)
+  console.log(`测试模型：${TEST_MODEL}（可用 YAN_TEST_MODEL 覆盖）；思考档：${process.env.YAN_TEST_THINKING || 'off'}（可用 YAN_TEST_THINKING 覆盖）`)
   const spends = names.filter((n) => CASES[n].cost > 0)
   if (spends.length) {
     for (const n of spends) {
@@ -3649,7 +3649,7 @@ async function main() {
     const piSettingsFile = sandboxRoot ? join(sandboxRoot, 'pi-agent', 'settings.json') : null
     if (piSettingsFile) {
       rmSync(piSettingsFile, { force: true })
-      const settings = { defaultThinkingLevel: 'off', ...(c.piSettings ?? {}) }
+      const settings = { defaultThinkingLevel: process.env.YAN_TEST_THINKING || 'off', ...(c.piSettings ?? {}) }
       writeFileSync(piSettingsFile, JSON.stringify(settings, null, 2), 'utf8')
     } else if (c.piSettings) {
       console.log('  ⤺ 跳过：非隔离模式（YAN_TEST_ISOLATED=0）不会写真实 pi 目录的 settings.json')

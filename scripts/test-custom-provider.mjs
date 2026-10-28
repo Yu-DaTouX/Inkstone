@@ -3,6 +3,7 @@ export async function runCustomProviderTests(ok, mod) {
     validateCustomProvider,
     readCustomProviders,
     mergeCustomProviders,
+    modelsWriteRisk,
     isYanProviderId,
     validateBaseUrl,
     hasExecutablePrefix,
@@ -149,6 +150,20 @@ export async function runCustomProviderTests(ok, mod) {
   ok(readCustomProviders({ providers: { 'yan-x': null } }).length === 1, '条目是 null 也能读（不抛）')
   const untouched = mergeCustomProviders(null, [], [])
   ok(untouched.changed === false, '没有任何改动时不写盘')
+
+  const many = { providers: { commandcode: { models: Array.from({ length: 94 }, (_, i) => ({ id: `m${i}` })) }, local: { models: [{ id: 'a' }] }, 'yan-big': { models: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }] } } }
+  const collapsed = { providers: { commandcode: { models: [{ id: 'm0' }] } } }
+  const collapseRisk = modelsWriteRisk(many, collapsed)
+  ok(collapseRisk.dropped.includes('local') && collapseRisk.dropped.includes('yan-big'), '整份覆盖丢掉的服务商被列出', JSON.stringify(collapseRisk))
+  ok(collapseRisk.shrink.some((item) => item.provider === 'commandcode' && item.before === 94 && item.after === 1), '模型从 94 缩到 1 算大幅减少', JSON.stringify(collapseRisk))
+  const shrinkOwn = mergeCustomProviders(many, [{ id: 'yan-big', api: 'openai-completions', baseUrl: 'https://x', models: [{ id: 'a' }] }], [])
+  const shrinkOwnRisk = modelsWriteRisk(many, shrinkOwn.next)
+  ok(shrinkOwnRisk.dropped.length === 0 && shrinkOwnRisk.shrink.length === 1 && shrinkOwnRisk.shrink[0].provider === 'yan-big', '表单只剩一个模型时需要确认，其他服务商不受影响', JSON.stringify(shrinkOwnRisk))
+  const grow = mergeCustomProviders(many, [{ id: 'yan-big', api: 'openai-completions', baseUrl: 'https://x', models: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }], [])
+  ok(modelsWriteRisk(many, grow.next).shrink.length === 0, '少量减少不打扰')
+  const removeOwn = mergeCustomProviders(many, [], ['yan-big'])
+  ok(modelsWriteRisk(many, removeOwn.next, ['yan-big']).dropped.length === 0, '显式删除的服务商不算意外丢失')
+  ok(modelsWriteRisk(null, collapsed).dropped.length === 0, '没有旧文件时没有风险')
 
   const masked = maskCustomProvider({ id: 'yan-a', api: 'openai-completions', baseUrl: 'https://x', models: [], hasApiKey: true })
   ok(masked.apiKeyLabel === '••••••' && !JSON.stringify(masked).includes('sk-'), '遮罩只显示存在状态')

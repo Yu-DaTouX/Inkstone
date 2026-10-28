@@ -109,7 +109,8 @@ const generations = []
 const registry = {
   refresh(elements) {
     generations.push(elements)
-    return `gen-${generations.length}`
+    const generationId = `gen-${generations.length}`
+    return { generationId, refs: elements.map((_, index) => `${generationId}:e${index + 1}`) }
   },
   resolve(ref) {
     const index = Number(String(ref).split(':e')[1]) - 1

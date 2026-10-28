@@ -34,8 +34,17 @@ export interface ParsedPaletteQuery {
   term: string
 }
 
+const FULLWIDTH_PREFIXES: Readonly<Record<string, CommandPrefix>> = {
+  '》': '>',
+  '＞': '>',
+  '＠': '@',
+  '＃': '#',
+  '？': '?'
+}
+
 export function parsePaletteQuery(query: string): ParsedPaletteQuery {
-  const head = query.slice(0, 1)
+  const first = query.slice(0, 1)
+  const head = FULLWIDTH_PREFIXES[first] ?? first
   const rest = query.slice(1).replace(/^\s+/, '')
   switch (head) {
     case '>':

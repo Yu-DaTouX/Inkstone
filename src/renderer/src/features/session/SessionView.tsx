@@ -39,6 +39,7 @@ import { domAnchor, domMetrics, readScrollSnapshot, restoreDomScroll, saveScroll
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
+import { cssQuoted, highlightMessageElement, nextFrame, registerMessageLocator } from '../../state/message-locator'
 
 const PAGER_TREE_DEBOUNCE_MS = 400
 
@@ -53,6 +54,7 @@ function nativeSessionBridge(): BranchPagerRequest | undefined {
 
 const VIRTUALIZE_TURNS_AT = 80
 const VIRTUALIZE_MSGS_AT = 200
+const LOCATE_MOUNT_FRAMES = 30
 
 type PendingTurn = { kind: 'pending'; id: string }
 type RenderItem = Turn | PendingTurn
@@ -318,15 +320,24 @@ export function SessionView(): JSX.Element {
       } else mark()
     }
     const onKey = (event: KeyboardEvent): void => { if (isScrollIntentKey(event.key)) mark() }
+    const release = (): void => {
+      const handle = vlistRef.current
+      const metrics = handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+      if (!metrics || stickRef.current || distanceFromBottom(metrics) > 1) return
+      intentRef.current = performance.now()
+      setStickNow(true)
+    }
     const options: AddEventListenerOptions = { passive: true, capture: true }
     host.addEventListener('wheel', wheel, options)
     host.addEventListener('touchmove', mark, options)
     host.addEventListener('pointerdown', mark, options)
+    host.addEventListener('pointerup', release, options)
     host.addEventListener('keydown', onKey, options)
     return () => {
       host.removeEventListener('wheel', wheel, options)
       host.removeEventListener('touchmove', mark, options)
       host.removeEventListener('pointerdown', mark, options)
+      host.removeEventListener('pointerup', release, options)
       host.removeEventListener('keydown', onKey, options)
     }
   }, [setStickNow])
@@ -429,20 +440,26 @@ export function SessionView(): JSX.Element {
   useEffect(() => { remountsRef.current = 0 }, [identity])
 
   useEffect(() => {
-    if (settlingRef.current) return
+    if (settlingRef.current) return undefined
     if (!stickRef.current) {
-      const handle = vlistRef.current
-      const metrics = virtual && handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
-      if (metrics) setShowJump(distanceFromBottom(metrics) > JUMP_THRESHOLD_PX)
-      return
+      const measure = (): void => {
+        if (stickRef.current) return
+        const handle = vlistRef.current
+        const metrics = virtual && handle ? { offset: handle.scrollOffset, size: handle.scrollSize, viewport: handle.viewportSize } : streamRef.current ? domMetrics(streamRef.current) : null
+        if (metrics) setShowJump(distanceFromBottom(metrics) > JUMP_THRESHOLD_PX)
+      }
+      measure()
+      let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(measure) })
+      return () => cancelAnimationFrame(raf)
     }
-    if (userScrollActive(intentRef.current, performance.now())) return
+    if (userScrollActive(intentRef.current, performance.now())) return undefined
     if (virtual) {
       vlistRef.current?.scrollToIndex(renderTurns.length - 1, { align: 'end' })
-      return
+      return undefined
     }
     const el = streamRef.current
     if (el) el.scrollTop = el.scrollHeight
+    return undefined
   }, [renderTurns, stick, virtual])
 
   useEffect(() => {
@@ -484,6 +501,23 @@ export function SessionView(): JSX.Element {
     box.scrollTop = Math.max(0, top)
   }, [virtual, setStickNow])
 
+  useEffect(() => registerMessageLocator(async (messageId) => {
+    const items = renderTurnsRef.current
+    const index = items.findIndex((item) => !isPending(item) && (item.id === messageId || (item.kind === 'assistant' && item.sourceIds.includes(messageId))))
+    if (index < 0) return false
+    setStickNow(false)
+    if (virtual) vlistRef.current?.scrollToIndex(index, { align: 'center' })
+    const selector = `[data-msg-id="${cssQuoted(messageId)}"], .v3-msg[data-turn-id="${cssQuoted(items[index].id)}"]`
+    for (let frame = 0; frame < LOCATE_MOUNT_FRAMES; frame++) {
+      const el = hostRef.current?.querySelector(selector)
+      if (el) {
+        highlightMessageElement(el)
+        return true
+      }
+      await nextFrame()
+    }
+    return false
+  }), [virtual, setStickNow])
 
   const findScope = useCallback((): HTMLElement | null => hostRef.current?.querySelector<HTMLElement>('.v3-stream') ?? null, [])
 
@@ -499,7 +533,7 @@ export function SessionView(): JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [setStickNow, virtual])
 
-  const userCount = useMemo(() => effectiveMessages.filter((message) => message.role === 'user').length, [effectiveMessages])
+  const userCount = useMemo(() => effectiveMessages.filter((message) => message.role === 'user' && !message.question).length, [effectiveMessages])
   const sentRef = useRef<{ identity: string | null; count: number }>({ identity: null, count: 0 })
   useEffect(() => {
     const prev = sentRef.current

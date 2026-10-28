@@ -2372,7 +2372,7 @@ function registerIpc(): void {
     const registry = runners
     const agent = id ? registry?.agentOf(id) : null
     if (!id || !registry || !agent) return { ok: false, error: 'pi 未运行' }
-    userMessageSent(agent.getState()?.sessionId)
+    await userMessageSent(agent.getState()?.sessionId)
     let admissionToken: number | undefined
     let handedOff = false
     const idleForTurn = (): boolean => {

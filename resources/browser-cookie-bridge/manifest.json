@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "砚 · 登录态导入 / Inkstone Cookie Bridge",
+  "version": "1.0.1",
+  "minimum_chrome_version": "130",
+  "description": "仅在你点击确认后，通过本机桥接把选定网站的登录 Cookie 导入砚。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu+aY+449XUnXFLw/6rqvGZ0HKXkYOKaWECmYA/n0csLPBVCa5gnV7d+BNZnmyEdpFyBRyrtu3GFFF8XrZjvzAnaEmtIyG6g3smJ+cqiW3NvzXMJDZTb6b5MFv8jc32zn4E7BzFiiJdj73n6UvcH4jBs2oo45STqpsjULnvqIynL5ED8+kMRFDpIfaIjMVleRFJIpUKJXl3xg01EOv7b/hPHsSr83LuYptayGGwfoxfIiV3CyRkCgNZ1+ljowGzD0Ap7dnTAFuZv5/ddU0yfvm31PQ4qKIQkU/T2pvKWrVO2JzkkHL921/9peNWExbuzHngqaBLk1xfLpz9ZoX3IewwIDAQAB",
+  "permissions": ["cookies"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [{ "resources": ["import.html"], "matches": ["http://127.0.0.1/*"] }],
+  "action": { "default_title": "导入登录态到砚" },
+  "background": { "service_worker": "background.js" }
+}

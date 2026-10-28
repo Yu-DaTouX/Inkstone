@@ -9,15 +9,6 @@
     color: var(--fg);
   }
 
-  .v3-root[data-side='open'][data-narrow='0']::before {
-    content: '';
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: var(--sidebar-width, var(--size-side));
-    height: var(--size-side-inset);
-    -webkit-app-region: drag;
-  }
-
   .v3-main {
     flex: 1;
     min-width: 0;

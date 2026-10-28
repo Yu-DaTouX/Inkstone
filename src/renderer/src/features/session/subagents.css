@@ -1,6 +1,6 @@
 @layer features {
   .v3-subagents { container: v3-subagents / inline-size; display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; margin: var(--s-8) 0; }
-  .v3-subagents-progress { margin: 0 var(--s-10) var(--s-6); }
+  .v3-subagents-progress { width: auto; margin: 0 var(--s-10) var(--s-6); }
   .v3-sa-card { min-width: 0; }
   .v3-sa-card > .v3-sa-list { padding: var(--s-2); }
   .v3-sa-card > .v3-sa-list:not(:first-child) { border-top: 1px solid var(--line); }

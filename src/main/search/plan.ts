@@ -1,6 +1,6 @@
 import { SEARCH_QUERIES_MAX, type SearchModifiers, type SearchSourceId } from '../../shared/search'
 import { detectLocale, isSearchRecency, normalizeSites } from './modifiers'
-import type { SearchPolicy } from './opencli'
+import type { SearchPolicy } from './search'
 
 export interface SearchKeys {
   tavily: boolean

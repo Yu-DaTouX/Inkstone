@@ -6,7 +6,7 @@ import type {
   BrowserTransferView,
   BrowserTransferWindow
 } from './windows/pane-browser-transfer'
-import { mkdir } from 'node:fs/promises'
+import { cp, mkdir } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -18,6 +18,8 @@ import type {
   BrowserPermissionRecord,
   BrowserState,
   BrowserTabState,
+  BrowserLoginImport,
+  BrowserLoginImportStatus,
   MainPush
 } from '../shared/ipc'
 import { sharedResources, INTERACTIVE_RESOURCE } from './interactive-resources'
@@ -40,6 +42,9 @@ import {
 import { defaultProfileDir, launchChrome, pickFreePort, stopChrome } from './chrome'
 import { syncLocalChromeData, type ChromeSyncReport } from './chrome-profile'
 import { YAN_DIR } from './paths'
+import { createCookieBridge, writeBridgeCookies, type BridgeCookie } from './browser/cookie-bridge'
+import type { BrowserActionOptions, BrowserActionReceipt, BrowserDialogRecord } from './browser/receipt'
+import { SCRIPT_GUIDE, runBrowserScript, type ScriptResult } from './browser/script-runner'
 import { transferCookies } from './browser/cookie-transfer'
 import { transferPageStorage } from './browser/storage-transfer'
 import { PrivateDnsGuard } from './browser/network-policy'
@@ -50,7 +55,10 @@ import { createStateFlush, ownedViewVisible } from './browser/host-state'
 
 type Push = (msg: MainPush) => void
 type BrowserActionResult = { ok: boolean; error?: string; code?: string }
+type BrowserActionOutcome = BrowserActionResult & { observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 const INITIAL_URL = 'about:blank'
+const PROMPT_TOKEN = `yan-prompt-${randomBytes(6).toString('hex')}:`
+const PROMPT_SHIM = `(() => { if (window.__yanPromptShim) return; Object.defineProperty(window, '__yanPromptShim', { value: true }); const log = console.debug.bind(console); window.prompt = function (message) { try { log(${JSON.stringify(PROMPT_TOKEN)} + String(message === undefined ? '' : message)) } catch {} return null } })()`
 export const DOWNLOAD_CONFIRM_BYTES = 100 * 1024 * 1024
 
 export interface LargeDownload {
@@ -107,6 +115,9 @@ interface BrowserTab {
   pendingMainFrameUrl: string | null
   openerUrl: string
   borrowedBy?: string
+  dialogs: BrowserDialogRecord[]
+  dialogPolicy?: BrowserActionOptions
+  acting?: boolean
 }
 
 interface ExternalTarget {
@@ -179,7 +190,16 @@ export class BrowserController {
   private automationOwner?: string
   private readonly ownedDownloads = new Map<string, NonNullable<BrowserState['lastDownload']>>()
   setAutomationOwner(owner?: string): void { this.automationOwner = owner }
+  private agentSessionId: string | undefined
+  setAgentSession(sessionId: string): void {
+    if (this.agentSessionId === sessionId) return
+    this.agentSessionId = sessionId
+    this.updateState()
+  }
   getOwnedDownload(owner: string): BrowserState['lastDownload'] { return this.ownedDownloads.get(owner) }
+  private downloadStarted: { name: string; at: number } | null = null
+  private readonly downloadsInProgress = new Map<Electron.DownloadItem, string>()
+  pendingDownloads(): string[] { return [...this.downloadsInProgress.values()] }
   private downloadSessionAttached = false
   private permissionHandlersAttached = false
   private requestBoundaryAttached = false
@@ -220,6 +240,58 @@ export class BrowserController {
     private readonly approveLargeDownload: (download: LargeDownload) => Promise<boolean> = async () => false
   ) {}
 
+  private loginImport?: Awaited<ReturnType<typeof createCookieBridge>>
+  private loginImportStarting = false
+
+  private loginImportExtensionPath(): string {
+    return join(YAN_DIR, 'browser-cookie-bridge')
+  }
+
+  private async showLoginImportExtension(): Promise<void> {
+    const error = await shell.openPath(this.loginImportExtensionPath())
+    if (error) throw new Error('无法打开扩展目录')
+  }
+
+  async startLoginImport(): Promise<{ id: string }> {
+    if (this.loginImportStarting || this.loginImport?.status().phase === 'importing') throw new Error('登录态正在写入，请稍后再试')
+    this.loginImportStarting = true
+    try {
+      if (this.loginImport?.status().phase !== 'waiting') {
+        const source = app.isPackaged ? join(process.resourcesPath, 'browser-cookie-bridge') : join(app.getAppPath(), 'resources', 'browser-cookie-bridge')
+        await cp(source, this.loginImportExtensionPath(), { recursive: true, force: true })
+        this.loginImport = await createCookieBridge({
+          extensionPath: this.loginImportExtensionPath(),
+          showExtension: () => this.showLoginImportExtension(),
+          receive: (cookies) => this.receiveLoginCookies(cookies)
+        })
+      }
+      try { await shell.openExternal(this.loginImport.url) } catch { this.loginImport.cancel(); throw new Error('无法打开来源浏览器') }
+      return { id: this.loginImport.id }
+    } finally { this.loginImportStarting = false }
+  }
+
+  loginImportStatus(id: string): BrowserLoginImportStatus {
+    if (!this.loginImport || this.loginImport.id !== id) return { id, phase: 'cancelled' }
+    return this.loginImport.status()
+  }
+
+  cancelLoginImport(id: string): BrowserLoginImportStatus {
+    if (this.loginImport?.id === id) this.loginImport.cancel()
+    return this.loginImportStatus(id)
+  }
+
+  private async receiveLoginCookies(cookies: BridgeCookie[]): Promise<BrowserLoginImport> {
+    const view = new WebContentsView({ webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, partition: 'persist:yan-browser' } })
+    try {
+      await view.webContents.loadURL('about:blank')
+      view.webContents.debugger.attach('1.3')
+      return await writeBridgeCookies((method, params) => view.webContents.debugger.sendCommand(method, params), cookies)
+    } finally {
+      if (view.webContents.debugger.isAttached()) view.webContents.debugger.detach()
+      view.webContents.close()
+    }
+  }
+
   getState(): BrowserState {
     const ext = this.external
     const active = this.activeTab()
@@ -238,6 +310,7 @@ export class BrowserController {
       userControl: this.userControl,
       ...(this.userControl && this.userControlRequest ? { userControlRequest: this.userControlRequest } : {}),
       lastDownload: this.lastDownload,
+      ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}),
       loadError: activeIsExternal ? undefined : active?.state.loadError,
       permissions: this.permissionLog,
       blockedRequests: this.blockedRequests,
@@ -297,9 +370,20 @@ export class BrowserController {
       state: { id, url: '', title: '', loading: false, canGoBack: false, canGoForward: false },
       committedUrl: '',
       pendingMainFrameUrl: null,
-      openerUrl: ''
+      openerUrl: '',
+      dialogs: []
     }
     void tab.network.start()
+    cdp.on('Page.javascriptDialogOpening', (params) => this.answerDialog(tab, params))
+    view.webContents.on('dom-ready', () => {
+      void view.webContents.executeJavaScript(PROMPT_SHIM, true).catch(() => undefined)
+    })
+    view.webContents.on('console-message', (details) => {
+      const message = String((details as unknown as { message?: unknown }).message ?? '')
+      if (!message.startsWith(PROMPT_TOKEN)) return
+      tab.dialogs.push({ type: 'prompt', message: message.slice(PROMPT_TOKEN.length, PROMPT_TOKEN.length + 300), accepted: false, unsupported: true })
+      if (tab.dialogs.length > 10) tab.dialogs.shift()
+    })
     view.webContents.on('did-start-loading', () => {
       tab.state.loading = true
       tab.state.loadError = undefined
@@ -374,6 +458,7 @@ export class BrowserController {
     if (!this.downloadSessionAttached) {
       try {
         view.webContents.session.on('will-download', (_event, item, contents) => {
+          this.downloadStarted = { name: item.getFilename(), at: Date.now() }
           const owner = !this.userControl && this.activeMode !== 'external' && contents?.id === this.activeTab()?.view.webContents.id ? this.automationOwner : undefined
           void this.handleDownload(item, owner).catch((error) => {
             item.cancel()
@@ -481,6 +566,22 @@ export class BrowserController {
       if (!contents || contents.id === win.webContents.id) continue
       win.contentView.removeChildView(child)
     }
+  }
+
+  async openFromUser(url?: string, sessionId = 'workspace'): Promise<BrowserState> {
+    const open = async (): Promise<BrowserState> => {
+      if (this.activeTab()?.borrowedBy) throw new Error('浏览器正在独立窗口中使用，请先归还后重试')
+      await this.open(url)
+      this.agentSessionId = undefined
+      this.updateState()
+      return this.getState()
+    }
+    if (this.userControl) {
+      const resource = sharedResources.snapshot().find(item => item.resourceId === INTERACTIVE_RESOURCE)
+      if (resource?.owner || resource?.uncertain) throw new Error('浏览器操作尚未结束，请稍后重试')
+      return open()
+    }
+    return sharedResources.run(INTERACTIVE_RESOURCE, `browser-user:${sessionId}`, open)
   }
 
   async open(url = INITIAL_URL): Promise<BrowserState> {
@@ -641,6 +742,7 @@ export class BrowserController {
     for (const id of ids) await this.closeTab(id, { silent: true })
     await this.closeExternalChrome()
     this.userControl = false
+    this.agentSessionId = undefined
     this.viewVisibleRequested = false
     this.stateFlush.cancel()
     this.updateState()
@@ -753,8 +855,10 @@ export class BrowserController {
     const url = safeUrl(raw)
     if (!url) return { ok: false, error: '只允许打开 http(s) 网页' }
     try {
+      if (this.automationOwner) await this.parts()?.input.showActivity('打开网页')
       if (this.external && this.activeMode === 'external') await this.navigateExternal(url)
       else await this.open(url)
+      if (this.automationOwner) await this.parts()?.input.showActivity('打开网页')
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -765,7 +869,9 @@ export class BrowserController {
     if (this.external && this.activeMode === 'external') return this.externalHistory(-1)
     const tab = this.activeTab()
     if (!tab?.view.webContents.canGoBack()) return { ok: false, error: '没有可返回的页面' }
+    const settled = this.navigationSettled(tab)
     tab.view.webContents.goBack()
+    await settled
     return { ok: true }
   }
 
@@ -773,7 +879,9 @@ export class BrowserController {
     if (this.external && this.activeMode === 'external') return this.externalHistory(1)
     const tab = this.activeTab()
     if (!tab?.view.webContents.canGoForward()) return { ok: false, error: '没有可前进的页面' }
+    const settled = this.navigationSettled(tab)
     tab.view.webContents.goForward()
+    await settled
     return { ok: true }
   }
 
@@ -792,7 +900,9 @@ export class BrowserController {
     const tab = this.activeTab()
     if (!tab) return { ok: false, error: '浏览器尚未打开' }
     tab.registry.clear()
+    const settled = this.navigationSettled(tab)
     tab.view.webContents.reload()
+    await settled
     return { ok: true }
   }
 
@@ -1163,6 +1273,32 @@ export class BrowserController {
     tab.view.setBounds(clean)
   }
 
+  runScript(code: string, signal?: AbortSignal): Promise<ScriptResult> {
+    return runBrowserScript(code, {
+      navigate: (url) => this.navigate(url),
+      observe: () => this.observe(),
+      click: (ref, options) => this.click(ref, options),
+      type: (ref, text, options) => this.type(ref, text, options),
+      select: (ref, value, options) => this.select(ref, value, options),
+      press: (key, options) => this.press(key, options),
+      scroll: (deltaX, deltaY) => this.scroll(deltaX, deltaY),
+      back: () => this.back(),
+      forward: () => this.forward(),
+      reload: () => this.reload(),
+      state: () => {
+        const state = this.getState()
+        return { url: state.url, title: state.title, activeTabId: state.activeTabId, tabs: state.tabs }
+      },
+      newTab: (url) => this.newTab(url),
+      switchTab: (id) => this.switchTab(id),
+      closeTab: (id) => this.closeTab(id)
+    }, { signal })
+  }
+
+  async guide(): Promise<string> {
+    return SCRIPT_GUIDE
+  }
+
   async dispose(): Promise<void> {
     await this.close()
   }
@@ -1170,6 +1306,7 @@ export class BrowserController {
   async observe(): Promise<BrowserObservation> {
     const p = this.parts()
     if (!p) throw new Error('浏览器尚未打开')
+    if (!this.userControl) await p.input.showActivity('读取页面')
     return this.observeTarget(p)
   }
 
@@ -1239,74 +1376,99 @@ export class BrowserController {
     return p.network.snapshot()
   }
 
-  async click(ref: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
-    const p = this.parts()
-    if (!p) return { ok: false, error: '浏览器尚未打开' }
-    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    try {
-      const element = p.registry.resolve(ref)
-      await p.input.click(element)
-      await this.waitForPage()
-      return { ok: true, observation: await this.observeTarget(p) }
-    } catch (error) {
-      return this.actionError(error)
-    }
+  async click(ref: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome> {
+    return this.act(async (p) => {
+      await p.input.click(p.registry.resolve(ref))
+      return {}
+    }, options)
   }
 
-  async type(ref: string, text: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
-    const p = this.parts()
-    if (!p) return { ok: false, error: '浏览器尚未打开' }
-    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    try {
-      const element = p.registry.resolve(ref)
-      await p.input.type(element, text)
-      await this.waitForPage()
-      return { ok: true, observation: await this.observeTarget(p) }
-    } catch (error) {
-      return this.actionError(error)
-    }
+  async type(ref: string, text: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome> {
+    return this.act(async (p) => {
+      const typed = await p.input.type(p.registry.resolve(ref), text)
+      return { receipt: { value: typed.value, ...(typed.picker ? { picker: typed.picker } : {}) } }
+    }, options)
   }
 
-  async press(key: string): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
-    const p = this.parts()
-    if (!p) return { ok: false, error: '浏览器尚未打开' }
-    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    try {
+  async press(key: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome> {
+    return this.act(async (p) => {
       await p.input.press(key)
-      await this.waitForPage()
-      return { ok: true, observation: await this.observeTarget(p) }
-    } catch (error) {
-      return this.actionError(error)
-    }
+      return {}
+    }, options)
   }
 
-  async select(ref: string, value: string): Promise<BrowserActionResult & { observation?: BrowserObservation; chosen?: SelectOutcome }> {
+  async select(ref: string, value: string, options: BrowserActionOptions = {}): Promise<BrowserActionOutcome & { chosen?: SelectOutcome }> {
+    return this.act(async (p) => ({ chosen: await p.input.select(p.registry.resolve(ref), value) }), options)
+  }
+
+  async scroll(deltaX: number, deltaY: number): Promise<BrowserActionOutcome> {
+    return this.act(async (p) => {
+      const position = await p.input.scroll(deltaX, deltaY)
+      return position ? { receipt: { scroll: position } } : {}
+    })
+  }
+
+  private async act(
+    work: (p: TargetParts) => Promise<{ receipt?: BrowserActionReceipt; chosen?: SelectOutcome }>,
+    options: BrowserActionOptions = {}
+  ): Promise<BrowserActionOutcome & { chosen?: SelectOutcome }> {
     const p = this.parts()
     if (!p) return { ok: false, error: '浏览器尚未打开' }
     if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
+    const tab = [...this.tabs.values()].find((candidate) => candidate.cdp === p.cdp)
+    const tabsBefore = new Set(this.tabs.keys())
+    const startedAt = Date.now()
+    if (tab) {
+      tab.dialogs = []
+      tab.dialogPolicy = options
+      tab.acting = true
+    }
     try {
-      const element = p.registry.resolve(ref)
-      const outcome = await p.input.select(element, value)
+      const { receipt: workReceipt, chosen } = await work(p)
       await this.waitForPage()
-      return { ok: true, chosen: outcome, observation: await this.observeTarget(p) }
+      const observation = await this.observeTarget(p)
+      const receipt: BrowserActionReceipt = { ...workReceipt }
+      if (tab?.dialogs.length) receipt.dialogs = [...tab.dialogs]
+      const opened = [...this.tabs.values()].filter((candidate) => !tabsBefore.has(candidate.id))
+      if (opened.length) receipt.openedTabs = opened.map((candidate) => ({ id: candidate.id, url: candidate.state.url }))
+      if (this.downloadStarted && this.downloadStarted.at >= startedAt) receipt.downloadStarted = this.downloadStarted.name
+      return { ok: true, ...(chosen ? { chosen } : {}), observation, receipt }
     } catch (error) {
       return this.actionError(error)
+    } finally {
+      if (tab) {
+        tab.dialogPolicy = undefined
+        tab.acting = false
+      }
     }
   }
 
-  async scroll(deltaX: number, deltaY: number): Promise<BrowserActionResult & { observation?: BrowserObservation }> {
-    const p = this.parts()
-    if (!p) return { ok: false, error: '浏览器尚未打开' }
-    if (this.userControl) return { ok: false, code: 'USER_CONTROL_ACTIVE', error: '浏览器当前由用户接管，请先由用户完成敏感操作并恢复 Agent 控制。' }
-    try {
-      await p.input.scroll(deltaX, deltaY)
-      return { ok: true, observation: await this.observeTarget(p) }
-    } catch (error) {
-      return this.actionError(error)
-    }
+  private answerDialog(tab: BrowserTab, params: Record<string, unknown>): void {
+    if (!tab.acting && tab.view.getVisible() && !tab.borrowedBy) return
+    const type = String(params.type ?? 'alert')
+    const policy = tab.dialogPolicy
+    const accepted = type === 'alert' || type === 'beforeunload' || policy?.dialog === 'accept'
+    tab.dialogs.push({ type, message: String(params.message ?? '').slice(0, 300), accepted })
+    if (tab.dialogs.length > 10) tab.dialogs.shift()
+    void tab.cdp.send('Page.handleJavaScriptDialog', { accept: accepted }).catch(() => undefined)
+  }
+
+  private navigationSettled(tab: BrowserTab, timeoutMs = 10_000): Promise<void> {
+    const contents = tab.view.webContents
+    return new Promise((resolve) => {
+      const events = ['did-stop-loading', 'did-navigate-in-page', 'did-fail-load', 'destroyed'] as const
+      const done = (): void => {
+        clearTimeout(timer)
+        for (const name of events) contents.removeListener(name as 'destroyed', done)
+        resolve()
+      }
+      const timer = setTimeout(done, timeoutMs)
+      for (const name of events) contents.once(name as 'destroyed', done)
+    })
   }
 
   requestUserControl(request: { reason?: string; sessionId?: string } = {}): BrowserState {
+    void this.parts()?.input.hideActivity()
     this.userControl = true
     this.userControlRequest = { reason: request.reason ?? '', sessionId: request.sessionId ?? '', at: Date.now() }
     this.updateState()
@@ -1329,6 +1491,7 @@ export class BrowserController {
   }
 
   setUserControl(value: boolean): BrowserState {
+    if (value) void this.parts()?.input.hideActivity()
     this.userControl = value
     if (!value) this.userControlRequest = null
     this.updateState()
@@ -1410,6 +1573,8 @@ export class BrowserController {
     const origin = item.getURL()
     mkdirSync(directory, { recursive: true })
     item.setSavePath(path)
+    this.downloadsInProgress.set(item, filename)
+    item.once('done', () => this.downloadsInProgress.delete(item))
     let asked = false
     const confirmIfLarge = (bytes: number): void => {
       if (asked || bytes <= DOWNLOAD_CONFIRM_BYTES) return

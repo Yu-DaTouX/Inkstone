@@ -35,6 +35,7 @@ export interface CommandText {
   messageEmpty: string
   failed: string
   switchFailed: string
+  messageNotFound: string
   sideBySideNoPeer: string
   activationFailed: string
   busy: string
@@ -80,6 +81,7 @@ const ZH: CommandText = {
   messageEmpty: '当前会话里没有匹配的消息',
   failed: '操作失败',
   switchFailed: '会话切换未生效',
+  messageNotFound: '这条消息已不在当前会话中',
   sideBySideNoPeer: '没有可以并排显示的其他会话',
   activationFailed: '会话未激活，工作区没有打开',
   busy: '执行中…',
@@ -125,6 +127,7 @@ const EN: CommandText = {
   messageEmpty: 'No matching messages in this chat',
   failed: 'Action failed',
   switchFailed: 'Chat did not switch',
+  messageNotFound: 'This message is no longer in the current chat',
   sideBySideNoPeer: 'No other chat to show side by side',
   activationFailed: 'Chat is not active, so the workspace did not open',
   busy: 'Running…',

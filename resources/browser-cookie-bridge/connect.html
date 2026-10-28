@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>砚 · 登录态导入</title><link rel="stylesheet" href="import.css"></head>
+<body><main>
+<h1>连接砚的导入扩展</h1>
+<p>已安装扩展时会自动导入当前浏览器档案，无需填写配对码。</p>
+<iframe id="bridge" title="登录态导入结果" hidden></iframe>
+<section id="setup" hidden>
+<h2>首次使用：安装扩展</h2>
+<p>请在 Chrome 或 Edge 打开此页面。打开扩展管理页，开启「开发者模式」，选择「加载已解压的扩展」，选择下方目录并确认网站访问权限。不会复制或修改原浏览器资料文件，也不会删除数据。</p>
+<p>Chrome：<code>chrome://extensions</code><br>Edge：<code>edge://extensions</code></p>
+<p id="path"></p>
+<button id="folder">打开扩展目录</button>
+<button id="retry">已安装，继续导入</button>
+<p>扩展读取当前档案的全部网站 Cookie，仅在你从砚点击导入时传输。相同 Cookie 会覆盖砚中的旧值；密码、通行密钥与其他设置不迁移。</p>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+</main><script src="connect.js"></script></body>
+</html>

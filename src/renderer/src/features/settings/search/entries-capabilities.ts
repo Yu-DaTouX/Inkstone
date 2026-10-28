@@ -94,14 +94,6 @@ export const CAPABILITIES_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     keywords: ['computer use', 'windows-mcp', '屏幕', '点击', 'uv', '安装 uv']
   },
   {
-    id: 'caps-tools-opencli',
-    section: 'capabilities',
-    tab: 'tools',
-    zh: '本机状态 · OpenCLI',
-    en: 'Local status · OpenCLI',
-    keywords: ['opencli', '搜索', 'search', '浏览器', 'Chrome 扩展', 'Node', '安装 OpenCLI', '重新检测']
-  },
-  {
     id: 'caps-tools-voice',
     section: 'capabilities',
     tab: 'tools',

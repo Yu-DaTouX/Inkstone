@@ -50,6 +50,10 @@ const inProcessScripts = [
 for (const script of inProcessScripts) await import(`./${script}.mjs`)
 
 const spawnedScripts = [
+  'test-browser-driver',
+  'test-cookie-bridge',
+  'test-browser-script',
+  'test-browser-agent-reveal',
   'test-session-actions', 'test-context-compact',
   'test-mcp-annotations-guard', 'test-backend-capability-boundaries', 'test-terminal-status', 'test-taskbar-status',
   'test-mcp-native-import', 'test-mcp-service-settings', 'test-turn-model', 'test-command-palette', 'test-acquired-skills',
@@ -2569,7 +2573,7 @@ runSubagentBriefTests(ok, subagentBrief)
 
 const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
-    entryPoints: ['src/main/search/opencli.ts'],
+    stdin: { contents: "export * from './src/main/search/search'\nexport * from './src/main/search/public-sources'", resolveDir: process.cwd(), loader: 'ts' },
     outfile: 'out/test/search.mjs',
     bundle: true,
     format: 'esm',

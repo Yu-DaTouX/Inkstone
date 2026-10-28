@@ -1,5 +1,5 @@
 import type { IpcRegistrar } from './registrar'
-import { installOpenCli, searchDoctor } from '../search/opencli'
+import { searchDoctor } from '../search/search'
 import { clearSearchKey, searchApiConfig, setSearchHintDismissed, setSearchKey } from '../search/config'
 import { isSearchProviderId } from '../../shared/search'
 import { computerUseStatus, disableComputerUse, enableComputerUse, installUv, refreshComputerUseEntry, resolveComputerUseInteraction } from '../computer-use'
@@ -89,7 +89,6 @@ export function registerCapabilitiesIpc(ipc: IpcRegistrar, deps: CapabilitiesIpc
   handle('yan:capabilities:builtin', async () => builtinCapabilities(thinExtensionPaths()))
 
   handle('yan:search:doctor', async () => searchDoctor())
-  handle('yan:search:install', async () => installOpenCli())
   handle('yan:search:apiConfig', async () => searchApiConfig())
   handle('yan:search:setApiKey', async (provider: unknown, key: unknown) =>
     isSearchProviderId(provider) ? setSearchKey(provider, String(key ?? '')) : { ok: false, error: '不认识的搜索服务' }

@@ -226,7 +226,7 @@ async function main() {
   ok(/\.plan-card \{[^}]*margin: calc\(-1 \* var\(--s-8\)\) calc\(-1 \* var\(--s-8\)\)/.test(planCss), '计划行铺满输入框卡片的上沿和两侧')
   ok(/\.plan-card \{[^}]*border-bottom: 1px solid var\(--line\)/.test(planCss), '计划行和输入区之间只有一条细分隔线')
   ok(!/\.plan-card \{[^}]*(background|border-radius|border:)/.test(planCss), '计划行没有自己的底色、外框和圆角（沿用输入框的）')
-  ok(/max-height: calc\(4\.5 \*/.test(planCss) && planCss.includes('overflow-y: auto'), '展开时最多约四行高度，超出卡内滚动')
+  ok(/max-height: min\(calc\(6\.5 \*[^;]*32svh\)/.test(planCss) && planCss.includes('overflow-y: auto'), '展开时最多约六行、不超过三分之一屏高，超出卡内滚动')
   ok(planCss.includes('mask-image'), '底部渐隐用 mask-image')
   ok(!planCss.includes('animation') && !planCss.includes('transition'), '计划行没有动效，不需要另做 reduced-motion 分支')
 
@@ -235,7 +235,7 @@ async function main() {
   for (const key of ['plan.title', 'plan.stale', 'plan.workingOn', 'plan.expand', 'plan.collapse']) {
     ok(typeof zhI18n[key] === 'string' && typeof enI18n[key] === 'string', `i18n 两份词典都有 ${key}`)
   }
-  ok(enI18n['plan.stale'] === 'Plan from before your last message', 'plan.stale 英文文案与约定一致')
+  ok(zhI18n['plan.stale'] === '上一轮' && enI18n['plan.stale'] === 'Earlier', 'plan.stale 是计数后的短标记')
 
   const agentSrc = await readFile(join(ROOT, 'src/main/agent.ts'), 'utf8')
   ok(!agentSrc.includes('panel_todos'), '死分支 panel_todos 已删除（真正的工具叫 todos，tasks.apply 已即时刷新）')

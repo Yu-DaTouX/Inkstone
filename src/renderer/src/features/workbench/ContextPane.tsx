@@ -95,7 +95,7 @@ function ToolCallRows({ rows, text }: { rows: ContextToolCall[]; text: ContextPa
                 title={label}
                 aria-label={`${text.jumpTo(label)} · ${shortTokens(row.tokens)}`}
                 data-testid="v3-wb-ctx-tool"
-                onPress={() => setMissed(useStore.getState().locateMessage(row.anchorId) ? null : row.id)}
+                onPress={() => void useStore.getState().locateMessage(row.anchorId).then((found) => setMissed(found ? null : row.id))}
               >
                 <span className="wb-ctx-tool-name">{row.name}</span>
                 <span className="wb-ctx-tool-target">{row.target}</span>

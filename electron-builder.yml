@@ -28,6 +28,9 @@ files:
   - '!**/*.{map,md,ts,tsx,tsbuildinfo}'
 
 extraResources:
+  - from: resources/browser-cookie-bridge
+    to: browser-cookie-bridge
+    filter: ['**/*']
   - from: integrations/hermes-inkstone
     to: integrations/hermes-inkstone
     filter: ['plugin.yaml', '__init__.py', 'client.py', 'approvals.py', 'connect.py']

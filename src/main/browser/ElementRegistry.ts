@@ -48,16 +48,26 @@ export class SelectOptionNotFoundError extends Error {
 export class ElementRegistry {
   private readonly targetId = globalThis.crypto.randomUUID()
   private generation = 0
+  private nextIndex = 1
+  private readonly indexByNode = new Map<string, number>()
   private elements = new Map<string, RegisteredElement>()
 
-  refresh(elements: Omit<RegisteredElement, 'ref'>[]): string {
-    this.generation += 1
-    this.elements.clear()
-    for (const [index, element] of elements.entries()) {
-      const ref = `${this.targetId}:${this.generation}:e${index + 1}`
-      this.elements.set(ref, { ...element, ref })
-    }
-    return `${this.targetId}:${this.generation}`
+  refresh(elements: Omit<RegisteredElement, 'ref'>[]): { generationId: string; refs: string[] } {
+    const generationId = `${this.targetId}:${this.generation}`
+    const next = new Map<string, RegisteredElement>()
+    const refs = elements.map((element) => {
+      const node = `${element.sessionId ?? ''}|${element.frameId ?? ''}|${element.backendNodeId}`
+      let index = this.indexByNode.get(node)
+      if (index === undefined) {
+        index = this.nextIndex++
+        this.indexByNode.set(node, index)
+      }
+      const ref = `${generationId}:e${index}`
+      next.set(ref, { ...element, ref })
+      return ref
+    })
+    this.elements = next
+    return { generationId, refs }
   }
 
   resolve(ref: unknown): RegisteredElement {
@@ -69,6 +79,8 @@ export class ElementRegistry {
 
   clear(): void {
     this.generation += 1
+    this.nextIndex = 1
+    this.indexByNode.clear()
     this.elements.clear()
   }
 }

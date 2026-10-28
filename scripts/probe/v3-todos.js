@@ -133,8 +133,8 @@
     check(await ensureExpanded(false), '收起态可达')
     check(!q('plan-card-scroll'), '收起时没有清单滚动容器（只剩一行）')
     check(
-      await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && (planTitle()?.textContent ?? '').includes('正在：把渲染端')),
-      `收起态一行为「计划 2/4 · 正在：<当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
+      await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && (planCard()?.querySelector('.plan-card-now')?.textContent ?? '').includes('把渲染端')),
+      `收起态一行为「计划 2/4 <当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
     )
     const head = planToggle()
     check(head?.tagName === 'BUTTON' && head.getAttribute('type') === 'button', '标题行是原生按钮，可 Tab 聚焦，Enter/Space 切换')
@@ -195,12 +195,12 @@
       ]
     })
     check(
-      await until(() => (planTitle()?.textContent ?? '').includes('在你上一条消息之前制定')),
-      `计划早于用户最新消息时标题改为「计划 · 在你上一条消息之前制定」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
+      await until(() => !!planCard()?.querySelector('.plan-card-stale') && !planCard()?.querySelector('.plan-card-now')),
+      `计划早于用户最新消息时标题带「上一轮」且不写当前项（实际 ${JSON.stringify(planTitle()?.textContent)}）`
     )
     setPlan(FIXTURE_TODOS, { running: true })
     check(
-      await until(() => !(planTitle()?.textContent ?? '').includes('在你上一条消息之前制定')),
+      await until(() => !planCard()?.querySelector('.plan-card-stale')),
       '计划更新到最新一轮后标题恢复计数形式'
     )
 
@@ -211,8 +211,8 @@
     check(!q('plan-card-scroll'), '收起后清单滚动容器不存在（只剩标题行）')
     check(readPref() === '0', '收起状态写入 localStorage')
     check(
-      await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && (planTitle()?.textContent ?? '').includes('正在：')),
-      `收起态标题为「计划 2/4 · 正在：<当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
+      await until(() => (planTitle()?.textContent ?? '').includes('计划 2/4') && !!planCard()?.querySelector('.plan-card-now')),
+      `收起态标题为「计划 2/4 <当前项>」（实际 ${JSON.stringify(planTitle()?.textContent)}）`
     )
     const collapsedHeight = planCard()?.getBoundingClientRect().height ?? 0
     check(collapsedHeight > 0 && collapsedHeight <= 36, `收起态只占一行（${collapsedHeight.toFixed(1)}px）`)
@@ -231,7 +231,7 @@
     const scroll = q('plan-card-scroll')
     check(!!scroll && scroll.scrollHeight > scroll.clientHeight + 4, `内部可滚动（${scroll?.scrollHeight} > ${scroll?.clientHeight}）`)
     const maxHeight = scroll ? parseFloat(getComputedStyle(scroll).maxHeight) : NaN
-    check(Number.isFinite(maxHeight) && maxHeight <= 120, `高度上限约四行（${Number.isFinite(maxHeight) ? maxHeight + 'px' : 'n/a'}，不无限长高）`)
+    check(Number.isFinite(maxHeight) && maxHeight <= 170, `高度上限约六行（${Number.isFinite(maxHeight) ? maxHeight + 'px' : 'n/a'}，不无限长高）`)
     check(scroll?.getAttribute('data-overflow') === 'true', '超长清单标记 data-overflow=true（驱动底部渐隐）')
     const activeRow = qa('v3-todo-row').find((r) => r.getAttribute('data-kind') === 'running')
     if (scroll && activeRow) {

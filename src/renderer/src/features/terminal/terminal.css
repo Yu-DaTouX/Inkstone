@@ -26,17 +26,11 @@
 
   .term-pane-chrome-title {
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
-    gap: var(--s-8);
+    gap: var(--s-6);
     min-width: 0;
     font-size: var(--t-footnote);
-  }
-
-  .term-pane-chrome-title .term-pane-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .term-pane-exited {
@@ -53,6 +47,19 @@
     min-width: 0;
     padding: 0 var(--s-6) 0 var(--s-8);
     border-bottom: 1px solid var(--line);
+  }
+
+  .term-tabbar[data-inline] {
+    flex: 1 1 auto;
+    height: auto;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .term-tabbar[data-inline] .term-tab {
+    flex: 0 1 auto;
+    min-width: 56px;
+    max-width: 200px;
   }
 
   .term-tabs {
@@ -185,7 +192,7 @@
   }
 
   @container (max-width: 320px) {
-    .term-tab:not([data-selected]) {
+    .term-tabbar:not([data-inline]) .term-tab:not([data-selected]) {
       flex-basis: 72px;
     }
   }

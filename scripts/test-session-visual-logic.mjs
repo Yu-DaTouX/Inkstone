@@ -77,8 +77,15 @@ check('渐显：rehype 只包正文文本，跳过代码', () => {
 })
 
 check('跟随：贴底时保持跟随，无按钮', () => {
-  const at = follow.decideFollow(false, { offset: 1000, size: 1500, viewport: 500 }, null, 0)
+  const at = follow.decideFollow(true, { offset: 1000, size: 1500, viewport: 500 }, null, 0)
   assert.deepEqual(at, { stick: true, showJump: false, repin: false })
+})
+
+check('跟随：用户上翻后内容变短被夹到底部，不自动恢复跟随', () => {
+  const clamped = follow.decideFollow(false, { offset: 1000, size: 1500, viewport: 500 }, 100, 5000)
+  assert.deepEqual(clamped, { stick: false, showJump: false, repin: false })
+  const never = follow.decideFollow(false, { offset: 1000, size: 1500, viewport: 500 }, null, 5000)
+  assert.equal(never.stick, false)
 })
 
 check('跟随：用户还没滚到底时，不因40px容差抢回滚动位置', () => {

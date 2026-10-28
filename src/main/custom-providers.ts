@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PI_AGENT_DIR } from './paths'
 import {
   describeDiscoveredModels,
   mergeCustomProviders,
+  modelsWriteRisk,
   parseModelEntries,
   validateBaseUrl,
   type CustomProviderDiscoverResult,
@@ -17,6 +18,8 @@ import {
 import { readPiModelCatalog } from './pi-model-catalog'
 
 export const MODELS_FILE = join(PI_AGENT_DIR, 'models.json')
+const AUTO_BACKUP_PREFIX = 'models.json.bak-yan-auto-'
+const AUTO_BACKUP_KEEP = 5
 
 export interface CustomProviderResult {
   ok: boolean
@@ -47,8 +50,21 @@ function serializeModels<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
+async function backupModels(): Promise<void> {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '')
+  try {
+    await copyFile(MODELS_FILE, join(PI_AGENT_DIR, `${AUTO_BACKUP_PREFIX}${stamp}`))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  const backups = (await readdir(PI_AGENT_DIR)).filter((name) => name.startsWith(AUTO_BACKUP_PREFIX)).sort()
+  await Promise.all(backups.slice(0, -AUTO_BACKUP_KEEP).map((name) => unlink(join(PI_AGENT_DIR, name)).catch(() => undefined)))
+}
+
 async function writeAtomic(json: Json): Promise<void> {
   await mkdir(PI_AGENT_DIR, { recursive: true })
+  await backupModels()
   const tmp = `${MODELS_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
   try {
     await writeFile(tmp, `${JSON.stringify(json, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
@@ -91,7 +107,12 @@ export async function saveCustomProvider(input: CustomProviderInput): Promise<Cu
     const raw = await readRaw()
     if (!raw.ok) return { ok: false, errors: [raw.error] }
     const merged = mergeCustomProviders(raw.json, [checked.value!], [])
-    if (merged.changed) await writeAtomic(merged.next)
+    if (merged.changed) {
+      const risk = modelsWriteRisk(raw.json, merged.next)
+      if (risk.dropped.length) return { ok: false, errors: [`保存会删掉其他服务商（${risk.dropped.join('、')}），已取消`] }
+      if (risk.shrink.length && !input.confirmShrink) return { ok: false, shrink: risk.shrink, errors: risk.shrink.map((item) => `${item.provider} 的模型会从 ${item.before} 个减少到 ${item.after} 个，需要确认`) }
+      await writeAtomic(merged.next)
+    }
     return { ok: true, providers: readCustomProviders(merged.next) }
   })
 }
@@ -101,7 +122,11 @@ export async function removeCustomProvider(id: string): Promise<CustomProviderRe
     const raw = await readRaw()
     if (!raw.ok) return { ok: false, errors: [raw.error] }
     const merged = mergeCustomProviders(raw.json, [], [id])
-    if (merged.changed) await writeAtomic(merged.next)
+    if (merged.changed) {
+      const risk = modelsWriteRisk(raw.json, merged.next, [id])
+      if (risk.dropped.length) return { ok: false, errors: [`删除会连带删掉其他服务商（${risk.dropped.join('、')}），已取消`] }
+      await writeAtomic(merged.next)
+    }
     return { ok: true, providers: readCustomProviders(merged.next) }
   })
 }

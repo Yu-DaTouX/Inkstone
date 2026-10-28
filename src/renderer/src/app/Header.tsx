@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Check, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
@@ -214,7 +214,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             onClick={() => win.maximize()}
             data-testid="v3-max"
           >
-            <Square size={maximized ? 12 : 13} />
+            {maximized ? <Copy size={13} style={{ transform: 'scaleX(-1)' }} /> : <Square size={13} />}
           </button>
           <button type="button" className="v3-winbtn v3-winbtn-close" aria-label={t('tb.hide')} title={t('tb.hide')} onClick={() => win.close()} data-testid="v3-close">
             <X size={14} />

@@ -1,9 +1,11 @@
-let release: ((sessionId: string) => void) | null = null
+let release: ((sessionId: string) => void | Promise<void>) | null = null
 
-export function setUserHandoffRelease(handler: ((sessionId: string) => void) | null): void {
+export function setUserHandoffRelease(handler: ((sessionId: string) => void | Promise<void>) | null): void {
   release = handler
 }
 
-export function userMessageSent(sessionId: string | null | undefined): void {
-  if (sessionId) release?.(sessionId)
+export async function userMessageSent(sessionId: string | null | undefined): Promise<void> {
+  const handler = release
+  if (!sessionId || !handler) return
+  await Promise.resolve().then(() => handler(sessionId)).catch(() => undefined)
 }

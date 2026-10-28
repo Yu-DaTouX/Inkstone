@@ -65,6 +65,7 @@ export class CDPBridge implements CdpChannel {
     this.contents.debugger.attach('1.3')
     this.attached = true
     await Promise.all(CDP_DOMAINS.map((method) => this.send(method)))
+    await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => undefined)
   }
 
   async send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> {

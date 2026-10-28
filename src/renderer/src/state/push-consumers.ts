@@ -10,6 +10,7 @@ export interface PushContext {
   alertAttention(settings: AppSettings | null, event: SoundEvent, body?: string): void
   pushNotice(list: Notice[], type: Notice['type'], text: string, id?: string): Notice[]
   applyBrowserVisibility(): void
+  revealBrowser(): void
   t(key: MessageKey, vars?: TVars): string
 }
 
@@ -51,11 +52,17 @@ export function consumeShellPush(m: MainPush, s: Store, ctx: PushContext): boole
         ...(s.settings ? { settings: { ...s.settings, uiScale: m.payload.uiScale } } : {})
       })
       break
-    case 'browser-state':
+    case 'browser-state': {
+      const browserStates = m.payload.sessionId ? { ...s.browserStates, [m.payload.sessionId]: m.payload } : s.browserStates
+      if (m.payload.sessionId && m.payload.sessionId !== (s.peekedSessionId ?? s.session?.sessionId ?? 'workspace')) { set({ browserStates }); break }
       if (!m.payload.open) releaseResource('browser')
-      set({ browserState: m.payload })
+      const viewSessionId = s.peekedSessionId ?? s.session?.sessionId
+      const agentArrived = m.payload.open && !!m.payload.agentSessionId && m.payload.agentSessionId === viewSessionId && (!s.browserState.open || s.browserState.agentSessionId !== m.payload.agentSessionId)
+      set({ browserState: m.payload, browserStates })
+      if (agentArrived) ctx.revealBrowser()
       ctx.applyBrowserVisibility()
       break
+    }
     case 'terminal':
       if (m.payload.kind === 'exit') {
         set({

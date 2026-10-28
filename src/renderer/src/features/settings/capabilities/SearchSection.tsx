@@ -1,29 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import { useT, type MessageKey } from '../../../i18n'
 import {
   SEARCH_PROVIDERS,
   type SearchApiConfigView,
-  type SearchBackendStatus,
   type SearchProvider,
   type SearchProviderState
 } from '../../../../../shared/search'
 import { Button, TextField } from '../../../ui'
-import { Actions, Entry, Group, Meta, Panel, Warn } from './parts'
-
-const OPENCLI_RELEASES = 'https://www.npmjs.com/package/@jackwener/opencli?activeTab=versions'
-const OPENCLI_EXTENSION = 'https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk'
-const NODE_DOWNLOAD = 'https://nodejs.org/zh-cn/download'
-
-type InstallState = { busy: boolean; ok?: boolean; needsNode?: boolean; text?: string }
-
-export function SearchBackendSection(): ReactElement {
-  const t = useT()
-  return (
-    <Panel label={t('set.searchTools')}>
-      <SearchBackendGroup />
-    </Panel>
-  )
-}
+import { Entry, Group, Panel, Warn } from './parts'
 
 export function SearchApiSection(): ReactElement {
   const t = useT()
@@ -31,115 +15,6 @@ export function SearchApiSection(): ReactElement {
     <Panel label={t('search.apiTitle')}>
       <SearchApiGroup />
     </Panel>
-  )
-}
-
-function SearchBackendGroup(): ReactElement {
-  const t = useT()
-  const [backend, setBackend] = useState<SearchBackendStatus | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [probeFailed, setProbeFailed] = useState(false)
-  const [install, setInstall] = useState<InstallState | null>(null)
-  const alive = useRef(true)
-  useEffect(() => {
-    alive.current = true
-    return () => {
-      alive.current = false
-    }
-  }, [])
-
-  const check = useCallback(async (): Promise<void> => {
-    setChecking(true)
-    try {
-      const next = await window.yan.search.doctor()
-      if (!alive.current) return
-      setBackend(next)
-      setProbeFailed(false)
-    } catch {
-      if (!alive.current) return
-      setBackend(null)
-      setProbeFailed(true)
-    } finally {
-      if (alive.current) setChecking(false)
-    }
-  }, [])
-  useEffect(() => {
-    void check()
-  }, [check])
-
-  const runInstall = async (): Promise<void> => {
-    setInstall({ busy: true })
-    try {
-      const r = await window.yan.search.installBackend()
-      if (!alive.current) return
-      setInstall({ busy: false, ok: r.ok, needsNode: r.needsNode, text: r.ok ? t('set.opencliInstalled') : [r.error, r.log].filter(Boolean).join('\n') })
-      if (r.ok) await check()
-    } catch (cause) {
-      if (alive.current) setInstall({ busy: false, ok: false, text: cause instanceof Error ? cause.message : String(cause) })
-    }
-  }
-
-  const status =
-    backend === null
-      ? probeFailed
-        ? t('set.searchBackendProbeFailed')
-        : t('set.searchBackendUnknown')
-      : backend.available
-        ? backend.code === 'extension_not_connected'
-          ? t('set.searchBackendExtOff', { version: backend.version ?? '?' })
-          : t('set.searchBackendReady', { version: backend.version ?? '?' })
-        : backend.code === 'backend_unusable'
-          ? t('set.searchBackendUnusable', { version: backend.version ?? '?' })
-          : t('set.searchBackendMissing')
-  const hint =
-    backend && !backend.available
-      ? backend.code === 'backend_unusable'
-        ? t('set.searchBackendUnusableHint')
-        : /\bnode\b/i.test(backend.detail ?? '')
-          ? t('set.searchBackendNodeHint')
-          : t('set.searchBackendHint')
-      : backend?.code === 'extension_not_connected'
-        ? t('set.searchBackendExtHint')
-        : ''
-  const detail = backend && !backend.available && backend.detail ? backend.detail : ''
-  const needsNode = !!install?.needsNode || (!!backend && !backend.available && /\bnode\b/i.test(backend.detail ?? ''))
-
-  return (
-    <div data-testid="cap-search-backend" data-setting-id="caps-tools-opencli">
-      <Group
-        title={t('set.searchBackend')}
-        desc={t('set.extToolsDesc')}
-        card
-        actions={
-          <Button variant="secondary" isDisabled={checking || !!install?.busy} onPress={() => void check()} data-testid="cap-search-recheck">
-            {checking ? t('set.searchBackendChecking') : t('set.extRecheck')}
-          </Button>
-        }
-      >
-        <Meta>{status}</Meta>
-        {hint ? <Meta>{hint}</Meta> : null}
-        {detail ? <Meta title={detail}>{detail.length > 240 ? `${detail.slice(0, 240)}…` : detail}</Meta> : null}
-        {install?.text ? install.ok ? <Meta>{install.text}</Meta> : <Warn>{install.text}</Warn> : null}
-        <Actions>
-          {backend ? (
-            <Button variant="secondary" isDisabled={!!install?.busy || checking} onPress={() => void runInstall()} data-testid="cap-search-install">
-              {install?.busy ? t('set.opencliInstalling') : backend.available ? t('set.opencliUpdate') : t('set.opencliInstall')}
-            </Button>
-          ) : null}
-          {needsNode ? (
-            <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(NODE_DOWNLOAD)}>
-              {t('set.opencliGetNode')}
-            </Button>
-          ) : null}
-          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_EXTENSION)}>
-            {t('set.opencliExtStore')}
-          </Button>
-          <Button variant="secondary" onPress={() => void window.yan.browser.openExternal(OPENCLI_RELEASES)}>
-            {t('set.releasePage')}
-          </Button>
-        </Actions>
-      </Group>
-    </div>
   )
 }
 

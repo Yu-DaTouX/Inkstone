@@ -6,7 +6,7 @@ const OUT = 'out/probe'
 mkdirSync(OUT, { recursive: true })
 
 await build({
-  entryPoints: ['src/main/search/opencli.ts'],
+  stdin: { contents: "export * from './src/main/search/search'\nexport * from './src/main/search/public-sources'", resolveDir: process.cwd(), loader: 'ts' },
   outfile: 'out/probe/search-mod.mjs',
   bundle: true,
   format: 'esm',
@@ -14,6 +14,8 @@ await build({
   logLevel: 'silent'
 })
 const mod = await import('../../out/probe/search-mod.mjs')
+const publicRunners = { wikipedia: mod.runWikipediaSearch, arxiv: mod.runArxivSearch, hackernews: mod.runHackerNewsSearch }
+const runner = (source, query, opts) => publicRunners[source.id]?.(query, opts) ?? Promise.resolve({ source: source.id, rows: null, unavailable: true, error: { code: 'probe_unsupported', message: '探针只直连公开来源' }, elapsedMs: 0 })
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -32,7 +34,7 @@ let worst = doctor.available ? 0 : 1
 if (!doctorOnly) {
   const outcome = await mod.runSearch(
     { text: query, ...(sources.length ? { sources } : {}) },
-    { runner: mod.createOpencliRunner(), now: () => Date.now() }
+    { runner, now: () => Date.now() }
   )
   console.log('=== query ===')
   console.log(mod.searchSummary(outcome))
@@ -47,7 +49,7 @@ if (!doctorOnly) {
 
   const ignoredProbe = await mod.runSearch(
     { text: query, sources: ['wikipedia', 'definitely-not-a-source'] },
-    { runner: mod.createOpencliRunner(), now: () => Date.now() }
+    { runner, now: () => Date.now() }
   )
   if ((ignoredProbe.ignoredSources ?? []).includes('definitely-not-a-source')) {
     console.log('未知来源被点名:', mod.searchSummary(ignoredProbe))

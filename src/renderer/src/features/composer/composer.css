@@ -186,7 +186,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--s-4);
-    padding: var(--s-4) var(--s-4) var(--s-10);
+    padding: var(--s-4) var(--s-4) var(--s-10) calc(var(--size-btn) + var(--s-4));
   }
 
   .ca-tile {

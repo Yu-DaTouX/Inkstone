@@ -17,14 +17,16 @@ export type {
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView,
-  LocalModelServer
+  LocalModelServer,
+  ModelsShrink
 } from './custom-provider'
 import type {
   CustomProviderDiscoverResult,
   CustomProviderInput,
   CustomProviderTestResult,
   CustomProviderView,
-  LocalModelServer
+  LocalModelServer,
+  ModelsShrink
 } from './custom-provider'
 import type { CheckpointPreview, CheckpointRecord, CheckpointRestoreResult, WorkspaceFit } from './checkpoints'
 import type { GitChangesOptions, GitChangesResult, GitDiffRequest, GitDiffResult, GitPathScreen, GitRefOption, GitRemoteIdentity, GitRepoState } from './git'
@@ -711,6 +713,7 @@ export interface CustomProviderResult {
   ok: boolean
   errors?: string[]
   providers?: CustomProviderView[]
+  shrink?: ModelsShrink[]
 }
 
 export interface ToolStatus {
@@ -967,6 +970,7 @@ export interface TerminalAvailability {
 }
 
 export interface BrowserState {
+  sessionId?: string
   open: boolean
   url: string
   title: string
@@ -976,6 +980,7 @@ export interface BrowserState {
   activeTabId?: string
   tabs?: BrowserTabState[]
   userControl?: boolean
+  agentSessionId?: string
   userControlRequest?: { reason: string; sessionId: string; at: number }
   lastDownload?: { path: string; filename: string; size?: number; source?: string }
   permissions?: BrowserPermissionRecord[]
@@ -1007,6 +1012,19 @@ export interface BrowserExternalState {
   profileDir?: string
   debuggingPort?: number
   sync?: ChromeSyncReport
+}
+
+export interface BrowserLoginImport {
+  copied: number
+  failed: number
+  skipped: number
+}
+
+export interface BrowserLoginImportStatus {
+  id: string
+  phase: 'waiting' | 'importing' | 'done' | 'failed' | 'cancelled'
+  error?: 'connection_failed' | 'pairing_expired' | 'read_failed' | 'invalid_payload' | 'import_failed'
+  result?: BrowserLoginImport
 }
 
 export interface ChromeSyncReport {
@@ -1903,7 +1921,6 @@ export interface YanBridge {
   builtinCapabilities: BuiltinCapabilitiesBridge
   search: {
     doctor(): Promise<SearchBackendStatus>
-    installBackend(): Promise<{ ok: boolean; needsNode?: boolean; error?: string; log?: string }>
     apiConfig(): Promise<SearchApiConfigView>
     setApiKey(provider: SearchProviderId, key: string): Promise<{ ok: boolean; error?: string }>
     clearApiKey(provider: SearchProviderId): Promise<{ ok: boolean; error?: string }>
@@ -1921,15 +1938,17 @@ export interface YanBridge {
   git: GitBridge
 
   browser: {
-    getState(): Promise<BrowserState>
-    open(url?: string): Promise<BrowserState>
+    activateSession(sessionId: string): Promise<BrowserState>
+    install(): Promise<void>
+    getState(sessionId?: string): Promise<BrowserState>
+    open(url?: string, sessionId?: string): Promise<BrowserState>
     observe(): Promise<BrowserObservation>
     network(): Promise<BrowserNetworkSnapshot>
-    newTab(url?: string): Promise<BrowserState>
-    switchTab(id: string): Promise<BrowserState>
-    closeTab(id?: string): Promise<BrowserState>
-    close(): Promise<BrowserState>
-    navigate(url: string): Promise<{ ok: boolean; error?: string }>
+    newTab(url?: string, sessionId?: string): Promise<BrowserState>
+    switchTab(id: string, sessionId?: string): Promise<BrowserState>
+    closeTab(id?: string, sessionId?: string): Promise<BrowserState>
+    close(sessionId?: string): Promise<BrowserState>
+    navigate(url: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
     siteAccess(sessionId: string, url: string): Promise<{ decision: 'allow' | 'deny' | 'forbidden' | 'invalid' }>
     remoteImage(sessionId: string, url: string, prompt: boolean): Promise<RemoteImageResult>
     allowedSites(): Promise<string[]>
@@ -1937,15 +1956,18 @@ export interface YanBridge {
     removeAllowedSite(value: string): Promise<{ removed: boolean; list: string[] }>
     clearAllowedSites(): Promise<string[]>
     siteAskAnswer(id: string, allowed: boolean): Promise<void>
-    back(): Promise<{ ok: boolean; error?: string }>
-    forward(): Promise<{ ok: boolean; error?: string }>
-    reload(): Promise<{ ok: boolean; error?: string }>
-    openExternal(url?: string): Promise<{ ok: boolean; error?: string }>
-    releaseUserControl(): Promise<BrowserState>
+    back(sessionId?: string): Promise<{ ok: boolean; error?: string }>
+    forward(sessionId?: string): Promise<{ ok: boolean; error?: string }>
+    reload(sessionId?: string): Promise<{ ok: boolean; error?: string }>
+    openExternal(url?: string, sessionId?: string): Promise<{ ok: boolean; error?: string }>
+    releaseUserControl(sessionId?: string): Promise<BrowserState>
     openExternalChrome(url?: string): Promise<{ ok: boolean; error?: string }>
     closeExternalChrome(): Promise<BrowserState>
     syncLocalProfile(): Promise<ChromeSyncReport>
     syncPageStorage(): Promise<ChromeSyncReport>
+    startLoginImport(): Promise<{ id: string }>
+    loginImportStatus(id: string): Promise<BrowserLoginImportStatus>
+    cancelLoginImport(id: string): Promise<BrowserLoginImportStatus>
     setPermission(permission: string, origin: string, allowed: boolean): Promise<{ ok: boolean; error?: string }>
     setBounds(bounds: BrowserBounds): Promise<void>
     setVisible(visible: boolean): Promise<void>

@@ -50,6 +50,9 @@
 | node-pty | 见包内声明 |
 | 内置 pi 运行时（`resources/pi-runtime/`） | 见上游项目声明 |
 | electron-updater | MIT（见包内声明） |
+| [ego-lite](https://github.com/citrolabs/ego-lite)（`package/ego-browser/src` 的 `driver/keyboard`、`driver/page-keyboard`、`driver/scroll-motion`，提交 `aecc583`） | MIT，内置浏览器驱动 [`src/main/browser/driver/`](src/main/browser/driver/) 移植自这些文件，许可原文见 [`LICENSE-ego-lite`](src/main/browser/driver/LICENSE-ego-lite)；ego lite 浏览器本体不随砚分发 |
+
+[Browser Cookie Bridge](https://github.com/apoorvdarshan/browser-cookie-bridge) 的 `extension-template/background.js`（来源 Cookie 采集与字段映射）及 `src/broker.js`（Bearer 认证、本地 HTTP 桥接）以 MIT 许可适配到 `resources/browser-cookie-bridge/` 和 `src/main/browser/cookie-bridge.ts`。Copyright (c) 2026 Apoorv Darshan。许可原文见 [`resources/browser-cookie-bridge/LICENSE`](resources/browser-cookie-bridge/LICENSE)。砚移除了定时同步、历史记录和目标扩展通道，仅保留用户触发的一次性本机导入。
 
 ## 按需下载的组件
 

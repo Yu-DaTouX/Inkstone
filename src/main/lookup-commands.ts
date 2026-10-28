@@ -1,7 +1,8 @@
 import type { CapabilityRunOptions } from './agent'
 import { CapabilityCommandError } from './capability-server'
 import { memoryStoreOf } from './personal-memory'
-import { createOpencliRunner, type AdapterRunner, runSearch, searchDoctor, searchSummary, type SearchPolicy } from './search/opencli'
+import { type AdapterRunner, runSearch, searchDoctor, searchSummary, type SearchPolicy } from './search/search'
+import { runArxivSearch, runHackerNewsSearch, runWikipediaSearch } from './search/public-sources'
 import { runBraveSearch } from './search/brave'
 import { runTavilySearch } from './search/tavily'
 import { firecrawlReadPage } from './search/firecrawl'
@@ -462,14 +463,15 @@ let cachedSearchRunner: AdapterRunner | null = null
 
 function searchRunner(): AdapterRunner {
   if (cachedSearchRunner) return cachedSearchRunner
-  const opencli = createOpencliRunner()
   cachedSearchRunner = (source, query, opts) => {
     switch (source.id) {
       case 'brave': return runBraveSearch(query, opts)
       case 'tavily': return runTavilySearch(query, opts)
       case 'deepseek': return runFundedDeepseekSearch(query, opts)
       case 'ddg': return runDdgSearch(query, opts)
-      default: return opencli(source, query, opts)
+      case 'wikipedia': return runWikipediaSearch(query, opts)
+      case 'arxiv': return runArxivSearch(query, opts)
+      case 'hackernews': return runHackerNewsSearch(query, opts)
     }
   }
   return cachedSearchRunner

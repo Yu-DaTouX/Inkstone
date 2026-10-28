@@ -109,6 +109,7 @@ import { taskPlanLogEntry, type TaskAction, type TaskPlanRequest } from '../shar
 import { titleSampleImages, titleSamples, titleSampleText, type TitleSampleMessage } from '../shared/title-samples'
 import { beginTreeSnapshot, endTreeSnapshot, isShellTool, isWriteTool, snapshotAfter, snapshotBefore, writePathOf } from './snapshots'
 import type { QueueEditOp } from '../shared/ipc'
+import type { BrowserActionOptions, BrowserActionReceipt } from './browser/receipt'
 import { ArtifactStore } from './artifacts'
 import { hasBash } from './git-runtime'
 import { defaultImageModel, detectImageProviders, generateImage, imageProviderEndpoint, imageProviderNeedsConfirmation, isImageProvider, resolveImageProvider, waitForImage, type ImageGenerationRequest } from './image-generation'
@@ -212,12 +213,17 @@ export type RunObserver = (ctx: RunObserverContext, signal: RunSignal) => void
 type BrowserCommandResult = { ok: boolean; error?: string; code?: string }
 type AutoContinueScope = { rpc: PiRpc; sessionId: string; generation?: number; runId?: string; version: number; reason?: 'model-error' }
 
-export type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation }
+export type BrowserObservationResult = BrowserCommandResult & { observation?: BrowserObservation; receipt?: BrowserActionReceipt }
 
 export interface BrowserCommandHost {
+  forSession?(sessionId: string): BrowserCommandHost
+  runScript?(code: string, signal?: AbortSignal): Promise<unknown>
+  guide?(): Promise<string>
   getState(): BrowserState
   setAutomationOwner?(owner?: string): void
+  setAgentSession?(sessionId: string): void
   getOwnedDownload?(owner: string): BrowserState['lastDownload']
+  pendingDownloads?(): string[]
   navigate(url: string): Promise<BrowserCommandResult>
   back(): Promise<BrowserCommandResult>
   forward(): Promise<BrowserCommandResult>
@@ -229,12 +235,12 @@ export interface BrowserCommandHost {
   closeExternalChrome(): Promise<BrowserState>
   observe(): Promise<BrowserObservation>
   network(): Promise<BrowserNetworkSnapshot>
-  click(ref: string): Promise<BrowserObservationResult>
-  type(ref: string, text: string): Promise<BrowserObservationResult>
-  select(ref: string, value: string): Promise<BrowserObservationResult>
-  press(key: string): Promise<BrowserObservationResult>
+  click(ref: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>
+  type(ref: string, text: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>
+  select(ref: string, value: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>
+  press(key: string, options?: BrowserActionOptions): Promise<BrowserObservationResult>
   scroll(deltaX: number, deltaY: number): Promise<BrowserObservationResult>
-  requestUserControl(request?: { reason?: string; sessionId?: string }): BrowserState
+  requestUserControl(request?: { reason?: string; sessionId?: string }): BrowserState | Promise<BrowserState>
   screenshot(): Promise<{ mimeType: string; data: Buffer }>
 }
 
@@ -498,6 +504,7 @@ export class AgentController extends EventEmitter {
   private readonly browserCommands = new BrowserCommands({
     browserHostOrNull: () => this.getBrowserHost?.() ?? null,
     capabilityOpts: () => this.capabilityOpts,
+    conversationId: () => this.state?.sessionId,
     cwd: () => this.cwd
   })
 
@@ -1185,7 +1192,7 @@ export class AgentController extends EventEmitter {
     signal?: AbortSignal
   ): Promise<CapabilityCommandResult> {
     if (command.startsWith('browser.')) {
-      return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params)
+      return this.browserCommands.runBrowserCommand(command.slice('browser.'.length), params, signal)
     }
     if (command.startsWith('schedule.')) {
       if (!this.scheduleHost) throw new CapabilityCommandError('schedule_unavailable', '定时任务当前不可用')

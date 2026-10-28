@@ -1,0 +1,15 @@
+:root { color-scheme: light dark; font: 16px/1.6 system-ui, sans-serif; }
+body { margin: 0; padding: 32px 20px; }
+main { max-width: 620px; margin: auto; }
+#bridge { width: 100%; height: 300px; border: 0; }
+#path { overflow-wrap: anywhere; }
+button + button { margin-top: 12px; }
+h1 { font-size: 26px; }
+form { display: grid; gap: 12px; }
+input:not([type=checkbox]), button { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit; border: 1px solid GrayText; border-radius: 6px; }
+.check { display: flex; gap: 8px; align-items: baseline; }
+button { cursor: pointer; }
+button:disabled { cursor: wait; }
+p, footer { color: GrayText; }
+#status { overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid Highlight; outline-offset: 3px; }

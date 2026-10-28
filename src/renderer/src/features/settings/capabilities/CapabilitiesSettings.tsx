@@ -7,7 +7,7 @@ import { MarketSection } from './MarketSection'
 import { PromptsSection } from './PromptsSection'
 import { VoiceSetupPanel, VoiceStatusPanel, useVoiceSetup } from './VoiceSection'
 import { ComputerUseSection } from './ComputerUseSection'
-import { SearchApiSection, SearchBackendSection } from './SearchSection'
+import { SearchApiSection } from './SearchSection'
 import { GitRuntimeSection } from './GitRuntimeSection'
 import { getSettingsRequest, subscribeSettingsRequest } from '../root/deep-link'
 import { getSettingReveal, requestSettingReveal, subscribeSettingReveal } from '../search/search-model'
@@ -76,7 +76,6 @@ function ToolsTab(): ReactElement {
   return (
     <>
       <ComputerUseSection />
-      <SearchBackendSection />
       <VoiceStatusPanel voice={voice} />
       <SearchApiSection />
       <div data-setting-id="caps-tools-git">

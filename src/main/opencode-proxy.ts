@@ -379,6 +379,7 @@ async function syncProvider(state: ProxyState, models: ProxyModel[]): Promise<st
     api: 'openai-completions',
     baseUrl: apiBase(state),
     apiKey: state.apiKey,
+    confirmShrink: true,
     models: models.map((model) => ({
       id: model.id,
       name: modelDisplayName(model.id),

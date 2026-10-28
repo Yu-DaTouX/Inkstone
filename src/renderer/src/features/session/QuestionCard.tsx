@@ -209,10 +209,9 @@ function PanelBody({ req, fallbackStart, collapsed, setCollapsed, page, onPrev, 
         </CardControl>
       </CardHead>
 
-      {collapsed ? (
-        <div className="v3-qmini">{t('q.collapsed', { n: page.total })}</div>
-      ) : (
-        <div className="v3-qbody" data-testid="v3-question-body">
+      {collapsed ? <div className="v3-qmini">{t('q.collapsed', { n: page.total })}</div> : null}
+      {(
+        <div className="v3-qbody" data-testid="v3-question-body" hidden={collapsed}>
           {req.message ? <div className="v3-qmsg">{req.message}</div> : null}
 
           {req.form?.length ? (

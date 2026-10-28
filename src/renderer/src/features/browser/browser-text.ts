@@ -1,5 +1,5 @@
 import type { Lang } from '../../i18n'
-import type { BrowserSiteAddResult } from '../../../../shared/ipc'
+import type { BrowserLoginImportStatus, BrowserSiteAddResult } from '../../../../shared/ipc'
 
 export interface BrowserText {
   inactive: string
@@ -25,6 +25,15 @@ export interface BrowserText {
   sitesDone: string
   sitesError(result: BrowserSiteAddResult): string
   sitesLoadError: string
+  importLogin: string
+  importing: string
+  importHint: string
+  importWaiting: string
+  importCancel: string
+  importDismiss: string
+  importDone(copied: number, failed: number, skipped: number): string
+  importFailed: string
+  importError(reason: BrowserLoginImportStatus['error']): string
 }
 
 const ZH: BrowserText = {
@@ -57,7 +66,22 @@ const ZH: BrowserText = {
         : result === 'blocked'
           ? '这个站点受安全限制，不能添加。'
           : '允许列表已达上限，无法添加更多。',
-  sitesLoadError: '读取允许列表失败。'
+  sitesLoadError: '读取允许列表失败。',
+  importLogin: '一键导入登录态',
+  importing: '正在导入登录态…',
+  importHint: '从默认 Chrome / Edge 当前档案导入全部网站的登录 Cookie，覆盖同名旧值。首次需安装并授权扩展；不含密码和其他设置。',
+  importWaiting: '等待来源浏览器连接；首次请按来源页面提示安装扩展。再次点击可取消。',
+  importCancel: '取消导入',
+  importDismiss: '关闭提示',
+  importDone: (copied, failed, skipped) => `已导入 ${copied} 条 Cookie，失败 ${failed} 条，跳过 ${skipped} 条。刷新网页后检查登录状态；部分网站仍需重新登录。`,
+  importFailed: '登录态导入未完成，请检查来源浏览器的扩展并重试。',
+  importError: (reason) => ({
+    connection_failed: '与来源浏览器的连接中断或未收到结果，请重新发起导入。',
+    pairing_expired: '本次配对已结束，请重新发起导入。',
+    read_failed: '来源浏览器读取 Cookie 失败，请确认扩展已获得全部网站访问权限。',
+    invalid_payload: 'Cookie 数据无法解析，请更新砚和导入扩展后重试。',
+    import_failed: '未能完成 Cookie 写入，请重新发起导入。'
+  })[reason ?? 'import_failed']
 }
 
 const EN: BrowserText = {
@@ -92,7 +116,22 @@ const EN: BrowserText = {
         : result === 'blocked'
           ? 'This site cannot be added because of safety restrictions.'
           : 'The allow list is full.',
-  sitesLoadError: 'Could not read the allow list.'
+  sitesLoadError: 'Could not read the allow list.',
+  importLogin: 'Import sign-ins',
+  importing: 'Importing sign-ins…',
+  importHint: 'Import all website cookies from the current profile in your default Chrome / Edge, replacing matching cookies. First use requires the extension. Passwords and other settings are not included.',
+  importWaiting: 'Waiting for the source browser. Install the extension there on first use. Click again to cancel.',
+  importCancel: 'Cancel import',
+  importDismiss: 'Dismiss notification',
+  importDone: (copied, failed, skipped) => `Imported ${copied} cookies; ${failed} failed, ${skipped} skipped. Reload and check the website; some sites may require signing in again.`,
+  importFailed: 'Import did not complete. Check the source browser extension and try again.',
+  importError: (reason) => ({
+    connection_failed: 'The source connection was interrupted or no result arrived. Start the import again.',
+    pairing_expired: 'This pairing has ended. Start the import again.',
+    read_failed: 'The source browser could not read cookies. Check that the extension has access to all websites.',
+    invalid_payload: 'Cookie data could not be parsed. Update Inkstone and the import extension, then retry.',
+    import_failed: 'Cookie writing did not complete. Start the import again.'
+  })[reason ?? 'import_failed']
 }
 
 export function browserText(lang: Lang): BrowserText {

@@ -409,9 +409,8 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         if (item.messageId) {
           const messageId = item.messageId
           onNavigate?.('chat')
-          if (store.locateMessage(messageId)) return { ok: true }
-          window.setTimeout(() => useStore.getState().locateMessage(messageId), 60)
-          return { ok: true }
+          if (await useStore.getState().locateMessage(messageId)) return { ok: true }
+          return { ok: false, error: text.messageNotFound }
         }
         if (!item.sessionPath) return { ok: false, error: text.failed }
         const before = new Set(store.notices.map((notice) => notice.id))

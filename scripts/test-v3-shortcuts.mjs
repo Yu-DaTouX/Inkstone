@@ -130,6 +130,13 @@ assert.deepEqual(parsePaletteQuery('#token'), { mode: 'message', term: 'token' }
 assert.deepEqual(parsePaletteQuery('?'), { mode: 'help', term: '' }, '? 是帮助')
 assert.deepEqual(parsePaletteQuery('>>'), { mode: 'action', term: '>' }, '第二个 > 作为检索词')
 assert.deepEqual(parsePaletteQuery('hello'), { mode: 'default', term: 'hello' })
+assert.deepEqual(parsePaletteQuery('》新'), { mode: 'action', term: '新' }, '中文书名号 》 等同 >')
+assert.deepEqual(parsePaletteQuery('＞ 新'), { mode: 'action', term: '新' }, '全角 ＞ 等同 >')
+assert.deepEqual(parsePaletteQuery('＠登录'), { mode: 'session', term: '登录' }, '全角 ＠ 等同 @')
+assert.deepEqual(parsePaletteQuery('＃token'), { mode: 'message', term: 'token' }, '全角 ＃ 等同 #')
+assert.deepEqual(parsePaletteQuery('？'), { mode: 'help', term: '' }, '全角 ？ 等同 ?')
+assert.deepEqual(parsePaletteQuery('》》'), { mode: 'action', term: '》' }, '只归一化首字符')
+assert.deepEqual(parsePaletteQuery('《新'), { mode: 'default', term: '《新' }, '其他中文标点不切模式')
 
 assert.deepEqual(COMMAND_GROUP_ORDER, ['action', 'session'], '旧默认顺序保持不变')
 assert.deepEqual(PALETTE_GROUP_ORDER, ['action', 'session', 'message', 'help'], '面板渲染顺序')
