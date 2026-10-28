@@ -104,7 +104,7 @@ try {
   }
   configureRemoteHost({ ...host, win: () => null, remoteAccess: () => null })
   const handlers = new Map()
-  registerSessionIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, host)
+  registerSessionIpc({ handle: (channel, fn) => handlers.set(channel, fn), rawHandle: (channel, fn) => handlers.set(channel, (...args) => fn({ sender: { id: 1 } }, ...args)) }, host)
 
   const layoutFile = join(dataDir, 'session-layout.json')
   const readLayout = async () => {

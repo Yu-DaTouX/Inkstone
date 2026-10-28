@@ -180,7 +180,7 @@ const host = {
   }
 }
 const handlers = new Map()
-registerSessionIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, host)
+registerSessionIpc({ handle: (channel, fn) => handlers.set(channel, fn), rawHandle: (channel, fn) => handlers.set(channel, (...args) => fn({ sender: { id: 1 } }, ...args)) }, host)
 const switchSession = (path) => handlers.get('yan:switchSession')(path)
 
 process.stdout.write('\n▌打开已有会话时以会话自身的目录和归属为准（当前目录 A，会话属于 B）\n')
