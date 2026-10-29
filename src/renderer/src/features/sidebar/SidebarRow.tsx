@@ -23,6 +23,7 @@ export interface SidebarRowCard {
   modelRef?: ModelRef
   branch?: string
   slim?: boolean
+  repeatProject?: boolean
 }
 
 export interface SidebarRowProps {
@@ -39,6 +40,10 @@ export interface SidebarRowProps {
 
 function cardDetail(card: SidebarRowCard, status: string): string {
   return [card.cwd && card.cwd !== card.project ? `${card.project} · ${card.cwd}` : card.project, card.branch, card.model, status].filter(Boolean).join('\n')
+}
+
+function branchWorthShowing(branch: string | undefined): branch is string {
+  return !!branch && branch !== 'main' && branch !== 'master'
 }
 
 function cardHasBot(status: SessionStatusKind): boolean {
@@ -200,7 +205,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
                 </>
               ) : null}
               {card && !card.slim ? (
-                <span className="v3-crow-meta">
+                <span className="v3-crow-meta" data-repeat={card.repeatProject ? '' : undefined}>
                   <ProjectBadge label={card.project} global={card.global} />
                   <span className="v3-crow-project">{card.project}</span>
                   {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
@@ -221,7 +226,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
               ) : (
                 <FadeTitleBox boxRef={titleBoxRef} text={title} />
               )}
-              {card?.branch && !card.slim ? (
+              {card && branchWorthShowing(card.branch) && !card.slim ? (
                 <span className="v3-crow-branch">
                   <GitBranch size={11} aria-hidden />
                   <span className="v3-crow-branch-name">{card.branch}</span>

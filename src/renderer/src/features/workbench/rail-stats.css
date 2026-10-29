@@ -34,11 +34,10 @@
   }
 
   .wb-rs-big {
-    font-size: var(--t-title);
-    line-height: var(--t-title-lh);
-    font-weight: var(--w-semibold);
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+    font-weight: var(--w-regular);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
     color: var(--fg);
   }
 

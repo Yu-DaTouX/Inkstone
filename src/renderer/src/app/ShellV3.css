@@ -61,6 +61,12 @@
   .v3-chat:has(.v3-rail) {
     --outline-on: 1;
   }
+  .v3-chat .v3-rail-track {
+    opacity: 0;
+  }
+  .v3-chat .v3-rail:is(:hover, :focus-within):not([data-open]) .v3-rail-track {
+    opacity: 1;
+  }
   .v3-chat[data-sessionbar='1'] {
     --bar-reserve: calc(var(--size-tiles) + var(--s-16));
     --tiles-on: 1;
@@ -145,7 +151,7 @@
     inset: auto 0 0 0;
     z-index: 4;
     width: 100%;
-    padding: 0 var(--col-pad-r) var(--s-12) var(--col-pad-l);
+    padding: 0 var(--col-pad-r) var(--s-24) var(--col-pad-l);
     pointer-events: none;
   }
 
@@ -224,7 +230,7 @@
     align-items: center;
     font-size: var(--t-body);
     line-height: var(--t-body-lh);
-    font-weight: var(--w-medium);
+    font-weight: var(--w-semibold);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

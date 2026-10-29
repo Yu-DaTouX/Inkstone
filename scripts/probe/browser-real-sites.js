@@ -61,9 +61,10 @@
 
   try {
     out.push('=== 0. 右侧工作区打开浏览器窗格 ===')
-    const opener = document.querySelector('[data-testid="wb-open-browser"]')
-    ok(!!opener, '顶栏有浏览器窗格入口')
-    if (opener && opener.getAttribute('aria-pressed') !== 'true') opener.click()
+    document.querySelector('[data-testid="wb-more-tools"]')?.click()
+    const opener = await waitFor(async () => document.querySelector('[data-testid="wb-view-browser"]'), 3_000)
+    ok(!!opener, '顶栏更多菜单有浏览器窗格入口')
+    if (opener && opener.getAttribute('aria-checked') !== 'true') opener.click()
     ok(!!await waitFor(async () => document.querySelector('.v3-browser'), 6_000), '浏览器窗格已挂载')
 
     out.push('\n=== 1. 真实下拉框 select ===')

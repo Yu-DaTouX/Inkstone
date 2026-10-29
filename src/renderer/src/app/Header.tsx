@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Copy, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Copy, EllipsisVertical, FileDiff, Folder, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
@@ -34,11 +34,10 @@ interface Props {
 const TITLEBAR_PANES = [
   { tab: 'terminal', Icon: Terminal },
   { tab: 'changes', Icon: FileDiff },
-  { tab: 'browser', Icon: Globe },
   { tab: 'files', Icon: Folder }
 ] as const
 
-const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['logs', 'device', 'pullRequests']
+const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['browser', 'logs', 'device', 'pullRequests']
 const MENU_KEEP_ON_TOP = 'head:keep-on-top'
 const MENU_SETTINGS = 'head:settings'
 
@@ -80,6 +79,10 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
     return lang === 'en-US' ? `${label} (${keys})` : `${label}（${keys}）`
   }
   const paneLabel = (tab: WorkbenchTabId): string => withShortcut(activeLabel(tab), tab)
+  const paneShortcut = (tab: WorkbenchTabId): string | undefined => {
+    const id = PANE_SHORTCUTS[tab]
+    return (id && shortcutKeysText(id, shortcutOverrides)) || undefined
+  }
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
   const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
   const menuDot = route === 'chat' && narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
@@ -182,7 +185,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
               }}
             >
               {menuPanes.map((tab) => (
-                <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} checked={openPanes.has(tab)} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
+                <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} checked={openPanes.has(tab)} aria-checked={openPanes.has(tab)} shortcut={paneShortcut(tab)} data-testid={`wb-view-${tab}`}>
                   {toolText.tabs[tab]}
                 </MenuItem>
               ))}

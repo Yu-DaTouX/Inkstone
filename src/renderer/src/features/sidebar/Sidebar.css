@@ -916,7 +916,20 @@
   }
 
   .v3-crow-bot[data-idle] {
-    opacity: 0.72;
+    opacity: 0.45;
+    filter: grayscale(1);
+  }
+
+  .v3-crow-meta[data-repeat] {
+    opacity: 0.6;
+  }
+
+  .v3-crow-meta[data-repeat] .ui-badge {
+    filter: grayscale(1);
+  }
+
+  .v3-side .v3-srow > .v3-row:is([aria-current='true'], [aria-current='page']) {
+    background: var(--side-sel);
   }
 
   .v3-crow-pin {

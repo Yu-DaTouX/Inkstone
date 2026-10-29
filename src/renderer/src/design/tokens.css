@@ -3,9 +3,10 @@
   :root {
     color-scheme: light dark;
     --bg: light-dark(#FCFCFB, #171717);
-    --side: light-dark(#F6F9FC, #1B1B1D);
-    --side-glass: light-dark(rgba(246,249,252,.95), rgba(27,27,29,.92));
-    --side-tint: light-dark(rgba(247,249,252,.88), rgba(20,20,22,.80));
+    --side: light-dark(#F6F9FC, #141415);
+    --side-glass: light-dark(rgba(246,249,252,.95), rgba(20,20,21,.95));
+    --side-tint: light-dark(rgba(247,249,252,.88), rgba(18,18,19,.96));
+    --side-sel: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.06));
     --side-rim-hi: light-dark(rgba(255,255,255,.95), rgba(255,255,255,.22));
     --side-rim-lo: light-dark(rgba(11,11,11,.07), rgba(255,255,255,.035));
     --side-sheen: light-dark(rgba(255,255,255,.58), rgba(255,255,255,.055));

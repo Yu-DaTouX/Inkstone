@@ -4,6 +4,7 @@ export const v3Light = {
   "side": "#F6F9FC",
   "sideGlass": "rgba(246,249,252,.95)",
   "sideTint": "rgba(247,249,252,.88)",
+  "sideSel": "rgba(11,11,11,.05)",
   "sideRimHi": "rgba(255,255,255,.95)",
   "sideRimLo": "rgba(11,11,11,.07)",
   "sideSheen": "rgba(255,255,255,.58)",
@@ -78,9 +79,10 @@ export const v3Light = {
 
 export const v3Dark = {
   "bg": "#171717",
-  "side": "#1B1B1D",
-  "sideGlass": "rgba(27,27,29,.92)",
-  "sideTint": "rgba(20,20,22,.80)",
+  "side": "#141415",
+  "sideGlass": "rgba(20,20,21,.95)",
+  "sideTint": "rgba(18,18,19,.96)",
+  "sideSel": "rgba(255,255,255,.06)",
   "sideRimHi": "rgba(255,255,255,.22)",
   "sideRimLo": "rgba(255,255,255,.035)",
   "sideSheen": "rgba(255,255,255,.055)",

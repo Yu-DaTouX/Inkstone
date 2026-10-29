@@ -388,10 +388,11 @@ interface FlatRowProps {
   now: number
   branch?: string | null
   slim?: boolean
+  repeatProject?: boolean
   onOpen: () => void
 }
 
-function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.Element {
+function FlatRow({ entry, row, now, branch, slim, repeatProject, onOpen }: FlatRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   return (
@@ -409,7 +410,8 @@ function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.E
         model: row.model,
         modelRef: row.modelRef,
         branch: branch ?? undefined,
-        slim
+        slim,
+        repeatProject
       }}
       onOpen={onOpen}
     />
@@ -531,13 +533,14 @@ export function FlatSessionList({
   const hidden = Math.max(0, rows.length - limit)
   const branches = useCwdBranches([...pinned, ...shown].map((entry) => entry.session.cwd), now)
 
-  const render = (entry: FlatEntry): JSX.Element => (
+  const render = (entry: FlatEntry, index: number, list: readonly FlatEntry[]): JSX.Element => (
     <FlatRow
       key={entry.session.path}
       entry={entry}
       row={rowState(entry.session)}
       now={now}
       branch={branches.get(entry.session.cwd)}
+      repeatProject={index > 0 && list[index - 1].group.key === entry.group.key}
       onOpen={() => onOpen(entry.session)}
     />
   )
