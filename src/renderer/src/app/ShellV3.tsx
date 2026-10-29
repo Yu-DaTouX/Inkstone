@@ -48,7 +48,7 @@ import { activateWorkspaceOwner, captureActivationTarget } from '../features/wor
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
 import { usePruneSubagentSurfaces } from '../features/workbench/use-subagent-surfaces'
 import { useTerminalRunning } from '../features/terminal/use-terminal-running'
-import { PANEL_WIDTH_MIN, currentPanelEntry, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
+import { PANEL_WIDTH_MIN, currentPanelEntry, panelRoom, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import './ShellV3.css'
@@ -582,7 +582,7 @@ export default function ShellV3(): ReactElement {
               <RightPanel
                 owner={owner.key ? owner : null}
                 mode={panelMode}
-                room={Math.max(PANEL_WIDTH_MIN, bodyWidth - CHAT_MIN_WIDTH_PX)}
+                room={panelRoom(window.innerWidth, bodyWidth, CHAT_MIN_WIDTH_PX)}
                 panes={WORKBENCH_PANES}
                 onOpenTool={(kind) => void openWorkspaceTab(kind)}
                 onRequestActivation={requestActivation}

@@ -30,9 +30,9 @@ export const RIGHT_PANEL_VERSION = 1
 export const RIGHT_PANEL_MAX_SESSIONS = 100
 export const HOME_PANEL_KEY = 'home'
 export const SESSION_PANEL_PREFIX = 's:'
-export const PANEL_WIDTH_MIN = 320
-export const PANEL_WIDTH_MAX = 1200
-export const PANEL_WIDTH_DEFAULT = 460
+export const PANEL_WIDTH_MIN = 360
+export const PANEL_WIDTH_DEFAULT = 540
+export const PANEL_WIDTH_MAX_FRACTION = 0.7
 export const PANEL_WIDTH_STEP = 16
 export const PANEL_TOOL_KINDS: readonly PanelToolKind[] = [
   ...WORKBENCH_TABS.filter((tab): tab is Exclude<WorkbenchTabId, 'preview'> => tab !== 'preview'),
@@ -79,8 +79,16 @@ export function subagentSurface(runId: string): RightPanelSurface {
   return { id: `subagent:${runId}`, kind: 'subagent', runId }
 }
 
-export function clampPanelWidth(value: number, room = PANEL_WIDTH_MAX): number {
-  const max = Math.max(PANEL_WIDTH_MIN, Math.min(PANEL_WIDTH_MAX, room))
+export function panelMaxWidth(room: number): number {
+  return Number.isFinite(room) ? Math.max(PANEL_WIDTH_MIN, Math.floor(room)) : Number.POSITIVE_INFINITY
+}
+
+export function panelRoom(viewportWidth: number, rowWidth: number, siblingMin: number): number {
+  return panelMaxWidth(Math.min(viewportWidth * PANEL_WIDTH_MAX_FRACTION, rowWidth - siblingMin))
+}
+
+export function clampPanelWidth(value: number, room = Number.POSITIVE_INFINITY): number {
+  const max = panelMaxWidth(room)
   if (!Number.isFinite(value)) return Math.min(PANEL_WIDTH_DEFAULT, max)
   return Math.round(Math.min(max, Math.max(PANEL_WIDTH_MIN, value)))
 }
@@ -238,7 +246,7 @@ export function sanitizeRightPanel(value: unknown): RightPanelSnapshot {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return snapshot
   const raw = value as Record<string, unknown>
   if (raw.version !== RIGHT_PANEL_VERSION) return snapshot
-  snapshot.width = clampPanelWidth(typeof raw.width === 'number' ? raw.width : PANEL_WIDTH_DEFAULT)
+  snapshot.width = typeof raw.width === 'number' && raw.width >= PANEL_WIDTH_MIN ? clampPanelWidth(raw.width) : PANEL_WIDTH_DEFAULT
   const byKey = raw.byKey && typeof raw.byKey === 'object' && !Array.isArray(raw.byKey) ? (raw.byKey as Record<string, unknown>) : {}
   const order = Array.isArray(raw.order) ? raw.order.filter((key): key is string => typeof key === 'string' && key.length > 0) : []
   for (const key of [...new Set([...order, ...Object.keys(byKey)])]) {
@@ -305,7 +313,8 @@ function entryKeyed(state: Pick<RightPanelState, 'byKey' | 'order'>, key: string
     const { [key]: _gone, ...rest } = state.byKey
     return { byKey: rest, order: order.filter((item) => item !== key) }
   }
-  return capPanelSessions({ version: RIGHT_PANEL_VERSION, width: 0, byKey: { ...state.byKey, [key]: entry }, order })
+  const capped = capPanelSessions({ version: RIGHT_PANEL_VERSION, width: PANEL_WIDTH_DEFAULT, byKey: { ...state.byKey, [key]: entry }, order })
+  return { byKey: capped.byKey, order: capped.order }
 }
 
 const initial = readRightPanel()

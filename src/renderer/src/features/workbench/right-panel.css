@@ -23,9 +23,8 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: -3px;
+    left: calc(-1 * var(--s-4));
     z-index: 2;
-    width: 6px;
   }
 
   .rp-bar {

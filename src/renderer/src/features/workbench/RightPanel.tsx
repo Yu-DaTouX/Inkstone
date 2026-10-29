@@ -34,6 +34,7 @@ import {
   PANEL_WIDTH_STEP,
   clampPanelWidth,
   fileSurface,
+  panelMaxWidth,
   pullRequestSurface,
   toolSurface,
   useRightPanel,
@@ -217,10 +218,10 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
     >
       {mode === 'inline' && !maximized ? (
         <Splitter
-          className="rp-resizer"
+          className="rp-resizer ui-splitter--edge"
           orientation="vertical"
           value={axis - shownWidth}
-          min={axis - clampPanelWidth(Number.POSITIVE_INFINITY, room)}
+          min={axis - panelMaxWidth(room)}
           max={axis - PANEL_WIDTH_MIN}
           step={PANEL_WIDTH_STEP}
           aria-label={panel.resize}

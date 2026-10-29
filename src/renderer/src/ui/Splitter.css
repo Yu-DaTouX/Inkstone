@@ -110,6 +110,31 @@
     background: var(--accent);
   }
 
+  .ui-splitter--edge[aria-orientation='vertical'] {
+    width: var(--s-8);
+  }
+
+  .ui-splitter--edge[aria-orientation]::before {
+    inset: 0;
+  }
+
+  .ui-splitter--edge[aria-orientation='vertical']::after {
+    top: 0;
+    width: var(--hair, 1px);
+    height: 100%;
+    border-radius: 0;
+    transform: translateX(-50%);
+  }
+
+  .ui-splitter--edge:hover::after {
+    background: var(--line2);
+  }
+
+  .ui-splitter--edge[data-dragging]::after,
+  .ui-splitter--edge:focus-visible::after {
+    background: var(--accent);
+  }
+
   .ui-splitter[aria-disabled='true'] {
     cursor: default;
   }
