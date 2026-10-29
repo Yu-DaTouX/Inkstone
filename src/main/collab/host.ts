@@ -11,6 +11,7 @@ import {
   slugForRemote,
   trackingRefFor,
   type CollabBranchSession,
+  type CollabFailureCode,
   type CollabMergeRequest,
   type CollabProjectListing
 } from '../../shared/collab'
@@ -80,7 +81,7 @@ function json(result: RemoteOperationResult): PeerCollabReply {
   return { kind: 'json', result }
 }
 
-function fail(status: number, error: string, code?: string): PeerCollabReply {
+function fail(status: number, error: string, code?: CollabFailureCode): PeerCollabReply {
   return json({ ok: false, status, error, ...(code ? { code } : {}) })
 }
 
@@ -101,14 +102,16 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown> |
   }
 }
 
-async function receiveFile(req: IncomingMessage, file: string): Promise<{ ok: true; bytes: number } | { ok: false; error: string; status: number }> {
+async function receiveFile(req: IncomingMessage, file: string): Promise<{ ok: true; bytes: number } | { ok: false; error: string; status: number; code: CollabFailureCode }> {
   const declared = Number(req.headers['content-length'] ?? NaN)
-  if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) return { ok: false, status: 413, error: '代码包超过 512MB 上限' }
+  if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) {
+    return { ok: false, status: 413, error: 'The code bundle is over the size limit', code: 'bundle-too-large' }
+  }
   return new Promise((resolveResult) => {
     const out = createWriteStream(file)
     let bytes = 0
     let settled = false
-    const finish = (value: { ok: true; bytes: number } | { ok: false; error: string; status: number }): void => {
+    const finish = (value: { ok: true; bytes: number } | { ok: false; error: string; status: number; code: CollabFailureCode }): void => {
       if (settled) return
       settled = true
       resolveResult(value)
@@ -118,11 +121,11 @@ async function receiveFile(req: IncomingMessage, file: string): Promise<{ ok: tr
       if (bytes > COLLAB_BUNDLE_MAX_BYTES) {
         req.destroy()
         out.destroy()
-        finish({ ok: false, status: 413, error: '代码包超过 512MB 上限' })
+        finish({ ok: false, status: 413, error: 'The code bundle is over the size limit', code: 'bundle-too-large' })
       }
     })
-    req.on('error', () => finish({ ok: false, status: 400, error: '接收代码包时连接中断' }))
-    out.on('error', () => finish({ ok: false, status: 500, error: '写入临时文件失败' }))
+    req.on('error', () => finish({ ok: false, status: 400, error: 'The connection dropped while receiving the code bundle', code: 'bundle-transfer-failed' }))
+    out.on('error', () => finish({ ok: false, status: 500, error: 'Could not write the temporary file', code: 'bundle-transfer-failed' }))
     out.on('finish', () => finish({ ok: true, bytes }))
     req.pipe(out)
   })
@@ -132,9 +135,9 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
   const requestTimes = new Map<string, number[]>()
   const projectOf = async (projectId: string): Promise<{ project: CollabHostProject; root: string } | PeerCollabReply> => {
     const project = (await deps.projects()).find((item) => item.id === projectId)
-    if (!project) return fail(404, '找不到这个项目')
+    if (!project) return fail(404, 'That project could not be found', 'peer-project-missing')
     const root = await repoRootOf(project.cwd)
-    if (!root) return fail(409, '这个项目不是 Git 仓库')
+    if (!root) return fail(409, 'That project is not a Git repository', 'peer-project-not-repo')
     return { project, root }
   }
 
@@ -172,10 +175,10 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
 
   const bundle = async (req: IncomingMessage, projectId: string): Promise<PeerCollabReply> => {
     const body = await readJson(req)
-    if (!body) return fail(400, '请求格式无效')
+    if (!body) return fail(400, 'The request body is not valid', 'request-invalid')
     const branch = typeof body.branch === 'string' ? body.branch : ''
     const invalid = checkBranchName(branch)
-    if (invalid) return fail(400, invalid)
+    if (invalid) return fail(400, invalid.error, invalid.code)
     const haves = Array.isArray(body.haves) ? body.haves.filter(isOid).slice(0, COLLAB_MAX_HAVES) : []
     const found = await projectOf(projectId)
     if ('kind' in found) return found
@@ -184,7 +187,7 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
     const outcome = await createBundle(found.root, branch, haves, file)
     if (outcome.kind === 'error') {
       await rm(file, { force: true })
-      return fail(409, outcome.error)
+      return fail(409, outcome.error, outcome.code)
     }
     if (outcome.kind === 'up-to-date') {
       await rm(file, { force: true })
@@ -204,22 +207,22 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
     const branch = url.searchParams.get('branch') ?? ''
     const oid = url.searchParams.get('oid') ?? ''
     const invalid = checkBranchName(branch)
-    if (invalid) return fail(400, invalid)
-    if (!isOid(oid)) return fail(400, '提交号无效')
+    if (invalid) return fail(400, invalid.error, invalid.code)
+    if (!isOid(oid)) return fail(400, 'That commit id is not valid', 'peer-oid-invalid')
     const found = await projectOf(projectId)
     if ('kind' in found) return found
     const trackingRef = trackingRefFor(slugForRemote(device.name, device.id), branch)
     if (url.searchParams.get('known') === '1') {
       const pointed = await pointTrackingRef(found.root, trackingRef, oid)
-      return pointed.ok ? json({ ok: true, data: { trackingRef, oid } }) : fail(409, pointed.error)
+      return pointed.ok ? json({ ok: true, data: { trackingRef, oid } }) : fail(409, pointed.error, pointed.code)
     }
     await mkdir(deps.tempDir, { recursive: true })
     const file = bundleTempPath(deps.tempDir, 'in')
     try {
       const received = await receiveFile(req, file)
-      if (!received.ok) return fail(received.status, received.error)
+      if (!received.ok) return fail(received.status, received.error, received.code)
       const fetched = await fetchBundle(found.root, file, branch, trackingRef, oid)
-      if (!fetched.ok) return fail(409, fetched.error)
+      if (!fetched.ok) return fail(409, fetched.error, fetched.code)
       return json({ ok: true, data: { trackingRef, oid } })
     } finally {
       await rm(file, { force: true })
@@ -228,18 +231,22 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
 
   const openRequest = async (req: IncomingMessage, projectId: string, device: RemoteDeviceSummary): Promise<PeerCollabReply> => {
     const body = await readJson(req)
-    if (!body) return fail(400, '请求格式无效')
+    if (!body) return fail(400, 'The request body is not valid', 'request-invalid')
     const branch = typeof body.branch === 'string' ? body.branch : ''
     const invalid = checkBranchName(branch)
-    if (invalid) return fail(400, invalid)
-    if (!isOid(body.oid)) return fail(400, '提交号无效')
+    if (invalid) return fail(400, invalid.error, invalid.code)
+    if (!isOid(body.oid)) return fail(400, 'That commit id is not valid', 'peer-oid-invalid')
     const now = Date.now()
     const recent = (requestTimes.get(device.id) ?? []).filter((at) => now - at < REQUEST_WINDOW_MS)
-    if (recent.length >= REQUEST_LIMIT) return fail(429, '合并请求发得太频繁，请稍后再试')
+    if (recent.length >= REQUEST_LIMIT) {
+      return fail(429, 'Merge requests are being sent too often; try again later', 'request-rate-limited')
+    }
     const found = await projectOf(projectId)
     if ('kind' in found) return found
     const trackingRef = trackingRefFor(slugForRemote(device.name, device.id), branch)
-    if ((await resolveCommit(found.root, trackingRef)) !== body.oid) return fail(409, '先推送这个分支，再发合并请求')
+    if ((await resolveCommit(found.root, trackingRef)) !== body.oid) {
+      return fail(409, 'Push this branch before opening a merge request', 'request-branch-unpushed')
+    }
     requestTimes.set(device.id, [...recent, now])
     const clean = (value: unknown, max: number): string =>
       typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim().slice(0, max) : ''
@@ -272,14 +279,16 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
         let requests: CollabMergeRequest[]
         try {
           const state = JSON.parse(await readFile(deps.stateFile ?? join(YAN_DIR, 'collab.json'), 'utf8'))
-          if (state?.version !== 1 || !Array.isArray(state.requests)) return fail(503, '合并请求状态暂时不可读取')
+          if (state?.version !== 1 || !Array.isArray(state.requests)) {
+            return fail(503, 'The merge request state cannot be read right now', 'request-state-unreadable')
+          }
           requests = state.requests
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fail(404, '找不到这条合并请求')
-          return fail(503, '合并请求状态暂时不可读取')
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fail(404, 'That merge request could not be found', 'request-missing')
+          return fail(503, 'The merge request state cannot be read right now', 'request-state-unreadable')
         }
         const request = requests.find((item) => item.id === decodeURIComponent(parts[3]) && item.direction === 'incoming' && item.localProjectId === projectId && item.peerDeviceId === ctx.device.id)
-        if (!request) return fail(404, '找不到这条合并请求')
+        if (!request) return fail(404, 'That merge request could not be found', 'request-missing')
         const revoked = ctx.allow(['push'], projectId)
         if (revoked) return json(revoked)
         return json({ ok: true, data: { requestId: request.id, projectId, branch: request.branch, oid: request.oid, status: request.status } })
@@ -307,7 +316,9 @@ export function createCollabHost(deps: CollabHostDeps): PeerCollabHost {
       if (req.method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'export') {
         const sessionId = decodeURIComponent(parts[1])
         const projectId = await deps.projectOfSession(sessionId)
-        if (!projectId) return fail(404, '找不到这个会话，或它不属于任何开放的项目')
+        if (!projectId) {
+          return fail(404, 'That session could not be found, or it does not belong to a shared project', 'session-export-failed')
+        }
         const denied = ctx.allow(['pull'], projectId)
         return denied ? json(denied) : json(await deps.exportSession(sessionId))
       }

@@ -2,12 +2,15 @@ import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promis
 import { dirname, join } from 'node:path'
 import {
   COLLAB_REQUEST_NOTE_MAX,
+  isCollabFailureCode,
   shortRef,
   slugForRemote,
   trackingRefFor,
   type CollabBridge,
   type CollabComparison,
   type CollabContinueResult,
+  type CollabFailure,
+  type CollabFailureCode,
   type CollabFetchRecord,
   type CollabFetchResult,
   type CollabLink,
@@ -71,7 +74,7 @@ export interface CollabServiceDeps {
   localProjects(): Promise<Array<{ id: string; name: string; cwd: string }>>
   importSession(peerId: string, sessionId: string): Promise<Result<PeerImportView>>
   readImportDir(importId: string): Promise<string | null>
-  createWorktree(input: { cwd: string; branch: string; startPoint: string }): Promise<{ ok: true; path: string; branch: string } | { ok: false; error: string }>
+  createWorktree(input: { cwd: string; branch: string; startPoint: string }): Promise<({ ok: true; path: string; branch: string } | ({ ok: false } & Partial<CollabFailure>))>
   notifyIncoming?(request: CollabMergeRequest): void
   now?: () => number
 }
@@ -87,6 +90,15 @@ const PEER_BASE = '/remote/v1/peer/collab'
 
 function emptyState(): CollabStateFile {
   return { version: 1, links: [], requests: [], fetched: [], sessionImports: [] }
+}
+
+function failure(code: CollabFailureCode, error: string): { ok: false; error: string; code: CollabFailureCode } {
+  return { ok: false, error, code }
+}
+
+function passFailure(result: { error: string; code?: string }): { ok: false; error: string; code?: CollabFailureCode } {
+  const code = result.code
+  return { ok: false, error: result.error, ...(code && isCollabFailureCode(code) ? { code } : {}) }
 }
 
 function asArray<T>(value: unknown): T[] {
@@ -173,17 +185,17 @@ export class CollabService implements CollabBridge {
     }
   }
 
-  private async localRoot(localProjectId: string): Promise<{ id: string; name: string; root: string } | { error: string }> {
+  private async localRoot(localProjectId: string): Promise<{ id: string; name: string; root: string } | CollabFailure> {
     const project = (await this.deps.localProjects()).find((item) => item.id === localProjectId)
-    if (!project) return { error: '找不到本地项目' }
+    if (!project) return { code: 'local-project-missing', error: 'That local project could not be found' }
     const root = await repoRootOf(project.cwd)
-    if (!root) return { error: `本地项目「${project.name}」不是 Git 仓库` }
+    if (!root) return { code: 'local-project-not-repo', error: 'That local project is not a Git repository' }
     return { id: project.id, name: project.name, root }
   }
 
-  private async linkedRoot(peerId: string, remoteProjectId: string): Promise<{ id: string; name: string; root: string } | { error: string }> {
+  private async linkedRoot(peerId: string, remoteProjectId: string): Promise<{ id: string; name: string; root: string } | CollabFailure> {
     const link = (await this.load()).links.find((item) => item.peerId === peerId && item.remoteProjectId === remoteProjectId)
-    if (!link) return { error: '先选择对应的本地项目' }
+    if (!link) return { code: 'local-project-unlinked', error: 'No local project is linked to theirs yet' }
     return this.localRoot(link.localProjectId)
   }
 
@@ -262,12 +274,12 @@ export class CollabService implements CollabBridge {
 
   async remoteProject(peerId: string, remoteProjectId: string): Promise<CollabResult<CollabRemoteProjectView>> {
     const peer = await this.peerOf(peerId)
-    if (!peer) return { ok: false, error: '找不到这台砚' }
-    if (!peer.grant) return { ok: false, error: '还没有连接这台砚，先申请连接' }
+    if (!peer) return failure('peer-missing', 'That computer is not paired')
+    if (!peer.grant) return failure('peer-not-connected', 'Not connected to that computer yet')
     const project = peer.grant.projects.find((item) => item.id === remoteProjectId)
-    if (!project) return { ok: false, error: '对方没有向本次连接开放这个项目' }
+    if (!project) return failure('peer-project-denied', 'They did not share this project for this connection')
     const listed = await this.listing(peerId, remoteProjectId)
-    if (!listed.ok) return { ok: false, error: listed.error }
+    if (!listed.ok) return passFailure(listed)
     await this.reconcile(await this.deps.peerStatus())
     const listing = listed.data
     const locals = await this.deps.localProjects()
@@ -295,7 +307,7 @@ export class CollabService implements CollabBridge {
 
   async link(peerId: string, remoteProjectId: string, localProjectId: string | null): Promise<CollabResult<CollabLink[]>> {
     if (localProjectId && !(await this.deps.localProjects()).some((item) => item.id === localProjectId)) {
-      return { ok: false, error: '找不到本地项目' }
+      return failure('local-project-missing', 'That local project could not be found')
     }
     const state = await this.update((draft) => {
       draft.links = draft.links.filter((item) => !(item.peerId === peerId && item.remoteProjectId === remoteProjectId))
@@ -306,15 +318,15 @@ export class CollabService implements CollabBridge {
 
   async fetch(peerId: string, remoteProjectId: string, branch: string): Promise<CollabResult<CollabFetchResult>> {
     const invalid = checkBranchName(branch)
-    if (invalid) return { ok: false, error: invalid }
+    if (invalid) return { ok: false, ...invalid }
     const peer = await this.peerOf(peerId)
-    if (!peer) return { ok: false, error: '找不到这台砚' }
+    if (!peer) return failure('peer-missing', 'That computer is not paired')
     const local = await this.linkedRoot(peerId, remoteProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const listed = await this.listing(peerId, remoteProjectId)
-    if (!listed.ok) return { ok: false, error: listed.error }
+    if (!listed.ok) return passFailure(listed)
     const remoteBranch = listed.data.branches.find((item) => item.name === branch)
-    if (!remoteBranch) return { ok: false, error: `对方没有分支 ${branch}` }
+    if (!remoteBranch) return failure('peer-branch-missing', 'They do not have that branch')
     const trackingRef = trackingRefFor(peer.remoteName, branch)
     await mkdir(this.deps.tempDir, { recursive: true })
     const file = bundleTempPath(this.deps.tempDir, 'fetch')
@@ -327,19 +339,19 @@ export class CollabService implements CollabBridge {
         { branch, haves: await refTips(local.root) },
         file
       )
-      if (!downloaded.ok) return { ok: false, error: downloaded.error }
+      if (!downloaded.ok) return passFailure(downloaded)
       if (downloaded.data.kind === 'json') {
         const known = downloaded.data.data?.oid
-        if (!isOid(known)) return { ok: false, error: '对方返回的提交号无效' }
+        if (!isOid(known)) return failure('peer-oid-invalid', 'They returned an invalid commit id')
         const pointed = await pointTrackingRef(local.root, trackingRef, known)
-        if (!pointed.ok) return { ok: false, error: pointed.error }
+        if (!pointed.ok) return passFailure(pointed)
         oid = known
         upToDate = true
       } else {
         const head = await bundleHead(local.root, file, branch)
-        if (!head) return { ok: false, error: '代码包里没有这个分支' }
+        if (!head) return failure('bundle-branch-missing', 'The code bundle does not contain this branch')
         const fetched = await fetchBundle(local.root, file, branch, trackingRef, head)
-        if (!fetched.ok) return fetched
+        if (!fetched.ok) return passFailure(fetched)
         oid = head
       }
     } finally {
@@ -356,7 +368,7 @@ export class CollabService implements CollabBridge {
       }
       const result = await this.deps.importSession(peerId, session.sessionId)
       if (!result.ok) {
-        importErrors.push(`${session.title || session.sessionId}：${result.error}`)
+        importErrors.push(`${session.title || session.sessionId}: ${result.error}`)
         continue
       }
       imported.push({ importId: result.data.id, title: result.data.title })
@@ -383,25 +395,25 @@ export class CollabService implements CollabBridge {
 
   async compare(localProjectId: string, ref: string): Promise<CollabResult<CollabComparison>> {
     const local = await this.localRoot(localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const result = await compareWith(local.root, ref)
-    return 'error' in result ? { ok: false, error: result.error } : { ok: true, data: result }
+    return 'error' in result ? passFailure(result) : { ok: true, data: result }
   }
 
   async fileDiff(localProjectId: string, ref: string, path: string): Promise<CollabResult<string>> {
     const local = await this.localRoot(localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const result = await fileDiffWith(local.root, ref, path)
-    return typeof result === 'string' ? { ok: true, data: result } : { ok: false, error: result.error }
+    return typeof result === 'string' ? { ok: true, data: result } : passFailure(result)
   }
 
   async merge(localProjectId: string, ref: string, requestId?: string): Promise<CollabMergeResult> {
     const local = await this.localRoot(localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     if (requestId) {
       const request = (await this.load()).requests.find((item) => item.id === requestId && item.direction === 'incoming')
       if (!request || request.status !== 'open' || request.localProjectId !== localProjectId || request.trackingRef !== ref || request.oid !== await resolveCommit(local.root, ref)) {
-        return { ok: false, error: '合并请求与当前项目、引用或提交不符，请刷新后重试' }
+        return failure('request-mismatch', 'The merge request no longer matches this project, branch or commit')
       }
     }
     const result = await mergeRef(local.root, ref, `Merge ${shortRef(ref)}`)
@@ -420,30 +432,32 @@ export class CollabService implements CollabBridge {
 
   async abortMerge(localProjectId: string): Promise<CollabResult<true>> {
     const local = await this.localRoot(localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const result = await abortMerge(local.root)
-    return result.ok ? { ok: true, data: true } : result
+    return result.ok ? { ok: true, data: true } : passFailure(result)
   }
 
   async push(input: CollabPushInput): Promise<CollabResult<{ trackingRef: string; requestId: string | null }>> {
     const invalid = checkBranchName(input.branch)
-    if (invalid) return { ok: false, error: invalid }
+    if (invalid) return { ok: false, ...invalid }
     const peer = await this.peerOf(input.peerId)
-    if (!peer) return { ok: false, error: '找不到这台砚' }
-    if (!peer.grant?.operations.includes('push')) return { ok: false, error: '本次连接没有推送权限，需要重新申请连接并勾选「推送」' }
+    if (!peer) return failure('peer-missing', 'That computer is not paired')
+    if (!peer.grant?.operations.includes('push')) {
+      return failure('push-denied', 'This connection does not allow pushing')
+    }
     const local = await this.localRoot(input.localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const oid = await resolveCommit(local.root, `refs/heads/${input.branch}`)
-    if (!oid) return { ok: false, error: `本地没有分支 ${input.branch}` }
+    if (!oid) return failure('local-branch-missing', 'This computer does not have that branch')
     const listed = await this.listing(input.peerId, input.remoteProjectId)
-    if (!listed.ok) return { ok: false, error: listed.error }
+    if (!listed.ok) return passFailure(listed)
     await this.link(input.peerId, input.remoteProjectId, input.localProjectId)
     await mkdir(this.deps.tempDir, { recursive: true })
     const file = bundleTempPath(this.deps.tempDir, 'push')
     let pushed: Result<{ trackingRef: string; oid: string }>
     try {
       const outcome = await createBundle(local.root, input.branch, listed.data.tips, file)
-      if (outcome.kind === 'error') return { ok: false, error: outcome.error }
+      if (outcome.kind === 'error') return { ok: false, error: outcome.error, code: outcome.code }
       const query = new URLSearchParams({ branch: input.branch, oid: outcome.oid, ...(outcome.kind === 'up-to-date' ? { known: '1' } : {}) })
       pushed = await this.deps.transport.upload<{ trackingRef: string; oid: string }>(
         input.peerId,
@@ -453,7 +467,7 @@ export class CollabService implements CollabBridge {
     } finally {
       await rm(file, { force: true }).catch(() => undefined)
     }
-    if (!pushed.ok) return { ok: false, error: pushed.error }
+    if (!pushed.ok) return passFailure(pushed)
     let requestId: string | null = null
     if (input.request) {
       const title = input.request.title.trim().slice(0, 200) || input.branch
@@ -463,7 +477,9 @@ export class CollabService implements CollabBridge {
         `${PEER_BASE}/projects/${encodeURIComponent(input.remoteProjectId)}/requests`,
         { method: 'POST', body: { branch: input.branch, oid, title, note } }
       )
-      if (!opened.ok) return { ok: false, error: `分支已推送，但合并请求没有发出：${opened.error}` }
+      if (!opened.ok) {
+        return { ok: false, error: 'The branch was pushed, but the merge request was not sent', code: 'request-open-failed' }
+      }
       requestId = opened.data.requestId
       const remoteProject = peer.grant.projects.find((item) => item.id === input.remoteProjectId)
       await this.update((draft) => {
@@ -510,16 +526,16 @@ export class CollabService implements CollabBridge {
         found = true
       }
     })
-    return found ? { ok: true, data: true } : { ok: false, error: '找不到这条合并请求，或它已处理' }
+    return found ? { ok: true, data: true } : failure('request-missing', 'That merge request is missing or already handled')
   }
 
   async continueFrom(localProjectId: string, ref: string, importId?: string): Promise<CollabResult<CollabContinueResult>> {
     const invalid = checkTrackingRef(ref)
-    if (invalid) return { ok: false, error: invalid }
+    if (invalid) return { ok: false, ...invalid }
     const local = await this.localRoot(localProjectId)
-    if ('error' in local) return { ok: false, error: local.error }
+    if ('error' in local) return passFailure(local)
     const oid = await resolveCommit(local.root, ref)
-    if (!oid) return { ok: false, error: '还没有拉取这个分支' }
+    if (!oid) return failure('branch-not-fetched', 'This branch has not been pulled yet')
     const short = shortRef(ref)
     const slash = short.indexOf('/')
     const remoteName = short.slice(0, slash)
@@ -533,7 +549,9 @@ export class CollabService implements CollabBridge {
     let branch = base
     for (let index = 2; (await resolveCommit(local.root, `refs/heads/${branch}`)) && index < 50; index++) branch = `${base}-${index}`
     const created = await this.deps.createWorktree({ cwd: local.root, branch, startPoint: oid })
-    if (!created.ok) return created
+    if (!created.ok) {
+      return { ok: false, error: created.error ?? 'Could not create the worktree', code: created.code ?? 'worktree-create-failed' }
+    }
     const state = await this.load()
     const peerIds = new Set(status.peers.filter((peer) => slugForRemote(peer.computer, peer.id) === remoteName).map((peer) => peer.id))
     const chosen = importId

@@ -208,7 +208,13 @@ try {
   assert.ok(Date.now() - startedAt < 5000, '对端不可达时最多等 3 秒通知超时')
   assert.deepEqual((await dead.status()).peers, [], '本地配对已删除')
 
-  console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知、配对设备名、对方结束连接通过')
+  const unknownPeer = await dead.send('peer-missing', 's-1', '你好')
+  assert.equal(unknownPeer.ok, false)
+  assert.equal(unknownPeer.code, 'peer-auth-missing', '找不到配对或令牌失效时返回错误码')
+  assert.doesNotMatch(unknownPeer.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
+  assert.equal((await dead.readImport('../etc')).code, 'import-invalid', '非法导入 id 返回错误码')
+
+  console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知、配对设备名、对方结束连接、失败返回错误码通过')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

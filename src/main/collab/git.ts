@@ -8,6 +8,7 @@ import {
   type CollabBranch,
   type CollabCommit,
   type CollabComparison,
+  type CollabFailure,
   type CollabFileChange,
   type CollabMergeResult
 } from '../../shared/collab'
@@ -21,17 +22,19 @@ export function isOid(value: unknown): value is string {
   return typeof value === 'string' && OID_RE.test(value)
 }
 
-export function checkBranchName(name: unknown): string | null {
-  if (typeof name !== 'string') return '分支名无效'
-  if (name !== name.trim()) return '分支名不能以空白开头或结尾'
-  return validateBranchName(name)
+export function checkBranchName(name: unknown): CollabFailure | null {
+  if (typeof name !== 'string') return { code: 'branch-name-invalid', error: 'Branch name is not valid' }
+  if (name !== name.trim()) return { code: 'branch-name-invalid', error: 'Branch name cannot start or end with whitespace' }
+  return validateBranchName(name) ? { code: 'branch-name-invalid', error: 'Branch name is not valid' } : null
 }
 
-export function checkTrackingRef(ref: unknown): string | null {
-  if (typeof ref !== 'string' || !ref.startsWith('refs/remotes/')) return '只能对比或合并协作者的分支'
+export function checkTrackingRef(ref: unknown): CollabFailure | null {
+  if (typeof ref !== 'string' || !ref.startsWith('refs/remotes/')) {
+    return { code: 'ref-not-peer-branch', error: 'Only a collaborator branch can be compared or merged' }
+  }
   const rest = ref.slice('refs/remotes/'.length)
   const slash = rest.indexOf('/')
-  if (slash <= 0) return '分支引用无效'
+  if (slash <= 0) return { code: 'ref-invalid', error: 'Branch reference is not valid' }
   return checkBranchName(rest.slice(slash + 1)) ?? checkBranchName(rest.slice(0, slash))
 }
 
@@ -108,36 +111,39 @@ export async function resolveCommit(root: string, ref: string): Promise<string |
   return res.ok && isOid(oid) ? oid : null
 }
 
-export type BundleOutcome = { kind: 'bundle'; oid: string } | { kind: 'up-to-date'; oid: string } | { kind: 'error'; error: string }
+export type BundleOutcome =
+  | { kind: 'bundle'; oid: string }
+  | { kind: 'up-to-date'; oid: string }
+  | ({ kind: 'error' } & CollabFailure)
 
 export async function createBundle(root: string, branch: string, haves: string[], file: string): Promise<BundleOutcome> {
   const invalid = checkBranchName(branch)
-  if (invalid) return { kind: 'error', error: invalid }
+  if (invalid) return { kind: 'error', ...invalid }
   const oid = await resolveCommit(root, `refs/heads/${branch}`)
-  if (!oid) return { kind: 'error', error: `找不到分支 ${branch}` }
+  if (!oid) return { kind: 'error', code: 'local-branch-missing', error: 'This computer does not have that branch' }
   const known = await knownCommits(root, haves)
   if (known.includes(oid)) return { kind: 'up-to-date', oid }
   const res = await git(root, ['bundle', 'create', file, `refs/heads/${branch}`, ...known.map((have) => `^${have}`)], BUNDLE_TIMEOUT_MS)
   if (res.ok) return { kind: 'bundle', oid }
   if (/empty bundle/i.test(res.error)) return { kind: 'up-to-date', oid }
-  return { kind: 'error', error: res.error || 'git bundle 失败' }
+  return { kind: 'error', code: 'bundle-create-failed', error: res.error || 'git bundle failed' }
 }
 
-export async function fetchBundle(root: string, file: string, branch: string, trackingRef: string, expectedOid: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function fetchBundle(root: string, file: string, branch: string, trackingRef: string, expectedOid: string): Promise<{ ok: true } | ({ ok: false } & CollabFailure)> {
   const invalid = checkBranchName(branch) ?? checkTrackingRef(trackingRef)
-  if (invalid) return { ok: false, error: invalid }
-  if (!isOid(expectedOid)) return { ok: false, error: '对方返回的提交号无效' }
+  if (invalid) return { ok: false, ...invalid }
+  if (!isOid(expectedOid)) return { ok: false, code: 'peer-oid-invalid', error: 'They returned an invalid commit id' }
   const info = await stat(file).catch(() => null)
-  if (!info?.isFile()) return { ok: false, error: '没有收到代码包' }
+  if (!info?.isFile()) return { ok: false, code: 'bundle-missing', error: 'No code bundle was received' }
   const verify = await git(root, ['bundle', 'verify', '--quiet', file], BUNDLE_TIMEOUT_MS)
-  if (!verify.ok) return { ok: false, error: `代码包校验失败：${verify.error}` }
+  if (!verify.ok) return { ok: false, code: 'bundle-invalid', error: 'The code bundle failed verification' }
   const packed = await bundleHead(root, file, branch)
-  if (!packed) return { ok: false, error: '代码包里没有这个分支' }
-  if (packed !== expectedOid) return { ok: false, error: '代码包里的提交与声明的不一致' }
+  if (!packed) return { ok: false, code: 'bundle-branch-missing', error: 'The code bundle does not contain this branch' }
+  if (packed !== expectedOid) return { ok: false, code: 'bundle-oid-mismatch', error: 'The commit in the code bundle does not match what they declared' }
   const fetched = await git(root, ['fetch', '--no-tags', '--no-write-fetch-head', file, `+refs/heads/${branch}:${trackingRef}`], BUNDLE_TIMEOUT_MS)
-  if (!fetched.ok) return { ok: false, error: `取回代码失败：${fetched.error}` }
+  if (!fetched.ok) return { ok: false, code: 'fetch-failed', error: fetched.error || 'git fetch failed' }
   const landed = await resolveCommit(root, trackingRef)
-  if (landed !== expectedOid) return { ok: false, error: '取回的提交与对方声明的不一致' }
+  if (landed !== expectedOid) return { ok: false, code: 'fetched-oid-mismatch', error: 'The fetched commit does not match what they declared' }
   return { ok: true }
 }
 
@@ -150,12 +156,12 @@ export async function bundleHead(root: string, file: string, branch: string): Pr
   return isOid(oid) ? oid : null
 }
 
-export async function pointTrackingRef(root: string, trackingRef: string, oid: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function pointTrackingRef(root: string, trackingRef: string, oid: string): Promise<{ ok: true } | ({ ok: false } & CollabFailure)> {
   const invalid = checkTrackingRef(trackingRef)
-  if (invalid) return { ok: false, error: invalid }
-  if (!(await knownCommits(root, [oid])).length) return { ok: false, error: '本机没有这个提交' }
+  if (invalid) return { ok: false, ...invalid }
+  if (!(await knownCommits(root, [oid])).length) return { ok: false, code: 'commit-unknown', error: 'This computer does not have that commit' }
   const res = await git(root, ['update-ref', trackingRef, oid])
-  return res.ok ? { ok: true } : { ok: false, error: res.error || '更新引用失败' }
+  return res.ok ? { ok: true } : { ok: false, code: 'update-ref-failed', error: res.error || 'git update-ref failed' }
 }
 
 export async function aheadBehind(root: string, ref: string): Promise<{ incoming: number; outgoing: number } | null> {
@@ -174,10 +180,10 @@ function parseCommits(out: string): CollabCommit[] {
     .map(([oid, subject, author, at]) => ({ oid, subject: subject.slice(0, 300), author: author.slice(0, 120), committedAt: Number(at) * 1000 || 0 }))
 }
 
-export async function compareWith(root: string, ref: string): Promise<CollabComparison | { error: string }> {
+export async function compareWith(root: string, ref: string): Promise<CollabComparison | CollabFailure> {
   const invalid = checkTrackingRef(ref)
-  if (invalid) return { error: invalid }
-  if (!(await resolveCommit(root, ref))) return { error: '还没有拉取这个分支' }
+  if (invalid) return invalid
+  if (!(await resolveCommit(root, ref))) return { code: 'branch-not-fetched', error: 'This branch has not been pulled yet' }
   const counts = (await aheadBehind(root, ref)) ?? { incoming: 0, outgoing: 0 }
   const base = (await git(root, ['merge-base', 'HEAD', ref])).out.trim() || null
   const log = await git(root, ['log', '--max-count=50', '--format=%H%x00%s%x00%an%x00%ct', `HEAD..${ref}`])
@@ -203,12 +209,12 @@ async function changedFiles(root: string, ref: string): Promise<CollabFileChange
   return files
 }
 
-export async function fileDiffWith(root: string, ref: string, path: string): Promise<string | { error: string }> {
+export async function fileDiffWith(root: string, ref: string, path: string): Promise<string | CollabFailure> {
   const invalid = checkTrackingRef(ref)
-  if (invalid) return { error: invalid }
-  if (!path || path.startsWith('-') || path.includes('\0')) return { error: '文件路径无效' }
+  if (invalid) return invalid
+  if (!path || path.startsWith('-') || path.includes('\0')) return { code: 'path-invalid', error: 'File path is not valid' }
   const res = await git(root, ['diff', '--no-color', '--no-ext-diff', `HEAD...${ref}`, '--', path])
-  if (!res.ok) return { error: res.error || 'git diff 失败' }
+  if (!res.ok) return { code: 'diff-failed', error: res.error || 'git diff failed' }
   return res.out.length > 400_000 ? `${res.out.slice(0, 400_000)}\n…` : res.out
 }
 
@@ -227,13 +233,17 @@ async function hasCommitIdentity(root: string): Promise<boolean> {
 
 export async function mergeRef(root: string, ref: string, message: string): Promise<CollabMergeResult> {
   const invalid = checkTrackingRef(ref)
-  if (invalid) return { ok: false, error: invalid }
-  if (!(await currentBranch(root))) return { ok: false, error: '当前不在任何分支上（分离 HEAD），先切到要合并进去的分支' }
-  if (await mergeInProgress(root)) return { ok: false, error: '上一次合并还没完成：先解决冲突或放弃合并' }
+  if (invalid) return { ok: false, ...invalid }
+  if (!(await currentBranch(root))) {
+    return { ok: false, code: 'merge-detached-head', error: 'No branch is checked out, so there is nothing to merge into' }
+  }
+  if (await mergeInProgress(root)) {
+    return { ok: false, code: 'merge-in-progress', error: 'The previous merge is unfinished' }
+  }
   const dirty = await git(root, ['status', '--porcelain=v1', '--untracked-files=no'])
-  if (!dirty.ok) return { ok: false, error: dirty.error || '读取工作区状态失败' }
+  if (!dirty.ok) return { ok: false, code: 'worktree-status-failed', error: 'Could not read the working tree status' }
   if (dirty.out.trim()) return { ok: false, code: 'worktree-dirty', error: 'Working tree has uncommitted changes; commit or stash them before merging' }
-  if (!(await resolveCommit(root, ref))) return { ok: false, error: '还没有拉取这个分支' }
+  if (!(await resolveCommit(root, ref))) return { ok: false, code: 'branch-not-fetched', error: 'This branch has not been pulled yet' }
   const fastForward = await git(root, ['merge', '--ff-only', '--no-edit', ref], MERGE_TIMEOUT_MS)
   if (fastForward.ok) {
     const already = /already up to date/i.test(fastForward.out)
@@ -242,7 +252,7 @@ export async function mergeRef(root: string, ref: string, message: string): Prom
   }
   if (await mergeInProgress(root)) await git(root, ['merge', '--abort'])
   if (!/not possible to fast-forward/i.test(fastForward.error)) {
-    return { ok: false, error: fastForward.error || 'git merge 失败' }
+    return { ok: false, code: 'merge-failed', error: fastForward.error || 'git merge failed' }
   }
   if (!(await hasCommitIdentity(root))) {
     return { ok: false, code: 'git-identity-missing', error: 'git user.name / user.email is not configured' }
@@ -255,15 +265,15 @@ export async function mergeRef(root: string, ref: string, message: string): Prom
   }
   const conflicts = await git(root, ['diff', '--name-only', '--diff-filter=U', '-z'])
   const files = conflicts.out.split('\0').filter(Boolean)
-  if (files.length) return { ok: false, error: '合并有冲突', conflicts: files }
+  if (files.length) return { ok: false, code: 'merge-conflicts', error: 'The merge has conflicts', conflicts: files }
   if (await mergeInProgress(root)) await git(root, ['merge', '--abort'])
-  return { ok: false, error: res.error || 'git merge 失败' }
+  return { ok: false, code: 'merge-failed', error: res.error || 'git merge failed' }
 }
 
-export async function abortMerge(root: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await mergeInProgress(root))) return { ok: false, error: '没有进行中的合并' }
+export async function abortMerge(root: string): Promise<{ ok: true } | ({ ok: false } & CollabFailure)> {
+  if (!(await mergeInProgress(root))) return { ok: false, code: 'no-merge-in-progress', error: 'No merge is in progress' }
   const res = await git(root, ['merge', '--abort'])
-  return res.ok ? { ok: true } : { ok: false, error: res.error || 'git merge --abort 失败' }
+  return res.ok ? { ok: true } : { ok: false, code: 'abort-merge-failed', error: res.error || 'git merge --abort failed' }
 }
 
 export function branchOfPath(worktrees: Map<string, string>, cwd: string): string | undefined {

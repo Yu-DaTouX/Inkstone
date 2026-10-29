@@ -533,36 +533,61 @@ try {
     assert.ok(diff.includes('+++ b/feature.txt'), diff)
     assert.ok(diff.includes('+feature v2'), diff)
     assert.ok(!diff.includes('feature2.txt'))
-    assert.ok(typeof (await gitOps.fileDiffWith(A, FEATURE_REF, '--output=x')) === 'object')
-    assert.ok(typeof (await gitOps.fileDiffWith(A, 'refs/heads/main', 'feature.txt')) === 'object')
+    const badPath = await gitOps.fileDiffWith(A, FEATURE_REF, '--output=x')
+    assert.equal(typeof badPath, 'object')
+    assert.equal(badPath.code, 'path-invalid')
+    assert.doesNotMatch(badPath.error, /[\u4e00-\u9fff]/)
+    const badRef = await gitOps.fileDiffWith(A, 'refs/heads/main', 'feature.txt')
+    assert.equal(badRef.code, 'ref-not-peer-branch')
+    assert.doesNotMatch(badRef.error, /[\u4e00-\u9fff]/)
+  })
+
+  await check('没拉取过的引用不能对比，错误码是 branch-not-fetched', async () => {
+    const compared = await gitOps.compareWith(A, trackingRefFor('yan-b', 'never-fetched'))
+    assert.equal(compared.code, 'branch-not-fetched')
+    assert.doesNotMatch(compared.error, /[\u4e00-\u9fff]/)
   })
 
   await check('checkTrackingRef 拒绝本地分支与畸形引用，且 fetch / 指针 / 对比 / 合并都不能越过它', async () => {
-    assert.ok(gitOps.checkTrackingRef('refs/heads/main'))
-    assert.ok(gitOps.checkTrackingRef('refs/remotes/yan-b'))
-    assert.ok(gitOps.checkTrackingRef('refs/remotes/yan-b/../x'))
-    assert.ok(gitOps.checkTrackingRef('refs/remotes//x'))
-    assert.ok(gitOps.checkTrackingRef('refs/tags/v1'))
-    assert.ok(gitOps.checkTrackingRef(42))
+    assert.equal(gitOps.checkTrackingRef('refs/heads/main').code, 'ref-not-peer-branch')
+    assert.equal(gitOps.checkTrackingRef('refs/remotes/yan-b').code, 'ref-invalid')
+    assert.equal(gitOps.checkTrackingRef('refs/remotes//x').code, 'ref-invalid')
+    assert.equal(gitOps.checkTrackingRef('refs/tags/v1').code, 'ref-not-peer-branch')
+    assert.equal(gitOps.checkTrackingRef(42).code, 'ref-not-peer-branch')
+    assert.equal(gitOps.checkBranchName('bad branch').code, 'branch-name-invalid')
+    assert.doesNotMatch(gitOps.checkTrackingRef('refs/heads/main').error, /[\u4e00-\u9fff]/)
     assert.equal(gitOps.checkTrackingRef(FEATURE_REF), null)
     const mainBefore = sh(A, 'rev-parse', 'refs/heads/main')
     const file = join(work, 'pull-1.bundle')
     const fetched = await gitOps.fetchBundle(A, file, 'feature', 'refs/heads/main', featureOid2)
     assert.equal(fetched.ok, false)
+    assert.equal(fetched.code, 'ref-not-peer-branch')
     const pointed = await gitOps.pointTrackingRef(A, 'refs/heads/main', featureOid2)
     assert.equal(pointed.ok, false)
-    assert.ok((await gitOps.compareWith(A, 'refs/heads/main')).error)
+    assert.equal(pointed.code, 'ref-not-peer-branch')
+    assert.equal((await gitOps.compareWith(A, 'refs/heads/main')).code, 'ref-not-peer-branch')
     const merged = await gitOps.mergeRef(A, 'refs/heads/feature', 'x')
     assert.equal(merged.ok, false)
+    assert.equal(merged.code, 'ref-not-peer-branch')
     assert.equal(sh(A, 'rev-parse', 'refs/heads/main'), mainBefore)
   })
 
   section('合并：mergeRef / abortMerge')
 
+  await check('分离 HEAD 时不能合并，错误码是 merge-detached-head', async () => {
+    sh(A, 'checkout', '-q', '--detach', 'HEAD')
+    const result = await gitOps.mergeRef(A, FEATURE_REF, 'x')
+    sh(A, 'checkout', '-q', 'main')
+    assert.equal(result.ok, false)
+    assert.equal(result.code, 'merge-detached-head')
+    assert.doesNotMatch(result.error, /[\u4e00-\u9fff]/)
+  })
+
   await check('没拉取过的追踪引用不能合并', async () => {
     const result = await gitOps.mergeRef(A, trackingRefFor('yan-b', 'never-fetched'), 'x')
     assert.equal(result.ok, false)
-    assert.match(result.error, /还没有拉取/)
+    assert.equal(result.code, 'branch-not-fetched')
+    assert.doesNotMatch(result.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
   })
 
   await check('工作区有未提交改动时拒绝合并，返回 worktree-dirty 错误码，HEAD 不动', async () => {
@@ -627,12 +652,15 @@ try {
     const head = sh(A, 'rev-parse', 'HEAD')
     const result = await gitOps.mergeRef(A, FEATURE_REF, '会冲突的合并')
     assert.equal(result.ok, false)
+    assert.equal(result.code, 'merge-conflicts')
+    assert.doesNotMatch(result.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
     assert.deepEqual(result.conflicts, ['a.txt'])
     assert.equal(await gitOps.mergeInProgress(A), true)
     assert.match(await readFile(join(A, 'a.txt'), 'utf8'), /<<<<<<<[\s\S]*line2 from A[\s\S]*=======[\s\S]*line2 from B[\s\S]*>>>>>>>/)
     const again = await gitOps.mergeRef(A, FEATURE_REF, '又合并')
     assert.equal(again.ok, false)
-    assert.match(again.error, /上一次合并/)
+    assert.equal(again.code, 'merge-in-progress')
+    assert.doesNotMatch(again.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
     assert.equal(sh(A, 'rev-parse', 'HEAD'), head)
   })
 
@@ -644,6 +672,8 @@ try {
     assert.equal(await readFile(join(A, 'a.txt'), 'utf8'), 'line1\nline2 from A\nline3\n')
     const second = await gitOps.abortMerge(A)
     assert.equal(second.ok, false)
+    assert.equal(second.code, 'no-merge-in-progress')
+    assert.doesNotMatch(second.error, /[\u4e00-\u9fff]/)
   })
 
   section('push：A 推给 B')
@@ -750,7 +780,8 @@ try {
   await check('请求的分支不存在时 bundle 返回 409', async () => {
     const response = await collabCall(conn1.connectionId, 'projects/p1/bundle', { method: 'POST', json: { branch: 'no-such-branch', haves: [] } })
     assert.equal(response.status, 409)
-    assert.match(response.body.error, /找不到分支/)
+    assert.equal(response.body.code, 'local-branch-missing')
+    assert.doesNotMatch(response.body.error, /[\u4e00-\u9fff]/, '对方界面上显示的文字不带中文')
   })
 
   await check('坏包（随便几字节）push 返回 409，B 没有新引用', async () => {
@@ -1081,13 +1112,16 @@ try {
   await check('remoteProject / fetch 的前置检查：未知设备、未开放项目、未 link', async () => {
     const unknownPeer = await service.remoteProject('peer-x', 'p4')
     assert.equal(unknownPeer.ok, false)
-    assert.match(unknownPeer.error, /找不到这台砚/)
+    assert.equal(unknownPeer.code, 'peer-missing')
+    assert.doesNotMatch(unknownPeer.error, /[\u4e00-\u9fff]/)
     const notOffered = await service.remoteProject(PEER_ID, 'p1')
     assert.equal(notOffered.ok, false)
-    assert.match(notOffered.error, /没有向本次连接开放/)
+    assert.equal(notOffered.code, 'peer-project-denied')
+    assert.doesNotMatch(notOffered.error, /[\u4e00-\u9fff]/)
     const unlinked = await service.fetch(PEER_ID, 'p4', 'feature')
     assert.equal(unlinked.ok, false)
-    assert.match(unlinked.error, /先选择对应的本地项目/)
+    assert.equal(unlinked.code, 'local-project-unlinked')
+    assert.doesNotMatch(unlinked.error, /[\u4e00-\u9fff]/)
     assert.equal(importCalls.length, 0)
     assert.equal(shOk(SC, 'rev-parse', '--verify', '--quiet', svcTracking), false)
   })
@@ -1118,9 +1152,11 @@ try {
   await check('fetch 参数检查：非法分支名与对方没有的分支', async () => {
     const bad = await service.fetch(PEER_ID, 'p4', '../x')
     assert.equal(bad.ok, false)
+    assert.equal(bad.code, 'branch-name-invalid')
     const missing = await service.fetch(PEER_ID, 'p4', 'no-such-branch')
     assert.equal(missing.ok, false)
-    assert.match(missing.error, /对方没有分支/)
+    assert.equal(missing.code, 'peer-branch-missing')
+    assert.doesNotMatch(missing.error, /[\u4e00-\u9fff]/)
     assert.equal(importCalls.length, 0)
   })
 
@@ -1324,17 +1360,31 @@ try {
   await check('合并缺少 Git 身份时给出 git config 指引，而不是回显 Git 原文', async () => {
     for (const lang of ['zh-CN', 'en-US']) {
       const text = collabTextMod.collabText(lang)
-      assert.match(text.mergeIdentityMissing, /git config --global user\.name/)
-      assert.match(text.mergeIdentityMissing, /git config --global user\.email/)
+      assert.match(text.failures['git-identity-missing'], /git config --global user\.name/)
+      assert.match(text.failures['git-identity-missing'], /git config --global user\.email/)
     }
   })
 
   await check('工作区不干净时合并被拒：渲染端按语言给出文案，不显示主进程原文', async () => {
     const zh = collabTextMod.collabText('zh-CN')
     const en = collabTextMod.collabText('en-US')
-    assert.match(zh.mergeDirty, /未提交/)
-    assert.match(en.mergeDirty, /uncommitted/)
-    assert.doesNotMatch(en.mergeDirty, /[\u4e00-\u9fff]/, '英文界面不出现中文')
+    assert.match(zh.failures['worktree-dirty'], /未提交/)
+    assert.match(en.failures['worktree-dirty'], /uncommitted/)
+    assert.doesNotMatch(en.failures['worktree-dirty'], /[\u4e00-\u9fff]/, '英文界面不出现中文')
+  })
+
+  await check('每个错误码都有中英文案，英文界面不出现中文，未知码不改写原文', async () => {
+    const zh = collabTextMod.collabText('zh-CN')
+    const en = collabTextMod.collabText('en-US')
+    for (const code of collab.COLLAB_FAILURE_CODES) {
+      assert.ok(zh.failures[code], `中文缺 ${code}`)
+      assert.ok(en.failures[code], `英文缺 ${code}`)
+      assert.match(zh.failures[code], /[\u4e00-\u9fff]/, `中文文案应是中文：${code}`)
+      assert.doesNotMatch(en.failures[code], /[\u4e00-\u9fff]/, `英文文案不应出现中文：${code}`)
+    }
+    assert.equal(collabTextMod.collabFailureText(en, 'branch-not-fetched'), en.failures['branch-not-fetched'])
+    assert.equal(collabTextMod.collabFailureText(en, 'not-a-code'), null)
+    assert.equal(collabTextMod.collabFailureText(en, undefined), null)
   })
 
   await check('对方结束连接的状态文案：两种语言都有，英文界面不出现中文', async () => {
@@ -1647,10 +1697,12 @@ try {
     const noPush = await service.push({ peerId: PEER_ID, remoteProjectId: 'p4', localProjectId: 'local-a', branch: 'service-topic' })
     svcConnection = original
     assert.equal(noPush.ok, false)
-    assert.match(noPush.error, /推送权限/)
+    assert.equal(noPush.code, 'push-denied')
+    assert.doesNotMatch(noPush.error, /[\u4e00-\u9fff]/)
     const noBranch = await service.push({ peerId: PEER_ID, remoteProjectId: 'p4', localProjectId: 'local-a', branch: 'does-not-exist' })
     assert.equal(noBranch.ok, false)
-    assert.match(noBranch.error, /本地没有分支/)
+    assert.equal(noBranch.code, 'local-branch-missing')
+    assert.doesNotMatch(noBranch.error, /[\u4e00-\u9fff]/)
     assert.equal((await service.push({ peerId: PEER_ID, remoteProjectId: 'p4', localProjectId: 'local-a', branch: '../x' })).ok, false)
     assert.equal((await service.push({ peerId: PEER_ID, remoteProjectId: 'p4', localProjectId: 'nope', branch: 'service-topic' })).ok, false)
     const requestsBefore = (await readState()).requests.length
@@ -1664,7 +1716,8 @@ try {
     })
     failRequests = false
     assert.equal(lost.ok, false)
-    assert.match(lost.error, /分支已推送，但合并请求没有发出/)
+    assert.equal(lost.code, 'request-open-failed')
+    assert.doesNotMatch(lost.error, /[\u4e00-\u9fff]/)
     assert.equal((await readState()).requests.length, requestsBefore)
   })
 
@@ -1674,7 +1727,8 @@ try {
     assert.equal((await readState()).requests.find((item) => item.id === outgoingRequestId).status, 'closed')
     const second = await service.closeRequest(outgoingRequestId)
     assert.equal(second.ok, false)
-    assert.match(second.error, /找不到这条合并请求，或它已处理/)
+    assert.equal(second.code, 'request-missing')
+    assert.doesNotMatch(second.error, /[\u4e00-\u9fff]/)
     assert.equal((await service.closeRequest('mr-manual-1')).ok, false)
     assert.equal((await service.closeRequest('mr-nope')).ok, false)
   })
@@ -1714,7 +1768,8 @@ try {
     assert.equal((await service.continueFrom('local-a', 'refs/heads/main')).ok, false)
     const unfetched = await service.continueFrom('local-a', trackingRefFor(REMOTE, 'never-fetched'))
     assert.equal(unfetched.ok, false)
-    assert.match(unfetched.error, /还没有拉取/)
+    assert.equal(unfetched.code, 'branch-not-fetched')
+    assert.doesNotMatch(unfetched.error, /[\u4e00-\u9fff]/)
     assert.equal((await service.continueFrom('nope', svcTracking)).ok, false)
   })
 
@@ -1751,10 +1806,11 @@ try {
     svcConnection = { state: 'idle' }
     const view = await service.remoteProject(PEER_ID, 'p4')
     assert.equal(view.ok, false)
-    assert.match(view.error, /还没有连接这台砚/)
+    assert.equal(view.code, 'peer-not-connected')
+    assert.doesNotMatch(view.error, /[\u4e00-\u9fff]/)
     const push = await service.push({ peerId: PEER_ID, remoteProjectId: 'p4', localProjectId: 'local-a', branch: 'service-topic' })
     assert.equal(push.ok, false)
-    assert.match(push.error, /推送权限/)
+    assert.equal(push.code, 'push-denied')
     const refsBefore = allRefs(SC)
     const fetched = await service.fetch(PEER_ID, 'p4', 'feature')
     assert.equal(fetched.ok, false)
@@ -1765,7 +1821,8 @@ try {
     const gone = await service.remoteProject(PEER_ID, 'p4')
     svcPeerKnown = true
     assert.equal(gone.ok, false)
-    assert.match(gone.error, /找不到这台砚/)
+    assert.equal(gone.code, 'peer-missing')
+    assert.doesNotMatch(gone.error, /[\u4e00-\u9fff]/)
   })
 
   section('requests 的服务端约束')

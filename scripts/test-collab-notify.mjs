@@ -15,7 +15,7 @@ const electronStub = {
       loader: 'js',
       contents: [
         'export const app = { getLocale: () => "zh-CN", getPath: () => process.env.YAN_USER_DATA, getVersion: () => "0.0.0", getName: () => "stub", whenReady: async () => undefined, on() {}, once() {}, quit() {} }',
-        'export const Notification = class { static isSupported() { return true } constructor(options) { this.options = options } show() { globalThis.__notifyShown = (globalThis.__notifyShown ?? 0) + 1 } on() {} }',
+        'export const Notification = class { static isSupported() { return true } constructor(options) { this.options = options; globalThis.__notifyOptions = options } show() { globalThis.__notifyShown = (globalThis.__notifyShown ?? 0) + 1 } on() {} }',
         'export const shell = { openExternal: async () => undefined, openPath: async () => undefined, showItemInFolder() {} }',
         'export const ipcMain = { handle() {}, on() {}, removeHandler() {} }',
         'export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] }), showMessageBox: async () => ({ response: 0 }) }',
@@ -56,6 +56,7 @@ const run = async (name, settings) => {
   process.env.YAN_USER_DATA = dataDir
   const { registerCollabIpc } = await import(pathToFileURL(outfile).href)
   globalThis.__notifyShown = 0
+  globalThis.__notifyOptions = null
   const service = registerCollabIpc({ handle() {} }, {
     peerClient: { status: async () => ({ peers: [], imports: [] }) },
     peerHost: {},
@@ -66,7 +67,6 @@ const run = async (name, settings) => {
   await new Promise((resolve) => setTimeout(resolve, 50))
   return globalThis.__notifyShown
 }
-
 const runProjects = async (name, projects) => {
   const dataDir = join(root, name)
   await mkdir(dataDir, { recursive: true })
@@ -102,7 +102,16 @@ try {
   assert.equal(await run('default', null), 0, '提示音总开关默认关闭时不弹协作通知')
   assert.equal(await run('muted', { sound: { enabled: true, notifications: false, volume: 0.4, events: { done: true, question: true, error: true } } }), 0, '关闭通知时不弹协作通知')
   assert.equal(await run('enabled', { sound: { enabled: true, notifications: true, volume: 0.4, events: { done: true, question: true, error: true } } }), 1, '总开关与通知都开启时弹一次协作通知')
-  console.log('collab-notify: 合并请求通知跟随提示音总开关、空项目名兜底通过')
+
+  const zh = await run('lang-zh', { lang: 'zh-CN', sound: { enabled: true, notifications: true, volume: 0.4, events: { done: true, question: true, error: true } } })
+  assert.equal(zh, 1)
+  assert.match(globalThis.__notifyOptions.title, /[\u4e00-\u9fff]/, '中文界面弹中文标题')
+  const en = await run('lang-en', { lang: 'en-US', sound: { enabled: true, notifications: true, volume: 0.4, events: { done: true, question: true, error: true } } })
+  assert.equal(en, 1)
+  assert.doesNotMatch(globalThis.__notifyOptions.title, /[\u4e00-\u9fff]/, '英文界面不弹中文标题')
+  assert.doesNotMatch(globalThis.__notifyOptions.body, /[：（）]/, '英文界面正文用英文标点，不用中文标点')
+  assert.match(globalThis.__notifyOptions.body, / \(feat\/x\)$/, '正文末尾带分支名')
+  console.log('collab-notify: 合并请求通知跟随提示音总开关、通知文案跟随界面语言、空项目名兜底通过')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

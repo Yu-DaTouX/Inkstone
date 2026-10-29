@@ -6,7 +6,80 @@ export const COLLAB_MAX_HAVES = 200
 export const COLLAB_MAX_BRANCHES = 200
 export const COLLAB_REQUEST_NOTE_MAX = 2000
 
-export type CollabFailureCode = 'git-identity-missing' | 'worktree-dirty'
+export const COLLAB_FAILURE_CODES = [
+  'branch-name-invalid',
+  'ref-not-peer-branch',
+  'ref-invalid',
+  'path-invalid',
+  'peer-oid-invalid',
+  'bundle-missing',
+  'bundle-invalid',
+  'bundle-branch-missing',
+  'bundle-oid-mismatch',
+  'bundle-create-failed',
+  'bundle-too-large',
+  'bundle-not-returned',
+  'bundle-transfer-failed',
+  'fetch-failed',
+  'fetched-oid-mismatch',
+  'download-failed',
+  'upload-failed',
+  'commit-unknown',
+  'update-ref-failed',
+  'branch-not-fetched',
+  'worktree-dirty',
+  'worktree-status-failed',
+  'worktree-create-failed',
+  'merge-detached-head',
+  'merge-in-progress',
+  'merge-conflicts',
+  'merge-failed',
+  'no-merge-in-progress',
+  'abort-merge-failed',
+  'git-identity-missing',
+  'diff-failed',
+  'local-project-missing',
+  'local-project-not-repo',
+  'local-project-unlinked',
+  'local-branch-missing',
+  'peer-missing',
+  'peer-not-connected',
+  'peer-project-denied',
+  'peer-project-missing',
+  'peer-project-not-repo',
+  'peer-branch-missing',
+  'push-denied',
+  'request-mismatch',
+  'request-missing',
+  'request-open-failed',
+  'request-invalid',
+  'request-rate-limited',
+  'request-branch-unpushed',
+  'request-state-unreadable',
+  'session-export-failed',
+  'address-invalid',
+  'peer-unreachable',
+  'pair-failed',
+  'peer-auth-missing',
+  'peer-request-failed',
+  'event-stream-failed',
+  'export-invalid',
+  'import-invalid',
+  'import-missing'
+] as const
+
+export type CollabFailureCode = (typeof COLLAB_FAILURE_CODES)[number]
+
+export interface CollabFailure {
+  code: CollabFailureCode
+  error: string
+}
+
+const COLLAB_FAILURE_CODE_SET: ReadonlySet<string> = new Set<string>(COLLAB_FAILURE_CODES)
+
+export function isCollabFailureCode(value: unknown): value is CollabFailureCode {
+  return typeof value === 'string' && COLLAB_FAILURE_CODE_SET.has(value)
+}
 
 export interface CollabBranchSession {
   sessionId: string

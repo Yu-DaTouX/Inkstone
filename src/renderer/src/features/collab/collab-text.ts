@@ -1,5 +1,5 @@
 import type { Lang } from '../../i18n'
-import type { CollabRequestStatus } from '../../../../shared/collab'
+import type { CollabFailureCode, CollabRequestStatus } from '../../../../shared/collab'
 import type { PeerOperation } from '../../../../shared/peer-protocol'
 
 export interface CollabAgentPromptInput {
@@ -129,8 +129,7 @@ export interface CollabText {
   merged: string
   mergeNoop: string
   mergeFailed: string
-  mergeIdentityMissing: string
-  mergeDirty: string
+  failures: Record<CollabFailureCode, string>
   mergeConflicts: string
   continue: string
   continueHint: string
@@ -194,6 +193,68 @@ export interface CollabText {
 }
 
 const ZH: CollabText = {
+  failures: {
+    'branch-name-invalid': '这个分支名不能用。',
+    'ref-not-peer-branch': '只能对比或合并协作者的分支。',
+    'ref-invalid': '分支引用无效。',
+    'path-invalid': '文件路径无效。',
+    'peer-oid-invalid': '对方返回的提交号无效。',
+    'bundle-missing': '没有收到代码包。',
+    'bundle-invalid': '代码包校验失败，可能没传完。',
+    'bundle-branch-missing': '代码包里没有这个分支。',
+    'bundle-oid-mismatch': '代码包里的提交与对方声明的不一致。',
+    'bundle-create-failed': '打包这个分支失败。',
+    'bundle-too-large': '代码包超过大小上限。',
+    'bundle-not-returned': '对方没有返回代码包。',
+    'bundle-transfer-failed': '代码包没传完。',
+    'fetch-failed': '取回代码失败。',
+    'fetched-oid-mismatch': '取回的提交与对方声明的不一致。',
+    'download-failed': '下载代码包失败。',
+    'upload-failed': '上传代码包失败。',
+    'commit-unknown': '本机没有这个提交。',
+    'update-ref-failed': '更新本机的分支引用失败。',
+    'branch-not-fetched': '还没有拉取这个分支。',
+    'worktree-dirty': '这台电脑的工作区有未提交的改动，先提交或暂存再合并。',
+    'worktree-status-failed': '读取工作区状态失败。',
+    'worktree-create-failed': '创建工作树失败。',
+    'merge-detached-head': '当前不在任何分支上（分离 HEAD），先把要合并进去的分支检出。',
+    'merge-in-progress': '上一次合并还没完成：先解决冲突或放弃合并。',
+    'merge-conflicts': '合并有冲突。',
+    'merge-failed': 'git 合并没有完成。',
+    'no-merge-in-progress': '没有进行中的合并。',
+    'abort-merge-failed': '放弃合并失败。',
+    'git-identity-missing':
+      '这台电脑还没有 Git 提交身份，没法生成合并提交。先运行 git config --global user.name "你的名字" 和 git config --global user.email "you@example.com"，然后重试。',
+    'diff-failed': '读取文件改动失败。',
+    'local-project-missing': '找不到这个本机项目。',
+    'local-project-not-repo': '这个本机项目不是 Git 仓库，不能拉取或合并。',
+    'local-project-unlinked': '先选对应的本机项目。',
+    'local-branch-missing': '本机没有这个分支。',
+    'peer-missing': '找不到这台电脑，可能已经移除配对。',
+    'peer-not-connected': '还没有连接这台电脑，先申请连接。',
+    'peer-project-denied': '对方没有向本次连接开放这个项目。',
+    'peer-project-missing': '对方找不到这个项目。',
+    'peer-project-not-repo': '对方这个项目不是 Git 仓库。',
+    'peer-branch-missing': '对方没有这个分支。',
+    'push-denied': '这次连接没有「推送」权限，需要重新申请连接并勾选「推送」。',
+    'request-mismatch': '合并请求与当前项目、分支或提交不符，请刷新后重试。',
+    'request-missing': '找不到这条合并请求，或它已处理。',
+    'request-open-failed': '分支已推送，但合并请求没有发出去。',
+    'request-invalid': '对方收到的请求格式不对。',
+    'request-rate-limited': '合并请求发得太频繁，请稍后再试。',
+    'request-branch-unpushed': '对方还没收到这个分支，先推送再发合并请求。',
+    'request-state-unreadable': '合并请求的状态暂时读不到，稍后再试。',
+    'session-export-failed': '对方找不到这个会话，或它不属于开放的项目。',
+    'address-invalid': '地址格式不对，例如 100.101.102.103:37892。',
+    'peer-unreachable': '连不上对方。',
+    'pair-failed': '配对失败，对方没有给出配对结果。',
+    'peer-auth-missing': '找不到这台电脑，或令牌已失效，请重新配对。',
+    'peer-request-failed': '请求对方失败。',
+    'event-stream-failed': '打不开对方的事件流。',
+    'export-invalid': '对方返回的导出包格式不对。',
+    'import-invalid': '导入 id 无效。',
+    'import-missing': '这份副本已不存在或已损坏。'
+  },
   title: '多人协作',
   nav: '多人协作',
   lede: '每台电脑各有一份代码，像 git 一样拉取、对比、合并对方的分支；对方批准后才能连接，推送只会落在对方的「你的名字/分支」下，不会改动对方已有的分支。',
@@ -318,9 +379,6 @@ const ZH: CollabText = {
   merged: '已合并：{message}',
   mergeNoop: '已是最新，没有需要合并的提交。',
   mergeFailed: '合并失败：{error}',
-  mergeIdentityMissing:
-    '这台电脑还没有 Git 提交身份，没法生成合并提交。先运行 git config --global user.name "你的名字" 和 git config --global user.email "you@example.com"，然后重试。',
-  mergeDirty: '这台电脑的工作区有未提交的改动，先提交或暂存再合并。',
   mergeConflicts: '合并有冲突，冲突文件列在本机「{project}」处。',
   continue: '接着做',
   continueHint: '在本机基于这个分支新建 worktree，并以对方的会话副本为上下文开新会话。',
@@ -400,6 +458,68 @@ const ZH: CollabText = {
 }
 
 const EN: CollabText = {
+  failures: {
+    'branch-name-invalid': 'That branch name cannot be used.',
+    'ref-not-peer-branch': 'Only a collaborator’s branch can be compared or merged.',
+    'ref-invalid': 'That branch reference is not valid.',
+    'path-invalid': 'That file path is not valid.',
+    'peer-oid-invalid': 'The other side returned an invalid commit id.',
+    'bundle-missing': 'No code bundle was received.',
+    'bundle-invalid': 'The code bundle failed verification and may be incomplete.',
+    'bundle-branch-missing': 'The code bundle does not contain this branch.',
+    'bundle-oid-mismatch': 'The commit in the code bundle does not match what they declared.',
+    'bundle-create-failed': 'Could not pack this branch.',
+    'bundle-too-large': 'The code bundle is over the size limit.',
+    'bundle-not-returned': 'They did not send a code bundle.',
+    'bundle-transfer-failed': 'The code bundle did not finish transferring.',
+    'fetch-failed': 'Could not fetch the code.',
+    'fetched-oid-mismatch': 'The fetched commit does not match what they declared.',
+    'download-failed': 'Could not download the code bundle.',
+    'upload-failed': 'Could not upload the code bundle.',
+    'commit-unknown': 'This computer does not have that commit.',
+    'update-ref-failed': 'Could not update the branch reference on this computer.',
+    'branch-not-fetched': 'Pull this branch first.',
+    'worktree-dirty': 'This computer’s working tree has uncommitted changes. Commit or stash them, then merge.',
+    'worktree-status-failed': 'Could not read the working tree status.',
+    'worktree-create-failed': 'Could not create the worktree.',
+    'merge-detached-head': 'No branch is checked out, so there is nothing to merge into. Check out the target branch first.',
+    'merge-in-progress': 'The previous merge is not finished; resolve the conflicts or abort it first.',
+    'merge-conflicts': 'The merge has conflicts.',
+    'merge-failed': 'The merge did not finish.',
+    'no-merge-in-progress': 'No merge is in progress.',
+    'abort-merge-failed': 'Could not abort the merge.',
+    'git-identity-missing':
+      'Git has no commit identity on this computer, so the merge commit cannot be created. Run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then retry.',
+    'diff-failed': 'Could not read the file changes.',
+    'local-project-missing': 'That local project could not be found.',
+    'local-project-not-repo': 'That local project is not a Git repository, so it cannot pull or merge.',
+    'local-project-unlinked': 'Choose the matching local project first.',
+    'local-branch-missing': 'This computer does not have that branch.',
+    'peer-missing': 'That computer could not be found; it may have been unpaired.',
+    'peer-not-connected': 'Not connected to that computer yet; request a connection first.',
+    'peer-project-denied': 'They did not share this project for this connection.',
+    'peer-project-missing': 'They could not find that project.',
+    'peer-project-not-repo': 'That project is not a Git repository on their computer.',
+    'peer-branch-missing': 'They do not have that branch.',
+    'push-denied': 'This connection does not allow pushing. Request a new connection with “Push” checked.',
+    'request-mismatch': 'The merge request no longer matches this project, branch or commit; refresh and retry.',
+    'request-missing': 'That merge request is missing or already handled.',
+    'request-open-failed': 'The branch was pushed, but the merge request was not sent.',
+    'request-invalid': 'The request they received was not in the expected format.',
+    'request-rate-limited': 'Merge requests are being sent too often; try again later.',
+    'request-branch-unpushed': 'They have not received this branch yet; push it before opening a merge request.',
+    'request-state-unreadable': 'The merge request state cannot be read right now; try again later.',
+    'session-export-failed': 'They could not find that session, or it does not belong to a shared project.',
+    'address-invalid': 'That address is not in the right format, for example 100.101.102.103:37892.',
+    'peer-unreachable': 'Could not reach them.',
+    'pair-failed': 'Pairing failed; they did not return a pairing result.',
+    'peer-auth-missing': 'That computer could not be found or the token expired; pair again.',
+    'peer-request-failed': 'The request to them failed.',
+    'event-stream-failed': 'Could not open their event stream.',
+    'export-invalid': 'The export package they returned is not in the expected format.',
+    'import-invalid': 'That import id is not valid.',
+    'import-missing': 'This copy no longer exists or is damaged.'
+  },
   title: 'Collaboration',
   nav: 'Collaboration',
   lede: 'Each computer keeps its own copy of the code. Pull, compare and merge each other’s branches the way git does. Connections need the other side’s approval, and a push only lands under “your name/branch” on their side, never touching their existing branches.',
@@ -524,9 +644,6 @@ const EN: CollabText = {
   merged: 'Merged: {message}',
   mergeNoop: 'Already up to date; nothing to merge.',
   mergeFailed: 'Merge failed: {error}',
-  mergeIdentityMissing:
-    'Git has no commit identity on this computer, so the merge commit cannot be created. Run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then retry.',
-  mergeDirty: 'This computer’s working tree has uncommitted changes. Commit or stash them, then merge.',
   mergeConflicts: 'The merge has conflicts; they are listed under local “{project}”.',
   continue: 'Continue here',
   continueHint: 'Creates a local worktree from this branch and starts a new session with their session copy as context.',
@@ -607,6 +724,12 @@ const EN: CollabText = {
 
 export function collabText(lang: Lang): CollabText {
   return lang === 'en-US' ? EN : ZH
+}
+
+export function collabFailureText(text: CollabText, code: string | null | undefined): string | null {
+  if (!code) return null
+  const table: Record<string, string | undefined> = text.failures
+  return table[code] ?? null
 }
 
 export function peerDisplayName(name: string): string {

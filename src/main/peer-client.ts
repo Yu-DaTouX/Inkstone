@@ -133,7 +133,9 @@ export class PeerClient implements PeerTransport {
 
   async pair(addressInput: string, code: string): Promise<Result<PeerRecordView>> {
     const address = normalizePeerAddress(addressInput)
-    if (!address) return { ok: false, error: '地址格式不对，例如 100.101.102.103:37892' }
+    if (!address) {
+      return { ok: false, error: 'That address is not in the right format, for example 100.101.102.103:37892', code: 'address-invalid' }
+    }
     try {
       const response = await fetch(`${address}/remote/v1/pair`, {
         method: 'POST',
@@ -142,7 +144,9 @@ export class PeerClient implements PeerTransport {
         signal: AbortSignal.timeout(15_000)
       })
       const body = (await response.json()) as { ok?: boolean; error?: string; deviceId?: string; token?: string; computer?: { name?: string } }
-      if (!response.ok || !body.ok || !body.token || !body.deviceId) return { ok: false, error: body.error ?? `配对失败（HTTP ${response.status}）` }
+      if (!response.ok || !body.ok || !body.token || !body.deviceId) {
+        return { ok: false, error: body.error ?? `Pairing failed (HTTP ${response.status})`, code: 'pair-failed' }
+      }
       const peers = await this.load()
       const peer: StoredPeer = {
         id: `peer-${randomUUID()}`,
@@ -156,7 +160,7 @@ export class PeerClient implements PeerTransport {
       await this.save()
       return { ok: true, data: { id: peer.id, computer: peer.computer, address: peer.address, pairedAt: peer.pairedAt } }
     } catch (error) {
-      return { ok: false, error: `连不上对方：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: `Could not reach them: ${error instanceof Error ? error.message : String(error)}`, code: 'peer-unreachable' }
     }
   }
 
@@ -202,7 +206,7 @@ export class PeerClient implements PeerTransport {
 
   private async request<T>(peerId: string, path: string, init: { method?: string; body?: unknown; idempotent?: boolean; timeoutMs?: number } = {}): Promise<Result<T>> {
     const auth = await this.credentials(peerId)
-    if (!auth) return { ok: false, error: '找不到这台砚，或令牌已失效（请重新配对）' }
+    if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
     const connection = this.connections.get(peerId)
     const headers: Record<string, string> = { authorization: `Bearer ${auth.token}` }
     if (connection?.state === 'connected') headers[PEER_CONNECTION_HEADER] = connection.grant.connectionId
@@ -220,12 +224,12 @@ export class PeerClient implements PeerTransport {
         const body = (await response.json()) as { ok?: boolean; data?: T; error?: string; code?: string }
         if (!response.ok || !body.ok) {
           if (connectionEnded(body.code)) this.dropConnection(peerId, { state: 'ended' }, false)
-          return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, code: body.code }
+          return { ok: false, error: body.error ?? `Request failed (HTTP ${response.status})`, code: body.code ?? 'peer-request-failed' }
         }
         return { ok: true, data: body.data as T }
       } catch (error) {
         if (idempotencyKey && attempt === 0) continue
-        return { ok: false, error: `请求失败：${error instanceof Error ? error.message : String(error)}` }
+        return { ok: false, error: `Request failed: ${error instanceof Error ? error.message : String(error)}`, code: 'peer-request-failed' }
       }
     }
   }
@@ -251,14 +255,14 @@ export class PeerClient implements PeerTransport {
     const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string }
     if (connectionEnded(body.code)) {
       this.dropConnection(peerId, { state: 'ended' })
-      return { ok: false, error: body.error ?? '对方已结束本次连接', code: body.code }
+      return { ok: false, error: body.error ?? 'They ended this connection', code: body.code }
     }
-    return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, ...(body.code ? { code: body.code } : {}) }
+    return { ok: false, error: body.error ?? `Request failed (HTTP ${response.status})`, ...(body.code ? { code: body.code } : {}) }
   }
 
   async download<T>(peerId: string, path: string, body: unknown, file: string): Promise<Result<PeerDownload<T>>> {
     const auth = await this.authHeaders(peerId)
-    if (!auth) return { ok: false, error: '找不到这台砚，或令牌已失效（请重新配对）' }
+    if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
     try {
       const response = await fetch(`${auth.address}${path}`, {
         method: 'POST',
@@ -269,23 +273,29 @@ export class PeerClient implements PeerTransport {
       if (!response.ok) return this.failureOf(peerId, response)
       if ((response.headers.get('content-type') ?? '').includes('application/json')) {
         const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
-        return parsed.ok ? { ok: true, data: { kind: 'json', data: parsed.data as T } } : { ok: false, error: parsed.error ?? '对方返回失败' }
+        return parsed.ok
+          ? { ok: true, data: { kind: 'json', data: parsed.data as T } }
+          : { ok: false, error: parsed.error ?? 'They returned a failure', code: 'peer-request-failed' }
       }
       const declared = Number(response.headers.get('content-length') ?? NaN)
-      if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) return { ok: false, error: '代码包超过 512MB 上限' }
-      if (!response.body) return { ok: false, error: '对方没有返回代码包' }
+      if (Number.isFinite(declared) && declared > COLLAB_BUNDLE_MAX_BYTES) {
+        return { ok: false, error: 'The code bundle is over the size limit', code: 'bundle-too-large' }
+      }
+      if (!response.body) return { ok: false, error: 'They did not return a code bundle', code: 'bundle-not-returned' }
       await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), createWriteStream(file))
       const info = await stat(file)
-      if (info.size > COLLAB_BUNDLE_MAX_BYTES) return { ok: false, error: '代码包超过 512MB 上限' }
+      if (info.size > COLLAB_BUNDLE_MAX_BYTES) {
+        return { ok: false, error: 'The code bundle is over the size limit', code: 'bundle-too-large' }
+      }
       return { ok: true, data: { kind: 'file', bytes: info.size } }
     } catch (error) {
-      return { ok: false, error: `下载失败：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: `Download failed: ${error instanceof Error ? error.message : String(error)}`, code: 'download-failed' }
     }
   }
 
   async upload<T>(peerId: string, path: string, file: string | null): Promise<Result<T>> {
     const auth = await this.authHeaders(peerId)
-    if (!auth) return { ok: false, error: '找不到这台砚，或令牌已失效（请重新配对）' }
+    if (!auth) return { ok: false, error: 'That computer could not be found or the token expired; pair again', code: 'peer-auth-missing' }
     try {
       const size = file ? (await stat(file)).size : 0
       const init: RequestInit & { duplex?: 'half' } = {
@@ -300,9 +310,11 @@ export class PeerClient implements PeerTransport {
       const response = await fetch(`${auth.address}${path}`, init)
       if (!response.ok) return this.failureOf(peerId, response)
       const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
-      return parsed.ok ? { ok: true, data: parsed.data as T } : { ok: false, error: parsed.error ?? '对方返回失败' }
+      return parsed.ok
+        ? { ok: true, data: parsed.data as T }
+        : { ok: false, error: parsed.error ?? 'They returned a failure', code: 'peer-request-failed' }
     } catch (error) {
-      return { ok: false, error: `上传失败：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: `Upload failed: ${error instanceof Error ? error.message : String(error)}`, code: 'upload-failed' }
     }
   }
 
@@ -332,7 +344,7 @@ export class PeerClient implements PeerTransport {
 
   private async openStream(peerId: string, grant: PeerGrantView, attempt = 0, generation = this.generation(peerId)): Promise<StreamOpened> {
     const auth = await this.credentials(peerId)
-    if (!auth) return { ok: false, error: '令牌已失效，请重新配对' }
+    if (!auth) return { ok: false, error: 'The token expired; pair again' }
     const controller = new AbortController()
     this.streams.set(peerId, controller)
     try {
@@ -343,12 +355,12 @@ export class PeerClient implements PeerTransport {
       if (!response.ok) {
         this.streams.delete(peerId)
         const body = (await response.json().catch(() => ({}))) as { code?: string; error?: string }
-        if (connectionEnded(body.code)) return { ok: false, error: body.error ?? '对方已结束本次连接', ended: true }
-        return { ok: false, error: body.error ?? `对方拒绝建立事件流（HTTP ${response.status}）` }
+        if (connectionEnded(body.code)) return { ok: false, error: body.error ?? 'They ended this connection', ended: true }
+        return { ok: false, error: body.error ?? `They refused the event stream (HTTP ${response.status})` }
       }
       if (!response.body) {
         this.streams.delete(peerId)
-        return { ok: false, error: '对方没有返回事件流' }
+        return { ok: false, error: 'They did not return an event stream' }
       }
       const reader = response.body.getReader()
       void (async () => {
@@ -366,14 +378,19 @@ export class PeerClient implements PeerTransport {
       return { ok: true, data: true }
     } catch (error) {
       this.streams.delete(peerId)
-      return { ok: false, error: `事件流打开失败：${error instanceof Error ? error.message : String(error)}` }
+      return { ok: false, error: `Could not open the event stream: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
 
   private async retryStream(peerId: string, grant: PeerGrantView, attempt: number, generation: number): Promise<void> {
     await this.waitForReconnect(peerId)
     if (generation !== this.generation(peerId)) return
-    if (attempt > RECONNECT_ATTEMPTS) return this.dropConnection(peerId, { state: 'failed', error: '连接已断开且没能重连；重新连接需要对方再次批准' })
+    if (attempt > RECONNECT_ATTEMPTS) {
+      return this.dropConnection(peerId, {
+        state: 'failed',
+        error: 'The connection dropped and could not be re-established; connecting again needs their approval'
+      })
+    }
     const opened = await this.openStream(peerId, grant, attempt, generation)
     if (opened.ok) return
     if (opened.ended) return this.dropConnection(peerId, { state: 'ended' })
@@ -442,9 +459,11 @@ export class PeerClient implements PeerTransport {
     const exported = await this.request<PeerSessionExport>(peerId, exportPath, { timeoutMs: 60_000 })
     if (!exported.ok) return exported
     const pack = exported.data
-    if (pack?.version !== 1 || !pack.source || !Array.isArray(pack.messages)) return { ok: false, error: '对方返回的导出包格式不对' }
+    if (pack?.version !== 1 || !pack.source || !Array.isArray(pack.messages)) {
+      return { ok: false, error: 'The export package they returned is not in the expected format', code: 'export-invalid' }
+    }
     const auth = await this.credentials(peerId)
-    if (!auth) return { ok: false, error: '令牌已失效，请重新配对' }
+    if (!auth) return { ok: false, error: 'The token expired; pair again', code: 'peer-auth-missing' }
     const importId = `imp-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`
     const dir = join(IMPORTS_DIR, importId)
     const artifactDir = join(dir, 'artifacts')
@@ -519,12 +538,12 @@ export class PeerClient implements PeerTransport {
   }
 
   async readImport(importId: string): Promise<Result<{ dir: string; messages: unknown[] }>> {
-    if (!/^imp-[A-Za-z0-9-]+$/.test(importId)) return { ok: false, error: '导入 id 无效' }
+    if (!/^imp-[A-Za-z0-9-]+$/.test(importId)) return { ok: false, error: 'That import id is not valid', code: 'import-invalid' }
     const dir = join(IMPORTS_DIR, importId)
     try {
       return { ok: true, data: { dir, messages: JSON.parse(await readFile(join(dir, 'messages.json'), 'utf8')) as unknown[] } }
     } catch {
-      return { ok: false, error: '这份副本已不存在或已损坏' }
+      return { ok: false, error: 'This copy no longer exists or is damaged', code: 'import-missing' }
     }
   }
 }

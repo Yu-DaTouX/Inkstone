@@ -30,9 +30,14 @@ export async function activeProjects(): Promise<Array<{ id: string; name: string
 
 async function notifyIncoming(win: BrowserWindow | null, request: CollabMergeRequest): Promise<void> {
   if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
-  const sound = (await getSettings()).sound
+  const settings = await getSettings()
+  const sound = settings.sound
   if (sound?.enabled !== true || sound.notifications === false || !Notification.isSupported()) return
-  new Notification({ title: '多人协作 · 合并请求', body: `${request.peerName.replace(/^(?:砚|Inkstone)\s*·\s*/, '')}：${request.title}（${request.branch}）` }).show()
+  const en = settings.lang === 'en-US'
+  const peer = request.peerName.replace(/^(?:砚|Inkstone)\s*·\s*/, '')
+  const title = en ? 'Collaboration · Merge request' : '多人协作 · 合并请求'
+  const body = en ? `${peer}: ${request.title} (${request.branch})` : `${peer}：${request.title}（${request.branch}）`
+  new Notification({ title, body }).show()
 }
 
 export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): CollabService {
@@ -50,7 +55,7 @@ export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): Colla
     },
     createWorktree: async ({ cwd, branch, startPoint }) => {
       const created = await createWorktree({ cwd, branch, startPoint, targetPath: null })
-      if (!created.ok || !created.path) return { ok: false, error: created.failure?.message ?? '创建工作树失败' }
+      if (!created.ok || !created.path) return { ok: false, error: 'Could not create the worktree', code: 'worktree-create-failed' }
       return { ok: true, path: created.path, branch: created.branch ?? branch }
     },
     notifyIncoming: (request) => void notifyIncoming(deps.win(), request)

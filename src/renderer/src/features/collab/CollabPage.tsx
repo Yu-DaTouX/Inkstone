@@ -49,7 +49,7 @@ import {
 } from '../../ui'
 import { DiffView } from '../diff'
 import { collabBridge, collabPeerBridge, parsePairLink, type CollabPeerBridge } from './bridge'
-import { collabText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
+import { collabFailureText, collabText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
 import { HostGrants } from './HostGrants'
 import { InviteCard } from './InviteCard'
 import { usePendingPairInvite } from './pending-invite'
@@ -238,9 +238,9 @@ interface ComparePanelProps {
   version: string
 }
 
-type CompareState = { status: 'loading' } | { status: 'error'; error: string } | { status: 'ready'; data: CollabComparison }
+type CompareState = { status: 'loading' } | { status: 'error'; error: string; code?: string } | { status: 'ready'; data: CollabComparison }
 
-type DiffState = { path: string; status: 'loading' } | { path: string; status: 'error'; error: string } | { path: string; status: 'ready'; body: string }
+type DiffState = { path: string; status: 'loading' } | { path: string; status: 'error'; error: string; code?: string } | { path: string; status: 'ready'; body: string }
 
 function ComparePanel({ bridge, text, lang, localProjectId, refName, label, version }: ComparePanelProps): ReactElement {
   const [state, setState] = useState<CompareState>({ status: 'loading' })
@@ -253,7 +253,7 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
     bridge.compare(localProjectId, refName).then(
       (result) => {
         if (!alive) return
-        setState(result.ok ? { status: 'ready', data: result.data } : { status: 'error', error: result.error })
+        setState(result.ok ? { status: 'ready', data: result.data } : { status: 'error', error: result.error, code: result.code })
       },
       (error: unknown) => {
         if (alive) setState({ status: 'error', error: describe(error) })
@@ -273,7 +273,11 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
     bridge.fileDiff(localProjectId, refName, path).then(
       (result) => {
         setDiff((current) =>
-          current?.path !== path ? current : result.ok ? { path, status: 'ready', body: result.data } : { path, status: 'error', error: result.error }
+          current?.path !== path
+            ? current
+            : result.ok
+              ? { path, status: 'ready', body: result.data }
+              : { path, status: 'error', error: result.error, code: result.code }
         )
       },
       (error: unknown) => {
@@ -293,7 +297,7 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
     return (
       <Card quiet padding="sm" className="collab-card collab-compare" data-testid="v3-collab-compare-panel">
         <Notice tone="fail" compact>
-          {fill(text.compareFailed, { error: state.error })}
+          {collabFailureText(text, state.code) ?? fill(text.compareFailed, { error: state.error })}
         </Notice>
       </Card>
     )
@@ -367,7 +371,7 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
             <Loading label={text.diffLoading} />
           ) : diff.status === 'error' ? (
             <Notice tone="fail" compact>
-              {fill(text.diffFailed, { error: diff.error })}
+              {collabFailureText(text, diff.code) ?? fill(text.diffFailed, { error: diff.error })}
             </Notice>
           ) : diff.body.trim() === '' ? (
             <p className="collab-hint">{text.diffEmpty}</p>
@@ -619,14 +623,14 @@ function RemoteProjectPanel({
         setView(result.data)
         setError('')
       } else {
-        setError(result.error)
+        setError(collabFailureText(text, result.code) ?? result.error)
       }
     } catch (cause) {
       if (id === seq.current) setError(describe(cause))
     } finally {
       if (id === seq.current) setLoading(false)
     }
-  }, [bridge, peer.id, project.id])
+  }, [bridge, peer.id, project.id, text])
 
   useEffect(() => {
     void load()
@@ -655,7 +659,7 @@ function RemoteProjectPanel({
     if (view?.localProjectId === localProject.id) return true
     const result = await bridge.link(peer.id, project.id, localProject.id)
     if (!result.ok) {
-      notify('fail', fill(text.linkFailed, { error: result.error }))
+      notify('fail', collabFailureText(text, result.code) ?? fill(text.linkFailed, { error: result.error }))
       return false
     }
     return true
@@ -669,7 +673,7 @@ function RemoteProjectPanel({
     void run('link', async () => {
       const result = await bridge.link(peer.id, project.id, next)
       if (!result.ok) {
-        notify('fail', fill(text.linkFailed, { error: result.error }))
+        notify('fail', collabFailureText(text, result.code) ?? fill(text.linkFailed, { error: result.error }))
         return
       }
       const name = next ? localProjects.find((item) => item.id === next)?.name ?? next : ''
@@ -687,7 +691,7 @@ function RemoteProjectPanel({
       if (!(await ensureLinked())) return
       const result = await bridge.fetch(peer.id, project.id, branch.name)
       if (!result.ok) {
-        notify('fail', fill(text.fetchFailed, { error: result.error }))
+        notify('fail', collabFailureText(text, result.code) ?? fill(text.fetchFailed, { error: result.error }))
         return
       }
       const data = result.data
@@ -731,7 +735,7 @@ function RemoteProjectPanel({
         ...(withRequest ? { request: { title: requestTitle.trim(), note: requestNote.trim() } } : {})
       })
       if (!result.ok) {
-        notify('fail', fill(text.pushFailed, { error: result.error }))
+        notify('fail', collabFailureText(text, result.code) ?? fill(text.pushFailed, { error: result.error }))
         return
       }
       notify('info', fill(result.data.requestId ? text.pushedWithRequest : text.pushed, { computer: peer.computer, branch }))
@@ -1186,15 +1190,7 @@ export function CollabPage(): ReactElement {
         notify('fail', fill(text.mergeConflicts, { project: target.project.name }))
         return
       }
-      if (result.code === 'git-identity-missing') {
-        notify('fail', text.mergeIdentityMissing)
-        return
-      }
-      if (result.code === 'worktree-dirty') {
-        notify('fail', text.mergeDirty)
-        return
-      }
-      notify('fail', fill(text.mergeFailed, { error: result.error }))
+      notify('fail', collabFailureText(text, result.code) ?? fill(text.mergeFailed, { error: result.error }))
     },
     [notify, text]
   )
@@ -1222,7 +1218,7 @@ export function CollabPage(): ReactElement {
       if (!bridge) return
       const result = await bridge.continueFrom(project.id, ref, importId)
       if (!result.ok) {
-        notify('fail', fill(text.continueFailed, { error: result.error }))
+        notify('fail', collabFailureText(text, result.code) ?? fill(text.continueFailed, { error: result.error }))
         return
       }
       await openSessionWithPrompt(result.data.worktree, project.id, result.data.prompt)
@@ -1258,7 +1254,7 @@ export function CollabPage(): ReactElement {
         run: async () => {
           const result = await bridge.abortMerge(project.id)
           if (!result.ok) {
-            notify('fail', fill(text.abortFailed, { error: result.error }))
+            notify('fail', collabFailureText(text, result.code) ?? fill(text.abortFailed, { error: result.error }))
           } else {
             setRecords((prev) => withoutKey(prev, project.id))
             notify('info', fill(text.aborted, { project: project.name }))
@@ -1298,7 +1294,7 @@ export function CollabPage(): ReactElement {
         ok = true
         notify('info', fill(text.paired, { computer: result.data.computer }))
       } else {
-        notify('fail', fill(text.pairFailed, { error: result.error }))
+        notify('fail', collabFailureText(text, result.code) ?? fill(text.pairFailed, { error: result.error }))
       }
       await refresh()
     })
@@ -1316,7 +1312,7 @@ export function CollabPage(): ReactElement {
       void refresh()
       const result = await pending
       if (result.ok) notify('info', fill(text.connected, { computer: peer.computer }))
-      else notify('fail', fill(text.connectFailed, { computer: peer.computer, error: result.error }))
+      else notify('fail', collabFailureText(text, result.code) ?? fill(text.connectFailed, { computer: peer.computer, error: result.error }))
       await refreshAll()
     })
   }
@@ -1351,7 +1347,7 @@ export function CollabPage(): ReactElement {
     void run(`close:${request.id}`, async () => {
       const result = await bridge.closeRequest(request.id)
       if (result.ok) notify('info', fill(text.closed, { title: request.title || request.branch }))
-      else notify('fail', fill(text.closeFailed, { error: result.error }))
+      else notify('fail', collabFailureText(text, result.code) ?? fill(text.closeFailed, { error: result.error }))
       await refresh()
     })
   }
