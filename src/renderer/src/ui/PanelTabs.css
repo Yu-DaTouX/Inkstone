@@ -23,7 +23,7 @@
     padding: 0 var(--s-8) 0 var(--s-4);
     border-radius: var(--r-sm);
     color: var(--fg3);
-    font: var(--t-footnote) / 1 var(--font-ui);
+    font: var(--t-footnote) / normal var(--font-ui);
     transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
   }
   .ui-ptab:hover {
