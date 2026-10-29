@@ -18,6 +18,11 @@ export function splitChangePath(path: string): { name: string; dir: string } {
   return cut === -1 ? { name: path, dir: '' } : { name: path.slice(cut + 1), dir: path.slice(0, cut) }
 }
 
+export function shortChangeDir(dir: string, keep = 2): string {
+  const parts = dir.split('/').filter(Boolean)
+  return parts.length <= keep ? parts.join('/') : `\u2026/${parts.slice(-keep).join('/')}`
+}
+
 export function ChangeStatusMark({ item, lang, text }: { item: ChangeItem; lang?: string; text: ChangesText }): ReactElement {
   const status = porcelainFileStatus(item.status)
   const label =
@@ -37,7 +42,12 @@ export function ChangePathLabel({ path, mark, stacked }: { path: string; mark?: 
         {mark}
         <span className="changes-path__lines">
           <span className="changes-path__name">{name}</span>
-          {dir ? <span className="changes-path__tail">{`\u200e${dir}\u200e`}</span> : null}
+          {dir ? (
+            <span className="changes-path__dirline">
+              <span className="changes-path__tail" data-short="">{shortChangeDir(dir)}</span>
+              <span className="changes-path__tail" data-full="">{`\u200e${dir}\u200e`}</span>
+            </span>
+          ) : null}
         </span>
       </span>
     )

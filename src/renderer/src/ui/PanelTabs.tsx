@@ -143,6 +143,7 @@ export function PanelTab({
 export interface PanelTabListProps extends Omit<HTMLAttributes<HTMLDivElement>, 'role' | 'aria-label' | 'aria-orientation' | 'children'> {
   label: string
   children: ReactNode
+  plain?: boolean
   onCloseFocused?: (id: string) => void
   onContextMenuFocused?: (id: string, anchor: HTMLElement) => void
 }
@@ -152,7 +153,7 @@ function tabsOf(list: HTMLElement): HTMLButtonElement[] {
 }
 
 export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(function PanelTabList(
-  { label, className, children, onCloseFocused, onContextMenuFocused, onKeyDown: onKeyDownProp, onWheel: onWheelProp, ...rest },
+  { label, plain, className, children, onCloseFocused, onContextMenuFocused, onKeyDown: onKeyDownProp, onWheel: onWheelProp, ...rest },
   ref
 ) {
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -200,7 +201,7 @@ export const PanelTabList = forwardRef<HTMLDivElement, PanelTabListProps>(functi
       role="tablist"
       aria-label={label}
       aria-orientation="horizontal"
-      className={cx('ui-ptabs', className)}
+      className={cx('ui-ptabs', plain && 'ui-ptabs--plain', className)}
       onKeyDown={onKeyDown}
       onWheel={(event) => {
         onWheelProp?.(event)

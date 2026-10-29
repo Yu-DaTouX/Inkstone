@@ -73,12 +73,39 @@
   }
 
   .ms-service {
-    display: flex;
-    flex-wrap: wrap;
+    --ms-actions-w: calc(var(--s-48) * 3 + var(--s-24));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(var(--ms-actions-w), auto);
     align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8) var(--s-16);
+    gap: var(--s-6) var(--s-16);
     padding: var(--s-12) 0;
+  }
+
+  .ms-service > * {
+    grid-column: 1 / -1;
+  }
+
+  .ms-service > .ms-service-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .ms-service > .ms-service-detail {
+    grid-column: 1;
+  }
+
+  .ms-service > .ms-service-actions:not(:has(.ms-key-edit)) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .ms-service-detail {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-4);
+    min-width: 0;
+    margin-top: calc(var(--s-2) * -1);
   }
 
   .ms-rows > * + *:not(.settings-reveal),
@@ -191,9 +218,8 @@
 
   .ms-service-main {
     display: flex;
-    flex: 1 1 240px;
     flex-direction: column;
-    gap: var(--s-4);
+    gap: var(--s-2);
     min-width: 0;
   }
 
@@ -218,6 +244,21 @@
     color: var(--fg3);
   }
 
+  .ms-service-hint {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-service:focus-within .ms-service-hint {
+    white-space: normal;
+  }
+
+  .ms-service-env {
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
   .ms-service-env code {
     font-family: var(--font-mono);
   }
@@ -238,11 +279,6 @@
     flex-wrap: wrap;
     min-width: 0;
     max-width: 100%;
-  }
-
-  .ms-service > .ms-oauth,
-  .ms-service > p {
-    flex-basis: 100%;
   }
 
   .ms-key-edit {
@@ -530,6 +566,18 @@
   @media (max-width: 720px) {
     .ms-custom-model {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .ms-service {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ms-service > .ms-service-actions:not(:has(.ms-key-edit)) {
+      grid-column: 1;
+      grid-row: auto;
+      justify-content: flex-start;
     }
   }
 }

@@ -128,7 +128,7 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    padding: var(--s-4);
+    padding: var(--s-4) var(--s-4) var(--s-12);
   }
 
   .changes-pane__item {
@@ -204,7 +204,10 @@
     min-width: 0;
     min-height: 0;
     overflow: auto;
+    padding-bottom: var(--s-24);
     outline: none;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s-24)), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--s-24)), transparent);
   }
 
   .changes-pane__banner {
@@ -231,7 +234,7 @@
   .changes-file__head .ui-collapsible__trigger {
     height: auto;
     min-height: var(--size-bar);
-    padding-block: var(--s-4);
+    padding-block: var(--s-2);
   }
 
   .changes-file__head .ui-collapsible__label {
@@ -256,7 +259,12 @@
 
   .changes-path--stacked .changes-path__name {
     font-size: var(--t-body);
-    line-height: var(--t-body-lh);
+    line-height: var(--t-footnote-lh);
+  }
+
+  .changes-path__dirline {
+    display: flex;
+    min-width: 0;
   }
 
   .changes-path__tail {
@@ -264,12 +272,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+    font-weight: var(--w-regular);
+  }
+
+  .changes-path__tail[data-full] {
+    display: none;
     direction: rtl;
     text-align: left;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    font-weight: var(--w-regular);
+  }
+
+  .changes-file__head:is(:hover, :has(:focus-visible)) .changes-path__tail[data-short] {
+    display: none;
+  }
+
+  .changes-file__head:is(:hover, :has(:focus-visible)) .changes-path__tail[data-full] {
+    display: block;
   }
 
   .changes-path {
@@ -355,7 +375,7 @@
     gap: var(--s-8);
     padding: var(--s-12);
     background: var(--surface);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line2);
   }
 
   .changes-pane__commit-field {

@@ -497,7 +497,11 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
             ? [{ id: 'preview:revealInTree', label: text.revealInTree, icon: <ListTree size={14} aria-hidden />, onAction: () => onRevealInTree(activeAbs) }]
             : []),
           { id: 'preview:reload', label: text.retry, icon: <RefreshCw size={14} aria-hidden />, onAction: () => setReload((value) => value + 1) },
-          ...(tabList.length > 1 ? [{ id: 'preview:closeAll', label: text.closeAllTabs, icon: <X size={14} aria-hidden />, onAction: closeAllTabs }] : [])
+          ...(tabList.length > 1
+            ? [{ id: 'preview:closeAll', label: text.closeAllTabs, icon: <X size={14} aria-hidden />, onAction: closeAllTabs }]
+            : tabList.length === 1 && chrome
+              ? [{ id: 'preview:close', label: `${text.closeTab}: ${name}`, icon: <X size={14} aria-hidden />, onAction: () => closeTab(tabList[0]) }]
+              : [])
         ]
       : []
   )
@@ -505,6 +509,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
   const mergedHead = !!chrome && !!tabStrip
+  const singleTab = mergedHead && tabList.length === 1
   const crumbPath = useMemo(() => {
     if (!activeAbs || !crumbs.length) return null
     return breadcrumbParent(crumbs.join('/')) ?? ''
@@ -517,7 +522,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         path={crumbPath}
         text={filesText(lang)}
         label={text.crumbsLabel}
-        tail={mergedHead ? undefined : name}
+        tail={mergedHead && !singleTab ? undefined : name}
         className="v3-preview-breadcrumbs"
         onNavigate={(dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir))}
       />
@@ -539,9 +544,9 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         mergedHead ? (
           <>
             <PaneTitle>
-              <span className="v3-preview-headrow" data-testid="v3-preview-headrow">
-                {tabStrip}
-                {activeAbs ? crumbNav : null}
+              <span className="v3-preview-headrow" data-testid="v3-preview-headrow" data-single={singleTab ? '' : undefined}>
+                {singleTab ? null : tabStrip}
+                {activeAbs ? crumbNav ?? (singleTab ? <span className="v3-preview-pathname" title={activeAbs}>{name}</span> : null) : null}
               </span>
             </PaneTitle>
             {activeAbs ? <PaneTools>{toolButtons}</PaneTools> : null}

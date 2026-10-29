@@ -307,6 +307,7 @@ export function PreviewTabs({
           <PanelTabList
             ref={stripRef}
             label={text.tabsLabel}
+            plain={chrome}
             onCloseFocused={onClose}
             onContextMenuFocused={(path, anchor) => openMenu(path, anchor)}
           >

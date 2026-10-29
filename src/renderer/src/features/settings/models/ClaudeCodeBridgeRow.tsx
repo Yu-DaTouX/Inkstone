@@ -93,19 +93,23 @@ export function ClaudeCodeBridgeRow(): ReactElement {
             {installed === true ? t('cc.installedLabel') : t('cc.notInstalled')}
           </Badge>
         </span>
-        <p className="ms-service-hint">{t('cc.desc')}</p>
-        {stateText ? (
-          <p className="ms-service-env" data-testid="cc-plugin-state">
-            {stateText}
-            {version ? ` · ${BRIDGE_NAME} ${version}` : ''}
-          </p>
-        ) : null}
-        {envOverrides.length > 0 ? (
-          <Notice tone="info" compact role="note" className="ms-env-notice" data-testid="cc-env-warn">
-            {t('cc.envWarn', { vars: envOverrides.join(', ') })}
-          </Notice>
-        ) : null}
+        <p className="ms-service-hint" title={t('cc.desc')}>{t('cc.desc')}</p>
       </div>
+      {stateText || envOverrides.length > 0 ? (
+        <div className="ms-service-detail">
+          {stateText ? (
+            <p className="ms-service-env" data-testid="cc-plugin-state">
+              {stateText}
+              {version ? ` · ${BRIDGE_NAME} ${version}` : ''}
+            </p>
+          ) : null}
+          {envOverrides.length > 0 ? (
+            <Notice tone="info" compact role="note" className="ms-env-notice" data-testid="cc-env-warn">
+              {t('cc.envWarn', { vars: envOverrides.join(', ') })}
+            </Notice>
+          ) : null}
+        </div>
+      ) : null}
       <div className="ms-service-actions">
         {installed !== true || outdated ? (
           <Button variant="secondary" isDisabled={busy} data-testid="cc-install-bridge" onPress={() => void install()}>

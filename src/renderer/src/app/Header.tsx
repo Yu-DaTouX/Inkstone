@@ -51,7 +51,7 @@ const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   files: 'workspaceTab3'
 }
 
-export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, sessionBarShown = false, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
+export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -93,8 +93,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const panesInMenu = narrow || freshHome
   const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(panesInMenu ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
   const menuDot = route === 'chat' && panesInMenu && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
-  const highlightPane = activePane && TITLEBAR_PANES.some(({ tab }) => tab === activePane) ? activePane : null
-  const sessionBarLit = sessionBarShown && !activePane
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -170,11 +168,11 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 className="v3-head-pane"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
-                data-active={sessionBarLit ? '1' : '0'}
+                data-active="0"
                 data-setting={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
                 <SquareMenu size={16} />
-                {sessionBarOpen && !sessionBarLit ? <span className="v3-head-pane-open" aria-hidden /> : null}
+                {sessionBarOpen ? <span className="v3-head-pane-open" aria-hidden /> : null}
               </IconButton>
               {narrow
                 ? null
@@ -184,7 +182,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                       tooltip={paneLabel(tab)}
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
-                      data-active={highlightPane === tab ? '1' : '0'}
+                      data-active="0"
                       pressedTone="neutral"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
@@ -193,7 +191,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                     >
                       <Icon size={16} />
                       {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
-                      {openPanes.has(tab) && highlightPane !== tab ? <span className="v3-head-pane-open" aria-hidden /> : null}
+                      {openPanes.has(tab) ? <span className="v3-head-pane-open" aria-hidden /> : null}
                     </IconButton>
                   ))}
             </div>

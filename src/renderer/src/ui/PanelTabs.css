@@ -34,6 +34,13 @@
     background: var(--sel);
     color: var(--fg);
   }
+  .ui-ptabs--plain .ui-ptab[data-active='1'] {
+    background: transparent;
+    font-weight: var(--w-medium);
+  }
+  .ui-ptabs--plain .ui-ptab[data-active='1']:hover {
+    background: var(--hover);
+  }
   .ui-ptab[data-muted] .ui-ptab__text,
   .ui-ptab[data-muted] .ui-ptab__glyph {
     opacity: 0.55;

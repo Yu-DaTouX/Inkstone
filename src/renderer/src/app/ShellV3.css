@@ -105,9 +105,6 @@
     align-items: center;
     gap: var(--s-2);
     margin-inline-end: var(--s-8);
-    padding: var(--s-2);
-    border-radius: var(--r-md);
-    box-shadow: var(--ring-line);
   }
 
   .v3-chat {
@@ -124,12 +121,10 @@
     content: '';
     position: absolute;
     inset: 0 0 auto 0;
-    height: 28px;
+    height: var(--s-24);
     z-index: 5;
     pointer-events: none;
-    background: linear-gradient(to bottom, var(--bg), transparent);
-    -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
-    mask-image: linear-gradient(to bottom, #000 25%, transparent);
+    background: linear-gradient(to bottom, var(--bg) var(--s-6), color-mix(in srgb, var(--bg) 60%, transparent) 60%, transparent);
   }
 
   .v3-conv {

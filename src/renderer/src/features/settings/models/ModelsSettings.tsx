@@ -331,11 +331,15 @@ export function ModelsSettings(): ReactElement {
             <span className="ms-service-name">{providerName(p)}</span>
             {state === 'ready' ? <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge> : null}
           </span>
-          {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
-          {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
-          {fromEnv ? <Notice tone="info" compact role="note" className="ms-env-notice">{text('envActive')}</Notice> : null}
-          {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
+          {providerHint(p) ? <p className="ms-service-hint" title={providerHint(p)}>{providerHint(p)}</p> : null}
         </div>
+        {p.envVar || fromEnv || p.envShadowed ? (
+          <div className="ms-service-detail">
+            {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
+            {fromEnv ? <Notice tone="info" compact role="note" className="ms-env-notice">{text('envActive')}</Notice> : null}
+            {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
+          </div>
+        ) : null}
 
         <div className="ms-service-actions">
           {editingThis ? (

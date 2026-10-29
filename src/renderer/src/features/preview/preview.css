@@ -221,6 +221,16 @@
     min-width: 0;
   }
 
+  .v3-preview-headrow[data-single] {
+    margin-inline-start: calc(var(--s-4) * -1);
+  }
+
+  .v3-preview-headrow > .v3-preview-pathname {
+    padding-inline: var(--s-4);
+    color: var(--fg);
+    font-weight: var(--w-medium);
+  }
+
   .v3-preview-headrow > .v3-preview-tabbar {
     flex: 0 1 auto;
     max-width: 70%;
