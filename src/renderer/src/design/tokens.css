@@ -29,6 +29,7 @@
     --fg-ctl: light-dark(#555750, #C9C8C2);
     --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.12));
     --line2: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
+    --turn-rule: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.3));
     --line-ctl: light-dark(rgba(11,11,11,.48), rgba(255,255,255,.34));
     --kbd-ink: light-dark(#6D6B67, #C2C1BA);
     --ink: light-dark(#0B0B0B, #FFFFFF);

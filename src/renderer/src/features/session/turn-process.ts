@@ -69,12 +69,13 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
   const leadReplies: TurnSegment[] = []
   const earlierReplies: TurnSegment[] = []
   const candidates: TurnSegment[] = []
+  const folds = options.foldReplies === true && firstWork >= 0 && firstWork <= at
   segments.slice(0, at).forEach((segment, index) => {
     const beforeWork = firstWork < 0 || index < firstWork
-    if (segment.response && beforeWork) leadReplies.push(segment)
-    else if (segment.response && !options.foldReplies) earlierReplies.push(segment)
-    if (inProcess(segment)) candidates.push(segment.response && !beforeWork && options.foldReplies ? withoutResponse(segment) : segment)
-    if (segment.response && !beforeWork && options.foldReplies) candidates.push(narrationOf(segment))
+    const fold = !!segment.response && folds
+    if (segment.response && !fold) (beforeWork ? leadReplies : earlierReplies).push(segment)
+    if (inProcess(segment)) candidates.push(fold ? withoutResponse(segment) : segment)
+    if (fold) candidates.push(narrationOf(segment))
   })
   if (inProcess(replySource)) {
     candidates.push(withoutResponse(replySource))
@@ -93,31 +94,20 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
   return { process, reply, leadReplies, earlierReplies, tail: segments.slice(at + 1) }
 }
 
-export function processPreview(process: readonly TurnSegment[]): string {
-  for (let i = process.length - 1; i >= 0; i -= 1) {
-    const notes = process[i].commentary
-    for (let j = notes.length - 1; j >= 0; j -= 1) {
-      const plain = notes[j].text
+export function processLead(process: readonly TurnSegment[]): string {
+  for (const segment of process) {
+    for (const note of segment.commentary) {
+      const plain = note.text
         .replace(/```[\s\S]*?```/g, ' ')
         .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/[`*_~#>|]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
       if (!plain) continue
-      const sentences = plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).filter(Boolean)
-      return clipAtClause(sentences[sentences.length - 1] ?? plain)
+      return plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).find(Boolean) ?? plain
     }
   }
   return ''
-}
-
-const PREVIEW_CHARS = 64
-
-function clipAtClause(sentence: string): string {
-  if (sentence.length <= PREVIEW_CHARS) return sentence
-  const head = sentence.slice(0, PREVIEW_CHARS)
-  const cut = Math.max(...[...head.matchAll(/[\uFF0C,\u3001\uFF1A:\uFF1B;\u2014]/g)].map((match) => match.index ?? -1))
-  return cut >= 12 ? `${head.slice(0, cut).trimEnd()}\u2026` : sentence
 }
 
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {

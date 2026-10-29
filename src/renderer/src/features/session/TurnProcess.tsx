@@ -6,9 +6,8 @@ import { ToolSteps } from './ToolSteps'
 import { ThinkingLine } from './Thinking'
 import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
-import { openPanelTool } from '../workbench/panel-actions'
 import { useSessionText } from './text'
-import { conciseSegment, mergeQuietSegments, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import { conciseSegment, mergeQuietSegments, pickLiveSegments, processLead, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
 import { useToolExpansion } from './use-tool-run'
 import type { TranscriptView } from './transcript-view-model'
 
@@ -65,9 +64,8 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
     ? pickLiveSegments(merged, stageSegmentCount(merged))
     : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
-  const changed = !live && (summary.edits.length > 0 || summary.creates.length > 0)
   const elapsed = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
-  const preview = live || open ? '' : processPreview(process)
+  const lead = live ? '' : processLead(process)
 
   const body = (
     <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
@@ -91,18 +89,8 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           chevron="end"
           tone="emphasized"
           data-testid="v3-process-toggle"
-          actions={preview || changed ? (
-            <>
-              {preview ? <span className="v3-process-preview" data-testid="v3-process-preview" title={preview} onClick={() => setManual(true)}>{preview}</span> : null}
-              {changed ? (
-                <Button size="sm" variant="secondary" className="v3-process-changes" onPress={() => openPanelTool('changes')} data-testid="v3-process-view-changes">
-                  {tt('processViewChanges')}
-                </Button>
-              ) : null}
-            </>
-          ) : undefined}
         >
-          <span className="v3-process-line">
+          <span className="v3-process-line" title={lead || undefined} data-testid="v3-process-line">
             {processParts(summary, tt).map((part) => (
               <span key={part.key} className="v3-process-count" data-kind={part.kind}>
                 {part.text}
@@ -147,24 +135,27 @@ function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionT
       ? { key: kind, kind, text: tt(single, { file: list[0].base }), file: list[0] }
       : { key: kind, kind, text: tt(many, { n: list.length }), file: totalLines(list) })
   }
-  const all: { kind: string; n: number; one: TextKey; many: TextKey }[] = [
-    { kind: 'commands', n: summary.commands + summary.code, one: 'processCommands1', many: 'processCommands' },
-    { kind: 'reads', n: summary.reads, one: 'processReads1', many: 'processReads' },
-    { kind: 'searches', n: summary.searches, one: 'processSearch1', many: 'processSearch' },
-    { kind: 'lists', n: summary.lists, one: 'processList1', many: 'processList' },
-    { kind: 'web', n: summary.web, one: 'processWeb1', many: 'processWeb' },
-    { kind: 'fetches', n: summary.fetches, one: 'processFetch1', many: 'processFetch' },
-    { kind: 'agents', n: summary.agents, one: 'processAgent1', many: 'processAgent' }
+  const all: { kind: string; n: number; one: TextKey; many: TextKey; noun: TextKey }[] = [
+    { kind: 'commands', n: summary.commands + summary.code, one: 'processCommands1', many: 'processCommands', noun: 'processKindCommands' },
+    { kind: 'reads', n: summary.reads, one: 'processReads1', many: 'processReads', noun: 'processKindReads' },
+    { kind: 'searches', n: summary.searches, one: 'processSearch1', many: 'processSearch', noun: 'processKindSearch' },
+    { kind: 'lists', n: summary.lists, one: 'processList1', many: 'processList', noun: 'processKindList' },
+    { kind: 'web', n: summary.web, one: 'processWeb1', many: 'processWeb', noun: 'processKindWeb' },
+    { kind: 'fetches', n: summary.fetches, one: 'processFetch1', many: 'processFetch', noun: 'processKindFetch' },
+    { kind: 'agents', n: summary.agents, one: 'processAgent1', many: 'processAgent', noun: 'processKindAgent' },
+    { kind: 'other', n: summary.other, one: 'processOther1', many: 'processOther', noun: 'processKindOther' }
   ]
   const actions = all.filter((action) => action.n > 0)
-  const shown = new Set([...actions].sort((a, b) => b.n - a.n).slice(0, SHOWN_ACTION_KINDS).map((action) => action.kind))
-  const rest = actions.filter((action) => !shown.has(action.kind)).reduce((sum, action) => sum + action.n, summary.other)
+  const ranked = [...actions].sort((a, b) => b.n - a.n)
+  const shownCount = ranked.length <= SHOWN_ACTION_KINDS + 1 ? ranked.length : SHOWN_ACTION_KINDS
+  const shown = new Set(ranked.slice(0, shownCount).map((action) => action.kind))
+  const rest = ranked.slice(shownCount)
   if (!summary.actions) count('thinking', summary.thinking, 'processThinking1', 'processThinking')
   for (const action of actions) if (shown.has(action.kind)) count(action.kind, action.n, action.one, action.many)
   files('edits', summary.edits, 'processEditFile', 'processEdits')
   files('creates', summary.creates, 'processCreateFile', 'processCreates')
-  if (parts.length) count('other', rest, 'processOther1', 'processOther')
-  else if (summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
+  if (rest.length) parts.push({ key: 'rest', kind: 'rest', text: tt('processRest', { kinds: rest.map((action) => tt(action.noun)).join(tt('processKindJoin')), n: rest.reduce((sum, action) => sum + action.n, 0) }) })
+  if (!parts.length && summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
   return parts
 }
 

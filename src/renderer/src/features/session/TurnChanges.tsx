@@ -9,7 +9,8 @@ import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
-import { collectTurnChanges, groupChangesByDir, type TurnChangeGroup, type TurnFileChange, type TurnFileStatus } from './turn-changes'
+import { collectTurnChanges, groupChangesByDir, isInsideCwd, splitChangePath, type TurnChangeGroup, type TurnChanges as TurnChangeSet, type TurnFileChange, type TurnFileStatus } from './turn-changes'
+import { processSummary, type ProcessFileChange } from './turn-process'
 import './turn-changes.css'
 
 const OPEN_GROUPS_UP_TO = 1
@@ -27,8 +28,8 @@ const ZH: ChangesText = {
     c.modified ? `编辑 ${c.modified} 个文件` : '',
     c.deleted ? `删除 ${c.deleted} 个文件` : ''
   ].filter(Boolean).join(' · '),
-  files: (n) => `${n} 个文件`,
-  view: '查看改动',
+  files: (n) => `${n} 个文件有改动`,
+  view: '查看更改',
   undo: '撤销'
 }
 const EN: ChangesText = {
@@ -55,13 +56,33 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
   return null
 }
 
+function estimatedChanges(turn: AssistantTurn, cwd?: string): TurnChangeSet | null {
+  if (!turn.segments.length) return null
+  const summary = processSummary(turn.segments)
+  const rows = (list: readonly ProcessFileChange[], status: TurnFileStatus): TurnFileChange[] => list
+    .filter((file) => file.path !== file.base || /\.[^.]+$/.test(file.base))
+    .filter((file) => isInsideCwd(file.path, cwd))
+    .map((file) => ({ path: file.path, status, added: file.added ?? -1, removed: file.removed ?? -1 }))
+  const files = [...rows(summary.creates, 'created'), ...rows(summary.edits, 'modified')]
+  if (!files.length) return null
+  const counts: Record<TurnFileStatus, number> = { created: 0, modified: 0, deleted: 0 }
+  for (const file of files) counts[file.status] += 1
+  const known = files.every((file) => file.added >= 0 && file.removed >= 0)
+  return {
+    files,
+    counts,
+    added: known ? files.reduce((sum, file) => sum + file.added, 0) : -1,
+    removed: known ? files.reduce((sum, file) => sum + file.removed, 0) : -1
+  }
+}
+
 export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
   const { lang } = useI18n()
   const openRewind = useStore((s) => s.openRewind)
   const sessionCwd = useStore((s) => s.session?.cwd)
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
   const cwd = turn.response?.sourceCwd || sessionCwd || undefined
-  const changes = useMemo(() => collectTurnChanges(turn.tools, cwd), [turn.tools, cwd])
+  const changes = useMemo(() => collectTurnChanges(turn.tools, cwd) ?? estimatedChanges(turn, cwd), [turn, cwd])
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
   const checkpoints = useStore((s) => s.checkpoints)
   const owned = useMemo(
@@ -78,15 +99,21 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const text = changesText(lang)
   const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
-  const groups = groupChangesByDir(changes.files, cwd)
+  const single = changes.files.length === 1 ? changes.files[0] : null
+  const groups = single ? [] : groupChangesByDir(changes.files, cwd)
   const openByDefault = groups.length <= OPEN_GROUPS_UP_TO
+  const singleBase = single ? splitChangePath(single.path, cwd).base : ''
 
   return (
     <section className="v3-chg" data-testid="v3-turn-changes" aria-label={text.summary(changes.counts)}>
       <header className="v3-chg-head">
-        <div className="v3-chg-title" title={text.summary(changes.counts)}>
-          <strong>{text.files(changes.files.length)}</strong>
-          {changes.added >= 0 ? <DiffStat className="v3-chg-stats" added={changes.added} removed={changes.removed} /> : null}
+        <div className="v3-chg-title" title={single ? single.path : text.summary(changes.counts)}>
+          {single ? (
+            <span className="v3-chg-path"><FileTypeIcon name={singleBase} size={14} />{singleBase}</span>
+          ) : (
+            <strong>{text.files(changes.files.length)}</strong>
+          )}
+          {changes.added >= 0 && changes.added + changes.removed > 0 ? <DiffStat className="v3-chg-stats" added={changes.added} removed={changes.removed} /> : null}
         </div>
         <div className="v3-chg-actions">
           {checkpoint && prompt ? (
@@ -100,11 +127,13 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
           </Button>
         </div>
       </header>
-      <ul className="v3-chg-list">
-        {groups.map((group) => group.dir
-          ? <ChangeGroup key={group.dir} group={group} expanded={openDirs[group.dir] ?? openByDefault} onExpandedChange={(open) => setOpenDirs((prev) => ({ ...prev, [group.dir]: open }))} />
-          : group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />))}
-      </ul>
+      {groups.length ? (
+        <ul className="v3-chg-list">
+          {groups.map((group) => group.dir
+            ? <ChangeGroup key={group.dir} group={group} expanded={openDirs[group.dir] ?? openByDefault} onExpandedChange={(open) => setOpenDirs((prev) => ({ ...prev, [group.dir]: open }))} />
+            : group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />))}
+        </ul>
+      ) : null}
     </section>
   )
 }

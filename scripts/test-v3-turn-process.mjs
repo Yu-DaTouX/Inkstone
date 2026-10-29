@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processPreview, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
+const { splitTurnProcess, processLead, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -257,14 +257,16 @@ group('回合结束后进度叙述收进过程：最终答复始终露出')
   ok(live.earlierReplies.map((s) => s.id).join() === 'f1,f2', '运行中（不折叠）：工具之后的叙述照常露出', live.earlierReplies.map((s) => s.id))
   const folded = splitTurnProcess(segs, { foldReplies: true })
   ok(folded.earlierReplies.length === 0, '结束后：工具之后的叙述不再露出', folded.earlierReplies)
-  ok(folded.leadReplies.map((s) => s.id).join() === 'f0', '第一次工具调用之前的叙述仍露出', folded.leadReplies.map((s) => s.id))
+  ok(folded.leadReplies.length === 0, '第一次工具调用之前的计划说明也收进过程', folded.leadReplies.map((s) => s.id))
   ok(folded.reply?.response?.id === 'final', '最终答复始终露出', folded.reply?.response?.id)
-  ok(folded.process.map((s) => s.id).join() === 'f1,f1:narration,f2,f2:narration,f3', '叙述与工具按时间交错排在过程里', folded.process.map((s) => s.id))
-  ok(folded.process[1].commentary[0]?.id === 'n1' && folded.process[0].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 2))
-  ok(processPreview(folded.process) === '还有一处残留。', '摘要预览取最后一句进度叙述', processPreview(folded.process))
+  ok(folded.process.map((s) => s.id).join() === 'f0:narration,f1,f1:narration,f2,f2:narration,f3', '计划说明排在过程最前，叙述与工具按时间交错', folded.process.map((s) => s.id))
+  ok(folded.process[2].commentary[0]?.id === 'n1' && folded.process[1].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 3))
+  ok(processLead(folded.process) === '我先确认仓库地址。', '悬停提示取开头计划说明的第一句', processLead(folded.process))
+  const replyFirst = splitTurnProcess([seg('q0', { response: text('q-lead', '先回答。', false) }), seg('q1', { tools: [tool('qt', 'bash')] })], { foldReplies: true })
+  ok(replyFirst.leadReplies.length === 0 && replyFirst.reply?.response?.id === 'q-lead', '答复先于工具时答复不被收起', replyFirst)
+  const noTools = splitTurnProcess([seg('m0', { response: text('m-lead', '说明', false) }), seg('m1', { response: text('m-final', '结论', false) })], { foldReplies: true })
+  ok(noTools.leadReplies.map((s) => s.id).join() === 'm0' && noTools.process.length === 0, '没有工具的回合：前面的正文照常露出', noTools)
   ok(processSummary(folded.process).actions === 3, '折叠不改变操作计数', processSummary(folded.process))
-  const long = processPreview([seg('l0', { commentary: [text('l', '第二套扫描器 Gitleaks 的 8 条命中也已逐项核对，均为扩展公钥、界面存储键名或测试数据，尚未发现真正需要撤下的凭据或个人资料文件内容')] })])
-  ok(long === '第二套扫描器 Gitleaks 的 8 条命中也已逐项核对，均为扩展公钥、界面存储键名或测试数据\u2026', '过长的预览在分句处截断', long)
 }
 
 group('过程摘要：按工具类型归类并带改动行数')

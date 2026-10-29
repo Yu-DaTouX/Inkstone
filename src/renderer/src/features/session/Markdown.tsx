@@ -233,8 +233,6 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   }
 
   const label = textOf(children).trim()
-  const fileBase = target.kind === 'file' && !/[\\/]$/.test(target.path) ? target.path.split(/[\\/]/).filter(Boolean).pop() ?? '' : ''
-  const showBase = !!fileBase && !!label && !label.toLowerCase().includes(fileBase.toLowerCase())
   const title =
     target.kind === 'file'
       ? (() => {
@@ -262,7 +260,6 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
     >
       {target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
       {children}
-      {showBase ? <span className="v3-md-link-file">{fileBase}</span> : null}
     </a>
   )
 }
@@ -454,8 +451,22 @@ function MarkdownPre({ node, children }: { node?: HastNode; children?: ReactNode
   return <CodeBlock lang={lang} source={source}>{children}</CodeBlock>
 }
 
+function isLeadParagraph(node?: HastNode): boolean {
+  const kids = (node?.children ?? []).filter((child) => !(child.type === 'text' && !(child.value ?? '').trim()))
+  if (kids.length !== 1 || kids[0].type !== 'element' || kids[0].tagName !== 'strong') return false
+  const label = hastText(kids[0]).trim()
+  return label.length > 0 && label.length <= LEAD_MAX_CHARS && !/[\u3002\uff01\uff1f.!?]$/.test(label)
+}
+
+const LEAD_MAX_CHARS = 32
+
+function MarkdownParagraph({ node, children }: { node?: HastNode; children?: ReactNode }): JSX.Element {
+  return <p data-lead={isLeadParagraph(node) ? '' : undefined}>{children}</p>
+}
+
 const MD_COMPONENTS: Options['components'] = {
   a: LinkAnchor,
+  p: MarkdownParagraph,
   img: MarkdownImage,
   code: InlineCodeLink,
   pre: MarkdownPre,

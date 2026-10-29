@@ -33,7 +33,6 @@ import { CompactCommandEcho, CompactionMarker } from './CompactionMarker'
 import { BranchSummary } from './BranchSummary'
 import { SubagentLine } from './SubagentLine'
 import type { TurnSubagentScope } from '../../state/subagent-view'
-import { TurnChanges } from './TurnChanges'
 import { WebSearchTurnProvider } from './web-search/citations'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
@@ -43,7 +42,7 @@ import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 import { stripImageNotice } from './effective-messages'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
-import { DecisionBlock, TurnFiles } from './TurnOutcome'
+import { DecisionBlock, TurnResult } from './TurnOutcome'
 import { splitDecision } from './turn-outcome'
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false, answer }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean; answer?: string | null }): JSX.Element | null {
@@ -127,6 +126,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
           {displayText ? (
             <IconButton
               className="v3-msg-btn"
+              size="sm"
               aria-label={copyState === 'copied' ? tt('msgCopied') : copyState === 'failed' ? tt('msgCopyFailed') : tt('msgCopy')}
               data-testid="v3-msg-copy"
               onPress={() => void navigator.clipboard.writeText(displayText).then(() => setCopyState('copied'), () => setCopyState('failed'))}
@@ -135,17 +135,17 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
             </IconButton>
           ) : null}
           {!readOnly && displayText ? (
-            <IconButton className="v3-msg-btn" aria-label={tt('msgEdit')} data-testid="v3-msg-edit" onPress={() => insertIntoComposer(displayText)}>
+            <IconButton className="v3-msg-btn" size="sm" aria-label={tt('msgEdit')} data-testid="v3-msg-edit" onPress={() => insertIntoComposer(displayText)}>
               <Icon name="edit" size={14} />
             </IconButton>
           ) : null}
           {checkpoint ? (
-            <IconButton className="v3-msg-btn" aria-label={t('chat.rewind')} onPress={() => openRewind(checkpoint.id, msg.text)} data-testid="v3-msg-rewind">
+            <IconButton className="v3-msg-btn" size="sm" aria-label={t('chat.rewind')} onPress={() => openRewind(checkpoint.id, msg.text)} data-testid="v3-msg-rewind">
               <Icon name="back" size={14} />
             </IconButton>
           ) : null}
           {!readOnly && msg.entryId ? (
-            <IconButton className="v3-msg-btn" aria-label={t('chat.fork')} data-testid="v3-msg-fork" onPress={() => void forkAt(msg.entryId!)}>
+            <IconButton className="v3-msg-btn" size="sm" aria-label={t('chat.fork')} data-testid="v3-msg-fork" onPress={() => void forkAt(msg.entryId!)}>
               <Icon name="branch" size={14} />
             </IconButton>
           ) : null}
@@ -245,7 +245,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside, foldReplies: !streaming }) : null
   const processSegs = split?.process ?? []
-  const planned = !streaming && processSegs.length > 0
   const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
@@ -273,7 +272,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {split ? (
             <>
               {split.leadReplies.map((segment) => (
-                <div key={segment.id} className="v3-seg" data-testid="v3-seg" data-role={planned ? 'plan' : undefined}>
+                <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
                   </div>
@@ -369,8 +368,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming ? <LiveRunNotice /> : null}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-          {!streaming && turn.tools.length ? <TurnFiles text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
-          {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
+          {!streaming ? <TurnResult turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} tail={tail ?? true} modelShift={modelShift} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
@@ -442,17 +440,17 @@ function TurnMeta({ turn, readOnly, tail, modelShift }: { turn: AssistantTurn; r
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
   if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
   if (!reply && !tail && !stopLabel) return null
-  const modelPinned = tail || modelShift
-  const pinned = modelPinned || !!stopLabel
+  const pinned = tail || modelShift || !!stopLabel
+  const elapsedTip = elapsed ? `${elapsed} \u00b7 ${turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}` : undefined
   return (
-    <div className="v3-msg-meta" data-testid="v3-turn-meta" data-reveal={pinned ? 'parts' : 'hover'}>
-      {modelDisplay ? <span className="v3-act-model" title={modelDisplay.identity} data-reveal={modelPinned ? undefined : 'hover'}>{modelDisplay.label}</span> : null}
-      {turn.timestamp ? <span className="v3-msg-meta-part" data-reveal="hover"><TurnClock timestamp={turn.timestamp} /></span> : null}
+    <div className="v3-msg-meta v3-turn-meta" data-testid="v3-turn-meta" data-reveal={pinned ? undefined : 'hover'}>
+      {turn.timestamp ? <span className="v3-msg-meta-part" title={elapsedTip}><TurnClock timestamp={turn.timestamp} /></span> : null}
+      {modelDisplay ? <span className="v3-act-model" title={elapsedTip ? `${modelDisplay.identity}\n${elapsedTip}` : modelDisplay.identity}>{modelDisplay.label}</span> : null}
       {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}
-      {elapsed ? <span className="v3-act-time" data-reveal="hover" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
-          data-reveal="hover"
+          className="v3-msg-meta-copy"
+          size="sm"
           aria-label={t(copyState === 'copied' ? 'turn.copied' : copyState === 'failed' ? 'turn.copyFailed' : 'turn.copy')}
           data-testid="v3-turn-copy"
           isDisabled={turn.streaming}

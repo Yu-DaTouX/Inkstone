@@ -1,6 +1,8 @@
 import { useMemo, type JSX } from 'react'
 import { Button } from '../../ui'
-import { Card, CardHead, CardMeta, CardStatus } from '../../ui/Card'
+import { Card, CardHead, CardStatus } from '../../ui/Card'
+import type { AssistantTurn } from '../../../../shared/turns'
+import { TurnChanges } from './TurnChanges'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
@@ -8,10 +10,6 @@ import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { replyFileLinks } from './turn-outcome'
 import './turn-outcome.css'
-
-function firstLine(text: string): string {
-  return text.trim().split(/\r?\n/)[0] ?? ''
-}
 
 export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer }: {
   question: string
@@ -22,13 +20,11 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
 }): JSX.Element {
   const tt = useSessionText()
   const answered = answer !== null
-  const reply = answer ? firstLine(answer) : ''
-  const label = answered ? tt('questionAnswered') : tt('wrapUpDecide')
+  const label = answered ? tt('decisionReplied') : tt('wrapUpDecide')
   return (
     <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} aria-label={label} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
-        <CardStatus tone={answered ? 'ok' : 'accent'} icon={<Icon name={answered ? 'check' : 'help'} size={14} />}>{label}</CardStatus>
-        {reply ? <CardMeta className="v3-decision-reply" title={answer ?? undefined}>{reply}</CardMeta> : null}
+        <CardStatus tone={answered ? 'muted' : 'accent'} icon={<Icon name={answered ? 'message' : 'help'} size={14} />}>{label}</CardStatus>
       </CardHead>
       <div className="v3-para v3-decision-body">
         <Markdown text={question} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
@@ -37,7 +33,16 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   )
 }
 
-export function TurnFiles({ text, sourceCwd }: { text: string; sourceCwd?: string }): JSX.Element | null {
+export function TurnResult({ turn, readOnly, rewindOwner, text, sourceCwd }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string }): JSX.Element {
+  return (
+    <div className="v3-result" data-testid="v3-turn-result">
+      <TurnChanges turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} />
+      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} /> : null}
+    </div>
+  )
+}
+
+function TurnFiles({ text, sourceCwd }: { text: string; sourceCwd?: string }): JSX.Element | null {
   const tt = useSessionText()
   const previewFile = useStore((s) => s.previewFile)
   const sessionCwd = useStore((s) => s.session?.cwd)

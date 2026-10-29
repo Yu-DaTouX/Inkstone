@@ -191,8 +191,19 @@ export type SessionTextKey =
   | 'processAgent'
   | 'processOther1'
   | 'processOther'
+  | 'processRest'
+  | 'processKindJoin'
+  | 'processKindCommands'
+  | 'processKindReads'
+  | 'processKindSearch'
+  | 'processKindList'
+  | 'processKindWeb'
+  | 'processKindFetch'
+  | 'processKindAgent'
+  | 'processKindOther'
   | 'processViewChanges'
   | 'outcomeFiles'
+  | 'decisionReplied'
   | 'questionChosen'
   | 'questionFreeAnswer'
   | 'thinkingEmptyRecord'
@@ -419,10 +430,21 @@ const ZH: Record<SessionTextKey, string> = {
   processFetch: '打开 {n} 个网页',
   processAgent1: '派出 1 个子 Agent',
   processAgent: '派出 {n} 个子 Agent',
-  processOther1: '另 1 次操作',
-  processOther: '另 {n} 次操作',
+  processOther1: '调用 1 次工具',
+  processOther: '调用 {n} 次工具',
+  processRest: '另有{kinds}共 {n} 次',
+  processKindJoin: '、',
+  processKindCommands: '命令',
+  processKindReads: '读取',
+  processKindSearch: '搜索',
+  processKindList: '查看目录',
+  processKindWeb: '联网搜索',
+  processKindFetch: '打开网页',
+  processKindAgent: '子 Agent',
+  processKindOther: '工具调用',
   processViewChanges: '查看更改',
   outcomeFiles: '本轮文件',
+  decisionReplied: '你已在下方回复',
   questionChosen: '已选',
   questionFreeAnswer: '回答：{answer}',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
@@ -650,10 +672,21 @@ const EN: Record<SessionTextKey, string> = {
   processFetch: 'Opened {n} web pages',
   processAgent1: 'Sent out 1 subagent',
   processAgent: 'Sent out {n} subagents',
-  processOther1: '1 more action',
-  processOther: '{n} more actions',
+  processOther1: 'Called 1 tool',
+  processOther: 'Called {n} tools',
+  processRest: '{n} more: {kinds}',
+  processKindJoin: ', ',
+  processKindCommands: 'commands',
+  processKindReads: 'reads',
+  processKindSearch: 'searches',
+  processKindList: 'folder listings',
+  processKindWeb: 'web searches',
+  processKindFetch: 'page opens',
+  processKindAgent: 'subagents',
+  processKindOther: 'tool calls',
   processViewChanges: 'View changes',
   outcomeFiles: 'Files this turn',
+  decisionReplied: 'You replied below',
   questionChosen: 'Chosen',
   questionFreeAnswer: 'Answer: {answer}',
   thinkingEmptyRecord: 'This turn left no reasoning text',
