@@ -54,6 +54,7 @@
 | [ProseMirror](https://prosemirror.net)（`prosemirror-model` / `-state` / `-view` / `-commands` / `-keymap` / `-history`，输入框编辑器） | MIT |
 | highlight.js（经 `lowlight`、`rehype-highlight` 使用） | BSD-3-Clause |
 | KaTeX（含其字体，经 `remark-math`、`rehype-katex` 按需加载） | MIT |
+| rehype-raw、rehype-sanitize（文件预览中 Markdown 内嵌 HTML 的解析与净化） | MIT |
 | qrcode.react | ISC |
 | tar | BlueOak-1.0.0 |
 | Maple Mono CN（`@mogeko/maple-mono-cn`） | 见包内声明 |
