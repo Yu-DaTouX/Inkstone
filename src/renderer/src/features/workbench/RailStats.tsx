@@ -151,9 +151,6 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
   }
   return (
     <div className="wb-rail-stats" data-testid="wb-rail-stats" data-live={live ? '1' : undefined} data-breakdown={breakdownOpen ? '1' : undefined}>
-      <p className="wb-rs-note" title={model.headlineTitle ?? undefined} data-testid="wb-rail-stats-headline">
-        {model.headline}
-      </p>
       {model.facts.length || time || speed ? (
         <ul className="wb-rs-rows">
           {model.facts.map((fact) => (

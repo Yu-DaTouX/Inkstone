@@ -881,7 +881,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                             icon={<FileTypeIcon name={row.path} size={12} />}
                             trailing={
                               !binaryPaths.has(row.path) && (entry?.added !== undefined || entry?.removed !== undefined) ? (
-                                <DiffStat added={entry?.added ?? 0} removed={entry?.removed ?? 0} />
+                                <DiffStat added={entry?.added ?? 0} removed={entry?.removed ?? 0} hideZero />
                               ) : undefined
                             }
                             onClick={() => selectFile(row.path)}

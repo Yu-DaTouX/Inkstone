@@ -93,7 +93,7 @@ export function ClaudeCodeBridgeRow(): ReactElement {
             {installed === true ? t('cc.installedLabel') : t('cc.notInstalled')}
           </Badge>
         </span>
-        <p className="ms-service-hint" title={t('cc.desc')}>{t('cc.desc')}</p>
+        <p className="ms-service-hint">{t('cc.desc')}</p>
       </div>
       {stateText || envOverrides.length > 0 ? (
         <div className="ms-service-detail">

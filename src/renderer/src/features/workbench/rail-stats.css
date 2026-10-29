@@ -119,7 +119,7 @@
   .wb-rs-rows {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--s-4);
+    gap: var(--s-2);
     min-width: 0;
     margin: 0;
     padding: 0;
@@ -128,6 +128,15 @@
 
   .wb-rs-rows .wb-rs-strong {
     font-weight: var(--w-medium);
+  }
+
+  .wb-rs-rows .wb-rs-line {
+    align-items: center;
+    min-height: var(--size-btn-sm);
+  }
+
+  .wb-rs-rows .wb-rs-label {
+    font-size: var(--t-body);
   }
 
   @media (hover: hover) {

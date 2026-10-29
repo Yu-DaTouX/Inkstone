@@ -648,7 +648,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     }
   }
 
-  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; onOpenView?: () => void; tone?: RailTone; body: ReactNode }>> = {
+  const sections: Partial<Record<RailSectionId, { summary?: ReactNode; summaryWhenOpen?: boolean; onOpenView?: () => void; tone?: RailTone; body: ReactNode }>> = {
     environment: {
       summary: environmentSummary,
       body: (
@@ -691,10 +691,13 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
     stats: statsModel
       ? {
           summary: isOpen('stats') ? (
-            <RailValue value={statsModel.headline} title={statsModel.headlineTitle ?? undefined} />
+            <span data-testid="wb-rail-stats-headline">
+              <RailValue value={statsModel.headline} title={statsModel.headlineTitle ?? undefined} />
+            </span>
           ) : (
             <StatsGlance model={statsModel} text={rail} />
           ),
+          summaryWhenOpen: true,
           body: (
             <div className={agentRunning ? 'wb-ov-stats-slot' : undefined}>
               <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} />
@@ -749,9 +752,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             summary: changesSummary,
             onOpenView: () => onOpenView('changes'),
             body:
-              changesCount === 0 ? (
-                <p className="wb-ov-note">{rail.changesNone}</p>
-              ) : lineTotals && lineTotals.entries.length > 0 ? (
+              changesCount === 0 ? null : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={() => onOpenView('changes')} />
               ) : (
                 <ul className="wb-ov-items">
@@ -813,6 +814,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
               id={id}
               title={rail.sections[id]}
               summary={section.summary}
+              summaryWhenOpen={section.summaryWhenOpen}
               open={isOpen(id)}
               onOpenChange={(open) => setSectionOpen(foldKey, id, open)}
               onOpenView={section.onOpenView}

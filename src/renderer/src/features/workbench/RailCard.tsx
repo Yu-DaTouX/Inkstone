@@ -16,6 +16,7 @@ export interface RailCardProps {
   id: RailSectionId
   title: string
   summary?: ReactNode
+  summaryWhenOpen?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   onOpenView?: () => void
@@ -31,6 +32,7 @@ export function RailCard({
   id,
   title,
   summary,
+  summaryWhenOpen,
   open,
   onOpenChange,
   onOpenView,
@@ -42,6 +44,8 @@ export function RailCard({
   children
 }: RailCardProps): ReactElement {
   const headRef = useRef<HTMLDivElement>(null)
+  const hasBody = children != null
+  const showSummary = summary != null && (!open || !hasBody || summaryWhenOpen === true)
   const openMenu = (): void => {
     if (headRef.current) onHeaderMenu(headRef.current)
   }
@@ -50,7 +54,7 @@ export function RailCard({
       className="wb-tile"
       data-rail-section={id}
       data-tile={id}
-      data-folded={open ? '0' : '1'}
+      data-folded={open && hasBody ? '0' : '1'}
       data-tone={tone}
       data-dragging={dragging ? '1' : undefined}
       data-picked={grip.picked ? '1' : undefined}
@@ -73,7 +77,7 @@ export function RailCard({
         <Button variant="plain" size="sm" justify="start" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
           <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
-          {!open && summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
+          {showSummary ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
         <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
           <IconButton
@@ -95,7 +99,7 @@ export function RailCard({
           </IconButton>
         ) : null}
       </div>
-      {!open || children == null ? null : <div className="wb-tile-body">{children}</div>}
+      {open && hasBody ? <div className="wb-tile-body">{children}</div> : null}
     </section>
   )
 }

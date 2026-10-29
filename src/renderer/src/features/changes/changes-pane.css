@@ -364,6 +364,21 @@
     background: var(--bg);
   }
 
+  .changes-file:not([data-collapsed], .changes-file--fixed) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .changes-file:not([data-collapsed], .changes-file--fixed) .changes-file__head {
+    border-bottom-color: transparent;
+  }
+
+  .changes-file:not([data-collapsed], .changes-file--fixed) .changes-file__body {
+    margin: 0 var(--s-8) var(--s-8) var(--s-48);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+  }
+
   .changes-file__note {
     margin: var(--s-6) var(--s-10);
   }
@@ -374,7 +389,7 @@
     align-items: center;
     gap: var(--s-8);
     padding: var(--s-12);
-    background: var(--surface);
+    background: var(--sunken);
     border-top: var(--hair, 1px) solid var(--line2);
   }
 

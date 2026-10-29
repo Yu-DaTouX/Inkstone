@@ -4,6 +4,14 @@
     margin: 0;
   }
 
+  .settings-section > .ms-overview + .settings-group {
+    margin-top: calc(var(--s-16) * -1);
+  }
+
+  .ms-overview > .ui-setting-section__head {
+    align-items: center;
+  }
+
   .ms-safety {
     display: flex;
     align-items: baseline;
@@ -245,13 +253,7 @@
   }
 
   .ms-service-hint {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ms-service:focus-within .ms-service-hint {
-    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .ms-service-env {

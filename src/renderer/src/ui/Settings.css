@@ -5,7 +5,7 @@
 
   .ui-settings-modal {
     --settings-nav-w: 192px;
-    --settings-col: 640px;
+    --settings-col: 760px;
     --settings-pad: var(--s-32);
     position: relative;
     display: flex;
@@ -356,8 +356,20 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
-    padding: var(--s-8) var(--settings-pad) var(--s-16);
+    padding: var(--s-8) var(--settings-pad) var(--s-24);
     overflow: auto;
+  }
+
+  .ui-settings__content::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: block;
+    height: var(--s-24);
+    margin: 0 calc(-1 * var(--settings-pad)) calc(-1 * var(--s-24));
+    background: linear-gradient(to top, var(--surface), transparent);
+    pointer-events: none;
   }
 
   .ui-settings__content::before {
@@ -569,7 +581,7 @@
 
   @media (min-width: 768px) {
     .ui-settings-modal {
-      max-height: max(50rem, min(60rem, calc(100dvh - 6rem)));
+      max-height: min(60rem, calc(100dvh - 6rem));
     }
   }
 

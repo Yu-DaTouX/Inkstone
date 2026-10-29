@@ -331,7 +331,7 @@ export function ModelsSettings(): ReactElement {
             <span className="ms-service-name">{providerName(p)}</span>
             {state === 'ready' ? <Badge tone={stateTone(state)}>{stateLabel(state)}</Badge> : null}
           </span>
-          {providerHint(p) ? <p className="ms-service-hint" title={providerHint(p)}>{providerHint(p)}</p> : null}
+          {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
         </div>
         {p.envVar || fromEnv || p.envShadowed ? (
           <div className="ms-service-detail">
@@ -479,7 +479,8 @@ export function ModelsSettings(): ReactElement {
       ) : null}
 
       <SettingsGroup
-        title={text('title')}
+        label={text('title')}
+        className="ms-overview"
         description={
           <>
             <span className="settings-row__line">{t('auth.summary', { ready: readyCount, total: authProviders.length })}</span>
