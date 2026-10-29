@@ -6,11 +6,15 @@ export const TREE_WIDTH_DEFAULT = 240
 export const TREE_WIDTH_MIN = 160
 export const TREE_WIDTH_MAX = 640
 export const PREVIEW_MIN_WIDTH = 160
+export const TREE_MAX_SHARE = 0.35
 export const SPLIT_FIT_WIDTH = 400
 const KEY_STEP = 16
 
 export function clampTreeWidth(width: number, paneWidth: number): number {
-  const limit = paneWidth > 0 ? Math.max(TREE_WIDTH_MIN, Math.min(TREE_WIDTH_MAX, paneWidth - PREVIEW_MIN_WIDTH)) : TREE_WIDTH_MAX
+  const limit =
+    paneWidth > 0
+      ? Math.max(TREE_WIDTH_MIN, Math.min(TREE_WIDTH_MAX, paneWidth - PREVIEW_MIN_WIDTH, Math.floor(paneWidth * TREE_MAX_SHARE)))
+      : TREE_WIDTH_MAX
   return Math.round(Math.min(limit, Math.max(TREE_WIDTH_MIN, width)))
 }
 

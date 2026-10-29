@@ -213,6 +213,28 @@
     font-size: var(--t-footnote);
   }
 
+  .v3-preview-headrow {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+
+  .v3-preview-headrow > .v3-preview-tabbar {
+    flex: 0 1 auto;
+    max-width: 70%;
+  }
+
+  .v3-preview-tab[data-preview] .ui-ptab__text {
+    padding-inline-end: 0.2em;
+  }
+
+  .v3-preview-headrow > .v3-files-crumbs {
+    flex: 1 1 0;
+    padding: 0;
+  }
+
   .v3-preview-pathname {
     flex: 1;
     min-width: 0;

@@ -2,6 +2,7 @@ import type { ChangeItem } from './types'
 
 export const FILE_LIST_WIDTH = { DEFAULT: 240, MIN: 160, MAX: 640 } as const
 export const FILE_LIST_MIN_PANE = FILE_LIST_WIDTH.DEFAULT + 160
+export const COMPACT_PANE_WIDTH = 900
 export const LARGE_DIFF_LINES = 5000
 export const LARGE_DIFF_FILES = 300
 
@@ -17,6 +18,10 @@ export function fileListLimit(paneWidth: number): number {
 
 export function canFitFileList(paneWidth: number): boolean {
   return !(paneWidth > 0) || paneWidth >= FILE_LIST_MIN_PANE
+}
+
+export function isCompactPane(paneWidth: number): boolean {
+  return paneWidth > 0 && paneWidth < COMPACT_PANE_WIDTH
 }
 
 export function isLargeDiff(items: readonly { added?: number; removed?: number }[]): boolean {

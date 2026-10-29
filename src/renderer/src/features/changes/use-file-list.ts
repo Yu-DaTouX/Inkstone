@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { FILE_LIST_WIDTH, canFitFileList, clampFileListWidth, fileListLimit } from './file-list'
+import { FILE_LIST_WIDTH, canFitFileList, clampFileListWidth, fileListLimit, isCompactPane } from './file-list'
 
 const WIDTH_KEY = 'inkstone.changes.fileListWidth'
 const SHOWN_KEY = 'inkstone.changes.fileListShown'
+const COMPACT_SHOWN_KEY = 'inkstone.changes.fileListShownCompact'
 const KEY_STEP = 24
 const KEY_STEP_LARGE = 120
 
@@ -34,6 +35,7 @@ export interface ChangesFileList {
   limit: number
   shown: boolean
   canFit: boolean
+  compact: boolean
   dragging: boolean
   show: () => void
   hide: () => void
@@ -55,6 +57,7 @@ export function useChangesFileList(): ChangesFileList {
   const [dragWidth, setDragWidth] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [shownPref, setShownPref] = useState(() => readStored(SHOWN_KEY) !== '0')
+  const [compactShownPref, setCompactShownPref] = useState(() => readStored(COMPACT_SHOWN_KEY) === '1')
   const dragRef = useRef<DragSession | null>(null)
   const latestRef = useRef(0)
   const stopRef = useRef<(() => void) | null>(null)
@@ -77,12 +80,17 @@ export function useChangesFileList(): ChangesFileList {
   const canFit = canFitFileList(paneWidth)
   const limit = paneWidth > 0 ? fileListLimit(paneWidth) : FILE_LIST_WIDTH.MAX
   const width = clampFileListWidth(dragWidth ?? storedWidth, limit)
-  const shown = shownPref && canFit
+  const compact = isCompactPane(paneWidth)
+  const shown = (compact ? compactShownPref : shownPref) && canFit
 
-  const setShown = useCallback((next: boolean): void => {
-    setShownPref(next)
-    writeStored(SHOWN_KEY, next ? '1' : '0')
-  }, [])
+  const setShown = useCallback(
+    (next: boolean): void => {
+      if (compact) setCompactShownPref(next)
+      else setShownPref(next)
+      writeStored(compact ? COMPACT_SHOWN_KEY : SHOWN_KEY, next ? '1' : '0')
+    },
+    [compact]
+  )
 
   const commitWidth = useCallback(
     (value: number): void => {
@@ -162,6 +170,7 @@ export function useChangesFileList(): ChangesFileList {
     limit,
     shown,
     canFit,
+    compact,
     dragging,
     show: () => setShown(true),
     hide: () => setShown(false),

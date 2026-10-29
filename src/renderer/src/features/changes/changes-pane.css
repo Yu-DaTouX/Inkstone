@@ -242,12 +242,71 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .changes-file__path {
+  .changes-path {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-6);
+    min-width: 0;
     font-family: var(--font-ui);
   }
 
-  .changes-file__label {
+  .changes-path__name {
+    flex: 0 1 auto;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+
+  .changes-path__dir {
+    flex: 0 10000 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg3);
+    font-weight: var(--w-regular);
+  }
+
+  .changes-status {
+    flex: none;
+    width: 1.5ch;
+    color: var(--fg3);
+    font-family: var(--font-mono);
+    font-size: var(--t-footnote);
+    font-weight: var(--w-semibold);
+    text-align: center;
+  }
+
+  .changes-status:is([data-status='added'], [data-status='untracked']) {
+    color: var(--add);
+  }
+
+  .changes-status[data-status='deleted'] {
+    color: var(--del);
+  }
+
+  .changes-status:is([data-status='modified'], [data-status='renamed']) {
+    color: var(--accent);
+  }
+
+  .changes-status[data-status='unmerged'] {
+    color: var(--fail);
+  }
+
+  .changes-binary__list {
+    margin: 0;
+    padding: var(--s-4) var(--s-8) var(--s-6) var(--s-24);
+    list-style: none;
+  }
+
+  .changes-binary__row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    min-height: var(--d-row);
+    font-size: var(--t-footnote);
   }
 
   .changes-file__body {

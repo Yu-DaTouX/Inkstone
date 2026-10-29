@@ -32,13 +32,15 @@ import {
   commitScope,
   compareLabel,
   isValidSha,
+  resolvePatchSource,
   scopeKey,
   scopeToRequest,
   type ChangesScopeKind,
   type ChangesScopeState
 } from './changes-scope'
 import { ChangesFileDiff } from './ChangesFileDiff'
-import { buildFileTree, createLimitedQueue, flattenFileTree, isLargeDiff, sortChangeItems } from './file-list'
+import { ChangesBinaryGroup } from './ChangesBinaryGroup'
+import { buildFileTree, createLimitedQueue, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
 import { isTestFilePath, readHideTestFiles, writeHideTestFiles } from './test-files'
 import {
@@ -216,6 +218,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const [shaInvalid, setShaInvalid] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set())
+  const [binaryOpen, setBinaryOpen] = useState(false)
   const [activePath, setActivePath] = useState<string | null>(null)
   const [reveal, setReveal] = useState<{ path: string; seq: number } | null>(null)
   const [layout, setLayout] = useState<DiffViewMode>(readLayout)
@@ -231,6 +234,9 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const lastOwnerRef = useRef(ownerId)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const revealAtRef = useRef(0)
+  const paneWidthRef = useRef(fileList.paneWidth)
+  paneWidthRef.current = fileList.paneWidth
+  const unsizedInitRef = useRef(false)
 
   const scope = scopeState.ownerId === ownerId ? scopeState.scope : WORKING_SCOPE
   const initKey = `${ownerId}|${scopeKey(scope)}|${generation}`
@@ -301,8 +307,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
           setMeta(listRes.meta)
           if (initRef.current !== initKey) {
             initRef.current = initKey
-            setExpanded(isLargeDiff(listRes.items) ? new Set() : new Set(listRes.items.map((item) => item.path)))
+            const width = paneWidthRef.current
+            unsizedInitRef.current = width <= 0
+            setExpanded(isLargeDiff(listRes.items) || isCompactPane(width) ? new Set() : new Set(listRes.items.map((item) => item.path)))
             setCollapsedDirs(new Set())
+            setBinaryOpen(false)
             setActivePath(null)
           } else {
             setExpanded((prev) => new Set(listRes.items.filter((item) => prev.has(item.path)).map((item) => item.path)))
@@ -349,6 +358,17 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   )
 
   const large = useMemo(() => isLargeDiff(shownItems), [shownItems])
+  useEffect(() => {
+    if (!unsizedInitRef.current || fileList.paneWidth <= 0) return
+    unsizedInitRef.current = false
+    if (fileList.compact) setExpanded(new Set())
+  }, [fileList.paneWidth, fileList.compact])
+  const binaryPaths = useMemo(
+    () => new Set(shownItems.filter((item) => resolvePatchSource(item.path, patches[item.path]).kind === 'binary').map((item) => item.path)),
+    [shownItems, patches]
+  )
+  const diffItems = useMemo(() => shownItems.filter((item) => !binaryPaths.has(item.path)), [shownItems, binaryPaths])
+  const binaryItems = useMemo(() => shownItems.filter((item) => binaryPaths.has(item.path)), [shownItems, binaryPaths])
   const narrow = fileList.paneWidth > 0 && fileList.paneWidth < 560
   const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
 
@@ -361,6 +381,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const itemByPath = useMemo(() => new Map(items.map((item) => [item.path, item])), [items])
   const selectFile = useCallback((path: string): void => {
     setActivePath(path)
+    if (binaryPaths.has(path)) setBinaryOpen(true)
     setExpanded((prev) => {
       if (prev.has(path)) return prev
       const next = new Set(prev)
@@ -368,7 +389,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
       return next
     })
     setReveal((prev) => ({ path, seq: (prev?.seq ?? 0) + 1 }))
-  }, [])
+  }, [binaryPaths])
 
   const toggleFile = useCallback((path: string): void => {
     setExpanded((prev) => {
@@ -674,7 +695,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const elsewhere = repo?.changedCount ?? 0
 
   return (
-    <section className={cx('changes-pane', className)} aria-label={text.title}>
+    <section className={cx('changes-pane', className)} aria-label={text.title} ref={fileList.hostRef} data-compact={fileList.compact ? '' : undefined}>
       {head}
       {!owner.active ? hint(text.inactiveHint) : null}
       {repo ? (
@@ -773,7 +794,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               <EmptyState size="sm" title={text.scopeEmpty} className="changes-pane__empty" />
             ) : null
           ) : (
-            <div className="changes-pane__layout" ref={fileList.hostRef} data-dragging={fileList.dragging || undefined}>
+            <div className="changes-pane__layout" data-dragging={fileList.dragging || undefined}>
               {fileList.shown ? (
                 <div className="changes-pane__files" style={{ width: fileList.width }}>
                   <div className="changes-pane__files-head">
@@ -832,7 +853,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                             muted={seen}
                             icon={<FileTypeIcon name={row.path} size={12} />}
                             trailing={
-                              entry?.added !== undefined || entry?.removed !== undefined ? (
+                              !binaryPaths.has(row.path) && (entry?.added !== undefined || entry?.removed !== undefined) ? (
                                 <DiffStat added={entry?.added ?? 0} removed={entry?.removed ?? 0} />
                               ) : undefined
                             }
@@ -884,7 +905,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               ) : null}
               <div className="changes-pane__main" ref={scrollerRef} tabIndex={-1}>
                 {large ? hint(text.largeDiffBanner, undefined, 'changes-pane__banner') : null}
-                {shownItems.map((item) => (
+                {diffItems.map((item) => (
                   <ChangesFileDiff
                     key={item.path}
                     item={item}
@@ -903,6 +924,15 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                     annotate={annotate}
                   />
                 ))}
+                {binaryItems.length > 0 ? (
+                  <ChangesBinaryGroup
+                    items={binaryItems}
+                    expanded={binaryOpen}
+                    onToggle={() => setBinaryOpen((open) => !open)}
+                    lang={resolvedLang}
+                    text={text}
+                  />
+                ) : null}
               </div>
             </div>
           )}

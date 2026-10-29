@@ -1,21 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { GitChangePatch, GitChangesScope } from '../../../../shared/git'
-import {
-  Badge,
-  Button,
-  Collapsible,
-  CollapsibleHeader,
-  CollapsiblePanel,
-  DiffStat,
-  MiddleTruncate,
-  Notice,
-  Spinner,
-  cx
-} from '../../ui'
-import { FileTypeIcon } from '../../ui/FileTypeIcon'
-import { porcelainFileStatus } from '../../lib/file-status'
+import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat, Notice, Spinner, cx } from '../../ui'
 import { DiffView, type DiffContents, type DiffViewMode } from '../diff'
 import { ImageCompare } from './ImageCompare'
+import { ChangePathLabel, ChangeStatusMark } from './ChangeEntryLabel'
 import { resolvePatchSource } from './changes-scope'
 import type { ChangeItem, ChangesAnnotate, ChangesImagePair, ChangesPatch, PatchLoader } from './types'
 import type { ChangesText } from './text'
@@ -112,13 +100,7 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
     return value.contents
   }, [loader, schedule, cwd, item.path, request])
 
-  const status = porcelainFileStatus(item.status)
-  const labels: string[] = []
-  if (status === 'untracked' || status === 'added') labels.push(text.fileNew)
-  else if (status === 'deleted') labels.push(text.fileDeleted)
-  else if (status === 'renamed' && item.origPath) labels.push(text.fileRenamed(item.origPath))
-  if (state.kind === 'binary') labels.push(text.fileBinary)
-  const counts = item.added !== undefined || item.removed !== undefined
+  const counts = state.kind !== 'binary' && (item.added !== undefined || item.removed !== undefined)
 
   const note = (message: string): ReactElement => (
     <Notice variant="hint" className="changes-file__note">
@@ -195,21 +177,9 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
         <CollapsibleHeader
           className="changes-file__head"
           tone="emphasized"
-          icon={<FileTypeIcon name={item.path} size={12} />}
-          accessory={
-            labels.length > 0 || counts ? (
-              <>
-                {labels.map((label) => (
-                  <Badge key={label} className="changes-file__label">
-                    {label}
-                  </Badge>
-                ))}
-                {counts ? <DiffStat added={item.added ?? 0} removed={item.removed ?? 0} /> : null}
-              </>
-            ) : undefined
-          }
+          accessory={counts ? <DiffStat added={item.added ?? 0} removed={item.removed ?? 0} /> : undefined}
         >
-          <MiddleTruncate value={item.path} className="changes-file__path" />
+          <ChangePathLabel path={item.path} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
         </CollapsibleHeader>
         <CollapsiblePanel className="changes-file__body">{open ? body() : null}</CollapsiblePanel>
       </Collapsible>

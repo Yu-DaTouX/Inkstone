@@ -107,7 +107,9 @@ assert.equal(layout({ paneWidth: 380, hasFile: false }).showTree, true, '窄屏�
 assert.equal(split.filesSplitLayout({ hasPreview: false, hasFile: false, paneWidth: 900, treeShown: false, narrowTree: false }).showTree, true, '没有预览组件时只显示树')
 assert.equal(split.clampTreeWidth(100, 900), 160, '树宽下限 160')
 assert.equal(split.clampTreeWidth(900, 2000), 640, '树宽上限 640')
-assert.equal(split.clampTreeWidth(500, 600), 440, '不超过面板宽 - 160')
+assert.equal(split.clampTreeWidth(500, 600), 210, '树不超过面板 35%，预览至少占 65%')
+assert.equal(split.clampTreeWidth(340, 780), 273, '780 宽面板里旧的 340 树宽收到 35%')
+assert.equal(split.clampTreeWidth(240, 780), 240, '默认 240 在 780 宽面板内保持')
 assert.equal(split.readTreeWidth('abc'), 240, '默认 240')
 
 const base = { ok: true, path: 'a', abs: '/p/a', name: 'a', size: 1, kind: 'text', text: 'x' }

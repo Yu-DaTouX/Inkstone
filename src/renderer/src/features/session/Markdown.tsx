@@ -1,6 +1,8 @@
 import { createContext, useContext, memo, startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { SquareTerminal, WrapText } from 'lucide-react'
 import { Button, IconButton } from '../../ui'
 import { useI18n, useT } from '../../i18n'
@@ -34,18 +36,21 @@ type PluginList = NonNullable<Options['rehypePlugins']>
 const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
 const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
 const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
+const MD_HTML_SCHEMA = { ...defaultSchema, tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'source') }
+const MD_REHYPE_HTML: PluginList = [rehypeRaw, [rehypeSanitize, MD_HTML_SCHEMA]]
 const NO_FADE: readonly FadeSpan[] = []
 
 const pluginCache = new Map<string, { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList }>()
 
-function pluginsFor(highlight: boolean, math: MathPlugins | null): { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList } {
-  const key = `${highlight ? 1 : 0}${math ? 1 : 0}`
+function pluginsFor(highlight: boolean, math: MathPlugins | null, html = false): { remark: NonNullable<Options['remarkPlugins']>; rehype: PluginList } {
+  const key = `${highlight ? 1 : 0}${math ? 1 : 0}${html ? 1 : 0}`
   let hit = pluginCache.get(key)
   if (!hit) {
+    const lead: PluginList = html ? MD_REHYPE_HTML : []
     const base = highlight ? MD_REHYPE : MD_REHYPE_PLAIN
     hit = math
-      ? { remark: [...MD_REMARK, ...math.remark], rehype: [...math.rehype, ...base] }
-      : { remark: MD_REMARK, rehype: base }
+      ? { remark: [...MD_REMARK, ...math.remark], rehype: [...lead, ...math.rehype, ...base] }
+      : { remark: MD_REMARK, rehype: html ? [...lead, ...base] : base }
     pluginCache.set(key, hit)
   }
   return hit
@@ -90,6 +95,7 @@ const NOT_A_LINK: LinkTarget = { kind: 'invalid', reason: 'empty' }
 const MessageSourceCwd = createContext<string | undefined>(undefined)
 const MarkdownLive = createContext(false)
 const MarkdownOffset = createContext(0)
+const MarkdownHtml = createContext(false)
 
 type HastNode = { position?: { start?: { offset?: number } }; type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
 
@@ -412,7 +418,7 @@ const FENCE_LINE = /^\s*(```|~~~)/m
 const CROSS_BLOCK_REFERENCE = /^ {0,3}\[[^\]]+\]:\s*\S/m
 
 const LiveMarkdownBlock = memo(function LiveMarkdownBlock({ text, offset, highlight, math, fade }: { text: string; offset: number; highlight: boolean; math: MathPlugins | null; fade: readonly FadeSpan[] }): JSX.Element {
-  const plugins = pluginsFor(highlight, math)
+  const plugins = pluginsFor(highlight, math, useContext(MarkdownHtml))
   const rehype = fade.length ? [...plugins.rehype, [rehypeRevealFade, { spans: fade }]] as PluginList : plugins.rehype
   const live = useContext(MarkdownLive)
   return (
@@ -489,13 +495,15 @@ export const Markdown = memo(function Markdown({
   sourceCwd,
   live = false,
   sessionId,
-  messageId
+  messageId,
+  allowHtml = false
 }: {
   text: string
   sourceCwd?: string
   live?: boolean
   sessionId?: string | null
   messageId?: string | null
+  allowHtml?: boolean
 }): JSX.Element {
   const sessionCwd = useStore((s) => sessionId
     ? s.sessionRuntimes[sessionId]?.session?.cwd ?? s.sessions.find((item) => item.id === sessionId)?.cwd ?? (s.session?.sessionId === sessionId ? s.session.cwd : undefined)
@@ -521,7 +529,7 @@ export const Markdown = memo(function Markdown({
   }, [settling])
 
   const mathPending = math.needed && !math.plugins
-  const cacheKey = `${lang}|${math.plugins ? `math:${renderedText}` : renderedText}`
+  const cacheKey = `${lang}|${allowHtml ? 'html:' : ''}${math.plugins ? `math:${renderedText}` : renderedText}`
   const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     return (
@@ -539,7 +547,9 @@ export const Markdown = memo(function Markdown({
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value>
-            <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={live} />
+            <MarkdownHtml.Provider value={allowHtml}>
+              <LiveMarkdown text={renderedText} math={math.plugins} fade={fade} throttle={live} />
+            </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
       </WidgetIdentityContext.Provider>
@@ -551,13 +561,15 @@ export const Markdown = memo(function Markdown({
       <WidgetIdentityContext.Provider value={identity}>
         <MessageSourceCwd.Provider value={sourceCwd}>
           <MarkdownLive.Provider value={false}>
-            <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} math={math.plugins} />
+            <MarkdownHtml.Provider value={allowHtml}>
+              <LiveMarkdown text={renderedText} highlight={highlightReady && !unclosed} math={math.plugins} />
+            </MarkdownHtml.Provider>
           </MarkdownLive.Provider>
         </MessageSourceCwd.Provider>
       </WidgetIdentityContext.Provider>
     )
   }
-  const plugins = pluginsFor(!unclosed, math.plugins)
+  const plugins = pluginsFor(!unclosed, math.plugins, allowHtml)
   const element = (
     <div className="v3-prose">
       <ReactMarkdown remarkPlugins={plugins.remark} rehypePlugins={plugins.rehype} components={MD_COMPONENTS} remarkRehypeOptions={footnoteOptions}>

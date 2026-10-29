@@ -8,7 +8,7 @@ import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
-import { PaneTitle, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
+import { PaneTitle, PaneTools, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editable-kind'
 import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/preview-bindings'
 import type { PreviewPaneProps } from '../workbench/types'
@@ -504,6 +504,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
 
   usePaneMenu('preview-view', activeAbs ? viewSettingsMenu(viewSettings, setViewSetting, text) : [])
 
+  const mergedHead = !!chrome && !!tabStrip
   const crumbPath = useMemo(() => {
     if (!activeAbs || !crumbs.length) return null
     return breadcrumbParent(crumbs.join('/')) ?? ''
@@ -516,12 +517,12 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         path={crumbPath}
         text={filesText(lang)}
         label={text.crumbsLabel}
-        tail={name}
+        tail={mergedHead ? undefined : name}
         className="v3-preview-breadcrumbs"
         onNavigate={(dir) => onRevealInTree(toAbsolutePath(owner.cwd, dir))}
       />
     ) : null
-  const pathRow = chrome && activeAbs ? (
+  const pathRow = mergedHead ? null : chrome && activeAbs ? (
     <div className="v3-preview-pathbar" data-testid="v3-preview-pathbar">
       {crumbNav ?? (
         <span className="v3-preview-pathname" title={activeAbs}>
@@ -535,9 +536,19 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
   return (
     <section className="v3-preview" data-testid="v3-preview" aria-label={text.title}>
       {chrome ? (
-        <>
+        mergedHead ? (
+          <>
+            <PaneTitle>
+              <span className="v3-preview-headrow" data-testid="v3-preview-headrow">
+                {tabStrip}
+                {activeAbs ? crumbNav : null}
+              </span>
+            </PaneTitle>
+            {activeAbs ? <PaneTools>{toolButtons}</PaneTools> : null}
+          </>
+        ) : (
           <PaneTitle>{tabStrip}</PaneTitle>
-        </>
+        )
       ) : (
         <>
           {previewTabs && previewTabs.tabs.length > 1 ? (
@@ -992,7 +1003,7 @@ function MarkdownView({
   return (
     <div className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
       <div className="v3-preview-md">
-        <Markdown text={view.text} sourceCwd={parentDir(view.abs)} />
+        <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
       </div>
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>

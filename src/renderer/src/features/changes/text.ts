@@ -54,10 +54,8 @@ export interface ChangesText {
   splitNeedsWidth: string
   largeDiffBanner: string
   retry: string
-  fileNew: string
-  fileDeleted: string
   fileRenamed: (path: string) => string
-  fileBinary: string
+  binaryGroup: (count: number) => string
   commitMessage: string
   commitPlaceholder: string
   stageAll: string
@@ -126,10 +124,8 @@ export function changesText(lang: string): ChangesText {
       splitNeedsWidth: 'Needs a wider pane',
       largeDiffBanner: 'Files are collapsed for large diffs. Select a file to expand it.',
       retry: 'Retry',
-      fileNew: 'New file',
-      fileDeleted: 'Deleted file',
       fileRenamed: (path) => `Renamed from ${path}`,
-      fileBinary: 'Binary file',
+      binaryGroup: (count) => `${count} binary ${count === 1 ? 'file' : 'files'}`,
       commitMessage: 'Commit message',
       commitPlaceholder: 'Describe this change',
       stageAll: 'Stage all',
@@ -196,10 +192,8 @@ export function changesText(lang: string): ChangesText {
     splitNeedsWidth: '面板更宽才能并排',
     largeDiffBanner: '改动较大，文件已全部折叠。选择文件展开查看。',
     retry: '重试',
-    fileNew: '新增文件',
-    fileDeleted: '已删除',
     fileRenamed: (path) => `重命名自 ${path}`,
-    fileBinary: '二进制文件',
+    binaryGroup: (count) => `${count} 个二进制文件`,
     commitMessage: '提交说明',
     commitPlaceholder: '描述这次改动',
     stageAll: '全部暂存',
