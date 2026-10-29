@@ -3,7 +3,7 @@ import { ArrowLeft, Copy, EllipsisVertical, FileDiff, Folder, Minus, PanelLeft, 
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
-import { IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover } from '../ui'
+import { IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover, Separator } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { workbenchText } from '../features/workbench/workbench-text'
@@ -168,11 +168,10 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 className="v3-head-pane"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
-                data-active="0"
+                data-active={sessionBarOpen && sessionBarHidden ? 'partial' : undefined}
                 data-setting={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
                 <SquareMenu size={16} />
-                {sessionBarOpen ? <span className="v3-head-pane-open" aria-hidden /> : null}
               </IconButton>
               {narrow
                 ? null
@@ -182,7 +181,6 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                       tooltip={paneLabel(tab)}
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
-                      data-active="0"
                       pressedTone="neutral"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
@@ -191,15 +189,15 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                     >
                       <Icon size={16} />
                       {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
-                      {openPanes.has(tab) ? <span className="v3-head-pane-open" aria-hidden /> : null}
                     </IconButton>
                   ))}
             </div>
             )}
+            {freshHome ? null : <Separator orientation="vertical" className="v3-head-sep" />}
           </>
         ) : null}
         <MenuTrigger>
-          <IconButton aria-label={text.more} tooltip={text.more} className="v3-head-pane" data-testid="wb-more-tools">
+          <IconButton aria-label={text.more} tooltip={text.more} className="v3-head-pane v3-head-more" data-testid="wb-more-tools">
             <EllipsisVertical size={16} />
             {menuDot ? <span className="v3-head-pane-dot" aria-hidden /> : null}
           </IconButton>
@@ -229,6 +227,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             </Menu>
           </Popover>
         </MenuTrigger>
+        <Separator orientation="vertical" className="v3-head-sep v3-head-sep--win" />
         <div className="v3-win">
           <button type="button" className="v3-winbtn v3-winbtn-min" aria-label={t('tb.minimize')} title={t('tb.minimize')} onClick={() => win.minimize()} data-testid="v3-min">
             <Minus size={14} />

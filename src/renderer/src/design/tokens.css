@@ -2,17 +2,17 @@
 @layer tokens {
   :root {
     color-scheme: light dark;
-    --bg: light-dark(#FCFCFB, #171717);
-    --side: light-dark(#F6F9FC, #141415);
-    --side-glass: light-dark(rgba(246,249,252,.95), rgba(20,20,21,.95));
-    --side-tint: light-dark(rgba(247,249,252,.88), rgba(18,18,19,.96));
+    --bg: light-dark(#FCFCFB, #181818);
+    --side: light-dark(#F6F9FC, #121213);
+    --side-glass: light-dark(rgba(246,249,252,.95), rgba(18,18,19,.95));
+    --side-tint: light-dark(rgba(247,249,252,.88), rgba(15,15,16,.96));
     --side-sel: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.06));
     --side-rim-hi: light-dark(rgba(255,255,255,.95), rgba(255,255,255,.22));
     --side-rim-lo: light-dark(rgba(11,11,11,.07), rgba(255,255,255,.035));
     --side-sheen: light-dark(rgba(255,255,255,.58), rgba(255,255,255,.055));
-    --surface: light-dark(#FFFFFF, #1C1C1B);
+    --surface: light-dark(#FFFFFF, #1F1F1E);
     --surface-0: light-dark(#F9F9F7, #0B0B0B);
-    --surface-3: light-dark(#FFFFFF, #20201F);
+    --surface-3: light-dark(#FFFFFF, #252524);
     --comp-rim-hi: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.16));
     --comp-rim-lo: light-dark(rgba(11,11,11,.06), rgba(255,255,255,.05));
     --hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.075));
@@ -23,10 +23,10 @@
     --bubble: light-dark(#F0F0EE, #222221);
     --sunken: light-dark(#F4F4F2, #131313);
     --fg: light-dark(#20211F, #D4D3CE);
-    --fg2: light-dark(#555750, #B5B4AE);
-    --fg3: light-dark(#6B6A64, #999892);
+    --fg2: light-dark(#555750, #BAB9B3);
+    --fg3: light-dark(#6B6A64, #A3A29C);
     --fg-ctl: light-dark(#555750, #C9C8C2);
-    --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.1));
+    --line: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.12));
     --line2: light-dark(rgba(11,11,11,.2), rgba(255,255,255,.2));
     --line-ctl: light-dark(rgba(11,11,11,.48), rgba(255,255,255,.34));
     --kbd-ink: light-dark(#6D6B67, #C2C1BA);
@@ -56,7 +56,7 @@
     --stall-t: light-dark(#A84510, #F08C5A);
     --stall-bg: light-dark(#FCEDE3, rgba(240,140,90,.12));
     --ok: light-dark(#009300, #0CA30C);
-    --ok-t: light-dark(#006300, #0CA30C);
+    --ok-t: light-dark(#006300, #14AD14);
     --ok-bg: light-dark(#E6F4E4, rgba(12,163,12,.1));
     --fail: light-dark(#D03B3B, #EC7E7E);
     --fail-t: light-dark(#8E2626, #EC7E7E);
@@ -230,10 +230,10 @@
       --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.25);
       --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
       --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
-      --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+      --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
       --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
       --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
-      --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+      --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
       --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
     }
   }
@@ -242,10 +242,10 @@
     --shadow-sm: 0 1px 2px rgba(0,0,0,.4), 0 1px 1px rgba(0,0,0,.25);
     --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
     --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
-    --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+    --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
     --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
     --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
-    --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1);
+    --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
     --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
   }
   [data-density-scope='compact'] {

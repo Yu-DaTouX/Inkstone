@@ -124,7 +124,6 @@
     display: flex;
     align-items: center;
     gap: var(--s-2);
-    margin-inline-end: var(--s-8);
   }
 
   .v3-chat {
@@ -296,29 +295,31 @@
     position: relative;
   }
 
-  .v3-head-pane-open {
-    position: absolute;
-    bottom: var(--s-2);
-    left: 50%;
-    width: var(--s-4);
-    height: var(--s-4);
-    translate: -50% 0;
-    border-radius: var(--r-full);
-    corner-shape: round;
-    background: var(--fg3);
-    pointer-events: none;
+  .v3-head-sep.ui-separator[aria-orientation='vertical'] {
+    align-self: center;
+    height: var(--s-16);
+    margin: 0 var(--s-6);
+  }
+
+  .v3-head-sep--win.ui-separator[aria-orientation='vertical'] {
+    margin: 0 0 0 var(--s-12);
   }
 
   .v3-head-pane-dot {
     position: absolute;
-    top: 3px;
-    right: 3px;
-    width: var(--s-4);
-    height: var(--s-4);
+    top: calc(50% - var(--s-8) - 1px);
+    left: calc(50% + var(--s-8) - var(--s-6) + 1px);
+    width: var(--s-6);
+    height: var(--s-6);
     border-radius: var(--r-full);
     corner-shape: round;
     background: var(--accent);
     pointer-events: none;
+  }
+
+  .v3-head-more .v3-head-pane-dot {
+    top: calc(50% - var(--s-10));
+    left: calc(50% + var(--s-4));
   }
 
   .v3-head-check {
@@ -328,7 +329,6 @@
 
   .v3-win {
     display: flex;
-    margin-left: 8px;
   }
 
   .v3-winbtn {

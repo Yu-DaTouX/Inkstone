@@ -343,7 +343,7 @@ async function main() {
     ok(typeof editorNode?.props.onChange === 'function' && typeof editorNode?.props.onKeyDown === 'function', '门面仍以 onChange / onKeyDown 回调上层')
     ok(byClass(line, 'composer-prompt') === null, '输入行不再渲染 › 提示符')
     const lineEnd = byClass(card, 'composer-line-end')
-    ok(controlNames(lineEnd).join('>') === 'ContextRing>PlusMenu>VoiceButton>#composer-send', '行尾：上下文环→＋→语音→发送', controlNames(lineEnd))
+    ok(controlNames(lineEnd).join('>') === 'ContextRing>Separator>PlusMenu>VoiceButton>#composer-send', '行尾：上下文读数｜＋→语音→发送，状态与操作分组', controlNames(lineEnd))
 
     const editorText = await readFile(join(ROOT, 'src/renderer/src/features/composer/ComposerEditor.tsx'), 'utf8')
     ok(!/<textarea/.test(editorText), '编辑器门面不再渲染 textarea')

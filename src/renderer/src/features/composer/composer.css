@@ -563,8 +563,10 @@
     margin-inline: var(--s-6);
   }
 
-  .composer-line-end > .ctx-ring-wrap {
-    margin-inline-end: var(--s-6);
+  .composer-line-end > .composer-status-sep {
+    align-self: center;
+    height: var(--s-16);
+    margin-inline: var(--s-8) var(--s-6);
   }
 
   .composer-plus,

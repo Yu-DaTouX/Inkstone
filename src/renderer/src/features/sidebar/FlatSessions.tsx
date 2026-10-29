@@ -397,7 +397,7 @@ function FlatSegmentHead({ entry }: { entry: FlatEntry }): JSX.Element {
   const global = entry.session.scope === 'global'
   return (
     <div className="v3-flat-seg" data-testid="v3-flat-seg">
-      {global ? <Globe size={11} className="v3-crow-scope" aria-hidden /> : <Folder size={11} className="v3-crow-scope" aria-hidden />}
+      {global ? <Globe size={12} className="v3-crow-scope" aria-hidden /> : <Folder size={12} className="v3-crow-scope" aria-hidden />}
       <span className="v3-crow-project">{entry.group.label || text.projectFallback}</span>
     </div>
   )

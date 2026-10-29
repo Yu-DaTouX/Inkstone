@@ -41,6 +41,25 @@
   .v3-empty-main > .start-strip {
     justify-content: center;
     column-gap: var(--s-4);
+    row-gap: 0;
+  }
+
+  .v3-empty-main > .start-strip .start-strip-bars {
+    order: -1;
+    flex: 0 0 100%;
+    justify-content: center;
+    gap: 3px;
+    height: var(--s-16);
+    margin: 0 0 var(--s-10);
+  }
+
+  .v3-empty-main > .start-strip .start-strip-bars > span {
+    width: var(--s-4);
+    border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+  }
+
+  .v3-empty-main > .start-strip :is(.start-label, .start-strip-sep) {
+    color: var(--fg3);
   }
 
   .v3-empty-main > .start-strip .start-strip-num {
@@ -90,9 +109,10 @@
   .v3-hello-cursor[data-blink='off'] { opacity: 0; }
 
   .v3-empty-main > .v3-empty-greet {
+    margin-bottom: var(--s-8);
     color: var(--fg);
-    font: var(--w-medium) calc(var(--t-title) * 4 / 3) / 1.25 var(--font-ui);
-    letter-spacing: -0.01em;
+    font: var(--w-semibold) calc(var(--t-title) * 8 / 5) / 1.25 var(--font-ui);
+    letter-spacing: -0.02em;
     animation: v3-empty-rise var(--dur-base) var(--ease) both;
   }
 

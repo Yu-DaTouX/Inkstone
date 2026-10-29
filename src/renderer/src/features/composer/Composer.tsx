@@ -562,6 +562,7 @@ export function Composer({ className }: { className?: string } = {}) {
             </div>
             <div className="composer-line-end">
               <ContextRing />
+              <Separator orientation="vertical" className="composer-group-sep composer-status-sep" />
               <PlusMenu onInsert={insertAtCursor} />
               <VoiceButton onText={insertAtCursor} scope={sessionId} />
               {submitAction === 'stop' ? (

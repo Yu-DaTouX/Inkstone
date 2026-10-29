@@ -191,8 +191,9 @@
     gap: var(--s-4);
     min-height: calc(var(--s-16) + var(--d-row) - var(--s-8) + var(--s-4));
     padding: var(--s-16) 1px var(--s-4) var(--s-10);
-    color: var(--fg3);
+    color: var(--fg2);
     font-size: var(--t-footnote);
+    font-weight: var(--w-semibold);
     line-height: var(--s-16);
   }
 
@@ -218,7 +219,7 @@
   }
 
   .v3-grp-toggle:hover {
-    color: var(--fg2);
+    color: var(--fg);
   }
 
   .v3-grp-toggle:focus-visible {
@@ -844,15 +845,21 @@
     display: flex;
     flex: none;
     align-items: center;
-    gap: var(--s-4);
+    gap: var(--s-6);
     min-width: 0;
-    height: calc(var(--s-24) + var(--s-4));
-    margin-top: var(--s-10);
+    height: var(--s-24);
+    margin-top: var(--s-16);
+    margin-bottom: var(--s-2);
     padding: 0 var(--s-8);
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    font-weight: var(--w-medium);
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    font-weight: var(--w-semibold);
     line-height: var(--s-16);
+  }
+
+  .v3-flat-seg > .v3-crow-scope {
+    color: var(--fg3);
+    opacity: 1;
   }
 
   .v3-flat-seg:first-child {
