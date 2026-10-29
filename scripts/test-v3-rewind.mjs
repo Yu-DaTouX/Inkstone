@@ -156,7 +156,7 @@ function abs(rel) {
 }
 
 function makeStubPlugin(rawMap) {
-  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', 'src/renderer/src/ui/FileCard.tsx': 'export function FileCard(){ return null }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
+  const stubMap = new Map(Object.entries({ 'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }', 'src/renderer/src/features/session/web-search/SearchStep.tsx': 'export function SearchStepView(p){ return p.children }', 'src/renderer/src/features/session/web-search/TurnSources.tsx': 'export function TurnSources(){ return null }', 'src/renderer/src/ui/FileCard.tsx': 'export function FileCard(){ return null }', ...rawMap }).map(([rel, src]) => [abs(rel), src]))
   return {
     name: 'v3-rewind-stubs',
     setup(b) {

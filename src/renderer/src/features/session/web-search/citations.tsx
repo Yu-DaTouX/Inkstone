@@ -3,7 +3,7 @@ import { useStore } from '../../../state/store'
 import { Focusable } from 'react-aria-components'
 import { Tooltip, TooltipTrigger } from '../../../ui'
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
-import { buildCitationIndex, citationFor, collectSearchDetailSources, collectSearchOperationIds, siteTone, type CitationRef } from './model'
+import { buildCitationIndex, citationFor, collectSearchDetailSources, collectSearchOperationIds, normalizeUrl, siteTone, type CitationRef } from './model'
 import { useSearchOps, type SearchOpState } from './op-store'
 import { useWebSearchText } from './text'
 
@@ -36,11 +36,29 @@ export function WebSearchTurnProvider({ tools, children }: { tools: readonly UIT
   const operationIds = useMemo(() => collectSearchOperationIds(tools), [tools])
   const detailSources = useMemo(() => collectSearchDetailSources(tools), [tools])
   const states = useSearchOps(operationIds)
-  const index = useMemo(() => {
-    const sources = [...sourcesOf(states), ...detailSources]
-    return sources.length ? buildCitationIndex(sources) : null
-  }, [states, detailSources])
-  return <CitationIndex.Provider value={index}>{children}</CitationIndex.Provider>
+  const sources = useMemo(() => uniqueSources([...sourcesOf(states), ...detailSources]), [states, detailSources])
+  const index = useMemo(() => (sources.length ? buildCitationIndex(sources) : null), [sources])
+  return (
+    <CitationIndex.Provider value={index}>
+      <TurnSourceList.Provider value={sources}>{children}</TurnSourceList.Provider>
+    </CitationIndex.Provider>
+  )
+}
+
+const TurnSourceList = createContext<readonly WebSearchSourceView[]>([])
+
+export function useTurnSources(): readonly WebSearchSourceView[] {
+  return useContext(TurnSourceList)
+}
+
+function uniqueSources(sources: readonly WebSearchSourceView[]): WebSearchSourceView[] {
+  const seen = new Set<string>()
+  return sources.filter((source) => {
+    const key = normalizeUrl(source.url)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 export function CitationLink({ citation }: { citation: CitationRef }): JSX.Element {

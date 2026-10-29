@@ -39,8 +39,6 @@ function uniqueSites(sources: readonly WebSearchSourceView[]): { site: string; u
 export function SearchStepView({ call, step, children, glow = true }: { call: UIToolCall; step: SearchStep; children: ReactNode; glow?: boolean }): JSX.Element {
   const tt = useWebSearchText()
   const panelId = useId()
-  const openLink = useStore((s) => s.openLink)
-  const turnIndex = useCitationIndex()
   const [open, setOpen] = useState(step.command.action === 'query')
   const [showAll, setShowAll] = useState(false)
   const running = call.status === 'running' || call.status === 'pending'
@@ -61,7 +59,6 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
 
   const expanded = open && settled
   const pending = open && !settled && !fetching
-  const folded = !showAll && sources.length > SOURCE_PREVIEW + 1
 
   return (
     <>
@@ -104,34 +101,44 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
               {Array.from({ length: SOURCE_PREVIEW }, (_, i) => <PendingCard key={i} index={i} />)}
             </div>
           ) : (
-            <div className="ws-op" role="group" aria-label={tt('sources')} data-testid="ws-sources" data-single={sources.length === 1 || undefined}>
-              {sources.length ? (
-                <>
-                  {(folded ? sources.slice(0, SOURCE_PREVIEW) : sources).map((source, i) => (
-                    <SourceCard
-                      key={`${source.url}#${i}`}
-                      source={source}
-                      index={i}
-                      n={citationFor(turnIndex, source.url)?.n ?? i + 1}
-                      onOpen={() => void openLink(source.url)}
-                    />
-                  ))}
-                  {folded ? <MoreSourcesCard rest={sources.slice(SOURCE_PREVIEW)} onPress={() => setShowAll(true)} /> : null}
-                  {showAll && sources.length > SOURCE_PREVIEW + 1 ? (
-                    <Button variant="plain" size="sm" className="ws-less" onPress={() => setShowAll(false)}>
-                      <Icon name="chevron-up" size={14} />
-                      {tt('showLess')}
-                    </Button>
-                  ) : null}
-                </>
-              ) : (
-                <div className="ws-empty">{tt('empty')}</div>
-              )}
-            </div>
+            <SourceList sources={sources} showAll={showAll} onShowAll={setShowAll} testId="ws-sources" />
           )}
         </div>
       </div>
     </>
+  )
+}
+
+export function SourceList({ sources, showAll, onShowAll, testId }: { sources: readonly WebSearchSourceView[]; showAll: boolean; onShowAll: (value: boolean) => void; testId: string }): JSX.Element {
+  const tt = useWebSearchText()
+  const openLink = useStore((s) => s.openLink)
+  const turnIndex = useCitationIndex()
+  const folded = !showAll && sources.length > SOURCE_PREVIEW + 1
+  return (
+    <div className="ws-op" role="group" aria-label={tt('sources')} data-testid={testId} data-single={sources.length === 1 || undefined}>
+      {sources.length ? (
+        <>
+          {(folded ? sources.slice(0, SOURCE_PREVIEW) : sources).map((source, i) => (
+            <SourceCard
+              key={`${source.url}#${i}`}
+              source={source}
+              index={i}
+              n={citationFor(turnIndex, source.url)?.n ?? i + 1}
+              onOpen={() => void openLink(source.url)}
+            />
+          ))}
+          {folded ? <MoreSourcesCard rest={sources.slice(SOURCE_PREVIEW)} onPress={() => onShowAll(true)} /> : null}
+          {showAll && sources.length > SOURCE_PREVIEW + 1 ? (
+            <Button variant="plain" size="sm" className="ws-less" onPress={() => onShowAll(false)}>
+              <Icon name="chevron-up" size={14} />
+              {tt('showLess')}
+            </Button>
+          ) : null}
+        </>
+      ) : (
+        <div className="ws-empty">{tt('empty')}</div>
+      )}
+    </div>
   )
 }
 

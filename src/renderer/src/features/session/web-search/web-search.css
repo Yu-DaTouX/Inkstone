@@ -69,6 +69,9 @@
   .ws-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-caption); }
   .ws-less.ui-btn { align-self: center; justify-self: start; gap: var(--s-4); }
   .ws-empty { color: var(--fg3); font-size: var(--t-footnote); }
+  .ws-turn-sources { display: grid; margin-top: var(--s-8); }
+  .ws-turn-sources-head { color: var(--fg3); font-size: var(--t-footnote); }
+  .ws-turn-sources .ws-op { margin: var(--s-6) 0 0; }
 
   .ws-cite {
     display: inline-flex;
