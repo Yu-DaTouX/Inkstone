@@ -1,16 +1,10 @@
 import { parseHTML } from 'linkedom'
 import { Readability } from '@mozilla/readability'
+import { NodeHtmlMarkdown, PostProcessResult, type TranslatorConfigFactory } from 'node-html-markdown'
 
-interface HtmlNode {
-  nodeType: number
-  textContent: string | null
-  localName?: string
-  childNodes: ArrayLike<HtmlNode>
-  getAttribute?(name: string): string | null
-}
+type ElementContext = Parameters<TranslatorConfigFactory>[0]
 
 const DROP = 'script,style,noscript,nav,footer,aside,form,iframe,svg,[role=navigation],[aria-hidden=true],[hidden]'
-const BLOCKS = new Set(['p', 'div', 'section', 'article', 'main', 'header', 'blockquote', 'figure', 'figcaption', 'dl', 'dt', 'dd'])
 
 function publicLink(raw: string, base: string): string | null {
   try {
@@ -19,41 +13,74 @@ function publicLink(raw: string, base: string): string | null {
   } catch { return null }
 }
 
-function markdown(node: HtmlNode, base: string): string {
-  if (node.nodeType === 3) return (node.textContent ?? '').replace(/\s+/g, ' ')
-  const tag = node.localName ?? ''
-  if (tag === 'pre') {
-    const code = (node.textContent ?? '').replace(/\r\n?/g, '\n').trim()
-    const fence = '`'.repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)))
-    return `\n\n${fence}\n${code}\n${fence}\n\n`
-  }
-  if (tag === 'table') {
-    const rows: HtmlNode[][] = []
-    const visit = (current: HtmlNode): void => {
-      if (current.localName === 'tr') rows.push(Array.from(current.childNodes).filter((child) => child.localName === 'td' || child.localName === 'th'))
-      else for (const child of Array.from(current.childNodes)) visit(child)
+function angleUrl(href: string): string {
+  return `<${href.replace(/>/g, '%3E')}>`
+}
+
+function collapse(raw: string | null | undefined): string {
+  return (raw ?? '').replace(/\s+/g, ' ').trim()
+}
+
+function compactTables(text: string): string {
+  let fenced = false
+  return text.split('\n').map((line) => {
+    if (/^\s*`{3,}/.test(line)) {
+      fenced = !fenced
+      return line
     }
-    visit(node)
-    if (!rows.length) return ''
-    const columns = Math.max(...rows.map((row) => row.length))
-    const render = (row: HtmlNode[]): string => `| ${Array.from({ length: columns }, (_, index) => row[index] ? Array.from(row[index].childNodes).map((child) => markdown(child, base)).join('').trim().replace(/\|/g, '\\|').replace(/\n+/g, '<br>') : '').join(' | ')} |`
-    const hasHeader = rows[0].some((cell) => cell.localName === 'th')
-    const header = hasHeader ? render(rows.shift()!) : `| ${Array.from({ length: columns }, (_, index) => `Column ${index + 1}`).join(' | ')} |`
-    return `\n\n${header}\n| ${Array.from({ length: columns }, () => '---').join(' | ')} |\n${rows.map(render).join('\n')}\n\n`
+    if (fenced || !/^[ \t]*\|.*\|[ \t]*$/.test(line)) return line
+    const compact = line.replace(/[ \t]{2,}/g, ' ').trim()
+    return /^\|(?:[ \t]*:?-+:?[ \t]*\|)+$/.test(compact) ? compact.replace(/-+/g, '---') : compact
+  }).join('\n')
+}
+
+function attribute(node: { getAttribute(name: string): string | null | undefined }, name: string): string {
+  return collapse(node.getAttribute(name))
+}
+
+function codeBlock(node: ElementContext['node'], lineBreak: string) {
+  const code = (node.textContent ?? '').replace(/\r\n?/g, '\n').trim()
+  if (!code) return { ignore: true }
+  const fence = '`'.repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((match) => match[0].length + 1)))
+  const language = (node.querySelector('code')?.getAttribute('class') ?? node.getAttribute('class') ?? '').match(/language-(\S+)/)?.[1] ?? ''
+  return { content: `${fence}${language}${lineBreak}${code.replace(/\n/g, lineBreak)}${lineBreak}${fence}`, recurse: false }
+}
+
+function converter(base: string): NodeHtmlMarkdown {
+  const link = ({ node }: ElementContext) => {
+    const href = publicLink(attribute(node, 'href'), base)
+    if (!href) return {}
+    return {
+      noEscape: true,
+      postprocess: ({ content }: { content: string }) => {
+        const label = collapse(content)
+        return label ? `[${label}](${angleUrl(href)})` : PostProcessResult.RemoveNode
+      }
+    }
   }
-  const content = Array.from(node.childNodes).map((child) => markdown(child, base)).join('')
-  if (/^h[1-6]$/.test(tag)) return `\n\n${'#'.repeat(Number(tag[1]))} ${content.trim()}\n\n`
-  if (tag === 'br') return '\n'
-  if (tag === 'li') return `\n- ${content.trim()}`
-  if (tag === 'ul' || tag === 'ol') return `\n${content}\n`
-  if (tag === 'tr') return `\n${content}\n`
-  if (tag === 'td' || tag === 'th') return ` | ${content.trim().replace(/\|/g, '\\|')}`
-  if (tag === 'code') return `\`${content.replace(/`/g, '\\`')}\``
-  if (tag === 'a') {
-    const href = publicLink(node.getAttribute?.('href') ?? '', base)
-    return href && content.trim() ? `[${content.trim()}](<${href.replace(/>/g, '%3E')}>)` : content
+  const image = ({ node }: ElementContext) => {
+    const src = publicLink(attribute(node, 'src'), base)
+    if (!src) return { ignore: true }
+    return { content: `![${attribute(node, 'alt')}](${angleUrl(src)})`, recurse: false }
   }
-  return BLOCKS.has(tag) ? `\n\n${content.trim()}\n\n` : content
+  const markdown = new NodeHtmlMarkdown({
+    bulletMarker: '-',
+    indent: '  '
+  }, {
+    a: link,
+    img: image,
+    'ol,ul': ({ indentLevel }) => ({ surroundingNewlines: indentLevel ? 1 : 2 }),
+    br: { content: '\n', recurse: false },
+    pre: ({ node }) => codeBlock(node, '\n')
+  })
+  const inlineCode = markdown.translators.get('code')
+  markdown.aTagTranslators.set('img', image)
+  markdown.tableCellTranslators.set('a', link)
+  markdown.tableCellTranslators.set('img', image)
+  markdown.tableCellTranslators.set('br', { content: '<br>', recurse: false })
+  markdown.tableCellTranslators.set('pre', ({ node }) => codeBlock(node, '<br>'))
+  if (inlineCode) markdown.tableCellTranslators.set('code', inlineCode)
+  return markdown
 }
 
 export function extractHtml(html: string, url: string) {
@@ -84,6 +111,6 @@ export function extractHtml(html: string, url: string) {
     links.push({ title: (anchor.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200), url: target })
     if (links.length === 500) break
   }
-  const text = markdown(root as unknown as HtmlNode, url).replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  const text = compactTables(converter(url).translate(root.innerHTML)).replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   return { title, text, links, ...(publishedAt ? { publishedAt } : {}), ...(modifiedAt ? { modifiedAt } : {}) }
 }

@@ -50,6 +50,17 @@ export async function runWebResearchTests() {
     check(extracted.text.includes('| Model | Limit |\n| --- | --- |\n| Alpha | 200 |'), '表格单元关系与 Markdown 表头保持')
     check(extracted.links.some((link) => link.url === 'https://example.com/reference') && extracted.links.every((link) => !link.url.startsWith('javascript:')), '相对链接解析，脚本链接不输出')
     check(extracted.publishedAt === '2026-10-01', '发布时间随正文返回')
+    const structured = mod.extractHtml(`<html><body><main><h2>Lists</h2><ul><li>alpha<ul><li>alpha-1</li></ul></li><li>beta</li></ul><ol><li>one</li><li>two</li></ol><table><tr><td>plain</td><td>second | pipe</td></tr><tr><td>row2</td><td>x</td></tr></table><p><img src="../pics/a.png" alt="Diagram"> <img src="data:image/gif;base64,AAAA" alt="tracker"> <img src="javascript:alert(1)" alt="bad"></p><pre>raw &lt;block&gt;
+  indented</pre><pre>a \`\`\` b</pre></main></body></html>`, 'https://example.com/docs/page')
+    check(structured.text.includes('- alpha\n  - alpha-1\n- beta'), '嵌套列表按层级缩进')
+    check(structured.text.includes('\n1. one\n2. two'), '有序列表按序编号')
+    check(structured.text.includes('| plain | second \\| pipe |\n| --- | --- |\n| row2 | x |'), '没有表头的表格保留首行内容并转义竖线')
+    check(
+      structured.text.includes('![Diagram](<https://example.com/pics/a.png>)') && !structured.text.includes('tracker') && !structured.text.includes('bad'),
+      '图片保留 alt 与解析后的地址，data: 与脚本图片不输出'
+    )
+    check(structured.text.includes('```\nraw <block>\n  indented\n```'), '没有 code 子元素的 pre 仍输出代码围栏')
+    check(structured.text.includes('````\na ``` b\n````'), '代码自带三反引号时围栏加长')
     let now = 1000
     const store = new mod.PageStore(() => now)
     const text = `${'intro line\n'.repeat(3000)}exception clause at the end\n`
