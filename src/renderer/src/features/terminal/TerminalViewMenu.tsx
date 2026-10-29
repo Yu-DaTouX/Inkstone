@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { Check, SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { IconButton, Menu, MenuItem, MenuTrigger, Popover, SubmenuTrigger } from '../../ui'
 import {
   TERMINAL_CURSOR_STYLES,
@@ -16,10 +16,6 @@ export interface TerminalViewMenuProps {
   onChange: (patch: Partial<TerminalViewSettings>) => void
 }
 
-function marker(checked: boolean): JSX.Element {
-  return <span className="term-view-check" aria-hidden>{checked ? <Check size={14} /> : null}</span>
-}
-
 export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps): JSX.Element {
   const cursorLabel = {
     block: text.cursorBlock,
@@ -29,8 +25,8 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
   const lineHeightLabel = (value: number): string => String(value)
   return (
     <MenuTrigger>
-      <IconButton size="sm" aria-label={text.viewMenu} title={text.viewMenu} data-testid="terminal-view-menu">
-        <SlidersHorizontal size={14} strokeWidth={1.75} />
+      <IconButton size="sm" aria-label={text.viewMenu} tooltip={text.viewMenu} data-testid="terminal-view-menu">
+        <SlidersHorizontal size={14} aria-hidden />
       </IconButton>
       <Popover placement="bottom end" offset={4}>
         <Menu aria-label={text.viewMenu} autoFocus="first">
@@ -42,8 +38,7 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.fontSize} onAction={(key) => onChange({ fontSize: Number(key) })}>
                 {TERMINAL_FONT_SIZES.map((size) => (
-                  <MenuItem key={size} id={String(size)} textValue={String(size)}>
-                    {marker(view.fontSize === size)}
+                  <MenuItem key={size} id={String(size)} textValue={String(size)} checked={view.fontSize === size}>
                     {String(size)}
                   </MenuItem>
                 ))}
@@ -58,8 +53,7 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.lineHeight} onAction={(key) => onChange({ lineHeight: Number(key) })}>
                 {TERMINAL_LINE_HEIGHTS.map((height) => (
-                  <MenuItem key={height} id={String(height)} textValue={lineHeightLabel(height)}>
-                    {marker(view.lineHeight === height)}
+                  <MenuItem key={height} id={String(height)} textValue={lineHeightLabel(height)} checked={view.lineHeight === height}>
                     {lineHeightLabel(height)}
                   </MenuItem>
                 ))}
@@ -74,16 +68,14 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.cursorStyle} onAction={(key) => onChange({ cursorStyle: String(key) as TerminalViewSettings['cursorStyle'] })}>
                 {TERMINAL_CURSOR_STYLES.map((style) => (
-                  <MenuItem key={style} id={style} textValue={cursorLabel[style]}>
-                    {marker(view.cursorStyle === style)}
+                  <MenuItem key={style} id={style} textValue={cursorLabel[style]} checked={view.cursorStyle === style}>
                     {cursorLabel[style]}
                   </MenuItem>
                 ))}
               </Menu>
             </Popover>
           </SubmenuTrigger>
-          <MenuItem id="cursor-blink" textValue={text.cursorBlink} onAction={() => onChange({ cursorBlink: !view.cursorBlink })}>
-            {marker(view.cursorBlink)}
+          <MenuItem id="cursor-blink" textValue={text.cursorBlink} checked={view.cursorBlink} onAction={() => onChange({ cursorBlink: !view.cursorBlink })}>
             {text.cursorBlink}
           </MenuItem>
           <SubmenuTrigger>
@@ -94,8 +86,7 @@ export function TerminalViewMenu({ view, text, onChange }: TerminalViewMenuProps
             <Popover placement="end top" offset={2}>
               <Menu aria-label={text.scrollback} onAction={(key) => onChange({ scrollback: Number(key) })}>
                 {TERMINAL_SCROLLBACKS.map((value) => (
-                  <MenuItem key={value} id={String(value)} textValue={text.lines(value)}>
-                    {marker(view.scrollback === value)}
+                  <MenuItem key={value} id={String(value)} textValue={text.lines(value)} checked={view.scrollback === value}>
                     {text.lines(value)}
                   </MenuItem>
                 ))}

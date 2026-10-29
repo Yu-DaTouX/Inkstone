@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { Globe, RotateCw } from 'lucide-react'
 import { useT } from '../../i18n'
-import { IconButton, RailRow } from '../../ui'
+import { IconButton, Notice, RailRow } from '../../ui'
 import type { LocalServerInfo } from '../../../../shared/local-servers'
 import './local-server-list.css'
 
@@ -64,18 +64,19 @@ export function LocalServerList({ active, onOpen }: LocalServerListProps): React
         <span className="v3-local-servers__title">{t('browser.localServers')}</span>
         <IconButton
           aria-label={t('browser.localServersRefresh')}
+          tooltip={t('browser.localServersRefresh')}
           size="sm"
           isPending={refreshing}
           data-testid="browser-local-servers-refresh"
           onPress={() => void load(true)}
         >
-          <RotateCw size={13} aria-hidden="true" />
+          <RotateCw size={14} aria-hidden="true" />
         </IconButton>
       </div>
       {servers.length === 0 ? (
-        <p className="v3-local-servers__empty" role="status" data-testid="browser-local-servers-empty">
+        <Notice variant="hint" data-testid="browser-local-servers-empty">
           {t('browser.localServersEmpty')}
-        </p>
+        </Notice>
       ) : (
         <ul className="v3-local-servers__list" data-testid="browser-local-servers-list">
           {servers.map((server) => (

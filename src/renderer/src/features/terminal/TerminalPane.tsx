@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type MouseEvent as ReactMouseEvent } from 'react'
-import { Plus, RefreshCw, Terminal as TerminalIcon } from 'lucide-react'
-import { Badge, Button, EmptyState, Menu, MenuItem, Notice, PaneHeader, Popover, Separator, type BadgeTone } from '../../ui'
+import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
+import { Badge, Button, EmptyState, Menu, MenuItem, MenuSeparator, Notice, PaneHeader, Popover, Spinner, type BadgeTone } from '../../ui'
 import { PaneTitle, PaneTools, usePaneChrome } from '../workbench/pane-chrome'
 import { useI18n, useT } from '../../i18n'
 import { resourceOwner } from '../../state/resource-owners'
@@ -448,7 +448,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         <PaneHeader
           size="sm"
           className="term-pane-bar"
-          icon={<TerminalIcon size={14} strokeWidth={1.75} />}
+          icon={<SquareTerminal size={14} aria-hidden />}
           title={barTitle}
           actions={barActions}
         >
@@ -488,7 +488,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
         {starting ? (
           <div className="term-pane-cover" data-testid="terminal-busy">
-            <Notice compact>{text.connecting}</Notice>
+            <Notice compact icon={<Spinner size="sm" />}>{text.connecting}</Notice>
           </div>
         ) : null}
 
@@ -552,7 +552,7 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
 
         {!inactive && !unavailable && !loadFailed && !failed && busy ? (
           <div className="term-pane-cover" data-testid="terminal-busy">
-            <Notice compact>{activeState?.phase === 'starting' ? text.starting : text.connecting}</Notice>
+            <Notice compact icon={<Spinner size="sm" />}>{activeState?.phase === 'starting' ? text.starting : text.connecting}</Notice>
           </div>
         ) : null}
 
@@ -578,9 +578,9 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
         ) : null}
 
         {!inactive && exited ? (
-          <span className="term-pane-exited term-pane-note" data-testid="terminal-exited">
+          <Notice compact className="term-pane-note" data-testid="terminal-exited">
             {t('term.exited', { code: activeState?.exitCode === null || activeState?.exitCode === undefined ? '—' : String(activeState.exitCode) })}
-          </span>
+          </Notice>
         ) : null}
 
         {findOpen && !inactive ? (
@@ -624,11 +624,11 @@ export function TerminalPane({ owner, visible = true }: TerminalPaneProps): JSX.
                 <MenuItem id="paste" textValue={text.paste}>
                   {text.paste}
                 </MenuItem>
-                <Separator />
+                <MenuSeparator />
                 <MenuItem id="select-all" textValue={text.selectAll}>
                   {text.selectAll}
                 </MenuItem>
-                <Separator />
+                <MenuSeparator />
                 <MenuItem id="clear" textValue={text.clear}>
                   {text.clear}
                 </MenuItem>

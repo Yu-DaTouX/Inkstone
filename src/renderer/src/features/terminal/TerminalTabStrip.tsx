@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { Plus, X } from 'lucide-react'
-import { IconButton, Menu, MenuItem, Popover } from '../../ui'
-import { isTerminalTabCloseKey, nextTerminalTabIndex } from './terminal-tabs'
+import { useEffect, useRef, useState, type JSX } from 'react'
+import { Plus, SquareTerminal } from 'lucide-react'
+import { IconButton, Menu, MenuItem, PanelTab, PanelTabList, Popover } from '../../ui'
+import { nextTerminalTabIndex } from './terminal-tabs'
 import type { TerminalText } from './terminal-text'
 
 export interface TerminalTabItem {
@@ -40,37 +40,22 @@ export function TerminalTabStrip({
   const stripRef = useRef<HTMLDivElement | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
   const [menuKey, setMenuKey] = useState<string | null>(null)
+  const keyboardMove = useRef(false)
 
   useEffect(() => {
-    const strip = stripRef.current
-    if (!strip || !active) return
-    const node = strip.querySelector<HTMLElement>(`[data-term-tab="${active}"]`)
-    if (!node) return
-    const box = strip.getBoundingClientRect()
-    const tab = node.getBoundingClientRect()
-    if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left
-    else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right
+    if (!active) return
+    const node = stripRef.current?.querySelector<HTMLElement>(`[data-panel-tab="${CSS.escape(active)}"]`)
+    node?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [active, tabs.length])
 
-  const focusTab = (key: string): void => {
+  const selectTab = (key: string): void => {
+    const fromKeyboard = keyboardMove.current
+    keyboardMove.current = false
+    onSelect(key)
+    if (!fromKeyboard) return
     requestAnimationFrame(() => {
-      stripRef.current?.querySelector<HTMLElement>(`[data-term-tab="${key}"] [role="tab"]`)?.focus()
+      stripRef.current?.querySelector<HTMLElement>(`[data-panel-tab="${CSS.escape(key)}"] [role="tab"]`)?.focus()
     })
-  }
-
-  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, key: string): void => {
-    const index = tabs.findIndex((tab) => tab.key === key)
-    if (index < 0) return
-    if (isTerminalTabCloseKey({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey })) {
-      event.preventDefault()
-      onClose(key)
-      return
-    }
-    const next = nextTerminalTabIndex(index, tabs.length, event.key)
-    if (next === null || tabs[next] === undefined) return
-    event.preventDefault()
-    onSelect(tabs[next].key)
-    focusTab(tabs[next].key)
   }
 
   const openTabMenu = (key: string, anchor: HTMLElement): void => {
@@ -78,7 +63,7 @@ export function TerminalTabStrip({
     setMenuKey(key)
   }
 
-  const closeTabMenu = (): void => {
+  const closeMenu = (): void => {
     const anchor = menuAnchor.current
     setMenuKey(null)
     requestAnimationFrame(() => {
@@ -86,82 +71,48 @@ export function TerminalTabStrip({
     })
   }
 
-  const closeMenu = (): void => {
-    closeTabMenu()
-  }
-
-  const selectTab = (key: string): void => {
-    onSelect(key)
-  }
-
   return (
     <div className="term-tabbar" data-inline={inline ? '' : undefined}>
-      <div className="term-tabs" role="tablist" aria-label={text.tabs} ref={stripRef} data-testid="terminal-tabs">
-        {tabs.map((tab) => (
-          <div
-            key={tab.key}
-            role="presentation"
-            className="term-tab"
-            data-term-tab={tab.key}
-            data-selected={tab.key === active ? '' : undefined}
-            data-busy={tab.busy ? '' : undefined}
-            data-exited={tab.exited ? '' : undefined}
-            data-bell={bell === tab.key ? '' : undefined}
-            data-menu-open={menuKey === tab.key ? '' : undefined}
-            onMouseDown={(event: ReactMouseEvent) => {
-              if (event.button === 1) event.preventDefault()
-            }}
-            onAuxClick={(event: ReactMouseEvent) => {
-              if (event.button !== 1) return
-              event.preventDefault()
-              onClose(tab.key)
-            }}
-            onContextMenu={(event: ReactMouseEvent<HTMLDivElement>) => {
-              event.preventDefault()
-              openTabMenu(tab.key, event.currentTarget)
-            }}
-          >
-            <span className="term-tab-bg" aria-hidden />
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab.key === active}
-              tabIndex={tab.key === active ? 0 : -1}
-              className="term-tab-name"
+      <div
+        className="term-tabs"
+        ref={stripRef}
+        data-testid="terminal-tabs"
+        onKeyDownCapture={(event) => {
+          keyboardMove.current = nextTerminalTabIndex(0, 2, event.key) !== null
+        }}
+      >
+        <PanelTabList label={text.tabs} onCloseFocused={onClose} onContextMenuFocused={openTabMenu}>
+          {tabs.map((tab) => (
+            <PanelTab
+              key={tab.key}
+              id={tab.key}
+              label={tab.label}
               title={tab.detail || tab.label}
-              onClick={() => selectTab(tab.key)}
-              onKeyDown={(event) => onTabKeyDown(event, tab.key)}
-            >
-              {tab.busy ? <span className="term-tab-dot" aria-hidden /> : null}
-              <span className="term-tab-label">{tab.label}</span>
-            </button>
-            <button
-              type="button"
-              tabIndex={-1}
-              className="term-tab-close"
-              aria-label={text.closeTab}
-              title={text.closeTab}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation()
-                onClose(tab.key)
+              icon={<SquareTerminal aria-hidden />}
+              active={tab.key === active}
+              pending={tab.busy || bell === tab.key}
+              closeLabel={text.closeTab}
+              testId={`terminal-tab-${tab.key}`}
+              onSelect={() => selectTab(tab.key)}
+              onClose={() => onClose(tab.key)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                openTabMenu(tab.key, event.currentTarget)
               }}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
+            />
+          ))}
+        </PanelTabList>
       </div>
       <IconButton
         size="sm"
         className="term-tab-new"
         aria-label={text.newTab}
-        title={text.newTab}
+        tooltip={text.newTab}
         isDisabled={!canAdd}
         onPress={onNew}
         data-testid="terminal-new"
       >
-        <Plus size={14} strokeWidth={1.75} />
+        <Plus size={14} aria-hidden />
       </IconButton>
       {menuKey && tabs.some((tab) => tab.key === menuKey) ? (
         <Popover

@@ -42,8 +42,8 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: var(--s-2);
-    height: 32px;
+    gap: var(--s-4);
+    height: var(--size-bar);
     min-width: 0;
     padding: 0 var(--s-6) 0 var(--s-8);
     border-bottom: 1px solid var(--line);
@@ -56,146 +56,14 @@
     border-bottom: 0;
   }
 
-  .term-tabbar[data-inline] .term-tab {
-    flex: 0 1 auto;
-    min-width: 56px;
-    max-width: 200px;
-  }
-
   .term-tabs {
+    display: flex;
     flex: 0 1 auto;
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
     min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .term-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .term-tab {
-    position: relative;
-    flex: 0 0 160px;
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    height: 24px;
-    border-radius: var(--r-sm);
-  }
-
-  .term-tab[data-selected] {
-    background: var(--alpha-2);
-  }
-
-  .term-tab > * {
-    position: relative;
-  }
-
-  .term-tab-bg {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-  }
-
-  .term-tab[data-bell] > .term-tab-bg {
-    animation: term-tab-bell 1.2s ease-out;
-  }
-
-  @keyframes term-tab-bell {
-    0%,
-    40% {
-      background-color: var(--hover);
-    }
-
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .term-tab[data-bell] > .term-tab-bg {
-      animation: none;
-    }
-  }
-
-  .term-tab-name {
-    flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
-    min-width: 0;
-    height: 100%;
-    margin: 0;
-    padding: 0 var(--s-2) 0 var(--s-6);
-    border: 0;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg2);
-    font-family: var(--font-ui);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    text-align: start;
-    white-space: nowrap;
-    cursor: default;
-  }
-
-  .term-tab[data-selected] .term-tab-name {
-    color: var(--fg);
-  }
-
-  .term-tab[data-exited] .term-tab-name {
-    color: var(--fg3);
-  }
-
-  .term-tab-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .term-tab-dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    margin-left: 2px;
-    border-radius: 50%;
-    corner-shape: round;
-    background: var(--accent);
-  }
-
-  .term-tab-close {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    margin: 0 var(--s-2) 0 0;
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg3);
-    cursor: default;
-  }
-
-  .term-tab-close:hover {
-    background: var(--hover);
-    color: var(--fg);
   }
 
   .term-tab-new {
     flex: none;
-  }
-
-  @container (max-width: 320px) {
-    .term-tabbar:not([data-inline]) .term-tab:not([data-selected]) {
-      flex-basis: 72px;
-    }
   }
 
   .term-pane-body {
@@ -267,47 +135,11 @@
     top: var(--s-8);
     right: var(--s-20);
     z-index: 6;
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
+    width: var(--size-tiles);
     max-width: calc(100% - var(--s-24));
-    padding: var(--s-4) var(--s-6);
-    border: 0.5px solid var(--line2);
     border-radius: var(--r-md);
     background: var(--surface);
     box-shadow: var(--shadow-lg);
-    color: var(--fg);
-  }
-
-  .term-find-input {
-    width: 192px;
-    min-width: 0;
-    margin: 0;
-    padding: var(--s-2) var(--s-4);
-    border: 1px solid var(--line2);
-    border-radius: var(--r-sm);
-    background: var(--surface-0);
-    color: var(--fg);
-    font-family: var(--font-ui);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    outline: none;
-  }
-
-  .term-find-input::placeholder {
-    color: var(--fg3);
-  }
-
-  .term-find-input:focus-visible {
-    border-color: var(--accent);
-  }
-
-  .term-find-status {
-    min-width: 0;
-    white-space: nowrap;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
   }
 
   .term-menu-anchor {
@@ -315,14 +147,6 @@
     width: 0;
     height: 0;
     pointer-events: none;
-  }
-
-  .term-view-check {
-    display: inline-grid;
-    flex: none;
-    place-items: center;
-    width: 14px;
-    height: 14px;
   }
 
   .term-view-hint {
@@ -341,10 +165,5 @@
     right: var(--s-8);
     bottom: var(--s-8);
     z-index: 3;
-    padding: var(--s-4) var(--s-8);
-    border-radius: var(--r-sm);
-    background: var(--surface);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
   }
 }

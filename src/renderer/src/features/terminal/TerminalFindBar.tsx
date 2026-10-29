@@ -1,6 +1,5 @@
 import { useEffect, useRef, type JSX, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ChevronDown, ChevronUp, X } from 'lucide-react'
-import { IconButton } from '../../ui'
+import { FindBar } from '../../ui'
 import { terminalFindKeyAction, type TerminalFindDirection } from './terminal-find'
 import type { TerminalText } from './terminal-text'
 
@@ -44,35 +43,23 @@ export function TerminalFindBar({ query, noResults, text, onQuery, onStep, onClo
   return (
     <div
       className="term-find"
-      role="search"
-      aria-label={text.find}
       data-testid="terminal-find"
       onKeyDown={onKeyDown}
       onContextMenu={(event) => event.stopPropagation()}
     >
-      <input
-        ref={inputRef}
-        className="term-find-input"
+      <FindBar
         value={query}
-        type="text"
-        spellCheck={false}
-        autoComplete="off"
+        onChange={onQuery}
+        onNext={() => onStep('next')}
+        onPrevious={() => onStep('previous')}
+        onClose={onClose}
+        matchCount={noResults && query !== '' ? 0 : null}
+        status={noResults && query !== '' ? text.noResults : undefined}
         placeholder={text.findPlaceholder}
-        aria-label={text.find}
-        onChange={(event) => onQuery(event.target.value)}
+        labels={{ input: text.find, previous: text.findPrev, next: text.findNext, close: text.findClose }}
+        autoFocus={false}
+        inputRef={inputRef}
       />
-      <span className="term-find-status" aria-live="polite">
-        {noResults ? text.noResults : ''}
-      </span>
-      <IconButton size="sm" aria-label={text.findPrev} title={text.findPrev} isDisabled={query === ''} onPress={() => onStep('previous')}>
-        <ChevronUp size={14} />
-      </IconButton>
-      <IconButton size="sm" aria-label={text.findNext} title={text.findNext} isDisabled={query === ''} onPress={() => onStep('next')}>
-        <ChevronDown size={14} />
-      </IconButton>
-      <IconButton size="sm" aria-label={text.findClose} title={text.findClose} onPress={onClose}>
-        <X size={14} />
-      </IconButton>
     </div>
   )
 }

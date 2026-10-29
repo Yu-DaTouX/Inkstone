@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, Modal, ModalOverlay } from '../../ui'
+import { Button, Dialog, DialogFooter, MiddleTruncate, Modal, ModalOverlay } from '../../ui'
 import { browserText } from './browser-text'
 import './browser.css'
 
@@ -44,16 +44,16 @@ export function BrowserSiteAskDialog(): ReactElement | null {
       <Modal className="v3-browser-site-ask">
         <Dialog title={text.siteAskTitle} closeLabel={text.siteAskDeny} data-testid="browser-site-ask">
           <p className="v3-browser-site-ask__lead" data-testid="browser-site-ask-origin">{text.siteAskLead(ask.origin)}</p>
-          <p className="v3-browser-site-ask__url" title={ask.url}>{ask.url}</p>
+          <MiddleTruncate className="v3-browser-site-ask__url" value={ask.url} />
           <p className="v3-browser-site-ask__detail">{text.siteAskDetail}</p>
-          <div className="v3-browser-site-ask__actions">
+          <DialogFooter>
             <Button data-testid="browser-site-ask-deny" onPress={() => decide(false)}>
               {text.siteAskDeny}
             </Button>
             <Button variant="primary" data-testid="browser-site-ask-allow" onPress={() => decide(true)}>
               {text.siteAskAllow}
             </Button>
-          </div>
+          </DialogFooter>
         </Dialog>
       </Modal>
     </ModalOverlay>

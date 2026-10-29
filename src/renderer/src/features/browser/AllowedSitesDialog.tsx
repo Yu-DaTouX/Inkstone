@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, EmptyState, IconButton, Input, Modal, ModalOverlay, Notice, TextField } from '../../ui'
+import { Button, Dialog, DialogFooter, EmptyState, IconButton, Input, Modal, ModalOverlay, Notice, TextField } from '../../ui'
 import { siteLabelOf } from './site-label'
 import { browserText } from './browser-text'
 import './browser.css'
@@ -95,7 +95,7 @@ export function AllowedSitesDialog({ isOpen, onClose }: { isOpen: boolean; onClo
               }}
             >
               <Input
-                className="ui-input v3-browser-sites__input"
+                className="ui-input"
                 aria-label={text.sitesAddLabel}
                 placeholder={text.sitesAddPlaceholder}
                 spellCheck={false}
@@ -105,13 +105,12 @@ export function AllowedSitesDialog({ isOpen, onClose }: { isOpen: boolean; onClo
             </TextField>
             <Button
               variant="secondary"
-              size="sm"
               type="submit"
+              icon={<Plus size={14} aria-hidden="true" />}
               isDisabled={!draft.trim()}
               isPending={busy}
               data-testid="browser-allowed-sites-add"
             >
-              <Plus size={14} aria-hidden="true" />
               {text.sitesAdd}
             </Button>
           </form>
@@ -130,7 +129,9 @@ export function AllowedSitesDialog({ isOpen, onClose }: { isOpen: boolean; onClo
                   <li key={origin} className="v3-browser-sites__row" data-origin={origin}>
                     <span className="v3-browser-sites__label" title={origin}>{label}</span>
                     <IconButton
+                      size="sm"
                       aria-label={text.sitesRemove(label)}
+                      tooltip={text.sitesRemove(label)}
                       variant="ghost"
                       isDisabled={busy}
                       onPress={() => void remove(origin)}
@@ -143,7 +144,7 @@ export function AllowedSitesDialog({ isOpen, onClose }: { isOpen: boolean; onClo
               })}
             </ul>
           )}
-          <div className="v3-browser-sites__actions">
+          <DialogFooter align="between">
             <Button
               variant="danger"
               isDisabled={sites.length === 0}
@@ -155,7 +156,7 @@ export function AllowedSitesDialog({ isOpen, onClose }: { isOpen: boolean; onClo
             <Button variant="primary" onPress={onClose} data-testid="browser-allowed-sites-done">
               {text.sitesDone}
             </Button>
-          </div>
+          </DialogFooter>
         </Dialog>
       </Modal>
     </ModalOverlay>

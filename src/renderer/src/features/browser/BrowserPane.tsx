@@ -1,8 +1,25 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, LogIn, Plus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, LogIn, Plus, RotateCw } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, EmptyState, Input, IconButton, Notice, Tab, TabList, Tabs, TextField } from '../../ui'
+import {
+  Button,
+  CloseButton,
+  EmptyState,
+  IconButton,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  MiddleTruncate,
+  Notice,
+  PanelTab,
+  PanelTabList,
+  Spinner,
+  TextField,
+  Tooltip,
+  TooltipHint,
+  TooltipTrigger
+} from '../../ui'
 import { claimResource, releaseResource, resourceOwner } from '../../state/resource-owners'
 import { nextAddressInput } from '../../../../shared/browser-navigation'
 import type { BrowserPaneProps } from '../workbench/types'
@@ -125,10 +142,14 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
     finally { setImportStarting(false) }
   }
   const importButton = (
-    <Button variant="ghost" size="sm" title={text.importHint} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
-      <LogIn size={14} aria-hidden="true" />
-      {importId ? text.importCancel : text.importLogin}
-    </Button>
+    <TooltipTrigger>
+      <Button variant="ghost" size="sm" className="v3-browser__import" aria-label={importId ? text.importCancel : text.importLogin} icon={<LogIn size={14} aria-hidden="true" />} data-testid="browser-pane-import" isPending={importStarting || (!!importId && importPhase === 'importing')} onPress={() => void importLogin()}>
+        <span className="v3-browser__import-label">{importId ? text.importCancel : text.importLogin}</span>
+      </Button>
+      <Tooltip>
+        <TooltipHint label={text.importHint} />
+      </Tooltip>
+    </TooltipTrigger>
   )
   const importStatus = importId || importNote ? (
     <Notice
@@ -136,9 +157,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       compact
       data-testid="browser-pane-import-note"
       action={!importId && importNote ? (
-        <IconButton size="sm" aria-label={text.importDismiss} data-testid="browser-pane-import-dismiss" onPress={() => setImportNote(null)}>
-          <X size={14} aria-hidden="true" />
-        </IconButton>
+        <CloseButton aria-label={text.importDismiss} tooltip={text.importDismiss} data-testid="browser-pane-import-dismiss" onPress={() => setImportNote(null)} />
       ) : undefined}
     >
       {importId ? (importPhase === 'waiting' ? text.importWaiting : text.importing) : importNote?.text}
@@ -225,33 +244,39 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
   const tabs = state.tabs ?? []
   const tabStrip = (
     <div className={`v3-browser__tabsrow${chrome?.title ? ' v3-browser__tabsrow--chrome' : ''}`} data-testid="browser-pane-tabs">
-      <Tabs
+      <PanelTabList
+        label={text.tabLabel}
         className="v3-browser__tabs"
-        selectedKey={state.activeTabId}
-        onSelectionChange={(key) => {
-          if (typeof key === 'string' && control && key !== state.activeTabId) {
-            void window.yan.browser.switchTab(key)
-          }
+        onCloseFocused={(id) => {
+          if (controlRef.current) void window.yan.browser.closeTab(id)
         }}
       >
-        <TabList className="v3-browser__tablist" aria-label={text.tabLabel}>
-          {tabs.map((tab) => (
-            <Tab
+        {tabs.map((tab) => {
+          const label = tab.title || tab.url || t('browser.newTab')
+          return (
+            <PanelTab
               key={tab.id}
               id={tab.id}
-              className="v3-browser__tab"
+              label={label}
+              title={tab.url && tab.url !== label ? `${label}\n${tab.url}` : label}
+              icon={<Globe aria-hidden="true" />}
+              pending={tab.loading}
+              active={tab.id === state.activeTabId}
               closeLabel={t('browser.closeTab')}
+              testId={`browser-pane-tab-${tab.id}`}
+              onSelect={() => {
+                if (controlRef.current && tab.id !== state.activeTabId) void window.yan.browser.switchTab(tab.id)
+              }}
               onClose={() => {
                 if (controlRef.current) void window.yan.browser.closeTab(tab.id)
               }}
-            >
-              {tab.title || tab.url || t('browser.newTab')}
-            </Tab>
-          ))}
-        </TabList>
-      </Tabs>
+            />
+          )
+        })}
+      </PanelTabList>
       <IconButton
         aria-label={t('browser.newTab')}
+        tooltip={t('browser.newTab')}
         size="sm"
         className="v3-browser__newtab"
         data-testid="browser-pane-new-tab"
@@ -271,26 +296,29 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
       <div className="v3-browser__toolbar">
         <IconButton
           aria-label={t('browser.back')}
+          tooltip={t('browser.back')}
           data-testid="browser-pane-back"
           isDisabled={!state.canGoBack}
           onPress={() => {
             if (controlRef.current) void window.yan.browser.back()
           }}
         >
-          <ArrowLeft size={15} aria-hidden="true" />
+          <ArrowLeft size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
           aria-label={t('browser.forward')}
+          tooltip={t('browser.forward')}
           data-testid="browser-pane-forward"
           isDisabled={!state.canGoForward}
           onPress={() => {
             if (controlRef.current) void window.yan.browser.forward()
           }}
         >
-          <ArrowRight size={15} aria-hidden="true" />
+          <ArrowRight size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
           aria-label={t('browser.reload')}
+          tooltip={t('browser.reload')}
           data-testid="browser-pane-reload"
           onPress={() => {
             if (controlRef.current) void window.yan.browser.reload()
@@ -315,18 +343,23 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
               setDirty(true)
             }}
           >
-            <Input
-              className="ui-input v3-browser__input"
-              aria-label={t('browser.address')}
-              data-testid="browser-pane-address"
-              spellCheck={false}
-              autoComplete="off"
-            />
+            <InputGroup>
+              <InputGroupAddon align="start">
+                <Globe size={14} aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label={t('browser.address')}
+                data-testid="browser-pane-address"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </InputGroup>
           </TextField>
         </form>
 
         <IconButton
           aria-label={t('browser.openExternal')}
+          tooltip={t('browser.openExternal')}
           data-testid="browser-pane-open-external"
           isDisabled={!shownUrl}
           onPress={() => {
@@ -342,7 +375,11 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
 
       {state.loading || state.loadError || error ? (
         <div className="v3-browser__status" data-testid="browser-pane-status" role="status">
-          {state.loading ? <span className="v3-browser__loading">{t('browser.loading')}</span> : null}
+          {state.loading ? (
+            <Notice variant="hint" icon={<Spinner size="xs" />}>
+              {t('browser.loading')}
+            </Notice>
+          ) : null}
           {state.loadError ? (
             <Notice
               tone="fail"
@@ -376,9 +413,7 @@ export function BrowserPane({ owner, visible = true }: BrowserPaneProps): ReactE
               <span title={state.loadError.description}>
                 {t('browser.pageFailed')}
               </span>
-              <span className="v3-browser__error-url" title={state.loadError.url} data-testid="browser-pane-error-url">
-                {state.loadError.url}
-              </span>
+              <MiddleTruncate className="v3-browser__error-url" value={state.loadError.url} data-testid="browser-pane-error-url" />
             </Notice>
           ) : null}
           {error ? (

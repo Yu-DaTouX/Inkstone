@@ -14,15 +14,24 @@ export function IconButton(props) {
 export function Button(props) { globalThis.__browserButtons[props['data-testid']] = props; return <button data-testid={props['data-testid']}>{props.children}</button> }
 export function EmptyState(props) { return <div role="status">{props.title}{props.action}</div> }
 export function Notice(props) { return <div>{props.children}{props.action}</div> }
-export function Tabs(props) {
+export function PanelTabList(props) {
   globalThis.__browserTabs = props
-  return <div className={props.className} data-ui="tabs">{props.children}</div>
+  return <div className={props.className} data-ui="tabs" role="tablist" aria-label={props.label}>{props.children}</div>
 }
-export function TabList(props) { return <div role="tablist" aria-label={props['aria-label']}>{props.children}</div> }
-export function Tab(props) {
+export function PanelTab(props) {
   globalThis.__browserTabItems[props.id] = props
-  return <div role="tab">{props.children}</div>
+  return <div role="tab">{props.label}</div>
 }
+export function CloseButton(props) { return <button data-testid={props['data-testid']} /> }
+export function InputGroup(props) { return <div>{props.children}</div> }
+export function InputGroupAddon(props) { return <div>{props.children}</div> }
+export function InputGroupInput(props) { return <input aria-label={props['aria-label']} data-testid={props['data-testid']} /> }
+export function MiddleTruncate(props) { return <span data-testid={props['data-testid']}>{props.value}</span> }
+export function Spinner() { return <span /> }
+export function RailRow() { return <li /> }
+export function TooltipTrigger(props) { return <>{props.children}</> }
+export function Tooltip() { return null }
+export function TooltipHint() { return null }
 export function TextField(props) { return <div className={props.className}>{props.children}</div> }
 export function Input(props) { return <input className={props.className} aria-label={props['aria-label']} data-testid={props['data-testid']} /> }
 `
@@ -40,7 +49,7 @@ export const usePaneChrome = () => globalThis.__browserChrome
 export function PaneTitle({ children }) { globalThis.__browserTitle = children; return null }
 `,
   'src/renderer/src/features/browser/use-browser-surface.ts': 'export const useBrowserBoundsSync = () => true; export const useBrowserSurfaceActive = () => {}; export const useBrowserOverlayBlocker = () => {}',
-}).map(([path, contents]) => [resolve(path), contents]))
+}).map(([path, contents]) => [resolve(process.cwd(), path), contents]))
 
 const dir = await mkdtemp(join(tmpdir(), 'inkstone-browser-header-'))
 try {
@@ -114,7 +123,7 @@ try {
   assert.match(header, /Second/)
   assert.match(header, /browser-pane-new-tab/)
   globalThis.__browserButtons['browser-pane-new-tab'].onPress()
-  globalThis.__browserTabs.onSelectionChange('tab-b')
+  globalThis.__browserTabItems['tab-b'].onSelect()
   globalThis.__browserTabItems['tab-a'].onClose()
   assert.deepEqual(calls, ['new', 'switch:tab-b', 'close:tab-a'], '合并顶栏后新增、切换、关闭标签照常工作')
 

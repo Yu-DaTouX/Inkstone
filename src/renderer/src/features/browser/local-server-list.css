@@ -29,12 +29,6 @@
     color: var(--fg2);
   }
 
-  .v3-local-servers__empty {
-    margin: 0;
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-    color: var(--fg3);
-  }
-
   .v3-local-servers__list {
     display: flex;
     flex-direction: column;
@@ -48,8 +42,8 @@
   }
 
   .v3-local-servers__favicon {
-    width: 16px;
-    height: 16px;
+    width: var(--size-icon);
+    height: var(--size-icon);
     border-radius: var(--r-2xs);
     object-fit: contain;
   }

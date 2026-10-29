@@ -7,6 +7,7 @@
     height: 100%;
     background: var(--bg);
     color: var(--fg);
+    container-type: inline-size;
   }
 
   .v3-browser--gate {
@@ -18,41 +19,24 @@
 
   .v3-browser__tabsrow {
     display: flex;
+    flex: none;
     align-items: center;
     gap: var(--s-4);
+    height: var(--size-bar);
     min-width: 0;
-    padding: var(--s-6) var(--s-8) 0;
+    padding: 0 var(--s-6) 0 var(--s-8);
     border-bottom: 1px solid var(--line);
   }
 
   .v3-browser__tabsrow--chrome {
     flex: 1;
+    height: auto;
     padding: 0;
     border-bottom: 0;
   }
 
   .v3-browser__tabs {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .v3-browser__tablist {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .v3-browser__tab {
-    flex: none;
-    max-width: 220px;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .v3-browser__tab .ui-tab__label {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    flex: 0 1 auto;
   }
 
   .v3-browser__newtab {
@@ -66,8 +50,18 @@
     padding: var(--s-6) var(--s-8);
   }
 
+  .v3-browser__toolbar > :not(.v3-browser__address) {
+    flex: none;
+  }
+
+  @container (max-width: 520px) {
+    .v3-browser__toolbar .v3-browser__import-label {
+      display: none;
+    }
+  }
+
   .v3-browser__address {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
   }
@@ -75,10 +69,6 @@
   .v3-browser__address-field {
     flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .v3-browser__input {
-    height: var(--size-btn);
   }
 
   .v3-browser__status {
@@ -90,18 +80,9 @@
     color: var(--fg2);
   }
 
-  .v3-browser__loading {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .v3-browser__error-url {
-    display: block;
+    display: flex;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: var(--font-mono);
     color: var(--fg3);
   }
@@ -128,11 +109,8 @@
   }
 
   .v3-browser-site-ask__url {
-    margin: 0;
+    display: flex;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: var(--font-mono);
     font-size: var(--t-footnote);
     color: var(--fg3);
@@ -142,12 +120,6 @@
     margin: 0;
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
     color: var(--fg2);
-  }
-
-  .v3-browser-site-ask__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
   }
 
   .v3-browser-sites {
@@ -174,10 +146,6 @@
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-  }
-
-  .v3-browser-sites__input {
-    height: var(--size-btn);
   }
 
   .v3-browser-sites__rows {
@@ -216,10 +184,4 @@
     color: var(--fg);
   }
 
-  .v3-browser-sites__actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s-8);
-  }
 }
