@@ -69,7 +69,7 @@
     align-items: center;
     gap: var(--s-6);
     padding: var(--s-6) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     min-width: 0;
   }
 
@@ -94,11 +94,7 @@
   }
 
   .v3-canvas-edit-empty {
-    margin: 0;
-    padding: var(--s-12);
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    padding-inline: var(--s-12);
   }
 
   .v3-canvas-edit-body {
@@ -187,7 +183,7 @@
     flex-wrap: wrap;
     gap: var(--s-6);
     padding: var(--s-8) var(--s-12);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
     background: var(--bg);
   }
 

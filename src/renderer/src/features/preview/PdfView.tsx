@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileWarning, FolderOpen, Lock, ZoomIn, ZoomOut } from 'lucide-react'
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -8,7 +8,7 @@ import {
   type PDFDocumentProxy
 } from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { Button, EmptyState, IconButton, Input, Skeleton, TextField } from '../../ui'
+import { Button, EmptyState, FindBar, IconButton, Separator, Skeleton, Toggle, Tooltip, TooltipHint, TooltipTrigger } from '../../ui'
 import {
   compileFind,
   findShortcut,
@@ -19,6 +19,7 @@ import {
   stepFindIndex,
   type FindOptions
 } from './code-find'
+import { findOptionEntries, isFindOptionKey } from './find-options'
 import { createPdfFindSession, pdfFindMatches, pdfMatchPage, pdfTextLines, type PdfFindResult, type PdfFindSession } from './pdf-find'
 import {
   PDF_LAZY_MARGIN,
@@ -322,15 +323,6 @@ export function PdfView({
     }
   }
 
-  const onFindInputKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing) return
-    const delta = findStepKey(event.key, event.shiftKey)
-    if (!delta) return
-    event.preventDefault()
-    event.stopPropagation()
-    stepFind(delta)
-  }
-
   const zoomBy = (direction: -1 | 1): void => {
     const current = fitWidth ? scale : zoom
     setFitWidth(false)
@@ -385,7 +377,7 @@ export function PdfView({
         <IconButton
           size="sm"
           aria-label={labels.pdfPrevPage}
-          title={labels.pdfPrevPage}
+          tooltip={labels.pdfPrevPage}
           isDisabled={page <= 1}
           onPress={() => jumpPage(-1)}
         >
@@ -397,116 +389,80 @@ export function PdfView({
         <IconButton
           size="sm"
           aria-label={labels.pdfNextPage}
-          title={labels.pdfNextPage}
+          tooltip={labels.pdfNextPage}
           isDisabled={page >= count}
           onPress={() => jumpPage(1)}
         >
           <ChevronRight size={14} />
         </IconButton>
-        <span className="v3-pdf-sep" aria-hidden />
-        <IconButton size="sm" aria-label={labels.pdfZoomOut} title={labels.pdfZoomOut} onPress={() => zoomBy(-1)}>
+        <Separator orientation="vertical" className="v3-toolbar-sep" />
+        <IconButton size="sm" aria-label={labels.pdfZoomOut} tooltip={labels.pdfZoomOut} onPress={() => zoomBy(-1)}>
           <ZoomOut size={14} />
         </IconButton>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="v3-pdf-percent"
-          aria-label={labels.pdfZoomReset}
-          title={labels.pdfZoomReset}
-          onPress={() => {
-            setFitWidth(false)
-            setZoom(1)
-          }}
-        >
-          {percent}
-        </Button>
-        <IconButton size="sm" aria-label={labels.pdfZoomIn} title={labels.pdfZoomIn} onPress={() => zoomBy(1)}>
+        <TooltipTrigger>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="v3-pdf-percent"
+            aria-label={labels.pdfZoomReset}
+            onPress={() => {
+              setFitWidth(false)
+              setZoom(1)
+            }}
+          >
+            {percent}
+          </Button>
+          <Tooltip>
+            <TooltipHint label={labels.pdfZoomReset} />
+          </Tooltip>
+        </TooltipTrigger>
+        <IconButton size="sm" aria-label={labels.pdfZoomIn} tooltip={labels.pdfZoomIn} onPress={() => zoomBy(1)}>
           <ZoomIn size={14} />
         </IconButton>
-        <Button
-          size="sm"
-          variant={fitWidth ? 'secondary' : 'ghost'}
-          aria-pressed={fitWidth}
-          data-testid="v3-pdf-fit-width"
-          onPress={() => setFitWidth(true)}
-        >
+        <Toggle size="sm" isSelected={fitWidth} data-testid="v3-pdf-fit-width" onChange={() => setFitWidth(true)}>
           {labels.pdfFitWidth}
-        </Button>
+        </Toggle>
       </div>
       {bar === 'find' ? (
-        <div className="v3-code-bar" role="search" aria-label={labels.find} data-testid="v3-pdf-findbar" onKeyDown={(event) => {
-          if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
-          event.preventDefault()
-          closeFind()
-        }}>
-          <TextField
-            className="v3-code-bar-field"
-            size="sm"
-            aria-label={labels.find}
+        <div
+          className="v3-code-bar v3-code-bar--find"
+          data-testid="v3-pdf-findbar"
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              closeFind()
+              return
+            }
+            if (event.key !== 'F3') return
+            const delta = findStepKey(event.key, event.shiftKey)
+            if (!delta) return
+            event.preventDefault()
+            event.stopPropagation()
+            stepFind(delta)
+          }}
+        >
+          <FindBar
             value={query}
             onChange={(value) => {
               setQuery(value)
               setFindIndex(0)
             }}
-          >
-            <Input
-              ref={findRef}
-              className="ui-input"
-              aria-label={labels.find}
-              placeholder={labels.findPlaceholder}
-              spellCheck={false}
-              autoComplete="off"
-              data-testid="v3-pdf-find-input"
-              onKeyDown={onFindInputKeyDown}
-            />
-          </TextField>
-          <span className="v3-code-bar-options" role="group" aria-label={labels.find}>
-            {([
-              ['matchCase', 'Aa', labels.findMatchCase],
-              ['wholeWord', 'ab', labels.findWholeWord],
-              ['regexp', '.*', labels.findRegexp]
-            ] as const).map(([key, glyph, label]) => (
-              <IconButton
-                key={key}
-                size="sm"
-                className="v3-code-bar-option"
-                aria-label={label}
-                title={label}
-                aria-pressed={options[key]}
-                onPress={() => toggleOption(key)}
-              >
-                <span aria-hidden className={key === 'wholeWord' ? 'v3-code-bar-word' : undefined}>
-                  {glyph}
-                </span>
-              </IconButton>
-            ))}
-          </span>
-          <span className="v3-code-bar-status" aria-live="polite">
-            {statusText}
-          </span>
-          <IconButton
-            size="sm"
-            aria-label={labels.findPrev}
-            title={labels.findPrev}
-            isDisabled={!search.matches.length}
-            data-testid="v3-pdf-find-prev"
-            onPress={() => stepFind(-1)}
-          >
-            <ChevronLeft size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            aria-label={labels.findNext}
-            title={labels.findNext}
-            isDisabled={!search.matches.length}
-            data-testid="v3-pdf-find-next"
-            onPress={() => stepFind(1)}
-          >
-            <ChevronRight size={14} />
-          </IconButton>
-          <IconButton size="sm" aria-label={labels.findClose} title={labels.findClose} data-testid="v3-pdf-find-close" onPress={closeFind}>
-            <X size={13} />
-          </IconButton>
+            onNext={() => stepFind(1)}
+            onPrevious={() => stepFind(-1)}
+            onClose={closeFind}
+            matchIndex={findIndex}
+            matchCount={query ? search.matches.length : null}
+            status={statusText || null}
+            options={findOptionEntries(labels, options)}
+            onOptionChange={(id) => {
+              if (isFindOptionKey(id)) toggleOption(id)
+            }}
+            placeholder={labels.findPlaceholder}
+            labels={{ input: labels.find, previous: labels.findPrev, next: labels.findNext, close: labels.findClose }}
+            inputRef={findRef}
+            className="v3-code-findbar"
+          />
         </div>
       ) : null}
       <div ref={scrollRef} className="v3-pdf-scroller" tabIndex={0} aria-label={name} data-testid="v3-pdf-scroller">

@@ -69,7 +69,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--s-4);
-    height: 32px;
+    height: var(--size-bar);
     min-width: 0;
     color: var(--fg2);
     font-size: var(--t-footnote);
@@ -103,7 +103,7 @@
     animation: v3-canvas-agent-drift var(--dur-breathe) ease-in-out infinite alternate;
   }
 
-  .v3-canvas-agent .ui-badge {
+  .v3-canvas-agent-badge {
     margin-top: var(--s-8);
     white-space: nowrap;
   }
@@ -139,19 +139,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .v3-canvas-tools {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-  }
-
-  .v3-canvas-toolbar-sep {
-    flex: 0 0 auto;
-    width: 1px;
-    height: 16px;
-    background: var(--line);
-  }
-
   .v3-canvas-devices {
     display: flex;
     flex-direction: column;
@@ -160,18 +147,11 @@
     padding: var(--s-4);
   }
 
-  .v3-canvas-devices .ui-menu__item {
-    gap: var(--s-6);
-  }
-
-  .v3-canvas-check {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 14px;
-    height: 14px;
-    color: var(--accent);
+  .v3-canvas-device {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-8);
+    min-width: 0;
   }
 
   .v3-canvas-device-name {
@@ -194,7 +174,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--s-6);
     padding: var(--s-6) var(--s-6) var(--s-2);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .v3-canvas[data-narrow] .v3-canvas-toolbar {

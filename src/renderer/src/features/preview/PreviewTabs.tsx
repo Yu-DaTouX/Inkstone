@@ -4,16 +4,16 @@ import {
   useState,
   type Key,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactElement
 } from 'react'
-import { ChevronDown, X } from 'lucide-react'
-import { IconButton, Menu, MenuItem, MenuSection, Popover, Separator, SubmenuTrigger } from '../../ui'
+import { ChevronDown } from 'lucide-react'
+import { IconButton, Menu, MenuItem, MenuSection, PanelTab, PanelTabList, Popover, Separator, SubmenuTrigger } from '../../ui'
 import { previewTabDirectory, previewTabLabel } from '../workbench/preview-state'
 import { previewTabKeyAction, previewTabMenu, type PreviewTabAction, type PreviewTabFileAction } from './preview-tab-menu'
 import { TAB_DRAG_THRESHOLD, dropGapIndex, dropIndexFor, tabMoveKey } from './tab-reorder'
 import { hiddenTabsAt, tabStripLayout, type TabSpan } from './preview-tab-strip'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import type { PreviewText } from './preview-text'
 
 export interface PreviewTabsProps {
@@ -73,7 +73,7 @@ export function PreviewTabs({
   onReorder,
   onRevealInTree
 }: PreviewTabsProps): ReactElement {
-  const stripRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
   const anchorRef = useRef<HTMLElement | null>(null)
   const overflowRef = useRef<HTMLButtonElement | null>(null)
   const activeRef = useRef(active)
@@ -88,7 +88,7 @@ export function PreviewTabs({
   useEffect(() => () => dragCleanupRef.current?.(), [])
 
   useEffect(() => {
-    const strip = stripRef.current
+    const strip = hostRef.current?.querySelector<HTMLElement>('[role="tablist"]')
     if (!strip) return undefined
     const measure = (): void => {
       if (strip.clientWidth < 1) return
@@ -103,11 +103,20 @@ export function PreviewTabs({
       markTabStripEdges(strip)
       setHidden((previous) => (sameIds(previous, layout.hiddenIds) ? previous : layout.hiddenIds))
     }
+    const onScroll = (): void => {
+      markTabStripEdges(strip)
+      const next = hiddenTabsAt(measureTabSpans(strip), strip.clientWidth, strip.scrollLeft, activeRef.current)
+      setHidden((previous) => (sameIds(previous, next) ? previous : next))
+    }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(strip)
     for (const node of strip.querySelectorAll<HTMLElement>('.v3-preview-tab')) observer.observe(node)
-    return () => observer.disconnect()
+    strip.addEventListener('scroll', onScroll)
+    return () => {
+      observer.disconnect()
+      strip.removeEventListener('scroll', onScroll)
+    }
   }, [active, tabs, chrome])
 
   useEffect(() => {
@@ -181,10 +190,12 @@ export function PreviewTabs({
             ? text.closeTabsRight
             : text.closeAllTabs
 
-  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, path: string): void => {
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLSpanElement>, path: string): void => {
+    if ((event.target as HTMLElement).getAttribute('role') !== 'tab') return
     const move = tabMoveKey({ key: event.key, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey, shift: event.shiftKey })
     if (move && onReorder) {
       event.preventDefault()
+      event.stopPropagation()
       const to = tabs.indexOf(path) + move
       if (to >= 0 && to < tabs.length) onReorder(path, to)
       return
@@ -195,21 +206,16 @@ export function PreviewTabs({
       alt: event.altKey,
       meta: event.metaKey
     })
-    if (!action) return
-    event.preventDefault()
-    if (action === 'close') onClose(path)
-    else {
-      const host = event.currentTarget.closest<HTMLElement>('.v3-preview-tab')
-      if (host) openMenu(path, host)
-    }
+    if (action) return
+    if (event.key === 'Delete' || event.key === 'Backspace' || event.key === 'ContextMenu' || event.key === 'F10') event.stopPropagation()
   }
 
   const startDrag = (event: ReactPointerEvent<HTMLSpanElement>, path: string): void => {
     if (!onReorder || tabs.length < 2) return
     if (event.button !== 0 || event.isPrimary === false) return
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
-    if ((event.target as HTMLElement).closest('.v3-preview-tab-close, input, textarea')) return
-    const strip = stripRef.current
+    if ((event.target as HTMLElement).closest('[data-panel-tab-close], input, textarea')) return
+    const strip = hostRef.current?.querySelector<HTMLElement>('[role="tablist"]')
     if (!strip) return
     const from = tabs.indexOf(path)
     if (from < 0) return
@@ -297,91 +303,60 @@ export function PreviewTabs({
   return (
     <>
       <div className={chrome ? 'v3-preview-tabbar v3-preview-tabbar--chrome' : 'v3-preview-tabbar'}>
-      <div
-        ref={stripRef}
-        className={chrome ? 'v3-preview-tabstrip v3-preview-tabstrip--chrome' : 'v3-preview-tabstrip'}
-        role="tablist"
-        aria-label={text.tabsLabel}
-        data-testid="v3-preview-tabs"
-        onWheel={(event) => {
-          if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) event.currentTarget.scrollLeft += event.deltaY
-        }}
-        onScroll={(event) => {
-          const strip = event.currentTarget
-          markTabStripEdges(strip)
-          const next = hiddenTabsAt(measureTabSpans(strip), strip.clientWidth, strip.scrollLeft, activeRef.current)
-          setHidden((previous) => (sameIds(previous, next) ? previous : next))
-        }}
-      >
-        {tabs.map((tab, index) => {
-          const label = previewTabLabel(tab)
-          const isPreview = preview === tab
-          const isHidden = hidden.includes(tab)
-          const directory = previewTabDirectory(tab, cwd)
-          const gap = drag?.gap ?? -1
-          return (
-            <span
-              key={tab}
-              className={`v3-preview-tab${tab === active ? ' is-active' : ''}`}
-              data-tab-path={tab}
-              data-overflowed={isHidden ? '' : undefined}
-              data-preview={isPreview ? '' : undefined}
-              data-menu-open={menuPath === tab ? '' : undefined}
-              data-dragging={drag?.path === tab ? '' : undefined}
-              data-drop-before={gap === index ? '' : undefined}
-              data-drop-after={gap === tabs.length && index === tabs.length - 1 ? '' : undefined}
-              data-testid={`v3-preview-tab-${label}`}
-              onPointerDown={(event) => startDrag(event, tab)}
-              onMouseDown={(event: MouseEvent) => {
-                if (event.button === 1) event.preventDefault()
-              }}
-              onAuxClick={(event: MouseEvent) => {
-                if (event.button !== 1 || isHidden) return
-                event.preventDefault()
-                onClose(tab)
-              }}
-              onDoubleClick={isPreview && !isHidden ? () => onKeep(tab) : undefined}
-              onContextMenu={(event: MouseEvent<HTMLSpanElement>) => {
-                if (isHidden) return
-                event.preventDefault()
-                openMenu(tab, event.currentTarget)
-              }}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab === active}
-                tabIndex={isHidden ? -1 : undefined}
-                className="v3-preview-tab-name"
-                title={directory ? `${label}\n${directory}` : label}
-                onClick={() => onSelect(tab)}
-                onKeyDown={(event) => onTabKeyDown(event, tab)}
-              >
-                {label}
-                {isPreview ? <span className="v3-preview-sr">{`, ${text.previewTabHint}`}</span> : null}
-              </button>
-              <button
-                type="button"
-                tabIndex={-1}
-                className="v3-preview-tab-close"
-                aria-label={`${text.closeTab}: ${label}`}
-                title={text.closeTab}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onClose(tab)}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          )
-        })}
-      </div>
+        <div ref={hostRef} className="v3-preview-tabstrip" data-testid="v3-preview-tabs">
+          <PanelTabList
+            label={text.tabsLabel}
+            onCloseFocused={onClose}
+            onContextMenuFocused={(path, anchor) => openMenu(path, anchor)}
+          >
+            {tabs.map((tab, index) => {
+              const label = previewTabLabel(tab)
+              const isPreview = preview === tab
+              const isHidden = hidden.includes(tab)
+              const directory = previewTabDirectory(tab, cwd)
+              const gap = drag?.gap ?? -1
+              return (
+                <span
+                  key={tab}
+                  className="v3-preview-tab"
+                  data-tab-path={tab}
+                  data-overflowed={isHidden ? '' : undefined}
+                  data-preview={isPreview ? '' : undefined}
+                  data-menu-open={menuPath === tab ? '' : undefined}
+                  data-dragging={drag?.path === tab ? '' : undefined}
+                  data-drop-before={gap === index ? '' : undefined}
+                  data-drop-after={gap === tabs.length && index === tabs.length - 1 ? '' : undefined}
+                  onPointerDown={(event) => startDrag(event, tab)}
+                  onKeyDown={(event) => onTabKeyDown(event, tab)}
+                  onDoubleClick={isPreview && !isHidden ? () => onKeep(tab) : undefined}
+                >
+                  <PanelTab
+                    id={tab}
+                    label={label}
+                    title={directory ? `${label}\n${directory}` : label}
+                    icon={<FileTypeIcon name={label} size={14} />}
+                    active={tab === active}
+                    closeLabel={`${text.closeTab}: ${label}`}
+                    testId={`v3-preview-tab-${label}`}
+                    onSelect={() => onSelect(tab)}
+                    onClose={() => onClose(tab)}
+                    onContextMenu={(event) => {
+                      if (isHidden) return
+                      event.preventDefault()
+                      openMenu(tab, event.currentTarget)
+                    }}
+                  />
+                </span>
+              )
+            })}
+          </PanelTabList>
+        </div>
         {hidden.length ? (
           <IconButton
             ref={overflowRef}
             size="sm"
-            className="v3-preview-tab-overflow"
             aria-label={text.moreTabs}
-            title={text.moreTabs}
+            tooltip={text.moreTabs}
             aria-haspopup="menu"
             data-testid="v3-preview-tab-overflow"
             onPress={() => setOverflowOpen(true)}

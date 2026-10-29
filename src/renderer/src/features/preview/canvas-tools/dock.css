@@ -21,13 +21,6 @@
     min-width: 0;
   }
 
-  .v3-canvas-dock-sep {
-    flex: 0 0 auto;
-    width: 1px;
-    height: 16px;
-    background: var(--line);
-  }
-
   .v3-canvas-dock-line {
     flex: 1 1 auto;
     min-width: 0;

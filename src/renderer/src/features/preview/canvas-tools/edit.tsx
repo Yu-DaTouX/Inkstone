@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import { Button, ListBoxItem, Select, TextArea, TextField } from '../../../ui'
+import { Button, EmptyState, ListBoxItem, Select, TextArea, TextField } from '../../../ui'
 import { HTML_CANVAS_CHANNEL } from '../../../../../shared/html-canvas-bridge'
 import { htmlElementSpan, type HtmlEditPatch, type HtmlPatchStyle } from '../../../../../shared/html-edit-patch'
 import { readHtmlStartTag, readHtmlTagAttribute } from '../../../../../shared/html-source-map'
@@ -262,7 +262,7 @@ function EditPanel({ context }: CanvasToolPanelProps): ReactElement {
           <span className="v3-canvas-edit-title">{text.panel}</span>
           {context.narrow ? <DockToggle labels={context.labels} expanded onToggle={context.toggleDock} /> : null}
         </div>
-        <p className="v3-canvas-edit-empty">{text.empty}</p>
+        <EmptyState size="sm" align="start" className="v3-canvas-edit-empty" title={text.empty} />
       </aside>
     )
   }
@@ -278,9 +278,7 @@ function EditPanel({ context }: CanvasToolPanelProps): ReactElement {
           <code className="v3-canvas-edit-taglet">{info.tag}</code>
           {context.narrow ? <DockToggle labels={context.labels} expanded onToggle={context.toggleDock} /> : null}
         </div>
-        <p className="v3-canvas-edit-empty" data-testid="v3-canvas-edit-generated">
-          {text.generated}
-        </p>
+        <EmptyState size="sm" align="start" className="v3-canvas-edit-empty" data-testid="v3-canvas-edit-generated" title={text.generated} />
       </aside>
     )
   }

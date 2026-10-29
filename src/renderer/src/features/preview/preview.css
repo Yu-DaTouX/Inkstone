@@ -52,6 +52,7 @@
   }
 
   .v3-preview-tabbar {
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
     gap: var(--s-2);
@@ -59,12 +60,7 @@
   }
 
   .v3-preview-tabbar--chrome {
-    flex: 1;
     padding: var(--s-2);
-  }
-
-  .v3-preview-tabstrip--chrome {
-    flex: 1;
   }
 
   .v3-preview-code {
@@ -72,7 +68,7 @@
     padding: 0 var(--s-12);
     font-family: var(--font-mono);
     font-size: var(--t-footnote);
-    line-height: 1.6;
+    line-height: var(--t-footnote-lh);
     white-space: pre;
     color: var(--fg);
   }
@@ -111,56 +107,26 @@
     max-width: 100%;
     max-height: 60vh;
     object-fit: contain;
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-sm);
     background: var(--sunken);
   }
 
   .v3-preview-manifest {
     list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
     margin: var(--s-8) 0 0;
     padding: 0;
     width: 100%;
     text-align: left;
   }
 
-  .v3-preview-manifest-item {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    width: 100%;
-    padding: var(--s-4) var(--s-8);
-    border: 0;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg2);
-    font: inherit;
-    font-size: var(--t-footnote);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .v3-preview-manifest-item:hover {
-    background: var(--hover-main);
-    color: var(--fg);
-  }
-
-  .v3-preview-manifest-item:active {
-    background: var(--press);
-    color: var(--fg);
-  }
-
-  .v3-preview-manifest-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .v3-preview-manifest-version {
-    flex: none;
     color: var(--fg3);
     font-size: var(--t-footnote);
+    font-variant-numeric: tabular-nums;
   }
 
   .v3-preview-tabs {
@@ -168,8 +134,9 @@
     display: flex;
     align-items: center;
     gap: var(--s-4);
-    padding: var(--s-2) var(--s-8);
-    border-bottom: 1px solid var(--line);
+    min-height: var(--size-bar);
+    padding: 0 var(--s-8);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
   .v3-preview-tabstrip {
@@ -177,48 +144,21 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--s-2);
-    overflow-x: auto;
-    scrollbar-width: none;
   }
 
   .v3-preview-tab {
+    position: relative;
     flex: none;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: var(--s-2);
     border-radius: var(--r-sm);
-    background: transparent;
-  }
-
-  .v3-preview-tab.is-active {
-    background: var(--alpha-2);
   }
 
   .v3-preview-tab[data-overflowed] {
     visibility: hidden;
   }
 
-  .v3-preview-tab-name {
-    max-width: 140px;
-    padding: var(--s-2) var(--s-4);
-    border: 0;
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--fg2);
-    font: inherit;
-    font-size: var(--t-footnote);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-  }
-
-  .v3-preview-tab.is-active .v3-preview-tab-name {
-    color: var(--fg);
-  }
-
-  .v3-preview-tab[data-preview] .v3-preview-tab-name {
+  .v3-preview-tab[data-preview] [role='tab'] {
     font-style: italic;
   }
 
@@ -234,43 +174,20 @@
   .v3-preview-tab[data-drop-before]::before,
   .v3-preview-tab[data-drop-after]::after {
     content: '';
-    flex: none;
+    position: absolute;
+    top: var(--s-2);
+    bottom: var(--s-2);
     width: 2px;
-    align-self: stretch;
-    margin: 2px 0;
     border-radius: var(--r-2xs);
     background: var(--accent);
   }
 
-  .v3-preview-sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+  .v3-preview-tab[data-drop-before]::before {
+    left: calc(-1 * var(--s-2));
   }
 
-  .v3-preview-tab-close {
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: var(--r-xs);
-    background: transparent;
-    color: var(--fg3);
-    cursor: pointer;
-  }
-
-  .v3-preview-tab-close:hover,
-  .v3-preview-tab-close:focus-visible {
-    background: var(--hover);
-    color: var(--fg);
-  }
-
-  .v3-preview-tab-overflow {
-    flex: none;
+  .v3-preview-tab[data-drop-after]::after {
+    right: calc(-1 * var(--s-2));
   }
 
   .v3-preview-tab-overflow-item {
@@ -302,7 +219,7 @@
     align-items: center;
     gap: var(--s-8);
     min-width: 0;
-    min-height: 32px;
+    min-height: var(--size-bar);
     padding: 0 var(--s-6) 0 var(--s-12);
     color: var(--fg3);
     font-size: var(--t-footnote);
@@ -320,7 +237,7 @@
     flex: none;
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--s-2);
   }
 
   .v3-preview-notes {
@@ -337,7 +254,7 @@
     align-items: center;
     gap: var(--s-8);
     padding: var(--s-4) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     background: var(--sunken);
   }
 
@@ -365,7 +282,7 @@
     align-items: center;
     gap: var(--s-8);
     padding: var(--s-6) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
   .v3-preview-csv-filter {
@@ -405,7 +322,7 @@
   .v3-preview-csv-table th,
   .v3-preview-csv-table td {
     padding: var(--s-4) var(--s-8);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     text-align: left;
     vertical-align: top;
     white-space: nowrap;
@@ -458,7 +375,7 @@
     align-items: center;
     gap: var(--s-2);
     padding: var(--s-4) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     background: var(--bg);
   }
 
@@ -475,11 +392,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .v3-pdf-sep {
-    width: 1px;
-    height: 16px;
-    margin-inline: var(--s-4);
-    background: var(--line);
+  .v3-toolbar-sep {
+    align-self: center;
+    height: var(--size-btn-micro);
   }
 
   .v3-pdf-scroller {
@@ -553,7 +468,7 @@
 
   .v3-pdf-text [data-pdf-hit] {
     border-radius: var(--r-2xs);
-    background: color-mix(in srgb, var(--ask) 55%, transparent);
+    background: color-mix(in srgb, var(--find) 55%, transparent);
   }
 
   .v3-pdf-text ::selection {
@@ -604,11 +519,7 @@
     pointer-events: none;
     z-index: 1;
     opacity: 0.92;
-  }
-
-  .v3-preview-live {
-    border-radius: var(--r-full);
-    corner-shape: round;
+    border-radius: var(--r-xs);
     background: var(--bg);
     box-shadow: var(--shadow-pop);
   }
@@ -619,11 +530,6 @@
     right: var(--s-12);
     bottom: var(--s-12);
     z-index: 2;
-  }
-
-  .v3-preview-live .ui-badge {
-    gap: var(--s-6);
-    padding: var(--s-4) var(--s-10);
   }
 
   .v3-preview-frame-cover {

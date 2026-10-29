@@ -14,7 +14,7 @@
     gap: var(--s-6);
     min-width: 0;
     padding: var(--s-8) var(--s-12);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: color-mix(in oklab, var(--bg) 94%, transparent);
     box-shadow: var(--shadow-md);

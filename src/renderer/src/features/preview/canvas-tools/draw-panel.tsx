@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { ArrowUpRight, Circle, Pencil, Redo2, SendHorizontal, Square, Trash2, Type, Undo2 } from 'lucide-react'
-import { Button, IconButton, Notice } from '../../../ui'
+import { Button, IconButton, Notice, Separator } from '../../../ui'
 import { DockToggle } from './dock'
 import { DRAW_PALETTE, DRAW_PENS, type DrawPen } from './draw-model'
 import {
@@ -204,7 +204,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
                   size="sm"
                   variant={active ? 'secondary' : 'ghost'}
                   aria-label={text.pens[pen]}
-                  title={text.pens[pen]}
+                  tooltip={text.pens[pen]}
                   aria-pressed={active}
                   data-testid={`v3-canvas-draw-pen-${pen}`}
                   onPress={() => setDrawPen(pen)}
@@ -214,7 +214,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
               )
             })}
           </div>
-          <span className="v3-canvas-dock-sep" aria-hidden />
+          <Separator orientation="vertical" className="v3-toolbar-sep" />
           <div className="v3-canvas-dock-group" role="group" aria-label={text.colorLabel}>
             {DRAW_PALETTE.map((spec) => {
               const active = state.color === spec.key
@@ -225,7 +225,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
                   variant={active ? 'secondary' : 'ghost'}
                   className="v3-canvas-draw-swatch"
                   aria-label={text.colors[spec.key] ?? spec.key}
-                  title={text.colors[spec.key] ?? spec.key}
+                  tooltip={text.colors[spec.key] ?? spec.key}
                   aria-pressed={active}
                   data-testid={`v3-canvas-draw-color-${spec.key}`}
                   onPress={() => setDrawColor(spec.key)}
@@ -235,11 +235,12 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
               )
             })}
           </div>
-          <span className="v3-canvas-dock-sep" aria-hidden />
+          <Separator orientation="vertical" className="v3-toolbar-sep" />
           <IconButton
             size="sm"
             aria-label={text.undo}
-            title={`${text.undo} (Ctrl/Cmd+Z)`}
+            tooltip={text.undo}
+            tooltipShortcut="Ctrl/Cmd+Z"
             isDisabled={!history.undo}
             data-testid="v3-canvas-draw-undo"
             onPress={() => undoDraw(abs, activeId)}
@@ -249,7 +250,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
           <Button
             size="sm"
             variant="primary"
-            icon={<SendHorizontal size={13} />}
+            icon={<SendHorizontal size={14} />}
             isDisabled={busy || total === 0}
             aria-label={text.send}
             data-testid="v3-canvas-draw-send"
@@ -294,7 +295,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
                   size="sm"
                   variant={active ? 'secondary' : 'ghost'}
                   aria-label={text.pens[pen]}
-                  title={text.pens[pen]}
+                  tooltip={text.pens[pen]}
                   aria-pressed={active}
                   data-testid={`v3-canvas-draw-pen-${pen}`}
                   onPress={() => setDrawPen(pen)}
@@ -317,7 +318,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
                   variant={active ? 'secondary' : 'ghost'}
                   className="v3-canvas-draw-swatch"
                   aria-label={text.colors[spec.key] ?? spec.key}
-                  title={text.colors[spec.key] ?? spec.key}
+                  tooltip={text.colors[spec.key] ?? spec.key}
                   aria-pressed={active}
                   data-testid={`v3-canvas-draw-color-${spec.key}`}
                   onPress={() => setDrawColor(spec.key)}
@@ -336,7 +337,8 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
           <IconButton
             size="sm"
             aria-label={text.undo}
-            title={`${text.undo} (Ctrl/Cmd+Z)`}
+            tooltip={text.undo}
+            tooltipShortcut="Ctrl/Cmd+Z"
             isDisabled={!history.undo}
             data-testid="v3-canvas-draw-undo"
             onPress={() => undoDraw(abs, activeId)}
@@ -346,7 +348,8 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
           <IconButton
             size="sm"
             aria-label={text.redo}
-            title={`${text.redo} (Ctrl/Cmd+Shift+Z)`}
+            tooltip={text.redo}
+            tooltipShortcut="Ctrl/Cmd+Shift+Z"
             isDisabled={!history.redo}
             data-testid="v3-canvas-draw-redo"
             onPress={() => redoDraw(abs, activeId)}
@@ -356,7 +359,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
           <IconButton
             size="sm"
             aria-label={text.clear}
-            title={text.clear}
+            tooltip={text.clear}
             isDisabled={!activeCount}
             data-testid="v3-canvas-draw-clear"
             onPress={() => clearDrawFrame(abs, activeId)}
@@ -388,7 +391,7 @@ export function DrawPanel({ context }: CanvasToolPanelProps): ReactElement {
           size="sm"
           variant="primary"
           block
-          icon={<SendHorizontal size={13} />}
+          icon={<SendHorizontal size={14} />}
           isDisabled={busy || total === 0}
           aria-label={text.send}
           data-testid="v3-canvas-draw-send"

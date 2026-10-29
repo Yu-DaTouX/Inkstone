@@ -121,13 +121,13 @@ export function CsvTableView({
                     >
                       <span className="v3-preview-csv-head">
                         <span className="v3-preview-csv-head-label">{label}</span>
-                        <IconButton size="sm" aria-label={sortLabel} title={sortLabel} onPress={() => toggle(column, label)}>
+                        <IconButton size="sm" aria-label={sortLabel} tooltip={sortLabel} onPress={() => toggle(column, label)}>
                           {direction === 'asc' ? (
-                            <ChevronUp size={13} />
+                            <ChevronUp size={14} />
                           ) : direction === 'desc' ? (
-                            <ChevronDown size={13} />
+                            <ChevronDown size={14} />
                           ) : (
-                            <ChevronsUpDown size={13} />
+                            <ChevronsUpDown size={14} />
                           )}
                         </IconButton>
                       </span>

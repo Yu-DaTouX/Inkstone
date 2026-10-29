@@ -71,8 +71,9 @@ export function NotebookView({ text, name, labels }: { text: string; name: strin
         <span className="v3-notebook-hint">{t('preview.notebook.savedOnly')}</span>
         <IconButton
           size="sm"
+          className="v3-notebook-mode"
           aria-label={source ? labels.readingMode : labels.sourceMode}
-          title={source ? labels.readingMode : labels.sourceMode}
+          tooltip={source ? labels.readingMode : labels.sourceMode}
           aria-pressed={source}
           data-testid="v3-notebook-source-toggle"
           onPress={() => setSource((value) => !value)}

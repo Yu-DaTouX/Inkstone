@@ -45,8 +45,8 @@
     gap: var(--s-8);
     min-width: 0;
     padding: var(--s-12) 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
   .v3-font-size-row {

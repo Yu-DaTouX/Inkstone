@@ -10,7 +10,7 @@ import {
   type RefObject
 } from 'react'
 import { Check, Crosshair, MessageSquarePlus, Pencil, Trash2 } from 'lucide-react'
-import { Button, Checkbox, IconButton, TextArea } from '../../../ui'
+import { Badge, Button, Checkbox, EmptyState, IconButton, TextArea } from '../../../ui'
 import { HTML_PREVIEW_CHANNEL } from '../../../../../shared/html-artifact-preview'
 import { stageRect, type CanvasFrameBox, type CanvasView } from '../html-canvas-model'
 import { elementVisibleRegion } from '../canvas-region'
@@ -356,7 +356,7 @@ function CommentOverlay({ frame, view, context }: CanvasToolOverlayProps): React
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => locateComment(context, store, comment)}
             >
-              {comment.sentAt ? <Check size={10} aria-hidden /> : index}
+              {comment.sentAt ? <Check size={12} aria-hidden /> : index}
             </button>
           )
         })}
@@ -556,6 +556,7 @@ function CommentPanel({ context }: CanvasToolPanelProps): ReactElement {
       </div>
       <div className="v3-canvas-comment-actions">
         <Checkbox
+          className="v3-canvas-comment-all"
           aria-label={text.selectAll}
           isSelected={allSelected}
           isIndeterminate={someSelected}
@@ -605,7 +606,7 @@ function CommentPanel({ context }: CanvasToolPanelProps): ReactElement {
                     onChange={() => store.toggleSelected(comment.id)}
                   />
                   <span className="v3-canvas-comment-num" aria-hidden>
-                    {comment.sentAt ? <Check size={10} /> : index}
+                    {comment.sentAt ? <Check size={12} /> : index}
                   </span>
                   <button
                     type="button"
@@ -650,44 +651,40 @@ function CommentPanel({ context }: CanvasToolPanelProps): ReactElement {
                   {typeof comment.time === 'number' ? (
                     <span className="v3-canvas-comment-stamp">{text.stamp(formatTimecode(comment.time))}</span>
                   ) : null}
-                  {comment.sentAt ? (
-                    <span className="v3-canvas-comment-badge" data-tone="sent">
-                      {text.sent}
-                    </span>
-                  ) : null}
+                  {comment.sentAt ? <Badge tone="ok">{text.sent}</Badge> : null}
                   {comment.invalid ? (
-                    <span className="v3-canvas-comment-badge" data-tone="invalid" title={text.invalidHint}>
+                    <Badge tone="stall" title={text.invalidHint}>
                       {text.invalid}
-                    </span>
+                    </Badge>
                   ) : null}
                   <span className="v3-canvas-comment-row-spacer" />
                   <IconButton
                     size="sm"
                     aria-label={text.locate}
-                    title={text.locate}
+                    tooltip={text.locate}
                     onPress={() => locateComment(context, store, comment)}
                   >
-                    <Crosshair size={12} />
+                    <Crosshair size={14} />
                   </IconButton>
                   <IconButton
                     size="sm"
                     aria-label={text.edit}
-                    title={text.edit}
+                    tooltip={text.edit}
                     onPress={() => setEditing({ id: comment.id, value: comment.content })}
                   >
-                    <Pencil size={12} />
+                    <Pencil size={14} />
                   </IconButton>
                   <IconButton
                     size="sm"
                     variant="danger"
                     aria-label={text.remove}
-                    title={text.remove}
+                    tooltip={text.remove}
                     onPress={() => {
                       if (editing?.id === comment.id) setEditing(null)
                       store.remove(comment.id)
                     }}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={14} />
                   </IconButton>
                 </div>
               </li>
@@ -695,11 +692,14 @@ function CommentPanel({ context }: CanvasToolPanelProps): ReactElement {
           })}
         </ul>
       ) : (
-        <div className="v3-canvas-comment-empty">
-          <MessageSquarePlus size={16} aria-hidden />
-          <p>{text.panelEmpty}</p>
-          <p className="v3-canvas-comment-empty-hint">{text.panelHint}</p>
-        </div>
+        <EmptyState
+          size="sm"
+          align="start"
+          className="v3-canvas-comment-empty"
+          icon={<MessageSquarePlus size={16} />}
+          title={text.panelEmpty}
+          description={text.panelHint}
+        />
       )}
     </aside>
   )

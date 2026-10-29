@@ -71,7 +71,7 @@
     align-items: center;
     gap: var(--s-4);
     padding: var(--s-6) var(--s-8) var(--s-6) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
   .v3-canvas-panel-title {
@@ -83,11 +83,7 @@
   }
 
   .v3-canvas-panel-empty {
-    margin: 0;
-    padding: var(--s-12);
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
+    padding-inline: var(--s-12);
   }
 
   .v3-canvas-panel-body {

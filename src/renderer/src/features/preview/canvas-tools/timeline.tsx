@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactElement } from 'react'
-import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
-import { Button, IconButton, Slider } from '../../../ui'
+import { ChevronLeft, ChevronRight, Clapperboard, Film, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { Button, CloseButton, IconButton, Slider, Tooltip, TooltipHint, TooltipTrigger } from '../../../ui'
 import type { CanvasTool, CanvasToolPanelProps } from './types'
 import {
   clampTimelineTime,
@@ -178,40 +178,40 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
     >
       <div className="v3-canvas-timeline-bar">
         <div className="v3-canvas-timeline-buttons">
-          <IconButton size="sm" aria-label={text.start} title={text.start} data-testid="v3-canvas-timeline-start" onPress={() => seek(0)}>
-            <SkipBack size={13} />
+          <IconButton size="sm" aria-label={text.start} tooltip={text.start} data-testid="v3-canvas-timeline-start" onPress={() => seek(0)}>
+            <SkipBack size={14} />
           </IconButton>
           <IconButton
             size="sm"
             aria-label={text.prevFrame}
-            title={text.prevFrame}
+            tooltip={text.prevFrame}
             data-testid="v3-canvas-timeline-prev"
             onPress={() => seek(stepFrames(time, -1, total))}
           >
-            <ChevronLeft size={13} />
+            <ChevronLeft size={14} />
           </IconButton>
           <IconButton
             size="sm"
             variant="secondary"
             aria-label={playing ? text.pause : text.play}
-            title={playing ? text.pause : text.play}
+            tooltip={playing ? text.pause : text.play}
             aria-pressed={playing}
             data-testid="v3-canvas-timeline-play"
             onPress={toggle}
           >
-            {playing ? <Pause size={13} /> : <Play size={13} />}
+            {playing ? <Pause size={14} /> : <Play size={14} />}
           </IconButton>
           <IconButton
             size="sm"
             aria-label={text.nextFrame}
-            title={text.nextFrame}
+            tooltip={text.nextFrame}
             data-testid="v3-canvas-timeline-next"
             onPress={() => seek(stepFrames(time, 1, total))}
           >
-            <ChevronRight size={13} />
+            <ChevronRight size={14} />
           </IconButton>
-          <IconButton size="sm" aria-label={text.end} title={text.end} data-testid="v3-canvas-timeline-end" onPress={() => seek(total)}>
-            <SkipForward size={13} />
+          <IconButton size="sm" aria-label={text.end} tooltip={text.end} data-testid="v3-canvas-timeline-end" onPress={() => seek(total)}>
+            <SkipForward size={14} />
           </IconButton>
         </div>
         <span className="v3-canvas-timeline-clock" data-testid="v3-canvas-timeline-clock" title={text.keys}>
@@ -293,32 +293,34 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
         <span className="v3-canvas-timeline-count">{text.clipCount(clips.length)}</span>
         <div className="v3-canvas-timeline-export" data-testid="v3-canvas-timeline-export">
           {exporter.phase.kind === 'idle' ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Film size={13} />}
-              title={text.exportHint}
-              data-testid="v3-canvas-timeline-export-start"
-              isDisabled={context.generating}
-              onPress={exporter.start}
-            >
-              {text.exportVideo}
-            </Button>
+            <TooltipTrigger>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Film size={14} />}
+                data-testid="v3-canvas-timeline-export-start"
+                isDisabled={context.generating}
+                onPress={exporter.start}
+              >
+                {text.exportVideo}
+              </Button>
+              <Tooltip>
+                <TooltipHint label={text.exportHint} />
+              </Tooltip>
+            </TooltipTrigger>
           ) : null}
           {exporter.phase.kind === 'running' ? (
             <>
               <span className="v3-canvas-timeline-export-status" data-testid="v3-canvas-timeline-export-progress">
                 {text.exporting(exporter.phase.frame, exporter.phase.total)}
               </span>
-              <IconButton
+              <CloseButton
                 size="sm"
                 aria-label={text.exportCancel}
-                title={text.exportCancel}
+                tooltip={text.exportCancel}
                 data-testid="v3-canvas-timeline-export-cancel"
                 onPress={exporter.cancel}
-              >
-                <X size={13} />
-              </IconButton>
+              />
             </>
           ) : null}
           {exporter.phase.kind === 'done' ? (
@@ -332,9 +334,7 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
               <Button size="sm" variant="ghost" onPress={() => void window.yan.revealPath(exportedPath)}>
                 {text.exportReveal}
               </Button>
-              <IconButton size="sm" aria-label={text.exportDismiss} title={text.exportDismiss} onPress={exporter.reset}>
-                <X size={13} />
-              </IconButton>
+              <CloseButton size="sm" aria-label={text.exportDismiss} tooltip={text.exportDismiss} onPress={exporter.reset} />
             </>
           ) : null}
           {exporter.phase.kind === 'failed' ? (
@@ -349,9 +349,7 @@ export function TimelinePanel({ context }: CanvasToolPanelProps): ReactElement |
                   exporter.phase.error === 'ffmpeg-missing' ? text.exportFfmpegMissing : exporter.phase.detail ?? exporter.phase.error
                 )}
               </span>
-              <IconButton size="sm" aria-label={text.exportDismiss} title={text.exportDismiss} onPress={exporter.reset}>
-                <X size={13} />
-              </IconButton>
+              <CloseButton size="sm" aria-label={text.exportDismiss} tooltip={text.exportDismiss} onPress={exporter.reset} />
             </>
           ) : null}
         </div>

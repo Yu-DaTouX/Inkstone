@@ -20,7 +20,7 @@ export function DockToggle({
       variant="ghost"
       className="v3-canvas-dock-toggle"
       aria-label={label}
-      title={label}
+      tooltip={label}
       aria-expanded={expanded}
       data-testid="v3-canvas-dock-toggle"
       onPress={onToggle}

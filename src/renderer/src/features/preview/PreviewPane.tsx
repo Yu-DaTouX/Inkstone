@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactEle
 import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, EmptyState, IconButton, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
+import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
 import type { OfficeDocumentView } from '../../../../shared/office'
 import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
@@ -448,7 +448,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         <IconButton
           size="sm"
           aria-label={sourceMode ? text.readingMode : text.sourceMode}
-          title={sourceMode ? text.readingMode : text.sourceMode}
+          tooltip={sourceMode ? text.readingMode : text.sourceMode}
           data-testid="v3-preview-reading-toggle"
           onPress={() => setSourceChoice(!sourceMode)}
         >
@@ -459,7 +459,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         <IconButton
           size="sm"
           aria-label={canvas ? text.singleMode : text.canvasMode}
-          title={canvas ? text.singleMode : text.canvasMode}
+          tooltip={canvas ? text.singleMode : text.canvasMode}
           aria-pressed={canvas}
           data-testid="v3-preview-canvas-toggle"
           onPress={() => chooseCanvas(!canvas)}
@@ -471,7 +471,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
         <IconButton
           size="sm"
           aria-label={editing ? text.viewMode : text.edit}
-          title={editing ? text.viewMode : text.edit}
+          tooltip={editing ? text.viewMode : text.edit}
           aria-pressed={editing}
           data-testid="v3-preview-edit-toggle"
           onPress={() => {
@@ -543,9 +543,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
           {previewTabs && previewTabs.tabs.length > 1 ? (
             <div className="v3-preview-tabs">
               {tabStrip}
-              <IconButton aria-label={text.closeAllTabs} title={text.closeAllTabs} onPress={closeAllTabs}>
-                <X size={13} />
-              </IconButton>
+              <CloseButton size="sm" aria-label={text.closeAllTabs} tooltip={text.closeAllTabs} onPress={closeAllTabs} />
             </div>
           ) : null}
           <PaneHeader
@@ -555,19 +553,19 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
               <>
                 {activeAbs ? (
                   <>
-                    <IconButton aria-label={text.open} title={text.open} onPress={open}>
+                    <IconButton size="sm" aria-label={text.open} tooltip={text.open} onPress={open}>
                       <ExternalLink size={14} />
                     </IconButton>
-                    <IconButton aria-label={text.reveal} title={text.reveal} onPress={reveal}>
+                    <IconButton size="sm" aria-label={text.reveal} tooltip={text.reveal} onPress={reveal}>
                       <FolderOpen size={14} />
                     </IconButton>
-                    <IconButton aria-label={text.copyPath} title={text.copyPath} onPress={copy}>
+                    <IconButton size="sm" aria-label={text.copyPath} tooltip={text.copyPath} onPress={copy}>
                       <Copy size={14} />
                     </IconButton>
                     {toolButtons}
                   </>
                 ) : null}
-                <IconButton aria-label={text.retry} title={text.retry} onPress={() => setReload((value) => value + 1)}>
+                <IconButton size="sm" aria-label={text.retry} tooltip={text.retry} onPress={() => setReload((value) => value + 1)}>
                   <RefreshCw size={14} />
                 </IconButton>
               </>
@@ -641,7 +639,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
       {liveGenerating && !canvas ? (
         <div className="v3-preview-live" role="status" data-testid="v3-preview-live">
           <Badge tone="run">
-            <Spinner size={12} />
+            <Spinner size="xs" />
             {text.liveGenerating}
           </Badge>
         </div>
@@ -653,9 +651,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, sta
           className="v3-preview-export-error"
           data-testid="v3-preview-export-error"
           action={
-            <IconButton size="sm" aria-label={text.closeTab} onPress={() => setExportError(null)}>
-              <X size={14} />
-            </IconButton>
+            <CloseButton size="sm" aria-label={text.closeTab} tooltip={text.closeTab} onPress={() => setExportError(null)} />
           }
         >
           {text.exportPngFailed.replace('{error}', exportError)}
@@ -738,13 +734,14 @@ function PreviewBody({
             <ul className="v3-preview-manifest" data-testid="v3-preview-manifest">
               {artifacts.map((artifact) => (
                 <li key={artifact.id}>
-                  <button type="button" className="v3-preview-manifest-item" onClick={() => onOpenArtifact(artifact.path)}>
-                    <FileText size={13} aria-hidden />
-                    <span className="v3-preview-manifest-name" title={artifact.path}>
-                      {artifact.filename}
-                    </span>
-                    {(artifact.version ?? 1) > 1 ? <span className="v3-preview-manifest-version">v{artifact.version}</span> : null}
-                  </button>
+                  <ListRow
+                    icon={<FileText size={14} aria-hidden />}
+                    trailing={(artifact.version ?? 1) > 1 ? <span className="v3-preview-manifest-version">v{artifact.version}</span> : undefined}
+                    title={artifact.path}
+                    onClick={() => onOpenArtifact(artifact.path)}
+                  >
+                    {artifact.filename}
+                  </ListRow>
                 </li>
               ))}
             </ul>
@@ -819,7 +816,7 @@ function PreviewBody({
       return (
         <EmptyState
           data-testid="v3-preview-binary"
-          icon={<ImageIcon size={18} />}
+          icon={<ImageIcon size={20} />}
           title={text.binary}
           description={
             <>

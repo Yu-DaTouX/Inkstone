@@ -10,11 +10,12 @@
   .v3-notebook-bar {
     flex: none;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--s-8);
     min-width: 0;
-    padding: var(--s-6) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    min-height: var(--size-bar);
+    padding: 0 var(--s-6) 0 var(--s-12);
+    border-bottom: var(--hair, 1px) solid var(--line);
     color: var(--fg2);
     font-size: var(--t-footnote);
     font-variant-numeric: tabular-nums;
@@ -36,7 +37,7 @@
     white-space: nowrap;
   }
 
-  .v3-notebook-bar > button {
+  .v3-notebook-mode {
     flex: none;
     margin-inline-start: auto;
   }
@@ -67,7 +68,7 @@
     flex-direction: column;
     min-width: 0;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
   }
@@ -79,7 +80,7 @@
     justify-content: space-between;
     gap: var(--s-8);
     padding: var(--s-2) var(--s-8);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     background: var(--surface-0);
     color: var(--fg3);
     font-size: var(--t-caption);
@@ -113,7 +114,7 @@
   .v3-notebook-output {
     margin: 0;
     padding: var(--s-8) var(--s-12);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
     color: var(--fg2);
     font-family: var(--font-mono);
     font-size: var(--t-code);

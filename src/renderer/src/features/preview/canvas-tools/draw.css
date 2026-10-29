@@ -39,12 +39,8 @@
     max-width: 60vw;
   }
 
-  .v3-canvas-draw-label .ui-field {
-    gap: 0;
-  }
-
   .v3-canvas-draw-input {
-    height: 26px;
+    height: var(--size-btn);
     padding: 0 var(--s-6);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);

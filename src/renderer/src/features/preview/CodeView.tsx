@@ -11,9 +11,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from 'react'
-import { Check, ChevronDown, ChevronRight, ChevronUp, Plus, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Hash, Plus } from 'lucide-react'
 import { VList, type VListHandle } from 'virtua'
-import { IconButton, Input, TextArea, TextField } from '../../ui'
+import { CloseButton, FindBar, IconButton, InputGroup, InputGroupAddon, InputGroupInput, InputGroupText, TextArea, TextField } from '../../ui'
 import { exceedsHighlightLimits, FILE_HIGHLIGHT_LIMITS, highlightLanguage, highlightTree } from '../../lib/code-highlight'
 import {
   capCodeText,
@@ -52,6 +52,7 @@ import {
   type MatchRange
 } from './code-find'
 import { parseLineLocation, goToLineShortcut, validateLineLocation, type LineLocation } from './code-go-to-line'
+import { findOptionEntries, isFindOptionKey } from './find-options'
 import { commentQuoteLines, commentRange, type LineCommentRange } from './code-line-comment'
 import type { FileViewSettings } from './file-view-settings'
 import { pickLanguage } from './preview-language'
@@ -316,6 +317,7 @@ function LineCommentCard({
       <span className="v3-code-comment-label">{label}</span>
       <TextArea
         className="v3-code-comment-field"
+        textAreaClassName="v3-code-comment-input"
         size="sm"
         aria-label={label}
         placeholder={labels.commentPlaceholder}
@@ -342,54 +344,16 @@ function LineCommentCard({
         <IconButton
           size="sm"
           aria-label={labels.commentSave}
-          title={labels.commentSave}
+          tooltip={labels.commentSave}
+          tooltipShortcut="Enter"
           isDisabled={!draft.body.trim()}
           onPress={() => onSave(draft.key)}
         >
-          <Check size={13} />
+          <Check size={14} />
         </IconButton>
-        <IconButton size="sm" aria-label={labels.commentCancel} title={labels.commentCancel} onPress={() => onCancel(draft.key)}>
-          <X size={13} />
-        </IconButton>
+        <CloseButton size="sm" aria-label={labels.commentCancel} tooltip={labels.commentCancel} tooltipShortcut="Esc" onPress={() => onCancel(draft.key)} />
       </span>
     </div>
-  )
-}
-
-function FindOptionsBar({
-  labels,
-  options,
-  onToggle
-}: {
-  labels: CodeViewText
-  options: FindOptions
-  onToggle: (key: keyof FindOptions) => void
-}): ReactNode {
-  const entries: readonly (readonly [keyof FindOptions, string, string])[] = [
-    ['matchCase', 'Aa', labels.findMatchCase],
-    ['wholeWord', 'ab', labels.findWholeWord],
-    ['regexp', '.*', labels.findRegexp]
-  ]
-  return (
-    <span className="v3-code-bar-options" role="group" aria-label={labels.find}>
-      {entries.map(([key, glyph, label]) => (
-        <IconButton
-          key={key}
-          size="sm"
-          className="v3-code-bar-option"
-          aria-label={label}
-          title={label}
-          aria-pressed={options[key]}
-          data-option={key}
-          data-testid={`v3-code-find-${key}`}
-          onPress={() => onToggle(key)}
-        >
-          <span aria-hidden className={key === 'wholeWord' ? 'v3-code-bar-word' : undefined}>
-            {glyph}
-          </span>
-        </IconButton>
-      ))}
-    </span>
   )
 }
 
@@ -732,8 +696,11 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
     closeBar()
   }
 
-  const onFindInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing) return
+  const onFindBarKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.nativeEvent.isComposing || event.key !== 'F3') {
+      onBarKeyDown(event)
+      return
+    }
     const delta = findStepKey(event.key, event.shiftKey)
     if (!delta) return
     event.preventDefault()
@@ -801,84 +768,61 @@ export function CodeView({ text, name, settings, firstNumber = 1, target, labels
         </p>
       ) : null}
       {bar === 'find' ? (
-        <div className="v3-code-bar" role="search" aria-label={labels.find} data-testid="v3-code-findbar" onKeyDown={onBarKeyDown}>
-          <TextField
-            className="v3-code-bar-field"
-            size="sm"
-            aria-label={labels.find}
+        <div className="v3-code-bar v3-code-bar--find" data-testid="v3-code-findbar" onKeyDown={onFindBarKeyDown}>
+          <FindBar
             value={findQuery}
             onChange={(value) => {
               setFindQuery(value)
               setFindIndex(0)
             }}
-          >
-            <Input
-              ref={findInputRef}
-              className="ui-input"
-              aria-label={labels.find}
-              placeholder={labels.findPlaceholder}
-              spellCheck={false}
-              autoComplete="off"
-              data-testid="v3-code-find-input"
-              onKeyDown={onFindInputKeyDown}
-            />
-          </TextField>
-          <FindOptionsBar labels={labels} options={findOptions} onToggle={toggleFindOption} />
-          <span className="v3-code-bar-status" aria-live="polite">
-            {statusText}
-          </span>
-          <IconButton
-            size="sm"
-            aria-label={labels.findPrev}
-            title={labels.findPrev}
-            isDisabled={!search.matches.length}
-            data-testid="v3-code-find-prev"
-            onPress={() => stepFind(-1)}
-          >
-            <ChevronUp size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            aria-label={labels.findNext}
-            title={labels.findNext}
-            isDisabled={!search.matches.length}
-            data-testid="v3-code-find-next"
-            onPress={() => stepFind(1)}
-          >
-            <ChevronDown size={14} />
-          </IconButton>
-          <IconButton size="sm" aria-label={labels.findClose} title={labels.findClose} data-testid="v3-code-find-close" onPress={closeBar}>
-            <X size={13} />
-          </IconButton>
+            onNext={() => stepFind(1)}
+            onPrevious={() => stepFind(-1)}
+            onClose={closeBar}
+            matchIndex={activeIndex}
+            matchCount={findQuery ? search.matches.length : null}
+            status={statusText || null}
+            options={findOptionEntries(labels, findOptions)}
+            onOptionChange={(id) => {
+              if (isFindOptionKey(id)) toggleFindOption(id)
+            }}
+            placeholder={labels.findPlaceholder}
+            labels={{ input: labels.find, previous: labels.findPrev, next: labels.findNext, close: labels.findClose }}
+            inputRef={findInputRef}
+            className="v3-code-findbar"
+          />
         </div>
       ) : null}
       {bar === 'goto' ? (
         <div className="v3-code-bar" role="search" aria-label={labels.goToLine} data-testid="v3-code-gotobar" onKeyDown={onBarKeyDown}>
           <TextField
             className="v3-code-bar-field"
-            size="sm"
             aria-label={labels.goToLine}
             value={gotoQuery}
             isInvalid={gotoInvalid}
             onChange={setGotoQuery}
           >
-            <Input
-              ref={gotoInputRef}
-              className="ui-input"
-              aria-label={labels.goToLine}
-              placeholder={labels.goToPlaceholder}
-              spellCheck={false}
-              autoComplete="off"
-              data-testid="v3-code-goto-input"
-              onKeyDown={onGotoInputKeyDown}
-            />
+            <InputGroup size="sm">
+              <InputGroupAddon align="start">
+                <Hash size={14} aria-hidden />
+              </InputGroupAddon>
+              <InputGroupInput
+                ref={gotoInputRef}
+                placeholder={labels.goToPlaceholder}
+                spellCheck={false}
+                autoComplete="off"
+                data-testid="v3-code-goto-input"
+                onKeyDown={onGotoInputKeyDown}
+              />
+              {gotoInvalid ? (
+                <InputGroupAddon align="end">
+                  <InputGroupText className="v3-code-bar-status" aria-live="polite">
+                    {gotoInvalidText}
+                  </InputGroupText>
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
           </TextField>
-          <span className="v3-code-bar-status" aria-live="polite">
-            {gotoInvalid ? gotoInvalidText : ''}
-          </span>
-          <IconButton size="sm" aria-label={labels.goToClose} title={labels.goToClose} data-testid="v3-code-goto-close" onPress={closeBar}>
-            <X size={13} />
-          </IconButton>
+          <CloseButton size="sm" aria-label={labels.goToClose} tooltip={labels.goToClose} tooltipShortcut="Esc" data-testid="v3-code-goto-close" onPress={closeBar} />
         </div>
       ) : null}
       <VList

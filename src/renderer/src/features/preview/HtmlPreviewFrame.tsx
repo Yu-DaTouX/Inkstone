@@ -263,7 +263,7 @@ export function HtmlPreviewFrame({
       )}
       {state.status !== 'ready' ? (
         <div className="v3-preview-frame-cover" role="status">
-          <Spinner size={18} />
+          <Spinner size="md" />
           <span>{labels.htmlLoading}</span>
         </div>
       ) : null}

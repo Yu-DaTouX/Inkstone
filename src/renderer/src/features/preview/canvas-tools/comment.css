@@ -22,8 +22,8 @@
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    min-width: 18px;
-    height: 18px;
+    min-width: var(--size-btn-xs);
+    height: var(--size-btn-xs);
     padding: 0 var(--s-4);
     border: 0;
     border-radius: var(--r-full);
@@ -142,7 +142,7 @@
     align-items: baseline;
     gap: var(--s-8);
     padding: var(--s-8) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
   .v3-canvas-comment-panel-title {
@@ -166,17 +166,17 @@
     gap: var(--s-8);
     flex-wrap: wrap;
     padding: var(--s-8) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
   }
 
-  .v3-canvas-comment-actions .ui-checkbox {
+  .v3-canvas-comment-all {
     margin-right: auto;
   }
 
   .v3-canvas-comment-status {
     margin: 0;
     padding: var(--s-6) var(--s-12);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     color: var(--fg2);
     font-size: var(--t-caption);
     line-height: var(--t-caption-lh);
@@ -233,8 +233,8 @@
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    min-width: 18px;
-    height: 18px;
+    min-width: var(--size-btn-micro);
+    height: var(--size-btn-micro);
     padding: 0 var(--s-4);
     border-radius: var(--r-full);
     corner-shape: round;
@@ -326,46 +326,12 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .v3-canvas-comment-badge {
-    padding: 0 var(--s-4);
-    border-radius: var(--r-xs);
-    background: var(--sunken);
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    line-height: var(--t-caption-lh);
-  }
-
-  .v3-canvas-comment-badge[data-tone='sent'] {
-    color: var(--ok-t);
-  }
-
-  .v3-canvas-comment-badge[data-tone='invalid'] {
-    color: var(--stall-t);
+  .v3-canvas-comment-empty {
+    padding-inline: var(--s-12);
   }
 
   .v3-canvas-comment-row-spacer {
     flex: 1 1 auto;
-  }
-
-  .v3-canvas-comment-empty {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-6);
-    align-items: flex-start;
-    padding: var(--s-12);
-    color: var(--fg3);
-  }
-
-  .v3-canvas-comment-empty p {
-    margin: 0;
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-  }
-
-  .v3-canvas-comment-empty-hint {
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    line-height: var(--t-caption-lh);
   }
 
   .v3-canvas[data-narrow] .v3-canvas-comment-panel {

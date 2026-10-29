@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
 import { Check, Copy, SquareDashedMousePointer } from 'lucide-react'
-import { IconButton } from '../../../ui'
+import { EmptyState, IconButton } from '../../../ui'
 import { stageRect, type CanvasFrameBox, type CanvasView } from '../html-canvas-model'
 import { DockToggle } from './dock'
 import type { CanvasElementInfo, CanvasTool, CanvasToolOverlayProps, CanvasToolPanelProps } from './types'
@@ -109,16 +109,16 @@ function InspectPanel({ context }: CanvasToolPanelProps): ReactElement {
           <IconButton
             size="sm"
             aria-label={copied === selector ? labels.canvasInspectCopied : labels.canvasInspectCopySelector}
-            title={copied === selector ? labels.canvasInspectCopied : labels.canvasInspectCopySelector}
+            tooltip={copied === selector ? labels.canvasInspectCopied : labels.canvasInspectCopySelector}
             data-testid="v3-canvas-inspect-copy"
             onPress={copy}
           >
-            {copied === selector ? <Check size={13} /> : <Copy size={13} />}
+            {copied === selector ? <Check size={14} /> : <Copy size={14} />}
           </IconButton>
         ) : null}
       </div>
       {!info ? (
-        <p className="v3-canvas-panel-empty">{labels.canvasInspectEmpty}</p>
+        <EmptyState size="sm" align="start" className="v3-canvas-panel-empty" title={labels.canvasInspectEmpty} />
       ) : (
         <div className="v3-canvas-panel-body">
           <div className="v3-canvas-panel-headline">

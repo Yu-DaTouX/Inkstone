@@ -195,6 +195,23 @@ export const TabList = stub
 export const TabPanel = stub
 export const TabPanels = stub
 export const Tabs = stub
+export function CloseButton(props){ return { type: 'button', props: { ...props, 'data-testid': 'icon:' + String(props['aria-label']) } } }
+export function ListRow(props){ return { type: 'button', props: { ...props } } }
+export function PanelTab(props){ return { type: 'div', props: { ...props, 'data-testid': props.testId } } }
+export function PanelTabList(props){ return { type: 'div', props: { ...props } } }
+export const FindBar = stub
+export const InputGroup = stub
+export const InputGroupAddon = stub
+export const InputGroupInput = stub
+export const InputGroupText = stub
+export const Collapsible = stub
+export const CollapsibleHeader = stub
+export const CollapsiblePanel = stub
+export const Toggle = stub
+export const ToggleGroup = stub
+export const Tooltip = stub
+export const TooltipHint = stub
+export const TooltipTrigger = stub
 `
 
 const I18N_STUB = `export function useI18n(){ return { lang: 'zh-CN', t: (k) => String(k) } }
@@ -215,7 +232,8 @@ function makeStubMap() {
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
       'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
       'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
-      'src/renderer/src/features/preview/HtmlCanvas.tsx': 'export function HtmlCanvas(){ return null }'
+      'src/renderer/src/features/preview/HtmlCanvas.tsx': 'export function HtmlCanvas(){ return null }',
+      'src/renderer/src/ui/FileTypeIcon.tsx': 'export function FileTypeIcon(){ return null }'
     }).map(([rel, src]) => [normalize(resolve(ROOT, rel)), src])
   )
 }

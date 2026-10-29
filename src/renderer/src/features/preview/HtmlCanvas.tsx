@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from 'react'
-import { Check, ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from 'lucide-react'
-import { Badge, Button, IconButton, Input, Label, Menu, MenuItem, MenuTrigger, Popover, TextField } from '../../ui'
+import { ExternalLink, Maximize, Monitor, MousePointer2, Play, RotateCw, Square, ZoomIn, ZoomOut } from 'lucide-react'
+import { Badge, Button, IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator, TextField, Toggle, ToggleGroup, Tooltip, TooltipHint, TooltipTrigger } from '../../ui'
 import type { PreviewText } from './preview-text'
 import { HtmlPreviewFrame, type PreviewFocus } from './HtmlPreviewFrame'
 import type { HtmlPreviewRect } from '../../../../shared/html-artifact-preview'
@@ -621,7 +621,7 @@ export function HtmlCanvas({
               style={{ left: agentLeft, top: agentTop }}
             >
               <MousePointer2 size={16} aria-hidden />
-              <Badge tone="accent" overlay>{labels.canvasAgentEditing}</Badge>
+              <Badge tone="accent" overlay className="v3-canvas-agent-badge">{labels.canvasAgentEditing}</Badge>
             </div>
           ) : null}
         </div>
@@ -647,7 +647,7 @@ export function HtmlCanvas({
                 size="sm"
                 variant={isRunning ? 'secondary' : 'ghost'}
                 aria-label={isRunning ? labels.canvasStop : labels.canvasRun}
-                title={isRunning ? labels.canvasStop : labels.canvasRun}
+                tooltip={isRunning ? labels.canvasStop : labels.canvasRun}
                 aria-pressed={isRunning}
                 data-testid={`v3-canvas-run-${frame.viewport.id}`}
                 onPress={() => setRunning(isRunning ? null : frame.viewport.id)}
@@ -657,7 +657,7 @@ export function HtmlCanvas({
               <IconButton
                 size="sm"
                 aria-label={labels.canvasReload}
-                title={labels.canvasReload}
+                tooltip={labels.canvasReload}
                 data-testid={`v3-canvas-reload-${frame.viewport.id}`}
                 onPress={reloadFrames}
               >
@@ -669,42 +669,57 @@ export function HtmlCanvas({
         {Panel ? <Panel context={context} /> : null}
       </div>
       <div className="v3-canvas-toolbar" data-canvas-interactive>
-        <div className="v3-canvas-tools" role="group" aria-label={labels.canvasTools}>
+        <ToggleGroup
+          className="v3-canvas-tools"
+          aria-label={labels.canvasTools}
+          size="sm"
+          selectionMode="single"
+          disallowEmptySelection
+          selectedKeys={[tool]}
+          onSelectionChange={(keys) => {
+            const next = [...keys][0]
+            const match = tools.find((candidate) => candidate.id === next)
+            if (match) setTool(match.id)
+          }}
+        >
           {tools.map((candidate) => {
             const Icon = candidate.icon
-            const active = candidate.id === tool
             return (
-              <IconButton
+              <Toggle
                 key={candidate.id}
-                size="sm"
-                variant={active ? 'secondary' : 'ghost'}
+                id={candidate.id}
+                icon
                 aria-label={candidate.label(labels)}
-                title={`${candidate.label(labels)} (${candidate.shortcut.toUpperCase()})`}
-                aria-pressed={active}
+                tooltip={candidate.label(labels)}
+                tooltipShortcut={candidate.shortcut.toUpperCase()}
                 data-testid={`v3-canvas-tool-${candidate.id}`}
-                onPress={() => setTool(candidate.id)}
               >
                 <Icon size={14} />
-              </IconButton>
+              </Toggle>
             )
           })}
-        </div>
-        <span className="v3-canvas-toolbar-sep" aria-hidden />
-        <IconButton size="sm" aria-label={labels.canvasZoomOut} title={labels.canvasZoomOut} onPress={() => zoomCenter(zoomStep(view.zoom, -1))}>
+        </ToggleGroup>
+        <Separator orientation="vertical" className="v3-toolbar-sep" />
+        <IconButton size="sm" aria-label={labels.canvasZoomOut} tooltip={labels.canvasZoomOut} onPress={() => zoomCenter(zoomStep(view.zoom, -1))}>
           <ZoomOut size={14} />
         </IconButton>
-        <Button size="sm" variant="ghost" aria-label={labels.canvasZoomReset} data-testid="v3-canvas-zoom" onPress={() => zoomCenter(1)}>
-          {percent}
-        </Button>
-        <IconButton size="sm" aria-label={labels.canvasZoomIn} title={labels.canvasZoomIn} onPress={() => zoomCenter(zoomStep(view.zoom, 1))}>
+        <TooltipTrigger>
+          <Button size="sm" variant="ghost" aria-label={labels.canvasZoomReset} data-testid="v3-canvas-zoom" onPress={() => zoomCenter(1)}>
+            {percent}
+          </Button>
+          <Tooltip>
+            <TooltipHint label={labels.canvasZoomReset} />
+          </Tooltip>
+        </TooltipTrigger>
+        <IconButton size="sm" aria-label={labels.canvasZoomIn} tooltip={labels.canvasZoomIn} onPress={() => zoomCenter(zoomStep(view.zoom, 1))}>
           <ZoomIn size={14} />
         </IconButton>
-        <IconButton size="sm" aria-label={labels.canvasFit} title={labels.canvasFit} data-testid="v3-canvas-fit" onPress={refit}>
+        <IconButton size="sm" aria-label={labels.canvasFit} tooltip={labels.canvasFit} data-testid="v3-canvas-fit" onPress={refit}>
           <Maximize size={14} />
         </IconButton>
-        <span className="v3-canvas-toolbar-sep" aria-hidden />
+        <Separator orientation="vertical" className="v3-toolbar-sep" />
         <MenuTrigger>
-          <IconButton size="sm" aria-label={labels.canvasDevices} title={labels.canvasDevices} data-testid="v3-canvas-devices">
+          <IconButton size="sm" aria-label={labels.canvasDevices} tooltip={labels.canvasDevices} data-testid="v3-canvas-devices">
             <Monitor size={14} />
           </IconButton>
           <Popover placement="bottom end" offset={6}>
@@ -731,47 +746,50 @@ export function HtmlCanvas({
                 onSelectionChange={(keys) => chooseDevices(new Set([...keys].map(String)))}
               >
                 {CANVAS_DEVICE_ORDER.map((id) => (
-                  <MenuItem key={id} id={id} textValue={deviceName(id)} aria-checked={frameState.devices.includes(id)} data-testid={`v3-canvas-device-${id}`}>
-                    <span className="v3-canvas-check" aria-hidden>
-                      {frameState.devices.includes(id) ? <Check size={14} /> : null}
+                  <MenuItem key={id} id={id} textValue={deviceName(id)} checked="selection" data-testid={`v3-canvas-device-${id}`}>
+                    <span className="v3-canvas-device">
+                      <span className="v3-canvas-device-name">{deviceName(id)}</span>
+                      <span className="v3-canvas-device-size">{deviceSize(id)}</span>
                     </span>
-                    <span className="v3-canvas-device-name">{deviceName(id)}</span>
-                    <span className="v3-canvas-device-size">{deviceSize(id)}</span>
                   </MenuItem>
                 ))}
               </Menu>
               <div className="v3-canvas-device-width">
-                <TextField label={labels.canvasCustomWidth} value={widthDraft} onChange={setWidthDraft} isDisabled={!frameState.devices.includes('custom')}>
-                  <Label className="ui-field__label">{labels.canvasCustomWidth}</Label>
-                  <Input
-                    inputMode="numeric"
-                    data-testid="v3-canvas-custom-width"
-                    onBlur={commitWidth}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return
-                      event.preventDefault()
-                      commitWidth()
-                    }}
-                  />
-                </TextField>
-                <TextField label={labels.canvasCustomHeight} value={heightDraft} onChange={setHeightDraft} isDisabled={!frameState.devices.includes('custom')}>
-                  <Label className="ui-field__label">{labels.canvasCustomHeight}</Label>
-                  <Input
-                    inputMode="numeric"
-                    data-testid="v3-canvas-custom-height"
-                    onBlur={commitHeight}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return
-                      event.preventDefault()
-                      commitHeight()
-                    }}
-                  />
-                </TextField>
+                <TextField
+                  size="sm"
+                  label={labels.canvasCustomWidth}
+                  value={widthDraft}
+                  onChange={setWidthDraft}
+                  isDisabled={!frameState.devices.includes('custom')}
+                  inputMode="numeric"
+                  data-testid="v3-canvas-custom-width"
+                  onBlur={commitWidth}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    commitWidth()
+                  }}
+                />
+                <TextField
+                  size="sm"
+                  label={labels.canvasCustomHeight}
+                  value={heightDraft}
+                  onChange={setHeightDraft}
+                  isDisabled={!frameState.devices.includes('custom')}
+                  inputMode="numeric"
+                  data-testid="v3-canvas-custom-height"
+                  onBlur={commitHeight}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    commitHeight()
+                  }}
+                />
               </div>
             </div>
           </Popover>
         </MenuTrigger>
-        <IconButton size="sm" aria-label={labels.canvasOpen} title={labels.canvasOpen} onPress={onOpen}>
+        <IconButton size="sm" aria-label={labels.canvasOpen} tooltip={labels.canvasOpen} onPress={onOpen}>
           <ExternalLink size={14} />
         </IconButton>
       </div>

@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { EmptyState, Notice, Tab, TabList, Tabs } from '../../ui'
+import { Collapsible, CollapsibleHeader, CollapsiblePanel, EmptyState, Notice, Tab, TabList, Tabs } from '../../ui'
 import { useT } from '../../i18n'
 import {
   OFFICE_MAX_LINES,
@@ -194,14 +194,16 @@ function SlideCard({ slide }: { slide: OfficeSlide }): ReactElement {
           </ul>
         ) : null}
         {slide.notes?.length ? (
-          <details className="v3-office-slide-notes">
-            <summary>{t('preview.office.slideNotes')}</summary>
-            <div className="v3-office-slide-notebody">
-              {slide.notes.map((line, index) => (
-                <p key={index}>{line}</p>
-              ))}
-            </div>
-          </details>
+          <Collapsible className="v3-office-slide-notes">
+            <CollapsibleHeader>{t('preview.office.slideNotes')}</CollapsibleHeader>
+            <CollapsiblePanel>
+              <div className="v3-office-slide-notebody">
+                {slide.notes.map((line, index) => (
+                  <p key={index}>{line}</p>
+                ))}
+              </div>
+            </CollapsiblePanel>
+          </Collapsible>
         ) : null}
       </div>
     </section>
