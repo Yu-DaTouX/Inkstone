@@ -451,7 +451,7 @@ async function main() {
       ].join('\n')
       const turnStubs = {
         'src/renderer/src/features/session/web-search/citations.tsx': 'export function WebSearchTurnProvider(p){ return p.children }\nexport function CitationLink(){ return null }\nexport function useCitation(){ return null }\nexport function useCitationIndex(){ return null }',
-        'src/renderer/src/features/session/web-search/TurnSources.tsx': 'export function TurnSources(){ return null }',
+        'src/renderer/src/ui/FileTypeIcon.tsx': 'export function FileTypeIcon(){ return null }',
         'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(){ return null }',
         'src/renderer/src/features/session/MessageParts.tsx': 'export function TurnArtifacts(){ return null }',
         'src/renderer/src/features/session/Thinking.tsx': 'export function ThinkingLine(){ return null }\nexport function ThinkingAside(){ return null }',
