@@ -128,6 +128,7 @@
     "lowlight": "^3.3.0",
     "lucide-react": "^1.57.0",
     "mermaid": "^12.2.0",
+    "node-html-markdown": "^2.0.0",
     "node-pty": "^1.1.0",
     "pdfjs-dist": "6.4.299",
     "pele": "^1.12.0",
