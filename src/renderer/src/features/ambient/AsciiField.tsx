@@ -9,6 +9,9 @@ import {
   EXIT_MS,
   FIELD_SEED,
   FRAME_SLACK_MS,
+  HOME_BAND,
+  HOME_PULL,
+  bandReach,
   STATIC_TIME,
   alphaLevel,
   animationPolicy,
@@ -16,6 +19,7 @@ import {
   computeFieldFrame,
   defaultClearZones,
   frameInterval,
+  gridOrigin,
   levelAlpha,
   shouldDraw,
   textClearZone,
@@ -52,6 +56,25 @@ function emptyStateOf(host: HTMLElement): HTMLElement | null {
   return host.parentElement?.querySelector('[data-testid="v3-empty"]') as HTMLElement | null
 }
 
+function composerOf(host: HTMLElement): HTMLElement | null {
+  return host.closest('.v3-chat')?.querySelector<HTMLElement>('.v3-composer .composer-wrap') ?? null
+}
+
+function readEnterMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--dur-flourish').trim()
+  const ms = raw.endsWith('ms') ? parseFloat(raw) : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN
+  return Number.isFinite(ms) && ms > 0 ? ms : ENTER_MS
+}
+
+function originFor(host: HTMLElement): MousePoint | null {
+  const spark = emptyStateOf(host)?.querySelector<HTMLElement>('.start-strip-spark')
+  if (!spark) return null
+  const rect = spark.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const base = host.getBoundingClientRect()
+  return gridOrigin(rect.left - base.left, rect.bottom - base.top, CELL_SIZE)
+}
+
 function zonesFor(host: HTMLElement, width: number, height: number): ClearZone[] {
   const empty = emptyStateOf(host)
   const base = host.getBoundingClientRect()
@@ -66,6 +89,10 @@ function zonesFor(host: HTMLElement, width: number, height: number): ClearZone[]
     zones.push(textClearZone({ left: text.left - base.left, top: text.top - base.top, width: text.width, height: text.height }, el.classList.contains('start-usage') ? 20 : 26))
   }
   if (!zones.length) return defaultClearZones(width, height)
+  const composer = composerOf(host)?.getBoundingClientRect()
+  if (composer && composer.width > 0 && composer.height > 0) {
+    zones.push(textClearZone({ left: composer.left - base.left, top: composer.top - base.top, width: composer.width, height: composer.height }, 24))
+  }
   zones.push(bottomClearZone(width, height))
   return zones
 }
@@ -103,6 +130,9 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   let frame: FieldFrame | null = null
   let zones: ClearZone[] = []
   let anchor: MousePoint = { x: 0, y: 0 }
+  let origin: MousePoint | null = null
+  let homed = false
+  const enterMs = readEnterMs()
   let mouse: MousePoint | null = null
   let pulses: Array<{ x: number; y: number; at: number }> = []
   let pageVisible = document.visibilityState !== 'hidden'
@@ -124,8 +154,12 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   const measure = (): void => {
     zones = zonesFor(host, width, height)
     anchor = anchorFor(host, width, height)
+    origin = originFor(host)
+    homed = !!emptyStateOf(host)?.querySelector('.v3-empty-greet')
     host.style.setProperty('--field-ax', `${Math.round(anchor.x)}px`)
     host.style.setProperty('--field-ay', `${Math.round(anchor.y + BAND_DROP_PX)}px`)
+    host.style.setProperty('--field-band-w', `${HOME_BAND.w}px`)
+    host.style.setProperty('--field-band-h', `${HOME_BAND.h}px`)
   }
 
   const resize = (): void => {
@@ -184,7 +218,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     }
   }
 
-  const enterProgress = (): number => (reduced ? 1 : Math.min(1, elapsed / ENTER_MS))
+  const enterProgress = (): number => (reduced ? 1 : Math.min(1, elapsed / enterMs))
 
   const draw = (): void => {
     if (closing) return
@@ -201,12 +235,17 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       mouse,
       pulses: pulses.map((p) => ({ x: p.x, y: p.y, age: (elapsed - p.at) / 1000 })),
       anchor,
-      enter: enterProgress()
+      enter: enterProgress(),
+      pull: homed ? HOME_PULL : 0,
+      origin,
+      reach: homed ? bandReach(HOME_BAND) : undefined
     }, frame)
     pulses = pulses.filter((p) => elapsed - p.at < 2400)
     const { alpha, glyph, accent, cols } = frame
     const total = alpha.length
-    const paintKey = `${canvas.width}x${canvas.height}|${cols}|${atlasKey}`
+    const ox = origin ? origin.x * dpr : 0
+    const oy = origin ? origin.y * dpr : 0
+    const paintKey = `${canvas.width}x${canvas.height}|${cols}|${atlasKey}|${Math.round(ox)}|${Math.round(oy)}`
     const full = !painted || painted.length !== total || paintedKey !== paintKey
     if (full) {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -221,9 +260,9 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       const a = alpha[i]
       const code = a > 0 ? (glyph[i] * 2 + accent[i]) * ALPHA_LEVELS + alphaLevel(a) : -1
       if (code !== cells[i]) {
-        const x = Math.round(col * step)
-        const y = Math.round(row * step)
-        if (cells[i] !== -1) ctx.clearRect(x, y, Math.round((col + 1) * step) - x, Math.round((row + 1) * step) - y)
+        const x = Math.round(ox + col * step)
+        const y = Math.round(oy + row * step)
+        if (cells[i] !== -1) ctx.clearRect(x, y, Math.round(ox + (col + 1) * step) - x, Math.round(oy + (row + 1) * step) - y)
         if (code !== -1) ctx.drawImage(atlas, glyph[i] * cellPx, (accent[i] * ALPHA_LEVELS + alphaLevel(a)) * cellPx, cellPx, cellPx, x, y, cellPx, cellPx)
         cells[i] = code
       }
@@ -254,7 +293,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
       return
     }
     if (closing) { running = false; return }
-    const fps = elapsed < ENTER_MS ? Math.max(policy.fps, 30) : policy.fps
+    const fps = elapsed < enterMs ? Math.max(policy.fps, 30) : policy.fps
     if (shouldDraw(now, lastDraw, fps)) {
       const step = lastDraw === Number.NEGATIVE_INFINITY ? 0 : Math.min(100, now - lastDraw)
       lastDraw = now
@@ -357,6 +396,13 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
   ro.observe(host)
   const empty = emptyStateOf(host)
   if (empty) ro.observe(empty)
+  const onSettle = (): void => {
+    measure()
+    if (!running) draw()
+  }
+  empty?.addEventListener('animationend', onSettle)
+  const composer = composerOf(host)
+  if (composer) ro.observe(composer)
   io.observe(host)
 
   if (reduced) draw()
@@ -372,6 +418,7 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
     dispose: () => {
       stop()
       ro.disconnect()
+      empty?.removeEventListener('animationend', onSettle)
       io.disconnect()
       themeObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)

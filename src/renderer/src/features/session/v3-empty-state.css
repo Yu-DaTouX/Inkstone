@@ -44,20 +44,11 @@
     row-gap: 0;
   }
 
-  .v3-empty-main > .start-strip .start-strip-bars {
+  .v3-empty-main > .start-strip .start-strip-spark {
     order: -1;
     flex: 0 0 100%;
     justify-content: center;
-    gap: var(--s-4);
-    height: calc(var(--s-24) + var(--s-4));
-    margin: 0 0 var(--s-10);
-    padding-bottom: var(--s-2);
-    background: linear-gradient(var(--line2), var(--line2)) center bottom / calc(var(--s-48) * 3 + var(--s-12)) var(--hair, 1px) no-repeat;
-  }
-
-  .v3-empty-main > .start-strip .start-strip-bars > span {
-    width: var(--s-6);
-    border-radius: var(--r-2xs) var(--r-2xs) 0 0;
+    margin: 0 0 var(--s-12);
   }
 
   .v3-empty-main > .start-strip :is(.start-label, .start-strip-sep) {

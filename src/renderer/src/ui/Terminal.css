@@ -55,6 +55,20 @@
     animation-delay: calc(var(--i, 0) * var(--dur-stagger));
   }
 
+  .ui-ascii-spark[data-cell] {
+    font-size: calc(var(--spark-cell) * 1.25);
+    letter-spacing: 0;
+  }
+
+  .ui-ascii-spark[data-cell] > .ui-ascii-spark__cell {
+    width: var(--spark-cell);
+    text-align: center;
+  }
+
+  .ui-ascii-spark__cell[data-zero] {
+    color: var(--ascii-dim);
+  }
+
   .ui-ascii-spark__cell[data-peak] {
     color: var(--fg);
   }

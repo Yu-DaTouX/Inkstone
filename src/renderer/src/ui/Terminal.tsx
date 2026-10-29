@@ -41,15 +41,17 @@ export interface AsciiSparkProps extends Omit<HTMLAttributes<HTMLSpanElement>, '
   tone?: 'ink' | 'accent'
   label: string
   markPeak?: boolean
+  cell?: number
 }
 
-export function AsciiSpark({ values, max, tone = 'ink', label, markPeak = true, className, ...rest }: AsciiSparkProps) {
+export function AsciiSpark({ values, max, tone = 'ink', label, markPeak = true, cell, className, style, ...rest }: AsciiSparkProps) {
   const glyphs = asciiSparkGlyphs(values, max)
   const peak = markPeak && values.length ? values.indexOf(Math.max(...values)) : -1
+  const gridStyle = cell ? ({ ...style, '--spark-cell': `${cell}px` } as CSSProperties) : style
   return (
-    <span {...rest} role="img" aria-label={label} className={cx('ui-ascii-spark', className)} data-tone={tone}>
+    <span {...rest} role="img" aria-label={label} className={cx('ui-ascii-spark', className)} data-tone={tone} data-cell={cell ? '' : undefined} style={gridStyle}>
       {glyphs.map((glyph, index) => (
-        <span key={index} className="ui-ascii-spark__cell" data-peak={index === peak && values[index] > 0 ? '' : undefined} style={{ '--i': index } as CSSProperties} aria-hidden>
+        <span key={index} className="ui-ascii-spark__cell" data-peak={index === peak && values[index] > 0 ? '' : undefined} data-zero={values[index] > 0 ? undefined : ''} style={{ '--i': index } as CSSProperties} aria-hidden>
           {glyph}
         </span>
       ))}

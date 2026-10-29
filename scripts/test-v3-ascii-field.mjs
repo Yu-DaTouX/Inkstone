@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
@@ -278,8 +279,93 @@ const H = 720
 
   assert.equal(model.computeFieldFrame({ ...base, enter: 0 }).visible, 0, '入场未开始时不出墨')
 
-  assert.ok(model.ENTER_MS <= 500, '入场不超过半秒')
+  const tokens = JSON.parse(readFileSync(fileURLToPath(new URL('../src/renderer/src/design/tokens.json', import.meta.url)), 'utf8'))
+  assert.equal(`${model.ENTER_MS}ms`, tokens.motion.flourish, '入场兜底时长等于 --dur-flourish')
   assert.ok(model.EXIT_MS <= 180, '退场短于 180ms')
+}
+
+{
+  const width = 1600
+  const height = 900
+  const anchor = { x: 800, y: 380 }
+  const reach = model.bandReach(model.HOME_BAND)
+  const home = { width, height, time: 6, zones: [], anchor, pull: model.HOME_PULL, reach }
+  const insideBand = (frame) => {
+    let n = 0
+    for (let row = 0; row < frame.rows; row++) {
+      for (let col = 0; col < frame.cols; col++) {
+        if (frame.alpha[row * frame.cols + col] <= 0) continue
+        const dx = ((col + 0.5) * frame.cell - anchor.x) / model.HOME_BAND.w
+        const dy = ((row + 0.5) * frame.cell - anchor.y) / model.HOME_BAND.h
+        if (dx * dx + dy * dy < 1) n++
+      }
+    }
+    return n
+  }
+  const full = insideBand(model.computeFieldFrame({ ...home, enter: 1 }))
+  const series = [0, 0.05, 0.15, 0.3, 0.6, 0.97].map((enter) => insideBand(model.computeFieldFrame({ ...home, enter })))
+  assert.equal(series[0], 0, '洇开起点：墨晕区一格不显')
+  for (let i = 1; i < series.length; i++) assert.ok(series[i] >= series[i - 1], `洇开单调扩大（${series.join(' → ')}）`)
+  assert.ok(series[1] > 0 && series[1] < full * 0.5, '洇开初段只有中心一小团')
+  assert.ok(series.at(-1) >= full * 0.97, '洇开收尾时墨晕区已基本铺满，结束时不跳变')
+
+  const early = model.computeFieldFrame({ ...home, enter: 0.08 })
+  let far = 0
+  for (let row = 0; row < early.rows; row++) {
+    for (let col = 0; col < early.cols; col++) {
+      if (early.alpha[row * early.cols + col] <= 0) continue
+      const dx = ((col + 0.5) * early.cell - anchor.x) / model.BLEED_ASPECT
+      const dy = (row + 0.5) * early.cell - anchor.y
+      if (Math.hypot(dx, dy) > reach * 0.9) far++
+    }
+  }
+  assert.equal(far, 0, '洇开初段不越过墨晕边缘')
+
+  const centroidDrift = (pull) => {
+    let worst = 0
+    for (let t = 0.5; t < 60; t += 1.3) {
+      const f = model.computeFieldFrame({ width, height, time: t, zones: [], anchor, pull })
+      let mx = 0
+      let my = 0
+      let w = 0
+      for (let row = 0; row < f.rows; row++) {
+        for (let col = 0; col < f.cols; col++) {
+          const a = f.alpha[row * f.cols + col]
+          if (!a) continue
+          const px = (col + 0.5) * f.cell
+          const py = (row + 0.5) * f.cell
+          const g = a * Math.exp(-(((px - anchor.x) / model.HOME_BAND.w) ** 2 + ((py - anchor.y) / model.HOME_BAND.h) ** 2) * 2)
+          mx += px * g
+          my += py * g
+          w += g
+        }
+      }
+      worst = Math.max(worst, Math.hypot(mx / w - anchor.x, my / w - anchor.y))
+    }
+    return worst
+  }
+  const loose = centroidDrift(0)
+  const pulled = centroidDrift(model.HOME_PULL)
+  console.log(`  墨晕重心最大偏移：不收拢 ${loose.toFixed(0)}px / 首页收拢 ${pulled.toFixed(0)}px`)
+  assert.ok(pulled < loose * 0.8, '首页墨源向问候收拢，墨晕不再长时间偏向一侧')
+  assert.deepEqual(
+    Array.from(model.computeFieldFrame({ width, height, time: 9, zones: [], anchor }).alpha),
+    Array.from(model.computeFieldFrame({ width, height, time: 9, zones: [], anchor, pull: 0 }).alpha),
+    '不传锚点权重时保持原画面'
+  )
+}
+
+{
+  assert.deepEqual(model.gridOrigin(130, 250, 12), { x: -2, y: -2 }, '网格原点按字符柱左缘与底边对齐')
+  assert.deepEqual(model.gridOrigin(120, 240, 12), { x: 0, y: 0 }, '已在网格上时不偏移')
+  const origin = model.gridOrigin(130, 250, 12)
+  const f = model.computeFieldFrame({ width: W, height: H, time: 4, zones: [], origin })
+  assert.equal(f.cols, Math.ceil((W + 2) / f.cell), '偏移后多补一列，右缘不缺字')
+  const zone = model.textClearZone({ left: 124, top: 220, width: 60, height: 24 }, 0)
+  const g = model.computeFieldFrame({ width: W, height: H, time: 4, zones: [zone], origin })
+  const col = (130 - origin.x) / g.cell
+  const row = Math.floor((232 - origin.y) / g.cell)
+  assert.equal(g.alpha[row * g.cols + col], 0, '遮罩按偏移后的格心判断')
 }
 
 {

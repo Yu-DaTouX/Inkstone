@@ -16,7 +16,12 @@ export const TARGET_FPS = 30
 const TICK_RATE = 60
 export const FRAME_SLACK_MS = 4
 export const FIELD_SEED = 1337
-export const ENTER_MS = 480
+export const ENTER_MS = 900
+export const BLEED_ASPECT = 2.4
+export const BLEED_EDGE = 0.18
+export const BLEED_FEATHER = 0.16
+export const HOME_PULL = 0.8
+export const HOME_BAND = { w: 620, h: 170 }
 export const EXIT_MS = 160
 export const FIELD_STRIDE = 2
 export const PLUME_COUNT = 4
@@ -82,6 +87,9 @@ export interface FieldFrameInput {
   pulses?: ReadonlyArray<{ x: number; y: number; age: number }>
   anchor?: MousePoint | null
   enter?: number
+  pull?: number
+  origin?: MousePoint | null
+  reach?: number
 }
 
 export interface FieldFrame {
@@ -107,6 +115,11 @@ function lerp(a: number, b: number, t: number): number {
 export function smoothstep(t: number): number {
   const x = clamp01(t)
   return x * x * (3 - 2 * x)
+}
+
+export function easeOutQuad(t: number): number {
+  const x = 1 - clamp01(t)
+  return 1 - x * x
 }
 
 export function easeOutCubic(t: number): number {
@@ -276,6 +289,39 @@ export function levelAlpha(level: number, levels = ALPHA_LEVELS): number {
   return ((level + 1) / levels) * ALPHA_CEILING
 }
 
+export function gridOrigin(left: number, bottom: number, cell = CELL_SIZE): MousePoint {
+  const snap = (v: number): number => (Number.isFinite(v) ? v - Math.ceil(v / cell) * cell : 0)
+  return { x: snap(left), y: snap(bottom) }
+}
+
+export function bandReach(band: { w: number; h: number } = HOME_BAND): number {
+  return Math.max(band.w / BLEED_ASPECT, band.h)
+}
+
+export function bleedReach(width: number, height: number, anchor: MousePoint, limit?: number): number {
+  if (limit && limit > 0) return (limit + CELL_SIZE * 2) / (1 - BLEED_EDGE - BLEED_FEATHER)
+  let reach = 0
+  for (const [x, y] of [[0, 0], [width, 0], [0, height], [width, height]]) {
+    reach = Math.max(reach, Math.hypot((x - anchor.x) / BLEED_ASPECT, y - anchor.y))
+  }
+  return (reach + CELL_SIZE * 2) / (1 - BLEED_EDGE - BLEED_FEATHER)
+}
+
+export function bleedFactor(px: number, py: number, anchor: MousePoint, radius: number, seed: number): { reveal: number; wet: number } {
+  const dx = (px - anchor.x) / BLEED_ASPECT
+  const dy = py - anchor.y
+  const d = Math.hypot(dx, dy)
+  if (!(radius > 0)) return { reveal: 0, wet: 0 }
+  const ux = d > 0 ? dx / d : 0
+  const uy = d > 0 ? dy / d : 0
+  const lobe = valueNoise3(ux * 1.7 + 4.1, uy * 1.7 + 6.3, radius * 0.004, seed + 21) - 0.5
+  const front = radius * (1 + lobe * BLEED_EDGE * 2)
+  const feather = Math.max(CELL_SIZE * 2, radius * BLEED_FEATHER)
+  const reveal = smoothstep((front - d) / feather)
+  const k = (d - front + feather * 0.5) / feather
+  return { reveal, wet: reveal > 0 ? Math.exp(-k * k * 2) : 0 }
+}
+
 export function computeGrid(width: number, height: number, cell = CELL_SIZE): GridSpec {
   const safeCell = Math.max(6, Math.floor(cell))
   const w = Math.max(0, width)
@@ -361,7 +407,9 @@ let inkScratch = new Float32Array(0)
 
 export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | null): FieldFrame {
   const cell = Math.max(6, Math.floor(input.cell ?? CELL_SIZE))
-  const grid = computeGrid(input.width, input.height, cell)
+  const ox = input.origin ? Math.max(-cell, Math.min(0, input.origin.x)) : 0
+  const oy = input.origin ? Math.max(-cell, Math.min(0, input.origin.y)) : 0
+  const grid = computeGrid(input.width - ox, input.height - oy, cell)
   const frame = ensureFrame(out, grid.cols, grid.rows, grid.cell)
   const { alpha, value, accent, glyph, band } = frame
   alpha.fill(0)
@@ -373,7 +421,10 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
   const enter = input.enter ?? 1
   const t = input.time
   const tick = input.tick ?? Math.floor(t * TICK_RATE)
-  const fade = Math.min(1, enter * 2)
+  const bleeding = enter < 1
+  const bleedRadius = bleeding ? easeOutQuad(enter) * bleedReach(input.width, input.height, anchor, input.reach) : 0
+  const pull = clamp01(input.pull ?? 0)
+  const spread = 1 - pull
   const height = input.height > 0 ? input.height : 1
   const mouse = input.mouse ? { x: input.mouse.x / height, y: input.mouse.y / height } : null
   const stirRadius = 250 / height
@@ -383,7 +434,7 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
   const ripples: Array<{ x: number; y: number; radius: number; strength: number }> = [0, 1, 2].map((k) => {
     const slot = drift - k
     const age = t - slot * 2.4
-    return { x: ax + (hash3i(slot, 31, 0, seed) - 0.5) * 0.7, y: ay + (hash3i(slot, 73, 0, seed) - 0.5) * 0.5, radius: age * 0.24, strength: Math.max(0, 1 - age / 7.2) * Math.min(1, age / 0.35) }
+    return { x: ax + (hash3i(slot, 31, 0, seed) - 0.5) * 0.7 * spread, y: ay + (hash3i(slot, 73, 0, seed) - 0.5) * 0.5 * spread, radius: age * 0.24, strength: Math.max(0, 1 - age / 7.2) * Math.min(1, age / 0.35) }
   })
 
   for (const pulse of input.pulses ?? []) {
@@ -397,10 +448,11 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
   }
   const step = (FIELD_STRIDE * grid.cell) / height
   const half = (grid.cell * 0.5) / height
+  const focusGain = 0.15 + 0.06 * pull
   for (let fr = 0; fr < frows; fr++) {
-    const y0 = fr * step + half
+    const y0 = fr * step + half + oy / height
     for (let fc = 0; fc < fcols; fc++) {
-      const x0 = fc * step + half
+      const x0 = fc * step + half + ox / height
       const p = stirPoint(x0, y0, mouse, stirRadius, t)
       const i = fr * fcols + fc
       let ripple = 0
@@ -410,18 +462,18 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
         ripple += Math.exp(-edge * edge) * wave.strength
       }
       const focus = Math.exp(-Math.hypot(p.x - ax, p.y - ay) * 1.7)
-      inkScratch[i] = 0.31 + ripple * 0.37 + focus * 0.15 + p.k * 0.3
+      inkScratch[i] = 0.31 + ripple * 0.37 + focus * focusGain + p.k * 0.3
     }
   }
 
   let visible = 0
   for (let row = 0; row < grid.rows; row++) {
-    const py = (row + 0.5) * grid.cell
+    const py = oy + (row + 0.5) * grid.cell
     const fy = row / FIELD_STRIDE
     const fr0 = fy | 0
     const ty = fy - fr0
     for (let col = 0; col < grid.cols; col++) {
-      const px = (col + 0.5) * grid.cell
+      const px = ox + (col + 0.5) * grid.cell
       const idx = row * grid.cols + col
       const fx = col / FIELD_STRIDE
       const fc0 = fx | 0
@@ -448,7 +500,12 @@ export function computeFieldFrame(input: FieldFrameInput, out?: FieldFrame | nul
         glyph[idx] = pickGlyph(nextBand, col, row, tick, seed)
       }
       band[idx] = nextBand
-      const a = cellAlpha(sample) * fade * mask
+      let a = cellAlpha(sample) * mask
+      if (bleeding) {
+        const bleed = bleedFactor(px, py, anchor, bleedRadius, seed)
+        if (bleed.reveal <= 0) continue
+        a *= bleed.reveal * (1 + bleed.wet * 0.8)
+      }
       if (a <= 0.004) continue
       alpha[idx] = a > ALPHA_CEILING ? ALPHA_CEILING : a
       if (nextBand === 2) accent[idx] = ink > 0.72 ? 1 : 0

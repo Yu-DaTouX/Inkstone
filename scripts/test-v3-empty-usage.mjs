@@ -155,6 +155,7 @@ async function main() {
   ok(keepPending.includes('>—</span>') && keepPending.includes('>—</dd>'), 'v3 取数中数字显示「—」占位')
   ok(!keepPending.includes('usage-empty-note'), '取数中不误报「无记录」')
   ok(html.includes('data-testid="usage-strip"'), '首页始终渲染一行用量条')
+  ok(html.includes('ui-ascii-spark start-strip-spark') && html.includes('--spark-cell:12px') && (html.match(/ui-ascii-spark__cell/g) ?? []).length === 14 && !html.includes('start-strip-bars'), '首页用量柱是 14 格 AsciiSpark，字宽对齐字符场 12px 网格')
 
   const enHtml = renderEmpty(usageView(mainSub, 'en-US', Pattern.renderUsageToggle), 'en-US')
   ok(enHtml.includes('Hello world') && !enHtml.includes('class="v3-empty-hint"'), '英文空态同样使用终端问候，无旧标语')
