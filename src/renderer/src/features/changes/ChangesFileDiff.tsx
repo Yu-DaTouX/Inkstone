@@ -11,6 +11,7 @@ import { patchLineCounts } from './patch-line-counts'
 
 export interface ChangesFileDiffProps {
   item: ChangeItem
+  dir?: string
   entry?: GitChangePatch
   cwd: string
   request: GitChangesScope
@@ -42,7 +43,7 @@ function samePatchText(patch: string): string {
 }
 
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
-  const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
+  const { item, dir, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
   const [state, setState] = useState<PatchState>({ kind: 'idle' })
   const origin = useMemo(() => resolvePatchSource(item.path, entry), [item.path, entry])
   const hasBody = origin.kind !== 'binary' && origin.kind !== 'too-large'
@@ -182,9 +183,10 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
         <CollapsibleHeader
           className="changes-file__head"
           tone="emphasized"
+          rowHover
           accessory={counts && lineCounts ? <DiffStat added={lineCounts.added} removed={lineCounts.removed} hideZero /> : undefined}
         >
-          <ChangePathLabel path={item.path} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
+          <ChangePathLabel path={item.path} dir={dir} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
         </CollapsibleHeader>
         <CollapsiblePanel className="changes-file__body">{open ? body() : null}</CollapsiblePanel>
       </Collapsible>

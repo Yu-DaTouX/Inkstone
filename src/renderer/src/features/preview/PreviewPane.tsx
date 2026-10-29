@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from 'react'
-import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as ImageIcon, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
+import { BookOpen, Code2, Copy, Download, FileText, Folder, FolderOpen, Image as ImageIcon, ImageOff, ExternalLink, LayoutGrid, ListTree, Pencil, RefreshCw, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Badge, Button, CloseButton, EmptyState, IconButton, ListRow, Notice, PaneHeader, Skeleton, Spinner } from '../../ui'
@@ -8,6 +8,7 @@ import type { AssistantArtifact, FilePreview } from '../../../../shared/ipc'
 import { latestArtifactVersions, ownerOwnsSession, ownerScopedRead, previewKindOf } from '../artifacts/model'
 import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
+import { RemoteImageGroupScope, useRemoteImageGroup, useRemoteImageGroupSummary, type RemoteImageGroup } from '../session/RemoteImage'
 import { PaneTitle, PaneTools, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editable-kind'
 import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/preview-bindings'
@@ -998,6 +999,44 @@ function ProblemView({ problem, text }: { problem: PreviewProblem; text: Preview
   )
 }
 
+function RemoteImagesNotice({ group, text }: { group: RemoteImageGroup; text: PreviewText }): ReactElement | null {
+  const summary = useRemoteImageGroupSummary(group)
+  const hosts = summary.hosts.join('\n')
+  const notice = (state: string, label: string, action?: { label: string; run: () => void; testId?: string }): ReactElement => (
+    <Notice
+      variant="hint"
+      loading={state === 'loading'}
+      icon={<ImageOff size={12} />}
+      className="v3-preview-remote"
+      data-testid="v3-preview-remote-images"
+      data-state={state}
+    >
+      <span title={hosts}>{label}</span>
+      {action ? (
+        <>
+          <span aria-hidden="true">{' \u00b7 '}</span>
+          <Button size="xs" variant="plain" className="v3-preview-remote__action" onPress={action.run} data-testid={action.testId}>
+            {action.label}
+          </Button>
+        </>
+      ) : null}
+    </Notice>
+  )
+  if (summary.blocked > 0) {
+    return notice('blocked', text.remoteImagesBlocked.replace('{count}', String(summary.blocked)), {
+      label: text.remoteImagesLoadAll,
+      run: () => group.loadBlocked(),
+      testId: 'v3-preview-remote-load-all'
+    })
+  }
+  if (summary.loading > 0) return notice('loading', text.remoteImagesLoading.replace('{count}', String(summary.loading)))
+  if (summary.failed > 0) {
+    const label = text.remoteImagesFailed.replace('{count}', String(summary.failed))
+    return notice('failed', label, { label: text.remoteImagesRetry, run: () => group.retryFailed() })
+  }
+  return null
+}
+
 function MarkdownView({
   view,
   text
@@ -1005,10 +1044,14 @@ function MarkdownView({
   view: Extract<PreviewView, { kind: 'text' }>
   text: PreviewText
 }): ReactElement {
+  const remoteImages = useRemoteImageGroup()
   return (
     <div className="v3-preview-text v3-preview-reading" data-testid="v3-preview-markdown">
+      <RemoteImagesNotice group={remoteImages} text={text} />
       <div className="v3-preview-md">
-        <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
+        <RemoteImageGroupScope group={remoteImages}>
+          <Markdown text={view.text} sourceCwd={parentDir(view.abs)} allowHtml />
+        </RemoteImageGroupScope>
       </div>
       {view.truncated ? <div className="v3-preview-note">{text.truncated}</div> : null}
     </div>

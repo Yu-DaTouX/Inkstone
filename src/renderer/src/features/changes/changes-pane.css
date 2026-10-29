@@ -217,6 +217,7 @@
   }
 
   .changes-file {
+    --changes-name-inset: calc(var(--s-4) * 2 + var(--s-16) + var(--s-6) * 2 + var(--s-12));
     min-width: 0;
     content-visibility: auto;
     contain-intrinsic-size: auto 240px;
@@ -228,7 +229,6 @@
     z-index: 4;
     padding-inline: var(--s-4);
     background: var(--surface);
-    border-bottom: 1px solid var(--line);
   }
 
   .changes-file__head .ui-collapsible__trigger {
@@ -251,7 +251,7 @@
     align-items: baseline;
     gap: var(--s-6);
     min-width: 0;
-    font-family: var(--font-ui);
+    font-weight: var(--w-regular);
   }
 
   .changes-path__name {
@@ -266,28 +266,15 @@
   .changes-path__dir {
     flex: 0 10000 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    font-weight: var(--w-regular);
+    font-size: var(--t-caption);
   }
 
   .changes-status {
     flex: none;
-    width: 1.5ch;
+    width: var(--s-12);
     color: var(--fg3);
-    font-family: var(--font-mono);
-    font-size: var(--t-footnote);
-    font-weight: var(--w-semibold);
+    font-size: var(--t-caption);
     text-align: center;
-  }
-
-  .changes-status:is([data-status='added'], [data-status='untracked']) {
-    color: var(--add);
   }
 
   .changes-status[data-status='deleted'] {
@@ -295,16 +282,16 @@
   }
 
   .changes-status:is([data-status='modified'], [data-status='renamed']) {
-    color: var(--accent);
+    color: var(--git-mod);
   }
 
   .changes-status[data-status='unmerged'] {
-    color: var(--fail);
+    color: var(--fail-t);
   }
 
   .changes-binary__list {
     margin: 0;
-    padding: var(--s-4) var(--s-8) var(--s-6) var(--s-24);
+    padding: var(--s-4) var(--s-8) var(--s-6);
     list-style: none;
   }
 
@@ -321,16 +308,8 @@
     background: var(--bg);
   }
 
-  .changes-file:not([data-collapsed], .changes-file--fixed) {
-    border-bottom: 1px solid var(--line);
-  }
-
-  .changes-file:not([data-collapsed], .changes-file--fixed) .changes-file__head {
-    border-bottom-color: transparent;
-  }
-
   .changes-file:not([data-collapsed], .changes-file--fixed) .changes-file__body {
-    margin: 0 var(--s-8) var(--s-8) var(--s-48);
+    margin: 0 var(--s-8) var(--s-8) var(--changes-name-inset);
     overflow: hidden;
     border: 1px solid var(--line);
     border-radius: var(--r-sm);

@@ -10,13 +10,14 @@ export interface ChangesBinaryGroupProps {
   onToggle: () => void
   lang?: string
   text: ChangesText
+  dirs?: ReadonlyMap<string, string>
 }
 
-export function ChangesBinaryGroup({ items, expanded, onToggle, lang, text }: ChangesBinaryGroupProps): ReactElement {
+export function ChangesBinaryGroup({ items, expanded, onToggle, lang, text, dirs }: ChangesBinaryGroupProps): ReactElement {
   return (
     <section className="changes-file changes-binary" data-testid="changes-binary-group" data-collapsed={expanded ? undefined : ''}>
       <Collapsible isExpanded={expanded} onExpandedChange={onToggle}>
-        <CollapsibleHeader className="changes-file__head" tone="emphasized">
+        <CollapsibleHeader className="changes-file__head" tone="emphasized" rowHover>
           {text.binaryGroup(items.length)}
         </CollapsibleHeader>
         <CollapsiblePanel className="changes-file__body">
@@ -24,7 +25,7 @@ export function ChangesBinaryGroup({ items, expanded, onToggle, lang, text }: Ch
             <ul className="changes-binary__list">
               {items.map((item) => (
                 <li key={item.path} className="changes-binary__row" data-path={item.path}>
-                  <ChangePathLabel path={item.path} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
+                  <ChangePathLabel path={item.path} dir={dirs?.get(item.path) ?? ''} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
                 </li>
               ))}
             </ul>

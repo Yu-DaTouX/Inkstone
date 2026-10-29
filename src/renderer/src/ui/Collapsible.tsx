@@ -62,6 +62,7 @@ export interface CollapsibleHeaderProps extends Omit<RACButtonProps, 'slot' | 'c
   tone?: 'muted' | 'emphasized'
   chevron?: 'start' | 'end' | 'none'
   rule?: boolean
+  rowHover?: boolean
   size?: 'md' | 'compact'
 }
 
@@ -73,12 +74,13 @@ export function CollapsibleHeader({
   tone = 'muted',
   chevron = 'start',
   rule = false,
+  rowHover = false,
   size = 'md',
   className,
   ...props
 }: CollapsibleHeaderProps) {
   return (
-    <div className={cx('ui-collapsible__head', className)} data-tone={tone} data-size={size === 'compact' ? 'compact' : undefined}>
+    <div className={cx('ui-collapsible__head', className)} data-tone={tone} data-size={size === 'compact' ? 'compact' : undefined} data-row-hover={rowHover ? '' : undefined}>
       <RACButton {...props} slot="trigger" className="ui-collapsible__trigger">
         {chevron === 'start' ? <CollapsibleChevron className="ui-collapsible__chevron" /> : null}
         {icon != null ? (

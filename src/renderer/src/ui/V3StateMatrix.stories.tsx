@@ -1420,6 +1420,14 @@ export const CollapsibleStates: Story = {
               <p style={{ ...noteStyle, padding: '0 var(--s-8) var(--s-8)' }}>同一套箭头大小与旋转方向。</p>
             </CollapsiblePanel>
           </Collapsible>
+          <Collapsible>
+            <CollapsibleHeader tone="emphasized" rowHover accessory={<DiffStat added={18} removed={0} hideZero />}>
+              更改列表行（悬停整行浅底）
+            </CollapsibleHeader>
+            <CollapsiblePanel>
+              <p style={noteStyle}>收起内容</p>
+            </CollapsiblePanel>
+          </Collapsible>
           <Row label="箭头">
             <CollapsibleChevron expanded={false} />
             <CollapsibleChevron expanded />

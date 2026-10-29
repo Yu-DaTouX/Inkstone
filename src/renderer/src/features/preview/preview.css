@@ -56,42 +56,16 @@
     height: auto;
   }
 
-  .v3-preview-md :is(p, div):has(> .v3-remote-image, > a > .v3-remote-image) {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: var(--s-6);
-    min-width: 0;
-  }
-
-  .v3-preview-md :is(p, div)[align='center']:has(> .v3-remote-image, > a > .v3-remote-image) {
-    justify-content: center;
-  }
-
-  .v3-preview-md :is(p, div):has(> .v3-remote-image, > a > .v3-remote-image) > :is(a, .v3-remote-image) {
-    display: inline-flex;
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .v3-preview-md a:has(> .v3-remote-image, > img, > picture) > .v3-md-link-icon {
-    display: none;
-  }
-
-  .v3-preview-md a:has(> .v3-remote-image) {
-    text-decoration: none;
-  }
-
-  .v3-preview-md .v3-remote-image {
-    min-width: 0;
+  .v3-preview-remote {
+    width: fit-content;
     max-width: 100%;
+    margin-bottom: var(--s-8);
   }
 
-  .v3-preview-md .v3-remote-image > .ui-btn__label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .v3-preview-remote__action {
+    height: auto;
+    margin-inline-start: calc(var(--s-6) * -1);
+    vertical-align: baseline;
   }
 
   .v3-preview-tabbar {

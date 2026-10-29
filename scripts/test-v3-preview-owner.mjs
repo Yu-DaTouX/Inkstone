@@ -230,6 +230,7 @@ function makeStubMap() {
       'src/renderer/src/i18n/index.tsx': I18N_STUB,
       'src/renderer/src/state/store.ts': STORE_STUB,
       'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(p){ return { type: "div", props: { children: p.text } } }',
+      'src/renderer/src/features/session/RemoteImage.tsx': 'const summary = { blocked: 0, loading: 0, failed: 0, hosts: [] }\nexport function RemoteImageGroupScope(p){ return p.children }\nexport function useRemoteImageGroup(){ return { summary: () => summary } }\nexport function useRemoteImageGroupSummary(){ return summary }',
       'src/renderer/src/features/editor/LazyCodeEditor.tsx': 'export function CodeEditor(){ return null }',
       'src/renderer/src/features/preview/LazyPdfView.tsx': 'export function PdfView(){ return null }',
       'src/renderer/src/features/preview/HtmlCanvas.tsx': 'export function HtmlCanvas(){ return null }',

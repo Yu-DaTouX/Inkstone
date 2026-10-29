@@ -22,6 +22,7 @@ const {
   clampFileListWidth,
   compareFilePaths,
   createLimitedQueue,
+  distinctChangeDirs,
   fileListLimit,
   flattenFileTree,
   isLargeDiff,
@@ -115,5 +116,31 @@ await assert.rejects(
   }),
   /boom/
 )
+
+const dirs = distinctChangeDirs([
+  'README.md',
+  'src/a.ts',
+  'mod-a/build/tmp/jar/MANIFEST.MF',
+  'mod-b/build/tmp/jar/MANIFEST.MF',
+  'x/.gradle/9.8.2/gc.properties',
+  'x/.gradle/vcs-1/gc.properties',
+  'tmp/jar/MANIFEST.MF',
+  'deep/one/two/three/only.txt'
+])
+assert.equal(dirs.has('README.md'), false)
+assert.equal(dirs.get('src/a.ts'), 'src')
+assert.equal(dirs.get('deep/one/two/three/only.txt'), '\u2026/two/three', '默认只留末两级')
+assert.equal(dirs.get('x/.gradle/9.8.2/gc.properties'), '\u2026/.gradle/9.8.2')
+assert.equal(dirs.get('x/.gradle/vcs-1/gc.properties'), '\u2026/.gradle/vcs-1')
+assert.equal(dirs.get('mod-a/build/tmp/jar/MANIFEST.MF'), 'mod-a/build/tmp/jar', '同名文件向上补段直到能区分')
+assert.equal(dirs.get('mod-b/build/tmp/jar/MANIFEST.MF'), 'mod-b/build/tmp/jar')
+assert.equal(dirs.get('tmp/jar/MANIFEST.MF'), 'tmp/jar')
+const mixed = distinctChangeDirs(['m/a/tmp/remapJar/M.MF', 'm/a/tmp/jar/M.MF', 'm/b/tmp/jar/M.MF'])
+assert.equal(mixed.get('m/a/tmp/remapJar/M.MF'), '\u2026/tmp/remapJar', '已能区分的路径不跟着补段')
+assert.equal(mixed.get('m/a/tmp/jar/M.MF'), '\u2026/a/tmp/jar')
+assert.equal(mixed.get('m/b/tmp/jar/M.MF'), '\u2026/b/tmp/jar')
+const deepTwins = distinctChangeDirs(['r/p/q/a/b/c/f.txt', 'r/s/q/a/b/c/f.txt'])
+assert.equal(deepTwins.get('r/p/q/a/b/c/f.txt'), '\u2026/p/q/a/b/c')
+assert.equal(deepTwins.get('r/s/q/a/b/c/f.txt'), '\u2026/s/q/a/b/c')
 
 console.log('test-changes-file-list ok')

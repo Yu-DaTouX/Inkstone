@@ -15,7 +15,7 @@ import { isVisualBlockLang } from '../../../../shared/visual-blocks'
 import { highlightOptions, rehypeHighlight, rehypeMarkOversizedCode } from '../../lib/code-highlight'
 import { prefersReducedMotion } from '../../lib/reduced-motion'
 import { MessageImage } from './Image'
-import { RemoteImage } from './RemoteImage'
+import { RemoteImage, useInRemoteImageGroup } from './RemoteImage'
 import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
@@ -192,8 +192,15 @@ function pathPieces(children: ReactNode): ReactNode {
   ))
 }
 
+function wrapsOnlyImages(node?: HastNode): boolean {
+  const children = node?.children ?? []
+  const pictures = children.filter((child) => child.type === 'element' && (child.tagName === 'img' || child.tagName === 'picture'))
+  return pictures.length > 0 && children.every((child) => pictures.includes(child) || (child.type === 'text' && !child.value?.trim()))
+}
+
 function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   const t = useT()
+  const imageLink = useInRemoteImageGroup() && wrapsOnlyImages(rest.node as HastNode | undefined)
   const openLink = useStore((s) => s.openLink)
   const previewFile = useStore((s) => s.previewFile)
   const citation = useCitation(href)
@@ -258,7 +265,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       onAuxClick={(e) => e.preventDefault()}
       onContextMenu={onContextMenu}
     >
-      {target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
+      {imageLink ? null : target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
       {children}
     </a>
   )

@@ -31,6 +31,34 @@ export function isLargeDiff(items: readonly { added?: number; removed?: number }
   return total > LARGE_DIFF_LINES
 }
 
+export const CHANGE_DIR_KEEP = 2
+
+export function distinctChangeDirs(paths: readonly string[], keep: number = CHANGE_DIR_KEEP): Map<string, string> {
+  const dirs = new Map<string, string[]>()
+  const byName = new Map<string, string[]>()
+  for (const path of paths) {
+    const parts = path.split('/').filter(Boolean)
+    const name = parts.pop() ?? path
+    dirs.set(path, parts)
+    const group = byName.get(name)
+    if (group) group.push(path)
+    else byName.set(name, [path])
+  }
+  const shown = new Map<string, string>()
+  for (const group of byName.values()) {
+    for (const path of group) {
+      const parts = dirs.get(path) ?? []
+      if (parts.length === 0) continue
+      const others = group.filter((other) => other !== path).map((other) => dirs.get(other) ?? [])
+      const suffix = (list: readonly string[], size: number): string => list.slice(-size).join('/')
+      let depth = keep
+      while (depth < parts.length && others.some((other) => suffix(other, depth) === suffix(parts, depth))) depth += 1
+      shown.set(path, parts.length <= depth ? parts.join('/') : `\u2026/${parts.slice(-depth).join('/')}`)
+    }
+  }
+  return shown
+}
+
 let segmentCollator: Intl.Collator | null = null
 
 function compareSegment(a: string, b: string): number {

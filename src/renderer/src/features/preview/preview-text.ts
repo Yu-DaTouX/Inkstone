@@ -186,6 +186,11 @@ export interface PreviewText {
   commentPlaceholder: string
   commentSave: string
   commentCancel: string
+  remoteImagesBlocked: string
+  remoteImagesLoadAll: string
+  remoteImagesLoading: string
+  remoteImagesFailed: string
+  remoteImagesRetry: string
 }
 
 const ZH: PreviewText = {
@@ -373,7 +378,12 @@ const ZH: PreviewText = {
   commentOnLines: '评论第 {start}–{end} 行',
   commentPlaceholder: '写下评论，回车加入输入框',
   commentSave: '加入输入框',
-  commentCancel: '取消评论'
+  commentCancel: '取消评论',
+  remoteImagesBlocked: '{count} 张远程图片已拦截',
+  remoteImagesLoadAll: '全部加载',
+  remoteImagesLoading: '正在加载 {count} 张远程图片',
+  remoteImagesFailed: '{count} 张远程图片未能加载',
+  remoteImagesRetry: '重试'
 }
 
 const EN: PreviewText = {
@@ -561,7 +571,12 @@ const EN: PreviewText = {
   commentOnLines: 'Comment on lines {start}–{end}',
   commentPlaceholder: 'Add a comment; Enter adds it to the composer',
   commentSave: 'Add to prompt',
-  commentCancel: 'Cancel comment'
+  commentCancel: 'Cancel comment',
+  remoteImagesBlocked: 'Remote images blocked: {count}',
+  remoteImagesLoadAll: 'Load all',
+  remoteImagesLoading: 'Loading remote images: {count}',
+  remoteImagesFailed: 'Remote images not loaded: {count}',
+  remoteImagesRetry: 'Retry'
 }
 
 export function previewText(lang: Lang): PreviewText {

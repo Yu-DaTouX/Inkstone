@@ -40,7 +40,7 @@ import {
 } from './changes-scope'
 import { ChangesFileDiff } from './ChangesFileDiff'
 import { ChangesBinaryGroup } from './ChangesBinaryGroup'
-import { buildFileTree, createLimitedQueue, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
+import { buildFileTree, createLimitedQueue, distinctChangeDirs, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
 import { patchLineCounts } from './patch-line-counts'
 import { isTestFilePath, readHideTestFiles, writeHideTestFiles } from './test-files'
@@ -395,6 +395,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const narrow = fileList.paneWidth > 0 && fileList.paneWidth < 560
   const mode: DiffViewMode = layout === 'split' && narrow ? 'unified' : layout
 
+  const shownDirs = useMemo(() => distinctChangeDirs(shownItems.map((item) => item.path)), [shownItems])
   const treeRows = useMemo(() => flattenFileTree(buildFileTree(shownItems), collapsedDirs), [shownItems, collapsedDirs])
   const tabbableRowPath = useMemo(() => {
     const paths = treeRows.map((row) => row.path)
@@ -964,6 +965,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                   <ChangesFileDiff
                     key={item.path}
                     item={item}
+                    dir={shownDirs.get(item.path) ?? ''}
                     entry={patches[item.path]}
                     cwd={cwd}
                     request={request ?? { kind: 'working' }}
@@ -984,6 +986,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                     items={binaryItems}
                     expanded={binaryOpen}
                     onToggle={() => setBinaryOpen((open) => !open)}
+                    dirs={shownDirs}
                     lang={resolvedLang}
                     text={text}
                   />

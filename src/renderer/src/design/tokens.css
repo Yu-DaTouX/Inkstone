@@ -69,6 +69,7 @@
     --git-del: light-dark(#CD2054, #FF2C56);
     --add: light-dark(#14792B, #32D74B);
     --del: light-dark(#B01C48, #FF5C7C);
+    --git-mod: light-dark(#8A5A00, #E2B340);
     --add-bg: light-dark(#E6F4E4, rgba(50,215,75,.12));
     --del-bg: light-dark(#FBE9EE, rgba(255,44,86,.12));
     --win-close: #C42B2B;
