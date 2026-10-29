@@ -622,7 +622,14 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
           <Kbd>Esc</Kbd>
           {text.footClose}
         </span>
-        <span className="cmd-foot__prefix">{text.prefixHint}</span>
+        <span className="cmd-foot__prefix">
+          {COMMAND_PREFIXES.map((prefix) => (
+            <span key={prefix} className="cmd-foot__item">
+              <Kbd>{prefix}</Kbd>
+              {text.prefixLabels[prefix]}
+            </span>
+          ))}
+        </span>
       </CommandSurfaceFooter>
     </CommandSurface>
   )

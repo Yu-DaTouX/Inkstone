@@ -314,6 +314,7 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
   )
 
   usePaneMenu('files', [
+    ...(layout.showPreview ? [{ id: 'files:search', label: text.goToFile, icon: <Search size={14} aria-hidden />, onAction: focusFilter }] : []),
     ...(hasPreview ? [{ id: 'files:tree', label: text.showTree, checked: layout.treePressed, onAction: toggleTree }] : []),
     { id: 'files:collapse', label: text.collapseAll, icon: <ChevronsDownUp size={14} aria-hidden />, onAction: collapseAll },
     { id: 'files:refresh', label: text.refresh, icon: <RefreshCw size={14} aria-hidden />, onAction: refresh }
@@ -361,33 +362,35 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
           <span className="v3-files-headtabs" ref={setTabsHost} />
         </span>
       </PaneTitle>
-      <PaneTools>
-        <IconButton
-          size="sm"
-          aria-label={text.goToFile}
-          tooltip={text.goToFile}
-          tooltipShortcut="Ctrl+P"
-          aria-keyshortcuts="Control+P"
-          data-testid="v3-files-search-toggle"
-          onPress={focusFilter}
-        >
-          <Search size={14} />
-        </IconButton>
-        {hasPreview ? (
+      {layout.showPreview ? null : (
+        <PaneTools>
           <IconButton
             size="sm"
-            aria-label={treeLabel}
-            tooltip={treeLabel}
-            tooltipShortcut={treeShortcut}
-            aria-pressed={layout.treePressed}
-            aria-keyshortcuts="Control+Shift+Y"
-            data-testid="v3-files-tree-toggle"
-            onPress={toggleTree}
+            aria-label={text.goToFile}
+            tooltip={text.goToFile}
+            tooltipShortcut="Ctrl+P"
+            aria-keyshortcuts="Control+P"
+            data-testid="v3-files-search-toggle"
+            onPress={focusFilter}
           >
-            <List size={14} />
+            <Search size={14} />
           </IconButton>
-        ) : null}
-      </PaneTools>
+          {hasPreview ? (
+            <IconButton
+              size="sm"
+              aria-label={treeLabel}
+              tooltip={treeLabel}
+              tooltipShortcut={treeShortcut}
+              aria-pressed={layout.treePressed}
+              aria-keyshortcuts="Control+Shift+Y"
+              data-testid="v3-files-tree-toggle"
+              onPress={toggleTree}
+            >
+              <List size={14} />
+            </IconButton>
+          ) : null}
+        </PaneTools>
+      )}
 
       {Preview ? (
         <div className="v3-files-preview" ref={previewRef} tabIndex={-1} hidden={!layout.showPreview} data-testid="v3-files-preview">

@@ -240,6 +240,7 @@
 
   .ms-service-name {
     color: var(--fg);
+    font-weight: var(--w-medium);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -253,6 +254,9 @@
   }
 
   .ms-service-hint {
+    color: var(--fg2);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
     overflow-wrap: anywhere;
   }
 

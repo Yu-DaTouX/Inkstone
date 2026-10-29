@@ -42,6 +42,7 @@ import { ChangesFileDiff } from './ChangesFileDiff'
 import { ChangesBinaryGroup } from './ChangesBinaryGroup'
 import { buildFileTree, createLimitedQueue, flattenFileTree, isCompactPane, isLargeDiff, sortChangeItems } from './file-list'
 import { useChangesFileList } from './use-file-list'
+import { patchLineCounts } from './patch-line-counts'
 import { isTestFilePath, readHideTestFiles, writeHideTestFiles } from './test-files'
 import {
   patchHash,
@@ -563,6 +564,26 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   const changeCount = repo ? (scope.kind === 'working' ? repo.changedCount : items.length) : null
   const countLabel =
     changeCount === null ? '' : `${changeCount} ${text.changed}${repo?.unborn ? ` \u00b7 ${text.unborn}` : ''}`
+  const lineTotals = useMemo(() => {
+    let added = 0
+    let removed = 0
+    let known = false
+    for (const item of items) {
+      const patch = patches[item.path]?.patch
+      const counts =
+        item.added !== undefined || item.removed !== undefined
+          ? { added: item.added ?? 0, removed: item.removed ?? 0 }
+          : patch
+            ? patchLineCounts(patch)
+            : null
+      if (!counts) continue
+      known = true
+      added += counts.added
+      removed += counts.removed
+    }
+    if (known) return { added, removed }
+    return meta.added !== null && meta.removed !== null ? { added: meta.added, removed: meta.removed } : null
+  }, [items, patches, meta.added, meta.removed])
 
   const scopeMenu = source.changes ? (
     <MenuTrigger>
@@ -727,6 +748,16 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                 {countLabel}
               </span>
             ) : null}
+            {countLabel && lineTotals ? (
+              <DiffStat
+                added={lineTotals.added}
+                removed={lineTotals.removed}
+                hideZero
+                className="changes-pane__totals"
+                data-testid="changes-line-totals"
+                aria-label={text.totalLines(lineTotals.added, lineTotals.removed)}
+              />
+            ) : null}
           </span>
         </PaneTitle>
       ) : null}
@@ -752,9 +783,6 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
         <div className="changes-pane__summary">
           <div className="changes-pane__compare">
             {compareWith ? <span className="changes-pane__compare-label" title={compareWith}>{text.compareWith(compareWith)}</span> : null}
-            {meta.added !== null && meta.removed !== null ? (
-              <DiffStat added={meta.added} removed={meta.removed} aria-label={text.totalLines(meta.added, meta.removed)} />
-            ) : null}
           </div>
           {scope.kind === 'commit' ? (
             <form className="changes-pane__sha" onSubmit={applySha}>
@@ -976,7 +1004,7 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
                 {text.stageAll}
               </Button>
               <Button
-                variant={canAct && message.trim() ? 'primary' : 'secondary'}
+                variant="primary"
                 isDisabled={!canAct || !message.trim()}
                 onPress={() => void runAction('commit')}
               >
