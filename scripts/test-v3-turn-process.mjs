@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert } = mod
+const { splitTurnProcess, processPreview, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -79,7 +79,7 @@ group('收尾卡片前后的多条正文都可读')
     seg('before-wrap', { response: text('long-reply', '完整交付与文件地址') }),
     seg('after-wrap', { response: text('short-reply', '请决定下一步') })
   ])
-  ok(out.earlierReplies.map((segment) => segment.response.text).join() === '完整交付与文件地址', '保留卡片前的正文', out.earlierReplies)
+  ok(out.leadReplies.map((segment) => segment.response.text).join() === '完整交付与文件地址' && out.earlierReplies.length === 0, '保留卡片前的正文（没有工具，排在过程之前）', out)
   ok(out.reply.response.text === '请决定下一步' && out.process.length === 0, '末条回复保留且前文不藏入过程区', out)
 }
 
@@ -235,6 +235,52 @@ group('过程行失败计数：只按回合最终状态决定是否标红')
   ok(processFailuresAlert({ terminalReason: 'interrupted' }, false) === true, '被中断：标红')
   ok(processFailuresAlert({ error: '模型报错' }, false) === true, '以错误结束：标红')
   ok(processFailuresAlert({ terminalReason: 'completed' }, true) === true, '运行中保持现状：失败计数仍标红')
+}
+
+group('回合结束后进度叙述收进过程：最终答复始终露出')
+{
+  const segs = [
+    seg('f0', { response: text('lead', '我先确认仓库地址。', false) }),
+    seg('f1', { tools: [tool('t1', 'bash')], response: text('n1', '备份已保存。正在核对提交。', false) }),
+    seg('f2', { tools: [tool('t2', 'bash')], response: text('n2', '远端已更新。还有一处残留。', false) }),
+    seg('f3', { tools: [tool('t3', 'read')], response: text('final', '已从远端撤下。', false) })
+  ]
+  const live = splitTurnProcess(segs)
+  ok(live.earlierReplies.map((s) => s.id).join() === 'f1,f2', '运行中（不折叠）：工具之后的叙述照常露出', live.earlierReplies.map((s) => s.id))
+  const folded = splitTurnProcess(segs, { foldReplies: true })
+  ok(folded.earlierReplies.length === 0, '结束后：工具之后的叙述不再露出', folded.earlierReplies)
+  ok(folded.leadReplies.map((s) => s.id).join() === 'f0', '第一次工具调用之前的叙述仍露出', folded.leadReplies.map((s) => s.id))
+  ok(folded.reply?.response?.id === 'final', '最终答复始终露出', folded.reply?.response?.id)
+  ok(folded.process.map((s) => s.id).join() === 'f1,f1:narration,f2,f2:narration,f3', '叙述与工具按时间交错排在过程里', folded.process.map((s) => s.id))
+  ok(folded.process[1].commentary[0]?.id === 'n1' && folded.process[0].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 2))
+  ok(processPreview(folded.process) === '还有一处残留。', '摘要预览取最后一句进度叙述', processPreview(folded.process))
+  ok(processSummary(folded.process).actions === 3, '折叠不改变操作计数', processSummary(folded.process))
+}
+
+group('过程摘要：按工具类型归类并带改动行数')
+{
+  ok(JSON.stringify(lineDelta('a\nb\nc', 'a\nB\nc')) === JSON.stringify({ added: 1, removed: 1 }), '行增删按公共首尾裁掉后计算', lineDelta('a\nb\nc', 'a\nB\nc'))
+  ok(JSON.stringify(estimateCallLines({ args: { path: 'a', edits: [{ oldText: 'x', newText: 'y\nz' }] } })) === JSON.stringify({ added: 2, removed: 1 }), '没有快照时用 edit 参数估算行数')
+  ok(JSON.stringify(estimateCallLines({ args: {}, details: { fileDiff: { path: 'a', added: 4, removed: 2, status: 'modified', patch: '', before: {}, after: {} } } })) === JSON.stringify({ added: 4, removed: 2 }), '有快照时以快照为准')
+  const mixed = processSummary([seg('p0', { tools: [
+    tool('b1', 'bash', 'ok', { args: { command: 'ls' } }),
+    tool('b2', 'bash', 'ok', { args: { command: 'pwd' } }),
+    tool('c1', 'codemode', 'ok', { args: { code: 'x' } }),
+    tool('r1', 'read', 'ok', { args: { path: 'a.md' } }),
+    tool('r2', 'read', 'ok', { args: { path: 'a.md' } }),
+    tool('r3', 'read', 'ok', { args: { path: 'b.md' } }),
+    tool('e1', 'edit', 'ok', { args: { path: '.local-docs/STATUS.md', edits: [{ oldText: 'old', newText: 'new' }] } }),
+    tool('w1', 'write', 'ok', { args: { path: 'new.md', content: 'a\nb' } }),
+    tool('w2', 'edit', 'ok', { args: { path: 'new.md', edits: [{ oldText: 'a', newText: 'A' }] } }),
+    tool('x1', 'edit', 'error', { args: { path: 'bad.md', edits: [{ oldText: 'a', newText: 'b' }] } }),
+    tool('q1', 'AskUserQuestion', 'ok', { args: { questions: [] } }),
+    tool('g1', 'grep', 'ok', { args: { pattern: 'x' } })
+  ] })])
+  ok(mixed.commands === 2 && mixed.code === 1, '命令与 codemode 分开计', mixed)
+  ok(mixed.reads === 2, '读取按不同文件计', mixed.reads)
+  ok(mixed.edits.length === 1 && mixed.edits[0].base === 'STATUS.md' && mixed.edits[0].added === 1 && mixed.edits[0].removed === 1, '编辑记文件名与行数，失败的编辑不算', mixed.edits)
+  ok(mixed.creates.length === 1 && mixed.creates[0].added === 3 && mixed.creates[0].removed === 1, '新建后再编辑仍算新建，行数累加', mixed.creates)
+  ok(mixed.other === 1, '提问不算其他操作，其余工具归入其他', mixed.other)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

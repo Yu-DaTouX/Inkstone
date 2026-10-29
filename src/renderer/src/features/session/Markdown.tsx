@@ -1,10 +1,12 @@
-import { createContext, useContext, memo, startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, memo, startTransition, useEffect, useMemo, useRef, useState, useSyncExternalStore, type AnchorHTMLAttributes, type ClassAttributes, type JSX, type ReactNode } from 'react'
 import ReactMarkdown, { type ExtraProps, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkCjkFriendly from 'remark-cjk-friendly'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import { SquareTerminal, WrapText } from 'lucide-react'
+import { CircleDot, Folder, FolderGit2, GitCommitHorizontal, GitPullRequest, SquareTerminal, WrapText } from 'lucide-react'
 import { Button, IconButton } from '../../ui'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { classifyLink, type LinkTarget } from '../../../../shared/links'
@@ -19,6 +21,7 @@ import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
 import { splitMarkdownBlocks } from './markdown-blocks'
+import { markdownCacheKey } from './markdown-cache-key'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
 import { useSmoothReveal } from './smooth-reveal'
@@ -33,7 +36,7 @@ import '../../patterns/highlighted-code.css'
 
 type PluginList = NonNullable<Options['rehypePlugins']>
 
-const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm]
+const MD_REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkCjkFriendly]
 const MD_REHYPE: PluginList = [rehypeKbd, rehypeMarkOversizedCode, [rehypeHighlight, highlightOptions]]
 const MD_REHYPE_PLAIN: PluginList = [rehypeKbd]
 const MD_HTML_SCHEMA = { ...defaultSchema, tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'source') }
@@ -127,6 +130,68 @@ function useLinkMenu(target: LinkTarget, sourceCwd?: string): ((event: React.Mou
 
 type AnchorProps = ClassAttributes<HTMLAnchorElement> & AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps
 
+const GITHUB_URL = /^https?:\/\/(?:www\.)?github\.com\/[^/\s]+\/[^/\s]+(\/(pull|issues|commit)\/)?/i
+
+function GithubLinkIcon({ url }: { url: string }): JSX.Element | null {
+  const match = GITHUB_URL.exec(url)
+  if (!match) return null
+  const Glyph = match[2] === 'pull' ? GitPullRequest : match[2] === 'issues' ? CircleDot : match[2] === 'commit' ? GitCommitHorizontal : FolderGit2
+  return <Glyph size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
+}
+
+function FileLinkIcon({ path }: { path: string }): JSX.Element {
+  if (/[\\/]$/.test(path)) return <Folder size={13} strokeWidth={1.75} className="v3-md-link-icon" aria-hidden />
+  const base = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+  return <FileTypeIcon name={base} size={14} className="v3-md-link-icon" />
+}
+
+const PATH_STAT_LIMIT = 2000
+const pathStats = new Map<string, string | null | Promise<string | null>>()
+
+function statKnown(path: string, cwd?: string): Promise<string | null> {
+  const key = `${cwd ?? ''}|${path}`
+  const hit = pathStats.get(key)
+  if (hit !== undefined && !(hit instanceof Promise)) return Promise.resolve(hit)
+  if (hit) return hit
+  if (pathStats.size > PATH_STAT_LIMIT) pathStats.clear()
+  const stat = window.yan?.statPreview
+  const pending = (typeof stat === 'function' ? stat(path, cwd).then((result) => (result.ok ? result.abs || path : null), () => null) : Promise.resolve(null))
+    .then((abs) => {
+      pathStats.set(key, abs)
+      return abs
+    })
+  pathStats.set(key, pending)
+  return pending
+}
+
+function useResolvedPath(path: string | null, cwd?: string): string | null {
+  const key = path ? `${cwd ?? ''}|${path}` : ''
+  const known = key ? pathStats.get(key) : undefined
+  const settled = known !== undefined && !(known instanceof Promise)
+  const [resolved, setResolved] = useState<{ key: string; abs: string | null } | null>(null)
+  useEffect(() => {
+    if (!path || settled) return undefined
+    let alive = true
+    void statKnown(path, cwd).then((abs) => {
+      if (alive) setResolved({ key, abs })
+    })
+    return () => { alive = false }
+  }, [key, settled, path, cwd])
+  if (settled) return known as string | null
+  return resolved?.key === key ? resolved.abs : null
+}
+
+function pathPieces(children: ReactNode): ReactNode {
+  if (typeof children !== 'string' || /\s/.test(children) || !/[\\/]./.test(children)) return children
+  const parts = children.split(/(?<=[\\/])/)
+  return parts.map((part, index) => (
+    <Fragment key={index}>
+      {index ? <wbr /> : null}
+      <span className="v3-md-path-part">{part}</span>
+    </Fragment>
+  ))
+}
+
 function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
   const t = useT()
   const openLink = useStore((s) => s.openLink)
@@ -169,7 +234,10 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
 
   const title =
     target.kind === 'file'
-      ? t('link.preview', { path: target.line ? `${target.path}:${target.line}${target.lineEnd ? `-${target.lineEnd}` : ''}` : target.path })
+      ? (() => {
+          const full = resolveAgainstCwd(target.path, sourceCwd)
+          return target.line ? `${full}:${target.line}${target.lineEnd ? `-${target.lineEnd}` : ''}` : full
+        })()
       : target.kind === 'invalid'
         ? t('link.blocked')
         : target.url
@@ -179,6 +247,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       href={target.kind === 'url' ? target.url : '#'}
       className={`v3-md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
+      data-github={target.kind === 'url' && GITHUB_URL.test(target.url) ? '' : undefined}
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
       title={target.kind === 'invalid' ? title : `${title}\n${t('link.dblclickHint')}`}
@@ -187,6 +256,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       onAuxClick={(e) => e.preventDefault()}
       onContextMenu={onContextMenu}
     >
+      {target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
       {children}
     </a>
   )
@@ -217,7 +287,8 @@ function InlineCodeLink({ className, children }: { className?: string; children?
     ? classifyLink(text.trim())
     : null
   const onContextMenu = useLinkMenu(candidate ?? NOT_A_LINK, sourceCwd)
-  if (!candidate || candidate.kind === 'invalid') return <code className={className}>{children}</code>
+  const resolved = useResolvedPath(candidate?.kind === 'file' ? candidate.path : null, sourceCwd)
+  if (!candidate || candidate.kind === 'invalid' || (candidate.kind === 'file' && !resolved)) return <code className={className}>{className ? children : pathPieces(children)}</code>
   const open = (e: React.MouseEvent): void => {
     e.preventDefault()
     e.stopPropagation()
@@ -232,14 +303,14 @@ function InlineCodeLink({ className, children }: { className?: string; children?
     else void window.yan.revealPath(resolveAgainstCwd(candidate.path, sourceCwd))
   }
   return (
-    <code className="v3-md-code-link" role="link" tabIndex={0} title={t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
+    <code className="v3-md-code-link" role="link" tabIndex={0} title={candidate.kind === 'file' && resolved ? `${resolved}\n${t('link.codeDblclickHint')}` : t('link.codeDblclickHint')} onClick={open} onDoubleClick={openExternally} onContextMenu={onContextMenu} onKeyDown={(event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
       event.preventDefault()
       event.stopPropagation()
       if (candidate.kind === 'url') void openLink(candidate.url)
       else void previewFile(candidate.path, candidate.line, sourceCwd, candidate.lineEnd)
     }}>
-      {children}
+      {pathPieces(children)}
     </code>
   )
 }
@@ -529,7 +600,7 @@ export const Markdown = memo(function Markdown({
   }, [settling])
 
   const mathPending = math.needed && !math.plugins
-  const cacheKey = `${lang}|${allowHtml ? 'html:' : ''}${math.plugins ? `math:${renderedText}` : renderedText}`
+  const cacheKey = markdownCacheKey({ lang, allowHtml, math: !!math.plugins, text: renderedText })
   const cached = live || mathPending ? undefined : mdCache.get(cacheKey)
   if (cached) {
     return (

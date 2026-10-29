@@ -1,22 +1,22 @@
 import { useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { FilePen, Undo2 } from 'lucide-react'
+import { Folder, Undo2 } from 'lucide-react'
 import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } from '../../ui'
+import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useI18n, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
-import { collectTurnChanges, splitChangePath, type TurnFileStatus } from './turn-changes'
+import { collectTurnChanges, groupChangesByDir, type TurnChangeGroup, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import './turn-changes.css'
 
-const VISIBLE_FILES = 3
+const OPEN_GROUPS_UP_TO = 1
 
 interface ChangesText {
   summary: (counts: Record<TurnFileStatus, number>) => string
-  more: (n: number) => string
-  less: string
+  files: (n: number) => string
   view: string
   undo: string
 }
@@ -27,8 +27,7 @@ const ZH: ChangesText = {
     c.modified ? `编辑 ${c.modified} 个文件` : '',
     c.deleted ? `删除 ${c.deleted} 个文件` : ''
   ].filter(Boolean).join(' · '),
-  more: (n) => `再显示 ${n} 个文件`,
-  less: '收起',
+  files: (n) => `${n} 个文件`,
   view: '查看改动',
   undo: '撤销'
 }
@@ -38,8 +37,7 @@ const EN: ChangesText = {
     c.modified ? `Edited ${c.modified} ${c.modified === 1 ? 'file' : 'files'}` : '',
     c.deleted ? `Deleted ${c.deleted} ${c.deleted === 1 ? 'file' : 'files'}` : ''
   ].filter(Boolean).join(' · '),
-  more: (n) => `Show ${n} more`,
-  less: 'Show less',
+  files: (n) => `${n} ${n === 1 ? 'file changed' : 'files changed'}`,
   view: 'View changes',
   undo: 'Undo'
 }
@@ -61,7 +59,7 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const { lang } = useI18n()
   const openRewind = useStore((s) => s.openRewind)
   const sessionCwd = useStore((s) => s.session?.cwd)
-  const [expanded, setExpanded] = useState(false)
+  const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
   const cwd = turn.response?.sourceCwd || sessionCwd || undefined
   const changes = useMemo(() => collectTurnChanges(turn.tools, cwd), [turn.tools, cwd])
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
@@ -80,20 +78,14 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const text = changesText(lang)
   const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
-  const shown = changes.files.slice(0, VISIBLE_FILES)
-  const rest = changes.files.slice(VISIBLE_FILES)
-  const hidden = changes.files.length - VISIBLE_FILES
-
-  const viewChanges = (): void => {
-    openPanelTool('changes')
-  }
+  const groups = groupChangesByDir(changes.files, cwd)
+  const openByDefault = groups.length <= OPEN_GROUPS_UP_TO
 
   return (
     <section className="v3-chg" data-testid="v3-turn-changes" aria-label={text.summary(changes.counts)}>
       <header className="v3-chg-head">
-        <span className="v3-chg-icon" aria-hidden><FilePen size={18} /></span>
-        <div className="v3-chg-title">
-          <strong>{text.summary(changes.counts)}</strong>
+        <div className="v3-chg-title" title={text.summary(changes.counts)}>
+          <strong>{text.files(changes.files.length)}</strong>
           {changes.added >= 0 ? <DiffStat className="v3-chg-stats" added={changes.added} removed={changes.removed} /> : null}
         </div>
         <div className="v3-chg-actions">
@@ -103,39 +95,50 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
               <Undo2 size={13} aria-hidden />
             </Button>
           ) : null}
-          <Button size="sm" variant="secondary" onPress={viewChanges} data-testid="v3-turn-changes-view">
+          <Button size="sm" variant="ghost" onPress={() => openPanelTool('changes')} data-testid="v3-turn-changes-view">
             {text.view}
           </Button>
         </div>
       </header>
-      <Collapsible className="v3-chg-files" isExpanded={expanded} onExpandedChange={setExpanded}>
-        <ul className="v3-chg-list">
-          {shown.map((file) => <ChangeRow key={file.path} file={file} cwd={cwd} />)}
-        </ul>
-        {hidden > 0 ? (
-          <>
-            <CollapsiblePanel className="v3-chg-panel">
-              {expanded ? (
-                <ul className="v3-chg-list v3-chg-rest">
-                  {rest.map((file) => <ChangeRow key={file.path} file={file} cwd={cwd} />)}
-                </ul>
-              ) : null}
-            </CollapsiblePanel>
-            <CollapsibleHeader className="v3-chg-more" data-testid="v3-turn-changes-more">
-              {expanded ? text.less : text.more(hidden)}
-            </CollapsibleHeader>
-          </>
-        ) : null}
-      </Collapsible>
+      <ul className="v3-chg-list">
+        {groups.map((group) => group.dir
+          ? <ChangeGroup key={group.dir} group={group} expanded={openDirs[group.dir] ?? openByDefault} onExpandedChange={(open) => setOpenDirs((prev) => ({ ...prev, [group.dir]: open }))} />
+          : group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />))}
+      </ul>
     </section>
   )
 }
 
-function ChangeRow({ file, cwd }: { file: { path: string; added: number; removed: number }; cwd: string | undefined }): JSX.Element {
-  const { dir, base } = splitChangePath(file.path, cwd)
+function ChangeGroup({ group, expanded, onExpandedChange }: { group: TurnChangeGroup; expanded: boolean; onExpandedChange: (open: boolean) => void }): JSX.Element {
+  const known = group.files.every(({ file }) => file.added >= 0 && file.removed >= 0)
+  return (
+    <li className="v3-chg-group">
+      <Collapsible isExpanded={expanded} onExpandedChange={onExpandedChange}>
+        <CollapsibleHeader
+          className="v3-chg-dir-head"
+          size="compact"
+          icon={<Folder size={14} aria-hidden />}
+          accessory={known && group.added + group.removed > 0 ? <DiffStat className="v3-chg-stats" added={group.added} removed={group.removed} /> : undefined}
+          data-testid="v3-turn-changes-dir"
+        >
+          <span className="v3-chg-dir" title={group.dir}>{group.dir.replace(/\/$/, '')}</span>
+        </CollapsibleHeader>
+        <CollapsiblePanel className="v3-chg-panel">
+          {expanded ? (
+            <ul className="v3-chg-sub">
+              {group.files.map(({ file, base }) => <ChangeRow key={file.path} file={file} base={base} />)}
+            </ul>
+          ) : null}
+        </CollapsiblePanel>
+      </Collapsible>
+    </li>
+  )
+}
+
+function ChangeRow({ file, base }: { file: TurnFileChange; base: string }): JSX.Element {
   return (
     <li className="v3-chg-row" data-testid="v3-turn-changes-row" title={file.path}>
-      <span className="v3-chg-path"><span className="v3-chg-dir">{dir}</span>{base}</span>
+      <span className="v3-chg-path"><FileTypeIcon name={base} size={14} />{base}</span>
       {file.added + file.removed > 0 ? <DiffStat className="v3-chg-stats" added={file.added} removed={file.removed} /> : null}
     </li>
   )

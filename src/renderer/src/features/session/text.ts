@@ -171,6 +171,21 @@ export type SessionTextKey =
   | 'processThinking'
   | 'processActions1'
   | 'processActions'
+  | 'processCommands1'
+  | 'processCommands'
+  | 'processCode1'
+  | 'processCode'
+  | 'processReads1'
+  | 'processReads'
+  | 'processEditFile'
+  | 'processEdits'
+  | 'processCreateFile'
+  | 'processCreates'
+  | 'processOther1'
+  | 'processOther'
+  | 'processViewChanges'
+  | 'questionChosen'
+  | 'questionFreeAnswer'
   | 'thinkingEmptyRecord'
   | 'thinkingUnavailable'
   | 'asideStacked'
@@ -358,6 +373,21 @@ const ZH: Record<SessionTextKey, string> = {
   processThinking: '{n} 段思考',
   processActions1: '1 次操作',
   processActions: '{n} 次操作',
+  processCommands1: '运行 1 个命令',
+  processCommands: '运行 {n} 个命令',
+  processCode1: '运行 1 段代码',
+  processCode: '运行 {n} 段代码',
+  processReads1: '读取 1 个文件',
+  processReads: '读取 {n} 个文件',
+  processEditFile: '编辑 {file}',
+  processEdits: '编辑 {n} 个文件',
+  processCreateFile: '新建 {file}',
+  processCreates: '新建 {n} 个文件',
+  processOther1: '其他操作 1 次',
+  processOther: '其他操作 {n} 次',
+  processViewChanges: '查看更改',
+  questionChosen: '已选',
+  questionFreeAnswer: '回答：{answer}',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
   thinkingUnavailable: '{model} 不提供思考文字',
   asideStacked: '窗口不够宽，推理暂时放在正文上方',
@@ -546,6 +576,21 @@ const EN: Record<SessionTextKey, string> = {
   processThinking: '{n} thoughts',
   processActions1: '1 action',
   processActions: '{n} actions',
+  processCommands1: 'Ran 1 command',
+  processCommands: 'Ran {n} commands',
+  processCode1: 'Ran 1 script',
+  processCode: 'Ran {n} scripts',
+  processReads1: 'Read 1 file',
+  processReads: 'Read {n} files',
+  processEditFile: 'Edited {file}',
+  processEdits: 'Edited {n} files',
+  processCreateFile: 'Created {file}',
+  processCreates: 'Created {n} files',
+  processOther1: '1 other action',
+  processOther: '{n} other actions',
+  processViewChanges: 'View changes',
+  questionChosen: 'Chosen',
+  questionFreeAnswer: 'Answer: {answer}',
   thinkingEmptyRecord: 'This turn left no reasoning text',
   thinkingUnavailable: '{model} does not return reasoning text',
   asideStacked: 'Not enough width; reasoning is shown above the reply for now',

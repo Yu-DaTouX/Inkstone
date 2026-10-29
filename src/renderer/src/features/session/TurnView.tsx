@@ -41,12 +41,15 @@ import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
 import { withoutWrapUp, type WrapUpCardModel } from './wrap-up'
 import { WrapUpCard, wrapUpKey } from './WrapUpCard'
+import { stripImageNotice } from './effective-messages'
+import { isHistoryQuestionCall } from './question-receipt'
+import { QuestionHistory } from './QuestionReceipt'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
-  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} modelShift={modelShift} />
 })
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
@@ -66,7 +69,7 @@ function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: User
   const pagerModel = msg.entryId ? branchPager?.models.get(msg.entryId) ?? null : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
   if (isSubagentNotice(msg.text)) return null
-  const fileContent = splitFileReferences(stripImageLegend(msg.text ?? ''))
+  const fileContent = splitFileReferences(stripImageLegend(stripImageNotice(msg.text ?? '')))
   const displayText = fileContent.text
   const refPrefix = usedImageRefPrefix(displayText) ?? imageRefPrefix(lang)
   const showImageRefs = (msg.images?.length ?? 0) > 1 || referencedImageNumbers(displayText).length > 0
@@ -214,7 +217,7 @@ function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean }): JSX.Element | null {
+function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, modelShift }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; modelShift: boolean }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
@@ -240,12 +243,18 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const hasBody = commentary.length > 0 || !!turn.response || turn.tools.length > 0 || !!turn.thinking || turn.artifacts.length > 0 || liveImageProgress.length > 0 || !!turn.error
   if (!hasBody && !streaming) return null
   const flow = flowSegments(sourceTurn, commentary)
-  const split = flow ? splitTurnProcess(flow, { keepThinking: !aside }) : null
+  const split = flow ? splitTurnProcess(flow, { keepThinking: !aside, foldReplies: !streaming }) : null
   const processSegs = split?.process ?? []
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
   const glowId = liveToolGlowId(turn.tools)
+  const askedCalls = streaming ? [] : turn.tools.filter((call) => !call.parentToolCallId && isHistoryQuestionCall(call) && call.status !== 'running' && call.status !== 'pending')
+  const askedCards = askedCalls.length ? (
+    <div className="v3-qhistory-list" data-testid="v3-question-history-list">
+      {askedCalls.map((call) => <QuestionHistory key={call.id} call={call} />)}
+    </div>
+  ) : null
 
   return (
     <TranscriptViewScope.Provider value={view}>
@@ -261,6 +270,13 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   
           {split ? (
             <>
+              {split.leadReplies.map((segment) => (
+                <div key={segment.id} className="v3-seg" data-testid="v3-seg">
+                  <div className="v3-para">
+                    <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
+                  </div>
+                </div>
+              ))}
               {processSegs.length ? (
                 <TurnProcess
                   process={processSegs}
@@ -271,8 +287,10 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   turnId={turn.id}
                   approvalIds={approvalIds}
                   glowId={glowId}
+                  elapsedMs={sourceTurn.elapsedMs}
                 />
               ) : null}
+              {askedCards}
               {split.earlierReplies.map((segment) => (
                 <div key={segment.id} className="v3-seg" data-testid="v3-seg">
                   <div className="v3-para">
@@ -333,6 +351,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   ? <div className="v3-para"><Markdown text={turn.response.text} sourceCwd={turn.response.sourceCwd} live={!!streaming} sessionId={sessionId} messageId={turn.response.id} /></div>
                   : null}
               <ToolSteps tools={turn.tools} approvalIds={approvalIds} glowId={glowId} />
+              {askedCards}
             </>
           )}
   
@@ -347,7 +366,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
           {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
-          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} pinned={tail ?? true} /> : null}
+          {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} tail={tail ?? true} modelShift={modelShift} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
         </div>
@@ -408,7 +427,7 @@ function useCopyState(): [CopyState, (next: CopyState) => void] {
   return [copyState, setCopyState]
 }
 
-function TurnMeta({ turn, readOnly, pinned }: { turn: AssistantTurn; readOnly: boolean; pinned: boolean }): JSX.Element | null {
+function TurnMeta({ turn, readOnly, tail, modelShift }: { turn: AssistantTurn; readOnly: boolean; tail: boolean; modelShift: boolean }): JSX.Element | null {
   const t = useT()
   const models = useStore((s) => s.models)
   const [copyState, setCopyState] = useCopyState()
@@ -417,14 +436,18 @@ function TurnMeta({ turn, readOnly, pinned }: { turn: AssistantTurn; readOnly: b
   const modelDisplay = turn.model ? turnModelLabel(turn.model, models) : null
   const stopLabel = turn.terminalReason === 'stopped' ? t('act.stopped') : turn.terminalReason === 'interrupted' ? t('act.interrupted') : null
   if (!reply && !turn.timestamp && !elapsed && !turn.model) return null
+  if (!reply && !tail && !stopLabel) return null
+  const modelPinned = tail || modelShift
+  const pinned = modelPinned || !!stopLabel
   return (
-    <div className="v3-msg-meta" data-testid="v3-turn-meta" data-reveal={pinned || stopLabel ? undefined : 'hover'}>
-      {turn.timestamp ? <TurnClock timestamp={turn.timestamp} /> : null}
-      {modelDisplay ? <span className="v3-act-model" title={modelDisplay.identity}>{modelDisplay.label}</span> : null}
+    <div className="v3-msg-meta" data-testid="v3-turn-meta" data-reveal={pinned ? 'parts' : 'hover'}>
+      {modelDisplay ? <span className="v3-act-model" title={modelDisplay.identity} data-reveal={modelPinned ? undefined : 'hover'}>{modelDisplay.label}</span> : null}
+      {turn.timestamp ? <span className="v3-msg-meta-part" data-reveal="hover"><TurnClock timestamp={turn.timestamp} /></span> : null}
       {stopLabel ? <span className="v3-msg-meta-stop">{stopLabel}</span> : null}
-      {elapsed ? <span className="v3-act-time" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span> : null}
+      {elapsed ? <span className="v3-act-time" data-reveal="hover" title={turn.waitMs ? t('tok.elapsedWaitTip', { n: formatDuration(turn.waitMs) }) : t('tok.elapsedTip')}>{elapsed}</span> : null}
       {reply && !readOnly ? (
         <IconButton
+          data-reveal="hover"
           aria-label={t(copyState === 'copied' ? 'turn.copied' : copyState === 'failed' ? 'turn.copyFailed' : 'turn.copy')}
           data-testid="v3-turn-copy"
           isDisabled={turn.streaming}

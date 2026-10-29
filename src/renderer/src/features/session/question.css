@@ -46,6 +46,15 @@
   .v3-qreceipt-q { color: var(--fg3); font-size: var(--t-footnote); line-height: var(--t-footnote-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
   .v3-qreceipt-a { color: var(--fg); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
 
+  .v3-qhistory { width: 100%; max-width: 560px; margin: var(--s-2) 0; }
+  .v3-qhistory-item + .v3-qhistory-item { border-top: var(--hair, 1px) solid var(--line); }
+  .v3-qhistory-options { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0 var(--s-12) var(--s-8); list-style: none; }
+  .v3-qhistory-option { display: flex; align-items: baseline; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-body); line-height: var(--t-body-lh); }
+  .v3-qhistory-option[data-chosen] { color: var(--fg); font-weight: var(--w-medium); }
+  .v3-qhistory-mark { display: inline-grid; place-items: center; flex: none; width: 12px; align-self: center; color: var(--accent-t); }
+  .v3-qhistory-label { min-width: 0; overflow-wrap: anywhere; }
+  .v3-qhistory-answer { padding: 0 var(--s-12) var(--s-8) calc(var(--s-12) + 12px + var(--s-6)); color: var(--fg); font-size: var(--t-body); line-height: var(--t-body-lh); white-space: pre-wrap; overflow-wrap: anywhere; }
+
   @media (prefers-reduced-motion: reduce) { .v3-qcard { animation: none; } }
   :root[data-reduce-motion='true'] .v3-qcard { animation: none; }
 }

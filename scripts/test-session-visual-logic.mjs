@@ -19,6 +19,7 @@ const fade = await load('reveal-fade', 'src/renderer/src/features/session/reveal
 const follow = await load('scroll-follow', 'src/renderer/src/features/session/scroll-follow.ts')
 const position = await load('scroll-position', 'src/renderer/src/features/session/scroll-position.ts')
 const receipt = await load('question-receipt', 'src/renderer/src/features/session/question-receipt.ts')
+const mdKey = await load('markdown-cache-key', 'src/renderer/src/features/session/markdown-cache-key.ts')
 const highlight = await load('code-highlight', 'src/renderer/src/lib/code-highlight.ts')
 const math = await load('markdown-math', 'src/renderer/src/features/session/markdown-math.ts', ['remark-math', 'rehype-katex', 'katex', 'katex/*'])
 await rm(dir, { recursive: true, force: true })
@@ -165,6 +166,14 @@ check('分屏：共享滚动记录有界，不无限保留历史会话', () => {
   for (let i = 0; i < 33; i += 1) position.saveScrollSnapshot(`bounded-${i}`, { top: i, bottom: false, anchor: null })
   assert.equal(position.readScrollSnapshot('bounded-0'), undefined)
   assert.equal(position.readScrollSnapshot('bounded-32').top, 32)
+})
+
+check('Markdown 缓存键：HTML 开关不靠拼接正文区分', () => {
+  const preview = mdKey.markdownCacheKey({ lang: 'zh-CN', allowHtml: true, math: false, text: '<b>x</b>' })
+  const chat = mdKey.markdownCacheKey({ lang: 'zh-CN', allowHtml: false, math: false, text: 'html:<b>x</b>' })
+  assert.notEqual(preview, chat)
+  assert.notEqual(mdKey.markdownCacheKey({ lang: 'zh-CN', allowHtml: false, math: true, text: 'a' }), mdKey.markdownCacheKey({ lang: 'zh-CN', allowHtml: false, math: false, text: 'math:a' }))
+  assert.notEqual(mdKey.markdownCacheKey({ lang: 'zh-CN', allowHtml: false, math: false, text: 'a|b' }), mdKey.markdownCacheKey({ lang: 'zh-CN|a', allowHtml: false, math: false, text: 'b' }))
 })
 
 check('提问回执：运行中、已答、跳过、失败', () => {

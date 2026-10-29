@@ -2,7 +2,7 @@
   .v3-prose {
     display: flex;
     flex-direction: column;
-    gap: var(--s-10);
+    gap: var(--s-16);
     min-width: 0;
     color: var(--fg);
     font-size: var(--d-prose);
@@ -12,9 +12,9 @@
   .v3-prose > * { margin: 0; }
   .v3-prose :is(h1, h2, h3, h4, h5, h6) { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   .v3-prose > :is(h1, h2, h3, h4, h5, h6) + * { margin-top: calc(-1 * var(--s-4)); }
-  .v3-prose h1 { margin-top: var(--s-12); font-size: 1.14286em; line-height: 1.25; }
-  .v3-prose h2 { margin-top: var(--s-10); font-size: 1.07143em; line-height: 1.33; }
-  .v3-prose h3 { margin-top: var(--s-6); font-size: 1em; }
+  .v3-prose h1 { margin-top: var(--s-24); font-size: 1.14286em; line-height: 1.25; }
+  .v3-prose h2 { margin-top: var(--s-20); font-size: 1.07143em; line-height: 1.33; }
+  .v3-prose h3 { margin-top: var(--s-16); font-size: 1em; }
   .v3-prose :is(h4, h5, h6) { font-size: 1em; font-weight: 500; }
   .v3-prose > :is(h1, h2, h3):first-child { margin-top: 0; }
   .v3-prose :is(ul, ol) { margin: 0; padding-left: var(--s-20); }
@@ -27,7 +27,12 @@
   .v3-prose blockquote > * { margin: 0; }
   .v3-prose blockquote > * + * { margin-top: var(--s-6); }
   .v3-prose hr { width: 100%; border: 0; border-top: var(--hair, 1px) solid var(--alpha-3); }
-  .v3-prose :not(pre) > code { padding: 1px var(--s-2); border-radius: var(--r-xs); background: var(--alpha-1); font-family: var(--font-mono); font-size: calc(var(--d-prose) - 1px); line-height: 1.4; }
+  .v3-prose :not(pre) > code { padding: 1px var(--s-4); border-radius: var(--r-xs); background: var(--alpha-1); font-family: var(--font-mono); color: var(--fg2); font-size: 0.9em; font-weight: var(--w-regular); line-height: 1.4; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  .v3-md-path-part { white-space: nowrap; }
+  .v3-prose .v3-md-code-link { text-decoration: underline dotted var(--fg3); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .v3-prose .v3-md-code-link:hover { text-decoration-color: currentColor; }
+  .v3-prose .v3-md-code-link:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+  .v3-md-link-icon { display: inline-block; margin-inline-end: 0.2em; vertical-align: -0.15em; }
   .v3-prose kbd { padding: 0 var(--s-4); border-bottom: 2px solid var(--alpha-2); border-radius: var(--r-xs); font-family: var(--font-mono); font-size: var(--t-footnote); }
   .v3-prose .katex-display { margin: 0; overflow-x: auto; overflow-y: hidden; padding: var(--s-2) 0; }
   .v3-md-link { color: var(--accent-t); text-decoration: none; }
@@ -80,12 +85,13 @@
   .v3-msg-act:hover { color: var(--fg); }
   .v3-user-actions { min-height: var(--size-btn); gap: var(--s-2); }
   .v3-user-actions > .v3-msg-btn { color: var(--fg3); }
-  .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'] { opacity: 0; transition: opacity var(--dur-fast) var(--ease-snap); }
+  .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'], .v3-msg-meta > [data-reveal='hover'] { opacity: 0; transition: opacity var(--dur-fast) var(--ease-snap); }
   .v3-msg.user:is(:hover, :focus-within) .v3-user-actions > :is(.v3-msg-btn, .v3-time),
-  .v3-msg.assistant:is(:hover, :focus-within) .v3-msg-meta[data-reveal='hover'] { opacity: 1; transition: opacity var(--dur-snap) var(--ease-snap) var(--dur-snap); }
+  .v3-msg.assistant:is(:hover, :focus-within) :is(.v3-msg-meta[data-reveal='hover'], .v3-msg-meta > [data-reveal='hover']) { opacity: 1; transition: opacity var(--dur-snap) var(--ease-snap) var(--dur-snap); }
+  .v3-msg-meta[data-reveal='hover'] > [data-reveal='hover'] { opacity: 1; }
   .v3-user-actions > .v3-msg-btn:hover { color: var(--fg); }
-  @media (hover: none), (pointer: coarse) { .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'] { opacity: 1; } }
-  :root[data-reduce-motion='true'] :is(.v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover']) { transition: none; }
+  @media (hover: none), (pointer: coarse) { .v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'], .v3-msg-meta > [data-reveal='hover'] { opacity: 1; } }
+  :root[data-reduce-motion='true'] :is(.v3-user-actions > :is(.v3-msg-btn, .v3-time), .v3-msg-meta[data-reveal='hover'], .v3-msg-meta > [data-reveal='hover']) { transition: none; }
   .v3-qa { width: 100%; max-width: 480px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-ring); overflow: hidden; }
   .v3-qa-item { padding: var(--s-8) var(--s-12); }
   .v3-qa-item + .v3-qa-item { border-top: var(--hair, 1px) solid var(--line); }

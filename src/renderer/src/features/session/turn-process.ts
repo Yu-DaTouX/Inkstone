@@ -1,12 +1,15 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
-import { countedProcessCalls, isWebTool, summarizeToolRun } from './tool-run-model'
+import { countedProcessCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
+import { callPath, readFileDiff } from './turn-changes'
+import { isHistoryQuestionCall } from './question-receipt'
 
 const LIVE_SEGMENTS = 3
 
 interface TurnProcessSplit {
   process: TurnSegment[]
   reply: TurnSegment | null
+  leadReplies: TurnSegment[]
   earlierReplies: TurnSegment[]
   tail: TurnSegment[]
 }
@@ -27,7 +30,27 @@ function withWork(process: TurnSegment[], keepThinking: boolean): TurnSegment[] 
   return keepThinking || process.some(hasWork) ? process : []
 }
 
-export function splitTurnProcess(segments: readonly TurnSegment[], options: { keepThinking?: boolean } = {}): TurnProcessSplit {
+function withoutResponse(segment: TurnSegment): TurnSegment {
+  return { ...segment, response: null, responseParts: undefined }
+}
+
+function narrationOf(segment: TurnSegment): TurnSegment {
+  return {
+    ...segment,
+    id: `${segment.id}:narration`,
+    thinking: '',
+    thinkingMs: undefined,
+    thinkingLive: false,
+    thinkingParts: [],
+    tools: [],
+    texts: [],
+    commentary: segment.responseParts?.length ? segment.responseParts : segment.response ? [segment.response] : [],
+    response: null,
+    responseParts: undefined
+  }
+}
+
+export function splitTurnProcess(segments: readonly TurnSegment[], options: { keepThinking?: boolean; foldReplies?: boolean } = {}): TurnProcessSplit {
   const keepThinking = options.keepThinking === true
   let at = -1
   for (let i = segments.length - 1; i >= 0; i -= 1) {
@@ -37,14 +60,23 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
     }
   }
   if (at < 0) {
-    return { process: withWork(segments.filter(inProcess), keepThinking), reply: null, earlierReplies: [], tail: [] }
+    return { process: withWork(segments.filter(inProcess), keepThinking), reply: null, leadReplies: [], earlierReplies: [], tail: [] }
   }
 
   const replySource = segments[at]
-  const earlierReplies = segments.slice(0, at).filter((segment) => !!segment.response)
-  const candidates = segments.slice(0, at).filter(inProcess)
+  const firstWork = segments.findIndex((segment) => segment.tools.length > 0)
+  const leadReplies: TurnSegment[] = []
+  const earlierReplies: TurnSegment[] = []
+  const candidates: TurnSegment[] = []
+  segments.slice(0, at).forEach((segment, index) => {
+    const beforeWork = firstWork < 0 || index < firstWork
+    if (segment.response && beforeWork) leadReplies.push(segment)
+    else if (segment.response && !options.foldReplies) earlierReplies.push(segment)
+    if (inProcess(segment)) candidates.push(segment.response && !beforeWork && options.foldReplies ? withoutResponse(segment) : segment)
+    if (segment.response && !beforeWork && options.foldReplies) candidates.push(narrationOf(segment))
+  })
   if (inProcess(replySource)) {
-    candidates.push({ ...replySource, response: null, responseParts: undefined })
+    candidates.push(withoutResponse(replySource))
   }
   const process = withWork(candidates, keepThinking)
   const reply: TurnSegment = {
@@ -57,7 +89,25 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
     texts: [],
     responseParts: replySource.responseParts
   }
-  return { process, reply, earlierReplies, tail: segments.slice(at + 1) }
+  return { process, reply, leadReplies, earlierReplies, tail: segments.slice(at + 1) }
+}
+
+export function processPreview(process: readonly TurnSegment[]): string {
+  for (let i = process.length - 1; i >= 0; i -= 1) {
+    const notes = process[i].commentary
+    for (let j = notes.length - 1; j >= 0; j -= 1) {
+      const plain = notes[j].text
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/[`*_~#>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (!plain) continue
+      const sentences = plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).filter(Boolean)
+      return sentences[sentences.length - 1] ?? plain
+    }
+  }
+  return ''
 }
 
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {
@@ -147,10 +197,86 @@ export function mergeQuietSegments(process: readonly TurnSegment[]): TurnSegment
   return merged
 }
 
+export interface ProcessFileChange {
+  path: string
+  base: string
+  added: number | null
+  removed: number | null
+}
+
 export interface ProcessSummary {
   thinking: number
   actions: number
   failed: number
+  commands: number
+  code: number
+  reads: number
+  edits: ProcessFileChange[]
+  creates: ProcessFileChange[]
+  other: number
+}
+
+function textLines(text: string): string[] {
+  return text ? text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') : []
+}
+
+export function lineDelta(before: string, after: string): { added: number; removed: number } {
+  const a = textLines(before)
+  const b = textLines(after)
+  let head = 0
+  while (head < a.length && head < b.length && a[head] === b[head]) head += 1
+  let tail = 0
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail += 1
+  return { added: b.length - head - tail, removed: a.length - head - tail }
+}
+
+function stringField(source: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) if (typeof source[key] === 'string') return source[key] as string
+  return null
+}
+
+export function estimateCallLines(call: Pick<UIToolCall, 'args' | 'details'>): { added: number; removed: number } | null {
+  const diff = readFileDiff(call.details)
+  if (diff) return diff.added >= 0 && diff.removed >= 0 ? { added: diff.added, removed: diff.removed } : null
+  const args = call.args && typeof call.args === 'object' ? call.args as Record<string, unknown> : null
+  if (!args) return null
+  const pairs = Array.isArray(args.edits) ? args.edits : [args]
+  let added = 0
+  let removed = 0
+  let seen = false
+  for (const raw of pairs) {
+    if (!raw || typeof raw !== 'object') continue
+    const edit = raw as Record<string, unknown>
+    const before = stringField(edit, ['oldText', 'old_string', 'old_str'])
+    const after = stringField(edit, ['newText', 'new_string', 'new_str'])
+    if (before !== null && after !== null) {
+      const delta = lineDelta(before, after)
+      added += delta.added
+      removed += delta.removed
+      seen = true
+    }
+  }
+  if (seen) return { added, removed }
+  const content = stringField(args, ['content', 'contents', 'text'])
+  return content === null ? null : { added: textLines(content).length, removed: 0 }
+}
+
+function baseOf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path
+}
+
+function isCodeTool(call: Pick<UIToolCall, 'name'>): boolean {
+  return /(^|__|\.)codemode$/i.test(call.name)
+}
+
+function addFileChange(target: Map<string, ProcessFileChange>, call: UIToolCall): void {
+  const path = readFileDiff(call.details)?.path || callPath(call)
+  const key = path ? normalizeToolPath(path) : call.id
+  const lines = estimateCallLines(call)
+  const row = target.get(key) ?? { path: path || call.name, base: path ? baseOf(path) : call.name, added: 0, removed: 0 }
+  row.added = row.added === null || !lines ? null : row.added + lines.added
+  row.removed = row.removed === null || !lines ? null : row.removed + lines.removed
+  target.set(key, row)
 }
 
 export function processSummary(process: readonly TurnSegment[]): ProcessSummary {
@@ -161,7 +287,41 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
     calls.push(...segment.tools)
   }
   const counted = countedProcessCalls(calls)
-  return { thinking, actions: counted.length, failed: summarizeToolRun(counted).failed }
+  let commands = 0
+  let code = 0
+  let other = 0
+  const reads = new Set<string>()
+  const edits = new Map<string, ProcessFileChange>()
+  const creates = new Map<string, ProcessFileChange>()
+  for (const call of counted) {
+    if (isHistoryQuestionCall(call)) continue
+    const category = toolCategory(call)
+    if (category === 'command') {
+      if (isCodeTool(call)) code += 1
+      else commands += 1
+    } else if (category === 'read') {
+      const path = callPath(call)
+      reads.add(path ? normalizeToolPath(path) : call.id)
+    } else if (category === 'edit' || category === 'delete' || category === 'create') {
+      if (call.status === 'error') continue
+      const key = normalizeToolPath(readFileDiff(call.details)?.path || callPath(call))
+      const created = creates.has(key) || (category === 'create' && !edits.has(key))
+      addFileChange(created ? creates : edits, call)
+    } else {
+      other += 1
+    }
+  }
+  return {
+    thinking,
+    actions: counted.length,
+    failed: summarizeToolRun(counted).failed,
+    commands,
+    code,
+    reads: reads.size,
+    edits: [...edits.values()],
+    creates: [...creates.values()],
+    other
+  }
 }
 
 export function processFailuresAlert(turn: Pick<AssistantTurn, 'terminalReason' | 'error' | 'errorRecovered'>, streaming: boolean): boolean {

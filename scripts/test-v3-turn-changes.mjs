@@ -25,7 +25,7 @@ try {
     platform: 'node',
     logLevel: 'silent'
   })
-  const { collectTurnChanges, splitChangePath, isInsideCwd } = await import(pathToFileURL(out).href)
+  const { collectTurnChanges, splitChangePath, isInsideCwd, groupChangesByDir } = await import(pathToFileURL(out).href)
 
   const diff = (path, added, removed, status = 'modified') => ({
     fileDiff: { path, added, removed, status, patch: '', before: { text: '' }, after: { text: '' } }
@@ -66,6 +66,17 @@ try {
   const shallow = splitChangePath('/tmp/b.txt', '/proj')
   ok(shallow.dir === '/tmp/' && shallow.base === 'b.txt', 'cwd 之外只有一级目录时原样显示', shallow)
   ok(splitChangePath('a.ts').dir === '' && splitChangePath('a.ts').base === 'a.ts', '没有目录的文件名', splitChangePath('a.ts'))
+
+  const grouped = groupChangesByDir([
+    { path: 'E:\\proj\\src\\a.ts', status: 'modified', added: 3, removed: 1 },
+    { path: 'E:\\proj\\src\\b.ts', status: 'created', added: 5, removed: 0 },
+    { path: 'E:\\proj\\README.md', status: 'modified', added: 1, removed: 1 },
+    { path: 'E:\\proj\\scripts\\x.mjs', status: 'modified', added: -1, removed: -1 }
+  ], 'E:\\proj')
+  ok(grouped.length === 3 && grouped[0].dir === 'src/' && grouped[0].files.length === 2, '按所在目录分组，保持首次出现顺序', grouped.map((g) => [g.dir, g.files.length]))
+  ok(grouped[0].added === 8 && grouped[0].removed === 1, '目录合计行数', grouped[0])
+  ok(grouped[1].dir === '' && grouped[1].files[0].base === 'README.md', '根目录文件不建目录组', grouped[1])
+  ok(grouped[2].added === 0 && grouped[2].removed === 0, '拿不到行数的文件不计入目录合计', grouped[2])
 
   console.log(`\nv3-turn-changes: ${checks} checks passed`)
 } finally {

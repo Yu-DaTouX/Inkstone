@@ -22,3 +22,19 @@ export function countUserMessages(messages: readonly UIMessage[]): number {
   for (const message of messages) if (message.role === 'user' && !message.question) count += 1
   return count
 }
+
+const IMAGE_NOTICE = /\[Image: original \d+x\d+, displayed at \d+x\d+\.[^\]\n]*\]/g
+
+export function stripImageNotice(text: string): string {
+  return text.includes('[Image: original') ? text.replace(IMAGE_NOTICE, '').trim() : text
+}
+
+function isImageNoticeOnly(message: UIMessage): boolean {
+  if (message.role !== 'user' || !message.text?.includes('[Image: original')) return false
+  if (message.images?.length || message.qa?.length || message.question) return false
+  return !stripImageNotice(message.text)
+}
+
+export function withoutImageNotices(messages: UIMessage[]): UIMessage[] {
+  return messages.some(isImageNoticeOnly) ? messages.filter((message) => !isImageNoticeOnly(message)) : messages
+}
