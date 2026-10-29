@@ -1,6 +1,6 @@
 export { SyncService } from './service'
 export type { SyncServiceOptions } from './service'
-export { SyncFolder, SYNC_SUBDIR } from './sync-folder'
+export { SyncFolder, SYNC_SUBDIR, validateSyncRoot } from './sync-folder'
 export { LocalStore, defaultSyncPaths, forbiddenFieldsInRecord, pickScheduleDefinition } from './local-store'
 export type { LocalStoreAppliers } from './local-store'
 export { SyncConfigStore, SYNC_CONFIG_FILE } from './config'

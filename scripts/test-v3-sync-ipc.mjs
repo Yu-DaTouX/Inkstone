@@ -172,7 +172,7 @@ try {
   await check('未配置时立即同步返回可读错误，不抛异常', async () => {
     const result = await registrar.invoke('yan:sync:now')
     assert.equal(result.ok, false)
-    assert.match(result.error, /同步文件夹/)
+    assert.equal(result.error.code, 'config.missing')
     assert.equal(syncCalls, 0)
   })
 
@@ -192,6 +192,22 @@ try {
     assert.equal(result.ok, true)
     assert.equal(result.syncRoot, other)
   })
+  await check('configure(path) 校验目录：不存在或不是目录都拒绝，且不写配置', async () => {
+    const before = (await registrar.invoke('yan:sync:status')).syncRoot
+    const missing = join(root, 'no-such-folder')
+    const rejected = await registrar.invoke('yan:sync:configure', missing)
+    assert.equal(rejected.ok, false)
+    assert.equal(rejected.error.code, 'folder.missing')
+    assert.equal(rejected.error.params.path, missing)
+    const file = join(root, 'not-a-folder.txt')
+    await writeFile(file, 'x')
+    const notDir = await registrar.invoke('yan:sync:configure', file)
+    assert.equal(notDir.ok, false)
+    assert.equal(notDir.error.code, 'folder.missing')
+    assert.equal(notDir.error.params.path, file)
+    assert.equal((await registrar.invoke('yan:sync:status')).syncRoot, before)
+  })
+
   await check('configure(null) 清除配置', async () => {
     const cleared = await registrar.invoke('yan:sync:configure', null)
     assert.equal(cleared.ok, true)
@@ -237,14 +253,15 @@ try {
     registerSyncIpc(local.ipc, failingDeps)
     const result = await local.invoke('yan:sync:now')
     assert.equal(result.ok, false)
-    assert.match(result.error, /boom/)
+    assert.equal(result.error.code, 'unknown')
+    assert.match(String(result.error.params?.reason), /boom/)
     syncResult = saved
   })
   await check('部分记录失败时 now 如实返回 ok=false 并带上错误', async () => {
-    syncResult = makeReport({ ok: false, errors: ['prompt:review：拒绝写出'] })
+    syncResult = makeReport({ ok: false, errors: [{ code: 'record.forbidden', params: { key: 'prompt:review', fields: 'apiKey' } }] })
     const result = await registrar.invoke('yan:sync:now')
     assert.equal(result.ok, false)
-    assert.deepEqual(result.errors, ['prompt:review：拒绝写出'])
+    assert.deepEqual(result.errors, [{ code: 'record.forbidden', params: { key: 'prompt:review', fields: 'apiKey' } }])
     syncResult = makeReport()
   })
   await check('同步进行中的 resolve 排在同步之后执行', async () => {
@@ -308,11 +325,11 @@ try {
     assert.equal((await registrar.invoke('yan:sync:resolve', 'conflict-1', 'bogus')).ok, false)
     assert.equal(resolveCalls.length, 0)
   })
-  await check('resolve 失败原因原样返回', async () => {
-    resolveResult = { ok: false, error: '冲突已经处理' }
+  await check('resolve 失败原因原样返回（结构化错误码）', async () => {
+    resolveResult = { ok: false, error: { code: 'conflict.missing' } }
     const result = await registrar.invoke('yan:sync:resolve', 'conflict-1', 'local')
     assert.equal(result.ok, false)
-    assert.equal(result.error, '冲突已经处理')
+    assert.deepEqual(result.error, { code: 'conflict.missing' })
     resolveResult = { ok: true }
   })
   await check('status 只数文件个数，不逐条解析冲突 payload', async () => {
@@ -324,13 +341,14 @@ try {
     assert.equal(countCalls, countBefore + 1)
     assert.equal(listCalls, listBefore)
   })
-  await check('listConflicts 抛异常时 status 不抛出，带 error', async () => {
+  await check('listConflicts 抛异常时 status 不抛出，带结构化 error', async () => {
     const failingDeps = { ...deps, makeService: () => ({ sync: async () => makeReport(), listConflicts: async () => { throw new Error('read fail') }, countConflicts: async () => { throw new Error('read fail') }, resolveConflict: async () => ({ ok: true }) }), config }
     const local = captureRegistrar()
     registerSyncIpc(local.ipc, failingDeps)
     const status = await local.invoke('yan:sync:status')
     assert.equal(status.configured, true)
-    assert.match(status.error, /read fail/)
+    assert.equal(status.error.code, 'unknown')
+    assert.match(String(status.error.params?.reason), /read fail/)
     assert.equal(status.conflictCount, 0)
   })
 
@@ -359,7 +377,7 @@ try {
     registerSyncIpc(local.ipc, emptyDeps)
     const result = await local.invoke('yan:sync:exportSession')
     assert.equal(result.ok, false)
-    assert.match(result.error, /可导出/)
+    assert.equal(result.error.code, 'session.missing')
   })
   await check('importSession 用注入的会话包路径，生成新 id 且不覆盖同名', async () => {
     const importDeps = { ...deps, pickImportFile: async () => exportedPath, config }
@@ -380,7 +398,7 @@ try {
     const result = await local.invoke('yan:sync:importSession')
     assert.equal(result.ok, false)
     assert.equal(result.cancelled, true)
-    assert.match(result.error, /取消/)
+    assert.equal(result.error.code, 'session.cancelled')
   })
   await check('exportSession 取消时不抛异常', async () => {
     const cancelDeps = { ...deps, pickExportPath: async () => null, config }
@@ -389,7 +407,7 @@ try {
     const result = await local.invoke('yan:sync:exportSession')
     assert.equal(result.ok, false)
     assert.equal(result.cancelled, true)
-    assert.match(result.error, /取消/)
+    assert.equal(result.error.code, 'session.cancelled')
   })
 
   section('同步方式：默认手动，自动每小时')

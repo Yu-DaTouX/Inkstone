@@ -219,6 +219,39 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     })
     ok(startAgain.status === 200 && started.length === 1, '砚对砚：同一幂等键重试不会重复开任务')
 
+    const peer2Ids = new Set((await devices.list()).map((item) => item.id))
+    const peer2 = await pairAs('peer')
+    const peer2DeviceId = (await devices.list()).find((item) => !peer2Ids.has(item.id)).id
+    nextDecision = () => ({ approve: true, projectIds: ['p-a'], operations: ['read'] })
+    const own = (await call('/remote/v1/peer/connect', { token: peer2, method: 'POST', body: { operations: ['read'] } })).body.data.grant
+    const ownStream = await openStream(peer2, own.connectionId)
+    ok(ownStream.status === 200 && grants.list().some((item) => item.connectionId === own.connectionId), '砚对砚：第二台另一台砚拿到自己的连接授权')
+
+    const foreign = await call('/remote/v1/peer/disconnect', { token: peer2, method: 'POST', body: { connectionId: second.connectionId } })
+    ok(foreign.status === 200, '砚对砚：断开接口对不属于自己的连接也返回 ok')
+    ok(
+      grants.list().some((item) => item.connectionId === second.connectionId) &&
+        (await call('/remote/v1/peer/sessions', { token: peer, connection: second.connectionId })).status === 200,
+      '砚对砚：别的设备不能撤销我的连接'
+    )
+
+    const ended = await call('/remote/v1/peer/disconnect', { token: peer2, method: 'POST', body: { connectionId: own.connectionId } })
+    ok(
+      ended.status === 200 && !grants.list().some((item) => item.connectionId === own.connectionId),
+      '砚对砚：对方主动断开后授权立即消失，不必等宽限期'
+    )
+    ok((await call('/remote/v1/peer/sessions', { token: peer2, connection: own.connectionId })).status === 401, '砚对砚：主动断开后旧连接 id 立即失效')
+    ok(revokedStreams.includes(own.connectionId), '砚对砚：主动断开时事件流一起关闭')
+    ownStream.close()
+    ok((await call('/remote/v1/peer/disconnect', { token: peer2, method: 'POST', body: { connectionId: own.connectionId } })).status === 200, '砚对砚：重复断开幂等')
+    ok((await call('/remote/v1/peer/disconnect', { token: peer2, method: 'POST', body: {} })).status === 200, '砚对砚：没有 connectionId 也返回 ok')
+    ok((await call('/remote/v1/peer/disconnect', { token: phone, method: 'POST', body: { connectionId: own.connectionId } })).status === 403, '砚对砚：手机令牌不能调用断开接口')
+
+    const selfRevoke = await call('/remote/v1/devices/self/revoke', { token: peer2, method: 'POST', body: {} })
+    ok(selfRevoke.status === 200, '砚对砚：另一端撤回配对时服务端接受')
+    ok(!grants.list().some((item) => item.deviceId === peer2DeviceId), '砚对砚：撤回配对时这台设备的全部授权一起撤销')
+    ok((await call('/remote/v1/peer/sessions', { token: peer2 })).status === 401, '砚对砚：撤回配对后令牌立即失效')
+
     grants.revoke(second.connectionId)
     await wait(30)
     ok((await call('/remote/v1/peer/sessions', { token: peer, connection: second.connectionId })).status === 401, '砚对砚：所有者撤销后立即失效')

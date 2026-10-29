@@ -8,7 +8,8 @@ import { sha256Hex, shortHash } from './canonical'
 import { LocalStore, defaultSyncPaths, forbiddenFieldsInRecord } from './local-store'
 import { buildConflictCopy } from './resolve'
 import { SyncFolder } from './sync-folder'
-import type { SyncResolution } from '../../shared/sync'
+import type { SyncResolution, SyncNote } from '../../shared/sync'
+import { syncNote } from '../../shared/sync'
 import type { AppSettings } from '../../shared/ipc'
 import type { BaselineFile, ConflictRecord, RemoteRecord, SyncPaths, SyncRecord, SyncReport } from './types'
 
@@ -87,15 +88,15 @@ export class SyncService {
     return this.folder.root
   }
 
-  resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
+  resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: SyncNote }> {
     const run = this.chain.then(() => this.runResolveConflict(id, resolution))
     this.chain = run.catch(() => undefined)
     return run
   }
 
-  private async runResolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }> {
+  private async runResolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: SyncNote }> {
     const conflict = await this.folder.findConflict(id)
-    if (!conflict) return { ok: false, error: '冲突不存在或已经处理' }
+    if (!conflict) return { ok: false, error: syncNote('conflict.missing') }
     try {
       const { deviceId, deviceName } = await this.device()
       const now = this.now()
@@ -104,7 +105,7 @@ export class SyncService {
       const remoteHash = conflict.remoteHash
       const [localRead, remoteRead] = await Promise.all([this.store.readAll(), this.folder.readRecords()])
       if (localRead.skipped.length || remoteRead.skipped.length) {
-        return { ok: false, error: '无法完整重读两端版本，拒绝处理旧冲突；请检查同步文件后重试' }
+        return { ok: false, error: syncNote('conflict.unreadable') }
       }
       const currentLocal = localRead.records.find((record) => record.key === conflict.key)
       const currentRemote = remoteRead.records.get(conflict.key)
@@ -127,11 +128,11 @@ export class SyncService {
             remoteModifiedAt: currentRemote.modifiedAt,
             remoteDeviceId: currentRemote.deviceId,
             remoteDeviceName: currentRemote.deviceName,
-            suffix: `来自 ${currentRemote.deviceName} · ${formatTime(now)}`
+            suffix: `${currentRemote.deviceName} · ${formatTime(now)}`
           })
           await this.folder.removeConflict(id)
         }
-        return { ok: false, error: '冲突产生后两端版本已变化，旧决议已拒绝；请刷新冲突列表后重新选择' }
+        return { ok: false, error: syncNote('conflict.changed') }
       }
 
       if (resolution === 'remote') {
@@ -167,7 +168,7 @@ export class SyncService {
       await this.folder.removeConflict(id)
       return { ok: true }
     } catch (error) {
-      return { ok: false, error: `处理冲突失败：${describe(error)}` }
+      return { ok: false, error: syncNote('conflict.failed', { reason: describe(error) }) }
     }
   }
 
@@ -253,7 +254,7 @@ export class SyncService {
           next
         })
       } catch (error) {
-        report.errors.push(`${key}：${describe(error)}`)
+        report.errors.push(syncNote('record.failed', { key, reason: describe(error) }))
         if (base) next.records[key] = base
       }
     }
@@ -261,7 +262,7 @@ export class SyncService {
     try {
       await atomicWriteFile(this.stateFile, JSON.stringify(next, null, 2))
     } catch (error) {
-      report.errors.push(`同步基线写入失败：${describe(error)}`)
+      report.errors.push(syncNote('baseline.writeFailed', { reason: describe(error) }))
     }
     report.ok = report.errors.length === 0
     return report
@@ -289,7 +290,7 @@ export class SyncService {
       if (!localRecord || !localHash) return
       const forbidden = forbiddenFieldsInRecord(localRecord)
       if (forbidden.length) {
-        report.errors.push(`拒绝写出 ${key}：含凭证字段 ${forbidden.join('、')}`)
+        report.errors.push(syncNote('record.forbidden', { key, fields: forbidden.join(', ') }))
         if (base) next.records[key] = base
         return
       }
@@ -331,7 +332,7 @@ export class SyncService {
         remoteModifiedAt: remoteRecord.modifiedAt,
         remoteHash,
         remotePayload: remoteRecord.payload,
-        suffix: `来自 ${remoteRecord.deviceName} · ${formatTime(now)}`
+        suffix: `${remoteRecord.deviceName} · ${formatTime(now)}`
       }
       await this.folder.writeConflict(entry)
       if (base) next.records[key] = base

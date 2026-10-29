@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { atomicWriteFile } from './atomic'
-import { isSyncMode, type SyncMode } from '../../shared/sync'
+import { isSyncMode, isSyncNote, type SyncMode, type SyncNote } from '../../shared/sync'
 
 export const SYNC_CONFIG_FILE = 'sync-config.json'
 
@@ -13,7 +13,7 @@ export interface SyncRunSummary {
   pulled: number
   conflicts: number
   skipped: number
-  errors: string[]
+  errors: SyncNote[]
 }
 
 export interface SyncConfig {
@@ -38,6 +38,15 @@ function isRunSummary(value: unknown): value is SyncRunSummary {
   )
 }
 
+function normalizeErrors(value: unknown): SyncNote[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): SyncNote[] => {
+    if (typeof entry === 'string') return entry.trim() ? [{ code: 'sync.raw', params: { text: entry } }] : []
+    if (isSyncNote(entry)) return [{ code: entry.code, ...(entry.params ? { params: entry.params } : {}) }]
+    return []
+  })
+}
+
 export class SyncConfigStore {
   private readonly file: string
   private cache?: SyncConfig
@@ -59,7 +68,7 @@ export class SyncConfigStore {
       const legacyMode: SyncMode = syncRoot ? 'auto' : 'manual'
       const config: SyncConfig = { v: 1, mode: isSyncMode(raw?.mode) ? raw.mode : legacyMode }
       if (syncRoot) config.syncRoot = syncRoot
-      if (isRunSummary(raw?.lastSync)) config.lastSync = raw.lastSync
+      if (isRunSummary(raw?.lastSync)) config.lastSync = { ...raw.lastSync, errors: normalizeErrors(raw.lastSync.errors) }
       return (this.cache = config)
     } catch {
       return (this.cache = { v: 1, mode: 'manual' })

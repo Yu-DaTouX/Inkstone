@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs'
-import { access, mkdir, readFile, readdir, rm } from 'node:fs/promises'
+import { access, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteFile } from './atomic'
 import { sha256Hex, shortHash } from './canonical'
 import { isRecordKind } from './local-store'
+import { syncNote, type SyncNote } from '../../shared/sync'
 import type { ConflictRecord, RemoteRecord, SyncRecordKind } from './types'
 
 export const SYNC_SUBDIR = 'inkstone-sync'
@@ -13,6 +14,18 @@ const KINDS: SyncRecordKind[] = ['settings', 'prompt', 'skill', 'bookmark', 'sch
 export interface ReadRecordsResult {
   records: Map<string, RemoteRecord>
   skipped: string[]
+}
+
+export async function validateSyncRoot(root: string): Promise<SyncNote | null> {
+  if (!root || !existsSync(root)) return syncNote('folder.missing', { path: root })
+  const info = await stat(root).catch(() => null)
+  if (!info?.isDirectory()) return syncNote('folder.missing', { path: root })
+  try {
+    await access(root, constants.W_OK)
+  } catch {
+    return syncNote('folder.unwritable', { path: root })
+  }
+  return null
 }
 
 export class SyncFolder {
@@ -26,17 +39,13 @@ export class SyncFolder {
     this.conflictsDir = join(this.dir, 'conflicts')
   }
 
-  async check(): Promise<{ ok: true } | { ok: false; error: string }> {
-    if (!existsSync(this.root)) return { ok: false, error: `同步文件夹不存在：${this.root}` }
-    try {
-      await access(this.root, constants.W_OK)
-    } catch {
-      return { ok: false, error: `同步文件夹不可写：${this.root}` }
-    }
+  async check(): Promise<{ ok: true } | { ok: false; error: SyncNote }> {
+    const invalid = await validateSyncRoot(this.root)
+    if (invalid) return { ok: false, error: invalid }
     try {
       await mkdir(this.dir, { recursive: true })
     } catch (error) {
-      return { ok: false, error: `无法创建同步子目录：${describe(error)}` }
+      return { ok: false, error: syncNote('folder.uncreatable', { path: this.dir, reason: describe(error) }) }
     }
     return { ok: true }
   }
@@ -151,7 +160,7 @@ async function readRecordFile(file: string, expectedKind: SyncRecordKind, skippe
   const key = typeof raw.key === 'string' ? raw.key : ''
   const kind = raw.kind
   const deviceId = typeof raw.deviceId === 'string' ? raw.deviceId : ''
-  const deviceName = typeof raw.deviceName === 'string' ? raw.deviceName : '未知设备'
+  const deviceName = typeof raw.deviceName === 'string' ? raw.deviceName : 'Unknown device'
   const modifiedAt = typeof raw.modifiedAt === 'number' && Number.isFinite(raw.modifiedAt) ? raw.modifiedAt : 0
   const payload = typeof raw.payload === 'string' ? raw.payload : undefined
   const hash = typeof raw.hash === 'string' ? raw.hash : ''

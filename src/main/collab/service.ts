@@ -267,7 +267,7 @@ export class CollabService implements CollabBridge {
     const project = peer.grant.projects.find((item) => item.id === remoteProjectId)
     if (!project) return { ok: false, error: '对方没有向本次连接开放这个项目' }
     const listed = await this.listing(peerId, remoteProjectId)
-    if (!listed.ok) return listed
+    if (!listed.ok) return { ok: false, error: listed.error }
     await this.reconcile(await this.deps.peerStatus())
     const listing = listed.data
     const locals = await this.deps.localProjects()
@@ -312,7 +312,7 @@ export class CollabService implements CollabBridge {
     const local = await this.linkedRoot(peerId, remoteProjectId)
     if ('error' in local) return { ok: false, error: local.error }
     const listed = await this.listing(peerId, remoteProjectId)
-    if (!listed.ok) return listed
+    if (!listed.ok) return { ok: false, error: listed.error }
     const remoteBranch = listed.data.branches.find((item) => item.name === branch)
     if (!remoteBranch) return { ok: false, error: `对方没有分支 ${branch}` }
     const trackingRef = trackingRefFor(peer.remoteName, branch)
@@ -327,12 +327,12 @@ export class CollabService implements CollabBridge {
         { branch, haves: await refTips(local.root) },
         file
       )
-      if (!downloaded.ok) return downloaded
+      if (!downloaded.ok) return { ok: false, error: downloaded.error }
       if (downloaded.data.kind === 'json') {
         const known = downloaded.data.data?.oid
         if (!isOid(known)) return { ok: false, error: '对方返回的提交号无效' }
         const pointed = await pointTrackingRef(local.root, trackingRef, known)
-        if (!pointed.ok) return pointed
+        if (!pointed.ok) return { ok: false, error: pointed.error }
         oid = known
         upToDate = true
       } else {
@@ -404,7 +404,7 @@ export class CollabService implements CollabBridge {
         return { ok: false, error: '合并请求与当前项目、引用或提交不符，请刷新后重试' }
       }
     }
-    const result = await mergeRef(local.root, ref, `合并 ${shortRef(ref)}（多人协作）`)
+    const result = await mergeRef(local.root, ref, `Merge ${shortRef(ref)}`)
     if (result.ok && requestId) {
       try {
         await this.update((draft) => {
@@ -412,7 +412,7 @@ export class CollabService implements CollabBridge {
           if (request) request.status = 'merged'
         })
       } catch {
-        return { ...result, message: `${result.message}\nGit 合并已成功，但请求状态保存失败，请刷新核对。` }
+        return { ...result, message: `${result.message}\nGit merge succeeded, but the merge request state could not be saved; refresh to check.` }
       }
     }
     return result
@@ -436,7 +436,7 @@ export class CollabService implements CollabBridge {
     const oid = await resolveCommit(local.root, `refs/heads/${input.branch}`)
     if (!oid) return { ok: false, error: `本地没有分支 ${input.branch}` }
     const listed = await this.listing(input.peerId, input.remoteProjectId)
-    if (!listed.ok) return listed
+    if (!listed.ok) return { ok: false, error: listed.error }
     await this.link(input.peerId, input.remoteProjectId, input.localProjectId)
     await mkdir(this.deps.tempDir, { recursive: true })
     const file = bundleTempPath(this.deps.tempDir, 'push')
@@ -453,7 +453,7 @@ export class CollabService implements CollabBridge {
     } finally {
       await rm(file, { force: true }).catch(() => undefined)
     }
-    if (!pushed.ok) return pushed
+    if (!pushed.ok) return { ok: false, error: pushed.error }
     let requestId: string | null = null
     if (input.request) {
       const title = input.request.title.trim().slice(0, 200) || input.branch
@@ -541,10 +541,14 @@ export class CollabService implements CollabBridge {
       : [...state.sessionImports].reverse().find((item) => item.branch === remoteBranch && peerIds.has(item.peerId))
     const dir = chosen ? await this.deps.readImportDir(chosen.importId) : null
     const lines = [
-      `接着 ${computer} 在分支 ${remoteBranch} 上的工作继续。`,
-      `代码在新工作树 ${created.path} 的分支 ${created.branch}，起点是对方的 ${short}（${oid.slice(0, 7)}）。`
+      `Continue the work ${computer} did on branch ${remoteBranch}.`,
+      `The code is in the new worktree ${created.path} on branch ${created.branch}, starting at their ${short} (${oid.slice(0, 7)}).`
     ]
-    if (chosen && dir) lines.push(`对方会话《${chosen.title}》的只读副本在 ${join(dir, 'messages.json')}，先读它了解对方做到哪里、还剩什么，再继续。`)
+    if (chosen && dir) {
+      lines.push(
+        `A read-only copy of their session "${chosen.title}" is at ${join(dir, 'messages.json')}: read it first to see where they left off and what is left to do.`
+      )
+    }
     return { ok: true, data: { worktree: created.path, branch: created.branch, prompt: lines.join('\n') } }
   }
 }

@@ -442,6 +442,7 @@ try {
     assert.equal(conflict.localPayload.includes('compact'), true)
     assert.equal(conflict.remotePayload.includes('comfortable'), true)
     assert.match(conflict.suffix, /Device C/)
+    assert.equal(conflict.suffix.includes('来自'), false, `冲突后缀不带写死中文：${conflict.suffix}`)
     const files = await walk(join(conflictRoot, 'inkstone-sync', 'conflicts'))
     assert.ok(files.some((file) => file.endsWith('.json') && !file.endsWith('index.json')), '缺少冲突副本文件')
     assert.ok((await D.listConflicts()).length >= 1, 'listConflicts 应能读回冲突')
@@ -546,7 +547,10 @@ try {
     })
     const missingReport = await missing.sync()
     assert.equal(missingReport.ok, false)
-    assert.ok(missingReport.errors.some((item) => item.includes('不存在')), missingReport.errors.join('; '))
+    assert.ok(
+      missingReport.errors.some((item) => item.code === 'folder.missing' && item.params?.path === join(root, 'no-such-folder')),
+      JSON.stringify(missingReport.errors)
+    )
   })
 
   section('会话导出 / 导入：生成新 id、不覆盖同名')
@@ -684,7 +688,10 @@ try {
     await G.sync()
     const pulled = await H.sync()
     assert.equal(pulled.ok, false, 'partial failure 不应报 ok')
-    assert.ok(pulled.errors.some((item) => item.includes('提示词或触发时间')), pulled.errors.join('; '))
+    assert.ok(
+      pulled.errors.some((item) => item.code === 'record.failed' && /提示词或触发时间/.test(String(item.params?.reason ?? ''))),
+      JSON.stringify(pulled.errors)
+    )
     const doc = await readJson(join(dataH, 'schedules.json'))
     assert.equal(doc.tasks.find((task) => task.id === 's1').prompt, '检查项目状态')
   })

@@ -38,9 +38,10 @@ const mod = await bundleModules({
   devicesMod: 'src/main/remote-devices.ts',
   grantsMod: 'src/main/peer-grants.ts',
   collab: 'src/shared/collab.ts',
-  serviceMod: 'src/main/collab/service.ts'
+  serviceMod: 'src/main/collab/service.ts',
+  collabTextMod: 'src/renderer/src/features/collab/collab-text.ts'
 })
-const { gitOps, hostMod, serverMod, devicesMod, grantsMod, collab, serviceMod } = mod
+const { gitOps, hostMod, serverMod, devicesMod, grantsMod, collab, serviceMod, collabTextMod } = mod
 const { CollabService } = serviceMod
 const { RemoteServer } = serverMod
 const { RemoteDeviceStore } = devicesMod
@@ -589,15 +590,18 @@ try {
     await rm(join(A, 'feature2.txt'), { force: true })
   })
 
-  await check('mergeRef 合并成功：产生双亲合并提交，带上对方文件，提交说明保留', async () => {
+  await check('mergeRef 合并成功：能快进就直接快进到对方提交，不生成合并提交', async () => {
     const before = sh(A, 'rev-parse', 'HEAD')
+    const tip = sh(A, 'rev-parse', FEATURE_REF)
+    const tipSubject = sh(A, 'log', '-1', '--format=%s', tip)
     const result = await gitOps.mergeRef(A, FEATURE_REF, '合并 B 电脑的 feature')
     assert.equal(result.ok, true, JSON.stringify(result))
     assert.equal(result.merged, true)
     assert.equal(result.head, sh(A, 'rev-parse', 'HEAD'))
     assert.notEqual(result.head, before)
-    assert.deepEqual(sh(A, 'log', '-1', '--format=%P').split(' ').sort(), [before, featureOid2].sort())
-    assert.equal(sh(A, 'log', '-1', '--format=%s'), '合并 B 电脑的 feature')
+    assert.equal(result.head, tip, '快进到对方的提交')
+    assert.equal(sh(A, 'log', '-1', '--format=%s'), tipSubject, '快进不生成合并提交')
+    assert.equal(sh(A, 'rev-list', '--parents', '-1', 'HEAD').trim().split(' ').length, 2, '快进后的提交只有单个父提交')
     assert.equal(await readFile(join(A, 'feature2.txt'), 'utf8'), 'second file\n')
     assert.equal(await gitOps.mergeInProgress(A), false)
   })
@@ -884,6 +888,8 @@ try {
       if (!shOk(root, 'check-ref-format', ref) || gitOps.checkTrackingRef(ref)) bad.push(`${JSON.stringify(name)} → ${ref}`)
     }
     assert.deepEqual(bad, [])
+    assert.equal(slugForRemote('Inkstone · Laptop-A', 'abcd'), slugForRemote('Laptop-A', 'abcd'), '新设备名前缀不进追踪引用')
+    assert.equal(slugForRemote('砚 · Laptop-A', 'abcd'), slugForRemote('Laptop-A', 'abcd'), '旧设备名前缀同样剥掉')
   })
 
   await check('requests 的分支名带前后空白时被拒绝（不能把畸形引用写进请求列表）', async () => {
@@ -1237,7 +1243,8 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result))
     assert.equal(result.merged, true)
     assert.notEqual(sh(SC, 'rev-parse', 'HEAD'), headBefore)
-    assert.equal(sh(SC, 'log', '-1', '--format=%s'), '合并 yan-b-peerb/feature（多人协作）')
+    assert.equal(sh(SC, 'rev-parse', 'HEAD'), svcFeatureOid)
+    assert.equal(sh(SC, 'log', '-1', '--format=%s'), '服务 feature 2')
     const state = await readState()
     assert.equal(state.requests.find((item) => item.id === 'mr-manual-1').status, 'merged')
     const again = await service.merge('local-a', svcTracking)
@@ -1258,7 +1265,7 @@ try {
     await mkdir(path)
     const result = await isolated.merge('local-a', svcTracking, 'mr-save-failure')
     assert.equal(result.ok, true, JSON.stringify(result))
-    assert.match(result.message, /Git 合并已成功.*状态保存失败/)
+    assert.match(result.message, /Git merge succeeded.*could not be saved/)
   })
 
   await check('merge 冲突：返回 conflicts，请求保持 open，overview 显示合并进行中，abortMerge 后恢复', async () => {
@@ -1296,6 +1303,93 @@ try {
     assert.equal(sh(SC, 'status', '--porcelain'), '')
     assert.equal((await service.abortMerge('local-a')).ok, false)
     assert.equal((await service.abortMerge('nope')).ok, false)
+  })
+
+  section('协作渲染端文案：推送提示与 Git 身份错误')
+  await check('推送成功提示只带分支名，不暴露内部追踪 ref', async () => {
+    const zh = collabTextMod.collabText('zh-CN')
+    const en = collabTextMod.collabText('en-US')
+    for (const text of [zh, en]) {
+      assert.equal(text.pushed.includes('{ref}'), false, text.pushed)
+      assert.equal(text.pushedWithRequest.includes('{ref}'), false, text.pushedWithRequest)
+      assert.ok(text.pushed.includes('{branch}'), text.pushed)
+      assert.ok(text.pushedWithRequest.includes('{branch}'), text.pushedWithRequest)
+    }
+    assert.equal(collabTextMod.fill(zh.pushed, { computer: 'B 电脑', branch: 'feature' }), '已推送到 B 电脑 的分支 feature')
+    assert.equal(collabTextMod.fill(en.pushed, { computer: 'B', branch: 'feature' }), 'Pushed to B on branch feature')
+  })
+
+  await check('合并缺少 Git 身份时给出 git config 指引，而不是回显 Git 原文', async () => {
+    for (const lang of ['zh-CN', 'en-US']) {
+      const text = collabTextMod.collabText(lang)
+      assert.match(text.mergeIdentityMissing, /git config --global user\.name/)
+      assert.match(text.mergeIdentityMissing, /git config --global user\.email/)
+    }
+  })
+
+  section('git merge：能快进就快进，需要合并提交时先检查 Git 身份')
+  await check('mergeRef 能快进时直接快进，不生成合并提交', async () => {
+    const repo = join(root, 'merge-ff')
+    sh(root, 'init', '-q', '-b', 'main', repo)
+    identify(repo, 'Fay')
+    const base = commitFile(repo, 'a.txt', 'a\n', 'base')
+    sh(repo, 'checkout', '-q', '-b', 'feature')
+    const tip = commitFile(repo, 'b.txt', 'b\n', 'feature tip')
+    sh(repo, 'checkout', '-q', 'main')
+    sh(repo, 'update-ref', 'refs/remotes/peer/feature', tip)
+    const result = await gitOps.mergeRef(repo, 'refs/remotes/peer/feature', 'Merge peer/feature')
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.equal(result.merged, true)
+    assert.equal(result.head, tip)
+    assert.equal(sh(repo, 'rev-parse', 'HEAD'), tip)
+    assert.equal(sh(repo, 'log', '-1', '--format=%s'), 'feature tip')
+    assert.notEqual(base, tip)
+    const again = await gitOps.mergeRef(repo, 'refs/remotes/peer/feature', 'Merge peer/feature')
+    assert.equal(again.ok, true, JSON.stringify(again))
+    assert.equal(again.merged, false)
+  })
+
+  await check('mergeRef 分叉时生成合并提交，提交说明是英文中性文本', async () => {
+    const repo = join(root, 'merge-nonff')
+    sh(root, 'init', '-q', '-b', 'main', repo)
+    identify(repo, 'Mo')
+    commitFile(repo, 'a.txt', 'a\n', 'base')
+    sh(repo, 'checkout', '-q', '-b', 'feature')
+    const tip = commitFile(repo, 'b.txt', 'b\n', 'feature tip')
+    sh(repo, 'checkout', '-q', 'main')
+    commitFile(repo, 'c.txt', 'c\n', 'main tip')
+    sh(repo, 'update-ref', 'refs/remotes/peer/feature', tip)
+    const result = await gitOps.mergeRef(repo, 'refs/remotes/peer/feature', 'Merge peer/feature')
+    assert.equal(result.ok, true, JSON.stringify(result))
+    assert.equal(result.merged, true)
+    assert.equal(sh(repo, 'log', '-1', '--format=%s'), 'Merge peer/feature')
+    assert.equal(sh(repo, 'rev-list', '--parents', '-1', 'HEAD').trim().split(' ').length, 3, '合并提交应有两个父提交')
+  })
+
+  await check('mergeRef 需要合并提交但本机没有 Git 身份：返回 git-identity-missing，不动工作区', async () => {
+    const repo = join(root, 'merge-no-identity')
+    sh(root, 'init', '-q', '-b', 'main', repo)
+    const commitAs = (dir, name, content, message) => {
+      writeFileSync(join(dir, name), content)
+      sh(dir, 'add', '--', name)
+      sh(dir, '-c', 'user.name=NoId', '-c', 'user.email=noid@example.test', 'commit', '-q', '-m', message)
+      return sh(dir, 'rev-parse', 'HEAD')
+    }
+    commitAs(repo, 'a.txt', 'a\n', 'base')
+    sh(repo, 'checkout', '-q', '-b', 'feature')
+    const tip = commitAs(repo, 'b.txt', 'b\n', 'feature tip')
+    sh(repo, 'checkout', '-q', 'main')
+    const mainTip = commitAs(repo, 'c.txt', 'c\n', 'main tip')
+    sh(repo, 'update-ref', 'refs/remotes/peer/feature', tip)
+    assert.equal(shOk(repo, 'config', '--get', 'user.email'), false, '夹具里不应有 Git 提交身份')
+    const result = await gitOps.mergeRef(repo, 'refs/remotes/peer/feature', 'Merge peer/feature')
+    assert.equal(result.ok, false, JSON.stringify(result))
+    assert.equal(result.code, 'git-identity-missing')
+    assert.match(result.error, /user\.name|user\.email/)
+    assert.equal(sh(repo, 'rev-parse', 'HEAD'), mainTip)
+    assert.equal(existsSync(join(repo, '.git', 'MERGE_HEAD')), false)
+    assert.equal(sh(repo, 'status', '--porcelain'), '')
+    assert.equal((await gitOps.mergeInProgress(repo)), false)
   })
 
   await check('push 新分支并带合并请求：B 收到 incoming 请求，A 的状态里有 outgoing 请求', async () => {

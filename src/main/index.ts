@@ -2672,7 +2672,8 @@ function registerIpc(): void {
         syncRoot: root,
         piAgentDir: PI_AGENT_DIR,
         settingsApplier: async (patch) => {
-          await patchSettings(patch)
+          const next = await patchSettings(patch)
+          if (typeof patch.theme === 'string') syncNativeThemeSource(next.theme)
         },
         scheduleApplier: (definition) => scheduleService.applySynced(definition)
       }),

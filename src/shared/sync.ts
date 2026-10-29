@@ -1,5 +1,41 @@
 export type SyncResolution = 'local' | 'remote' | 'both'
 
+export type SyncNoteCode =
+  | 'sync.raw'
+  | 'folder.missing'
+  | 'folder.unwritable'
+  | 'folder.uncreatable'
+  | 'config.missing'
+  | 'mode.unknown'
+  | 'resolution.unknown'
+  | 'conflict.missing'
+  | 'conflict.unreadable'
+  | 'conflict.changed'
+  | 'conflict.failed'
+  | 'record.failed'
+  | 'record.forbidden'
+  | 'baseline.writeFailed'
+  | 'session.missing'
+  | 'session.cancelled'
+  | 'session.exportFailed'
+  | 'session.importFailed'
+  | 'unknown'
+
+export interface SyncNote {
+  code: SyncNoteCode
+  params?: Record<string, string | number>
+}
+
+export function syncNote(code: SyncNoteCode, params?: Record<string, string | number>): SyncNote {
+  return params ? { code, params } : { code }
+}
+
+export function isSyncNote(value: unknown): value is SyncNote {
+  if (!value || typeof value !== 'object') return false
+  const raw = value as Partial<SyncNote>
+  return typeof raw.code === 'string' && raw.code.length > 0
+}
+
 export type SyncMode = 'manual' | 'auto'
 
 export const AUTO_SYNC_INTERVAL_MS = 60 * 60_000
@@ -17,7 +53,7 @@ export interface SyncLastSummary {
   pulled: number
   conflicts: number
   skipped: number
-  errors: string[]
+  errors: SyncNote[]
 }
 
 export interface SyncStatusView {
@@ -27,7 +63,7 @@ export interface SyncStatusView {
   syncRoot?: string
   lastSync?: SyncLastSummary
   conflictCount: number
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncNowResult {
@@ -36,15 +72,15 @@ export interface SyncNowResult {
   pulled: number
   conflicts: number
   skipped: number
-  errors: string[]
+  errors: SyncNote[]
   at?: number
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncSetModeResult {
   ok: boolean
   mode?: SyncMode
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncConflictView {
@@ -63,14 +99,14 @@ export interface SyncConflictView {
 
 export interface SyncResolveResult {
   ok: boolean
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncConfigureResult {
   ok: boolean
   cancelled?: boolean
   syncRoot?: string
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncExportSessionResult {
@@ -78,7 +114,7 @@ export interface SyncExportSessionResult {
   path?: string
   bytes?: number
   cancelled?: boolean
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncImportSessionResult {
@@ -86,7 +122,7 @@ export interface SyncImportSessionResult {
   path?: string
   sessionId?: string
   cancelled?: boolean
-  error?: string
+  error?: SyncNote
 }
 
 export interface SyncBridge {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 
@@ -67,11 +67,42 @@ const run = async (name, settings) => {
   return globalThis.__notifyShown
 }
 
+const runProjects = async (name, projects) => {
+  const dataDir = join(root, name)
+  await mkdir(dataDir, { recursive: true })
+  for (const project of projects) await mkdir(project.cwd, { recursive: true })
+  await writeFile(join(dataDir, 'desktop.json'), JSON.stringify({ projects }), 'utf8')
+  const outfile = join(root, `${name}.mjs`)
+  await build({ entryPoints: ['src/main/ipc/collab-ipc.ts'], outfile, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [electronStub] })
+  process.env.YAN_DATA_DIR = dataDir
+  process.env.YAN_USER_DATA = dataDir
+  const { activeProjects } = await import(pathToFileURL(outfile).href)
+  return activeProjects()
+}
+
 try {
+  const emptyDir = join(root, 'project-empty-name')
+  const blankDir = join(root, 'project-blank-name')
+  const namedDir = join(root, 'project-named')
+  const listed = await runProjects('project-names', [
+    { id: 'p-empty', name: '', cwd: emptyDir },
+    { id: 'p-blank', name: '   ', cwd: blankDir },
+    { id: 'p-named', name: '设计稿', cwd: namedDir }
+  ])
+  const byId = new Map(listed.map((project) => [project.id, project]))
+  assert.equal(byId.get('p-empty').name, basename(emptyDir), '空项目名用目录名兜底')
+  assert.equal(byId.get('p-blank').name, basename(blankDir), '纯空白项目名同样兜底')
+  assert.equal(byId.get('p-named').name, '设计稿', '已有项目名保持不变')
+  assert.deepEqual(
+    listed.filter((project) => project.id.startsWith('p-')).map((project) => project.id).sort(),
+    ['p-blank', 'p-empty', 'p-named'],
+    '项目列表与顺序不受影响'
+  )
+
   assert.equal(await run('default', null), 0, '提示音总开关默认关闭时不弹协作通知')
   assert.equal(await run('muted', { sound: { enabled: true, notifications: false, volume: 0.4, events: { done: true, question: true, error: true } } }), 0, '关闭通知时不弹协作通知')
   assert.equal(await run('enabled', { sound: { enabled: true, notifications: true, volume: 0.4, events: { done: true, question: true, error: true } } }), 1, '总开关与通知都开启时弹一次协作通知')
-  console.log('collab-notify: 合并请求通知跟随提示音总开关通过')
+  console.log('collab-notify: 合并请求通知跟随提示音总开关、空项目名兜底通过')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useI18n } from '../../../i18n'
+import { useStore } from '../../../state/store'
 import { Badge, Button, Notice } from '../../../ui'
 import {
   AUTO_SYNC_INTERVAL_MS,
@@ -12,7 +13,7 @@ import {
 import { Segmented, SettingsGroup, SettingsRow } from '../root/controls'
 import { requestSettingReveal } from '../search/search-model'
 import { syncBridge } from './bridge'
-import { syncText, type SyncText } from './text'
+import { conflictTitle, conflictsPendingText, syncNoteText, syncText, type SyncText } from './text'
 
 export interface SyncMessage {
   scope: 'sync' | 'conflicts'
@@ -86,6 +87,14 @@ export function useSyncPanel(): SyncPanel {
 
   const configured = Boolean(status?.syncRoot)
 
+  const applySyncedSettings = useCallback(async (): Promise<void> => {
+    try {
+      const next = await window.yan.getSettings()
+      useStore.getState().setSettings(next)
+    } catch {
+    }
+  }, [])
+
   const perform = (key: string, scope: SyncMessage['scope'], failure: string, action: (sync: SyncBridge) => Promise<void>): void => {
     if (!bridge || busy) return
     setBusy(key)
@@ -100,14 +109,14 @@ export function useSyncPanel(): SyncPanel {
       const result = await sync.configure()
       if (result.ok) await refresh()
       else if (result.cancelled) setMessage({ scope: 'sync', tone: 'info', text: text.cancelled })
-      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.configureFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: syncNoteText(text, result.error) || text.configureFailed })
     })
 
   const clearFolder = (): void =>
     perform('folder', 'sync', text.configureFailed, async (sync) => {
       const result = await sync.configure(null)
       if (result.ok) await refresh()
-      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.configureFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: syncNoteText(text, result.error) || text.configureFailed })
     })
 
   const changeMode = (mode: SyncMode): void => {
@@ -115,7 +124,7 @@ export function useSyncPanel(): SyncPanel {
     perform('mode', 'sync', text.modeFailed, async (sync) => {
       const result = await sync.setMode(mode)
       if (result.ok) await refresh()
-      else setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.modeFailed })
+      else setMessage({ scope: 'sync', tone: 'fail', text: syncNoteText(text, result.error) || text.modeFailed })
     })
   }
 
@@ -135,17 +144,22 @@ export function useSyncPanel(): SyncPanel {
           })
         })
       } else {
-        setMessage({ scope: 'sync', tone: 'fail', text: result.error ?? text.syncFailed })
+        setMessage({ scope: 'sync', tone: 'fail', text: syncNoteText(text, result.error) || text.syncFailed })
       }
       await refresh()
+      await applySyncedSettings()
     })
   }
 
   const resolve = (id: string, resolution: SyncResolution): void =>
     perform(id, 'conflicts', text.resolveFailed, async (sync) => {
       const result = await sync.resolve(id, resolution)
-      if (!result.ok) setMessage({ scope: 'conflicts', tone: 'fail', text: result.error ?? text.resolveFailed })
+      if (!result.ok) setMessage({ scope: 'conflicts', tone: 'fail', text: syncNoteText(text, result.error) || text.resolveFailed })
       await refresh()
+      if (result.ok) {
+        useStore.getState().notify('info', text.resolved)
+        await applySyncedSettings()
+      }
     })
 
   return { bridge, text, lang, status, conflicts, busy, message, configured, chooseFolder, clearFolder, changeMode, syncNow, resolve }
@@ -236,12 +250,12 @@ export function SyncGroup({ panel, title }: { panel: SyncPanel; title?: string }
                 {fillTemplate(text.resultConflicts, { n: last.conflicts })} · {fillTemplate(text.resultSkipped, { n: last.skipped })}
               </span>
             ) : null}
-            {errors.map((line, index) => (
-              <span key={`${index}-${line}`} className="settings-row__desc--error">
-                {line}
+            {errors.map((note, index) => (
+              <span key={`${index}-${note.code}`} className="settings-row__desc--error">
+                {syncNoteText(text, note)}
               </span>
             ))}
-            {conflicts.length > 0 ? <span>{fillTemplate(text.conflictsPending, { n: conflicts.length })}</span> : null}
+            {conflicts.length > 0 ? <span>{conflictsPendingText(text, conflicts.length)}</span> : null}
           </span>
         }
       >
@@ -293,7 +307,7 @@ export function SyncConflictsGroup({ panel }: { panel: SyncPanel }): ReactElemen
               <div className="dd-conflict__head">
                 <Badge tone="ask">{text.kinds[conflict.kind]}</Badge>
                 <span className="settings-device__name dd-conflict__key" title={conflict.key}>
-                  {conflict.key}
+                  {conflictTitle(text, conflict.key)}
                 </span>
               </div>
               <div className="dd-conflict__sides">

@@ -79,6 +79,7 @@ function safeFileName(name: string): string {
 const TRANSFER_TIMEOUT_MS = 30 * 60_000
 const RECONNECT_DELAY_MS = 3000
 const RECONNECT_ATTEMPTS = 3
+const PEER_NOTICE_TIMEOUT_MS = 3000
 
 export class PeerClient implements PeerTransport {
   private peers: StoredPeer[] | null = null
@@ -131,7 +132,7 @@ export class PeerClient implements PeerTransport {
       const response = await fetch(`${address}/remote/v1/pair`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), deviceName: `砚 · ${hostname()}`, kind: 'peer' }),
+        body: JSON.stringify({ code: code.trim(), deviceName: `Inkstone · ${hostname()}`, kind: 'peer' }),
         signal: AbortSignal.timeout(15_000)
       })
       const body = (await response.json()) as { ok?: boolean; error?: string; deviceId?: string; token?: string; computer?: { name?: string } }
@@ -154,6 +155,7 @@ export class PeerClient implements PeerTransport {
   }
 
   async remove(peerId: string): Promise<boolean> {
+    await this.bestEffort(peerId, '/remote/v1/devices/self/revoke', {})
     this.disconnect(peerId)
     const peers = await this.load()
     const index = peers.findIndex((peer) => peer.id === peerId)
@@ -162,6 +164,28 @@ export class PeerClient implements PeerTransport {
     await this.save()
     this.connections.delete(peerId)
     return true
+  }
+
+  private async bestEffort(peerId: string, path: string, body: unknown): Promise<void> {
+    const auth = await this.credentials(peerId)
+    if (!auth) return
+    try {
+      await fetch(`${auth.peer.address}${path}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${auth.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(PEER_NOTICE_TIMEOUT_MS)
+      })
+    } catch {
+    }
+  }
+
+  async endConnection(peerId: string): Promise<void> {
+    const connection = this.connections.get(peerId)
+    if (connection?.state === 'connected') {
+      await this.bestEffort(peerId, '/remote/v1/peer/disconnect', { connectionId: connection.grant.connectionId })
+    }
+    this.disconnect(peerId)
   }
 
   private async credentials(peerId: string): Promise<{ peer: StoredPeer; token: string } | null> {

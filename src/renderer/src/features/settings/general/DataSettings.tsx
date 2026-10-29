@@ -11,7 +11,7 @@ import { SettingsGroup, SettingsRow } from '../root/controls'
 import { settingsText } from '../settings-text'
 import { PiShareDestinationGroup } from './PiNativeSettings'
 import { SyncConflictsGroup, SyncGroup, fillTemplate, useSyncPanel } from '../sync/SyncSettings'
-import { syncText } from '../sync/text'
+import { syncNoteText, syncText } from '../sync/text'
 import './devices-data.css'
 
 export interface StorageFactsProps {
@@ -160,7 +160,7 @@ export function DataSettings(): ReactElement {
       const path = session?.conversationFile ?? session?.sessionFile
       const result = await window.yan.sync.exportSession(path)
       if (result.ok && result.path) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.exportDone, { path: result.path }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error ?? sync.syncFailed })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: syncNoteText(sync, result.error) || sync.syncFailed })
     } catch (cause) {
       setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {
@@ -175,7 +175,7 @@ export function DataSettings(): ReactElement {
     try {
       const result = await bridge.importSession()
       if (result.ok && result.sessionId) setMessage({ scope: 'session', tone: 'info', text: fillTemplate(sync.importDone, { id: result.sessionId }) })
-      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: result.error ?? sync.syncFailed })
+      else if (!result.cancelled) setMessage({ scope: 'session', tone: 'fail', text: syncNoteText(sync, result.error) || sync.syncFailed })
     } catch (cause) {
       setMessage({ scope: 'session', tone: 'fail', text: describe(cause) })
     } finally {

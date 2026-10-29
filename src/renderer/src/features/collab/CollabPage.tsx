@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Download, GitCompare, GitMerge, Play, RefreshCw, Upload, Users, X } from 'lucide-react'
 import {
   COLLAB_REQUEST_NOTE_MAX,
-  shortRef,
   type CollabBridge,
   type CollabComparison,
   type CollabFetchRecord,
@@ -745,8 +744,7 @@ function RemoteProjectPanel({
         notify('fail', fill(text.pushFailed, { error: result.error }))
         return
       }
-      const ref = shortRef(result.data.trackingRef)
-      notify('info', fill(result.data.requestId ? text.pushedWithRequest : text.pushed, { computer: peer.computer, ref }))
+      notify('info', fill(result.data.requestId ? text.pushedWithRequest : text.pushed, { computer: peer.computer, branch }))
       setWithRequest(false)
       setRequestTitle('')
       setRequestNote('')
@@ -1182,7 +1180,7 @@ export function CollabPage(): ReactElement {
         notify('fail', fill(text.mergeConflicts, { project: target.project.name }))
         return
       }
-      notify('fail', fill(text.mergeFailed, { error: result.error }))
+      notify('fail', result.code === 'git-identity-missing' ? text.mergeIdentityMissing : fill(text.mergeFailed, { error: result.error }))
     },
     [notify, text]
   )

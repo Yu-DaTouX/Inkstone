@@ -1,3 +1,5 @@
+import type { SyncNote } from '../../shared/sync'
+
 export type SyncRecordKind = 'settings' | 'prompt' | 'skill' | 'bookmark' | 'schedule'
 
 export interface SyncRecord {
@@ -51,7 +53,7 @@ export interface SyncReport {
   pulled: string[]
   conflicts: ConflictRecord[]
   skipped: string[]
-  errors: string[]
+  errors: SyncNote[]
   at: number
 }
 

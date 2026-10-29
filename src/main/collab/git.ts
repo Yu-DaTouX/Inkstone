@@ -218,6 +218,13 @@ export async function mergeInProgress(root: string): Promise<boolean> {
   return existsSync(resolve(root, res.out.trim()))
 }
 
+async function hasCommitIdentity(root: string): Promise<boolean> {
+  const name = await git(root, ['config', '--get', 'user.name'])
+  if (!name.ok || !name.out.trim()) return false
+  const email = await git(root, ['config', '--get', 'user.email'])
+  return email.ok && !!email.out.trim()
+}
+
 export async function mergeRef(root: string, ref: string, message: string): Promise<CollabMergeResult> {
   const invalid = checkTrackingRef(ref)
   if (invalid) return { ok: false, error: invalid }
@@ -227,11 +234,24 @@ export async function mergeRef(root: string, ref: string, message: string): Prom
   if (!dirty.ok) return { ok: false, error: dirty.error || '读取工作区状态失败' }
   if (dirty.out.trim()) return { ok: false, error: '工作区有未提交的改动，先提交或暂存后再合并' }
   if (!(await resolveCommit(root, ref))) return { ok: false, error: '还没有拉取这个分支' }
+  const fastForward = await git(root, ['merge', '--ff-only', '--no-edit', ref], MERGE_TIMEOUT_MS)
+  if (fastForward.ok) {
+    const already = /already up to date/i.test(fastForward.out)
+    const fastHead = (await resolveCommit(root, 'HEAD')) ?? ''
+    return { ok: true, merged: !already, head: fastHead, message: already ? 'Already up to date' : 'Fast-forwarded' }
+  }
+  if (await mergeInProgress(root)) await git(root, ['merge', '--abort'])
+  if (!/not possible to fast-forward/i.test(fastForward.error)) {
+    return { ok: false, error: fastForward.error || 'git merge 失败' }
+  }
+  if (!(await hasCommitIdentity(root))) {
+    return { ok: false, code: 'git-identity-missing', error: 'git user.name / user.email is not configured' }
+  }
   const res = await git(root, ['merge', '--no-ff', '--no-edit', '-m', message, ref], MERGE_TIMEOUT_MS)
   const head = (await resolveCommit(root, 'HEAD')) ?? ''
   if (res.ok) {
     const already = /already up to date/i.test(res.out)
-    return { ok: true, merged: !already, head, message: already ? '已经包含对方的全部提交' : '已合并' }
+    return { ok: true, merged: !already, head, message: already ? 'Already up to date' : 'Merged' }
   }
   const conflicts = await git(root, ['diff', '--name-only', '--diff-filter=U', '-z'])
   const files = conflicts.out.split('\0').filter(Boolean)

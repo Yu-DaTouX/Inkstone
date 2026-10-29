@@ -151,3 +151,20 @@ assert.ok(!root.includes('settings-missing') && !root.includes('pickLazy'), '子
 assert.ok(!root.includes('components/settings'), '根页不引入 v2 旧设置组件')
 
 console.log('v3 设置：旧深链接映射 / 用量数值 / 分区入口与测试 id 检查通过')
+
+const syncTextModule = await loadTs('../src/renderer/src/features/settings/sync/text.ts')
+const { syncText, syncNoteText, conflictsPendingText, conflictTitle } = syncTextModule
+const zhSync = syncText('zh-CN')
+const enSync = syncText('en-US')
+assert.equal(conflictsPendingText(enSync, 1), '1 conflict waiting.', '单条冲突用单数')
+assert.equal(conflictsPendingText(enSync, 3), '3 conflicts waiting.', '多条冲突用复数')
+assert.equal(conflictsPendingText(zhSync, 1), '有 1 条冲突待处理。')
+assert.equal(conflictTitle(zhSync, 'prompt:hello'), '提示词 · hello', '冲突标题显示可读类别与名称')
+assert.equal(conflictTitle(enSync, 'skill:my-skill'), 'Skill · my-skill')
+assert.equal(conflictTitle(enSync, 'settings'), 'Settings', '设置冲突只显示类别')
+assert.equal(syncNoteText(enSync, { code: 'folder.missing', params: { path: 'D:/sync' } }), 'Sync folder not found: D:/sync')
+assert.equal(syncNoteText(zhSync, { code: 'folder.missing', params: { path: 'D:/sync' } }), '同步文件夹不存在：D:/sync')
+assert.equal(syncNoteText(zhSync, { code: 'sync.raw', params: { text: '旧版中文错误' } }), '旧版中文错误', '旧记录原样显示')
+assert.equal(syncNoteText(enSync, undefined), '')
+
+console.log('v3 同步设置文案：单复数 / 冲突可读名称 / 结构化错误码通过')

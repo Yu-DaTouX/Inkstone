@@ -6,6 +6,8 @@ export const COLLAB_MAX_HAVES = 200
 export const COLLAB_MAX_BRANCHES = 200
 export const COLLAB_REQUEST_NOTE_MAX = 2000
 
+export type CollabFailureCode = 'git-identity-missing'
+
 export interface CollabBranchSession {
   sessionId: string
   title: string
@@ -154,7 +156,7 @@ export interface CollabFetchResult {
 
 export type CollabMergeResult =
   | { ok: true; merged: boolean; head: string; message: string }
-  | { ok: false; error: string; conflicts?: string[] }
+  | { ok: false; error: string; conflicts?: string[]; code?: CollabFailureCode }
 
 export interface CollabPushInput {
   peerId: string
@@ -170,7 +172,7 @@ export interface CollabContinueResult {
   prompt: string
 }
 
-export type CollabResult<T> = { ok: true; data: T } | { ok: false; error: string }
+export type CollabResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: CollabFailureCode }
 
 export interface CollabBridge {
   overview(): Promise<CollabOverview>
@@ -191,7 +193,7 @@ export function slugForRemote(name: string, fallback: string): string {
   const cleaned = trim(
     trim(
       name
-        .replace(/^砚\s*·\s*/, '')
+        .replace(/^(?:砚\s*|Inkstone\s*)·\s*/, '')
         .normalize('NFKD')
         .replace(/[^A-Za-z0-9._-]+/g, '-')
         .replace(/\.{2,}/g, '.')

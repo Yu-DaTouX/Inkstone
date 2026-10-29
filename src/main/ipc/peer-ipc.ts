@@ -11,7 +11,7 @@ export function registerPeerIpc(ipc: IpcRegistrar, client: PeerClient): void {
   handle('yan:peer:connect', (peerId: unknown, operations: unknown, note: unknown) =>
     client.connect(str(peerId), Array.isArray(operations) ? PEER_OPERATIONS.filter((op) => operations.includes(op)) : [], str(note).slice(0, 200))
   )
-  handle('yan:peer:disconnect', (peerId: unknown) => client.disconnect(str(peerId)))
+  handle('yan:peer:disconnect', (peerId: unknown) => client.endConnection(str(peerId)))
   handle('yan:peer:sessions', (peerId: unknown) => client.sessions(str(peerId)))
   handle('yan:peer:history', (peerId: unknown, sessionId: unknown, before: unknown) =>
     client.history(str(peerId), str(sessionId), str(before) || undefined)

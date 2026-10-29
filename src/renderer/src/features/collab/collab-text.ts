@@ -128,6 +128,7 @@ export interface CollabText {
   merged: string
   mergeNoop: string
   mergeFailed: string
+  mergeIdentityMissing: string
   mergeConflicts: string
   continue: string
   continueHint: string
@@ -300,6 +301,8 @@ const ZH: CollabText = {
   merged: '已合并：{message}',
   mergeNoop: '已是最新，没有需要合并的提交。',
   mergeFailed: '合并失败：{error}',
+  mergeIdentityMissing:
+    '这台电脑还没有 Git 提交身份，没法生成合并提交。先运行 git config --global user.name "你的名字" 和 git config --global user.email "you@example.com"，然后重试。',
   mergeConflicts: '合并有冲突，冲突文件列在本机「{project}」处。',
   continue: '接着做',
   continueHint: '在本机基于这个分支新建 worktree，并以对方的会话副本为上下文开新会话。',
@@ -316,8 +319,8 @@ const ZH: CollabText = {
   requestTitle: '标题',
   requestNote: '说明',
   push: '推送',
-  pushed: '已推送到 {computer}：{ref}',
-  pushedWithRequest: '已推送到 {computer}：{ref}，合并请求已发出。',
+  pushed: '已推送到 {computer} 的分支 {branch}',
+  pushedWithRequest: '已推送到 {computer} 的分支 {branch}，合并请求已发出。',
   pushFailed: '推送失败：{error}',
   noPush: '这次连接没有「推送」权限，需要重新申请连接并勾选「推送」。',
   needTitle: '合并请求需要标题。',
@@ -488,6 +491,8 @@ const EN: CollabText = {
   merged: 'Merged: {message}',
   mergeNoop: 'Already up to date; nothing to merge.',
   mergeFailed: 'Merge failed: {error}',
+  mergeIdentityMissing:
+    'Git has no commit identity on this computer, so the merge commit cannot be created. Run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then retry.',
   mergeConflicts: 'The merge has conflicts; they are listed under local “{project}”.',
   continue: 'Continue here',
   continueHint: 'Creates a local worktree from this branch and starts a new session with their session copy as context.',
@@ -504,8 +509,8 @@ const EN: CollabText = {
   requestTitle: 'Title',
   requestNote: 'Description',
   push: 'Push',
-  pushed: 'Pushed to {computer}: {ref}',
-  pushedWithRequest: 'Pushed to {computer}: {ref}, and opened a merge request.',
+  pushed: 'Pushed to {computer} on branch {branch}',
+  pushedWithRequest: 'Pushed to {computer} on branch {branch}, and opened a merge request.',
   pushFailed: 'Push failed: {error}',
   noPush: 'This connection does not allow pushing. Request a new connection with “Push” checked.',
   needTitle: 'A merge request needs a title.',

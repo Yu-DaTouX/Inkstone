@@ -1,6 +1,6 @@
 import { Notification, type BrowserWindow } from 'electron'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import type { CollabMergeRequest, CollabPushInput } from '../../shared/collab'
 import { CollabService } from '../collab/service'
@@ -22,15 +22,17 @@ export interface CollabIpcDeps {
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-async function activeProjects(): Promise<Array<{ id: string; name: string; cwd: string }>> {
-  return (await getSettings()).projects.filter((project) => !project.archived).map(({ id, name, cwd }) => ({ id, name, cwd }))
+export async function activeProjects(): Promise<Array<{ id: string; name: string; cwd: string }>> {
+  return (await getSettings()).projects
+    .filter((project) => !project.archived)
+    .map(({ id, name, cwd }) => ({ id, name: name.trim() || basename(cwd) || cwd, cwd }))
 }
 
 async function notifyIncoming(win: BrowserWindow | null, request: CollabMergeRequest): Promise<void> {
   if (win && !win.isDestroyed() && !win.isFocused()) win.flashFrame(true)
   const sound = (await getSettings()).sound
   if (sound?.enabled !== true || sound.notifications === false || !Notification.isSupported()) return
-  new Notification({ title: '多人协作 · 合并请求', body: `${request.peerName.replace(/^砚\s*·\s*/, '')}：${request.title}（${request.branch}）` }).show()
+  new Notification({ title: '多人协作 · 合并请求', body: `${request.peerName.replace(/^(?:砚|Inkstone)\s*·\s*/, '')}：${request.title}（${request.branch}）` }).show()
 }
 
 export function registerCollabIpc(ipc: IpcRegistrar, deps: CollabIpcDeps): CollabService {

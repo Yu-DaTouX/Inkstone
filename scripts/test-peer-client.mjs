@@ -69,7 +69,19 @@ try {
 
   const grant = { connectionId: 'conn-1', deviceId: 'dev-1', deviceName: '另一台砚', projects: [], operations: ['read'], grantedAt: 1, activatedAt: null }
   let streamAttempts = 0
-  const peerServer = createServer((req, res) => {
+  const notices = []
+  const readBody = (req) => new Promise((resolve) => {
+    let text = ''
+    req.on('data', (chunk) => { text += chunk })
+    req.on('end', () => resolve(text))
+  })
+  const peerServer = createServer(async (req, res) => {
+    if (req.url === '/remote/v1/peer/disconnect' || req.url === '/remote/v1/devices/self/revoke') {
+      notices.push({ path: req.url, method: req.method, body: await readBody(req) })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
     if (req.url === '/remote/v1/peer/connect') {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ ok: true, data: { grant } }))
@@ -103,9 +115,38 @@ try {
   const beforeDisconnect = streamAttempts
   await new Promise((resolve) => setTimeout(resolve, 3500))
   assert.equal(streamAttempts, beforeDisconnect, '主动断开后不再重连')
+  assert.equal(notices.filter((item) => item.path === '/remote/v1/peer/disconnect').length, 0, '内部断开（连接前、重连前）不发通知')
+
+  const reconnected = await reconnect.connect('peer-1', ['read'], '再看一下')
+  assert.equal(reconnected.ok, true, reconnected.error)
+  await reconnect.endConnection('peer-1')
+  const ended = notices.find((item) => item.path === '/remote/v1/peer/disconnect')
+  assert.ok(ended, '用户点「断开」时通知对端')
+  assert.equal(ended.method, 'POST')
+  assert.deepEqual(JSON.parse(ended.body), { connectionId: 'conn-1' })
+  const afterEnd = (await reconnect.status()).peers.find((item) => item.id === 'peer-1')
+  assert.equal(afterEnd.connection.state, 'idle', '本地连接照旧断开')
+
+  const removed = await reconnect.remove('peer-1')
+  assert.equal(removed, true)
+  assert.ok(notices.some((item) => item.path === '/remote/v1/devices/self/revoke'), '移除配对时通知对端撤销这台设备')
+  assert.deepEqual((await reconnect.status()).peers, [], '本地配对已删除')
   await new Promise((resolve) => peerServer.close(resolve))
 
-  console.log('peer-client: 幂等重试、peers.json 损坏备份与断流重连通过')
+  const deadDir = join(root, 'unreachable')
+  await mkdir(deadDir, { recursive: true })
+  await writeFile(join(deadDir, 'peers.json'), JSON.stringify({
+    version: 1,
+    peers: [{ id: 'peer-dead', computer: '关机的砚', address: 'http://127.0.0.1:9', pairedAt: 1, deviceId: 'dev-dead', token: 'raw:peer-token-dead-0001' }]
+  }), 'utf8')
+  const { PeerClient: DeadClient } = await buildClient('peer-client-dead', deadDir)
+  const dead = new DeadClient()
+  const startedAt = Date.now()
+  assert.equal(await dead.remove('peer-dead'), true, '对端不可达时移除仍成功')
+  assert.ok(Date.now() - startedAt < 5000, '对端不可达时最多等 3 秒通知超时')
+  assert.deepEqual((await dead.status()).peers, [], '本地配对已删除')
+
+  console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知通过')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

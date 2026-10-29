@@ -2,14 +2,17 @@ import { basename } from 'node:path'
 import type { IpcRegistrar } from './registrar'
 import { SyncConfigStore } from '../sync/config'
 import { exportSession, importSession } from '../sync/session-transfer'
+import { validateSyncRoot } from '../sync/sync-folder'
 import type { ConflictRecord, SyncReport } from '../sync/types'
 import {
   AUTO_SYNC_INTERVAL_MS,
   isSyncMode,
+  syncNote,
   type SyncConflictView,
   type SyncConfigureResult,
   type SyncExportSessionResult,
   type SyncImportSessionResult,
+  type SyncNote,
   type SyncNowResult,
   type SyncResolution,
   type SyncResolveResult,
@@ -21,7 +24,7 @@ export interface SyncServiceLike {
   sync(): Promise<SyncReport>
   listConflicts(): Promise<ConflictRecord[]>
   countConflicts(): Promise<number>
-  resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: string }>
+  resolveConflict(id: string, resolution: SyncResolution): Promise<{ ok: boolean; error?: SyncNote }>
 }
 
 export interface SyncIpcDeps {
@@ -54,7 +57,7 @@ function summarize(report: SyncReport): {
   pulled: number
   conflicts: number
   skipped: number
-  errors: string[]
+  errors: SyncNote[]
 } {
   return {
     at: report.at,
@@ -105,7 +108,7 @@ export async function runAutoSync(deps: SyncIpcDeps, injected?: SyncConfigStore)
     const report = await deps.makeService(current.syncRoot).sync()
     await config.recordSync(summarize(report))
     if (!report.ok || report.errors.length) {
-      log(`[sync] 自动同步未完成：${report.errors.join('；') || '同步目录不可用'}`, undefined)
+      log(`[sync] 自动同步未完成：${report.errors.map((note) => note.code).join('; ') || '同步目录不可用'}`, undefined)
     }
   } catch (error) {
     log('[sync] 自动同步失败', error)
@@ -147,22 +150,22 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
         try {
           status.conflictCount = await deps.makeService(current.syncRoot).countConflicts()
         } catch (error) {
-          status.error = describe(error)
+          status.error = syncNote('unknown', { reason: describe(error) })
         }
       }
       return status
     } catch (error) {
-      return { configured: false, mode: 'manual', autoIntervalMs, conflictCount: 0, error: describe(error) }
+      return { configured: false, mode: 'manual', autoIntervalMs, conflictCount: 0, error: syncNote('unknown', { reason: describe(error) }) }
     }
   })
 
   handle('yan:sync:setMode', async (mode?: unknown): Promise<SyncSetModeResult> => {
-    if (!isSyncMode(mode)) return { ok: false, error: '未知的同步方式' }
+    if (!isSyncMode(mode)) return { ok: false, error: syncNote('mode.unknown') }
     try {
       const next = await config.setMode(mode)
       return { ok: true, mode: next.mode }
     } catch (error) {
-      return { ok: false, error: describe(error) }
+      return { ok: false, error: syncNote('unknown', { reason: describe(error) }) }
     }
   })
 
@@ -178,17 +181,19 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
         if (!picked) return { ok: false, cancelled: true }
         target = picked
       }
+      const invalid = await validateSyncRoot(target)
+      if (invalid) return { ok: false, error: invalid }
       const next = await config.setSyncRoot(target)
       return { ok: true, ...(next.syncRoot ? { syncRoot: next.syncRoot } : {}) }
     } catch (error) {
-      return { ok: false, error: describe(error) }
+      return { ok: false, error: syncNote('unknown', { reason: describe(error) }) }
     }
   })
 
   handle('yan:sync:now', async (): Promise<SyncNowResult> => {
     const current = await config.read()
     if (!current.syncRoot) {
-      return { ok: false, pushed: 0, pulled: 0, conflicts: 0, skipped: 0, errors: [], error: '还没有配置同步文件夹' }
+      return { ok: false, pushed: 0, pulled: 0, conflicts: 0, skipped: 0, errors: [], error: syncNote('config.missing') }
     }
     const syncRoot = current.syncRoot
     try {
@@ -207,7 +212,7 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
         at: report.at
       }
     } catch (error) {
-      return { ok: false, pushed: 0, pulled: 0, conflicts: 0, skipped: 0, errors: [], error: describe(error) }
+      return { ok: false, pushed: 0, pulled: 0, conflicts: 0, skipped: 0, errors: [], error: syncNote('unknown', { reason: describe(error) }) }
     }
   })
 
@@ -223,16 +228,16 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
 
   handle('yan:sync:resolve', async (id: unknown, resolution: unknown): Promise<SyncResolveResult> => {
     const conflictId = typeof id === 'string' ? id.trim() : ''
-    if (!conflictId) return { ok: false, error: '缺少冲突编号' }
-    if (!isResolution(resolution)) return { ok: false, error: '未知的处理方式' }
+    if (!conflictId) return { ok: false, error: syncNote('conflict.missing') }
+    if (!isResolution(resolution)) return { ok: false, error: syncNote('resolution.unknown') }
     try {
       return await exclusive(async () => {
         const service = await configuredService()
-        if (!service) return { ok: false, error: '还没有配置同步文件夹' }
+        if (!service) return { ok: false, error: syncNote('config.missing') }
         return service.resolveConflict(conflictId, resolution)
       })
     } catch (error) {
-      return { ok: false, error: describe(error) }
+      return { ok: false, error: syncNote('unknown', { reason: describe(error) }) }
     }
   })
 
@@ -240,27 +245,29 @@ export function registerSyncIpc(ipc: IpcRegistrar, deps: SyncIpcDeps): SyncContr
     try {
       const requested = typeof sessionPath === 'string' && sessionPath ? sessionPath : undefined
       const source = requested ?? deps.currentSessionPath?.()
-      if (!source) return { ok: false, error: '当前没有可导出的会话' }
+      if (!source) return { ok: false, error: syncNote('session.missing') }
       const suggested = `${basename(source).replace(/\.jsonl$/i, '')}.inkstone-session.json`
       const target = await deps.pickExportPath(suggested)
-      if (!target) return { ok: false, cancelled: true, error: '已取消导出' }
+      if (!target) return { ok: false, cancelled: true, error: syncNote('session.cancelled') }
       const result = await exportSession(source, target, { now })
-      return result.ok ? { ok: true, path: result.path, bytes: result.bytes } : { ok: false, error: result.error }
+      return result.ok
+        ? { ok: true, path: result.path, bytes: result.bytes }
+        : { ok: false, error: syncNote('session.exportFailed', { reason: result.error }) }
     } catch (error) {
-      return { ok: false, error: describe(error) }
+      return { ok: false, error: syncNote('session.exportFailed', { reason: describe(error) }) }
     }
   })
 
   handle('yan:sync:importSession', async (): Promise<SyncImportSessionResult> => {
     try {
       const bundle = await deps.pickImportFile()
-      if (!bundle) return { ok: false, cancelled: true, error: '已取消导入' }
+      if (!bundle) return { ok: false, cancelled: true, error: syncNote('session.cancelled') }
       const result = await importSession(bundle, deps.sessionsDir)
       return result.ok
         ? { ok: true, path: result.path, sessionId: result.sessionId }
-        : { ok: false, error: result.error }
+        : { ok: false, error: syncNote('session.importFailed', { reason: result.error }) }
     } catch (error) {
-      return { ok: false, error: describe(error) }
+      return { ok: false, error: syncNote('session.importFailed', { reason: describe(error) }) }
     }
   })
 

@@ -539,7 +539,10 @@ export class RemoteServer {
     }
 
     if (req.method === 'POST' && url.pathname === '/remote/v1/devices/self/revoke') {
-      if (!caller.device || (caller.device.kind ?? 'phone') !== 'phone' || !this.options.devices) return writeError(res, 403, '需要配对手机令牌')
+      const kind = caller.device?.kind ?? 'phone'
+      if (!caller.device || (kind !== 'phone' && kind !== 'peer') || !this.options.devices) {
+        return writeError(res, 403, '需要配对令牌')
+      }
       await this.readJson(req)
       const revoked = await this.options.devices.revoke(caller.device.id)
       writeJson(res, revoked ? 200 : 404, revoked ? { ok: true } : { ok: false, error: '设备已撤销' })
@@ -807,6 +810,24 @@ export class RemoteServer {
       if (!grant) return writeError(res, 403, '所有者拒绝了这次连接，或没有及时处理', 'peer_denied')
       this.log(`已批准另一台砚的连接：${device.name}`)
       writeJson(res, 200, { ok: true, data: { grant } })
+      return
+    }
+
+    if (req.method === 'POST' && parts.length === 1 && parts[0] === 'disconnect') {
+      let body: Record<string, unknown>
+      try {
+        body = await this.readJson(req)
+      } catch {
+        return writeError(res, 413, '请求超过大小限制或格式无效')
+      }
+      const target = typeof body.connectionId === 'string' ? body.connectionId.trim() : ''
+      const grant = target && target.length <= 200 ? grants.list().find((item) => item.connectionId === target) : undefined
+      if (grant && grant.deviceId === device.id) {
+        grants.revoke(target)
+        this.disconnectConnection(target)
+        this.log(`另一台砚结束了本次连接：${device.name}`)
+      }
+      writeJson(res, 200, { ok: true })
       return
     }
 
