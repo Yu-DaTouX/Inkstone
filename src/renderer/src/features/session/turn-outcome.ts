@@ -62,6 +62,21 @@ export function turnAnswers(turns: readonly Turn[]): Map<string, string | null> 
   return answers
 }
 
+function samePath(a: string, b: string): boolean {
+  const x = pathKey(a)
+  const y = pathKey(b)
+  return x === y || x.endsWith(`/${y}`) || y.endsWith(`/${x}`)
+}
+
+function labelShowsFile(file: ReplyFileLink): boolean {
+  const label = file.label.replace(/\\/g, '/').toLowerCase()
+  return !label || label.includes(file.base.toLowerCase())
+}
+
+export function outcomeFiles(files: readonly ReplyFileLink[], changedPaths: readonly string[]): ReplyFileLink[] {
+  return files.filter((file) => !labelShowsFile(file) && !changedPaths.some((path) => samePath(path, file.path)))
+}
+
 export function replyFileLinks(text: string): ReplyFileLink[] {
   const prose = text.replace(/^(\s*)(```|~~~)[\s\S]*?^\s*\2/gm, ' ')
   const found = new Map<string, ReplyFileLink>()

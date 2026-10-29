@@ -33,8 +33,8 @@
   .v3-prose hr { width: 100%; border: 0; border-top: var(--hair, 1px) solid var(--alpha-3); }
   .v3-prose :not(pre) > code { padding: 1px var(--s-4); border-radius: var(--r-xs); background: var(--code-inline-bg); font-family: var(--font-mono); color: var(--fg2); font-size: 0.9em; font-weight: var(--w-regular); line-height: 1.4; overflow-wrap: normal; word-break: normal; hyphens: none; }
   .v3-md-path-part { white-space: nowrap; }
-  .v3-prose .v3-md-code-link { color: var(--accent-t); text-decoration: underline dotted currentColor; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  .v3-prose .v3-md-code-link:hover { text-decoration-color: currentColor; }
+  .v3-prose .v3-md-code-link { padding-inline: 0; background: none; color: var(--accent-t); text-decoration: none; }
+  .v3-prose .v3-md-code-link:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .v3-prose .v3-md-code-link:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .v3-md-link-icon { display: inline-block; margin-inline-end: 0.2em; vertical-align: -0.15em; }
   .v3-md-link[data-link-kind='file'][data-short] { white-space: nowrap; }

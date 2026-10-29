@@ -43,6 +43,7 @@ import { stripImageNotice } from './effective-messages'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
 import { DecisionBlock, TurnResult } from './TurnOutcome'
+import { turnChangeSet } from './turn-process'
 import { splitDecision } from './turn-outcome'
 
 export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false, answer }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean; answer?: string | null }): JSX.Element | null {
@@ -228,6 +229,9 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const turnThinking = aside || (!inline && !turn.thinkingLive) ? '' : turn.thinking ?? ''
   const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
   const asideFits = useAsideFit()
+  const sessionCwd = useStore((s) => s.session?.cwd)
+  const changeCwd = sourceTurn.response?.sourceCwd || sessionCwd || undefined
+  const changes = useMemo(() => (streaming ? null : turnChangeSet(sourceTurn, changeCwd)), [streaming, sourceTurn, changeCwd])
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
   const showCompaction = useStore((s) => {
     if (s.session?.compaction) return edge.last
@@ -289,6 +293,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   approvalIds={approvalIds}
                   glowId={glowId}
                   elapsedMs={sourceTurn.elapsedMs}
+                  filesShownBelow={!!changes}
                 />
               ) : null}
               {askedCards}
@@ -368,7 +373,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming ? <LiveRunNotice /> : null}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
-          {!streaming ? <TurnResult turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
+          {!streaming ? <TurnResult turn={sourceTurn} changes={changes} cwd={changeCwd} readOnly={readOnly} rewindOwner={rewindOwner} text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} tail={tail ?? true} modelShift={modelShift} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
           {showCompaction ? <CompactionMarker /> : null}
@@ -481,5 +486,5 @@ function TurnClock({ timestamp }: { timestamp: number }): JSX.Element | null {
   const formats = turnClockFormats()
   const clock = formats.clock.format(date)
   const full = formats.full.format(date)
-  return <time className="v3-time" dateTime={date.toISOString()} title={full} aria-label={full}>{clock}</time>
+  return <time className="v3-time ui-num" dateTime={date.toISOString()} title={full} aria-label={full}>{clock}</time>
 }

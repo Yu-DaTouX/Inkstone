@@ -31,7 +31,7 @@ await build({
   outfile,
   logLevel: 'silent'
 })
-const { splitDecision, replyFileLinks, turnAnswers } = await import(pathToFileURL(posix(outfile)).href)
+const { splitDecision, replyFileLinks, outcomeFiles, turnAnswers } = await import(pathToFileURL(posix(outfile)).href)
 await rm(outdir, { recursive: true, force: true })
 
 process.stdout.write('\n▌待决策：只取答复末段的提问\n')
@@ -54,6 +54,15 @@ process.stdout.write('\n▌本轮文件：取答复里的本地文件链接\n')
   const files = replyFileLinks(text)
   ok(files.map((f) => f.base).join() === 'support-request-draft.md,result.md', '只收本地文件，去重，跳过网址、目录、图片和代码块', files)
   ok(files[1]?.label === '撤下结果报告', '保留链接文字作用途说明', files[1])
+}
+
+process.stdout.write('\n▌本轮文件：不重复正文已写明的文件名和改动卡里的文件\n')
+{
+  const text = '草稿在[Support 请求草稿](E:/pi/.local-docs/support-request-draft.md)，记录写进了 [STATUS.md](E:/pi/.local-docs/STATUS.md) 和 [`.local-docs/result.md`](E:/pi/.local-docs/result.md)，改动见[说明](E:/pi/docs/notes.md)。'
+  const links = replyFileLinks(text)
+  const extra = outcomeFiles(links, ['docs/notes.md'])
+  ok(extra.map((f) => f.base).join() === 'support-request-draft.md', '只留下正文用友好名称遮住真实文件名、且不在改动卡里的文件', extra)
+  ok(outcomeFiles(links, ['E:\\pi\\.local-docs\\support-request-draft.md', 'docs/notes.md']).length === 0, '全部已在正文或改动卡里出现：不显示本轮文件', null)
 }
 
 process.stdout.write('\n▌回答归属：下一条用户消息\n')

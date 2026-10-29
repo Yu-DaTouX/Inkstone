@@ -9,8 +9,7 @@ import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
-import { groupChangesByDir, splitChangePath, type TurnChangeGroup, type TurnFileChange, type TurnFileStatus } from './turn-changes'
-import { turnChangeSet } from './turn-process'
+import { groupChangesByDir, splitChangePath, type TurnChangeGroup, type TurnChanges as TurnChangeSet, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import './turn-changes.css'
 
 const OPEN_GROUPS_UP_TO = 1
@@ -56,13 +55,10 @@ function promptBefore(messages: readonly UIMessage[], sourceIds: readonly string
   return null
 }
 
-export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
+export function TurnChanges({ turn, changes, cwd, readOnly, rewindOwner }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null }): JSX.Element | null {
   const { lang } = useI18n()
   const openRewind = useStore((s) => s.openRewind)
-  const sessionCwd = useStore((s) => s.session?.cwd)
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
-  const cwd = turn.response?.sourceCwd || sessionCwd || undefined
-  const changes = useMemo(() => turnChangeSet(turn, cwd), [turn, cwd])
   const wantsCheckpoint = !!changes && !readOnly && !!rewindOwner
   const checkpoints = useStore((s) => s.checkpoints)
   const owned = useMemo(

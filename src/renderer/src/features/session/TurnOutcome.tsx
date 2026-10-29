@@ -8,7 +8,8 @@ import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
-import { replyFileLinks } from './turn-outcome'
+import { outcomeFiles, replyFileLinks } from './turn-outcome'
+import type { TurnChanges as TurnChangeSet } from './turn-changes'
 import './turn-outcome.css'
 
 export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answer }: {
@@ -33,20 +34,23 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
   )
 }
 
-export function TurnResult({ turn, readOnly, rewindOwner, text, sourceCwd }: { turn: AssistantTurn; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string }): JSX.Element {
+const NO_PATHS: readonly string[] = []
+
+export function TurnResult({ turn, changes, cwd, readOnly, rewindOwner, text, sourceCwd }: { turn: AssistantTurn; changes: TurnChangeSet | null; cwd?: string; readOnly: boolean; rewindOwner: string | null; text: string; sourceCwd?: string }): JSX.Element {
+  const changedPaths = useMemo(() => changes?.files.map((file) => file.path) ?? NO_PATHS, [changes])
   return (
     <div className="v3-result" data-testid="v3-turn-result">
-      <TurnChanges turn={turn} readOnly={readOnly} rewindOwner={rewindOwner} />
-      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} /> : null}
+      <TurnChanges turn={turn} changes={changes} cwd={cwd} readOnly={readOnly} rewindOwner={rewindOwner} />
+      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} changedPaths={changedPaths} /> : null}
     </div>
   )
 }
 
-function TurnFiles({ text, sourceCwd }: { text: string; sourceCwd?: string }): JSX.Element | null {
+function TurnFiles({ text, sourceCwd, changedPaths }: { text: string; sourceCwd?: string; changedPaths: readonly string[] }): JSX.Element | null {
   const tt = useSessionText()
   const previewFile = useStore((s) => s.previewFile)
   const sessionCwd = useStore((s) => s.session?.cwd)
-  const files = useMemo(() => replyFileLinks(text), [text])
+  const files = useMemo(() => outcomeFiles(replyFileLinks(text), changedPaths), [text, changedPaths])
   if (!files.length) return null
   const cwd = sourceCwd || sessionCwd || undefined
   return (

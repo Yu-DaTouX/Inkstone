@@ -37,7 +37,7 @@ function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; m
   return { ref: setNode, minHeight: active && minHeight > 0 ? minHeight : undefined }
 }
 
-export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs }: {
+export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs, filesShownBelow = false }: {
   process: TurnSegment[]
   live: boolean
   alertFailures: boolean
@@ -47,6 +47,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   approvalIds?: ReadonlySet<string>
   glowId?: string | null
   elapsedMs?: number
+  filesShownBelow?: boolean
 }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
@@ -91,13 +92,13 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           data-testid="v3-process-toggle"
         >
           <span className="v3-process-line" title={lead || undefined} data-testid="v3-process-line">
-            {processParts(summary, tt).map((part) => (
+            {processParts(summary, tt, filesShownBelow && !live).map((part) => (
               <span key={part.key} className="v3-process-count" data-kind={part.kind}>
                 {part.text}
                 {part.file && part.file.added !== null && part.file.removed !== null && part.file.added + part.file.removed > 0 ? <DiffStat className="v3-process-diff" added={part.file.added} removed={part.file.removed} /> : null}
               </span>
             ))}
-            {elapsed ? <span className="v3-process-count" data-kind="elapsed">{elapsed}</span> : null}
+            {elapsed ? <span className="v3-process-count ui-num" data-kind="elapsed">{elapsed}</span> : null}
             {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
           </span>
         </CollapsibleHeader>
@@ -124,7 +125,7 @@ const SHOWN_ACTION_KINDS = 2
 
 type TextKey = Parameters<ReturnType<typeof useSessionText>>[0]
 
-function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionText>): ProcessPart[] {
+function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionText>, filesShownBelow = false): ProcessPart[] {
   const parts: ProcessPart[] = []
   const count = (kind: string, n: number, one: TextKey, many: TextKey): void => {
     if (n) parts.push({ key: kind, kind, text: n === 1 ? tt(one) : tt(many, { n }) })
@@ -152,8 +153,10 @@ function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionT
   const rest = ranked.slice(shownCount)
   if (!summary.actions) count('thinking', summary.thinking, 'processThinking1', 'processThinking')
   for (const action of actions) if (shown.has(action.kind)) count(action.kind, action.n, action.one, action.many)
-  files('edits', summary.edits, 'processEditFile', 'processEdits')
-  files('creates', summary.creates, 'processCreateFile', 'processCreates')
+  if (!filesShownBelow) {
+    files('edits', summary.edits, 'processEditFile', 'processEdits')
+    files('creates', summary.creates, 'processCreateFile', 'processCreates')
+  }
   if (rest.length) parts.push({ key: 'rest', kind: 'rest', text: tt('processRest', { kinds: rest.map((action) => tt(action.noun)).join(tt('processKindJoin')), n: rest.reduce((sum, action) => sum + action.n, 0) }) })
   if (!parts.length && summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
   return parts

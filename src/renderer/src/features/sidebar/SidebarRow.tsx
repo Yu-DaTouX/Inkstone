@@ -196,7 +196,7 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
                 <>
                   <ProjectBadge label={card.project} global={card.global} />
                   <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                  <span className="v3-crow-ago">{card.ago}</span>
+                  <span className="v3-crow-ago ui-num">{card.ago}</span>
                 </>
               ) : null}
               {card?.slim ? null : card ? (
@@ -210,13 +210,13 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
                     </span>
                   ) : null}
                   {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
-                  <span className="v3-crow-ago">{card.ago}</span>
+                  <span className="v3-crow-ago ui-num">{card.ago}</span>
                 </span>
               ) : (
                 <FadeTitleBox boxRef={titleBoxRef} text={title} />
               )}
               {snoozeLabel ? (
-                <span className="v3-srow-wake" title={snoozeTitle} data-testid="v3-session-snooze-wake">
+                <span className="v3-srow-wake ui-num" title={snoozeTitle} data-testid="v3-session-snooze-wake">
                   <AlarmClock size={12} aria-hidden />
                   {snoozeLabel}
                 </span>
