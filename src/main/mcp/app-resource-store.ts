@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { isMcpAppMimeType, MCP_APP_RESOURCE_MAX_BYTES } from './app-spec'
+import { isMcpAppMimeType, MCP_APP_RESOURCE_MAX_BYTES, type McpAppCsp } from './app-spec'
 import {
   buildMcpAppUrl,
   isCompleteMcpAppOwner,
@@ -17,6 +17,7 @@ export interface McpAppLoadedResource {
   mimeType: string
   bytes: number
   csp: string
+  approvedCsp?: McpAppCsp
 }
 
 export interface McpAppResourceFetchRequest {
@@ -63,6 +64,7 @@ export type McpAppReadResult =
       ok: true
       html: string
       csp: string
+      approvedCsp?: McpAppCsp
       mimeType: string
       instanceId: string
       serverHash: string
@@ -85,6 +87,7 @@ interface McpAppInstance {
   mimeType: string
   bytes: number
   csp: string
+  approvedCsp?: McpAppCsp
 }
 
 interface McpAppCacheEntry {
@@ -92,6 +95,7 @@ interface McpAppCacheEntry {
   mimeType: string
   bytes: number
   csp: string
+  approvedCsp?: McpAppCsp
   fetchedAt: number
 }
 
@@ -174,7 +178,7 @@ export class McpAppResourceStore {
       const bytes = typeof loaded.bytes === 'number' ? loaded.bytes : Buffer.byteLength(loaded.html, 'utf8')
       if (!Number.isFinite(bytes) || bytes <= 0 || bytes > this.maxResourceBytes) return { ok: false, error: 'size' }
       if (typeof loaded.csp !== 'string' || !loaded.csp) return { ok: false, error: 'fetch' }
-      cached = { html: loaded.html, mimeType: loaded.mimeType, bytes, csp: loaded.csp, fetchedAt: this.now() }
+      cached = { html: loaded.html, mimeType: loaded.mimeType, bytes, csp: loaded.csp, approvedCsp: loaded.approvedCsp, fetchedAt: this.now() }
       this.cache.set(key, cached)
       this.trimCache()
     }
@@ -192,7 +196,8 @@ export class McpAppResourceStore {
       html: cached.html,
       mimeType: cached.mimeType,
       bytes: cached.bytes,
-      csp: cached.csp
+      csp: cached.csp,
+      approvedCsp: cached.approvedCsp
     })
     return { ok: true, url: buildMcpAppUrl(serverHash, instanceId), instanceId, serverHash, bytes: cached.bytes, cached: fromCache }
   }
@@ -212,6 +217,7 @@ export class McpAppResourceStore {
       ok: true,
       html: instance.html,
       csp: instance.csp,
+      approvedCsp: instance.approvedCsp,
       mimeType: instance.mimeType,
       instanceId: instance.instanceId,
       serverHash: instance.serverHash,

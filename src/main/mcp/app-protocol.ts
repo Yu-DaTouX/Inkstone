@@ -1,4 +1,5 @@
 import { protocol } from 'electron'
+import { isMcpAppPrivateHost } from './app-network-policy'
 import type { McpAppResource } from './app-host'
 import type { McpAppResourceStore, McpAppLoadedResource, McpAppResourceFetch } from './app-resource-store'
 import type { McpAppCsp } from './app-spec'
@@ -33,16 +34,27 @@ export interface McpAppLoaderOptions {
   resolvePrivateHost?: McpAppResolveHost
 }
 
+async function resolveMcpAppCsp(
+  uiCsp: McpAppCsp | null | undefined,
+  options: McpAppLoaderOptions = {}
+): Promise<{ csp: string; approvedCsp: McpAppCsp }> {
+  const resolveHost = options.resolvePrivateHost ?? isMcpAppPrivateHost
+  const resource = await resolveDomainList(uiCsp?.resourceDomains, 'network', resolveHost)
+  const connect = await resolveDomainList(uiCsp?.connectDomains, 'network', resolveHost)
+  const approvedCsp: McpAppCsp = {
+    resourceDomains: resource.filter((item) => item.allowed).map((item) => item.value),
+    connectDomains: connect.filter((item) => item.allowed).map((item) => item.value),
+    frameDomains: [],
+    baseUriDomains: []
+  }
+  return { csp: buildMcpAppCsp({ resource: approvedCsp.resourceDomains, connect: approvedCsp.connectDomains }), approvedCsp }
+}
+
 export async function deriveMcpAppCsp(
   uiCsp: McpAppCsp | null | undefined,
   options: McpAppLoaderOptions = {}
 ): Promise<string> {
-  const resource = await resolveDomainList(uiCsp?.resourceDomains, 'network', options.resolvePrivateHost)
-  const connect = await resolveDomainList(uiCsp?.connectDomains, 'network', options.resolvePrivateHost)
-  return buildMcpAppCsp({
-    resource: resource.filter((item) => item.allowed).map((item) => item.value),
-    connect: connect.filter((item) => item.allowed).map((item) => item.value)
-  })
+  return (await resolveMcpAppCsp(uiCsp, options)).csp
 }
 
 export function createMcpAppResourceLoader(host: McpAppResourceReader, options: McpAppLoaderOptions = {}): McpAppResourceFetch {
@@ -51,8 +63,8 @@ export function createMcpAppResourceLoader(host: McpAppResourceReader, options: 
       ...(signal ? { signal } : {}),
       ...(projectId ? { projectId } : {})
     })
-    const derivation = await deriveMcpAppCsp(resource.uiCsp, options)
-    return { html: resource.text, mimeType: resource.mimeType, bytes: resource.bytes, csp: derivation }
+    const policy = await resolveMcpAppCsp(resource.uiCsp, options)
+    return { html: resource.text, mimeType: resource.mimeType, bytes: resource.bytes, ...policy }
   }
 }
 

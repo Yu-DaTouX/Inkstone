@@ -76,6 +76,7 @@ import { registerMcpAppIpc } from './ipc/mcp-app-ipc'
 import { registerMcpAppViewIpc } from './ipc/mcp-app-view-ipc'
 import { McpAppViewService, createMcpAppViewRuntime, type McpAppViewRunnerFacts } from './mcp/app-view-service'
 import { McpAppViewAuditStore } from './mcp/app-view-audit'
+import { createMcpAppHostRequests } from './mcp/app-host-requests'
 import { createMcpAppResourceLoader, registerMcpAppProtocol } from './mcp/app-protocol'
 import { mcpAppHost, closeMcpAppHost, configureMcpAppHostOwnership } from './mcp/app-host'
 import { loadMcpServersCached } from './mcp/config'
@@ -3826,6 +3827,12 @@ app.whenReady().then(async () => {
       theme: async () => (await getSettings()).theme,
       systemPrefersDark: () => nativeTheme.shouldUseDarkColors,
       grantsOf: () => [],
+      hostRequests: createMcpAppHostRequests(async (text, facts, signal) => {
+        const agent = runners?.agentOf(facts.runnerId)
+        if (!agent || signal.aborted || agent.getState()?.sessionId !== facts.sessionId) throw new Error('App 所属会话已失效')
+        const result = await agent.send(text, undefined, undefined, undefined, facts.generation)
+        if (!result.ok) throw new Error(result.error ?? '消息发送失败')
+      }),
       fetchResource: createMcpAppResourceLoader(mcpAppHost())
     })
     registerMcpAppProtocol(mcpAppViewService.resourceStore())

@@ -112,6 +112,8 @@ interface McpAppProxyCallRecord {
   uiCsp: McpAppCsp | null
   meta: Record<string, unknown> | null
   structuredContent: Record<string, unknown> | null
+  arguments?: Record<string, unknown>
+  result?: unknown
   error?: string
   code?: string
 }
@@ -488,7 +490,11 @@ export class McpAppProxyService {
       resourceUri: outcome.resourceUri,
       uiCsp: outcome.uiCsp,
       meta: outcome.meta,
-      structuredContent: outcome.structuredContent
+      structuredContent: outcome.structuredContent,
+      arguments: input.args,
+      result: Buffer.byteLength(JSON.stringify(outcome.result ?? {}), 'utf8') <= 1024 * 1024
+        ? outcome.result
+        : { content: [{ type: 'text', text }], isError: outcome.isError }
     }
     this.remember(record)
     return record

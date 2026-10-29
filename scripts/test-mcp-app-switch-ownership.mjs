@@ -9,7 +9,8 @@ import { build } from 'esbuild'
 import { createFakeManagerFactory } from './fixtures/mcp-app-ownership-fixture.mjs'
 import { createFakeManagerFactory as createFakeManagerFactory__runtimeOwnershipSuite, createFakeAgent } from './fixtures/mcp-app-runtime-ownership-fixture.mjs'
 import { delayingNativeConfigReader } from './fixtures/mcp-app-runtime-integration-fixture.mjs'
-import { fakeFrame, fakePort, fakeWindow } from './fixtures/mcp-app-cross-contract-boundary.mjs'
+import { fakeFrame, fakeWindow } from './fixtures/mcp-app-cross-contract-boundary.mjs'
+import { connectOfficialApp, waitFor as waitForSdk } from './lib/mcp-app-sdk-fixture.mjs'
 
 async function isolated(run) {
   const savedEnv = { ...process.env }
@@ -2197,14 +2198,6 @@ const { McpAppViewService, McpAppViewAuditStore, mcpServerIdentityFingerprint } 
 const { McpAppChannel } = renderer
 
 const tick = () => new Promise((done) => setTimeout(done, 60))
-async function waitFor(predicate, timeoutMs = 5000) {
-  const start = Date.now()
-  for (;;) {
-    if (await predicate()) return true
-    if (Date.now() - start > timeoutMs) return false
-    await new Promise((done) => setTimeout(done, 5))
-  }
-}
 function deferred() {
   let resolve
   let reject
@@ -2305,148 +2298,66 @@ function makeBridge(options = {}) {
   return { state, service }
 }
 
-function attachChannel(service, instanceId, overrides = {}) {
-  const win = fakeWindow()
-  const frame = fakeFrame()
-  const api = {
-    calls: [],
-    dispatch(instanceIdArg, message) {
-      api.calls.push(message)
-      return service.dispatch(instanceIdArg, message)
-    }
-  }
-  const channel = new McpAppChannel({
-    instanceId,
-    api,
-    window: win,
-    getFrame: () => frame,
-    ...overrides
+
+{
+  const { service, state } = makeBridge({ name: 'official-sdk-cross-contract' })
+  const prepared = await service.prepare('call-1')
+  ok(prepared.kind === 'ready', '正式 prepare 返回受控实例')
+  ok(state.fetchProjectId === 'p1', '资源读取保留 owner.projectId')
+  const { app, channel, frame } = await connectOfficialApp(McpAppChannel, {
+    instanceId: prepared.instanceId,
+    api: { dispatch: (id, message) => service.dispatch(id, message) }
   })
-  channel.attach()
-  return { win, frame, api, channel }
-}
-
-const rpc = (method, params, id) => ({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), method, params })
-const fromFrame = (frame, message) => ({ data: message, origin: 'null', source: frame })
-
-{
-  const { state, service } = makeBridge({ name: 'handshake' })
-  const prepared = await service.prepare('call-1')
-  ok(prepared.kind === 'ready', '正式 service.prepare 返回 ready 实例', prepared.kind)
-  ok(state.fetchProjectId === 'p1', 'prepare 用 owner.projectId 取资源（不是目标 scope）')
-
-  const { win, frame, api, channel } = attachChannel(service, prepared.instanceId)
-  const other = fakeFrame()
-
-  win.emit(fromFrame(frame, rpc('ui/initialize', { protocolVersion: 1 }, 11)))
-  await waitFor(() => channel.getPhase() === 'ready')
-  ok(api.calls.length === 1 && api.calls[0].method === 'ui/initialize', 'initialize 只派发给 host 一次')
-  const envelope = frame.posted.at(-1).message
-  ok(envelope.jsonrpc === '2.0' && envelope.id === 11, 'host 信封带 jsonrpc/id（单层）')
-  ok(envelope.result?.hostContext?.platform === 'desktop', 'initialize 结果在顶层 result')
-  ok(envelope.result?.result === undefined, 'ui/initialize 响应只有一层，没有被再包成 result.result')
-  ok(channel.getPhase() === 'ready', '合法 initialize 应答后进入 ready')
-
-  win.emit(fromFrame(frame, rpc('vendor/unknown', {}, 12)))
-  await waitFor(() => frame.posted.at(-1)?.message?.error?.code === -32601)
-  const unknown = frame.posted.at(-1).message
-  ok(unknown.error?.code === -32601 && unknown.result === undefined, '未知方法保留顶层 error -32601 unsupported')
-
-  const before = api.calls.length
-  win.emit(fromFrame(other, rpc('tools/call', { name: 'read', arguments: {} }, 13)))
-  await tick()
-  ok(api.calls.length === before, '非本框 source 的消息不派发')
-  ok(other.posted.length === 0, '结果不会回投给非本框')
-
-  const dup = rpc('tools/call', { name: 'read', arguments: {} }, 14)
-  win.emit(fromFrame(frame, dup))
-  win.emit(fromFrame(frame, dup))
-  await waitFor(() => state.hostCalls.length >= 1)
-  await tick()
-  ok(state.hostCalls.length === 1, '同代重复 id 只执行一次', String(state.hostCalls.length))
-}
-
-{
-  const { state, service } = makeBridge({ name: 'reject-init' })
-  const prepared = await service.prepare('call-1')
-  state.active.delete('s1')
-  const { win, frame, channel } = attachChannel(service, prepared.instanceId)
-  win.emit(fromFrame(frame, rpc('ui/initialize', {}, 21)))
-  await waitFor(() => Boolean(frame.posted.at(-1)?.message?.error))
-  const envelope = frame.posted.at(-1).message
-  ok(envelope.error?.code === -32001 && envelope.result === undefined, 'host 拒绝 initialize 保留顶层 error，不转 result')
-  ok(channel.getPhase() !== 'ready', '错误 initialize 不进 ready')
-  ok(state.hostCalls.length === 0, '未成功 initialize 不放行 tools/call')
-}
-
-{
-  const { state, service } = makeBridge({ name: 'tools' })
-  const prepared = await service.prepare('call-1')
-  const { win, frame, channel } = attachChannel(service, prepared.instanceId)
-  win.emit(fromFrame(frame, rpc('ui/initialize', {}, 31)))
-  await waitFor(() => channel.getPhase() === 'ready')
-  win.emit(fromFrame(frame, rpc('tools/call', { name: 'read', arguments: { q: 'x' } }, 32)))
-  await waitFor(() => Boolean(frame.posted.at(-1)?.message?.result?.structuredContent))
-  const envelope = frame.posted.at(-1).message
-  ok(envelope.result?.structuredContent?.chart === 1, 'structuredContent 回到本框')
-  ok(envelope.result?._meta !== undefined, '_meta 回到本框')
-  ok(state.hostCalls.length === 1 && state.hostCalls[0].toolName === 'read', '审批通过后真正执行一次工具', String(state.hostCalls.length))
-  ok(channel.getPhase() === 'ready', '工具调用不改变握手状态')
-}
-
-{
-  const { state, service } = makeBridge({ name: 'audit' })
-  const prepared = await service.prepare('call-1')
-  const { win, frame, channel } = attachChannel(service, prepared.instanceId)
-  win.emit(fromFrame(frame, rpc('ui/initialize', {}, 41)))
-  await waitFor(() => channel.getPhase() === 'ready')
-  win.emit(fromFrame(frame, rpc('tools/call', { name: 'read', arguments: { q: 'x' } }, 42)))
-  await waitFor(() => state.hostCalls.length === 1)
-  await waitFor(async () => {
-    const entries = await service.audit('call-1')
-    return entries.some((entry) => entry.phase === 'completed')
-  })
-  const inA = await service.audit('call-1')
-  ok(inA.some((entry) => entry.phase === 'completed'), '会话 A 可读本机审计（真实临时 JSONL 落盘）')
-
+  ok(channel.getPhase() === 'ready', '官方 App 完成 initialize + initialized 握手')
+  const initialized = frame.posted.find((message) => message.result?.hostInfo)
+  ok(initialized.result.hostInfo.name === 'Inkstone', '官方握手下发 hostInfo')
+  ok(initialized.result.hostCapabilities.serverTools !== undefined, '握手声明实际支持的工具代理')
+  ok(initialized.result.hostContext.platform === 'desktop', '宿主上下文透传到官方 App')
+  const result = await app.callServerTool({ name: 'read', arguments: { q: 'x' } })
+  ok(result.structuredContent?.chart === 1 && result._meta !== undefined, '审批后的完整结果返回本 App')
+  ok(state.hostCalls.length === 1, '通过所有权与审批后只执行一次工具')
+  await waitForSdk(async () => (await service.audit('call-1')).some((entry) => entry.phase === 'completed'))
   state.foreground = factsFor('s2', 'r2', 1)
-  const inB = await service.audit('call-1')
-  ok(inB.length === 0, '前台 B 读后台 A 审计返回空（不跨会话）')
-
-  state.foreground = factsFor('s1', 'r1', 3)
-  const restored = await service.audit('call-1')
-  ok(restored.length >= 3, '恢复同 sessionFile 可读本机历史审计（绝不重跑 tool）')
+  ok((await service.audit('call-1')).length === 0, '前台 B 不能读取 A 的审计')
+  state.active.delete('s1')
+  await assert.rejects(() => app.callServerTool({ name: 'read', arguments: {} }))
+  ok(state.hostCalls.length === 1, '所有权失效后官方 SDK 请求也不能绕过后端')
+  channel.dispose()
+  await app.close()
+  service.close()
 }
 
 {
+  const { service, state } = makeBridge({ name: 'official-sdk-late' })
   const late = deferred()
-  const { state, service } = makeBridge({ name: 'late', late })
+  state.late = late
   const prepared = await service.prepare('call-1')
-  const { win, frame, channel } = attachChannel(service, prepared.instanceId)
-  win.emit(fromFrame(frame, rpc('ui/initialize', {}, 51)))
-  await waitFor(() => channel.getPhase() === 'ready')
-  win.emit(fromFrame(frame, rpc('tools/call', { name: 'read', arguments: {} }, 52)))
-  await waitFor(() => state.hostCalls.length === 1)
-  const postedBefore = frame.posted.length
+  const { app, channel, frame } = await connectOfficialApp(McpAppChannel, { instanceId: prepared.instanceId, api: { dispatch: (id, message) => service.dispatch(id, message) } })
+  const pending = app.callServerTool({ name: 'read', arguments: {} }).catch(() => undefined)
+  await waitForSdk(() => state.hostCalls.length === 1)
+  const before = frame.posted.length
   channel.nextGeneration()
   late.resolve(makeOutcome('late'))
   await tick()
-  ok(frame.posted.length === postedBefore, '换代（iframe reload）后旧代迟到结果不回投')
-  ok(channel.getPhase() === 'idle', '换代把握手重置为 idle')
+  ok(!frame.posted.slice(before).some((message) => message.result?.structuredContent), 'iframe 换代后迟到工具结果不回投')
+  channel.dispose()
+  await app.close()
+  await pending
+  service.close()
 }
 
 {
-  const { service } = makeBridge({ name: 'port' })
+  const { service } = makeBridge({ name: 'official-sdk-reload' })
   const prepared = await service.prepare('call-1')
-  const { win, frame, channel } = attachChannel(service, prepared.instanceId)
-  const port = fakePort()
-  win.emit({ ...fromFrame(frame, rpc('ui/initialize', {}, 61)), ports: [port] })
-  await waitFor(() => port.posted.length === 1)
-  ok(port.started, '本框初始化采纳 MessagePort 并 start')
-  ok(port.posted.length === 1, 'initialize 应答经端口回投')
-  ok(frame.posted.length === 0, '采纳端口后不再走 window.postMessage')
-  channel.dispose()
-  ok(port.closed, 'dispose 关闭端口')
+  const options = { instanceId: prepared.instanceId, api: { dispatch: (id, message) => service.dispatch(id, message) } }
+  const first = await connectOfficialApp(McpAppChannel, options)
+  await first.channel.dispose()
+  await first.app.close()
+  const second = await connectOfficialApp(McpAppChannel, options)
+  ok(second.channel.getPhase() === 'ready', '同一实例重新创建 channel 不会复用内部请求 ID，reload/离屏恢复仍可握手')
+  await second.channel.dispose()
+  await second.app.close()
+  service.close()
 }
 
 {
@@ -2726,7 +2637,7 @@ const call = (instanceId, method, params = {}, id = 1) => ({
   ok(typeof prepared.instanceId === 'string' && prepared.instanceId.length > 0, 'prepare 返回实例号')
   ok(parseMcpAppUrl(prepared.url) !== null, 'prepare 返回受控 inkstone-app 地址', prepared.url)
 
-  const init = await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'ui/initialize', {}, 10))
+  const init = await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'inkstone/activate', {}, 10))
   ok(init && init.result && typeof init.result === 'object', 'initialize 返回单层 result 信封')
   const tool = await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'tools/call', { name: 'read', arguments: {} }, 11))
   ok(tool && tool.result && tool.result.structuredContent && tool.result.structuredContent.chart === 1, 'tools/call 返回 structuredContent（只回本框）')
@@ -2792,7 +2703,7 @@ const call = (instanceId, method, params = {}, id = 1) => ({
 
   const { service, state } = makeAssembly({ name: 'project-gate' })
   const prepared = await service.prepare('call-1')
-  await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'ui/initialize', {}, 40))
+  await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'inkstone/activate', {}, 40))
   const before = await service.dispatch(prepared.instanceId, call(prepared.instanceId, 'tools/call', { name: 'read', arguments: {} }, 41))
   ok(before && before.result, '项目一致时正常调用', JSON.stringify(before))
   state.foreground = { ...FACTS_A, projectId: 'p2' }
@@ -2832,7 +2743,7 @@ const call = (instanceId, method, params = {}, id = 1) => ({
     win.emit({ data: call('inst-x', 'tools/call', { name: 'read', arguments: {} }, 62), origin: 'null', source: frame })
     setTimeout(() => resolve(frame.posted.slice(before)), 10)
   })
-  ok(blocked.some((item) => item.message && item.message.error && item.message.error.code === -32002), 'channel：未 ready 的 tools/call 本地拒绝（-32002）')
+  ok(dispatched.length === 1 && blocked.length === 0, 'channel：宿主拒绝激活后关闭传输，不转发后续工具请求')
   channel.dispose()
 }
 

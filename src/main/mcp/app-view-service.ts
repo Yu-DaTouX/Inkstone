@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { JSONRPCMessageSchema } from '@modelcontextprotocol/core'
+import { McpUiMessageRequestSchema, McpUiOpenLinkRequestSchema, McpUiDownloadFileRequestSchema, type McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { PermissionMode } from '../../shared/approval'
 import type {
   McpAppViewApi,
@@ -33,6 +35,8 @@ export interface McpAppViewCallRecordLike {
   toolName: string
   text: string
   resourceUri: string | null
+  arguments?: Record<string, unknown>
+  result?: unknown
 }
 
 export interface McpAppViewProxyLike {
@@ -148,6 +152,13 @@ export interface McpAppViewServiceOptions {
   maxSeenIdsPerInstance?: number
   maxInstances?: number
   maxCallSessions?: number
+  hostRequests?: McpAppHostRequests
+}
+
+export interface McpAppHostRequests {
+  openLink?(url: string, facts: McpAppViewRunnerFacts, signal: AbortSignal): Promise<void>
+  message?(text: string, facts: McpAppViewRunnerFacts, signal: AbortSignal): Promise<void>
+  downloadFile?(contents: unknown[], facts: McpAppViewRunnerFacts, signal: AbortSignal): Promise<void>
 }
 
 interface InstanceBinding {
@@ -305,10 +316,12 @@ export class McpAppViewService implements McpAppViewApi {
   private readonly maxSeenIds: number
   private readonly maxInstances: number
   private readonly maxCallSessions: number
+  private readonly hostRequests: McpAppHostRequests
   private readonly instances = new Map<string, InstanceBinding>()
   private readonly callSessions = new Map<string, string>()
 
   constructor(options: McpAppViewServiceOptions) {
+    this.hostRequests = options.hostRequests ?? {}
     this.proxy = options.proxy
     this.host = options.host
     if (!options.ownerGuard || typeof options.ownerGuard.isActive !== 'function') {
@@ -348,7 +361,8 @@ export class McpAppViewService implements McpAppViewApi {
     if (!binding) return null
     if (!this.isOwnerActive(binding.owner)) return null
     try {
-      return await this.resolveHostContext()
+      const context = await this.resolveHostContext()
+      return this.isOwnerActive(binding.owner) ? context : null
     } catch {
       return null
     }
@@ -455,19 +469,31 @@ export class McpAppViewService implements McpAppViewApi {
       return this.rpcError(id, -32001, 'App 实例归属已失效，拒绝请求')
     }
 
+    if (!binding.initialized && method !== 'inkstone/activate') return this.rpcError(id, -32002, 'App 尚未完成初始化')
+
     switch (method) {
-      case MCP_APP_METHODS.initialize:
+      case 'inkstone/activate': {
+        const hostContext = await this.resolveHostContext()
+        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
         binding.initialized = true
-        return this.rpcResult(id, { hostContext: await this.resolveHostContext() })
-      case MCP_APP_METHODS.initialized:
-        if (!binding.initialized) {
-          return this.rpcError(id, -32002, 'App 尚未成功初始化，拒绝 initialized 通知')
-        }
-        return null
-      case MCP_APP_METHODS.sizeChanged:
-        return null
-      case MCP_APP_METHODS.requestDisplayMode:
-        return this.rpcResult(id, { displayMode: 'inline' })
+        return this.rpcResult(id, { hostContext, hostCapabilities: this.hostCapabilities(binding) })
+      }
+      case 'inkstone/tool-data': {
+        const record = this.proxy.getCallResult(binding.callId, { sessionId: binding.facts.sessionId, projectId: binding.facts.projectId, runnerId: binding.facts.runnerId, epoch: binding.facts.generation })
+        return this.rpcResult(id, { arguments: record?.arguments ?? {}, ...(record?.result ? { result: record.result } : {}) })
+      }
+      case 'tools/list': {
+        const tools = await this.host.listToolsWithMeta(binding.serverId, { projectId: binding.facts.projectId, signal: binding.abort.signal })
+        if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
+        return this.rpcResult(id, { tools: tools.filter((tool) => tool.appVisible).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema ?? { type: 'object' }, annotations: tool.annotations, _meta: tool.meta })) })
+      }
+      case 'resources/list':
+        return this.rpcResult(id, { resources: [{ uri: binding.resourceUri, name: binding.resourceUri, mimeType: 'text/html;profile=mcp-app' }] })
+      case 'ui/message':
+      case 'ui/open-link':
+      case 'ui/download-file':
+        if (id === undefined) return this.rpcError(null, -32600, '宿主请求必须带 id')
+        return this.handleHostRequest(binding, id, method, params)
       case MCP_APP_METHODS.toolsCall:
         if (id === undefined) return this.rpcError(null, -32600, 'tools/call 必须是带 id 的请求')
         if (!binding.initialized) return this.rpcError(id, -32002, 'App 尚未完成初始化，拒绝调用工具')
@@ -479,7 +505,7 @@ export class McpAppViewService implements McpAppViewApi {
         return this.rpcError(
           id,
           -32601,
-          `不支持的 App 请求：${method}（首版只开放初始化、尺寸/显示通知与 tools/call）`
+          `不支持的 App 请求：${method}（宿主未声明此能力）`
         )
     }
   }
@@ -749,13 +775,67 @@ export class McpAppViewService implements McpAppViewApi {
       })
       if (!this.isOwnerActive(binding.owner)) return this.rpcError(id, -32001, 'App 实例归属已失效')
       return this.rpcResult(id, {
-        contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: resource.text }]
+        contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: resource.text, ...(resource.meta ? { _meta: resource.meta } : {}) }]
       })
     } catch (error) {
       return this.rpcError(id, -32000, `资源读取失败：${messageOf(error)}`)
     } finally {
       binding.inFlight--
     }
+  }
+
+  private hostCapabilities(binding: InstanceBinding): McpUiHostCapabilities {
+    const resource = this.store.read(binding.url, { owner: binding.owner })
+    return {
+      serverTools: {}, serverResources: {}, sandbox: { permissions: {}, csp: resource.ok ? resource.approvedCsp ?? {} : {} },
+      ...(this.hostRequests.openLink ? { openLinks: {} } : {}),
+      ...(this.hostRequests.message ? { message: { text: {} } } : {}),
+      ...(this.hostRequests.downloadFile ? { downloadFile: {} } : {})
+    }
+  }
+
+  private async handleHostRequest(binding: InstanceBinding, id: string | number, method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (binding.inFlight >= this.maxConcurrent) return this.rpcError(id, -32000, '并发请求过多')
+    const message = { method, params }
+    let execute: (() => Promise<void>) | undefined
+    if (method === 'ui/message' && this.hostRequests.message) {
+      const parsed = McpUiMessageRequestSchema.safeParse(message)
+      if (!parsed.success || parsed.data.params.content.some((block) => block.type !== 'text')) return this.rpcError(id, -32602, '宿主只支持文本消息')
+      const text = parsed.data.params.content.map((block) => block.type === 'text' ? block.text : '').join('\n')
+      if (!text.trim()) return this.rpcError(id, -32602, '消息不能为空')
+      execute = () => this.hostRequests.message!(text, binding.facts, binding.abort.signal)
+    } else if (method === 'ui/open-link' && this.hostRequests.openLink) {
+      const parsed = McpUiOpenLinkRequestSchema.safeParse(message)
+      if (!parsed.success) return this.rpcError(id, -32602, '链接请求无效')
+      execute = () => this.hostRequests.openLink!(parsed.data.params.url, binding.facts, binding.abort.signal)
+    } else if (method === 'ui/download-file' && this.hostRequests.downloadFile) {
+      const parsed = McpUiDownloadFileRequestSchema.safeParse(message)
+      if (!parsed.success) return this.rpcError(id, -32602, '下载请求无效')
+      execute = () => this.hostRequests.downloadFile!(parsed.data.params.contents, binding.facts, binding.abort.signal)
+    }
+    if (!execute) return this.rpcError(id, -32601, '宿主未声明此能力')
+    binding.inFlight++
+    try {
+      const mode = await this.permissionMode()
+      const fingerprint = this.serverFingerprint(binding.serverId)
+      if (!fingerprint) return this.rpcError(id, -32000, '无法确认服务器身份')
+      const argsHash = hashMcpAppViewArgs(params)
+      await this.writeAudit(binding, 'requested', method, mode, `App 请求 ${method}`, { argsHash })
+      const decision = await approveAppViewCall({ server: binding.serverId, tool: method, visibility: ['app'], annotations: { destructiveHint: true }, args: params, sessionId: binding.facts.sessionId, runId: binding.facts.runnerId, cwd: binding.facts.cwd, permissionMode: mode }, this.ask, { serverFingerprint: fingerprint })
+      if (!decision.allowed) {
+        await this.tryWriteAudit(binding, 'denied', method, mode, `拒绝 ${method}`, { reason: decision.reason })
+        return this.rpcResult(id, { isError: true })
+      }
+      await this.writeAudit(binding, 'approved', method, mode, `允许 ${method}`, { argsHash })
+      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, '归属或服务身份已变化')
+      await execute()
+      if (!this.isOwnerActive(binding.owner) || this.serverFingerprint(binding.serverId) !== fingerprint) return this.rpcError(id, -32001, '归属或服务身份已变化')
+      await this.tryWriteAudit(binding, 'completed', method, mode, `完成 ${method}`, { argsHash })
+      return this.rpcResult(id, {})
+    } catch (error) {
+      await this.tryWriteAudit(binding, 'error', method, await this.permissionMode(), `失败 ${method}`, { reason: messageOf(error) })
+      return this.rpcResult(id, { isError: true })
+    } finally { binding.inFlight-- }
   }
 
   private async resolveHostContext(): Promise<Record<string, unknown>> {
@@ -904,35 +984,24 @@ export class McpAppViewService implements McpAppViewApi {
   }
 
   private parseRpc(message: unknown): ParsedRpcOk | ParsedRpcError {
-    if (!message || typeof message !== 'object' || Array.isArray(message)) {
-      return { ok: false, id: null, error: '消息必须是 JSON-RPC 2.0 对象' }
-    }
-    const record = message as Record<string, unknown>
-    if (record.jsonrpc !== '2.0') return { ok: false, id: record.id ?? null, error: '缺少 jsonrpc:"2.0"' }
-    const method = typeof record.method === 'string' ? record.method : ''
-    if (!method || method.length > 128) return { ok: false, id: record.id ?? null, error: '缺少有效的方法名' }
-    let id: string | number | undefined
-    if (record.id !== undefined && record.id !== null) {
-      if (typeof record.id === 'string') {
-        if (record.id.length > 128) return { ok: false, id: null, error: '请求 ID 过长' }
-        id = record.id
-      } else if (typeof record.id === 'number' && Number.isFinite(record.id)) {
-        id = record.id
-      } else {
-        return { ok: false, id: null, error: '请求 ID 形状不合法' }
-      }
-    }
+    const parsed = JSONRPCMessageSchema.safeParse(message)
+    if (!parsed.success || !('method' in parsed.data)) return { ok: false, id: null, error: '无效的 JSON-RPC 请求' }
+    const record = parsed.data
+    const method = record.method
+    const id = 'id' in record ? record.id : undefined
+    if (typeof id === 'string' && id.length > 128) return { ok: false, id: null, error: '请求 ID 过长' }
+    if (method.length > 128) return { ok: false, id: null, error: '方法名过长' }
     let serialized: string
     try {
       serialized = JSON.stringify(message)
     } catch {
-      return { ok: false, id: record.id ?? null, error: '消息无法序列化' }
+      return { ok: false, id: id ?? null, error: '消息无法序列化' }
     }
     if (Buffer.byteLength(serialized, 'utf8') > this.maxMessageBytes) {
-      return { ok: false, id: record.id ?? null, error: '消息超过体积上限' }
+      return { ok: false, id: id ?? null, error: '消息超过体积上限' }
     }
     const params = record.params === undefined ? {} : asRecord(record.params)
-    if (!params) return { ok: false, id: record.id ?? null, error: 'params 必须是对象' }
+    if (!params) return { ok: false, id: id ?? null, error: 'params 必须是对象' }
     return { ok: true, id, method, params }
   }
 

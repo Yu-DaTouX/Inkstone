@@ -173,6 +173,7 @@ export function McpAppFrame({
   const [height, setHeight] = useState(160)
   const [rawHeight, setRawHeight] = useState<number | null>(null)
   const [reload, setReload] = useState(0)
+  const [tornDown, setTornDown] = useState(false)
   const [pipRect, setPipRect] = useState<FrameRect | null>(null)
   const [convRect, setConvRect] = useState<ConversationRect | null>(null)
   const viewportHeight = useViewportHeight()
@@ -189,7 +190,8 @@ export function McpAppFrame({
   useEffect(() => {
     const instanceId = descriptor.instanceId
     return () => {
-      void Promise.resolve(api.release(instanceId)).catch(() => undefined)
+      const teardown = channelRef.current?.dispose() ?? Promise.resolve()
+      void teardown.then(() => api.release(instanceId)).catch(() => undefined)
     }
   }, [api, descriptor.instanceId])
 
@@ -208,7 +210,7 @@ export function McpAppFrame({
   )
 
   useEffect(() => {
-    if (!trusted || !near) return undefined
+    if (!trusted || !near || tornDown) return undefined
     const channel = new McpAppChannel({
       instanceId: descriptor.instanceId,
       api: countedApi,
@@ -218,6 +220,15 @@ export function McpAppFrame({
         typeof api.hostContext === 'function' ? () => api.hostContext(descriptor.instanceId) : undefined,
       hooks: {
         onPhase: setPhase,
+        onDisplayMode: (mode) => {
+          if (mode === 'pip') setPipRect((current) => current ?? defaultPipRect(windowViewport()))
+          setForm(mode)
+        },
+        onTeardown: () => {
+          setTornDown(true)
+          void api.release(descriptor.instanceId)
+          onClose?.()
+        },
         onSizeChanged: (value) => {
           setRawHeight((current) => (current === null || Math.abs(current - value) > 1 ? value : current))
           setHeight(clampInlineHeight(value, viewportHeight))
@@ -226,6 +237,11 @@ export function McpAppFrame({
     })
     channelRef.current = channel
     channel.attach()
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      const rect = iframeRef.current?.getBoundingClientRect()
+      if (rect) channel.setContainerDimensions(rect.width, rect.height)
+    })
+    if (iframeRef.current) resizeObserver?.observe(iframeRef.current)
     const unsubscribe = channel.subscribe(setPhase)
     const themeWatcher = createMcpAppThemeWatcher(
       {
@@ -238,11 +254,23 @@ export function McpAppFrame({
     )
     return () => {
       themeWatcher.dispose()
+      resizeObserver?.disconnect()
       unsubscribe()
       channel.dispose()
       channelRef.current = null
     }
-  }, [trusted, near, descriptor.instanceId, countedApi, viewportHeight])
+  }, [trusted, near, descriptor.instanceId, countedApi, reload, tornDown])
+
+  useEffect(() => {
+    if (form === 'inline' || form === 'fullscreen' || form === 'pip') channelRef.current?.setDisplayMode(form)
+  }, [form])
+
+  const reloadApp = useCallback((): void => {
+    const teardown = channelRef.current?.dispose() ?? Promise.resolve()
+    void teardown.then(() => {
+      if (mountedRef.current) setReload((value) => value + 1)
+    })
+  }, [])
 
   const requestForm = useCallback(
     (next: ArtifactForm): void => {
@@ -344,6 +372,8 @@ export function McpAppFrame({
     }
   }
 
+  if (tornDown) return <></>
+
   if (!trusted) {
     return (
       <div className={`v3-mcp-app-invalid ${className ?? ''}`} role="alert" data-testid="v3-mcp-app-invalid">
@@ -402,7 +432,7 @@ export function McpAppFrame({
                   <PictureInPicture2 size={14} />
                 </IconButton>
               ) : null}
-              <IconButton aria-label={labels.reload} title={labels.reload} onPress={() => setReload((value) => value + 1)}>
+              <IconButton aria-label={labels.reload} title={labels.reload} onPress={reloadApp}>
                 <RefreshCw size={14} />
               </IconButton>
               <IconButton aria-label={form === 'pip' ? labels.exitPip : labels.exitFullscreen} title={form === 'pip' ? labels.exitPip : labels.exitFullscreen} onPress={exitToInline}>
@@ -433,9 +463,6 @@ export function McpAppFrame({
             allow={MCP_APP_FRAME_ALLOW}
             data-testid="v3-mcp-app-iframe"
             style={form === 'inline' && inlineOverflow && rawHeight ? { height: rawHeight, flex: 'none' } : undefined}
-            onLoad={() => {
-              channelRef.current?.nextGeneration()
-            }}
           />
         ) : (
           <div className="v3-artifact-frame-parked" role="status" data-testid="v3-mcp-app-parked">

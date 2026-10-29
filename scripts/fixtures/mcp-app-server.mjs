@@ -20,7 +20,7 @@ async function loadSpec() {
     outfile,
     bundle: true,
     format: 'esm',
-    platform: 'neutral',
+    platform: 'node',
     logLevel: 'silent'
   })
   return import(pathToFileURL(outfile).href)
@@ -59,7 +59,7 @@ const TOOLS = [
   },
   {
     name: 'no_visibility_note',
-    description: '不声明 visibility 的工具（fixture）：应按最严只给模型。',
+    description: '不声明 visibility 的工具（fixture）：按规范同时向模型和 App 开放。',
     inputSchema: { type: 'object', properties: {}, required: [] }
   },
   {

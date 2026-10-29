@@ -53,7 +53,7 @@ await build({
   outfile: specOutfile,
   bundle: true,
   format: 'esm',
-  platform: 'neutral',
+  platform: 'node',
   logLevel: 'silent'
 })
 
@@ -84,9 +84,9 @@ const host = await import(pathToFileURL(hostOutfile).href)
   ok(!host.isMcpAppMimeType(undefined), '规范：缺 MIME 被拒')
 
   const strict = host.mcpAppVisibilityOf(undefined)
-  ok(strict.length === 1 && strict[0] === 'model', '缺省最严：缺 _meta.ui 只给模型')
+  ok(strict.join(',') === 'model,app', '规范：缺 _meta.ui 同时向模型和 App 开放，调用仍走审批')
   ok(host.mcpAppVisibilityOf({ ui: { visibility: 'app' } })[0] === 'model', '缺省最严：visibility 不是数组时退回只给模型')
-  ok(host.mcpAppVisibilityOf({ ui: { visibility: [] } })[0] === 'model', '缺省最严：空 visibility 退回只给模型')
+  ok(host.mcpAppVisibilityOf({ ui: { visibility: [] } }).length === 0, '规范：空 visibility 不向任何调用方开放')
   const appOnly = host.mcpAppVisibilityOf({ ui: { visibility: ['app'] } })
   ok(appOnly.length === 1 && appOnly[0] === 'app', 'visible：声明 app 才给 App')
 
@@ -198,7 +198,7 @@ try {
     const appOnly = tools.find((tool) => tool.name === 'app_only_refresh')
     ok(appOnly?.appVisible === true && appOnly?.modelVisible === false, 'stdio：app-only 工具对模型不可见')
     const noVisibility = tools.find((tool) => tool.name === 'no_visibility_note')
-    ok(noVisibility?.modelVisible === true && noVisibility?.appVisible === false, 'stdio：缺 visibility 按最严只给模型')
+    ok(noVisibility?.modelVisible === true && noVisibility?.appVisible === true, 'stdio：缺 visibility 按规范同时向模型和 App 开放，调用仍走审批')
 
     const call = await appHost.callToolWithMeta('app-stdio', 'read_only_note', { text: 'hi' })
     ok(call.text === 'note:hi' && call.isError === false, 'stdio：callToolWithMeta 返回模型可见文本')
@@ -253,7 +253,7 @@ try {
     ok(tools.length === 5, 'HTTP：listToolsWithMeta 拿到全部工具', tools.map((tool) => tool.name).join(','))
     const readOnly = tools.find((tool) => tool.name === 'read_only_note')
     ok(readOnly?.resourceUri === 'ui://mcp-app/dashboard.html', 'HTTP：工具 _meta.ui.resourceUri 保真')
-    ok(tools.find((tool) => tool.name === 'no_visibility_note')?.appVisible === false, 'HTTP：缺 visibility 按最严只给模型')
+    ok(tools.find((tool) => tool.name === 'no_visibility_note')?.appVisible === true, 'HTTP：缺 visibility 按规范同时向模型和 App 开放')
 
     const call = await appHost.callToolWithMeta('app-http', 'read_only_note', { text: 'h2' })
     ok(call.resourceUri === 'ui://mcp-app/dashboard.html' && call.structuredContent?.note === 'h2', 'HTTP：调用结果 _meta 与 structuredContent 保真')
@@ -311,7 +311,7 @@ await build({
   outfile: specOutfile,
   bundle: true,
   format: 'esm',
-  platform: 'neutral',
+  platform: 'node',
   logLevel: 'silent'
 })
 const bundleDir = join(process.cwd(), '.tmp', 'MA2-proxy')
@@ -391,7 +391,7 @@ try {
 
     const toolNames = refreshed.tools.map((tool) => tool.name).sort()
     ok(toolNames.includes('mcp__app_stdio__read_only_note'), '注册名：mcp__<server>__<tool>（- 归一成 _）', toolNames.join(','))
-    ok(toolNames.includes('mcp__app_stdio__no_visibility_note'), '注册名：缺 visibility 的工具默认只给模型')
+    ok(toolNames.includes('mcp__app_stdio__no_visibility_note'), '注册名：缺 visibility 的工具默认对模型可见')
     ok(!toolNames.some((name) => name.includes('app_only_refresh')), '注册名：app-only 工具不注册')
 
     const readOnly = refreshed.tools.find((tool) => tool.toolName === 'read_only_note')
@@ -421,6 +421,8 @@ try {
 
     const fetched = service.getCallResult('call-1', owner)
     ok(fetched?.structuredContent?.note === 'hi', '只读结果接口：按 callId + owner 取回结构化结果')
+    ok(fetched?.arguments?.text === 'hi', '官方 tool-input：保留原始参数，不重跑工具')
+    ok(fetched?.result?.content?.[0]?.text === 'note:hi' && fetched?.result?.structuredContent?.note === 'hi', '官方 tool-result：保留 content 与 structuredContent')
     ok(service.getCallResult('call-1', { sessionId: 's-other', projectId: owner.projectId }) === null, '跨 owner 拒绝：别的 runner 读不到结果')
     ok(service.getCallResult('call-other', owner) === null, '只读结果接口：未知 callId 返回 null')
 
@@ -770,7 +772,7 @@ try {
   }
 
   {
-    const runtimeDir = selectedPiRuntime(resolve('resources/pi-runtime'))
+    const runtimeDir = selectedPiRuntime(resolve(process.env.YAN_TEST_PI_RUNTIME_ROOT ?? 'resources/pi-runtime'))
     const cli = join(runtimeDir, 'dist/bundle/cli.js')
     const piDir = join(root, 'pi')
     const extDir = join(piDir, 'extensions')
@@ -908,7 +910,7 @@ try {
       ok(readOnly?.parameters?.properties?.text?.type === 'string', '真实 pi：getAllTools() 保留 parameters schema')
       ok(readOnly?.description === '只读工具（fixture）：返回文本并声明 App 页面。', '真实 pi：getAllTools() 保留描述')
       ok(!tools.some((tool) => tool.name.includes('app_only_refresh')), '真实 pi：app-only 工具没有注册')
-      ok(tools.some((tool) => tool.name === 'mcp__app_stdio__slow'), '真实 pi：缺 visibility 的工具按最严仍给模型')
+      ok(tools.some((tool) => tool.name === 'mcp__app_stdio__slow'), '真实 pi：缺 visibility 的工具按规范仍对模型可见')
       ok(tools.length > 0 && tools.every((tool) => tool.exposure === 'deferred'), '真实 pi：托管工具的 exposure 保留为 deferred', tools.map((tool) => `${tool.name}=${tool.exposure}`).join(','))
 
       const declared = (request) => (request?.tools ?? []).map((tool) => tool?.function?.name ?? tool?.name).filter(Boolean)

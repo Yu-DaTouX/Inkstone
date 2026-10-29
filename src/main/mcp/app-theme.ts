@@ -1,3 +1,4 @@
+import { McpUiHostStylesSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import {
   APP_THEME_SHADOW_VARIABLES,
   APP_THEME_VARIABLES
@@ -88,6 +89,7 @@ function sanitizeVariables(value: unknown): Record<string, string> {
     if (!VARIABLE_NAME.test(name)) continue
     if (typeof raw !== 'string' || raw.length > VARIABLE_VALUE_MAX) continue
     if (raw.includes(';') || raw.includes('\n') || raw.includes('\r')) continue
+    if (!McpUiHostStylesSchema.safeParse({ variables: { [name]: raw } }).success) continue
     out[name] = raw
   }
   return out
@@ -96,7 +98,7 @@ function sanitizeVariables(value: unknown): Record<string, string> {
 const HOST_CONTEXT_DEFAULTS: Readonly<Record<string, unknown>> = {
   platform: 'desktop',
   displayMode: 'inline',
-  availableDisplayModes: ['inline']
+  availableDisplayModes: ['inline', 'fullscreen', 'pip']
 }
 
 export interface McpAppHostContextInput {

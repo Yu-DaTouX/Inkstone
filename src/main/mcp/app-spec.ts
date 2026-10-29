@@ -1,3 +1,4 @@
+import { getToolUiResourceUri, McpUiToolMetaSchema, McpUiResourceCspSchema, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpServerConfig } from '../../shared/mcp'
 import { MCP_APP_METHODS } from '../../shared/mcp-app-methods'
 
@@ -5,18 +6,15 @@ export { MCP_APP_METHODS }
 
 export const MCP_APP_EXTENSION_ID = 'io.modelcontextprotocol/ui'
 
-export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
+export const MCP_APP_MIME_TYPE = RESOURCE_MIME_TYPE
 
 export const MCP_APP_RESOURCE_MAX_BYTES = 2 * 1024 * 1024
 
 export const MCP_APP_META_UI = 'ui'
-const MCP_APP_META_RESOURCE_URI = 'resourceUri'
-const MCP_APP_META_CSP = 'csp'
-const MCP_APP_META_VISIBILITY = 'visibility'
 
 export type McpAppVisibility = 'model' | 'app'
 
-const MCP_APP_DEFAULT_VISIBILITY: readonly McpAppVisibility[] = ['model']
+const MCP_APP_DEFAULT_VISIBILITY: readonly McpAppVisibility[] = ['model', 'app']
 
 export interface McpAppCsp {
   connectDomains?: string[]
@@ -37,37 +35,24 @@ function uiMetaOf(meta: unknown): Record<string, unknown> | null {
 }
 
 export function mcpAppResourceUriOf(meta: unknown): string | null {
-  const uri = uiMetaOf(meta)?.[MCP_APP_META_RESOURCE_URI]
-  return typeof uri === 'string' && uri.trim() ? uri : null
+  try {
+    return getToolUiResourceUri({ _meta: meta as Record<string, unknown> }) ?? null
+  } catch {
+    return null
+  }
 }
 
 export function mcpAppVisibilityOf(meta: unknown): McpAppVisibility[] {
-  const raw = uiMetaOf(meta)?.[MCP_APP_META_VISIBILITY]
-  if (!Array.isArray(raw)) return [...MCP_APP_DEFAULT_VISIBILITY]
-  const values = raw.filter((value): value is McpAppVisibility => value === 'model' || value === 'app')
-  return values.length ? [...new Set(values)] : [...MCP_APP_DEFAULT_VISIBILITY]
+  const ui = uiMetaOf(meta)
+  if (!ui && meta && typeof meta === 'object' && 'ui' in meta) return ['model']
+  if (!ui || ui.visibility === undefined) return [...MCP_APP_DEFAULT_VISIBILITY]
+  const parsed = McpUiToolMetaSchema.safeParse({ visibility: ui.visibility })
+  return parsed.success ? [...new Set(parsed.data.visibility ?? MCP_APP_DEFAULT_VISIBILITY)] : ['model']
 }
 
 export function mcpAppCspOf(meta: unknown): McpAppCsp | null {
-  const raw = uiMetaOf(meta)?.[MCP_APP_META_CSP]
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const source = raw as Record<string, unknown>
-  const list = (key: string): string[] | undefined => {
-    const value = source[key]
-    if (!Array.isArray(value)) return undefined
-    const domains = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    return domains.length ? domains : undefined
-  }
-  const csp: McpAppCsp = {}
-  const connect = list('connectDomains')
-  if (connect) csp.connectDomains = connect
-  const resource = list('resourceDomains')
-  if (resource) csp.resourceDomains = resource
-  const frame = list('frameDomains')
-  if (frame) csp.frameDomains = frame
-  const baseUri = list('baseUriDomains')
-  if (baseUri) csp.baseUriDomains = baseUri
-  return Object.keys(csp).length ? csp : null
+  const parsed = McpUiResourceCspSchema.safeParse(uiMetaOf(meta)?.csp)
+  return parsed.success ? parsed.data : null
 }
 
 export function isMcpAppMimeType(mimeType: string | null | undefined): boolean {

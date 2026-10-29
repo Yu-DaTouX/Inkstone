@@ -185,6 +185,7 @@ function makeHarness(options = {}) {
   const serviceOptions = {
     proxy,
     host,
+    hostRequests: options.hostRequests,
     ownerGuard,
     runtime: {
       resolve: options.resolve ?? (async ({ callId }) => callFacts.get(callId) ?? null),
@@ -224,7 +225,7 @@ function factsFor(sessionId, runnerId, generation, sessionFile = `/sessions/${se
 const rpc = (method, params, id) => ({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), method, params })
 
 async function init(service, instanceId, id = 1) {
-  return service.dispatch(instanceId, rpc('ui/initialize', {}, id))
+  return service.dispatch(instanceId, rpc('inkstone/activate', {}, id))
 }
 
 await (async () => {
@@ -438,7 +439,7 @@ await (async () => {
   const pendingB = service.dispatch(b.instanceId, rpc('tools/call', { name: 'read', arguments: {} }, 13))
   await delay(10)
   await service.release(a.instanceId)
-  const releasedAgain = await service.dispatch(a.instanceId, rpc('ui/initialize', {}, 14))
+  const releasedAgain = await service.dispatch(a.instanceId, rpc('inkstone/activate', {}, 14))
   ok(releasedAgain?.error?.code === -32600, '释放后实例不可再用')
   callGate.resolve({
     result: { content: [{ type: 'text', text: 'b-ok' }] },
@@ -454,7 +455,7 @@ await (async () => {
   ok(state.callLog.length === 1 && state.callLog[0].toolName === 'read', '只有 B 的工具被执行')
 
   service.close()
-  const afterClose = await service.dispatch(b.instanceId, rpc('ui/initialize', {}, 15))
+  const afterClose = await service.dispatch(b.instanceId, rpc('inkstone/activate', {}, 15))
   ok(afterClose?.error?.code === -32600, 'close 取消全部实例')
 })()
 
@@ -607,7 +608,7 @@ await (async () => {
   ok(text.length < 40_000 && text.includes('已截断'), '大结果：文本内容截到 32KB 以内并带占位', String(text.length))
 
   const mode = await harness.service.dispatch(prepared.instanceId, rpc('ui/request-display-mode', { mode: 'fullscreen' }, 9))
-  ok(mode?.result?.displayMode === 'inline', '显示模式：只回报 inline', JSON.stringify(mode?.result))
+  ok(mode?.error?.code === -32601, '显示模式由官方 AppBridge 处理，不转发到主进程协议', JSON.stringify(mode))
 })()
 
 await (async () => {
@@ -625,6 +626,45 @@ await (async () => {
   ok(again.kind === 'ready', 'reload：清空后可以重新准备（不会 8 次后永久不可用）')
   void facts
   void secondCallId
+})()
+
+await (async () => {
+  const effects = []
+  const hostRequests = {
+    message: async (text, facts) => effects.push(['message', text, facts.runnerId]),
+    openLink: async (url, facts) => effects.push(['link', url, facts.runnerId]),
+    downloadFile: async (contents, facts) => effects.push(['download', contents.length, facts.runnerId])
+  }
+  const { service, state } = makeHarness({ name: 'sdk-host-requests', hostRequests })
+  const prepared = await service.prepare('call-1')
+  const initialized = await init(service, prepared.instanceId)
+  ok(initialized.result.hostCapabilities.message.text !== undefined && initialized.result.hostCapabilities.openLinks !== undefined && initialized.result.hostCapabilities.downloadFile !== undefined, '握手只声明实际接线的宿主能力')
+  ok(Object.keys(initialized.result.hostCapabilities.sandbox.permissions).length === 0, '沙箱明确不授予浏览器设备权限')
+  for (const [id, method, params] of [
+    [201, 'ui/message', { role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+    [202, 'ui/open-link', { url: 'https://example.com/path' }],
+    [203, 'ui/download-file', { contents: [{ type: 'resource', resource: { uri: 'file:///export.txt', text: 'hello' } }] }]
+  ]) {
+    const response = await service.dispatch(prepared.instanceId, rpc(method, params, id))
+    ok(response.result && !response.result.isError, `宿主请求通过审批：${method}`)
+  }
+  ok(effects.length === 3 && effects.every((effect) => effect[2] === 'r1'), '宿主副作用使用绑定的 runner，不从前台会话猜测')
+  ok(state.askLog.length === 3 && state.askLog.every((request) => request.runId === 'r1' && request.canRemember === false), '消息/链接/下载逐次审批，不能借只读信任跳过')
+  const audit = await service.audit('call-1')
+  ok(audit.filter((entry) => entry.phase === 'completed').length === 3, '三类宿主请求都保留审计')
+  const invalid = await service.dispatch(prepared.instanceId, rpc('ui/message', { role: 'user', content: [{ type: 'image', data: 'aA==', mimeType: 'image/png' }] }, 204))
+  ok(invalid.error?.code === -32602 && effects.length === 3, '未声明的消息模态不执行')
+  state.activeSessions.delete('s1')
+  const stale = await service.dispatch(prepared.instanceId, rpc('ui/open-link', { url: 'https://example.com' }, 205))
+  ok(stale.error?.code === -32001 && effects.length === 3, '归属失效后宿主请求同样拒绝')
+  service.close()
+
+  const denied = makeHarness({ name: 'sdk-host-denied', hostRequests, ask: async () => ({ choice: 'deny' }) })
+  const deniedPrepared = await denied.service.prepare('call-1')
+  await init(denied.service, deniedPrepared.instanceId)
+  const refused = await denied.service.dispatch(deniedPrepared.instanceId, rpc('ui/message', { role: 'user', content: [{ type: 'text', text: 'no' }] }, 206))
+  ok(refused.result?.isError === true && effects.length === 3, '用户拒绝时返回规范 isError，不执行副作用')
+  denied.service.close()
 })()
 
 await rm(root, { recursive: true, force: true })
