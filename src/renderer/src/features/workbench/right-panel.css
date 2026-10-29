@@ -98,11 +98,6 @@
     min-width: 0;
     overflow: hidden;
   }
-  .rp-sub-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .rp-sub-tools {
     display: inline-flex;
     flex: none;

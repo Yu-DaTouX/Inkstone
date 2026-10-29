@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 
 export const TREE_WIDTH_KEY = 'inkstone.v3.files.treeWidth'
-export const TREE_SHOWN_KEY = 'inkstone.v3.files.treeShown'
-export const TREE_WIDTH_DEFAULT = 240
+export const TREE_SHOWN_KEY = 'inkstone.v3.files.treeOpen'
+export const TREE_WIDTH_DEFAULT = 220
+export const TREE_AUTO_WIDTH = 760
 export const TREE_WIDTH_MIN = 160
 export const TREE_WIDTH_MAX = 640
 export const PREVIEW_MIN_WIDTH = 160
@@ -21,6 +22,14 @@ export function clampTreeWidth(width: number, paneWidth: number): number {
 export function readTreeWidth(raw: string | null): number {
   const value = Number(raw)
   return Number.isFinite(value) && value >= TREE_WIDTH_MIN && value <= TREE_WIDTH_MAX ? value : TREE_WIDTH_DEFAULT
+}
+
+export function readTreeShown(raw: string | null): boolean | null {
+  return raw === '1' ? true : raw === '0' ? false : null
+}
+
+export function resolveTreeShown(stored: boolean | null, paneWidth: number, hasFile: boolean): boolean {
+  return stored ?? (!hasFile || paneWidth >= TREE_AUTO_WIDTH)
 }
 
 export interface FilesSplitLayout {
@@ -76,12 +85,13 @@ export interface FilesSplit {
   resetWidth: () => void
 }
 
-export function useFilesSplit(): FilesSplit {
+export function useFilesSplit(hasFile: boolean): FilesSplit {
   const [host, setHost] = useState<HTMLElement | null>(null)
   const [paneWidth, setPaneWidth] = useState(0)
   const [storedWidth, setStoredWidth] = useState(() => readTreeWidth(readStored(TREE_WIDTH_KEY)))
   const [dragWidth, setDragWidth] = useState<number | null>(null)
-  const [treeShown, setTreeShown] = useState(() => readStored(TREE_SHOWN_KEY) !== '0')
+  const [storedShown, setStoredShown] = useState(() => readTreeShown(readStored(TREE_SHOWN_KEY)))
+  const treeShown = resolveTreeShown(storedShown, paneWidth, hasFile)
   const paneWidthRef = useRef(0)
   paneWidthRef.current = paneWidth
   const dragStopRef = useRef<(() => void) | null>(null)
@@ -105,7 +115,7 @@ export function useFilesSplit(): FilesSplit {
   }, [])
 
   const setShown = useCallback((next: boolean): void => {
-    setTreeShown(next)
+    setStoredShown(next)
     writeStored(TREE_SHOWN_KEY, next ? '1' : '0')
   }, [])
 

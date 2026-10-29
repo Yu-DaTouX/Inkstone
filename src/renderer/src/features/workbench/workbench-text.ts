@@ -73,7 +73,6 @@ export interface WorkbenchText {
   paneMenu: (name: string) => string
   moveBesideChat: string
   viewOptions: string
-  changesScope: string
   move: string
   moveInstructions: string
   movedTo: (name: string, position: number, count: number) => string
@@ -109,7 +108,6 @@ const ZH: WorkbenchText = {
   paneMenu: (name) => `${name}设置`,
   moveBesideChat: '移到对话旁',
   viewOptions: '视图选项',
-  changesScope: '工作区',
   move: '移动',
   moveInstructions: '用方向键调整面板位置：沿排列方向换位，垂直方向先预览再按回车移过去，Esc 取消。拖动时拖出面板左侧可移到对话旁，按 Esc 还原。',
   movedTo: (name, position, count) => `「${name}」移到第 ${position} / ${count} 个位置`,
@@ -208,7 +206,6 @@ const EN: WorkbenchText = {
   paneMenu: (name) => `${name} settings`,
   moveBesideChat: 'Move beside chat',
   viewOptions: 'View options',
-  changesScope: 'Working tree',
   move: 'Move',
   moveInstructions: 'Use the arrow keys to move the panel: along its row or column to reorder, across it to preview a move, then Enter. Escape cancels. While dragging, drop left of the panel to move it beside the chat; Escape restores it.',
   movedTo: (name, position, count) => `${name} is now in position ${position} of ${count}.`,

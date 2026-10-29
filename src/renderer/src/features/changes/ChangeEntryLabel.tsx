@@ -29,8 +29,19 @@ export function ChangeStatusMark({ item, lang, text }: { item: ChangeItem; lang?
   )
 }
 
-export function ChangePathLabel({ path, mark }: { path: string; mark?: ReactNode }): ReactElement {
+export function ChangePathLabel({ path, mark, stacked }: { path: string; mark?: ReactNode; stacked?: boolean }): ReactElement {
   const { name, dir } = splitChangePath(path)
+  if (stacked) {
+    return (
+      <span className="changes-path changes-path--stacked" title={path}>
+        {mark}
+        <span className="changes-path__lines">
+          <span className="changes-path__name">{name}</span>
+          {dir ? <span className="changes-path__tail">{`\u200e${dir}\u200e`}</span> : null}
+        </span>
+      </span>
+    )
+  }
   return (
     <span className="changes-path" title={path}>
       {mark}

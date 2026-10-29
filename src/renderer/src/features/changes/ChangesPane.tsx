@@ -1,6 +1,6 @@
 import { uiText } from '../../i18n/ui-text'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from 'react'
-import { ChevronDown, FlaskConical, GitCompare, List, RefreshCw } from 'lucide-react'
+import { ChevronDown, FlaskConical, List, RefreshCw } from 'lucide-react'
 import type { GitActionExpected } from '../../../../shared/git-actions'
 import type { GitChangePatch, GitStatusEntry } from '../../../../shared/git'
 import {
@@ -26,7 +26,7 @@ import { useStore } from '../../state/store'
 import type { DiffViewMode } from '../diff'
 import { serializeLineComment, type CommentLang } from '../preview/code-line-comment'
 import { changesText } from './text'
-import { PaneTools, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
+import { PaneTitle, PaneTools, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import {
   WORKING_SCOPE,
   commitScope,
@@ -187,6 +187,21 @@ type ListOutcome =
 
 const SCOPE_KINDS: readonly ChangesScopeKind[] = ['working', 'branch', 'commit']
 
+function firstTextDiffPath(items: readonly ChangeItem[], patches: Record<string, GitChangePatch>): string | null {
+  let fallback: string | null = null
+  for (const item of items) {
+    const kind = resolvePatchSource(item.path, patches[item.path]).kind
+    if (kind !== 'inline' && kind !== 'fetch') continue
+    if ((item.added ?? 1) + (item.removed ?? 1) > 0) return item.path
+    fallback ??= item.path
+  }
+  return fallback
+}
+
+function onlyFirst(path: string | null): Set<string> {
+  return new Set(path ? [path] : [])
+}
+
 export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: ChangesPaneProps): ReactElement {
   const { lang: uiLang, t } = useI18n()
   const resolvedLang = lang ?? uiLang
@@ -309,7 +324,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
             initRef.current = initKey
             const width = paneWidthRef.current
             unsizedInitRef.current = width <= 0
-            setExpanded(isLargeDiff(listRes.items) || isCompactPane(width) ? new Set() : new Set(listRes.items.map((item) => item.path)))
+            setExpanded(
+              isLargeDiff(listRes.items) || isCompactPane(width)
+                ? onlyFirst(firstTextDiffPath(listRes.items, listRes.patches))
+                : new Set(listRes.items.map((item) => item.path))
+            )
             setCollapsedDirs(new Set())
             setBinaryOpen(false)
             setActivePath(null)
@@ -361,8 +380,8 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   useEffect(() => {
     if (!unsizedInitRef.current || fileList.paneWidth <= 0) return
     unsizedInitRef.current = false
-    if (fileList.compact) setExpanded(new Set())
-  }, [fileList.paneWidth, fileList.compact])
+    if (fileList.compact) setExpanded(onlyFirst(firstTextDiffPath(items, patches)))
+  }, [fileList.paneWidth, fileList.compact, items, patches])
   const binaryPaths = useMemo(
     () => new Set(shownItems.filter((item) => resolvePatchSource(item.path, patches[item.path]).kind === 'binary').map((item) => item.path)),
     [shownItems, patches]
@@ -537,10 +556,15 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     commit: text.scopeCommit
   }
 
+  const branchLabel = repo ? (repo.detached ? text.detached : repo.branch ?? text.noBranch) : ''
+  const changeCount = repo ? (scope.kind === 'working' ? repo.changedCount : items.length) : null
+  const countLabel =
+    changeCount === null ? '' : `${changeCount} ${text.changed}${repo?.unborn ? ` \u00b7 ${text.unborn}` : ''}`
+
   const scopeMenu = source.changes ? (
     <MenuTrigger>
-      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} icon={<GitCompare size={14} aria-hidden="true" />}>
-        {scopeLabels[scope.kind]}
+      <Button size="sm" variant="ghost" aria-label={text.scopeLabel} title={repo?.root} className="changes-pane__scope">
+        {branchLabel ? `${branchLabel} \u2192 ${scopeLabels[scope.kind]}` : scopeLabels[scope.kind]}
         <ChevronDown size={12} aria-hidden="true" />
       </Button>
       <Popover placement="bottom end">
@@ -680,11 +704,24 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
   }, [resolvedLang, t])
 
   const head = (
-    <PaneTools>
-      {scopeMenu}
-      {listToggle}
-      {refreshButton}
-    </PaneTools>
+    <>
+      {scopeMenu ? (
+        <PaneTitle>
+          <span className="changes-pane__title">
+            {scopeMenu}
+            {countLabel ? (
+              <span className="changes-pane__count" data-testid="changes-stats">
+                {countLabel}
+              </span>
+            ) : null}
+          </span>
+        </PaneTitle>
+      ) : null}
+      <PaneTools>
+        {listToggle}
+        {refreshButton}
+      </PaneTools>
+    </>
   )
 
   const problem = repo ? '' : error ? classifyProblem(error, text) : text.notRepo
@@ -698,37 +735,14 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
     <section className={cx('changes-pane', className)} aria-label={text.title} ref={fileList.hostRef} data-compact={fileList.compact ? '' : undefined}>
       {head}
       {!owner.active ? hint(text.inactiveHint) : null}
-      {repo ? (
+      {repo && scope.kind !== 'working' ? (
         <div className="changes-pane__summary">
-          <div className="changes-pane__repo">
-            <span className="changes-pane__repo-name" title={repo.root}>
-              {repo.name}
-            </span>
-            <span className="changes-pane__branch">
-              {repo.detached ? text.detached : repo.branch ?? text.noBranch}
-              {repo.unborn ? ` · ${text.unborn}` : ''}
-            </span>
+          <div className="changes-pane__compare">
+            {compareWith ? <span className="changes-pane__compare-label" title={compareWith}>{text.compareWith(compareWith)}</span> : null}
+            {meta.added !== null && meta.removed !== null ? (
+              <DiffStat added={meta.added} removed={meta.removed} aria-label={text.totalLines(meta.added, meta.removed)} />
+            ) : null}
           </div>
-          {scope.kind === 'working' ? (
-            <p className="changes-pane__stats" data-testid="changes-stats">
-              {[
-                { label: text.changed, count: repo.changedCount, always: true },
-                { label: text.staged, count: repo.stagedCount },
-                { label: text.unstaged, count: repo.unstagedCount },
-                { label: text.untracked, count: repo.untrackedCount }
-              ]
-                .filter((part) => part.always || part.count > 0)
-                .map((part) => `${part.count} ${part.label}`)
-                .join(' \u00b7 ')}
-            </p>
-          ) : (
-            <div className="changes-pane__compare">
-              {compareWith ? <span className="changes-pane__compare-label" title={compareWith}>{text.compareWith(compareWith)}</span> : null}
-              {meta.added !== null && meta.removed !== null ? (
-                <DiffStat added={meta.added} removed={meta.removed} aria-label={text.totalLines(meta.added, meta.removed)} />
-              ) : null}
-            </div>
-          )}
           {scope.kind === 'commit' ? (
             <form className="changes-pane__sha" onSubmit={applySha}>
               <TextField
@@ -948,7 +962,11 @@ export function ChangesPane({ owner, gitSource, loadPatch, lang, className }: Ch
               <Button isDisabled={!canAct} onPress={() => void runAction('stage-all')}>
                 {text.stageAll}
               </Button>
-              <Button variant="primary" isDisabled={!canAct || !message.trim()} onPress={() => void runAction('commit')}>
+              <Button
+                variant={canAct && message.trim() ? 'primary' : 'secondary'}
+                isDisabled={!canAct || !message.trim()}
+                onPress={() => void runAction('commit')}
+              >
                 {text.commitAction}
               </Button>
             </div>

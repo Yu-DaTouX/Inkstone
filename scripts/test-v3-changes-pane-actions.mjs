@@ -68,6 +68,7 @@ export function translate(_lang, key) { return String(key) }`
 const UI_TEXT_STUB = `export function uiText(key) { return String(key) }`
 
 const CHROME_STUB = `export function PaneTools() { return null }
+export function PaneTitle() { return null }
 export function usePaneChrome() { return null }
 export function usePaneMenu() {}`
 

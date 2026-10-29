@@ -48,7 +48,6 @@ import { OverviewPane } from './OverviewPane'
 import { PaneChromeContext, paneMenuSignature, type PaneChrome, type PaneMenuItem } from './pane-chrome'
 import { previewPathFor, type PreviewOpenOptions } from './preview-state'
 import { usePreviewBindings } from './preview-bindings'
-import { useWorkspaceBranch } from './use-workspace-branch'
 import { rightPanelText, type RightPanelText } from './right-panel-text'
 import { workbenchText, type WorkbenchText } from './workbench-text'
 import { WORKBENCH_ACTIVE_TABS, type PreviewPaneProps, type WorkbenchPaneComponents, type WorkbenchTabId, type WorkspaceOwner } from './types'
@@ -459,7 +458,6 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
   const chrome = useMemo<PaneChrome>(() => ({ title: titleEl, tools: toolsEl, setMenu }), [titleEl, toolsEl, setMenu])
   const previewPath = usePreviewBindings((s) => previewPathFor(s.bindings, owner.key))
   const tool = surface.kind !== 'file' && surface.kind !== 'pullRequest' && surface.kind !== 'subagent' && surface.kind !== 'overview' ? surface.kind : null
-  const branch = useWorkspaceBranch(owner.cwd || null, shown && tool === 'changes')
   const blocked = !!tool && !owner.active && WORKBENCH_ACTIVE_TABS.has(tool)
   const extraItems: PaneMenuItem[] =
     tool === 'files' && previewPath
@@ -526,9 +524,7 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
     >
       {subHeader ? (
         <div className="rp-sub" data-testid={`rp-sub-${surface.id}`}>
-          <span className="rp-sub-title" ref={setTitleEl}>
-            {tool === 'changes' && branch ? <span className="rp-sub-name" title={`${branch} → ${text.changesScope}`}>{branch} → {text.changesScope}</span> : null}
-          </span>
+          <span className="rp-sub-title" ref={setTitleEl} />
           <span className="rp-sub-tools" ref={setToolsEl} />
           {allItems.length ? (
             <MenuTrigger>

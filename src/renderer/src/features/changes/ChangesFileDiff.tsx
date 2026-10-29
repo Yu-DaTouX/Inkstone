@@ -40,6 +40,19 @@ function samePatchText(patch: string): string {
   return (body < 0 ? text : text.slice(body)).trim()
 }
 
+function patchLineCounts(patch: string): { added: number; removed: number } {
+  let added = 0
+  let removed = 0
+  let inHunk = false
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('@@')) inHunk = true
+    else if (!inHunk) continue
+    else if (line.startsWith('+')) added += 1
+    else if (line.startsWith('-')) removed += 1
+  }
+  return { added, removed }
+}
+
 export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
   const { item, entry, cwd, request, loader, schedule, tick, lang, text, mode, expanded, onToggle, onRetry, annotate } = props
   const [state, setState] = useState<PatchState>({ kind: 'idle' })
@@ -100,7 +113,10 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
     return value.contents
   }, [loader, schedule, cwd, item.path, request])
 
-  const counts = state.kind !== 'binary' && (item.added !== undefined || item.removed !== undefined)
+  const known = item.added !== undefined || item.removed !== undefined
+  const derived = useMemo(() => (!known && state.kind === 'patch' && !state.truncated ? patchLineCounts(state.patch) : null), [known, state])
+  const lineCounts = known ? { added: item.added ?? 0, removed: item.removed ?? 0 } : derived
+  const counts = state.kind !== 'binary' && lineCounts !== null
 
   const note = (message: string): ReactElement => (
     <Notice variant="hint" className="changes-file__note">
@@ -177,9 +193,9 @@ export function ChangesFileDiff(props: ChangesFileDiffProps): ReactElement {
         <CollapsibleHeader
           className="changes-file__head"
           tone="emphasized"
-          accessory={counts ? <DiffStat added={item.added ?? 0} removed={item.removed ?? 0} /> : undefined}
+          accessory={counts && lineCounts ? <DiffStat added={lineCounts.added} removed={lineCounts.removed} /> : undefined}
         >
-          <ChangePathLabel path={item.path} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
+          <ChangePathLabel stacked path={item.path} mark={<ChangeStatusMark item={item} lang={lang} text={text} />} />
         </CollapsibleHeader>
         <CollapsiblePanel className="changes-file__body">{open ? body() : null}</CollapsiblePanel>
       </Collapsible>

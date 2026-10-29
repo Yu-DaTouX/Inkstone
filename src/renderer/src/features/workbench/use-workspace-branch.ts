@@ -95,10 +95,6 @@ function useWorkspaceGit(cwd: string | null, enabled: boolean): WorkspaceGitSnap
   return snapshot
 }
 
-export function useWorkspaceBranch(cwd: string | null, enabled: boolean): string | null {
-  return useWorkspaceGit(cwd, enabled).branch
-}
-
 export function useWorkspaceHasChanges(cwd: string | null, enabled: boolean): boolean {
   return useWorkspaceGit(cwd, enabled).dirty
 }

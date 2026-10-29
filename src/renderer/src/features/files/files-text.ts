@@ -24,6 +24,7 @@ export interface FilesText {
   goToFile: string
   searchLabel: string
   searchPlaceholder: string
+  searchIn: (root: string) => string
   searchClear: string
   searching: string
   searchEmpty: string
@@ -94,6 +95,7 @@ const ZH: FilesText = {
   goToFile: '转到文件或搜索',
   searchLabel: '筛选文件',
   searchPlaceholder: '筛选文件',
+  searchIn: (root) => `筛选 ${root}`,
   searchClear: '清除筛选',
   searching: '正在搜索文件',
   searchEmpty: '没有匹配的文件',
@@ -164,6 +166,7 @@ const EN: FilesText = {
   goToFile: 'Go to file or search',
   searchLabel: 'Filter files',
   searchPlaceholder: 'Filter files',
+  searchIn: (root) => `Filter ${root}`,
   searchClear: 'Clear filter',
   searching: 'Searching files',
   searchEmpty: 'No matching files',

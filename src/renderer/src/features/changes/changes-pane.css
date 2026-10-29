@@ -24,38 +24,25 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .changes-pane__repo {
+  .changes-pane__title {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--s-8);
-  }
-
-  .changes-pane__repo-name {
+    align-items: center;
+    gap: var(--s-6);
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--fg);
-    font-size: var(--t-heading);
-    font-weight: var(--t-heading-w);
+    margin-inline-start: calc(var(--s-8) * -1);
   }
 
-  .changes-pane__branch {
-    flex: 0 0 auto;
-    color: var(--fg3);
-    font-family: var(--font-mono);
-    font-size: var(--t-footnote);
+  .changes-pane__scope {
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
-  .changes-pane__stats {
-    margin: var(--s-4) 0 0;
-    overflow: hidden;
+  .changes-pane__count {
+    flex: none;
     color: var(--fg3);
     font-size: var(--t-footnote);
     line-height: var(--t-footnote-lh);
     font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
@@ -64,7 +51,6 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--s-8);
-    margin-top: var(--s-8);
   }
 
   .changes-pane__compare-label {
@@ -242,6 +228,50 @@
     border-bottom: 1px solid var(--line);
   }
 
+  .changes-file__head .ui-collapsible__trigger {
+    height: auto;
+    min-height: var(--size-bar);
+    padding-block: var(--s-4);
+  }
+
+  .changes-file__head .ui-collapsible__label {
+    flex: 1 1 auto;
+  }
+
+  .changes-file__head .ui-collapsible__accessory {
+    min-width: 10ch;
+    justify-content: flex-end;
+  }
+
+  .changes-path--stacked {
+    flex: 1 1 auto;
+  }
+
+  .changes-path__lines {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .changes-path--stacked .changes-path__name {
+    font-size: var(--t-body);
+    line-height: var(--t-body-lh);
+  }
+
+  .changes-path__tail {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-regular);
+  }
+
   .changes-path {
     display: flex;
     align-items: baseline;
@@ -322,8 +352,8 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: var(--s-6);
-    padding: var(--s-6) var(--s-8);
+    gap: var(--s-8);
+    padding: var(--s-12);
     background: var(--surface);
     border-top: 1px solid var(--line);
   }
