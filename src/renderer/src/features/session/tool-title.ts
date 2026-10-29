@@ -1,6 +1,9 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import { isDangerDenial } from '../../../../shared/danger-block'
+import { mcpTarget } from '../../../../shared/mcp-approval'
 import type { SessionTextKey } from './text'
+import { readFileDiff } from './turn-changes'
+import { firstLinePreview, readLineRange, scalarArgValues } from './tool-output'
 
 type StepCategory = 'read' | 'bash' | 'edit' | 'write' | 'grep' | 'ls' | 'web' | 'other'
 
@@ -151,14 +154,22 @@ export function toolTarget(call: Pick<UIToolCall, 'name' | 'args'>): string {
   if (typeof args.pattern === 'string') return args.pattern
   if (typeof args.query === 'string') return args.query
   if (typeof args.url === 'string') return args.url
-  const keys = Object.keys(args)
-  return keys.length ? keys.slice(0, 3).join(', ') : ''
+  return scalarArgValues(args).join(' \u00b7 ')
 }
 
 export interface ToolStepTitle {
   label: string
   meta: string
   code: boolean
+  hint?: string
+}
+
+const COMMAND_PREVIEW = 60
+
+function readRangeText(call: Pick<UIToolCall, 'args'>, tt: StepTextKey): string {
+  const range = readLineRange(call.args)
+  if (!range) return ''
+  return range.to === null ? tt('stepLinesFrom', { a: range.from }) : tt('stepLines', { a: range.from, b: range.to })
 }
 
 const TODO_NAMES = new Set(['todo', 'todos', 'todo_write', 'update_todos'])
@@ -170,17 +181,27 @@ function todoStepTitle(call: Pick<UIToolCall, 'args'>, tt: StepTextKey): ToolSte
 }
 
 export function toolStepTitle(
-  call: Pick<UIToolCall, 'name' | 'args' | 'status' | 'cancelled' | 'denied' | 'output'>,
+  call: Pick<UIToolCall, 'name' | 'args' | 'status' | 'cancelled' | 'denied' | 'output'> & { details?: unknown },
   tt: StepTextKey
 ): ToolStepTitle {
   if (TODO_NAMES.has(bareName(call.name))) return todoStepTitle(call, tt)
   const category = stepCategory(call.name)
-  const verb = stepVerbKey(call, tt)
   const description = category === 'bash' ? stepDescription(call) : ''
-  if (description) return { label: description, meta: '', code: false }
+  if (description) return { label: description, meta: firstLinePreview(redactCommandSecrets(commandText(call)), COMMAND_PREVIEW), code: true }
+  const overwrote = category === 'write' && stepState(call) === 'done' && readFileDiff(call.details)?.status === 'modified'
+  const verb = overwrote ? tt('stepOverwrote') : stepVerbKey(call, tt)
+  const target = toolTarget(call)
+  if (category === 'read') {
+    const range = readRangeText(call, tt)
+    return { label: verb ?? call.name, meta: [target, range].filter(Boolean).join(' \u00b7 '), code: false }
+  }
+  if (category === 'other' && call.name.startsWith('mcp__')) {
+    const { server, tool } = mcpTarget(call.name)
+    return { label: tool || call.name, meta: target, code: false, hint: server ? tt('stepMcpServer', { server }) : undefined }
+  }
   return {
     label: verb ?? call.name,
-    meta: toolTarget(call),
-    code: category === 'bash' && !stepDescription(call)
+    meta: target,
+    code: category === 'bash'
   }
 }

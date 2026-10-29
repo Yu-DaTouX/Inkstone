@@ -39,6 +39,7 @@ async function loadView() {
   await writeFile(entry, [
     `export { SearchStepView } from '${session}/web-search/SearchStep.tsx'`,
     `export { CitationLink } from '${session}/web-search/citations.tsx'`,
+    `export { webSearchText } from '${session}/web-search/text.ts'`,
     `export { I18nProvider } from '${i18n}'`
   ].join('\n'))
   const outfile = resolve(OUT, 'bundle-view.mjs')
@@ -461,6 +462,8 @@ async function run() {
     ok(runningHtml.includes('electron WebContentsView'), '胶囊显示查询词')
     ok(runningHtml.includes('ws-ring-arc'), '运行中地球图标外圈有进度环')
     ok(!runningHtml.includes('id="plain"'), '有胶囊时不再渲染普通步骤')
+    ok((runningHtml.match(/ws-source ws-source-pending/g) ?? []).length === 4, '骨架卡固定 4 张', (runningHtml.match(/ws-source ws-source-pending/g) ?? []).length)
+    ok(runningHtml.includes('ws-cap-sites'), '运行中也预留站点图标位，完成时胶囊不变宽')
 
     const fallbackHtml = renderWith(createElement(view.SearchStepView, { call: call({ status: 'ok', output: 'no json here' }), step }, createElement('span', { id: 'plain' }, 'plain')))
     ok(fallbackHtml.includes('id="plain"') && !fallbackHtml.includes('data-testid="ws-capsule"'), '拿不到 operationId 时退回普通步骤')
@@ -470,19 +473,35 @@ async function run() {
     const directHtml = renderWith(createElement(view.SearchStepView, { call: searchCall, step: m.searchStepOf(searchCall) }, plain))
     ok(directHtml.includes('data-testid="ws-capsule"') && !directHtml.includes('id="plain"'), 'web_search 完成后仍渲染胶囊', directHtml.slice(0, 120))
     ok(directHtml.includes('data-state="done"'), '完成的子代理搜索胶囊标记为完成')
-    ok(directHtml.includes('已搜索 2 个网站'), '胶囊标签带来源数量', directHtml.slice(0, 400))
+    ok(directHtml.includes('aria-label="搜索 “electron 窗口” · 2 条结果"'), '胶囊标签写成「搜索 “q” · N 条结果」', directHtml.slice(0, 400))
+    ok(directHtml.includes('data-testid="ws-capsule-count"') && directHtml.includes('>2 条结果<'), '结果数单独成段，不再写「个网站」', directHtml.slice(0, 900))
+    ok(!directHtml.includes('搜索命中'), '只是搜索命中的来源不挂状态标签')
+    ok(directHtml.includes('ui-source-card__snippet') && directHtml.includes('摘要 1'), '来源卡片带摘要')
+    const readCall = { id: 'w1r', name: 'web_search', args: { query: 'electron 窗口' }, status: 'ok', details: { search: { action: 'query', query: 'electron 窗口', items: [item(1, { readState: 'read' }), item(2, { readState: 'partial', snippet: '' })] } } }
+    const readHtml = renderWith(createElement(view.SearchStepView, { call: readCall, step: m.searchStepOf(readCall) }, plain))
+    ok(readHtml.includes('已取原文') && readHtml.includes('部分原文'), '已取原文与部分原文仍显示状态标签', readHtml.slice(0, 300))
+    ok((readHtml.match(/ui-source-card__snippet/g) ?? []).length === 1, '没有摘要的卡片不渲染摘要行', (readHtml.match(/ui-source-card__snippet/g) ?? []).length)
+    ok(view.webSearchText('en-US', 'searched') === 'Searched' && view.webSearchText('en-US', 'results', { n: 2 }) === '2 results', '英文胶囊文案同步', [view.webSearchText('en-US', 'searched'), view.webSearchText('en-US', 'results', { n: 2 })])
     ok(directHtml.includes('electron 窗口'), '胶囊显示查询词')
     ok(directHtml.includes('ws-cap-sites'), '胶囊显示来源站点头像')
 
     const legacyCall = { id: 'w2', name: 'web_search', args: { query: '旧记录' }, status: 'ok' }
     const legacyHtml = renderWith(createElement(view.SearchStepView, { call: legacyCall, step: m.searchStepOf(legacyCall) }, plain))
     ok(legacyHtml.includes('data-testid="ws-capsule"') && legacyHtml.includes('旧记录'), '没 details 的旧记录只留胶囊与查询词', legacyHtml.slice(0, 200))
-    ok(legacyHtml.includes('已搜索') && !legacyHtml.includes('个网站'), '没 details 时不谎报来源数量', legacyHtml.slice(0, 400))
-    ok(!legacyHtml.includes('ws-cap-sites') && !legacyHtml.includes('ui-shimmer'), '没 details 时不显示站点与闪烁')
+    ok(legacyHtml.includes('aria-label="搜索 “旧记录”"') && !legacyHtml.includes('条结果'), '没 details 时不谎报结果数量', legacyHtml.slice(0, 400))
+    ok(!legacyHtml.includes('ui-site-icon') && !legacyHtml.includes('ui-shimmer'), '没 details 时不显示站点图标与闪烁', legacyHtml.slice(0, 900))
 
     const fetchCall = { id: 'w3', name: 'web_fetch', args: { url: 'https://example.com/a' }, status: 'ok', details: { search: { action: 'fetch', url: 'https://example.com/a', title: '示例' } } }
     const fetchHtml = renderWith(createElement(view.SearchStepView, { call: fetchCall, step: m.searchStepOf(fetchCall) }, plain))
-    ok(fetchHtml.includes('已读取网页') && fetchHtml.includes('https://example.com/a'), 'web_fetch 胶囊显示已读取与网址', fetchHtml.slice(0, 300))
+    ok(fetchHtml.includes('已读取网页'), 'web_fetch 胶囊显示已读取', fetchHtml.slice(0, 300))
+
+    const botCall = { id: 'w4', name: 'web_fetch', args: { url: 'https://raybyte.example/post' }, status: 'ok', details: { search: { action: 'fetch', url: 'https://raybyte.example/post', title: "Making sure you're not a bot!", readState: 'read' } } }
+    const botHtml = renderWith(createElement(view.SearchStepView, { call: botCall, step: m.searchStepOf(botCall) }, plain))
+    ok(botHtml.includes('data-tone="warn"') && botHtml.includes('网页被拦截'), '抓到验证页时胶囊用警告色并写「网页被拦截」', botHtml.slice(0, 400))
+    ok(botHtml.includes('被拦截') && !botHtml.includes('已取原文'), '验证页的来源卡写「被拦截」，不写「已取原文」', botHtml.slice(0, 1600))
+    ok(botHtml.includes('ws-cap-target">Making sure you&#x27;re not a bot!<'), '折叠行显示页面标题而不是只有地址', botHtml.slice(0, 900))
+    ok(fetchHtml.includes('ws-cap-target">示例<') && fetchHtml.includes('https://example.com/a'), '正常网页折叠行也显示页面标题，地址留在提示里', fetchHtml.slice(0, 600))
+    ok(m.isBlockedPage({ title: 'Just a moment...', snippet: '' }) && m.isBlockedPage({ title: 'x', snippet: 'Please complete the security check to access' }) && !m.isBlockedPage({ title: 'Electron 文档', snippet: '窗口' }), '验证页识别只认典型拦截文案')
 
     const citation = { n: 2, title: 'Milvus 3.0 发布', url: 'https://milvus.io/blog/announcing-milvus-3', domain: 'milvus.io', site: 'milvus', snippet: '向量检索引擎的新版本' }
     const citeHtml = renderWith(createElement(view.CitationLink, { citation }))

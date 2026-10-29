@@ -2,7 +2,7 @@ import type { UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, toolCallForest, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { mcpTarget } from '../../../../shared/mcp-approval'
 import { searchStepOf } from './web-search/model'
-import { callPath, collectTurnChanges, readFileDiff } from './turn-changes'
+import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff } from './turn-changes'
 import type { SessionTextKey } from './text'
 import { isDeniedCall } from './tool-title'
 
@@ -254,6 +254,29 @@ function buildSegments(calls: readonly UIToolCall[], failedIds: ReadonlySet<stri
   })
 }
 
+function runChanges(calls: readonly UIToolCall[], cwd?: string): { added: number | null; removed: number | null; files: number } | null {
+  const changes = collectTurnChanges(calls, cwd)
+  const files = new Set((changes?.files ?? []).map((file) => normalizeToolPath(file.path)))
+  let added = changes ? changes.added : 0
+  let removed = changes ? changes.removed : 0
+  let seen = !!changes
+  for (const call of calls) {
+    if (readFileDiff(call.details)) continue
+    const category = toolCategory(call)
+    if (category !== 'edit' && category !== 'create' && category !== 'delete') continue
+    const pi = readPiDiff(call.details)
+    if (!pi) continue
+    const path = callPath(call)
+    if (path && !isInsideCwd(path, cwd)) continue
+    seen = true
+    files.add(normalizeToolPath(path || call.id))
+    if (added >= 0) added += pi.added
+    if (removed >= 0) removed += pi.removed
+  }
+  if (!seen) return null
+  return { added: added >= 0 ? added : null, removed: removed >= 0 ? removed : null, files: files.size }
+}
+
 export function summarizeToolRun(
   calls: readonly UIToolCall[],
   approvalIds: ReadonlySet<string> = EMPTY_IDS,
@@ -261,7 +284,7 @@ export function summarizeToolRun(
 ): ToolRunSummary {
   const failedIds = latestFailures(calls)
   const path = sharedPath(calls)
-  const changes = collectTurnChanges(calls.filter((call) => call.status === 'ok' && !call.cancelled), cwd)
+  const changes = runChanges(calls.filter((call) => call.status === 'ok' && !call.cancelled), cwd)
   let running: UIToolCall | null = null
   for (let i = calls.length - 1; i >= 0; i -= 1) {
     if (isLive(calls[i])) {
@@ -272,9 +295,9 @@ export function summarizeToolRun(
   return {
     state: runState(calls, approvalIds),
     segments: buildSegments(calls, failedIds, path),
-    added: changes && changes.added >= 0 ? changes.added : null,
-    removed: changes && changes.removed >= 0 ? changes.removed : null,
-    changedFiles: changes?.files.length ?? 0,
+    added: changes ? changes.added : null,
+    removed: changes ? changes.removed : null,
+    changedFiles: changes?.files ?? 0,
     failed: failedIds.size,
     needsApproval: calls.some((call) => isLive(call) && approvalIds.has(call.id)),
     running,
@@ -463,7 +486,7 @@ function joinVerbs(verbs: readonly string[], tt: RunTextFn): string {
   return tt('runAnd', { a: head, b: verbs[verbs.length - 1] })
 }
 
-function mcpDisplayName(name: string): string {
+export function mcpDisplayName(name: string): string {
   return name.startsWith('mcp__') ? mcpTarget(name).tool || name : name
 }
 

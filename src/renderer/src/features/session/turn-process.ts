@@ -1,7 +1,7 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
 import { countedProcessCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
-import { callPath, readFileDiff } from './turn-changes'
+import { callPath, readFileDiff, readPiDiff } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
 
 const LIVE_SEGMENTS = 3
@@ -238,6 +238,8 @@ function stringField(source: Record<string, unknown>, keys: readonly string[]): 
 export function estimateCallLines(call: Pick<UIToolCall, 'args' | 'details'>): { added: number; removed: number } | null {
   const diff = readFileDiff(call.details)
   if (diff) return diff.added >= 0 && diff.removed >= 0 ? { added: diff.added, removed: diff.removed } : null
+  const pi = readPiDiff(call.details)
+  if (pi) return { added: pi.added, removed: pi.removed }
   const args = call.args && typeof call.args === 'object' ? call.args as Record<string, unknown> : null
   if (!args) return null
   const pairs = Array.isArray(args.edits) ? args.edits : [args]

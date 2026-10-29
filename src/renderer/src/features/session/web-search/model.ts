@@ -359,6 +359,12 @@ export function collectSearchDetailSources(tools: readonly UIToolCall[]): WebSea
   return sources
 }
 
+const BLOCKED_PAGE = /not a bot|are you (?:a )?human|verify(?:ing)? (?:that )?you are (?:a )?human|just a moment|checking your browser|attention required|access denied|security check|captcha|robot check|请完成安全验证|人机验证|安全验证|访问受限/i
+
+export function isBlockedPage(source: Pick<WebSearchSourceView, 'title' | 'snippet'>): boolean {
+  return BLOCKED_PAGE.test(`${source.title ?? ''}\n${(source.snippet ?? '').slice(0, 400)}`)
+}
+
 export function searchStepLabel(command: SearchCommand): string {
   if (command.action === 'fetch') return command.url
   return command.queries.join(' · ')

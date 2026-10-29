@@ -4,8 +4,10 @@ export type WebSearchTextKey =
   | 'searching'
   | 'fetching'
   | 'searched'
-  | 'searchedAny'
+  | 'results'
   | 'fetched'
+  | 'fetchBlocked'
+  | 'blocked'
   | 'sources'
   | 'expand'
   | 'collapse'
@@ -15,7 +17,6 @@ export type WebSearchTextKey =
   | 'empty'
   | 'moreSources'
   | 'showLess'
-  | 'discovered'
   | 'read'
   | 'partial'
   | 'cached'
@@ -23,9 +24,11 @@ export type WebSearchTextKey =
 const ZH: Record<WebSearchTextKey, string> = {
   searching: '搜索中',
   fetching: '读取中',
-  searched: '已搜索 {n} 个网站',
-  searchedAny: '已搜索',
+  searched: '搜索',
+  results: '{n} 条结果',
   fetched: '已读取网页',
+  fetchBlocked: '网页被拦截',
+  blocked: '被拦截',
   sources: '来源',
   expand: '展开来源',
   collapse: '收起来源',
@@ -35,7 +38,6 @@ const ZH: Record<WebSearchTextKey, string> = {
   empty: '没有可显示的来源',
   moreSources: '{n} 个更多来源',
   showLess: '显示更少',
-  discovered: '搜索命中',
   read: '已取原文',
   partial: '部分原文',
   cached: '缓存'
@@ -44,9 +46,11 @@ const ZH: Record<WebSearchTextKey, string> = {
 const EN: Record<WebSearchTextKey, string> = {
   searching: 'Searching',
   fetching: 'Reading',
-  searched: 'Searched {n} sites',
-  searchedAny: 'Searched',
+  searched: 'Searched',
+  results: '{n} results',
   fetched: 'Read page',
+  fetchBlocked: 'Page blocked',
+  blocked: 'Blocked',
   sources: 'Sources',
   expand: 'Show sources',
   collapse: 'Hide sources',
@@ -56,7 +60,6 @@ const EN: Record<WebSearchTextKey, string> = {
   empty: 'No sources to show',
   moreSources: '{n} more sources',
   showLess: 'Show less',
-  discovered: 'Search result',
   read: 'Text fetched',
   partial: 'Partial text',
   cached: 'Cached'

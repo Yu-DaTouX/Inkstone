@@ -5,13 +5,14 @@ import { Button, Card, ShimmerText, Skeleton, SourceCard as SourceCardFrame } fr
 import type { UIToolCall, WebSearchSourceView } from '../../../../../shared/ipc'
 import { Icon } from '../Icon'
 import { useCitationIndex } from './citations'
-import { citationFor, domainOf, searchStepLabel, siteLabel, type SearchStep } from './model'
+import { citationFor, domainOf, isBlockedPage, searchStepLabel, siteLabel, type SearchStep } from './model'
 import { useSearchOp } from './op-store'
 import { useWebSearchText } from './text'
 import { WebsiteIcon } from './WebsiteIcon'
 import './web-search.css'
 
 const MAX_SITES = 3
+const PENDING_CARDS = 4
 
 function pageSource(state: ReturnType<typeof useSearchOp>): WebSearchSourceView[] {
   if (state.status !== 'ready' || !state.view.ok) return []
@@ -48,9 +49,13 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
   const sites = useMemo(() => uniqueSites(sources), [sources])
   const fetching = step.command.action === 'fetch'
   const settled = !running && (fromDetails || !!step.fromTool || state.status === 'ready')
-  const label = settled
-    ? fetching ? tt('fetched') : sources.length ? tt('searched', { n: sources.length }) : tt('searchedAny')
-    : fetching ? tt('fetching') : tt('searching')
+  const page = fetching && settled ? sources[0] : undefined
+  const blocked = !!page && isBlockedPage(page)
+  const pageTitle = page && page.title && page.title !== page.url && page.title !== page.domain ? page.title : ''
+  const label = settled ? (fetching ? (blocked ? tt('fetchBlocked') : tt('fetched')) : tt('searched')) : fetching ? tt('fetching') : tt('searching')
+  const target = fetching ? pageTitle || searchStepLabel(step.command) : `\u201c${searchStepLabel(step.command)}\u201d`
+  const count = settled && !fetching && sources.length ? tt('results', { n: sources.length }) : ''
+  const summary = [label, target, count ? `\u00b7 ${count}` : '', pageTitle ? searchStepLabel(step.command) : ''].filter(Boolean).join(' ')
 
   if (!running && !step.fromTool) {
     if (!step.operationId) return <>{children}</>
@@ -67,14 +72,15 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         className="ws-cap"
         aria-expanded={expanded}
         aria-controls={panelId}
-        aria-label={`${label} ${searchStepLabel(step.command)}`.trim()}
-        title={`${label} ${searchStepLabel(step.command)}`.trim()}
+        aria-label={summary}
+        title={summary}
         onClick={() => {
           setOpen((value) => !value)
           setShowAll(false)
         }}
         data-testid="ws-capsule"
         data-state={running ? 'running' : 'done'}
+        data-tone={blocked ? 'warn' : undefined}
       >
         <span className="ws-cap-icon" data-done={running ? undefined : true} aria-hidden="true">
           <Globe size={13} strokeWidth={1.75} />
@@ -86,19 +92,18 @@ export function SearchStepView({ call, step, children, glow = true }: { call: UI
         <span className="ws-cap-label">
           {settled ? label : <ShimmerText active={glow}>{label}</ShimmerText>}
         </span>
-        <span className="ws-cap-target" title={searchStepLabel(step.command)}>{searchStepLabel(step.command)}</span>
-        {sites.length ? (
-          <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
-            {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
-          </span>
-        ) : null}
+        <span className="ws-cap-target">{target}</span>
+        {count ? <span className="ws-cap-count" data-testid="ws-capsule-count">{count}</span> : null}
+        <span className="ws-cap-sites ui-source-stack" aria-hidden="true">
+          {sites.map((site) => <WebsiteIcon key={site.url} url={site.url} />)}
+        </span>
         <Icon name="chevron-right" size={14} className="v3-chev" />
       </button>
       <div id={panelId} className="ui-source-reveal" data-open={expanded || pending} aria-hidden={!expanded || undefined} inert={!expanded}>
         <div className="ui-source-reveal__inner">
           {pending ? (
             <div className="ws-op" aria-hidden="true" data-testid="ws-sources-pending">
-              {Array.from({ length: SOURCE_PREVIEW }, (_, i) => <PendingCard key={i} index={i} />)}
+              {Array.from({ length: PENDING_CARDS }, (_, i) => <PendingCard key={i} index={i} />)}
             </div>
           ) : (
             <SourceList sources={sources} showAll={showAll} onShowAll={setShowAll} testId="ws-sources" />
@@ -180,6 +185,7 @@ function SourceCard({ source, n, index, onOpen }: { source: WebSearchSourceView;
   const tt = useWebSearchText()
   const domain = domainOf(source.url) || source.domain
   const hint = [source.title, domain, source.snippet].filter(Boolean).join('\n')
+  const blocked = !!source.readState && isBlockedPage(source)
   return (
     <SourceCardFrame
       title={source.title}
@@ -190,8 +196,9 @@ function SourceCard({ source, n, index, onOpen }: { source: WebSearchSourceView;
       index={index}
       label={tt('openSource', { title: source.title })}
       hint={hint}
-      status={tt(source.readState ?? 'discovered')}
-      statusTone={source.readState === 'read' ? 'ok' : source.readState === 'partial' ? 'ask' : 'muted'}
+      snippet={source.snippet}
+      status={blocked ? tt('blocked') : source.readState === 'read' || source.readState === 'partial' ? tt(source.readState) : undefined}
+      statusTone={!blocked && source.readState === 'read' ? 'ok' : 'ask'}
       meta={source.published || source.cached ? <>
         {source.published ? <time dateTime={source.published}>{source.published.slice(0, 10)}</time> : null}
         {source.cached ? <span>{tt('cached')}</span> : null}

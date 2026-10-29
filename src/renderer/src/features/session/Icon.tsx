@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowDown,
   Ban,
+  Bot,
   Brain,
   Check,
   ChevronDown,
@@ -12,11 +13,14 @@ import {
   CircleHelp,
   CircleStop,
   Clock,
+  Code,
   Copy,
   ExternalLink,
+  Eye,
   File,
   FolderOpen,
   GitBranch,
+  Globe,
   Image,
   Layers,
   ListTree,
@@ -41,6 +45,7 @@ const ICONS = {
   alert: AlertCircle,
   'arrow-down': ArrowDown,
   deny: Ban,
+  bot: Bot,
   brain: Brain,
   check: Check,
   'chevron-down': ChevronDown,
@@ -50,11 +55,14 @@ const ICONS = {
   help: CircleHelp,
   stop: CircleStop,
   clock: Clock,
+  code: Code,
   copy: Copy,
   external: ExternalLink,
+  eye: Eye,
   file: File,
   folder: FolderOpen,
   branch: GitBranch,
+  globe: Globe,
   image: Image,
   layers: Layers,
   tree: ListTree,
@@ -75,7 +83,7 @@ const ICONS = {
   close: X
 }
 
-type SessionIconName = keyof typeof ICONS
+export type SessionIconName = keyof typeof ICONS
 
 export function Icon({ name, size = 16, className }: { name: SessionIconName; size?: number; className?: string }): JSX.Element {
   const Cmp = ICONS[name]

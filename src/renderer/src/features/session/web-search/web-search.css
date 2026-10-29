@@ -29,6 +29,10 @@
   .ws-ring { position: absolute; inset: -2px; width: 22px; height: 22px; max-width: none; overflow: visible; }
   .ws-ring-track { fill: none; stroke: var(--line2); stroke-width: 2; }
   .ws-cap-icon[data-done] .ws-ring-track { stroke: color-mix(in srgb, var(--ok) 55%, transparent); }
+  .ws-cap[data-tone='warn'] .ws-cap-icon { color: var(--ask-t); }
+  .ws-cap[data-tone='warn'] .ws-ring-track { stroke: color-mix(in srgb, var(--ask) 70%, transparent); }
+  .ws-cap[data-tone='warn'] .ws-cap-label { color: var(--ask-t); }
+  .ws-cap-sites { width: calc(18px * 3 - 10px); min-height: 18px; box-sizing: content-box; }
   .ws-ring-arc {
     fill: none;
     stroke: var(--run);
@@ -49,6 +53,8 @@
     color: var(--fg3);
     font-size: var(--t-footnote);
   }
+  .ws-cap-count { flex: none; white-space: nowrap; color: var(--fg3); font-size: var(--t-footnote); }
+  .ws-cap-count::before { content: '\00b7'; margin-inline-end: var(--s-6); }
   .ws-tone-0 { --ws-tone: var(--accent); }
   .ws-tone-1 { --ws-tone: var(--ok); }
   .ws-tone-2 { --ws-tone: var(--stall); }
@@ -69,9 +75,6 @@
   .ws-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-caption); }
   .ws-less { align-self: center; justify-self: start; gap: var(--s-4); }
   .ws-empty { color: var(--fg3); font-size: var(--t-footnote); }
-  .ws-turn-sources { display: grid; margin-top: var(--s-8); }
-  .ws-turn-sources-head { color: var(--fg3); font-size: var(--t-footnote); }
-  .ws-turn-sources .ws-op { margin: var(--s-6) 0 0; }
 
   .ws-cite {
     display: inline-flex;

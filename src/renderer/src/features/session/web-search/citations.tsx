@@ -40,15 +40,9 @@ export function WebSearchTurnProvider({ tools, children }: { tools: readonly UIT
   const index = useMemo(() => (sources.length ? buildCitationIndex(sources) : null), [sources])
   return (
     <CitationIndex.Provider value={index}>
-      <TurnSourceList.Provider value={sources}>{children}</TurnSourceList.Provider>
+      {children}
     </CitationIndex.Provider>
   )
-}
-
-const TurnSourceList = createContext<readonly WebSearchSourceView[]>([])
-
-export function useTurnSources(): readonly WebSearchSourceView[] {
-  return useContext(TurnSourceList)
 }
 
 function uniqueSources(sources: readonly WebSearchSourceView[]): WebSearchSourceView[] {

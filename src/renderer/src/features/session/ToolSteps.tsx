@@ -4,10 +4,13 @@ import { InlineImage } from '../../ui/InlineImage'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
 import { flattenToolNodes, type ToolCallNode } from '../../../../shared/tool-call-tree'
 import { useSessionText } from './text'
-import { callPath, readFileDiff } from './turn-changes'
+import { callPath, editArgLines, readFileDiff, readPiDiff, type CallDiffLine } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
 import { isDeniedCall, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
-import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolNodesEqual, toolRunParts, type ToolRow, type ToolRowsCache } from './tool-run-model'
+import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolCategory, toolNodesEqual, toolRunParts, type ToolRow, type ToolRowsCache } from './tool-run-model'
+import { estimateCallLines } from './turn-process'
+import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
+import { HighlightedCode } from '../../patterns/HighlightedCode'
 import { useStore } from '../../state/store'
 import { ApprovalCard } from './ApprovalCard'
 import { QuestionCard } from './QuestionCard'
@@ -16,13 +19,15 @@ import { ApprovalReceipt } from './ApprovalReceipt'
 import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
 import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
-import { Icon } from './Icon'
-import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, IconButton, ShimmerText } from '../../ui'
+import { Icon, type SessionIconName } from './Icon'
+import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, DiffStat, IconButton, ShimmerText, Spinner } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 import { SearchStepView } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
 
 const OUTPUT_PREVIEW_LINES = 16
+const OUTPUT_PREVIEW_CHARS = 1600
+const CONTENT_PREVIEW_LINES = 40
 const NEST_VISIBLE = 3
 
 export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean): { shown: readonly T[]; earlier: number } {
@@ -31,10 +36,34 @@ export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean):
 }
 const NO_APPROVALS: ReadonlySet<string> = new Set()
 
-export function detailKind(name: string): 'command' | 'change' | 'result' {
+export function detailKind(name: string): 'command' | 'code' | 'change' | 'result' {
+  if (isCodemodeTool(name)) return 'code'
   if (name === 'bash' || name === 'powershell' || name === 'shell' || name === 'run' || name === 'exec') return 'command'
   if (name === 'edit' || name === 'write' || name === 'multi_edit' || name === 'multiEdit' || name === 'apply_patch' || name === 'patch') return 'change'
   return 'result'
+}
+
+export function stepIconName(call: UIToolCall): SessionIconName {
+  if (isCodemodeTool(call.name)) return 'code'
+  switch (toolCategory(call)) {
+    case 'command': return 'terminal'
+    case 'read': return 'eye'
+    case 'edit':
+    case 'create':
+    case 'delete': return 'edit'
+    case 'search': return 'search'
+    case 'list': return 'folder'
+    case 'fetch':
+    case 'web': return 'globe'
+    case 'agent': return 'bot'
+    case 'todo': return 'tree'
+    default: return 'wrench'
+  }
+}
+
+export function groupIconName(nodes: readonly ToolCallNode[]): SessionIconName {
+  const icons = new Set(flattenToolNodes([...nodes]).filter((node) => !node.children.length).map((node) => stepIconName(node.call)))
+  return icons.size === 1 ? [...icons][0] : 'layers'
 }
 
 function isRunning(call: UIToolCall): boolean {
@@ -103,7 +132,7 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
 
   return (
     <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step-group">
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step-group" icon={<Icon name={groupIconName(row.nodes)} size={13} />}>
         <span className="v3-step-line" title={label}>
           {running ? (
             <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
@@ -145,12 +174,20 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
   const nested = collapsedNest(visibleNestedNodes(children, nestAll === true), children, open, running)
   const searches = nestedTitle || blocked || asking ? [] : searchStepsOf(call)
+  const failed = call.status === 'error' && !call.cancelled && !denied
+  const kind = detailKind(call.name)
+  const command = kind === 'command' ? commandOf(call) : ''
+  const settledView = !running && call.output && (kind === 'command' || failed) ? toolOutputView(call.name, call.output) : null
+  const exitCode = failed && settledView && settledView.exitCode !== null && settledView.exitCode !== 0 ? settledView.exitCode : null
+  const tests = command && settledView && isTestCommand(command) ? parseTestSummary(settledView.body) : null
+  const lines = kind === 'change' && call.status === 'ok' && !call.cancelled && !nestedTitle ? estimateCallLines(call) : null
+  const tooltip = [`${title.label} ${meta}`.trim(), title.hint ?? ''].filter(Boolean).join('\n')
 
   const step = (
     <>
-      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step">
+      <CollapsibleHeader className="v3-step-head" size="compact" chevron="end" data-testid="v3-step" icon={<Icon name={stepIconName(call)} size={13} />}>
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
-        <span className="v3-step-line" title={`${title.label} ${meta}`.trim()}>
+        <span className="v3-step-line" title={tooltip}>
           <span className="v3-step-label">
             <ShimmerText active={running && !blocked && call.id === glowId}>{title.label}</ShimmerText>
           </span>
@@ -160,6 +197,12 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
               {meta}
             </span>
           ) : null}
+          {lines ? <DiffStat className="v3-step-diff" added={lines.added} removed={lines.removed} data-testid="v3-step-diff-stat" /> : null}
+          {tests ? <Badge tone={tests.failed ? 'fail' : 'ok'} className="v3-steps-badge" data-testid="v3-step-tests">{tt('testSummary', { p: tests.passed, f: tests.failed })}</Badge> : null}
+          {kind === 'command' && running && !blocked ? <Spinner size="xs" className="v3-step-state" label={tt('stepRunningMark')} /> : null}
+          {kind === 'command' && call.status === 'ok' && !call.cancelled ? <span className="v3-step-state" role="img" aria-label={tt('stepDoneMark')} data-testid="v3-step-done"><Icon name="check" size={13} /></span> : null}
+          {failed ? <span className="v3-step-fail" role="img" aria-label={tt('stepFailedMark')} data-testid="v3-step-failed"><Icon name="close" size={13} /></span> : null}
+          {exitCode !== null ? <span className="v3-step-time" data-testid="v3-step-exit-code">{tt('exitCode', { n: exitCode })}</span> : null}
           {call.cancelled ? <Badge className="v3-steps-badge" data-testid="v3-step-cancelled">{t('run.cancelled')}</Badge> : null}
           {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
           {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
@@ -216,19 +259,33 @@ function commandOf(call: UIToolCall): string {
   return ''
 }
 
+const COMMAND_ARG_KEYS = ['command', 'cmd', 'script', 'code', 'timeout', 'description']
+const READ_ARG_KEYS = ['path', 'file_path', 'file', 'offset', 'limit']
+
+function hasArgs(call: UIToolCall): boolean {
+  return !!call.args && typeof call.args === 'object' && Object.keys(call.args as object).length > 0
+}
+
 function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   const t = useT()
   const tt = useSessionText()
+  const cwd = useStore((s) => s.session?.cwd)
   const [copied, setCopied] = useState(false)
   const kind = detailKind(call.name)
   const diff = readFileDiff(call.details)
-  const args = call.args as Record<string, unknown> | undefined
-  const command = kind === 'command' ? commandOf(call) : ''
-  const onlyCommand = !!command && Object.keys(args ?? {}).every((k) => k === 'command' || k === 'timeout' || k === 'description')
-  const argsText = onlyCommand ? '' : call.args && Object.keys(call.args as object).length ? JSON.stringify(call.args, null, 2) : call.argsRaw ?? ''
-  const argsShown = !onlyCommand && !!argsText
-  const copyText = [command ? `$ ${command}` : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
+  const command = kind === 'command' || kind === 'code' ? commandOf(call) : ''
+  const readPath = kind === 'result' && stepCategory(call.name) === 'read' ? callPath(call) : ''
+  const skip = command ? COMMAND_ARG_KEYS : readPath ? READ_ARG_KEYS : []
+  const entries = argEntries(call.args, skip)
+  const rawArgs = !hasArgs(call) && !command && !readPath ? call.argsRaw ?? '' : ''
+  const argsShown = entries.length > 0 || !!rawArgs
+  const onlyCommand = !!command && !entries.length
+  const copyText = [command ? (kind === 'code' ? command : `$ ${command}`) : '', call.args && !onlyCommand ? JSON.stringify(call.args, null, 2) : onlyCommand ? '' : call.argsRaw ?? '', call.output ?? ''].filter(Boolean).join('\n\n')
   const failed = call.status === 'error' && !call.cancelled && !isDeniedCall(call)
+  const view = call.output ? toolOutputView(call.name, call.output) : null
+  const yan = kind === 'command' && view && isYanJsonCommand(command) ? parseYanSummaries(view.body) : null
+  const body = yan ? yan.rest : view?.body ?? ''
+  const range = readLineRange(call.args)
   const copy = (): void => {
     void navigator.clipboard.writeText(copyText || summarize(call)).then(
       () => { setCopied(true); window.setTimeout(() => setCopied(false), 1600) },
@@ -249,24 +306,39 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
         </div>
       ) : null}
       {kind === 'change' ? (
-        <ChangeDetail call={call} diff={diff} />
+        <ChangeDetail call={call} diff={diff} cwd={cwd} />
       ) : (
         <>
-          {command ? (
+          {command && kind === 'code' ? (
+            <section className="v3-step-sec" data-sec="code">
+              <pre className="v3-step-code" data-testid="v3-step-code"><HighlightedCode code={command} lang="javascript" /></pre>
+            </section>
+          ) : command ? (
             <section className="v3-step-sec" data-sec="command">
               <pre className="v3-step-cmd-line"><span className="v3-step-cmd-prompt" aria-hidden>$ </span>{command}</pre>
+            </section>
+          ) : null}
+          {readPath ? (
+            <section className="v3-step-sec" data-sec="path">
+              <div className="v3-step-path" data-testid="v3-step-read-path">
+                <Icon name="file" size={13} />
+                <span title={readPath}>{relativePath(readPath, cwd)}</span>
+                {range ? <span className="v3-step-status">{range.to === null ? tt('stepLinesFrom', { a: range.from }) : tt('stepLines', { a: range.from, b: range.to })}</span> : null}
+              </div>
             </section>
           ) : null}
           {argsShown ? (
             <section className="v3-step-sec" data-sec="args">
               <div className="v3-step-sec-head">{tt('detailArgs')}</div>
-              <pre className="v3-step-pre args">{argsText}</pre>
+              {rawArgs ? <pre className="v3-step-pre args">{rawArgs}</pre> : <ArgList entries={entries} />}
             </section>
           ) : null}
-          {call.output ? (
+          {view && (body || yan || view.notices.length || (view.exitCode !== null && view.exitCode !== 0)) ? (
             <section className="v3-step-sec" data-sec="output">
               {argsShown ? <div className="v3-step-sec-head">{tt('detailOutput')}</div> : null}
-              <StepOutput text={call.output} error={failed || call.cancelled} />
+              {yan ? <YanSummaryList summaries={yan.summaries} /> : null}
+              {body ? <StepOutput text={body} error={failed || !!call.cancelled} tail={kind !== 'result' || failed} /> : null}
+              <OutputNotes view={view} />
             </section>
           ) : call.status === 'ok' ? <div className="v3-step-note">{t('tool.noOutput')}</div> : null}
           {call.name.startsWith('mcp__') ? (
@@ -281,15 +353,79 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   )
 }
 
-function StepOutput({ text, error = false }: { text: string; error?: boolean }): JSX.Element {
+function ArgList({ entries }: { entries: ReturnType<typeof argEntries> }): JSX.Element {
+  return (
+    <dl className="v3-step-args" data-testid="v3-step-args">
+      {entries.map((entry) => (
+        <div key={entry.key} className="v3-step-arg" data-block={entry.block || undefined}>
+          <dt className="v3-step-arg-key">{entry.key}</dt>
+          <dd className="v3-step-arg-value">{entry.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function noticeText(notice: OutputNotice, tt: ReturnType<typeof useSessionText>): string {
+  if (notice.kind === 'truncated') return notice.path ? tt('outputTruncatedPath', { path: notice.path }) : tt('outputTruncated')
+  if (notice.kind === 'lines') {
+    const lines = tt('outputLinesOf', { a: notice.from, b: notice.to, n: notice.total })
+    return notice.path ? `${lines} \u00b7 ${tt('outputTruncatedPath', { path: notice.path })}` : lines
+  }
+  if (notice.kind === 'more') return tt('outputMoreInFile', { n: notice.n })
+  return notice.text
+}
+
+function OutputNotes({ view }: { view: ToolOutputView }): JSX.Element | null {
   const tt = useSessionText()
-  const [expanded, setExpanded] = useState(false)
-  const lines = text.split('\n')
-  const truncated = lines.length > OUTPUT_PREVIEW_LINES
-  const shown = truncated && !expanded ? lines.slice(0, OUTPUT_PREVIEW_LINES) : lines
+  const exit = view.exitCode !== null && view.exitCode !== 0 ? view.exitCode : null
+  if (!view.notices.length && exit === null) return null
   return (
     <>
-      <pre className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">{shown.join('\n')}</pre>
+      {view.notices.length ? <div className="v3-step-note" data-testid="v3-step-output-notice">{view.notices.map((notice) => noticeText(notice, tt)).join(' \u00b7 ')}</div> : null}
+      {exit !== null ? <div className="v3-step-exit" data-testid="v3-step-exit">{tt('exitCode', { n: exit })}</div> : null}
+    </>
+  )
+}
+
+function YanSummaryList({ summaries }: { summaries: readonly YanSummary[] }): JSX.Element {
+  const tt = useSessionText()
+  return (
+    <div className="v3-step-summary" data-testid="v3-step-yan-summary">
+      {summaries.map((summary, i) => (
+        <div key={i} className="v3-step-summary-item">
+          <div className="v3-step-summary-title">{summary.kind === 'search' ? (summary.count !== null ? tt('yanSearchResults', { n: summary.count }) : tt('yanSearch')) : summary.title}</div>
+          {summary.points.length ? (
+            <ul className="v3-step-summary-points">
+              {summary.points.map((point, j) => <li key={j}>{point}</li>)}
+            </ul>
+          ) : null}
+          {summary.kind === 'page' && summary.body ? <StepOutput text={summary.body} /> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StepOutput({ text, error = false, tail = false }: { text: string; error?: boolean; tail?: boolean }): JSX.Element {
+  const tt = useSessionText()
+  const [expanded, setExpanded] = useState(false)
+  const preview = previewOutput(text, { tail, maxLines: OUTPUT_PREVIEW_LINES, maxChars: OUTPUT_PREVIEW_CHARS })
+  const truncated = preview.hidden > 0
+  const shown = truncated && !expanded ? preview.text : text
+  const leadShown = error && (!truncated || expanded || !tail)
+  const cut = shown.indexOf('\n')
+  return (
+    <>
+      {truncated && !expanded && tail ? <div className="v3-step-note" data-testid="v3-step-output-earlier">{tt('outputEarlier', { n: preview.hidden })}</div> : null}
+      <pre className="v3-step-pre out" data-testid="v3-step-output" data-error={error || undefined} role="group">
+        {leadShown ? (
+          <>
+            <span className="v3-step-out-lead">{cut < 0 ? shown : shown.slice(0, cut)}</span>
+            {cut < 0 ? null : shown.slice(cut)}
+          </>
+        ) : shown}
+      </pre>
       {truncated ? (
         <Button
           size="sm"
@@ -298,22 +434,83 @@ function StepOutput({ text, error = false }: { text: string; error?: boolean }):
           data-testid="v3-step-output-toggle"
           onPress={() => setExpanded((v) => !v)}
         >
-          {expanded ? tt('outputLess') : tt('outputMore', { n: lines.length })}
+          {expanded ? tt('outputLess') : tt('outputMore', { n: preview.total })}
         </Button>
       ) : null}
     </>
   )
 }
 
-function ChangeDetail({ call, diff }: { call: UIToolCall; diff: FileDiff | null }): JSX.Element {
+function DiffLines({ lines }: { lines: readonly CallDiffLine[] }): JSX.Element {
+  const numbered = lines.some((line) => line.num !== null)
+  return (
+    <pre className="v3-step-patch" data-numbered={numbered || undefined} data-testid="v3-step-diff">
+      {lines.map((line, i) => line.kind === 'skip' ? (
+        <span key={i} className="v3-diff-line" data-kind="skip">{'\u22ef\n'}</span>
+      ) : (
+        <span key={i} className="v3-diff-line" data-kind={line.kind}>
+          {numbered ? <span className="v3-diff-num" aria-hidden>{line.num ?? ''}</span> : null}
+          <span className="v3-diff-sign" aria-hidden>{line.kind === 'add' ? '+' : line.kind === 'del' ? '\u2212' : ' '}</span>
+          {line.text}{'\n'}
+        </span>
+      ))}
+    </pre>
+  )
+}
+
+function languageOf(path: string): string | null {
+  const ext = /\.([A-Za-z0-9]+)$/.exec(path)?.[1]
+  return ext ? ext.toLowerCase() : null
+}
+
+function FileContentPreview({ path, content }: { path: string; content: string }): JSX.Element {
+  const tt = useSessionText()
+  const [all, setAll] = useState(false)
+  const lines = content.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
+  const long = lines.length > CONTENT_PREVIEW_LINES
+  const shown = long && !all ? lines.slice(0, CONTENT_PREVIEW_LINES).join('\n') : lines.join('\n')
+  return (
+    <>
+      <pre className="v3-step-patch v3-step-file" data-testid="v3-step-content"><HighlightedCode code={shown} lang={languageOf(path)} /></pre>
+      {long ? (
+        <Button size="sm" variant="ghost" aria-expanded={all} data-testid="v3-step-content-toggle" onPress={() => setAll((v) => !v)}>
+          {all ? tt('contentLess') : tt('contentMore', { n: lines.length })}
+        </Button>
+      ) : null}
+    </>
+  )
+}
+
+function ChangeDetail({ call, diff, cwd }: { call: UIToolCall; diff: FileDiff | null; cwd?: string }): JSX.Element {
   const t = useT()
+  const tt = useSessionText()
   const denied = isDeniedCall(call)
+  const failed = call.status === 'error' && !call.cancelled && !denied
   if (!diff) {
+    const path = callPath(call)
+    const pi = readPiDiff(call.details)
+    const fallback = pi ? null : editArgLines(call.args)
+    const content = pi || fallback ? null : writeArgContent(call.args)
+    const contentLines = content === null ? 0 : content.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').length
+    const showOutput = !!call.output && (failed || (!pi && !fallback && content === null))
     return (
       <>
-        <div className="v3-step-path">{callPath(call) || call.name}</div>
-        <div className="v3-step-note">{t('tool.diffUnavailable')}</div>
-        {call.output ? <StepOutput text={call.output} error={call.status === 'error'} /> : null}
+        <div className="v3-step-path">
+          <Icon name="file" size={13} />
+          <span title={path}>{path ? relativePath(path, cwd) : call.name}</span>
+          {content !== null ? <span className="v3-step-status">{tt('contentLines', { n: contentLines })}</span> : null}
+          <span className="v3-code-sp" />
+          {pi ? <span className="v3-add">+{pi.added}</span> : null}
+          {pi ? <span className="v3-del">−{pi.removed}</span> : null}
+        </div>
+        {failed ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
+        {showOutput ? <StepOutput text={toolOutputView(call.name, call.output ?? '').body} error={failed} tail={failed} /> : null}
+        {pi ? <DiffLines lines={pi.lines} /> : fallback ? (
+          <>
+            <div className="v3-step-note">{t('tool.diffUnavailable')}</div>
+            <DiffLines lines={fallback} />
+          </>
+        ) : content !== null ? <FileContentPreview path={path} content={content} /> : <div className="v3-step-note">{t('tool.diffUnavailable')}</div>}
       </>
     )
   }
@@ -323,13 +520,13 @@ function ChangeDetail({ call, diff }: { call: UIToolCall; diff: FileDiff | null 
     <>
       <div className="v3-step-path">
         <Icon name="file" size={13} />
-        <span title={diff.path}>{diff.path}</span>
+        <span title={diff.path}>{relativePath(diff.path, cwd)}</span>
         {status ? <span className="v3-step-status">{status}</span> : null}
         <span className="v3-code-sp" />
         {diff.added >= 0 ? <span className="v3-add">+{diff.added}</span> : null}
         {diff.removed >= 0 ? <span className="v3-del">−{diff.removed}</span> : null}
       </div>
-      {call.status === 'error' && !call.cancelled && !denied ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
+      {failed ? <div className="v3-step-note err">{t('tool.notApplied')}</div> : null}
       {tooLarge ? <div className="v3-step-note">{t('tool.diffTooLarge')}</div> : null}
       {diff.patch ? (
         <pre className="v3-step-patch">

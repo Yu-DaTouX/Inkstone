@@ -11,7 +11,7 @@ import { TurnProcess } from './TurnProcess'
 import { conciseSegment, processFailuresAlert, splitTurnProcess, withoutThinking } from './turn-process'
 import { liveToolGlowId } from './tool-run-model'
 import { showsThinkingAside, showsThinkingInline } from './transcript-view-model'
-import { TranscriptViewScope, useAsideFit, useToolExpansion } from './use-tool-run'
+import { TranscriptViewScope, useAsideFit } from './use-tool-run'
 import { useTranscriptView } from '../../state/transcript-view'
 import { approvalCallIds } from './tool-run-model'
 import { MessageImage } from './Image'
@@ -35,7 +35,6 @@ import { SubagentLine } from './SubagentLine'
 import type { TurnSubagentScope } from '../../state/subagent-view'
 import { TurnChanges } from './TurnChanges'
 import { WebSearchTurnProvider } from './web-search/citations'
-import { TurnSources } from './web-search/TurnSources'
 import { compactionAnchorId, viewEdge } from './turn-lines'
 import { BranchPager, type BranchPagerBinding } from './BranchPager'
 import type { AssistantTurn, BashTurn, NoteTurn, Turn, TurnSegment, UserTurn } from '../../../../shared/turns'
@@ -227,7 +226,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const turnThinking = aside || (!inline && !turn.thinkingLive) ? '' : turn.thinking ?? ''
   const asideThinking = aside ? sourceTurn.thinking ?? '' : ''
   const asideFits = useAsideFit()
-  const [processOpen] = useToolExpansion(`process:${rawTurn.id}`)
   const edge = useStore(useShallow((s) => viewEdge(turn.sourceIds, s.messages, !!streaming)))
   const showCompaction = useStore((s) => {
     if (s.session?.compaction) return edge.last
@@ -303,7 +301,6 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
                   <div className="v3-para">
                     <Markdown text={split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
                   </div>
-                  {streaming || !processSegs.length || (processOpen ?? view === 'thinking') ? null : <TurnSources />}
                 </div>
               ) : null}
               {tailSegments.map((seg, si) => {

@@ -190,6 +190,25 @@ export type SessionTextKey =
   | 'thinkingUnavailable'
   | 'asideStacked'
   | 'detailArgs'
+  | 'stepRunningMark'
+  | 'stepDoneMark'
+  | 'testSummary'
+  | 'stepOverwrote'
+  | 'stepLines'
+  | 'stepLinesFrom'
+  | 'stepMcpServer'
+  | 'stepFailedMark'
+  | 'outputEarlier'
+  | 'outputTruncated'
+  | 'outputTruncatedPath'
+  | 'outputLinesOf'
+  | 'outputMoreInFile'
+  | 'exitCode'
+  | 'contentLines'
+  | 'contentMore'
+  | 'contentLess'
+  | 'yanSearch'
+  | 'yanSearchResults'
   | 'detailOutput'
   | 'wrapUpLabel'
   | 'wrapUpDismiss'
@@ -299,7 +318,7 @@ const ZH: Record<SessionTextKey, string> = {
   stepEdited: '编辑',
   stepEditing: '正在编辑',
   stepEditFailed: '编辑失败',
-  stepCreated: '写入',
+  stepCreated: '新建',
   stepCreating: '正在写入',
   stepWriteFailed: '写入失败',
   stepSearched: '搜索',
@@ -392,6 +411,25 @@ const ZH: Record<SessionTextKey, string> = {
   thinkingUnavailable: '{model} 不提供思考文字',
   asideStacked: '窗口不够宽，推理暂时放在正文上方',
   detailArgs: '参数',
+  stepRunningMark: '运行中',
+  stepDoneMark: '完成',
+  testSummary: '{p} 通过 / {f} 失败',
+  stepOverwrote: '覆盖',
+  stepLines: '{a}–{b} 行',
+  stepLinesFrom: '{a} 行起',
+  stepMcpServer: 'MCP 服务：{server}',
+  stepFailedMark: '失败',
+  outputEarlier: '更早的 {n} 行输出未显示',
+  outputTruncated: '输出过长，已截断',
+  outputTruncatedPath: '输出过长，已截断 · 完整输出：{path}',
+  outputLinesOf: '显示第 {a}–{b} 行，共 {n} 行',
+  outputMoreInFile: '文件后面还有 {n} 行',
+  exitCode: '退出码 {n}',
+  contentLines: '共 {n} 行',
+  contentMore: '展开全部内容（{n} 行）',
+  contentLess: '收起内容',
+  yanSearch: '联网搜索',
+  yanSearchResults: '联网搜索 · {n} 条结果',
   detailOutput: '输出',
   wrapUpLabel: '下一步建议',
   wrapUpDismiss: '关闭建议',
@@ -595,6 +633,25 @@ const EN: Record<SessionTextKey, string> = {
   thinkingUnavailable: '{model} does not return reasoning text',
   asideStacked: 'Not enough width; reasoning is shown above the reply for now',
   detailArgs: 'Arguments',
+  stepRunningMark: 'Running',
+  stepDoneMark: 'Done',
+  testSummary: '{p} passed / {f} failed',
+  stepOverwrote: 'Overwrote',
+  stepLines: 'lines {a}–{b}',
+  stepLinesFrom: 'from line {a}',
+  stepMcpServer: 'MCP server: {server}',
+  stepFailedMark: 'Failed',
+  outputEarlier: '{n} earlier lines not shown',
+  outputTruncated: 'Output was truncated',
+  outputTruncatedPath: 'Output was truncated · full output: {path}',
+  outputLinesOf: 'Showing lines {a}–{b} of {n}',
+  outputMoreInFile: '{n} more lines in the file',
+  exitCode: 'exit {n}',
+  contentLines: '{n} lines',
+  contentMore: 'Show all content ({n} lines)',
+  contentLess: 'Collapse content',
+  yanSearch: 'Web search',
+  yanSearchResults: 'Web search · {n} results',
   detailOutput: 'Output',
   wrapUpLabel: 'Next step',
   wrapUpDismiss: 'Dismiss suggestion',

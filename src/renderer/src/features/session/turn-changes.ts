@@ -9,6 +9,87 @@ export function readFileDiff(details: unknown): FileDiff | null {
   return diff as FileDiff
 }
 
+export type CallDiffLineKind = 'add' | 'del' | 'context' | 'skip'
+
+export interface CallDiffLine {
+  kind: CallDiffLineKind
+  num: number | null
+  text: string
+}
+
+export interface PiDiff {
+  lines: CallDiffLine[]
+  added: number
+  removed: number
+}
+
+const PI_DIFF_NUMBERED = /^\s*(\d+) ([\s\S]*)$/
+
+export function parsePiDiff(diff: string): PiDiff | null {
+  const lines: CallDiffLine[] = []
+  let added = 0
+  let removed = 0
+  for (const raw of diff.replace(/\r\n/g, '\n').split('\n')) {
+    if (!raw) continue
+    const sign = raw[0]
+    if (sign !== '+' && sign !== '-' && sign !== ' ') return null
+    const rest = raw.slice(1)
+    const numbered = PI_DIFF_NUMBERED.exec(rest) ?? (/^\s*\d+$/.test(rest) ? [rest, rest.trim(), ''] : null)
+    if (!numbered) {
+      if (sign === ' ' && rest.trim() === '...') {
+        lines.push({ kind: 'skip', num: null, text: '' })
+        continue
+      }
+      return null
+    }
+    const kind: CallDiffLineKind = sign === '+' ? 'add' : sign === '-' ? 'del' : 'context'
+    if (kind === 'add') added += 1
+    if (kind === 'del') removed += 1
+    lines.push({ kind, num: Number(numbered[1]), text: numbered[2] })
+  }
+  return lines.length ? { lines, added, removed } : null
+}
+
+export function readPiDiff(details: unknown): PiDiff | null {
+  if (!details || typeof details !== 'object') return null
+  const diff = (details as { diff?: unknown }).diff
+  return typeof diff === 'string' && diff.trim() ? parsePiDiff(diff) : null
+}
+
+function stringArg(source: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) if (typeof source[key] === 'string') return source[key] as string
+  return null
+}
+
+function splitLines(text: string): string[] {
+  return text ? text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') : []
+}
+
+export function editArgLines(args: unknown): CallDiffLine[] | null {
+  if (!args || typeof args !== 'object') return null
+  const record = args as Record<string, unknown>
+  const pairs = Array.isArray(record.edits) ? record.edits : [record]
+  const lines: CallDiffLine[] = []
+  for (const raw of pairs) {
+    if (!raw || typeof raw !== 'object') continue
+    const edit = raw as Record<string, unknown>
+    const before = stringArg(edit, ['oldText', 'old_string', 'old_str'])
+    const after = stringArg(edit, ['newText', 'new_string', 'new_str'])
+    if (before === null || after === null) continue
+    if (lines.length) lines.push({ kind: 'skip', num: null, text: '' })
+    for (const text of splitLines(before)) lines.push({ kind: 'del', num: null, text })
+    for (const text of splitLines(after)) lines.push({ kind: 'add', num: null, text })
+  }
+  return lines.length ? lines : null
+}
+
+export function callLineStats(call: Pick<UIToolCall, 'details'>): { added: number; removed: number } | null {
+  const diff = readFileDiff(call.details)
+  if (diff) return diff.added >= 0 && diff.removed >= 0 ? { added: diff.added, removed: diff.removed } : null
+  const pi = readPiDiff(call.details)
+  return pi ? { added: pi.added, removed: pi.removed } : null
+}
+
 export function callPath(call: UIToolCall): string {
   const a = (call.args ?? {}) as Record<string, unknown>
   for (const key of ['path', 'file_path', 'filePath']) {
