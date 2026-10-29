@@ -22,20 +22,4 @@
     font-size: var(--t-footnote);
   }
 
-  .peer-approval-error {
-    margin: 0;
-    color: var(--fail-t);
-  }
-
-  .peer-approval-foot {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-8);
-    margin-top: var(--s-4);
-  }
-
-  .peer-approval-spacer {
-    flex: 1 1 auto;
-  }
 }
