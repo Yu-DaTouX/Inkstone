@@ -114,5 +114,5 @@ const singleKey = renderToStaticMarkup(createElement(ui.I18nProvider, null, crea
   provider: 'deepseek', keys: [{ id: 'key-one', label: '个人', masked: 'sk-…1234', active: true }], onDone() {}
 })))
 assert.ok(singleKey.includes('sk-…1234') && singleKey.includes('当前'), '一个 API key 也能展示备注、打码值和当前状态')
-assert.ok(singleKey.includes('改备注') && singleKey.includes('删除'), '当前 API key 也有备注及二次确认删除入口')
+assert.ok(singleKey.includes('改备注') && singleKey.includes('移除'), '当前 API key 也有备注及二次确认移除入口')
 console.log('v3 模型与服务单测通过（凭证门禁 / 收藏 / 订阅多账号 / 单 key 管理）')

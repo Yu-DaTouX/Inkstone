@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import type { PackageListingView } from '../../../../../shared/ipc'
 import { useT } from '../../../i18n'
 import { useStore } from '../../../state/store'
-import { Badge, Button } from '../../../ui'
+import { Badge, Button, Notice } from '../../../ui'
 
 const BRIDGE_NAME = 'pi-claude-bridge'
 const BRIDGE_VERSION = '0.9.3'
@@ -101,9 +101,9 @@ export function ClaudeCodeBridgeRow(): ReactElement {
           </p>
         ) : null}
         {envOverrides.length > 0 ? (
-          <p className="ms-service-warn" role="note" data-testid="cc-env-warn">
+          <Notice tone="info" compact role="note" className="ms-env-notice" data-testid="cc-env-warn">
             {t('cc.envWarn', { vars: envOverrides.join(', ') })}
-          </p>
+          </Notice>
         ) : null}
       </div>
       <div className="ms-service-actions">

@@ -24,7 +24,7 @@
     store.setState({ messages: [], peekedMessages: null, settings: { ...store.getState().settings, asciiBackground: true } })
     await wait(1000)
     window.__polishStage = 'home'
-    check(document.querySelector('.v3-empty-greet')?.textContent.includes('HELLO WORLD'), '终端 HELLO WORLD 已替换首页问候')
+    check(document.querySelector('.v3-empty-greet')?.textContent.includes('Hello world'), '首页问候 Hello world 已渲染')
     check(!document.querySelector('.v3-empty-hint'), '首页旧标语已移除')
     const firstCanvas = document.querySelector('.v3-ascii-field canvas')
     const beforeSession = store.getState().session

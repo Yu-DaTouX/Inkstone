@@ -450,7 +450,7 @@ export function SettingsPage({ onClose, onShowOnboarding }: SettingsPageProps): 
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
-      title={text.title}
+      title={legacy ? text.title : `${text.title} / ${pageTitle}`}
       closeLabel={text.close}
       nav={nav}
       narrowNav={narrowNav}

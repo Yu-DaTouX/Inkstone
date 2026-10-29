@@ -11,7 +11,6 @@ import {
   ConfirmDialog,
   EmptyState,
   Kbd,
-  MiddleTruncate,
   Notice,
   Spinner,
   TextField,
@@ -94,6 +93,7 @@ export function ModelsSettings(): ReactElement {
   const [codexLogging, setCodexLogging] = useState(false)
   const [pendingRemove, setPendingRemove] = useState<AuthProviderInfo | null>(null)
   const [showAllKeys, setShowAllKeys] = useState(false)
+  const [showPath, setShowPath] = useState(false)
 
   const loadPools = async (): Promise<void> => {
     const next = await window.yan.apiKeys().catch(() => null)
@@ -333,7 +333,7 @@ export function ModelsSettings(): ReactElement {
           </span>
           {providerHint(p) ? <p className="ms-service-hint">{providerHint(p)}</p> : null}
           {p.envVar ? <p className="ms-service-env">{t('auth.orEnv')} <code>{p.envVar}</code></p> : null}
-          {fromEnv ? <p className="ms-service-warn">{text('envActive')}</p> : null}
+          {fromEnv ? <Notice tone="info" compact role="note" className="ms-env-notice">{text('envActive')}</Notice> : null}
           {p.envShadowed ? <p className="ms-service-env">{text('envShadowed')}</p> : null}
         </div>
 
@@ -405,7 +405,7 @@ export function ModelsSettings(): ReactElement {
                     setMsg(null)
                   }}
                 >
-                  {state === 'ready' ? text('addKey') : t('auth.setKey')}
+                  {text('addKey')}
                 </Button>
               ) : null}
               {!isKey && (state === 'loginable' || (p.inAppLogin && state === 'ready')) ? (
@@ -484,7 +484,17 @@ export function ModelsSettings(): ReactElement {
               {fileInfo ? (
                 <span className="ms-file">
                   <span className="ms-file-sep" aria-hidden="true">{' \u00b7 '}</span>
-                  <MiddleTruncate className="ms-file-path" value={fileInfo.path} />
+                  <Button
+                    variant="plain"
+                    size="micro"
+                    className="ms-file-link"
+                    tooltip={<span className="ms-file-tip">{fileInfo.path}</span>}
+                    aria-expanded={showPath}
+                    data-testid="ms-file-link"
+                    onPress={() => setShowPath((v) => !v)}
+                  >
+                    {text('credentialFile')}
+                  </Button>
                   <span className="ms-file-count">
                     {' · '}
                     {fileInfo.exists ? t(fileInfo.count === 1 ? 'auth.entry' : 'auth.entries', { n: fileInfo.count }) : t('auth.noFile')}
@@ -492,6 +502,9 @@ export function ModelsSettings(): ReactElement {
                 </span>
               ) : null}
             </span>
+            {fileInfo && showPath ? (
+              <span className="ms-file-path settings-row__line" data-testid="ms-file-path">{fileInfo.path}</span>
+            ) : null}
           </>
         }
         actions={

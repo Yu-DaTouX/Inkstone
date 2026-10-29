@@ -115,7 +115,8 @@ async function main() {
 
   ok(html.includes('class="v3-empty v3-empty-page"') && html.includes('v3-empty-cols'), '空态根部使用生产版面类 v3-empty-page / v3-empty-cols')
   ok(html.includes('class="v3-empty-main"'), '左栏 primary 容器 v3-empty-main 存在')
-  ok(html.includes('v3-empty-greet') && html.includes('HELLO WORLD'), '问候改为终端 HELLO WORLD')
+  ok(html.includes('v3-empty-greet') && html.includes('Hello world') && !html.includes('HELLO WORLD') && !html.includes('v3-empty-prompt'), '问候用正文字体的 Hello world，不再是全大写终端提示')
+  ok(html.indexOf('data-testid="usage-strip"') > html.indexOf('v3-empty-greet') && html.indexOf('data-testid="usage-strip"') < html.indexOf('data-testid="usage-overview"'), '一行用量紧跟在问候下方')
   ok(!html.includes('class="v3-empty-hint"'), '首页旧标语移除')
   const iMain = html.indexOf('class="v3-empty-main"')
   const iUsage = html.indexOf('data-testid="usage-overview"')
@@ -153,20 +154,18 @@ async function main() {
   ok(keepPending.includes('data-testid="usage-overview"') && keepPending.includes('data-pending=""'), 'v3 取数中仍渲染用量框架并标记 pending')
   ok(keepPending.includes('>—</span>') && keepPending.includes('>—</dd>'), 'v3 取数中数字显示「—」占位')
   ok(!keepPending.includes('usage-empty-note'), '取数中不误报「无记录」')
-  ok(html.includes('data-testid="usage-strip"'), '左栏同时渲染一行用量条（由容器查询决定窄屏显示）')
+  ok(html.includes('data-testid="usage-strip"'), '首页始终渲染一行用量条')
 
   const enHtml = renderEmpty(usageView(mainSub, 'en-US', Pattern.renderUsageToggle), 'en-US')
-  ok(enHtml.includes('HELLO WORLD') && !enHtml.includes('class="v3-empty-hint"'), '英文空态同样使用终端问候，无旧标语')
+  ok(enHtml.includes('Hello world') && !enHtml.includes('class="v3-empty-hint"'), '英文空态同样使用终端问候，无旧标语')
   ok(enHtml.includes('data-testid="usage-overview"') && !enHtml.includes('Subagents 80K'), '英文长文案下用量面板仍渲染，不被内容长度错误隐藏')
 
   const css = await readFile(join(process.cwd(), 'src/renderer/src/features/session/v3-empty-state.css'), 'utf8')
   ok(css.includes("container-type: inline-size"), 'CSS：v3-empty-page 建立 inline-size 容器（按真实对话列宽度判定）')
-  ok(/\.v3-empty-cols\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/.test(css), 'CSS：问候与用量同列堆叠，共用左边线')
-  ok(css.includes("grid-template-areas: 'head head head' 'hero stats heat'"), 'CSS：用量压成一行，热力图并入统计行')
-  ok(css.includes('@container (max-width: 560px)'), 'CSS：560px 容器查询存在')
-  const narrowBlock = css.slice(css.indexOf('@container (max-width: 560px)'))
-  ok(/\.start-usage\s*\{[^}]*display:\s*none/.test(narrowBlock), 'CSS：窄容器只收起 .start-usage，不隐藏问候')
-  ok(/\.start-strip\s*\{[^}]*display:\s*flex/.test(narrowBlock), 'CSS：窄容器显示一行用量条，用量不整块消失')
+  ok(/\.v3-empty-cols\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/.test(css), 'CSS：问候与用量同列堆叠')
+  ok(/\.v3-empty-main\s*\{[^}]*align-items:\s*center;[^}]*text-align:\s*center;/.test(css), 'CSS：问候与用量居中，与输入框共用居中轴')
+  ok(/\.v3-chat:has\(\.v3-empty-page\) > \.v3-composer\s*\{[^}]*bottom:\s*var\(--home-lift\)/.test(css) && /\.v3-empty\.v3-empty-page\s*\{[^}]*padding:\s*0 0 var\(--home-lift/.test(css), 'CSS：首页输入框与问候同一抬升量，三者成组位于视觉中心略偏下')
+  ok(!css.includes('font-family: var(--font-mono)') && !css.includes('letter-spacing: 0.06em'), 'CSS：问候不再用等宽宽字距')
   const fixedCaps = [...css.replace(/@container\s*\([^)]*\)/g, '').matchAll(/max-width\s*:\s*([^;}]+)/g)].filter((m) => m[1].trim() !== '100%')
   ok(fixedCaps.length === 0, 'CSS：除容器查询判定外没有固定 max-width 规则（避免旧 max-width 让统计永远隐藏）', fixedCaps.map((m) => m[0]))
 
@@ -186,10 +185,9 @@ async function main() {
   const patternSrc = await readFile(join(process.cwd(), 'src/renderer/src/patterns/UsagePattern.tsx'), 'utf8')
   const pattern0 = () => patternSrc
   const emptyState = await readFile(join(process.cwd(), 'src/renderer/src/features/session/V3EmptyState.tsx'), 'utf8')
-  ok(emptyState.includes("import { UsagePattern } from '../../patterns/UsagePattern'"), 'V3EmptyState 引入 v3 UsagePattern')
-  ok(/<UsagePattern\b[^>]*\/>/.test(emptyState), 'V3EmptyState 默认槽位实际渲染 <UsagePattern />（非闲置副本）')
+  ok(!emptyState.includes('UsagePattern'), 'V3EmptyState 首页不再渲染整块用量面板，只留一行用量')
   ok(pattern0().includes('keepWhenEmpty'), 'UsagePattern 让 v3 用量在取数中 / 无记录时保留框架')
-  ok(emptyState.includes('<UsageStrip'), 'V3EmptyState 在左栏渲染窄屏一行用量条')
+  ok(emptyState.includes('<UsageStrip'), 'V3EmptyState 在问候下渲染一行用量条')
   ok(emptyState.includes("import './v3-empty-state.css'"), 'V3EmptyState 自己 import 专用版面 CSS')
 
   const pattern = patternSrc

@@ -4,7 +4,6 @@ import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
 import type { RunSnapshot } from '../../../../shared/runs'
 import { v3Text } from '../../app/v3-text'
-import { UsagePattern } from '../../patterns/UsagePattern'
 import { UsageStrip } from '../../patterns/UsageStrip'
 import { ListRow } from '../../ui'
 import { BlinkCursor } from './BlinkCursor'
@@ -62,9 +61,13 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
       <div className="v3-empty-cols">
         <div className="v3-empty-main">
           <div className="v3-empty-greet">
-            <span className="v3-empty-prompt" aria-hidden>&gt;</span>
-            <span>HELLO WORLD<BlinkCursor className="v3-hello-cursor" /></span>
+            Hello world<BlinkCursor className="v3-hello-cursor" />
           </div>
+          {usage === null ? null : (
+            <UsageStrip
+              text={{ label: text.usageStripLabel, sessions: text.usageStripSessions, days: text.usageStripDays, recent: text.usageStripRecent }}
+            />
+          )}
           {awaiting.length > 0 ? (
             <section className="v3-empty-waiting" aria-label={waiting.waiting} data-testid="v3-empty-waiting">
               <h2 className="v3-empty-waiting-head">{waiting.waiting}</h2>
@@ -85,13 +88,8 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
               ))}
             </section>
           ) : null}
-          {usage === null ? null : (
-            <UsageStrip
-              text={{ label: text.usageStripLabel, sessions: text.usageStripSessions, days: text.usageStripDays, recent: text.usageStripRecent }}
-            />
-          )}
         </div>
-        {usage === undefined ? <UsagePattern emptyNote={text.usageEmptyNote} /> : usage}
+        {usage ?? null}
       </div>
     </div>
   )

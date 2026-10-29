@@ -17,6 +17,7 @@ export type ModelsTextKey =
   | 'pickerFavoriteCurrent'
   | 'pickerUnfavoriteCurrent'
   | 'addKey'
+  | 'credentialFile'
   | 'keyLabelPlaceholder'
   | 'keyList'
   | 'keyCurrent'
@@ -66,14 +67,15 @@ const ZH: Record<ModelsTextKey, string> = {
   pickerPriceHint: '每百万 token 的输入 / 输出价（美元）',
   pickerFavoriteCurrent: '收藏当前模型',
   pickerUnfavoriteCurrent: '取消收藏当前模型',
-  addKey: "添加 key",
+  addKey: "添加 Key",
+  credentialFile: "凭证位置",
   keyLabelPlaceholder: "备注（可选）",
   keyList: "已保存的 key",
   keyCurrent: "当前",
   keyUse: "使用",
   keyRename: "改备注",
-  keyDelete: "删除",
-  keyDeleteConfirm: "确认删除",
+  keyDelete: "移除",
+  keyDeleteConfirm: "确认移除",
   keySwitched: "已切换到「{label}」，空闲后生效",
   removeBodyMany: "将移除该服务商保存的全部 {n} 个 key；相关模型需重新配置后才可用。",
   addAccount: '添加账号',
@@ -118,13 +120,14 @@ const EN: Record<ModelsTextKey, string> = {
   pickerFavoriteCurrent: 'Favorite current model',
   pickerUnfavoriteCurrent: 'Unfavorite current model',
   addKey: "Add key",
+  credentialFile: "Credential file",
   keyLabelPlaceholder: "Label (optional)",
   keyList: "Saved keys",
   keyCurrent: "Current",
   keyUse: "Use",
   keyRename: "Rename",
-  keyDelete: "Delete",
-  keyDeleteConfirm: "Confirm delete",
+  keyDelete: "Remove",
+  keyDeleteConfirm: "Confirm remove",
   keySwitched: "Switched to “{label}”; applies once idle",
   removeBodyMany: "Removes all {n} saved keys for this provider; set a key again to use its models.",
   addAccount: 'Add account',

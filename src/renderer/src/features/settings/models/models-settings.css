@@ -34,9 +34,29 @@
     min-width: 0;
   }
 
+  .ms-file-link {
+    flex: none;
+    padding-inline: 0;
+  }
+
   .ms-file-path {
     min-width: 0;
-    font-family: var(--font-mono);
+    margin-top: var(--s-4);
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-mono);
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  .ms-file-tip {
+    overflow-wrap: anywhere;
+  }
+
+  .ms-env-notice {
+    --notice-fg: var(--fg);
+    width: fit-content;
+    max-width: 100%;
+    margin-top: var(--s-4);
   }
 
   .ms-file-count {
