@@ -1,8 +1,9 @@
 import { RemoteImage } from '../components/RemoteImage'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native'
-import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage } from '../api/client'
+import { idempotencyKey, RemoteHttpError, type HistoryMessage, type HistoryPage, type SubagentInfo } from '../api/client'
 import { PlanCard } from '../components/PlanCard'
+import { SubagentCard } from '../components/SubagentCard'
 import { QuestionCard } from '../components/QuestionCard'
 import { MessageBody } from '../components/MessageBody'
 import { SpeechInputButton } from '../components/SpeechInputButton'
@@ -40,6 +41,9 @@ function argSummary(args: unknown): string {
   const text = key ? String(record[key]) : JSON.stringify(args)
   return text.split('\n')[0].slice(0, 160)
 }
+
+const SUBAGENT_NOTICE_RE = /^<subagent-notification id="[^"]+" status="[^"]+">/
+const isSubagentNotice = (message: HistoryMessage) => message.role === 'user' && SUBAGENT_NOTICE_RE.test(message.text?.trimStart() ?? '')
 
 const hasReply = (message: HistoryMessage) => !!(message.text?.trim() || message.error || message.artifacts?.length)
 
@@ -90,7 +94,7 @@ function makeTimeline(messages: HistoryMessage[]): TimelineEntry[] {
   for (const message of messages) {
     if (message.role === 'user' || message.role === 'bash') {
       flushTurn()
-      entries.push({ kind: 'message', key: message.id, message })
+      if (!isSubagentNotice(message)) entries.push({ kind: 'message', key: message.id, message })
     } else turn.push(message)
   }
   flushTurn()
@@ -152,6 +156,8 @@ export function SessionScreen({
   const legacyLimit = useRef(60)
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<HistoryPage['plan']>(cached?.plan)
+  const [subagents, setSubagents] = useState<SubagentInfo[]>([])
+  const subagentsAllowed = capabilityAllowed(info, 'subagents')
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -270,13 +276,26 @@ export function SessionScreen({
     }
   }
 
+  const loadSubagents = useCallback(async (): Promise<void> => {
+    if (!subagentsAllowed) return
+    try {
+      const runs = await client.subagents(sessionId)
+      if (alive.current) setSubagents(runs)
+    } catch { }
+  }, [client, sessionId, subagentsAllowed])
+
   useEffect(() => {
     alive.current = true
     followBottom.current = true
     void load()
-    const unsubscribe = onSessionEvent(sessionId, () => void load())
+    const unsubscribe = onSessionEvent(sessionId, (kinds) => {
+      if (kinds.has('messages')) void load()
+      if (kinds.has('subagents')) void loadSubagents()
+    })
     return () => { alive.current = false; unsubscribe() }
-  }, [load, onSessionEvent, sessionId])
+  }, [load, loadSubagents, onSessionEvent, sessionId])
+
+  useEffect(() => { void loadSubagents() }, [loadSubagents])
 
   const send = async (): Promise<void> => {
     const text = draft.trim()
@@ -460,6 +479,7 @@ export function SessionScreen({
         {awayFromBottom && unread.has(sessionId) ? <Pressable accessibilityRole="button" onPress={() => { followBottom.current = true; snapBottom(true); readLatest() }} style={{ alignSelf: 'center', minHeight: touch.min, justifyContent: 'center', paddingHorizontal: space[4] }}><Text style={{ color: p.accent, fontSize: font.sm }}>新回复 ↓</Text></Pressable> : null}
         {photos.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>{photos.map((photo, index) => <View key={photo.id} style={{ width: 72, height: 72 }}><Image accessibilityLabel={`待发送图片 ${index + 1}`} source={{ uri: `data:${photo.mimeType};base64,${photo.data}` }} style={{ width: 72, height: 72, borderRadius: radius.md }} /><Pressable disabled={sending} accessibilityLabel={`移除图片 ${index + 1}`} accessibilityRole="button" onPress={() => onPhotosChange(photos.filter((entry) => entry.id !== photo.id))} style={{ position: 'absolute', top: -4, right: -4, width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'flex-start', padding: 3 }}><View style={{ backgroundColor: p.bg1, borderRadius: 12, padding: 3 }}><Icon name="close" size={icon.sm} color={p.fg} /></View></Pressable></View>)}</View> : null}
         {runner?.waiting || pending.length ? <ActivityLine state="wait" text={STATUS_TEXT.wait} /> : runner?.running && !runInList ? <ActivityLine state="run" text={STATUS_TEXT.run} /> : stream !== 'open' ? <ActivityLine state="offline" text={STATUS_TEXT[stream]} /> : null}
+        {subagents.length ? <SubagentCard runs={subagents} /> : null}
         {plan ? <PlanCard todos={plan.todos} stale={plan.stale} running={!!runner?.running} /> : null}
         <View style={[styles.inputFrame, { backgroundColor: p.surface, borderColor: p.border }]}>
         <TextInput

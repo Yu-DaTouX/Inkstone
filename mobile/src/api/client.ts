@@ -176,6 +176,25 @@ export interface HistoryMessage {
   artifacts?: Array<{ id: string; filename: string; mediaType: string; kind: string; bytes: number; version?: number; unavailable?: boolean }>
 }
 
+export interface SubagentInfo {
+  id: string
+  title: string
+  task: string
+  status: 'starting' | 'running' | 'done' | 'error' | 'cancelled'
+  isolation?: string
+  startedAt: number
+  endedAt?: number
+  endReason?: string
+  model?: string
+  thinkingLevel?: string
+  toolCalls?: number
+  latestActivity?: string
+  error?: string
+  summary?: string
+  tokens?: number
+  cost?: number
+}
+
 export interface RemoteProject {
   id: string
   name: string
@@ -227,6 +246,10 @@ export class RemoteClient {
       `/remote/v1/sessions/${encodeURIComponent(sessionId)}?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}`
     )
     return result.data
+  }
+
+  async subagents(sessionId: string): Promise<SubagentInfo[]> {
+    return (await this.get<{ data: { runs: SubagentInfo[] } }>(`/remote/v1/sessions/${encodeURIComponent(sessionId)}/subagents`)).data.runs
   }
 
   async questions(): Promise<RemotePendingQuestion[]> {

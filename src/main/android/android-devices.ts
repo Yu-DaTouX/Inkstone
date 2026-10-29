@@ -7,7 +7,7 @@ const run = promisify(execFile)
 const START_CODE = Buffer.from([0, 0, 0, 1])
 const NAL_PREFIX = START_CODE.subarray(1)
 const MAX_STREAM_EDGE = 1600
-const FLUSH_DELAY_MS = 8
+const FLUSH_DELAY_MS = 30
 const RESTART_DELAY_MS = 2000
 const INPUT_ACK = '__inkstone_input_done__'
 const TOUCH_PHASES = new Set(['down', 'move', 'up'])
@@ -33,8 +33,15 @@ export class H264Splitter {
   private slices: Buffer[] = []
   private key = false
   private codec = ''
+  private flushed = false
+  damaged = false
 
   push(chunk: Buffer): H264Packet[] {
+    if (this.flushed && !this.buffer.length) {
+      const at = chunk.indexOf(NAL_PREFIX)
+      if (at < 0 || at > 1) this.damaged = true
+    }
+    this.flushed = false
     this.buffer = this.buffer.length ? Buffer.concat([this.buffer, chunk]) : chunk
     const packets: H264Packet[] = []
     for (;;) {
@@ -55,6 +62,7 @@ export class H264Splitter {
     if (this.buffer.length > 3 && this.buffer.indexOf(NAL_PREFIX) === 0) {
       this.unit(this.buffer.subarray(3), packets)
       this.buffer = Buffer.alloc(0)
+      this.flushed = true
     }
     this.finish(packets)
     return packets
@@ -216,13 +224,26 @@ export class AndroidDeviceService {
     this.child = child
     const splitter = new H264Splitter()
     let flushTimer: NodeJS.Timeout | null = null
+    let received = 0
     const emit = (packets: H264Packet[]): void => {
       for (const packet of packets) this.onFrame({ serial, ...packet, sequence: ++this.sequence })
     }
     child.stdout?.on('data', (chunk: Buffer) => {
+      received += 1
       emit(splitter.push(chunk))
+      if (splitter.damaged) {
+        if (flushTimer) clearTimeout(flushTimer)
+        flushTimer = null
+        child.kill()
+        return
+      }
       if (flushTimer) clearTimeout(flushTimer)
-      flushTimer = setTimeout(() => { flushTimer = null; emit(splitter.flush()) }, FLUSH_DELAY_MS)
+      const seen = received
+      flushTimer = setTimeout(() => setImmediate(() => {
+        if (seen !== received || splitter.damaged) return
+        flushTimer = null
+        emit(splitter.flush())
+      }), FLUSH_DELAY_MS)
     })
     child.on('error', () => undefined)
     child.on('exit', () => {

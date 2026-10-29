@@ -27,6 +27,7 @@ function takeUnread(runs: SubagentRun[]): SubagentRun[] {
 export interface NoticeTarget {
   send(text: string, images: undefined, mode: 'followUp'): Promise<{ ok: boolean; error?: string }>
   getState?(): { isAgentRunning?: boolean; isStreaming?: boolean } | null
+  holdsNotices?(): boolean
 }
 
 function targetBusy(target: NoticeTarget): boolean {
@@ -175,7 +176,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       undelivered.delete(key)
       if (runs.length === 0) return
       const target = deps.find(runs[runs.length - 1])
-      if (!target) {
+      if (!target || target.holdsNotices?.()) {
         undelivered.set(key, runs)
         trimUndelivered()
         return
@@ -211,7 +212,7 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
       for (const [key, runs] of [...undelivered]) {
         if (pending.has(key)) continue
         const target = deps.find(runs[runs.length - 1])
-        if (!target) continue
+        if (!target || target.holdsNotices?.()) continue
         undelivered.delete(key)
         if (await deliver(target, runs)) failedAttempts.delete(key)
         else keepUndelivered(key, runs)

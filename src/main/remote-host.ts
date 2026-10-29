@@ -5,7 +5,7 @@ import { join, dirname, basename, resolve } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { hostname } from 'node:os'
-import { remoteHistoryPage } from '../shared/remote-history-page'
+import { remoteHistoryPage, remoteToolCall } from '../shared/remote-history-page'
 import { approvalDigest, applyHumanApproval, remoteApprovalQuestion } from './remote-approval'
 import type { ApprovalBroker } from './approval-broker'
 import { localizeImage } from './image-store'
@@ -21,7 +21,7 @@ import { REMOTE_ARTIFACT_MAX_BYTES } from '../shared/remote-protocol'
 import type { RemoteAnswer, RemoteArtifact, RemotePendingQuestion, RemoteHumanApproval } from '../shared/remote-protocol'
 import { normalizeChainKey, isRepresentative, chainForFile } from '../shared/session-chain'
 import { YAN_DIR } from './paths'
-import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo } from '../shared/ipc'
+import type { AssistantArtifact, RunnerStatus, SessionState, SessionSummary, SessionTodo, SubagentRun } from '../shared/ipc'
 import { SessionEntriesLite } from './session-entries-lite'
 import { readTaskPlanLog } from './task-plan-store'
 import { taskPlanLogEntry } from '../shared/task-plan'
@@ -141,7 +141,41 @@ function remoteModelError(payload: unknown): Record<string, unknown> {
   }
 }
 
+const clip = (text: string | undefined, max: number): string | undefined =>
+  text === undefined ? undefined : text.length > max ? `${text.slice(0, max)}…` : text
+
+export function remoteSubagentRun(run: SubagentRun): Record<string, unknown> {
+  const title = run.brief?.title?.trim() || run.task.split('\n')[0].trim()
+  return {
+    id: run.id,
+    title: clip(title, 80),
+    task: clip(run.task, 600),
+    status: run.status,
+    isolation: run.isolation,
+    startedAt: run.startedAt,
+    ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
+    ...(run.endReason ? { endReason: run.endReason } : {}),
+    ...(run.model ? { model: run.model } : {}),
+    ...(run.thinkingLevel ? { thinkingLevel: run.thinkingLevel } : {}),
+    ...(typeof run.toolCalls === 'number' ? { toolCalls: run.toolCalls } : {}),
+    ...(run.latestActivity ? { latestActivity: clip(run.latestActivity, 200) } : {}),
+    ...(run.error ? { error: clip(run.error, 600) } : {}),
+    ...(run.result?.summary ? { summary: clip(run.result.summary, 1200) } : {}),
+    ...(typeof run.usage?.totalTokens === 'number' ? { tokens: run.usage.totalTokens } : {}),
+    ...(typeof run.usage?.cost === 'number' ? { cost: run.usage.cost } : {})
+  }
+}
+
+export function remoteSubagents(sessionId: string, runs: readonly SubagentRun[]): RemoteOperationResult {
+  const own = runs.filter((run) => run.parentSessionId === sessionId).sort((a, b) => a.startedAt - b.startedAt)
+  return { ok: true, data: { runs: own.map(remoteSubagentRun) } }
+}
+
 export function remotePushPayload(channel: string, payload: unknown): unknown {
+  if (channel === 'subagent') {
+    const parent = asRecord(payload).parentSessionId
+    return typeof parent === 'string' ? { sessionId: parent } : {}
+  }
   if (channel === 'state') return remoteSessionState((payload ?? null) as SessionState | null)
   if (channel === 'runners') return Array.isArray(payload) ? payload.map((item) => remoteRunnerStatus(item as RunnerStatus)) : payload
   if (channel === 'turn-settled') return remoteTurnSettled(payload)
@@ -266,7 +300,7 @@ export async function remoteHistory(sessionId: string, limit: number, before?: s
   const messages = page.messages.map((message) => ({
     ...message,
     ...(message.images ? { images: message.images.map((image) => ({ mimeType: image.mimeType, data: '' })) } : {}),
-    ...(message.toolCalls ? { toolCalls: message.toolCalls.map((tool) => ({ ...tool, images: undefined })) } : {}),
+    ...(message.toolCalls ? { toolCalls: message.toolCalls.map(remoteToolCall) } : {}),
     ...(message.artifacts ? { artifacts: message.artifacts.map(remoteArtifactOf) } : {})
   }))
   const plan = before ? undefined : await remotePlan(summary.path, summary.id)

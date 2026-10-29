@@ -29,7 +29,7 @@ interface RemoteState {
   previews: Record<string, { text: string; role: string; at?: number; reply?: ReadMark }>
   error: string | null
   refresh(): Promise<void>
-  onSessionEvent(sessionId: string, listener: () => void): () => void
+  onSessionEvent(sessionId: string, listener: (kinds: ReadonlySet<SessionEventKind>) => void): () => void
 }
 
 const Ctx = createContext<RemoteState | null>(null)
@@ -41,6 +41,8 @@ export function useRemote(): RemoteState {
 }
 
 const MESSAGE_CHANNELS = new Set(['msg-add', 'msg-update', 'msg-remove', 'tool', 'session-title'])
+
+export type SessionEventKind = 'messages' | 'subagents'
 const QUESTION_CHANNELS = new Set(['ui-request', 'ui-resolved', 'ui-deadline', 'approval', 'approval-close'])
 const STATUS_CHANNELS = new Set(['state', 'runners', 'proc'])
 
@@ -75,7 +77,8 @@ export function RemoteProvider({
   const [previews, setPreviews] = useState<Record<string, { text: string; role: string; at?: number; reply?: ReadMark }>>({})
   const previewVersions = useRef(new Map<string, number>())
   const [error, setError] = useState<string | null>(null)
-  const listeners = useRef(new Map<string, Set<() => void>>())
+  const listeners = useRef(new Map<string, Set<(kinds: ReadonlySet<SessionEventKind>) => void>>())
+  const eventKinds = useRef(new Map<string, Set<SessionEventKind>>())
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
   useEffect(() => {
@@ -158,7 +161,8 @@ export function RemoteProvider({
 
   const refresh = useCallback(async () => {
     await Promise.all([refreshStatus(), refreshQuestions(), refreshInfo()])
-    for (const set of listeners.current.values()) for (const listener of set) listener()
+    const all = new Set<SessionEventKind>(['messages', 'subagents'])
+    for (const set of listeners.current.values()) for (const listener of set) listener(all)
   }, [refreshStatus, refreshQuestions, refreshInfo])
 
   const debounce = useCallback((key: string, run: () => void) => {
@@ -170,9 +174,14 @@ export function RemoteProvider({
     }, 750))
   }, [])
 
-  const notifySession = useCallback((sessionId: string) => {
+  const notifySession = useCallback((sessionId: string, kind: SessionEventKind = 'messages') => {
+    const kinds = eventKinds.current.get(sessionId) ?? new Set<SessionEventKind>()
+    kinds.add(kind)
+    eventKinds.current.set(sessionId, kinds)
     debounce(`session:${sessionId}`, () => {
-      for (const listener of listeners.current.get(sessionId) ?? []) listener()
+      const fired = eventKinds.current.get(sessionId) ?? new Set<SessionEventKind>(['messages'])
+      eventKinds.current.delete(sessionId)
+      for (const listener of listeners.current.get(sessionId) ?? []) listener(fired)
     })
   }, [debounce])
 
@@ -195,6 +204,10 @@ export function RemoteProvider({
           const sessionId = sessionOfEvent(event)
           if (sessionId) notifySession(sessionId)
         }
+        if (event.channel === 'subagent') {
+          const sessionId = sessionOfEvent(event)
+          if (sessionId) notifySession(sessionId, 'subagents')
+        }
         if (MESSAGE_CHANNELS.has(event.channel)) {
           const sessionId = sessionOfEvent(event)
           debounce('status', () => void refreshStatus())
@@ -211,7 +224,7 @@ export function RemoteProvider({
     }
   }, [connection, debounce, notifySession, onUnauthorized, refresh, refreshInfo, refreshQuestions, refreshStatus])
 
-  const onSessionEvent = useCallback((sessionId: string, listener: () => void) => {
+  const onSessionEvent = useCallback((sessionId: string, listener: (kinds: ReadonlySet<SessionEventKind>) => void) => {
     const set = listeners.current.get(sessionId) ?? new Set()
     set.add(listener)
     listeners.current.set(sessionId, set)

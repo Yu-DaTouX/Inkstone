@@ -590,6 +590,7 @@ export class AgentController extends EventEmitter {
   private loopGuardHit?: { rule: LoopHit['rule']; stream: 'thinking' | 'text' }
   private retrySeenThisRun = false
   private pendingModelError?: { text: string; retried: boolean }
+  private quotaExhausted = false
 
   private readonly turn = new TurnTimingTracker()
   private pendingRequestMono?: number
@@ -2465,6 +2466,7 @@ export class AgentController extends EventEmitter {
         })
         if (m.stopReason === 'error' || m.stopReason === 'aborted') this.sessionMoveFailureVersion += 1
         this.pendingModelError = m.stopReason === 'error' ? { text: modelErrorText(m.errorMessage), retried: this.retrySeenThisRun } : undefined
+        if (m.stopReason !== 'aborted') this.quotaExhausted = m.stopReason === 'error' && isQuotaWaitError(modelErrorText(m.errorMessage))
         if (m.stopReason === 'error') {
           this.push({
             ch: 'agent-error',
@@ -4679,6 +4681,10 @@ export class AgentController extends EventEmitter {
 
   getState(): SessionState | null {
     return this.state
+  }
+
+  holdsNotices(): boolean {
+    return this.quotaExhausted
   }
 
   forkSource(): SubagentForkSource | string {

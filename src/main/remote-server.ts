@@ -54,6 +54,7 @@ export interface RemoteServerHandlers {
   snapshot(): Promise<unknown>
   history(sessionId: string, limit: number, before?: string): Promise<RemoteOperationResult>
   models?(sessionId: string): Promise<RemoteOperationResult>
+  subagents?(sessionId: string): Promise<RemoteOperationResult>
   image?(sessionId: string, messageId: string, index: number): Promise<RemoteArtifactFile | RemoteOperationResult>
   command(command: RemoteCommand): Promise<RemoteOperationResult>
   questions?(): Promise<RemotePendingQuestion[]>
@@ -126,7 +127,8 @@ const REMOTE_CHANNELS = new Set([
   'approval',
   'approval-close',
   'turn-settled',
-  'agent-error'
+  'agent-error',
+  'subagent'
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -570,9 +572,10 @@ export class RemoteServer {
         ...(this.options.handlers.artifact ? ['artifacts'] : []),
         ...(this.options.devices ? ['device-name', 'device-revoke'] : []),
         ...(this.options.handlers.models ? ['models', 'thinking', 'send-images'] : []),
-        ...(this.options.handlers.transcribe ? ['voice-transcribe'] : [])
+        ...(this.options.handlers.transcribe ? ['voice-transcribe'] : []),
+        ...(this.options.handlers.subagents ? ['subagents'] : [])
       ]
-      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe'])]
+      const implemented = [...new Set([...configured, 'questions', 'answer', 'artifacts', 'device-name', 'device-revoke', 'models', 'thinking', 'send-images', 'voice-transcribe', 'subagents'])]
       const allowed = isPeer || isAgent ? [] : configured
       const negotiation = negotiateCapabilities(implemented, configured, allowed)
       writeJson(res, 200, {
@@ -634,6 +637,14 @@ export class RemoteServer {
       if (!validText(body.name, 60)) return writeError(res, 400, '设备名称需要 1–60 个字符')
       const device = await this.options.devices.renameDevice(caller.device.id, body.name)
       writeJson(res, device ? 200 : 404, device ? { ok: true, data: device } : { ok: false, error: '设备已撤销' })
+      return
+    }
+
+    if (req.method === 'GET' && parts.length === 5 && parts[2] === 'sessions' && parts[4] === 'subagents') {
+      const sessionId = decodeURIComponent(parts[3])
+      if (!validSessionId(sessionId)) return writeError(res, 400, '会话 id 无效')
+      if (!this.options.handlers.subagents) return writeError(res, 404, '请更新电脑端')
+      this.writeOperation(res, await this.options.handlers.subagents(sessionId))
       return
     }
 
