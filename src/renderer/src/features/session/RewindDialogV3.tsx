@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import type { CheckpointPreview } from '../../../../shared/checkpoints'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Badge, Button, Dialog, Modal, ModalOverlay, Notice, type BadgeTone } from '../../ui'
+import { Badge, Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice, Spinner, type BadgeTone } from '../../ui'
 import './rewind-dialog.css'
 
 const CHANGE_TONE: Record<'A' | 'D' | 'M', BadgeTone> = { A: 'fail', D: 'ok', M: 'stall' }
@@ -121,7 +121,7 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
             {`「${rewind.preview.replace(/\s+/g, ' ').slice(0, 60)}」`}
           </p>
           <div className="rewind-body">
-            {phase === 'loading' ? <div className="rewind-dim">{t('rewind.loading')}</div> : null}
+            {phase === 'loading' ? <div className="rewind-dim rewind-loading" role="status"><Spinner size="sm" />{t('rewind.loading')}</div> : null}
             {phase === 'ready' && preview && preview.total === 0 ? <div className="rewind-dim">{t('rewind.nothing')}</div> : null}
             {phase === 'ready' && preview && preview.total > 0 && counts ? (
               <>
@@ -140,12 +140,11 @@ export function RewindDialogV3({ ownerKey, active }: { ownerKey: string; active:
             ) : null}
             {message ? (phase === 'failed' ? <Notice tone="fail" compact>{message}</Notice> : <div className="rewind-dim" role="status">{message}</div>) : null}
           </div>
-          <div className="rewind-foot">
-            <span className="rewind-spacer" />
+          <DialogFooter>
             {phase === 'ready' && preview && preview.total > 0 ? <Button variant="primary" onPress={() => void run()} data-testid="rewind-confirm">{t('rewind.confirm')}</Button> : null}
             {phase === 'done' && undoId ? <Button onPress={() => void undo()} data-testid="rewind-undo">{t('rewind.undo')}</Button> : null}
             <Button onPress={close} isDisabled={phase === 'working'} data-testid="rewind-done">{phase === 'done' || phase === 'undone' ? t('rewind.close') : t('rewind.cancel')}</Button>
-          </div>
+          </DialogFooter>
         </Dialog>
       </Modal>
     </ModalOverlay>

@@ -64,11 +64,10 @@
     margin: var(--s-8) 0 var(--s-10);
   }
   .ws-op[data-single] { grid-template-columns: minmax(0, 1fr); max-width: 240px; }
-  .ws-source-pending.ui-card { flex-direction: column; justify-content: space-between; gap: var(--s-8); }
+  .ws-source-pending { flex-direction: column; justify-content: space-between; gap: var(--s-8); }
   .ws-source-pending-title { display: grid; gap: var(--s-6); }
-  .ws-source-pending .ui-skeleton--text { height: 0.8em; }
   .ws-source-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-6); min-width: 0; color: var(--fg3); font-size: var(--t-caption); }
-  .ws-less.ui-btn { align-self: center; justify-self: start; gap: var(--s-4); }
+  .ws-less { align-self: center; justify-self: start; gap: var(--s-4); }
   .ws-empty { color: var(--fg3); font-size: var(--t-footnote); }
   .ws-turn-sources { display: grid; margin-top: var(--s-8); }
   .ws-turn-sources-head { color: var(--fg3); font-size: var(--t-footnote); }

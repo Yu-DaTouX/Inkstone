@@ -11,36 +11,15 @@
     max-width: 168px;
   }
 
-  .scripts-run .ui-btn__label {
+  .scripts-run-name {
+    display: block;
     max-width: 128px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .scripts-item-icon {
-    display: inline-flex;
-    flex: none;
-    color: var(--fg2);
-  }
-
-  .scripts-item-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .scripts-item-keys {
-    display: inline-flex;
-    flex: none;
-    gap: var(--s-2);
-    margin-inline-start: auto;
-    padding-inline-start: var(--s-12);
-    color: var(--fg3);
-  }
-
-  .ui-modal.scripts-modal {
+  .scripts-modal {
     width: min(640px, 100%);
   }
 
@@ -68,19 +47,9 @@
     padding-inline-end: var(--s-2);
   }
 
-  .scripts-dialog-empty {
-    margin: 0;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-  }
-
   .scripts-card {
     display: grid;
     gap: var(--s-8);
-    padding: var(--s-10);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface-0);
   }
 
   .scripts-card-head {
@@ -106,9 +75,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-8);
-    padding: var(--s-10);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
   }
 
   .scripts-import-list {
@@ -127,11 +93,5 @@
     color: var(--fg3);
     font-family: var(--font-mono);
     font-size: var(--t-caption);
-  }
-
-  .scripts-dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
   }
 }

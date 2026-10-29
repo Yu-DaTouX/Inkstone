@@ -125,6 +125,9 @@
   }
 
   .sa-pane-wait {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
     margin: 0;
     color: var(--fg3);
     font-size: var(--t-body);
@@ -181,26 +184,13 @@
     font-size: var(--t-footnote);
   }
 
-  .sa-pane-paths-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-4);
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-sm);
-    background: none;
-    color: var(--fg3);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .sa-pane-paths-toggle:hover {
-    color: var(--fg);
+  .sa-pane-paths-panel[hidden] {
+    display: none;
   }
 
   .sa-pane-paths ul {
-    margin: var(--s-4) 0 0;
-    padding: 0;
+    margin: 0;
+    padding: 0 0 0 calc(var(--s-4) + var(--s-16) + var(--s-6));
     font-family: var(--font-mono);
     list-style: none;
   }

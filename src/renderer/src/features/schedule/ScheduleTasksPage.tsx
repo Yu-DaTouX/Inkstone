@@ -9,7 +9,9 @@ import {
   Card,
   Checkbox,
   CheckboxGroup,
+  ConfirmDialog,
   Dialog,
+  DialogFooter,
   EmptyState,
   Input,
   Label,
@@ -271,12 +273,12 @@ function ScheduleEditor({ draft, editingId, busy, error, models, t, onChange, on
           {error}
         </Notice>
       ) : null}
-      <footer className="sched-form-foot">
-        <Button onPress={onCancel}>{t('sched.cancel')}</Button>
+      <DialogFooter>
+        <Button variant="ghost" onPress={onCancel}>{t('sched.cancel')}</Button>
         <Button type="submit" variant="primary" isPending={busy} data-testid="schedule-save">
           {t(editingId ? 'sched.save' : 'sched.create')}
         </Button>
-      </footer>
+      </DialogFooter>
     </form>
   )
 }
@@ -459,25 +461,19 @@ export function ScheduleTasksPage({ client }: ScheduleTasksPageProps = {}): Reac
         </Modal>
       </ModalOverlay>
 
-      <ModalOverlay
-        isDismissable
+      <ConfirmDialog
         isOpen={!!confirming}
         onOpenChange={(open) => {
           if (!open) setConfirming(null)
         }}
-      >
-        <Modal>
-          <Dialog title={t('sched.deleteTitle')} closeLabel={t('sched.cancel')} data-testid="schedule-delete-dialog">
-            <p className="sched-confirm-body">{confirming?.name ?? ''}</p>
-            <footer className="sched-confirm-foot">
-              <Button onPress={() => setConfirming(null)}>{t('sched.cancel')}</Button>
-              <Button variant="danger" isDisabled={busy === confirming?.id} onPress={() => void confirmDelete()}>
-                {t('sched.delete')}
-              </Button>
-            </footer>
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
+        title={t('sched.deleteTitle')}
+        description={confirming?.name ?? ''}
+        tone="danger"
+        confirmLabel={t('sched.delete')}
+        cancelLabel={t('sched.cancel')}
+        isPending={!!confirming && busy === confirming.id}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

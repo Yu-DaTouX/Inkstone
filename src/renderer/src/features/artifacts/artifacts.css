@@ -9,7 +9,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
     overflow: hidden;
@@ -110,9 +110,9 @@
     display: flex;
     align-items: center;
     gap: var(--s-6);
-    min-height: 32px;
+    min-height: var(--size-bar);
     padding: 0 var(--s-8);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     background: var(--hover-main);
   }
 
@@ -176,7 +176,7 @@
     font-size: var(--t-footnote);
   }
 
-  .v3-visual-head .ui-badge {
+  .v3-visual-badge {
     align-self: center;
   }
 
@@ -210,7 +210,7 @@
     display: inline-flex;
     gap: var(--s-4);
     padding: 1px var(--s-6);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-full);
     corner-shape: round;
     color: var(--accent-t);
@@ -529,7 +529,7 @@
   .v3-visual-table th,
   .v3-visual-table td {
     padding: 2px var(--s-8);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     text-align: right;
   }
 
@@ -585,7 +585,7 @@
     gap: var(--s-2);
     min-width: 0;
     padding: var(--s-8) 0;
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .v3-visual-card-title {
@@ -635,7 +635,7 @@
     gap: var(--s-6) var(--s-16);
     margin: 0;
     padding-top: var(--s-8);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .v3-visual-field {
@@ -674,7 +674,7 @@
     flex-direction: column;
     min-width: 0;
     padding: var(--s-4) var(--s-10);
-    border: 1px solid var(--line2);
+    border: var(--hair, 1px) solid var(--line2);
     border-radius: var(--r-sm);
   }
 
@@ -757,7 +757,7 @@
     place-items: center;
     width: 20px;
     height: 20px;
-    border: 1px solid var(--line2);
+    border: var(--hair, 1px) solid var(--line2);
     border-radius: var(--r-full);
     corner-shape: round;
     color: var(--fg2);
@@ -864,7 +864,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
     overflow: hidden;
@@ -876,7 +876,7 @@
     gap: var(--s-6);
     min-height: 34px;
     padding: var(--s-4) var(--s-8);
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--hair, 1px) solid var(--line);
     background: var(--hover-main);
   }
 
@@ -948,7 +948,7 @@
     opacity: 1;
   }
 
-  .v3-artifact-thumb-open .ui-badge {
+  .v3-artifact-thumb-badge {
     gap: var(--s-4);
   }
 

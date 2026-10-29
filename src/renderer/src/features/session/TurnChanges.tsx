@@ -1,7 +1,7 @@
 import { useMemo, useState, type JSX } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { ChevronDown, ChevronUp, FilePen, Undo2 } from 'lucide-react'
-import { Button } from '../../ui'
+import { FilePen, Undo2 } from 'lucide-react'
+import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } from '../../ui'
 import { useI18n, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
 import { openPanelTool } from '../workbench/panel-actions'
@@ -80,7 +80,8 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const text = changesText(lang)
   const prompt = checkpointId ? anchor : null
   const checkpoint = checkpointId ? { id: checkpointId } : null
-  const shown = expanded ? changes.files : changes.files.slice(0, VISIBLE_FILES)
+  const shown = changes.files.slice(0, VISIBLE_FILES)
+  const rest = changes.files.slice(VISIBLE_FILES)
   const hidden = changes.files.length - VISIBLE_FILES
 
   const viewChanges = (): void => {
@@ -93,11 +94,7 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
         <span className="v3-chg-icon" aria-hidden><FilePen size={18} /></span>
         <div className="v3-chg-title">
           <strong>{text.summary(changes.counts)}</strong>
-          {changes.added >= 0 ? (
-            <span className="v3-chg-stats">
-              <span className="v3-add">+{changes.added}</span> <span className="v3-del">-{changes.removed}</span>
-            </span>
-          ) : null}
+          {changes.added >= 0 ? <DiffStat className="v3-chg-stats" added={changes.added} removed={changes.removed} /> : null}
         </div>
         <div className="v3-chg-actions">
           {checkpoint && prompt ? (
@@ -111,25 +108,35 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
           </Button>
         </div>
       </header>
-      <ul className="v3-chg-list">
-        {shown.map((file) => {
-          const { dir, base } = splitChangePath(file.path, cwd)
-          return (
-            <li key={file.path} className="v3-chg-row" data-testid="v3-turn-changes-row" title={file.path}>
-              <span className="v3-chg-path"><span className="v3-chg-dir">{dir}</span>{base}</span>
-              {file.added + file.removed > 0 ? (
-                <span className="v3-chg-stats"><span className="v3-add">+{file.added}</span> <span className="v3-del">-{file.removed}</span></span>
+      <Collapsible className="v3-chg-files" isExpanded={expanded} onExpandedChange={setExpanded}>
+        <ul className="v3-chg-list">
+          {shown.map((file) => <ChangeRow key={file.path} file={file} cwd={cwd} />)}
+        </ul>
+        {hidden > 0 ? (
+          <>
+            <CollapsiblePanel className="v3-chg-panel">
+              {expanded ? (
+                <ul className="v3-chg-list v3-chg-rest">
+                  {rest.map((file) => <ChangeRow key={file.path} file={file} cwd={cwd} />)}
+                </ul>
               ) : null}
-            </li>
-          )
-        })}
-      </ul>
-      {hidden > 0 ? (
-        <button type="button" className="v3-chg-more" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} data-testid="v3-turn-changes-more">
-          {expanded ? text.less : text.more(hidden)}
-          {expanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-        </button>
-      ) : null}
+            </CollapsiblePanel>
+            <CollapsibleHeader className="v3-chg-more" data-testid="v3-turn-changes-more">
+              {expanded ? text.less : text.more(hidden)}
+            </CollapsibleHeader>
+          </>
+        ) : null}
+      </Collapsible>
     </section>
+  )
+}
+
+function ChangeRow({ file, cwd }: { file: { path: string; added: number; removed: number }; cwd: string | undefined }): JSX.Element {
+  const { dir, base } = splitChangePath(file.path, cwd)
+  return (
+    <li className="v3-chg-row" data-testid="v3-turn-changes-row" title={file.path}>
+      <span className="v3-chg-path"><span className="v3-chg-dir">{dir}</span>{base}</span>
+      {file.added + file.removed > 0 ? <DiffStat className="v3-chg-stats" added={file.added} removed={file.removed} /> : null}
+    </li>
   )
 }

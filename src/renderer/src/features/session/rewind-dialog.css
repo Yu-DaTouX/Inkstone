@@ -60,14 +60,9 @@
     font-size: var(--t-footnote);
   }
 
-  .rewind-foot {
+  .rewind-loading {
     display: flex;
     align-items: center;
-    gap: var(--s-8);
-    margin-top: var(--s-4);
-  }
-
-  .rewind-spacer {
-    flex: 1 1 auto;
+    gap: var(--s-6);
   }
 }

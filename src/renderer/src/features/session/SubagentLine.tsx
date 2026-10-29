@@ -298,7 +298,7 @@ function SubagentRow({ run, snapshot, index = 0 }: { run: SubagentRun; snapshot?
         <SubagentStateIcon state={row.state} label={status} />
       </span>
       <span className="v3-sa-title" data-testid="v3-subagent-task">
-        {live ? <ShimmerText>{label}</ShimmerText> : label}
+        {live ? <ShimmerText className="v3-sa-shimmer">{label}</ShimmerText> : label}
       </span>
       {modelName ? (
         <span className="v3-sa-model" data-testid="v3-subagent-model" title={run.model}>

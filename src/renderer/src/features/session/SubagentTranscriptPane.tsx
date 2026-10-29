@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useRunsV3 } from '../../state/runs-v3'
-import { Button, EmptyState, IconButton, Notice } from '../../ui'
+import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, EmptyState, IconButton, Notice, Spinner } from '../../ui'
 import { groupIntoTurns, type Turn } from '../../../../shared/turns'
 import { mergeApprovalLog } from '../../../../shared/approval-log'
 import type { ApprovalReceipt } from '../../../../shared/approval'
@@ -103,6 +103,7 @@ function PaneSteps({ run }: { run: SubagentRun }): JSX.Element | null {
       <IconButton
         size="sm"
         aria-label={tt('subagentPrev')}
+        tooltip={tt('subagentPrev')}
         isDisabled={!prev}
         onPress={() => go(prev, 'prev')}
         data-subagent-step="prev"
@@ -115,6 +116,7 @@ function PaneSteps({ run }: { run: SubagentRun }): JSX.Element | null {
       <IconButton
         size="sm"
         aria-label={tt('subagentNext')}
+        tooltip={tt('subagentNext')}
         isDisabled={!next}
         onPress={() => go(next, 'next')}
         data-subagent-step="next"
@@ -238,7 +240,7 @@ function PaneBody({ run }: { run: SubagentRun }): JSX.Element {
               <TurnView turn={turn} subagentScope={scope} streaming={turn.kind === 'assistant' && model.live && turn === turns[turns.length - 1]} tail={turn === turns[turns.length - 1]} readOnly />
             </div>
           ))}
-          {turns.length === 0 && model.live ? <p className="sa-pane-wait">{t('sa.waitingMessages')}</p> : null}
+          {turns.length === 0 && model.live ? <p className="sa-pane-wait" role="status"><Spinner size="sm" />{t('sa.waitingMessages')}</p> : null}
           {model.error ? (
             <Notice tone="fail" compact data-testid="v3-subagent-error">
               {model.recovery ? `${tt(model.recovery.key, 'n' in model.recovery ? { n: model.recovery.n } : undefined)} · ` : ''}
@@ -263,19 +265,18 @@ function PathList({ label, items }: { label: string; items: readonly string[] })
   const [open, setOpen] = useState(false)
   if (!items.length) return null
   return (
-    <div className="sa-pane-paths">
-      <button type="button" className="sa-pane-paths-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{`${label} ${items.length}`}</span>
-        <Icon name="chevron-right" size={13} className="v3-chev" />
-      </button>
-      {open ? (
-        <ul>
-          {items.slice(0, PATHS_SHOWN).map((item) => (
-            <li key={item} title={item}>{item}</li>
-          ))}
-          {items.length > PATHS_SHOWN ? <li className="dim">+{items.length - PATHS_SHOWN}</li> : null}
-        </ul>
-      ) : null}
-    </div>
+    <Collapsible className="sa-pane-paths" isExpanded={open} onExpandedChange={setOpen}>
+      <CollapsibleHeader accessory={items.length}>{label}</CollapsibleHeader>
+      <CollapsiblePanel className="sa-pane-paths-panel">
+        {open ? (
+          <ul>
+            {items.slice(0, PATHS_SHOWN).map((item) => (
+              <li key={item} title={item}>{item}</li>
+            ))}
+            {items.length > PATHS_SHOWN ? <li className="dim">+{items.length - PATHS_SHOWN}</li> : null}
+          </ul>
+        ) : null}
+      </CollapsiblePanel>
+    </Collapsible>
   )
 }

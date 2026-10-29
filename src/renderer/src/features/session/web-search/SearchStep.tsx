@@ -149,13 +149,13 @@ function PendingCard({ index }: { index: number }): JSX.Element {
     <Card padding="sm" quiet className="ui-source-card ws-source ws-source-pending" style={{ '--source-index': index } as CSSProperties}>
       <span className="ws-source-meta">
         <Skeleton shape="circle" width={24} height={24} />
-        <Skeleton width="48%" />
+        <Skeleton width="48%" height="0.8em" />
       </span>
       <span className="ws-source-pending-title">
-        <Skeleton width="92%" />
-        <Skeleton width="64%" />
+        <Skeleton width="92%" height="0.8em" />
+        <Skeleton width="64%" height="0.8em" />
       </span>
-      <Skeleton width="38%" />
+      <Skeleton width="38%" height="0.8em" />
     </Card>
   )
 }

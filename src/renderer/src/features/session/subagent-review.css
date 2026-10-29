@@ -33,7 +33,7 @@
     min-width: 0;
     height: min(24rem, 60vh);
     margin-top: var(--s-4);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-sm);
     background: var(--bg);
     overflow: hidden;
@@ -53,12 +53,5 @@
     font-size: var(--t-body);
     line-height: 1.6;
     overflow-wrap: anywhere;
-  }
-
-  .v3-subagent-review-foot {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-6);
-    margin-top: var(--s-16);
   }
 }

@@ -88,7 +88,7 @@ export function BranchPager({
         size="sm"
         isDisabled={blocked}
         aria-label={text.prev}
-        title={text.prev}
+        tooltip={text.prev}
         data-testid="v3-branch-prev"
         onPress={() => onNavigate(model.prevTargetId)}
       >
@@ -101,7 +101,7 @@ export function BranchPager({
         size="sm"
         isDisabled={blocked}
         aria-label={text.next}
-        title={text.next}
+        tooltip={text.next}
         data-testid="v3-branch-next"
         onPress={() => onNavigate(model.nextTargetId)}
       >

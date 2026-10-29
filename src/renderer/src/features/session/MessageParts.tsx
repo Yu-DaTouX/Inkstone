@@ -194,15 +194,15 @@ function ArtifactCardView({
         ) : null}
         {!unavailable ? (
           <>
-            <IconButton aria-label={t('artifact.previewHint')} title={t('artifact.previewHint')} onPress={() => void previewFile(artifact.path)}>
+            <IconButton aria-label={t('artifact.previewHint')} tooltip={t('artifact.previewHint')} onPress={() => void previewFile(artifact.path)}>
               <Icon name="file" size={14} />
             </IconButton>
-            <IconButton aria-label={t('artifact.revealHint')} title={t('artifact.revealHint')} onPress={reveal}>
+            <IconButton aria-label={t('artifact.revealHint')} tooltip={t('artifact.revealHint')} onPress={reveal}>
               <Icon name="folder" size={14} />
             </IconButton>
             <IconButton
               aria-label={t('artifact.copyPathHint')}
-              title={t('artifact.copyPathHint')}
+              tooltip={t('artifact.copyPathHint')}
               onPress={() => void navigator.clipboard.writeText(openTarget)}
             >
               <Icon name="copy" size={14} />

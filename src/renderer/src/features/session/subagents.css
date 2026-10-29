@@ -3,7 +3,7 @@
   .v3-subagents-progress { width: auto; margin: 0 var(--s-10) var(--s-6); }
   .v3-sa-card { min-width: 0; }
   .v3-sa-card > .v3-sa-list { padding: var(--s-2); }
-  .v3-sa-card > .v3-sa-list:not(:first-child) { border-top: 1px solid var(--line); }
+  .v3-sa-card > .v3-sa-list:not(:first-child) { border-top: var(--hair, 1px) solid var(--line); }
   .v3-sa-list {
     --sa-cols: [bot] var(--size-avatar) [state] var(--size-status) [title] minmax(35%, 1fr) [model] minmax(0, auto) [usage] minmax(0, auto) [time] auto [chev] 13px [end];
     display: grid;
@@ -11,12 +11,12 @@
     gap: 0 var(--s-6);
     min-width: 0;
   }
-  .v3-sa-row.ui-row { display: grid; grid-column: bot / end; grid-template-columns: subgrid; align-items: center; gap: 0 var(--s-6); width: auto; padding: 0 var(--s-6) 0 var(--s-4); }
+  .v3-sa-row { display: grid; grid-column: bot / end; grid-template-columns: subgrid; align-items: center; gap: 0 var(--s-6); width: auto; padding: 0 var(--s-6) 0 var(--s-4); }
   .v3-sa-bot { grid-column: bot; display: grid; place-items: center; width: var(--size-avatar); height: var(--size-avatar); }
   .v3-sa-bot .v3-subagent-bot { display: block; }
   .v3-sa-state { grid-column: state; display: grid; place-items: center; }
   .v3-sa-title { grid-column: title; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .v3-sa-title .ui-shimmer { vertical-align: top; }
+  .v3-sa-shimmer { vertical-align: top; }
   .v3-sa-model, .v3-sa-usage { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-sa-model { grid-column: model; display: inline-flex; max-width: 18em; }
   .v3-sa-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -24,7 +24,7 @@
   .v3-sa-usage { grid-column: usage; max-width: 13em; }
   .v3-sa-time { grid-column: time; justify-self: end; white-space: nowrap; }
   .v3-sa-row .v3-chev { grid-column: chev; }
-  .v3-sa-more.ui-btn { grid-column: title / end; justify-self: start; }
+  .v3-sa-more { grid-column: title / end; justify-self: start; }
   .v3-sa-totals { grid-column: title / end; min-width: 0; margin: 0; padding: var(--s-4) 0 var(--s-2); overflow-wrap: anywhere; font-size: var(--t-footnote); line-height: var(--t-footnote-lh); font-variant-numeric: tabular-nums; }
   @container v3-subagents (max-width: 460px) {
     .v3-sa-list { --sa-cols: [bot] var(--size-avatar) [state] var(--size-status) [title] minmax(35%, 1fr) [usage] minmax(0, auto) [time] auto [chev] 13px [end]; }

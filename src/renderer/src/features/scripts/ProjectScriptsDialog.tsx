@@ -2,14 +2,18 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { ArrowDown, ArrowUp, FileJson, Plus, Trash2 } from 'lucide-react'
 import {
   Button,
+  Card,
   Checkbox,
   Dialog,
+  DialogFooter,
+  EmptyState,
   IconButton,
   ListBoxItem,
   Modal,
   ModalOverlay,
   Notice,
   Select,
+  Spinner,
   TextField
 } from '../../ui'
 import { useT } from '../../i18n'
@@ -136,9 +140,9 @@ export function ProjectScriptsDialog({
               <p className="scripts-dialog-project">{project.name || project.cwd}</p>
 
               <div className="scripts-dialog-list">
-                {draft.length === 0 ? <p className="scripts-dialog-empty">{t('script.empty')}</p> : null}
+                {draft.length === 0 ? <EmptyState size="sm" title={t('script.empty')} /> : null}
                 {draft.map((script, index) => (
-                  <div className="scripts-card" key={script.id} data-testid={`script-card-${index}`}>
+                  <Card padding="sm" quiet className="scripts-card" key={script.id} data-testid={`script-card-${index}`}>
                     <div className="scripts-card-head">
                       <Select
                         aria-label={t('script.icon')}
@@ -163,7 +167,7 @@ export function ProjectScriptsDialog({
                       <div className="scripts-card-tools">
                         <IconButton
                           aria-label={t('script.moveUp')}
-                          title={t('script.moveUp')}
+                          tooltip={t('script.moveUp')}
                           isDisabled={index === 0}
                           onPress={() => setDraft((current) => moveProjectScript(current, script.id, -1))}
                           data-testid={`script-up-${index}`}
@@ -172,7 +176,7 @@ export function ProjectScriptsDialog({
                         </IconButton>
                         <IconButton
                           aria-label={t('script.moveDown')}
-                          title={t('script.moveDown')}
+                          tooltip={t('script.moveDown')}
                           isDisabled={index === draft.length - 1}
                           onPress={() => setDraft((current) => moveProjectScript(current, script.id, 1))}
                           data-testid={`script-down-${index}`}
@@ -181,7 +185,7 @@ export function ProjectScriptsDialog({
                         </IconButton>
                         <IconButton
                           aria-label={t('script.remove')}
-                          title={t('script.remove')}
+                          tooltip={t('script.remove')}
                           variant="danger"
                           onPress={() => setDraft((current) => removeProjectScript(current, script.id))}
                           data-testid={`script-remove-${index}`}
@@ -202,7 +206,7 @@ export function ProjectScriptsDialog({
                       value={script.previewUrl ?? ''}
                       onChange={(previewUrl) => update(script.id, { previewUrl })}
                     />
-                  </div>
+                  </Card>
                 ))}
               </div>
 
@@ -228,8 +232,8 @@ export function ProjectScriptsDialog({
               </div>
 
               {importShown ? (
-                <div className="scripts-import" data-testid="scripts-import">
-                  {importLoading ? <Notice compact>{t('script.importLoading')}</Notice> : null}
+                <Card padding="sm" quiet className="scripts-import" data-testid="scripts-import">
+                  {importLoading ? <Notice compact variant="hint" icon={<Spinner size="sm" />}>{t('script.importLoading')}</Notice> : null}
                   {importError ? (
                     <Notice tone="fail" compact>
                       {importError}
@@ -237,7 +241,7 @@ export function ProjectScriptsDialog({
                   ) : null}
                   {!importLoading && !importError ? (
                     importable.length === 0 ? (
-                      <p className="scripts-dialog-empty">{t('script.importEmpty')}</p>
+                      <EmptyState size="sm" title={t('script.importEmpty')} />
                     ) : (
                       <>
                         <div className="scripts-import-list">
@@ -269,7 +273,7 @@ export function ProjectScriptsDialog({
                       </>
                     )
                   ) : null}
-                </div>
+                </Card>
               ) : null}
 
               {error ? (
@@ -278,8 +282,8 @@ export function ProjectScriptsDialog({
                 </Notice>
               ) : null}
 
-              <footer className="scripts-dialog-footer">
-                <Button isDisabled={busy} onPress={close}>
+              <DialogFooter>
+                <Button variant="ghost" isDisabled={busy} onPress={close}>
                   {t('script.cancel')}
                 </Button>
                 <Button
@@ -290,7 +294,7 @@ export function ProjectScriptsDialog({
                 >
                   {t('script.save')}
                 </Button>
-              </footer>
+              </DialogFooter>
             </div>
           )}
         </Dialog>

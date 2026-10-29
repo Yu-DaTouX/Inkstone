@@ -6,6 +6,39 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }'}
+function __patch(key, src){ if (!/[\\/]ui[\\/]index\.ts$/.test(key)) return src; let out = src; for (const [n, code] of Object.entries(__EXTRA)) { if (!new RegExp('export (function|const|class) '+n+'\\b').test(out) && !new RegExp('export \\{[^}]*\\b'+n+'\\b').test(out)) out += '\n' + code } return out }
+function __findHeader(node) {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const hit = __findHeader(item)
+      if (hit) return hit
+    }
+    return null
+  }
+  if (!node || typeof node !== 'object') return null
+  if (typeof node.type === 'function' && /^CollapsibleHeader\d*$/.test(node.type.name)) return node
+  if (node.props && 'isExpanded' in node.props) return null
+  return node.props?.children !== undefined ? __findHeader(node.props.children) : null
+}
+function __wireCollapsibles(node) {
+  if (Array.isArray(node)) {
+    for (const item of node) __wireCollapsibles(item)
+    return node
+  }
+  if (!node || typeof node !== 'object') return node
+  const props = node.props
+  if (props && 'isExpanded' in props && typeof props.onExpandedChange === 'function') {
+    const head = __findHeader(props.children)
+    if (head) {
+      head.type = 'button'
+      head.props = { ...head.props, 'aria-expanded': !!props.isExpanded, onClick: () => props.onExpandedChange(!props.isExpanded) }
+    }
+  }
+  if (props?.children !== undefined) __wireCollapsibles(props.children)
+  return node
+}
+
 const posix = (p) => p.replace(/\\/g, '/')
 
 const report = { pass: 0, fail: 0 }
@@ -124,7 +157,7 @@ function makeStubPlugin(rawMap, extraResolve = {}) {
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         const key = args.path.slice('v3stub:'.length)
         if (virtual.has(key)) return { contents: virtual.get(key), loader: 'js' }
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
+        return { contents: __patch(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
       })
     }
   }
@@ -290,7 +323,7 @@ function makeHookRuntime() {
         for (const fn of rt.effects) fn()
       } while (rt.dirty && ++guard < 100)
       if (guard >= 100) throw new Error('浅渲染未收敛（疑似 effect 里无限 setState）')
-      return tree
+      return __wireCollapsibles(tree)
     }
   }
   return rt
@@ -642,7 +675,8 @@ async function main() {
     }
     const done = processOf({ ...base, terminalReason: 'completed' })
     ok(!!done.toggle && collect(done.toggle, (node) => String(node.props?.className ?? '').includes('v3-process-label')).length === 0, '过程入口不再带「过程」前缀')
-    const firstPart = done.toggle ? [].concat(done.toggle.props.children).flat().find((child) => child && typeof child === 'object') : null
+    const partsLine = done.toggle ? collect(done.toggle, (node) => node.props?.className === 'v3-process-line')[0] : null
+    const firstPart = partsLine ? [].concat(partsLine.props.children).flat().find((child) => child && typeof child === 'object') : null
     ok(firstPart?.props?.className === 'v3-process-count', '入口第一项就是计数', firstPart?.props?.className)
     ok(done.el?.props.alertFailures === false && !!done.failed && !String(done.failed.props.className).includes('err'), '正常收尾：失败计数用次级文字色，不标红', done.failed?.props.className)
     const failed = processOf({ ...base, terminalReason: 'failed' })

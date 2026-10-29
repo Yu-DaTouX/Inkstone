@@ -27,7 +27,7 @@
 
   .v3-rail-card {
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     box-shadow: var(--shadow-pop);
     color: var(--fg2);

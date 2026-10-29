@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { SubagentRun } from '../../../../shared/ipc'
 import { useI18n, useT } from '../../i18n'
-import { Button, Dialog, Modal, ModalOverlay, Notice } from '../../ui'
+import { Button, Dialog, DialogFooter, Modal, ModalOverlay, Notice } from '../../ui'
 import { DiffView } from '../diff'
 import { loadSubagentPatch, subagentReviewGate, type SubagentPatch } from './subagent-review'
 import './subagent-review.css'
@@ -228,7 +228,7 @@ export function SubagentReview({ run, onMerge, onDiscard, loadPatch }: SubagentR
                   {actionError}
                 </Notice>
               ) : null}
-              <div className="v3-subagent-review-foot">
+              <DialogFooter>
                 <Button
                   variant="ghost"
                   isDisabled={!!busy}
@@ -238,7 +238,7 @@ export function SubagentReview({ run, onMerge, onDiscard, loadPatch }: SubagentR
                   {text.cancel}
                 </Button>
                 <Button
-                  variant={confirming === 'discard' ? 'danger' : 'primary'}
+                  variant={confirming === 'discard' ? 'destructive' : 'primary'}
                   isDisabled={!!busy}
                   onPress={() => { if (confirming) void runAction(confirming) }}
                   data-testid="v3-subagent-review-confirm"
@@ -247,7 +247,7 @@ export function SubagentReview({ run, onMerge, onDiscard, loadPatch }: SubagentR
                     ? confirming === 'merge' ? text.applying : text.discarding
                     : confirming === 'merge' ? text.confirmApply : text.confirmDiscard}
                 </Button>
-              </div>
+              </DialogFooter>
             </Dialog>
           </Modal>
         </ModalOverlay>

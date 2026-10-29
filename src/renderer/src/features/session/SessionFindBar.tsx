@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom'
 import { useT } from '../../i18n'
 import { isModalOpen } from '../../lib/modalLayer'
 import { useStore } from '../../state/store'
-import { Icon } from './Icon'
-import { IconButton } from '../../ui'
+import { FindBar } from '../../ui'
 import { stepFindIndex } from '../preview/code-find'
 import {
   FIND_ACTIVE_HIGHLIGHT,
@@ -13,7 +12,6 @@ import {
   FIND_MUTATION_DEBOUNCE_MS,
   clampActiveIndex,
   centeringOffset,
-  findStatusText,
   findStepQuery,
   matchFind,
   sessionFindAction,
@@ -79,7 +77,6 @@ export function SessionFindBar({
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState({ current: 0, total: 0 })
   const found = useRef<{ query: string; matches: PaintedMatch[]; index: number }>({ query: '', matches: [], index: -1 })
-  const rootRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const restoreRef = useRef<HTMLElement | null>(null)
   const debounceRef = useRef<number | null>(null)
@@ -203,6 +200,32 @@ export function SessionFindBar({
   }, [enabled, open])
 
   useEffect(() => {
+    if (!open) return undefined
+    const input = inputRef.current
+    if (!input) return undefined
+    const onStart = (): void => {
+      composingRef.current = true
+    }
+    const onEnd = (): void => {
+      composingRef.current = false
+      cancelDebounce()
+      const value = input.value
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null
+        runRef.current(value, 'new')
+      }, FIND_INPUT_DEBOUNCE_MS)
+    }
+    input.spellcheck = false
+    input.autocomplete = 'off'
+    input.addEventListener('compositionstart', onStart)
+    input.addEventListener('compositionend', onEnd)
+    return () => {
+      input.removeEventListener('compositionstart', onStart)
+      input.removeEventListener('compositionend', onEnd)
+    }
+  }, [open])
+
+  useEffect(() => {
     if (!enabled) return undefined
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
@@ -290,96 +313,31 @@ export function SessionFindBar({
   }, [])
 
   if (!open) return null
-  const statusText = findStatusText(query, status.current, status.total)
   return createPortal(
-    <div
-      ref={rootRef}
-      className="v3-find"
-      role="search"
-      aria-label={t('chat.find')}
-      data-testid="v3-session-findbar"
-      style={{ zIndex: FIND_Z }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
-        event.preventDefault()
-        event.stopPropagation()
-        closeBar('escape')
-      }}
-    >
-      <input
-        ref={inputRef}
-        className="v3-find-input"
+    <div className="v3-find" style={{ zIndex: FIND_Z }} data-testid="v3-session-findbar">
+      <FindBar
         value={query}
-        spellCheck={false}
-        autoComplete="off"
-        aria-label={t('chat.find')}
+        matchIndex={status.total ? status.current - 1 : null}
+        matchCount={query ? status.total : null}
+        inputRef={inputRef}
+        labels={{ input: t('chat.find'), previous: t('chat.findPrev'), next: t('chat.findNext'), close: t('chat.findClose') }}
         placeholder={t('chat.findPlaceholder')}
-        data-testid="v3-session-find-input"
-        onChange={(event) => {
+        data-testid="v3-session-find"
+        onChange={(value) => {
           if (closingRef.current) return
-          setQuery(event.target.value)
+          setQuery(value)
           cancelDebounce()
           if (!composingRef.current) {
-            const value = event.target.value
             debounceRef.current = window.setTimeout(() => {
               debounceRef.current = null
               runRef.current(value, 'new')
             }, FIND_INPUT_DEBOUNCE_MS)
           }
         }}
-        onCompositionStart={() => {
-          composingRef.current = true
-        }}
-        onCompositionEnd={(event) => {
-          composingRef.current = false
-          cancelDebounce()
-          const value = event.currentTarget.value
-          debounceRef.current = window.setTimeout(() => {
-            debounceRef.current = null
-            runRef.current(value, 'new')
-          }, FIND_INPUT_DEBOUNCE_MS)
-        }}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return
-          const delta = event.key === 'Enter' ? (event.shiftKey ? -1 : 1) : event.key === 'F3' ? (event.shiftKey ? -1 : 1) : 0
-          if (!delta) return
-          event.preventDefault()
-          event.stopPropagation()
-          step(delta > 0)
-        }}
+        onNext={() => step(true)}
+        onPrevious={() => step(false)}
+        onClose={() => closeBar('escape')}
       />
-      <span className="v3-find-status" role="status" aria-atomic="true" data-testid="v3-session-find-status">
-        {statusText}
-      </span>
-      <IconButton
-        size="md"
-        aria-label={t('chat.findPrev')}
-        title={t('chat.findPrev')}
-        isDisabled={!status.total}
-        data-testid="v3-session-find-prev"
-        onPress={() => step(false)}
-      >
-        <Icon name="chevron-up" size={14} />
-      </IconButton>
-      <IconButton
-        size="md"
-        aria-label={t('chat.findNext')}
-        title={t('chat.findNext')}
-        isDisabled={!status.total}
-        data-testid="v3-session-find-next"
-        onPress={() => step(true)}
-      >
-        <Icon name="chevron-down" size={14} />
-      </IconButton>
-      <IconButton
-        size="md"
-        aria-label={t('chat.findClose')}
-        title={t('chat.findClose')}
-        data-testid="v3-session-find-close"
-        onPress={() => closeBar('button')}
-      >
-        <Icon name="close" size={14} />
-      </IconButton>
     </div>,
     document.body
   )

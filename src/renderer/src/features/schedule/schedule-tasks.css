@@ -174,21 +174,6 @@
     line-height: var(--t-body-lh);
   }
 
-  .sched-form-foot,
-  .sched-confirm-foot {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-8);
-  }
-
-  .sched-confirm-body {
-    margin: 0 0 var(--s-16);
-    color: var(--fg);
-    font-size: var(--t-body);
-    line-height: var(--t-body-lh);
-    overflow-wrap: anywhere;
-  }
-
   @media (max-width: 640px) {
     .sched-form-row {
       grid-template-columns: minmax(0, 1fr);

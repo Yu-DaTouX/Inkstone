@@ -20,7 +20,7 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0.0625em 0.25em;
-    border: 0.5px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: 0.4em;
     background: var(--alpha-1);
     color: var(--fail-t);

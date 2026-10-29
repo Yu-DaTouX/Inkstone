@@ -3,7 +3,7 @@ import { AlertCircle, ArrowLeft, RotateCw } from 'lucide-react'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { viewIdentityOf } from '../../../state/view-identity'
-import { Badge, Button, Checkbox, CheckboxGroup, Dialog, EmptyState, Modal, ModalOverlay, Notice, Spinner } from '../../../ui'
+import { Badge, Button, Checkbox, CheckboxGroup, Dialog, DialogFooter, EmptyState, Modal, ModalOverlay, Notice, Spinner } from '../../../ui'
 import type { NativeSessionHostRequest } from '../../../../../shared/native-session-host'
 import {
   isNativeSurfaceMode,
@@ -116,7 +116,7 @@ export function ScopeModelsView({
                 data-testid={`native-scope-row-${model.key}`}
                 data-in-scope={model.inScope ? '1' : undefined}
               >
-                <Checkbox value={model.key}>
+                <Checkbox value={model.key} className="native-scope__check">
                   <span className="native-scope__name">{model.name}</span>
                   <span className="native-scope__provider">{model.provider}</span>
                   {model.current ? <Badge tone="run">{t.current}</Badge> : null}
@@ -128,7 +128,7 @@ export function ScopeModelsView({
       ) : (
         <EmptyState size="sm" data-testid="native-scope-empty" title={t.empty} />
       )}
-      <div className="native-surface__foot">
+      <DialogFooter className="native-surface__foot">
         <Button size="sm" variant="ghost" onPress={onSelectAll} data-testid="native-scope-select-all">
           {t.selectAll}
         </Button>
@@ -153,7 +153,7 @@ export function ScopeModelsView({
             {text.viewEntries}
           </Button>
         ) : null}
-      </div>
+      </DialogFooter>
     </div>
   )
 }
@@ -335,7 +335,7 @@ export function TrustPanel({ text, view, busy, error, notice, onToggle, onShowEn
       <p className="native-surface__risk" data-testid="native-trust-risk">
         {t.risk}
       </p>
-      <div className="native-surface__foot">
+      <DialogFooter className="native-surface__foot">
         <span className="native-surface__spacer" />
         {error ? (
           <Notice tone="fail" compact data-testid="native-trust-error">
@@ -360,7 +360,7 @@ export function TrustPanel({ text, view, busy, error, notice, onToggle, onShowEn
             {text.viewEntries}
           </Button>
         ) : null}
-      </div>
+      </DialogFooter>
     </div>
   )
 }
@@ -497,7 +497,7 @@ export function EntriesPanel({ text, view, busy, error, onRefresh, onBack }: Ent
           {t.limit(view.shown, view.total)}
         </p>
       ) : null}
-      <div className="native-surface__foot">
+      <DialogFooter className="native-surface__foot">
         {onBack ? (
           <Button
             size="sm"
@@ -524,7 +524,7 @@ export function EntriesPanel({ text, view, busy, error, onRefresh, onBack }: Ent
         >
           {t.refresh}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   )
 }
@@ -685,12 +685,12 @@ export function NativeSessionSurfaces({ transport }: NativeSessionSurfacesProps)
           <p className="native-surface__unknown" data-testid="native-surface-unknown-detail">
             {text.unknownMode(unknown)}
           </p>
-          <div className="native-surface__foot">
+          <DialogFooter className="native-surface__foot">
             <span className="native-surface__spacer" />
             <Button size="sm" variant="primary" onPress={close}>
               {text.close}
             </Button>
-          </div>
+          </DialogFooter>
         </>
       )
     })

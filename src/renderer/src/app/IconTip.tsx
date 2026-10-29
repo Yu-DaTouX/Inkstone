@@ -13,7 +13,7 @@ export function IconTip({
   children: ReactElement
 }): ReactElement {
   return (
-    <TooltipTrigger delay={500}>
+    <TooltipTrigger>
       {children}
       <Tooltip>
         {shortcut == null && detail == null ? label : <TooltipHint label={label} shortcut={shortcut} detail={detail} />}

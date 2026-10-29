@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
-import { ShimmerText } from '../../ui'
+import { Collapsible, CollapsibleHeader, CollapsiblePanel, ShimmerText } from '../../ui'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
 import { showsThinkingInline } from './transcript-view-model'
@@ -101,35 +101,37 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
   const peek = open ? '' : peekText(text)
 
   return (
-    <div ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking">
-      <button className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} aria-expanded={open} onClick={toggle} data-testid="v3-thinking-toggle">
-        <Icon name="brain" size={13} />
-        {asStep ? (
-          <span className="v3-step-label">{label}</span>
-        ) : (
-          <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
-        )}
-        {peek ? (
-          <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir="rtl" data-testid="v3-thinking-peek">
-            <span dir="ltr">{peek}</span>
-          </span>
+    <Collapsible ref={rootRef} className={asStep ? 'v3-think v3-step' : 'v3-think'} data-live={live || undefined} data-open={open || undefined} data-row={asStep ? 'step' : undefined} data-testid="v3-thinking" isExpanded={open} onExpandedChange={toggle}>
+      <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} chevron="end" icon={<Icon name="brain" size={13} />} data-testid="v3-thinking-toggle">
+        <span className="v3-step-line">
+          {asStep ? (
+            <span className="v3-step-label">{label}</span>
+          ) : (
+            <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
+          )}
+          {peek ? (
+            <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir="rtl" data-testid="v3-thinking-peek">
+              <span dir="ltr">{peek}</span>
+            </span>
+          ) : null}
+        </span>
+      </CollapsibleHeader>
+      <CollapsiblePanel className="v3-step-panel">
+        {open ? (
+          <div
+            ref={bodyRef}
+            className="v3-think-body"
+            tabIndex={0}
+            data-testid="v3-thinking-body"
+            onScroll={(event) => {
+              const el = event.currentTarget
+              followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
+            }}
+          >
+            {text}
+          </div>
         ) : null}
-        <Icon name={asStep ? 'chevron-right' : open ? 'chevron-down' : 'chevron-right'} size={asStep ? 14 : 13} className="v3-chev" />
-      </button>
-      {open ? (
-        <div
-          ref={bodyRef}
-          className="v3-think-body"
-          tabIndex={0}
-          data-testid="v3-thinking-body"
-          onScroll={(event) => {
-            const el = event.currentTarget
-            followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
-          }}
-        >
-          {text}
-        </div>
-      ) : null}
-    </div>
+      </CollapsiblePanel>
+    </Collapsible>
   )
 }

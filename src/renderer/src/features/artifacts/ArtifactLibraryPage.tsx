@@ -232,7 +232,7 @@ export function ArtifactLibraryPage(): JSX.Element {
                 { value: 'grid', label: t('artifactLibrary.viewGrid'), testId: 'v3-artifact-library-view-grid' }
               ]}
             />
-            <SearchField aria-label={t('artifactLibrary.search')} placeholder={t('artifactLibrary.search')} value={query} onChange={setQuery} />
+            <SearchField className="artifact-library-search" aria-label={t('artifactLibrary.search')} placeholder={t('artifactLibrary.search')} value={query} onChange={setQuery} />
           </div>
         }
       />

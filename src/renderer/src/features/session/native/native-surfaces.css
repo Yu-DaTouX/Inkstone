@@ -68,14 +68,9 @@
   }
 
   .native-surface__foot {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s-8);
     min-width: 0;
-    margin-top: var(--s-8);
     padding-top: var(--s-8);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .native-scope__group {
@@ -95,7 +90,7 @@
     min-width: 0;
   }
 
-  .native-scope__row .ui-checkbox {
+  .native-scope__check {
     width: 100%;
   }
 

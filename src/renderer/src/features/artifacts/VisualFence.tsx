@@ -194,7 +194,7 @@ function Record({ block }: { block: RecordBlock }): JSX.Element {
       <header className="v3-visual-head">
         <span className="v3-visual-title">{block.title}</span>
         {block.subtitle ? <span className="v3-visual-sub">{block.subtitle}</span> : null}
-        {block.badge ? <Badge tone="neutral">{block.badge}</Badge> : null}
+        {block.badge ? <Badge tone="neutral" className="v3-visual-badge">{block.badge}</Badge> : null}
       </header>
       <dl className="v3-visual-fields">
         {block.fields.map((field, index) => (

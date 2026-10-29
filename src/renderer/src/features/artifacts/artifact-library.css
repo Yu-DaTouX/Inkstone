@@ -4,8 +4,8 @@
   .artifact-library-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--s-12); margin-bottom: var(--s-16); }
   .artifact-library-title { display: inline-flex; align-items: center; gap: var(--s-8); }
   .artifact-library-note { margin-top: 0; margin-bottom: 0; color: var(--fg3); font-size: var(--t-footnote); }
-  .artifact-library-list { display: grid; gap: 0; margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-  .artifact-library-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--s-12); padding: var(--s-12) var(--s-4); border-bottom: 1px solid var(--line); }
+  .artifact-library-list { display: grid; gap: 0; margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; border-top: var(--hair, 1px) solid var(--line); }
+  .artifact-library-row { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: var(--s-12); padding: var(--s-12) var(--s-4); border-bottom: var(--hair, 1px) solid var(--line); }
   .artifact-library-row[data-unavailable] { opacity: 0.6; }
   .artifact-library-main { display: grid; gap: var(--s-2); min-width: 0; }
   .artifact-library-name { justify-self: start; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
@@ -16,11 +16,11 @@
   .artifact-library-desc { color: var(--fg2); }
   .artifact-library-actions { display: flex; align-items: center; gap: var(--s-4); }
   .artifact-library-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-8); }
-  .artifact-library-tools .ui-search { width: min(100%, 15rem); }
+  .artifact-library-search { width: min(100%, 15rem); }
   .artifact-library-name { display: inline-flex; align-items: center; gap: var(--s-4); }
   .artifact-library-pin { flex: none; color: var(--accent); }
   .artifact-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: var(--s-16); margin-top: 0; margin-bottom: 0; padding: 0; list-style: none; }
-  .artifact-library-card { display: grid; grid-template-rows: max-content max-content max-content; gap: var(--s-8); min-width: 0; padding: var(--s-8); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
+  .artifact-library-card { display: grid; grid-template-rows: max-content max-content max-content; gap: var(--s-8); min-width: 0; padding: var(--s-8); border: var(--hair, 1px) solid var(--line); border-radius: var(--r-md); background: var(--bg); }
   .artifact-library-card[data-unavailable] { opacity: 0.6; }
   .artifact-library-card .artifact-library-main { padding: 0 var(--s-4); }
   .artifact-library-card .artifact-library-actions { justify-content: flex-end; }

@@ -16,7 +16,7 @@ import { isLang } from '../../i18n/lang'
 import { useStore } from '../../state/store'
 import { contextUsageSummary } from '../workbench/context-pane-view'
 import type { AppSettings } from '../../../../shared/ipc'
-import { Button, Dialog, ListBoxItem, Modal, ModalOverlay, Radio, RadioGroup, Select, Spinner, Switch } from '../../ui'
+import { Button, Dialog, DialogFooter, ListBoxItem, Modal, ModalOverlay, Radio, RadioGroup, Select, Spinner, Switch } from '../../ui'
 import { Slider } from '../../ui/Slider'
 import '../../ui/Slider.css'
 import { AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS, autoCompactAt } from '../../../../shared/context-limits'
@@ -114,82 +114,84 @@ export function OnboardingWizard({ onClose, initialStep, onOpenSettings }: Onboa
       }}
     >
       <Modal className="v3-ob-modal">
-        <Dialog className="v3-ob-dialog" title={text.title} closeLabel={text.close}>
-          <p className="v3-ob-subtitle">{text.subtitle}</p>
+        <Dialog className="v3-ob-dialog" title={text.title} closeLabel={text.close} body="flush">
+          <div className="v3-ob-content">
+            <p className="v3-ob-subtitle">{text.subtitle}</p>
 
-          <nav className="v3-ob-steps" aria-label={text.stepsLabel}>
-            <ol className="v3-ob-steps__list">
-              {ONBOARDING_STEPS.map((entry: OnboardingStepDef, i: number) => {
-                const active = i === index
-                const past = i < index
-                const done = isDone(entry.id)
-                return (
-                  <li key={entry.id}>
-                    <button
-                      type="button"
-                      className="v3-ob-step"
-                      data-active={active ? '1' : '0'}
-                      data-past={past ? '1' : '0'}
-                      data-done={done ? '1' : '0'}
-                      aria-current={active ? 'step' : undefined}
-                      data-testid={`v3-ob-step-${entry.id}`}
-                      onClick={() => setIndex(clampStepIndex(i))}
-                    >
-                      <span className="v3-ob-step__dot" aria-hidden="true">
-                        {done ? <Check size={12} /> : i + 1}
-                      </span>
-                      <span className="v3-ob-step__name">{text[stepLabelKey(entry.id)]}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ol>
-          </nav>
+            <nav className="v3-ob-steps" aria-label={text.stepsLabel}>
+              <ol className="v3-ob-steps__list">
+                {ONBOARDING_STEPS.map((entry: OnboardingStepDef, i: number) => {
+                  const active = i === index
+                  const past = i < index
+                  const done = isDone(entry.id)
+                  return (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        className="v3-ob-step"
+                        data-active={active ? '1' : '0'}
+                        data-past={past ? '1' : '0'}
+                        data-done={done ? '1' : '0'}
+                        aria-current={active ? 'step' : undefined}
+                        data-testid={`v3-ob-step-${entry.id}`}
+                        onClick={() => setIndex(clampStepIndex(i))}
+                      >
+                        <span className="v3-ob-step__dot" aria-hidden="true">
+                          {done ? <Check size={12} /> : i + 1}
+                        </span>
+                        <span className="v3-ob-step__name">{text[stepLabelKey(entry.id)]}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ol>
+            </nav>
 
-          <div className="v3-ob-main">
-            <OnboardingIllustration
-              step={step.id}
-              text={text}
-              light={settings?.theme === 'light'}
-              soundOn={settings?.sound.enabled === true}
-              volume={typeof settings?.sound.volume === 'number' ? settings.sound.volume : 0.4}
-              authed={authReady}
-              limit={settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS}
-            />
-            <div className="v3-ob-body">
-              {ONBOARDING_STEPS.map((entry, i) => (
-                <div
-                  key={entry.id}
-                  className="v3-ob-stage"
-                  data-active={i === index ? '1' : '0'}
-                  aria-hidden={i === index ? undefined : true}
-                  data-testid={`v3-ob-panel-${entry.id}`}
-                >
-                  {renderPanel(entry)}
-                </div>
-              ))}
+            <div className="v3-ob-main">
+              <OnboardingIllustration
+                step={step.id}
+                text={text}
+                light={settings?.theme === 'light'}
+                soundOn={settings?.sound.enabled === true}
+                volume={typeof settings?.sound.volume === 'number' ? settings.sound.volume : 0.4}
+                authed={authReady}
+                limit={settings?.autoCompactTokens ?? DEFAULT_AUTO_COMPACT_TOKENS}
+              />
+              <div className="v3-ob-body">
+                {ONBOARDING_STEPS.map((entry, i) => (
+                  <div
+                    key={entry.id}
+                    className="v3-ob-stage"
+                    data-active={i === index ? '1' : '0'}
+                    aria-hidden={i === index ? undefined : true}
+                    data-testid={`v3-ob-panel-${entry.id}`}
+                  >
+                    {renderPanel(entry)}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-
-          <div className="v3-ob-foot">
+          <DialogFooter align="between" className="v3-ob-foot">
             <span className="v3-ob-progress" data-testid="v3-ob-progress">
               {text.stepOf.replace('{n}', String(progress.n)).replace('{total}', String(progress.total))}
               {step.skippable ? <span className="v3-ob-optional"> · {text.optional}</span> : null}
             </span>
-            <span className="v3-ob-spacer" />
-            {!isFirstStep(index) ? (
-              <Button data-testid="v3-ob-back" onPress={() => setIndex(prevStepIndex(index))}>
-                {text.back}
+            <span className="v3-ob-foot-actions">
+              {!isFirstStep(index) ? (
+                <Button variant="ghost" data-testid="v3-ob-back" onPress={() => setIndex(prevStepIndex(index))}>
+                  {text.back}
+                </Button>
+              ) : null}
+              <Button
+                variant="primary"
+                data-testid={last ? 'v3-ob-done' : 'v3-ob-next'}
+                onPress={() => (last ? onClose('done') : setIndex(nextStepIndex(index)))}
+              >
+                {last ? text.start : text.next}
               </Button>
-            ) : null}
-            <Button
-              variant="primary"
-              data-testid={last ? 'v3-ob-done' : 'v3-ob-next'}
-              onPress={() => (last ? onClose('done') : setIndex(nextStepIndex(index)))}
-            >
-              {last ? text.start : text.next}
-            </Button>
-          </div>
+            </span>
+          </DialogFooter>
         </Dialog>
       </Modal>
     </ModalOverlay>

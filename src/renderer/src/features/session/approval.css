@@ -50,7 +50,7 @@
     min-height: 64px;
     max-height: 160px;
     padding: var(--s-8) var(--s-10);
-    border: 1px solid var(--line2);
+    border: var(--hair, 1px) solid var(--line2);
     border-radius: var(--r-sm);
     background: var(--bg);
     color: var(--fg);

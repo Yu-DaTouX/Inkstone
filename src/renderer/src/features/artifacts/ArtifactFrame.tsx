@@ -404,7 +404,7 @@ export function ArtifactFrame({
               {form !== 'fullscreen' ? (
                 <IconButton
                   aria-label={at('fullscreen')}
-                  title={at('fullscreen')}
+                  tooltip={at('fullscreen')}
                   data-testid="v3-artifact-frame-fullscreen"
                   onPress={() => requestForm('fullscreen')}
                 >
@@ -414,7 +414,7 @@ export function ArtifactFrame({
               {form !== 'pip' ? (
                 <IconButton
                   aria-label={at('pip')}
-                  title={at('pip')}
+                  tooltip={at('pip')}
                   data-testid="v3-artifact-frame-pip"
                   onPress={() => requestForm('pip')}
                 >
@@ -423,7 +423,7 @@ export function ArtifactFrame({
               ) : null}
               <IconButton
                 aria-label={t('artifact.htmlReload')}
-                title={t('artifact.htmlReload')}
+                tooltip={t('artifact.htmlReload')}
                 data-testid="v3-artifact-frame-reload"
                 onPress={() => setReload((value) => value + 1)}
               >
@@ -431,7 +431,7 @@ export function ArtifactFrame({
               </IconButton>
               <IconButton
                 aria-label={form === 'pip' ? at('exitPip') : at('exitFullscreen')}
-                title={form === 'pip' ? at('exitPip') : at('exitFullscreen')}
+                tooltip={form === 'pip' ? at('exitPip') : at('exitFullscreen')}
                 data-testid="v3-artifact-frame-close"
                 onPress={exitToInline}
               >
@@ -444,7 +444,7 @@ export function ArtifactFrame({
             {tools}
             <IconButton
               aria-label={at('fullscreen')}
-              title={at('fullscreen')}
+              tooltip={at('fullscreen')}
               data-testid="v3-artifact-frame-expand"
               onPress={() => requestForm('fullscreen')}
             >
@@ -452,7 +452,7 @@ export function ArtifactFrame({
             </IconButton>
             <IconButton
               aria-label={at('pip')}
-              title={at('pip')}
+              tooltip={at('pip')}
               data-testid="v3-artifact-frame-pip"
               onPress={() => requestForm('pip')}
             >

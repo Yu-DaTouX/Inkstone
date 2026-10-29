@@ -298,7 +298,7 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
           className="v3-code-act"
           aria-pressed={wrap}
           aria-label={t('code.wrap')}
-          title={t('code.wrap')}
+          tooltip={t('code.wrap')}
           isDisabled={reading}
           onPress={() => setWrap((v) => !v)}
         >
@@ -310,7 +310,7 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
             size="sm"
             className="v3-code-act"
             aria-label={t('code.toTerminal')}
-            title={t('code.toTerminalHint')}
+            tooltip={t('code.toTerminalHint')}
             onPress={fillTerminal}
             data-testid="code-to-terminal"
           >
@@ -322,7 +322,7 @@ function CodeBlock({ lang, source, children }: { lang?: string; source: string; 
           size="sm"
           className="v3-code-act"
           aria-label={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
-          title={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
+          tooltip={copied ? t('turn.copied') : failed ? t('turn.copyFailed') : t('turn.copy')}
           onPress={copy}
         >
           <Icon name={copied ? 'check' : 'copy'} size={14} />

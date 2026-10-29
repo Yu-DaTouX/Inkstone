@@ -4,8 +4,7 @@ import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
 import { ToolSteps } from './ToolSteps'
 import { ThinkingLine } from './Thinking'
-import { Button } from '../../ui'
-import { Icon } from './Icon'
+import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel } from '../../ui'
 import { useSessionText } from './text'
 import { conciseSegment, mergeQuietSegments, pickLiveSegments, processSummary, segmentSteps, withoutThinking, type ProcessSummary } from './turn-process'
 import { useToolExpansion } from './use-tool-run'
@@ -40,28 +39,32 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
     : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
 
-  return (
-    <div className="v3-process" data-open={open || undefined} data-live={live || undefined} data-testid="v3-process">
-      {headless ? null : (
-        <button type="button" className="v3-process-head" aria-expanded={open} onClick={() => setManual(!open)} data-testid="v3-process-toggle">
-          {processParts(summary, tt).map((part) => <span key={part} className="v3-process-count">{part}</span>)}
-          {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
-          <Icon name="chevron-right" size={14} className="v3-chev" />
-        </button>
-      )}
-      {open || stage ? (
-        <div className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body">
-          {picked.hidden > 0 && !stage ? (
-            <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setShowAll(true)} data-testid="v3-process-more">
-              {tt('moreItems', { n: picked.hidden })}
-            </Button>
-          ) : null}
-          {picked.shown.map((segment) => (
-            <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
-          ))}
-        </div>
+  const body = (
+    <div className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body">
+      {picked.hidden > 0 && !stage ? (
+        <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setShowAll(true)} data-testid="v3-process-more">
+          {tt('moreItems', { n: picked.hidden })}
+        </Button>
       ) : null}
+      {picked.shown.map((segment) => (
+        <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
+      ))}
     </div>
+  )
+
+  return (
+    <Collapsible className="v3-process" data-open={open || undefined} data-live={live || undefined} data-headless={headless || undefined} data-testid="v3-process" isExpanded={open} onExpandedChange={setManual}>
+      {headless ? null : (
+        <CollapsibleHeader className="v3-process-head" chevron="end" data-testid="v3-process-toggle">
+          <span className="v3-process-line">
+            {processParts(summary, tt).map((part) => <span key={part} className="v3-process-count">{part}</span>)}
+            {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
+          </span>
+        </CollapsibleHeader>
+      )}
+      <CollapsiblePanel className="v3-step-panel">{open ? body : null}</CollapsiblePanel>
+      {stage ? body : null}
+    </Collapsible>
   )
 }
 

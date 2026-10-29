@@ -28,13 +28,13 @@ import './ambient.css'
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 const glyphAtlases = new Map<string, HTMLCanvasElement>()
 
-function resolveToken(host: HTMLElement, token: string, fallback: string): string {
+function resolveToken(host: HTMLElement, token: string): string {
   const probe = document.createElement('span')
   probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;color:var(${token})`
   host.appendChild(probe)
   const color = getComputedStyle(probe).color
   probe.remove()
-  return color || fallback
+  return color
 }
 
 function readMonoStack(): string {
@@ -91,8 +91,8 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
 
   let width = 1
   let height = 1
-  let colorFg = '#888888'
-  let colorAccent = '#6f8cff'
+  let colorFg = resolveToken(host, '--fg')
+  let colorAccent = resolveToken(host, '--accent')
   let monoStack = readMonoStack()
   let atlas: HTMLCanvasElement | null = null
   let atlasKey = ''
@@ -170,8 +170,8 @@ function startField(host: HTMLElement, canvas: HTMLCanvasElement): FieldHandle {
 
   const readTokens = (): void => {
     const nextMono = readMonoStack()
-    const nextFg = resolveToken(host, '--fg', '#888888')
-    const nextAccent = resolveToken(host, '--accent', '#6f8cff')
+    const nextFg = resolveToken(host, '--fg')
+    const nextAccent = resolveToken(host, '--accent')
     if (nextFg !== colorFg || nextAccent !== colorAccent || nextMono !== monoStack) {
       colorFg = nextFg
       colorAccent = nextAccent

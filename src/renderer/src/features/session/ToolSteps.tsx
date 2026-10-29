@@ -17,7 +17,7 @@ import { isQuestionCall } from './question-receipt'
 import { ToolRunStats } from './ToolRunStats'
 import { useHeldRunLabel, useToolExpansion } from './use-tool-run'
 import { Icon } from './Icon'
-import { Badge, Button, CompletionSweep, IconButton, ShimmerText } from '../../ui'
+import { Badge, Button, Collapsible, CollapsibleHeader, CollapsiblePanel, CompletionSweep, IconButton, ShimmerText } from '../../ui'
 import { McpAppResult, McpAppStepAudit } from '../artifacts/McpAppFrame'
 import { SearchStepView } from './web-search/SearchStep'
 import { searchStepsOf } from './web-search/model'
@@ -102,27 +102,30 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
   const members = open ? coalesceNodes(row.nodes) : []
 
   return (
-    <div className="v3-step v3-step-group" data-state={summary.state} data-depth={0}>
-      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={label} data-testid="v3-step-group">
-        {running ? (
-          <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
-        ) : (
-          <span className="v3-steps-label">
-            {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
-          </span>
-        )}
-        <ToolRunStats summary={summary} alertFailures={alertFailures} />
-        {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
-        {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
-        <Icon name="chevron-right" size={14} className="v3-chev" />
-      </button>
+    <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
+      <CollapsibleHeader className="v3-step-head" chevron="end" data-testid="v3-step-group">
+        <span className="v3-step-line" title={label}>
+          {running ? (
+            <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
+          ) : (
+            <span className="v3-steps-label">
+              {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
+            </span>
+          )}
+          <ToolRunStats summary={summary} alertFailures={alertFailures} />
+          {summary.state === 'cancelled' ? <Badge className="v3-steps-badge" data-testid="v3-step-group-cancelled">{t('run.cancelled')}</Badge> : null}
+          {summary.needsApproval ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-group-approval">{tt('runNeedsApproval')}</Badge> : null}
+        </span>
+      </CollapsibleHeader>
       {asking ? <ApprovalCard inline /> : null}
-      {open ? (
-        <div className="v3-step-nest" role="group" aria-label={label} data-testid="v3-step-group-list">
-          {members.map((member) => <MemoStepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
-        </div>
-      ) : null}
-    </div>
+      <CollapsiblePanel className="v3-step-panel" aria-label={label}>
+        {open ? (
+          <div className="v3-step-nest" data-testid="v3-step-group-list">
+            {members.map((member) => <MemoStepNode key={member.node.call.id} node={member.node} glowId={glowId} depth={1} repeat={member.repeat} />)}
+          </div>
+        ) : null}
+      </CollapsiblePanel>
+    </Collapsible>
   )
 }
 
@@ -145,24 +148,25 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
 
   const step = (
     <>
-      <button className="v3-step-head" aria-expanded={open} onClick={() => setOpen(!open)} title={`${title.label} ${meta}`.trim()} data-testid="v3-step">
+      <CollapsibleHeader className="v3-step-head" chevron="end" data-testid="v3-step">
         <CompletionSweep done={!running && !call.cancelled && !denied} settledAt={call.endedAt} />
-        <span className="v3-step-label">
-          <ShimmerText active={running && !blocked && call.id === glowId}>{title.label}</ShimmerText>
-        </span>
-        {denied ? <Icon name="deny" size={13} className="v3-step-deny" /> : null}
-        {meta ? (
-          <span className="v3-step-target" data-code={title.code || undefined}>
-            {meta}
+        <span className="v3-step-line" title={`${title.label} ${meta}`.trim()}>
+          <span className="v3-step-label">
+            <ShimmerText active={running && !blocked && call.id === glowId}>{title.label}</ShimmerText>
           </span>
-        ) : null}
-        {call.cancelled ? <Badge className="v3-steps-badge" data-testid="v3-step-cancelled">{t('run.cancelled')}</Badge> : null}
-        {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
-        {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
-        <Icon name="chevron-right" size={14} className="v3-chev" />
-      </button>
+          {denied ? <Icon name="deny" size={13} className="v3-step-deny" /> : null}
+          {meta ? (
+            <span className="v3-step-target" data-code={title.code || undefined}>
+              {meta}
+            </span>
+          ) : null}
+          {call.cancelled ? <Badge className="v3-steps-badge" data-testid="v3-step-cancelled">{t('run.cancelled')}</Badge> : null}
+          {repeat > 1 ? <span className="v3-step-time">{tt('runRepeat', { n: repeat })}</span> : null}
+          {blocked ? <Badge tone="ask" className="v3-steps-badge" data-testid="v3-step-approval">{tt('runNeedsApproval')}</Badge> : null}
+        </span>
+      </CollapsibleHeader>
       {asking ? <ApprovalCard inline /> : call.approval ? <ApprovalReceipt approval={call.approval} /> : null}
-      {open ? <StepDetail call={call} /> : null}
+      <CollapsiblePanel className="v3-step-panel">{open ? <StepDetail call={call} /> : null}</CollapsiblePanel>
       {nested.shown.length ? (
         <div className="v3-step-nest" role="group" aria-label={t('tool2.nestLabel', { n: children.length })}>
           {nested.earlier ? (
@@ -177,13 +181,13 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   )
 
   return (
-    <div className="v3-step" data-state={call.cancelled ? 'cancelled' : denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth}>
+    <Collapsible className="v3-step" data-state={call.cancelled ? 'cancelled' : denied ? 'denied' : call.status} data-tool={call.name} data-depth={depth} isExpanded={open} onExpandedChange={setOpen}>
       {searches.length
         ? searches.map((search, i) => (
             <SearchStepView key={i} call={call} step={search} glow={call.id === glowId}>{i === 0 ? step : null}</SearchStepView>
           ))
         : step}
-    </div>
+    </Collapsible>
   )
 }
 
@@ -235,7 +239,7 @@ function StepDetail({ call }: { call: UIToolCall }): JSX.Element {
   return (
     <div className="v3-step-detail" data-kind={kind}>
       <div className="v3-step-detail-bar">
-        <IconButton size="sm" aria-label={t('tool.copyDetail')} onPress={copy}><Icon name={copied ? 'check' : 'copy'} size={14} /></IconButton>
+        <IconButton size="sm" aria-label={t('tool.copyDetail')} tooltip={t('tool.copyDetail')} onPress={copy}><Icon name={copied ? 'check' : 'copy'} size={14} /></IconButton>
       </div>
       {call.historySummary ? <div className="v3-step-note">{t('tool2.historySummary')}</div> : null}
       {call.nestedCallsIncomplete ? <div className="v3-step-note">{t('tool2.nestedIncomplete')}</div> : null}

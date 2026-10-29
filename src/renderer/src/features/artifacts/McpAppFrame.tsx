@@ -423,29 +423,29 @@ export function McpAppFrame({
             <span className="v3-artifact-frame-title" title={title ?? descriptor.title}>{title ?? descriptor.title}</span>
             <div className="v3-artifact-frame-actions">
               {form !== 'fullscreen' ? (
-                <IconButton aria-label={labels.fullscreen} title={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
+                <IconButton aria-label={labels.fullscreen} tooltip={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
                   <Maximize2 size={14} />
                 </IconButton>
               ) : null}
               {form !== 'pip' ? (
-                <IconButton aria-label={labels.pip} title={labels.pip} onPress={() => requestForm('pip')}>
+                <IconButton aria-label={labels.pip} tooltip={labels.pip} onPress={() => requestForm('pip')}>
                   <PictureInPicture2 size={14} />
                 </IconButton>
               ) : null}
-              <IconButton aria-label={labels.reload} title={labels.reload} onPress={reloadApp}>
+              <IconButton aria-label={labels.reload} tooltip={labels.reload} onPress={reloadApp}>
                 <RefreshCw size={14} />
               </IconButton>
-              <IconButton aria-label={form === 'pip' ? labels.exitPip : labels.exitFullscreen} title={form === 'pip' ? labels.exitPip : labels.exitFullscreen} onPress={exitToInline}>
+              <IconButton aria-label={form === 'pip' ? labels.exitPip : labels.exitFullscreen} tooltip={form === 'pip' ? labels.exitPip : labels.exitFullscreen} onPress={exitToInline}>
                 {form === 'pip' ? <X size={14} /> : <Minimize2 size={14} />}
               </IconButton>
             </div>
           </div>
         ) : (
           <div className="v3-artifact-frame-tools" data-testid="v3-mcp-app-tools">
-            <IconButton aria-label={labels.fullscreen} title={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
+            <IconButton aria-label={labels.fullscreen} tooltip={labels.fullscreen} onPress={() => requestForm('fullscreen')}>
               <Maximize2 size={14} />
             </IconButton>
-            <IconButton aria-label={labels.pip} title={labels.pip} onPress={() => requestForm('pip')}>
+            <IconButton aria-label={labels.pip} tooltip={labels.pip} onPress={() => requestForm('pip')}>
               <PictureInPicture2 size={14} />
             </IconButton>
           </div>

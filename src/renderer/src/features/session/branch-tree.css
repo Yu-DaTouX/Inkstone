@@ -107,12 +107,6 @@
     width: min(260px, calc(100vw - 32px));
   }
 
-  .branch-bookmark-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--s-6);
-  }
-
   .branch-status {
     display: flex;
     flex-direction: column;
@@ -168,7 +162,7 @@
     min-width: 0;
     margin-top: var(--s-8);
     padding-top: var(--s-8);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .branch-foot__hint {

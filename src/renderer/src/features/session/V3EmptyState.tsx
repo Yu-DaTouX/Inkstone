@@ -6,6 +6,7 @@ import type { RunSnapshot } from '../../../../shared/runs'
 import { v3Text } from '../../app/v3-text'
 import { UsagePattern } from '../../patterns/UsagePattern'
 import { UsageStrip } from '../../patterns/UsageStrip'
+import { ListRow } from '../../ui'
 import { BlinkCursor } from './BlinkCursor'
 import './v3-empty-state.css'
 
@@ -68,18 +69,19 @@ export function V3EmptyState({ usage }: V3EmptyStateProps = {}): JSX.Element {
             <section className="v3-empty-waiting" aria-label={waiting.waiting} data-testid="v3-empty-waiting">
               <h2 className="v3-empty-waiting-head">{waiting.waiting}</h2>
               {awaiting.map((run) => (
-                <button
+                <ListRow
                   key={run.runId}
-                  type="button"
-                  className="ui-row v3-empty-waiting-row"
+                  className="v3-empty-waiting-row"
                   onClick={() => openAwaiting(run)}
                   data-testid="v3-empty-waiting-row"
+                  trailing={
+                    <span className="v3-empty-waiting-ask">
+                      {run.phase.kind === 'needs-you' && run.phase.request.type === 'danger' ? waiting.permission : waiting.question}
+                    </span>
+                  }
                 >
-                  <span className="v3-empty-waiting-title">{titleOf(run)}</span>
-                  <span className="v3-empty-waiting-ask">
-                    {run.phase.kind === 'needs-you' && run.phase.request.type === 'danger' ? waiting.permission : waiting.question}
-                  </span>
-                </button>
+                  {titleOf(run)}
+                </ListRow>
               ))}
             </section>
           ) : null}

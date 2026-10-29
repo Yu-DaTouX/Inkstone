@@ -1,7 +1,7 @@
 @layer features {
   .v3-chg {
     margin-top: var(--s-8);
-    border: 1px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: var(--r-md);
     background: var(--surface);
     overflow: hidden;
@@ -44,16 +44,13 @@
 
   .v3-chg-stats {
     flex: none;
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    font-variant-numeric: tabular-nums;
   }
 
   .v3-chg-list {
     margin: 0;
     padding: var(--s-4) 0;
     list-style: none;
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .v3-chg-row {
@@ -79,30 +76,21 @@
     color: var(--fg3);
   }
 
+  .v3-chg-files[data-expanded] > .v3-chg-list:first-child {
+    padding-bottom: 0;
+  }
+
+  .v3-chg-rest {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .v3-chg-panel[hidden] {
+    display: none;
+  }
+
   .v3-chg-more {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    width: 100%;
-    padding: var(--s-8) var(--s-12);
-    border-top: 1px solid var(--line);
-    color: var(--fg2);
-    font-size: var(--t-body);
-    text-align: left;
-  }
-
-  .v3-chg-more:hover {
-    background: var(--hover);
-    color: var(--fg);
-  }
-
-  .v3-chg-more:active {
-    background: var(--press);
-    color: var(--fg);
-  }
-
-  .v3-chg-more:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus-inset);
+    padding-inline: var(--s-8);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 }

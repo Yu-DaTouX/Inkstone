@@ -26,7 +26,7 @@ import {
   type NativeTreeRow
 } from '../../../../shared/native-session'
 import type { NativeSessionHostRequest, NativeSessionHostResult } from '../../../../shared/native-session-host'
-import { Badge, Button, Dialog, DialogTrigger, IconButton, Popover, Spinner, TextField } from '../../ui'
+import { Badge, Button, Dialog, DialogFooter, DialogTrigger, IconButton, Popover, Spinner, TextField } from '../../ui'
 import { Tree, TreeChevron, TreeItem, TreeItemContent, TreeItemLabel } from '../../ui/Tree'
 import type { WorkspaceOwner } from '../workbench/types'
 import './branch-tree.css'
@@ -285,7 +285,7 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
         size="sm"
         className="branch-bookmark"
         aria-label={`${ctx.text.bookmarkEdit} · ${row.text || ctx.text.kind[row.kind]}`}
-        title={ctx.text.bookmarkEdit}
+        tooltip={ctx.text.bookmarkEdit}
         isDisabled={ctx.blocked}
         data-testid="branch-bookmark"
       >
@@ -303,7 +303,7 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
               placeholder={ctx.text.bookmarkPlaceholder}
               data-testid="branch-bookmark-input"
             />
-            <div className="branch-bookmark-actions">
+            <DialogFooter>
               {row.label ? (
                 <Button size="sm" variant="ghost" isDisabled={saving} onPress={() => void save('')} data-testid="branch-bookmark-clear">
                   {ctx.text.bookmarkClear}
@@ -312,7 +312,7 @@ function BranchBookmark({ row, ctx }: { row: NativeTreeRow; ctx: BranchNodeConte
               <Button size="sm" variant="primary" type="submit" isDisabled={saving || !value.trim()} data-testid="branch-bookmark-save">
                 {ctx.text.bookmarkSave}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </Dialog>
       </Popover>

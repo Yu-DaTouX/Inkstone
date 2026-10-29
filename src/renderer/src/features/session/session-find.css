@@ -1,49 +1,16 @@
 @layer features {
   .v3-find {
     position: fixed;
-    top: 56px;
-    right: 16px;
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
+    top: calc(var(--size-head) + var(--s-16));
+    right: var(--s-16);
     box-sizing: border-box;
-    padding: var(--s-6) var(--s-8);
-    border: 0.5px solid var(--line2);
+    width: min(var(--size-tiles), calc(100vw - var(--s-32)));
+    padding: var(--s-2);
     border-radius: var(--r-md);
     background: var(--surface-3);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-pop);
     color: var(--fg);
     -webkit-app-region: no-drag;
-  }
-
-  .v3-find-input {
-    width: 192px;
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    outline: none;
-    color: var(--fg);
-    font-family: var(--font-ui);
-    font-size: var(--t-prose);
-    line-height: var(--t-prose-lh);
-  }
-
-  .v3-find-input::placeholder {
-    color: var(--fg3);
-  }
-
-  .v3-find-input:focus-visible {
-    outline: none;
-  }
-
-  .v3-find-status {
-    white-space: nowrap;
-    color: var(--fg3);
-    font-size: var(--t-footnote);
-    line-height: var(--t-footnote-lh);
-    font-variant-numeric: tabular-nums;
   }
 
   ::highlight(session-find) {

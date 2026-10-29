@@ -8,6 +8,9 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }'}
+function __patch(key, src){ if (!/[\\/]ui[\\/]index\.ts$/.test(key)) return src; let out = src; for (const [n, code] of Object.entries(__EXTRA)) { if (!new RegExp('export (function|const|class) '+n+'\\b').test(out) && !new RegExp('export \\{[^}]*\\b'+n+'\\b').test(out)) out += '\n' + code } return out }
+
 const posix = (p) => p.replace(/\\/g, '/')
 
 const report = { pass: 0, fail: 0 }
@@ -100,7 +103,7 @@ function stubPlugin(stubMap, reactShimPath, jsxShimPath) {
       b.onLoad({ filter: /.*/, namespace: 'v3stub' }, (args) => {
         if (args.path === 'v3stub:lucide') return { contents: LUCIDE_STUB, loader: 'js' }
         const key = args.path.slice('v3stub:'.length)
-        return { contents: stubMap.get(key) ?? 'export {}', loader: 'js' }
+        return { contents: __patch(key, stubMap.get(key) ?? 'export {}'), loader: 'js' }
       })
     }
   }

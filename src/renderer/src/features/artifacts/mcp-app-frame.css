@@ -12,7 +12,7 @@
     align-items: center;
     gap: var(--s-6);
     padding: var(--s-4) var(--s-8);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
     color: var(--ask-t);
     background: var(--ask-bg);
     font-size: var(--t-footnote);
@@ -33,7 +33,7 @@
     gap: 2px;
     margin-top: var(--s-6);
     padding-top: var(--s-6);
-    border-top: 1px solid var(--line);
+    border-top: var(--hair, 1px) solid var(--line);
   }
 
   .v3-mcp-app-audit-title {

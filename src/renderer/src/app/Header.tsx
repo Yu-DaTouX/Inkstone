@@ -1,15 +1,14 @@
 import { useMemo, type ReactElement } from 'react'
-import { ArrowLeft, Check, Copy, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
+import { ArrowLeft, Copy, EllipsisVertical, FileDiff, Folder, Globe, Minus, PanelLeft, Square, SquareMenu, SquarePen, Terminal, X } from 'lucide-react'
 import { useI18n, useT } from '../i18n'
 import { useStore } from '../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings, type ShortcutId } from './shortcuts'
-import { IconButton, Menu, MenuItem, MenuTrigger, Popover, Separator } from '../ui'
+import { IconButton, Menu, MenuItem, MenuSeparator, MenuTrigger, Popover } from '../ui'
 import type { V3RouteName } from '../state/ui-v3'
 import type { WorkbenchTabId } from '../features/workbench/types'
 import { workbenchText } from '../features/workbench/workbench-text'
 import { collabText } from '../features/collab/collab-text'
 import { useHoverDelay } from '../lib/use-hover-delay'
-import { IconTip } from './IconTip'
 import { ProjectScriptsControl } from '../features/scripts/ProjectScriptsControl'
 import { v3Text, withShortcutKeys } from './v3-text'
 import { plainTitleText } from '../../../shared/title-text'
@@ -105,29 +104,24 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
       <div className="v3-head-left">
         {route === 'chat' ? (
           !sidebarOpen || sidebarOverlay ? (
-            <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : preview.start} onHoverEnd={preview.cancel} onPressStart={preview.cancel} data-testid="v3-rail-toggle">
-                <PanelLeft size={16} />
-              </IconButton>
-            </IconTip>
+            <IconButton tooltip={text.toggleSidebar} aria-label={text.toggleSidebar} onPress={onToggleSidebar} onHoverStart={sidebarOpen ? undefined : preview.start} onHoverEnd={preview.cancel} onPressStart={preview.cancel} data-testid="v3-rail-toggle">
+              <PanelLeft size={16} />
+            </IconButton>
           ) : null
         ) : (
-          <IconTip label={text.back}>
-            <IconButton aria-label={text.back} onPress={onBack} data-testid="v3-back">
-              <ArrowLeft size={16} />
-            </IconButton>
-          </IconTip>
+          <IconButton tooltip={text.back} aria-label={text.back} onPress={onBack} data-testid="v3-back">
+            <ArrowLeft size={16} />
+          </IconButton>
         )}
         {route === 'chat' && !sidebarOpen ? (
-          <IconTip label={newChatLabel}>
-            <IconButton
-              aria-label={newChatLabel}
-              onPress={() => void useStore.getState().newSession({ scope: 'global' })}
-              data-testid="v3-head-new-chat"
-            >
-              <SquarePen size={16} />
-            </IconButton>
-          </IconTip>
+          <IconButton
+            tooltip={newChatLabel}
+            aria-label={newChatLabel}
+            onPress={() => void useStore.getState().newSession({ scope: 'global' })}
+            data-testid="v3-head-new-chat"
+          >
+            <SquarePen size={16} />
+          </IconButton>
         ) : null}
         <h1 className={route === 'chat' ? 'v3-head-title' : 'v3-head-title v3-visually-hidden'} title={title}>
           <span className="v3-head-title__text">{title}</span>
@@ -140,40 +134,39 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
         {route === 'chat' ? (
           <>
             <ProjectScriptsControl />
-            <IconTip label={sessionBarLabel}>
-              <IconButton
-                aria-label={sessionBarLabel}
-                aria-pressed={sessionBarOpen}
-                pressedTone="neutral"
-                className="v3-head-group-end"
-                onPress={onToggleSessionBar}
-                data-testid="v3-header-sessionbar"
-                data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
-              >
-                <SquareMenu size={16} />
-              </IconButton>
-            </IconTip>
+            <IconButton
+              tooltip={sessionBarLabel}
+              aria-label={sessionBarLabel}
+              aria-pressed={sessionBarOpen}
+              pressedTone="neutral"
+              className="v3-head-group-end"
+              onPress={onToggleSessionBar}
+              data-testid="v3-header-sessionbar"
+              data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
+            >
+              <SquareMenu size={16} />
+            </IconButton>
             {narrow
               ? null
               : TITLEBAR_PANES.map(({ tab, Icon }) => (
-                  <IconTip key={tab} label={paneLabel(tab)}>
-                    <IconButton
-                      aria-label={paneLabel(tab)}
-                      aria-pressed={openPanes.has(tab)}
-                      pressedTone="neutral"
-                      className="v3-head-pane"
-                      data-testid={`wb-open-${tab}`}
-                      onPress={() => onTogglePane(tab)}
-                    >
-                      <Icon size={16} />
-                      {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
-                    </IconButton>
-                  </IconTip>
+                  <IconButton
+                    key={tab}
+                    tooltip={paneLabel(tab)}
+                    aria-label={paneLabel(tab)}
+                    aria-pressed={openPanes.has(tab)}
+                    pressedTone="neutral"
+                    className="v3-head-pane"
+                    data-testid={`wb-open-${tab}`}
+                    onPress={() => onTogglePane(tab)}
+                  >
+                    <Icon size={16} />
+                    {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
+                  </IconButton>
                 ))}
           </>
         ) : null}
         <MenuTrigger>
-          <IconButton aria-label={text.more} title={text.more} className="v3-head-pane" data-testid="wb-more-tools">
+          <IconButton aria-label={text.more} tooltip={text.more} className="v3-head-pane" data-testid="wb-more-tools">
             <EllipsisVertical size={16} />
             {menuDot ? <span className="v3-head-pane-dot" aria-hidden /> : null}
           </IconButton>
@@ -189,18 +182,15 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
               }}
             >
               {menuPanes.map((tab) => (
-                <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
-                  <span className="v3-head-check" aria-hidden>{openPanes.has(tab) ? <Check size={14} /> : null}</span>
+                <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} checked={openPanes.has(tab)} aria-checked={openPanes.has(tab)} data-testid={`wb-view-${tab}`}>
                   {toolText.tabs[tab]}
                 </MenuItem>
               ))}
-              {menuPanes.length > 0 ? <Separator /> : null}
-              <MenuItem id={MENU_KEEP_ON_TOP} textValue={text.keepOnTop} aria-checked={alwaysOnTop} data-testid="v3-always-on-top">
-                <span className="v3-head-check" aria-hidden>{alwaysOnTop ? <Check size={14} /> : null}</span>
+              {menuPanes.length > 0 ? <MenuSeparator /> : null}
+              <MenuItem id={MENU_KEEP_ON_TOP} textValue={text.keepOnTop} checked={alwaysOnTop} aria-checked={alwaysOnTop} data-testid="v3-always-on-top">
                 {text.keepOnTop}
               </MenuItem>
-              <MenuItem id={MENU_SETTINGS} textValue={text.settings} data-testid="v3-menu-settings">
-                <span className="v3-head-check" aria-hidden />
+              <MenuItem id={MENU_SETTINGS} textValue={text.settings} checked={false} data-testid="v3-menu-settings">
                 {text.settings}
               </MenuItem>
             </Menu>

@@ -25,7 +25,7 @@
 
   .v3-wrapup-code {
     padding: 0.0625em 0.25em;
-    border: 0.5px solid var(--line);
+    border: var(--hair, 1px) solid var(--line);
     border-radius: 0.4em;
     background: var(--alpha-1);
     font-family: var(--font-mono);
