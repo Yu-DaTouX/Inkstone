@@ -34,11 +34,12 @@ export function createSandbox(runDir, { fakePort, samples = [] } = {}) {
     dataDir: join(runDir, 'yan'),
     userData: join(runDir, 'electron'),
     downloads: join(runDir, 'downloads'),
+    androidSdk: join(runDir, 'android-sdk'),
     project: join(runDir, 'project'),
     projects: [],
     samples: []
   }
-  for (const dir of [box.piDir, box.sessionsDir, box.dataDir, box.userData, box.downloads]) mkdirSync(dir, { recursive: true })
+  for (const dir of [box.piDir, box.sessionsDir, box.dataDir, box.userData, box.downloads, box.androidSdk]) mkdirSync(dir, { recursive: true })
   box.projects = seedProjects(join(runDir, 'projects'))
   if (box.projects.length > 0) box.project = box.projects[0]
   else {
@@ -71,6 +72,7 @@ export function sandboxEnv(box, { fake = false, cdpPort, probe } = {}) {
     YAN_DATA_DIR: box.dataDir,
     YAN_USER_DATA: box.userData,
     YAN_DOWNLOADS_DIR: box.downloads,
+    ...(process.env.YAN_DEBUG_REAL_DEVICES === '1' ? {} : { ANDROID_HOME: box.androidSdk, ANDROID_SDK_ROOT: box.androidSdk }),
     ...(fake ? { YAN_TEST_MODEL: 'fake/fake-model' } : {}),
     ...(probe ? { YAN_PROBE: probe, YAN_PROBE_DELAY: '500' } : {}),
     ...(probe && cdpPort ? { YAN_PROBE_DEBUG_PORT: String(cdpPort) } : {})
