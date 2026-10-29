@@ -70,9 +70,28 @@ export interface GhPrListItemJson {
   url?: string
 }
 
+export interface GhPrLabelJson {
+  name?: string
+  color?: string
+  description?: string
+}
+
+export interface GhPrReviewRequestJson {
+  __typename?: string
+  login?: string
+  name?: string
+  slug?: string
+}
+
 export interface GhPrDetailJson extends GhPrListItemJson {
   body?: string
   createdAt?: string
+  mergedAt?: string | null
+  closedAt?: string | null
+  changedFiles?: number
+  labels?: GhPrLabelJson[] | null
+  reviewRequests?: GhPrReviewRequestJson[] | null
+  latestReviews?: GhPrReviewJson[] | null
   files?: GhPrFileJson[] | null
   commits?: GhPrCommitJson[] | null
   comments?: GhPrCommentJson[] | null

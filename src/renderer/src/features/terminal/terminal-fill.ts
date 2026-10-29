@@ -1,4 +1,4 @@
-import { useUiV3 } from '../../state/ui-v3'
+import { openPanelTool } from '../workbench/panel-actions'
 import { activateTerminal } from './terminal-activate'
 import { isTerminalCommandRunning } from './terminal-running'
 
@@ -24,9 +24,7 @@ function wait(ms: number): Promise<void> {
 export async function fillTerminalCommand(ownerKey: string, command: string): Promise<TerminalFillResult> {
   const terminal = window.yan?.terminal
   if (!terminal || !ownerKey) return 'failed'
-  const ui = useUiV3.getState()
-  ui.setWorkspaceTab('terminal')
-  ui.setWorkspaceOpen(true)
+  openPanelTool('terminal')
   for (let attempt = 0; attempt < POLL_LIMIT; attempt += 1) {
     const list = await terminal.list().catch(() => [])
     const owned = list.filter((item) => item.owner === ownerKey && item.alive)

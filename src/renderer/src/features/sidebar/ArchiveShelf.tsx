@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { SessionSummary } from '../../../../shared/ipc'
 import type { ModelRef } from '../../../../shared/model-brand'
-import { useSplitDrag } from '../split/split-drag'
+import { useSessionDrag } from './session-drag'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
 import type { SessionStatusKind } from './session-status'
@@ -54,7 +54,7 @@ export function ArchiveShelf({
   const own = sidebarText(lang)
   const [open, setOpen] = useState(readOpen)
   const [limit, setLimit] = useState(ARCHIVE_SHELF_INITIAL)
-  const dragSource = useSplitDrag((s) => s.source)
+  const dragSource = useSessionDrag((s) => s.source)
   const dragging = !!dragSource?.startsWith('session:')
   const draggingArchived = dragging && rows.some((row) => dragSource === `session:${row.item.path}`)
   const showHint = dragging && !draggingArchived

@@ -157,12 +157,36 @@ assert.equal(detail.files[1].key.startsWith('acme/app#12:new name.txt:'), true)
 assert.deepEqual(
   detail.timeline.map((item) => [item.kind, item.author]),
   [
+    ['commit', ''],
     ['review', 'maintainer'],
     ['comment', 'reviewer'],
     ['review', 'qa']
   ]
 )
-assert.equal(detail.timeline[2].review, 'CHANGES_REQUESTED')
+assert.equal(detail.timeline[0].body, 'add panel')
+assert.equal(detail.timeline[3].review, 'CHANGES_REQUESTED')
+assert.deepEqual(detail.labels, [])
+assert.deepEqual(
+  normalizePrDetail(
+    {
+      ...detailJson,
+      labels: [{ name: 'bug' }, { name: '' }],
+      latestReviews: [{ author: { login: 'ann' }, state: 'APPROVED' }],
+      reviewRequests: [{ login: 'bob' }, { slug: 'core' }, { login: 'ann' }],
+      additions: 30,
+      deletions: 4,
+      changedFiles: 5
+    },
+    { repo: 'acme/app', diff: '' }
+  ).reviewers,
+  [
+    { name: 'ann', state: 'approved' },
+    { name: 'bob', state: 'pending' },
+    { name: 'core', state: 'pending' }
+  ]
+)
+assert.equal(normalizePrDetail({ ...detailJson, changedFiles: 5 }, { repo: 'acme/app', diff: '' }).changedFiles, 5)
+assert.deepEqual(normalizePrDetail({ ...detailJson, labels: [{ name: 'bug' }, { name: '' }] }, { repo: 'acme/app', diff: '' }).labels, ['bug'])
 
 const detailWithoutDiff = normalizePrDetail(detailJson, { repo: 'acme/app', diff: '' })
 assert.equal(detailWithoutDiff.files.length, 1)

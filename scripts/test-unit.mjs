@@ -877,23 +877,7 @@ const { runFileListingTests } = await import('./test-files.mjs')
 const { runFilesWatchTests } = await import('./test-files-watch.mjs')
 const { runOpenGuardTests } = await import('./test-open-guard.mjs')
 const { runRailSectionsTests } = await import('./test-rail-sections.mjs')
-const { runTileTreeTests } = await import('./test-tile-tree.mjs')
-await import('./test-chat-tree.mjs')
-
-const [tileTree, tileDropZones, tileDropIndicator] = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
-  Promise.all(
-    ['tile-tree', 'tile-drop-zones', 'tile-drop-indicator'].map((name) =>
-      build({
-        entryPoints: [`src/renderer/src/features/workbench/${name}.ts`],
-        outfile: `out/test/${name}.mjs`,
-        bundle: true,
-        format: 'esm',
-        platform: 'node',
-        logLevel: 'silent'
-      }).then(() => import(`../out/test/${name}.mjs`))
-    )
-  )
-)
+const { runRightPanelTests } = await import('./test-right-panel.mjs')
 
 const railSections = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
@@ -1553,11 +1537,6 @@ await runGitWorkspaceChangesTests(ok, workspaceChanges)
 }
 
 {
-  const { runSplitViewTests } = await import('./test-split-view.mjs')
-  await runSplitViewTests(ok)
-}
-
-{
   const { runRemoteApprovalTests } = await import('./test-remote-approval.mjs')
   await runRemoteApprovalTests(ok)
 }
@@ -1644,7 +1623,7 @@ await runFileListingTests(ok, fileListing)
 await runFilesWatchTests(ok, filesWatch)
 await runOpenGuardTests(ok, openGuard)
 await runRailSectionsTests(ok, railSections)
-await runTileTreeTests(ok, tileTree, tileDropZones, tileDropIndicator)
+await runRightPanelTests(ok)
 await runFileContentSearchTests(ok, fileContentSearch)
 await runFileEditorTests(ok, fileEditor)
 

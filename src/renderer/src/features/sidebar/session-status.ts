@@ -1,23 +1,6 @@
-import { isAuxTile, sameSplitSession, type SplitLayout, type SplitSessionRef } from '../../state/split-view'
 import type { RunPhase } from '../../../../shared/runs'
 
 export type SessionStatusKind = 'archived' | 'error' | 'awaiting' | 'running' | 'unread' | 'idle'
-
-export interface PaneSession {
-  id?: string
-  path?: string
-}
-
-export function visiblePaneSessions(split: SplitLayout | null, narrow: boolean): SplitSessionRef[] {
-  if (!split || split.tiles.length < 2) return []
-  const shown = narrow ? [split.tiles[split.live]] : split.tiles
-  return shown.filter((tile): tile is SplitSessionRef => !!tile && !isAuxTile(tile) && !!(tile.sessionId || tile.path))
-}
-
-export function paneShowsSession(panes: readonly SplitSessionRef[], target: PaneSession): boolean {
-  if (!target.id && !target.path) return false
-  return panes.some((pane) => !isAuxTile(pane) && sameSplitSession(pane, { sessionId: target.id, path: target.path }))
-}
 
 export interface SessionUnreadInput {
   unread: boolean

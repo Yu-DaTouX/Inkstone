@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '../../state/store'
-import { showPreview } from '../workbench/tool-tiles'
+import { showPreview } from '../workbench/preview-bindings'
 
 export function useChatFilePreview(ownerKey: string | null): void {
   const ownerRef = useRef(ownerKey)

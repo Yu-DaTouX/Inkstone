@@ -2,7 +2,7 @@ import type { ProjectRecord } from '../../../../shared/ipc'
 import type { ProjectScript } from '../../../../shared/project-scripts'
 import { currentLang, translate } from '../../i18n'
 import { useStore } from '../../state/store'
-import { useUiV3 } from '../../state/ui-v3'
+import { openPanelTool } from '../workbench/panel-actions'
 import { requestTerminalTab } from '../terminal/terminal-requests'
 import { primaryProjectScript, scriptsOfProject } from './project-scripts'
 import { currentProjectTarget } from './use-current-project'
@@ -27,10 +27,7 @@ export async function runProjectScript(
     .start({ cwd, fallbackCwd: cwd, owner: ownerKey, title: script.name })
     .catch(() => null)
   if (!snapshot) return false
-  const ui = useUiV3.getState()
-  ui.navigate({ name: 'chat' })
-  ui.setWorkspaceTab('terminal')
-  ui.setWorkspaceOpen(true)
+  openPanelTool('terminal')
   requestTerminalTab({ ownerKey, terminalId: snapshot.id })
   window.setTimeout(() => {
     void terminal.write(snapshot.id, `${script.command.trim()}\r`)

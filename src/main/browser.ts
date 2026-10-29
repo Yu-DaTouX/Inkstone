@@ -1,11 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { app, shell, BrowserWindow, View, WebContentsView } from 'electron'
-import type {
-  BrowserTransferRevokeReason,
-  BrowserTransferView,
-  BrowserTransferWindow
-} from './windows/pane-browser-transfer'
 import { cp, mkdir } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -146,6 +141,10 @@ interface TargetParts {
   input: InputController
   network: NetworkTracker
 }
+
+type BrowserTransferRevokeReason = 'tab-closed' | 'controller-disposed'
+type BrowserTransferView = WebContentsView
+type BrowserTransferWindow = BrowserWindow
 
 export interface BrowserHostTransfer {
   readonly tabId: string

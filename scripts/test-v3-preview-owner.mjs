@@ -231,7 +231,7 @@ async function buildBundle(outdir) {
     entry,
     `export { PreviewPane } from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/PreviewPane'))}'
 export * as sel from '${posix(resolve(ROOT, 'src/renderer/src/features/preview/preview-selection'))}'
-export * as tiles from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/tool-tiles'))}'
+export * as tiles from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/preview-bindings'))}'
 `
   )
 

@@ -4,7 +4,7 @@ import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { Avatar, Button, Dialog, EmptyState, IconButton, Modal, ModalOverlay, SearchField, StatusDot, type StatusDotKind } from '../../ui'
-import { SESSION_FOLDER_DROP_EVENT, type SessionFolderDrop } from '../split/split-drag'
+import { SESSION_FOLDER_DROP_EVENT, type SessionFolderDrop } from './session-drag'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
 import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
@@ -14,8 +14,6 @@ import type { SessionSummary } from '../../../../shared/ipc'
 import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, withIdleProjects, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
-import { useSplitView } from '../../state/split-view'
-import { useNarrowLayout } from '../workbench/tool-tiles'
 import { ArchivedView } from './ArchivedView'
 import { ArchiveShelf, type ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectHeader } from './ProjectHeader'
@@ -26,7 +24,7 @@ import { ContentMatches, useContentSearch } from './ContentMatches'
 import { FlatSessionList, FlatToolbar, ProjectScopeButton, WorkingShelf, useArchivedSlimRow, useFlatScope, useWorkingSet } from './FlatSessions'
 import { turnModelLabel } from '../session/turn-model-label'
 import { buildContentMatches } from './content-search'
-import { paneShowsSession, sessionStatusKind, sessionUnread, visiblePaneSessions } from './session-status'
+import { sessionStatusKind, sessionUnread } from './session-status'
 import { activeSessions, isSnoozed, snoozedSessions } from './session-snooze'
 import { useSnoozeClock } from './use-session-snooze'
 import { SnoozeShelf } from './SnoozeShelf'
@@ -101,9 +99,6 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const running = useStore((s) => !!(s.session?.isAgentRunning || s.session?.isStreaming))
   const currentSessionFile = useStore((s) => s.session?.sessionFile)
   const route = useUiV3((s) => s.route.name)
-  const split = useSplitView((s) => s.split)
-  const narrowPanes = useNarrowLayout()
-  const paneSessions = useMemo(() => (route === 'chat' ? visiblePaneSessions(split, narrowPanes) : []), [route, split, narrowPanes])
 
   const currentListed = useStore((s) => !s.session?.sessionFile || s.sessions.some((entry) => entry.path === s.session?.sessionFile))
 
@@ -213,7 +208,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const rowState = (item: SessionSummary): ArchiveShelfRow => {
     const isCurrent = isCurrentItem(item)
     const run = runIndex.latest({ id: item.id, path: item.path })
-    const paneSelected = isCurrent || paneShowsSession(paneSessions, item)
+    const paneSelected = isCurrent
     const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
     return {
       item,

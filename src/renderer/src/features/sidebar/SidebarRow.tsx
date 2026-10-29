@@ -9,8 +9,8 @@ import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { SessionStatusIcon, sessionStatusHasMark } from './SessionStatusIcon'
 import { sessionStatusLabel, type SessionStatusKind } from './session-status'
-import { startSessionRowDrag, useSplitDrag } from '../split/split-drag'
-import { SessionMenu, openSessionInSplit } from './SessionMenu'
+import { startSessionRowDrag, useSessionDrag } from './session-drag'
+import { SessionMenu } from './SessionMenu'
 import { SidebarTip } from './SidebarTip'
 import { ProjectBadge } from './ProjectBadge'
 
@@ -70,7 +70,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
   const [renaming, setRenaming] = useState(false)
   const [renamePending, setRenamePending] = useState(false)
   const [draft, setDraft] = useState(title)
-  const dragging = useSplitDrag((s) => s.source === `session:${item.path}`)
+  const dragging = useSessionDrag((s) => s.source === `session:${item.path}`)
 
   useEffect(() => {
     if (!renamePending || menuOpen) return
@@ -187,13 +187,9 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
             data-mark={sessionStatusHasMark(status) && !(card && !card.slim && cardHasBot(status)) ? '' : undefined}
             aria-current={isCurrent ? 'true' : undefined}
             onPointerDown={onPointerDown}
-            onClick={(event) => {
+            onClick={() => {
               if (draggedRef.current) {
                 draggedRef.current = false
-                return
-              }
-              if ((event.ctrlKey || event.metaKey) && !isCurrent) {
-                openSessionInSplit(item)
                 return
               }
               onOpen()

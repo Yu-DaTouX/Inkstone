@@ -205,8 +205,8 @@ async function main() {
   const designEntry = await readFile(join(process.cwd(), 'src/renderer/src/design/index.css'), 'utf8')
   ok(designEntry.includes('@layer reset, tokens, base, primitives, patterns, features, utilities;'), 'v3 入口声明 patterns 层，pattern CSS 落到既定层序')
 
-  const sideBySide = await readFile(join(process.cwd(), 'src/renderer/src/app/SideBySide.tsx'), 'utf8')
-  ok(sideBySide.includes('import { SessionView }') && sideBySide.includes('<SessionView />'), '真实入口 SideBySide 渲染 SessionView（与 ShellV3 同一链）')
+  const chatMain = await readFile(join(process.cwd(), 'src/renderer/src/app/ChatMain.tsx'), 'utf8')
+  ok(chatMain.includes('import { SessionView }') && chatMain.includes('<SessionView />'), '真实入口 ChatMain 渲染 SessionView（与 ShellV3 同一链）')
 
   ok(sessionView.includes("import { AsciiField } from '../ambient/AsciiField'") && /<AsciiField\s+active=\{turns\.length === 0[^}]*\}/.test(sessionView), 'ASCII 层与空态判定未被本任务改动')
   ok(!sessionView.includes('StalledCard') && sessionView.includes('className="v3-asks"') && sessionView.includes('onScroll={onScroll}'), '滚动 / 审批 / 提问分支仍保留，停滞卡已移除')

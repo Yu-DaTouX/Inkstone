@@ -23,13 +23,26 @@
     min-width: 0;
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: minmax(0, 1fr);
   }
 
-  .v3-body > .wb-panel {
-    min-width: 0;
-    min-height: 0;
+  .v3-body > :not(.rp) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .v3-body > .rp {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .v3-body > .rp[data-maximized='1'] {
+    grid-column: 1 / -1;
+  }
+
+  .v3-body[data-panel='maximized'] > .v3-chat {
+    display: none;
   }
   .v3-chat {
     --tiles-reserve: var(--bar-reserve, 0px);

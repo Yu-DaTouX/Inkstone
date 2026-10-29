@@ -16,7 +16,6 @@ export interface CommandText {
   themeToLight: string
   themeToDark: string
   openSettings: string
-  openSideBySide: string
   stopSession: string
   workspaceChanges: string
   workspaceTerminal: string
@@ -36,7 +35,6 @@ export interface CommandText {
   failed: string
   switchFailed: string
   messageNotFound: string
-  sideBySideNoPeer: string
   activationFailed: string
   busy: string
   clear: string
@@ -57,7 +55,6 @@ const ZH: CommandText = {
   themeToLight: '切换到浅色主题',
   themeToDark: '切换到深色主题',
   openSettings: '打开设置',
-  openSideBySide: '并排打开',
   stopSession: '停止当前会话',
   workspaceChanges: '工作区 · 改动',
   workspaceTerminal: '工作区 · 终端',
@@ -82,7 +79,6 @@ const ZH: CommandText = {
   failed: '操作失败',
   switchFailed: '会话切换未生效',
   messageNotFound: '这条消息已不在当前会话中',
-  sideBySideNoPeer: '没有可以并排显示的其他会话',
   activationFailed: '会话未激活，工作区没有打开',
   busy: '执行中…',
   clear: '清除'
@@ -103,7 +99,6 @@ const EN: CommandText = {
   themeToLight: 'Switch to light theme',
   themeToDark: 'Switch to dark theme',
   openSettings: 'Open settings',
-  openSideBySide: 'Open side by side',
   stopSession: 'Stop current chat',
   workspaceChanges: 'Workspace · Changes',
   workspaceTerminal: 'Workspace · Terminal',
@@ -128,7 +123,6 @@ const EN: CommandText = {
   failed: 'Action failed',
   switchFailed: 'Chat did not switch',
   messageNotFound: 'This message is no longer in the current chat',
-  sideBySideNoPeer: 'No other chat to show side by side',
   activationFailed: 'Chat is not active, so the workspace did not open',
   busy: 'Running…',
   clear: 'Clear'

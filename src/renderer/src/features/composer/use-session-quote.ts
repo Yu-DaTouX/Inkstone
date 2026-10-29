@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import { useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { composerSubmitIdentity } from '../../state/composer-recovery'
-import { SESSION_QUOTE_DROP_EVENT, type SessionDragItem } from '../split/split-drag'
+import { SESSION_QUOTE_DROP_EVENT, type SessionDragItem } from '../sidebar/session-drag'
 
 export function useSessionQuoteDrop(targetRef: RefObject<HTMLElement | null>): void {
   const t = useT()

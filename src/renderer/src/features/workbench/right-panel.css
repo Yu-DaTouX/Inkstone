@@ -1,0 +1,201 @@
+@layer features {
+  .rp {
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    border-left: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .rp[data-maximized='1'] {
+    flex: 1 1 auto;
+    border-left: none;
+  }
+  .rp[data-mode='sheet'] {
+    flex: 1 1 auto;
+    width: 100%;
+    border-left: none;
+  }
+  .rp-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    z-index: 2;
+    width: 6px;
+  }
+
+  .rp-bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-4);
+    height: var(--size-bar, 32px);
+    min-height: var(--size-bar, 32px);
+    padding: 0 var(--s-6) 0 var(--s-8);
+    border-bottom: 1px solid var(--line);
+  }
+  .rp-tabs {
+    flex: 0 1 auto;
+  }
+  .rp-bar-add {
+    flex: none;
+  }
+  .rp-bar-actions {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+    margin-left: auto;
+  }
+  .rp-launch-menu {
+    display: contents;
+  }
+  .rp-launch-label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .rp-launch-key {
+    margin-left: var(--s-16);
+  }
+
+  .rp-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .rp-surfaces {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .rp-surface {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .rp-surface[hidden] {
+    display: none;
+  }
+  .rp-sub {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-6);
+    height: var(--size-bar, 32px);
+    padding: 0 var(--s-6) 0 var(--s-12);
+    border-bottom: 1px solid var(--line);
+    color: var(--fg3);
+    font: var(--t-footnote) / 1 var(--font-ui);
+  }
+  .rp-sub:not(:has(.rp-sub-title > *, .rp-sub-tools > *, .rp-sub-menu)) {
+    display: none;
+  }
+  .rp-sub-title {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .rp-sub-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rp-sub-tools {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+  }
+  .rp-check {
+    display: inline-grid;
+    width: 14px;
+    place-items: center;
+  }
+  .rp-surface-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .rp-surface-body > * {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .rp-block {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-12);
+    padding: var(--s-24);
+    background: var(--surface);
+    color: var(--fg2);
+    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+    text-align: center;
+  }
+  .rp-empty {
+    margin: auto;
+  }
+
+  .rp-launcher {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: var(--s-24);
+    overflow-y: auto;
+  }
+  .rp-launcher-inner {
+    width: 100%;
+    max-width: 280px;
+  }
+  .rp-launcher-title {
+    margin: 0 0 var(--s-12);
+    color: var(--fg);
+    font: var(--w-medium) var(--t-body) / var(--t-body-lh) var(--font-ui);
+    text-align: center;
+  }
+  .rp-launcher-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+  .rp-launcher-item {
+    justify-content: flex-start;
+  }
+  .rp-launcher-item > .ui-btn__label {
+    flex: 1 1 auto;
+    text-align: left;
+  }
+}
+
+@layer patterns {
+  .rp-tabs svg[data-tone='open'] {
+    color: var(--ok);
+  }
+  .rp-tabs svg[data-tone='merged'] {
+    color: var(--accent);
+  }
+  .rp-tabs svg[data-tone='closed'] {
+    color: var(--fail);
+  }
+  .rp-tabs svg[data-tone='draft'] {
+    color: var(--fg3);
+  }
+}

@@ -4,8 +4,10 @@ import type {
   GhPrDetailJson,
   GhPrFileJson,
   GhPrListItemJson,
+  GhPrCommitJson,
   GhPrListState,
-  GhPrReviewJson
+  GhPrReviewJson,
+  GhPrReviewRequestJson
 } from '../../../../shared/github'
 
 export type PrState = 'open' | 'draft' | 'merged' | 'closed'
@@ -50,9 +52,16 @@ export interface PrFileItem {
   key: string
 }
 
+export type PrReviewerState = 'approved' | 'changes' | 'commented' | 'pending' | 'dismissed'
+
+export interface PrReviewer {
+  name: string
+  state: PrReviewerState
+}
+
 export interface PrTimelineItem {
   id: string
-  kind: 'comment' | 'review'
+  kind: 'comment' | 'review' | 'commit'
   author: string
   at: string
   body: string
@@ -70,8 +79,15 @@ export interface PrDetail {
   base: string
   createdAt: string
   updatedAt: string
+  mergedAt: string
+  closedAt: string
   reviewDecision: string
   commitCount: number
+  additions: number
+  deletions: number
+  changedFiles: number
+  labels: string[]
+  reviewers: PrReviewer[]
   checks: PrChecks
   checkItems: PrCheckItem[]
   files: PrFileItem[]
@@ -245,11 +261,47 @@ function fileItemOf(
   return { path, additions, deletions, patch, key: prFileKey(repo, number, path, salt) }
 }
 
+function reviewerStateOf(state: string): PrReviewerState {
+  const value = state.toUpperCase()
+  if (value === 'APPROVED') return 'approved'
+  if (value === 'CHANGES_REQUESTED') return 'changes'
+  if (value === 'DISMISSED') return 'dismissed'
+  if (value === 'PENDING') return 'pending'
+  return 'commented'
+}
+
+export function reviewersOf(
+  latest: readonly GhPrReviewJson[] | null | undefined,
+  requests: readonly GhPrReviewRequestJson[] | null | undefined
+): PrReviewer[] {
+  const out: PrReviewer[] = []
+  for (const review of latest ?? []) {
+    const name = text(review?.author?.login)
+    if (name && !out.some((item) => item.name === name)) out.push({ name, state: reviewerStateOf(text(review.state)) })
+  }
+  for (const request of requests ?? []) {
+    const name = text(request?.login) || text(request?.slug) || text(request?.name)
+    if (name && !out.some((item) => item.name === name)) out.push({ name, state: 'pending' })
+  }
+  return out
+}
+
 export function timelineOf(
   comments: readonly GhPrCommentJson[] | null | undefined,
-  reviews: readonly GhPrReviewJson[] | null | undefined
+  reviews: readonly GhPrReviewJson[] | null | undefined,
+  commits: readonly GhPrCommitJson[] | null | undefined = []
 ): PrTimelineItem[] {
   const items: PrTimelineItem[] = []
+  ;(commits ?? []).forEach((commit, index) => {
+    items.push({
+      id: `k${index}:${text(commit.oid)}`,
+      kind: 'commit',
+      author: text(commit.authors?.[0]?.login) || text(commit.authors?.[0]?.name),
+      at: text(commit.committedDate),
+      body: text(commit.messageHeadline),
+      review: text(commit.oid).slice(0, 7)
+    })
+  })
   const commentList = comments ?? []
   const reviewList = reviews ?? []
   commentList.forEach((comment, index) => {
@@ -304,12 +356,19 @@ export function normalizePrDetail(json: GhPrDetailJson, options: { repo: string;
     base: text(json.baseRefName),
     createdAt: text(json.createdAt),
     updatedAt: text(json.updatedAt),
+    mergedAt: text(json.mergedAt),
+    closedAt: text(json.closedAt),
     reviewDecision: text(json.reviewDecision),
     commitCount: Array.isArray(json.commits) ? json.commits.length : 0,
+    additions: typeof json.additions === 'number' ? json.additions : files.reduce((sum, file) => sum + file.additions, 0),
+    deletions: typeof json.deletions === 'number' ? json.deletions : files.reduce((sum, file) => sum + file.deletions, 0),
+    changedFiles: typeof json.changedFiles === 'number' ? json.changedFiles : files.length,
+    labels: (json.labels ?? []).map((label) => text(label?.name)).filter(Boolean),
+    reviewers: reviewersOf(json.latestReviews, json.reviewRequests),
     checks: summary,
     checkItems: items,
     files,
-    timeline: timelineOf(json.comments, json.reviews)
+    timeline: timelineOf(json.comments, json.reviews, json.commits)
   }
 }
 

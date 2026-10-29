@@ -23,7 +23,7 @@ import { RunnerRegistry } from './runners'
 import { readPiNativeSettings, readPiRuntimePrefs, writePiNativeSettings } from './pi-runtime-prefs'
 import { createRunsHost, type RunsHost } from './runs-host'
 import { createAttentionService, createTrayAssetStore, type AttentionMenuNode, type AttentionService, type AttentionWindowPort, type TrayAnimationState, type TrayFrameSet, type TraySelectTarget, type TrayTheme } from './attention'
-import { createAuxWindows, createPaneBrowserTransfer, createPanePopoutController, createPaneTerminalTransfer, registerAuxIpc, registerPaneBrowserIpc, registerPanePopoutIpc, registerPaneTerminalIpc, submitQuickAsk, type AuxWindows, type PaneBrowserTransfer, type PanePopoutController, type PaneTerminalTransfer } from './windows'
+import { createAuxWindows, registerAuxIpc, submitQuickAsk, type AuxWindows } from './windows'
 import { registerDeepLinkProtocol, windowDeepLinkRouter } from './deeplink'
 import { RunnerVisibility } from './runner-reclaim'
 import { getSettings, patchSettings, setGuardSettingsNoticeSink, updateSettings, validateRendererSettingsPatch } from './settings'
@@ -56,7 +56,7 @@ import { resolvePi, piInfo, resetPiVersionCache } from './protocol'
 import { applyZoom, clampScale, peekUiScale, stepScale, zoomState } from './zoom'
 import { BrowserController, DOWNLOAD_CONFIRM_BYTES, type LargeDownload } from './browser'
 import { openableExternalUrl } from './external-url'
-import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, readTerminal, resizeTerminal, setTerminalSink, writeTerminal } from './terminal'
+import { disposeTerminals, hasBlockedTerminal, hasWorkingTerminal, setTerminalSink } from './terminal'
 import { choiceFromResponse, needsQuitConfirm, parseProbeChoice, quitPrompt, quitReasons, type ExitChoice, type QuitActivity } from './quit-guard'
 import { runShutdownSteps } from './shutdown'
 import { createIpcRegistrar } from './ipc/registrar'
@@ -151,7 +151,6 @@ import { planSessionSyncAgainst } from './session-sync-plan'
 import { takeSyncBaseline } from './sync-baseline'
 import { messageSyncSignature } from '../shared/session-sync'
 import type { Attachment, AttentionNotify, FileRequestContext, MainPush, QueueEditOp, QueueSnapshot, QueueState, RunnerStatus, RuntimeEnvelope, SessionState, TerminalProgramStatus } from '../shared/ipc'
-import { toPaneTerminalSnapshot } from '../shared/pane-terminal'
 
 const __dirname_ = fileURLToPath(new URL('.', import.meta.url))
 
@@ -318,9 +317,6 @@ let trayAssets: ReturnType<typeof createTrayAssetStore> | null = null
 let trayMotionAllowed = false
 let attention: AttentionService | null = null
 let auxWindows: AuxWindows | null = null
-let panePopout: PanePopoutController | null = null
-let paneTerminal: PaneTerminalTransfer | null = null
-let paneBrowserTransfer: PaneBrowserTransfer | null = null
 let isQuitting = false
 let exitRequestInFlight: Promise<{
   action: 'cancelled' | 'save-and-exit' | 'interrupt-exit' | 'already-exiting'
@@ -1302,9 +1298,6 @@ async function runShutdown(): Promise<void> {
   stopDesktopPetSync()
   attention?.dispose()
   auxWindows?.dispose()
-  panePopout?.dispose()
-  paneTerminal?.dispose()
-  paneBrowserTransfer?.dispose()
   await runShutdownSteps(
     [
       { name: 'remote-access', run: async () => { try { await remoteAccess?.stop() } finally { remoteAccess = null } } },
@@ -3600,7 +3593,6 @@ app.whenReady().then(async () => {
       notifyBlockedTerminal(event.id, event.status)
       refreshTaskbar()
     }
-    if (paneTerminal?.forward(event) && event.kind === 'data') return
     push({
       ch: 'terminal',
       payload:
@@ -3711,67 +3703,6 @@ app.whenReady().then(async () => {
   })
   registerAuxIpc(auxWindows)
   auxWindows.registerShortcut()
-
-  const browserTransfer = createPaneBrowserTransfer({
-    beginHostTransfer: (request) =>
-      browser?.beginHostTransfer(request) ?? { ok: false, code: 'not-found', message: '浏览器未初始化' },
-    endHostTransfer: (tabId, ownerKey) => browser?.endHostTransfer(tabId, ownerKey) ?? false
-  })
-  paneBrowserTransfer = browserTransfer
-
-  paneTerminal = createPaneTerminalTransfer(
-    {
-      preloadPath: () => join(__dirname_, '../preload/index.cjs'),
-      loadEntry: (target) => {
-        if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/pane.html`)
-        else void target.loadFile(join(__dirname_, '../renderer/auxwin/pane.html'))
-      },
-      anchorBounds: () => (win && !win.isDestroyed() ? win.getBounds() : undefined),
-      workArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
-      zoomFactor: () => zoomState(win, peekUiScale()).effective,
-      locale: () => (trayLanguage === 'en-US' ? 'en-US' : 'zh-CN'),
-      read: (terminalId) => {
-        const snapshot = readTerminal(terminalId)
-        return snapshot ? toPaneTerminalSnapshot(snapshot) : null
-      },
-      write: (terminalId, data) => writeTerminal(terminalId, data),
-      resize: (terminalId, cols, rows) => resizeTerminal(terminalId, cols, rows),
-      authorize: (owner) => owner.active === true && owner.key.length > 0
-    },
-    {
-      onLeaseChange: (event) => {
-        if (win && !win.isDestroyed()) win.webContents.send('yan:pane-terminal:lease', event)
-      }
-    }
-  )
-
-  panePopout = createPanePopoutController(
-    {
-      preloadPath: () => join(__dirname_, '../preload/index.cjs'),
-      loadEntry: (target) => {
-        if (process.env.ELECTRON_RENDERER_URL) void target.loadURL(`${process.env.ELECTRON_RENDERER_URL}/auxwin/pane.html`)
-        else void target.loadFile(join(__dirname_, '../renderer/auxwin/pane.html'))
-      },
-      anchorBounds: () => (win && !win.isDestroyed() ? win.getBounds() : undefined),
-      workArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
-      zoomFactor: () => zoomState(win, peekUiScale()).effective,
-      locale: () => (trayLanguage === 'en-US' ? 'en-US' : 'zh-CN')
-    },
-    {
-      onAction: (event) => {
-        if (win && !win.isDestroyed()) win.webContents.send('yan:pane-popout:action-event', event)
-      },
-      browserTransfer,
-      terminalTransfer: paneTerminal
-    }
-  )
-  registerPanePopoutIpc(panePopout, {
-    isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
-  })
-  registerPaneBrowserIpc({ controller: panePopout, transfer: browserTransfer })
-  registerPaneTerminalIpc(paneTerminal, {
-    isMainWindow: (contents) => !!win && !win.isDestroyed() && win.webContents === contents
-  })
 
   if (!isRestoredReadonly()) syncController?.start()
   const deliverStartupDeepLinks = (): void => {

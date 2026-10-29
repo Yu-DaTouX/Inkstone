@@ -50,7 +50,7 @@ import { isCapabilityResponseStale } from './capability-request'
 import { fileResourceKey } from '../../../shared/file-resource'
 import { OverlayBlockers, shouldShowBrowser } from './browser-visibility'
 import { BrowserOpener, type BrowserOpenTarget } from '../features/browser/browser-open'
-import { revealToolTile } from '../features/workbench/tool-tiles'
+import { toolSurface, useRightPanel } from './right-panel'
 import { useUiV3 } from './ui-v3'
 import { markStopRequested } from '../features/session/stop-intent'
 import { applySyncDelta, mergePeekedHistory, mergeSyncHistory } from './session-message-merge'
@@ -86,7 +86,6 @@ import { routePush, viewingSessionId } from './push-routing'
 import { beginSessionSwitch as markSessionSwitch, endSessionSwitch as unmarkSessionSwitch } from './session-activation'
 import { pushBelongsToView, sameSessionFile, viewIdentityOf, viewKeyRef } from './view-identity'
 import { consumeQuestionPush, consumeShellPush, consumeSubagentPush, consumeTaskStatePush } from './push-consumers'
-import { useSplitView } from './split-view'
 import { claimResource, releaseResource, resourceOwner } from './resource-owners'
 import { conversationKeyOf, workspaceKeyFor } from './workspace-key'
 import type { SubmittingMessage } from './submitting-messages'
@@ -1038,10 +1037,7 @@ export const useStore = create<Store>((rawSet, get) => {
     if (!get().settings?.rightPanelOpen) void get().setRightPanelOpen(true)
     const ui = useUiV3.getState()
     if (navigate) ui.navigate({ name: 'chat' })
-    if (!revealToolTile('browser')) {
-      ui.setWorkspaceTab('browser')
-      ui.setWorkspaceOpen(true)
-    }
+    useRightPanel.getState().open(toolSurface('browser'))
     applyBrowserVisibility(get)
   }
   const browserOpener = new BrowserOpener({
@@ -1313,7 +1309,7 @@ export const useStore = create<Store>((rawSet, get) => {
         peekedSessionId: s.peekedSessionId,
         peekedPath: s.peekedPath,
         session: s.session,
-        visibleSessionIds: useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : [])
+        visibleSessionIds: []
       },
       m
     )
@@ -1377,8 +1373,7 @@ export const useStore = create<Store>((rawSet, get) => {
       case 'runners':
         {
           const active = viewedActiveRunner(s, m.payload)
-          const keep = new Set([viewingSessionId(s) ?? '',
-            ...(useSplitView.getState().split?.tiles.flatMap((tile) => tile.sessionId ? [tile.sessionId] : []) ?? [])])
+          const keep = new Set([viewingSessionId(s) ?? ''])
           for (const runner of m.payload) if (runner.running || runner.waiting || runner.isActive) keep.add(runner.sessionId || `run:${runner.runId}`)
           set({ runners: keepRef(s.runners, m.payload), sessionRuntimes: pruneSessionRuntimes(get().sessionRuntimes, keep), ...(active ? { activeRunnerId: active.runId ?? active.id } : {}) })
           if (active) {

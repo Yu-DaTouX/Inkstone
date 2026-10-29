@@ -172,8 +172,8 @@ async function main() {
 
   const sidebar = await readFile(join(ROOT, 'src/renderer/src/features/sidebar/Sidebar.tsx'), 'utf8')
   ok(!sidebar.includes('TodoTile'), '待办磁贴已不在左侧栏')
-  const panel = await readFile(join(ROOT, 'src/renderer/src/features/workbench/WorkbenchPanel.tsx'), 'utf8')
-  ok(!panel.includes('<TodoTile />'), '待办不再固定在页签栏下方')
+  const panel = await readFile(join(ROOT, 'src/renderer/src/features/workbench/RightPanel.tsx'), 'utf8')
+  ok(!panel.includes('<TodoTile />'), '待办不再固定在右栏标签条下方')
 
   const overview = await readFile(join(ROOT, 'src/renderer/src/features/workbench/OverviewPane.tsx'), 'utf8')
   ok(!overview.includes('todo-tile-model') && !overview.includes('TodoTileView'), '总览已不再引用待办模型/视图')
@@ -244,8 +244,6 @@ async function main() {
   ok(pushConsumers.includes("case 'todos':") && pushConsumers.includes('set({ todos: m.payload })'), 'store.todos 只由 todos 推送套用')
   const routing = await readFile(join(ROOT, 'src/renderer/src/state/push-routing.ts'), 'utf8')
   ok(routing.includes('viewingSessionId') && routing.includes('belongsToView'), '后台会话的待办只进 sessionRuntimes，不覆盖当前视图')
-  const splitActions = await readFile(join(ROOT, 'src/renderer/src/features/split/split-actions.ts'), 'utf8')
-  ok(splitActions.includes('void store.switchSession(target.path)'), '并排切焦点列走正式 switchSession（随之重投影 store.todos）')
 
   await rm(outdir, { recursive: true, force: true })
   console.log(`\nv3-todo-tile: ${checks} checks passed`)

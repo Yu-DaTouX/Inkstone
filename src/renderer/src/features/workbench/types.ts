@@ -1,6 +1,5 @@
 import type { ComponentType } from 'react'
 import type { PreviewOpenOptions } from './preview-state'
-import type { PanePopoutTabId } from '../../../../shared/pane-popout'
 
 export type WorkbenchTabId = 'changes' | 'terminal' | 'files' | 'browser' | 'preview' | 'context' | 'branch' | 'logs' | 'quota' | 'device' | 'pullRequests'
 
@@ -15,8 +14,6 @@ export type WorkspacePaneId = WorkbenchTabId | SubagentPaneId
 export type WorkspaceView = WorkbenchView | SubagentPaneId
 
 export const WORKBENCH_ACTIVE_TABS: ReadonlySet<string> = new Set<string>(['terminal', 'browser'])
-
-export type WorkbenchPopoutTabId = PanePopoutTabId
 
 export interface WorkspaceOwner {
   readonly key: string
@@ -54,6 +51,7 @@ export interface PreviewPaneProps {
   path?: string
   treeShown?: boolean
   onRevealInTree?: (abs: string) => void
+  standalone?: boolean
 }
 
 export interface ContextPaneProps {

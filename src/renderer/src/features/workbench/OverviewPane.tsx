@@ -51,7 +51,7 @@ import {
 } from './rail-data'
 import { railText, type RailText } from './rail-text'
 import { useRailReorder } from './use-rail-reorder'
-import { showPreview } from './tool-tiles'
+import { showPreview } from './preview-bindings'
 import { BackgroundTasks, backgroundTaskCount } from './BackgroundTasks'
 import { useMcpConnections } from './McpConnections'
 import './workbench.css'

@@ -128,30 +128,7 @@ import type { SearchApiConfigView, SearchBackendStatus } from '../shared/search'
 import type { AccountQuotaReport, CodexAccountView } from '../shared/account-quota'
 import type { OAuthAccountPools } from '../shared/oauth-accounts'
 import type { AuxPush, QuickAskSubmit } from '../main/windows/aux-types'
-import { PANE_POPOUT_CHANNELS } from '../shared/pane-popout'
-import { PANE_BROWSER_CHANNELS } from '../shared/pane-popout'
-import type { PaneBrowserStateView } from '../shared/pane-popout'
-import type { BrowserLeaseResult } from '../main/windows/pane-browser-transfer'
 import type { LocalServerSnapshot } from '../shared/local-servers'
-import type {
-  PaneActionEvent,
-  PaneActionRequest,
-  PaneActionResult,
-  PanePopoutAnyTabId,
-  PanePopoutOpenRequest,
-  PanePopoutOpenResult,
-  PaneProjectionEnvelope,
-  PaneStateView
-} from '../shared/pane-popout'
-import { PANE_TERMINAL_CHANNELS } from '../shared/pane-terminal'
-import type {
-  PaneTerminalBridge,
-  PaneTerminalLeaseEvent,
-  PaneTerminalLeaseView,
-  PaneTerminalOpenRequest,
-  PaneTerminalOpenResult,
-  PaneTerminalPushEvent
-} from '../shared/pane-terminal'
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(ch, ...args) as Promise<T>
 
@@ -774,69 +751,5 @@ const auxApi = {
   }
 }
 contextBridge.exposeInMainWorld('auxBridge', auxApi)
-
-const paneApi = {
-  open: (request: PanePopoutOpenRequest): Promise<PanePopoutOpenResult> =>
-    invoke(PANE_POPOUT_CHANNELS.open, request),
-  update: (envelope: PaneProjectionEnvelope): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.update, envelope),
-  close: (tab: PanePopoutAnyTabId): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.close, tab),
-  state: (): Promise<PaneStateView | null> => invoke(PANE_POPOUT_CHANNELS.state),
-  action: (action: PaneActionRequest): Promise<PaneActionResult> => invoke(PANE_POPOUT_CHANNELS.action, action),
-  closeSelf: (): void => ipcRenderer.send(PANE_POPOUT_CHANNELS.closeSelf),
-  onPush: (cb: (view: PaneStateView) => void): (() => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, view: PaneStateView): void => cb(view)
-    ipcRenderer.on(PANE_POPOUT_CHANNELS.push, listener)
-    return () => {
-      ipcRenderer.removeListener(PANE_POPOUT_CHANNELS.push, listener)
-    }
-  },
-  onAction: (cb: (event: PaneActionEvent) => void): (() => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, event: PaneActionEvent): void => cb(event)
-    ipcRenderer.on(PANE_POPOUT_CHANNELS.actionEvent, listener)
-    return () => {
-      ipcRenderer.removeListener(PANE_POPOUT_CHANNELS.actionEvent, listener)
-    }
-  }
-}
-contextBridge.exposeInMainWorld('paneBridge', paneApi)
-
-const paneBrowserApi = {
-  state: (): Promise<PaneBrowserStateView | null> => invoke(PANE_BROWSER_CHANNELS.state),
-  setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<BrowserLeaseResult> =>
-    invoke(PANE_BROWSER_CHANNELS.bounds, bounds),
-  navigate: (url: string): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.navigate, url),
-  goBack: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.back),
-  goForward: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.forward),
-  reload: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.reload),
-  close: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.close),
-  returnToHost: (): Promise<BrowserLeaseResult> => invoke(PANE_BROWSER_CHANNELS.returnToHost)
-}
-contextBridge.exposeInMainWorld('paneBrowserBridge', paneBrowserApi)
-
-const paneTerminalApi: PaneTerminalBridge = {
-  open: (request: PaneTerminalOpenRequest): Promise<PaneTerminalOpenResult> =>
-    invoke(PANE_TERMINAL_CHANNELS.open, request),
-  state: (): Promise<PaneTerminalLeaseView | null> => invoke(PANE_TERMINAL_CHANNELS.state),
-  input: (leaseId: string, data: string): Promise<boolean> => invoke(PANE_TERMINAL_CHANNELS.input, leaseId, data),
-  resize: (leaseId: string, cols: number, rows: number): Promise<boolean> =>
-    invoke(PANE_TERMINAL_CHANNELS.resize, leaseId, cols, rows),
-  detach: (leaseId: string): Promise<boolean> => invoke(PANE_TERMINAL_CHANNELS.detach, leaseId),
-  closeSelf: (): void => ipcRenderer.send(PANE_TERMINAL_CHANNELS.closeSelf),
-  onPush: (cb: (event: PaneTerminalPushEvent) => void): (() => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, event: PaneTerminalPushEvent): void => cb(event)
-    ipcRenderer.on(PANE_TERMINAL_CHANNELS.push, listener)
-    return () => {
-      ipcRenderer.removeListener(PANE_TERMINAL_CHANNELS.push, listener)
-    }
-  },
-  onLease: (cb: (event: PaneTerminalLeaseEvent) => void): (() => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, event: PaneTerminalLeaseEvent): void => cb(event)
-    ipcRenderer.on(PANE_TERMINAL_CHANNELS.lease, listener)
-    return () => {
-      ipcRenderer.removeListener(PANE_TERMINAL_CHANNELS.lease, listener)
-    }
-  }
-}
-contextBridge.exposeInMainWorld('paneTerminalBridge', paneTerminalApi)
 
 contextBridge.exposeInMainWorld('yan', api)

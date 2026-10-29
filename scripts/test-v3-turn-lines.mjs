@@ -201,16 +201,16 @@ async function buildBundle(outdir) {
     `export * from '${posix(abs('src/renderer/src/features/session/turn-lines.ts'))}'`,
     `export { SubagentLine, subagentTitle } from '${posix(abs('src/renderer/src/features/session/SubagentLine.tsx'))}'`,
     `export { orderSubagentRuns, subagentListRank, subagentListSlice, subagentNeighbor, subagentRowFocusTarget, subagentSiblings, subagentSessionPeers, useSubagentGroups } from '${posix(abs('src/renderer/src/features/session/subagent-list.ts'))}'`,
-    `export { swapLayoutTiles, switchSubagentPane } from '${posix(abs('src/renderer/src/features/session/subagent-actions.ts'))}'`,
+    `export { switchSubagentPane } from '${posix(abs('src/renderer/src/features/session/subagent-actions.ts'))}'`,
     `export { toolExpansion } from '${posix(abs('src/renderer/src/features/session/tool-expansion.ts'))}'`,
-    `export { columnLayout, orderedTileIds } from '${posix(abs('src/renderer/src/features/workbench/tile-tree.ts'))}'`,
     `export { ErrorCard } from '${posix(abs('src/renderer/src/features/session/ErrorCard.tsx'))}'`,
     `export { CompactionMarker, CompactCommandEcho } from '${posix(abs('src/renderer/src/features/session/CompactionMarker.tsx'))}'`,
     `export { BranchSummary } from '${posix(abs('src/renderer/src/features/session/BranchSummary.tsx'))}'`,
     `export { modelErrorNotice } from '${posix(abs('src/shared/model-errors.ts'))}'`,
     `export { useStore } from '${posix(abs('src/renderer/src/state/store.ts'))}'`,
     `export { useRunsV3 } from '${posix(abs('src/renderer/src/state/runs-v3.ts'))}'`,
-    `export { useUiV3 } from '${posix(abs('src/renderer/src/state/ui-v3.ts'))}'`
+    `export { useUiV3 } from '${posix(abs('src/renderer/src/state/ui-v3.ts'))}'`,
+    `export { useRightPanel } from '${posix(abs('src/renderer/src/state/right-panel.ts'))}'`
   ].join('\n'))
   const out = join(outdir, 'bundle.mjs')
   await build({
@@ -420,7 +420,10 @@ async function main() {
     return globalThis.__V3_STORE
   }
 
-  const resetPanes = () => lib.useUiV3.setState({ workspaceOpen: false, workspaceTab: 'files', workspacePanes: [] })
+  const panelOf = () => { const st = lib.useRightPanel.getState(); return st.byKey[st.key] ?? { open: false, active: null, surfaces: [], maximized: false } }
+  const panelIds = () => panelOf().surfaces.map((item) => item.id)
+  const setPanel = (ids, active, open = true) => lib.useRightPanel.setState({ key: 'home', order: ['home'], byKey: { home: { open, active, maximized: false, surfaces: ids.map((id) => id.startsWith('subagent:') ? { id, kind: 'subagent', runId: id.slice(9) } : { id, kind: id }) } } })
+  const resetPanes = () => setPanel(['files'], 'files', false)
 
   const kind = (name) => (el) => typeof el.type === 'function' && (el.type.name === name || new RegExp('^' + name + '[0-9]+$').test(el.type.name))
   const stub = (name) => (el) => typeof el.type === 'function' && el.type.__stub === name
@@ -468,12 +471,12 @@ async function main() {
     ok(byTestId(row, 'v3-subagent-model').length === 0, '没有模型时不写模型名')
     ok(row.props['aria-current'] === undefined && row.props['data-selected'] === undefined, '未打开时不标选中')
     row.props.onClick()
-    const ui = lib.useUiV3.getState()
-    ok(ui.workspaceOpen === true && ui.workspaceTab === 'subagent:sub-1' && ui.workspacePanes.includes('subagent:sub-1'), '点击后右侧工作区打开 subagent:<runId> 窗格并聚焦', { open: ui.workspaceOpen, tab: ui.workspaceTab, panes: ui.workspacePanes })
+    const ui = panelOf()
+    ok(ui.open === true && ui.active === 'subagent:sub-1' && panelIds().includes('subagent:sub-1'), '点击后右栏打开 subagent:<runId> 标签并聚焦', ui)
     const pressed = renderRowEl(rowEl)
     ok(pressed.props['aria-current'] === 'true' && pressed.props['data-selected'] === '', '窗格打开时行显示为选中')
     pressed.props.onClick()
-    ok(lib.useUiV3.getState().workspacePanes.filter((id) => id === 'subagent:sub-1').length === 1, '再点不会重复开窗格')
+    ok(panelIds().filter((id) => id === 'subagent:sub-1').length === 1, '再点不会重复开标签')
     resetPanes()
   }
 
@@ -569,7 +572,7 @@ async function main() {
     byTestId(rt.render(bundle.SubagentLine, { turn }), 'v3-subagents-more')[0].props.onPress()
     ok(rowsOf(rt.render(bundle.SubagentLine, { turn })).length === 5, '收起后回到前 5 行')
 
-    lib.useUiV3.setState({ workspaceOpen: true, workspaceTab: 'subagent:sub-6', workspacePanes: ['subagent:sub-6'] })
+    setPanel(['subagent:sub-6'], 'subagent:sub-6')
     ok(rowsOf(rt.render(bundle.SubagentLine, { turn })).length === 7, '选中的行被折叠时整组展开，选中项不藏起来')
     resetPanes()
 
@@ -639,16 +642,12 @@ async function main() {
     ok(bundle.subagentSessionPeers(sessionRuns, sessionRuns[3]).map((run) => run.id).includes('finished'), '正在查看的代理结束后仍保留当前位置')
     ok(bundle.subagentSessionPeers([subagentRun({id:'unknown',parentSessionId:undefined}),...sessionRuns], subagentRun({id:'unknown',parentSessionId:undefined})).length === 1, '归属不明时不串到其他会话')
 
-    const layout = lib.columnLayout(['files', 'subagent:s1', 'context'])
-    const swapped = bundle.swapLayoutTiles(layout, 'subagent:s1', 'subagent:s2')
-    ok(lib.orderedTileIds(swapped).join() === 'files,subagent:s2,context', '交换磁贴 id 保留位置')
-    lib.useUiV3.setState({ workspaceOpen: true, workspaceTab: 'subagent:s1', workspacePanes: ['files', 'subagent:s1', 'context'], workspaceLayout: layout })
+    setPanel(['files', 'subagent:s1', 'context'], 'subagent:s1')
     bundle.switchSubagentPane('s1', 's2')
-    const ui = lib.useUiV3.getState()
-    ok(ui.workspacePanes.join() === 'files,subagent:s2,context' && ui.workspaceTab === 'subagent:s2' && lib.orderedTileIds(ui.workspaceLayout).filter((id) => id !== 'chat').join() === 'files,subagent:s2,context', '窗格切换在原位换成另一个子 Agent，不新增磁贴', { panes: ui.workspacePanes, tab: ui.workspaceTab })
-    lib.useUiV3.setState({ workspacePanes: ['subagent:s2', 'subagent:s3'], workspaceTab: 'subagent:s2', workspaceLayout: lib.columnLayout(['subagent:s2', 'subagent:s3']) })
+    ok(panelIds().join() === 'files,subagent:s2,context' && panelOf().active === 'subagent:s2', '标签在原位换成另一个子 Agent，不新增标签', panelOf())
+    setPanel(['subagent:s2', 'subagent:s3'], 'subagent:s2')
     bundle.switchSubagentPane('s2', 's3')
-    ok(lib.useUiV3.getState().workspacePanes.join() === 'subagent:s2,subagent:s3' && lib.useUiV3.getState().workspaceTab === 'subagent:s3', '目标已打开时只切换焦点')
+    ok(panelIds().join() === 'subagent:s2,subagent:s3' && panelOf().active === 'subagent:s3', '目标已打开时只切换焦点')
     resetPanes()
   }
 

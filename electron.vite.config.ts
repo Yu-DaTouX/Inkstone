@@ -68,8 +68,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html'),
-          'auxwin/pane': resolve('src/renderer/auxwin/pane.html')
+          'auxwin/quick-ask': resolve('src/renderer/auxwin/quick-ask.html')
         }
       }
     },

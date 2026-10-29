@@ -2,7 +2,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { I18nProvider } from './i18n'
 import { useStore } from './state/store'
-import { useSplitView } from './state/split-view'
 import { useRunsV3 } from './state/runs-v3'
 import { useLiveQuota } from './state/live-quota'
 import { installAudioUnlock } from './lib/sound'
@@ -18,7 +17,6 @@ if (!root) throw new Error('找不到 #root')
 declare global {
   interface Window {
     __yanStore: typeof useStore
-    __yanSplit: typeof useSplitView
     __yanRuns: typeof useRunsV3
     __yanLiveQuota: typeof useLiveQuota
   }
@@ -26,7 +24,6 @@ declare global {
 const probeMode = window.yan.probeMode || (import.meta.env.DEV && new URLSearchParams(window.location.search).get('probe') === '1')
 if (probeMode) {
   window.__yanStore = useStore
-  window.__yanSplit = useSplitView
   window.__yanRuns = useRunsV3
   window.__yanLiveQuota = useLiveQuota
 }

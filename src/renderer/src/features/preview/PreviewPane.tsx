@@ -10,7 +10,7 @@ import { CodeEditor } from '../editor/LazyCodeEditor'
 import { Markdown } from '../session/Markdown'
 import { PaneTitle, usePaneChrome, usePaneMenu, type PaneMenuItem } from '../workbench/pane-chrome'
 import { editorIsEditableKind } from '../editor/editable-kind'
-import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/tool-tiles'
+import { showPreview, usePreviewBindings, usePreviewTabs } from '../workbench/preview-bindings'
 import type { PreviewPaneProps } from '../workbench/types'
 import { previewText, type PreviewText } from './preview-text'
 import { filesText } from '../files/files-text'
@@ -92,7 +92,7 @@ type PreviewView =
   | { kind: 'problem'; name: string; problem: PreviewProblem }
   | { kind: 'error'; name: string; message: string }
 
-export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: PreviewPaneProps): ReactElement {
+export function PreviewPane({ owner, path, treeShown = true, onRevealInTree, standalone = false }: PreviewPaneProps): ReactElement {
   const { lang } = useI18n()
   const text = previewText(lang)
   const [viewSlot, setViewSlot] = useState<{ key: string; view: PreviewView } | null>(null)
@@ -423,7 +423,7 @@ export function PreviewPane({ owner, path, treeShown = true, onRevealInTree }: P
   const tabList = previewTabs && previewTabs.tabs.length > 0 ? previewTabs.tabs : activePath ? [activePath] : []
   const activeTab = previewTabs?.active ?? activePath ?? ''
   const bindings = usePreviewBindings.getState
-  const tabStrip = tabList.length ? (
+  const tabStrip = tabList.length && !standalone ? (
     <PreviewTabs
       tabs={tabList}
       active={activeTab}

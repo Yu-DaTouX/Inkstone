@@ -1,4 +1,4 @@
-import { useUiV3 } from '../../state/ui-v3'
+import { openPanelTool } from '../workbench/panel-actions'
 import { activateTerminal } from '../terminal/terminal-activate'
 import { cdCommandFor } from './files-menu'
 
@@ -18,9 +18,7 @@ export async function openFolderInTerminal(ownerKey: string, abs: string): Promi
   if (!terminal) return false
   const command = cdCommandFor(abs)
   if (!command) return false
-  const ui = useUiV3.getState()
-  ui.setWorkspaceTab('terminal')
-  ui.setWorkspaceOpen(true)
+  openPanelTool('terminal')
   for (let attempt = 0; attempt < POLL_LIMIT; attempt += 1) {
     const list = await terminal.list().catch(() => [])
     const owned = list.filter((item) => item.owner === ownerKey && item.alive)

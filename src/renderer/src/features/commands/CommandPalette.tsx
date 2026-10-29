@@ -6,8 +6,7 @@ import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
 import { openSettingsDialog } from '../settings/root/deep-link'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../session/view-state'
-import { displayedSessionOf, useSplitView } from '../../state/split-view'
-import { sideBySideCandidate } from '../../app/SideBySideLayout'
+import { currentPanelEntry, toolSurface, useRightPanel } from '../../state/right-panel'
 import { activateWorkspaceOwner, captureActivationTarget } from '../workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, type WorkbenchTabId } from '../workbench/types'
 import { Dialog, EmptyState, Kbd, Modal, ModalOverlay, Notice, Spinner, cx } from '../../ui'
@@ -158,12 +157,6 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
         label: text.openSettings,
         keywords: 'settings preferences options 设置 首选项',
         shortcut: shortcutKeys('openSettings')
-      },
-      {
-        id: COMMAND_ACTION_IDS.openSideBySide,
-        group: 'action',
-        label: text.openSideBySide,
-        keywords: 'split side by side panes 并排 分屏 双栏'
       },
       {
         id: COMMAND_ACTION_IDS.workspaceChanges,
@@ -321,31 +314,29 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
 
   const openWorkspaceTab = async (tab: WorkbenchTabId): Promise<RunResult> => {
     onNavigate?.('chat')
-    const ui = useUiV3.getState()
-    ui.setWorkspaceTab(tab)
     if (WORKBENCH_ACTIVE_TABS.has(tab)) {
       const target = captureActivationTarget()
       const ok = await activateWorkspaceOwner(target)
       if (!ok) return { ok: false, error: text.activationFailed }
     }
-    useUiV3.getState().setWorkspaceOpen(true)
+    useRightPanel.getState().open(toolSurface(tab))
     return { ok: true }
   }
 
   const toggleWorkspace = async (): Promise<RunResult> => {
     onNavigate?.('chat')
-    const ui = useUiV3.getState()
-    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
-      ui.setWorkspaceOpen(false)
+    const entry = currentPanelEntry()
+    if (entry.open) {
+      useRightPanel.getState().setOpen(false)
       return { ok: true }
     }
-    if (ui.workspaceTab === 'overview') ui.setWorkspaceTab('changes')
-    if (WORKBENCH_ACTIVE_TABS.has(ui.workspaceTab)) {
+    const active = entry.surfaces.find((item) => item.id === entry.active)
+    if (active && WORKBENCH_ACTIVE_TABS.has(active.kind)) {
       const target = captureActivationTarget()
       const ok = await activateWorkspaceOwner(target)
       if (!ok) return { ok: false, error: text.activationFailed }
     }
-    useUiV3.getState().setWorkspaceOpen(true)
+    useRightPanel.getState().setOpen(true)
     return { ok: true }
   }
 
@@ -388,21 +379,6 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
       case COMMAND_ACTION_IDS.openSettings:
         openSettingsDialog()
         return { ok: true }
-      case COMMAND_ACTION_IDS.openSideBySide: {
-        onNavigate?.('chat')
-        const state = useStore.getState()
-        const current = displayedSessionOf({
-          peekedSessionId: state.peekedSessionId,
-          peekedPath: state.peekedPath,
-          session: state.session ? { sessionId: state.session.sessionId, sessionFile: state.session.sessionFile } : null
-        })
-        if (!current) return { ok: false, error: text.failed }
-        const taken = useSplitView.getState().split?.tiles ?? []
-        const candidate = sideBySideCandidate(state.sessions, current, taken)
-        if (!candidate) return { ok: false, error: text.sideBySideNoPeer }
-        useSplitView.getState().open({ sessionId: candidate.id, path: candidate.path }, current)
-        return { ok: true }
-      }
       case COMMAND_ACTION_IDS.settingsUsage:
         useUiV3.getState().navigate({ name: 'usage' })
         return { ok: true }

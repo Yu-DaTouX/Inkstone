@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, FilePen, Undo2 } from 'lucide-react'
 import { Button } from '../../ui'
 import { useI18n, type Lang } from '../../i18n'
 import { useStore } from '../../state/store'
-import { useUiV3 } from '../../state/ui-v3'
+import { openPanelTool } from '../workbench/panel-actions'
 import { matchCheckpoint } from '../../../../shared/checkpoints'
 import type { UIMessage } from '../../../../shared/ipc'
 import type { AssistantTurn } from '../../../../shared/turns'
@@ -84,9 +84,7 @@ export function TurnChanges({ turn, readOnly, rewindOwner }: { turn: AssistantTu
   const hidden = changes.files.length - VISIBLE_FILES
 
   const viewChanges = (): void => {
-    const ui = useUiV3.getState()
-    ui.setWorkspaceTab('changes')
-    ui.setWorkspaceOpen(true)
+    openPanelTool('changes')
   }
 
   return (

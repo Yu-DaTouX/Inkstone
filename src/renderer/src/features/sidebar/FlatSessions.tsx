@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
 import { Archive, Check, ChevronRight, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
-import { useSplitDrag } from '../split/split-drag'
+import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField } from '../../ui'
@@ -522,7 +522,7 @@ export function FlatSessionList({
   const own = sidebarText(lang)
   const now = useMinuteClock()
   const [limit, setLimit] = useState(FLAT_PAGE_SIZE)
-  const dragSource = useSplitDrag((s) => s.source)
+  const dragSource = useSessionDrag((s) => s.source)
   const dragging = !!dragSource?.startsWith('session:')
   const draggingPinned = dragging && pinned.some((entry) => dragSource === `session:${entry.session.path}`)
 

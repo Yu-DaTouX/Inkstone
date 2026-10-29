@@ -4,11 +4,10 @@ import { FocusScope } from 'react-aria'
 import { showToast, Splitter } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
-import { translate, useI18n, type Lang, type MessageKey } from '../i18n'
+import { useI18n } from '../i18n'
 import { useStore } from '../state/store'
 import { useRunnerVisibility } from '../lib/use-runner-visibility'
 import { useHoverDelay } from '../lib/use-hover-delay'
-import { displayedSessionOf, reconcileSplit, useSplitView, type SplitSessionRef } from '../state/split-view'
 import { sessionViewIdentity, viewMatchesProjectedSession } from '../features/session/view-state'
 import { isModalOpen } from '../lib/modalLayer'
 import { dismissBootSplash } from '../lib/boot-splash'
@@ -17,13 +16,9 @@ import { startRunSync } from '../state/runs-v3'
 import { useCurrentRunsSeen } from '../state/use-current-runs-seen'
 import type { RunSnapshot } from '../../../shared/runs'
 import { Sidebar } from '../features/sidebar/Sidebar'
-import { SplitDragLayer } from '../features/split/SplitDragLayer'
-import { SPLIT_CONSTRAINED_WIDTH } from '../features/split/split-drop-model'
-import { runSplitShortcut } from '../features/split/split-keys'
-import { useSplitPersistence } from '../features/split/use-split-persistence'
+import { SessionDragLayer } from '../features/sidebar/SessionDragLayer'
 import { SIDEBAR_DRAG_COLLAPSE, SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_STEP, SIDEBAR_WIDTH_STEP_LARGE, readSidebarWidth, sidebarMaxForWindow, shouldAutoCollapseSidebar } from '../features/sidebar/sidebar-layout'
-import { SideBySide } from './SideBySide'
-import { collapsedPanes, sessionTiles } from './SideBySideLayout'
+import { ChatMain } from './ChatMain'
 import { CommandPalette } from '../features/commands/CommandPalette'
 import { ShortcutSheet } from '../features/commands/ShortcutSheet'
 import { SessionSwitcher, useSessionSwitcher } from '../features/commands/SessionSwitcher'
@@ -41,69 +36,32 @@ import { ConnBanner } from './ConnBanner'
 import { OnboardingWizard, markOnboarded, shouldAutoWizard } from '../features/onboarding'
 import { NativeSessionSurfaces } from '../features/session/native'
 import { V3ErrorBoundary } from './ErrorBoundary'
-import { WorkbenchPanel } from '../features/workbench/WorkbenchPanel'
+import { RightPanel } from '../features/workbench/RightPanel'
 import { OverviewPane } from '../features/workbench/OverviewPane'
 import { WORKBENCH_PANES } from '../features/workbench/panes'
 import { filesClaimsQuickOpen } from '../features/files/FilesPane'
 import { useWorkspaceOwner } from '../features/workbench/use-owner'
-import { closeToolTile, isToolTiled, revealToolTile, useTiledTools } from '../features/workbench/tool-tiles'
 import { useChatFilePreview } from '../features/preview/use-chat-file-preview'
 import { useLiveHtmlFollow } from '../features/preview/live-html'
 import { useWorkspaceHasChanges } from '../features/workbench/use-workspace-branch'
-import { createPanePopoutClient } from '../features/workbench/pane-popout-client'
 import { activateWorkspaceOwner, captureActivationTarget } from '../features/workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, WORKBENCH_TABS, type WorkbenchTabId } from '../features/workbench/types'
-import { isSubagentPaneId, toolPanes } from '../features/workbench/subagent-panes'
-import { CHAT_MIN_WIDTH_PX, TILE_GAP, TILE_MIN_WIDTH_PX } from '../features/workbench/tile-tree'
-import { usePruneSubagentPanes } from '../features/workbench/use-subagent-panes'
-import { panePopoutBridge, paneTerminalBridge } from '../../auxwin/pane-bridge'
-import { pickOwnedTerminal, selectOwnedTerminals } from '../features/terminal/terminal-session'
+import { usePruneSubagentSurfaces } from '../features/workbench/use-subagent-surfaces'
 import { useTerminalRunning } from '../features/terminal/use-terminal-running'
-import { resourceOwner } from '../state/resource-owners'
-import { autoCompactLimitOf, contextPaneData } from '../features/workbench/context-pane-view'
-import type { ContextSlice } from '../state/context-breakdown'
-import type { PaneContextSegment } from '../../../shared/pane-popout'
+import { PANEL_WIDTH_MIN, currentPanelEntry, toolSurface, useRightPanel, useRightPanelEntry, type PanelToolKind } from '../state/right-panel'
 import { railText } from '../features/workbench/rail-text'
 import { LANE_GAP, MESSAGE_MIN_WIDTH, TILES_WIDTH_DEFAULT, TILES_WIDTH_MAX, TILES_WIDTH_MIN, TILES_WIDTH_STEP, clampTilesWidth, readTilesWidth, tilesWidthRoom, writeTilesWidth } from './tiles-width'
 import './ShellV3.css'
 
 let bootstrapStarted = false
 
-const CONTEXT_SEGMENT_LABELS: Record<ContextSlice['id'], MessageKey> = {
-  system: 'ctx.cat.system',
-  user: 'ctx.cat.user',
-  assistant: 'ctx.cat.assistant',
-  thinking: 'ctx.cat.thinking',
-  tools: 'ctx.cat.tools'
-}
-
 const UsagePage = lazy(() => import('../features/usage/UsagePage').then((m) => ({ default: m.UsagePage })))
 const CollabPage = lazy(() => import('../features/collab').then((m) => ({ default: m.CollabPage })))
 const ScheduleTasksPage = lazy(() => import('../features/schedule').then((m) => ({ default: m.ScheduleTasksPage })))
 const ArtifactLibraryPage = lazy(() => import('../features/artifacts/ArtifactLibraryPage').then((m) => ({ default: m.ArtifactLibraryPage })))
 
-function contextSegments(
-  slices: readonly ContextSlice[],
-  usage: { tokens: number; windowSize: number },
-  lang: Lang
-): PaneContextSegment[] {
-  const segments: PaneContextSegment[] = slices
-    .filter((slice) => slice.tokens > 0)
-    .map((slice) => ({ id: slice.id, label: translate(lang, CONTEXT_SEGMENT_LABELS[slice.id]), tokens: slice.tokens }))
-  const free = Math.max(0, usage.windowSize - usage.tokens)
-  if (free > 0) segments.push({ id: 'free', label: translate(lang, 'ctx.cat.free'), tokens: free, tone: 'free' })
-  return segments
-}
-
-async function ownedTerminalId(ownerKey: string): Promise<string | null> {
-  if (typeof window === 'undefined' || !window.yan?.terminal) return null
-  try {
-    const list = await window.yan.terminal.list()
-    return pickOwnedTerminal(selectOwnedTerminals(list, ownerKey, resourceOwner))?.id ?? null
-  } catch {
-    return null
-  }
-}
+const CHAT_MIN_WIDTH_PX = 420
+const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
 
 export default function ShellV3(): ReactElement {
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(localStorage))
@@ -175,13 +133,10 @@ export default function ShellV3(): ReactElement {
 
   const route = useUiV3((s) => s.route)
   const sidebarOpen = useUiV3((s) => s.sidebarOpen)
-  const workspaceOpen = useUiV3((s) => s.workspaceOpen)
-  const workspaceTab = useUiV3((s) => s.workspaceTab)
-  const workspacePanes = useUiV3((s) => s.workspacePanes)
-  const workspaceFocus = useUiV3((s) => s.workspaceFocus)
+  const panelEntry = useRightPanelEntry()
   const hasMessages = useStore((s) => s.messages.length > 0)
   const sessionBarOn = useStore((s) => s.settings?.workspaceTiles !== false)
-  const workspaceShown = route.name === 'chat' && workspaceOpen && workspaceTab !== 'overview'
+  const panelOpen = route.name === 'chat' && panelEntry.open
   const [sessionBarWidth] = useState(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-tiles')) || 300)
   const showSidebarPreview = useCallback(() => { if (!useUiV3.getState().sidebarOpen) setSidebarPreview(true) }, [])
   const reveal = useHoverDelay(120, showSidebarPreview)
@@ -234,60 +189,12 @@ export default function ShellV3(): ReactElement {
   const owner = useWorkspaceOwner()
   useChatFilePreview(owner.key)
   useLiveHtmlFollow(owner.key)
-  const panelMode: 'docked' | 'full' =
-    bodyWidth > 0 && bodyWidth < CHAT_MIN_WIDTH_PX + TILE_MIN_WIDTH_PX + TILE_GAP ? 'full' : 'docked'
-
-  const [paneClient] = useState(() => {
-    const bridge = panePopoutBridge()
-    if (!bridge) return null
-    return createPanePopoutClient({
-      bridge,
-      terminalBridge: paneTerminalBridge() ?? undefined,
-      source: {
-        snapshot: () => {
-          const s = useStore.getState()
-          const locale: Lang = s.settings?.lang === 'en-US' ? 'en-US' : 'zh-CN'
-          const context = contextPaneData({
-            session: s.session,
-            stats: s.stats,
-            messages: s.messages,
-            autoCompactLimit: autoCompactLimitOf(s.session, s.settings)
-          })
-          return {
-            locale,
-            context: {
-              usedTokens: context.usage.tokens,
-              windowTokens: context.usage.windowSize,
-              known: context.usage.known,
-              segments: context.usage.known ? contextSegments(context.slices, context.usage, locale) : []
-            }
-          }
-        },
-        onAction: (event) => {
-          if (event.action.type === 'refresh') paneClientRef.current?.refresh(event.tab)
-          if (event.action.type === 'files.attach' && event.action.path) {
-            void useStore.getState().addFileRefPaths([event.action.path])
-          }
-        }
-      }
-    })
-  })
-  const paneClientRef = useRef(paneClient)
-  paneClientRef.current = paneClient
-
+  const panelMode: 'inline' | 'sheet' = bodyWidth > 0 && bodyWidth < SHEET_BELOW_PX ? 'sheet' : 'inline'
+  const panelMaximized = panelOpen && panelMode === 'inline' && panelEntry.maximized
+  const liveSessionId = useStore((s) => s.session?.sessionId ?? null)
   useEffect(() => {
-    paneClient?.refresh()
-  }, [paneClient, lang, owner.key])
-
-  useEffect(
-    () =>
-      useStore.subscribe((state, previous) => {
-        if (state.stats !== previous.stats || state.messages !== previous.messages) paneClient?.refresh('context')
-      }),
-    [paneClient]
-  )
-
-  useEffect(() => () => paneClient?.dispose(), [paneClient])
+    useRightPanel.getState().load(liveSessionId)
+  }, [liveSessionId])
 
   useEffect(() => {
     const off = window.yan.onPush(applyPush)
@@ -343,29 +250,13 @@ export default function ShellV3(): ReactElement {
     return () => mq.removeEventListener('change', apply)
   }, [])
 
-  const displayed = useMemo<SplitSessionRef | null>(
-    () =>
-      displayedSessionOf({
-        peekedSessionId,
-        peekedPath,
-        session: session ? { sessionId: session.sessionId, sessionFile: session.sessionFile } : null
-      }),
-    [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile]
-  )
-  const storedSplit = useSplitView((s) => s.split)
-  const split = useMemo(() => (storedSplit ? reconcileSplit(storedSplit, displayed) : null), [storedSplit, displayed])
-  useLayoutEffect(() => {
-    useSplitView.getState().sync(displayed)
-  }, [displayed, storedSplit])
-  const splitParked = windowWidth <= SPLIT_CONSTRAINED_WIDTH
   const visibleSessions = useMemo(() => {
-    const layout = collapsedPanes(split, splitParked)
-    return layout ? sessionTiles(layout.tiles) : displayed ? [displayed] : []
-  }, [split, splitParked, displayed])
+    const sessionId = peekedSessionId ?? (peekedPath ? undefined : session?.sessionId || undefined)
+    const path = peekedPath ?? (peekedSessionId ? undefined : session?.sessionFile || undefined)
+    return sessionId || path ? [{ sessionId, path }] : []
+  }, [peekedSessionId, peekedPath, session?.sessionId, session?.sessionFile])
   useRunnerVisibility(visibleSessions)
-  usePruneSubagentPanes()
-  useSplitPersistence()
-  const singlePane = !collapsedPanes(split, splitParked)
+  usePruneSubagentSurfaces()
   useLayoutEffect(() => {
     if (route.name !== 'chat') return
     const chat = chatRef.current
@@ -376,14 +267,12 @@ export default function ShellV3(): ReactElement {
     return () => observer.disconnect()
   }, [route.name])
   const chatWidth = route.name === 'chat' ? measuredChatWidth : bodyWidth
-  const chatClipped = route.name === 'chat' && workspaceShown && (panelMode === 'full' || workspaceFocus)
-  const chatClipWidth = chatClipped && measuredChatWidth > 0 ? measuredChatWidth : undefined
-  const toastInset = workspaceShown && panelMode === 'docked' && chatWidth > 0 ? Math.max(0, bodyWidth - chatWidth) : 0
+  const toastInset = panelOpen && panelMode === 'inline' && !panelMaximized && chatWidth > 0 ? Math.max(0, bodyWidth - chatWidth) : 0
   useEffect(() => {
     document.documentElement.style.setProperty('--toast-inset-right', `${toastInset}px`)
   }, [toastInset])
   const sessionBarFits = chatWidth - (sessionBarWidth + LANE_GAP) >= MESSAGE_MIN_WIDTH
-  const sessionBarShown = route.name === 'chat' && singlePane && hasMessages && sessionBarOn && sessionBarFits && !(workspaceShown && panelMode === 'full')
+  const sessionBarShown = route.name === 'chat' && hasMessages && sessionBarOn && sessionBarFits && !panelMaximized
   const tilesRoom = tilesWidthRoom(chatWidth, LANE_GAP, MESSAGE_MIN_WIDTH)
   const shownTilesWidth = clampTilesWidth(tilesWidth, tilesRoom)
   const tilesMaxShown = clampTilesWidth(TILES_WIDTH_MAX, tilesRoom)
@@ -411,22 +300,27 @@ export default function ShellV3(): ReactElement {
 
   const requestActivation = (_tab: WorkbenchTabId): Promise<boolean> => activateWorkspaceOwner(captureActivationTarget())
 
-  const tiledTools = useTiledTools()
   const openPanes = useMemo(
-    () => new Set<WorkbenchTabId>([...(workspaceShown ? toolPanes(workspacePanes) : []), ...tiledTools]),
-    [workspaceShown, workspacePanes, tiledTools]
+    () => new Set<WorkbenchTabId>(panelOpen ? panelEntry.surfaces.flatMap((item) => ((WORKBENCH_TABS as readonly string[]).includes(item.kind) ? [item.kind as WorkbenchTabId] : [])) : []),
+    [panelOpen, panelEntry.surfaces]
   )
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
   const terminalRunning = useTerminalRunning(owner.key || null, route.name === 'chat')
 
+  const openWorkspaceTab = useCallback((tab: WorkbenchTabId | PanelToolKind): Promise<boolean> => {
+    useUiV3.getState().navigate({ name: 'chat' })
+    const surface = toolSurface(tab)
+    useRightPanel.getState().open(surface)
+    if (!WORKBENCH_ACTIVE_TABS.has(surface.kind)) return Promise.resolve(true)
+    return activateWorkspaceOwner(captureActivationTarget())
+  }, [])
+
   const togglePane = (tab: WorkbenchTabId): void => {
-    if (isToolTiled(tab)) {
-      closeToolTile(tab)
-      return
-    }
-    const ui = useUiV3.getState()
-    if (workspaceShown && ui.workspacePanes.includes(tab)) {
-      ui.closeWorkspacePane(tab)
+    const entry = currentPanelEntry()
+    const id = toolSurface(tab).id
+    if (panelOpen && entry.surfaces.some((item) => item.id === id)) {
+      if (entry.active === id) useRightPanel.getState().close(id)
+      else useRightPanel.getState().activate(id)
       return
     }
     void openWorkspaceTab(tab)
@@ -434,37 +328,21 @@ export default function ShellV3(): ReactElement {
 
   useEffect(() => {
     if (nativeSessionPanel?.mode !== 'tree') return
-    useUiV3.getState().setWorkspaceTab('branch')
-    useUiV3.getState().setWorkspaceOpen(true)
+    void openWorkspaceTab('branch')
     useStore.getState().closeNativeSessionPanel()
-  }, [nativeSessionPanel])
-
-  const openWorkspaceTab = useCallback((tab: WorkbenchTabId): Promise<boolean> => {
-    useUiV3.getState().navigate({ name: 'chat' })
-    if (revealToolTile(tab)) return Promise.resolve(true)
-    useUiV3.getState().setWorkspaceTab(tab)
-    if (!WORKBENCH_ACTIVE_TABS.has(tab)) {
-      useUiV3.getState().setWorkspaceOpen(true)
-      return Promise.resolve(true)
-    }
-    return activateWorkspaceOwner(captureActivationTarget()).then((ok) => {
-      if (ok) useUiV3.getState().setWorkspaceOpen(true)
-      return ok
-    })
-  }, [])
+  }, [nativeSessionPanel, openWorkspaceTab])
 
   const toggleWorkspace = useCallback((): void => {
-    const ui = useUiV3.getState()
-    if (ui.workspaceOpen && ui.workspaceTab !== 'overview') {
-      ui.setWorkspaceOpen(false)
+    useUiV3.getState().navigate({ name: 'chat' })
+    const entry = currentPanelEntry()
+    if (entry.open) {
+      useRightPanel.getState().setOpen(false)
       return
     }
-    if (isSubagentPaneId(ui.workspaceTab)) {
-      ui.setWorkspaceOpen(true)
-      return
-    }
-    void openWorkspaceTab(ui.workspaceTab === 'overview' ? 'changes' : ui.workspaceTab)
-  }, [openWorkspaceTab])
+    useRightPanel.getState().setOpen(true)
+    const active = entry.surfaces.find((item) => item.id === entry.active)
+    if (active && WORKBENCH_ACTIVE_TABS.has(active.kind)) void activateWorkspaceOwner(captureActivationTarget())
+  }, [])
 
   useEffect(() => {
     const off = window.yan.onHotkey((action) => {
@@ -575,31 +453,26 @@ export default function ShellV3(): ReactElement {
             return
           }
           case 'workspaceClosePane': {
-            const current = useUiV3.getState()
-            if (current.route.name !== 'chat' || !current.workspaceOpen || current.workspaceTab === 'overview') return
+            const entry = currentPanelEntry()
+            if (useUiV3.getState().route.name !== 'chat' || !entry.open || !entry.active) return
             event.preventDefault()
-            const tab = current.workspaceTab
-            current.setWorkspaceFocus(false)
-            current.closeWorkspacePane(tab)
+            useRightPanel.getState().close(entry.active)
             return
           }
           case 'workspaceToggleMaximize': {
-            const current = useUiV3.getState()
-            if (current.route.name !== 'chat' || !current.workspaceOpen || current.workspaceTab === 'overview') return
+            const entry = currentPanelEntry()
+            if (useUiV3.getState().route.name !== 'chat' || !entry.open || !entry.surfaces.length) return
             event.preventDefault()
-            current.toggleWorkspaceExpanded()
+            useRightPanel.getState().setMaximized(!entry.maximized)
             return
           }
           default:
-            if (ui.route.name === 'chat' && runSplitShortcut(shortcut, event.target)) {
-              event.preventDefault()
-              return
-            }
+            break
         }
       }
       if (event.key === 'Escape' && !typing) {
         const ui = useUiV3.getState()
-        if (ui.workspaceOpen && panelMode === 'full') ui.setWorkspaceOpen(false)
+        if (currentPanelEntry().maximized && currentPanelEntry().open) useRightPanel.getState().setMaximized(false)
         else if (ui.route.name !== 'chat') ui.goBack()
         else if (sidebarCompact && ui.sidebarOpen) ui.setSidebarOpen(false)
       }
@@ -674,8 +547,7 @@ export default function ShellV3(): ReactElement {
           <div
             className="v3-body"
             ref={bodyRef}
-            data-workspace={workspaceShown ? 'open' : 'closed'}
-            data-workspace-mode={panelMode}
+            data-panel={panelMaximized ? 'maximized' : panelOpen ? panelMode : 'closed'}
           >
             {route.name === 'schedule' ? (
               <Suspense fallback={null}>
@@ -694,43 +566,28 @@ export default function ShellV3(): ReactElement {
                 <ArtifactLibraryPage />
               </Suspense>
             ) : null}
-            <WorkbenchPanel
-              owner={owner}
-              open={workspaceShown}
-              mode={panelMode}
-              panes={WORKBENCH_PANES}
-              chat={
-                route.name === 'chat' ? (
-                  <div className="v3-chat" ref={chatRef} data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px`, width: chatClipWidth, flex: chatClipWidth ? 'none' : undefined } as CSSProperties}>
-                    <ConnBanner />
-                    <SideBySide split={split} narrow={splitParked} />
-                    {sessionBarShown ? (
-                      <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
-                        <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
-                        <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
-                      </aside>
-                    ) : null}
-                  </div>
-                ) : undefined
-              }
-              onClose={() => useUiV3.getState().setWorkspaceOpen(false)}
-              onRequestActivation={requestActivation}
-              onPopout={(tab) => {
-                if (!paneClient || !owner) return
-                if (tab === 'terminal') {
-                  void ownedTerminalId(owner.key).then((terminalId) => {
-                    if (terminalId) void paneClient.openTerminal(owner, terminalId)
-                  })
-                  return
-                }
-                if (tab === 'browser') {
-                  const viewId = useStore.getState().browserState.activeTabId
-                  if (viewId) void paneClient.open('browser', owner, { viewId })
-                  return
-                }
-                if (tab === 'context') void paneClient.open('context', owner)
-              }}
-            />
+            {route.name === 'chat' ? (
+              <div className="v3-chat" ref={chatRef} data-sessionbar={sessionBarShown ? '1' : undefined} style={{ '--size-tiles': `${shownTilesWidth}px` } as CSSProperties}>
+                <ConnBanner />
+                <ChatMain />
+                {sessionBarShown ? (
+                  <aside className="v3-sessionbar" aria-label={lang === 'en-US' ? 'Session bar' : '会话栏'} data-testid="v3-sessionbar">
+                    <OverviewPane owner={owner} onOpenView={(tab) => void openWorkspaceTab(tab)} />
+                    <Splitter className="v3-tiles-resizer ui-splitter--gutter" title={railText(lang).resizeTiles} orientation="vertical" value={tilesAxis - shownTilesWidth} min={tilesAxis - tilesMaxShown} max={tilesAxis - TILES_WIDTH_MIN} step={TILES_WIDTH_STEP} aria-label={railText(lang).resizeTiles} data-testid="v3-tiles-resizer" onChange={(left) => resizeTiles(tilesAxis - left)} onReset={() => resizeTiles(TILES_WIDTH_DEFAULT)} />
+                  </aside>
+                ) : null}
+              </div>
+            ) : null}
+            {route.name === 'chat' ? (
+              <RightPanel
+                owner={owner.key ? owner : null}
+                mode={panelMode}
+                room={Math.max(PANEL_WIDTH_MIN, bodyWidth - CHAT_MIN_WIDTH_PX)}
+                panes={WORKBENCH_PANES}
+                onOpenTool={(kind) => void openWorkspaceTab(kind)}
+                onRequestActivation={requestActivation}
+              />
+            ) : null}
           </div>
         </main>
       </div>
@@ -751,7 +608,7 @@ export default function ShellV3(): ReactElement {
         />
       ) : null}
       <NativeSessionSurfaces />
-      <SplitDragLayer />
+      <SessionDragLayer />
       <NoticeBridge />
       <PeerApprovalDialog />
       <BrowserSiteAskDialog />

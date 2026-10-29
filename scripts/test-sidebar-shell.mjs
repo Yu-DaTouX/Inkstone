@@ -107,30 +107,6 @@ async function run() {
     assert.equal(status.sessionStatusLabel('awaiting', 'zh-CN'), '等待输入')
     assert.equal(status.sessionStatusLabel('unread', 'en-US'), 'Unread response')
 
-    const pane = (sessionId, path) => ({ sessionId, path })
-    const wideSplit = {
-      tiles: [
-        pane('a', 'C:\\x\\a.jsonl'),
-        pane('tool:terminal'),
-        pane('subagent:r1'),
-        pane('b', 'C:\\x\\b.jsonl')
-      ],
-      live: 3
-    }
-    assert.deepEqual(status.visiblePaneSessions(null, false), [], '没有分屏时没有额外可见窗格')
-    assert.deepEqual(status.visiblePaneSessions({ tiles: [pane('a')], live: 0 }, false), [], '单窗格不算分屏')
-    assert.deepEqual(
-      status.visiblePaneSessions(wideSplit, false).map((tile) => tile.sessionId),
-      ['a', 'b'],
-      '宽屏分屏里每个会话窗格都算可见，工具和子代理窗格不算会话'
-    )
-    assert.deepEqual(status.visiblePaneSessions(wideSplit, true).map((tile) => tile.sessionId), ['b'], '窄屏只显示当前窗格')
-    assert.equal(status.paneShowsSession(status.visiblePaneSessions(wideSplit, false), { id: 'a', path: 'C:\\x\\a.jsonl' }), true)
-    assert.equal(status.paneShowsSession(status.visiblePaneSessions(wideSplit, false), { path: 'c:/X/A.jsonl' }), true, '路径大小写与分隔符不敏感')
-    assert.equal(status.paneShowsSession(status.visiblePaneSessions(wideSplit, false), { id: 'c' }), false)
-    assert.equal(status.paneShowsSession(wideSplit.tiles, { id: 'tool:terminal' }), false, '工具窗格不匹配会话')
-    assert.equal(status.paneShowsSession([], { id: 'a' }), false)
-    assert.equal(status.paneShowsSession(status.visiblePaneSessions(wideSplit, false), {}), false, '没有 id 和路径不匹配')
     assert.equal(status.sessionUnread({ unread: true, paneSelected: false }), true)
     assert.equal(status.sessionUnread({ unread: true, paneSelected: true }), false, '当前窗格显示的会话不算未读')
     assert.equal(status.sessionUnread({ unread: false, paneSelected: false }), false)

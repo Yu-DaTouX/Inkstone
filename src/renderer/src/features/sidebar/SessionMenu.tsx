@@ -1,15 +1,12 @@
 import { useState, type JSX, type RefObject } from 'react'
-import { AlarmClock, Clock, Columns2, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Rows2, Sparkles, SquareArrowOutUpRight, Trash2, X } from 'lucide-react'
+import { AlarmClock, Clock, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { indexOfSession, useSplitView } from '../../state/split-view'
 import { Button, Dialog, Menu, MenuItem, Modal, ModalOverlay, Popover, SubmenuTrigger } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
 import type { SessionSummary } from '../../../../shared/ipc'
 
-import { closeSplitPane, openSessionInSplit as openInSplit } from '../split/split-actions'
-import { splitText } from '../split/split-text'
 import { useTranscriptViews } from '../../state/transcript-view'
 import { effectiveView, TRANSCRIPT_VIEWS, type TranscriptView } from '../session/transcript-view-model'
 import { transcriptViewText } from '../session/transcript-view-text'
@@ -17,11 +14,7 @@ import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { formatSnoozeWake, isSnoozed, pickSnoozeOption, resolveSnoozeOptions } from './session-snooze'
 import { CustomSnoozeDialog } from './CustomSnoozeDialog'
 
-export function openSessionInSplit(item: { id: string; path: string }): void {
-  openInSplit(item)
-}
-
-type MenuKey = `move:${string}` | `snooze:${string}` | 'split' | 'split-below' | 'split-close' | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
+type MenuKey = `move:${string}` | `snooze:${string}` | 'rename' | 'pin' | 'archive' | 'title' | 'reveal' | 'delete' | 'wake' | 'unread'
 
 export interface SessionMenuProps {
   item: SessionSummary
@@ -41,8 +34,6 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
   const [customSnooze, setCustomSnooze] = useState(false)
   const projects = useStore((s) => s.settings?.projects)
   const moveTargets = (projects ?? []).filter((project) => !project.archived && project.id !== item.projectId)
-  const split = splitText(lang)
-  const splitIndex = useSplitView((s) => (s.split ? indexOfSession(s.split.tiles, { sessionId: item.id, path: item.path }) : -1))
   const viewText = transcriptViewText(lang)
   const currentView = useTranscriptViews((s) => effectiveView(s, item.id))
   const defaultView = useTranscriptViews((s) => s.defaultView)
@@ -78,15 +69,6 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
           void store.setSessionMarkedUnread(item.id, true)
         }
         return
-      case 'split':
-        openInSplit(item)
-        return
-      case 'split-below':
-        openInSplit(item, 'below')
-        return
-      case 'split-close':
-        if (splitIndex >= 0) closeSplitPane(splitIndex)
-        return
       case 'rename':
         onRename()
         return
@@ -118,45 +100,10 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
           disabledKeys={isCurrent ? ['delete'] : []}
           data-testid="v3-session-menu"
         >
-          <SubmenuTrigger>
-            <MenuItem id="open-with" textValue={split.openWith} data-testid="v3-session-open-with">
-              <SquareArrowOutUpRight size={14} aria-hidden />
-              {split.openWith}
-            </MenuItem>
-            <Popover placement="end top" offset={2}>
-              <Menu
-                aria-label={split.openWith}
-                onAction={(key) => {
-                  onOpenChange(false)
-                  run(key as MenuKey)
-                }}
-                disabledKeys={isCurrent && splitIndex < 0 ? ['split', 'split-below'] : []}
-                data-testid="v3-session-open-with-menu"
-              >
-                {splitIndex >= 0 ? (
-                  <MenuItem id="split-close" textValue={t('split.closeSide')}>
-                    <X size={14} aria-hidden />
-                    {t('split.closeSide')}
-                  </MenuItem>
-                ) : (
-                  <MenuItem id="split" textValue={split.openInSplit}>
-                    <Columns2 size={14} aria-hidden />
-                    {split.openInSplit}
-                  </MenuItem>
-                )}
-                {splitIndex < 0 ? (
-                  <MenuItem id="split-below" textValue={split.openBelow}>
-                    <Rows2 size={14} aria-hidden />
-                    {split.openBelow}
-                  </MenuItem>
-                ) : null}
-                <MenuItem id="reveal" textValue={t('rail.reveal')}>
-                  <FolderOpen size={14} aria-hidden />
-                  {t('rail.reveal')}
-                </MenuItem>
-              </Menu>
-            </Popover>
-          </SubmenuTrigger>
+          <MenuItem id="reveal" textValue={t('rail.reveal')} data-testid="v3-session-reveal">
+            <FolderOpen size={14} aria-hidden />
+            {t('rail.reveal')}
+          </MenuItem>
           <SubmenuTrigger>
             <MenuItem id="transcript-view" textValue={viewText.menu} data-testid="v3-session-transcript-view">
               <Eye size={14} aria-hidden />

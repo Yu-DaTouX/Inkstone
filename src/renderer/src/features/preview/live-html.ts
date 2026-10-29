@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { useStore } from '../../state/store'
-import { showPreview, usePreviewBindings } from '../workbench/tool-tiles'
+import { showPreview, usePreviewBindings } from '../workbench/preview-bindings'
 import { currentTurnHtmlCalls, resolveAgainst, thinkingHtmlDraft, type HtmlToolCall } from './live-html-calls'
 
 export interface LiveHtmlTarget {

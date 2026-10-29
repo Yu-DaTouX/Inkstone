@@ -200,6 +200,8 @@ export {
 } from './Table'
 export { sortRows, type TableSortDescriptor } from './table-model'
 export { Splitter, type SplitterProps, type SplitterOrientation } from './Splitter'
+export { PanelTab, PanelTabCloseButton, PanelTabList, type PanelTabCloseButtonProps, type PanelTabListProps, type PanelTabProps } from './PanelTabs'
+export { Sheet, type SheetProps } from './Sheet'
 
 export {
   FieldError,

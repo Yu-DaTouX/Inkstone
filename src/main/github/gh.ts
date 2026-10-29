@@ -21,7 +21,7 @@ const MAX_PR_NUMBER = 9_999_999
 const LIST_FIELDS =
   'number,title,author,state,isDraft,headRefName,baseRefName,updatedAt,reviewDecision,statusCheckRollup,additions,deletions,url'
 const DETAIL_FIELDS =
-  'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,reviewDecision,statusCheckRollup,files,commits,comments,reviews,url'
+  'number,title,body,author,state,isDraft,headRefName,baseRefName,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,files,commits,comments,reviews,latestReviews,reviewRequests,labels,additions,deletions,changedFiles,url'
 
 const GH_ENV = {
   GH_PROMPT_DISABLED: '1',

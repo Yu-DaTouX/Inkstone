@@ -5,7 +5,9 @@ import { Badge, EmptyState, IconButton, Notice, SearchField, Spinner, StatusDot,
 import type { GhPrListState, GithubStatus } from '../../../../shared/github'
 import type { PullRequestsPaneProps } from '../workbench/types'
 import { ageOf, filterByListState, filterPrRows, normalizePrRow, type PrChecks, type PrRow } from './pr-model'
-import { PullRequestDetail, stateTone } from './PullRequestDetail'
+import { stateTone } from './PullRequestDetail'
+import { openPanelSurface } from '../workbench/panel-actions'
+import { pullRequestSurface } from '../../state/right-panel'
 import './pull-requests.css'
 
 const LIST_STATES: readonly { id: GhPrListState; label: MessageKey }[] = [
@@ -34,7 +36,6 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
   const [rows, setRows] = useState<PrRow[]>([])
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState('')
-  const [open, setOpen] = useState<PrRow | null>(null)
 
   const repo = status?.repo?.nameWithOwner ?? ''
   const ready = !!status && status.installed && status.authed && !!status.repo
@@ -74,7 +75,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
   }, [cwd, reloadToken, t])
 
   useEffect(() => {
-    if (!ready || open || !repo) return undefined
+    if (!ready || !repo) return undefined
     let alive = true
     setListLoading(true)
     const github = window.yan?.github
@@ -99,7 +100,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
     return () => {
       alive = false
     }
-  }, [ready, open, repo, cwd, listState, reloadToken])
+  }, [ready, repo, cwd, listState, reloadToken])
 
   const shown = useMemo(() => filterPrRows(filterByListState(rows, listState), query), [rows, query, listState])
 
@@ -133,14 +134,6 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
     return (
       <div className="gh-pr-pane" data-testid="v3-wb-pulls">
         <p className="gh-pr-hint"><Spinner size={14} /> {t('github.pr.loading')}</p>
-      </div>
-    )
-  }
-
-  if (open) {
-    return (
-      <div className="gh-pr-pane" data-testid="v3-wb-pulls">
-        <PullRequestDetail cwd={cwd} repo={repo} row={open} onBack={() => setOpen(null)} />
       </div>
     )
   }
@@ -229,7 +222,7 @@ export function PullRequestsPane({ owner }: PullRequestsPaneProps): ReactElement
                   type="button"
                   className="gh-pr-row"
                   aria-label={`#${row.number} ${row.title}`}
-                  onClick={() => setOpen(row)}
+                  onClick={() => openPanelSurface(pullRequestSurface(row.number, { title: row.title, state: row.state }))}
                   data-testid={`gh-pr-row-${row.number}`}
                 >
                   <span className="gh-pr-row__top">

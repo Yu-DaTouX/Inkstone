@@ -26,7 +26,6 @@ export { WORKBENCH_TABS, WORKBENCH_ACTIVE_TABS } from '${posix(resolve(ROOT, 'sr
 export { autoCompactDistance, autoCompactLimitOf, contextUsageSummary, contextPaneData, contextPaneToolCalls, largestToolCalls, shortTokens, turnAnchorIds } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-pane-view'))}'
 export { compactionHistory, compactionReclaim, loadCompactionHistory } from '${posix(resolve(ROOT, 'src/renderer/src/features/workbench/context-compactions'))}'
 export { contextBreakdown, contextFromOf, inContextMessages } from '${posix(resolve(ROOT, 'src/renderer/src/state/context-breakdown'))}'
-export { restorableWorkbenchTab } from '${posix(resolve(ROOT, 'src/renderer/src/state/ui-v3'))}'
 `
 
 async function load() {
@@ -60,8 +59,7 @@ async function main() {
     compactionHistory,
     compactionReclaim,
     loadCompactionHistory,
-    shortTokens,
-    restorableWorkbenchTab
+    shortTokens
   } = mod
 
   group('页签注册：上下文进入固定页签与恢复白名单（W0）')
@@ -69,9 +67,6 @@ async function main() {
     ok(WORKBENCH_TABS.includes('context'), '上下文在固定页签里', WORKBENCH_TABS)
     ok(WORKBENCH_TABS.slice(-4).join('>') === 'branch>logs>quota>device', '分支页之后依次是日志、额度、设备（新页签追加在末尾）', WORKBENCH_TABS)
     ok(!WORKBENCH_ACTIVE_TABS.has('context'), '上下文是只读页签，不需要会话激活')
-    ok(restorableWorkbenchTab('context') === 'context', '只读的上下文页签原样恢复')
-    ok(restorableWorkbenchTab('terminal') === 'overview', '终端降级到概览，不隐式起 PTY')
-    ok(restorableWorkbenchTab('browser') === 'overview', '浏览器降级到概览，不隐式导航')
   }
 
   group('上下文用量：只认同模型对齐后的 agent 总量')

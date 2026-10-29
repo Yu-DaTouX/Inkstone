@@ -6,6 +6,9 @@
     min-height: 0;
     height: 100%;
     gap: var(--s-8);
+    padding: var(--s-8);
+    box-sizing: border-box;
+    overflow-y: auto;
   }
 
   .gh-pr-hint {
@@ -451,5 +454,196 @@
     min-width: 0;
     color: var(--fg2);
     font-size: var(--t-footnote);
+  }
+}
+
+@layer features {
+  .gh-prd {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .gh-prd__head {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--s-6);
+    padding: var(--s-8) var(--s-16) var(--s-12);
+  }
+  .gh-prd__crumbs {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    min-height: var(--size-bar, 32px);
+  }
+  .gh-prd__crumb {
+    min-width: 0;
+    max-width: 60%;
+  }
+  .gh-prd__sep {
+    color: var(--fg3);
+  }
+  .gh-prd__state {
+    margin-inline-start: var(--s-6);
+  }
+  .gh-prd__spacer {
+    flex: 1 1 auto;
+  }
+  .gh-prd__title {
+    margin: 0;
+    color: var(--fg);
+    font: var(--t-heading-w) var(--t-heading) / var(--t-heading-lh) var(--font-ui);
+    overflow-wrap: anywhere;
+  }
+  .gh-prd__meta {
+    flex-wrap: wrap;
+  }
+  .gh-prd__meta,
+  .gh-prd__refs {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    color: var(--fg3);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+  .gh-prd__refs {
+    margin-top: var(--s-6);
+  }
+  .gh-prd__avatar {
+    width: 20px;
+    height: 20px;
+    font-size: var(--t-caption);
+  }
+  .gh-prd__author {
+    color: var(--fg2);
+    white-space: nowrap;
+  }
+  .gh-prd__dim {
+    white-space: nowrap;
+  }
+  .gh-prd__checkout {
+    min-width: 0;
+  }
+  .gh-prd__checkout code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--t-caption) / 1 var(--font-mono);
+  }
+  .gh-prd__branches {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+  }
+  .gh-prd__ref {
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+  }
+  .gh-prd__arrow {
+    flex: none;
+  }
+  .gh-prd__stat {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-6);
+    font-variant-numeric: tabular-nums;
+  }
+  .gh-prd__tabs {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-8);
+    padding: var(--s-8) var(--s-16);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .gh-prd__checks {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    margin-inline-start: auto;
+    color: var(--fg3);
+    font: var(--t-footnote) / 1 var(--font-ui);
+    white-space: nowrap;
+  }
+  .gh-prd__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--s-16);
+    min-height: 0;
+    padding: var(--s-12) var(--s-16) var(--s-24);
+    overflow-y: auto;
+  }
+  .gh-prd__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-8);
+    min-width: 0;
+  }
+  .gh-prd__heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s-8);
+    margin: 0;
+    color: var(--fg2);
+    font: var(--w-medium) var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+  .gh-prd__people {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .gh-prd__person {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
+  }
+  .gh-prd__labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+  }
+  .gh-prd__fold {
+    align-self: flex-start;
+  }
+  .gh-prd__chev {
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .gh-prd__chev[data-open='1'] {
+    transform: rotate(90deg);
+  }
+  .gh-prd__markdown {
+    min-width: 0;
+    color: var(--fg2);
+  }
+  .gh-prd__commit {
+    margin: 0;
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+  }
+  .gh-prd .gh-pr-timeline,
+  .gh-prd .gh-pr-files {
+    padding: 0;
+  }
+  .gh-prd .gh-pr-timeline {
+    margin: 0;
   }
 }

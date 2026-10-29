@@ -14,7 +14,6 @@ async function run() {
   const dir = await mkdtemp(join(tmpdir(), 'inkstone-subagent-panes-'))
   try {
     const panes = await compile('src/renderer/src/features/workbench/subagent-panes.ts', join(dir, 'subagent-panes.mjs'))
-    const ui = await compile('src/renderer/src/state/ui-v3.ts', join(dir, 'ui-v3.mjs'))
 
     assert.equal(panes.subagentPaneId('sub-1a'), 'subagent:sub-1a')
     assert.equal(panes.subagentRunOfPane('subagent:sub-1a'), 'sub-1a')
@@ -43,34 +42,6 @@ async function run() {
     assert.deepEqual(panes.staleSubagentPanes(['files', 'terminal'], new Set()), [])
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [{ id: 'b' }]), ['a', 'c'])
     assert.deepEqual(panes.removedRunIds([{ id: 'a' }], [{ id: 'a' }, { id: 'n' }]), [])
-
-    const store = ui.useUiV3
-    store.setState({ workspaceOpen: true, workspaceTab: 'files', workspacePanes: ['files'], workspaceFocus: false })
-    store.getState().setWorkspaceTab('subagent:sub-1')
-    assert.equal(store.getState().workspaceTab, 'subagent:sub-1')
-    assert.deepEqual(store.getState().workspacePanes, ['files', 'subagent:sub-1'])
-    store.getState().setWorkspaceTab('subagent:sub-1')
-    assert.deepEqual(store.getState().workspacePanes, ['files', 'subagent:sub-1'])
-    store.getState().setWorkspaceTab('subagent:has space')
-    assert.equal(store.getState().workspaceTab, 'subagent:sub-1')
-
-    store.getState().setWorkspaceTab('subagent:sub-2')
-    store.getState().dropWorkspacePanes(['subagent:sub-2', 'subagent:sub-9'])
-    assert.deepEqual(store.getState().workspacePanes, ['files', 'subagent:sub-1'])
-    assert.equal(store.getState().workspaceTab, 'subagent:sub-1')
-
-    store.getState().setWorkspaceTab('files')
-    store.getState().dropWorkspacePanes(['subagent:sub-1'])
-    assert.deepEqual(store.getState().workspacePanes, ['files'])
-    assert.equal(store.getState().workspaceTab, 'files')
-
-    const before = store.getState()
-    store.getState().dropWorkspacePanes(['subagent:absent'])
-    assert.equal(store.getState(), before)
-
-    store.getState().closeWorkspacePane('files')
-    assert.deepEqual(store.getState().workspacePanes, [])
-    assert.equal(store.getState().workspaceTab, 'overview')
 
     console.log('subagent-panes: 通过')
   } finally {

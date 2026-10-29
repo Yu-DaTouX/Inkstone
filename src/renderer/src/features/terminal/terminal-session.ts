@@ -4,7 +4,6 @@ import type {
   TerminalSnapshot,
   TerminalStartRequest
 } from '../../../../shared/ipc'
-import type { PaneTerminalLeaseEvent } from '../../../../shared/pane-terminal'
 import type { WorkspaceOwner } from '../workbench/types'
 
 export interface TerminalBridge {
@@ -91,7 +90,6 @@ export function pickOwnedTerminal(owned: readonly TerminalSnapshot[]): TerminalS
 export interface TerminalSessionDeps {
   bridge: TerminalBridge
   onPush: TerminalPushSubscriber
-  onLease?: (cb: (event: PaneTerminalLeaseEvent) => void) => () => void
   ownerOf: (resourceId: string) => string | undefined
   claim: (resourceId: string, ownerKey: string) => void
   release: (resourceId: string) => void
@@ -141,13 +139,11 @@ export class TerminalSession {
   private pendingBytes = 0
   private disposed = false
   private readonly unsubPush: () => void
-  private readonly unsubLease: () => void
 
   constructor(deps: TerminalSessionDeps) {
     this.deps = deps
     this.text = deps.text ?? DEFAULT_RUNTIME_TEXT
     this.unsubPush = deps.onPush((msg) => this.handlePush(msg))
-    this.unsubLease = deps.onLease?.((event) => this.handleLease(event)) ?? (() => {})
   }
 
   getState(): TerminalViewState {
@@ -274,7 +270,6 @@ export class TerminalSession {
     this.epoch += 1
     this.detachLocal()
     this.unsubPush()
-    this.unsubLease()
     this.listeners.clear()
     this.sink = null
   }
@@ -448,17 +443,6 @@ export class TerminalSession {
     if (payload.kind === 'status') {
       this.publish({ status: payload.status })
     }
-  }
-
-  private handleLease(event: PaneTerminalLeaseEvent): void {
-    if (this.disposed || !this.owner?.active) return
-    if (!this.terminalId || event.terminalId !== this.terminalId) return
-    if (event.kind === 'attached') return
-    if (!this.visible) {
-      this.attached = false
-      return
-    }
-    void this.connect(this.terminalId, this.epoch)
   }
 
   private queuePending(seq: number, data: string): void {

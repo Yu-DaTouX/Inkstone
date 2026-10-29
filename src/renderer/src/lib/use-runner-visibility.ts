@@ -1,8 +1,7 @@
 import { useLayoutEffect, useMemo } from 'react'
-import type { SplitSessionRef } from '../state/split-view'
 import type { VisibleRunnerSession } from '../../../shared/ipc'
 
-export function useRunnerVisibility(sessions: readonly SplitSessionRef[]): void {
+export function useRunnerVisibility(sessions: readonly { sessionId?: string; path?: string }[]): void {
   const visible = useMemo<VisibleRunnerSession[]>(
     () => sessions.flatMap(({ sessionId, path }) => (sessionId || path ? [{ sessionId, sessionFile: path }] : [])),
     [sessions]

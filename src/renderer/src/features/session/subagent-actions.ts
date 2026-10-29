@@ -1,44 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { useUiV3 } from '../../state/ui-v3'
+import { currentPanelEntry, subagentSurface, useRightPanel } from '../../state/right-panel'
+import { openPanelSurface } from '../workbench/panel-actions'
 import { useSubagentStopping } from '../../state/subagent-stopping'
 import { subagentPaneId, subagentRunOfPane } from '../workbench/subagent-panes'
-import type { TileLayout, TileNode } from '../workbench/tile-tree'
 import { buildSubagentTaskRow, isLiveSubagentRun, type SubagentRowLang, type SubagentTaskRow } from '../../../../shared/subagent-task-rows'
 import type { SubagentRun } from '../../../../shared/ipc'
 
 type SubagentStopOutcome = 'sent' | 'gone'
 
 export function openSubagentPane(runId: string): void {
-  const ui = useUiV3.getState()
-  ui.navigate({ name: 'chat' })
-  ui.setWorkspaceTab(subagentPaneId(runId))
-  ui.setWorkspaceOpen(true)
-}
-
-function swapTileIds(node: TileNode, a: string, b: string): TileNode {
-  if (node.kind === 'tile') return node.tileId === a ? { ...node, tileId: b } : node.tileId === b ? { ...node, tileId: a } : node
-  return { ...node, children: node.children.map((child) => swapTileIds(child, a, b)) }
-}
-
-export function swapLayoutTiles(layout: TileLayout, a: string, b: string): TileLayout {
-  return { root: swapTileIds(layout.root, a, b) as TileLayout['root'] }
+  openPanelSurface(subagentSurface(runId))
 }
 
 export function switchSubagentPane(fromRunId: string, toRunId: string): void {
-  const ui = useUiV3.getState()
   const from = subagentPaneId(fromRunId)
-  const to = subagentPaneId(toRunId)
-  if (from === to) return
-  if (!ui.workspacePanes.includes(from) || ui.workspacePanes.includes(to)) {
+  if (from === subagentPaneId(toRunId)) return
+  if (!currentPanelEntry().surfaces.some((item) => item.id === from)) {
     openSubagentPane(toRunId)
     return
   }
-  ui.setWorkspaceTab(to)
-  const next = useUiV3.getState()
-  next.setWorkspaceLayout(swapLayoutTiles(next.workspaceLayout, from, to))
-  useUiV3.getState().closeWorkspacePane(from)
+  useRightPanel.getState().replace(from, subagentSurface(toRunId))
 }
 
 async function freshRun(runId: string): Promise<SubagentRun | undefined> {
@@ -63,11 +46,18 @@ export async function retrySubagent(run: SubagentRun): Promise<void> {
 }
 
 export function useSubagentPaneOpen(runId: string): boolean {
-  return useUiV3((s) => s.workspaceOpen && s.workspacePanes.includes(subagentPaneId(runId)))
+  const id = subagentPaneId(runId)
+  return useRightPanel((s) => {
+    const entry = s.byKey[s.key]
+    return !!entry?.open && entry.surfaces.some((item) => item.id === id)
+  })
 }
 
 export function useFocusedSubagentRun(): string | null {
-  return useUiV3((s) => (s.workspaceOpen ? subagentRunOfPane(s.workspaceTab) : null))
+  return useRightPanel((s) => {
+    const entry = s.byKey[s.key]
+    return entry?.open ? subagentRunOfPane(entry.active) : null
+  })
 }
 
 export function useTicker(active: boolean, everyMs = 1000): number {

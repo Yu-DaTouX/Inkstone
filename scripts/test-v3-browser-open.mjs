@@ -12,6 +12,7 @@ const entry = [
   "export * from './src/renderer/src/features/browser/browser-text.ts'",
   "export { useStore } from './src/renderer/src/state/store.ts'",
   "export { useUiV3 } from './src/renderer/src/state/ui-v3.ts'",
+  "export { useRightPanel } from './src/renderer/src/state/right-panel.ts'",
   "export { releaseResource, claimResource, resourceOwner } from './src/renderer/src/state/resource-owners.ts'"
 ].join('\n')
 
@@ -33,7 +34,7 @@ globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} 
 const mod = await import(
   `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`
 )
-const { BrowserOpener, browserControlAllowed, browserText, useStore, useUiV3, releaseResource, claimResource, resourceOwner } = mod
+const { BrowserOpener, browserControlAllowed, browserText, useStore, useUiV3, useRightPanel, releaseResource, claimResource, resourceOwner } = mod
 
 let pass = 0
 let fail = 0
@@ -253,6 +254,8 @@ group('消息链接：成功加载后前台显示浏览器，拒绝及切换会�
 {
   const initial = useStore.getInitialState()
   const uiInitial = useUiV3.getInitialState()
+  const panelInitial = useRightPanel.getInitialState()
+  const panel = () => { const st = useRightPanel.getState(); return st.byKey[st.key] ?? { open: false, active: null, surfaces: [] } }
   const calls = []
   let gate = async () => ({ decision: 'allow' })
   let pendingOpen = null
@@ -272,26 +275,27 @@ group('消息链接：成功加载后前台显示浏览器，拒绝及切换会�
     pendingOpen = null
     gate = async () => ({ decision: 'allow' })
     useStore.setState({ ...initial, session: { sessionId: 'A', conversationId: 'A' }, settings: { rightPanelOpen: true } })
-    useUiV3.setState({ ...uiInitial, workspaceOpen: false, workspaceTab: 'files', workspacePanes: [] })
+    useUiV3.setState(uiInitial)
+    useRightPanel.setState({ ...panelInitial, key: 'home', byKey: { home: { open: false, active: 'files', surfaces: [{ id: 'files', kind: 'files' }], maximized: false } }, order: ['home'] })
   }
   reset()
   await useStore.getState().openLink('https://www.google.com/')
   ok(calls.length === 1, '消息链接确实加载网页')
-  ok(useUiV3.getState().workspaceTab === 'browser', '自动选中浏览器而非留在其他面板')
-  ok(useUiV3.getState().workspaceOpen, '收起的工作区自动展开')
+  ok(panel().active === 'browser', '自动选中浏览器而非留在其他面板')
+  ok(panel().open, '收起的工作区自动展开')
 
   reset()
   claimResource('browser', 'expired-conversation')
   useStore.setState({ browserState: browserState({ agentSessionId: 'old-session' }) })
   await useStore.getState().openLink('https://new.test/')
-  ok(calls.length === 1 && useUiV3.getState().workspaceOpen, '聊天链接能打开已被旧会话认领的浏览器')
+  ok(calls.length === 1 && panel().open, '聊天链接能打开已被旧会话认领的浏览器')
   ok(resourceOwner('browser') === 'A', '链接打开后面板归属同步到当前会话')
   ok(useStore.getState().browserState.agentSessionId === undefined, '用户打开后的状态不残留旧 Agent 归属')
 
   reset()
   gate = async () => ({ decision: 'deny' })
   await useStore.getState().openLink('https://blocked.test/')
-  ok(calls.length === 0 && !useUiV3.getState().workspaceOpen, '权限拒绝不加载、不显示面板')
+  ok(calls.length === 0 && !panel().open, '权限拒绝不加载、不显示面板')
 
   reset()
   const approval = deferred()
@@ -300,7 +304,7 @@ group('消息链接：成功加载后前台显示浏览器，拒绝及切换会�
   useStore.setState({ session: { sessionId: 'B', conversationId: 'B' } })
   approval.resolve({ decision: 'allow' })
   await approving
-  ok(calls.length === 0 && !useUiV3.getState().workspaceOpen, '等待权限期间切换会话不打开旧链接')
+  ok(calls.length === 0 && !panel().open, '等待权限期间切换会话不打开旧链接')
 
   reset()
   pendingOpen = deferred()
@@ -310,10 +314,11 @@ group('消息链接：成功加载后前台显示浏览器，拒绝及切换会�
   useStore.setState({ session: { sessionId: 'B', conversationId: 'B' } })
   pendingOpen.resolve(browserState())
   await loading
-  ok(!useUiV3.getState().workspaceOpen, '加载期间切换会话后不抢新会话前台')
+  ok(!panel().open, '加载期间切换会话后不抢新会话前台')
   releaseResource('browser')
   useStore.setState(initial)
   useUiV3.setState(uiInitial)
+  useRightPanel.setState(panelInitial)
 }
 
 process.stdout.write(`\n${fail === 0 ? '✓' : '✗'} ${pass} 项通过，${fail} 项失败\n`)
