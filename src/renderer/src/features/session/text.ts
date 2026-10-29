@@ -181,6 +181,16 @@ export type SessionTextKey =
   | 'processEdits'
   | 'processCreateFile'
   | 'processCreates'
+  | 'processSearch1'
+  | 'processSearch'
+  | 'processList1'
+  | 'processList'
+  | 'processWeb1'
+  | 'processWeb'
+  | 'processFetch1'
+  | 'processFetch'
+  | 'processAgent1'
+  | 'processAgent'
   | 'processOther1'
   | 'processOther'
   | 'processViewChanges'
@@ -402,6 +412,16 @@ const ZH: Record<SessionTextKey, string> = {
   processEdits: '编辑 {n} 个文件',
   processCreateFile: '新建 {file}',
   processCreates: '新建 {n} 个文件',
+  processSearch1: '搜索 1 次',
+  processSearch: '搜索 {n} 次',
+  processList1: '查看 1 个目录',
+  processList: '查看 {n} 个目录',
+  processWeb1: '联网搜索 1 次',
+  processWeb: '联网搜索 {n} 次',
+  processFetch1: '打开 1 个网页',
+  processFetch: '打开 {n} 个网页',
+  processAgent1: '派出 1 个子 Agent',
+  processAgent: '派出 {n} 个子 Agent',
   processOther1: '其他操作 1 次',
   processOther: '其他操作 {n} 次',
   processViewChanges: '查看更改',
@@ -624,6 +644,16 @@ const EN: Record<SessionTextKey, string> = {
   processEdits: 'Edited {n} files',
   processCreateFile: 'Created {file}',
   processCreates: 'Created {n} files',
+  processSearch1: 'Searched once',
+  processSearch: 'Searched {n} times',
+  processList1: 'Listed 1 folder',
+  processList: 'Listed {n} folders',
+  processWeb1: 'Searched the web once',
+  processWeb: 'Searched the web {n} times',
+  processFetch1: 'Opened 1 web page',
+  processFetch: 'Opened {n} web pages',
+  processAgent1: 'Sent out 1 subagent',
+  processAgent: 'Sent out {n} subagents',
   processOther1: '1 other action',
   processOther: '{n} other actions',
   processViewChanges: 'View changes',

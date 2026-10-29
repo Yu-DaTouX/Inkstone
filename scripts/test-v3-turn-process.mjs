@@ -172,16 +172,24 @@ group('推理按段留在过程里：排在同段工具之前，回复段的推�
   ])
   ok(live.process.map((s) => s.id).join() === 'l0,l1', '运行中只有推理的最新段排在最后', live.process.map((s) => s.id))
   const steps = segmentSteps(merged[0])
-  ok(steps.lead.map((p) => p.text).join() === '先看目录', '首段推理排在全部工具之前', steps.lead)
-  ok(steps.steps.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 't1 > think:再问用户 > t2', '合并后第二段推理排在它自己的工具之前、前一段工具之后', steps.steps)
+  ok(steps[0].kind === 'thinking' && steps[0].thinking.text === '先看目录', '首段推理排在全部工具之前', steps)
+  ok(steps.slice(1).map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : s.kind === 'notes' ? 'note:' + s.notes.map((n) => n.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 't1 > think:再问用户 > t2', '合并后第二段推理排在它自己的工具之前、前一段工具之后', steps)
   const inner = segmentSteps({
     ...seg('i0', { tools: [tool('a', 'bash'), tool('b', 'read'), tool('c', 'read')] }),
     thinking: '一\n\n二\n\n三',
     thinkingLive: true,
     thinkingParts: [{ text: '一', at: 0 }, { text: '二', at: 1, ms: 300 }, { text: '三', at: 3, ms: 200 }]
   })
-  ok(inner.steps.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 'a > think:二 > b+c > think:三', '同一段内多次推理按工具位置穿插', inner.steps)
-  ok(inner.steps.at(-1).thinking.live === true && inner.steps[1].thinking.live === false && inner.lead[0].live === false, '只有最后一段推理标为进行中', inner.steps)
+  ok(inner.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : s.kind === 'notes' ? 'note:' + s.notes.map((n) => n.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 'think:一 > a > think:二 > b+c > think:三', '同一段内多次推理按工具位置穿插', inner)
+  ok(inner.at(-1).thinking.live === true && inner[2].thinking.live === false && inner[0].thinking.live === false, '只有最后一段推理标为进行中', inner)
+  const narrated = segmentSteps({
+    ...seg('n0', { commentary: [{ ...text('k1', '开始修复'), at: 1 }], tools: [tool('a', 'bash'), tool('b', 'bash')] }),
+    thinking: '先读\n\n再改',
+    thinkingParts: [{ text: '先读', at: 0 }, { text: '再改', at: 1 }]
+  })
+  ok(narrated.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : s.kind === 'notes' ? 'note:' + s.notes.map((n) => n.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 'think:先读 > a > think:再改 > note:k1 > b', '后一条消息的说明排在它自己的工具之前、更早的工具之后，同位置推理在说明之前', narrated)
+  const legacy = segmentSteps(seg('n1', { commentary: [text('k2', '旧记录')], tools: [tool('a', 'bash')] }))
+  ok(legacy.map((s) => s.kind === 'tools' ? s.tools.map((c) => c.id).join('+') : s.kind === 'notes' ? 'note:' + s.notes.map((n) => n.id).join('+') : 'think:' + s.thinking.text).join(' > ') === 'note:k2 > a', '没有位置的说明按旧行为排在最前', legacy)
   const plain = splitTurnProcess([seg('p0', { thinking: '只是想想', response: text('r1', '回答') })])
   ok(plain.process.length === 0, '没有工具与旁白时不因推理生成过程行', plain.process)
 }
@@ -280,7 +288,11 @@ group('过程摘要：按工具类型归类并带改动行数')
   ok(mixed.reads === 2, '读取按不同文件计', mixed.reads)
   ok(mixed.edits.length === 1 && mixed.edits[0].base === 'STATUS.md' && mixed.edits[0].added === 1 && mixed.edits[0].removed === 1, '编辑记文件名与行数，失败的编辑不算', mixed.edits)
   ok(mixed.creates.length === 1 && mixed.creates[0].added === 3 && mixed.creates[0].removed === 1, '新建后再编辑仍算新建，行数累加', mixed.creates)
-  ok(mixed.other === 1, '提问不算其他操作，其余工具归入其他', mixed.other)
+  ok(mixed.searches === 1 && mixed.other === 0, '提问不算其他操作，grep 记为搜索', mixed)
+  const web = processSummary([seg('w0', { tools: [tool('ws', 'web_search', 'ok', { args: { query: 'float rounding' } })] })])
+  ok(web.web === 1 && web.other === 0, '单独一次联网搜索记为联网搜索，不算其他操作', web)
+  const fetched = processSummary([seg('w1', { tools: [tool('wf', 'web_fetch', 'ok', { args: { url: 'https://example.com' } }), tool('ls', 'ls', 'ok', { args: { path: '.' } }), tool('mc', 'mcp__srv__thing', 'ok')] })])
+  ok(fetched.fetches === 1 && fetched.lists === 1 && fetched.other === 1, '网页抓取与列目录各自计数，MCP 仍归其他', fetched)
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)

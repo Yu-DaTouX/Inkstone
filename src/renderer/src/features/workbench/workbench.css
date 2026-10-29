@@ -502,6 +502,11 @@
     list-style: none;
   }
 
+  .wb-ov-stats-slot {
+    min-height: calc(var(--t-footnote-lh) + 4 * var(--t-body-lh) + 3 * var(--s-4) + 2 * var(--s-10) + var(--size-btn-sm));
+    min-width: 0;
+  }
+
   .wb-rail-more {
     align-self: flex-start;
     margin-left: calc(-1 * var(--s-4));

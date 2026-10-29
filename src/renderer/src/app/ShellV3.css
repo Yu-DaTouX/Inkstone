@@ -52,11 +52,25 @@
     --col-r: calc(var(--s-20) + var(--tiles-reserve));
     --col-hidden-scrollbar: calc(var(--stream-scrollbar) * var(--tiles-on, 0));
     --col-window-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-pl: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-window-shift), 100% - var(--col-r) - var(--size-chat)));
-    --col-pr: max(var(--col-r), 100% - var(--col-pl) - var(--size-chat));
+    --col-pl-to: max(var(--col-pl-min), min((100% + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-window-shift), 100% - var(--col-r) - var(--size-chat)));
+    --col-pr-to: max(var(--col-r), 100% - var(--col-pl-to) - var(--size-chat));
     --col-pad-shift: clamp(0px, ((100% - var(--sidebar-offset, 0px) - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pl-min)) * 8, var(--sidebar-offset, 0px) / 2);
-    --col-pad-l: max(var(--col-pl-min), min((100% - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift), 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
-    --col-pad-r: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l) - var(--size-chat));
+    --col-pad-l-to: max(var(--col-pl-min), min((100% - var(--stream-scrollbar) + var(--col-hidden-scrollbar) - var(--size-chat)) / 2 - var(--col-pad-shift), 100% - var(--stream-scrollbar) - var(--col-r) - var(--size-chat)));
+    --col-pad-r-to: max(var(--col-r) + var(--stream-scrollbar), 100% - var(--col-pad-l-to) - var(--size-chat));
+    --col-pl-at: var(--col-pl-to);
+    --col-pr-at: var(--col-pr-to);
+    --col-pad-l-at: var(--col-pad-l-to);
+    --col-pad-r-at: var(--col-pad-r-to);
+    --col-pl: var(--col-pl-at);
+    --col-pr: var(--col-pr-at);
+    --col-pad-l: var(--col-pad-l-at);
+    --col-pad-r: var(--col-pad-r-at);
+    transition-property: --col-pl-at, --col-pr-at, --col-pad-l-at, --col-pad-r-at;
+    transition-duration: var(--dur-sheet);
+    transition-timing-function: ease-in-out;
+  }
+  .v3-root:has(.ui-splitter[data-dragging]) .v3-chat {
+    transition: none;
   }
   .v3-chat:has(.v3-rail) {
     --outline-on: 1;
@@ -81,6 +95,12 @@
     width: var(--size-tiles);
     max-height: 100%;
     min-height: 0;
+    animation: v3-sessionbar-open var(--dur-sheet) ease-in-out;
+  }
+  @keyframes v3-sessionbar-open {
+    from {
+      clip-path: inset(0 0 0 100%);
+    }
   }
   .v3-tiles-resizer.ui-splitter {
     position: absolute;
@@ -414,3 +434,26 @@
   }
 }
 
+@property --col-pl-at {
+  syntax: '<length-percentage>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --col-pr-at {
+  syntax: '<length-percentage>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --col-pad-l-at {
+  syntax: '<length-percentage>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --col-pad-r-at {
+  syntax: '<length-percentage>';
+  inherits: true;
+  initial-value: 0px;
+}

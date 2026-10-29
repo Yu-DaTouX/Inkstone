@@ -27,6 +27,7 @@ interface TurnText {
   text: string
   sourceCwd?: string
   hasTools: boolean
+  at?: number
 }
 
 export interface AssistantTurn {
@@ -386,12 +387,14 @@ export function groupIntoTurns(messages: UIMessage[], streamingId?: string): Tur
     if (hasText(m.text)) {
       const hasTools = (m.toolCalls?.length ?? 0) > 0
       const target = seg()
+      const at = Math.max(0, target.tools.length - (m.toolCalls?.length ?? 0))
       for (const p of splitParagraphs(m.text)) {
         const item = {
           id: `${m.id}#${cur.texts.length}`,
           text: p,
           hasTools,
-          ...(m.sourceCwd ? { sourceCwd: m.sourceCwd } : {})
+          ...(m.sourceCwd ? { sourceCwd: m.sourceCwd } : {}),
+          ...(at > 0 ? { at } : {})
         }
         cur.texts.push(item)
         target.texts.push(item)

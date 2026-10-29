@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
+import { formatDuration } from '../../../../shared/duration'
 import { Collapsible, CollapsibleHeader, CollapsiblePanel, ShimmerText } from '../../ui'
 import { Icon } from './Icon'
 import { useSessionText } from './text'
@@ -52,12 +53,25 @@ export function ThinkingAside({ text, ms, live, stacked = false }: { text: strin
   )
 }
 
+function useLiveElapsed(live: boolean): number | null {
+  const startRef = useRef<number | null>(live ? Date.now() : null)
+  const [now, setNow] = useState(() => Date.now())
+  if (live && startRef.current === null) startRef.current = Date.now()
+  if (!live && startRef.current !== null) startRef.current = null
+  useEffect(() => {
+    if (!live) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [live])
+  return live && startRef.current !== null ? Math.max(0, now - startRef.current) : null
+}
+
 export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expansionId }: { text: string; ms?: number; live?: boolean; defaultOpen?: boolean; step?: boolean; expansionId?: string }): JSX.Element | null {
   const t = useT()
   const inlineView = showsThinkingInline(useTranscriptViewScope())
-  const asStep = (step ?? inlineView) && !live
+  const asStep = step ?? inlineView
   const touchedRef = useRef(false)
-  const [localOpen, setLocalOpen] = useState(defaultOpen || !!live)
+  const [localOpen, setLocalOpen] = useState(defaultOpen && !live)
   const [stored, setStored] = useToolExpansion(expansionId ? `think:${expansionId}` : '')
   const open = expansionId && stored !== undefined ? stored : localOpen
   const setOpen = (next: boolean): void => {
@@ -65,20 +79,14 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
     if (expansionId && touchedRef.current) setStored(next)
   }
   const followRef = useRef(true)
-  const wasLiveRef = useRef(!!live)
+  const liveRef = useRef(!!live)
+  liveRef.current = !!live
   const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const elapsed = useLiveElapsed(!!live)
 
   useEffect(() => {
-    if (!touchedRef.current) {
-      if (live && !wasLiveRef.current) setOpen(true)
-      if (!live && wasLiveRef.current) setOpen(false)
-    }
-    wasLiveRef.current = !!live
-  }, [live])
-
-  useEffect(() => {
-    if (!touchedRef.current) setOpen(defaultOpen || !!wasLiveRef.current)
+    if (!touchedRef.current) setOpen(defaultOpen && !liveRef.current)
   }, [defaultOpen])
 
   useLayoutEffect(() => {
@@ -105,10 +113,11 @@ export function ThinkingLine({ text, ms, live, defaultOpen = false, step, expans
       <CollapsibleHeader className={asStep ? 'v3-step-head v3-think-step' : 'v3-think-head'} size="compact" chevron="end" icon={<Icon name="brain" size={13} />} data-testid="v3-thinking-toggle">
         <span className="v3-step-line">
           {asStep ? (
-            <span className="v3-step-label">{label}</span>
+            <span className="v3-step-label"><ShimmerText active={!!live}>{label}</ShimmerText></span>
           ) : (
             <ShimmerText className="v3-think-label" active={live}>{label}</ShimmerText>
           )}
+          {elapsed !== null ? <span className="v3-step-time v3-think-time" data-testid="v3-thinking-elapsed">{formatDuration(elapsed)}</span> : null}
           {peek ? (
             <span className={asStep ? 'v3-step-target v3-think-peek' : 'v3-think-peek'} dir="rtl" data-testid="v3-thinking-peek">
               <span dir="ltr">{peek}</span>

@@ -37,7 +37,7 @@ import type { NativeTreeNode } from '../../../../shared/native-session'
 import { MessageMenuHost } from './MessageMenu'
 import { SessionFindBar } from './SessionFindBar'
 import { decideFollow, distanceFromBottom, isScrollIntentKey, JUMP_THRESHOLD_PX, userScrollActive, type FollowDecision, type ReadingAnchor, type ScrollMetrics } from './scroll-follow'
-import { domAnchor, domMetrics, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot } from './scroll-position'
+import { domAnchor, domMetrics, glideSettle, keepSettleAnchor, readScrollSnapshot, restoreDomScroll, saveScrollSnapshot, settleAnchor, settleShift, type SettleAnchor } from './scroll-position'
 import './session.css'
 import { sameComposerView } from '../../state/composer-recovery'
 import { withSubmittingMessages } from '../../state/submitting-messages'
@@ -276,6 +276,33 @@ export function SessionView(): JSX.Element {
   renderTurnsRef.current = renderTurns
   const [remountKey, setRemountKey] = useState(0)
   const remountsRef = useRef(0)
+  const settleRef = useRef<SettleAnchor | null>(null)
+  const streamingSeenRef = useRef({ identity, streamingId })
+  if (streamingSeenRef.current.identity !== identity || streamingSeenRef.current.streamingId !== streamingId) {
+    const seen = streamingSeenRef.current
+    if (seen.identity === identity && seen.streamingId && !streamingId && !virtual && streamRef.current) settleRef.current = settleAnchor(streamRef.current)
+    streamingSeenRef.current = { identity, streamingId }
+  }
+
+  useLayoutEffect(() => {
+    const anchor = settleRef.current
+    const box = streamRef.current
+    settleRef.current = null
+    if (!anchor || !box) return undefined
+    if (stickRef.current) {
+      if (!userScrollActive(intentRef.current, performance.now())) box.scrollTop = box.scrollHeight
+      glideSettle(anchor, settleShift(box, anchor))
+      return undefined
+    }
+    keepSettleAnchor(box, anchor)
+    glideSettle(anchor, settleShift(box, anchor))
+    const settled = box.scrollTop
+    const raf = requestAnimationFrame(() => {
+      if (stickRef.current || Math.abs(box.scrollTop - settled) > 1) return
+      keepSettleAnchor(box, anchor)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [streamingId])
 
   const setStickNow = useCallback((value: boolean) => {
     stickRef.current = value

@@ -88,8 +88,9 @@ export function ToolSteps({ tools, approvalIds = NO_APPROVALS, glowId = liveTool
   const approvalCall = useCurrentApprovalCall(tools, approvalIds)
   const askedCalls = useStore((s) => s.uiRequests)
   const cache = useRef<ToolRowsCache | null>(null)
-  if (!tools.length) return null
-  cache.current = cachedToolRows(cache.current, tools, approvalIds)
+  const ready = tools.some(generatingArgs) ? tools.filter((call) => !generatingArgs(call)) : tools
+  if (!ready.length) return null
+  cache.current = cachedToolRows(cache.current, ready, approvalIds)
   const rows = cache.current.rows
   if (!rows.length) return null
   return (

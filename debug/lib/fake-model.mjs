@@ -36,8 +36,29 @@ export const FAKE_TRIGGERS = {
   MANYTOOLS: '连续 40 步，每步一句话加一次 bash 工具调用',
   BIGOUT: '一次 bash 输出 6000 行，期间分段停顿',
   FAIL: '返回 502，用来看模型错误与重试',
-  APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批'
+  APPROVAL: '一次命中危险规则的 bash（删除不存在的注册表项），用来看审批',
+  FLOW: '五步：每步先慢速思考，夹叙述与 bash（含无叙述步、慢参数），最后流出较长答案（含 SHORT 时答案很短），用来看消息流跳动与顺序'
 }
+
+function flowThinking(step) {
+  const lines = [`Step ${step + 1}: weighing what to check next.`]
+  for (let i = 1; i <= 9; i++) lines.push(`- consideration ${i} for step ${step + 1}: compare the ledger totals and the float rounding path before touching code.`)
+  return lines.join('\n')
+}
+
+function flowAnswer(short) {
+  const parts = ['## 修复结果\n\n金额改为以分为单位的整数计算，避免了浮点误差。\n\n']
+  for (let i = 1; i <= (short ? 3 : 24); i++) parts.push(`- 第 ${i} 项：核对账本第 ${i} 行，金额与汇总一致，测试覆盖对应分支。\n`)
+  parts.push('\n全部测试通过，最终答案结束。\n')
+  return parts.join('')
+}
+
+const FLOW_STEPS = [
+  { text: '先看看项目结构。', command: 'echo list files', description: '列出项目文件' },
+  { text: '', command: 'echo read readme', description: '读取 README 与事件说明' },
+  { text: '开始修复金额精度，先复现一次。', command: 'echo reproduce', description: '验证浮点误差复现数值', slowArgs: true },
+  { text: '', command: 'echo run tests', description: '运行测试', slowArgs: true }
+]
 
 async function respond(res, text, done, requestNo) {
   const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
@@ -58,14 +79,28 @@ async function respond(res, text, done, requestNo) {
     send({ type: 'response.output_item.done', output_index: index, item: finished })
     output.push(finished)
   }
-  const callTool = async (name, args) => {
+  const streamThinking = async (content, chunk, delay) => {
+    const index = output.length
+    const item = { id: `rs_${requestNo}_${index}`, type: 'reasoning', summary: [] }
+    send({ type: 'response.output_item.added', output_index: index, item })
+    send({ type: 'response.reasoning_summary_part.added', item_id: item.id, output_index: index, summary_index: 0, part: { type: 'summary_text', text: '' } })
+    for (let i = 0; i < content.length; i += chunk) {
+      send({ type: 'response.reasoning_summary_text.delta', item_id: item.id, output_index: index, summary_index: 0, delta: content.slice(i, i + chunk) })
+      if (delay) await sleep(delay)
+    }
+    send({ type: 'response.reasoning_summary_text.done', item_id: item.id, output_index: index, summary_index: 0, text: content })
+    const finished = { ...item, summary: [{ type: 'summary_text', text: content }] }
+    send({ type: 'response.output_item.done', output_index: index, item: finished })
+    output.push(finished)
+  }
+  const callTool = async (name, args, chunkDelay = 5) => {
     const index = output.length
     const item = { id: `fc_${requestNo}_${index}`, type: 'function_call', call_id: `call_${requestNo}_${index}`, name, arguments: '', status: 'in_progress' }
     send({ type: 'response.output_item.added', output_index: index, item })
     const raw = JSON.stringify(args)
     for (let i = 0; i < raw.length; i += 40) {
       send({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: index, delta: raw.slice(i, i + 40) })
-      await sleep(5)
+      await sleep(chunkDelay)
     }
     send({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: index, arguments: raw })
     const finished = { ...item, arguments: raw, status: 'completed' }
@@ -79,6 +114,13 @@ async function respond(res, text, done, requestNo) {
         await streamText(`第 ${done + 1} 步。`, 20, 0)
         await callTool('bash', { command: `echo step ${done + 1}`, description: `step ${done + 1}` })
       } else await streamText('四十步都完成了。', 20, 10)
+    } else if (text.includes('FLOW')) {
+      await streamThinking(flowThinking(done), 24, 45)
+      const step = FLOW_STEPS[done]
+      if (step) {
+        if (step.text) await streamText(step.text, 6, 30)
+        await callTool('bash', { command: step.command, description: step.description }, step.slowArgs ? 300 : 5)
+      } else await streamText(flowAnswer(text.includes('SHORT')), 16, 25)
     } else if (text.includes('BIGOUT')) {
       if (done < 1) await callTool('bash', { command: 'for i in $(seq 1 6000); do echo "line $i ................................................................"; if [ $((i % 400)) -eq 0 ]; then sleep 0.25; fi; done', description: 'long output' })
       else await streamText('长输出结束。', 20, 10)

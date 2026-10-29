@@ -3,6 +3,7 @@ import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../share
 import { countedProcessCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
 import { callPath, readFileDiff, readPiDiff } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
+import { searchStepOf } from './web-search/model'
 
 const LIVE_SEGMENTS = 3
 
@@ -120,8 +121,11 @@ interface ProcessThinking extends TurnThinking {
   live: boolean
 }
 
+type ProcessNote = TurnSegment['commentary'][number]
+
 type ProcessStep =
   | { kind: 'thinking'; key: string; thinking: ProcessThinking }
+  | { kind: 'notes'; key: string; notes: ProcessNote[] }
   | { kind: 'tools'; key: string; tools: UIToolCall[] }
 
 function segmentThinking(segment: TurnSegment): ProcessThinking[] {
@@ -140,21 +144,28 @@ function segmentThinking(segment: TurnSegment): ProcessThinking[] {
   return joined.map((part, index) => ({ ...part, live: segment.thinkingLive && index === joined.length - 1 }))
 }
 
-export function segmentSteps(segment: TurnSegment): { lead: ProcessThinking[]; steps: ProcessStep[] } {
+function noteAt(note: ProcessNote, tools: number): number {
+  return Math.max(0, Math.min(note.at ?? 0, tools))
+}
+
+export function segmentSteps(segment: TurnSegment): ProcessStep[] {
   const thinking = segmentThinking(segment)
-  const lead = thinking.filter((part) => part.at === 0)
+  const total = segment.tools.length
+  const positions = [...new Set([...thinking.map((part) => part.at), ...segment.commentary.map((note) => noteAt(note, total))])].sort((a, b) => a - b)
   const steps: ProcessStep[] = []
   let from = 0
-  for (const part of thinking) {
-    if (part.at === 0) continue
-    if (part.at > from) {
-      steps.push({ kind: 'tools', key: `tools:${from}`, tools: segment.tools.slice(from, part.at) })
-      from = part.at
+  for (const at of positions) {
+    if (at > from) {
+      steps.push({ kind: 'tools', key: `tools:${from}`, tools: segment.tools.slice(from, at) })
+      from = at
     }
-    steps.push({ kind: 'thinking', key: `thinking:${part.at}`, thinking: part })
+    const part = thinking.find((item) => item.at === at)
+    if (part) steps.push({ kind: 'thinking', key: `thinking:${at}`, thinking: part })
+    const notes = segment.commentary.filter((note) => noteAt(note, total) === at)
+    if (notes.length) steps.push({ kind: 'notes', key: `notes:${at}`, notes })
   }
-  if (from < segment.tools.length) steps.push({ kind: 'tools', key: `tools:${from}`, tools: segment.tools.slice(from) })
-  return { lead, steps }
+  if (from < total) steps.push({ kind: 'tools', key: `tools:${from}`, tools: segment.tools.slice(from) })
+  return steps
 }
 
 export function conciseSegment(segment: TurnSegment): TurnSegment {
@@ -213,6 +224,11 @@ export interface ProcessSummary {
   reads: number
   edits: ProcessFileChange[]
   creates: ProcessFileChange[]
+  searches: number
+  lists: number
+  web: number
+  fetches: number
+  agents: number
   other: number
 }
 
@@ -291,6 +307,11 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   const counted = countedProcessCalls(calls)
   let commands = 0
   let code = 0
+  let searches = 0
+  let lists = 0
+  let web = 0
+  let fetches = 0
+  let agents = 0
   let other = 0
   const reads = new Set<string>()
   const edits = new Map<string, ProcessFileChange>()
@@ -298,7 +319,16 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   for (const call of counted) {
     if (isHistoryQuestionCall(call)) continue
     const category = toolCategory(call)
-    if (category === 'command') {
+    const step = searchStepOf(call)
+    if (step) {
+      if (step.command.action === 'fetch') fetches += 1
+      else web += 1
+    } else if (category === 'web') web += 1
+    else if (category === 'fetch') fetches += 1
+    else if (category === 'search') searches += 1
+    else if (category === 'list') lists += 1
+    else if (category === 'agent') agents += 1
+    else if (category === 'command') {
       if (isCodeTool(call)) code += 1
       else commands += 1
     } else if (category === 'read') {
@@ -322,6 +352,11 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
     reads: reads.size,
     edits: [...edits.values()],
     creates: [...creates.values()],
+    searches,
+    lists,
+    web,
+    fetches,
+    agents,
     other
   }
 }
@@ -330,6 +365,15 @@ export function processFailuresAlert(turn: Pick<AssistantTurn, 'terminalReason' 
   if (streaming) return true
   if (turn.terminalReason === 'failed' || turn.terminalReason === 'stopped' || turn.terminalReason === 'interrupted') return true
   return !!turn.error && !turn.errorRecovered
+}
+
+export function stageSegmentCount(segments: readonly TurnSegment[]): number {
+  let count = 0
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    count += 1
+    if (segments[i].tools.length || segments[i].commentary.length) break
+  }
+  return Math.max(1, count)
 }
 
 export function pickLiveSegments(segments: readonly TurnSegment[], limit = LIVE_SEGMENTS): { shown: TurnSegment[]; hidden: number } {

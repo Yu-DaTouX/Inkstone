@@ -80,10 +80,9 @@ const concise = proc.conciseSegment(settled)
 assert.equal(concise.thinking, '', '简洁档去掉已结束的推理')
 assert.deepEqual(concise.thinkingParts, [])
 const steps = proc.segmentSteps(concise)
-assert.equal(steps.lead.length, 0)
-assert.equal(steps.steps.length, 1, '推理不再把工具切成多段')
-assert.equal(steps.steps[0].kind, 'tools')
-assert.equal(steps.steps[0].tools.length, 2)
+assert.equal(steps.length, 1, '推理不再把工具切成多段')
+assert.equal(steps[0].kind, 'tools')
+assert.equal(steps[0].tools.length, 2)
 
 const live = proc.conciseSegment(segment({
   thinking: 'a\n\nb',
@@ -94,8 +93,8 @@ const live = proc.conciseSegment(segment({
 assert.equal(live.thinking, 'b', '简洁档保留正在进行的推理')
 assert.equal(live.thinkingLive, true)
 const liveSteps = proc.segmentSteps(live)
-assert.equal(liveSteps.steps[0].kind, 'tools', '进行中的推理排在已有工具之后')
-assert.equal(liveSteps.steps.at(-1).kind, 'thinking')
+assert.equal(liveSteps[0].kind, 'tools', '进行中的推理排在已有工具之后')
+assert.equal(liveSteps.at(-1).kind, 'thinking')
 
 const thinkingOnly = proc.conciseSegment(segment({ thinking: 'x', thinkingParts: [{ text: 'x', at: 0 }] }))
 assert.equal(proc.splitTurnProcess([thinkingOnly, segment({ id: 'r', response: { id: 'r', text: 'done' } })]).process.length, 0, '只有推理的段落在简洁档不进过程区')
@@ -105,11 +104,11 @@ const merged = proc.mergeQuietSegments([
   proc.conciseSegment(segment({ id: 'b', thinking: 'y', tools: [tool('t2')] }))
 ])
 assert.equal(merged.length, 1, '没有说明文字的相邻段落合成一组')
-assert.equal(proc.segmentSteps(merged[0]).steps.length, 1)
+assert.equal(proc.segmentSteps(merged[0]).length, 1)
 
 const stripped = proc.withoutThinking(segment({ thinking: 'a', thinkingLive: true, thinkingParts: [{ text: 'a', at: 0 }], tools: [tool('t1')] }))
 assert.equal(stripped.thinking, '', '侧边推理档从正文去掉全部推理')
 assert.equal(stripped.thinkingLive, false)
-assert.equal(proc.segmentSteps(stripped).steps.length, 1)
+assert.equal(proc.segmentSteps(stripped).length, 1)
 
 process.stdout.write('对话显示方式：三档循环、按会话覆盖、默认值、旧档迁移、存储容错、简洁与侧边推理分组检查通过\n')

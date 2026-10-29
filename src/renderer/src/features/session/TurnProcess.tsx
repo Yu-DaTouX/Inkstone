@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import { useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
@@ -8,12 +8,35 @@ import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } fr
 import { formatDuration } from '../../../../shared/duration'
 import { openPanelTool } from '../workbench/panel-actions'
 import { useSessionText } from './text'
-import { conciseSegment, mergeQuietSegments, pickLiveSegments, processPreview, processSummary, segmentSteps, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import { conciseSegment, mergeQuietSegments, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
 import { useToolExpansion } from './use-tool-run'
 import type { TranscriptView } from './transcript-view-model'
 
 const NO_APPROVALS: ReadonlySet<string> = new Set()
-const STAGE_SEGMENTS = 1
+
+function useSteadyHeight(active: boolean): { ref: RefCallback<HTMLDivElement>; minHeight: number | undefined } {
+  const [node, setNode] = useState<HTMLDivElement | null>(null)
+  const [minHeight, setMinHeight] = useState(0)
+  useLayoutEffect(() => {
+    if (!active || !node) {
+      setMinHeight(0)
+      return undefined
+    }
+    let width = node.getBoundingClientRect().width
+    const observer = new ResizeObserver(() => {
+      const box = node.getBoundingClientRect()
+      if (Math.abs(box.width - width) > 0.5) {
+        width = box.width
+        setMinHeight(0)
+        return
+      }
+      setMinHeight((current) => (box.height > current + 0.5 ? box.height : current))
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [active, node])
+  return { ref: setNode, minHeight: active && minHeight > 0 ? minHeight : undefined }
+}
 
 export function TurnProcess({ process, live, alertFailures, view, sessionId, turnId, approvalIds = NO_APPROVALS, glowId, elapsedMs }: {
   process: TurnSegment[]
@@ -35,10 +58,11 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   const headless = !summary.thinking && !summary.actions
   const open = headless || (manual ?? view === 'thinking')
   const stage = !open && live
+  const steady = useSteadyHeight(live)
   const source = stage ? process.map(view === 'side' ? withoutThinking : conciseSegment) : process
   const merged = mergeQuietSegments(source)
   const picked = stage
-    ? pickLiveSegments(merged, STAGE_SEGMENTS)
+    ? pickLiveSegments(merged, stageSegmentCount(merged))
     : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
   const changed = !live && (summary.edits.length > 0 || summary.creates.length > 0)
@@ -46,7 +70,7 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
   const preview = live || open ? '' : processPreview(process)
 
   const body = (
-    <div className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body">
+    <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
       {picked.hidden > 0 && !stage ? (
         <Button size="sm" variant="ghost" className="v3-process-more" onPress={() => setShowAll(true)} data-testid="v3-process-more">
           {tt('moreItems', { n: picked.hidden })}
@@ -120,6 +144,11 @@ function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionT
   count('reads', summary.reads, 'processReads1', 'processReads')
   files('edits', summary.edits, 'processEditFile', 'processEdits')
   files('creates', summary.creates, 'processCreateFile', 'processCreates')
+  count('searches', summary.searches, 'processSearch1', 'processSearch')
+  count('lists', summary.lists, 'processList1', 'processList')
+  count('web', summary.web, 'processWeb1', 'processWeb')
+  count('fetches', summary.fetches, 'processFetch1', 'processFetch')
+  count('agents', summary.agents, 'processAgent1', 'processAgent')
   count('other', summary.other, 'processOther1', 'processOther')
   if (parts.length === (summary.thinking ? 1 : 0) && summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
   return parts
@@ -133,24 +162,21 @@ function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking,
   openThinking: boolean
   alertFailures: boolean
 }): JSX.Element {
-  const { lead, steps } = segmentSteps(segment)
   return (
     <div className="v3-process-seg">
-      {lead.map((part, index) => (
-        <ThinkingLine key={`lead:${index}`} text={part.text} ms={part.ms} live={part.live} step defaultOpen={openThinking} expansionId={`${segment.id}:lead:${index}`} />
-      ))}
-      {segment.commentary.length ? (
-        <div className="v3-process-notes">
-          {segment.commentary.map((part) => (
-            <div key={part.id} className="v3-para">
-              <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {steps.map((step) => step.kind === 'tools'
+      {segmentSteps(segment).map((step) => step.kind === 'tools'
         ? <ToolSteps key={step.key} tools={step.tools} approvalIds={approvalIds} glowId={glowId} alertFailures={alertFailures} />
-        : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
+        : step.kind === 'notes'
+          ? (
+              <div key={step.key} className="v3-process-notes">
+                {step.notes.map((part) => (
+                  <div key={part.id} className="v3-para">
+                    <Markdown text={part.text} sourceCwd={part.sourceCwd} live={false} sessionId={sessionId} messageId={part.id} />
+                  </div>
+                ))}
+              </div>
+            )
+          : <ThinkingLine key={step.key} text={step.thinking.text} ms={step.thinking.ms} live={step.thinking.live} step defaultOpen={openThinking} expansionId={`${segment.id}:${step.key}`} />)}
     </div>
   )
 }

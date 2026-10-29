@@ -688,18 +688,19 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
         </ul>
       )
     },
-    ...(statsModel
+    stats: statsModel
       ? {
-          stats: {
-            summary: isOpen('stats') ? (
-              <RailValue value={statsModel.headline} title={statsModel.headlineTitle ?? undefined} />
-            ) : (
-              <StatsGlance model={statsModel} text={rail} />
-            ),
-            body: <RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} />
-          }
+          summary: isOpen('stats') ? (
+            <RailValue value={statsModel.headline} title={statsModel.headlineTitle ?? undefined} />
+          ) : (
+            <StatsGlance model={statsModel} text={rail} />
+          ),
+          body: <div className="wb-ov-stats-slot"><RailStatsBody model={statsModel} breakdownLabel={rail.statsBreakdown} /></div>
         }
-      : {}),
+      : {
+          summary: <RailValue value="—" />,
+          body: <div className="wb-ov-stats-slot" data-testid="wb-rail-stats-pending" aria-hidden />
+        },
     context: {
       summary: !contextOpen || !contextData || !usage.known ? contextSummary : undefined,
       tone: contextKnown ? glyphTone(usage.tone) : undefined,
