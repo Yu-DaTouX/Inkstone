@@ -47,7 +47,6 @@
 | [DOMPurify](https://github.com/cure53/DOMPurify)（`dompurify`，Mermaid 图 SVG 清理） | MPL-2.0 或 Apache-2.0（双许可） |
 | [fff](https://github.com/dmtrKovalenko/fff)（`@ff-labs/fff-node` 及平台二进制包，文件名与内容搜索） | MIT |
 | node-html-markdown（网页正文转 Markdown） | MIT |
-| write-file-atomic | ISC |
 | dequal | MIT |
 | [PDF.js](https://mozilla.github.io/pdf.js/)（npm 包 `pdfjs-dist`，文件预览与联网 PDF 文字读取） | Apache-2.0 |
 | [Mozilla Readability](https://github.com/mozilla/readability)（`@mozilla/readability`，网页正文提取） | Apache-2.0（见包内 LICENSE） |

@@ -150,7 +150,6 @@
     "remark-math": "^6.0.0",
     "tar": "7.5.22",
     "virtua": "^0.51.2",
-    "write-file-atomic": "^8.0.0",
     "zustand": "^5.0.15"
   },
   "allowScripts": {
