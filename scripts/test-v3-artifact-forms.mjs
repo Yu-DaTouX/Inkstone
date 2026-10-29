@@ -74,63 +74,29 @@ const mermaid = await loadTs('../src/renderer/src/features/artifacts/mermaid-the
 }
 
 {
-  assert.deepEqual(mermaid.MERMAID_THEME_TOKEN_NAMES, {
-    bg: '--bg',
-    surface: '--surface',
-    surfaceAlt: '--hover',
-    sunken: '--sunken',
-    fg: '--fg',
-    fgMute: '--fg3',
-    line2: '--line2',
-    accent: '--accent',
-    font: '--font-ui'
-  })
-
-  const light = mermaid.mermaidThemeVariables({
-    dark: false,
-    bg: 'bg-light',
-    surface: 'surface-light',
-    surfaceAlt: 'hover-light',
-    sunken: 'sunken-light',
-    fg: 'fg-light',
-    fgMute: 'fg3-light',
-    line2: 'line2-light',
-    accent: 'accent-light',
-    font: 'font-light'
-  })
-  assert.equal(light.darkMode, false, '浅色主题随 data-theme 报告')
-  assert.equal(light.background, 'bg-light')
-  assert.equal(light.primaryColor, 'surface-light')
-  assert.equal(light.primaryTextColor, 'fg-light')
-  assert.equal(light.primaryBorderColor, 'line2-light', '节点描边用细线色，不用强调色')
-  assert.equal(light.actorBorder, 'line2-light')
-  assert.equal(light.secondaryColor, 'hover-light')
-  assert.equal(light.tertiaryColor, 'sunken-light')
-  assert.equal(light.lineColor, 'fg3-light', '连线/网格用 fg3')
-  assert.equal(light.noteBorderColor, 'line2-light')
-  assert.equal(light.clusterBorder, 'line2-light')
-  assert.equal(light.fontFamily, 'font-light')
-
-  const dark = mermaid.mermaidThemeVariables({
-    dark: true,
-    bg: 'bg-dark',
-    surface: 'surface-dark',
-    surfaceAlt: 'hover-dark',
-    sunken: 'sunken-dark',
-    fg: 'fg-dark',
-    fgMute: 'fg3-dark',
-    line2: 'line2-dark',
-    accent: 'accent-dark',
-    font: 'font-dark'
-  })
-  assert.equal(dark.darkMode, true, '深色主题随 data-theme 报告')
-  assert.equal(dark.background, 'bg-dark')
-  assert.equal(dark.primaryBorderColor, 'line2-dark')
-  for (const value of Object.values(dark)) {
-    if (typeof value === 'string' && value !== '13px') {
-      assert.ok(!/^#|^rgb/.test(value), '不出现硬编码色值：' + value)
-    }
+  assert.equal(mermaid.MERMAID_COLOR_TOKENS['--pele-bg'], '--bg')
+  assert.equal(mermaid.MERMAID_COLOR_TOKENS['--pele-fg'], '--fg')
+  assert.equal(mermaid.MERMAID_COLOR_TOKENS['--pele-surface'], '--surface')
+  assert.equal(mermaid.MERMAID_COLOR_TOKENS['--pele-border'], '--line2', '节点描边用细线色，不用强调色')
+  assert.equal(mermaid.MERMAID_COLOR_TOKENS['--pele-line'], '--fg3', '连线用 fg3')
+  for (let index = 1; index <= 8; index++) {
+    assert.equal(mermaid.MERMAID_COLOR_TOKENS[`--pele-series-${index}`], `--data-${index}`, '图表系列色来自 data 令牌')
   }
+  assert.equal(mermaid.MERMAID_TEXT_TOKENS['--pele-font'], '--font-ui')
+
+  const style = mermaid.mermaidThemeStyle()
+  for (const [name, value] of Object.entries(style)) {
+    assert.match(name, /^--pele-/)
+    assert.match(value, /^var\(--[a-z0-9-]+\)$/, '主题只引用令牌，深浅随令牌切换：' + value)
+  }
+
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" class="pele" viewBox="0 0 200 50" width="200" height="50" style="max-width:100%;height:auto"></svg>'
+  assert.match(mermaid.withMinWidth(svg, 200), /^<svg[^>]* style="min-width:160px;max-width:100%/, '保留 80% 最小宽度，过宽时横向滚动')
+  assert.equal(mermaid.withMinWidth(svg, Number.NaN), svg)
+
+  const standalone = mermaid.inlineMermaidTheme(svg, { '--pele-bg': 'rgb(1, 2, 3)', '--pele-font': '"Segoe UI", sans-serif' })
+  assert.match(standalone, /style="--pele-bg:rgb\(1, 2, 3\);--pele-font:&quot;Segoe UI&quot;, sans-serif;background-color:rgb\(1, 2, 3\);max-width/, '导出 SVG 内联解析后的主题值')
+  assert.equal(mermaid.inlineMermaidTheme(svg, {}), svg)
 }
 
 {

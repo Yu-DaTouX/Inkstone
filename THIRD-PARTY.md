@@ -38,12 +38,13 @@
 
 | 组件 | 许可 |
 | --- | --- |
-| React / React DOM / Zustand / CodeMirror 6 / mermaid / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
+| React / React DOM / Zustand / CodeMirror 6 / xterm.js 等 npm 依赖 | 各自包内声明（多为 MIT） |
 | React Aria Components（`react-aria-components`） | Apache-2.0 |
 | Model Context Protocol SDK（`@modelcontextprotocol/sdk`、`@modelcontextprotocol/ext-apps`，MCP 连接与 MCP Apps 宿主） | MIT |
 | Model Context Protocol SDK v2（`@modelcontextprotocol/client`、`@modelcontextprotocol/core`，MCP Apps 宿主依赖） | Apache-2.0 |
 | [@pierre/diffs](https://www.npmjs.com/package/@pierre/diffs)（改动与差异视图） | Apache-2.0 |
 | [pele](https://github.com/obsidianmd/pele)（Mermaid 图渲染） | MIT |
+| [DOMPurify](https://github.com/cure53/DOMPurify)（`dompurify`，Mermaid 图 SVG 清理） | MPL-2.0 或 Apache-2.0（双许可） |
 | [fff](https://github.com/dmtrKovalenko/fff)（`@ff-labs/fff-node` 及平台二进制包，文件名与内容搜索） | MIT |
 | node-html-markdown（网页正文转 Markdown） | MIT |
 | write-file-atomic | ISC |

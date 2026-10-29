@@ -1,87 +1,81 @@
-import { useEffect, useState, type JSX, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import DOMPurify from 'dompurify'
 import { useT } from '../../i18n'
 import { Notice } from '../../ui'
 import { VISUAL_MERMAID_MAX_CHARS } from '../../../../shared/visual-blocks'
-import { MERMAID_THEME_TOKEN_NAMES, mermaidThemeVariables, type MermaidTokenSet } from './mermaid-theme'
+import {
+  MERMAID_COLOR_TOKENS,
+  MERMAID_FONT_SIZE,
+  MERMAID_TEXT_TOKENS,
+  inlineMermaidTheme,
+  mermaidThemeStyle,
+  withMinWidth,
+  type MermaidThemeVariable
+} from './mermaid-theme'
 import { SaveAsArtifactButton, shortHash } from './SaveAsArtifact'
 import './artifacts.css'
 
-type MermaidApi = typeof import('mermaid').default
+type Pele = typeof import('pele/lazy')
 
-let mermaidPromise: Promise<MermaidApi> | null = null
-function loadMermaid(): Promise<MermaidApi> {
-  if (!mermaidPromise) mermaidPromise = import('mermaid').then((module) => module.default)
-  return mermaidPromise
+let pelePromise: Promise<Pele> | null = null
+function loadPele(): Promise<Pele> {
+  if (!pelePromise) {
+    pelePromise = import('pele/lazy').catch((error: unknown) => {
+      pelePromise = null
+      throw error
+    })
+  }
+  return pelePromise
 }
 
-let queue: Promise<unknown> = Promise.resolve()
 let seq = 0
 const svgCache = new Map<string, string>()
 const SVG_CACHE_LIMIT = 40
-const MERMAID_MIN_SCALE = 0.8
+const themeStyle = mermaidThemeStyle() as CSSProperties
 
 function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-function colorToken(name: string): string {
-  const probe = document.createElement('span')
-  probe.style.display = 'none'
-  probe.style.color = `var(${name})`
-  document.documentElement.appendChild(probe)
-  const resolved = getComputedStyle(probe).color
-  probe.remove()
-  return resolved || token(name)
-}
-
-function readTokens(): MermaidTokenSet {
-  return {
-    dark: document.documentElement.getAttribute('data-theme') === 'dark',
-    bg: colorToken(MERMAID_THEME_TOKEN_NAMES.bg),
-    surface: colorToken(MERMAID_THEME_TOKEN_NAMES.surface),
-    surfaceAlt: colorToken(MERMAID_THEME_TOKEN_NAMES.surfaceAlt),
-    sunken: colorToken(MERMAID_THEME_TOKEN_NAMES.sunken),
-    fg: colorToken(MERMAID_THEME_TOKEN_NAMES.fg),
-    fgMute: colorToken(MERMAID_THEME_TOKEN_NAMES.fgMute),
-    line2: colorToken(MERMAID_THEME_TOKEN_NAMES.line2),
-    accent: colorToken(MERMAID_THEME_TOKEN_NAMES.accent),
-    font: token(MERMAID_THEME_TOKEN_NAMES.font)
-  }
-}
-
-function themeKey(): string {
-  return document.documentElement.getAttribute('data-theme') ?? ''
+function sanitizeDiagramSvg(svg: string): string {
+  return DOMPurify.sanitize(svg, {
+    FORBID_ATTR: ['href', 'xlink:href', 'src', 'srcset'],
+    FORBID_TAGS: ['a', 'image', 'foreignObject', 'style'],
+    USE_PROFILES: { svg: true, svgFilters: true }
+  })
 }
 
 async function renderMermaid(source: string): Promise<string> {
-  const job = queue.then(async () => {
-    const mermaid = await loadMermaid()
-    const tokens = readTokens()
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      theme: 'base',
-      fontFamily: tokens.font || 'sans-serif',
-      htmlLabels: false,
-      flowchart: { htmlLabels: false, useMaxWidth: true, nodeSpacing: 32, rankSpacing: 36, padding: 8 },
-      sequence: { useMaxWidth: true, mirrorActors: false, width: 110, height: 34, actorMargin: 48, boxMargin: 6, messageMargin: 28, noteMargin: 8 },
-      themeVariables: mermaidThemeVariables(tokens)
-    })
-    await mermaid.parse(source)
-    const { svg } = await mermaid.render(`v3-mermaid-${++seq}`, source)
-    return naturalWidth(svg)
+  const pele = await loadPele()
+  const { svg, width } = await pele.renderAsync(source, {
+    idPrefix: `v3-mermaid-${++seq}-`,
+    fontFamily: token(MERMAID_TEXT_TOKENS['--pele-font']) || 'sans-serif',
+    fontFamilyMono: token(MERMAID_TEXT_TOKENS['--pele-font-mono']) || undefined,
+    fontSize: MERMAID_FONT_SIZE,
+    links: false,
+    images: false,
+    autoDirection: false
   })
-  queue = job.catch(() => undefined)
-  return job
+  return withMinWidth(sanitizeDiagramSvg(svg), width)
 }
 
-function naturalWidth(svg: string): string {
-  const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"/.exec(svg)
-  if (!box) return svg
-  const width = Math.ceil(Number(box[1]))
-  return svg
-    .replace(/<svg([^>]*?)\swidth="100%"/, `<svg$1 width="${width}"`)
-    .replace(/max-width:\s*[\d.]+px;?/, `min-width:${Math.ceil(width * MERMAID_MIN_SCALE)}px;`)
+function resolvedColor(host: HTMLElement, name: string): string {
+  const probe = document.createElement('span')
+  probe.style.display = 'none'
+  probe.style.color = `var(${name})`
+  host.appendChild(probe)
+  const resolved = getComputedStyle(probe).color
+  probe.remove()
+  return resolved
+}
+
+function standaloneSvg(host: HTMLElement | null, svg: string): string {
+  if (!host) return svg
+  const computed = getComputedStyle(host)
+  const values: Partial<Record<MermaidThemeVariable, string>> = {}
+  for (const name of Object.keys(MERMAID_COLOR_TOKENS) as MermaidThemeVariable[]) values[name] = resolvedColor(host, name)
+  for (const name of Object.keys(MERMAID_TEXT_TOKENS) as MermaidThemeVariable[]) values[name] = computed.getPropertyValue(name)
+  return inlineMermaidTheme(svg, values)
 }
 
 export interface MermaidBlockProps {
@@ -91,17 +85,11 @@ export interface MermaidBlockProps {
 
 export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Element {
   const t = useT()
-  const [theme, setTheme] = useState(themeKey)
+  const host = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<{ svg?: string; error?: string }>(() => {
-    const cached = svgCache.get(`${themeKey()} ${source}`)
+    const cached = svgCache.get(source)
     return cached ? { svg: cached } : {}
   })
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => setTheme(themeKey()))
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    return () => observer.disconnect()
-  }, [])
 
   useEffect(() => {
     let alive = true
@@ -109,8 +97,7 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
       setState({ error: t('vb.mermaidTooLarge') })
       return undefined
     }
-    const cacheKey = `${theme} ${source}`
-    const cached = svgCache.get(cacheKey)
+    const cached = svgCache.get(source)
     if (cached) {
       setState({ svg: cached })
       return undefined
@@ -118,7 +105,7 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
     renderMermaid(source)
       .then((svg) => {
         if (svgCache.size >= SVG_CACHE_LIMIT) svgCache.delete(svgCache.keys().next().value as string)
-        svgCache.set(cacheKey, svg)
+        svgCache.set(source, svg)
         if (alive) setState({ svg })
       })
       .catch((error) => {
@@ -127,7 +114,7 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
     return () => {
       alive = false
     }
-  }, [source, theme, t])
+  }, [source, t])
 
   if (state.error) {
     return (
@@ -146,12 +133,12 @@ export function MermaidBlock({ source, fallback }: MermaidBlockProps): JSX.Eleme
   }
   return (
     <figure className="v3-visual v3-visual-mermaid" data-testid="v3-visual-mermaid">
-      <div className="v3-mermaid-svg" dangerouslySetInnerHTML={{ __html: state.svg }} />
+      <div ref={host} className="v3-mermaid-svg" style={themeStyle} dangerouslySetInnerHTML={{ __html: state.svg }} />
       <div className="v3-visual-actions">
         <SaveAsArtifactButton
           filename={`diagram-${shortHash(source)}.svg`}
           sourceKey={`mermaid:${shortHash(source)}`}
-          content={() => state.svg ?? ''}
+          content={() => standaloneSvg(host.current, state.svg ?? '')}
         />
       </div>
     </figure>
