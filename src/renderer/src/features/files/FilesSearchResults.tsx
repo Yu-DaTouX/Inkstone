@@ -1,6 +1,6 @@
 import { Fragment, type KeyboardEvent, type ReactElement, type RefObject } from 'react'
 import { Folder } from 'lucide-react'
-import { Button, Spinner } from '../../ui'
+import { Button, EmptyState, ListRow, Notice, Spinner } from '../../ui'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { toAbsolutePath } from './files-model'
 import { parseFilesQuery, resultDestination, type FilesSearchRow, type HighlightPart } from './files-search'
@@ -64,44 +64,52 @@ export function FilesSearchResults({
 }: FilesSearchResultsProps): ReactElement {
   const parsed = parseFilesQuery(raw)
   if (parsed.mode === 'content' && !parsed.query) {
-    return <p className="v3-files-note" data-testid="v3-files-search-hint">{text.contentHint}</p>
+    return <EmptyState className="v3-files-note" size="sm" title={text.contentHint} data-testid="v3-files-search-hint" />
   }
   if (search.mode === parsed.mode && search.error === 'pattern' && search.phase === 'done') {
     return (
-      <p className="v3-files-note v3-files-note--error" role="alert" data-testid="v3-files-search-pattern">
+      <Notice className="v3-files-note" tone="fail" variant="hint" role="alert" data-testid="v3-files-search-pattern">
         {text.contentPattern}
-      </p>
+      </Notice>
     )
   }
   if (search.phase !== 'done' && !search.rows.length) {
     return (
-      <div className="v3-files-note v3-files-note--busy" role="status" data-testid="v3-files-search-busy">
-        <Spinner size={12} />
-        <span>{text.searching}</span>
-      </div>
+      <EmptyState className="v3-files-note" size="sm" role="status" icon={<Spinner size="xs" />} title={text.searching} data-testid="v3-files-search-busy" />
     )
   }
   if (search.failed) {
     return (
-      <div className="v3-files-note v3-files-note--error" role="alert" data-testid="v3-files-search-failed">
-        <span>{failureText(text, search)}</span>
-        <Button size="sm" variant="ghost" onPress={onRetry} data-testid="v3-files-search-retry">
-          {text.retry}
-        </Button>
-      </div>
+      <EmptyState
+        className="v3-files-note"
+        size="sm"
+        role="alert"
+        title={failureText(text, search)}
+        action={
+          <Button size="sm" variant="ghost" onPress={onRetry} data-testid="v3-files-search-retry">
+            {text.retry}
+          </Button>
+        }
+        data-testid="v3-files-search-failed"
+      />
     )
   }
   if (!search.rows.length) {
     if (search.mode === 'content') {
-      return <p className="v3-files-note" data-testid="v3-files-search-empty">{text.contentEmpty}</p>
+      return <EmptyState className="v3-files-note" size="sm" title={text.contentEmpty} data-testid="v3-files-search-empty" />
     }
     return (
-      <div className="v3-files-note" data-testid="v3-files-search-empty">
-        <span>{text.searchEmpty}</span>
-        <Button size="sm" variant="ghost" onPress={onSearchContents} data-testid="v3-files-search-contents">
-          {text.searchInContents}
-        </Button>
-      </div>
+      <EmptyState
+        className="v3-files-note"
+        size="sm"
+        title={text.searchEmpty}
+        action={
+          <Button size="sm" variant="ghost" onPress={onSearchContents} data-testid="v3-files-search-contents">
+            {text.searchInContents}
+          </Button>
+        }
+        data-testid="v3-files-search-empty"
+      />
     )
   }
 
@@ -143,8 +151,7 @@ export function FilesSearchResults({
         if (row.kind === 'line') {
           return (
             <Fragment key={row.key}>
-              <button
-                type="button"
+              <ListRow
                 role="listitem"
                 className="v3-files-result v3-files-result--line"
                 title={`${toAbsolutePath(cwd, row.path)}:${row.line}`}
@@ -152,25 +159,27 @@ export function FilesSearchResults({
                 data-testid={`v3-files-result-${row.key}`}
                 onClick={() => onOpen(row)}
               >
-                <span className="v3-files-result-line">{row.line}</span>
-                <span className="v3-files-result-snippet">
-                  {row.lead ? (
-                    <span className="v3-files-result-lead" dir="rtl">
-                      <span dir="ltr">{row.lead}</span>
-                    </span>
-                  ) : null}
-                  {row.hit?.length ? (
-                    <span className="v3-files-result-hit">
-                      <Highlighted parts={row.hit} />
-                    </span>
-                  ) : null}
-                  {row.tail?.length ? (
-                    <span className="v3-files-result-tail">
-                      <Highlighted parts={row.tail} />
-                    </span>
-                  ) : null}
+                <span className="v3-files-result-body">
+                  <span className="v3-files-result-line">{row.line}</span>
+                  <span className="v3-files-result-snippet">
+                    {row.lead ? (
+                      <span className="v3-files-result-lead" dir="rtl">
+                        <span dir="ltr">{row.lead}</span>
+                      </span>
+                    ) : null}
+                    {row.hit?.length ? (
+                      <span className="v3-files-result-hit">
+                        <Highlighted parts={row.hit} />
+                      </span>
+                    ) : null}
+                    {row.tail?.length ? (
+                      <span className="v3-files-result-tail">
+                        <Highlighted parts={row.tail} />
+                      </span>
+                    ) : null}
+                  </span>
                 </span>
-              </button>
+              </ListRow>
               {row.more ? (
                 <p className="v3-files-content-more" data-testid={`v3-files-more-${row.path}`}>
                   {text.contentMore}
@@ -181,29 +190,24 @@ export function FilesSearchResults({
         }
         const matched = row.nameParts.some((part) => part.hit)
         return (
-          <button
+          <ListRow
             key={row.key}
-            type="button"
             role="listitem"
             className="v3-files-result"
             title={toAbsolutePath(cwd, row.path)}
-            data-current={currentRel === row.path ? '1' : undefined}
+            current={currentRel === row.path}
+            icon={row.dir ? <Folder size={14} /> : <FileTypeIcon name={row.name} size={14} />}
             data-group={search.mode === 'content' ? '1' : undefined}
             data-testid={`v3-files-result-${row.key}`}
             onClick={() => onOpen(row)}
           >
-            {row.dir ? (
-              <span className="v3-files-result-icon" aria-hidden>
-                <Folder size={14} />
+            <span className="v3-files-result-body">
+              <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
+                <Highlighted parts={row.nameParts} />
               </span>
-            ) : (
-              <FileTypeIcon name={row.name} className="v3-files-result-icon" />
-            )}
-            <span className="v3-files-result-name" data-matched={matched ? '1' : undefined}>
-              <Highlighted parts={row.nameParts} />
+              {row.parent ? <span className="v3-files-result-path">{row.parent}</span> : null}
             </span>
-            {row.parent ? <span className="v3-files-result-path">{row.parent}</span> : null}
-          </button>
+          </ListRow>
         )
       })}
       {limit ? (

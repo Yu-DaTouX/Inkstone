@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { useI18n, useT, type MessageKey } from '../../i18n'
 import { SHORTCUT_NOTE_GROUPS, type ShortcutNote } from '../../lib/host-actions'
-import { Dialog, Kbd, Modal, ModalOverlay } from '../../ui'
+import { CloseButton, CommandSurface, CommandSurfaceBody, CommandSurfaceFooter, CommandSurfaceHeader, KbdGroup } from '../../ui'
 import { useStore } from '../../state/store'
 import { applyShortcutOverrides, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import { shortcutText } from './shortcut-text'
@@ -14,13 +14,7 @@ export interface ShortcutSheetProps {
 
 function Keys({ tokens }: { tokens?: readonly string[] }): ReactElement | null {
   if (!tokens?.length) return null
-  return (
-    <span className="sheet-keys">
-      {tokens.map((token, index) => (
-        <Kbd key={`${token}-${index}`}>{token}</Kbd>
-      ))}
-    </span>
-  )
+  return <KbdGroup keys={tokens} />
 }
 
 function NoteRow({ label, note }: { label: string; note?: string }): ReactElement {
@@ -51,40 +45,41 @@ export function ShortcutSheet({ isOpen, onOpenChange }: ShortcutSheetProps): Rea
   const defs = applyShortcutOverrides(shortcutOverridesFromSettings(useStore.getState().settings))
 
   return (
-    <ModalOverlay className="sheet-overlay" isOpen onOpenChange={onOpenChange} isDismissable>
-      <Modal className="sheet-modal">
-        <Dialog className="sheet-dialog" body="flush" title={text.title} closeLabel={text.close}>
-          <p className="sheet-hint">{text.hint}</p>
-
-          <section className="sheet-group" aria-label={text.groups.global}>
-            <h3 className="sheet-group__title">{text.groups.global}</h3>
-            {defs.map((def) => (
-              <KeyRow key={def.id} label={text.purposes[def.purposeKey]} tokens={def.keys} />
-            ))}
-          </section>
-
-          {SHORTCUT_NOTE_GROUPS.map((group) => (
-            <section key={group.id} className="sheet-group" aria-label={text.groups[group.id]}>
-              <h3 className="sheet-group__title">{text.groups[group.id]}</h3>
-              {group.id === 'approval' ? (
-                <>
-                  <KeyRow label={text.approval.allow} tokens={['Alt', 'Y']} />
-                  <KeyRow label={text.approval.deny} tokens={['Alt', 'N']} />
-                </>
-              ) : null}
-              {group.rows.map((row: ShortcutNote, index) => {
-                const label = t(row.labelKey as MessageKey)
-                const note = row.noteKey ? t(row.noteKey as MessageKey) : undefined
-                return row.keys?.length ? (
-                  <KeyRow key={`${group.id}-${index}`} label={label} tokens={row.keys} />
-                ) : (
-                  <NoteRow key={`${group.id}-${index}`} label={label} note={note} />
-                )
-              })}
-            </section>
+    <CommandSurface isOpen onOpenChange={onOpenChange} aria-label={text.title} className="sheet-surface">
+      <CommandSurfaceHeader>
+        <h2 className="sheet-title">{text.title}</h2>
+        <CloseButton aria-label={text.close} onPress={() => onOpenChange(false)} />
+      </CommandSurfaceHeader>
+      <CommandSurfaceBody className="sheet-body">
+        <section className="sheet-group" aria-label={text.groups.global}>
+          <h3 className="sheet-group__title">{text.groups.global}</h3>
+          {defs.map((def) => (
+            <KeyRow key={def.id} label={text.purposes[def.purposeKey]} tokens={def.keys} />
           ))}
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+        </section>
+
+        {SHORTCUT_NOTE_GROUPS.map((group) => (
+          <section key={group.id} className="sheet-group" aria-label={text.groups[group.id]}>
+            <h3 className="sheet-group__title">{text.groups[group.id]}</h3>
+            {group.id === 'approval' ? (
+              <>
+                <KeyRow label={text.approval.allow} tokens={['Alt', 'Y']} />
+                <KeyRow label={text.approval.deny} tokens={['Alt', 'N']} />
+              </>
+            ) : null}
+            {group.rows.map((row: ShortcutNote, index) => {
+              const label = t(row.labelKey as MessageKey)
+              const note = row.noteKey ? t(row.noteKey as MessageKey) : undefined
+              return row.keys?.length ? (
+                <KeyRow key={`${group.id}-${index}`} label={label} tokens={row.keys} />
+              ) : (
+                <NoteRow key={`${group.id}-${index}`} label={label} note={note} />
+              )
+            })}
+          </section>
+        ))}
+      </CommandSurfaceBody>
+      <CommandSurfaceFooter>{text.hint}</CommandSurfaceFooter>
+    </CommandSurface>
   )
 }

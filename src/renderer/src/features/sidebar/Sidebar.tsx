@@ -3,10 +3,9 @@ import { Archive, PanelLeftClose, Search, Settings, FolderPlus, SquarePen, Unplu
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { useUiV3 } from '../../state/ui-v3'
-import { Avatar, Button, Dialog, EmptyState, IconButton, Modal, ModalOverlay, SearchField, StatusDot, type StatusDotKind } from '../../ui'
+import { Avatar, Button, Dialog, DialogFooter, EmptyState, IconButton, ListRow, Modal, ModalOverlay, SearchField, StatusDot, type StatusDotKind } from '../../ui'
 import { SESSION_FOLDER_DROP_EVENT, type SessionFolderDrop } from './session-drag'
 import { newSessionInPickedFolder } from '../../lib/new-session-in-folder'
-import { IconTip } from '../../app/IconTip'
 import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
@@ -18,6 +17,7 @@ import { ArchivedView } from './ArchivedView'
 import { ArchiveShelf, type ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectHeader } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
+import { SidebarTip } from './SidebarTip'
 import { sidebarText } from './sidebar-text'
 import { SideMore } from './SideMore'
 import { ContentMatches, useContentSearch } from './ContentMatches'
@@ -345,18 +345,20 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         </span>
         <div className="v3-side-top-actions">
           {flat ? null : (
-            <IconTip label={newChatLabel}>
-              <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
-                <SquarePen size={16} />
-              </IconButton>
-            </IconTip>
+            <IconButton aria-label={newChatLabel} tooltip={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
+              <SquarePen size={16} />
+            </IconButton>
           )}
           {onClose ? (
-            <IconTip label={text.toggleSidebar}>
-              <IconButton aria-label={preview ? own.pin : text.toggleSidebar} onPress={preview ? onPin : onClose} className="v3-side-close" data-testid="v3-side-close">
-                <PanelLeftClose size={16} />
-              </IconButton>
-            </IconTip>
+            <IconButton
+              aria-label={preview ? own.pin : text.toggleSidebar}
+              tooltip={text.toggleSidebar}
+              onPress={preview ? onPin : onClose}
+              className="v3-side-close"
+              data-testid="v3-side-close"
+            >
+              <PanelLeftClose size={16} />
+            </IconButton>
           ) : null}
         </div>
       </div>
@@ -370,16 +372,12 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           tools={
             <>
               <ProjectScopeButton groups={scopeGroups} scope={flatScope} onScope={setFlatScope} onNew={createInProject} onAddProject={createInFolder} />
-              <IconTip label={own.newChatInFolder}>
-                <IconButton aria-label={own.newChatInFolder} onPress={createInFolder} data-testid="v3-nav-new-chat-folder">
-                  <FolderPlus size={18} />
-                </IconButton>
-              </IconTip>
-              <IconTip label={newChatLabel}>
-                <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
-                  <SquarePen size={18} />
-                </IconButton>
-              </IconTip>
+              <IconButton aria-label={own.newChatInFolder} tooltip={own.newChatInFolder} onPress={createInFolder} data-testid="v3-nav-new-chat-folder">
+                <FolderPlus size={18} />
+              </IconButton>
+              <IconButton aria-label={newChatLabel} tooltip={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
+                <SquarePen size={18} />
+              </IconButton>
               <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} compact />
             </>
           }
@@ -399,18 +397,18 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                 data-testid="v3-search"
               />
             ) : (
-              <button type="button" className="ui-row ui-row--field" aria-label={own.searchHint} title={own.searchHint} onClick={onSearch} data-testid="v3-search-open">
-                <span className="ui-row__lead"><Search size={16} aria-hidden /></span>
-                <span className="ui-row__label">{own.search}</span>
-              </button>
+              <SidebarTip label={own.searchHint}>
+                <ListRow variant="field" icon={<Search size={16} />} aria-label={own.searchHint} onClick={onSearch} data-testid="v3-search-open">
+                  {own.search}
+                </ListRow>
+              </SidebarTip>
             )}
           </div>
 
           <div className="v3-side-entries">
-            <button type="button" className="ui-row" onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
-              <span className="ui-row__lead"><FolderPlus size={16} aria-hidden /></span>
-              <span className="ui-row__label">{own.newChatInFolder}</span>
-            </button>
+            <ListRow icon={<FolderPlus size={16} />} onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
+              {own.newChatInFolder}
+            </ListRow>
             <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} />
           </div>
         </>
@@ -474,9 +472,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                     )
                   })}
                   {!collapsed && group.list.length > GROUP_PAGE_SIZE ? (
-                    <button
-                      type="button"
-                      className="ui-row v3-show-more"
+                    <ListRow
+                      className="v3-show-more"
                       aria-expanded={page.expanded}
                       aria-label={
                         page.expanded
@@ -487,7 +484,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                       data-testid="v3-group-more"
                     >
                       {page.expanded ? own.showLess : own.showMore.replace('{n}', String(page.revealable))}
-                    </button>
+                    </ListRow>
                   ) : null}
                 </div>
               )
@@ -520,6 +517,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
               onOpen={openSession}
               onShowAll={() => setShowArchived(true)}
               renderRow={archivedSlimRow}
+              emphasized
             />
           ) : null}
         </div>
@@ -535,18 +533,15 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       ) : null}
 
       {showArchived ? (
-        <button
-          type="button"
-          className="ui-row v3-archive-toggle"
+        <ListRow
+          className="v3-archive-toggle"
+          icon={<Archive size={16} />}
           aria-pressed={showArchived}
           onClick={() => setShowArchived((value) => !value)}
           data-testid="v3-archive-toggle"
         >
-          <span className="ui-row__lead"><Archive size={16} aria-hidden /></span>
-          <span className="ui-row__label">
-            {showArchived ? own.archivedBack : own.archivedEntryCount.replace('{n}', String(archivedCount))}
-          </span>
-        </button>
+          {showArchived ? own.archivedBack : own.archivedEntryCount.replace('{n}', String(archivedCount))}
+        </ListRow>
       ) : null}
 
       <div className="v3-side-foot">
@@ -568,22 +563,18 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
             >
               {t('conn.retry')}
             </Button>
-            <IconTip label={own.connectionSettings}>
-              <IconButton aria-label={own.connectionSettings} onPress={() => useStore.getState().openSettings('devices')} data-testid="v3-conn-settings">
-                <Unplug size={16} />
-              </IconButton>
-            </IconTip>
+            <IconButton aria-label={own.connectionSettings} tooltip={own.connectionSettings} onPress={() => useStore.getState().openSettings('devices')} data-testid="v3-conn-settings">
+              <Unplug size={16} />
+            </IconButton>
           </>
         ) : null}
         <span className="v3-side-conn" role="status" aria-label={connLabel} title={connDetail ? `${connLabel}\n${connDetail}` : connLabel} data-testid="v3-side-conn">
           <StatusDot kind={connDot} />
         </span>
         {onSettings ? (
-          <IconTip label={text.settingsEntryHint}>
-            <IconButton aria-label={text.settingsEntryHint} onPress={onSettings} data-testid="v3-side-settings">
-              <Settings size={16} />
-            </IconButton>
-          </IconTip>
+          <IconButton aria-label={text.settingsEntryHint} tooltip={text.settingsEntryHint} onPress={onSettings} data-testid="v3-side-settings">
+            <Settings size={16} />
+          </IconButton>
         ) : null}
       </div>
 
@@ -594,7 +585,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
               <p className="v3-confirm-body">{own.moveDropBody.replace('{name}', folderDrop?.item.title ?? '')}</p>
               {folderDrop?.projectId ? <p className="v3-confirm-body">{own.moveDropOwnerOnly} · {own.moveDropOwnerOnlyHint}</p> : null}
               <p className="v3-confirm-body">{own.moveDropWithCwd} · {own.moveDropWithCwdHint.replace('{cwd}', folderDrop?.cwd ?? '')}</p>
-              <div className="v3-confirm-actions">
+              <DialogFooter>
                 <Button variant="secondary" onPress={() => setFolderDrop(null)}>{text.cancel}</Button>
                 {folderDrop?.projectId ? (
                   <Button variant="secondary" onPress={() => applyFolderDrop(false)} data-testid="v3-session-folder-drop-owner">
@@ -604,7 +595,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                 <Button variant="primary" onPress={() => applyFolderDrop(true)} data-testid="v3-session-folder-drop-cwd">
                   {own.moveDropWithCwd}
                 </Button>
-              </div>
+              </DialogFooter>
             </div>
           </Dialog>
         </Modal>

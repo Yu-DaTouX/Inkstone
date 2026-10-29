@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { SessionSearchHit } from '../../../../shared/ipc'
-import { EmptyState } from '../../ui'
+import { EmptyState, ListRow, Spinner } from '../../ui'
 import { CONTENT_SEARCH_LIMIT, focusSnippet, shouldSearchContent, splitSnippet, type ContentMatch } from './content-search'
 import type { SidebarText } from './sidebar-text'
 
@@ -65,27 +65,28 @@ export function ContentMatches({ query, state, matches, currentPath, text, onOpe
         <EmptyState size="sm" role="status" title={text.contentFailed} />
       ) : null}
       {state.status === 'searching' && matches.length === 0 ? (
-        <EmptyState size="sm" role="status" title={text.contentSearching} />
+        <EmptyState size="sm" role="status" icon={<Spinner size="sm" />} title={text.contentSearching} />
       ) : null}
       {matches.map((match) => (
-        <button
+        <ListRow
           key={match.path}
-          type="button"
-          className="ui-row v3-hit"
-          aria-current={currentPath === match.path ? 'true' : undefined}
+          className="v3-hit"
+          current={currentPath === match.path}
           onClick={() => onOpen(match)}
           data-testid="v3-content-match"
         >
-          <span className="v3-hit-head">
-            <span className="v3-hit-title">{match.title}</span>
-            {match.archived ? <span className="v3-hit-tag">{text.contentArchived}</span> : null}
+          <span className="v3-hit-body">
+            <span className="v3-hit-head">
+              <span className="v3-hit-title">{match.title}</span>
+              {match.archived ? <span className="v3-hit-tag">{text.contentArchived}</span> : null}
+            </span>
+            <span className="v3-hit-snippet">
+              {splitSnippet(focusSnippet(match.snippet, query), query).map((part, index) =>
+                part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>
+              )}
+            </span>
           </span>
-          <span className="v3-hit-snippet">
-            {splitSnippet(focusSnippet(match.snippet, query), query).map((part, index) =>
-              part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>
-            )}
-          </span>
-        </button>
+        </ListRow>
       ))}
     </div>
   )

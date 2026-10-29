@@ -10,7 +10,7 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, Folder } from 'lucide-react'
 import { IconButton, Menu, MenuItem, Popover, Separator } from '../../ui'
 import type { DirEntry } from '../../../../shared/ipc'
 import {
@@ -224,7 +224,7 @@ export function FileBreadcrumbs({
           size="sm"
           className="v3-files-crumb-browse"
           aria-label={text.browseFolders}
-          title={text.browseFolders}
+          tooltip={text.browseFolders}
           aria-haspopup="menu"
           aria-expanded={menu?.kind === 'children'}
           data-testid="v3-files-crumb-browse"
@@ -260,8 +260,7 @@ export function FileBreadcrumbs({
                 ))
               : [
                   menu.path === '' ? null : (
-                    <MenuItem key={PARENT_KEY} id={PARENT_KEY} textValue={text.backToParent}>
-                      <ArrowLeft size={12} aria-hidden />
+                    <MenuItem key={PARENT_KEY} id={PARENT_KEY} textValue={text.backToParent} icon={<ArrowLeft size={14} />}>
                       {text.backToParent}
                     </MenuItem>
                   ),
@@ -284,8 +283,8 @@ export function FileBreadcrumbs({
                         key={`${DIR_PREFIX}${child.path}`}
                         id={`${DIR_PREFIX}${child.path}`}
                         textValue={child.label}
+                        icon={<Folder size={14} />}
                       >
-                        <ChevronRight size={12} aria-hidden />
                         <span className="v3-files-crumb-menu-label" title={child.path}>
                           {child.label}
                         </span>

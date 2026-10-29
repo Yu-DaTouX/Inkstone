@@ -1,8 +1,8 @@
 import { useRef, useState, type JSX } from 'react'
-import { Archive, ChevronRight, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace, X } from 'lucide-react'
+import { Archive, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover } from '../../ui'
+import { Button, CollapsibleChevron, Dialog, DialogFooter, IconButton, InlineRename, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
@@ -56,7 +56,6 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
   const rowRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
-  const [draft, setDraft] = useState(group.label)
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
@@ -65,10 +64,8 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
 
   const notifyError = (message: string): void => useStore.getState().notify('error', message)
 
-  const commitRename = async (): Promise<void> => {
-    const name = draft.trim()
+  const commitRename = async (name: string): Promise<void> => {
     setRenaming(false)
-    if (!name || name === group.label) return
     const target = record ?? (await ensureProjectForCwd(group.cwd))
     if (!target) {
       notifyError(t('rail.renameFailed', { name }))
@@ -103,7 +100,6 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
         void createHere()
         return
       case 'rename':
-        setDraft(group.label)
         setRenaming(true)
         return
       case 'directory':
@@ -132,22 +128,11 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
       }}
     >
       {renaming ? (
-        <input
-          className="ui-input v3-grp-rename"
+        <InlineRename
           aria-label={t('rail.renameProject')}
-          value={draft}
-          autoFocus
-          onFocus={(event) => event.currentTarget.select()}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => void commitRename()}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return
-            if (event.key === 'Enter') void commitRename()
-            else if (event.key === 'Escape') {
-              event.preventDefault()
-              setRenaming(false)
-            }
-          }}
+          defaultValue={group.label}
+          onCommit={(name) => void commitRename(name)}
+          onCancel={() => setRenaming(false)}
           data-testid="v3-project-rename"
         />
       ) : (
@@ -165,7 +150,7 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
             {clearLabel ? (
               <X size={12} aria-hidden className="v3-grp-clear" />
             ) : (
-              <ChevronRight size={12} aria-hidden className="v3-grp-chev" data-open={collapsed ? undefined : '1'} />
+              <CollapsibleChevron expanded={!collapsed} className="v3-grp-chev" />
             )}
           </button>
         </SidebarTip>
@@ -173,6 +158,7 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
       {manageable && !renaming ? (
         <span className="v3-grp-actions">
           <IconButton
+            size="xs"
             variant="ghost"
             className="v3-grp-more"
             aria-label={own.projectMenu}
@@ -182,6 +168,7 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
             <MoreHorizontal size={14} />
           </IconButton>
           <IconButton
+            size="xs"
             variant="ghost"
             className="v3-grp-add"
             aria-label={`${text.newInProject} · ${label}`}
@@ -196,28 +183,22 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
       {manageable ? (
         <Popover triggerRef={rowRef} isOpen={menuOpen} onOpenChange={setMenuOpen} placement="bottom end" offset={4}>
           <Menu aria-label={own.projectMenu} autoFocus="first" onAction={(key) => run(key as MenuKey)} onClose={() => setMenuOpen(false)} data-testid="v3-project-menu">
-            <MenuItem id="new" textValue={text.newInProject}>
-              <Plus size={14} aria-hidden />
+            <MenuItem id="new" textValue={text.newInProject} icon={<Plus size={14} />}>
               {text.newInProject}
             </MenuItem>
-            <MenuItem id="rename" textValue={t('rail.renameProject')}>
-              <Pencil size={14} aria-hidden />
+            <MenuItem id="rename" textValue={t('rail.renameProject')} icon={<Pencil size={14} />}>
               {t('rail.renameProject')}
             </MenuItem>
-            <MenuItem id="directory" textValue={t('rail.changeDirectory')}>
-              <Replace size={14} aria-hidden />
+            <MenuItem id="directory" textValue={t('rail.changeDirectory')} icon={<Replace size={14} />}>
               {t('rail.changeDirectory')}
             </MenuItem>
-            <MenuItem id="reveal" textValue={t('rail.reveal')}>
-              <FolderOpen size={14} aria-hidden />
+            <MenuItem id="reveal" textValue={t('rail.reveal')} icon={<FolderOpen size={14} />}>
               {t('rail.reveal')}
             </MenuItem>
-            <MenuItem id="copy" textValue={t('rail.copyPath')}>
-              <Link size={14} aria-hidden />
+            <MenuItem id="copy" textValue={t('rail.copyPath')} icon={<Link size={14} />}>
               {t('rail.copyPath')}
             </MenuItem>
-            <MenuItem id="archive" textValue={t('rail.removeProject')} className="v3-menu-danger">
-              <Archive size={14} aria-hidden />
+            <MenuItem id="archive" textValue={t('rail.removeProject')} tone="danger" icon={<Archive size={14} />}>
               {t('rail.removeProject')}
             </MenuItem>
           </Menu>
@@ -259,7 +240,7 @@ export function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; on
     <div className="v3-confirm">
       <p className="v3-confirm-body">{t('rail.removeProjectExplain', { name })}</p>
       {error ? <Notice tone="fail" compact>{error}</Notice> : null}
-      <div className="v3-confirm-actions">
+      <DialogFooter>
         <Button variant="secondary" onPress={onCancel} isDisabled={busy}>{text.cancel}</Button>
         <Button
           variant="danger"
@@ -277,7 +258,7 @@ export function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; on
         >
           {busy ? t('rail.removingProject') : t('rail.removeProjectAction')}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   )
 }
@@ -353,12 +334,12 @@ export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectR
                 </span>
               </label>
               {error ? <Notice tone="fail" compact data-testid="v3-project-directory-error">{error}</Notice> : null}
-              <div className="v3-confirm-actions">
+              <DialogFooter>
                 <Button variant="secondary" onPress={close}>{text.cancel}</Button>
                 <Button variant="primary" isDisabled={busy || !cwd.trim()} onPress={() => void save(close)} data-testid="v3-project-directory-save">
                   {busy ? t('rail.directorySaving') : t('rail.directorySave')}
                 </Button>
-              </div>
+              </DialogFooter>
             </div>
           )}
         </Dialog>

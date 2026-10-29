@@ -1,154 +1,32 @@
-@layer patterns {
-  .cmd-overlay {
-    align-items: flex-start;
-    padding-top: 12vh;
-  }
-
-  .cmd-modal {
-    width: min(600px, calc(100vw - var(--s-32)));
-    max-height: min(70vh, 520px);
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    box-shadow: var(--shadow-pop);
-  }
-
-  .cmd-option {
-    border-radius: var(--r-sm);
-    color: var(--fg);
-    cursor: pointer;
-  }
-  .cmd-option[data-active='true'] {
-    background: var(--sel);
-  }
-  .cmd-option--disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
-
-  .cmd-option__meta,
-  .cmd-option__reason {
-    color: var(--fg3);
-  }
-
-  .cmd-group__label {
-    color: var(--fg3);
-  }
-
-  .cmd-prefix-hint {
-    color: var(--fg3);
-  }
-
-  .cmd-search__icon {
-    color: var(--fg3);
-  }
-
-  .cmd-clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--size-icon);
-    height: var(--size-icon);
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-full);
-    corner-shape: round;
-    background: transparent;
-    color: var(--fg3);
-    cursor: pointer;
-  }
-  .cmd-clear:hover {
-    color: var(--fg);
-    background: var(--hover);
-  }
-
-  .cmd-clear:active {
-    color: var(--fg);
-    background: var(--press);
-  }
-}
-
 @layer features {
-  .cmd-search {
-    display: flex;
-    align-items: center;
-    gap: var(--s-8);
-    padding: var(--s-12) var(--s-16);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .cmd-input {
-    flex: 1;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    outline: none;
-    background: transparent;
-    color: var(--fg);
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
-  }
-  .cmd-input::placeholder {
-    color: var(--fg3);
-  }
-
-  .cmd-busy {
-    flex: none;
-  }
-
-  .cmd-prefix-hint {
-    padding: var(--s-6) var(--s-16) 0;
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-  }
-
-  .cmd-list {
-    min-height: 0;
-    max-height: 380px;
-    overflow-y: auto;
-    padding: var(--s-6);
-  }
-
   .cmd-group + .cmd-group {
     margin-top: var(--s-6);
   }
 
   .cmd-group__label {
     padding: var(--s-6) var(--s-8) var(--s-2);
+    color: var(--fg3);
     font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
   }
 
   .cmd-option {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
-    gap: var(--s-8);
-    padding: var(--s-8) var(--s-10);
+    color: var(--fg);
+    cursor: pointer;
   }
 
-  .cmd-option__label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: var(--t-body) / var(--t-body-lh) var(--font-ui);
+  .cmd-option[aria-disabled='true'] {
+    cursor: default;
   }
 
-  .cmd-option__meta,
-  .cmd-option__reason {
-    font: var(--t-footnote) / var(--t-footnote-lh) var(--font-ui);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .cmd-option__meta {
     max-width: 18em;
-  }
-
-  .cmd-option__keys {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .cmd-error {
-    margin: var(--s-8) var(--s-12) var(--s-12);
+    flex: none;
+    margin: var(--s-4) var(--s-12) var(--s-8);
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
-import { Button, Dialog, Input, Modal, ModalOverlay, TextField } from '../../ui'
+import { Button, Dialog, DialogFooter, Input, Modal, ModalOverlay, Notice, TextField } from '../../ui'
 import { customSnoozeUntil, localDateValue, localTimeValue } from './session-snooze'
 
 const HOUR_MS = 3_600_000
@@ -77,18 +77,18 @@ export function CustomSnoozeDialog({ open, onOpenChange, onSubmit }: CustomSnooz
                 </TextField>
               </div>
               {invalid ? (
-                <p className="v3-snooze-error" role="alert">
+                <Notice tone="fail" variant="hint" role="alert">
                   {t('rail.snoozeCustomInvalid')}
-                </p>
+                </Notice>
               ) : null}
-              <div className="v3-confirm-actions">
+              <DialogFooter>
                 <Button variant="secondary" onPress={close}>
                   {t('ui.cancel')}
                 </Button>
                 <Button type="submit" variant="primary" data-testid="v3-snooze-confirm">
                   {t('rail.snoozeCustomConfirm')}
                 </Button>
-              </div>
+              </DialogFooter>
             </form>
           )}
         </Dialog>

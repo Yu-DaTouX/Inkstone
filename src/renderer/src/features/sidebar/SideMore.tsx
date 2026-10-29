@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Clock, Layers, MoreHorizontal, Users, type LucideIcon } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useRunsV3 } from '../../state/runs-v3'
-import { IconButton, Menu, MenuItem, Popover, StatusDot, StatusSlot } from '../../ui'
-import { IconTip } from '../../app/IconTip'
+import { IconButton, ListRow, Menu, MenuItem, Popover, StatusDot, StatusSlot } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { collabText } from '../collab/collab-text'
 import { usePendingPairInvite } from '../collab/pending-invite'
@@ -68,15 +67,22 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
   const renderRow = ({ id, attention }: SideMoreEntry): ReactElement => {
     const { label, Icon, testId } = meta[id]
     return (
-      <button key={id} type="button" className="ui-row" onClick={handlers[id]} aria-current={route === id ? 'page' : undefined} data-testid={testId}>
-        <span className="ui-row__lead"><Icon size={16} aria-hidden /></span>
-        <span className="ui-row__label">{label}</span>
-        {attention ? (
-          <StatusSlot className="v3-side-entry-mark" label={attention === 'awaiting' ? own.entryAwaiting : own.entryRunning}>
-            <StatusDot kind={attention === 'awaiting' ? 'awaiting' : 'running'} />
-          </StatusSlot>
-        ) : null}
-      </button>
+      <ListRow
+        key={id}
+        icon={<Icon size={16} />}
+        trailing={
+          attention ? (
+            <StatusSlot label={attention === 'awaiting' ? own.entryAwaiting : own.entryRunning}>
+              <StatusDot kind={attention === 'awaiting' ? 'awaiting' : 'running'} />
+            </StatusSlot>
+          ) : null
+        }
+        onClick={handlers[id]}
+        aria-current={route === id ? 'page' : undefined}
+        data-testid={testId}
+      >
+        {label}
+      </ListRow>
     )
   }
 
@@ -85,24 +91,23 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
     const current = entries.some((entry) => entry.id === route)
     return (
       <>
-        <IconTip label={text.more}>
-          <IconButton
-            ref={moreRef}
-            aria-label={text.more}
-            aria-haspopup="menu"
-            className="v3-side-more-btn"
-            data-selected={current ? '' : undefined}
-            onPress={() => setOpen(true)}
-            data-testid="v3-side-more"
-          >
-            <MoreHorizontal size={18} />
-            {attention ? (
-              <StatusSlot className="v3-side-more-mark" label={attention === 'awaiting' ? own.entryAwaiting : own.entryRunning}>
-                <StatusDot kind={attention === 'awaiting' ? 'awaiting' : 'running'} />
-              </StatusSlot>
-            ) : null}
-          </IconButton>
-        </IconTip>
+        <IconButton
+          ref={moreRef}
+          aria-label={text.more}
+          tooltip={text.more}
+          aria-haspopup="menu"
+          className="v3-side-more-btn"
+          data-selected={current ? '' : undefined}
+          onPress={() => setOpen(true)}
+          data-testid="v3-side-more"
+        >
+          <MoreHorizontal size={18} />
+          {attention ? (
+            <StatusSlot className="v3-side-more-mark" label={attention === 'awaiting' ? own.entryAwaiting : own.entryRunning}>
+              <StatusDot kind={attention === 'awaiting' ? 'awaiting' : 'running'} />
+            </StatusSlot>
+          ) : null}
+        </IconButton>
         <Popover triggerRef={moreRef} isOpen={open} onOpenChange={setOpen} placement="bottom end" offset={4}>
           <Menu
             aria-label={text.more}
@@ -117,8 +122,13 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
             {entries.map(({ id, attention: mark }) => {
               const { label, Icon, testId } = meta[id]
               return (
-                <MenuItem key={id} id={id} textValue={label} data-testid={testId}>
-                  <Icon size={14} aria-hidden />
+                <MenuItem
+                  key={id}
+                  id={id}
+                  textValue={label}
+                  icon={<Icon size={14} />}
+                  data-testid={testId}
+                >
                   {label}
                   {mark ? <StatusDot kind={mark === 'awaiting' ? 'awaiting' : 'running'} /> : null}
                 </MenuItem>
@@ -135,10 +145,9 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
       {layout.shown.map(renderRow)}
       {layout.folded.length > 0 ? (
         <>
-          <button
+          <ListRow
             ref={moreRef}
-            type="button"
-            className="ui-row"
+            icon={<MoreHorizontal size={16} />}
             aria-haspopup="menu"
             aria-expanded={open}
             data-menu={open ? '1' : undefined}
@@ -146,9 +155,8 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
             onClick={() => setOpen(true)}
             data-testid="v3-side-more"
           >
-            <span className="ui-row__lead"><MoreHorizontal size={16} aria-hidden /></span>
-            <span className="ui-row__label">{text.more}</span>
-          </button>
+            {text.more}
+          </ListRow>
           <Popover triggerRef={moreRef} isOpen={open} onOpenChange={setOpen} placement="bottom start" offset={4}>
             <Menu
               aria-label={text.more}
@@ -163,8 +171,7 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: 
               {layout.folded.map(({ id }) => {
                 const { label, Icon, testId } = meta[id]
                 return (
-                  <MenuItem key={id} id={id} textValue={label} data-testid={testId}>
-                    <Icon size={14} aria-hidden />
+                  <MenuItem key={id} id={id} textValue={label} icon={<Icon size={14} />} data-testid={testId}>
                     {label}
                   </MenuItem>
                 )

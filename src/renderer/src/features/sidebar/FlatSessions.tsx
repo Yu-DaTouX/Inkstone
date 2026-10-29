@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
-import { Archive, Check, ChevronRight, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
+import { Archive, Check, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
 import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField } from '../../ui'
-import { IconTip } from '../../app/IconTip'
+import { Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
 import { FLAT_PAGE_SIZE, compactAgo, sessionProjectLabel, isGlobalGroup, sessionActivityAt, type FlatEntry, type SidebarGroup } from './sidebar-model'
@@ -185,36 +184,36 @@ function ScopeRow({
   const manageable = !!group.cwd && !isGlobalGroup(group)
   return (
     <div ref={rowRef} className="v3-scope-row" data-menu={menuOpen ? '1' : undefined}>
-      <button type="button" className="ui-row v3-scope-pick" aria-pressed={active} onClick={onSelect} data-testid="v3-project-scope-item">
-        <ProjectBadge label={name} global={isGlobalGroup(group)} />
-        <span className="v3-scope-item">{name}</span>
-        {active ? <Check size={14} aria-hidden /> : null}
-      </button>
+      <ListRow
+        className="v3-scope-pick"
+        aria-pressed={active}
+        icon={<ProjectBadge label={name} global={isGlobalGroup(group)} />}
+        trailing={active ? <Check size={14} aria-hidden /> : null}
+        onClick={onSelect}
+        data-testid="v3-project-scope-item"
+      >
+        {name}
+      </ListRow>
       {manageable ? (
         <>
-          <IconButton size="sm" variant="ghost" className="v3-scope-more" aria-label={`${own.projectMenu} · ${name}`} onPress={() => setMenuOpen(true)} data-testid="v3-project-scope-more">
+          <IconButton size="xs" variant="ghost" className="v3-scope-more" aria-label={`${own.projectMenu} · ${name}`} onPress={() => setMenuOpen(true)} data-testid="v3-project-scope-more">
             <MoreHorizontal size={14} />
           </IconButton>
           <Popover triggerRef={rowRef} isOpen={menuOpen} onOpenChange={setMenuOpen} placement="end top" offset={4}>
             <Menu aria-label={own.projectMenu} autoFocus="first" onAction={(key) => onAction(key as ScopeAction)} onClose={() => setMenuOpen(false)} data-testid="v3-project-scope-actions">
-              <MenuItem id="new" textValue={text.newInProject}>
-                <Plus size={14} aria-hidden />
+              <MenuItem id="new" textValue={text.newInProject} icon={<Plus size={14} />}>
                 {text.newInProject}
               </MenuItem>
-              <MenuItem id="reveal" textValue={t('rail.reveal')}>
-                <FolderOpen size={14} aria-hidden />
+              <MenuItem id="reveal" textValue={t('rail.reveal')} icon={<FolderOpen size={14} />}>
                 {t('rail.reveal')}
               </MenuItem>
-              <MenuItem id="copy" textValue={t('rail.copyPath')}>
-                <Link size={14} aria-hidden />
+              <MenuItem id="copy" textValue={t('rail.copyPath')} icon={<Link size={14} />}>
                 {t('rail.copyPath')}
               </MenuItem>
-              <MenuItem id="directory" textValue={t('rail.changeDirectory')}>
-                <Replace size={14} aria-hidden />
+              <MenuItem id="directory" textValue={t('rail.changeDirectory')} icon={<Replace size={14} />}>
                 {t('rail.changeDirectory')}
               </MenuItem>
-              <MenuItem id="archive" textValue={t('rail.removeProject')} className="v3-menu-danger">
-                <Archive size={14} aria-hidden />
+              <MenuItem id="archive" textValue={t('rail.removeProject')} tone="danger" icon={<Archive size={14} />}>
                 {t('rail.removeProject')}
               </MenuItem>
             </Menu>
@@ -275,40 +274,43 @@ export function ProjectScopeButton({
 
   return (
     <>
-      <IconTip label={label}>
-        <IconButton
-          ref={triggerRef}
-          aria-label={label}
-          className="v3-scope-btn"
-          data-active={current ? '1' : undefined}
-          onPress={() => setOpen(true)}
-          data-testid="v3-project-scope"
-        >
-          {current ? <ProjectBadge label={current.label || text.projectFallback} global={isGlobalGroup(current)} /> : <ListFilter size={18} />}
-        </IconButton>
-      </IconTip>
+      <IconButton
+        ref={triggerRef}
+        aria-label={label}
+        tooltip={label}
+        className="v3-scope-btn"
+        data-active={current ? '1' : undefined}
+        onPress={() => setOpen(true)}
+        data-testid="v3-project-scope"
+      >
+        {current ? <ProjectBadge label={current.label || text.projectFallback} global={isGlobalGroup(current)} /> : <ListFilter size={18} />}
+      </IconButton>
       <Popover triggerRef={triggerRef} isOpen={open} onOpenChange={setOpen} placement="bottom end" offset={4}>
         <div className="v3-scope-pop" role="group" aria-label={own.projectScope} data-testid="v3-project-scope-menu">
-          <button type="button" className="ui-row v3-scope-pick" aria-pressed={!current} onClick={() => pick(null)} data-testid="v3-project-scope-all">
-            <ListFilter size={14} aria-hidden />
-            <span className="v3-scope-item">{own.allProjects}</span>
-            {current ? null : <Check size={14} aria-hidden />}
-          </button>
+          <ListRow
+            className="v3-scope-pick"
+            aria-pressed={!current}
+            icon={<ListFilter size={14} />}
+            trailing={current ? null : <Check size={14} aria-hidden />}
+            onClick={() => pick(null)}
+            data-testid="v3-project-scope-all"
+          >
+            {own.allProjects}
+          </ListRow>
           {groups.map((group) => (
             <ScopeRow key={group.key} group={group} active={group.key === scope} onSelect={() => pick(group.key)} onAction={(action) => void run(group, action)} />
           ))}
-          <button
-            type="button"
-            className="ui-row v3-scope-pick v3-scope-add"
+          <ListRow
+            className="v3-scope-pick v3-scope-add"
+            icon={<FolderPlus size={14} />}
             onClick={() => {
               setOpen(false)
               onAddProject()
             }}
             data-testid="v3-project-scope-add"
           >
-            <FolderPlus size={14} aria-hidden />
-            <span className="v3-scope-item">{own.newChatInFolder}</span>
-          </button>
+            {own.newChatInFolder}
+          </ListRow>
         </div>
       </Popover>
       {pending?.kind === 'directory' ? <ProjectDirectoryDialog project={pending.record} onClose={() => setPending(null)} /> : null}
@@ -464,37 +466,32 @@ export function WorkingShelf({
   if (!entries.length) return null
   return (
     <section className="v3-shelf v3-shelf--working" data-open={open ? '1' : undefined} aria-label={own.workingShelf} data-testid="v3-working-shelf">
-      <button
-        type="button"
-        className="v3-shelf-head"
-        aria-expanded={open}
-        onClick={() =>
-          setOpen((value) => {
-            writeShelfOpen(WORKING_OPEN_KEY, !value)
-            return !value
-          })
-        }
-        data-testid="v3-working-shelf-toggle"
+      <Collapsible
+        className="v3-shelf-fold"
+        isExpanded={open}
+        onExpandedChange={(next) => {
+          writeShelfOpen(WORKING_OPEN_KEY, next)
+          setOpen(next)
+        }}
       >
-        <span className="v3-shelf-label">{own.workingShelf}</span>
-        <span className="v3-shelf-rule" aria-hidden />
-        <span className="v3-shelf-count">{entries.length}</span>
-        <ChevronRight className="v3-shelf-chev" size={12} aria-hidden />
-      </button>
-      {shown.length ? (
-        <div className="v3-shelf-list">
-          {shown.map((entry) => (
-            <FlatRow
-              key={entry.session.path}
-              entry={entry}
-              row={rowState(entry.session)}
-              now={now}
-              branch={branches.get(entry.session.cwd)}
-              onOpen={() => onOpen(entry.session)}
-            />
-          ))}
-        </div>
-      ) : null}
+        <CollapsibleHeader chevron="end" tone="emphasized" accessory={entries.length} data-testid="v3-working-shelf-toggle">
+          {own.workingShelf}
+        </CollapsibleHeader>
+        {shown.length ? (
+          <div className="v3-shelf-list">
+            {shown.map((entry) => (
+              <FlatRow
+                key={entry.session.path}
+                entry={entry}
+                row={rowState(entry.session)}
+                now={now}
+                branch={branches.get(entry.session.cwd)}
+                onOpen={() => onOpen(entry.session)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </Collapsible>
     </section>
   )
 }
@@ -565,9 +562,9 @@ export function FlatSessionList({
         {draggingPinned ? <div className="v3-zone-drop" aria-hidden>{own.unpinDrop}</div> : null}
         {shown.map(render)}
         {hidden > 0 ? (
-          <button type="button" className="ui-row v3-show-more" onClick={() => setLimit((value) => value + FLAT_PAGE_SIZE)} data-testid="v3-flat-more">
+          <ListRow className="v3-show-more" onClick={() => setLimit((value) => value + FLAT_PAGE_SIZE)} data-testid="v3-flat-more">
             {own.showMore.replace('{n}', String(Math.min(hidden, FLAT_PAGE_SIZE)))}
-          </button>
+          </ListRow>
         ) : null}
       </div>
     </div>

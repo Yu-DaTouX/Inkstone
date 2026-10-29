@@ -4,7 +4,7 @@ import { effectiveShortcutKeys, SHORTCUTS, shortcutOverridesFromSettings, type S
 import { useUiV3 } from '../../state/ui-v3'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { cx } from '../../ui'
+import { CommandSurfaceBody, CommandSurfaceHeader, CommandSurfacePanel, ListRow } from '../../ui'
 import { heldModifiersReleased, initialSwitcherIndex, relativeAge, stepSwitcherIndex, switcherSessions } from './session-switcher-model'
 import './session-switcher.css'
 
@@ -124,31 +124,32 @@ export function SessionSwitcher({ control }: { control: SessionSwitcherControl }
   const label = lang === 'en-US' ? 'Switch session' : '切换会话'
   return (
     <div className="session-switcher" data-testid="session-switcher">
-      <div className="session-switcher__panel" role="listbox" aria-label={label}>
-        <div className="session-switcher__title">{label}</div>
-        {state.items.map((item, index) => {
-          const current = item.path === currentPath
-          return (
-            <div
-              key={item.path}
-              role="option"
-              aria-selected={index === state.index}
-              data-selected={index === state.index ? '' : undefined}
-              className={cx('ui-row', 'session-switcher__row')}
-              data-testid="session-switcher-item"
-              onPointerDown={(event) => {
-                event.preventDefault()
-                control.pick(index)
-              }}
-            >
-              <span className="ui-row__label">{manualTitles[item.id] ?? titles[item.id] ?? item.title}</span>
-              <span className="session-switcher__meta">
-                {current ? (lang === 'en-US' ? 'Current' : '当前') : relativeAge(item.lastOpenedAt ?? item.lastActivityAt ?? item.updatedAt, now, lang)}
-              </span>
-            </div>
-          )
-        })}
-      </div>
+      <CommandSurfacePanel className="session-switcher__panel">
+        <CommandSurfaceHeader className="session-switcher__title">{label}</CommandSurfaceHeader>
+        <CommandSurfaceBody role="listbox" aria-label={label}>
+          {state.items.map((item, index) => {
+            const current = item.path === currentPath
+            return (
+              <ListRow
+                key={item.path}
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === state.index}
+                data-selected={index === state.index ? '' : undefined}
+                className="session-switcher__row"
+                trailing={current ? (lang === 'en-US' ? 'Current' : '当前') : relativeAge(item.lastOpenedAt ?? item.lastActivityAt ?? item.updatedAt, now, lang)}
+                data-testid="session-switcher-item"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  control.pick(index)
+                }}
+              >
+                {manualTitles[item.id] ?? titles[item.id] ?? item.title}
+              </ListRow>
+            )
+          })}
+        </CommandSurfaceBody>
+      </CommandSurfacePanel>
     </div>
   )
 }

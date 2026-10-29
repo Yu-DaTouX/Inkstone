@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
-import { ChevronRight } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import { Collapsible, CollapsibleHeader, ListRow } from '../../ui'
 import type { SessionSummary } from '../../../../shared/ipc'
 import type { ModelRef } from '../../../../shared/model-brand'
 import { useSessionDrag } from './session-drag'
@@ -42,13 +42,15 @@ export function ArchiveShelf({
   total,
   onOpen,
   onShowAll,
-  renderRow
+  renderRow,
+  emphasized = false
 }: {
   rows: readonly ArchiveShelfRow[]
   total: number
   onOpen: (item: SessionSummary) => void
   onShowAll: () => void
   renderRow?: (row: ArchiveShelfRow) => JSX.Element
+  emphasized?: boolean
 }): JSX.Element {
   const { lang } = useI18n()
   const own = sidebarText(lang)
@@ -59,11 +61,9 @@ export function ArchiveShelf({
   const draggingArchived = dragging && rows.some((row) => dragSource === `session:${row.item.path}`)
   const showHint = dragging && !draggingArchived
 
-  const toggle = (): void => {
-    setOpen((value) => {
-      writeOpen(!value)
-      return !value
-    })
+  const toggle = (next: boolean): void => {
+    writeOpen(next)
+    setOpen(next)
   }
 
   const shown = open ? rows.slice(0, limit) : rows.filter((row) => row.isCurrent)
@@ -78,48 +78,47 @@ export function ArchiveShelf({
       aria-label={own.archiveShelf}
       data-testid="v3-archive-shelf"
     >
-      <button
-        type="button"
-        className="v3-shelf-head"
-        aria-expanded={open}
-        onClick={toggle}
-        data-testid="v3-archive-shelf-toggle"
-      >
-        <span className="v3-shelf-label">{own.archiveShelf}</span>
-        <span className="v3-shelf-rule" aria-hidden />
-        <span className="v3-shelf-count">{total}</span>
-        <ChevronRight className="v3-shelf-chev" size={12} aria-hidden />
-      </button>
-      {showHint ? (
-        <div className="v3-shelf-drop" aria-hidden>
-          {own.archiveShelfDrop}
-        </div>
-      ) : null}
-      {shown.length || open ? (
-        <div className="v3-shelf-list">
-          {shown.map((row) => renderRow ? renderRow(row) : (
-            <SidebarRow
-              key={row.item.path}
-              item={row.item}
-              title={row.title}
-              isCurrent={row.isCurrent}
-              status={row.status}
-              code={row.code}
-              onOpen={() => onOpen(row.item)}
-            />
-          ))}
-          {open && hidden > 0 ? (
-            <button type="button" className="ui-row v3-show-more" onClick={() => setLimit((value) => value + ARCHIVE_SHELF_PAGE)} data-testid="v3-archive-shelf-more">
-              {own.showMore.replace('{n}', String(Math.min(hidden, ARCHIVE_SHELF_PAGE)))}
-            </button>
-          ) : null}
-          {open ? (
-            <button type="button" className="ui-row v3-show-more" onClick={onShowAll} data-testid="v3-archive-all">
-              {own.archiveShelfAll}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      <Collapsible className="v3-shelf-fold" isExpanded={open} onExpandedChange={toggle}>
+        <CollapsibleHeader
+          chevron="end"
+          rule={!emphasized}
+          tone={emphasized ? 'emphasized' : 'muted'}
+          accessory={total}
+          data-testid="v3-archive-shelf-toggle"
+        >
+          {own.archiveShelf}
+        </CollapsibleHeader>
+        {showHint ? (
+          <div className="v3-shelf-drop" aria-hidden>
+            {own.archiveShelfDrop}
+          </div>
+        ) : null}
+        {shown.length || open ? (
+          <div className="v3-shelf-list">
+            {shown.map((row) => renderRow ? renderRow(row) : (
+              <SidebarRow
+                key={row.item.path}
+                item={row.item}
+                title={row.title}
+                isCurrent={row.isCurrent}
+                status={row.status}
+                code={row.code}
+                onOpen={() => onOpen(row.item)}
+              />
+            ))}
+            {open && hidden > 0 ? (
+              <ListRow className="v3-show-more" onClick={() => setLimit((value) => value + ARCHIVE_SHELF_PAGE)} data-testid="v3-archive-shelf-more">
+                {own.showMore.replace('{n}', String(Math.min(hidden, ARCHIVE_SHELF_PAGE)))}
+              </ListRow>
+            ) : null}
+            {open ? (
+              <ListRow className="v3-show-more" onClick={onShowAll} data-testid="v3-archive-all">
+                {own.archiveShelfAll}
+              </ListRow>
+            ) : null}
+          </div>
+        ) : null}
+      </Collapsible>
     </section>
   )
 }

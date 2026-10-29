@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { AlarmClock, GitBranch, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton, StatusSlot } from '../../ui'
+import { IconButton, InlineRename, ListRow, StatusSlot } from '../../ui'
 import { ModelBot, type BotMood } from '../../patterns/ModelBot'
 import { modelBrand, type ModelRef } from '../../../../shared/model-brand'
 import { v3Text } from '../../app/v3-text'
@@ -69,7 +69,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renamePending, setRenamePending] = useState(false)
-  const [draft, setDraft] = useState(title)
+  const settledByKey = useRef(false)
   const dragging = useSessionDrag((s) => s.source === `session:${item.path}`)
 
   useEffect(() => {
@@ -84,7 +84,6 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
         return
       }
       setRenamePending(false)
-      setDraft(title)
       setRenaming(true)
     }
     frame = requestAnimationFrame(wait)
@@ -126,11 +125,16 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
     requestAnimationFrame(() => rowRef.current?.querySelector<HTMLElement>('.v3-row')?.focus())
   }
 
-  const commitRename = (): void => {
-    const name = draft.trim()
+  const finishRename = (): void => {
     setRenaming(false)
-    if (!name || name === title) return
-    void useStore.getState().setManualTitle(item.id, name)
+    if (!settledByKey.current) return
+    settledByKey.current = false
+    restoreRowFocus()
+  }
+
+  const noteRenameKey = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (event.key === 'Enter' || event.key === 'Escape') settledByKey.current = true
   }
 
   return (
@@ -149,24 +153,16 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
       }}
     >
       {renaming ? (
-        <input
-          className="ui-input v3-srow-rename"
+        <InlineRename
+          className="v3-srow-rename"
           aria-label={title}
-          value={draft}
-          autoFocus
-          onFocus={(event) => event.currentTarget.select()}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              commitRename()
-              restoreRowFocus()
-            } else if (event.key === 'Escape') {
-              event.preventDefault()
-              setRenaming(false)
-              restoreRowFocus()
-            }
+          defaultValue={title}
+          onKeyDown={noteRenameKey}
+          onCommit={(name) => {
+            finishRename()
+            void useStore.getState().setManualTitle(item.id, name)
           }}
+          onCancel={finishRename}
           data-testid="v3-session-rename"
         />
       ) : (
@@ -177,15 +173,14 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
           card={!!card}
           isDisabled={(!card && !titleOverflowing) || menuOpen || dragging}
         >
-          <button
-            type="button"
-            className="ui-row v3-row"
+          <ListRow
+            className="v3-row"
+            current={isCurrent}
+            muted={status === 'archived'}
             data-variant={card ? (card.slim ? 'slim' : 'card') : undefined}
             data-menu={menuOpen ? '1' : undefined}
-            data-muted={status === 'archived' ? '' : undefined}
             data-status={status}
             data-mark={sessionStatusHasMark(status) && !(card && !card.slim && cardHasBot(status)) ? '' : undefined}
-            aria-current={isCurrent ? 'true' : undefined}
             onPointerDown={onPointerDown}
             onClick={() => {
               if (draggedRef.current) {
@@ -196,48 +191,50 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
             }}
             data-testid="v3-session-row"
           >
-            {card?.slim ? (
-              <>
-                <ProjectBadge label={card.project} global={card.global} />
+            <span className="v3-row-body">
+              {card?.slim ? (
+                <>
+                  <ProjectBadge label={card.project} global={card.global} />
+                  <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                  <span className="v3-crow-ago">{card.ago}</span>
+                </>
+              ) : null}
+              {card && !card.slim ? (
+                <span className="v3-crow-meta">
+                  <ProjectBadge label={card.project} global={card.global} />
+                  <span className="v3-crow-project">{card.project}</span>
+                  {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
+                  <span className="v3-crow-ago">{card.ago}</span>
+                </span>
+              ) : null}
+              {card?.slim ? null : card ? (
+                <span className="v3-crow-line">
+                  <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                  {card.modelRef || cardHasBot(status) ? (
+                    <span className="v3-crow-bot" data-idle={cardHasBot(status) ? undefined : ''}>
+                      <StatusSlot label={cardHasBot(status) ? statusLabel : card.model} live={cardHasBot(status)}>
+                        <ModelBot brand={modelBrand(card.modelRef)} mood={botMood(status)} size={16} seedKey={item.id} />
+                      </StatusSlot>
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
                 <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                <span className="v3-crow-ago">{card.ago}</span>
-              </>
-            ) : null}
-            {card && !card.slim ? (
-              <span className="v3-crow-meta">
-                <ProjectBadge label={card.project} global={card.global} />
-                <span className="v3-crow-project">{card.project}</span>
-                {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
-                <span className="v3-crow-ago">{card.ago}</span>
-              </span>
-            ) : null}
-            {card?.slim ? null : card ? (
-              <span className="v3-crow-line">
-                <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                {card.modelRef || cardHasBot(status) ? (
-                  <span className="v3-crow-bot" data-idle={cardHasBot(status) ? undefined : ''}>
-                    <StatusSlot label={cardHasBot(status) ? statusLabel : card.model} live={cardHasBot(status)}>
-                      <ModelBot brand={modelBrand(card.modelRef)} mood={botMood(status)} size={16} seedKey={item.id} />
-                    </StatusSlot>
-                  </span>
-                ) : null}
-              </span>
-            ) : (
-              <FadeTitleBox boxRef={titleBoxRef} text={title} />
-            )}
-            {card?.branch && !card.slim ? (
-              <span className="v3-crow-branch">
-                <GitBranch size={11} aria-hidden />
-                <span className="v3-crow-branch-name">{card.branch}</span>
-              </span>
-            ) : null}
-            {snoozeLabel ? (
-              <span className="v3-srow-wake" title={snoozeTitle} data-testid="v3-session-snooze-wake">
-                <AlarmClock size={12} aria-hidden />
-                {snoozeLabel}
-              </span>
-            ) : card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
-          </button>
+              )}
+              {card?.branch && !card.slim ? (
+                <span className="v3-crow-branch">
+                  <GitBranch size={11} aria-hidden />
+                  <span className="v3-crow-branch-name">{card.branch}</span>
+                </span>
+              ) : null}
+              {snoozeLabel ? (
+                <span className="v3-srow-wake" title={snoozeTitle} data-testid="v3-session-snooze-wake">
+                  <AlarmClock size={12} aria-hidden />
+                  {snoozeLabel}
+                </span>
+              ) : card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
+            </span>
+          </ListRow>
         </SidebarTip>
       )}
       {renaming ? null : (

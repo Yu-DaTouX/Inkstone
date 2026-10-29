@@ -9,7 +9,21 @@ import { sessionViewIdentity, viewMatchesProjectedSession } from '../session/vie
 import { currentPanelEntry, toolSurface, useRightPanel } from '../../state/right-panel'
 import { activateWorkspaceOwner, captureActivationTarget } from '../workbench/activation'
 import { WORKBENCH_ACTIVE_TABS, type WorkbenchTabId } from '../workbench/types'
-import { Dialog, EmptyState, Kbd, Modal, ModalOverlay, Notice, Spinner, cx } from '../../ui'
+import {
+  CommandSurface,
+  CommandSurfaceBody,
+  CommandSurfaceFooter,
+  CommandSurfaceHeader,
+  EmptyState,
+  IconButton,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  KbdGroup,
+  ListRow,
+  Notice,
+  Spinner
+} from '../../ui'
 import { SHORTCUTS, type ShortcutId } from '../../app/shortcuts'
 import {
   COMMAND_ACTION_IDS,
@@ -454,102 +468,100 @@ function CommandPaletteBody({ isOpen, onOpenChange, onNavigate }: CommandPalette
   if (!isOpen) return null
 
   return (
-    <ModalOverlay className="cmd-overlay" isOpen onOpenChange={onOpenChange} isDismissable>
-      <Modal className="cmd-modal">
-        <Dialog className="cmd-dialog" body="flush" aria-label={text.paletteLabel} showClose={false}>
-          <div className="cmd-search">
-            <Search className="cmd-search__icon" size={16} aria-hidden="true" />
-            <input
-              ref={inputRef}
-              className="cmd-input"
-              type="text"
-              role="combobox"
-              aria-label={text.paletteLabel}
-              aria-expanded="true"
-              aria-controls="cmd-list"
-              aria-autocomplete="list"
-              aria-activedescendant={safeIndex >= 0 ? `cmd-opt-${safeIndex}` : undefined}
-              placeholder={text.placeholder}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={onInputKeyDown}
-              autoComplete="off"
-              spellCheck={false}
-              data-testid="v3-command-input"
-            />
-            {query ? (
-              <button
-                type="button"
-                className="cmd-clear"
-                aria-label={text.clear}
-                onClick={() => setQuery('')}
-                tabIndex={-1}
-              >
-                <X size={14} aria-hidden="true" />
-              </button>
-            ) : null}
-            {busy ? <Spinner className="cmd-busy" label={text.busy} size={15} /> : null}
-          </div>
-
-          <div className="cmd-prefix-hint" aria-hidden="true">
-            {text.prefixHint}
-          </div>
-
-          <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
-            {options.length === 0 ? (
-              <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text)} />
-            ) : (
-              groups.map((section) => (
-                <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
-                  <div className="cmd-group__label" aria-hidden="true">
-                    {groupLabel(section.group, text)}
-                  </div>
-                  {section.items.map((item) => {
-                    const index = optionIndex.get(item.id) ?? -1
-                    const active = index === safeIndex
-                    return (
-                      <div
-                        key={item.id}
-                        id={index >= 0 ? `cmd-opt-${index}` : undefined}
-                        role="option"
-                        aria-selected={active}
-                        aria-disabled={item.disabled || undefined}
-                        data-active={active ? 'true' : undefined}
-                        className={cx('cmd-option', item.disabled && 'cmd-option--disabled')}
-                        onMouseMove={() => {
-                          if (index >= 0 && index !== safeIndex) setActiveIndex(index)
-                        }}
-                        onClick={() => void execute(item)}
-                      >
-                        <span className="cmd-option__label">{item.label}</span>
-                        {item.disabled && item.reason ? (
-                          <span className="cmd-option__reason">{item.reason}</span>
-                        ) : item.meta ? (
-                          <span className="cmd-option__meta">{item.meta}</span>
-                        ) : null}
-                        {item.shortcut?.length ? (
-                          <span className="cmd-option__keys">
-                            {item.shortcut.map((key) => (
-                              <Kbd key={key}>{key}</Kbd>
-                            ))}
-                          </span>
-                        ) : null}
-                      </div>
-                    )
-                  })}
-                </div>
-              ))
-            )}
-          </div>
-
-          {error ? (
-            <Notice tone="fail" compact className="cmd-error">
-              {error}
-            </Notice>
+    <CommandSurface isOpen onOpenChange={onOpenChange} aria-label={text.paletteLabel} className="cmd-surface">
+      <CommandSurfaceHeader>
+        <InputGroup>
+          <InputGroupAddon align="start">
+            <Search size={16} aria-hidden="true" />
+          </InputGroupAddon>
+          <InputGroupInput
+            ref={inputRef}
+            type="text"
+            role="combobox"
+            aria-label={text.paletteLabel}
+            aria-expanded="true"
+            aria-controls="cmd-list"
+            aria-autocomplete="list"
+            aria-activedescendant={safeIndex >= 0 ? `cmd-opt-${safeIndex}` : undefined}
+            placeholder={text.placeholder}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={onInputKeyDown}
+            autoComplete="off"
+            spellCheck={false}
+            data-testid="v3-command-input"
+          />
+          {query || busy ? (
+            <InputGroupAddon align="end">
+              {busy ? <Spinner label={text.busy} size="sm" /> : null}
+              {query ? (
+                <IconButton size="xs" aria-label={text.clear} excludeFromTabOrder onPress={() => setQuery('')}>
+                  <X size={14} />
+                </IconButton>
+              ) : null}
+            </InputGroupAddon>
           ) : null}
-        </Dialog>
-      </Modal>
-    </ModalOverlay>
+        </InputGroup>
+      </CommandSurfaceHeader>
+
+      <CommandSurfaceBody>
+        <div ref={listRef} id="cmd-list" className="cmd-list" role="listbox" aria-label={text.paletteLabel}>
+          {options.length === 0 ? (
+            <EmptyState size="sm" title={emptyTitle(parsed.mode, trimmedTerm, text)} />
+          ) : (
+            groups.map((section) => (
+              <div key={section.group} className="cmd-group" role="group" aria-label={groupLabel(section.group, text)}>
+                <div className="cmd-group__label" aria-hidden="true">
+                  {groupLabel(section.group, text)}
+                </div>
+                {section.items.map((item) => {
+                  const index = optionIndex.get(item.id) ?? -1
+                  const active = index === safeIndex
+                  const aside = item.disabled && item.reason ? item.reason : item.meta
+                  return (
+                    <ListRow
+                      key={item.id}
+                      id={index >= 0 ? `cmd-opt-${index}` : undefined}
+                      role="option"
+                      tabIndex={-1}
+                      aria-selected={active}
+                      aria-disabled={item.disabled || undefined}
+                      muted={item.disabled}
+                      data-active={active ? 'true' : undefined}
+                      data-selected={active ? '' : undefined}
+                      className="cmd-option"
+                      trailing={
+                        aside || item.shortcut?.length ? (
+                          <>
+                            {aside ? <span className="cmd-option__meta">{aside}</span> : null}
+                            {item.shortcut?.length ? <KbdGroup keys={item.shortcut} /> : null}
+                          </>
+                        ) : undefined
+                      }
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseMove={() => {
+                        if (index >= 0 && index !== safeIndex) setActiveIndex(index)
+                      }}
+                      onClick={() => void execute(item)}
+                    >
+                      {item.label}
+                    </ListRow>
+                  )
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      </CommandSurfaceBody>
+
+      {error ? (
+        <Notice tone="fail" compact className="cmd-error">
+          {error}
+        </Notice>
+      ) : null}
+
+      <CommandSurfaceFooter aria-hidden="true">{text.prefixHint}</CommandSurfaceFooter>
+    </CommandSurface>
   )
 }
 

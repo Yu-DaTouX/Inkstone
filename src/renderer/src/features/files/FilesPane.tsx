@@ -10,10 +10,21 @@ import {
   type MouseEvent,
   type ReactElement
 } from 'react'
-import { ArrowUpRight, ChevronRight, ChevronsDownUp, List, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowUpRight, ChevronsDownUp, Folder, FolderOpen, List, RefreshCw, Search, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, IconButton, SearchField, Spinner } from '../../ui'
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  Spinner,
+  Toggle,
+  ToggleGroup,
+  TreeRow
+} from '../../ui'
 import type { DirEntry } from '../../../../shared/ipc'
 import {
   canAttachToContext,
@@ -24,7 +35,6 @@ import {
   toAbsolutePath,
   toRelativePath,
   toggleSelected,
-  treeIndent,
   type FileTreeRow,
   type FilesRootStatus
 } from './files-model'
@@ -82,7 +92,7 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const [menu, setMenu] = useState<MenuState | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
-  const filterRef = useRef<HTMLDivElement>(null)
+  const filterRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const [tabsHost, setTabsHost] = useState<HTMLElement | null>(null)
@@ -118,15 +128,44 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
     else split.showTree()
   }, [layout.narrow, previewPath, split])
 
-  const filterInput = (): HTMLInputElement | null => filterRef.current?.querySelector('input') ?? null
+  const filterInput = (): HTMLInputElement | null => filterRef.current
   const focusFilter = useCallback((): void => {
     showTreeNow()
     requestAnimationFrame(() => {
-      const input = filterRef.current?.querySelector('input')
+      const input = filterRef.current
       input?.focus()
       input?.select()
     })
   }, [showTreeNow])
+
+  const submitFilter = (): void => {
+    const list = resultsRef.current
+    const first =
+      (contentMode ? list?.querySelector<HTMLButtonElement>('.v3-files-result--line') : null) ??
+      list?.querySelector<HTMLButtonElement>('.v3-files-result')
+    first?.click()
+  }
+
+  const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      submitFilter()
+      return
+    }
+    if (event.key === 'Escape') {
+      if (!query) return
+      event.preventDefault()
+      event.stopPropagation()
+      setQuery('')
+      return
+    }
+    if (event.key !== 'ArrowDown') return
+    const first = resultsRef.current?.querySelector<HTMLButtonElement>('.v3-files-result')
+    if (!first) return
+    event.preventDefault()
+    first.focus()
+  }
 
   const goToDirectory = useCallback(
     (rel: string): void => {
@@ -326,7 +365,8 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
         <IconButton
           size="sm"
           aria-label={text.goToFile}
-          title={`${text.goToFile} (Ctrl+P)`}
+          tooltip={text.goToFile}
+          tooltipShortcut="Ctrl+P"
           aria-keyshortcuts="Control+P"
           data-testid="v3-files-search-toggle"
           onPress={focusFilter}
@@ -337,7 +377,8 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
           <IconButton
             size="sm"
             aria-label={treeLabel}
-            title={`${treeLabel} (${treeShortcut})`}
+            tooltip={treeLabel}
+            tooltipShortcut={treeShortcut}
             aria-pressed={layout.treePressed}
             aria-keyshortcuts="Control+Shift+Y"
             data-testid="v3-files-tree-toggle"
@@ -370,77 +411,83 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
           />
         ) : null}
         <div className="v3-files-filter" data-content={contentMode ? '1' : undefined} data-query={query ? '1' : undefined}>
-          <SearchField
-            ref={filterRef}
-            aria-label={text.searchLabel}
-            placeholder={text.searchPlaceholder}
-            value={query}
-            className="v3-files-filter-field"
-            data-testid="v3-files-search-input"
+          <InputGroup
+            size="sm"
             isDisabled={!owner.cwd}
             isInvalid={contentMode && search.error === 'pattern'}
-            maxLength={contentMode ? CONTENT_QUERY_MAX : NAME_QUERY_MAX}
-            onChange={setQuery}
-            onSubmit={() => {
-              const list = resultsRef.current
-              const first =
-                (contentMode ? list?.querySelector<HTMLButtonElement>('.v3-files-result--line') : null) ??
-                list?.querySelector<HTMLButtonElement>('.v3-files-result')
-              first?.click()
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'ArrowDown') return
-              const first = resultsRef.current?.querySelector<HTMLButtonElement>('.v3-files-result')
-              if (!first) return
-              event.preventDefault()
-              first.focus()
-            }}
-          />
-          <span className="v3-files-filter-tail">
-            {contentMode ? (
-              <span className="v3-files-filter-options" role="group" aria-label={text.searchOptions} data-testid="v3-files-search-options">
-                {(
-                  [
-                    ['matchCase', 'Aa', text.matchCase],
-                    ['wholeWord', 'ab', text.wholeWord],
-                    ['regexp', '.*', text.useRegexp]
-                  ] as const
-                ).map(([key, glyph, label]) => (
+            data-testid="v3-files-search-input"
+          >
+            <InputGroupAddon align="start">
+              <Search size={14} aria-hidden />
+            </InputGroupAddon>
+            <InputGroupInput
+              ref={filterRef}
+              aria-label={text.searchLabel}
+              placeholder={text.searchPlaceholder}
+              value={query}
+              disabled={!owner.cwd}
+              aria-invalid={contentMode && search.error === 'pattern' ? true : undefined}
+              maxLength={contentMode ? CONTENT_QUERY_MAX : NAME_QUERY_MAX}
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              onKeyDown={onFilterKeyDown}
+            />
+            {contentMode || query ? (
+              <InputGroupAddon align="end">
+                {contentMode ? (
+                  <ToggleGroup
+                    size="xs"
+                    selectionMode="multiple"
+                    aria-label={text.searchOptions}
+                    selectedKeys={(['matchCase', 'wholeWord', 'regexp'] as const).filter((key) => contentOptions[key])}
+                    onSelectionChange={(keys) =>
+                      setContentOptions({ matchCase: keys.has('matchCase'), wholeWord: keys.has('wholeWord'), regexp: keys.has('regexp') })
+                    }
+                    data-testid="v3-files-search-options"
+                  >
+                    {(
+                      [
+                        ['matchCase', 'Aa', text.matchCase],
+                        ['wholeWord', 'ab', text.wholeWord],
+                        ['regexp', '.*', text.useRegexp]
+                      ] as const
+                    ).map(([key, glyph, label]) => (
+                      <Toggle
+                        key={key}
+                        id={key}
+                        icon
+                        className="v3-files-filter-option"
+                        aria-label={label}
+                        tooltip={label}
+                        data-option={key}
+                        data-testid={`v3-files-search-${key}`}
+                        onPress={(event) => {
+                          if (event.pointerType !== 'keyboard') filterInput()?.focus()
+                        }}
+                      >
+                        <span aria-hidden>{glyph}</span>
+                      </Toggle>
+                    ))}
+                  </ToggleGroup>
+                ) : null}
+                {query ? (
                   <IconButton
-                    key={key}
-                    size="sm"
-                    className="v3-files-filter-option"
-                    aria-label={label}
-                    title={label}
-                    aria-pressed={contentOptions[key]}
-                    data-option={key}
-                    data-testid={`v3-files-search-${key}`}
-                    onPress={(event) => {
-                      setContentOptions((current) => ({ ...current, [key]: !current[key] }))
-                      if (event.pointerType !== 'keyboard') filterInput()?.focus()
+                    size="xs"
+                    aria-label={text.searchClear}
+                    tooltip={text.searchClear}
+                    data-testid="v3-files-search-clear"
+                    onPress={() => {
+                      setQuery('')
+                      filterInput()?.focus()
                     }}
                   >
-                    <span aria-hidden>{glyph}</span>
+                    <X size={12} />
                   </IconButton>
-                ))}
-              </span>
+                ) : null}
+              </InputGroupAddon>
             ) : null}
-            {query ? (
-              <IconButton
-                size="sm"
-                className="v3-files-filter-clear"
-                aria-label={text.searchClear}
-                title={text.searchClear}
-                data-testid="v3-files-search-clear"
-                onPress={() => {
-                  setQuery('')
-                  filterInput()?.focus()
-                }}
-              >
-                <X size={12} />
-              </IconButton>
-            ) : null}
-          </span>
+          </InputGroup>
         </div>
 
         {searching ? (
@@ -534,7 +581,6 @@ export function FilesPane({ owner, onPreview, path: previewPath, Preview }: File
           type="button"
           className="v3-files-edge"
           aria-label={text.showTree}
-          title={text.showTree}
           data-testid="v3-files-edge"
           onClick={showTreeNow}
         />
@@ -577,24 +623,32 @@ function FilesRootState({
   if (status === 'loading') {
     return (
       <div className="v3-files-block" role="status" data-testid="v3-files-loading">
-        <Spinner size={12} label={text.loading} />
+        <Spinner size="xs" label={text.loading} />
       </div>
     )
   }
   if (status === 'error') {
     return (
-      <div className="v3-files-block" data-testid="v3-files-error">
-        <p className="v3-files-block-text">{text.error}</p>
-        <Button size="sm" variant="ghost" isDisabled={busy} aria-label={busy ? text.listing : undefined} onPress={onRetry}>
-          {text.retry}
-        </Button>
-      </div>
+      <EmptyState
+        className="v3-files-block"
+        size="sm"
+        title={text.error}
+        action={
+          <Button size="sm" variant="ghost" isDisabled={busy} aria-label={busy ? text.listing : undefined} onPress={onRetry}>
+            {text.retry}
+          </Button>
+        }
+        data-testid="v3-files-error"
+      />
     )
   }
   return (
-    <div className="v3-files-block" data-testid={status === 'none' ? 'v3-files-invalid' : 'v3-files-empty'}>
-      <p className="v3-files-block-text">{status === 'none' ? text.noCwd : text.empty}</p>
-    </div>
+    <EmptyState
+      className="v3-files-block"
+      size="sm"
+      title={status === 'none' ? text.noCwd : text.empty}
+      data-testid={status === 'none' ? 'v3-files-invalid' : 'v3-files-empty'}
+    />
   )
 }
 
@@ -636,8 +690,6 @@ function FilesRowView({
   onDragStart: (event: DragEvent<HTMLButtonElement>, row: FileTreeRow) => void
   onContextMenu: (event: MouseEvent<HTMLButtonElement>) => void
 }): ReactElement {
-  const indent = { '--files-indent': `${treeIndent(row.depth)}px`, '--files-depth': String(row.depth) } as CSSProperties
-
   if (row.kind === 'state') {
     return (
       <div
@@ -645,7 +697,7 @@ function FilesRowView({
         role="treeitem"
         aria-level={row.depth + 1}
         aria-disabled="true"
-        style={indent}
+        style={{ '--tree-depth': row.depth } as CSSProperties}
         data-testid={`v3-files-state-${row.path || 'root'}`}
       >
         {statusLabel(text, row.state)}
@@ -658,23 +710,23 @@ function FilesRowView({
   const title = [toAbsolutePath(cwd, row.path), linkNote].filter(Boolean).join('\n')
 
   return (
-    <button
-      type="button"
+    <TreeRow
       className="v3-files-row"
       role="treeitem"
+      depth={row.depth}
+      expanded={expandable ? !!row.open : undefined}
+      icon={row.dir ? (row.open && expandable ? <FolderOpen size={14} /> : <Folder size={14} />) : <FileTypeIcon name={row.name} size={14} />}
+      trailing={row.link ? <ArrowUpRight size={12} className="v3-files-linkmark" aria-hidden /> : undefined}
+      current={current}
       aria-selected={selected}
       aria-level={row.depth + 1}
-      aria-expanded={expandable ? !!row.open : undefined}
       aria-disabled={row.blocked ? true : undefined}
-      aria-current={current ? 'true' : undefined}
       draggable={!row.dir && !row.blocked}
       tabIndex={tabbable ? 0 : -1}
-      style={indent}
       data-tree-path={row.path}
       data-selected={selected ? '1' : undefined}
-      data-current={current ? '1' : undefined}
       data-highlighted={highlighted ? '1' : undefined}
-      data-pressed={menuOpen ? '1' : undefined}
+      data-menu={menuOpen ? '1' : undefined}
       data-blocked={row.blocked ? '1' : undefined}
       data-testid={`v3-files-row-${row.path}`}
       title={title}
@@ -684,16 +736,8 @@ function FilesRowView({
       onClick={(event) => onClick(row, event)}
       onContextMenu={onContextMenu}
     >
-      <span className="v3-files-glyph" aria-hidden>
-        {row.dir ? (
-          <ChevronRight size={12} className="v3-files-caret" data-open={row.open ? '1' : undefined} />
-        ) : (
-          <FileTypeIcon name={row.name} />
-        )}
-      </span>
-      <span className="v3-files-name">{row.name}</span>
-      {row.link ? <ArrowUpRight size={12} className="v3-files-linkmark" aria-hidden /> : null}
-    </button>
+      {row.name}
+    </TreeRow>
   )
 }
 

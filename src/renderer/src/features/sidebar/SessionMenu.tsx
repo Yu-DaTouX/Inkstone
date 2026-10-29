@@ -2,7 +2,7 @@ import { useState, type JSX, type RefObject } from 'react'
 import { AlarmClock, Clock, Eye, FolderInput, FolderOpen, Globe, Mail, MailOpen, Pencil, Pin, PinOff, Archive, ArchiveRestore, Sparkles, Trash2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, Dialog, Menu, MenuItem, Modal, ModalOverlay, Popover, SubmenuTrigger } from '../../ui'
+import { Button, Dialog, DialogFooter, Menu, MenuItem, Modal, ModalOverlay, Popover, SubmenuTrigger } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import { shortProject } from './sidebar-model'
 import type { SessionSummary } from '../../../../shared/ipc'
@@ -100,13 +100,11 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
           disabledKeys={isCurrent ? ['delete'] : []}
           data-testid="v3-session-menu"
         >
-          <MenuItem id="reveal" textValue={t('rail.reveal')} data-testid="v3-session-reveal">
-            <FolderOpen size={14} aria-hidden />
+          <MenuItem id="reveal" textValue={t('rail.reveal')} data-testid="v3-session-reveal" icon={<FolderOpen size={14} />}>
             {t('rail.reveal')}
           </MenuItem>
           <SubmenuTrigger>
-            <MenuItem id="transcript-view" textValue={viewText.menu} data-testid="v3-session-transcript-view">
-              <Eye size={14} aria-hidden />
+            <MenuItem id="transcript-view" textValue={viewText.menu} data-testid="v3-session-transcript-view" icon={<Eye size={14} />}>
               {viewText.menu} · {viewText.views[currentView]}
             </MenuItem>
             <Popover placement="end top" offset={2}>
@@ -124,7 +122,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
                 data-testid="v3-session-transcript-view-menu"
               >
                 {TRANSCRIPT_VIEWS.map((view) => (
-                  <MenuItem key={view} id={view} textValue={viewText.views[view]}>
+                  <MenuItem key={view} id={view} textValue={viewText.views[view]} checked="selection">
                     {viewText.views[view]}
                   </MenuItem>
                 ))}
@@ -136,23 +134,19 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
               </Menu>
             </Popover>
           </SubmenuTrigger>
-          <MenuItem id="rename" textValue={t('rail.rename')}>
-            <Pencil size={14} aria-hidden />
+          <MenuItem id="rename" textValue={t('rail.rename')} icon={<Pencil size={14} />}>
             {t('rail.rename')}
           </MenuItem>
-          <MenuItem id="pin" textValue={item.pinned ? t('rail.unpin') : t('rail.pin')}>
-            {item.pinned ? <PinOff size={14} aria-hidden /> : <Pin size={14} aria-hidden />}
+          <MenuItem id="pin" textValue={item.pinned ? t('rail.unpin') : t('rail.pin')} icon={item.pinned ? <PinOff size={14} /> : <Pin size={14} />}>
             {item.pinned ? t('rail.unpin') : t('rail.pin')}
           </MenuItem>
           {snoozed ? (
-            <MenuItem id="wake" textValue={t('rail.wakeNow')} data-testid="v3-session-wake">
-              <AlarmClock size={14} aria-hidden />
+            <MenuItem id="wake" textValue={t('rail.wakeNow')} data-testid="v3-session-wake" icon={<AlarmClock size={14} />}>
               {t('rail.wakeNow')}
             </MenuItem>
           ) : (
             <SubmenuTrigger>
-              <MenuItem id="snooze" textValue={t('rail.snooze')} data-testid="v3-session-snooze">
-                <Clock size={14} aria-hidden />
+              <MenuItem id="snooze" textValue={t('rail.snooze')} data-testid="v3-session-snooze" icon={<Clock size={14} />}>
                 {t('rail.snooze')}
               </MenuItem>
               <Popover placement="end top" offset={2}>
@@ -180,32 +174,26 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
               </Popover>
             </SubmenuTrigger>
           )}
-          <MenuItem id="unread" textValue={item.markedUnread ? t('rail.markRead') : t('rail.markUnread')} data-testid="v3-session-mark-unread">
-            {item.markedUnread ? <MailOpen size={14} aria-hidden /> : <Mail size={14} aria-hidden />}
+          <MenuItem id="unread" textValue={item.markedUnread ? t('rail.markRead') : t('rail.markUnread')} data-testid="v3-session-mark-unread" icon={item.markedUnread ? <MailOpen size={14} /> : <Mail size={14} />}>
             {item.markedUnread ? t('rail.markRead') : t('rail.markUnread')}
           </MenuItem>
-          <MenuItem id="title" textValue={t('rail.regenerateTitle')}>
-            <Sparkles size={14} aria-hidden />
+          <MenuItem id="title" textValue={t('rail.regenerateTitle')} icon={<Sparkles size={14} />}>
             {t('rail.regenerateTitle')}
           </MenuItem>
-          <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}>
-            {item.archivedAt ? <ArchiveRestore size={14} aria-hidden /> : <Archive size={14} aria-hidden />}
+          <MenuItem id="archive" textValue={t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')} icon={item.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />}>
             {t(item.archivedAt ? 'rail.unarchive' : 'rail.archive')}
           </MenuItem>
           {item.scope !== 'global' ? (
-            <MenuItem id="move:global" textValue={`${t('rail.moveSession')} ${t('rail.global')}`}>
-              <Globe size={14} aria-hidden />
+            <MenuItem id="move:global" textValue={`${t('rail.moveSession')} ${t('rail.global')}`} icon={<Globe size={14} />}>
               {t('rail.moveSession')} · {t('rail.global')}
             </MenuItem>
           ) : null}
           {moveTargets.map((project) => (
-            <MenuItem key={project.id} id={`move:${project.id}`} textValue={`${t('rail.moveSession')} ${project.name || shortProject(project.cwd)}`}>
-              <FolderInput size={14} aria-hidden />
+            <MenuItem key={project.id} id={`move:${project.id}`} textValue={`${t('rail.moveSession')} ${project.name || shortProject(project.cwd)}`} icon={<FolderInput size={14} />}>
               {t('rail.moveSession')} · {project.name || shortProject(project.cwd)}
             </MenuItem>
           ))}
-          <MenuItem id="delete" textValue={t('rail.delete')} className="v3-menu-danger">
-            <Trash2 size={14} aria-hidden />
+          <MenuItem id="delete" textValue={t('rail.delete')} tone="danger" icon={<Trash2 size={14} />}>
             {isCurrent ? t('rail.cantDeleteCurrent') : t('rail.delete')}
           </MenuItem>
         </Menu>
@@ -223,7 +211,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
             {({ close }) => (
               <div className="v3-confirm">
                 <p className="v3-confirm-body">{text.deleteConfirmBody.replace('{name}', title)}</p>
-                <div className="v3-confirm-actions">
+                <DialogFooter>
                   <Button variant="secondary" onPress={close}>{text.cancel}</Button>
                   <Button
                     variant="danger"
@@ -235,7 +223,7 @@ export function SessionMenu({ item, title, isCurrent, anchor, open, onOpenChange
                   >
                     {text.deleteConfirm}
                   </Button>
-                </div>
+                </DialogFooter>
               </div>
             )}
           </Dialog>

@@ -2,8 +2,8 @@ import type { JSX } from 'react'
 import { ArchiveRestore, Undo2 } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { EmptyState, IconButton } from '../../ui'
-import { IconTip } from '../../app/IconTip'
+import { EmptyState, IconButton, ListRow } from '../../ui'
+import { SidebarTip } from './SidebarTip'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { setProjectArchived } from './ProjectHeader'
 import { sidebarText } from './sidebar-text'
@@ -43,17 +43,16 @@ export function ArchivedView({
                 <span className="v3-row-title" title={project.record.cwd}>{project.label}</span>
                 <span className="v3-arow-meta">{own.projectSessionCount.replace('{n}', String(project.sessionCount))}</span>
               </span>
-              <IconTip label={own.restoreProject}>
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  aria-label={own.restoreProject}
-                  onPress={() => void restoreProject(project.record.id)}
-                  data-testid="v3-restore-project"
-                >
-                  <ArchiveRestore size={14} />
-                </IconButton>
-              </IconTip>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                aria-label={own.restoreProject}
+                tooltip={own.restoreProject}
+                onPress={() => void restoreProject(project.record.id)}
+                data-testid="v3-restore-project"
+              >
+                <ArchiveRestore size={14} />
+              </IconButton>
             </div>
           ))}
         </div>
@@ -66,20 +65,21 @@ export function ArchivedView({
           </div>
           {view.sessions.map((session) => (
             <div key={session.path} className="v3-arow" data-testid="v3-archived-session">
-              <button type="button" className="v3-arow-main v3-arow-open" onClick={() => onOpen(session)} title={session.cwd}>
-                <span className="v3-row-title">{titleOf(session)}</span>
-              </button>
-              <IconTip label={own.restoreSession}>
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  aria-label={own.restoreSession}
-                  onPress={() => void useStore.getState().setSessionArchived(session.id, false)}
-                  data-testid="v3-restore-session"
-                >
-                  <Undo2 size={14} />
-                </IconButton>
-              </IconTip>
+              <SidebarTip label={titleOf(session)} detail={session.cwd || undefined}>
+                <ListRow className="v3-arow-open" onClick={() => onOpen(session)}>
+                  {titleOf(session)}
+                </ListRow>
+              </SidebarTip>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                aria-label={own.restoreSession}
+                tooltip={own.restoreSession}
+                onPress={() => void useStore.getState().setSessionArchived(session.id, false)}
+                data-testid="v3-restore-session"
+              >
+                <Undo2 size={14} />
+              </IconButton>
             </div>
           ))}
         </div>

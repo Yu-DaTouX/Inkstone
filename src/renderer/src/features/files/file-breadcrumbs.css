@@ -11,8 +11,7 @@
     color: var(--fg);
   }
 
-  button.v3-files-crumb:focus-visible,
-  .v3-files-crumb-browse:focus-visible {
+  button.v3-files-crumb:focus-visible {
     outline: none;
     box-shadow: var(--ring-focus-inset);
   }
@@ -24,8 +23,7 @@
   }
 
   .v3-files-crumb--fold,
-  .v3-files-crumb-sep,
-  .v3-files-crumb-browse {
+  .v3-files-crumb-sep {
     color: var(--fg3);
   }
 
@@ -105,13 +103,9 @@
 
   .v3-files-crumb-browse {
     flex: none;
-    width: var(--size-btn-sm);
-    min-width: var(--size-btn-sm);
-    height: var(--size-btn-sm);
   }
 
-  .v3-files-crumb--fold,
-  .v3-files-crumb-browse {
+  .v3-files-crumb--fold {
     display: flex;
     align-items: center;
     justify-content: center;
