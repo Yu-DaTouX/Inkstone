@@ -12,10 +12,11 @@
   .v3-prose > * { margin: 0; }
   .v3-prose :is(h1, h2, h3, h4, h5, h6) { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   .v3-prose > :is(h1, h2, h3, h4, h5, h6) + * { margin-top: calc(-1 * var(--s-4)); }
-  .v3-prose h1 { margin-top: var(--s-24); font-size: 1.14286em; line-height: 1.25; }
-  .v3-prose h2 { margin-top: var(--s-20); font-size: 1.07143em; line-height: 1.33; }
-  .v3-prose h3 { margin-top: var(--s-16); font-size: 1em; }
-  .v3-prose :is(h4, h5, h6) { font-size: 1em; font-weight: 500; }
+  .v3-prose h1 { margin-top: var(--s-24); font-size: 1.25em; line-height: 1.25; }
+  .v3-prose h2 { margin-top: var(--s-24); font-size: 1.14286em; line-height: 1.33; }
+  .v3-prose h3 { margin-top: var(--s-20); font-size: 1.07143em; line-height: 1.4; }
+  .v3-prose h4 { margin-top: var(--s-12); font-size: 1em; }
+  .v3-prose :is(h5, h6) { font-size: 1em; font-weight: 500; }
   .v3-prose > :is(h1, h2, h3):first-child { margin-top: 0; }
   .v3-prose :is(ul, ol) { margin: 0; padding-left: var(--s-20); }
   .v3-prose li { margin: 0; }
@@ -27,12 +28,14 @@
   .v3-prose blockquote > * { margin: 0; }
   .v3-prose blockquote > * + * { margin-top: var(--s-6); }
   .v3-prose hr { width: 100%; border: 0; border-top: var(--hair, 1px) solid var(--alpha-3); }
-  .v3-prose :not(pre) > code { padding: 1px var(--s-4); border-radius: var(--r-xs); background: var(--alpha-1); font-family: var(--font-mono); color: var(--fg2); font-size: 0.9em; font-weight: var(--w-regular); line-height: 1.4; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  .v3-prose :not(pre) > code { padding: 1px var(--s-4); border-radius: var(--r-xs); background: var(--code-inline-bg); font-family: var(--font-mono); color: var(--fg2); font-size: 0.9em; font-weight: var(--w-regular); line-height: 1.4; overflow-wrap: normal; word-break: normal; hyphens: none; }
   .v3-md-path-part { white-space: nowrap; }
-  .v3-prose .v3-md-code-link { text-decoration: underline dotted var(--fg3); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .v3-prose .v3-md-code-link { color: var(--accent-t); text-decoration: underline dotted currentColor; text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .v3-prose .v3-md-code-link:hover { text-decoration-color: currentColor; }
   .v3-prose .v3-md-code-link:focus-visible { outline: none; box-shadow: var(--ring-focus); }
   .v3-md-link-icon { display: inline-block; margin-inline-end: 0.2em; vertical-align: -0.15em; }
+  .v3-md-link[data-link-kind='file'][data-short] { white-space: nowrap; }
+  .v3-md-link-file { margin-inline-start: 0.35em; color: var(--fg3); font-family: var(--font-mono); font-size: 0.85em; white-space: nowrap; }
   .v3-prose kbd { padding: 0 var(--s-4); border-bottom: 2px solid var(--alpha-2); border-radius: var(--r-xs); font-family: var(--font-mono); font-size: var(--t-footnote); }
   .v3-prose .katex-display { margin: 0; overflow-x: auto; overflow-y: hidden; padding: var(--s-2) 0; }
   .v3-md-link { color: var(--accent-t); text-decoration: none; }
@@ -237,7 +240,7 @@
   .v3-empty-prompt { margin-right: var(--s-6); color: var(--fg3); }
   .v3-empty-hint { margin: 0; color: var(--fg3); font-size: var(--t-body); }
 
-  .v3-jump { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-4); height: 28px; padding: 0 var(--s-12) 0 var(--s-10); border: 0; border-radius: var(--r-full); corner-shape: round; background: color-mix(in srgb, var(--surface-3) 86%, transparent); backdrop-filter: blur(12px); color: var(--fg2); font: var(--t-footnote) / 1 var(--font-ui); white-space: nowrap; box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-jump { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-4); height: var(--size-jump); padding: 0 var(--s-12) 0 var(--s-10); border: 0; border-radius: var(--r-full); corner-shape: round; background: color-mix(in srgb, var(--surface-3) 86%, transparent); backdrop-filter: blur(12px); color: var(--fg2); font: var(--t-footnote) / 1 var(--font-ui); white-space: nowrap; box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
   .v3-jump:hover { color: var(--fg); }
   .v3-jump:active { color: var(--fg); background: var(--press); }
 

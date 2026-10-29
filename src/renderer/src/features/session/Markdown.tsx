@@ -232,6 +232,9 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
     else if (target.kind === 'file') void window.yan.revealPath(resolveAgainstCwd(target.path, sourceCwd))
   }
 
+  const label = textOf(children).trim()
+  const fileBase = target.kind === 'file' && !/[\\/]$/.test(target.path) ? target.path.split(/[\\/]/).filter(Boolean).pop() ?? '' : ''
+  const showBase = !!fileBase && !!label && !label.toLowerCase().includes(fileBase.toLowerCase())
   const title =
     target.kind === 'file'
       ? (() => {
@@ -247,6 +250,7 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
       href={target.kind === 'url' ? target.url : '#'}
       className={`v3-md-link ${target.kind === 'invalid' ? 'blocked' : ''}`}
       data-link-kind={target.kind}
+      data-short={label.length <= SHORT_LINK_CHARS ? '' : undefined}
       data-github={target.kind === 'url' && GITHUB_URL.test(target.url) ? '' : undefined}
       data-line={target.kind === 'file' && target.line ? String(target.line) : undefined}
       data-line-end={target.kind === 'file' && target.lineEnd ? String(target.lineEnd) : undefined}
@@ -258,8 +262,18 @@ function LinkAnchor({ href, children, ...rest }: AnchorProps): JSX.Element {
     >
       {target.kind === 'file' ? <><FileLinkIcon path={target.path} />{'\u2060'}</> : target.kind === 'url' && GITHUB_URL.test(target.url) ? <><GithubLinkIcon url={target.url} />{'\u2060'}</> : null}
       {children}
+      {showBase ? <span className="v3-md-link-file">{fileBase}</span> : null}
     </a>
   )
+}
+
+const SHORT_LINK_CHARS = 24
+
+function textOf(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (node && typeof node === 'object' && 'props' in node) return textOf((node as { props: { children?: ReactNode } }).props.children)
+  return ''
 }
 
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }): JSX.Element | null {

@@ -105,10 +105,19 @@ export function processPreview(process: readonly TurnSegment[]): string {
         .trim()
       if (!plain) continue
       const sentences = plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).filter(Boolean)
-      return sentences[sentences.length - 1] ?? plain
+      return clipAtClause(sentences[sentences.length - 1] ?? plain)
     }
   }
   return ''
+}
+
+const PREVIEW_CHARS = 64
+
+function clipAtClause(sentence: string): string {
+  if (sentence.length <= PREVIEW_CHARS) return sentence
+  const head = sentence.slice(0, PREVIEW_CHARS)
+  const cut = Math.max(...[...head.matchAll(/[\uFF0C,\u3001\uFF1A:\uFF1B;\u2014]/g)].map((match) => match.index ?? -1))
+  return cut >= 12 ? `${head.slice(0, cut).trimEnd()}\u2026` : sentence
 }
 
 function rawThinkingParts(segment: TurnSegment): TurnThinking[] {

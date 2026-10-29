@@ -263,6 +263,8 @@ group('回合结束后进度叙述收进过程：最终答复始终露出')
   ok(folded.process[1].commentary[0]?.id === 'n1' && folded.process[0].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 2))
   ok(processPreview(folded.process) === '还有一处残留。', '摘要预览取最后一句进度叙述', processPreview(folded.process))
   ok(processSummary(folded.process).actions === 3, '折叠不改变操作计数', processSummary(folded.process))
+  const long = processPreview([seg('l0', { commentary: [text('l', '第二套扫描器 Gitleaks 的 8 条命中也已逐项核对，均为扩展公钥、界面存储键名或测试数据，尚未发现真正需要撤下的凭据或个人资料文件内容')] })])
+  ok(long === '第二套扫描器 Gitleaks 的 8 条命中也已逐项核对，均为扩展公钥、界面存储键名或测试数据\u2026', '过长的预览在分句处截断', long)
 }
 
 group('过程摘要：按工具类型归类并带改动行数')

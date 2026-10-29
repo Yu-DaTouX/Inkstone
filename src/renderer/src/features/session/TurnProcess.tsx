@@ -89,11 +89,17 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           className="v3-process-head"
           size="compact"
           chevron="end"
+          tone="emphasized"
           data-testid="v3-process-toggle"
-          actions={changed ? (
-            <Button size="sm" variant="ghost" className="v3-process-changes" onPress={() => openPanelTool('changes')} data-testid="v3-process-view-changes">
-              {tt('processViewChanges')}
-            </Button>
+          actions={preview || changed ? (
+            <>
+              {preview ? <span className="v3-process-preview" data-testid="v3-process-preview" title={preview} onClick={() => setManual(true)}>{preview}</span> : null}
+              {changed ? (
+                <Button size="sm" variant="secondary" className="v3-process-changes" onPress={() => openPanelTool('changes')} data-testid="v3-process-view-changes">
+                  {tt('processViewChanges')}
+                </Button>
+              ) : null}
+            </>
           ) : undefined}
         >
           <span className="v3-process-line">
@@ -105,7 +111,6 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
             ))}
             {elapsed ? <span className="v3-process-count" data-kind="elapsed">{elapsed}</span> : null}
             {summary.failed ? <span className={alertFailures ? 'v3-steps-stats err' : 'v3-steps-stats'} data-kind="failed" data-testid="v3-process-failed">{t('tool.wsFailed', { n: summary.failed })}</span> : null}
-            {preview ? <span className="v3-process-preview" data-testid="v3-process-preview" title={preview}>{preview}</span> : null}
           </span>
         </CollapsibleHeader>
       )}
@@ -127,9 +132,13 @@ function totalLines(files: readonly ProcessFileChange[]): Pick<ProcessFileChange
   return { added: files.reduce((sum, file) => sum + (file.added ?? 0), 0), removed: files.reduce((sum, file) => sum + (file.removed ?? 0), 0) }
 }
 
+const SHOWN_ACTION_KINDS = 2
+
+type TextKey = Parameters<ReturnType<typeof useSessionText>>[0]
+
 function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionText>): ProcessPart[] {
   const parts: ProcessPart[] = []
-  const count = (kind: string, n: number, one: Parameters<typeof tt>[0], many: Parameters<typeof tt>[0]): void => {
+  const count = (kind: string, n: number, one: TextKey, many: TextKey): void => {
     if (n) parts.push({ key: kind, kind, text: n === 1 ? tt(one) : tt(many, { n }) })
   }
   const files = (kind: string, list: readonly ProcessFileChange[], single: Parameters<typeof tt>[0], many: Parameters<typeof tt>[0]): void => {
@@ -138,19 +147,24 @@ function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionT
       ? { key: kind, kind, text: tt(single, { file: list[0].base }), file: list[0] }
       : { key: kind, kind, text: tt(many, { n: list.length }), file: totalLines(list) })
   }
-  count('thinking', summary.thinking, 'processThinking1', 'processThinking')
-  count('commands', summary.commands, 'processCommands1', 'processCommands')
-  count('code', summary.code, 'processCode1', 'processCode')
-  count('reads', summary.reads, 'processReads1', 'processReads')
+  const all: { kind: string; n: number; one: TextKey; many: TextKey }[] = [
+    { kind: 'commands', n: summary.commands + summary.code, one: 'processCommands1', many: 'processCommands' },
+    { kind: 'reads', n: summary.reads, one: 'processReads1', many: 'processReads' },
+    { kind: 'searches', n: summary.searches, one: 'processSearch1', many: 'processSearch' },
+    { kind: 'lists', n: summary.lists, one: 'processList1', many: 'processList' },
+    { kind: 'web', n: summary.web, one: 'processWeb1', many: 'processWeb' },
+    { kind: 'fetches', n: summary.fetches, one: 'processFetch1', many: 'processFetch' },
+    { kind: 'agents', n: summary.agents, one: 'processAgent1', many: 'processAgent' }
+  ]
+  const actions = all.filter((action) => action.n > 0)
+  const shown = new Set([...actions].sort((a, b) => b.n - a.n).slice(0, SHOWN_ACTION_KINDS).map((action) => action.kind))
+  const rest = actions.filter((action) => !shown.has(action.kind)).reduce((sum, action) => sum + action.n, summary.other)
+  if (!summary.actions) count('thinking', summary.thinking, 'processThinking1', 'processThinking')
+  for (const action of actions) if (shown.has(action.kind)) count(action.kind, action.n, action.one, action.many)
   files('edits', summary.edits, 'processEditFile', 'processEdits')
   files('creates', summary.creates, 'processCreateFile', 'processCreates')
-  count('searches', summary.searches, 'processSearch1', 'processSearch')
-  count('lists', summary.lists, 'processList1', 'processList')
-  count('web', summary.web, 'processWeb1', 'processWeb')
-  count('fetches', summary.fetches, 'processFetch1', 'processFetch')
-  count('agents', summary.agents, 'processAgent1', 'processAgent')
-  count('other', summary.other, 'processOther1', 'processOther')
-  if (parts.length === (summary.thinking ? 1 : 0) && summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
+  if (parts.length) count('other', rest, 'processOther1', 'processOther')
+  else if (summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
   return parts
 }
 

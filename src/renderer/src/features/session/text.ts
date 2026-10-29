@@ -173,8 +173,6 @@ export type SessionTextKey =
   | 'processActions'
   | 'processCommands1'
   | 'processCommands'
-  | 'processCode1'
-  | 'processCode'
   | 'processReads1'
   | 'processReads'
   | 'processEditFile'
@@ -194,6 +192,7 @@ export type SessionTextKey =
   | 'processOther1'
   | 'processOther'
   | 'processViewChanges'
+  | 'outcomeFiles'
   | 'questionChosen'
   | 'questionFreeAnswer'
   | 'thinkingEmptyRecord'
@@ -402,10 +401,8 @@ const ZH: Record<SessionTextKey, string> = {
   processThinking: '{n} 段思考',
   processActions1: '1 次操作',
   processActions: '{n} 次操作',
-  processCommands1: '运行 1 个命令',
-  processCommands: '运行 {n} 个命令',
-  processCode1: '运行 1 段代码',
-  processCode: '运行 {n} 段代码',
+  processCommands1: '运行 1 条命令',
+  processCommands: '运行 {n} 条命令',
   processReads1: '读取 1 个文件',
   processReads: '读取 {n} 个文件',
   processEditFile: '编辑 {file}',
@@ -422,9 +419,10 @@ const ZH: Record<SessionTextKey, string> = {
   processFetch: '打开 {n} 个网页',
   processAgent1: '派出 1 个子 Agent',
   processAgent: '派出 {n} 个子 Agent',
-  processOther1: '其他操作 1 次',
-  processOther: '其他操作 {n} 次',
+  processOther1: '另 1 次操作',
+  processOther: '另 {n} 次操作',
   processViewChanges: '查看更改',
+  outcomeFiles: '本轮文件',
   questionChosen: '已选',
   questionFreeAnswer: '回答：{answer}',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
@@ -636,8 +634,6 @@ const EN: Record<SessionTextKey, string> = {
   processActions: '{n} actions',
   processCommands1: 'Ran 1 command',
   processCommands: 'Ran {n} commands',
-  processCode1: 'Ran 1 script',
-  processCode: 'Ran {n} scripts',
   processReads1: 'Read 1 file',
   processReads: 'Read {n} files',
   processEditFile: 'Edited {file}',
@@ -654,9 +650,10 @@ const EN: Record<SessionTextKey, string> = {
   processFetch: 'Opened {n} web pages',
   processAgent1: 'Sent out 1 subagent',
   processAgent: 'Sent out {n} subagents',
-  processOther1: '1 other action',
-  processOther: '{n} other actions',
+  processOther1: '1 more action',
+  processOther: '{n} more actions',
   processViewChanges: 'View changes',
+  outcomeFiles: 'Files this turn',
   questionChosen: 'Chosen',
   questionFreeAnswer: 'Answer: {answer}',
   thinkingEmptyRecord: 'This turn left no reasoning text',

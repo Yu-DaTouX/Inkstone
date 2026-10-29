@@ -1,0 +1,11 @@
+@layer features {
+  .v3-decision { width: 100%; margin-top: var(--s-6); }
+  .v3-decision-head { padding: var(--s-8) var(--s-12) 0; }
+  .v3-decision-reply { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-decision-body { padding: var(--s-4) var(--s-12) var(--s-10); }
+  .v3-decision[data-state='answered'] .v3-decision-body .v3-prose { color: var(--fg2); }
+
+  .v3-outcome { display: flex; align-items: baseline; gap: var(--s-10); min-width: 0; }
+  .v3-outcome-label { flex: none; color: var(--fg3); font-size: var(--t-footnote); line-height: var(--size-btn); white-space: nowrap; }
+  .v3-outcome-files { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); min-width: 0; }
+}

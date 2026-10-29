@@ -43,12 +43,14 @@ import { WrapUpCard, wrapUpKey } from './WrapUpCard'
 import { stripImageNotice } from './effective-messages'
 import { isHistoryQuestionCall } from './question-receipt'
 import { QuestionHistory } from './QuestionReceipt'
+import { DecisionBlock, TurnFiles } from './TurnOutcome'
+import { splitDecision } from './turn-outcome'
 
-export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean }): JSX.Element | null {
+export const TurnView = memo(function TurnView({ turn, streaming, readOnly = false, sessionId = null, rewindOwner = null, branchPager, subagentScope, wrapUp = null, tail, modelShift = false, answer }: { turn: Turn; streaming?: boolean; readOnly?: boolean; sessionId?: string | null; rewindOwner?: string | null; branchPager?: BranchPagerBinding; subagentScope?: TurnSubagentScope; wrapUp?: WrapUpCardModel | null; tail?: boolean; modelShift?: boolean; answer?: string | null }): JSX.Element | null {
   if (turn.kind === 'user') return <UserTurnView turn={turn} readOnly={readOnly || turn.msg.id.startsWith('submitting-')} rewindOwner={rewindOwner} branchPager={branchPager} />
   if (turn.kind === 'bash') return <BashTurnView turn={turn} />
   if (turn.kind === 'note') return <NoteTurnView turn={turn} sessionId={sessionId} />
-  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} modelShift={modelShift} />
+  return <AssistantTurnView turn={turn} streaming={streaming} readOnly={readOnly} sessionId={sessionId} rewindOwner={rewindOwner} subagentScope={subagentScope} wrapUp={wrapUp} tail={tail} modelShift={modelShift} answer={answer} />
 })
 
 function UserTurnView({ turn, readOnly, rewindOwner, branchPager }: { turn: UserTurn; readOnly: boolean; rewindOwner: string | null; branchPager?: BranchPagerBinding }): JSX.Element | null {
@@ -216,7 +218,7 @@ function replyText(turn: AssistantTurn): string {
   return text
 }
 
-function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, modelShift }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; modelShift: boolean }): JSX.Element | null {
+function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewindOwner, subagentScope, wrapUp, tail, modelShift, answer }: { turn: AssistantTurn; streaming?: boolean; readOnly: boolean; sessionId: string | null; rewindOwner: string | null; subagentScope?: TurnSubagentScope; wrapUp: WrapUpCardModel | null; tail?: boolean; modelShift: boolean; answer?: string | null }): JSX.Element | null {
   const sourceTurn = useMemo(() => withoutWrapUp(rawTurn), [rawTurn])
   const view = useTranscriptView(sessionId)
   const inline = showsThinkingInline(view)
@@ -243,6 +245,8 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
   const flow = flowSegments(sourceTurn, commentary)
   const split = flow ? splitTurnProcess(flow, { keepThinking: !aside, foldReplies: !streaming }) : null
   const processSegs = split?.process ?? []
+  const planned = !streaming && processSegs.length > 0
+  const decision = !streaming && !wrapUp && answer !== undefined && split?.reply && !split.tail.length ? splitDecision(split.reply.response?.text ?? '') : null
   const tailSegments = split ? split.tail.map(strip) : []
   const thinkingNote = !streaming && (inline || aside) && !sourceTurn.thinking && (!!turn.response || turn.tools.length > 0)
   const thinkingBySegment = processSegs.length > 0
@@ -269,7 +273,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {split ? (
             <>
               {split.leadReplies.map((segment) => (
-                <div key={segment.id} className="v3-seg" data-testid="v3-seg">
+                <div key={segment.id} className="v3-seg" data-testid="v3-seg" data-role={planned ? 'plan' : undefined}>
                   <div className="v3-para">
                     <Markdown text={segment.response?.text ?? ''} sourceCwd={segment.response?.sourceCwd} sessionId={sessionId} messageId={segment.response?.id ?? segment.id} />
                   </div>
@@ -298,9 +302,12 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
               ))}
               {split.reply ? (
                 <div className="v3-seg" data-testid="v3-seg">
-                  <div className="v3-para">
-                    <Markdown text={split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
-                  </div>
+                  {decision?.body !== '' ? (
+                    <div className="v3-para">
+                      <Markdown text={decision ? decision.body : split.reply.response?.text ?? ''} sourceCwd={split.reply.response?.sourceCwd} live={!!streaming && split.reply.sourceMessageId === turn.sourceIds.at(-1)} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} />
+                    </div>
+                  ) : null}
+                  {decision && answer !== undefined ? <DecisionBlock question={decision.question} sourceCwd={split.reply.response?.sourceCwd} sessionId={sessionId} messageId={split.reply.response?.id ?? split.reply.id} answer={answer} /> : null}
                 </div>
               ) : null}
               {tailSegments.map((seg, si) => {
@@ -362,6 +369,7 @@ function AssistantTurnView({ turn: rawTurn, streaming, readOnly, sessionId, rewi
           {streaming ? <LiveRunNotice /> : null}
           {tail && !streaming && !readOnly ? <QuotaResumeNotice sessionId={sessionId} /> : null}
           {streaming && !turn.response && !commentary.length && !turn.tools.length && !turn.thinking ? <span className="v3-caret" aria-hidden>▍</span> : null}
+          {!streaming && turn.tools.length ? <TurnFiles text={replyText(sourceTurn)} sourceCwd={sourceTurn.response?.sourceCwd} /> : null}
           {!streaming ? <TurnChanges turn={sourceTurn} readOnly={readOnly} rewindOwner={rewindOwner} /> : null}
           {!streaming ? <TurnMeta turn={sourceTurn} readOnly={readOnly} tail={tail ?? true} modelShift={modelShift} /> : null}
           {showCompaction ? <CompactCommandEcho /> : null}
