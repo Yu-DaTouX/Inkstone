@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import type { HtmlArtifactPreviewStore } from './html-artifact-preview-store'
+import { delay } from '../shared/delay'
 
 export const IMAGE_EXPORT_DEFAULT_WIDTH = 1280
 export const IMAGE_EXPORT_MAX_SIDE = 8000
@@ -89,10 +90,6 @@ async function within<T>(work: Promise<T>, code: ImageExportErrorCode, label: st
   } finally {
     if (timer) clearTimeout(timer)
   }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export const POSTER_PROBE = `(() => {

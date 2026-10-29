@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
+import { escapeHtml } from '../shared/escape'
 import { hasPendingStorageMove, runPendingStorageMove, type StorageMoveProgress, type StorageMoveResult } from './storage-move'
 
 interface MoveText {
@@ -53,10 +54,6 @@ function progressView(text: MoveText, progress: StorageMoveProgress): { percent:
       formatBytes(progress.totalBytes)
     )
   }
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] as string)
 }
 
 function progressPage(text: MoveText, dark: boolean): string {

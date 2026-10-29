@@ -1,3 +1,5 @@
+import { escapeRegExp } from '../shared/escape'
+
 const MAX_REGEX_LINE = 1000
 
 const WORD_CLASS = '[\\p{L}\\p{N}_]'
@@ -32,10 +34,6 @@ export interface ContentMatchOutcome {
   longLines: number
   limitReached: boolean
   cancelled?: boolean
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export function compileContentMatcher(query: string, options: ContentSearchOptions = {}): ContentMatcher | null {

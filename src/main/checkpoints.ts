@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, parse, resolve } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import { gitRun } from './git-service'
 import { createGitDeadline, type GitDeadline } from './git-run-policy'
 import {
@@ -89,10 +90,7 @@ async function readIndex(dir: string, cwd: string, onCorrupt: 'reset' | 'throw' 
 }
 
 async function writeIndex(dir: string, index: Index): Promise<void> {
-  await mkdir(dir, { recursive: true })
-  const tmp = join(dir, `index.${process.pid}.${randomUUID()}.tmp`)
-  await writeFile(tmp, JSON.stringify(index), 'utf8')
-  await rename(tmp, join(dir, 'index.json'))
+  await atomicWriteFile(join(dir, 'index.json'), JSON.stringify(index))
 }
 
 function shadowGit(cwd: string, dir: string, args: string[], opts: { timeout?: number; allowFailure?: boolean; stdin?: string; deadline?: GitDeadline } = {}) {

@@ -1,4 +1,5 @@
 import { webcrypto } from 'node:crypto'
+import { decodeBase64Url as fromB64u, encodeBase64Url as toB64u } from '../../shared/base64url'
 
 const subtle = webcrypto.subtle
 const encoder = new TextEncoder()
@@ -15,14 +16,7 @@ export interface KeyPair {
   raw: Uint8Array
 }
 
-export function toB64u(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64url')
-}
-
-export function fromB64u(text: string): Uint8Array {
-  if (typeof text !== 'string' || !/^[A-Za-z0-9_-]*$/.test(text)) throw new Error('不是 base64url')
-  return new Uint8Array(Buffer.from(text, 'base64url'))
-}
+export { fromB64u, toB64u }
 
 function concat(...parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))

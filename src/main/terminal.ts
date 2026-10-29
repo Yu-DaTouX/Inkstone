@@ -4,6 +4,7 @@ import { basename, delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { IPty } from 'node-pty'
 import { PROGRAM_STATUS_REPLY, TerminalProgramStatusTracker } from './terminal-status'
+import { clampRounded } from '../shared/clamp'
 import {
   EXITED_REPLAY_CHARS,
   MAX_UNOWNED_TERMINALS,
@@ -127,9 +128,7 @@ function validDir(candidate: string | undefined): string | null {
 }
 
 function clampDimension(value: number | undefined, fallback: number): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return fallback
-  return Math.max(2, Math.min(1000, Math.round(n)))
+  return clampRounded(value, 2, 1000, fallback)
 }
 
 function titleOf(shell: string, cwd: string): string {

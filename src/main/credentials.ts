@@ -1,8 +1,9 @@
-import { readFile, mkdir, stat, readdir, realpath, rmdir, utimes, open, rename, unlink } from 'node:fs/promises'
+import { readFile, mkdir, stat, readdir, realpath, rmdir, utimes } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import type { AuthProviderInfo, AuthStatus, FileListingStatus, FileRequestContext, PathCompletionResult } from '../shared/ipc'
 import { PI_AGENT_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 
 const PI_DIR = PI_AGENT_DIR
 const AUTH_FILE = join(PI_DIR, 'auth.json')
@@ -96,20 +97,7 @@ export async function readAuth(): Promise<Record<string, unknown>> {
 }
 
 async function writeAuthAtomic(data: Record<string, unknown>): Promise<void> {
-  const tmp = `${AUTH_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-  let handle: Awaited<ReturnType<typeof open>> | undefined
-  try {
-    handle = await open(tmp, 'wx', 0o600)
-    await handle.writeFile(JSON.stringify(data, null, 2) + '\n', 'utf8')
-    await handle.sync()
-    await handle.close()
-    handle = undefined
-    await rename(tmp, AUTH_FILE)
-  } catch (error) {
-    await handle?.close().catch(() => undefined)
-    await unlink(tmp).catch(() => undefined)
-    throw error
-  }
+  await atomicWriteFile(AUTH_FILE, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 })
 }
 
 export async function readAuthEntry(provider: string): Promise<unknown> {

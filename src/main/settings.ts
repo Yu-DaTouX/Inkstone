@@ -1,4 +1,4 @@
-import { readFile, mkdir, copyFile, open, rename, unlink } from 'node:fs/promises'
+import { readFile, mkdir, copyFile, rename } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute, parse, resolve } from 'node:path'
@@ -27,6 +27,7 @@ import { FONT_UI_DEFAULT, FONT_UI_MAX, FONT_UI_MIN, sanitizeFontCodePreset, sani
 import { allowedSiteList } from './preview-site-access'
 import { sanitizeProjectScripts } from '../shared/project-scripts'
 import { electronGuardSealStore, guardFieldsOf, sameGuardFields, trustedGuardFields, type GuardFields } from './settings-guard-seal'
+import { atomicWriteFile } from './sync/atomic'
 
 const DIR = YAN_DIR
 const FILE = join(DIR, 'desktop.json')
@@ -462,7 +463,6 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   }))
 
   next = sanitizeSettings(next)
-  const temp = `${FILE}.${process.pid}.${randomUUID()}.tmp`
   const sealStore = await electronGuardSealStore()
   const guardChanged = !sameGuardFields(guardFieldsOf(cur), guardFieldsOf(next))
   let sealWritten = false
@@ -471,19 +471,8 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
       await sealStore.write(guardFieldsOf(next))
       sealWritten = true
     }
-    await mkdir(DIR, { recursive: true })
-    const handle = await open(temp, 'wx')
-    try {
-      await handle.writeFile(JSON.stringify(next, null, 2), 'utf8')
-      await handle.sync()
-    } finally { await handle.close() }
-    await rename(temp, FILE)
-    try {
-      const dir = await open(DIR, 'r')
-      try { await dir.sync() } finally { await dir.close() }
-    } catch { }
+    await atomicWriteFile(FILE, JSON.stringify(next, null, 2), { syncDir: true })
   } catch (e) {
-    await unlink(temp).catch(() => undefined)
     if (sealStore && sealWritten) await sealStore.write(guardFieldsOf(cur)).catch(() => undefined)
     invalidate()
     throw new Error(`设置写入失败：${e instanceof Error ? e.message : String(e)}`)

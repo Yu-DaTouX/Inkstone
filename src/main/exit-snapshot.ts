@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { RunnerStatus } from '../shared/ipc'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 
 export const EXIT_SNAPSHOT_FILE = join(YAN_DIR, 'exit-snapshot.json')
 
@@ -49,10 +50,7 @@ export async function writeExitSnapshot(mode: ExitSnapshotMode, statuses: Runner
     }))
   }
 
-  await mkdir(YAN_DIR, { recursive: true })
-  const temp = `${EXIT_SNAPSHOT_FILE}.${process.pid}.tmp`
-  await writeFile(temp, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
-  await rename(temp, EXIT_SNAPSHOT_FILE)
+  await atomicWriteFile(EXIT_SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
   return snapshot
 }
 

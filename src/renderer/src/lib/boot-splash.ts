@@ -1,3 +1,5 @@
+import { clamp } from '../../../shared/clamp'
+
 const LIMIT_MS = 8000
 const KEY = 'yan.boot.ms'
 const MIN_MS = 360
@@ -6,12 +8,12 @@ const MAX_WAIT_MS = 500
 let done = false
 let drawMs = 0
 
-const clamp = (n: number): number => Math.min(MAX_MS, Math.max(MIN_MS, Math.round(n)))
+const splashMs = (n: number): number => clamp(Math.round(n), MIN_MS, MAX_MS)
 
 function readLast(): number {
   try {
     const n = Number(localStorage.getItem(KEY))
-    return Number.isFinite(n) && n > 0 ? clamp(n) : 0
+    return Number.isFinite(n) && n > 0 ? splashMs(n) : 0
   } catch {
     return 0
   }
@@ -33,7 +35,7 @@ export function dismissBootSplash(): void {
   if (!el) return
   const ready = performance.now()
   try {
-    localStorage.setItem(KEY, String(clamp(ready)))
+    localStorage.setItem(KEY, String(splashMs(ready)))
   } catch { }
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const wait = reduced || !drawMs ? 0 : Math.min(MAX_WAIT_MS, Math.max(0, drawMs - ready))

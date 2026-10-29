@@ -1,62 +1,78 @@
 import { deflateSync } from 'node:zlib'
 
-export function makePdf(text, options = {}) {
+function pdfObjects(pages, compress) {
   const LF = String.fromCharCode(10)
-  const content = 'BT /F1 12 Tf 72 720 Td (' + text + ') Tj ET'
-  if (options.noStream) {
-    return Buffer.from(['%PDF-1.4', '1 0 obj << /Type /Catalog >> endobj', 'trailer << /Root 1 0 R >>', '%%EOF', ''].join(LF), 'latin1')
+  const escape = (value) => value.replace(/([\\()])/g, '\\$1')
+  const contentOf = (lines) => {
+    const body = lines
+      .map((line, index) => (index === 0 ? `(${escape(line)}) Tj` : `0 -16 Td (${escape(line)}) Tj`))
+      .join(LF)
+    return `BT /F1 12 Tf 72 720 Td ${body} ET`
   }
-  const plain = Buffer.from(content, 'latin1')
-  const body = options.compress ? deflateSync(plain) : plain
-  const filter = options.compress ? ' /Filter /FlateDecode' : ''
-  const head = [
-    '%PDF-1.4',
-    '1 0 obj << /Type /Catalog >> endobj',
-    '2 0 obj << /Type /Page /Contents 3 0 R >> endobj',
-    '3 0 obj << /Length ' + body.length + filter + ' >>',
-    'stream',
-    ''
-  ].join(LF)
-  const tail = ['', 'endstream', 'endobj', 'trailer << /Root 1 0 R >>', '%%EOF', ''].join(LF)
-  return Buffer.concat([Buffer.from(head, 'latin1'), body, Buffer.from(tail, 'latin1')])
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>']
+  const kids = pages.map((_, index) => `${3 + index * 2} 0 R`).join(' ')
+  objects.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`)
+  pages.forEach((lines, index) => {
+    const pageId = 3 + index * 2
+    const contentId = pageId + 1
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> /Contents ${contentId} 0 R >>`
+    )
+    const raw = Buffer.from(contentOf(lines), 'latin1')
+    const stream = compress ? deflateSync(raw) : raw
+    const filter = compress ? ' /Filter /FlateDecode' : ''
+    objects.push({ stream, head: `<< /Length ${stream.length}${filter} >>` })
+  })
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+  return { objects, LF }
+}
+
+export function makePdf(pages, options = {}) {
+  const list = Array.isArray(pages) ? pages : [[pages]]
+  const { objects, LF } = pdfObjects(list, options.compress === true)
+  const parts = ['%PDF-1.5']
+  objects.forEach((object, index) => {
+    parts.push(`${index + 1} 0 obj`)
+    if (typeof object === 'string') parts.push(object, 'endobj')
+    else parts.push(object.head, 'stream', object.stream, 'endstream', 'endobj')
+  })
+  parts.push('trailer << /Root 1 0 R >>', '%%EOF', '')
+  const chunks = []
+  for (const part of parts) chunks.push(typeof part === 'string' ? Buffer.from(part + LF, 'latin1') : Buffer.concat([part, Buffer.from(LF, 'latin1')]))
+  return Buffer.concat(chunks)
 }
 
 export function runPdfTextTests(ok, pdf) {
-  {
-    const bs = String.fromCharCode(92)
-    ok(pdf.decodePdfString(`a${bs}n b`) === 'a\n b', 'PDF 字符串：换行转义')
-    ok(pdf.decodePdfString(`x${bs}(y${bs})`) === 'x(y)', 'PDF 字符串：括号转义')
-    ok(pdf.decodePdfString(`q${bs}101`) === 'qA', 'PDF 字符串：八进制转义（101 = A）', pdf.decodePdfString(`q${bs}101`))
-    const bom = Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from('汉字', 'utf16le').swap16()])
-    ok(pdf.decodePdfString(bom.toString('latin1')) === '汉字', 'PDF 字符串：UTF-16BE（带 BOM）')
-  }
+  return (async () => {
+    ok(pdf.MAX_PDF_BYTES > 0 && pdf.MAX_PDF_PAGES > 0 && pdf.MAX_PDF_TEXT_CHARS > 0, 'PDF 预算常量已导出')
 
-  {
-    const text = pdf.extractPdfText('BT /F1 12 Tf 72 720 Td (Hello) Tj 72 700 Td (World) Tj ET')
-    ok(text.includes('Hello') && text.includes('World'), '内容流：取出两段文本')
-    ok(text.includes('\n'), '内容流：Td 产生换行', JSON.stringify(text))
-    const joined = pdf.extractPdfText('[(He) -20 (llo)] TJ')
-    ok(joined.includes('Hello'), '内容流：TJ 数组内拼接不插空格', JSON.stringify(joined))
-  }
+    const plain = await pdf.parsePdfBuffer(makePdf('Hello Yan Library from Inkstone'))
+    ok(plain.status === 'ok' && plain.text?.includes('Hello Yan Library'), 'PDF（未压缩流）→ 提取到正文', plain.note)
+    ok(plain.pages === 1, 'PDF：页数统计', String(plain.pages))
+    ok(/已提取正文：1 页/.test(plain.note), 'PDF：note 带上页数', plain.note)
 
-  {
-    ok(pdf.printableRatio('正常的中文 English 123！') > 0.9, '可打印比例：正常文本接近 1')
-    ok(pdf.printableRatio(String.fromCharCode(1, 2, 3, 4, 5)) < 0.2, '可打印比例：控制字符很低')
-    ok(pdf.printableRatio('') === 0, '可打印比例：空串为 0')
-  }
+    const zipped = await pdf.parsePdfBuffer(makePdf('Compressed Yan Library content here', { compress: true }))
+    ok(zipped.status === 'ok' && zipped.text?.includes('Compressed Yan Library'), 'PDF（FlateDecode）→ 提取到正文', zipped.note)
 
-  const plain = pdf.parsePdfBuffer(makePdf('Hello Yan Library from Inkstone'))
-  ok(plain.status === 'ok' && plain.text?.includes('Hello Yan Library'), 'PDF（未压缩流）→ 提取到正文', plain.note)
-  ok(plain.pages === 1, 'PDF：页数统计', String(plain.pages))
-  const zipped = pdf.parsePdfBuffer(makePdf('Compressed Yan Library content here', { compress: true }))
-  ok(zipped.status === 'ok' && zipped.text?.includes('Compressed Yan Library'), 'PDF（FlateDecode）→ 提取到正文', zipped.note)
-  ok(pdf.parsePdfBuffer(makePdf('', { noStream: true })).status === 'failed', 'PDF 无内容流 → failed（不是 unsupported）')
-  ok(pdf.parsePdfBuffer(Buffer.from('this is not a pdf at all, just text')).status === 'failed', '不是 PDF → failed')
-  ok(
-    pdf.MAX_PDF_STREAM_BYTES > 0 && pdf.MAX_PDF_TOTAL_BYTES >= pdf.MAX_PDF_STREAM_BYTES,
-    '解压预算常量已导出（单流 ≤ 累计）'
-  )
-  const bomb = pdf.parsePdfBuffer(makePdf(' '.repeat(20 * 1024 * 1024) + 'BT (ONLY_SYNTHETIC_OVERSIZE) Tj ET', { compress: true }))
-  ok(bomb.status === 'failed', '解压超出上限的内容流被跳过（不返回 ok）', bomb.status)
-  ok(/内容流超出预算或解压失败/.test(bomb.note), 'note 说明是超出解压上限，而不是把压缩数据当未压缩流乱解', bomb.note)
+    const twoPages = await pdf.parsePdfBuffer(makePdf([['第一页内容 First page text'], ['第二页内容 Second page text']]))
+    ok(twoPages.status === 'ok' && twoPages.pages === 2, 'PDF：两页文档按页统计', String(twoPages.pages))
+    ok(twoPages.text?.includes('First page') && twoPages.text?.includes('Second page'), 'PDF：两页正文都在', twoPages.text)
+    ok(twoPages.text?.indexOf('First page') < twoPages.text?.indexOf('Second page'), 'PDF：正文按页顺序拼接')
+
+    const notPdf = await pdf.parsePdfBuffer(Buffer.from('this is not a pdf at all, just text'))
+    ok(notPdf.status === 'failed' && /不是 PDF/.test(notPdf.note), '不是 PDF → failed', notPdf.note)
+
+    const broken = await pdf.parsePdfBuffer(Buffer.from('%PDF-1.5\nthis body is garbage\n%%EOF\n', 'latin1'))
+    ok(broken.status === 'failed', 'PDF 头正确但结构损坏 → failed', broken.note)
+
+    const encrypted = await pdf.parsePdfBuffer(Buffer.concat([makePdf('secret'), Buffer.from('\ntrailer << /Encrypt 9 0 R >>\n', 'latin1')]))
+    ok(encrypted.status === 'failed' && /已加密/.test(encrypted.note), '含 /Encrypt 的 PDF → failed 并说明已加密', encrypted.note)
+
+    const blank = await pdf.parsePdfBuffer(makePdf([['']]))
+    ok(blank.status !== 'ok', '没有文本层的 PDF 不返回 ok', blank.status)
+
+    const oversize = Buffer.alloc(pdf.MAX_PDF_BYTES + 1)
+    const tooBig = await pdf.parsePdfBuffer(oversize)
+    ok(tooBig.status === 'unsupported' && /64MB/.test(tooBig.note), '超过体积上限 → unsupported', tooBig.note)
+  })()
 }

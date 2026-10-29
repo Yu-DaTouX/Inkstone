@@ -4,6 +4,7 @@ import { rename, stat, unlink } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { htmlArtifactPreviews } from './html-artifact-preview'
+import { delay } from '../shared/delay'
 import { VIDEO_COMPOSITION_PROBE, normalizeVideoComposition, videoSeekScript, type VideoCompositionInfo } from './video-composition'
 
 export const VIDEO_EXPORT_DEFAULT_FPS = 30
@@ -77,10 +78,6 @@ export interface VideoExportPixelSize {
 }
 
 export type FfmpegFinder = (candidate: string) => boolean
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 async function within<T>(work: Promise<T>, code: VideoExportErrorCode, label: string, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined

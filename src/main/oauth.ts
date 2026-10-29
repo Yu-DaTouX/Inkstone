@@ -2,6 +2,8 @@ import { createServer, type Server } from 'node:http'
 import { randomBytes, createHash } from 'node:crypto'
 import { shell } from 'electron'
 import type { CodexLoginResult } from '../shared/ipc'
+import { encodeBase64Url } from '../shared/base64url'
+import { escapeHtml } from '../shared/escape'
 import { mergeAuthEntry } from './credentials'
 import { CLIENT_ID, TOKEN_URL, extractAccountId } from './codex-token'
 
@@ -18,19 +20,14 @@ const configuredCallbackHost = process.env.PI_OAUTH_CALLBACK_HOST?.trim().toLowe
 const CALLBACK_HOST = configuredCallbackHost === 'localhost' || configuredCallbackHost === '127.0.0.1' ? configuredCallbackHost : '127.0.0.1'
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 
-function base64url(bytes: Buffer): string {
-  return bytes.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-}
-
 function createPkce(): { verifier: string; challenge: string } {
-  const verifier = base64url(randomBytes(32))
-  const challenge = base64url(createHash('sha256').update(verifier).digest())
+  const verifier = encodeBase64Url(randomBytes(32))
+  const challenge = encodeBase64Url(createHash('sha256').update(verifier).digest())
   return { verifier, challenge }
 }
 
 function resultPage(heading: string, message: string, details?: string): string {
-  const esc = (s: string): string =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const esc = escapeHtml
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -129,7 +126,7 @@ export async function startCodexLogin(): Promise<CodexLoginResult> {
   if (active) return { ok: false, error: '已有一次登录在进行中' }
 
   const { verifier, challenge } = createPkce()
-  const state = base64url(randomBytes(16))
+  const state = encodeBase64Url(randomBytes(16))
   const url = new URL(AUTHORIZE_URL)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('client_id', CLIENT_ID)

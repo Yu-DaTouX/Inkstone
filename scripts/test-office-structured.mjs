@@ -21,10 +21,13 @@ const shared = await load('shared/office.ts')
 const notebook = await load('renderer/src/features/preview/notebook.ts')
 
 let passed = 0
+const queued = []
 const check = (name, fn) => {
-  fn()
-  passed += 1
-  process.stdout.write(`  ✓ ${name}\n`)
+  queued.push(async () => {
+    await fn()
+    passed += 1
+    process.stdout.write(`  ✓ ${name}\n`)
+  })
 }
 
 const CRC_TABLE = (() => {
@@ -122,8 +125,8 @@ function docxBuffer(documentXml = DOCUMENT_XML) {
   return zipOf({ 'word/document.xml': documentXml, 'word/numbering.xml': NUMBERING_XML })
 }
 
-check('docx 结构化：标题、粗斜体、列表、表格按文档流输出', () => {
-  const view = extract.extractOffice(docxBuffer(), 'docx')
+check('docx 结构化：标题、粗斜体、列表、表格按文档流输出', async () => {
+  const view = await extract.extractOffice(docxBuffer(), 'docx')
   assert.equal(view.ok, true)
   assert.equal(view.format, 'docx')
   const blocks = view.blocks
@@ -161,22 +164,22 @@ check('docx 结构化：标题、粗斜体、列表、表格按文档流输出',
   assert.ok(lines.includes('编号项'))
 })
 
-check('docx 结构化：没有 numbering.xml 时列表按无序处理，缺 document.xml 报错', () => {
-  const noNumbering = extract.extractOffice(zipOf({ 'word/document.xml': DOCUMENT_XML }), 'docx')
+check('docx 结构化：没有 numbering.xml 时列表按无序处理，缺 document.xml 报错', async () => {
+  const noNumbering = await extract.extractOffice(zipOf({ 'word/document.xml': DOCUMENT_XML }), 'docx')
   assert.equal(noNumbering.ok, true)
   assert.equal(noNumbering.blocks[3].kind, 'list')
   assert.equal(noNumbering.blocks[3].ordered, false)
-  const missing = extract.extractOffice(zipOf({ 'word/styles.xml': '<x/>' }), 'docx')
+  const missing = await extract.extractOffice(zipOf({ 'word/styles.xml': '<x/>' }), 'docx')
   assert.equal(missing.ok, false)
   assert.match(missing.error, /document\.xml/)
 })
 
-check('docx 结构化：标题层级按 outlineLvl 与 Heading2 识别', () => {
+check('docx 结构化：标题层级按 outlineLvl 与 Heading2 识别', async () => {
   const xml = `<?xml version="1.0"?><w:document xmlns:w="w"><w:body>
 <w:p><w:pPr><w:pStyle w:val="Heading 2"/></w:pPr><w:r><w:t>二级</w:t></w:r></w:p>
 <w:p><w:pPr><w:outlineLvl w:val="2"/></w:pPr><w:r><w:t>三级</w:t></w:r></w:p>
 </w:body></w:document>`
-  const view = extract.extractOffice(docxBuffer(xml), 'docx')
+  const view = await extract.extractOffice(docxBuffer(xml), 'docx')
   assert.equal(view.ok, true)
   assert.deepEqual(
     view.blocks.map((block) => [block.kind, block.level, block.text]),
@@ -208,8 +211,8 @@ function workbookFiles(rows) {
   }
 }
 
-check('xlsx 结构化：行、列、行号起点与空单元格补位', () => {
-  const view = extract.extractOffice(
+check('xlsx 结构化：行、列、行号起点与空单元格补位', async () => {
+  const view = await extract.extractOffice(
     zipOf(workbookFiles([['名称', '数量'], ['甲', '1'], [null, '2'], ['乙', null]])),
     'xlsx'
   )
@@ -224,9 +227,9 @@ check('xlsx 结构化：行、列、行号起点与空单元格补位', () => {
   assert.ok(view.sections[0].lines.includes('A1: 名称'))
 })
 
-check('xlsx 结构化：超过 500 行 50 列时截断并标记', () => {
+check('xlsx 结构化：超过 500 行 50 列时截断并标记', async () => {
   const rows = Array.from({ length: 620 }, (_, index) => [`r${index + 1}`, `c${index + 1}`])
-  const view = extract.extractOffice(zipOf(workbookFiles(rows)), 'xlsx')
+  const view = await extract.extractOffice(zipOf(workbookFiles(rows)), 'xlsx')
   assert.equal(view.ok, true)
   const sheet = view.sheets[0]
   assert.equal(sheet.rows.length, 500)
@@ -235,11 +238,11 @@ check('xlsx 结构化：超过 500 行 50 列时截断并标记', () => {
   assert.equal(sheet.truncated, true)
 })
 
-check('xlsx 结构化：行从 C3 开始时保留起始行号与列号', () => {
+check('xlsx 结构化：行从 C3 开始时保留起始行号与列号', async () => {
   const files = workbookFiles([['值']])
   files['xl/worksheets/sheet1.xml'] =
     '<?xml version="1.0"?><worksheet><sheetData><row r="3"><c r="C3" t="inlineStr"><is><t>值</t></is></c></row></sheetData></worksheet>'
-  const view = extract.extractOffice(zipOf(files), 'xlsx')
+  const view = await extract.extractOffice(zipOf(files), 'xlsx')
   assert.equal(view.ok, true)
   assert.deepEqual(view.sheets[0].rows, [['值']])
   assert.equal(view.sheets[0].startRow, 3)
@@ -262,8 +265,8 @@ function pptxFiles() {
   }
 }
 
-check('pptx 结构化：标题、要点与备注分页', () => {
-  const view = extract.extractOffice(zipOf(pptxFiles()), 'pptx')
+check('pptx 结构化：标题、要点与备注分页', async () => {
+  const view = await extract.extractOffice(zipOf(pptxFiles()), 'pptx')
   assert.equal(view.ok, true)
   assert.equal(view.slides.length, 2)
   assert.equal(view.slides[0].index, 1)
@@ -390,4 +393,5 @@ check('Notebook：code cell 用足够长的围栏包住反引号', () => {
   assert.ok(notebook.notebookFence('x = 1', 'python').startsWith('```python\n'))
 })
 
+for (const run of queued) await run()
 process.stdout.write(`\n${passed} 组检查通过\n`)

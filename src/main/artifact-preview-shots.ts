@@ -15,6 +15,7 @@ import {
   videoSeekScript,
   type VideoCompositionInfo
 } from './video-composition'
+import { delay } from '../shared/delay'
 
 const PREVIEW_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const PREVIEW_DIR_KEEP = 30
@@ -108,10 +109,6 @@ const GLYPH_ADVANCE = 4
 const LABEL_PADDING = 8
 const LABEL_BG = [0x00, 0x00, 0x00, 0xff] as const
 const LABEL_FG = [0xff, 0xff, 0xff, 0xff] as const
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 async function within<T>(work: Promise<T>, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined

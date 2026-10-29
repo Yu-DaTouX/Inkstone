@@ -1,18 +1,35 @@
-import { ReadPageError } from './page-types'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { ReadPageError } from './page-types'
 
-export async function extractPdf(data: Uint8Array, signal: AbortSignal, maxChars: number) {
+export async function openPdfDocument(data: Uint8Array, signal?: AbortSignal) {
   const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  signal.throwIfAborted()
+  signal?.throwIfAborted()
   const packageDir = dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'))
   GlobalWorkerOptions.workerSrc = pathToFileURL(join(packageDir, 'legacy', 'build', 'pdf.worker.mjs')).href
   const task = getDocument({ data: new Uint8Array(data), useSystemFonts: false, disableFontFace: true, useWorkerFetch: false, standardFontDataUrl: join(packageDir, 'standard_fonts') + '/' })
   const cancel = (): void => { void task.destroy().catch(() => undefined) }
-  signal.addEventListener('abort', cancel, { once: true })
+  signal?.addEventListener('abort', cancel, { once: true })
   try {
     const doc = await task.promise
+    return {
+      doc,
+      close: async (): Promise<void> => {
+        signal?.removeEventListener('abort', cancel)
+        await task.destroy()
+      }
+    }
+  } catch (error) {
+    signal?.removeEventListener('abort', cancel)
+    await task.destroy().catch(() => undefined)
+    throw error
+  }
+}
+
+export async function extractPdf(data: Uint8Array, signal: AbortSignal, maxChars: number) {
+  const { doc, close } = await openPdfDocument(data, signal)
+  try {
     let title = ''
     try {
       const meta = await doc.getMetadata()
@@ -43,7 +60,6 @@ export async function extractPdf(data: Uint8Array, signal: AbortSignal, maxChars
     if (!text.replace(/## Page \d+/g, '').trim()) throw new ReadPageError('pdf_no_text', 'PDF 没有可提取的文字，可能需要 OCR')
     return { title, text: text.slice(0, maxChars), pages, links, pageCount: doc.numPages, truncated: text.length > maxChars || pages.length < doc.numPages, totalChars: text.length }
   } finally {
-    signal.removeEventListener('abort', cancel)
-    await task.destroy()
+    await close()
   }
 }

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { autoCompactAt } from '../shared/context-limits'
+import { delay } from '../shared/delay'
 import { PI_AGENT_DIR, YAN_DIR } from './paths'
 
 const DEFAULT_RESERVE_TOKENS = 16_384
@@ -98,10 +99,6 @@ const SETTINGS_RETRY_DELAY_MS = 20
 function isRetryableWriteError(e: unknown): boolean {
   const code = (e as NodeJS.ErrnoException)?.code
   return code === 'EPERM' || code === 'EBUSY'
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 type SettingsModifyOutcome<T> = { next: Json; result: T } | { result: T }

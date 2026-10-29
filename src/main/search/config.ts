@@ -1,7 +1,7 @@
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from '../paths'
+import { atomicWriteFile } from '../sync/atomic'
 import { resolveQuotaProviderSecret } from '../quota-credentials'
 import {
   SEARCH_PROVIDERS,
@@ -38,21 +38,7 @@ async function read(): Promise<SearchConfigFile> {
 }
 
 async function write(next: SearchConfigFile): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const temp = `${CONFIG_FILE()}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    const handle = await open(temp, 'wx', 0o600)
-    try {
-      await handle.writeFile(JSON.stringify(next, null, 2) + '\n', 'utf8')
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await rename(temp, CONFIG_FILE())
-  } catch (error) {
-    await unlink(temp).catch(() => undefined)
-    throw error
-  }
+  await atomicWriteFile(CONFIG_FILE(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
 }
 
 function stateOf(cfg: SearchConfigFile, id: SearchProviderId): SearchProviderState {

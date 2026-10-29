@@ -269,7 +269,17 @@ await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
     logLevel: 'silent'
   })
 )
-const { runSameMessagesTests } = await import('./test-same-messages.mjs')
+const { runSameMessagesTests, runStableRefTests } = await import('./test-same-messages.mjs')
+await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
+  build({
+    entryPoints: ['src/renderer/src/state/stable-ref.ts'],
+    outfile: 'out/test/stable-ref.mjs',
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    logLevel: 'silent'
+  })
+)
 await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({
     entryPoints: ['src/main/session-reader.ts'],
@@ -1384,6 +1394,7 @@ await runSubagentUsageTests(ok)
 await runKeepImagesTests(ok)
 await runQueueImageTests(ok)
 await runSameMessagesTests(ok)
+await runStableRefTests(ok)
 await runAttachmentTests(ok)
 await runSessionImageTests(ok)
 const { runImageStoreTests } = await import('./test-image-store.mjs')
@@ -2395,11 +2406,12 @@ const pdfText = await import('../node_modules/esbuild/lib/main.js').then(({ buil
     bundle: true,
     format: 'esm',
     platform: 'node',
+    external: ['pdfjs-dist', 'pdfjs-dist/*'],
     logLevel: 'silent'
   }).then(() => import('../out/test/pdf-text.mjs'))
 )
 const { runPdfTextTests } = await import('./test-pdf-text.mjs')
-runPdfTextTests(ok, pdfText)
+await runPdfTextTests(ok, pdfText)
 
 const userSkillShared = await import('../node_modules/esbuild/lib/main.js').then(({ build }) =>
   build({

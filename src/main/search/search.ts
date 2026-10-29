@@ -16,6 +16,7 @@ import {
   type SearchBackendStatus
 } from '../../shared/search'
 import { aggregate, summarizeSources, type SourceRun } from './aggregate'
+import { clampRounded } from '../../shared/clamp'
 import type { SourceCooldown } from './cooldown'
 import type { SourceRequest } from './modifiers'
 
@@ -39,11 +40,6 @@ const byId = new Map<string, SearchSource>(SEARCH_SOURCES.map((s) => [s.id, s]))
 
 export function findSource(id: string): SearchSource | undefined {
   return byId.get(id)
-}
-
-function clamp(value: number | undefined, min: number, max: number, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 export function normalizeQuery(input: SearchQuery):
@@ -80,9 +76,9 @@ export function normalizeQuery(input: SearchQuery):
     text,
     sources,
     ignoredSources,
-    limitPerSource: clamp(input.limitPerSource, 1, SEARCH_LIMIT_PER_SOURCE_MAX, SEARCH_LIMIT_PER_SOURCE_DEFAULT),
-    limitTotal: clamp(input.limitTotal, 1, SEARCH_LIMIT_TOTAL_MAX, SEARCH_LIMIT_TOTAL_DEFAULT),
-    timeoutMs: clamp(input.timeoutMs, 1000, SEARCH_TIMEOUT_MS_MAX, SEARCH_TIMEOUT_MS_DEFAULT)
+    limitPerSource: clampRounded(input.limitPerSource, 1, SEARCH_LIMIT_PER_SOURCE_MAX, SEARCH_LIMIT_PER_SOURCE_DEFAULT),
+    limitTotal: clampRounded(input.limitTotal, 1, SEARCH_LIMIT_TOTAL_MAX, SEARCH_LIMIT_TOTAL_DEFAULT),
+    timeoutMs: clampRounded(input.timeoutMs, 1000, SEARCH_TIMEOUT_MS_MAX, SEARCH_TIMEOUT_MS_DEFAULT)
   }
 }
 

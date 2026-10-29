@@ -1,5 +1,5 @@
 import { parsePersistedDocument } from './persisted-document'
-import { readFile, mkdir, writeFile, rename, copyFile } from 'node:fs/promises'
+import { readFile, copyFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type {
@@ -11,6 +11,7 @@ import type {
   SessionSummary
 } from '../shared/ipc'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import { normalizeLayoutPath } from '../shared/session-path'
 
 export { normalizeLayoutPath }
@@ -147,15 +148,7 @@ async function readFromDisk(): Promise<SessionLayoutDocument> {
 }
 
 async function persist(document: SessionLayoutDocument): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const temp = `${SESSION_LAYOUT_FILE}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temp, JSON.stringify(document, null, 2), 'utf8')
-    await rename(temp, SESSION_LAYOUT_FILE)
-  } catch (error) {
-    await import('node:fs/promises').then(({ rm }) => rm(temp, { force: true })).catch(() => undefined)
-    throw error
-  }
+  await atomicWriteFile(SESSION_LAYOUT_FILE, JSON.stringify(document, null, 2))
 }
 
 async function update(mutator: (document: SessionLayoutDocument) => SessionLayoutDocument): Promise<SessionLayoutDocument> {

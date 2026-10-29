@@ -19,7 +19,7 @@ async function run(): Promise<void> {
     }
     if (length > MAX_BYTES) throw new Error('文件超过 64MB，请用系统程序打开')
     if (length > size) throw new Error('文件在读取期间发生变化，请重试')
-    parentPort?.postMessage(extractOffice(buffer.subarray(0, length), format))
+    parentPort?.postMessage(await extractOffice(buffer.subarray(0, length), format))
   } finally { await file.close() }
 }
 void run().catch((error: unknown) => parentPort?.postMessage({ ok: false, error: String(error) }))

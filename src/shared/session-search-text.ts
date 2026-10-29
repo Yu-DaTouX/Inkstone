@@ -1,3 +1,5 @@
+import { escapeRegExp } from './escape'
+
 const HEAD_KEEP = 100 * 1024
 const TAIL_KEEP = 300 * 1024
 const MAX_TOKENS = 6
@@ -65,10 +67,6 @@ export function extractSearchText(jsonl: string): string {
     offset = end + 1
   }
   return collector.finish()
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 export function queryTokens(query: string): string[] {

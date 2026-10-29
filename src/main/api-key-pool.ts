@@ -1,7 +1,8 @@
-import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises'
+import { readFile, copyFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import { readAuth, readAuthEntry, updateAuthFile, validProviderId } from './credentials'
 import { CURRENT_KEY_ID, poolView, withCurrentKey, type ApiKeyPools, type StoredApiKey } from '../shared/api-keys'
 
@@ -53,10 +54,7 @@ async function readStore(): Promise<Store> {
 }
 
 async function writeStore(store: Store): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const tmp = `${STORE_FILE}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(store, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
-  await rename(tmp, STORE_FILE)
+  await atomicWriteFile(STORE_FILE, JSON.stringify(store, null, 2) + '\n', { mode: 0o600 })
 }
 
 function apiKeyOf(entry: unknown): string | undefined {

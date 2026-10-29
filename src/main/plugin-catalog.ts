@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { net } from 'electron'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 import {
   BUILTIN_PLUGIN_CATALOG,
   PLUGIN_CATALOG_URL,
@@ -39,10 +40,7 @@ async function readCache(): Promise<PluginCatalogView | null> {
 }
 
 async function writeCache(body: unknown, fetchedAt: number): Promise<void> {
-  await mkdir(YAN_DIR, { recursive: true })
-  const temp = `${CACHE_FILE}.${process.pid}.tmp`
-  await writeFile(temp, JSON.stringify({ fetchedAt, body }), 'utf8')
-  await rename(temp, CACHE_FILE)
+  await atomicWriteFile(CACHE_FILE, JSON.stringify({ fetchedAt, body }))
 }
 
 async function fetchRemote(request: typeof fetch): Promise<{ body: unknown; view: PluginCatalogView }> {

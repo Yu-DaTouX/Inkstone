@@ -445,10 +445,10 @@ const NOTES: Record<OfficeFormat, string> = {
   pdf: '按页提取文字，不含版式与图片'
 }
 
-export function extractOffice(buffer: Buffer, format: OfficeFormat): OfficeDocumentView {
+export async function extractOffice(buffer: Buffer, format: OfficeFormat): Promise<OfficeDocumentView> {
   try {
     if (format === 'pdf') {
-      const parsed = parsePdfBuffer(buffer)
+      const parsed = await parsePdfBuffer(buffer)
       if (parsed.status !== 'ok' || !parsed.text) return { ok: false, error: parsed.note }
       const { sections, truncated } = clamp([{ title: '正文', lines: parsed.text.split('\n').map((line) => line.trim()).filter(Boolean) }])
       return { ok: true, format, sections, truncated, note: parsed.note }

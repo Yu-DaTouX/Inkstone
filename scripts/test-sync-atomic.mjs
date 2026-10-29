@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { mkdtemp, open, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -29,7 +29,7 @@ async function check(message, fn) {
   }
 }
 
-const leftovers = (names) => names.filter((name) => name.endsWith('.tmp') || name.endsWith('.bak'))
+const leftovers = (names) => names.filter((name) => name.endsWith('.tmp') || name.endsWith('.bak') || /\.\d+$/.test(name))
 const root = await mkdtemp(join(tmpdir(), 'yan-sync-atomic-'))
 
 try {
@@ -76,6 +76,27 @@ try {
     assert.ok(failure, '写入目录应失败')
     assert.equal(await readFile(join(dir, 'inner.txt'), 'utf8'), 'keep')
     assert.deepEqual(leftovers(await readdir(root)), [])
+  })
+
+  process.stdout.write('\n▌原子写：并发与权限\n')
+  await check('同一文件并发写入，最终内容是完整的一份', async () => {
+    const target = join(root, 'concurrent.json')
+    const body = (ch) => ch.repeat(200_000)
+    await Promise.all([atomicWriteFile(target, body('a')), atomicWriteFile(target, body('b'))])
+    const text = await readFile(target, 'utf8')
+    assert.ok(text === body('a') || text === body('b'), '不出现两份内容交错')
+    assert.deepEqual(leftovers(await readdir(root)), [])
+  })
+  await check('调用方给的 mode 落到目标文件上', async () => {
+    const target = join(root, 'secrets.json')
+    await atomicWriteFile(target, 'x', { mode: 0o600 })
+    assert.equal(await readFile(target, 'utf8'), 'x')
+    if (process.platform !== 'win32') assert.equal((await stat(target)).mode & 0o777, 0o600)
+  })
+  await check('目标目录不存在时自动创建', async () => {
+    const target = join(root, 'nested', 'deep', 'settings.json')
+    await atomicWriteFile(target, 'ok')
+    assert.equal(await readFile(target, 'utf8'), 'ok')
   })
 } finally {
   await rm(root, { recursive: true, force: true }).catch(() => undefined)

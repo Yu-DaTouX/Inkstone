@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { YAN_DIR } from './paths'
+import { atomicWriteFile } from './sync/atomic'
 
 export const QUEUE_RECOVERY_DIR = join(YAN_DIR, 'queue-recovery')
 
@@ -61,11 +62,7 @@ export function saveQueue(input: QueueToPersist): Promise<void> {
     images: imageCount(input.images)
   }
   return serialize(sessionId, async () => {
-    await mkdir(QUEUE_RECOVERY_DIR, { recursive: true })
-    const target = queueFile(sessionId)
-    const temp = `${target}.${process.pid}.tmp`
-    await writeFile(temp, `${JSON.stringify(record)}\n`, 'utf8')
-    await rename(temp, target)
+    await atomicWriteFile(queueFile(sessionId), `${JSON.stringify(record)}\n`)
   })
 }
 

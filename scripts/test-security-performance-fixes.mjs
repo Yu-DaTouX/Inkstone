@@ -56,14 +56,14 @@ try {
   const { extractOffice } = await mod('src/main/office/extract.ts', 'office')
   const paragraph = '<a:p><a:t>' + 'x'.repeat(2000) + '</a:t></a:p>'
   const long = zip(Array.from({ length: 300 }, (_, i) => [`ppt/slides/slide${i + 1}.xml`, `<p:sp>${paragraph.repeat(3)}</p:sp>`]))
-  const preview = extractOffice(long, 'pptx')
+  const preview = await extractOffice(long, 'pptx')
   assert.equal(preview.ok, true); assert.equal(preview.truncated, true)
   const returned = preview.sections.reduce((sum, section) => sum + section.title.length + section.lines.reduce((acc, line) => acc + line.length, 0), 0)
   assert.ok(returned <= 512 * 1024 && returned > 500 * 1024, `returned ${returned}`)
-  assert.equal(extractOffice(zip([['word/document.xml', 'x'.repeat(9 * 1024 * 1024)]]), 'docx').ok, false)
+  assert.equal((await extractOffice(zip([['word/document.xml', 'x'.repeat(9 * 1024 * 1024)]]), 'docx')).ok, false)
   console.log('✓ Office response character budget and oversized XML rejection')
 
-  const docWithImage = extractOffice(
+  const docWithImage = await extractOffice(
     zip([
       [
         'word/document.xml',
@@ -75,7 +75,7 @@ try {
   assert.equal(docWithImage.ok, true)
   assert.deepEqual(docWithImage.sections[0].lines, ['图一 [图片]', '正文'], 'docx 的图片位置给占位，正文顺序不变')
 
-  const sheetWithChart = extractOffice(
+  const sheetWithChart = await extractOffice(
     zip([
       ['xl/workbook.xml', '<workbook xmlns:r="r"><sheets><sheet name="对比总表" sheetId="1" r:id="rId1" /></sheets></workbook>'],
       ['xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml" /></Relationships>'],
