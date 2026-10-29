@@ -158,6 +158,60 @@ async function run() {
     assert.deepEqual(more.sideMoreLayout(partial, 'chat').shown.map((entry) => entry.id), ['artifacts'], '只有一个入口时直接显示')
     assert.equal(more.activeRunCount([scheduledRun, sessionRun, { phase: phase('needs-you') }, { phase: phase('stalled') }, { phase: phase('queued') }, { phase: phase('done') }, { phase: phase('failed') }]), 5, '排队、运行、等待与停滞都算进行中')
 
+    const noon = new Date(2026, 9, 30, 12, 0, 0).getTime()
+    const at = (day, hour) => new Date(2026, 9, day, hour, 0, 0).getTime()
+    assert.equal(model.recencyBucket(at(30, 1), noon), 'today', '今天零点后算今天')
+    assert.equal(model.recencyBucket(at(29, 23), noon), 'yesterday', '昨天按自然日，不按 24 小时')
+    assert.equal(model.recencyBucket(at(24, 9), noon), 'week', '7 天内含今天往前 6 天')
+    assert.equal(model.recencyBucket(at(23, 23), noon), 'older')
+    assert.equal(model.recencyTier(noon - 30 * 60_000, noon), 'hot', '一小时内最醒目')
+    assert.equal(model.recencyTier(at(30, 2), noon), 'warm')
+    assert.equal(model.recencyTier(at(28, 2), noon), 'cool')
+    assert.equal(model.recencyTier(at(1, 2), noon), 'cold', '一周以前退后')
+    const runs = model.bucketByRecency([at(30, 11), at(30, 9), at(29, 9), at(20, 9), at(30, 10)], (value) => value, noon)
+    assert.deepEqual(runs.map((run) => [run.bucket, run.entries.length]), [['today', 2], ['yesterday', 1], ['older', 2]], '按时间连续分段，分页外补回的当前会话并入末段不另起旧分组')
+
+    const twins = model.titleTwins([{ id: 'a', title: '去阅读t3code的代码 我想要基于' }, { id: 'b', title: '去阅读t3code的代码  我想要基于…' }, { id: 'c', title: '侧栏' }, { id: 'd', title: '' }, { id: 'e', title: '' }])
+    assert.deepEqual([...twins].sort(), ['a', 'b'], '空白与末尾省略号不影响同名判断，空标题不算同名')
+    assert.equal(model.sessionNote({ lastReply: { id: 'r', at: 1, text: '\n## **结论**：保留 `Sidebar`\n更多' }, createdAt: 0 }, 'zh-CN'), '结论：保留 Sidebar', '同名会话用最后答复首行区分，去掉 Markdown 记号')
+    assert.match(model.sessionNote({ createdAt: at(28, 14) }, 'zh-CN'), /10\/28/, '没有答复时用创建时间区分')
+    const meta = model.sessionRowMeta({ id: 'x', path: 'x', cwd: '', title: '', named: false, createdAt: 0, updatedAt: noon - 5 * 60_000, messageCount: 1 }, { now: noon, lang: 'zh-CN', since: noon - 30_000, live: true })
+    assert.equal(meta.elapsed, '<1m', '运行中显示本轮已运行时长')
+    assert.equal(meta.age, 'hot', '运行或等待中的会话总在最醒目档')
+    assert.equal(meta.ago, '5m')
+    assert.equal(meta.note, undefined, '不同名时不显示辨识行')
+
+    const grp = (key, label, cwd) => ({ key, slot: key, label, cwd, current: false, list: [] })
+    const hints = model.segmentPathHints([
+      grp('a', 'Inkstone', 'E:\\pi-desktop'),
+      grp('b', 'Inkstone', 'E:\\pi-desktop-worktrees\\yan-auto-20261029-opus'),
+      grp('c', 'worktree', 'C:\\Temp\\sub-1a2b\\worktree'),
+      grp('d', 'worktree', 'C:\\Temp\\sub-9f8e\\worktree'),
+      grp('e', 'Notes', 'D:\\notes\\reading'),
+      grp('pinned', 'Inkstone', '')
+    ])
+    assert.equal(hints.get('a'), 'pi-desktop', '同名项目给出最短可区分的路径尾')
+    assert.equal(hints.get('b'), 'yan-auto-20261029-opus')
+    assert.equal(hints.get('c'), 'sub-1a2b', '路径尾与项目名相同时只显示能区分的上一级')
+    assert.equal(hints.get('d'), 'sub-9f8e')
+    assert.equal(hints.has('e'), false, '不同名且未改名时不加提示')
+    assert.equal(model.segmentPathHints([grp('e', 'Notes', 'D:\\notes\\reading')], { renamed: true }).get('e'), 'D:\\notes\\reading', '改过名的项目可选显示路径')
+    assert.equal(model.segmentPathHints([grp('a', 'X', 'E:\\a\\yan-subagent-sub-1a2b'), grp('b', 'X', 'E:\\b\\other')], { clip: true }).get('a'), '\u2026agent-sub-1a2b', '平铺行内的提示保留末尾、过长从前面截断')
+
+    const tally = model.tallyAttention([
+      { path: 'p1', status: 'running' },
+      { path: 'p2', status: 'awaiting' },
+      { path: 'p3', status: 'unread' },
+      { path: 'p4', status: 'error' },
+      { path: 'p1', status: 'running' },
+      { path: 'p5', status: 'running' }
+    ])
+    assert.deepEqual(tally, { running: ['p1', 'p5'], awaiting: ['p2'], unread: ['p3'] }, '按显示顺序汇总，重复路径只算一次，失败不计入待处理')
+    assert.equal(model.nextAttentionPath(tally.running, null), 'p1')
+    assert.equal(model.nextAttentionPath(tally.running, 'p1'), 'p5')
+    assert.equal(model.nextAttentionPath(tally.running, 'p5'), 'p1', '跳到最后一个后回到第一个')
+    assert.equal(model.nextAttentionPath([], null), null)
+
     const shell = await readFile('src/renderer/src/app/ShellV3.tsx', 'utf8')
     assert.match(shell, /const drawerOpen = sidebarCompact && sidebarOpen/, '抽屉状态只在窄屏且左栏打开时成立')
     assert.match(shell, /<main className="v3-main" inert=\{drawerOpen\}>/, '抽屉打开时主界面退出交互')

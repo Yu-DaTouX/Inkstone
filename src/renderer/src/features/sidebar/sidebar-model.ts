@@ -34,22 +34,165 @@ export function compactCwd(cwd: string): string {
   return [full[0], '\u2026', ...parts.slice(-2)].join(sep)
 }
 
-export function segmentPathHints(groups: readonly SidebarGroup[]): Map<string, string> {
-  const keysByLabel = new Map<string, Set<string>>()
+function pathParts(cwd: string): string[] {
+  return cwd.split(/[\\/]+/).filter(Boolean)
+}
+
+const HINT_MAX = 16
+
+function clipHint(hint: string): string {
+  const chars = [...hint]
+  return chars.length > HINT_MAX ? `\u2026${chars.slice(-(HINT_MAX - 2)).join('')}` : hint
+}
+
+function distinctTail(cwd: string, rivals: readonly string[], label: string, clip: boolean): string {
+  const sep = cwd.includes('\\') ? '\\' : '/'
+  const own = pathParts(cwd)
+  const others = rivals.map(pathParts)
+  for (let take = 1; take <= own.length; take++) {
+    const tail = own.slice(-take).join('/').toLowerCase()
+    if (others.every((parts) => parts.slice(-take).join('/').toLowerCase() !== tail)) {
+      const parts = own.slice(-take)
+      if (parts.length > 1 && parts[parts.length - 1].toLowerCase() === label.toLowerCase()) parts.pop()
+      return clip ? clipHint(parts.join(sep)) : parts.join(sep)
+    }
+  }
+  return clip ? clipHint(compactCwd(cwd)) : compactCwd(cwd)
+}
+
+export function segmentPathHints(groups: readonly SidebarGroup[], options: { renamed?: boolean; clip?: boolean } = {}): Map<string, string> {
+  const byLabel = new Map<string, Map<string, string>>()
   for (const group of groups) {
+    if (!group.cwd || group.key === 'pinned') continue
     const label = group.label.toLowerCase()
-    const keys = keysByLabel.get(label) ?? new Set<string>()
-    keys.add(group.key)
-    keysByLabel.set(label, keys)
+    const keys = byLabel.get(label) ?? new Map<string, string>()
+    keys.set(group.key, group.cwd)
+    byLabel.set(label, keys)
   }
   const hints = new Map<string, string>()
   for (const group of groups) {
-    if (!group.cwd || hints.has(group.key)) continue
-    const ambiguous = (keysByLabel.get(group.label.toLowerCase())?.size ?? 0) > 1
-    const renamed = group.label.toLowerCase() !== shortProject(group.cwd).toLowerCase()
-    if (ambiguous || renamed) hints.set(group.key, compactCwd(group.cwd))
+    if (!group.cwd || group.key === 'pinned' || hints.has(group.key)) continue
+    const peers = byLabel.get(group.label.toLowerCase()) ?? new Map<string, string>()
+    const rivals = [...peers].filter(([key, cwd]) => key !== group.key && !sameCwd(cwd, group.cwd)).map(([, cwd]) => cwd)
+    if (rivals.length) hints.set(group.key, distinctTail(group.cwd, rivals, group.label, !!options.clip))
+    else if (options.renamed && group.label.toLowerCase() !== shortProject(group.cwd).toLowerCase()) hints.set(group.key, compactCwd(group.cwd))
   }
   return hints
+}
+
+export type RecencyBucket = 'today' | 'yesterday' | 'week' | 'older'
+export type RecencyTier = 'hot' | 'warm' | 'cool' | 'cold'
+
+export const RECENCY_BUCKETS: readonly RecencyBucket[] = ['today', 'yesterday', 'week', 'older']
+
+function dayStart(now: number, back = 0): number {
+  const day = new Date(now)
+  day.setHours(0, 0, 0, 0)
+  day.setDate(day.getDate() - back)
+  return day.getTime()
+}
+
+export function recencyBucket(at: number, now: number): RecencyBucket {
+  if (at >= dayStart(now)) return 'today'
+  if (at >= dayStart(now, 1)) return 'yesterday'
+  if (at >= dayStart(now, 6)) return 'week'
+  return 'older'
+}
+
+export function recencyTier(at: number, now: number): RecencyTier {
+  if (now - at < 3_600_000) return 'hot'
+  const bucket = recencyBucket(at, now)
+  if (bucket === 'today') return 'warm'
+  return bucket === 'older' ? 'cold' : 'cool'
+}
+
+export interface RecencyRun<T> {
+  bucket: RecencyBucket
+  entries: T[]
+}
+
+export function bucketByRecency<T>(entries: readonly T[], activityAt: (entry: T) => number, now: number): RecencyRun<T>[] {
+  const runs: RecencyRun<T>[] = []
+  for (const entry of entries) {
+    const bucket = recencyBucket(activityAt(entry), now)
+    const last = runs[runs.length - 1]
+    if (last && RECENCY_BUCKETS.indexOf(last.bucket) >= RECENCY_BUCKETS.indexOf(bucket)) last.entries.push(entry)
+    else runs.push({ bucket, entries: [entry] })
+  }
+  return runs
+}
+
+function titleKey(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.\u2026。]+$/, '')
+}
+
+export function titleTwins(items: readonly { id: string; title: string }[]): Set<string> {
+  const byKey = new Map<string, string[]>()
+  for (const item of items) {
+    const key = titleKey(item.title)
+    if (!key) continue
+    const ids = byKey.get(key) ?? []
+    ids.push(item.id)
+    byKey.set(key, ids)
+  }
+  const twins = new Set<string>()
+  for (const ids of byKey.values()) if (ids.length > 1) for (const id of ids) twins.add(id)
+  return twins
+}
+
+export function sessionNote(session: Pick<SessionSummary, 'lastReply' | 'createdAt'>, lang: 'zh-CN' | 'en-US'): string {
+  const reply = session.lastReply?.text
+    ?.split('\n')
+    .map((line) => line.replace(/^[\s#>*\-+`|]+/, '').replace(/[*`_]+/g, '').trim())
+    .find(Boolean)
+  if (reply) return reply.length > 120 ? `${reply.slice(0, 120)}\u2026` : reply
+  return new Date(session.createdAt).toLocaleString(lang, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+export interface SessionRowMeta {
+  ago: string
+  age: RecencyTier
+  elapsed?: string
+  note?: string
+}
+
+function elapsedLabel(since: number, now: number, lang: 'zh-CN' | 'en-US'): string {
+  return now - since < 60_000 ? '<1m' : compactAgo(since, now, lang)
+}
+
+export function sessionRowMeta(
+  session: SessionSummary,
+  options: { now: number; lang: 'zh-CN' | 'en-US'; since?: number; live?: boolean; twin?: boolean }
+): SessionRowMeta {
+  const at = activityOf(session)
+  return {
+    ago: compactAgo(at, options.now, options.lang),
+    age: options.live ? 'hot' : recencyTier(at, options.now),
+    elapsed: options.live && options.since ? elapsedLabel(options.since, options.now, options.lang) : undefined,
+    note: options.twin ? sessionNote(session, options.lang) : undefined
+  }
+}
+
+export type AttentionKind = 'running' | 'awaiting' | 'unread'
+
+export type AttentionTally = Record<AttentionKind, string[]>
+
+export function tallyAttention(rows: readonly { path: string; status: string }[]): AttentionTally {
+  const tally: AttentionTally = { running: [], awaiting: [], unread: [] }
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (seen.has(row.path)) continue
+    seen.add(row.path)
+    if (row.status === 'running' || row.status === 'awaiting') tally[row.status].push(row.path)
+    else if (row.status === 'unread') tally.unread.push(row.path)
+  }
+  return tally
+}
+
+export function nextAttentionPath(paths: readonly string[], after: string | null): string | null {
+  if (!paths.length) return null
+  const index = after ? paths.indexOf(after) : -1
+  return paths[(index + 1) % paths.length]
 }
 
 function activityOf(session: SessionSummary): number {

@@ -123,6 +123,14 @@
 }
 
 @layer utilities {
+  .ui-signal-run {
+    color: var(--run-t);
+  }
+
+  .ui-signal-ask {
+    color: var(--ask-t);
+  }
+
   .ui-num {
     font-family: var(--font-num);
     font-variant-numeric: tabular-nums;

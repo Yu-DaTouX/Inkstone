@@ -10,18 +10,19 @@ import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, withIdleProjects, type SidebarGroup } from './sidebar-model'
+import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, nextAttentionPath, segmentPathHints, tallyAttention, titleTwins, withIdleProjects, type AttentionKind, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { ArchivedView } from './ArchivedView'
 import { ArchiveShelf, type ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectHeader } from './ProjectHeader'
-import { SidebarRow } from './SidebarRow'
 import { SidebarTip } from './SidebarTip'
 import { sidebarText } from './sidebar-text'
 import { SideMore } from './SideMore'
 import { ContentMatches, useContentSearch } from './ContentMatches'
-import { FlatSessionList, FlatToolbar, ProjectScopeButton, WorkingShelf, useArchivedSlimRow, useFlatScope, useWorkingSet } from './FlatSessions'
+import { FLAT_REVEAL_EVENT, FlatSessionList, FlatToolbar, ProjectScopeButton, WORKING_SHELF_OPEN_EVENT, WorkingShelf, useArchivedSlimRow, useFlatScope, useMinuteClock, useWorkingSet, type FlatCues } from './FlatSessions'
+import { AttentionLedger } from './AttentionLedger'
+import { GroupRow } from './GroupRow'
 import { turnModelLabel } from '../session/turn-model-label'
 import { buildContentMatches } from './content-search'
 import { sessionStatusKind, sessionUnread } from './session-status'
@@ -209,9 +210,11 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
     const run = runIndex.latest({ id: item.id, path: item.path })
     const paneSelected = isCurrent
     const unread = run ? sessionUnread({ unread: isUnreadRun(run), paneSelected }) : false
+    const phase = run?.phase
     return {
       item,
       title: manualTitles[item.id] ?? titles[item.id] ?? item.title,
+      since: phase && 'since' in phase ? phase.since : undefined,
       isCurrent,
       status: sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt, markedUnread: item.markedUnread }),
       code: run?.code,
@@ -228,6 +231,62 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const working = useWorkingSet(runningPaths)
   const workingRows = flatView.rows.filter((entry) => working.has(entry.session.path))
   const activeRows = workingRows.length ? flatView.rows.filter((entry) => !working.has(entry.session.path)) : flatView.rows
+  const rowClock = useMinuteClock()
+  const twins = useMemo(
+    () => titleTwins(listedSessions.map((item) => ({ id: item.id, title: manualTitles[item.id] ?? titles[item.id] ?? item.title }))),
+    [listedSessions, manualTitles, titles]
+  )
+  const hints = useMemo(() => segmentPathHints(flat ? scopeGroups : groups, { clip: flat }), [flat, scopeGroups, groups])
+  const cues = useMemo<FlatCues>(() => ({ hints, twins }), [hints, twins])
+  const orderedSessions = flat
+    ? [...flatView.pinned, ...activeRows, ...workingRows].map((entry) => entry.session)
+    : groups.flatMap((group) => group.list)
+  const tally = tallyAttention(orderedSessions.map((item) => ({ path: item.path, status: rowState(item).status })))
+  const jumpCursor = useRef<Partial<Record<AttentionKind, string>>>({})
+
+  const jumpTo = (kind: AttentionKind): void => {
+    const path = nextAttentionPath(tally[kind], jumpCursor.current[kind] ?? null)
+    if (!path) return
+    jumpCursor.current[kind] = path
+    const selector = `[data-session-path="${CSS.escape(path)}"]`
+    if (!asideRef.current?.querySelector(selector)) {
+      if (flat && working.has(path)) window.dispatchEvent(new Event(WORKING_SHELF_OPEN_EVENT))
+      else if (flat) window.dispatchEvent(new CustomEvent(FLAT_REVEAL_EVENT, { detail: path }))
+      else {
+        const group = groups.find((entry) => entry.list.some((item) => item.path === path))
+        if (group) {
+          const index = group.list.findIndex((item) => item.path === path)
+          setCollapsedKeys((prev) => (prev.has(group.slot) ? toggleKey(prev, group.slot) : prev))
+          if (index >= GROUP_PAGE_SIZE) {
+            setVisibleCounts((prev) => new Map(prev).set(group.slot, Math.max(prev.get(group.slot) ?? 0, Math.ceil((index + 1 - GROUP_PAGE_SIZE) / GROUP_PAGE_SIZE) * GROUP_PAGE_SIZE)))
+          }
+        }
+      }
+    }
+    let tries = 0
+    const land = (): void => {
+      const host = asideRef.current?.querySelector<HTMLElement>(selector)
+      const row = host?.querySelector<HTMLElement>('.v3-row')
+      if (!host || !row) {
+        if (tries++ < 10) requestAnimationFrame(land)
+        return
+      }
+      row.scrollIntoView({ block: 'nearest' })
+      row.focus({ preventScroll: true })
+      host.setAttribute('data-jumped', '1')
+      window.setTimeout(() => host.removeAttribute('data-jumped'), 1200)
+    }
+    requestAnimationFrame(land)
+  }
+  const ledger = <AttentionLedger tally={tally} onJump={jumpTo} />
+  const groupPulse = (list: readonly SessionSummary[]): { running: number; awaiting: number } => {
+    const pulse = { running: 0, awaiting: 0 }
+    for (const item of list) {
+      const status = rowState(item).status
+      if (status === 'running' || status === 'awaiting') pulse[status]++
+    }
+    return pulse
+  }
 
   const pageOf = (group: SidebarGroup): ReturnType<typeof groupPage> =>
     groupPage(
@@ -342,6 +401,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           <BrandMark size={16} decorative />
           <span className="v3-side-name">Inkstone</span>
         </span>
+        {ledger}
         <div className="v3-side-top-actions">
           {flat ? null : (
             <IconButton aria-label={newChatLabel} tooltip={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
@@ -432,6 +492,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
               onScope={setFlatScope}
               projects={projectRecords}
               rowState={rowState}
+              cues={cues}
               onOpen={openSession}
               onNew={createInProject}
             />
@@ -455,21 +516,12 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
                     collapsed={collapsed}
                     onToggle={() => setCollapsedKeys((prev) => toggleKey(prev, group.slot))}
                     onNew={(projectId) => createInProject(group, projectId)}
+                    hint={hints.get(group.key)}
+                    pulse={collapsed ? groupPulse(group.list) : undefined}
                   />
-                  {rows.map((item) => {
-                    const row = rowState(item)
-                    return (
-                      <SidebarRow
-                        key={item.path}
-                        item={item}
-                        title={row.title}
-                        isCurrent={row.isCurrent}
-                        status={row.status}
-                        code={row.code}
-                        onOpen={openSession}
-                      />
-                    )
-                  })}
+                  {rows.map((item) => (
+                    <GroupRow key={item.path} row={rowState(item)} now={rowClock} twin={twins.has(item.id)} onOpen={openSession} />
+                  ))}
                   {!collapsed && group.list.length > GROUP_PAGE_SIZE ? (
                     <ListRow
                       className="v3-show-more"
@@ -508,7 +560,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
 
       {flat && !showArchived && (workingRows.length || showShelf) ? (
         <div className="v3-flat-shelves">
-          <WorkingShelf entries={workingRows} rowState={rowState} onOpen={openSession} />
+          <WorkingShelf entries={workingRows} rowState={rowState} cues={cues} onOpen={openSession} />
           {showShelf ? (
             <ArchiveShelf
               rows={archivedView.sessions.map(rowState)}

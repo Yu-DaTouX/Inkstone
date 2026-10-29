@@ -11,9 +11,11 @@ import {
   IconButton,
   Kbd,
   KbdGroup,
+  ListRow,
   RailValue,
   Separator,
   ShimmerText,
+  StatusDot,
   Swatch,
   TermSpinner,
   Text
@@ -202,6 +204,13 @@ export const TerminalElements: Story = {
             <Kbd>K</Kbd>
           </KbdGroup>
           <Badge tone="run">运行</Badge>
+        </div>
+      </Section>
+      <Section title="侧栏状态列：运行 / 等你 / 未读">
+        <div style={{ display: 'grid', gap: 2, maxWidth: 280 }}>
+          <ListRow icon={<TermSpinner />} trailing={<span className="ui-num ui-signal-run">3m</span>}>重构侧栏</ListRow>
+          <ListRow signal="ask" icon={<StatusDot kind="awaiting" />} trailing={<span className="ui-num ui-signal-ask">2m</span>}>删除 .tmp 前等你确认</ListRow>
+          <ListRow icon={<StatusDot kind="ready" />} trailing={<span className="ui-num">47m</span>}>完成未读</ListRow>
         </div>
       </Section>
       <p style={noteStyle}>

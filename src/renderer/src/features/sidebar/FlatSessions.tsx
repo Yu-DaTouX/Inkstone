@@ -1,17 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react'
-import { Archive, Check, Folder, FolderOpen, FolderPlus, Globe, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
+import { Archive, Check, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
 import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField } from '../../ui'
+import { AsciiRule, Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField, TermSpinner } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
-import { FLAT_PAGE_SIZE, compactAgo, sessionProjectLabel, isGlobalGroup, segmentPathHints, sessionActivityAt, type FlatEntry, type SidebarGroup } from './sidebar-model'
+import { FLAT_PAGE_SIZE, bucketByRecency, compactAgo, recencyBucket, sessionProjectLabel, isGlobalGroup, sessionActivityAt, sessionRowMeta, type FlatEntry, type RecencyBucket, type SidebarGroup } from './sidebar-model'
 import type { ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectBadge } from './ProjectBadge'
 import { ArchiveConfirm, ProjectDirectoryDialog, ProjectHeader, ensureProjectForCwd, setProjectArchived } from './ProjectHeader'
 import { SidebarRow } from './SidebarRow'
-import { sidebarText } from './sidebar-text'
+import { sidebarText, type SidebarText } from './sidebar-text'
 
 const SCOPE_KEY = 'inkstone.v3.sidebar.flatScope'
 
@@ -152,7 +152,28 @@ export function FlatToolbar({
   )
 }
 
-function useMinuteClock(): number {
+export function recencyLabel(own: SidebarText, bucket: RecencyBucket): string {
+  return bucket === 'today' ? own.recencyToday : bucket === 'yesterday' ? own.recencyYesterday : bucket === 'week' ? own.recencyWeek : own.recencyOlder
+}
+
+export function RecencyRule({ label, count, bucket }: { label: string; count: number; bucket?: RecencyBucket }): JSX.Element {
+  return (
+    <AsciiRule
+      className="v3-recency"
+      tone={bucket === 'today' ? 'ink' : 'dim'}
+      data-bucket={bucket}
+      data-testid="v3-recency-rule"
+      label={
+        <>
+          {label}
+          <span className="v3-recency-count ui-num">{count}</span>
+        </>
+      }
+    />
+  )
+}
+
+export function useMinuteClock(): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -382,40 +403,27 @@ function writeShelfOpen(key: string, open: boolean): void {
   }
 }
 
+export interface FlatCues {
+  hints: ReadonlyMap<string, string>
+  twins: ReadonlySet<string>
+}
+
 interface FlatRowProps {
   entry: FlatEntry
   row: ArchiveShelfRow
   now: number
   branch?: string | null
-  slim?: boolean
+  cues: FlatCues
+  scoped?: boolean
   onOpen: (item: SessionSummary) => void
 }
 
-function FlatSegmentHead({ entry, hint }: { entry: FlatEntry; hint?: string }): JSX.Element {
+function FlatRow({ entry, row, now, branch, cues, scoped, onOpen }: FlatRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
-  const global = entry.session.scope === 'global'
-  const label = entry.group.label || text.projectFallback
-  return (
-    <div className="v3-flat-seg" data-testid="v3-flat-seg" title={entry.group.cwd && entry.group.cwd !== label ? `${label} \u00b7 ${entry.group.cwd}` : undefined}>
-      {global ? <Globe size={12} className="v3-crow-scope" aria-hidden /> : <Folder size={12} className="v3-crow-scope" aria-hidden />}
-      <span className="v3-crow-project">{label}</span>
-      {hint ? <span className="v3-flat-seg-path" data-testid="v3-flat-seg-path">{hint}</span> : null}
-    </div>
-  )
-}
-
-function segmentHints(entries: readonly FlatEntry[]): Map<string, string> {
-  return segmentPathHints([...new Map(entries.map((entry) => [entry.group.key, entry.group])).values()])
-}
-
-function startsSegment(list: readonly FlatEntry[], index: number): boolean {
-  return index === 0 || list[index - 1].group.key !== list[index].group.key
-}
-
-function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.Element {
-  const { lang } = useI18n()
-  const text = v3Text(lang)
+  const hint = cues.hints.get(entry.group.key)
+  const twin = cues.twins.has(entry.session.id)
+  const live = row.status === 'running' || row.status === 'awaiting'
   const card = useMemo(() => ({
     project: entry.group.label || text.projectFallback,
     cwd: entry.group.cwd,
@@ -424,8 +432,14 @@ function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.E
     model: row.model,
     modelRef: row.modelRef,
     branch: branch ?? undefined,
-    slim
-  }), [entry.group.label, entry.group.cwd, entry.session, row.model, row.modelRef, text.projectFallback, now, lang, branch, slim])
+    hint,
+    toneKey: hint ? entry.group.cwd : undefined,
+    hideProject: scoped
+  }), [entry.group.label, entry.group.cwd, entry.session, row.model, row.modelRef, text.projectFallback, now, lang, branch, hint, scoped])
+  const meta = useMemo(
+    () => sessionRowMeta(entry.session, { now, lang, since: row.since, live, twin }),
+    [entry.session, now, lang, row.since, live, twin]
+  )
   return (
     <SidebarRow
       item={entry.session}
@@ -434,6 +448,7 @@ function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.E
       status={row.status}
       code={row.code}
       card={card}
+      meta={meta}
       onOpen={onOpen}
     />
   )
@@ -464,13 +479,18 @@ export function useArchivedSlimRow(onOpen: (item: SessionSummary) => void): (row
   return (row) => <ArchivedSlimRow key={row.item.path} row={row} onOpen={onOpen} now={now} />
 }
 
+export const WORKING_SHELF_OPEN_EVENT = 'yan-v3-working-shelf-open'
+export const FLAT_REVEAL_EVENT = 'yan-v3-flat-reveal'
+
 export function WorkingShelf({
   entries,
   rowState,
+  cues,
   onOpen
 }: {
   entries: readonly FlatEntry[]
   rowState: (item: SessionSummary) => ArchiveShelfRow
+  cues: FlatCues
   onOpen: (item: SessionSummary) => void
 }): JSX.Element | null {
   const { lang } = useI18n()
@@ -479,7 +499,14 @@ export function WorkingShelf({
   const [open, setOpen] = useState(() => readShelfOpen(WORKING_OPEN_KEY))
   const shown = open ? entries : entries.filter((entry) => rowState(entry.session).isCurrent)
   const branches = useCwdBranches(shown.map((entry) => entry.session.cwd), now)
-  const hints = segmentHints(shown)
+  useEffect(() => {
+    const reveal = (): void => {
+      writeShelfOpen(WORKING_OPEN_KEY, true)
+      setOpen(true)
+    }
+    window.addEventListener(WORKING_SHELF_OPEN_EVENT, reveal)
+    return () => window.removeEventListener(WORKING_SHELF_OPEN_EVENT, reveal)
+  }, [])
   if (!entries.length) return null
   return (
     <section className="v3-shelf v3-shelf--working" data-open={open ? '1' : undefined} aria-label={own.workingShelf} data-testid="v3-working-shelf">
@@ -491,22 +518,21 @@ export function WorkingShelf({
           setOpen(next)
         }}
       >
-        <CollapsibleHeader chevron="end" tone="emphasized" accessory={entries.length} data-testid="v3-working-shelf-toggle">
+        <CollapsibleHeader chevron="end" tone="emphasized" icon={<TermSpinner />} accessory={<span className="ui-num">{entries.length}</span>} data-testid="v3-working-shelf-toggle">
           {own.workingShelf}
         </CollapsibleHeader>
         {shown.length ? (
           <div className="v3-shelf-list">
-            {shown.map((entry, index) => (
-              <Fragment key={entry.session.path}>
-                {startsSegment(shown, index) ? <FlatSegmentHead entry={entry} hint={hints.get(entry.group.key)} /> : null}
-                <FlatRow
-                  entry={entry}
-                  row={rowState(entry.session)}
-                  now={now}
-                  branch={branches.get(entry.session.cwd)}
-                  onOpen={onOpen}
-                />
-              </Fragment>
+            {shown.map((entry) => (
+              <FlatRow
+                key={entry.session.path}
+                entry={entry}
+                row={rowState(entry.session)}
+                now={now}
+                branch={branches.get(entry.session.cwd)}
+                cues={cues}
+                onOpen={onOpen}
+              />
             ))}
           </div>
         ) : null}
@@ -522,6 +548,7 @@ export function FlatSessionList({
   onScope,
   projects,
   rowState,
+  cues,
   onOpen,
   onNew
 }: {
@@ -531,11 +558,13 @@ export function FlatSessionList({
   onScope: (scope: string | null) => void
   projects: readonly ProjectRecord[]
   rowState: (item: SessionSummary) => ArchiveShelfRow
+  cues: FlatCues
   onOpen: (item: SessionSummary) => void
   onNew: (group: SidebarGroup, projectId: string) => void
 }): JSX.Element {
   const { lang } = useI18n()
   const own = sidebarText(lang)
+  const text = v3Text(lang)
   const now = useMinuteClock()
   const [limit, setLimit] = useState(FLAT_PAGE_SIZE)
   const dragSource = useSessionDrag((s) => s.source)
@@ -544,24 +573,38 @@ export function FlatSessionList({
 
   useEffect(() => setLimit(FLAT_PAGE_SIZE), [scopeGroup?.key])
 
+  useEffect(() => {
+    const reveal = (event: Event): void => {
+      const index = rows.findIndex((entry) => entry.session.path === (event as CustomEvent<string>).detail)
+      if (index >= 0) setLimit((value) => Math.max(value, (Math.floor(index / FLAT_PAGE_SIZE) + 1) * FLAT_PAGE_SIZE))
+    }
+    window.addEventListener(FLAT_REVEAL_EVENT, reveal)
+    return () => window.removeEventListener(FLAT_REVEAL_EVENT, reveal)
+  }, [rows])
+
   const shown = rows.slice(0, limit)
   const current = rows.slice(limit).find((entry) => rowState(entry.session).isCurrent)
   if (current) shown.push(current)
   const hidden = Math.max(0, rows.length - limit)
   const branches = useCwdBranches([...pinned, ...shown].map((entry) => entry.session.cwd), now)
-  const hints = segmentHints([...pinned, ...shown])
+  const buckets = bucketByRecency(shown, (entry) => sessionActivityAt(entry.session), now)
+  const bucketTotals = new Map<RecencyBucket, number>()
+  for (const entry of rows) {
+    const bucket = recencyBucket(sessionActivityAt(entry.session), now)
+    bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + 1)
+  }
 
-  const render = (entry: FlatEntry, index: number, list: readonly FlatEntry[]): JSX.Element => (
-    <Fragment key={entry.session.path}>
-      {!scopeGroup && startsSegment(list, index) ? <FlatSegmentHead entry={entry} hint={hints.get(entry.group.key)} /> : null}
-      <FlatRow
-        entry={entry}
-        row={rowState(entry.session)}
-        now={now}
-        branch={branches.get(entry.session.cwd)}
-        onOpen={onOpen}
-      />
-    </Fragment>
+  const render = (entry: FlatEntry): JSX.Element => (
+    <FlatRow
+      key={entry.session.path}
+      entry={entry}
+      row={rowState(entry.session)}
+      now={now}
+      branch={branches.get(entry.session.cwd)}
+      cues={cues}
+      scoped={!!scopeGroup}
+      onOpen={onOpen}
+    />
   )
 
   return (
@@ -577,12 +620,18 @@ export function FlatSessionList({
         />
       ) : null}
       <div className="v3-pin-zone" data-pin-zone data-empty={pinned.length ? undefined : '1'} data-dragging={dragging && !draggingPinned ? '1' : undefined} data-testid="v3-pin-zone">
+        {pinned.length ? <RecencyRule label={text.pinnedGroup} count={pinned.length} /> : null}
         {pinned.map(render)}
         {dragging && !draggingPinned ? <div className="v3-zone-drop" aria-hidden>{own.pinDrop}</div> : null}
       </div>
       <div className="v3-unpin-zone" data-unpin-zone data-dragging={draggingPinned ? '1' : undefined}>
         {draggingPinned ? <div className="v3-zone-drop" aria-hidden>{own.unpinDrop}</div> : null}
-        {shown.map(render)}
+        {buckets.map((run) => (
+          <Fragment key={run.bucket}>
+            <RecencyRule label={recencyLabel(own, run.bucket)} count={bucketTotals.get(run.bucket) ?? run.entries.length} bucket={run.bucket} />
+            {run.entries.map(render)}
+          </Fragment>
+        ))}
         {hidden > 0 ? (
           <ListRow className="v3-show-more" onClick={() => setLimit((value) => value + FLAT_PAGE_SIZE)} data-testid="v3-flat-more">
             {own.showMore.replace('{n}', String(Math.min(hidden, FLAT_PAGE_SIZE)))}

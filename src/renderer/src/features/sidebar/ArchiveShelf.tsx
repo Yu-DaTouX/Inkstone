@@ -35,6 +35,7 @@ export interface ArchiveShelfRow {
   code?: string
   model?: string
   modelRef?: ModelRef
+  since?: number
 }
 
 export function ArchiveShelf({

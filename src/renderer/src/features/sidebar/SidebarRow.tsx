@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type JSX, type Keyb
 import { AlarmClock, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
+import { cx, IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
 import { ModelBot, type BotMood } from '../../patterns/ModelBot'
 import { modelBrand, type ModelRef } from '../../../../shared/model-brand'
 import { v3Text } from '../../app/v3-text'
@@ -13,6 +13,7 @@ import { startSessionRowDrag, useSessionDrag } from './session-drag'
 import { SessionMenu } from './SessionMenu'
 import { SidebarTip } from './SidebarTip'
 import { ProjectBadge } from './ProjectBadge'
+import type { SessionRowMeta } from './sidebar-model'
 
 export interface SidebarRowCard {
   project: string
@@ -23,7 +24,11 @@ export interface SidebarRowCard {
   modelRef?: ModelRef
   branch?: string
   slim?: boolean
+  hint?: string
+  toneKey?: string
+  hideProject?: boolean
 }
+
 
 export interface SidebarRowProps {
   item: SessionSummary
@@ -32,13 +37,37 @@ export interface SidebarRowProps {
   status: SessionStatusKind
   code?: string
   card?: SidebarRowCard
+  meta?: SessionRowMeta
   snoozeLabel?: string
   snoozeTitle?: string
   onOpen: (item: SessionSummary) => void
 }
 
-function cardDetail(card: SidebarRowCard, status: string): string {
-  return [card.cwd && card.cwd !== card.project ? `${card.project} · ${card.cwd}` : card.project, card.branch, card.model, status].filter(Boolean).join('\n')
+function cardDetail(card: SidebarRowCard, status: string, note?: string): string {
+  return [card.cwd && card.cwd !== card.project ? `${card.project} · ${card.cwd}` : card.project, card.branch, card.model, status, note].filter(Boolean).join('\n')
+}
+
+function signalInk(status: SessionStatusKind): string | undefined {
+  return status === 'running' ? 'ui-signal-run' : status === 'awaiting' ? 'ui-signal-ask' : undefined
+}
+
+function RowSub({ card, note }: { card?: SidebarRowCard; note?: string }): JSX.Element | null {
+  const project = card && !card.slim && !card.hideProject ? card : undefined
+  const tail = note ?? (card && !card.slim ? card.model : undefined)
+  if (!project && !tail) return null
+  return (
+    <span className="v3-srow-sub" data-testid="v3-session-sub">
+      {project ? (
+        <span className="v3-srow-owner">
+          <ProjectBadge label={project.project} global={project.global} toneKey={project.toneKey} />
+          {note ? null : <span className="v3-crow-project">{project.project}</span>}
+          {project.hint && !note ? <span className="v3-srow-hint" data-testid="v3-session-hint">{project.hint}</span> : null}
+        </span>
+      ) : null}
+      {project && tail && !note ? <span className="v3-srow-dot" aria-hidden>·</span> : null}
+      {tail ? <span className="v3-srow-note" data-note={note ? '' : undefined}>{tail}</span> : null}
+    </span>
+  )
 }
 
 function cardHasBot(status: SessionStatusKind): boolean {
@@ -57,7 +86,7 @@ function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | nu
   )
 }
 
-export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, status, code, card, snoozeLabel, snoozeTitle, onOpen }: SidebarRowProps): JSX.Element {
+export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, status, code, card, meta, snoozeLabel, snoozeTitle, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const statusWord = sessionStatusLabel(status, lang)
@@ -71,6 +100,7 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
   const [renamePending, setRenamePending] = useState(false)
   const settledByKey = useRef(false)
   const dragging = useSessionDrag((s) => s.source === `session:${item.path}`)
+  const hasSub = !!meta?.note || (!!card && !card.slim && (!card.hideProject || !!card.model))
 
   useEffect(() => {
     if (!renamePending || menuOpen) return
@@ -168,19 +198,22 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
       ) : (
         <SidebarTip
           label={title}
-          detail={card ? cardDetail(card, status === 'idle' ? '' : statusLabel) : undefined}
+          detail={card ? cardDetail(card, status === 'idle' ? '' : statusLabel, meta?.note) : meta?.note}
           placement="right"
-          card={!!card}
-          isDisabled={(!card && !titleOverflowing) || menuOpen || dragging}
+          card={!!card || !!meta?.note}
+          isDisabled={(!card && !meta?.note && !titleOverflowing) || menuOpen || dragging}
         >
           <ListRow
             className="v3-row"
             current={isCurrent}
             muted={status === 'archived'}
+            signal={status === 'awaiting' ? 'ask' : undefined}
             data-variant={card ? (card.slim ? 'slim' : 'card') : undefined}
             data-menu={menuOpen ? '1' : undefined}
             data-status={status}
-            data-mark={sessionStatusHasMark(status) && !(card && !card.slim && cardHasBot(status)) ? '' : undefined}
+            data-age={meta?.age}
+            data-sub={hasSub ? '' : undefined}
+            data-mark={card?.slim && sessionStatusHasMark(status) ? '' : undefined}
             onPointerDown={onPointerDown}
             onClick={() => {
               if (draggedRef.current) {
@@ -191,37 +224,40 @@ export const SidebarRow = memo(function SidebarRow({ item, title, isCurrent, sta
             }}
             data-testid="v3-session-row"
           >
-            <span className="v3-row-body">
-              {card?.slim ? (
-                <>
-                  <ProjectBadge label={card.project} global={card.global} />
-                  <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                  <span className="v3-crow-ago ui-num">{card.ago}</span>
-                </>
-              ) : null}
-              {card?.slim ? null : card ? (
-                <span className="v3-crow-line">
-                  <FadeTitleBox boxRef={titleBoxRef} text={title} />
-                  {cardHasBot(status) ? (
+            {card?.slim ? (
+              <span className="v3-row-body">
+                <ProjectBadge label={card.project} global={card.global} toneKey={card.toneKey} />
+                <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                <span className="v3-crow-ago ui-num">{card.ago}</span>
+                <SessionStatusIcon kind={status} label={statusLabel} />
+              </span>
+            ) : (
+              <span className="v3-row-body" data-layout="lane">
+                <SessionStatusIcon kind={status} label={statusLabel} />
+                <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                <span className="v3-srow-meta">
+                  {card && cardHasBot(status) ? (
                     <span className="v3-crow-bot">
-                      <StatusSlot label={statusLabel} live>
+                      <StatusSlot label={statusLabel}>
                         <ModelBot brand={modelBrand(card.modelRef)} mood={botMood(status)} size={16} seedKey={item.id} />
                       </StatusSlot>
                     </span>
                   ) : null}
-                  {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
-                  <span className="v3-crow-ago ui-num">{card.ago}</span>
+                  {card && item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
+                  {snoozeLabel ? (
+                    <span className="v3-srow-wake ui-num" title={snoozeTitle} data-testid="v3-session-snooze-wake">
+                      <AlarmClock size={12} aria-hidden />
+                      {snoozeLabel}
+                    </span>
+                  ) : meta ? (
+                    <span className={cx('v3-crow-ago ui-num', meta.elapsed ? signalInk(status) : undefined)} data-testid="v3-session-ago">
+                      {meta.elapsed ?? meta.ago}
+                    </span>
+                  ) : null}
                 </span>
-              ) : (
-                <FadeTitleBox boxRef={titleBoxRef} text={title} />
-              )}
-              {snoozeLabel ? (
-                <span className="v3-srow-wake ui-num" title={snoozeTitle} data-testid="v3-session-snooze-wake">
-                  <AlarmClock size={12} aria-hidden />
-                  {snoozeLabel}
-                </span>
-              ) : card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
-            </span>
+                {hasSub ? <RowSub card={card} note={meta?.note} /> : null}
+              </span>
+            )}
           </ListRow>
         </SidebarTip>
       )}

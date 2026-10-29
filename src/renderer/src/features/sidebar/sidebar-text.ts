@@ -45,6 +45,15 @@ export interface SidebarText {
   workingShelf: string
   pinDrop: string
   unpinDrop: string
+  recencyToday: string
+  recencyYesterday: string
+  recencyWeek: string
+  recencyOlder: string
+  attention: string
+  attentionRunning: string
+  attentionAwaiting: string
+  attentionUnread: string
+  attentionJump: string
 }
 
 const zh: SidebarText = {
@@ -93,7 +102,16 @@ const zh: SidebarText = {
   clearScope: '显示全部项目',
   workingShelf: '运行中',
   pinDrop: '松开即可置顶',
-  unpinDrop: '松开即可取消置顶'
+  unpinDrop: '松开即可取消置顶',
+  recencyToday: '今天',
+  recencyYesterday: '昨天',
+  recencyWeek: '7 天内',
+  recencyOlder: '更早',
+  attention: '会话状态',
+  attentionRunning: '运行',
+  attentionAwaiting: '等你',
+  attentionUnread: '未读',
+  attentionJump: '{state} {n} 个，跳到下一个'
 }
 
 const en: SidebarText = {
@@ -142,7 +160,16 @@ const en: SidebarText = {
   clearScope: 'Show all projects',
   workingShelf: 'Working',
   pinDrop: 'Release to pin',
-  unpinDrop: 'Release to unpin'
+  unpinDrop: 'Release to unpin',
+  recencyToday: 'Today',
+  recencyYesterday: 'Yesterday',
+  recencyWeek: 'Previous 7 days',
+  recencyOlder: 'Older',
+  attention: 'Chat status',
+  attentionRunning: 'running',
+  attentionAwaiting: 'need you',
+  attentionUnread: 'unread',
+  attentionJump: '{n} {state}, jump to the next'
 }
 
 export function sidebarText(lang: string): SidebarText {

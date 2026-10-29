@@ -2,7 +2,7 @@ import { useRef, useState, type JSX } from 'react'
 import { Archive, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { Button, CollapsibleChevron, Dialog, DialogFooter, IconButton, InlineRename, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover } from '../../ui'
+import { Button, CollapsibleChevron, Dialog, DialogFooter, IconButton, InlineRename, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover, StatusDot, TermSpinner } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
@@ -46,9 +46,11 @@ export interface ProjectHeaderProps {
   onToggle: () => void
   onNew: (projectId: string) => void
   clearLabel?: string
+  hint?: string
+  pulse?: { running: number; awaiting: number }
 }
 
-export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clearLabel }: ProjectHeaderProps): JSX.Element {
+export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clearLabel, hint, pulse }: ProjectHeaderProps): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
@@ -147,6 +149,19 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clear
           >
             {clearLabel ? <ProjectBadge label={label} global={isGlobalGroup(group)} /> : null}
             <span className="v3-grp-label">{label}</span>
+            {hint ? <span className="v3-grp-hint" data-testid="v3-group-hint">{hint}</span> : null}
+            {collapsed && pulse?.running ? (
+              <span className="v3-grp-pulse ui-num ui-signal-run" data-testid="v3-group-running">
+                <TermSpinner />
+                {pulse.running}
+              </span>
+            ) : null}
+            {collapsed && pulse?.awaiting ? (
+              <span className="v3-grp-pulse ui-num ui-signal-ask" data-testid="v3-group-awaiting">
+                <StatusDot kind="awaiting" />
+                {pulse.awaiting}
+              </span>
+            ) : null}
             {clearLabel ? (
               <X size={12} aria-hidden className="v3-grp-clear" />
             ) : (

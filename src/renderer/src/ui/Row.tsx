@@ -38,12 +38,13 @@ function rowClass(variant: RowSlots['variant'], description: ReactNode, ...extra
 
 export interface ListRowProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>, RowSlots {
   current?: boolean
+  signal?: 'ask'
   hoverHighlight?: boolean
   accessory?: ReactNode
 }
 
 export const ListRow = forwardRef<HTMLButtonElement, ListRowProps>(function ListRow(
-  { icon, trailing, description, children, current, muted, hoverHighlight = true, accessory, variant = 'default', className, type = 'button', ...rest },
+  { icon, trailing, description, children, current, muted, signal, hoverHighlight = true, accessory, variant = 'default', className, type = 'button', ...rest },
   ref
 ) {
   const button = (
@@ -53,6 +54,7 @@ export const ListRow = forwardRef<HTMLButtonElement, ListRowProps>(function List
       type={type}
       aria-current={current ? 'true' : rest['aria-current']}
       data-muted={muted ? '' : undefined}
+      data-signal={signal}
       data-no-hover={hoverHighlight ? undefined : ''}
       className={rowClass(variant, description, className)}
     >

@@ -26,6 +26,16 @@
   .ui-row:not(.ui-row--static):active {
     background: var(--press);
   }
+  .ui-row[data-signal='ask'] {
+    background: var(--ask-bg);
+  }
+  .ui-row[data-signal='ask']:not([data-no-hover]):is(:hover, [data-hovered]),
+  .ui-row[data-signal='ask'][data-menu='1'] {
+    background: linear-gradient(var(--hover), var(--hover)), var(--ask-bg);
+  }
+  .ui-row[data-signal='ask']:is([aria-current='true'], [aria-current='page']) {
+    background: linear-gradient(var(--alpha-1), var(--alpha-1)), var(--ask-bg);
+  }
   .ui-row:is([aria-current='true'], [aria-current='page'], [data-selected]) {
     background: var(--alpha-1);
     color: var(--fg);
