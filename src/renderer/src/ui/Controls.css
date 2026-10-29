@@ -345,6 +345,12 @@
   .ui-collapsible__panel {
     min-width: 0;
   }
+  .ui-collapsible__panel[data-animated] {
+    height: var(--disclosure-panel-height);
+    overflow: clip;
+    overflow-clip-margin: var(--s-4);
+    transition: height var(--dur-base) var(--ease);
+  }
   @media (hover: hover) {
     .ui-collapsible__trigger:hover:not([data-disabled]) {
       color: var(--fg);

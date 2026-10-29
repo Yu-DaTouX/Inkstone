@@ -14,6 +14,27 @@
     flex: 1 1 auto;
     border-left: none;
   }
+  .rp[data-mode='inline'] {
+    animation: rp-open var(--dur-base) var(--ease);
+  }
+  .rp[data-mode='inline'] > :is(.rp-bar, .rp-body) {
+    animation: rp-hold var(--dur-base) linear;
+  }
+  @keyframes rp-open {
+    from {
+      width: 0;
+      overflow: clip;
+    }
+    to {
+      overflow: clip;
+    }
+  }
+  @keyframes rp-hold {
+    from,
+    to {
+      min-width: calc(var(--rp-w) - var(--hair, 1px));
+    }
+  }
   .rp[data-mode='sheet'] {
     flex: 1 1 auto;
     width: 100%;

@@ -212,7 +212,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
       data-mode={mode}
       data-maximized={maximized ? '1' : undefined}
       data-testid="rp"
-      style={mode === 'inline' && !maximized ? ({ width: shownWidth } as CSSProperties) : undefined}
+      style={mode === 'inline' && !maximized ? ({ width: shownWidth, '--rp-w': `${shownWidth}px` } as CSSProperties) : undefined}
       onKeyDown={onPanelKey}
     >
       {mode === 'inline' && !maximized ? (

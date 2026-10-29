@@ -18,16 +18,19 @@ export const Collapsible = forwardRef<HTMLDivElement, CollapsibleProps>(function
   return <RACDisclosure {...props} ref={ref} className={composeRenderProps(className, (cn) => cx('ui-collapsible', cn))} />
 })
 
-export type CollapsiblePanelProps = RACDisclosurePanelProps
+export interface CollapsiblePanelProps extends RACDisclosurePanelProps {
+  animated?: boolean
+}
 
 export const CollapsiblePanel = forwardRef<HTMLDivElement, CollapsiblePanelProps>(function CollapsiblePanel(
-  { className, ...props },
+  { className, animated, ...props },
   ref
 ) {
   return (
     <RACDisclosurePanel
       {...props}
       ref={ref}
+      data-animated={animated ? 'true' : undefined}
       className={composeRenderProps(className, (cn) => cx('ui-collapsible__panel', cn))}
     />
   )
