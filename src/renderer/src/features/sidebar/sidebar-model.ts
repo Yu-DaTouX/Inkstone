@@ -175,6 +175,26 @@ export function buildSidebarGroups(options: BuildOptions): SidebarGroup[] {
   return [{ key: 'pinned', slot: 'pinned', label: options.pinnedLabel, cwd: '', current: false, list: pinned }, ...rest]
 }
 
+export function withIdleProjects(
+  groups: readonly SidebarGroup[],
+  projects: readonly ProjectRecord[],
+  projectNames: Record<string, string>
+): SidebarGroup[] {
+  const idle = projects
+    .filter((project) => !project.archived && !groups.some((group) => group.projectId === project.id || (!!group.cwd && sameCwd(group.cwd, project.cwd))))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((project) => ({
+      key: `project:${project.id}`,
+      slot: `cwd:${project.cwd.toLowerCase()}`,
+      label: project.name || projectNames[project.cwd] || shortProject(project.cwd),
+      projectId: project.id,
+      cwd: project.cwd,
+      current: false,
+      list: []
+    }))
+  return [...groups, ...idle]
+}
+
 export const GROUP_PAGE_SIZE = 10
 
 export interface SidebarGroupPage {

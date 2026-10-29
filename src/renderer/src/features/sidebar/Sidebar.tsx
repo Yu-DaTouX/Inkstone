@@ -11,7 +11,7 @@ import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, type SidebarGroup } from './sidebar-model'
+import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, withIdleProjects, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { useSplitView } from '../../state/split-view'
@@ -137,14 +137,18 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const scopeGroups = useMemo(
     () =>
       flat
-        ? buildSidebarGroups({
-            sessions,
-            query: '',
-            projects: settings?.projects ?? [],
-            projectNames: settings?.projectNames ?? {},
-            titles,
-            manualTitles
-          })
+        ? withIdleProjects(
+            buildSidebarGroups({
+              sessions,
+              query: '',
+              projects: settings?.projects ?? [],
+              projectNames: settings?.projectNames ?? {},
+              titles,
+              manualTitles
+            }),
+            settings?.projects ?? [],
+            settings?.projectNames ?? {}
+          )
         : [],
     [flat, sessions, settings?.projects, settings?.projectNames, titles, manualTitles]
   )
