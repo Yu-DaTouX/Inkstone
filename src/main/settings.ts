@@ -267,7 +267,7 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.keepAwakeOnBattery = settings.keepAwakeOnBattery === false ? false : undefined
   settings.visualAnswers = settings.visualAnswers === false ? false : undefined
   settings.wrapUpCard = settings.wrapUpCard === false ? false : undefined
-  settings.asciiBackground = settings.asciiBackground === true ? true : undefined
+  settings.asciiBackground = settings.asciiBackground === false ? false : undefined
   settings.autoCompactTokens = pickTokenStep(settings.autoCompactTokens, AUTO_COMPACT_STEPS, DEFAULT_AUTO_COMPACT_TOKENS)
   settings.fontUi = sanitizeFontUiPreset(settings.fontUi)
   settings.fontUiCustom = sanitizeFontName(settings.fontUiCustom)

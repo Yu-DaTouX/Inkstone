@@ -67,22 +67,22 @@ try {
 }
 ok(stillRejected, '白名单没有连带放行其它键（piBin 仍被拒）')
 
-ok((await getSettings()).asciiBackground === undefined, '缺省不写 asciiBackground（视为关）')
+ok((await getSettings()).asciiBackground === undefined, '缺省不写 asciiBackground（视为开）')
 
-const on = await patchSettings({ asciiBackground: true })
-ok(on.asciiBackground === true, '打开后返回值为 true')
-const diskOn = await readDisk()
-ok(diskOn.asciiBackground === true, '磁盘上确实落了 true')
+const off = await patchSettings({ asciiBackground: false })
+ok(off.asciiBackground === false, '关掉后返回值为 false')
+const diskOff = await readDisk()
+ok(diskOff.asciiBackground === false, '磁盘上确实落了 false')
 
 const restarted = await load('restart')
-ok((await restarted.getSettings()).asciiBackground === true, '重新加载模块（模拟重启）后仍读到 true')
+ok((await restarted.getSettings()).asciiBackground === false, '重新加载模块（模拟重启）后仍读到 false')
 
 await patchSettings({ theme: 'light' })
 const diskAfterTheme = await readDisk()
-ok(diskAfterTheme.asciiBackground === true && diskAfterTheme.theme === 'light', '改其它字段后 true 仍在磁盘上')
+ok(diskAfterTheme.asciiBackground === false && diskAfterTheme.theme === 'light', '改其它字段后 false 仍在磁盘上')
 
-const off = await patchSettings({ asciiBackground: false })
-ok(off.asciiBackground === undefined, '明确关闭回落缺省（不写 false）')
+const on = await patchSettings({ asciiBackground: true })
+ok(on.asciiBackground === undefined, '明确打开回落缺省（不写 true）')
 ok((await readDisk()).asciiBackground === undefined, '磁盘上删除了 asciiBackground')
 
 const dirty = await patchSettings({ asciiBackground: 'yes' })
@@ -91,9 +91,9 @@ ok((await readDisk()).asciiBackground === undefined, '脏值也没写进磁盘')
 
 const third = await load('third')
 ok((await third.getSettings()).asciiBackground === undefined, '第三个实例读到缺省')
-await third.patchSettings({ asciiBackground: true })
-ok((await third.getSettings()).asciiBackground === true, '第三个实例写入 true 后读到 true')
-ok((await readDisk()).asciiBackground === true, '第三个实例写入后磁盘上仍是 true')
+await third.patchSettings({ asciiBackground: false })
+ok((await third.getSettings()).asciiBackground === false, '第三个实例写入 false 后读到 false')
+ok((await readDisk()).asciiBackground === false, '第三个实例写入后磁盘上仍是 false')
 
 await rm(temp, { recursive: true, force: true })
 
