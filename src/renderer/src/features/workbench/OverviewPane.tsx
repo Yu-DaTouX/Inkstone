@@ -442,7 +442,7 @@ function OutputRows({
             onPress={() => onOpen(file.path)}
             actionReveal="hover"
             action={
-              <IconButton variant="plain" size="sm" aria-label={text.removeOutput(name)} className="wb-rail-dismiss" onPress={() => onDismiss(file.path)}>
+              <IconButton variant="plain" size="sm" aria-label={text.removeOutput(name)} tooltip={text.removeOutput(name)} className="wb-rail-dismiss" onPress={() => onDismiss(file.path)}>
                 <X size={12} aria-hidden />
               </IconButton>
             }

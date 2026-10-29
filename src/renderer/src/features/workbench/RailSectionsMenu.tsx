@@ -1,5 +1,5 @@
 import type { ReactElement, RefObject } from 'react'
-import { Check, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { Header, Menu, MenuItem, MenuSection, Popover, Separator } from '../../ui'
 import {
   canHideRailSection,
@@ -48,16 +48,14 @@ export function RailSectionsMenu({ anchor, open, onOpenChange, text }: RailSecti
           {HIDEABLE.map((id) => {
             const visible = shown.includes(id)
             return (
-              <MenuItem key={id} id={id} textValue={text.sections[id]} aria-checked={visible} shouldCloseOnSelect={false} data-testid={`wb-rail-menu-${id}`}>
-                <span className="wb-rail-check" aria-hidden>{visible ? <Check size={14} /> : null}</span>
+              <MenuItem key={id} id={id} textValue={text.sections[id]} aria-checked={visible} shouldCloseOnSelect={false} checked={visible} data-testid={`wb-rail-menu-${id}`}>
                 {text.sections[id]}
               </MenuItem>
             )
           })}
         </MenuSection>
         <Separator />
-        <MenuItem id="reset" textValue={text.reset} data-testid="wb-rail-menu-reset">
-          <RotateCcw size={14} aria-hidden />
+        <MenuItem id="reset" textValue={text.reset} icon={<RotateCcw size={14} />} data-testid="wb-rail-menu-reset">
           {text.reset}
         </MenuItem>
       </Menu>

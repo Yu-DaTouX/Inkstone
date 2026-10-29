@@ -1,6 +1,6 @@
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from 'react'
-import { ArrowUpRight, ChevronRight, GripVertical } from 'lucide-react'
-import { Button, IconButton } from '../../ui'
+import { ArrowUpRight, GripVertical } from 'lucide-react'
+import { Button, CollapsibleChevron, IconButton } from '../../ui'
 import type { RailSectionId } from './rail-sections'
 
 export interface RailGrip {
@@ -72,7 +72,7 @@ export function RailCard({
       >
         <Button variant="plain" size="sm" className="wb-tile-toggle" aria-expanded={open} onPress={() => onOpenChange(!open)}>
           <span className="wb-tile-title">{title}</span>
-          <ChevronRight size={12} className="wb-tile-chevron" aria-hidden />
+          <CollapsibleChevron expanded={open} className="wb-tile-chevron" />
           {!open && summary != null ? <span className="wb-tile-summary">{summary}</span> : null}
         </Button>
         <span className="wb-rail-grip" data-with-open={onOpenView ? '1' : undefined} onPointerDownCapture={grip.onPointerDown}>
@@ -90,8 +90,8 @@ export function RailCard({
           </IconButton>
         </span>
         {onOpenView ? (
-          <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
-            <ArrowUpRight size={13} aria-hidden />
+          <IconButton variant="plain" size="sm" aria-label={openLabel ?? title} tooltip={openLabel ?? title} className="wb-tile-open" onPress={onOpenView}>
+            <ArrowUpRight size={12} aria-hidden />
           </IconButton>
         ) : null}
       </div>

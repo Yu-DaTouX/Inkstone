@@ -94,9 +94,9 @@ export function useMcpConnections(owner: WorkspaceOwner | null, running: boolean
   const body = <>
     {!active ? <p className="wb-ov-note">{en ? 'Open this conversation to manage MCP.' : '进入此会话后可管理 MCP。'}</p> : <>
       <p className="wb-ov-note" data-testid="rail-mcp-scope">{scopeLabel}</p>
-      {sessionBusy ? <p className="wb-ov-note">{busyText}</p> : null}
+      {sessionBusy ? <Notice variant="hint" tone="ask">{busyText}</Notice> : null}
       {error ? <Notice tone="fail" compact>{error}</Notice> : null}
-      {notice ? <p className="wb-ov-note" role="status">{notice}</p> : null}
+      {notice ? <Notice variant="hint" tone="ok">{notice}</Notice> : null}
       {snapshot?.errors.map((problem) => <Notice key={problem} tone="fail" compact>{problem}</Notice>)}
       <ul className="wb-ov-items" data-testid="rail-mcp-services">
         {services.map((service) => {

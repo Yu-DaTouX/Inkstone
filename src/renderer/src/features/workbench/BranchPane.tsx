@@ -72,7 +72,7 @@ export function BranchPane({ owner }: BranchPaneProps): ReactElement {
     <IconButton
       size="sm"
       aria-label={text.refresh}
-      title={text.refresh}
+      tooltip={text.refresh}
       data-testid="branch-refresh"
       onPress={() => setReloadToken((value) => value + 1)}
     >

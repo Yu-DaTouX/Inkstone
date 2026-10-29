@@ -9,7 +9,7 @@ import {
   compactionSummary,
   compactionTokensText
 } from '../../state/compaction-view'
-import { Button, Notice, Spinner } from '../../ui'
+import { Button, ListRow, Notice, Spinner } from '../../ui'
 import {
   autoCompactDistance,
   autoCompactLimitOf,
@@ -88,19 +88,17 @@ function ToolCallRows({ rows, text }: { rows: ContextToolCall[]; text: ContextPa
           const label = row.target ? `${row.name} · ${row.target}` : row.name
           return (
             <li key={row.id}>
-              <Button
-                variant="ghost"
-                size="sm"
+              <ListRow
                 className="wb-ctx-tool"
                 title={label}
                 aria-label={`${text.jumpTo(label)} · ${shortTokens(row.tokens)}`}
                 data-testid="v3-wb-ctx-tool"
-                onPress={() => void useStore.getState().locateMessage(row.anchorId).then((found) => setMissed(found ? null : row.id))}
+                trailing={`≈${shortTokens(row.tokens)}`}
+                onClick={() => void useStore.getState().locateMessage(row.anchorId).then((found) => setMissed(found ? null : row.id))}
               >
-                <span className="wb-ctx-tool-name">{row.name}</span>
-                <span className="wb-ctx-tool-target">{row.target}</span>
-                <span className="wb-ctx-tool-num ui-meta-num">{`≈${shortTokens(row.tokens)}`}</span>
-              </Button>
+                {row.name}
+                {row.target ? <span className="wb-ctx-tool-target">{` ${row.target}`}</span> : null}
+              </ListRow>
             </li>
           )
         })}
@@ -247,7 +245,7 @@ export function ContextPane({ visible = true }: ContextPaneProps): ReactElement 
             variant="secondary"
             size="sm"
             isDisabled={compactDisabled}
-            icon={compacting ? <Spinner size={12} /> : undefined}
+            icon={compacting ? <Spinner size="xs" /> : undefined}
             title={running ? text.compactBusy : undefined}
             data-testid="v3-wb-ctx-compact"
             onPress={compactNow}

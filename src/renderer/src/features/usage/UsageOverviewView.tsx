@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { TFunc } from '../../i18n'
+import { Button } from '../../ui'
 import { HEAT_WEEKS, heatLevels, localDay, type UsageRange } from '../../../../shared/usage-stats'
 import type { ModelInfo, UsageStatsResult } from '../../../../shared/ipc'
 import { compactNumber, shareText } from './usage-format'
@@ -103,7 +104,7 @@ export function UsageOverviewView({
   return (
     <aside className="start-sec start-usage" data-testid="usage-overview" data-pending={pending ? '' : undefined} aria-busy={pending || undefined} aria-label={t('usage.title')}>
       <div className="start-usage-head">
-        <h2 className="start-label">{onOpenDetails ? <button className="start-details-link" type="button" onClick={onOpenDetails}>{t('usage.title')} ↗</button> : t('usage.title')}</h2>
+        <h2 className="start-label">{onOpenDetails ? <Button variant="plain" size="micro" className="start-details-link" onPress={onOpenDetails}>{t('usage.title')} ↗</Button> : t('usage.title')}</h2>
         <span className="start-spacer" />
         {!compact && renderToggle({
           kind: 'tab',

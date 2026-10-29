@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { ChevronRight } from 'lucide-react'
-import { Button, MiniBars, SegmentBar, Swatch } from '../../ui'
+import { Button, CollapsibleChevron, MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
 import { useStreamingThrottledStore } from '../../state/streaming-throttle'
@@ -201,7 +200,7 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
           data-testid="wb-rail-stats-breakdown-toggle"
         >
           <span>{breakdownLabel}</span>
-          <ChevronRight size={12} className="wb-rs-toggle-chevron" aria-hidden />
+          <CollapsibleChevron expanded={breakdownOpen} />
         </Button>
       ) : null}
       {breakdownOpen && breakdown.length ? (

@@ -101,11 +101,12 @@ export function QuotaPane(_props: QuotaPaneProps): ReactElement {
   return (
     <div className="wb-quota" data-testid="v3-wb-quota">
       <div className="wb-quota-head">
-        <span className="wb-quota-checked">{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size={14} /> : null}</span>
+        <span className="wb-quota-checked">{report ? t('quota.checkedAt', { time }) : loading ? <Spinner label={t('quota.refresh')} size="sm" /> : null}</span>
         <IconButton
           size="sm"
           variant="ghost"
           aria-label={t('quota.refresh')}
+          tooltip={t('quota.refresh')}
           onPress={() => void load()}
           isDisabled={loading}
           data-testid="v3-wb-quota-refresh"
@@ -166,8 +167,7 @@ export function QuotaCard({
         {card.active ? <Badge tone="accent">{t('acct.active')}</Badge> : null}
         {card.status === 'limited' ? <Badge tone="fail">{t('quota.limitReached')}</Badge> : null}
         {card.switchable && !card.active ? (
-          <Button size="sm" variant="secondary" isDisabled={locked} onPress={onSwitch} data-testid="v3-wb-quota-switch">
-            {busy ? <Spinner size={12} /> : null}
+          <Button size="sm" variant="secondary" isDisabled={locked} icon={busy ? <Spinner size="xs" /> : undefined} onPress={onSwitch} data-testid="v3-wb-quota-switch">
             {t('acct.switch')}
           </Button>
         ) : null}

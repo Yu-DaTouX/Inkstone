@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactElement, type WheelEvent } from 'react'
 import { ArrowLeft, Circle, Power, RefreshCw, Square } from 'lucide-react'
 import { useT } from '../../i18n'
-import { Button, EmptyState, IconButton, ListBoxItem, Select, TextField } from '../../ui'
+import { Button, EmptyState, IconButton, ListBoxItem, Notice, Select, Spinner, TextField } from '../../ui'
 import type { AndroidControl, AndroidDevice } from '../../../../shared/android-sdk'
 import { openSettingsDialog } from '../settings/root/deep-link'
 import type { DevicePaneProps } from '../workbench/types'
@@ -173,8 +173,8 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
           </Select>
         ) : null}
         <span className="device-pane__spacer" />
-        <IconButton aria-label={t('android.pane.refresh')} onPress={() => void refresh()}><RefreshCw size={15} aria-hidden /></IconButton>
-        <IconButton aria-label={t('android.pane.wake')} isDisabled={!serial} onPress={() => send({ kind: 'key', key: 'wake' })}><Power size={15} aria-hidden /></IconButton>
+        <IconButton size="sm" aria-label={t('android.pane.refresh')} tooltip={t('android.pane.refresh')} onPress={() => void refresh()}><RefreshCw size={14} aria-hidden /></IconButton>
+        <IconButton size="sm" aria-label={t('android.pane.wake')} tooltip={t('android.pane.wake')} isDisabled={!serial} onPress={() => send({ kind: 'key', key: 'wake' })}><Power size={14} aria-hidden /></IconButton>
       </div>
 
       {serial ? (
@@ -192,12 +192,12 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
               onPointerCancel={onPointerUp}
               onWheel={onWheel}
             />
-            {live ? null : <p className="device-pane__hint">{t('android.pane.connecting')}</p>}
+            {live ? null : <p className="device-pane__hint" role="status"><Spinner size="sm" />{t('android.pane.connecting')}</p>}
           </div>
           <div className="device-pane__bar device-pane__bar--bottom">
-            <IconButton aria-label={t('android.pane.back')} onPress={() => send({ kind: 'key', key: 'back' })}><ArrowLeft size={15} aria-hidden /></IconButton>
-            <IconButton aria-label={t('android.pane.home')} onPress={() => send({ kind: 'key', key: 'home' })}><Circle size={15} aria-hidden /></IconButton>
-            <IconButton aria-label={t('android.pane.recents')} onPress={() => send({ kind: 'key', key: 'recents' })}><Square size={15} aria-hidden /></IconButton>
+            <IconButton size="sm" aria-label={t('android.pane.back')} tooltip={t('android.pane.back')} onPress={() => send({ kind: 'key', key: 'back' })}><ArrowLeft size={14} aria-hidden /></IconButton>
+            <IconButton size="sm" aria-label={t('android.pane.home')} tooltip={t('android.pane.home')} onPress={() => send({ kind: 'key', key: 'home' })}><Circle size={14} aria-hidden /></IconButton>
+            <IconButton size="sm" aria-label={t('android.pane.recents')} tooltip={t('android.pane.recents')} onPress={() => send({ kind: 'key', key: 'recents' })}><Square size={14} aria-hidden /></IconButton>
             <form
               className="device-pane__type"
               onSubmit={(event) => {
@@ -232,7 +232,7 @@ export function DevicePane({ visible = true }: DevicePaneProps): ReactElement {
           }
         />
       )}
-      {error ? <p className="device-pane__error" role="alert">{error}</p> : null}
+      {error ? <Notice tone="fail" compact className="device-pane__error">{error}</Notice> : null}
     </div>
   )
 }

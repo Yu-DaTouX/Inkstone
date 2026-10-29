@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { ListBoxItem, Select, TextField } from '../../ui'
+import { ListBoxItem, Select, SettingRow, TextField } from '../../ui'
 import {
   currencyLabel,
   DEFAULT_USD_RATES,
@@ -40,26 +40,22 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
   const rateLabel = rateCode ? text.usageRate.replace('{code}', rateCode) : ''
   return (
     <section className="usage-page-currency" data-testid="v3-usage-currency">
-      <div className="usage-page-currency-row">
-        <div>
-          <h2>{text.usageCurrency}</h2>
-          <p>{text.usageCurrencyDesc}</p>
-        </div>
-        <div className="usage-page-currency-control"><Select aria-label={text.usageCurrency} selectedKey={currency} onSelectionChange={(key) => save({ currency: String(key) as Currency })}>
+      <SettingRow label={text.usageCurrency} description={text.usageCurrencyDesc}>
+        <Select className="usage-page-currency-control" aria-label={text.usageCurrency} selectedKey={currency} onSelectionChange={(key) => save({ currency: String(key) as Currency })}>
           {USAGE_CURRENCIES.map((code) => (
             <ListBoxItem key={code} id={code}>
               {currencyLabel(code, lang)}
             </ListBoxItem>
           ))}
-        </Select></div>
-      </div>
+        </Select>
+      </SettingRow>
       {rateCode ? (
-        <div className="usage-page-currency-row">
-          <div>
-            <h2>{rateLabel}</h2>
-            <p>{text.usageRateDesc.replace('{default}', String(DEFAULT_USD_RATES[rateCode])).replace('{sample}', formatMoney(1, current, lang))}</p>
-          </div>
-          <div className="usage-page-currency-control"><TextField
+        <SettingRow
+          label={rateLabel}
+          description={text.usageRateDesc.replace('{default}', String(DEFAULT_USD_RATES[rateCode])).replace('{sample}', formatMoney(1, current, lang))}
+        >
+          <TextField
+            className="usage-page-currency-control"
             aria-label={rateLabel}
             value={draft}
             inputMode="decimal"
@@ -67,8 +63,8 @@ export function UsageCurrency({ text }: { text: SettingsText }): ReactElement {
             onBlur={commitRate}
             onKeyDown={(event) => { if (event.key === 'Enter') commitRate() }}
             data-testid="v3-usage-rate"
-          /></div>
-        </div>
+          />
+        </SettingRow>
       ) : null}
     </section>
   )

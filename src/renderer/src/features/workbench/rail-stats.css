@@ -147,15 +147,6 @@
     font-size: var(--t-footnote);
   }
 
-  .wb-rs-toggle-chevron {
-    flex: none;
-    transition: transform var(--dur-snap) var(--ease);
-  }
-
-  .wb-rs-toggle[aria-expanded='true'] .wb-rs-toggle-chevron {
-    transform: rotate(90deg);
-  }
-
   .wb-rs-breakdown {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react'
 import {
   Bot,
-  Check,
   EllipsisVertical,
   Eye,
   FileDiff,
@@ -25,7 +24,7 @@ import {
   Terminal,
   type LucideIcon
 } from 'lucide-react'
-import { Button, EmptyState, IconButton, Kbd, Menu, MenuItem, MenuTrigger, PanelTab, PanelTabList, Popover, Separator, Sheet, Splitter } from '../../ui'
+import { Button, EmptyState, IconButton, Kbd, ListRow, Menu, MenuItem, MenuTrigger, PanelTab, PanelTabList, Popover, Separator, Sheet, Spinner, Splitter } from '../../ui'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
@@ -200,6 +199,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
   const closeShortcut = shortcutKeysText('workspaceClosePane', shortcutOverrides)
   const maximizeShortcut = shortcutKeysText('workspaceToggleMaximize', shortcutOverrides)
   const withKeys = (label: string, keys: string): string => (keys ? `${label} · ${keys}` : label)
+  const shortcutOrNone = (keys: string): string | undefined => keys || undefined
 
   const menuSurface = menu ? entry.surfaces.find((item) => item.id === menu.id) : undefined
   const menuIndex = menuSurface ? entry.surfaces.indexOf(menuSurface) : -1
@@ -261,7 +261,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
           })}
         </PanelTabList>
         <MenuTrigger isOpen={adding} onOpenChange={setAdding}>
-          <IconButton size="sm" aria-label={panel.newTab} title={panel.newTab} data-testid="rp-new-tab" className="rp-bar-add">
+          <IconButton size="sm" aria-label={panel.newTab} tooltip={panel.newTab} data-testid="rp-new-tab" className="rp-bar-add">
             <Plus size={14} />
           </IconButton>
           <Popover placement="bottom start" offset={4}>
@@ -283,10 +283,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
                   const Icon = TOOL_ICONS[action.kind]
                   const label = toolLabel(action.kind, text, panel)
                   return (
-                    <MenuItem key={action.kind} id={action.kind} textValue={label} aria-keyshortcuts={action.key}>
-                      <Icon size={14} aria-hidden />
-                      <span className="rp-launch-label">{label}</span>
-                      <Kbd className="rp-launch-key">{action.key}</Kbd>
+                    <MenuItem key={action.kind} id={action.kind} textValue={label} aria-keyshortcuts={action.key} icon={<Icon size={14} />} shortcut={action.key}>
+                      {label}
                     </MenuItem>
                   )
                 })}
@@ -299,7 +297,8 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
             <IconButton
               size="sm"
               aria-label={maximized ? panel.restore : panel.maximize}
-              title={withKeys(maximized ? panel.restore : panel.maximize, maximizeShortcut)}
+              tooltip={maximized ? panel.restore : panel.maximize}
+              tooltipShortcut={shortcutOrNone(maximizeShortcut)}
               aria-pressed={maximized}
               isDisabled={!entry.surfaces.length}
               data-testid="rp-maximize"
@@ -308,7 +307,7 @@ export function RightPanel({ owner, mode, room, panes, onOpenTool, onRequestActi
               {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </IconButton>
           ) : null}
-          <IconButton size="sm" aria-label={panel.hidePanel} title={panel.hidePanel} data-testid="rp-hide" onPress={() => useRightPanel.getState().setOpen(false)}>
+          <IconButton size="sm" aria-label={panel.hidePanel} tooltip={panel.hidePanel} data-testid="rp-hide" onPress={() => useRightPanel.getState().setOpen(false)}>
             <PanelRightClose size={14} />
           </IconButton>
         </span>
@@ -396,19 +395,17 @@ function Launcher({ text, panel, onPick }: { text: WorkbenchText; panel: RightPa
           {LAUNCHER.map((action) => {
             const Icon = TOOL_ICONS[action.kind]
             return (
-              <Button
+              <ListRow
                 key={action.kind}
-                variant="ghost"
-                block
-                className="rp-launcher-item"
-                icon={<Icon size={15} aria-hidden />}
-                trailingIcon={<Kbd>{action.key}</Kbd>}
+                icon={<Icon size={14} />}
+                trailing={<Kbd>{action.key}</Kbd>}
+                aria-keyshortcuts={action.key}
                 data-launch
                 data-testid={`rp-launch-${action.kind}`}
-                onPress={() => onPick(action)}
+                onClick={() => onPick(action)}
               >
                 {toolLabel(action.kind, text, panel)}
-              </Button>
+              </ListRow>
             )
           })}
         </div>
@@ -534,7 +531,7 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
           <span className="rp-sub-tools" ref={setToolsEl} />
           {allItems.length ? (
             <MenuTrigger>
-              <IconButton size="sm" aria-label={text.paneMenu(name || panel.file)} title={text.paneMenu(name || panel.file)} data-testid={`rp-menu-${surface.id}`} className="rp-sub-menu">
+              <IconButton size="sm" aria-label={text.paneMenu(name || panel.file)} tooltip={text.paneMenu(name || panel.file)} data-testid={`rp-menu-${surface.id}`} className="rp-sub-menu">
                 <EllipsisVertical size={14} />
               </IconButton>
               <Popover placement="bottom end" offset={4}>
@@ -546,8 +543,14 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
                   {groups.flatMap((items, index) => [
                     ...(index > 0 ? [<Separator key={`sep:${index}`} />] : []),
                     ...items.map((item) => (
-                      <MenuItem key={item.id} id={item.id} textValue={item.label} aria-checked={item.checked}>
-                        {item.checked === undefined ? item.icon : <span className="rp-check" aria-hidden>{item.checked ? <Check size={14} /> : null}</span>}
+                      <MenuItem
+                        key={item.id}
+                        id={item.id}
+                        textValue={item.label}
+                        aria-checked={item.checked}
+                        checked={item.checked}
+                        icon={item.checked === undefined ? item.icon : undefined}
+                      >
                         {item.label}
                       </MenuItem>
                     ))
@@ -562,10 +565,15 @@ function SurfaceView({ surface, shown, owner, panes, text, panel, onRequestActiv
         <PaneChromeContext.Provider value={chrome}>{body}</PaneChromeContext.Provider>
         {blocked ? (
           <div className="rp-block">
-            <p>{text.activateHint}</p>
-            <Button size="sm" variant="primary" onPress={activate} isDisabled={activating} data-testid="rp-activate">
-              {text.activate}
-            </Button>
+            <EmptyState
+              size="sm"
+              title={text.activateHint}
+              action={
+                <Button size="sm" variant="primary" onPress={activate} isDisabled={activating} icon={activating ? <Spinner size="xs" /> : undefined} data-testid="rp-activate">
+                  {text.activate}
+                </Button>
+              }
+            />
           </div>
         ) : null}
       </div>

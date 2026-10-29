@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { ChevronDown, ChevronRight, Square } from 'lucide-react'
-import { Button, IconButton, StatusDot, StatusSlot } from '../../ui'
+import { Square } from 'lucide-react'
+import { Button, CollapsibleChevron, IconButton, ListRow, Notice, StatusDot, StatusSlot } from '../../ui'
 import { useStore } from '../../state/store'
 import { useSubagentStopping } from '../../state/subagent-stopping'
 import { phaseWord, runTone, type RunLang } from '../../state/runs-v3'
@@ -86,7 +86,7 @@ export function BackgroundTasks({ subagents, scheduled, lang, text }: Background
             size="sm"
             className="wb-bg-section-toggle"
             aria-expanded={finishedOpen}
-            trailingIcon={finishedOpen ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
+            trailingIcon={<CollapsibleChevron expanded={finishedOpen} />}
             onPress={() => setFinishedOpen((open) => !open)}
             data-testid="wb-bg-finished-toggle"
           >
@@ -101,7 +101,7 @@ export function BackgroundTasks({ subagents, scheduled, lang, text }: Background
           ) : null}
         </section>
       ) : null}
-      {notice ? <p className="wb-bg-notice" role="status" data-testid="wb-bg-notice">{notice}</p> : null}
+      {notice ? <Notice variant="hint" data-testid="wb-bg-notice">{notice}</Notice> : null}
     </div>
   )
 }
@@ -118,10 +118,9 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
     if (!entry.live) return (
       <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
         <div className="wb-bg-line">
-          <Button variant="ghost" size="sm" className="wb-bg-main" title={run.task} onPress={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
-            <SubagentStateIcon state={row.state} />
+          <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={row.state} />} title={run.task} onClick={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
             <span className="wb-bg-label">{compactTaskPaths(run.brief?.title || row.description)}</span>
-          </Button>
+          </ListRow>
         </div>
       </li>
     )
@@ -140,19 +139,17 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
     return (
       <li className="wb-bg-row" data-state={row.state} data-testid="wb-bg-row">
         <div className="wb-bg-line">
-          <Button variant="ghost" size="sm" className="wb-bg-main" title={run.task} onPress={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
-            <SubagentStateIcon state={row.state} />
+          <ListRow className="wb-bg-open" icon={<SubagentStateIcon state={row.state} />} trailing={time || undefined} title={run.task} onClick={() => openSubagentPane(run.id)} data-testid="wb-bg-open">
             <span className="wb-bg-label">{label}</span>
-            <span className="wb-bg-time">{time}</span>
-          </Button>
+          </ListRow>
           {output ? (
-            <IconButton size="sm" aria-label={open ? text.hideOutput : text.showOutput} aria-expanded={open} onPress={() => setOpen((value) => !value)} data-testid="wb-bg-output-toggle">
-              {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
+            <IconButton size="sm" aria-label={open ? text.hideOutput : text.showOutput} tooltip={open ? text.hideOutput : text.showOutput} aria-expanded={open} onPress={() => setOpen((value) => !value)} data-testid="wb-bg-output-toggle">
+              <CollapsibleChevron expanded={open} />
             </IconButton>
           ) : null}
           {row.canStop || row.state === 'stopping' ? (
-            <IconButton size="sm" aria-label={text.stopTask} isDisabled={row.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop">
-              <Square size={11} aria-hidden />
+            <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={row.state === 'stopping'} onPress={() => void stop()} data-testid="wb-bg-stop">
+              <Square size={12} aria-hidden />
             </IconButton>
           ) : null}
         </div>
@@ -186,16 +183,18 @@ function TaskRow({ entry, now, lang, text, onGone }: { entry: TaskEntry; now: nu
   return (
     <li className="wb-bg-row" data-state={snapshot.phase.kind} data-testid="wb-bg-row">
       <div className="wb-bg-line">
-        <span className="wb-bg-main wb-bg-static" title={`${snapshot.code} ${snapshot.title}`}>
-          <StatusSlot>
-            <StatusDot kind={RUN_DOT[tone]} />
-          </StatusSlot>
+        <span className="wb-bg-static" title={`${snapshot.code} ${snapshot.title}`}>
+          <span className="wb-bg-lead" aria-hidden>
+            <StatusSlot>
+              <StatusDot kind={RUN_DOT[tone]} />
+            </StatusSlot>
+          </span>
           <span className="wb-bg-label">{snapshot.title || snapshot.code}</span>
           {entry.live ? <span className="wb-bg-time">{time}</span> : null}
         </span>
         {entry.live ? (
-          <IconButton size="sm" aria-label={text.stopTask} isDisabled={stoppingRun} onPress={() => void stop()} data-testid="wb-bg-stop">
-            <Square size={11} aria-hidden />
+          <IconButton size="sm" aria-label={text.stopTask} tooltip={text.stopTask} isDisabled={stoppingRun} onPress={() => void stop()} data-testid="wb-bg-stop">
+            <Square size={12} aria-hidden />
           </IconButton>
         ) : null}
       </div>

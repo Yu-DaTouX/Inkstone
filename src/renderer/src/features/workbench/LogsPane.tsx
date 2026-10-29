@@ -1,8 +1,8 @@
 import { useMemo, useState, type ReactElement } from 'react'
-import { Copy } from 'lucide-react'
+import { Copy, Search } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
-import { EmptyState, IconButton } from '../../ui'
+import { CloseButton, EmptyState, IconButton, InputGroup, InputGroupAddon, InputGroupInput } from '../../ui'
 import { workbenchPaneText } from './pane-text'
 import type { LogsPaneProps } from './types'
 
@@ -64,19 +64,35 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
             <span className="wb-logs-count ui-meta-num" data-testid="v3-wb-logs-count">
               {needle ? `${visible.length}/${Math.min(logs.length, TAIL)}` : logs.length}
             </span>
-            <input
-              className="ui-input wb-logs-filter"
-              type="search"
-              value={filter}
-              placeholder={text.logFilter}
-              aria-label={text.logFilter}
-              onChange={(event) => setFilter(event.target.value)}
-              data-testid="v3-wb-logs-filter"
-            />
+            <InputGroup size="sm" className="wb-logs-filter">
+              <InputGroupAddon>
+                <Search size={12} aria-hidden />
+              </InputGroupAddon>
+              <InputGroupInput
+                value={filter}
+                placeholder={text.logFilter}
+                aria-label={text.logFilter}
+                onChange={(event) => setFilter(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && filter) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setFilter('')
+                  }
+                }}
+                data-testid="v3-wb-logs-filter"
+              />
+              {filter ? (
+                <InputGroupAddon align="end">
+                  <CloseButton size="micro" aria-label={text.clearFilter} onPress={() => setFilter('')} />
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
             <IconButton
               size="sm"
               variant="ghost"
               aria-label={copied ? text.copied : text.copyLogs}
+              tooltip={copied ? text.copied : text.copyLogs}
               onPress={() => void copy()}
               isDisabled={visible.length === 0}
               data-testid="v3-wb-logs-copy"
@@ -89,7 +105,7 @@ export function LogsPane(_props: LogsPaneProps): ReactElement {
               {visible.join('\n')}
             </pre>
           ) : (
-            <p className="wb-ctx-note">{text.logNoMatch}</p>
+            <EmptyState size="sm" title={text.logNoMatch} />
           )}
           <p className="wb-ctx-note">{t('rp.logHint')}</p>
         </section>
