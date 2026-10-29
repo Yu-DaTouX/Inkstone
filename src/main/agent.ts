@@ -1111,7 +1111,9 @@ export class AgentController extends EventEmitter {
 
     const timingBucket = presentationReady ? undefined : timingKey(this.state?.sessionFile)
     if (timingBucket) {
-      const records = await readTurnTimings(YAN_DIR, timingBucket).catch(() => [])
+      const liveRunId = this.agentRunning ? this.turn.runId : undefined
+      const records = (await readTurnTimings(YAN_DIR, timingBucket).catch(() => []))
+        .filter((record) => !(liveRunId && record.runId === liveRunId && record.final === false))
       if (records.length) this.messages = applyTurnTimings(this.messages, records)
     }
 

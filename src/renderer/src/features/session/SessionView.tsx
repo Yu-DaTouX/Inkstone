@@ -577,8 +577,8 @@ export function SessionView(): JSX.Element {
             bufferSize={800}
             onScroll={onVirtualScroll}
           >
-            {(item) => (
-              <div key={`${identity}|${item.id}`} className="v3-stream-row">
+            {(item, index) => (
+              <div key={`${identity}|${item.id}`} className={`v3-stream-row${index === 0 ? ' v3-stream-row--head' : ''}${index === renderTurns.length - 1 ? ' v3-stream-row--tail' : ''}`}>
                 {isPending(item) ? <PendingRunNotice /> : <TurnView turn={item} sessionId={view.sessionId} rewindOwner={rewindOwner} branchPager={branchPager} streaming={item.kind === 'assistant' && item.streaming} wrapUp={wrapUp?.turnId === item.id ? wrapUp.card : null} tail={item === renderTurns.at(-1)} />}
               </div>
             )}
