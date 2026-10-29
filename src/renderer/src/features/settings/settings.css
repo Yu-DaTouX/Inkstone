@@ -20,47 +20,6 @@
     overflow-wrap: anywhere;
   }
 
-  .ui-settings[data-layout='split'] {
-    --settings-bar-h: calc(var(--size-btn) + var(--s-24));
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: var(--settings-bar-h) minmax(0, 1fr);
-  }
-
-  .ui-settings[data-layout='split'] > .ui-settings-nav {
-    grid-column: 1;
-    grid-row: 1 / -1;
-  }
-
-  .ui-settings[data-layout='split'] > .ui-settings__pane {
-    grid-column: 2;
-    grid-row: 1 / -1;
-  }
-
-  .ui-settings[data-layout='split'] > .ui-settings__title {
-    position: relative;
-    z-index: 1;
-    grid-column: 2;
-    grid-row: 1;
-    align-self: center;
-    width: auto;
-    height: auto;
-    margin: 0;
-    padding: 0 calc(var(--size-btn) + var(--s-32)) 0 var(--s-24);
-    overflow: hidden;
-    clip-path: none;
-    color: var(--fg);
-    font: var(--w-medium) var(--t-heading) / var(--t-heading-lh) var(--font-ui);
-    text-overflow: ellipsis;
-    pointer-events: none;
-  }
-
-  .ui-settings[data-layout='split'] .ui-settings__head {
-    min-height: var(--settings-bar-h);
-    padding-block: 0;
-    border-bottom: 1px solid var(--alpha-2);
-  }
-
   .settings-loading {
     display: flex;
     flex-direction: column;
@@ -124,8 +83,7 @@
     gap: var(--s-16);
     width: 100%;
     min-width: 0;
-    max-width: var(--size-chat);
-    margin-inline: auto;
+    max-width: var(--settings-col);
   }
 
   .settings-group > .ui-setting-rows,

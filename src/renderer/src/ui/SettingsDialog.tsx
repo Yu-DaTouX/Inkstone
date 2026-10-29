@@ -93,15 +93,12 @@ export function SettingsDialog({
                 onKeyDown={onKeyDown}
               >
                 <ModalLayerToken />
-                <Heading slot="title" className="ui-settings__title">
-                  {title}
-                </Heading>
                 {stacked ? (
                   <header className="ui-settings-narrow">
                     <div className="ui-settings-narrow__head">
-                      <strong className="ui-settings-narrow__title" aria-hidden="true">
+                      <Heading slot="title" className="ui-settings-narrow__title">
                         {title}
-                      </strong>
+                      </Heading>
                       {closeButton}
                     </div>
                     {narrowNav}
@@ -110,7 +107,14 @@ export function SettingsDialog({
                   nav
                 )}
                 <div className="ui-settings__pane">
-                  {stacked ? null : <div className="ui-settings__head">{closeButton}</div>}
+                  {stacked ? null : (
+                    <header className="ui-settings__head">
+                      <Heading slot="title" className="ui-settings__title">
+                        {title}
+                      </Heading>
+                      {closeButton}
+                    </header>
+                  )}
                   <div className="ui-settings__content">{children}</div>
                 </div>
               </div>
