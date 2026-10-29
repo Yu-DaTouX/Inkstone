@@ -16,7 +16,7 @@ const outfile = join(dir, 'markdown-blocks.mjs')
 const kbdOutfile = join(dir, 'markdown-kbd.mjs')
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-blocks.ts')], bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'error' })
 await build({ entryPoints: [join(ROOT, 'src/renderer/src/features/session/markdown-kbd.ts')], bundle: true, platform: 'node', format: 'esm', outfile: kbdOutfile, logLevel: 'error' })
-const { splitMarkdownBlocks } = await import(pathToFileURL(outfile).href)
+const { splitMarkdownBlocks, prepareStreamingMarkdown } = await import(pathToFileURL(outfile).href)
 const { rehypeKbd } = await import(pathToFileURL(kbdOutfile).href)
 await rm(dir, { recursive: true, force: true })
 
@@ -122,6 +122,27 @@ check('.sr-only 在 base.css 里是完整的无障碍隐藏规则', () => {
   for (const declaration of ['position: absolute', 'width: 1px', 'height: 1px', 'clip-path: inset(50%)', 'white-space: nowrap']) {
     assert.ok(rule[1].includes(declaration), `${declaration} missing in ${rule[1]}`)
   }
+})
+
+check('流式未闭合行内代码暂缓到闭合，最终正文不变', () => {
+  for (const delimiter of ['`', '``', '````']) {
+    const prefix = `完成 ${delimiter}INCIDENT.md`
+    assert.equal(prepareStreamingMarkdown(prefix, true), '完成 ')
+    assert.equal(prepareStreamingMarkdown(prefix, false), prefix)
+    assert.equal(prepareStreamingMarkdown(`${prefix}${delimiter}。`, true), `${prefix}${delimiter}。`)
+    assert.ok(html(prepareStreamingMarkdown(`${prefix}${delimiter}`, true)).includes('<code>INCIDENT.md</code>'))
+  }
+  assert.equal(prepareStreamingMarkdown('完成 `', true), '完成 ')
+  assert.equal(prepareStreamingMarkdown('完成 `ok`，以及 `pending', true), '完成 `ok`，以及 ')
+  assert.equal(prepareStreamingMarkdown('跨行 `one\ntwo', true), '跨行 ')
+  assert.equal(prepareStreamingMarkdown('旧段 `literal\n\n新段', true), '旧段 `literal\n\n新段')
+})
+
+check('流式预处理保留转义、围栏、代码里的反斜杠与不同长度反引号', () => {
+  const samples = [String.raw`转义 \`literal`, '`a\\`', '``a`b``', '```js\nconst x = `pending\n', '~~~js\nconst x = `pending\n~~~', '    indented `code', '\tindented `code', '> ```js\n> const x = `pending', '- ```js\n  const x = `pending']
+  for (const source of samples) assert.equal(prepareStreamingMarkdown(source, true), source)
+  assert.equal(prepareStreamingMarkdown('```js\nconst x = `a`\n```\n\n后文 `pending', true), '```js\nconst x = `a`\n```\n\n后文 ')
+  assert.equal(prepareStreamingMarkdown('``a`b', true), '')
 })
 
 const samples = [

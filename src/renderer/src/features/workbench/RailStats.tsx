@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Button, CollapsibleChevron, MiniBars, SegmentBar, Swatch } from '../../ui'
 import { useT } from '../../i18n'
 import { useStore, type Store } from '../../state/store'
@@ -10,13 +10,14 @@ import {
   liveStepId,
   liveStepSpeed,
   projectSessionMetrics,
-  sessionTurnCounts,
   splitLiveStep,
   stepSpeeds,
   stepSpeed
 } from '../../../../shared/session-metrics'
 import type { UIMessage } from '../../../../shared/ipc'
-import { buildRailStats, railTimeText, type RailSegment, type RailStatsModel } from './rail-stats'
+import { buildRailStats, railTimeText, retainRailSpeed, type RailSpeedHold, type RailSegment, type RailStatsModel } from './rail-stats'
+import { railOperationCounts } from './rail-data'
+import { sessionViewIdentity } from '../session/view-state'
 import './rail-stats.css'
 
 const SPEED_BARS = 12
@@ -62,23 +63,29 @@ export function useRailStats(enabled: boolean): RailStatsModel | null {
   const peekedPath = useStore((s) => s.peekedPath)
   const runners = useStore((s) => s.runners)
   const historyPartial = (peekNote?.truncated ?? 0) > 0
+  const speedHold = useRef<RailSpeedHold | null>(null)
   return useMemo(() => {
     if (!enabled) return null
     const { messages, liveId, running } = snapshot
     const { settled, live } = splitLiveStep(messages, liveId)
-    const liveReading = liveStepSpeed(live)
+    const latestSpeed = stepSpeed(settled.findLast((message) => message.role === 'assistant'))
+    const reading = live ? liveStepSpeed(live) : latestSpeed === null ? null : { speed: latestSpeed, estimated: false }
+    const identity = JSON.stringify([sessionViewIdentity({ session, peekedSessionId, peekedPath }).key, messages.findLast((message) => message.role === 'user')?.id])
+    speedHold.current = retainRailSpeed(speedHold.current, identity, reading)
+    const heldReading = speedHold.current.sample
     const metrics = projectSessionMetrics(settled, stats, { historyPartial })
     const runs = selectSubagentRuns(subagents, subagentScopeForView({ session, peekedSessionId, peekedPath, runners })).all
     return buildRailStats({
       metrics,
-      counts: sessionTurnCounts(messages),
+      counts: railOperationCounts(messages),
       historyPartial,
       subagentTokens: subagentTokens(runs),
       subagentCost: subagentCost(runs),
       speeds: stepSpeeds(settled, live ? SPEED_BARS - 1 : SPEED_BARS),
-      latestSpeed: stepSpeed(settled.findLast((message) => message.role === 'assistant')),
-      liveSpeed: live ? (liveReading?.speed ?? null) : undefined,
-      liveSpeedEstimated: liveReading?.estimated ?? false,
+      latestSpeed: heldReading?.speed ?? null,
+      latestSpeedEstimated: heldReading?.estimated ?? false,
+      liveSpeed: running ? (heldReading?.speed ?? null) : undefined,
+      liveSpeedEstimated: heldReading?.estimated ?? false,
       liveSince: liveActivitySince(messages, live, running),
       money,
       t

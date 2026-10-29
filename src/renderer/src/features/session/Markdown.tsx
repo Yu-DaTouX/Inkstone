@@ -20,7 +20,7 @@ import { Icon } from './Icon'
 import { VisualFence } from '../artifacts/VisualFence'
 import { MermaidBlock } from '../artifacts/MermaidBlock'
 import { WidgetIdentityContext, useMarkdownIdentity } from '../artifacts/widget-lifecycle'
-import { splitMarkdownBlocks } from './markdown-blocks'
+import { prepareStreamingMarkdown, splitMarkdownBlocks } from './markdown-blocks'
 import { markdownCacheKey } from './markdown-cache-key'
 import { throttleTail, type TailHold } from './markdown-tail-throttle'
 import { rehypeKbd } from './markdown-kbd'
@@ -581,7 +581,7 @@ export const Markdown = memo(function Markdown({
     : s.session?.cwd)
   sourceCwd = sourceCwd || sessionCwd
   const revealedText = useSmoothReveal(text, live)
-  const renderedText = live ? revealedText : text
+  const renderedText = prepareStreamingMarkdown(live ? revealedText : text, live)
   const { lang } = useI18n()
   const footnoteOptions = useFootnoteOptions()
   const fade = useRevealFade(renderedText, live)

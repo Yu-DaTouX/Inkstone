@@ -43,7 +43,7 @@ import {
   outputFolder,
   outputName,
   useDismissedOutputs,
-  useGitLineTotals,
+  sessionLineTotals,
   useOutputScreen,
   visibleOutputs,
   type RailChangedFile,
@@ -533,18 +533,20 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
   const gitMessageCount = useThrottledValue(messages.length, agentRunning, GIT_REFRESH_WHILE_RUNNING_MS)
   const gitRefresh = `${gitMessageCount}:${agentRunning ? 1 : 0}`
   const repo = useGitRepo(cwd || null, gitRefresh)
+  const sessionChanges = useMemo(() => sessionLineTotals(messages, cwd || undefined), [messages, cwd])
+  const changesCount = sessionChanges.files
+  const lineTotals = sessionChanges
   const branch = repo ? (repo.detached ? text.detached : repo.branch || text.noBranch) : null
-  const lineTotals = useGitLineTotals(cwd || null, !!repo && repo.changedCount > 0 && !isRailSectionHidden({ hidden }, 'changes'), gitRefresh)
-  const changesSummary = !repo ? undefined : repo.changedCount === 0 ? (
+  const changesSummary = !repo ? undefined : changesCount === 0 ? (
     <RailValue value={rail.changesNone} />
-  ) : lineTotals ? (
+  ) : lineTotals.added >= 0 && lineTotals.removed >= 0 ? (
     <RailValue
       glyph={{ kind: 'delta', added: lineTotals.added, removed: lineTotals.removed }}
       title={rail.linesChanged(lineTotals.added, lineTotals.removed)}
       aria-label={rail.linesChanged(lineTotals.added, lineTotals.removed)}
     />
   ) : (
-    <RailValue value={text.changesFiles(repo.changedCount)} />
+    <RailValue value={text.changesFiles(changesCount)} />
   )
   const environmentSummary = cwd ? (
     <RailValue
@@ -740,7 +742,7 @@ export function OverviewPane({ owner, onOpenView }: OverviewPaneProps): ReactEle
             summary: changesSummary,
             onOpenView: () => onOpenView('changes'),
             body:
-              repo.changedCount === 0 ? (
+              changesCount === 0 ? (
                 <p className="wb-ov-note">{rail.changesNone}</p>
               ) : lineTotals && lineTotals.entries.length > 0 ? (
                 <ChangedRows files={lineTotals.entries} text={rail} onOpen={() => onOpenView('changes')} />

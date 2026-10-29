@@ -119,7 +119,24 @@ export function cleanTitle(raw: string): string {
   s = s.replace(/^(标题|title)\s*[:：]\s*/i, '')
   s = s.replace(/^["'“”『「【\[(（]+/, '').replace(/["'“”』」】\])）]+$/, '')
   s = s.replace(/[。！？!?.,，、；;：:]+$/, '')
-  if (Array.from(s).length > TITLE_MAX) s = Array.from(s).slice(0, TITLE_MAX).join('')
+  const chars = Array.from(s)
+  if (chars.length > TITLE_MAX) {
+    const tokenChar = (char: string): boolean => /^[\p{L}\p{N}_./\\:@%+~#?=&-]$/u.test(char) && !/^\p{Script=Han}$/u.test(char)
+    const paths = [...s.matchAll(/"[^"]*[\\/][^"]*"|“[^”]*[\\/][^”]*”|'[^']*[\\/][^']*'|[^\s，。！？!?；;()[\]{}"'“”]*[\\/][^\s，。！？!?；;()[\]{}"'“”]*|[\p{L}\p{N}_-]+\.[\p{L}\p{N}_.-]+/gu)]
+    const boundary = (limit: number): number => {
+      let end = limit
+      while (end > 0 && tokenChar(chars[end - 1]) && tokenChar(chars[end])) end -= 1
+      const offset = chars.slice(0, end).join('').length
+      const path = paths.find((match) => match.index < offset && offset < match.index + match[0].length)
+      return path ? Array.from(s.slice(0, path.index)).length : end
+    }
+    const end = boundary(TITLE_MAX)
+    if (end < TITLE_MAX || tokenChar(chars[end - 1]) || /\s/.test(chars[end - 1])) {
+      s = `${chars.slice(0, boundary(TITLE_MAX - 1)).join('').trimEnd().replace(/[.,，、；;：:]+$/, '')}…`
+    } else {
+      s = chars.slice(0, end).join('')
+    }
+  }
   return s
 }
 

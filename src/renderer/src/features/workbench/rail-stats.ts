@@ -89,6 +89,7 @@ export interface RailStatsInput {
   subagentCost?: number
   speeds?: readonly number[]
   latestSpeed?: number | null
+  latestSpeedEstimated?: boolean
   liveSpeed?: number | null
   liveSpeedEstimated?: boolean
   liveSince?: number | null
@@ -103,6 +104,21 @@ const TONE: Record<RailSegmentKey, DataTone> = {
   output: 6,
   model: 1,
   tool: 7
+}
+
+export interface RailSpeedSample {
+  speed: number
+  estimated: boolean
+}
+
+export interface RailSpeedHold {
+  identity: string
+  sample: RailSpeedSample | null
+}
+
+export function retainRailSpeed(previous: RailSpeedHold | null, identity: string, sample: RailSpeedSample | null): RailSpeedHold {
+  const valid = sample && Number.isFinite(sample.speed) && sample.speed > 0 ? sample : null
+  return { identity, sample: valid ?? (previous?.identity === identity ? previous.sample : null) }
 }
 
 export function tpsNumber(tps: number | null): string {
@@ -273,7 +289,7 @@ function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed |
   if (bars.length === 0 && live === undefined && latest === null && metrics.tps === null) return null
   const { t } = input
   const perSec = t('tok.perSec')
-  const estimated = live !== undefined && live !== null && input.liveSpeedEstimated === true
+  const estimated = live !== undefined ? live !== null && input.liveSpeedEstimated === true : latest !== null && input.latestSpeedEstimated === true
   const caption = [
     ...(bars.length > 0 ? [t('sm.recentSteps', { n: bars.length })] : []),
     ...(latest === null ? [] : [t('sm.latestSpeed', { speed: tpsText(latest, perSec) })]),
@@ -283,7 +299,7 @@ function buildSpeed(metrics: SessionMetrics, input: RailStatsInput): RailSpeed |
     label: t('sm.tps'),
     value:
       live === undefined
-        ? tpsNumber(input.latestSpeed === undefined ? latest ?? metrics.tps : latest)
+        ? `${estimated ? '≈' : ''}${tpsNumber(input.latestSpeed === undefined ? latest ?? metrics.tps : latest)}`
         : `${estimated ? '≈' : ''}${tpsNumber(live)}`,
     unit: perSec,
     bars,
@@ -314,6 +330,7 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
   const liveEstimated = running && live !== null && input.liveSpeedEstimated === true
   const hit = metrics.hitRate !== null && Number.isFinite(metrics.hitRate) ? Math.min(100, Math.max(0, metrics.hitRate)) : null
   const settledSpeed = input.latestSpeed === undefined ? bars.at(-1) ?? positive(metrics.tps) : positive(input.latestSpeed)
+  const settledEstimated = settledSpeed !== null && input.latestSpeedEstimated === true
   const metric: RailGlanceMetric = running
     ? {
         kind: 'speed',
@@ -324,7 +341,7 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
         ...(liveEstimated ? { estimated: true } : {})
       }
     : settledSpeed !== null || input.latestSpeed !== undefined
-      ? { kind: 'speed', value: tpsNumber(settledSpeed), unit: perSec, bars: null, pending: null }
+      ? { kind: 'speed', value: `${settledEstimated ? '≈' : ''}${tpsNumber(settledSpeed)}`, unit: perSec, bars: null, pending: null, ...(settledEstimated ? { estimated: true } : {}) }
       : metrics.total !== null
         ? { kind: 'tokens', value: steadyCount(metrics.total), unit }
         : { kind: 'counts', text: headline }
@@ -334,7 +351,7 @@ function buildGlance(metrics: SessionMetrics, input: RailStatsInput, headline: s
     ...(hit === null ? [] : [`${t('sm.hitRate')} ${formatHitRate(metrics.hitRate) ?? '—'}`]),
     ...(running || settledSpeed === null ? [] : [`${t('sm.tps')} ${tpsText(settledSpeed, perSec)}`]),
     ...(running ? [`${t('sm.liveStep')} ${tpsText(live, perSec)}`] : []),
-    ...(liveEstimated ? [t('sm.liveSpeedEstimate')] : []),
+    ...(liveEstimated || !running && settledEstimated ? [t('sm.liveSpeedEstimate')] : []),
     ...(input.historyPartial ? [t('sm.historyPartialTip')] : []),
     ...(metrics.partial ? [t('sm.partialTip')] : [])
   ].join('\n')

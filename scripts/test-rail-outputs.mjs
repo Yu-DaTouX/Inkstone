@@ -132,6 +132,42 @@ const paths = (list) => list.map((item) => item.path)
   assert.equal(addDismissed(Array.from({ length: 250 }, (_, i) => `f${i}`), 'new').length, 200)
 }
 
+{
+  const changes = await load('../src/renderer/src/features/session/turn-changes.ts')
+  const process = await load('../src/renderer/src/features/session/turn-process.ts')
+  const turns = await load('../src/shared/turns.ts')
+  const edits = [
+    call('src/money.js', 'modified', 100, { details: { fileDiff: { ...diff('src/money.js', 'modified').fileDiff, added: 35, removed: 6 } } }),
+    call('src/money.js', 'modified', 200, { details: { fileDiff: { ...diff('src/money.js', 'modified').fileDiff, added: 35, removed: 5 } } })
+  ]
+  const actions = Array.from({ length: 13 }, (_, i) => ({ id: `read-${i}`, name: 'read', status: 'ok', args: { path: 'README.md' } }))
+  const messages = [{ id: 'user-1', role: 'user', text: '修复精度', timestamp: 1 }, assistant([...edits, ...actions])]
+  const turn = turns.groupIntoTurns(messages).find((turn) => turn.kind === 'assistant')
+  const card = changes.collectTurnChanges(turn.tools, CWD)
+  const totals = rail.sessionLineTotals(messages, CWD)
+  assert.deepEqual([totals.added, totals.removed, totals.files], [70, 11, 1], '重复编辑累计变动，不使用工作树净差')
+  assert.deepEqual([totals.added, totals.removed], [card.added, card.removed], '右栏与对话卡同源')
+  assert.deepEqual(rail.railOperationCounts(messages), { turns: 1, steps: 15 }, '操作数不是 assistant 消息数')
+  assert.equal(rail.railOperationCounts(messages).steps, process.processSummary(turn.segments).actions, '过程摘要与右栏操作数一致')
+  const child = { id: 'child', name: 'read', parentToolCallId: edits[0].id, status: 'ok', args: {} }
+  const todo = { id: 'todo', name: 'todo', status: 'ok', args: {} }
+  const withHidden = [...messages, assistant([child, todo])]
+  const hiddenTurn = turns.groupIntoTurns(withHidden).find((turn) => turn.kind === 'assistant')
+  assert.equal(rail.railOperationCounts(withHidden).steps, process.processSummary(hiddenTurn.segments).actions, '嵌套调用与隐藏 todo 沿用过程摘要过滤')
+  const secondTurn = [...messages, { id: 'user-2', role: 'user', text: '继续', timestamp: 2 }, assistant([call('new.js', 'created', 300)])]
+  assert.deepEqual(rail.railOperationCounts(secondTurn), { turns: 2, steps: 16 })
+  assert.equal(rail.sessionLineTotals(secondTurn, CWD).added, 71, '右栏为本会话所有回合卡之和')
+  assert.deepEqual(rail.railOperationCounts([]), { turns: 0, steps: 0 })
+  assert.equal(rail.sessionLineTotals([], CWD).files, 0, '无会话改动不借用工作树数字')
+  const outside = [assistant([call('E:/other/out.md', 'created', 300)])]
+  assert.equal(rail.sessionLineTotals(outside, CWD).files, 0, '项目外变动同样过滤')
+  const running = [assistant([call('pending.md', 'created', 300, { status: 'running' })])]
+  assert.equal(rail.sessionLineTotals(running, CWD).files, 0, '未完成的改动不提前计数')
+  const unknown = rail.sessionLineTotals([assistant([call('binary.png', 'modified', 300, { details: { fileDiff: { ...diff('binary.png', 'modified').fileDiff, added: -1, removed: -1 } } })])], CWD)
+  assert.equal(unknown.added, -1)
+  assert.equal(unknown.entries[0].added, null, '无法计行时不伪造零行数')
+}
+
 const screenModule = await load('../src/main/git-path-screen.ts')
 const work = await mkdtemp(join(tmpdir(), 'inkstone-rail-outputs-'))
 try {

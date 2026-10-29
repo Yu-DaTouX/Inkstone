@@ -1,7 +1,6 @@
 import type { RetryRun, UIMessage } from '../../../../shared/ipc'
 import type { SessionTextKey } from './text'
 
-const THOUGHT_HOLD_MS = 2000
 const WORKING_SECONDS_FROM_MS = 2000
 
 export type WorkingKind =
@@ -50,9 +49,9 @@ export interface WorkingLine {
   error?: string
 }
 
-const TOKEN_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'thought', 'responding', 'working'])
-const TIMED_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'thought', 'responding', 'working', 'sending', 'retrying', 'compacting'])
-const QUIET_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['tool', 'thinking', 'responding', 'working'])
+const TOKEN_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['working'])
+const TIMED_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['working', 'retrying', 'compacting'])
+const QUIET_KINDS: ReadonlySet<WorkingKind> = new Set<WorkingKind>(['working'])
 
 export function trackThinking(
   previous: ThinkingClock | null,
@@ -82,12 +81,7 @@ function pickKind(input: WorkingLineInput): WorkingKind | null {
   if (input.retry) return 'retrying'
   if (input.compacting) return 'compacting'
   if (!input.running) return null
-  if (input.toolRunning) return 'tool'
-  const thinking = input.thinking
-  if (thinking?.live) return 'thinking'
-  if (thinking && thinking.endedAt !== null && input.now - thinking.endedAt < THOUGHT_HOLD_MS) return 'thought'
-  if (input.streaming) return 'responding'
-  return input.requested ? 'working' : 'sending'
+  return 'working'
 }
 
 export function workingLine(input: WorkingLineInput): WorkingLine | null {
@@ -95,7 +89,7 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
   if (!kind) return null
   const elapsedMs = TIMED_KINDS.has(kind) ? wholeSecondsMs(input.elapsedMs) : null
   const tokens = TOKEN_KINDS.has(kind) && typeof input.tokens === 'number' && input.tokens > 0 ? input.tokens : null
-  const quiet = QUIET_KINDS.has(kind) && !!input.quiet
+  const quiet = QUIET_KINDS.has(kind)
   const base = { kind, elapsedMs, tokens, quiet }
   if (quiet) return { ...base, textKey: 'workActive' }
   switch (kind) {
@@ -116,20 +110,8 @@ export function workingLine(input: WorkingLineInput): WorkingLine | null {
     }
     case 'compacting':
       return { ...base, textKey: null }
-    case 'tool':
-      return { ...base, textKey: 'workTool' }
-    case 'thinking':
-      return { ...base, textKey: 'workThinking' }
-    case 'thought': {
-      const ms = input.thinking?.ms ?? 0
-      return { ...base, textKey: 'workThought', vars: { n: Math.max(1, Math.round(ms / 1000)) } }
-    }
-    case 'responding':
-      return { ...base, textKey: 'workResponding' }
-    case 'working':
-      return { ...base, textKey: 'workWorking' }
-    case 'sending':
-      return { ...base, textKey: 'workSending' }
+    default:
+      return { ...base, textKey: 'workActive' }
   }
 }
 

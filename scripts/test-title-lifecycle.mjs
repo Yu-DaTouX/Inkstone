@@ -154,9 +154,33 @@ try {
     assert.equal(await agent.maybeGenerateTitle({ prompt: { text: '首条消息' } }), null, '回退标题同样不覆盖生成期间的手动改名')
     assert.equal(pushes.some(event => event.ch === 'session-title'), false)
   }
+  const titleOut = join(root, 'clean-title.mjs')
+  await build({
+    entryPoints: ['src/main/title.ts'], outfile: titleOut, bundle: true, platform: 'node', format: 'esm',
+    plugins: [{ name: 'isolated-clean-title', setup(api) {
+      api.onResolve({ filter: /^\.\/paths$/ }, () => ({ path: 'paths', namespace: 'fixture' }))
+      api.onLoad({ filter: /^paths$/, namespace: 'fixture' }, () => ({ contents: `export const YAN_DIR=${JSON.stringify(root)}; export const PI_AGENT_DIR=${JSON.stringify(root)};`, loader: 'js' }))
+      api.onResolve({ filter: /^\.\/protocol$/ }, () => ({ path: 'protocol', namespace: 'fixture' }))
+      api.onLoad({ filter: /^protocol$/, namespace: 'fixture' }, () => ({ contents: 'export class PiRpc {}', loader: 'js' }))
+    } }]
+  })
+  const { cleanTitle } = await import(pathToFileURL(titleOut).href)
+  assert.equal(cleanTitle('请处理这个项目 INCIDENT.md 第一点'), '请处理这个项目…', '录屏标题不切开文件名')
+  assert.equal(cleanTitle('Fix precision calculation regression'), 'Fix precision…', '英文按完整单词截断')
+  assert.equal(cleanTitle('修复 src/session/working-line-model.ts 中的问题'), '修复…', '路径整体保留或整体省略')
+  assert.equal(cleanTitle('修复 C:\\repo\\very-long-file.ts 的错误'), '修复…', 'Windows 路径不切开')
+  assert.equal(cleanTitle('修复 src/金额计算/very-long-file.ts 的问题'), '修复…', '含中文段的路径也不能切开')
+  assert.equal(cleanTitle('检查 "C:/Program Files/Inkstone/main.ts" 的问题'), '检查…', '带空格的引号路径整体省略')
+  assert.equal(cleanTitle('修复 **INCIDENT.md**'), '修复 INCIDENT.md', '短文件名不变')
+  assert.equal(cleanTitle('标题：请修复金额精度并补充边界情况测试以及回归检查'), '请修复金额精度并补充边界情况测试以及', '纯中文保持按字截断')
+  assert.equal(cleanTitle('AReallyLongFilenameWithoutAnyBoundary.ts'), '…', '单个超长原子不可截成半个文件名')
+  for (const source of ['Fix precision calculation regression', '修复 src/session/working-line-model.ts 中的问题', '请处理这个项目 INCIDENT.md 第一点']) {
+    assert.ok(Array.from(cleanTitle(source)).length <= 18)
+    assert.equal(cleanTitle(cleanTitle(source)), cleanTitle(source), '清洗结果幂等')
+  }
   const titleSource = await readFile(new URL('../src/main/title.ts', import.meta.url), 'utf8')
   assert.match(titleSource, /'--no-extensions',[\s\S]*'--no-tools',/, '标题请求不带默认工具定义')
-  console.log('title-lifecycle: 31 assertions passed (stop等待期间、实例替换、正常返回、外部名字不覆盖、首条消息并行生成、失败截断回退、无工具定义)')
+  console.log('title-lifecycle: passed (生命周期守卫、首条消息并行生成、无工具定义、按词与文件路径边界截断)')
 } finally {
   delete globalThis.__titleFixture
   await rm(root, { recursive: true, force: true })

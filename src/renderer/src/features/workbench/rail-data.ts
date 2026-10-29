@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { GitChangeEntry, GitChangesResult, GitPathScreen } from '../../../../shared/git'
 import type { UIMessage, UIToolCall } from '../../../../shared/ipc'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff } from '../session/turn-changes'
+import { groupIntoTurns } from '../../../../shared/turns'
+import { countedProcessCalls } from '../session/tool-run-model'
 
 export interface RailChangedFile {
   path: string
@@ -15,6 +17,41 @@ export interface RailLineTotals {
   removed: number
   files: number
   entries: RailChangedFile[]
+}
+
+export function railOperationCounts(messages: readonly UIMessage[]): { turns: number; steps: number } {
+  const turns = groupIntoTurns([...messages]).filter((turn) => turn.kind === 'assistant')
+  return {
+    turns: turns.length,
+    steps: turns.reduce((sum, turn) => sum + countedProcessCalls(turn.tools).length, 0)
+  }
+}
+
+export function sessionLineTotals(messages: readonly UIMessage[], cwd?: string): RailLineTotals {
+  const turns = groupIntoTurns([...messages]).filter((turn) => turn.kind === 'assistant')
+  const files = new Map<string, RailChangedFile>()
+  let countable = true
+  for (const turn of turns) {
+    const changes = collectTurnChanges(turn.tools, cwd)
+    if (!changes) continue
+    if (changes.added < 0 || changes.removed < 0) countable = false
+    for (const file of changes.files) {
+      const previous = files.get(file.path)
+      files.set(file.path, {
+        path: file.path,
+        added: (previous?.added ?? 0) + file.added,
+        removed: (previous?.removed ?? 0) + file.removed,
+        untracked: file.status === 'created'
+      })
+    }
+  }
+  const entries = [...files.values()]
+  return {
+    added: countable ? entries.reduce((sum, file) => sum + (file.added ?? 0), 0) : -1,
+    removed: countable ? entries.reduce((sum, file) => sum + (file.removed ?? 0), 0) : -1,
+    files: entries.length,
+    entries: countable ? entries : entries.map((file) => ({ ...file, added: null, removed: null }))
+  }
 }
 
 function changedFile(entry: GitChangeEntry): RailChangedFile {

@@ -25,6 +25,7 @@ const {
   hasRailStats,
   hitText,
   railTimeText,
+  retainRailSpeed,
   spanText,
   steadyCount,
   sumTime,
@@ -229,5 +230,22 @@ assert.ok(build1({ cost: null }, { subagentCost: 0.6 }).extras.includes('$0.60')
 assert.ok(build1({ cost: 0.4, costEstimated: 0.1 }, { subagentCost: 0.6 }).extras.includes('≈$1.00'), '合计保留主会话估算标记')
 assert.equal(build1({ cost: 0.4 }, { subagentCost: Number.NaN }).extras, build1({ cost: 0.4 }).extras, '异常子代理费用不污染合计')
 assert.equal(build1({ cost: 0.4 }, { subagentCost: -1 }).extras, build1({ cost: 0.4 }).extras)
+
+let held = retainRailSpeed(null, 'session-a:turn-1', { speed: 48, estimated: true })
+held = retainRailSpeed(held, 'session-a:turn-1', null)
+assert.deepEqual(held.sample, { speed: 48, estimated: true }, '采样间隙保留上次值与估算标识')
+held = retainRailSpeed(held, 'session-a:turn-1', { speed: Number.NaN, estimated: false })
+assert.equal(held.sample.speed, 48, '无效采样不清空上次速度')
+held = retainRailSpeed(held, 'session-a:turn-1', { speed: 52, estimated: false })
+assert.deepEqual(held.sample, { speed: 52, estimated: false }, '可靠新采样替换旧采样')
+assert.equal(retainRailSpeed(held, 'session-b:turn-1', null).sample, null, '换会话不能带入旧速度')
+assert.equal(retainRailSpeed(held, 'session-a:turn-2', null).sample, null, '新任务不能带入旧速度')
+const heldModel = build1({}, { latestSpeed: held.sample.speed, liveSpeed: held.sample.speed, liveSpeedEstimated: held.sample.estimated })
+assert.equal(heldModel.glance.metric.value, '52.0')
+assert.equal(heldModel.speed.value, '52.0', '展开和折叠保留同一速度')
+
+const settledEstimate = build1({}, { latestSpeed: 48, latestSpeedEstimated: true })
+assert.equal(settledEstimate.speed.value, '≈48.0', '结束瞬间缺真实采样时保留估算标识')
+assert.equal(settledEstimate.glance.metric.value, '≈48.0')
 
 console.log('rail-stats ok')
