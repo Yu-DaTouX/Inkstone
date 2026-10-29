@@ -469,6 +469,10 @@ function expectedRuntimeFor(state: Store, id: ComposerSubmitIdentity): ExpectedR
 }
 
 async function sessionActionTarget(get: () => Store) {
+  for (let i = 0; i < 8 && newSessionInFlight; i += 1) {
+    await newSessionInFlight
+  }
+  if (newSessionInFlight) return null
   const identity = composerSubmitIdentity(get())
   const gate = sessionSwitchGate
   if (!(await get().ensureActivated(identity))) return null
@@ -910,6 +914,18 @@ function beginSessionSwitch(gate: number): () => void {
   return () => {
     if (sessionSwitchInFlight?.gate === gate) sessionSwitchInFlight = null
     unmarkSessionSwitch(gate)
+    resolve()
+  }
+}
+
+let newSessionInFlight: Promise<void> | null = null
+
+function beginNewSession(): () => void {
+  let resolve!: () => void
+  const done = new Promise<void>((r) => { resolve = r })
+  newSessionInFlight = done
+  return () => {
+    if (newSessionInFlight === done) newSessionInFlight = null
     resolve()
   }
 }
@@ -1892,6 +1908,8 @@ export const useStore = create<Store>((rawSet, get) => {
   newSession: async (target) => {
     discardPendingMessagePatches()
     const gate = ++sessionSwitchGate
+    const finishNewSession = beginNewSession()
+    try {
     if (get().switchLoading) set({ switchLoading: false })
     const res = await piCall(() => window.yan.newSession(target))
     if (gate !== sessionSwitchGate) {
@@ -1937,6 +1955,9 @@ export const useStore = create<Store>((rawSet, get) => {
     void get().reloadCommands()
     await get().refreshSessions()
     return { ok: true, sessionId: res.sessionId ?? undefined, runId: res.runId ?? res.id }
+    } finally {
+      finishNewSession()
+    }
   },
 
   pickProjectSession: (cwd, projectId) => {
