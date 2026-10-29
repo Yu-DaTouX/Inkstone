@@ -107,11 +107,6 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
   const liveMs = model.liveSince !== null ? Math.max(0, now - model.liveSince) : 0
   const [breakdownOpen, setBreakdownOpen] = useBreakdownOpen()
   const { tokens, time, speed } = model
-  const extras = model.extras ? (
-    <p className="wb-rs-note" title={model.extrasTitle ?? undefined} data-testid="wb-rail-stats-extras">
-      {model.extras}
-    </p>
-  ) : null
   const breakdown: ReactElement[] = []
   if (tokens && tokens.segments.length) {
     breakdown.push(
@@ -152,26 +147,17 @@ export function RailStatsBody({ model, breakdownLabel }: { model: RailStatsModel
       <p className="wb-rs-note" title={model.headlineTitle ?? undefined} data-testid="wb-rail-stats-headline">
         {model.headline}
       </p>
-      {tokens || extras ? (
-        <section className="wb-rs-main" data-block="total">
-          {tokens ? (
-            <div className="wb-rs-line">
-              <span className="wb-rs-total" title={tokens.title}>
-                <span className="wb-rs-big">{tokens.total}</span>
-                <span className="wb-rs-unit">{tokens.unit}</span>
-              </span>
-              {tokens.hit ? (
-                <span className="wb-rs-note wb-rs-num" title={tokens.hitTitle ?? undefined}>
-                  {tokens.hit}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          {extras}
-        </section>
-      ) : null}
-      {time || speed ? (
+      {model.facts.length || time || speed ? (
         <ul className="wb-rs-rows">
+          {model.facts.map((fact) => (
+            <li key={fact.key} className="wb-rs-line" data-row={fact.key} title={fact.title ?? undefined} data-testid={`wb-rail-stats-${fact.key}`}>
+              <span className="wb-rs-label">{fact.label}</span>
+              <span className="wb-rs-num wb-rs-strong">
+                {fact.value}
+                {fact.unit ? <> <span className="wb-rs-unit">{fact.unit}</span></> : null}
+              </span>
+            </li>
+          ))}
           {time ? (
             <li className="wb-rs-line" data-row="time" title={time.title ?? undefined}>
               <span className="wb-rs-label">{time.label}</span>

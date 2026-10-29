@@ -26,7 +26,9 @@ interface Props {
   sessionBarOpen: boolean
   sessionBarHidden?: boolean
   onToggleSessionBar: () => void
+  sessionBarShown?: boolean
   openPanes: ReadonlySet<WorkbenchTabId>
+  activePane?: string | null
   changesDirty: boolean
   terminalRunning?: boolean
   onTogglePane: (tab: WorkbenchTabId) => void
@@ -49,7 +51,7 @@ const PANE_SHORTCUTS: Partial<Record<WorkbenchTabId, ShortcutId>> = {
   files: 'workspaceTab3'
 }
 
-export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, openPanes, changesDirty, onTogglePane }: Props): ReactElement {
+export function Header({ narrow, sidebarOverlay = false, terminalRunning = false, sidebarOpen, route, onToggleSidebar, onPreviewSidebar, onSettings, onBack, sessionBarOpen, sessionBarHidden, onToggleSessionBar, sessionBarShown = false, openPanes, activePane = null, changesDirty, onTogglePane }: Props): ReactElement {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -89,6 +91,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverrides))
   const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(narrow ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
   const menuDot = route === 'chat' && narrow && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
+  const highlightPane = activePane && TITLEBAR_PANES.some(({ tab }) => tab === activePane) ? activePane : null
+  const sessionBarLit = sessionBarShown && !activePane
+  const freshHome = route === 'chat' && !peekedSessionId && !hasMessages && openPanes.size === 0 && !activePane
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -154,17 +159,21 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
         {route === 'chat' ? (
           <>
             <ProjectScriptsControl />
+            {freshHome ? null : (
             <div className="v3-head-toggles" role="group" aria-label={text.panelToggles}>
               <IconButton
                 tooltip={sessionBarLabel}
                 aria-label={sessionBarLabel}
                 aria-pressed={sessionBarOpen}
                 pressedTone="neutral"
+                className="v3-head-pane"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
-                data-active={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
+                data-active={sessionBarLit ? '1' : '0'}
+                data-setting={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
                 <SquareMenu size={16} />
+                {sessionBarOpen && !sessionBarLit ? <span className="v3-head-pane-open" aria-hidden /> : null}
               </IconButton>
               {narrow
                 ? null
@@ -174,16 +183,20 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                       tooltip={paneLabel(tab)}
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
+                      data-active={highlightPane === tab ? '1' : '0'}
                       pressedTone="neutral"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
+                      data-open={openPanes.has(tab) ? '1' : undefined}
                       onPress={() => onTogglePane(tab)}
                     >
                       <Icon size={16} />
                       {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
+                      {openPanes.has(tab) && highlightPane !== tab ? <span className="v3-head-pane-open" aria-hidden /> : null}
                     </IconButton>
                   ))}
             </div>
+            )}
           </>
         ) : null}
         <MenuTrigger>

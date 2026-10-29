@@ -116,13 +116,6 @@
 }
 
 @layer features {
-  .wb-rs-main {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--s-4);
-    min-width: 0;
-  }
-
   .wb-rs-rows {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -137,9 +130,14 @@
     font-weight: var(--w-medium);
   }
 
-  .wb-rs-main > .wb-rs-line {
-    justify-content: flex-start;
-    gap: var(--s-12);
+  @media (hover: hover) {
+    .wb-overview .wb-tile-open {
+      opacity: 0;
+      transition: opacity var(--dur-fast) ease;
+    }
+    .wb-overview .wb-tile-head:is(:hover, :focus-within) .wb-tile-open {
+      opacity: 1;
+    }
   }
 
   .wb-overview .wb-tile-title {

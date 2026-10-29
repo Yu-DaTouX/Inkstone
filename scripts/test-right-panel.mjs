@@ -83,6 +83,7 @@ export async function runRightPanelTests(ok) {
     ok(store.getState().width === rp.PANEL_WIDTH_MIN, '右栏：宽度有下限')
     ok(rp.clampPanelWidth(900, 500) === 500, '右栏：宽度受可用空间限制')
     ok(rp.panelMaxWidth(1330) === 1330 && rp.panelRoom(2000, 1750, 420) === 1330 && rp.panelRoom(1000, 900, 420) === 480, '右栏：上限取视口 70% 与行宽减对话最小宽度中较小者')
+    ok(rp.PANEL_WIDTH_DEFAULT === 720, '右栏：默认宽度 720', rp.PANEL_WIDTH_DEFAULT)
     ok(rp.sanitizeRightPanel({ version: 1, width: 0, byKey: {}, order: [] }).width === rp.PANEL_WIDTH_DEFAULT, '存档：异常宽度回到默认')
 
     const saved = rp.sanitizeRightPanel({

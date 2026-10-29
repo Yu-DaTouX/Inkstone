@@ -771,11 +771,6 @@
     }
   }
 
-  @container (max-width: 360px) {
-    .composer-bar .ctx-ring-wrap {
-      display: none;
-    }
-  }
 }
 
 @layer features {

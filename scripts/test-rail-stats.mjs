@@ -154,6 +154,11 @@ assert.ok(extras.extrasTitle.includes(`sm.withSubagents ${(132_345).toLocaleStri
 assert.ok(extras.extrasTitle.includes('sm.costEstimatedTip'))
 assert.equal(build1({ cost: 0.42 }).extras, 'sm.costLine(cost=$0.42)')
 assert.equal(build1({ cost: 0, costZero: true }, { subagentTokens: 5 }).extras, 'sm.withSubagents +5')
+assert.deepEqual(full.facts.map((f) => [f.label, f.value]), [['sm.total', '12.3K'], ['sm.hitRate', '90%']], '统计行统一成标签与数值两列')
+assert.deepEqual(extras.facts.map((f) => f.key), ['total', 'hit', 'subagents', 'cost'])
+assert.equal(extras.facts[3].label, 'usage.cost')
+assert.equal(extras.facts[3].value, '≈$0.42')
+assert.equal(extras.facts[3].title, 'sm.costEstimatedTip')
 
 const noWrite = build1({ cacheWrite: null })
 assert.deepEqual(noWrite.tokens.segments.map((s) => s.key), ['input', 'cacheRead', 'output'], '缓存写入为空时省略该段')

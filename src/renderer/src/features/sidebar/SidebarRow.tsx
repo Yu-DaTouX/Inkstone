@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { AlarmClock, Folder, GitBranch, Globe, MoreHorizontal, Pin } from 'lucide-react'
+import { AlarmClock, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
 import { IconButton, InlineRename, isImeComposing, ListRow, StatusSlot } from '../../ui'
@@ -23,7 +23,6 @@ export interface SidebarRowCard {
   modelRef?: ModelRef
   branch?: string
   slim?: boolean
-  repeatProject?: boolean
 }
 
 export interface SidebarRowProps {
@@ -40,10 +39,6 @@ export interface SidebarRowProps {
 
 function cardDetail(card: SidebarRowCard, status: string): string {
   return [card.cwd && card.cwd !== card.project ? `${card.project} · ${card.cwd}` : card.project, card.branch, card.model, status].filter(Boolean).join('\n')
-}
-
-function branchWorthShowing(branch: string | undefined): branch is string {
-  return !!branch && branch !== 'main' && branch !== 'master'
 }
 
 function cardHasBot(status: SessionStatusKind): boolean {
@@ -204,14 +199,6 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
                   <span className="v3-crow-ago">{card.ago}</span>
                 </>
               ) : null}
-              {card && !card.slim ? (
-                <span className="v3-crow-meta" data-repeat={card.repeatProject ? '' : undefined}>
-                  {card.global ? <Globe size={11} className="v3-crow-scope" aria-hidden /> : <Folder size={11} className="v3-crow-scope" aria-hidden />}
-                  <span className="v3-crow-project">{card.project}</span>
-                  {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
-                  <span className="v3-crow-ago">{card.ago}</span>
-                </span>
-              ) : null}
               {card?.slim ? null : card ? (
                 <span className="v3-crow-line">
                   <FadeTitleBox boxRef={titleBoxRef} text={title} />
@@ -222,16 +209,12 @@ export function SidebarRow({ item, title, isCurrent, status, code, card, snoozeL
                       </StatusSlot>
                     </span>
                   ) : null}
+                  {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
+                  <span className="v3-crow-ago">{card.ago}</span>
                 </span>
               ) : (
                 <FadeTitleBox boxRef={titleBoxRef} text={title} />
               )}
-              {card && branchWorthShowing(card.branch) && !card.slim ? (
-                <span className="v3-crow-branch">
-                  <GitBranch size={11} aria-hidden />
-                  <span className="v3-crow-branch-name">{card.branch}</span>
-                </span>
-              ) : null}
               {snoozeLabel ? (
                 <span className="v3-srow-wake" title={snoozeTitle} data-testid="v3-session-snooze-wake">
                   <AlarmClock size={12} aria-hidden />

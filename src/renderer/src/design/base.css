@@ -83,7 +83,7 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--line2);
+    background: transparent;
     background-clip: padding-box;
     border: 3px solid transparent;
     border-radius: var(--r-full);
@@ -91,6 +91,23 @@
   }
 
   ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  :hover::-webkit-scrollbar-thumb,
+  :focus-visible::-webkit-scrollbar-thumb,
+  [data-scrolling]::-webkit-scrollbar-thumb {
+    background: var(--line2);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background: var(--fg3);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-corner {
     background: transparent;
   }
 

@@ -59,6 +59,14 @@ export interface RailGlance {
   title: string
 }
 
+export interface RailFact {
+  key: 'total' | 'hit' | 'subagents' | 'cost'
+  label: string
+  value: string
+  unit?: string
+  title: string | null
+}
+
 export interface RailStatsModel {
   glance: RailGlance
   headline: string
@@ -66,6 +74,7 @@ export interface RailStatsModel {
   tokens: RailTokens | null
   extras: string | null
   extrasTitle: string | null
+  facts: RailFact[]
   time: RailTime | null
   speed: RailSpeed | null
   liveSince: number | null
@@ -356,13 +365,26 @@ export function buildRailStats(input: RailStatsInput): RailStatsModel | null {
     ...(cost !== null && metrics.costEstimated > 0 ? [t('sm.costEstimatedTip')] : [])
   ]
   const headline = t('sm.headline', { turns: countText(counts.turns), steps: countText(counts.steps) })
+  const tokens = buildTokens(metrics, input, tokenNotes)
+  const hit = hitText(metrics.hitRate)
+  const facts: RailFact[] = [
+    ...(tokens ? [{ key: 'total' as const, label: t('sm.total'), value: tokens.total, unit: tokens.unit, title: tokens.title }] : []),
+    ...(tokens && hit !== null ? [{ key: 'hit' as const, label: t('sm.hitRate'), value: hit, title: tokens.hitTitle }] : []),
+    ...(subagentTokens > 0 && metrics.total !== null
+      ? [{ key: 'subagents' as const, label: t('sm.withSubagents'), value: `+${steadyCount(subagentTokens)}`, title: `${t('sm.withSubagents')} ${tokenText(metrics.total + subagentTokens, unit)}` }]
+      : []),
+    ...(cost === null
+      ? []
+      : [{ key: 'cost' as const, label: t('usage.cost'), value: cost, title: metrics.costEstimated > 0 ? t('sm.costEstimatedTip') : null }])
+  ]
   return {
     glance: buildGlance(metrics, input, headline),
     headline,
     headlineTitle: joinNotes(historyNotes),
-    tokens: buildTokens(metrics, input, tokenNotes),
+    tokens,
     extras: extras.length > 0 ? extras.join(' · ') : null,
     extrasTitle: joinNotes(extrasTitle),
+    facts,
     time: buildTime(metrics, input),
     speed: buildSpeed(metrics, input),
     liveSince: input.liveSince ?? null,

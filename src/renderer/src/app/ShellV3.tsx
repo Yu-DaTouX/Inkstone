@@ -1,7 +1,7 @@
 import '../design/index.css'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type CSSProperties } from 'react'
 import { FocusScope } from 'react-aria'
-import { showToast, Splitter } from '../ui'
+import { showToast, Splitter, useScrollbarReveal } from '../ui'
 import { useTranscriptViews } from '../state/transcript-view'
 import { transcriptViewText } from '../features/session/transcript-view-text'
 import { useI18n } from '../i18n'
@@ -66,6 +66,7 @@ const SHEET_BELOW_PX = CHAT_MIN_WIDTH_PX + PANEL_WIDTH_MIN
 export default function ShellV3(): ReactElement {
   const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(localStorage))
   const [sidebarPreview, setSidebarPreview] = useState(false)
+  useScrollbarReveal()
   useEffect(() => {
     const timer = setTimeout(() => { try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)) } catch { } }, 150)
     return () => clearTimeout(timer)
@@ -305,6 +306,8 @@ export default function ShellV3(): ReactElement {
     () => new Set<WorkbenchTabId>(panelOpen ? panelEntry.surfaces.flatMap((item) => ((WORKBENCH_TABS as readonly string[]).includes(item.kind) ? [item.kind as WorkbenchTabId] : [])) : []),
     [panelOpen, panelEntry.surfaces]
   )
+  const activePaneKind = panelOpen ? panelEntry.surfaces.find((item) => item.id === panelEntry.active)?.kind ?? null : null
+  const activePane = activePaneKind === 'file' ? 'files' : activePaneKind
   const changesDirty = useWorkspaceHasChanges(owner.cwd || null, route.name === 'chat')
   const terminalRunning = useTerminalRunning(owner.key || null, route.name === 'chat')
 
@@ -539,7 +542,9 @@ export default function ShellV3(): ReactElement {
             sessionBarOpen={sessionBarOn}
             sessionBarHidden={route.name === 'chat' && sessionBarOn && hasMessages && !sessionBarShown && !sessionBarYields}
             onToggleSessionBar={toggleSessionBar}
+            sessionBarShown={sessionBarShown}
             openPanes={openPanes}
+            activePane={activePane}
             changesDirty={changesDirty}
             terminalRunning={terminalRunning}
             onTogglePane={togglePane}

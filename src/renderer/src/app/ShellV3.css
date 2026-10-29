@@ -100,12 +100,6 @@
   .v3-sessionbar .wb-tile[data-folded='1'] {
     padding-bottom: var(--s-8);
   }
-  .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-text {
-    display: none;
-  }
-  .v3-chat[data-sessionbar='1'] .v3-composer .ctx-ring-wrap:has(> .ctx-ring:not([data-tone='ask'], [data-tone='fail'], [aria-expanded='true'])) {
-    display: none;
-  }
   .v3-head-toggles {
     display: flex;
     align-items: center;
@@ -285,6 +279,19 @@
 
   .v3-head-pane {
     position: relative;
+  }
+
+  .v3-head-pane-open {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    width: 3px;
+    height: 3px;
+    margin-left: -1.5px;
+    border-radius: var(--r-full);
+    corner-shape: round;
+    background: var(--fg3);
+    pointer-events: none;
   }
 
   .v3-head-pane-dot {

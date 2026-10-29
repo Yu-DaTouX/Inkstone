@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
-import { Archive, Check, FolderOpen, FolderPlus, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, type JSX, type ReactNode } from 'react'
+import { Archive, Check, Folder, FolderOpen, FolderPlus, Globe, Link, ListFilter, MoreHorizontal, Plus, Replace, Search } from 'lucide-react'
 import { useSessionDrag } from './session-drag'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
@@ -388,11 +388,26 @@ interface FlatRowProps {
   now: number
   branch?: string | null
   slim?: boolean
-  repeatProject?: boolean
   onOpen: () => void
 }
 
-function FlatRow({ entry, row, now, branch, slim, repeatProject, onOpen }: FlatRowProps): JSX.Element {
+function FlatSegmentHead({ entry }: { entry: FlatEntry }): JSX.Element {
+  const { lang } = useI18n()
+  const text = v3Text(lang)
+  const global = entry.session.scope === 'global'
+  return (
+    <div className="v3-flat-seg" data-testid="v3-flat-seg">
+      {global ? <Globe size={11} className="v3-crow-scope" aria-hidden /> : <Folder size={11} className="v3-crow-scope" aria-hidden />}
+      <span className="v3-crow-project">{entry.group.label || text.projectFallback}</span>
+    </div>
+  )
+}
+
+function startsSegment(list: readonly FlatEntry[], index: number): boolean {
+  return index === 0 || list[index - 1].group.key !== list[index].group.key
+}
+
+function FlatRow({ entry, row, now, branch, slim, onOpen }: FlatRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   return (
@@ -410,8 +425,7 @@ function FlatRow({ entry, row, now, branch, slim, repeatProject, onOpen }: FlatR
         model: row.model,
         modelRef: row.modelRef,
         branch: branch ?? undefined,
-        slim,
-        repeatProject
+        slim
       }}
       onOpen={onOpen}
     />
@@ -481,15 +495,17 @@ export function WorkingShelf({
         </CollapsibleHeader>
         {shown.length ? (
           <div className="v3-shelf-list">
-            {shown.map((entry) => (
-              <FlatRow
-                key={entry.session.path}
-                entry={entry}
-                row={rowState(entry.session)}
-                now={now}
-                branch={branches.get(entry.session.cwd)}
-                onOpen={() => onOpen(entry.session)}
-              />
+            {shown.map((entry, index) => (
+              <Fragment key={entry.session.path}>
+                {startsSegment(shown, index) ? <FlatSegmentHead entry={entry} /> : null}
+                <FlatRow
+                  entry={entry}
+                  row={rowState(entry.session)}
+                  now={now}
+                  branch={branches.get(entry.session.cwd)}
+                  onOpen={() => onOpen(entry.session)}
+                />
+              </Fragment>
             ))}
           </div>
         ) : null}
@@ -534,15 +550,16 @@ export function FlatSessionList({
   const branches = useCwdBranches([...pinned, ...shown].map((entry) => entry.session.cwd), now)
 
   const render = (entry: FlatEntry, index: number, list: readonly FlatEntry[]): JSX.Element => (
-    <FlatRow
-      key={entry.session.path}
-      entry={entry}
-      row={rowState(entry.session)}
-      now={now}
-      branch={branches.get(entry.session.cwd)}
-      repeatProject={index > 0 && list[index - 1].group.key === entry.group.key}
-      onOpen={() => onOpen(entry.session)}
-    />
+    <Fragment key={entry.session.path}>
+      {!scopeGroup && startsSegment(list, index) ? <FlatSegmentHead entry={entry} /> : null}
+      <FlatRow
+        entry={entry}
+        row={rowState(entry.session)}
+        now={now}
+        branch={branches.get(entry.session.cwd)}
+        onOpen={() => onOpen(entry.session)}
+      />
+    </Fragment>
   )
 
   return (

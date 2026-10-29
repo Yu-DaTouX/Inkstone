@@ -829,7 +829,8 @@
 
   .v3-srow[data-variant='card'] > .v3-row {
     height: auto;
-    padding-block: var(--s-6);
+    min-height: max(var(--s-32) + var(--s-4), var(--d-row) + var(--s-6));
+    padding-block: var(--s-4);
     padding-right: var(--s-8);
   }
 
@@ -837,7 +838,21 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: center;
-    gap: 1px;
+  }
+
+  .v3-flat-seg {
+    display: flex;
+    align-items: center;
+    gap: var(--s-6);
+    min-width: 0;
+    padding: var(--s-8) var(--s-8) var(--s-2);
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--s-16);
+  }
+
+  .v3-flat-seg:first-child {
+    padding-top: var(--s-2);
   }
 
   .v3-srow[data-variant='card'][data-variant] > .v3-row .v3-row-title {
@@ -853,17 +868,6 @@
 
   .v3-srow[data-variant='card'] > .v3-row[data-muted] .v3-row-title {
     color: var(--fg2);
-  }
-
-  .v3-crow-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--s-6);
-    min-width: 0;
-    height: var(--s-16);
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    line-height: var(--s-16);
   }
 
   .v3-crow-project {
@@ -895,34 +899,9 @@
     display: block;
   }
 
-  .v3-crow-branch {
-    display: flex;
-    align-items: center;
-    gap: var(--s-4);
-    min-width: 0;
-    color: var(--fg3);
-    font-size: var(--t-caption);
-    line-height: var(--s-16);
-  }
-
-  .v3-crow-branch > svg {
-    flex: none;
-  }
-
-  .v3-crow-branch-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .v3-crow-scope {
     flex: none;
     opacity: 0.7;
-  }
-
-  .v3-crow-meta[data-repeat] {
-    opacity: 0.6;
   }
 
   .v3-side .v3-srow > .v3-row:is([aria-current='true'], [aria-current='page']) {
@@ -931,7 +910,7 @@
 
   .v3-crow-pin {
     flex: none;
-    margin-left: calc(var(--s-2) * -1);
+    color: var(--fg3);
   }
 
   .v3-crow-ago {
@@ -941,15 +920,16 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .v3-crow-line .v3-crow-ago {
+    color: var(--fg3);
+    font-size: var(--t-caption);
+  }
+
   .v3-srow[data-variant='card'] > .v3-row[data-mark] .v3-crow-ago,
   .v3-srow[data-variant='card']:hover .v3-crow-ago,
   .v3-srow[data-variant='card']:focus-within .v3-crow-ago,
   .v3-srow[data-variant='card'][data-menu='1'] .v3-crow-ago {
     visibility: hidden;
-  }
-
-  .v3-srow[data-variant='card'] :is(.v3-srow-mark, .v3-srow-more) {
-    top: calc(var(--s-6) + var(--s-8));
   }
 
   .v3-flat > .v3-grp {
