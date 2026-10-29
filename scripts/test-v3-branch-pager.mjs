@@ -8,7 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }'}
+const __EXTRA = {'Collapsible': 'export function Collapsible(p){ return p.children ?? null }', 'CollapsibleHeader': 'export function CollapsibleHeader(p){ return p.children ?? null }', 'CollapsiblePanel': 'export function CollapsiblePanel(p){ return p.children ?? null }', 'DiffStat': 'export function DiffStat(){ return null }', 'DialogFooter': 'export function DialogFooter(p){ return p.children ?? null }', 'FindBar': 'export function FindBar(){ return null }', 'ListRow': 'export function ListRow(p){ return p.children ?? null }', 'Spinner': 'export function Spinner(){ return null }', 'CollapsibleChevron': 'export function CollapsibleChevron(){ return null }', 'TermSpinner': 'export function TermSpinner(){ return null }', 'AsciiRule': 'export function AsciiRule(){ return null }'}
 function __patch(key, src){ if (!/[\\/]ui[\\/]index\.ts$/.test(key)) return src; let out = src; for (const [n, code] of Object.entries(__EXTRA)) { if (!new RegExp('export (function|const|class) '+n+'\\b').test(out) && !new RegExp('export \\{[^}]*\\b'+n+'\\b').test(out)) out += '\n' + code } return out }
 
 const posix = (p) => p.replace(/\\/g, '/')
@@ -455,7 +455,7 @@ async function main() {
         'src/renderer/src/features/session/Markdown.tsx': 'export function Markdown(){ return null }',
         'src/renderer/src/features/session/MessageParts.tsx': 'export function TurnArtifacts(){ return null }',
         'src/renderer/src/features/session/Thinking.tsx': 'export function ThinkingLine(){ return null }\nexport function ThinkingAside(){ return null }',
-        'src/renderer/src/features/session/ToolSteps.tsx': 'export function ToolSteps(){ return null }',
+        'src/renderer/src/features/session/ToolSteps.tsx': 'export function ToolSteps(){ return null }\nexport const ToolTallyScope = { Provider: (p) => p.children ?? null }',
         'src/renderer/src/features/session/Image.tsx': 'export function MessageImage(){ return null }',
         'src/renderer/src/features/session/text.ts': 'export function useSessionText(){ return (k)=>String(k) }\nexport function sessionText(_l,k){ return String(k) }',
         'src/renderer/src/features/session/ErrorCard.tsx': 'export function ErrorCard(){ return null }',

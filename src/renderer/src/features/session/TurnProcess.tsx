@@ -2,12 +2,12 @@ import { useLayoutEffect, useState, type JSX, type RefCallback } from 'react'
 import { useT } from '../../i18n'
 import type { TurnSegment } from '../../../../shared/turns'
 import { Markdown } from './Markdown'
-import { ToolSteps } from './ToolSteps'
+import { ToolSteps, ToolTallyScope } from './ToolSteps'
 import { ThinkingLine } from './Thinking'
-import { Button, Collapsible, CollapsibleHeader, CollapsiblePanel, DiffStat } from '../../ui'
+import { Button, Collapsible, CollapsibleChevron, CollapsibleHeader, CollapsiblePanel, DiffStat, TermSpinner } from '../../ui'
 import { formatDuration } from '../../../../shared/duration'
 import { useSessionText } from './text'
-import { conciseSegment, mergeQuietSegments, pickLiveSegments, processLead, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
+import { conciseSegment, mergeQuietSegments, pickLiveSegments, processPreview, processSummary, segmentSteps, stageSegmentCount, withoutThinking, type ProcessFileChange, type ProcessSummary } from './turn-process'
 import { useToolExpansion } from './use-tool-run'
 import type { TranscriptView } from './transcript-view-model'
 
@@ -66,7 +66,8 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
     : live && showAll !== true ? pickLiveSegments(merged) : { shown: merged, hidden: 0 }
   const single = summary.thinking === 1 && !summary.actions
   const elapsed = !live && elapsedMs && elapsedMs > 0 ? formatDuration(elapsedMs) : null
-  const lead = live ? '' : processLead(process)
+  const preview = live ? '' : processPreview(process)
+  const tip = [preview, processBreakdown(summary, tt)].filter(Boolean).join('\n')
 
   const body = (
     <div ref={steady.ref} className="v3-process-body" role="group" aria-label={t('proc.title')} data-stage={stage || undefined} data-testid="v3-process-body" style={steady.minHeight ? { minHeight: steady.minHeight } : undefined}>
@@ -75,9 +76,11 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
           {tt('moreItems', { n: picked.hidden })}
         </Button>
       ) : null}
-      {picked.shown.map((segment) => (
-        <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
-      ))}
+      <ToolTallyScope.Provider value>
+        {picked.shown.map((segment) => (
+          <ProcessSegment key={segment.id} segment={segment} sessionId={sessionId} approvalIds={approvalIds} glowId={glowId} openThinking={single} alertFailures={alertFailures} />
+        ))}
+      </ToolTallyScope.Provider>
     </div>
   )
 
@@ -87,11 +90,12 @@ export function TurnProcess({ process, live, alertFailures, view, sessionId, tur
         <CollapsibleHeader
           className="v3-process-head"
           size="compact"
-          chevron="end"
+          chevron="none"
+          icon={live ? <TermSpinner className="v3-process-spin" /> : <CollapsibleChevron className="ui-collapsible__chevron" />}
           tone="emphasized"
           data-testid="v3-process-toggle"
         >
-          <span className="v3-process-line" title={lead || undefined} data-testid="v3-process-line">
+          <span className="v3-process-line" title={tip || undefined} data-testid="v3-process-line">
             {processParts(summary, tt, filesShownBelow && !live).map((part) => (
               <span key={part.key} className="v3-process-count" data-kind={part.kind}>
                 {part.text}
@@ -121,45 +125,46 @@ function totalLines(files: readonly ProcessFileChange[]): Pick<ProcessFileChange
   return { added: files.reduce((sum, file) => sum + (file.added ?? 0), 0), removed: files.reduce((sum, file) => sum + (file.removed ?? 0), 0) }
 }
 
-const SHOWN_ACTION_KINDS = 2
+type SessionText = ReturnType<typeof useSessionText>
+type TextKey = Parameters<SessionText>[0]
 
-type TextKey = Parameters<ReturnType<typeof useSessionText>>[0]
+function countText(tt: SessionText, n: number, one: TextKey, many: TextKey): string {
+  return n === 1 ? tt(one) : tt(many, { n })
+}
 
-function processParts(summary: ProcessSummary, tt: ReturnType<typeof useSessionText>, filesShownBelow = false): ProcessPart[] {
+function fileText(tt: SessionText, list: readonly ProcessFileChange[], single: TextKey, many: TextKey): string {
+  return list.length === 1 ? tt(single, { file: list[0].base }) : tt(many, { n: list.length })
+}
+
+function processParts(summary: ProcessSummary, tt: SessionText, filesShownBelow = false): ProcessPart[] {
   const parts: ProcessPart[] = []
-  const count = (kind: string, n: number, one: TextKey, many: TextKey): void => {
-    if (n) parts.push({ key: kind, kind, text: n === 1 ? tt(one) : tt(many, { n }) })
-  }
-  const files = (kind: string, list: readonly ProcessFileChange[], single: Parameters<typeof tt>[0], many: Parameters<typeof tt>[0]): void => {
-    if (!list.length) return
-    parts.push(list.length === 1
-      ? { key: kind, kind, text: tt(single, { file: list[0].base }), file: list[0] }
-      : { key: kind, kind, text: tt(many, { n: list.length }), file: totalLines(list) })
-  }
-  const all: { kind: string; n: number; one: TextKey; many: TextKey; noun: TextKey }[] = [
-    { kind: 'commands', n: summary.commands + summary.code, one: 'processCommands1', many: 'processCommands', noun: 'processKindCommands' },
-    { kind: 'reads', n: summary.reads, one: 'processReads1', many: 'processReads', noun: 'processKindReads' },
-    { kind: 'searches', n: summary.searches, one: 'processSearch1', many: 'processSearch', noun: 'processKindSearch' },
-    { kind: 'lists', n: summary.lists, one: 'processList1', many: 'processList', noun: 'processKindList' },
-    { kind: 'web', n: summary.web, one: 'processWeb1', many: 'processWeb', noun: 'processKindWeb' },
-    { kind: 'fetches', n: summary.fetches, one: 'processFetch1', many: 'processFetch', noun: 'processKindFetch' },
-    { kind: 'agents', n: summary.agents, one: 'processAgent1', many: 'processAgent', noun: 'processKindAgent' },
-    { kind: 'other', n: summary.other, one: 'processOther1', many: 'processOther', noun: 'processKindOther' }
-  ]
-  const actions = all.filter((action) => action.n > 0)
-  const ranked = [...actions].sort((a, b) => b.n - a.n)
-  const shownCount = ranked.length <= SHOWN_ACTION_KINDS + 1 ? ranked.length : SHOWN_ACTION_KINDS
-  const shown = new Set(ranked.slice(0, shownCount).map((action) => action.kind))
-  const rest = ranked.slice(shownCount)
-  if (!summary.actions) count('thinking', summary.thinking, 'processThinking1', 'processThinking')
-  for (const action of actions) if (shown.has(action.kind)) count(action.kind, action.n, action.one, action.many)
+  const commands = summary.commands + summary.code
+  if (!summary.actions && summary.thinking) parts.push({ key: 'thinking', kind: 'thinking', text: countText(tt, summary.thinking, 'processThinking1', 'processThinking') })
+  if (commands) parts.push({ key: 'commands', kind: 'commands', text: countText(tt, commands, 'processCommandCount1', 'processCommandCount') })
+  if (summary.tools) parts.push({ key: 'tools', kind: 'tools', text: countText(tt, summary.tools, 'processToolCount1', 'processToolCount') })
   if (!filesShownBelow) {
-    files('edits', summary.edits, 'processEditFile', 'processEdits')
-    files('creates', summary.creates, 'processCreateFile', 'processCreates')
+    if (summary.edits.length) parts.push({ key: 'edits', kind: 'edits', text: fileText(tt, summary.edits, 'processEditFile', 'processEdits'), file: summary.edits.length === 1 ? summary.edits[0] : totalLines(summary.edits) })
+    if (summary.creates.length) parts.push({ key: 'creates', kind: 'creates', text: fileText(tt, summary.creates, 'processCreateFile', 'processCreates'), file: summary.creates.length === 1 ? summary.creates[0] : totalLines(summary.creates) })
   }
-  if (rest.length) parts.push({ key: 'rest', kind: 'rest', text: tt('processRest', { kinds: rest.map((action) => tt(action.noun)).join(tt('processKindJoin')), n: rest.reduce((sum, action) => sum + action.n, 0) }) })
-  if (!parts.length && summary.actions) count('actions', summary.actions, 'processActions1', 'processActions')
+  if (!parts.length && summary.actions) parts.push({ key: 'actions', kind: 'actions', text: countText(tt, summary.actions, 'processActions1', 'processActions') })
   return parts
+}
+
+function processBreakdown(summary: ProcessSummary, tt: SessionText): string {
+  const all: [number, TextKey, TextKey][] = [
+    [summary.commands + summary.code, 'processCommands1', 'processCommands'],
+    [summary.reads, 'processReads1', 'processReads'],
+    [summary.searches, 'processSearch1', 'processSearch'],
+    [summary.lists, 'processList1', 'processList'],
+    [summary.web, 'processWeb1', 'processWeb'],
+    [summary.fetches, 'processFetch1', 'processFetch'],
+    [summary.agents, 'processAgent1', 'processAgent'],
+    [summary.other, 'processOther1', 'processOther']
+  ]
+  const phrases = all.filter(([n]) => n > 0).map(([n, one, many]) => countText(tt, n, one, many))
+  if (summary.edits.length) phrases.push(fileText(tt, summary.edits, 'processEditFile', 'processEdits'))
+  if (summary.creates.length) phrases.push(fileText(tt, summary.creates, 'processCreateFile', 'processCreates'))
+  return phrases.join(tt('processKindJoin'))
 }
 
 function ProcessSegment({ segment, sessionId, approvalIds, glowId, openThinking, alertFailures }: {

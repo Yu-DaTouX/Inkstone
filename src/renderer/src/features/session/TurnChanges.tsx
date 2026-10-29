@@ -15,6 +15,7 @@ import './turn-changes.css'
 const OPEN_GROUPS_UP_TO = 1
 
 interface ChangesText {
+  title: string
   summary: (counts: Record<TurnFileStatus, number>) => string
   files: (n: number) => string
   view: string
@@ -22,22 +23,24 @@ interface ChangesText {
 }
 
 const ZH: ChangesText = {
+  title: '本轮改动',
   summary: (c) => [
     c.created ? `新建 ${c.created} 个文件` : '',
     c.modified ? `编辑 ${c.modified} 个文件` : '',
     c.deleted ? `删除 ${c.deleted} 个文件` : ''
   ].filter(Boolean).join(' · '),
-  files: (n) => `${n} 个文件有改动`,
+  files: (n) => `${n} 个文件`,
   view: '查看更改',
   undo: '撤销'
 }
 const EN: ChangesText = {
+  title: 'Changes this turn',
   summary: (c) => [
     c.created ? `Created ${c.created} ${c.created === 1 ? 'file' : 'files'}` : '',
     c.modified ? `Edited ${c.modified} ${c.modified === 1 ? 'file' : 'files'}` : '',
     c.deleted ? `Deleted ${c.deleted} ${c.deleted === 1 ? 'file' : 'files'}` : ''
   ].filter(Boolean).join(' · '),
-  files: (n) => `${n} ${n === 1 ? 'file changed' : 'files changed'}`,
+  files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
   view: 'View changes',
   undo: 'Undo'
 }
@@ -84,6 +87,7 @@ export function TurnChanges({ turn, changes, cwd, readOnly, rewindOwner }: { tur
     <section className="v3-chg" data-testid="v3-turn-changes" aria-label={text.summary(changes.counts)}>
       <header className="v3-chg-head">
         <div className="v3-chg-title" title={single ? single.path : text.summary(changes.counts)}>
+          <span className="v3-result-label" data-testid="v3-turn-changes-label">{text.title}</span>
           {single ? (
             <span className="v3-chg-path"><FileTypeIcon name={singleBase} size={14} />{singleBase}</span>
           ) : (

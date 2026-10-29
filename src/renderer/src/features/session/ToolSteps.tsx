@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type JSX } from 'react'
+import { createContext, memo, useContext, useMemo, useRef, useState, type JSX } from 'react'
 import { useT } from '../../i18n'
 import { InlineImage } from '../../ui/InlineImage'
 import type { FileDiff, UIToolCall } from '../../../../shared/ipc'
@@ -7,7 +7,7 @@ import { useSessionText } from './text'
 import { callPath, editArgLines, readFileDiff, readPiDiff, type CallDiffLine } from './turn-changes'
 import { generatingArgs, summarize, toolRunningLabel } from './tool-summary'
 import { isDeniedCall, stepCategory, stepDescription, toolStepTitle, type ToolStepTitle } from './tool-title'
-import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, liveToolGlowId, summarizeToolRun, toolCategory, toolNodesEqual, toolRunParts, type ToolRow, type ToolRowsCache } from './tool-run-model'
+import { approvalCallIds, cachedToolRows, coalesceNodes, formatToolRun, groupTally, liveToolGlowId, mcpDisplayName, summarizeToolRun, toolCategory, toolNodesEqual, toolRunParts, toolTally, toolTallyText, type ToolRow, type ToolRowsCache, type ToolTallyPart } from './tool-run-model'
 import { estimateCallLines } from './turn-process'
 import { argEntries, isCodemodeTool, isTestCommand, isYanJsonCommand, parseTestSummary, parseYanSummaries, previewOutput, readLineRange, relativePath, toolOutputView, writeArgContent, type OutputNotice, type ToolOutputView, type YanSummary } from './tool-output'
 import { HighlightedCode } from '../../patterns/HighlightedCode'
@@ -35,6 +35,12 @@ export function visibleNestedNodes<T>(children: readonly T[], showAll: boolean):
   return { shown: children.slice(-NEST_VISIBLE), earlier: children.length - NEST_VISIBLE }
 }
 const NO_APPROVALS: ReadonlySet<string> = new Set()
+
+export const ToolTallyScope = createContext(false)
+
+export function tallyText(parts: readonly ToolTallyPart[], tt: ReturnType<typeof useSessionText>): string {
+  return parts.map((part) => toolTallyText(part, tt)).join(' \u00b7 ')
+}
 
 export function detailKind(name: string): 'command' | 'code' | 'change' | 'result' {
   if (isCodemodeTool(name)) return 'code'
@@ -130,6 +136,8 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
   const held = useHeldRunLabel(running ? running.id : null, running ? toolRunningLabel(running, t('tool2.generatingArgs'), tt) : label)
   const shown = held.key !== null ? held.label : label
   const members = open ? coalesceNodes(row.nodes) : []
+  const tallied = useContext(ToolTallyScope)
+  const tally = useMemo(() => tallied ? groupTally(row.nodes) : null, [tallied, row.nodes])
 
   return (
     <Collapsible className="v3-step v3-step-group" data-state={summary.state} data-depth={0} isExpanded={open} onExpandedChange={setOpen}>
@@ -137,6 +145,10 @@ function ToolGroupRow({ row, asking, glowId, alertFailures }: { row: Extract<Too
         <span className="v3-step-line" title={label}>
           {running ? (
             <ShimmerText className="v3-steps-label" active={!open && !!glowId && holdsCall(row.nodes, glowId)}>{shown}</ShimmerText>
+          ) : tally ? (
+            <span className="v3-steps-label v3-steps-tally" data-testid="v3-step-group-tally">
+              {tally.map((part) => <span key={part.key} data-failed={(part.failed > 0 && alertFailures) || undefined}>{toolTallyText(part, tt)}</span>)}
+            </span>
           ) : (
             <span className="v3-steps-label">
               {parts.map((part, index) => <span key={index} data-failed={(part.failed && alertFailures) || undefined}>{part.text}</span>)}
@@ -169,7 +181,8 @@ function StepNode({ node, depth, glowId, blocked = false, repeat = 1, asking = f
   const denied = isDeniedCall(call)
   const open = stored ?? false
   const children = depth + 1 >= 4 ? flattenToolNodes(node.children) : node.children
-  const nestedTitle = nestedStepTitle(call, node.children, tt)
+  const tallied = useContext(ToolTallyScope)
+  const nestedTitle = nestedStepTitle(call, node.children, tt, tallied)
   const title = nestedTitle ?? toolStepTitle(call, tt)
   const selfContained = !!nestedTitle || (stepCategory(call.name) === 'bash' && !!stepDescription(call))
   const meta = generatingArgs(call) ? t('tool2.generatingArgs') : title.meta || (selfContained ? '' : t('tool2.noTarget'))
@@ -244,8 +257,12 @@ export function collapsedNest<T>(nested: { shown: readonly T[]; earlier: number 
   return { shown: [], earlier: 0 }
 }
 
-function nestedStepTitle(call: UIToolCall, children: readonly ToolCallNode[], tt: ReturnType<typeof useSessionText>): ToolStepTitle | null {
+function nestedStepTitle(call: UIToolCall, children: readonly ToolCallNode[], tt: ReturnType<typeof useSessionText>, tallied: boolean): ToolStepTitle | null {
   if (!children.length || stepDescription(call)) return null
+  if (tallied) {
+    const meta = tallyText(toolTally(flattenToolNodes([...children]).map((child) => child.call)), tt)
+    return meta ? { label: mcpDisplayName(call.name), meta, code: false } : null
+  }
   const label = formatToolRun(summarizeToolRun(flattenToolNodes([...children]).map((child) => child.call)), tt)
   return label ? { label, meta: '', code: false } : null
 }

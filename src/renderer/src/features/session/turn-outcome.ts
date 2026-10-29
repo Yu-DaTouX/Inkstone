@@ -1,5 +1,6 @@
 import { classifyLink } from '../../../../shared/links'
 import type { Turn } from '../../../../shared/turns'
+import { isSubagentNotice } from '../../../../shared/subagent-notice'
 
 const DECISION_MAX_CHARS = 320
 const NOT_PROSE = /^\s*(?:[-*+]\s|\d+[.)]\s|\||#|>|```|~~~|<)/
@@ -43,6 +44,46 @@ export function splitDecision(text: string): ReplyDecision | null {
   return { body, question }
 }
 
+const TITLE_MAX_CHARS = 140
+const SENTENCE_END = /[\u3002\uff01\uff1f!?]/
+const CLOSERS = /[\u300d\u300f\u201d\uff09)"']/
+
+export interface DecisionTitle {
+  title: string
+  rest: string
+}
+
+function sentencesOf(text: string): string[] {
+  const sentences: string[] = []
+  let from = 0
+  let code = false
+  let depth = 0
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (ch === '`') code = !code
+    if (code) continue
+    if (ch === '[' || ch === '(') depth += 1
+    else if ((ch === ']' || ch === ')') && depth > 0) depth -= 1
+    if (depth > 0 || !SENTENCE_END.test(ch)) continue
+    let end = i + 1
+    while (end < text.length && (SENTENCE_END.test(text[end]) || CLOSERS.test(text[end]))) end += 1
+    sentences.push(text.slice(from, end))
+    from = end
+    i = end - 1
+  }
+  if (from < text.length) sentences.push(text.slice(from))
+  return sentences.map((sentence) => sentence.trim()).filter(Boolean)
+}
+
+export function decisionTitle(question: string): DecisionTitle {
+  const sentences = sentencesOf(question.replace(/\s+/g, ' ').trim())
+  const at = sentences.findIndex((sentence) => QUESTION.test(plainOf(sentence)))
+  const title = at < 0 ? '' : sentences[at]
+  if (!title || title.length > TITLE_MAX_CHARS) return { title: '', rest: question.trim() }
+  const rest = sentences.filter((_, index) => index !== at).reduce((text, sentence) => !text ? sentence : /[\u3000-\u303f\uff00-\uffef\u201d]$/.test(text) ? text + sentence : `${text} ${sentence}`, '')
+  return { title, rest }
+}
+
 function baseOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
 }
@@ -60,6 +101,15 @@ export function turnAnswers(turns: readonly Turn[]): Map<string, string | null> 
     else if (next.kind === 'user') answers.set(turn.id, (next.msg.text ?? '').trim())
   })
   return answers
+}
+
+export function userTurnOrdinals(turns: readonly Turn[]): Map<string, number> {
+  const ordinals = new Map<string, number>()
+  for (const turn of turns) {
+    if (turn.kind !== 'user' || isSubagentNotice(turn.msg.text)) continue
+    ordinals.set(turn.id, ordinals.size + 1)
+  }
+  return ordinals
 }
 
 function samePath(a: string, b: string): boolean {

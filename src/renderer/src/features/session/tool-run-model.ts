@@ -317,6 +317,60 @@ export function countedProcessCalls(calls: readonly UIToolCall[]): UIToolCall[] 
   return calls.filter((call) => !call.parentToolCallId && !isHiddenTodoCall(call))
 }
 
+export function countedWorkCalls(calls: readonly UIToolCall[]): UIToolCall[] {
+  const parents = new Set(calls.flatMap((call) => call.parentToolCallId ? [call.parentToolCallId] : []))
+  return calls.filter((call) => {
+    if (isHiddenTodoCall(call)) return false
+    if (call.parentToolCallId || !parents.has(call.id)) return true
+    return isLive(call) || isFailure(call)
+  })
+}
+
+export interface ToolTallyPart {
+  key: string
+  category: ToolCategory
+  name: string
+  count: number
+  failed: number
+}
+
+export function toolTally(calls: readonly UIToolCall[]): ToolTallyPart[] {
+  const failedIds = latestFailures(calls)
+  const parts = new Map<string, ToolTallyPart>()
+  for (const call of calls) {
+    const category = toolCategory(call)
+    const key = category === 'other' ? `other:${call.name}` : category
+    const part = parts.get(key) ?? { key, category, name: mcpDisplayName(call.name), count: 0, failed: 0 }
+    part.count += 1
+    if (failedIds.has(call.id)) part.failed += 1
+    parts.set(key, part)
+  }
+  return [...parts.values()]
+}
+
+const TALLY_TEXT: Record<Exclude<ToolCategory, 'other'>, SessionTextKey> = {
+  command: 'tallyCommand',
+  read: 'tallyRead',
+  edit: 'tallyEdit',
+  create: 'tallyCreate',
+  delete: 'tallyDelete',
+  search: 'tallySearch',
+  list: 'tallyList',
+  fetch: 'tallyFetch',
+  web: 'tallyWeb',
+  agent: 'tallyAgent',
+  todo: 'tallyTodo'
+}
+
+export function toolTallyText(part: ToolTallyPart, tt: RunTextFn): string {
+  const label = part.category === 'other' ? part.name : tt(TALLY_TEXT[part.category])
+  return `${label} ${tt('runRepeat', { n: part.count })}`
+}
+
+export function groupTally(nodes: readonly ToolCallNode[]): ToolTallyPart[] {
+  return toolTally(countedRunCalls(nodes))
+}
+
 export function isWebTool(call: UIToolCall): boolean {
   const category = toolCategory(call)
   return !!searchStepOf(call) || category === 'web' || category === 'fetch'

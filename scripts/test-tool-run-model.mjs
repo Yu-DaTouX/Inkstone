@@ -122,6 +122,17 @@ async function run() {
     assert.deepEqual(nested[0].nodes.map((node) => node.call.id), ['r1', 'p1', 'r2', 'r3'])
     assert.equal(nested[0].nodes[1].children.length, 1, '组内脚本保留自己的子调用')
     assert.equal(m.formatToolRun(nested[0].summary, zh), '读取 4 个文件', '组的汇总按脚本内部调用计数，不把脚本本身算成命令')
+    const tallyZh = (key, vars) => m.sessionText('zh-CN', key, vars)
+    assert.deepEqual(m.groupTally(nested[0].nodes).map((part) => m.toolTallyText(part, tallyZh)), ['读取 ×4'], '组内计数按类别列出次数，口径与过程行一致')
+    const agents = m.groupTally(m.buildToolRows([
+      call('b1', 'bash', { command: 'ls' }),
+      call('c1', 'codemode', { code: 'x' }),
+      call('c1/1', 'bash', { command: 'yan subagent start --request-file a.json' }, { parentToolCallId: 'c1' }),
+      call('c1/2', 'bash', { command: 'git status' }, { parentToolCallId: 'c1', status: 'error' }),
+      call('m1', 'mcp__srv__thing')
+    ])[0].nodes)
+    assert.deepEqual(agents.map((part) => m.toolTallyText(part, tallyZh)), ['命令 ×2', '子 Agent ×1', 'thing ×1'], '派子 Agent 的命令归子 Agent，MCP 用工具名')
+    assert.deepEqual(agents.map((part) => part.failed), [1, 0, 0], '失败数挂在对应类别上')
 
     const scripts = m.buildToolRows([
       call('s1', 'codemode', { code: 'x' }),

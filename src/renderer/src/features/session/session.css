@@ -24,10 +24,10 @@
     content: '';
     position: absolute;
     inset: auto max(var(--s-12), calc(var(--col-pr, var(--s-20)) - var(--s-24))) 0 max(0px, calc(var(--col-pl, var(--s-20)) - var(--s-24)));
-    height: calc(var(--composer-h, 0px) + var(--s-12));
+    height: calc(var(--composer-h, 0px) + var(--s-24) + var(--s-16));
     z-index: 1;
     pointer-events: none;
-    background: linear-gradient(to top, var(--bg) calc(100% - var(--s-12)), transparent);
+    background: linear-gradient(to top, var(--bg) calc(100% - var(--s-32)), transparent);
   }
 
   .v3-stream {
@@ -62,9 +62,9 @@
 
   .v3-msg.assistant { margin-bottom: var(--s-6); }
   .v3-msg.user { align-items: flex-end; padding-top: 0; margin-bottom: var(--s-4); }
-  .v3-msg.user::before { content: ''; align-self: stretch; margin-bottom: var(--s-20); border-top: var(--hair, 1px) dashed var(--turn-rule); }
+  .v3-turn-rule { align-self: stretch; margin-bottom: var(--s-12); }
   :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) { padding-top: 0; }
-  :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user)::before { display: none; }
+  :is(.v3-stream-inner > .v3-msg.user:first-child, .v3-stream-row--head > .v3-msg.user) > .v3-turn-rule { display: none; }
   .v3-msg.user .v3-user-body { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-4); max-width: 85%; }
   .v3-msg.assistant .v3-assistant-body { display: flex; flex-direction: column; gap: var(--s-10); min-width: 0; }
   .v3-msg.bash { gap: var(--s-6); }
@@ -87,7 +87,9 @@
   .v3-process-head { width: 100%; gap: var(--s-12); }
   .v3-process-head > .ui-collapsible__trigger { flex: 0 1 auto; }
   .v3-process-head > .ui-collapsible__actions { flex: 1 1 0; min-width: 0; gap: var(--s-12); }
-  .v3-process-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s-6); min-width: 0; }
+  .v3-process-head .ui-collapsible__icon { inline-size: var(--s-16); justify-content: center; }
+  .v3-process-line { display: flex; flex-wrap: nowrap; align-items: center; column-gap: var(--s-6); min-width: 0; }
+  .v3-process-count[data-kind='lead'] { display: block; flex: 0 1 auto; min-width: 3em; }
   .v3-step-panel[hidden] { display: none; }
   .v3-process-count { display: inline-flex; align-items: baseline; gap: var(--s-4); flex: none; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-process-count[data-kind='thinking'], .v3-process-count[data-kind='elapsed'] { flex: none; }
@@ -110,6 +112,7 @@
   .v3-process-more, .v3-steps-more { display: flex; width: fit-content; align-self: flex-start; }
   .v3-steps-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: inherit; }
   .v3-steps-label [data-failed] { color: var(--fail-t); }
+  .v3-steps-tally > span + span::before { content: '\00b7'; margin-inline: var(--s-6); }
   .v3-steps-sum { width: fit-content; max-width: 100%; min-height: 0; gap: 2px; }
   .v3-step-group > .v3-step-head .v3-step-line { gap: 2px; }
 .v3-step-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg2); }
@@ -184,7 +187,10 @@
   .v3-asks > :is(.v3-approval, .v3-qcard) { margin-inline-start: max(0px, calc((100% - var(--size-chat)) / 2)); }
   .v3-msgmenu-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 
-  .v3-jump { position: absolute; right: var(--col-pad-r, var(--col-pr, var(--s-20))); bottom: calc(var(--composer-h, 0px) + var(--s-24) + var(--s-8)); z-index: 5; }
+  .v3-jump { position: absolute; right: calc(var(--col-pad-r, var(--s-20)) + (100% - var(--col-pad-l, var(--s-20)) - var(--col-pad-r, var(--s-20)) - var(--size-jump)) / 2); bottom: calc(var(--composer-h, 0px) + var(--s-24) - var(--size-jump) / 2); z-index: 5; }
+  @container (min-width: 900px) {
+    .v3-jump { right: calc(var(--col-pad-r, var(--s-20)) - var(--size-jump) - var(--s-12)); bottom: calc(var(--composer-h, 0px) + var(--s-24) - var(--size-jump)); }
+  }
   .v3-asks:not(:empty) { margin-bottom: var(--composer-h, 0px); }
 
   @media (max-width: 720px) {

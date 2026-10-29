@@ -60,7 +60,7 @@ export interface CollapsibleHeaderProps extends Omit<RACButtonProps, 'slot' | 'c
   accessory?: ReactNode
   actions?: ReactNode
   tone?: 'muted' | 'emphasized'
-  chevron?: 'start' | 'end'
+  chevron?: 'start' | 'end' | 'none'
   rule?: boolean
   size?: 'md' | 'compact'
 }

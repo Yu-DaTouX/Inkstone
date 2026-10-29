@@ -36,7 +36,7 @@ export function useWrapUpDismissed(key: string): boolean {
   return useSyncExternalStore(subscribe, isDismissed, isDismissed)
 }
 
-function WrapUpText({ text }: { text: string }): JSX.Element {
+export function WrapUpText({ text }: { text: string }): JSX.Element {
   const runs = useMemo(() => parseUserInline(text), [text])
   return <>{runs.map((run, index) => run.kind === 'code' ? <code key={index} className="v3-wrapup-code">{run.text}</code> : run.text)}</>
 }

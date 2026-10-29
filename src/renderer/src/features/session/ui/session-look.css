@@ -245,9 +245,13 @@
   .v3-empty-prompt { margin-right: var(--s-6); color: var(--fg3); }
   .v3-empty-hint { margin: 0; color: var(--fg3); font-size: var(--t-body); }
 
-  .v3-jump { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-4); height: var(--size-jump); padding: 0 var(--s-12) 0 var(--s-10); border: 0; border-radius: var(--r-full); corner-shape: round; background: color-mix(in srgb, var(--surface-3) 86%, transparent); backdrop-filter: blur(12px); color: var(--fg2); font: var(--t-footnote) / 1 var(--font-ui); white-space: nowrap; box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
+  .v3-jump { display: inline-flex; align-items: center; justify-content: center; width: var(--size-jump); height: var(--size-jump); padding: 0; border: 0; border-radius: var(--r-full); corner-shape: round; background: color-mix(in srgb, var(--surface-3) 86%, transparent); backdrop-filter: blur(12px); color: var(--fg2); font: var(--t-footnote) / 1 var(--font-ui); white-space: nowrap; box-shadow: var(--shadow-ring), var(--shadow-comp); cursor: pointer; animation: v3-fade-in var(--dur-base) var(--ease) both; }
   .v3-jump:hover { color: var(--fg); }
   .v3-jump:active { color: var(--fg); background: var(--press); }
+  .v3-jump:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+  .v3-process-line > [data-kind='lead'] { color: var(--fg2); }
+  .v3-process-line > [data-kind='lead'] ~ :is(.v3-process-count, .v3-steps-stats:not(.err)) { color: var(--fg3); }
+  .v3-steps-tally { font-variant-numeric: tabular-nums; }
 
 
   .v3-compaction { color: var(--fg3); font-size: var(--t-footnote); }

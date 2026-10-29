@@ -1,6 +1,6 @@
 import type { UIToolCall } from '../../../../shared/ipc'
 import type { AssistantTurn, TurnSegment, TurnThinking } from '../../../../shared/turns'
-import { countedProcessCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
+import { countedWorkCalls, isWebTool, normalizeToolPath, summarizeToolRun, toolCategory } from './tool-run-model'
 import { callPath, collectTurnChanges, isInsideCwd, readFileDiff, readPiDiff, type TurnChanges, type TurnFileChange, type TurnFileStatus } from './turn-changes'
 import { isHistoryQuestionCall } from './question-receipt'
 import { searchStepOf } from './web-search/model'
@@ -94,17 +94,18 @@ export function splitTurnProcess(segments: readonly TurnSegment[], options: { ke
   return { process, reply, leadReplies, earlierReplies, tail: segments.slice(at + 1) }
 }
 
-export function processLead(process: readonly TurnSegment[]): string {
-  for (const segment of process) {
-    for (const note of segment.commentary) {
-      const plain = note.text
+export function processPreview(process: readonly TurnSegment[]): string {
+  for (let i = process.length - 1; i >= 0; i -= 1) {
+    const notes = process[i].commentary
+    for (let j = notes.length - 1; j >= 0; j -= 1) {
+      const plain = notes[j].text
         .replace(/```[\s\S]*?```/g, ' ')
         .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/[`*_~#>|]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
       if (!plain) continue
-      return plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).find(Boolean) ?? plain
+      return plain.split(/(?<=[。！？!?；;]|\.\s)/).map((part) => part.trim()).filter(Boolean).at(-1) ?? plain
     }
   }
   return ''
@@ -217,6 +218,7 @@ export interface ProcessFileChange {
 export interface ProcessSummary {
   thinking: number
   actions: number
+  tools: number
   failed: number
   commands: number
   code: number
@@ -303,7 +305,8 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
     thinking += segmentThinking(segment).length
     calls.push(...segment.tools)
   }
-  const counted = countedProcessCalls(calls)
+  const counted = countedWorkCalls(calls)
+  let tools = 0
   let commands = 0
   let code = 0
   let searches = 0
@@ -318,6 +321,7 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   for (const call of counted) {
     if (isHistoryQuestionCall(call)) continue
     const category = toolCategory(call)
+    if (category !== 'command') tools += 1
     const step = searchStepOf(call)
     if (step) {
       if (step.command.action === 'fetch') fetches += 1
@@ -345,6 +349,7 @@ export function processSummary(process: readonly TurnSegment[]): ProcessSummary 
   return {
     thinking,
     actions: counted.length,
+    tools,
     failed: summarizeToolRun(counted).failed,
     commands,
     code,

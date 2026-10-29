@@ -191,18 +191,27 @@ export type SessionTextKey =
   | 'processAgent'
   | 'processOther1'
   | 'processOther'
-  | 'processRest'
   | 'processKindJoin'
-  | 'processKindCommands'
-  | 'processKindReads'
-  | 'processKindSearch'
-  | 'processKindList'
-  | 'processKindWeb'
-  | 'processKindFetch'
-  | 'processKindAgent'
-  | 'processKindOther'
   | 'processViewChanges'
   | 'outcomeFiles'
+  | 'outcomeNoChanges1'
+  | 'outcomeNoChanges'
+  | 'turnOrdinal'
+  | 'tallyCommand'
+  | 'tallyRead'
+  | 'tallyEdit'
+  | 'tallyCreate'
+  | 'tallyDelete'
+  | 'tallySearch'
+  | 'tallyList'
+  | 'tallyFetch'
+  | 'tallyWeb'
+  | 'tallyAgent'
+  | 'tallyTodo'
+  | 'processCommandCount1'
+  | 'processCommandCount'
+  | 'processToolCount1'
+  | 'processToolCount'
   | 'decisionReplied'
   | 'questionChosen'
   | 'questionFreeAnswer'
@@ -432,19 +441,28 @@ const ZH: Record<SessionTextKey, string> = {
   processAgent: '派出 {n} 个子 Agent',
   processOther1: '调用 1 次工具',
   processOther: '调用 {n} 次工具',
-  processRest: '另有{kinds}共 {n} 次',
   processKindJoin: '、',
-  processKindCommands: '命令',
-  processKindReads: '读取',
-  processKindSearch: '搜索',
-  processKindList: '查看目录',
-  processKindWeb: '联网搜索',
-  processKindFetch: '打开网页',
-  processKindAgent: '子 Agent',
-  processKindOther: '工具调用',
   processViewChanges: '查看更改',
-  outcomeFiles: '本轮文件',
-  decisionReplied: '你已在下方回复',
+  outcomeFiles: '交付文件',
+  outcomeNoChanges1: '无代码改动 · 1 个交付文件',
+  outcomeNoChanges: '无代码改动 · {n} 个交付文件',
+  turnOrdinal: '第 {n} 轮',
+  tallyCommand: '命令',
+  tallyRead: '读取',
+  tallyEdit: '编辑',
+  tallyCreate: '新建',
+  tallyDelete: '删除',
+  tallySearch: '搜索',
+  tallyList: '查看目录',
+  tallyFetch: '打开网页',
+  tallyWeb: '联网搜索',
+  tallyAgent: '子 Agent',
+  tallyTodo: '待办',
+  processCommandCount1: '1 条命令',
+  processCommandCount: '{n} 条命令',
+  processToolCount1: '1 次工具',
+  processToolCount: '{n} 次工具',
+  decisionReplied: '已回复',
   questionChosen: '已选',
   questionFreeAnswer: '回答：{answer}',
   thinkingEmptyRecord: '这一轮的思考没有留下文字记录',
@@ -674,19 +692,28 @@ const EN: Record<SessionTextKey, string> = {
   processAgent: 'Sent out {n} subagents',
   processOther1: 'Called 1 tool',
   processOther: 'Called {n} tools',
-  processRest: '{n} more: {kinds}',
   processKindJoin: ', ',
-  processKindCommands: 'commands',
-  processKindReads: 'reads',
-  processKindSearch: 'searches',
-  processKindList: 'folder listings',
-  processKindWeb: 'web searches',
-  processKindFetch: 'page opens',
-  processKindAgent: 'subagents',
-  processKindOther: 'tool calls',
   processViewChanges: 'View changes',
-  outcomeFiles: 'Files this turn',
-  decisionReplied: 'You replied below',
+  outcomeFiles: 'Deliverables',
+  outcomeNoChanges1: 'No code changes · 1 deliverable',
+  outcomeNoChanges: 'No code changes · {n} deliverables',
+  turnOrdinal: 'Turn {n}',
+  tallyCommand: 'command',
+  tallyRead: 'read',
+  tallyEdit: 'edit',
+  tallyCreate: 'create',
+  tallyDelete: 'delete',
+  tallySearch: 'search',
+  tallyList: 'list',
+  tallyFetch: 'fetch',
+  tallyWeb: 'web search',
+  tallyAgent: 'subagent',
+  tallyTodo: 'to-do',
+  processCommandCount1: '1 command',
+  processCommandCount: '{n} commands',
+  processToolCount1: '1 tool call',
+  processToolCount: '{n} tool calls',
+  decisionReplied: 'Replied',
   questionChosen: 'Chosen',
   questionFreeAnswer: 'Answer: {answer}',
   thinkingEmptyRecord: 'This turn left no reasoning text',

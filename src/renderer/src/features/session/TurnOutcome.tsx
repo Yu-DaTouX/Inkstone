@@ -1,14 +1,14 @@
 import { useMemo, type JSX } from 'react'
-import { Button } from '../../ui'
-import { Card, CardHead, CardStatus } from '../../ui/Card'
+import { Badge, Button } from '../../ui'
+import { Card, CardHead, CardTitle } from '../../ui/Card'
 import type { AssistantTurn } from '../../../../shared/turns'
 import { TurnChanges } from './TurnChanges'
 import { FileTypeIcon } from '../../ui/FileTypeIcon'
 import { useStore } from '../../state/store'
 import { Markdown } from './Markdown'
-import { Icon } from './Icon'
 import { useSessionText } from './text'
-import { outcomeFiles, replyFileLinks } from './turn-outcome'
+import { decisionTitle, outcomeFiles, replyFileLinks } from './turn-outcome'
+import { WrapUpText } from './WrapUpCard'
 import type { TurnChanges as TurnChangeSet } from './turn-changes'
 import './turn-outcome.css'
 
@@ -21,17 +21,26 @@ export function DecisionBlock({ question, sourceCwd, sessionId, messageId, answe
 }): JSX.Element {
   const tt = useSessionText()
   const answered = answer !== null
-  const label = answered ? tt('decisionReplied') : tt('wrapUpDecide')
+  const status = answered ? tt('decisionReplied') : tt('wrapUpDecide')
+  const { title, rest } = useMemo(() => decisionTitle(question), [question])
+  const heading = title ? plainTitle(title) : ''
   return (
-    <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} aria-label={label} data-testid="v3-decision">
+    <Card as="section" padding="none" receipt={answered} className="v3-decision" data-state={answered ? 'answered' : 'open'} aria-label={heading.replace(/`/g, '') || status} data-testid="v3-decision">
       <CardHead className="v3-decision-head">
-        <CardStatus tone={answered ? 'muted' : 'accent'} icon={<Icon name={answered ? 'message' : 'help'} size={14} />}>{label}</CardStatus>
+        <CardTitle className="v3-decision-title" data-testid="v3-decision-title">{heading ? <WrapUpText text={heading} /> : status}</CardTitle>
+        {heading ? <Badge tone={answered ? 'neutral' : 'ask'} className="v3-decision-status" data-testid="v3-decision-status">{status}</Badge> : null}
       </CardHead>
-      <div className="v3-para v3-decision-body">
-        <Markdown text={question} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
-      </div>
+      {rest ? (
+        <div className="v3-para v3-decision-body">
+          <Markdown text={rest} sourceCwd={sourceCwd} sessionId={sessionId} messageId={`${messageId}:decision`} />
+        </div>
+      ) : null}
     </Card>
   )
+}
+
+function plainTitle(title: string): string {
+  return title.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/(\*\*|__)(.+?)\1/g, '$2')
 }
 
 const NO_PATHS: readonly string[] = []
@@ -41,12 +50,12 @@ export function TurnResult({ turn, changes, cwd, readOnly, rewindOwner, text, so
   return (
     <div className="v3-result" data-testid="v3-turn-result">
       <TurnChanges turn={turn} changes={changes} cwd={cwd} readOnly={readOnly} rewindOwner={rewindOwner} />
-      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} changedPaths={changedPaths} /> : null}
+      {turn.tools.length ? <TurnFiles text={text} sourceCwd={sourceCwd} changedPaths={changedPaths} changed={!!changes} /> : null}
     </div>
   )
 }
 
-function TurnFiles({ text, sourceCwd, changedPaths }: { text: string; sourceCwd?: string; changedPaths: readonly string[] }): JSX.Element | null {
+function TurnFiles({ text, sourceCwd, changedPaths, changed }: { text: string; sourceCwd?: string; changedPaths: readonly string[]; changed: boolean }): JSX.Element | null {
   const tt = useSessionText()
   const previewFile = useStore((s) => s.previewFile)
   const sessionCwd = useStore((s) => s.session?.cwd)
@@ -55,7 +64,7 @@ function TurnFiles({ text, sourceCwd, changedPaths }: { text: string; sourceCwd?
   const cwd = sourceCwd || sessionCwd || undefined
   return (
     <div className="v3-outcome" role="group" aria-label={tt('outcomeFiles')} data-testid="v3-turn-files">
-      <span className="v3-outcome-label">{tt('outcomeFiles')}</span>
+      <span className="v3-result-label" data-testid="v3-turn-files-label">{changed ? tt('outcomeFiles') : files.length === 1 ? tt('outcomeNoChanges1') : tt('outcomeNoChanges', { n: files.length })}</span>
       <div className="v3-outcome-files">
         {files.map((file) => (
           <Button

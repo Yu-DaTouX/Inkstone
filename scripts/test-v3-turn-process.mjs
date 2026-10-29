@@ -62,7 +62,7 @@ function seg(id, { commentary = [], tools = [], response = null, thinking = '', 
 }
 
 const mod = await loadModule()
-const { splitTurnProcess, processLead, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
+const { splitTurnProcess, processPreview, mergeQuietSegments, pickLiveSegments, segmentSteps, processSummary, processFailuresAlert, lineDelta, estimateCallLines } = mod
 
 group('只有回复：没有过程行，行为与原来一致')
 {
@@ -227,7 +227,8 @@ group('每轮过程入口：摘要只数已有思考段与操作')
   ]
   const summary = processSummary(turn)
   ok(summary.thinking === 3, '思考按段计数，同一段多次推理分开计', summary)
-  ok(summary.actions === 3, '操作数不含待办调用与子调用', summary)
+  ok(summary.actions === 3, '操作数不含待办调用；有子调用的脚本按内部调用计', summary)
+  ok(summary.commands === 1 && summary.tools === 2, '摘要分成命令数与其余工具数', summary)
   ok(summary.failed === 1, '失败数来自已有工具状态', summary)
   const none = processSummary([seg('n0', { commentary: [text('c', '只有旁白')] })])
   ok(none.thinking === 0 && none.actions === 0 && none.failed === 0, '只有旁白时摘要为空，入口退回无标题的铺开', none)
@@ -261,7 +262,8 @@ group('回合结束后进度叙述收进过程：最终答复始终露出')
   ok(folded.reply?.response?.id === 'final', '最终答复始终露出', folded.reply?.response?.id)
   ok(folded.process.map((s) => s.id).join() === 'f0:narration,f1,f1:narration,f2,f2:narration,f3', '计划说明排在过程最前，叙述与工具按时间交错', folded.process.map((s) => s.id))
   ok(folded.process[2].commentary[0]?.id === 'n1' && folded.process[1].response === null, '叙述作为过程旁白，原段去掉回复', folded.process.slice(0, 3))
-  ok(processLead(folded.process) === '我先确认仓库地址。', '悬停提示取开头计划说明的第一句', processLead(folded.process))
+  ok(processPreview(folded.process) === '还有一处残留。', '摘要预览取最后一句进度说明', processPreview(folded.process))
+  ok(processPreview([seg('np', { tools: [tool('np1', 'bash')] })]) === '', '没有进度说明时没有预览')
   const replyFirst = splitTurnProcess([seg('q0', { response: text('q-lead', '先回答。', false) }), seg('q1', { tools: [tool('qt', 'bash')] })], { foldReplies: true })
   ok(replyFirst.leadReplies.length === 0 && replyFirst.reply?.response?.id === 'q-lead', '答复先于工具时答复不被收起', replyFirst)
   const noTools = splitTurnProcess([seg('m0', { response: text('m-lead', '说明', false) }), seg('m1', { response: text('m-final', '结论', false) })], { foldReplies: true })
@@ -293,6 +295,16 @@ group('过程摘要：按工具类型归类并带改动行数')
   ok(mixed.edits.length === 1 && mixed.edits[0].base === 'STATUS.md' && mixed.edits[0].added === 1 && mixed.edits[0].removed === 1, '编辑记文件名与行数，失败的编辑不算', mixed.edits)
   ok(mixed.creates.length === 1 && mixed.creates[0].added === 3 && mixed.creates[0].removed === 1, '新建后再编辑仍算新建，行数累加', mixed.creates)
   ok(mixed.searches === 1 && mixed.other === 0, '提问不算其他操作，grep 记为搜索', mixed)
+  ok(mixed.tools === 8, '其余工具数按调用计，提问不算', mixed.tools)
+  const nested = processSummary([seg('cm', { tools: [
+    tool('cm1', 'codemode', 'ok', { args: { code: 'x' } }),
+    tool('cm1a', 'bash', 'ok', { parentToolCallId: 'cm1', args: { command: 'ls' } }),
+    tool('cm1b', 'bash', 'error', { parentToolCallId: 'cm1', args: { command: 'pwd' } }),
+    tool('cm1c', 'read', 'ok', { parentToolCallId: 'cm1', args: { path: 'a.md' } }),
+    tool('b9', 'bash', 'ok', { args: { command: 'git status' } })
+  ] })])
+  ok(nested.commands === 3 && nested.code === 0 && nested.tools === 1, '外层计数等于内层之和：脚本按内部调用计，不把脚本本身算成命令', nested)
+  ok(nested.failed === 1, '内部调用的失败计入外层', nested.failed)
   const web = processSummary([seg('w0', { tools: [tool('ws', 'web_search', 'ok', { args: { query: 'float rounding' } })] })])
   ok(web.web === 1 && web.other === 0, '单独一次联网搜索记为联网搜索，不算其他操作', web)
   const fetched = processSummary([seg('w1', { tools: [tool('wf', 'web_fetch', 'ok', { args: { url: 'https://example.com' } }), tool('ls', 'ls', 'ok', { args: { path: '.' } }), tool('mc', 'mcp__srv__thing', 'ok')] })])

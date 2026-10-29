@@ -31,7 +31,7 @@ await build({
   outfile,
   logLevel: 'silent'
 })
-const { splitDecision, replyFileLinks, outcomeFiles, turnAnswers } = await import(pathToFileURL(posix(outfile)).href)
+const { splitDecision, decisionTitle, replyFileLinks, outcomeFiles, turnAnswers, userTurnOrdinals } = await import(pathToFileURL(posix(outfile)).href)
 await rm(outdir, { recursive: true, force: true })
 
 process.stdout.write('\n▌待决策：只取答复末段的提问\n')
@@ -46,6 +46,20 @@ process.stdout.write('\n▌待决策：只取答复末段的提问\n')
   ok(splitDecision('参考 `a?b` 和 [链接](https://x.dev/?q=1)。\n\n已完成 `x?y`。') === null, '问号只在行内代码或链接里：不拆', null)
   ok(splitDecision('要我继续吗？')?.body === '', '整条答复只有一句提问：正文为空', splitDecision('要我继续吗？'))
   ok(splitDecision(`${'说明'.repeat(10)}\n\n${'很长的段落'.repeat(80)}？`) === null, '末段过长：不当作决策', null)
+}
+
+process.stdout.write('\n▌待决策：问题本身作卡片标题\n')
+{
+  const a = decisionTitle('现在公开发布吗？回复「公开发布」，或者你先看看再说。')
+  ok(a.title === '现在公开发布吗？' && a.rest === '回复「公开发布」，或者你先看看再说。', '提问句作标题，其余作说明', a)
+  const b = decisionTitle('草稿已就绪。要推送 `v0.13.0` 吗？推送后 CI 会打包。')
+  ok(b.title === '要推送 `v0.13.0` 吗？' && b.rest === '草稿已就绪。推送后 CI 会打包。', '标题取第一句提问，前后文按原顺序留作说明', b)
+  const c = decisionTitle('参考 `a?b` 后决定：要继续「下一步」吗？')
+  ok(c.title === '参考 `a?b` 后决定：要继续「下一步」吗？' && c.rest === '', '行内代码里的问号不断句', c)
+  const d = decisionTitle(`${'很长的问题'.repeat(40)}？`)
+  ok(d.title === '' && d.rest.length > 0, '提问句过长：不作标题，整段留作说明', d)
+  const e = decisionTitle('Ship it? Reply "ship" or wait.')
+  ok(e.title === 'Ship it?' && e.rest === 'Reply "ship" or wait.', '英文句子之间保留空格', e)
 }
 
 process.stdout.write('\n▌本轮文件：取答复里的本地文件链接\n')
@@ -79,6 +93,19 @@ process.stdout.write('\n▌回答归属：下一条用户消息\n')
   ok(answers.get('a1') === '公开发布\n顺便更新说明', '后面紧跟用户消息：记为已回答', answers.get('a1'))
   ok(!answers.has('a2'), '后面不是用户消息：不判断', answers.get('a2'))
   ok(answers.get('a3') === null, '最后一轮：仍待回答', answers.get('a3'))
+}
+
+process.stdout.write('\n▌回合序号：只数用户回合\n')
+{
+  const turns = [
+    { kind: 'user', id: 'u1', msg: { text: '第一条' } },
+    { kind: 'assistant', id: 'a1' },
+    { kind: 'note', id: 'n1' },
+    { kind: 'user', id: 'u2', msg: { text: '第二条' } },
+    { kind: 'assistant', id: 'a2' }
+  ]
+  const ordinals = userTurnOrdinals(turns)
+  ok(ordinals.get('u1') === 1 && ordinals.get('u2') === 2 && !ordinals.has('a1') && !ordinals.has('n1'), '用户回合按出现顺序编号', [...ordinals])
 }
 
 process.stdout.write(`\n结果：${pass} 通过，${fail} 失败\n`)
