@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react'
-import { Download, GitCompare, GitMerge, Play, RefreshCw, Upload, Users, X } from 'lucide-react'
+import { Download, GitCompare, GitMerge, Play, RefreshCw, Upload, Users } from 'lucide-react'
 import {
   COLLAB_REQUEST_NOTE_MAX,
   type CollabBridge,
@@ -22,34 +22,41 @@ import {
   Badge,
   Button,
   Card,
+  CardHead,
+  CardTitle,
   Checkbox,
   CheckboxGroup,
   Dialog,
+  DialogFooter,
+  DiffStat,
   EmptyState,
-  IconButton,
   ListBox,
   ListBoxItem,
+  MiddleTruncate,
   Modal,
   ModalOverlay,
   Notice,
   PageHeader,
   Select,
+  SettingSection,
+  Spinner,
   TextArea,
   TextField,
+  Tooltip,
+  TooltipTrigger,
+  showToast,
   type BadgeTone
 } from '../../ui'
+import { DiffView } from '../diff'
 import { collabBridge, collabPeerBridge, parsePairLink, type CollabPeerBridge } from './bridge'
-import { collabText, fill, formatCollabTime, type CollabText } from './collab-text'
+import { collabText, fill, formatCollabTime, peerDisplayName, type CollabText } from './collab-text'
+import { HostGrants } from './HostGrants'
 import { InviteCard } from './InviteCard'
 import { usePendingPairInvite } from './pending-invite'
+import { useRemoteStatus } from './remote-status'
 import './collab.css'
 
 type Tone = 'info' | 'fail'
-
-interface Message {
-  tone: Tone
-  text: string
-}
 
 type Notify = (tone: Tone, text: string) => void
 
@@ -80,6 +87,8 @@ interface MergeTarget {
 
 const REQUEST_OPS: PeerOperation[] = ['pull', 'push']
 const POLL_MS = 5000
+const TOAST_SUMMARY_MAX = 140
+const FAIL_TOAST_MS = 10000
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -93,8 +102,11 @@ function remoteLabel(computer: string, branch: string): string {
   return `${computer}/${branch}`
 }
 
-function peerDisplayName(name: string): string {
-  return name.replace(/^砚\s*·\s*/, '') || name
+function splitMessage(value: string): { summary: string; folded: boolean } {
+  const trimmed = value.trim()
+  const firstLine = trimmed.split('\n')[0] ?? ''
+  const clipped = firstLine.length > TOAST_SUMMARY_MAX ? `${firstLine.slice(0, TOAST_SUMMARY_MAX)}…` : firstLine
+  return { summary: clipped, folded: clipped !== trimmed }
 }
 
 function useBusy(onError: (error: unknown) => void): [ReadonlySet<string>, RunBusy] {
@@ -164,32 +176,12 @@ function branchStates(branch: CollabRemoteBranchView, text: CollabText): Array<{
   return states
 }
 
-function diffLineKind(line: string): 'add' | 'del' | 'hunk' | 'meta' | 'ctx' {
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ')) return 'meta'
-  if (line.startsWith('@@')) return 'hunk'
-  if (line.startsWith('+')) return 'add'
-  if (line.startsWith('-')) return 'del'
-  return 'ctx'
-}
-
-function MessageBar({ message, text, onDismiss }: { message: Message | null; text: CollabText; onDismiss(): void }): ReactElement {
+function Loading({ label }: { label: string }): ReactElement {
   return (
-    <div className="collab-msg-slot" data-testid="v3-collab-message">
-      {message ? (
-        <Notice
-          className="collab-msg"
-          tone={message.tone}
-          data-tone={message.tone}
-          action={
-            <IconButton aria-label={text.dismiss} size="sm" variant="ghost" onPress={onDismiss}>
-              <X size={14} aria-hidden />
-            </IconButton>
-          }
-        >
-          <span className="collab-msg__text">{message.text}</span>
-        </Notice>
-      ) : null}
-    </div>
+    <p className="collab-hint collab-loading" aria-busy="true">
+      <Spinner size="xs" />
+      <span>{label}</span>
+    </p>
   )
 }
 
@@ -203,36 +195,35 @@ interface MergeNoticeProps {
 }
 
 function MergeNotice({ text, project, record, busy, onAgent, onAbort }: MergeNoticeProps): ReactElement {
+  const title = fill(text.mergePending, { project: project.name })
   return (
-    <div className="collab-merge" role="group" aria-label={fill(text.mergePending, { project: project.name })} data-testid={`v3-collab-merge-${project.id}`}>
-      <p className="collab-merge__title">
-        <Badge tone="stall">{text.local}</Badge>
-        <span>{fill(text.mergePending, { project: project.name })}</span>
-      </p>
-      {record ? (
-        <p className="collab-hint">{fill(text.mergePendingOf, { source: record.source, branch: record.branch ?? text.detached })}</p>
-      ) : null}
-      {record && record.files.length ? (
-        <div className="collab-merge__files">
-          <p className="collab-label">{text.conflictFiles}</p>
-          <ul className="collab-mono-list">
-            {record.files.map((file) => (
-              <li key={file}>{file}</li>
-            ))}
-          </ul>
+    <Notice tone="stall" role="group" aria-label={title} title={title} data-testid={`v3-collab-merge-${project.id}`}>
+      <div className="collab-stack">
+        {record ? <p className="collab-hint">{fill(text.mergePendingOf, { source: record.source, branch: record.branch ?? text.detached })}</p> : null}
+        {record && record.files.length ? (
+          <div className="collab-stack">
+            <p className="collab-label">{text.conflictFiles}</p>
+            <ul className="collab-file-list">
+              {record.files.map((file) => (
+                <li key={file}>
+                  <MiddleTruncate value={file} className="collab-code" />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="collab-hint">{text.conflictUnknown}</p>
+        )}
+        <div className="collab-actions">
+          <Button size="sm" variant="primary" isDisabled={busy} onPress={onAgent} data-testid="v3-collab-merge-agent">
+            {text.resolveWithAgent}
+          </Button>
+          <Button size="sm" variant="danger" isDisabled={busy} onPress={onAbort} data-testid="v3-collab-merge-abort">
+            {text.abortMerge}
+          </Button>
         </div>
-      ) : (
-        <p className="collab-hint">{text.conflictUnknown}</p>
-      )}
-      <div className="collab-actions">
-        <Button size="sm" variant="primary" isDisabled={busy} onPress={onAgent} data-testid="v3-collab-merge-agent">
-          {text.resolveWithAgent}
-        </Button>
-        <Button size="sm" variant="danger" isDisabled={busy} onPress={onAbort} data-testid="v3-collab-merge-abort">
-          {text.abortMerge}
-        </Button>
       </div>
-    </div>
+    </Notice>
   )
 }
 
@@ -292,26 +283,27 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
 
   if (state.status === 'loading') {
     return (
-      <div className="collab-compare" data-testid="v3-collab-compare-panel" aria-busy="true">
-        <p className="collab-hint">{text.compareLoading}</p>
-      </div>
+      <Card quiet padding="sm" className="collab-card collab-compare" data-testid="v3-collab-compare-panel" aria-busy="true">
+        <Loading label={text.compareLoading} />
+      </Card>
     )
   }
   if (state.status === 'error') {
     return (
-      <div className="collab-compare" data-testid="v3-collab-compare-panel">
+      <Card quiet padding="sm" className="collab-card collab-compare" data-testid="v3-collab-compare-panel">
         <Notice tone="fail" compact>
           {fill(text.compareFailed, { error: state.error })}
         </Notice>
-      </div>
+      </Card>
     )
   }
 
   const data = state.data
+  const [diffTitleBefore = '', diffTitleAfter = ''] = text.diffOf.split('{path}')
   return (
-    <div className="collab-compare" role="region" aria-label={`${text.compare} · ${label}`} data-testid="v3-collab-compare-panel">
-      {data.base ? <p className="collab-hint collab-mono">{fill(text.compareBase, { base: shortOid(data.base) })}</p> : null}
-      <div className="collab-compare__block">
+    <Card quiet padding="sm" className="collab-card collab-compare" role="region" aria-label={`${text.compare} · ${label}`} data-testid="v3-collab-compare-panel">
+      {data.base ? <p className="collab-hint">{fill(text.compareBase, { base: shortOid(data.base) })}</p> : null}
+      <div className="collab-stack">
         <p className="collab-label">{fill(text.compareCommits, { n: data.commits.length })}</p>
         {data.commits.length === 0 ? (
           <p className="collab-hint">{text.compareNoCommits}</p>
@@ -319,7 +311,7 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
           <ol className="collab-commits">
             {data.commits.map((commit) => (
               <li key={commit.oid} className="collab-commit">
-                <span className="collab-commit__oid">{shortOid(commit.oid)}</span>
+                <span className="collab-commit__oid collab-code">{shortOid(commit.oid)}</span>
                 <span className="collab-commit__subject">{commit.subject}</span>
                 <span className="collab-commit__meta">
                   {commit.author} · {formatCollabTime(commit.committedAt, lang)}
@@ -329,7 +321,7 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
           </ol>
         )}
       </div>
-      <div className="collab-compare__block">
+      <div className="collab-stack">
         <p className="collab-label">{fill(text.compareFiles, { n: data.files.length })}</p>
         {data.files.length === 0 ? (
           <p className="collab-hint">{text.compareNoFiles}</p>
@@ -347,32 +339,31 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
             data-testid="v3-collab-files"
           >
             {data.files.map((file) => (
-              <ListBoxItem key={file.path} id={file.path} textValue={file.path} className="collab-file">
-                <span className="collab-file__status">{fileStatusLabel(porcelainFileStatus(file.status), lang)}</span>
-                <span className="collab-file__path" title={file.path}>
-                  {file.path}
+              <ListBoxItem key={file.path} id={file.path} textValue={file.path}>
+                <span className="collab-file">
+                  <span className="collab-file__status">{fileStatusLabel(porcelainFileStatus(file.status), lang)}</span>
+                  <MiddleTruncate value={file.path} className="collab-file__path" />
+                  {file.additions !== null || file.deletions !== null ? <DiffStat added={file.additions ?? 0} removed={file.deletions ?? 0} /> : null}
                 </span>
-                {file.additions !== null || file.deletions !== null ? (
-                  <span className="collab-file__stat">
-                    <span data-kind="add">+{file.additions ?? 0}</span>
-                    <span data-kind="del">−{file.deletions ?? 0}</span>
-                  </span>
-                ) : null}
               </ListBoxItem>
             ))}
           </ListBox>
         )}
       </div>
       {diff ? (
-        <div className="collab-diff-wrap" data-testid="v3-collab-diff">
+        <div className="collab-stack" data-testid="v3-collab-diff">
           <div className="collab-diff-head">
-            <p className="collab-label collab-mono">{fill(text.diffOf, { path: diff.path })}</p>
+            <p className="collab-label collab-diff-head__title">
+              {diffTitleBefore ? <span className="collab-diff-head__affix">{diffTitleBefore}</span> : null}
+              <MiddleTruncate value={diff.path} className="collab-code" />
+              {diffTitleAfter ? <span className="collab-diff-head__affix">{diffTitleAfter}</span> : null}
+            </p>
             <Button size="sm" variant="ghost" onPress={() => setDiff(null)}>
               {text.diffHide}
             </Button>
           </div>
           {diff.status === 'loading' ? (
-            <p className="collab-hint">{text.diffLoading}</p>
+            <Loading label={text.diffLoading} />
           ) : diff.status === 'error' ? (
             <Notice tone="fail" compact>
               {fill(text.diffFailed, { error: diff.error })}
@@ -380,17 +371,13 @@ function ComparePanel({ bridge, text, lang, localProjectId, refName, label, vers
           ) : diff.body.trim() === '' ? (
             <p className="collab-hint">{text.diffEmpty}</p>
           ) : (
-            <pre className="collab-diff" tabIndex={0} aria-label={fill(text.diffOf, { path: diff.path })}>
-              {diff.body.replace(/\n$/, '').split('\n').map((line, index) => (
-                <span key={index} className="collab-diff__line" data-kind={diffLineKind(line)}>
-                  {`${line}\n`}
-                </span>
-              ))}
-            </pre>
+            <div className="collab-diff" tabIndex={0} aria-label={fill(text.diffOf, { path: diff.path })}>
+              <DiffView patch={diff.body} embedded showFileHeader={false} lang={lang} />
+            </div>
           )}
         </div>
       ) : null}
-    </div>
+    </Card>
   )
 }
 
@@ -414,21 +401,19 @@ function PeerCard({ peer, text, busy, canConnect, onConnect, onDisconnect, onRem
   const chosen = REQUEST_OPS.filter((op) => ops.includes(op))
 
   return (
-    <Card as="li" className="collab-card collab-peer" data-testid={`v3-collab-peer-${peer.id}`} data-state={connection.state}>
-      <div className="collab-peer__head">
-        <span className="collab-peer__name">{peer.computer}</span>
+    <Card as="li" className="collab-card" data-testid={`v3-collab-peer-${peer.id}`} data-state={connection.state}>
+      <CardHead className="collab-card__head">
+        <CardTitle className="collab-card__title">{peer.computer}</CardTitle>
         <Badge tone={badge.tone}>{badge.label}</Badge>
-        <span className="collab-peer__addr collab-mono" title={peer.address}>
-          {peer.address}
-        </span>
-      </div>
+        <MiddleTruncate value={peer.address} className="collab-card__meta collab-peer__addr" />
+      </CardHead>
       {connection.state === 'failed' ? (
         <Notice tone="fail" compact>{fill(text.failedReason, { error: connection.error })}</Notice>
       ) : null}
       {grant ? (
         <p className="collab-hint">{grantSummary(grant, text)}</p>
       ) : (
-        <div className="collab-peer__request">
+        <div className="collab-row">
           <CheckboxGroup
             label={text.requestOps}
             value={ops}
@@ -535,39 +520,43 @@ function PairForm({ text, disabled, pending, notify, onPair }: PairFormProps): R
   }
 
   return (
-    <form className="collab-pair" onSubmit={submit} data-testid="v3-collab-pair-form">
-      <p className="collab-label">{text.pairTitle}</p>
-      <p className="collab-hint">{text.pairHint}</p>
-      <div className="collab-pair__row">
-        <TextField
-          label={text.address}
-          placeholder={text.addressPlaceholder}
-          value={address}
-          isDisabled={disabled}
-          onChange={(value) => {
-            if (!absorbLink(value)) setAddress(value)
-          }}
-          className="collab-pair__address"
-          data-testid="v3-collab-pair-address"
-        />
-        <TextField
-          label={text.code}
-          placeholder={text.codePlaceholder}
-          value={code}
-          inputMode="numeric"
-          maxLength={200}
-          isDisabled={disabled}
-          onChange={(value) => {
-            if (!absorbLink(value)) setCode(value.replace(/\D/g, '').slice(0, 6))
-          }}
-          className="collab-pair__code"
-          data-testid="v3-collab-pair-code"
-        />
-        <Button type="submit" variant="primary" isDisabled={!ready} isPending={pending} data-testid="v3-collab-pair">
-          {text.pair}
-        </Button>
-      </div>
-    </form>
+    <Card className="collab-card">
+      <CardHead>
+        <CardTitle>{text.pairTitle}</CardTitle>
+      </CardHead>
+      <form className="collab-stack" onSubmit={submit} data-testid="v3-collab-pair-form">
+        <p className="collab-hint">{text.pairHint}</p>
+        <div className="collab-row">
+          <TextField
+            label={text.address}
+            placeholder={text.addressPlaceholder}
+            value={address}
+            isDisabled={disabled}
+            onChange={(value) => {
+              if (!absorbLink(value)) setAddress(value)
+            }}
+            className="collab-pair__address"
+            data-testid="v3-collab-pair-address"
+          />
+          <TextField
+            label={text.code}
+            placeholder={text.codePlaceholder}
+            value={code}
+            inputMode="numeric"
+            maxLength={200}
+            isDisabled={disabled}
+            onChange={(value) => {
+              if (!absorbLink(value)) setCode(value.replace(/\D/g, '').slice(0, 6))
+            }}
+            className="collab-pair__code"
+            data-testid="v3-collab-pair-code"
+          />
+          <Button type="submit" variant="primary" isDisabled={!ready} isPending={pending} data-testid="v3-collab-pair">
+            {text.pair}
+          </Button>
+        </div>
+      </form>
+    </Card>
   )
 }
 
@@ -757,23 +746,17 @@ function RemoteProjectPanel({
   const mergeBlocked = !!localProject?.mergeInProgress
 
   return (
-    <Card as="article" className="collab-card collab-project" data-testid={`v3-collab-project-${peer.id}-${project.id}`} aria-label={`${remoteTag} · ${project.name}`}>
-      <header className="collab-project__head">
-        <h4 className="collab-project__name">{project.name}</h4>
-        <Badge tone="accent">{remoteTag}</Badge>
-        <Button
-          size="sm"
-          variant="ghost"
-          icon={<RefreshCw size={14} aria-hidden />}
-          isPending={loading}
-          onPress={() => void load()}
-          className="collab-project__refresh"
-        >
+    <Card as="article" className="collab-card" data-testid={`v3-collab-project-${peer.id}-${project.id}`} aria-label={`${remoteTag} · ${project.name}`}>
+      <CardHead className="collab-card__head">
+        <CardTitle className="collab-card__title" role="heading" aria-level={4}>
+          {project.name}
+        </CardTitle>
+        <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden />} isPending={loading} onPress={() => void load()} className="collab-card__end">
           {text.refresh}
         </Button>
-      </header>
+      </CardHead>
 
-      <div className="collab-local">
+      <div className="collab-row collab-local">
         <Select
           label={`${text.local} · ${text.localProject}`}
           placeholder={text.localProjectPlaceholder}
@@ -831,12 +814,10 @@ function RemoteProjectPanel({
         </Notice>
       ) : null}
 
-      <section className="collab-branches" aria-label={`${remoteTag} · ${text.branchesTitle}`}>
+      <section className="collab-block" aria-label={`${remoteTag} · ${text.branchesTitle}`}>
         <p className="collab-label">{text.branchesTitle}</p>
         {!view && loading ? (
-          <p className="collab-hint" aria-busy="true">
-            {text.projectLoading}
-          </p>
+          <Loading label={text.projectLoading} />
         ) : view && branches.length === 0 ? (
           <p className="collab-hint">{text.branchesEmpty}</p>
         ) : (
@@ -849,9 +830,7 @@ function RemoteProjectPanel({
               return (
                 <li key={branch.name} className="collab-branch" data-testid={`v3-collab-branch-${branch.name}`}>
                   <div className="collab-branch__line">
-                    <span className="collab-branch__name" title={branch.trackingRef}>
-                      {label}
-                    </span>
+                    <MiddleTruncate value={label} className="collab-branch__name collab-code" />
                     {branch.current ? <Badge>{text.remoteCurrent}</Badge> : null}
                     {branchStates(branch, text).map((state) => (
                       <Badge key={state.label} tone={state.tone}>
@@ -886,7 +865,6 @@ function RemoteProjectPanel({
                       variant="ghost"
                       icon={<GitCompare size={14} aria-hidden />}
                       isDisabled={!usable || !fetchedHere}
-                      title={fetchedHere ? undefined : text.needFetch}
                       aria-expanded={compareOpen}
                       onPress={() => setOpenCompare((current) => (current === branch.name ? null : branch.name))}
                       data-testid="v3-collab-compare"
@@ -898,7 +876,6 @@ function RemoteProjectPanel({
                       variant="ghost"
                       icon={<GitMerge size={14} aria-hidden />}
                       isDisabled={!usable || !fetchedHere || mergeBlocked || (branch.incoming ?? 0) === 0}
-                      title={fetchedHere ? undefined : text.needFetch}
                       onPress={() => {
                         if (localProject) onMerge({ project: localProject, ref: branch.trackingRef, source: label })
                       }}
@@ -906,19 +883,26 @@ function RemoteProjectPanel({
                     >
                       {text.merge}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Play size={14} aria-hidden />}
-                      isPending={busy.has(`continue:${branch.name}`)}
-                      isDisabled={!usable || !fetchedHere}
-                      title={fetchedHere ? text.continueHint : text.needFetch}
-                      onPress={() => continueBranch(branch)}
-                      data-testid="v3-collab-continue"
-                    >
-                      {text.continue}
-                    </Button>
+                    <TooltipTrigger>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Play size={14} aria-hidden />}
+                        isPending={busy.has(`continue:${branch.name}`)}
+                        isDisabled={!usable || !fetchedHere}
+                        onPress={() => continueBranch(branch)}
+                        data-testid="v3-collab-continue"
+                      >
+                        {text.continue}
+                      </Button>
+                      <Tooltip>{text.continueHint}</Tooltip>
+                    </TooltipTrigger>
                   </div>
+                  {usable && !fetchedHere ? (
+                    <Notice tone="info" variant="hint" role="note">
+                      {text.needFetch}
+                    </Notice>
+                  ) : null}
                   {compareOpen && localProject ? (
                     <ComparePanel
                       bridge={bridge}
@@ -937,7 +921,7 @@ function RemoteProjectPanel({
         )}
       </section>
 
-      <section className="collab-push" aria-label={fill(text.pushTitle, { computer: peer.computer })} data-testid="v3-collab-push">
+      <section className="collab-block" aria-label={fill(text.pushTitle, { computer: peer.computer })} data-testid="v3-collab-push">
         <p className="collab-label">{fill(text.pushTitle, { computer: peer.computer })}</p>
         <p className="collab-hint">{text.pushHint}</p>
         {!canPush ? (
@@ -945,7 +929,7 @@ function RemoteProjectPanel({
             {text.noPush}
           </Notice>
         ) : null}
-        <div className="collab-push__row">
+        <div className="collab-row">
           <Select
             label={`${text.local} · ${text.pushBranch}`}
             placeholder={text.pushBranchPlaceholder}
@@ -961,12 +945,14 @@ function RemoteProjectPanel({
               </ListBoxItem>
             ))}
           </Select>
-          <Checkbox isSelected={withRequest} isDisabled={!usable || !canPush} onChange={setWithRequest} data-testid="v3-collab-push-request">
-            {text.pushRequest}
-          </Checkbox>
+          <span className="collab-row__check">
+            <Checkbox isSelected={withRequest} isDisabled={!usable || !canPush} onChange={setWithRequest} data-testid="v3-collab-push-request">
+              {text.pushRequest}
+            </Checkbox>
+          </span>
         </div>
         {withRequest ? (
-          <div className="collab-push__request">
+          <div className="collab-stack">
             <TextField label={text.requestTitle} value={requestTitle} maxLength={200} onChange={setRequestTitle} data-testid="v3-collab-request-title" />
             <TextArea
               label={text.requestNote}
@@ -1015,18 +1001,22 @@ function RequestItem({ bridge, text, lang, request, localProject, busy, onMerge,
   const source = incoming ? remoteLabel(peerName, request.branch) : request.branch
   const statusTone: BadgeTone = request.status === 'open' ? 'accent' : request.status === 'merged' ? 'run' : 'neutral'
   const usable = !!localProject && localProject.isRepo
+  const showCompare = incoming && open && comparing && usable && !!localProject
+
+  useEffect(() => {
+    if (!open) setComparing(false)
+  }, [open])
 
   return (
-    <li className="collab-request" data-testid={`v3-collab-request-${request.id}`} data-status={request.status}>
-      <div className="collab-request__head">
-        <strong className="collab-request__title">{request.title || source}</strong>
+    <Card as="li" quiet={!open} className="collab-card" data-testid={`v3-collab-request-${request.id}`} data-status={request.status}>
+      <CardHead className="collab-card__head">
+        <CardTitle className="collab-card__title">{request.title || source}</CardTitle>
         <Badge tone={statusTone}>{text.requestStatus[request.status]}</Badge>
-      </div>
-      <p className="collab-request__meta">
-        <Badge tone={incoming ? 'accent' : 'neutral'}>{incoming ? fill(text.remote, { computer: peerName }) : text.local}</Badge>
+      </CardHead>
+      <p className="collab-hint collab-request__meta">
         <span>{fill(incoming ? text.requestFrom : text.requestTo, { peer: peerName })}</span>
         <span>· {request.projectName}</span>
-        <span className="collab-mono">· {source}</span>
+        <span>· {source}</span>
         {incoming && localProject ? (
           <span>
             → {text.local} · {localProject.name}
@@ -1043,11 +1033,11 @@ function RequestItem({ bridge, text, lang, request, localProject, busy, onMerge,
             variant="ghost"
             icon={<GitCompare size={14} aria-hidden />}
             isDisabled={!usable}
-            aria-expanded={comparing}
+            aria-expanded={showCompare}
             onPress={() => setComparing((value) => !value)}
             data-testid="v3-collab-request-compare"
           >
-            {comparing ? text.compareHide : text.compare}
+            {showCompare ? text.compareHide : text.compare}
           </Button>
           <Button
             size="sm"
@@ -1072,7 +1062,7 @@ function RequestItem({ bridge, text, lang, request, localProject, busy, onMerge,
           </Button>
         </div>
       ) : null}
-      {comparing && usable && localProject ? (
+      {showCompare && localProject ? (
         <ComparePanel
           bridge={bridge}
           text={text}
@@ -1083,7 +1073,7 @@ function RequestItem({ bridge, text, lang, request, localProject, busy, onMerge,
           version={`${localProject.currentBranch ?? ''}:${localProject.mergeInProgress ? 1 : 0}:${request.status}`}
         />
       ) : null}
-    </li>
+    </Card>
   )
 }
 
@@ -1094,13 +1084,28 @@ export function CollabPage(): ReactElement {
   const peerBridge = useMemo<CollabPeerBridge | null>(() => collabPeerBridge(), [])
   const [overview, setOverview] = useState<CollabOverview | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [message, setMessage] = useState<Message | null>(null)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [records, setRecords] = useState<Record<string, MergeRecord>>({})
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
   const [panelLocals, setPanelLocals] = useState<Record<string, string | null>>({})
-  const notify = useCallback<Notify>((tone, value) => setMessage({ tone, text: value }), [])
+  const remoteState = useRemoteStatus()
+  const notify = useCallback<Notify>(
+    (tone, value) => {
+      if (tone === 'info') {
+        showToast(value, { tone: 'info' })
+        return
+      }
+      const { summary, folded } = splitMessage(value)
+      showToast(summary, {
+        tone: 'danger',
+        timeout: FAIL_TOAST_MS,
+        ...(folded ? { action: { label: text.errorDetails, onAction: () => setErrorDetail(value) } } : {})
+      })
+    },
+    [text]
+  )
   const [busy, run] = useBusy((error) => notify('fail', describe(error)))
   const seq = useRef(0)
   const inflight = useRef(0)
@@ -1357,8 +1362,8 @@ export function CollabPage(): ReactElement {
   }
 
   const head = (
-  <PageHeader
-      className="collab-head"
+    <PageHeader
+      description={<span data-testid="v3-collab-lede">{text.lede}</span>}
       title={
         <span className="collab-title">
           <Users size={18} aria-hidden /> {text.title}
@@ -1378,9 +1383,6 @@ export function CollabPage(): ReactElement {
     return (
       <div className="collab-page" data-testid="v3-collab-page" data-wired="0">
         {head}
-        <p className="collab-lede" data-testid="v3-collab-lede">
-          {text.lede}
-        </p>
         <Notice tone="ask" role="note" data-testid="v3-collab-missing">
           {text.bridgeMissing}
         </Notice>
@@ -1400,7 +1402,7 @@ export function CollabPage(): ReactElement {
     list.length === 0 ? (
       <p className="collab-hint">{empty}</p>
     ) : (
-      <ul className="collab-request-list">
+      <ul className="collab-list">
         {list.map((request) => (
           <RequestItem
             key={request.id}
@@ -1420,10 +1422,6 @@ export function CollabPage(): ReactElement {
   return (
     <div className="collab-page" data-testid="v3-collab-page" data-wired="1" aria-busy={!overview && !loadError ? true : undefined}>
       {head}
-      <p className="collab-lede" data-testid="v3-collab-lede">
-        {text.lede}
-      </p>
-      <MessageBar message={message} text={text} onDismiss={() => setMessage(null)} />
       {loadError ? (
         <Notice
           tone="fail"
@@ -1436,7 +1434,7 @@ export function CollabPage(): ReactElement {
           {fill(text.loadFailed, { error: loadError })}
         </Notice>
       ) : null}
-      {!overview && !loadError ? <p className="collab-hint">{text.loading}</p> : null}
+      {!overview && !loadError ? <Loading label={text.loading} /> : null}
 
       {looseMerges.length ? (
         <section className="collab-section" aria-label={text.local} data-testid="v3-collab-local-merges">
@@ -1444,93 +1442,91 @@ export function CollabPage(): ReactElement {
         </section>
       ) : null}
 
-      <section className="collab-section" aria-labelledby="collab-peers-title" data-testid="v3-collab-peers">
-        <h2 className="collab-section__title" id="collab-peers-title">
-          {text.peersTitle}
-        </h2>
-        <p className="collab-hint">{text.peersHint}</p>
-        {!peerBridge ? (
-          <Notice tone="ask" compact role="note">
-            {text.peerMissing}
-          </Notice>
-        ) : null}
-        {overview && peers.length === 0 ? <EmptyState size="sm" align="start" title={text.peersEmpty} /> : null}
-        {peers.length ? (
-          <ul className="collab-peer-list">
-            {peers.map((peer) => (
-              <PeerCard
-                key={peer.id}
-                peer={peer}
-                text={text}
-                busy={busy}
-                canConnect={!!peerBridge}
-                onConnect={(ops, note) => connect(peer, ops, note)}
-                onDisconnect={() => disconnect(peer)}
-                onRemove={() => remove(peer)}
-              />
-            ))}
-          </ul>
-        ) : null}
-        <PairForm text={text} disabled={!peerBridge} pending={busy.has('pair')} notify={notify} onPair={pair} />
-        <InviteCard text={text} />
-      </section>
+      <SettingSection plain className="collab-section" title={text.peersTitle} description={text.peersHint} aria-label={text.peersTitle} data-testid="v3-collab-peers">
+        <div className="collab-section__body">
+          {!peerBridge ? (
+            <Notice tone="ask" compact role="note">
+              {text.peerMissing}
+            </Notice>
+          ) : null}
+          {overview && peers.length === 0 ? <EmptyState size="sm" align="start" title={text.peersEmpty} /> : null}
+          {peers.length ? (
+            <ul className="collab-list">
+              {peers.map((peer) => (
+                <PeerCard
+                  key={peer.id}
+                  peer={peer}
+                  text={text}
+                  busy={busy}
+                  canConnect={!!peerBridge}
+                  onConnect={(ops, note) => connect(peer, ops, note)}
+                  onDisconnect={() => disconnect(peer)}
+                  onRemove={() => remove(peer)}
+                />
+              ))}
+            </ul>
+          ) : null}
+          <InviteCard text={text} remoteState={remoteState} />
+          <PairForm text={text} disabled={!peerBridge} pending={busy.has('pair')} notify={notify} onPair={pair} />
+        </div>
+      </SettingSection>
 
-      <section className="collab-section" aria-labelledby="collab-remote-title" data-testid="v3-collab-remote">
-        <h2 className="collab-section__title" id="collab-remote-title">
-          {text.projectsTitle}
-        </h2>
-        {connectedPeers.length === 0 ? (
-          <EmptyState size="sm" align="start" title={text.projectsEmpty} />
-        ) : (
-          connectedPeers.map(({ peer, grant }) => (
-            <div className="collab-remote" key={peer.id} data-testid={`v3-collab-remote-${peer.id}`}>
-              <h3 className="collab-remote__title">
-                <Badge tone="accent">{fill(text.remote, { computer: peer.computer })}</Badge>
-              </h3>
-              {grant.projects.length === 0 ? (
-                <p className="collab-hint">{text.grantNoProjects}</p>
-              ) : (
-                grant.projects.map((project) => (
-                  <RemoteProjectPanel
-                    key={`${peer.id}:${project.id}`}
-                    bridge={bridge}
-                    text={text}
-                    lang={lang}
-                    peer={peer}
-                    grant={grant}
-                    project={project}
-                    localProjects={overview?.localProjects ?? []}
-                    fetched={overview?.fetched ?? []}
-                    reloadTick={reloadTick}
-                    notify={notify}
-                    onOverviewChanged={refresh}
-                    onMerge={requestMerge}
-                    onContinue={continueFrom}
-                    onLocalChange={setPanelLocal}
-                    mergeNotice={mergeNotice}
-                  />
-                ))
-              )}
-            </div>
-          ))
-        )}
-      </section>
+      <SettingSection plain className="collab-section" title={text.hostTitle} description={text.hostHint} aria-label={text.hostTitle} data-testid="v3-collab-host">
+        <div className="collab-section__body">
+          <HostGrants text={text} lang={lang} remoteState={remoteState} notify={notify} />
+        </div>
+      </SettingSection>
 
-      <section className="collab-section" aria-labelledby="collab-requests-title" data-testid="v3-collab-requests">
-        <h2 className="collab-section__title" id="collab-requests-title">
-          {text.requestsTitle}
-        </h2>
-        <div className="collab-requests">
-          <div className="collab-requests__group" data-testid="v3-collab-requests-incoming">
-            <h3 className="collab-label">{text.incoming}</h3>
+      <SettingSection plain className="collab-section" title={text.projectsTitle} aria-label={text.projectsTitle} data-testid="v3-collab-remote">
+        <div className="collab-section__body">
+          {connectedPeers.length === 0 ? (
+            <EmptyState size="sm" align="start" title={text.projectsEmpty} />
+          ) : (
+            connectedPeers.map(({ peer, grant }) => (
+              <div className="collab-stack" key={peer.id} data-testid={`v3-collab-remote-${peer.id}`}>
+                <h4 className="collab-label">{fill(text.remote, { computer: peer.computer })}</h4>
+                {grant.projects.length === 0 ? (
+                  <p className="collab-hint">{text.grantNoProjects}</p>
+                ) : (
+                  grant.projects.map((project) => (
+                    <RemoteProjectPanel
+                      key={`${peer.id}:${project.id}`}
+                      bridge={bridge}
+                      text={text}
+                      lang={lang}
+                      peer={peer}
+                      grant={grant}
+                      project={project}
+                      localProjects={overview?.localProjects ?? []}
+                      fetched={overview?.fetched ?? []}
+                      reloadTick={reloadTick}
+                      notify={notify}
+                      onOverviewChanged={refresh}
+                      onMerge={requestMerge}
+                      onContinue={continueFrom}
+                      onLocalChange={setPanelLocal}
+                      mergeNotice={mergeNotice}
+                    />
+                  ))
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </SettingSection>
+
+      <SettingSection plain className="collab-section" title={text.requestsTitle} aria-label={text.requestsTitle} data-testid="v3-collab-requests">
+        <div className="collab-section__body">
+          <div className="collab-stack" data-testid="v3-collab-requests-incoming">
+            <h4 className="collab-label">{text.incoming}</h4>
             {requestList(incomingRequests, text.requestsEmptyIn)}
           </div>
-          <div className="collab-requests__group" data-testid="v3-collab-requests-outgoing">
-            <h3 className="collab-label">{text.outgoing}</h3>
+          <div className="collab-stack" data-testid="v3-collab-requests-outgoing">
+            <h4 className="collab-label">{text.outgoing}</h4>
             {requestList(outgoingRequests, text.requestsEmptyOut)}
           </div>
         </div>
-      </section>
+      </SettingSection>
 
       <ModalOverlay
         isDismissable={!confirmBusy}
@@ -1539,23 +1535,38 @@ export function CollabPage(): ReactElement {
           if (!open && !confirmBusy) setConfirm(null)
         }}
       >
-        <Modal>
+        <Modal data-dialog-size="sm">
           <Dialog title={confirm?.title} closeLabel={text.cancel} data-testid="v3-collab-confirm">
             <p className="collab-confirm__body">{confirm?.body}</p>
             {confirm?.hint ? <p className="collab-hint">{confirm.hint}</p> : null}
-            <footer className="collab-confirm__foot">
-              <Button isDisabled={confirmBusy} onPress={() => setConfirm(null)}>
+            <DialogFooter>
+              <Button variant="ghost" isDisabled={confirmBusy} onPress={() => setConfirm(null)}>
                 {text.cancel}
               </Button>
               <Button
-                variant={confirm?.danger ? 'danger' : 'primary'}
+                variant={confirm?.danger ? 'destructive' : 'primary'}
                 isPending={confirmBusy}
                 onPress={() => void confirmRun()}
                 data-testid="v3-collab-confirm-ok"
               >
                 {confirm?.confirmLabel}
               </Button>
-            </footer>
+            </DialogFooter>
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
+
+      <ModalOverlay isDismissable isOpen={errorDetail !== null} onOpenChange={(open) => (open ? undefined : setErrorDetail(null))}>
+        <Modal data-dialog-size="md">
+          <Dialog title={text.errorDetailTitle} closeLabel={text.close} data-testid="v3-collab-error-detail">
+            <pre className="collab-error-detail collab-code" tabIndex={0}>
+              {errorDetail}
+            </pre>
+            <DialogFooter>
+              <Button variant="primary" onPress={() => setErrorDetail(null)}>
+                {text.close}
+              </Button>
+            </DialogFooter>
           </Dialog>
         </Modal>
       </ModalOverlay>

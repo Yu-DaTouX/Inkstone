@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { PeerApprovalRequest, PeerOperation } from '../../../shared/peer-protocol'
 import { useT } from '../i18n'
 import { useStore } from '../state/store'
-import { Button, Checkbox, CheckboxGroup, Dialog, Modal, ModalOverlay } from '../ui'
+import { Button, Checkbox, CheckboxGroup, Dialog, DialogFooter, Modal, ModalOverlay, Notice } from '../ui'
 import { peerDecisionOutcome, withoutApprovalRequest } from './peer-approval-model'
 import './peer-approval.css'
 
@@ -93,11 +93,10 @@ export function PeerApprovalDialog() {
               <Checkbox key={op} value={op}>{t(`peer.op.${op}` as 'peer.op.read')}</Checkbox>
             ))}
           </CheckboxGroup>
-          {error ? <p className="peer-approval-error" role="alert">{error}</p> : null}
-          <div className="peer-approval-foot">
-            <span className="peer-approval-dim">{t('peer.approveNotShared')}</span>
-            <span className="peer-approval-spacer" />
-            <Button isDisabled={pending} onPress={() => void decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
+          {error ? <Notice tone="fail" compact>{error}</Notice> : null}
+          <p className="peer-approval-dim">{t('peer.approveNotShared')}</p>
+          <DialogFooter>
+            <Button variant="ghost" isDisabled={pending} onPress={() => void decide(false)} data-testid="peer-deny">{t('peer.deny')}</Button>
             <Button
               variant="primary"
               isDisabled={pending || !projects.length || !operations.length}
@@ -106,7 +105,7 @@ export function PeerApprovalDialog() {
             >
               {t('peer.approve')}
             </Button>
-          </div>
+          </DialogFooter>
         </Dialog>
       </Modal>
     </ModalOverlay>

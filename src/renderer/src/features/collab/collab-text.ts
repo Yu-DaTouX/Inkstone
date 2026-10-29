@@ -174,6 +174,20 @@ export interface CollabText {
   aborted: string
   abortFailed: string
   agentStarted: string
+  hostTitle: string
+  hostGrantLine: string
+  hostHint: string
+  hostEmpty: string
+  hostActive: string
+  hostPending: string
+  hostSince: string
+  hostRevoke: string
+  hostRevoked: string
+  hostRevokeFailed: string
+  hostMissing: string
+  errorDetails: string
+  errorDetailTitle: string
+  close: string
   agentPrompt: (input: CollabAgentPromptInput) => string
 }
 
@@ -194,7 +208,7 @@ const ZH: CollabText = {
   peersEmpty: '还没有配对的协作者。',
   peerMissing: '当前构建还没有接入砚互联，不能配对或连接。',
   pairTitle: '配对新的协作者',
-  pairHint: '对方在「设置 › 手机与远程」点「生成配对码」后，填入那里显示的地址和 6 位配对码，或粘贴对方「复制链接」得到的链接。',
+  pairHint: '粘贴对方发来的邀请链接，或填入对方邀请卡片上的地址和 6 位配对码。',
   address: '地址',
   addressPlaceholder: '100.101.102.103:37892 或 inkstone://pair?…',
   code: '配对码',
@@ -205,7 +219,7 @@ const ZH: CollabText = {
   pairLinkParsed: '已从配对链接填入地址和配对码。',
   pairInviteReceived: '收到邀请链接，已填入地址和配对码，确认后点「配对」。',
   inviteTitle: '邀请协作者',
-  inviteHint: '生成一次性配对码，把链接发给对方，或让对方扫二维码。对方在砚里打开链接会自动填好上方的配对表单。',
+  inviteHint: '生成一次性配对码，把链接发给对方或让对方扫码；对方在砚里打开链接会自动填好配对表单。',
   inviteStart: '生成邀请',
   inviteCancel: '取消邀请',
   inviteCopy: '复制邀请链接',
@@ -352,6 +366,20 @@ const ZH: CollabText = {
   aborted: '已放弃合并，本机「{project}」回到合并前的状态。',
   abortFailed: '放弃合并失败：{error}',
   agentStarted: '已在本机「{project}」开了新会话，解决冲突的提示词已填好。',
+  hostTitle: '连着本机的协作者',
+  hostGrantLine: '你开放：{projects} · 允许：{ops}',
+  hostHint: '你批准过的连接。撤销后对方需要重新申请，你再批准才能继续访问。',
+  hostEmpty: '目前没有协作者连着本机。',
+  hostActive: '已连接',
+  hostPending: '已批准，等待对方接入',
+  hostSince: '批准于 {time}',
+  hostRevoke: '撤销连接',
+  hostRevoked: '已撤销「{computer}」的连接。',
+  hostRevokeFailed: '没能撤销「{computer}」的连接。',
+  hostMissing: '当前构建读不到本机的连接状态。',
+  errorDetails: '查看详情',
+  errorDetailTitle: '错误详情',
+  close: '关闭',
   agentPrompt: ({ project, cwd, source, branch, files }) => {
     const target = branch ? `「${project}」的 ${branch} 分支` : `「${project}」`
     const head = source
@@ -384,7 +412,7 @@ const EN: CollabText = {
   peersEmpty: 'No paired collaborators yet.',
   peerMissing: 'Peer connections are not wired into this build, so pairing is unavailable.',
   pairTitle: 'Pair a new collaborator',
-  pairHint: 'Have them click “Generate pairing code” in Settings › Phone & remote, then enter the address and 6-digit code shown there, or paste the link from their “Copy link”.',
+  pairHint: 'Paste the invite link they sent you, or enter the address and 6-digit code from their invite card.',
   address: 'Address',
   addressPlaceholder: '100.101.102.103:37892 or inkstone://pair?…',
   code: 'Pairing code',
@@ -395,7 +423,7 @@ const EN: CollabText = {
   pairLinkParsed: 'Filled in the address and code from the pairing link.',
   pairInviteReceived: 'Invite link received. The address and code are filled in; press “Pair” to confirm.',
   inviteTitle: 'Invite a collaborator',
-  inviteHint: 'Generate a one-time pairing code, then send the link or let them scan the QR code. Opening the link in Inkstone fills in the pairing form above for them.',
+  inviteHint: 'Generate a one-time pairing code, then send the link or let them scan the QR code. Opening the link in Inkstone fills in their pairing form.',
   inviteStart: 'Create invite',
   inviteCancel: 'Cancel invite',
   inviteCopy: 'Copy invite link',
@@ -542,6 +570,20 @@ const EN: CollabText = {
   aborted: 'Aborted the merge; local “{project}” is back to its state before the merge.',
   abortFailed: 'Could not abort the merge: {error}',
   agentStarted: 'Started a new session in local “{project}” with a conflict-resolution prompt filled in.',
+  hostTitle: 'Connected to this computer',
+  hostGrantLine: 'You shared: {projects} · Allowed: {ops}',
+  hostHint: 'Connections you approved. After you revoke one, they have to request again and you approve again before they can continue.',
+  hostEmpty: 'No collaborators are connected to this computer.',
+  hostActive: 'Connected',
+  hostPending: 'Approved, waiting for them to connect',
+  hostSince: 'Approved {time}',
+  hostRevoke: 'Revoke',
+  hostRevoked: 'Revoked the connection from “{computer}”.',
+  hostRevokeFailed: 'Could not revoke the connection from “{computer}”.',
+  hostMissing: 'This build cannot read the connections to this computer.',
+  errorDetails: 'Details',
+  errorDetailTitle: 'Error details',
+  close: 'Close',
   agentPrompt: ({ project, cwd, source, branch, files }) => {
     const target = branch ? `branch ${branch} of local project “${project}”` : `local project “${project}”`
     const head = source
@@ -559,6 +601,10 @@ const EN: CollabText = {
 
 export function collabText(lang: Lang): CollabText {
   return lang === 'en-US' ? EN : ZH
+}
+
+export function peerDisplayName(name: string): string {
+  return name.replace(/^(?:砚|Inkstone)\s*·\s*/, '') || name
 }
 
 export function fill(template: string, values: Record<string, string | number>): string {

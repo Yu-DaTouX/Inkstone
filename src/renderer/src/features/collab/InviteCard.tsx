@@ -1,52 +1,21 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import { QRCodeSVG } from 'qrcode.react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { pairInviteAddress, pairInviteLink } from '../../../../shared/pair-invite'
 import type { RemoteAccessStatus } from '../../../../shared/remote-protocol'
 import { useStore } from '../../state/store'
-import { Button, Card, Notice } from '../../ui'
+import { Button, Card, CardHead, CardTitle, Notice, QrCode } from '../../ui'
 import { fill, type CollabText } from './collab-text'
+import { errorText, type RemoteStatusState } from './remote-status'
 
 interface InviteCardProps {
   text: CollabText
+  remoteState: RemoteStatusState
 }
 
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
-}
-
-export function InviteCard({ text }: InviteCardProps): ReactElement | null {
-  const [status, setStatus] = useState<RemoteAccessStatus | null>(null)
-  const [loaded, setLoaded] = useState(false)
+export function InviteCard({ text, remoteState }: InviteCardProps): ReactElement | null {
+  const { remote, status, loaded, error, setError, apply } = remoteState
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const alive = useRef(true)
-  const remote = typeof window !== 'undefined' ? window.yan?.remote : undefined
-
-  const refresh = useCallback(async (): Promise<void> => {
-    if (!remote) return
-    try {
-      const next = await remote.status()
-      if (alive.current) setStatus(next)
-    } catch (cause) {
-      if (alive.current) setError(errorText(cause))
-    } finally {
-      if (alive.current) setLoaded(true)
-    }
-  }, [remote])
-
-  useEffect(() => {
-    alive.current = true
-    void refresh()
-    const id = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh()
-    }, 5000)
-    return () => {
-      alive.current = false
-      window.clearInterval(id)
-    }
-  }, [refresh])
 
   const pairing = status?.pairing ?? null
 
@@ -67,15 +36,9 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
     setBusy(true)
     setError('')
     void action()
-      .then((next) => {
-        if (alive.current) setStatus(next)
-      })
-      .catch((cause) => {
-        if (alive.current) setError(errorText(cause))
-      })
-      .finally(() => {
-        if (alive.current) setBusy(false)
-      })
+      .then(apply)
+      .catch((cause) => setError(errorText(cause)))
+      .finally(() => setBusy(false))
   }
 
   const openDevices = (): void => {
@@ -88,8 +51,10 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
   const link = active && target.ok ? pairInviteLink({ address: target.address, code: active.code }) : ''
 
   return (
-    <Card className="collab-invite" data-testid="v3-collab-invite">
-      <p className="collab-label">{text.inviteTitle}</p>
+    <Card className="collab-card" data-testid="v3-collab-invite">
+      <CardHead>
+        <CardTitle>{text.inviteTitle}</CardTitle>
+      </CardHead>
       <p className="collab-hint">{text.inviteHint}</p>
       {error ? (
         <Notice tone="fail" compact>
@@ -97,29 +62,32 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
         </Notice>
       ) : null}
       {loaded && !target.ok ? (
-        <div className="collab-invite__row">
-          <Notice tone="ask" compact role="note" data-testid="v3-collab-invite-unavailable">
-            {target.reason === 'stopped' ? text.inviteStopped : text.inviteLoopback}
-          </Notice>
-          <Button size="sm" variant="secondary" onPress={openDevices}>
-            {text.inviteOpenDevices}
-          </Button>
-        </div>
+        <Notice
+          tone="ask"
+          compact
+          role="note"
+          data-testid="v3-collab-invite-unavailable"
+          action={
+            <Button size="sm" variant="secondary" onPress={openDevices}>
+              {text.inviteOpenDevices}
+            </Button>
+          }
+        >
+          {target.reason === 'stopped' ? text.inviteStopped : text.inviteLoopback}
+        </Notice>
       ) : null}
       {active ? (
-        <div className="collab-invite__body" data-testid="v3-collab-invite-active">
-          <div className="collab-invite__qr" role="img" aria-label={text.inviteQrLabel}>
-            <QRCodeSVG value={link} size={144} marginSize={2} bgColor="#ffffff" fgColor="#111111" />
-          </div>
+        <div className="collab-invite" data-testid="v3-collab-invite-active">
+          <QrCode value={link} size={144} title={text.inviteQrLabel} />
           <div className="collab-invite__detail">
             <span className="collab-invite__code">
               {text.inviteCode}: <strong data-testid="v3-collab-invite-code">{active.code}</strong>
             </span>
             <span className="collab-hint">{fill(text.inviteExpires, { seconds: secondsLeft })}</span>
-            <code className="collab-invite__link" data-testid="v3-collab-invite-link">
+            <code className="collab-invite__link collab-code" data-testid="v3-collab-invite-link">
               {link}
             </code>
-            <div className="collab-invite__row">
+            <div className="collab-actions">
               <Button
                 size="sm"
                 variant="primary"
@@ -140,7 +108,7 @@ export function InviteCard({ text }: InviteCardProps): ReactElement | null {
           </div>
         </div>
       ) : target.ok ? (
-        <div className="collab-invite__row">
+        <div className="collab-actions">
           <Button size="sm" variant="secondary" isPending={busy} data-testid="v3-collab-invite-start" onPress={() => run(() => remote.pair())}>
             {text.inviteStart}
           </Button>
