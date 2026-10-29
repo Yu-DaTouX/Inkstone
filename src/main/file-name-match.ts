@@ -113,20 +113,3 @@ export function matchName(rawQuery: string, path: string): NameMatchScore | null
   return { score: top - m * LENGTH_WEIGHT, positions }
 }
 
-export interface RankedName<T> {
-  item: T
-  path: string
-  score: number
-  positions: number[]
-}
-
-export function rankNames<T>(query: string, items: readonly T[], pathOf: (item: T) => string, limit: number): RankedName<T>[] {
-  const ranked: RankedName<T>[] = []
-  for (const item of items) {
-    const path = pathOf(item)
-    const match = matchName(query, path)
-    if (match) ranked.push({ item, path, score: match.score, positions: match.positions })
-  }
-  ranked.sort((a, b) => b.score - a.score || a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  return ranked.slice(0, Math.max(0, limit))
-}

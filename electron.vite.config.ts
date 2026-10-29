@@ -40,8 +40,7 @@ export default defineConfig({
           protocol: resolve('src/main/protocol.ts'),
           sessions: resolve('src/main/sessions.ts'),
           'office-worker': resolve('src/main/office/worker.ts'),
-          'file-name-search-worker': resolve('src/main/file-name-search-worker.ts'),
-          'file-content-search-worker': resolve('src/main/file-content-search-worker.ts'),
+          'file-search-worker': resolve('src/main/file-search-worker.ts'),
           'web-content-worker': resolve('src/main/web-content-worker.ts'),
           'zoom-math': resolve('src/main/zoom-math.ts')
         }

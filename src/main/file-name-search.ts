@@ -1,98 +1,48 @@
-import { utilityProcess, type UtilityProcess } from 'electron'
-import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import type { FileNameSearchRequest, FileNameSearchResult } from '../shared/file-name-search'
-import { killPidTree } from './git-service'
+import type { FileNameMatch, FileNameSearchRequest, FileNameSearchResult } from '../shared/file-name-search'
+import { matchName, normalizeQuery } from './file-name-match'
 import { LatestPerScopeScheduler } from './file-name-scheduler'
-import { MAX_NAME_RESULTS } from './file-name-search-core'
+import { disposeFileSearch, runFileSearchJob } from './file-search-host'
+import type { NameJob, NamePage } from './file-search-index'
 
-interface NameJob {
-  root: string
-  query: string
-  limit: number
+export const MAX_NAME_RESULTS = 50
+const QUERY_LIMIT = 512
+const DEADLINE_MS = 4000
+
+interface NameScope extends NameJob {
+  needle: string
 }
 
-interface WorkerReply {
-  id: string
-  matches?: FileNameSearchResult['matches']
-  truncated?: boolean
-  source?: FileNameSearchResult['source']
-  scanned?: number
-  cancelled?: boolean
-  error?: string
+function baseName(path: string): string {
+  const cut = path.lastIndexOf('/')
+  return cut >= 0 ? path.slice(cut + 1) : path
 }
 
-interface Slot {
-  proc: UtilityProcess
-  pending: number
+function splitQuery(raw: string): { query: string; needle: string; directoriesOnly: boolean } {
+  const normalized = normalizeQuery(String(raw ?? '').slice(0, QUERY_LIMIT))
+  const directoriesOnly = normalized.endsWith('/')
+  return { query: normalized, needle: directoriesOnly ? normalized.replace(/\/+$/, '') : normalized, directoriesOnly }
 }
 
-const MAX_WORKERS = 2
-const slots = new Set<Slot>()
-
-function workerPath(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), 'file-name-search-worker.js')
+function toMatch(needle: string, hit: NamePage['hits'][number]): FileNameMatch {
+  const scored = matchName(needle, hit.path)
+  return {
+    path: hit.path,
+    name: baseName(hit.path),
+    directory: hit.directory,
+    positions: scored ? scored.positions : [],
+    score: scored ? Math.round(scored.score * 100) / 100 : 0
+  }
 }
 
-function spawnSlot(): Slot {
-  const proc = utilityProcess.fork(workerPath(), [], { serviceName: 'Inkstone file name search', stdio: 'ignore' })
-  const slot: Slot = { proc, pending: 0 }
-  proc.once('exit', () => slots.delete(slot))
-  slots.add(slot)
-  return slot
-}
-
-function acquireSlot(): Slot {
-  let best: Slot | null = null
-  for (const slot of slots) if (!best || slot.pending < best.pending) best = slot
-  if (best && (best.pending === 0 || slots.size >= MAX_WORKERS)) return best
-  return spawnSlot()
-}
-
-function killSlot(slot: Slot): void {
-  slots.delete(slot)
-  killPidTree(slot.proc.pid, () => slot.proc.kill())
-}
-
-function runInWorker(job: NameJob, signal: AbortSignal): Promise<WorkerReply> {
-  const slot = acquireSlot()
-  const id = randomUUID()
-  slot.pending += 1
-  return new Promise<WorkerReply>((resolve, reject) => {
-    const cleanup = (): void => {
-      slot.proc.off('message', onMessage)
-      slot.proc.off('exit', onExit)
-      signal.removeEventListener('abort', onAbort)
-    }
-    const onMessage = (message: WorkerReply): void => {
-      if (!message || message.id !== id) return
-      slot.pending = Math.max(0, slot.pending - 1)
-      cleanup()
-      resolve(message)
-    }
-    const onExit = (): void => {
-      cleanup()
-      reject(new Error('文件名搜索进程已退出'))
-    }
-    const onAbort = (): void => {
-      cleanup()
-      if (signal.reason === 'timeout' || signal.reason === 'disposed') killSlot(slot)
-      else {
-        slot.proc.postMessage({ type: 'cancel', id })
-        slot.pending = Math.max(0, slot.pending - 1)
-      }
-      reject(new Error(String(signal.reason ?? 'aborted')))
-    }
-    slot.proc.on('message', onMessage)
-    slot.proc.once('exit', onExit)
-    signal.addEventListener('abort', onAbort, { once: true })
-    slot.proc.postMessage({ type: 'search', id, root: job.root, query: job.query, limit: job.limit })
-  })
-}
-
-const scheduler = new LatestPerScopeScheduler<NameJob, WorkerReply>(runInWorker, { concurrency: 2, queueLimit: 2, deadlineMs: 4000 })
+const scheduler = new LatestPerScopeScheduler<NameScope, NamePage>(
+  (job, signal) =>
+    runFileSearchJob(
+      { kind: 'name', root: job.root, query: job.query, limit: job.limit, directoriesOnly: job.directoriesOnly },
+      signal
+    ),
+  { concurrency: 2, queueLimit: 2, deadlineMs: DEADLINE_MS }
+)
 
 export async function searchFileNames(scope: string, request: FileNameSearchRequest): Promise<FileNameSearchResult> {
   const empty = (error?: FileNameSearchResult['error']): FileNameSearchResult => ({
@@ -111,21 +61,21 @@ export async function searchFileNames(scope: string, request: FileNameSearchRequ
     return empty({ code: 'invalid' })
   }
   const limit = Math.max(1, Math.min(MAX_NAME_RESULTS, Math.floor(request.limit ?? MAX_NAME_RESULTS)))
-  const outcome = await scheduler.submit(scope, { root, query: String(request.query ?? '').slice(0, 512), limit })
+  const { query, needle, directoriesOnly } = splitQuery(request.query)
+  const outcome = await scheduler.submit(scope, { root, query, limit, directoriesOnly, needle })
   if (!outcome.ok) return empty({ code: outcome.code, ...(outcome.message ? { message: outcome.message } : {}) })
-  const reply = outcome.value
-  if (reply.cancelled) return empty({ code: 'superseded' })
-  if (reply.error) return empty({ code: 'failed', message: reply.error })
+  const page = outcome.value
+  const matches = page.hits.slice(0, limit).map((hit) => toMatch(needle, hit))
   return {
     request,
-    matches: reply.matches ?? [],
-    truncated: reply.truncated === true,
-    source: reply.source ?? 'none',
-    scanned: reply.scanned ?? 0
+    matches,
+    truncated: page.totalMatched > matches.length,
+    source: page.git ? 'git' : 'walk',
+    scanned: page.totalFiles
   }
 }
 
 export function disposeFileNameSearch(): void {
   scheduler.dispose()
-  for (const slot of [...slots]) killSlot(slot)
+  disposeFileSearch()
 }

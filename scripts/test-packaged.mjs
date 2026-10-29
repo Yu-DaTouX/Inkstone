@@ -284,6 +284,13 @@ if (!exeFromArg) {
 
 if (!exeFromArg) {
   const asarPath = join(unpacked, 'resources', 'app.asar')
+  const unpackedModules = join(unpacked, 'resources', 'app.asar.unpacked', 'node_modules')
+  const mustUnpacked = [
+    ['fff-node', join(unpackedModules, '@ff-labs', 'fff-node', 'dist', 'index.cjs')],
+    ['fff 原生库', join(unpackedModules, '@ff-labs', 'fff-bin-win32-x64', 'fff_c.dll')],
+    ['ffi-rs 绑定', join(unpackedModules, '@yuuang', 'ffi-rs-win32-x64-msvc', 'ffi-rs.win32-x64-msvc.node')]
+  ]
+  for (const [label, p] of mustUnpacked) runChecks.push([existsSync(p), `文件搜索原生依赖已解包：${label}`])
   if (existsSync(asarPath)) {
     const asar = readFileSync(asarPath)
     for (const [needle, label] of [
