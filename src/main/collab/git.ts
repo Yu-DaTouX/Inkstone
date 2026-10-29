@@ -232,7 +232,7 @@ export async function mergeRef(root: string, ref: string, message: string): Prom
   if (await mergeInProgress(root)) return { ok: false, error: '上一次合并还没完成：先解决冲突或放弃合并' }
   const dirty = await git(root, ['status', '--porcelain=v1', '--untracked-files=no'])
   if (!dirty.ok) return { ok: false, error: dirty.error || '读取工作区状态失败' }
-  if (dirty.out.trim()) return { ok: false, error: '工作区有未提交的改动，先提交或暂存后再合并' }
+  if (dirty.out.trim()) return { ok: false, code: 'worktree-dirty', error: 'Working tree has uncommitted changes; commit or stash them before merging' }
   if (!(await resolveCommit(root, ref))) return { ok: false, error: '还没有拉取这个分支' }
   const fastForward = await git(root, ['merge', '--ff-only', '--no-edit', ref], MERGE_TIMEOUT_MS)
   if (fastForward.ok) {

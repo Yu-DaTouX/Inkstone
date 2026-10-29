@@ -32,8 +32,12 @@ function sameHash(left: string, right: string): boolean {
   return a.length === b.length && a.length > 0 && timingSafeEqual(a, b)
 }
 
+function stripBrandPrefix(name: string): string {
+  return name.replace(/^(?:砚|Inkstone)\s*·\s*/, '')
+}
+
 function cleanName(value: unknown): string {
-  const text = typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim() : ''
+  const text = typeof value === 'string' ? stripBrandPrefix(value.replace(/[\u0000-\u001f\u007f]/g, '').trim()) : ''
   return (text || '未命名设备').slice(0, DEVICE_NAME_MAX)
 }
 
@@ -79,9 +83,9 @@ export class RemoteDeviceStore {
           if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new SyntaxError('设备表格式无效')
           const document = parsed as Partial<DeviceFile>
           if (document.version !== 1 || !Array.isArray(document.devices)) throw new SyntaxError('设备表格式无效')
-          return document.devices.filter((device) =>
-            typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash)
-          )
+          return document.devices
+            .filter((device) => typeof device?.id === 'string' && typeof device.tokenHash === 'string' && /^[0-9a-f]{64}$/.test(device.tokenHash))
+            .map((device) => ({ ...device, name: cleanName(device.name) }))
         } catch (error) {
           await copyFile(this.file, `${this.file}.corrupt-${randomUUID()}`).catch(() => undefined)
           throw error

@@ -38,6 +38,8 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code
 
 export type PeerDownload<T> = { kind: 'file'; bytes: number } | { kind: 'json'; data: T }
 
+type StreamOpened = { ok: true; data: true } | { ok: false; error: string; ended?: boolean }
+
 export interface PeerTransport {
   call<T>(peerId: string, path: string, init?: { method?: string; body?: unknown; timeoutMs?: number }): Promise<Result<T>>
   download<T>(peerId: string, path: string, body: unknown, file: string): Promise<Result<PeerDownload<T>>>
@@ -80,6 +82,10 @@ const TRANSFER_TIMEOUT_MS = 30 * 60_000
 const RECONNECT_DELAY_MS = 3000
 const RECONNECT_ATTEMPTS = 3
 const PEER_NOTICE_TIMEOUT_MS = 3000
+
+function connectionEnded(code: string | undefined): boolean {
+  return code === 'peer_connection_required' || code === 'unauthorized'
+}
 
 export class PeerClient implements PeerTransport {
   private peers: StoredPeer[] | null = null
@@ -132,7 +138,7 @@ export class PeerClient implements PeerTransport {
       const response = await fetch(`${address}/remote/v1/pair`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), deviceName: `Inkstone · ${hostname()}`, kind: 'peer' }),
+        body: JSON.stringify({ code: code.trim(), deviceName: hostname(), kind: 'peer' }),
         signal: AbortSignal.timeout(15_000)
       })
       const body = (await response.json()) as { ok?: boolean; error?: string; deviceId?: string; token?: string; computer?: { name?: string } }
@@ -213,7 +219,7 @@ export class PeerClient implements PeerTransport {
         })
         const body = (await response.json()) as { ok?: boolean; data?: T; error?: string; code?: string }
         if (!response.ok || !body.ok) {
-          if (body.code === 'peer_connection_required') this.dropConnection(peerId, '对方已结束本次连接，需要重新申请', false)
+          if (connectionEnded(body.code)) this.dropConnection(peerId, { state: 'ended' }, false)
           return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, code: body.code }
         }
         return { ok: true, data: body.data as T }
@@ -241,9 +247,12 @@ export class PeerClient implements PeerTransport {
     }
   }
 
-  private async failureOf(response: Response): Promise<{ ok: false; error: string; code?: string }> {
+  private async failureOf(peerId: string, response: Response): Promise<{ ok: false; error: string; code?: string }> {
     const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string }
-    if (body.code === 'peer_connection_required') return { ok: false, error: body.error ?? '对方已结束本次连接', code: body.code }
+    if (connectionEnded(body.code)) {
+      this.dropConnection(peerId, { state: 'ended' })
+      return { ok: false, error: body.error ?? '对方已结束本次连接', code: body.code }
+    }
     return { ok: false, error: body.error ?? `请求失败（HTTP ${response.status}）`, ...(body.code ? { code: body.code } : {}) }
   }
 
@@ -257,7 +266,7 @@ export class PeerClient implements PeerTransport {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS)
       })
-      if (!response.ok) return this.failureOf(response)
+      if (!response.ok) return this.failureOf(peerId, response)
       if ((response.headers.get('content-type') ?? '').includes('application/json')) {
         const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
         return parsed.ok ? { ok: true, data: { kind: 'json', data: parsed.data as T } } : { ok: false, error: parsed.error ?? '对方返回失败' }
@@ -289,7 +298,7 @@ export class PeerClient implements PeerTransport {
         init.duplex = 'half'
       }
       const response = await fetch(`${auth.address}${path}`, init)
-      if (!response.ok) return this.failureOf(response)
+      if (!response.ok) return this.failureOf(peerId, response)
       const parsed = (await response.json()) as { ok?: boolean; data?: T; error?: string }
       return parsed.ok ? { ok: true, data: parsed.data as T } : { ok: false, error: parsed.error ?? '对方返回失败' }
     } catch (error) {
@@ -313,14 +322,15 @@ export class PeerClient implements PeerTransport {
     const grant = result.data.grant
     const opened = await this.openStream(peerId, grant)
     if (!opened.ok) {
-      this.setState(peerId, { state: 'failed', error: opened.error })
-      return opened
+      if (opened.ended) this.dropConnection(peerId, { state: 'ended' })
+      else this.setState(peerId, { state: 'failed', error: opened.error })
+      return { ok: false, error: opened.error }
     }
     this.setState(peerId, { state: 'connected', grant })
     return { ok: true, data: grant }
   }
 
-  private async openStream(peerId: string, grant: PeerGrantView, attempt = 0, generation = this.generation(peerId)): Promise<Result<true>> {
+  private async openStream(peerId: string, grant: PeerGrantView, attempt = 0, generation = this.generation(peerId)): Promise<StreamOpened> {
     const auth = await this.credentials(peerId)
     if (!auth) return { ok: false, error: '令牌已失效，请重新配对' }
     const controller = new AbortController()
@@ -330,9 +340,15 @@ export class PeerClient implements PeerTransport {
         headers: { authorization: `Bearer ${auth.token}`, [PEER_CONNECTION_HEADER]: grant.connectionId, accept: 'text/event-stream' },
         signal: controller.signal
       })
-      if (!response.ok || !response.body) {
+      if (!response.ok) {
         this.streams.delete(peerId)
-        return { ok: false, error: `对方拒绝建立事件流（HTTP ${response.status}）` }
+        const body = (await response.json().catch(() => ({}))) as { code?: string; error?: string }
+        if (connectionEnded(body.code)) return { ok: false, error: body.error ?? '对方已结束本次连接', ended: true }
+        return { ok: false, error: body.error ?? `对方拒绝建立事件流（HTTP ${response.status}）` }
+      }
+      if (!response.body) {
+        this.streams.delete(peerId)
+        return { ok: false, error: '对方没有返回事件流' }
       }
       const reader = response.body.getReader()
       void (async () => {
@@ -344,7 +360,7 @@ export class PeerClient implements PeerTransport {
         } catch {
         }
         if (this.streams.get(peerId) !== controller) return
-        if (controller.signal.aborted) return this.dropConnection(peerId, null, false)
+        if (controller.signal.aborted) return this.dropConnection(peerId, { state: 'idle' }, false)
         await this.retryStream(peerId, grant, attempt + 1, generation)
       })()
       return { ok: true, data: true }
@@ -357,9 +373,11 @@ export class PeerClient implements PeerTransport {
   private async retryStream(peerId: string, grant: PeerGrantView, attempt: number, generation: number): Promise<void> {
     await this.waitForReconnect(peerId)
     if (generation !== this.generation(peerId)) return
-    if (attempt > RECONNECT_ATTEMPTS) return this.dropConnection(peerId, '连接已断开且没能重连；重新连接需要对方再次批准', false)
+    if (attempt > RECONNECT_ATTEMPTS) return this.dropConnection(peerId, { state: 'failed', error: '连接已断开且没能重连；重新连接需要对方再次批准' })
     const opened = await this.openStream(peerId, grant, attempt, generation)
-    if (!opened.ok) await this.retryStream(peerId, grant, attempt + 1, generation)
+    if (opened.ok) return
+    if (opened.ended) return this.dropConnection(peerId, { state: 'ended' })
+    await this.retryStream(peerId, grant, attempt + 1, generation)
   }
 
   private waitForReconnect(peerId: string): Promise<void> {
@@ -383,17 +401,17 @@ export class PeerClient implements PeerTransport {
     return this.generations.get(peerId) ?? 0
   }
 
-  private dropConnection(peerId: string, reason: string | null, abort = true): void {
+  private dropConnection(peerId: string, state: PeerConnectionState = { state: 'idle' }, abort = true): void {
     const controller = this.streams.get(peerId)
     this.streams.delete(peerId)
     if (abort) controller?.abort()
     this.cancelReconnect(peerId)
     this.generations.set(peerId, this.generation(peerId) + 1)
-    this.setState(peerId, reason ? { state: 'failed', error: reason } : { state: 'idle' })
+    this.setState(peerId, state)
   }
 
   disconnect(peerId: string): void {
-    if (this.streams.has(peerId) || this.reconnects.has(peerId) || this.connections.get(peerId)?.state === 'connected') this.dropConnection(peerId, null)
+    if (this.streams.has(peerId) || this.reconnects.has(peerId) || this.connections.get(peerId)?.state === 'connected') this.dropConnection(peerId)
   }
 
   sessions(peerId: string): Promise<Result<{ projects: Array<{ id: string; name: string }>; sessions: unknown[] }>> {

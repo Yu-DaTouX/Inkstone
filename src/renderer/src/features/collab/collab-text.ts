@@ -53,6 +53,7 @@ export interface CollabText {
   stateWaiting: string
   stateConnected: string
   stateFailed: string
+  stateEnded: string
   failedReason: string
   requestOps: string
   note: string
@@ -129,6 +130,7 @@ export interface CollabText {
   mergeNoop: string
   mergeFailed: string
   mergeIdentityMissing: string
+  mergeDirty: string
   mergeConflicts: string
   continue: string
   continueHint: string
@@ -234,6 +236,7 @@ const ZH: CollabText = {
   stateWaiting: '等待对方批准',
   stateConnected: '已连接',
   stateFailed: '失败',
+  stateEnded: '对方已结束连接',
   failedReason: '连接失败：{error}',
   requestOps: '申请的操作',
   note: '写给对方的说明（可选）',
@@ -317,6 +320,7 @@ const ZH: CollabText = {
   mergeFailed: '合并失败：{error}',
   mergeIdentityMissing:
     '这台电脑还没有 Git 提交身份，没法生成合并提交。先运行 git config --global user.name "你的名字" 和 git config --global user.email "you@example.com"，然后重试。',
+  mergeDirty: '这台电脑的工作区有未提交的改动，先提交或暂存再合并。',
   mergeConflicts: '合并有冲突，冲突文件列在本机「{project}」处。',
   continue: '接着做',
   continueHint: '在本机基于这个分支新建 worktree，并以对方的会话副本为上下文开新会话。',
@@ -438,6 +442,7 @@ const EN: CollabText = {
   stateWaiting: 'Waiting for approval',
   stateConnected: 'Connected',
   stateFailed: 'Failed',
+  stateEnded: 'They ended the connection',
   failedReason: 'Connection failed: {error}',
   requestOps: 'Requested access',
   note: 'Note to the other person (optional)',
@@ -521,6 +526,7 @@ const EN: CollabText = {
   mergeFailed: 'Merge failed: {error}',
   mergeIdentityMissing:
     'Git has no commit identity on this computer, so the merge commit cannot be created. Run git config --global user.name "Your Name" and git config --global user.email "you@example.com", then retry.',
+  mergeDirty: 'This computer’s working tree has uncommitted changes. Commit or stash them, then merge.',
   mergeConflicts: 'The merge has conflicts; they are listed under local “{project}”.',
   continue: 'Continue here',
   continueHint: 'Creates a local worktree from this branch and starts a new session with their session copy as context.',

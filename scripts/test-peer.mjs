@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -108,6 +108,28 @@ export async function runPeerTests(ok, { RemoteServer, RemoteDeviceStore, PeerGr
     const phone = await pairAs('phone')
     const peer = await pairAs('peer')
     ok(typeof phone === 'string' && typeof peer === 'string', '砚对砚：手机与另一台砚都能用配对码配对')
+
+    {
+      const { code } = devices.startPairing()
+      const named = await call('/remote/v1/pair', { method: 'POST', body: { code, deviceName: 'Inkstone · DESKTOP-ABC', kind: 'peer' } })
+      ok(named.status === 200 && (await devices.list()).some((item) => item.name === 'DESKTOP-ABC'), '砚对砚：新配对只存计算机名，不再带 Inkstone 前缀')
+    }
+
+    {
+      const legacyDir = join(dir, 'legacy-devices')
+      await mkdir(legacyDir, { recursive: true })
+      await writeFile(join(legacyDir, 'remote-devices.json'), JSON.stringify({
+        version: 1,
+        devices: [
+          { id: 'device-old-1', name: '砚 · 老电脑', kind: 'peer', createdAt: 1, lastSeenAt: null, revokedAt: null, tokenHash: 'a'.repeat(64) },
+          { id: 'device-old-2', name: 'Inkstone · LAPTOP-X', kind: 'phone', createdAt: 1, lastSeenAt: null, revokedAt: null, tokenHash: 'b'.repeat(64) },
+          { id: 'device-old-3', name: '别的名字', kind: 'phone', createdAt: 1, lastSeenAt: null, revokedAt: null, tokenHash: 'c'.repeat(64) }
+        ]
+      }), 'utf8')
+      const legacy = new RemoteDeviceStore(legacyDir)
+      const names = (await legacy.list()).map((item) => item.name)
+      ok(names.join(',') === '老电脑,LAPTOP-X,别的名字', '旧设备表里的砚 / Inkstone 前缀读入时去掉，其它名字不变')
+    }
 
     ok((await call('/remote/v1/sessions', { token: peer })).status === 403, '砚对砚：peer 令牌不能访问手机路由')
     ok((await call('/remote/v1/events', { token: peer })).status === 403, '砚对砚：peer 令牌不能订阅桌面事件流')

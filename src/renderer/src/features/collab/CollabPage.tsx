@@ -155,6 +155,7 @@ function connectionBadge(peer: CollabPeerView, text: CollabText): { tone: BadgeT
   const connection = peer.connection
   if (connection.state === 'connected') return { tone: 'ok', label: text.stateConnected }
   if (connection.state === 'waiting') return { tone: 'stall', label: text.stateWaiting }
+  if (connection.state === 'ended') return { tone: 'neutral', label: text.stateEnded }
   if (connection.state === 'failed') return { tone: 'fail', label: text.stateFailed }
   return { tone: 'neutral', label: text.stateIdle }
 }
@@ -1185,7 +1186,15 @@ export function CollabPage(): ReactElement {
         notify('fail', fill(text.mergeConflicts, { project: target.project.name }))
         return
       }
-      notify('fail', result.code === 'git-identity-missing' ? text.mergeIdentityMissing : fill(text.mergeFailed, { error: result.error }))
+      if (result.code === 'git-identity-missing') {
+        notify('fail', text.mergeIdentityMissing)
+        return
+      }
+      if (result.code === 'worktree-dirty') {
+        notify('fail', text.mergeDirty)
+        return
+      }
+      notify('fail', fill(text.mergeFailed, { error: result.error }))
     },
     [notify, text]
   )

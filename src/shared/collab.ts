@@ -6,7 +6,7 @@ export const COLLAB_MAX_HAVES = 200
 export const COLLAB_MAX_BRANCHES = 200
 export const COLLAB_REQUEST_NOTE_MAX = 2000
 
-export type CollabFailureCode = 'git-identity-missing'
+export type CollabFailureCode = 'git-identity-missing' | 'worktree-dirty'
 
 export interface CollabBranchSession {
   sessionId: string

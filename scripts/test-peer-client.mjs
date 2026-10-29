@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdtemp, mkdir, readdir, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { tmpdir, hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
@@ -133,6 +133,68 @@ try {
   assert.deepEqual((await reconnect.status()).peers, [], '本地配对已删除')
   await new Promise((resolve) => peerServer.close(resolve))
 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  for (const [index, item] of [
+    { code: 'peer_connection_required', label: '授权被撤销' },
+    { code: 'unauthorized', label: '设备被撤销' }
+  ].entries()) {
+    const endedGrant = { connectionId: `conn-ended-${index}`, deviceId: `dev-ended-${index}`, deviceName: '对端电脑', projects: [], operations: ['read'], grantedAt: 1, activatedAt: 1 }
+    const pairBodies = []
+    let streamAttempts = 0
+    const endedServer = createServer(async (req, res) => {
+      if (req.url === '/remote/v1/pair') {
+        pairBodies.push(JSON.parse((await readBody(req)) || '{}'))
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, deviceId: `dev-ended-${index}`, token: `fresh-token-${index}`, computer: { name: 'HOST-PC' } }))
+        return
+      }
+      if (req.url === '/remote/v1/peer/connect') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, data: { grant: endedGrant } }))
+        return
+      }
+      if (req.url === '/remote/v1/peer/events') {
+        streamAttempts += 1
+        if (streamAttempts > 1) {
+          res.writeHead(401, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, code: item.code, error: '本次连接已失效' }))
+          return
+        }
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write(`event: grant\ndata: ${JSON.stringify(endedGrant)}\n\n`)
+        res.end()
+        return
+      }
+      res.writeHead(404, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: false, error: 'not found' }))
+    })
+    await new Promise((resolve) => endedServer.listen(0, '127.0.0.1', resolve))
+    const endedDir = join(root, `ended-${index}`)
+    await mkdir(endedDir, { recursive: true })
+    const address = `http://127.0.0.1:${endedServer.address().port}`
+    await writeFile(join(endedDir, 'peers.json'), JSON.stringify({
+      version: 1,
+      peers: [{ id: 'peer-ended', computer: '对端电脑', address, pairedAt: 1, deviceId: `dev-ended-${index}`, token: 'raw:peer-token-0123456789' }]
+    }), 'utf8')
+    const { PeerClient: EndedClient } = await buildClient(`peer-client-ended-${index}`, endedDir)
+    const endedClient = new EndedClient()
+    const paired = await endedClient.pair(address.replace(/^http:\/\//, ''), '123456')
+    assert.equal(paired.ok, true, paired.error)
+    assert.equal(pairBodies[0]?.deviceName, hostname(), '配对时只报计算机名')
+    assert.doesNotMatch(String(pairBodies[0]?.deviceName), /·|Inkstone/, '配对时不再带品牌前缀')
+    const connected = await endedClient.connect('peer-ended', ['read'], '看一下')
+    assert.equal(connected.ok, true, connected.error)
+    await wait(4000)
+    const endedState = (await endedClient.status()).peers.find((peer) => peer.id === 'peer-ended').connection
+    assert.equal(endedState.state, 'ended', `${item.label}后事件流被拒（${item.code}），状态及时变成「对方已结束连接」`)
+    assert.equal(streamAttempts, 2, `${item.label}后不再反复重连`)
+    await wait(3500)
+    assert.equal(streamAttempts, 2, `${item.label}：结束后不再继续重连`)
+    assert.equal((await endedClient.status()).peers.find((peer) => peer.id === 'peer-ended').connection.state, 'ended', '状态保持已结束，不回退成失败')
+    await new Promise((resolve) => endedServer.close(resolve))
+  }
+
   const deadDir = join(root, 'unreachable')
   await mkdir(deadDir, { recursive: true })
   await writeFile(join(deadDir, 'peers.json'), JSON.stringify({
@@ -146,7 +208,7 @@ try {
   assert.ok(Date.now() - startedAt < 5000, '对端不可达时最多等 3 秒通知超时')
   assert.deepEqual((await dead.status()).peers, [], '本地配对已删除')
 
-  console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知通过')
+  console.log('peer-client: 幂等重试、peers.json 损坏备份、断流重连、断开与移除通知、配对设备名、对方结束连接通过')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

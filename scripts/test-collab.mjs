@@ -565,12 +565,14 @@ try {
     assert.match(result.error, /还没有拉取/)
   })
 
-  await check('工作区有未提交改动时拒绝合并，HEAD 不动', async () => {
+  await check('工作区有未提交改动时拒绝合并，返回 worktree-dirty 错误码，HEAD 不动', async () => {
     const head = sh(A, 'rev-parse', 'HEAD')
     writeFileSync(join(A, 'a.txt'), 'dirty\n')
     const result = await gitOps.mergeRef(A, FEATURE_REF, '不该合并')
     assert.equal(result.ok, false)
-    assert.match(result.error, /未提交/)
+    assert.equal(result.code, 'worktree-dirty')
+    assert.doesNotMatch(result.error, /[\u4e00-\u9fff]/, '主进程文案不写中文，由渲染端按语言显示')
+    assert.match(result.error, /uncommitted/)
     assert.equal(sh(A, 'rev-parse', 'HEAD'), head)
     assert.equal(await gitOps.mergeInProgress(A), false)
     sh(A, 'restore', '--', 'a.txt')
@@ -709,7 +711,7 @@ try {
     assert.equal(request.branch, 'topic')
     assert.equal(request.localProjectId, 'p1')
     assert.equal(request.projectName, '演示')
-    assert.equal(request.peerName, DEVICE_NAME)
+    assert.equal(request.peerName, 'Laptop-A', '旧客户端报的「砚 · Laptop-A」在登记设备时已去掉前缀')
     assert.equal(request.title, '加 topic')
     assert.equal(request.note, '请看一下 这个改动')
     assert.equal(request.status, 'open')
@@ -1325,6 +1327,22 @@ try {
       assert.match(text.mergeIdentityMissing, /git config --global user\.name/)
       assert.match(text.mergeIdentityMissing, /git config --global user\.email/)
     }
+  })
+
+  await check('工作区不干净时合并被拒：渲染端按语言给出文案，不显示主进程原文', async () => {
+    const zh = collabTextMod.collabText('zh-CN')
+    const en = collabTextMod.collabText('en-US')
+    assert.match(zh.mergeDirty, /未提交/)
+    assert.match(en.mergeDirty, /uncommitted/)
+    assert.doesNotMatch(en.mergeDirty, /[\u4e00-\u9fff]/, '英文界面不出现中文')
+  })
+
+  await check('对方结束连接的状态文案：两种语言都有，英文界面不出现中文', async () => {
+    const zh = collabTextMod.collabText('zh-CN')
+    const en = collabTextMod.collabText('en-US')
+    assert.equal(zh.stateEnded, '对方已结束连接')
+    assert.doesNotMatch(en.stateEnded, /[\u4e00-\u9fff]/)
+    assert.ok(en.stateEnded.length > 0)
   })
 
   section('git merge：能快进就快进，需要合并提交时先检查 Git 身份')
