@@ -43,6 +43,12 @@ export interface SearchModifiers {
   sites?: string[]
   question?: string
   withContent?: boolean
+  excludeSites?: string[]
+  language?: string
+  country?: string
+  after?: string
+  before?: string
+  coverage?: 'fast' | 'broad'
 }
 
 export interface SearchQuery extends SearchModifiers {
@@ -61,6 +67,8 @@ export interface SearchItem {
   quality?: { provider: 'deepseek'; rerank_score?: number; authority?: number }
   source: SearchSourceId
   published?: string
+  sources?: SearchSourceId[]
+  groupId?: string
   content?: string
   meta?: Record<string, string | number>
 }
@@ -75,6 +83,7 @@ export interface PerSourceStatus {
   code?: string
   message?: string
   elapsedMs: number
+  usage?: { credits?: number; requests?: number }
 }
 
 export interface SearchOutcome {
@@ -83,6 +92,10 @@ export interface SearchOutcome {
   sources: PerSourceStatus[]
   truncated: boolean
   durationMs: number
+  fetchedAt?: string
+  cached?: boolean
+  cacheAgeMs?: number
+  coverage?: 'fast' | 'broad'
   error?: { code: string; message: string }
   ignoredSources?: string[]
 }

@@ -2544,6 +2544,8 @@ const searchMod = await import('../node_modules/esbuild/lib/main.js').then(({ bu
 )
 const { runSearchTests } = await import('./test-search.mjs')
 await runSearchTests(ok, searchMod)
+const { runWebResearchTests } = await import('./test-web-research.mjs')
+await runWebResearchTests()
 
 {
   const { mkdtempSync, writeFileSync } = await import('node:fs')

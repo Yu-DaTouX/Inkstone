@@ -414,7 +414,7 @@ const notifySubagentFinished = createSubagentNotifier({
   find: (run) => (runners ? findNoticeTarget(subagentService.current()?.get(run.id) ?? run, runners) : null),
   runningSiblings: (run) => subagentService.current()?.runningSiblings({ parentSessionId: run.parentSessionId, parentRunId: run.parentRunId }) ?? 0
 })
-const subagentSearch = new LookupCommands({ capabilityOpts: () => undefined, cwd: () => process.cwd() })
+const subagentSearch = new Map<string, LookupCommands>()
 const subagentService: SubagentService = new SubagentService({
   preambleExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.preambleExtension),
   codemodeExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.codemodeExtension),
@@ -422,7 +422,16 @@ const subagentService: SubagentService = new SubagentService({
   guardExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.dangerGuardExtension),
   shellExtension: () => yanThinResourcePath(YAN_THIN_EXTENSION_FILES.shellFallbackExtension),
   readOnlyExtension: () => yanThinResourcePath('readonly-tools.js'),
-  runReadOnlyCommand: (command, params) => subagentSearch.runSearchCommand(command.slice('search.'.length), params),
+  runReadOnlyCommand: (command, params, cwd, signal, ownerId) => {
+    const key = ownerId ?? cwd
+    let lookup = subagentSearch.get(key)
+    if (!lookup) {
+      lookup = new LookupCommands({ capabilityOpts: () => undefined, cwd: () => cwd })
+      subagentSearch.set(key, lookup)
+      if (subagentSearch.size > 32) subagentSearch.delete(subagentSearch.keys().next().value!)
+    }
+    return lookup.runSearchCommand(command.slice('search.'.length), params, signal)
+  },
   previewHtml: (htmlPath, root, options) => captureHtmlPreviewShots({ previews: htmlArtifactPreviews, htmlPath, root, outDir: join(YAN_DIR, 'artifact-previews'), ...(options?.at ? { at: options.at } : {}) }),
   resolveModelApi: async (label, origin) => {
     const parent = (origin.runId ? runners?.agentOf(origin.runId) : null) ??

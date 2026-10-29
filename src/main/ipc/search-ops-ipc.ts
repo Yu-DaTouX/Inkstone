@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { SEARCH_OPS_READ_CHANNEL } from '../../shared/ipc'
+import { SEARCH_OPS_READ_CHANNEL, SEARCH_SITE_ICON_CHANNEL } from '../../shared/ipc'
+import { createSiteIconLoader } from '../search/site-icon'
 import type { WebSearchOpView, WebSearchPageView, WebSearchSourceView } from '../../shared/ipc'
 import type { IpcRegistrar } from './registrar'
 
@@ -80,7 +81,11 @@ export function cleanSearchSources(data: unknown): WebSearchSourceView[] {
         url,
         domain,
         snippet: clipText(item.snippet ?? item.summary ?? item.description, MAX_SNIPPET),
-        source: clipText(item.source, MAX_SOURCE_NAME)
+        source: clipText(item.source, MAX_SOURCE_NAME),
+        readState: 'discovered',
+        published: clipText(item.published, 40),
+        fetchedAt: clipText(root.fetchedAt, 40),
+        cached: root.cached === true
       })
       if (sources.length >= MAX_SOURCES) return sources
     }
@@ -98,7 +103,11 @@ export function cleanFetchPage(data: unknown): WebSearchPageView | null {
     title: clipText(root.title, MAX_TITLE) || domain || url,
     url,
     domain,
-    excerpt: clipText(root.text ?? root.excerpt ?? root.markdown, MAX_SNIPPET)
+    excerpt: clipText(root.text ?? root.excerpt ?? root.markdown, MAX_SNIPPET),
+    fetchedAt: clipText(root.fetchedAt, 40),
+    cached: root.cached === true,
+    truncated: root.truncated === true,
+    sourceTruncated: root.sourceTruncated === true || root.action === 'find' || root.action === 'links'
   }
 }
 
@@ -133,6 +142,8 @@ export function readSearchOpFile(opsDir: string, operationId: string): WebSearch
 }
 
 export function registerSearchOpsIpc(ipc: IpcRegistrar, opts: { opsDir: string }): void {
+  const siteIcon = createSiteIconLoader()
+  ipc.handle(SEARCH_SITE_ICON_CHANNEL, (url: unknown) => typeof url === 'string' && url.length <= 8192 ? siteIcon(url) : null)
   ipc.handle(SEARCH_OPS_READ_CHANNEL, (operationId: unknown): WebSearchOpView => {
     try {
       return readSearchOpFile(opts.opsDir, typeof operationId === 'string' ? operationId : '')

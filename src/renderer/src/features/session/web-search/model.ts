@@ -276,7 +276,7 @@ export function searchSourcesFromDetails(details: unknown): WebSearchSourceView[
     if (!url) return undefined
     const domain = domainOf(url)
     const title = typeof entry.title === 'string' && entry.title.trim() ? entry.title.trim() : domain || url
-    return [{ title, url, domain, snippet: '', source: '' }]
+    return [{ title, url, domain, snippet: '', source: '', ...sourceMetadata(entry) }]
   }
   if (entry.action !== 'query') return undefined
   const sources: WebSearchSourceView[] = []
@@ -290,7 +290,7 @@ export function searchSourcesFromDetails(details: unknown): WebSearchSourceView[
     seen.add(key)
     const domain = domainOf(url)
     const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : domain || url
-    sources.push({ title, url, domain, snippet: typeof item.snippet === 'string' ? item.snippet : '', source: '' })
+    sources.push({ title, url, domain, snippet: typeof item.snippet === 'string' ? item.snippet : '', source: '', ...sourceMetadata(item) })
     if (sources.length >= DETAIL_SOURCES_MAX) break
   }
   return sources
@@ -300,12 +300,21 @@ function directSearchCommand(name: string, args: unknown): SearchCommand | null 
   if (!args || typeof args !== 'object') return null
   const record = args as Record<string, unknown>
   if (name === 'web_fetch') {
-    const url = httpDetailUrl(record.url)
+    const url = httpDetailUrl(record.url) || (typeof record.pageRef === 'string' ? record.pageRef : '')
     return url ? { action: 'fetch', queries: [], url } : null
   }
   if (name !== 'web_search') return null
-  const query = typeof record.query === 'string' ? record.query.trim() : ''
-  return query ? { action: 'query', queries: [query], url: '' } : null
+  const queries = Array.isArray(record.queries) ? record.queries.filter((query): query is string => typeof query === 'string' && !!query.trim()) : typeof record.query === 'string' && record.query.trim() ? [record.query.trim()] : []
+  return queries.length ? { action: 'query', queries, url: '' } : null
+}
+
+function sourceMetadata(value: Record<string, unknown>): Partial<WebSearchSourceView> {
+  return {
+    ...(value.readState === 'discovered' || value.readState === 'read' || value.readState === 'partial' ? { readState: value.readState } : {}),
+    ...(typeof value.published === 'string' ? { published: value.published.slice(0, 40) } : {}),
+    ...(typeof value.fetchedAt === 'string' ? { fetchedAt: value.fetchedAt.slice(0, 40) } : {}),
+    ...(typeof value.cached === 'boolean' ? { cached: value.cached } : {})
+  }
 }
 
 export function searchStepOf(call: UIToolCall): SearchStep | null {

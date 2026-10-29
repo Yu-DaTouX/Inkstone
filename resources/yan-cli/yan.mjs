@@ -357,7 +357,7 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
   · --model 写完整名称「供应商/模型」（例：commandcode/deepseek/deepseek-v4.1-flash）；只写模型名时按已登录模型匹配，优先当前会话的供应商，仍有歧义会列出候选；
   · --thinking（请求文件 "thinkingLevel"）取 off / minimal / low / medium / high / xhigh；不传时用 pi 对该模型的默认档（pi 设置里的 defaultThinkingLevel），fork 沿用当前会话的档位、不能再传；
   · start 默认在当前目录执行，可能直接改文件；未指定 --model 时优先使用设置中的默认子 Agent 模型，否则跟随当前会话；启用强制模型时由宿主按该设置选模；
-    readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
+    readOnly=true 开放 read/grep/find/ls/git_inspect/web_search/web_fetch/web_docs；只读不代表离线，联网搜索可能使用已配置的付费来源；需要代码隔离时显式传 --isolation worktree（要求 Git）；
   · --fork（请求文件 "fork":true）让子代理继承当前会话的全部历史，沿用当前会话的模型与推理档位，首个请求复用当前会话的提示缓存；
     任务依赖对话里已有的讨论或读过的文件时用 fork，能几句话讲清时用普通子代理；fork 只在当前目录运行，
     不能与 --read-only、--isolation worktree 或其他 --model 同用，当前上下文已用超过 60% 时会被拒绝；
@@ -391,10 +391,20 @@ models.generateImages() 生成，image() 在结果里展示；生图可能要几
           --site a.com,b.org             只搜这些站点（最多 5 个）
           --question "用户原问题"         把用户原话交给 DeepSeek，帮它理解查询
           --with-content                 DeepSeek 结果直接带正文（content，每条最多 3000 字），可省掉一次 fetch
+          --language en --country AU     检索语言与地区偏好，与回答语言分开；来源不支持时会明示
+          --after YYYY-MM-DD --before YYYY-MM-DD  尽量按发布日期范围筛选，须核对原文日期
+          --exclude-sites a.com,b.org    排除这些域名（最多 5 个，返回结果再核对过滤）
+          --coverage fast|broad          默认 fast；broad 同时查已配置来源，不按条数提前停止，可能增加费用
+          --timeout-ms 20000             每个查询的总时限，来源回退共用；来源状态保留耗时与可取得的用量
   fetch   把一个网页读成正文文本（JS 渲染页也行；不共享用户浏览器登录态，不读本机/内网地址）。本地读不出正文时，
           依次改用用户配了 key 的 Firecrawl、DeepSeek（结果里 via 写明是谁读的）；--via local|firecrawl|deepseek 可强制；
           10 分钟内读过的同一网址直接复用（cached）；自动回退共用总时限（默认 30 秒，--timeout-ms 可设 5000–60000）
             yan search fetch --url https://example.com/post [--max-chars 12000] [--via firecrawl]
+          结果带 pageRef、offset、endOffset、nextOffset、fetchedAt、sourceTruncated；续读与查找使用同一份快照（30 分钟有效）
+            yan search fetch --page-ref <pageRef> --offset 12000
+            yan search fetch --page-ref <pageRef> --action find --find "例外条件"
+            yan search fetch --page-ref <pageRef> --action links
+          --refresh 与 --url 一起使用会重新抓取；pageRef 固定指向原快照。PDF 读取带页号，扫描 PDF 可能需要 OCR。
   docs    查开发文档：按库名取该库最新版本的文档片段与示例（Context7）。库名有歧义时看结果里的 alternatives，
           用 --library-id 指定
             yan search docs --library react --query-text "useEffect 清理函数"
@@ -544,7 +554,7 @@ const GROUP_SPECS = {
   },
   search: {
     actions: ['query', 'fetch', 'docs', 'doctor'],
-    required: { query: ['query-text'], fetch: ['url'], docs: ['query-text'] }
+    required: { query: ['query-text'], docs: ['query-text'] }
   },
   browser: {
     actions: [

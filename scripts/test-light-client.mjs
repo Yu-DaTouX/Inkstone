@@ -39,7 +39,7 @@ try {
   const readOnly = launch.subagentPiArgs({ sessionDir: root, native: true, readOnly: true })
   check(readOnly.includes('read,grep,find,ls') && readOnly.includes('--no-extensions'), '只读任务不能被自动发现扩展恢复写入工具')
   const readOnlyPlus = launch.subagentPiArgs({ sessionDir: root, native: true, readOnly: true, readOnlyExtension: '/fixture/readonly-tools.js' })
-  check(readOnlyPlus[readOnlyPlus.indexOf('--tools') + 1] === 'read,grep,find,ls,git_inspect,web_search,web_fetch' && readOnlyPlus.includes('/fixture/readonly-tools.js'), '只读任务带上 git_inspect 与联网工具，仍不含 bash/edit/write')
+  check(readOnlyPlus[readOnlyPlus.indexOf('--tools') + 1] === 'read,grep,find,ls,git_inspect,web_search,web_fetch,web_docs' && readOnlyPlus.includes('/fixture/readonly-tools.js'), '只读任务带上 git_inspect 与联网工具，仍不含 bash/edit/write')
   const readonlyTools = await import(pathToFileURL(join(process.cwd(), 'resources/pi-extensions/readonly-tools.js')).href)
   const gitDiff = readonlyTools.gitInspectArgs('diff', ['HEAD~1', '--stat', '--', 'src/a.ts'])
   check(gitDiff.argv?.includes('--no-ext-diff') && gitDiff.argv.includes('--no-textconv') && gitDiff.argv.includes('--no-optional-locks'), 'git_inspect 关闭外部 diff 驱动与可选锁')

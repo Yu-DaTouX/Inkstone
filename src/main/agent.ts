@@ -1278,7 +1278,7 @@ export class AgentController extends EventEmitter {
       return this.lookup.runKnowledgeCommand(command.slice('knowledge.'.length), params)
     }
     if (command.startsWith('search.')) {
-      return this.lookup.runSearchCommand(command.slice('search.'.length), params)
+      return this.lookup.runSearchCommand(command.slice('search.'.length), params, signal)
     }
     if (command === 'image.generate') return this.runImageCommand(params)
     if (command === 'image.local.status' || command === 'image.local.start' || command === 'image.local.stop') return runLocalImageServiceCommand(command)

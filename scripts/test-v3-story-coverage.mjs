@@ -13,7 +13,8 @@ const STORY_FILES = [
   join(UI_DIR, 'Slider.stories.tsx'),
   join(UI_DIR, 'Tree.stories.tsx'),
   join(UI_DIR, 'Table.stories.tsx'),
-  join(UI_DIR, 'Splitter.stories.tsx')
+  join(UI_DIR, 'Splitter.stories.tsx'),
+  join(UI_DIR, 'SourceCard.stories.tsx')
 ]
 
 const ALLOWED_STATES = new Set([

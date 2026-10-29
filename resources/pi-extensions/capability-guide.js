@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { registerWriteLineEndings } from './write-line-endings.js'
 import { callHostTool, hostToolsAvailable, toolText } from './host-tool-call.js'
+import { createWebTools } from './web-tools.js'
 
 const PLAN_WITH_CLI = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with `yan tasks apply` before the first change and tick them off as they finish; chain each update into a command you are running anyway, never a step of its own.'
 const PLAN_WITH_TOOL = '- Work with 3+ distinct steps, subagents or a plan the user asked for: list the steps with the `todos` tool before the first change and tick them off as they finish; send each update alongside other tool calls in the same response, never in a response of its own.'
@@ -172,7 +173,10 @@ const MARKER = 'Inkstone provides local capabilities through the `yan` CLI'
 
 export default function capabilityGuideExtension(pi) {
   const tools = hostToolsAvailable() && typeof pi.registerTool === 'function'
-  if (tools) pi.registerTool(createTodosTool())
+  if (tools) {
+    pi.registerTool(createTodosTool())
+    for (const tool of createWebTools()) pi.registerTool(tool)
+  }
   const guideText = capabilityGuide(tools)
   registerWriteLineEndings(pi)
   pi.on('before_agent_start', (event, ctx) => {

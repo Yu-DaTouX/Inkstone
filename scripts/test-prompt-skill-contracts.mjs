@@ -80,7 +80,7 @@ export async function runPromptSkillContractTests(ok) {
     }
     const output = await search.execute('search-fixture', { query: 'fixture', refresh: true, withContent: true })
     ok(hostRequest.command === 'search.query' && hostRequest.params.refresh && hostRequest.params.withContent, '只读搜索把新增参数传给宿主')
-    match(output.content[0].text, /Long model summary.*DeepSeek quality/s, '模型读到长摘要和带来源的质量数据')
+    match(output.content[0].text, /Long model summary.*Provider-specific quality/s, '模型读到长摘要和带来源的质量数据')
     match(output.content[0].text, /deepseek.*2026-10-24/s, '模型读到供应商与发布日期')
     await fetchPage.execute('fetch-fixture', { url: 'https://example.com/', refresh: true, maxChars: 1000 })
     ok(hostRequest.command === 'search.fetch' && hostRequest.params.refresh && hostRequest.params.maxChars === 1000, '只读正文把刷新与字数传给宿主')

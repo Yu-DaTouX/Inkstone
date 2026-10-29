@@ -8,7 +8,7 @@ export function subagentModelError(model: string | undefined, readOnly: boolean)
 }
 
 export const READ_ONLY_TOOLS = ['read', 'grep', 'find', 'ls']
-export const READ_ONLY_EXTENSION_TOOLS = ['git_inspect', 'web_search', 'web_fetch']
+export const READ_ONLY_EXTENSION_TOOLS = ['git_inspect', 'web_search', 'web_fetch', 'web_docs']
 
 export function subagentPiArgs(options: { sessionDir: string; sessionFile?: string; native: boolean; readOnly: boolean; model?: string; systemPrompt?: string; extensions?: string[]; readOnlyExtension?: string; thinkingLevel?: string }): string[] {
   const error = subagentModelError(options.model, options.readOnly)

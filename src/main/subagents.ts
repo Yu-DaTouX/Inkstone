@@ -168,7 +168,7 @@ interface Run extends SubagentRun {
 }
 
 export interface SubagentApprovalOrigin { sessionId?: string; runId?: string; subagentId?: string }
-const READ_ONLY_HOST_COMMANDS = ['search.query', 'search.fetch']
+const READ_ONLY_HOST_COMMANDS = ['search.query', 'search.fetch', 'search.docs']
 
 export interface SubagentDangerAnswer { decision: 'allow' | 'deny' | 'no-answer'; feedback?: string }
 
@@ -248,7 +248,7 @@ export interface SubagentOptions {
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   extensions?: string[]
   readOnlyExtension?: string
-  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult>
+  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   appendSystemPrompt?: string
   onChange: (run: SubagentRun) => void
   onPatch?: (payload: { id: string; run: SubagentRun; transcriptFrom: number }) => void
@@ -261,7 +261,7 @@ export interface SubagentOptions {
 
 export interface SubagentHostCommands {
   onlyCommands: string[]
-  handle(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult | undefined>
+  handle(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult | undefined>
 }
 
 export function subagentHostCommands(opts: {
@@ -271,8 +271,8 @@ export function subagentHostCommands(opts: {
   const onlyCommands = ['danger.confirm', 'danger.prefs', ...(opts.readOnlyHost ? READ_ONLY_HOST_COMMANDS : []), ...(opts.previewHtml ? ['artifact.preview'] : [])]
   return {
     onlyCommands,
-    handle: async (command, params, cwd) => {
-      if (opts.readOnlyHost && READ_ONLY_HOST_COMMANDS.includes(command)) return opts.readOnlyHost(command, params, cwd)
+    handle: async (command, params, cwd, signal, ownerId) => {
+      if (opts.readOnlyHost && READ_ONLY_HOST_COMMANDS.includes(command)) return opts.readOnlyHost(command, params, cwd, signal, ownerId)
       if (command === 'artifact.preview') return runArtifactPreview(opts.previewHtml, params.path, cwd, params.at)
       return undefined
     }
@@ -781,7 +781,7 @@ export class SubagentController {
       onlyCommands: host.onlyCommands,
       handlers: {
         run: async (command, params, _context, signal) => {
-          const handled = await host.handle(command, params, cwd)
+          const handled = await host.handle(command, params, cwd, signal, id)
           if (handled) return handled
           if (command === 'danger.prefs') return { summary: { kind: 'danger-prefs', ...(await ctx.dangerPrefs?.() ?? { mode: 'danger', outsideWrites: true, allowRoots: [] }) } }
           const origin = { sessionId: ctx.parentSessionId, runId: ctx.parentRunId, subagentId: id }

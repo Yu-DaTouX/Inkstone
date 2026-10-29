@@ -1,7 +1,7 @@
 import type { SourceRun } from './aggregate'
 import type { SearchRecency } from '../../shared/search'
 import { resolveBraveKey } from './config'
-import { siteOperator, withOperators, type SourceRequest } from './modifiers'
+import { queryOperators, withOperators, type SourceRequest } from './modifiers'
 
 const ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
 const BRAVE_FRESHNESS: Record<SearchRecency, string> = { day: 'pd', week: 'pw', month: 'pm', year: 'py' }
@@ -24,9 +24,12 @@ export async function runBraveSearch(query: string, opts: SourceRequest, fetchIm
     }
   }
   const url = new URL(ENDPOINT)
-  url.searchParams.set('q', withOperators(query, [siteOperator(opts.sites)]))
+  url.searchParams.set('q', withOperators(query, queryOperators({ ...opts, language: undefined, after: undefined, before: undefined })))
   url.searchParams.set('count', String(Math.min(20, Math.max(1, opts.limit))))
   if (opts.recent) url.searchParams.set('freshness', BRAVE_FRESHNESS[opts.recent])
+  if (opts.after || opts.before) url.searchParams.set('freshness', `${opts.after ?? '2000-01-01'}to${opts.before ?? new Date().toISOString().slice(0, 10)}`)
+  if (opts.language) url.searchParams.set('search_lang', opts.language)
+  if (opts.country) url.searchParams.set('country', opts.country)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs)
   const signal = opts.signal ? AbortSignal.any([controller.signal, opts.signal]) : controller.signal

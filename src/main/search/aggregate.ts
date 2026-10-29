@@ -10,6 +10,7 @@ import {
   type SourceStatusKind
 } from '../../shared/search'
 import { RECENCY_SOURCES, siteMatches } from './modifiers'
+import { createHash } from 'node:crypto'
 
 export interface SourceRun {
   source: SearchSourceId
@@ -19,6 +20,7 @@ export interface SourceRun {
   unavailable?: boolean
   skipped?: boolean
   elapsedMs: number
+  usage?: { credits?: number; requests?: number }
 }
 
 export interface AggregateOptions {
@@ -26,6 +28,9 @@ export interface AggregateOptions {
   limitTotal: number
   sites?: readonly string[]
   recent?: SearchRecency
+  excludeSites?: readonly string[]
+  after?: string
+  before?: string
 }
 
 export interface AggregateResult {
@@ -142,7 +147,7 @@ function cleanContent(input: unknown): string | undefined {
 }
 
 function statusOf(run: SourceRun): { status: SourceStatusKind; code?: string; message?: string } {
-  if (run.skipped) return { status: 'skipped', code: run.error?.code ?? 'skipped', message: run.error?.message ?? '已有足够结果，提前停止' }
+  if (run.skipped) return { status: 'skipped', code: run.error?.code ?? 'skipped', message: run.error?.message ?? '快速搜索已返回候选，停止等待；未判断证据是否充分' }
   if (run.unavailable) return { status: 'unavailable', code: run.error?.code ?? 'backend_unavailable', message: run.error?.message }
   if (run.timedOut) return { status: 'timeout', code: run.error?.code ?? 'timeout', message: run.error?.message }
   if (run.error) return { status: 'error', code: run.error.code ?? 'error', message: run.error.message }
@@ -182,7 +187,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
           badRows++
           continue
         }
-        if (sites && !siteMatches(item.url, sites)) {
+        if ((sites && !siteMatches(item.url, sites)) || (opts.excludeSites?.length && siteMatches(item.url, opts.excludeSites))) {
           offSite++
           continue
         }
@@ -196,6 +201,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
         const gain = 1 / (FUSION_K + rank)
         const hit = merged.get(key)
         if (hit) {
+          if (!hit.item.sources?.includes(run.source)) hit.item.sources?.push(run.source)
           hit.score += gain
           hit.bestRank = Math.min(hit.bestRank, rank)
           if (!hit.item.snippet && item.snippet) hit.item.snippet = item.snippet
@@ -204,6 +210,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
           if (!hit.item.summary && item.summary) hit.item.summary = item.summary
           if (!hit.item.quality && item.quality) hit.item.quality = item.quality
         } else {
+          item.sources = [run.source]
           merged.set(key, { item, owner, score: gain, bestRank: rank })
         }
         rank++
@@ -216,6 +223,7 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
     if (badRows > 0) notes.push(`${badRows} 条结果结构不认识，已跳过`)
     if (offSite > 0) notes.push(`${offSite} 条不在指定站点，已去掉`)
     if (opts.recent && !RECENCY_SOURCES.has(run.source) && (status === 'ok' || status === 'empty')) notes.push('这个来源不支持按时间过滤，结果没有限定时间')
+    if (opts.after || opts.before) notes.push('日期范围按来源能力尽量筛选，未知日期与页面更新时间须另行核对')
     const entry: PerSourceStatus = {
       source: run.source,
       status,
@@ -223,11 +231,22 @@ export function aggregate(runs: SourceRun[], opts: AggregateOptions): AggregateR
       elapsedMs: Number.isFinite(run.elapsedMs) ? Math.max(0, Math.round(run.elapsedMs)) : 0
     }
     if (code) entry.code = code
+    if (run.usage) entry.usage = run.usage
     if (notes.length) entry.message = notes.join('；')
     sources.push(entry)
   })
 
   const ranked = [...merged.values()].sort((a, b) => b.score - a.score || a.bestRank - b.bestRank || a.owner - b.owner)
+  const groups = new Map<string, SearchItem[]>()
+  for (const { item } of ranked) {
+    const content = (item.content ?? item.snippet ?? '').replace(/\s+/g, ' ').trim()
+    if (content.length < 100) continue
+    const key = createHash('sha256').update(content).digest('hex').slice(0, 16)
+    const list = groups.get(key) ?? []
+    list.push(item)
+    groups.set(key, list)
+  }
+  for (const [key, items] of groups) if (items.length > 1) for (const item of items) item.groupId = `excerpt-${key}`
   if (ranked.length > opts.limitTotal) truncated = true
   ranked.forEach((r, index) => {
     const entry = sources[r.owner]

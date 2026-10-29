@@ -69,7 +69,7 @@ export interface SubagentServiceDeps {
   guardExtension?(): string | undefined
   shellExtension?(): string | undefined
   readOnlyExtension?(): string | undefined
-  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string): Promise<CapabilityCommandResult>
+  runReadOnlyCommand?(command: string, params: Record<string, unknown>, cwd: string, signal?: AbortSignal, ownerId?: string): Promise<CapabilityCommandResult>
   previewHtml?(htmlPath: string, root: string, options?: { at?: number[] }): Promise<unknown>
   resolveModelApi?(label: string, origin: { sessionId?: string; runId?: string }): Promise<string | undefined>
   resolveModelLabel?(requested: string, context: SubagentCommandContext): Promise<ModelLabelResolution>

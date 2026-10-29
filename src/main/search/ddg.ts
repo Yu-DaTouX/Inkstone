@@ -1,6 +1,6 @@
 import type { SourceRun } from './aggregate'
 import type { SearchRecency } from '../../shared/search'
-import { siteOperator, withOperators, type SourceRequest } from './modifiers'
+import { queryOperators, withOperators, type SourceRequest } from './modifiers'
 import { runWebEngine, type WebEngine } from './web-engine'
 
 interface Raw {
@@ -42,7 +42,7 @@ export function runDdgSearch(query: string, opts: SourceRequest): Promise<Source
   const engine: WebEngine<Raw> = {
     source: 'ddg',
     label: 'DuckDuckGo',
-    url: ddgUrl(withOperators(query, [siteOperator(opts.sites)]), opts.recent),
+    url: ddgUrl(withOperators(query, queryOperators(opts)), opts.recent) + (opts.country ? `&kl=${opts.country.toLowerCase()}-${opts.language?.split('-')[0] ?? 'en'}` : ''),
     script: SCRIPT,
     toRow: (r) => ({ title: r.title, url: decodeDdgRedirect(r.href), snippet: r.snippet })
   }

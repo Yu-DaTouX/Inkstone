@@ -7,6 +7,7 @@ const ENDPOINT = 'https://api.tavily.com/search'
 
 interface TavilyBody {
   results?: Array<Record<string, unknown>>
+  usage?: { credits?: number }
 }
 
 function withCallerAbort(fetchImpl: typeof fetch, signal?: AbortSignal): typeof fetch {
@@ -38,8 +39,15 @@ export async function runTavilySearch(query: string, opts: SourceRequest, fetchI
         max_results: Math.min(20, Math.max(1, opts.limit)),
         search_depth: 'basic',
         topic: 'general',
+        include_usage: true,
+        include_published_date: true,
         ...(opts.recent ? { time_range: opts.recent } : {}),
-        ...(opts.sites?.length ? { include_domains: opts.sites } : {})
+        ...(opts.sites?.length ? { include_domains: opts.sites } : {}),
+        ...(opts.excludeSites?.length ? { exclude_domains: opts.excludeSites } : {}),
+        ...(opts.language ? { language: opts.language } : {}),
+        ...(opts.after ? { start_date: opts.after } : {}),
+        ...(opts.before ? { end_date: opts.before } : {}),
+        ...(opts.country ? { country: new Intl.DisplayNames(['en'], { type: 'region' }).of(opts.country)?.toLowerCase() } : {})
       })
     },
     opts.timeoutMs,
@@ -59,5 +67,5 @@ export async function runTavilySearch(query: string, opts: SourceRequest, fetchI
     snippet: r.content,
     published: typeof r.published_date === 'string' ? r.published_date.slice(0, 10) : undefined
   }))
-  return { source: 'tavily', rows, elapsedMs: elapsed() }
+  return { source: 'tavily', rows, elapsedMs: elapsed(), ...(typeof body.usage?.credits === 'number' && Number.isFinite(body.usage.credits) ? { usage: { credits: body.usage.credits } } : {}) }
 }
