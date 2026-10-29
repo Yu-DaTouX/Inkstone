@@ -87,7 +87,7 @@ export const v3Light = {
 } as const
 
 export const v3Dark = {
-  "bg": "#181818",
+  "bg": "#1A1A1A",
   "side": "#121213",
   "sideGlass": "rgba(18,18,19,.95)",
   "sideTint": "rgba(15,15,16,.96)",
@@ -95,9 +95,9 @@ export const v3Dark = {
   "sideRimHi": "rgba(255,255,255,.22)",
   "sideRimLo": "rgba(255,255,255,.035)",
   "sideSheen": "rgba(255,255,255,.055)",
-  "surface": "#1F1F1E",
+  "surface": "#242423",
   "surface-0": "#0B0B0B",
-  "surface-3": "#252524",
+  "surface-3": "#292928",
   "compRimHi": "rgba(255,255,255,.16)",
   "compRimLo": "rgba(255,255,255,.05)",
   "hover": "rgba(255,255,255,.075)",
@@ -105,7 +105,7 @@ export const v3Dark = {
   "press": "rgba(255,255,255,.15)",
   "field": "rgba(255,255,255,.05)",
   "fieldHover": "rgba(255,255,255,.14)",
-  "bubble": "#222221",
+  "bubble": "#262625",
   "sunken": "#131313",
   "codeInlineBg": "rgba(255,255,255,.09)",
   "fg": "#D4D3CE",

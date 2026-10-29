@@ -524,7 +524,7 @@ ok(
 const lightVars = resolveMcpAppThemeVariables('light')
 const darkVars = resolveMcpAppThemeVariables('dark')
 ok(lightVars['--color-background-primary'] === '#FFFFFF', '浅色主背景是具体值')
-ok(darkVars['--color-background-primary'] === '#1F1F1E', '深色主背景是具体值')
+ok(darkVars['--color-background-primary'] === '#242423', '深色主背景是具体值')
 ok(lightVars['--color-text-primary'] === '#20211F' && darkVars['--color-text-primary'] === '#D4D3CE', '文字主色按主题取值')
 ok(
   lightVars['--shadow-hairline'] === '0 0 0 1px rgba(11,11,11,.1)' &&

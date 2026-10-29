@@ -48,13 +48,15 @@
     order: -1;
     flex: 0 0 100%;
     justify-content: center;
-    gap: 3px;
-    height: var(--s-16);
+    gap: var(--s-4);
+    height: calc(var(--s-24) + var(--s-4));
     margin: 0 0 var(--s-10);
+    padding-bottom: var(--s-2);
+    background: linear-gradient(var(--line2), var(--line2)) center bottom / calc(var(--s-48) * 3 + var(--s-12)) var(--hair, 1px) no-repeat;
   }
 
   .v3-empty-main > .start-strip .start-strip-bars > span {
-    width: var(--s-4);
+    width: var(--s-6);
     border-radius: var(--r-2xs) var(--r-2xs) 0 0;
   }
 
@@ -105,6 +107,71 @@
     line-height: var(--t-footnote-lh);
   }
 
+  .v3-empty-recent {
+    position: absolute;
+    top: calc(100% - var(--home-lift, 0px) + var(--s-32));
+    left: var(--col-pad-l);
+    right: var(--col-pad-r);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    max-height: calc(var(--home-lift, 0px) - var(--s-48));
+    overflow: hidden;
+    padding-inline: var(--s-8);
+    text-align: start;
+    animation: v3-empty-rise var(--dur-slow) var(--ease) var(--dur-base) both;
+  }
+
+  .v3-empty-recent-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-10);
+    margin: 0 0 var(--s-4);
+    padding-inline: var(--s-2);
+    color: var(--fg3);
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-regular);
+  }
+
+  .v3-empty-recent-head::after {
+    content: '';
+    flex: 1;
+    height: var(--hair, 1px);
+    background: var(--line);
+  }
+
+  .v3-empty-recent-row {
+    color: var(--fg2);
+  }
+
+  .v3-empty-recent-row:hover {
+    color: var(--fg);
+  }
+
+  .v3-empty-recent-meta {
+    display: inline-flex;
+    flex: none;
+    align-items: baseline;
+    gap: var(--s-12);
+    color: var(--fg3);
+    font-size: var(--t-caption);
+    line-height: var(--t-caption-lh);
+  }
+
+  .v3-empty-recent-ago {
+    min-width: 4ch;
+    font: var(--t-caption) / var(--t-caption-lh) var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+
+  @media (max-height: 560px) {
+    .v3-empty-recent {
+      display: none;
+    }
+  }
+
   .v3-empty-greet > .v3-hello-cursor { position: absolute; }
   .v3-hello-cursor[data-blink='off'] { opacity: 0; }
 
@@ -136,7 +203,8 @@
     .v3-empty-greet,
     .v3-empty-hint,
     .v3-empty-cols > .start-usage,
-    .v3-empty-main > .start-strip {
+    .v3-empty-main > .start-strip,
+    .v3-empty-recent {
       animation: none;
     }
   }

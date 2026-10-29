@@ -136,14 +136,36 @@
     flex-direction: column;
   }
 
+  .v3-chat {
+    timeline-scope: --v3-stream-y;
+  }
+
+  .v3-chat .v3-stream {
+    scroll-timeline: --v3-stream-y y;
+  }
+
   .v3-chat::before {
     content: '';
     position: absolute;
     inset: 0 0 auto 0;
-    height: var(--s-24);
+    height: var(--s-20);
     z-index: 5;
     pointer-events: none;
-    background: linear-gradient(to bottom, var(--bg) var(--s-6), color-mix(in srgb, var(--bg) 60%, transparent) 60%, transparent);
+    background: linear-gradient(to bottom, var(--bg) 30%, color-mix(in srgb, var(--bg) 82%, transparent) 50%, color-mix(in srgb, var(--bg) 45%, transparent) 72%, color-mix(in srgb, var(--bg) 14%, transparent) 88%, transparent);
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .v3-chat::before {
+      animation: v3-top-fade linear both;
+      animation-timeline: --v3-stream-y;
+      animation-range: 0 var(--s-48);
+    }
+  }
+
+  @keyframes v3-top-fade {
+    to {
+      height: var(--s-48);
+    }
   }
 
   .v3-conv {
@@ -295,6 +317,29 @@
     position: relative;
   }
 
+  .v3-head-pane > .ui-btn__label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-6);
+  }
+
+  .v3-head-pane[data-open='1'] {
+    width: auto;
+    padding-inline: var(--s-8) var(--s-10);
+  }
+
+  .v3-head-pane-glyph {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .v3-head-pane-label {
+    font-size: var(--t-footnote);
+    line-height: var(--t-footnote-lh);
+    font-weight: var(--w-medium);
+    white-space: nowrap;
+  }
+
   .v3-head-sep.ui-separator[aria-orientation='vertical'] {
     align-self: center;
     height: var(--s-16);
@@ -307,8 +352,8 @@
 
   .v3-head-pane-dot {
     position: absolute;
-    top: calc(50% - var(--s-8) - 1px);
-    left: calc(50% + var(--s-8) - var(--s-6) + 1px);
+    top: -1px;
+    right: -1px;
     width: var(--s-6);
     height: var(--s-6);
     border-radius: var(--r-full);
@@ -317,9 +362,27 @@
     pointer-events: none;
   }
 
+  .v3-head-pane-dot[data-tone='terminal'] {
+    background: var(--run);
+    animation: v3-head-dot-breathe var(--dur-breathe) var(--ease) infinite;
+  }
+
+  @keyframes v3-head-dot-breathe {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v3-head-pane-dot[data-tone='terminal'] {
+      animation: none;
+    }
+  }
+
   .v3-head-more .v3-head-pane-dot {
     top: calc(50% - var(--s-10));
     left: calc(50% + var(--s-4));
+    right: auto;
   }
 
   .v3-head-check {

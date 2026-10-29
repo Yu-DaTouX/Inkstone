@@ -359,7 +359,7 @@ async function main() {
     ok(/data-empty="/.test(editorText) && /dataset\.empty/.test(editorText), '空态用 data-empty 驱动占位符')
 
     const tools = byClass(card, 'composer-tools')
-    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>Separator>ProjectPicker', '状态行左侧：模型+思考→权限｜新会话项目选择单独成组')
+    ok(controlNames(tools).join('>') === 'ModelThinkingPicker>PermissionToggle>ProjectPicker', '状态行左侧：模型+思考→权限，新会话项目选择靠间距与描边单独成组')
     ok(byTestId(card, 'composer-send').props.round === true, '发送键是圆形主按钮，禁用时保持同形实心')
     const bar = byClass(card, 'composer-bar')
     const barControls = controlNames(bar)

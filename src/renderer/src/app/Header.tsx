@@ -40,6 +40,11 @@ const TITLEBAR_PANES = [
   { tab: 'files', Icon: Folder }
 ] as const
 
+const HEAD_TEXT = {
+  'zh-CN': { sessionBar: '会话栏', changesDirty: '有未提交的改动' },
+  'en-US': { sessionBar: 'Session', changesDirty: 'uncommitted changes' }
+} as const
+
 const VIEW_OPTION_PANES: readonly WorkbenchTabId[] = ['browser', 'logs', 'device', 'pullRequests']
 const MENU_KEEP_ON_TOP = 'head:keep-on-top'
 const MENU_SETTINGS = 'head:settings'
@@ -56,6 +61,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const t = useT()
   const text = v3Text(lang)
   const toolText = workbenchText(lang)
+  const headText = HEAD_TEXT[lang === 'en-US' ? 'en-US' : 'zh-CN']
   const sessionBarLabel = sessionBarOpen ? (sessionBarHidden ? text.sessionBarNoRoom : text.hideSessionBar) : text.showSessionBar
   const session = useStore((s) => s.session)
   const peekedSessionId = useStore((s) => s.peekedSessionId)
@@ -75,7 +81,11 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
 
   const preview = useHoverDelay(280, () => onPreviewSidebar?.())
   const paneActive = (tab: WorkbenchTabId): boolean => (tab === 'changes' && changesDirty) || (tab === 'terminal' && terminalRunning)
-  const activeLabel = (tab: WorkbenchTabId): string => (tab === 'terminal' && terminalRunning ? `${toolText.tabs[tab]} · ${text.terminalRunning}` : toolText.tabs[tab])
+  const paneState = (tab: WorkbenchTabId): string => (tab === 'terminal' && terminalRunning ? text.terminalRunning : tab === 'changes' && changesDirty ? headText.changesDirty : '')
+  const activeLabel = (tab: WorkbenchTabId): string => {
+    const state = paneState(tab)
+    return state ? `${toolText.tabs[tab]} · ${state}` : toolText.tabs[tab]
+  }
   const withShortcut = (label: string, tab: WorkbenchTabId): string => {
     const id = PANE_SHORTCUTS[tab]
     if (!id) return label
@@ -92,7 +102,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
   const freshHome = route === 'chat' && !peekedSessionId && !hasMessages && openPanes.size === 0 && !activePane
   const panesInMenu = narrow || freshHome
   const menuPanes: readonly WorkbenchTabId[] = route === 'chat' ? [...(panesInMenu ? TITLEBAR_PANES.map((item) => item.tab) : []), ...VIEW_OPTION_PANES] : []
-  const menuDot = route === 'chat' && panesInMenu && TITLEBAR_PANES.some(({ tab }) => paneActive(tab))
+  const menuDotTab = route === 'chat' && narrow && !freshHome ? TITLEBAR_PANES.find(({ tab }) => paneActive(tab))?.tab : undefined
+  const moreLabel = menuDotTab ? `${text.more} · ${activeLabel(menuDotTab)}` : text.more
+  const sessionBarVisible = sessionBarOpen && !sessionBarHidden
 
   const title = useMemo(() => {
     if (route === 'usage') return t('usage.title')
@@ -164,14 +176,18 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                 tooltip={sessionBarLabel}
                 aria-label={sessionBarLabel}
                 aria-pressed={sessionBarOpen}
-                pressedTone="neutral"
+                pressedTone="outline"
                 className="v3-head-pane"
                 onPress={onToggleSessionBar}
                 data-testid="v3-header-sessionbar"
+                data-open={sessionBarVisible ? '1' : undefined}
                 data-active={sessionBarOpen && sessionBarHidden ? 'partial' : undefined}
                 data-setting={sessionBarOpen ? (sessionBarHidden ? 'partial' : '1') : '0'}
               >
-                <SquareMenu size={16} />
+                <span className="v3-head-pane-glyph">
+                  <SquareMenu size={16} />
+                </span>
+                {sessionBarVisible ? <span className="v3-head-pane-label" aria-hidden>{headText.sessionBar}</span> : null}
               </IconButton>
               {narrow
                 ? null
@@ -181,14 +197,17 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
                       tooltip={paneLabel(tab)}
                       aria-label={paneLabel(tab)}
                       aria-pressed={openPanes.has(tab)}
-                      pressedTone="neutral"
+                      pressedTone="outline"
                       className="v3-head-pane"
                       data-testid={`wb-open-${tab}`}
                       data-open={openPanes.has(tab) ? '1' : undefined}
                       onPress={() => onTogglePane(tab)}
                     >
-                      <Icon size={16} />
-                      {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} /> : null}
+                      <span className="v3-head-pane-glyph">
+                        <Icon size={16} />
+                        {paneActive(tab) ? <span className="v3-head-pane-dot" aria-hidden data-testid={`wb-dot-${tab}`} data-tone={tab} /> : null}
+                      </span>
+                      {openPanes.has(tab) ? <span className="v3-head-pane-label" aria-hidden>{toolText.tabs[tab]}</span> : null}
                     </IconButton>
                   ))}
             </div>
@@ -197,9 +216,9 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
           </>
         ) : null}
         <MenuTrigger>
-          <IconButton aria-label={text.more} tooltip={text.more} className="v3-head-pane v3-head-more" data-testid="wb-more-tools">
+          <IconButton aria-label={moreLabel} tooltip={moreLabel} className="v3-head-pane v3-head-more" data-testid="wb-more-tools">
             <EllipsisVertical size={16} />
-            {menuDot ? <span className="v3-head-pane-dot" aria-hidden /> : null}
+            {menuDotTab ? <span className="v3-head-pane-dot" aria-hidden data-tone={menuDotTab} /> : null}
           </IconButton>
           <Popover placement="bottom end" offset={6}>
             <Menu
@@ -214,7 +233,7 @@ export function Header({ narrow, sidebarOverlay = false, terminalRunning = false
             >
               {menuPanes.map((tab) => (
                 <MenuItem key={tab} id={tab} textValue={toolText.tabs[tab]} checked={openPanes.has(tab)} aria-checked={openPanes.has(tab)} shortcut={paneShortcut(tab)} data-testid={`wb-view-${tab}`}>
-                  {toolText.tabs[tab]}
+                  {paneActive(tab) ? activeLabel(tab) : toolText.tabs[tab]}
                 </MenuItem>
               ))}
               {menuPanes.length > 0 ? <MenuSeparator /> : null}

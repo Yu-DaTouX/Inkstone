@@ -203,6 +203,12 @@ export const ButtonStates: Story = {
         <IconButton aria-label="中性未按下" pressedTone="neutral" aria-pressed={false} onPress={() => undefined}>
           <GearGlyph />
         </IconButton>
+        <IconButton aria-label="描边按下" pressedTone="outline" aria-pressed onPress={() => undefined}>
+          <GearGlyph />
+        </IconButton>
+        <IconButton aria-label="描边部分" pressedTone="outline" aria-pressed data-active="partial" onPress={() => undefined}>
+          <GearGlyph />
+        </IconButton>
       </Row>
       <p style={noteStyle}>
         悬停 / 按下 / 键盘焦点只声明，未在静态故事里复现：RAC 会在真实交互时写入

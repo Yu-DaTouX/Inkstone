@@ -6,7 +6,7 @@ import { useStore } from '../../state/store'
 import { Collapsible, CollapsibleHeader, Dialog, IconButton, ListRow, Menu, MenuItem, Modal, ModalOverlay, Popover, SearchField } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord, SessionSummary } from '../../../../shared/ipc'
-import { FLAT_PAGE_SIZE, compactAgo, sessionProjectLabel, isGlobalGroup, sessionActivityAt, type FlatEntry, type SidebarGroup } from './sidebar-model'
+import { FLAT_PAGE_SIZE, compactAgo, sessionProjectLabel, isGlobalGroup, segmentPathHints, sessionActivityAt, type FlatEntry, type SidebarGroup } from './sidebar-model'
 import type { ArchiveShelfRow } from './ArchiveShelf'
 import { ProjectBadge } from './ProjectBadge'
 import { ArchiveConfirm, ProjectDirectoryDialog, ProjectHeader, ensureProjectForCwd, setProjectArchived } from './ProjectHeader'
@@ -391,16 +391,22 @@ interface FlatRowProps {
   onOpen: (item: SessionSummary) => void
 }
 
-function FlatSegmentHead({ entry }: { entry: FlatEntry }): JSX.Element {
+function FlatSegmentHead({ entry, hint }: { entry: FlatEntry; hint?: string }): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const global = entry.session.scope === 'global'
+  const label = entry.group.label || text.projectFallback
   return (
-    <div className="v3-flat-seg" data-testid="v3-flat-seg">
+    <div className="v3-flat-seg" data-testid="v3-flat-seg" title={entry.group.cwd && entry.group.cwd !== label ? `${label} \u00b7 ${entry.group.cwd}` : undefined}>
       {global ? <Globe size={12} className="v3-crow-scope" aria-hidden /> : <Folder size={12} className="v3-crow-scope" aria-hidden />}
-      <span className="v3-crow-project">{entry.group.label || text.projectFallback}</span>
+      <span className="v3-crow-project">{label}</span>
+      {hint ? <span className="v3-flat-seg-path" data-testid="v3-flat-seg-path">{hint}</span> : null}
     </div>
   )
+}
+
+function segmentHints(entries: readonly FlatEntry[]): Map<string, string> {
+  return segmentPathHints([...new Map(entries.map((entry) => [entry.group.key, entry.group])).values()])
 }
 
 function startsSegment(list: readonly FlatEntry[], index: number): boolean {
@@ -473,6 +479,7 @@ export function WorkingShelf({
   const [open, setOpen] = useState(() => readShelfOpen(WORKING_OPEN_KEY))
   const shown = open ? entries : entries.filter((entry) => rowState(entry.session).isCurrent)
   const branches = useCwdBranches(shown.map((entry) => entry.session.cwd), now)
+  const hints = segmentHints(shown)
   if (!entries.length) return null
   return (
     <section className="v3-shelf v3-shelf--working" data-open={open ? '1' : undefined} aria-label={own.workingShelf} data-testid="v3-working-shelf">
@@ -491,7 +498,7 @@ export function WorkingShelf({
           <div className="v3-shelf-list">
             {shown.map((entry, index) => (
               <Fragment key={entry.session.path}>
-                {startsSegment(shown, index) ? <FlatSegmentHead entry={entry} /> : null}
+                {startsSegment(shown, index) ? <FlatSegmentHead entry={entry} hint={hints.get(entry.group.key)} /> : null}
                 <FlatRow
                   entry={entry}
                   row={rowState(entry.session)}
@@ -542,10 +549,11 @@ export function FlatSessionList({
   if (current) shown.push(current)
   const hidden = Math.max(0, rows.length - limit)
   const branches = useCwdBranches([...pinned, ...shown].map((entry) => entry.session.cwd), now)
+  const hints = segmentHints([...pinned, ...shown])
 
   const render = (entry: FlatEntry, index: number, list: readonly FlatEntry[]): JSX.Element => (
     <Fragment key={entry.session.path}>
-      {!scopeGroup && startsSegment(list, index) ? <FlatSegmentHead entry={entry} /> : null}
+      {!scopeGroup && startsSegment(list, index) ? <FlatSegmentHead entry={entry} hint={hints.get(entry.group.key)} /> : null}
       <FlatRow
         entry={entry}
         row={rowState(entry.session)}

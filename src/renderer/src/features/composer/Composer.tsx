@@ -557,7 +557,6 @@ export function Composer({ className }: { className?: string } = {}) {
             <div className="composer-tools">
               <ModelThinkingPicker />
               <PermissionToggle />
-              {freshSession ? <Separator orientation="vertical" className="composer-group-sep" /> : null}
               {freshSession ? <ProjectPicker /> : null}
             </div>
             <div className="composer-line-end">

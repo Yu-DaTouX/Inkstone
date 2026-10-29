@@ -271,6 +271,23 @@
   .ui-btn.ui-icon-btn--neutral-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled], [data-active='partial']) {
     background: var(--press);
   }
+  .ui-btn.ui-icon-btn--outline-on:is([aria-pressed='true']:not([data-active]), [data-active='1']):not([data-disabled]) {
+    background: transparent;
+    box-shadow: var(--ring-line2);
+    color: var(--fg);
+  }
+  .ui-btn.ui-icon-btn--outline-on[data-active='partial']:not([data-disabled]) {
+    background: transparent;
+    box-shadow: none;
+    color: var(--fg2);
+    outline: var(--hair, 1px) dashed var(--line-ctl);
+    outline-offset: calc(-1 * var(--hair, 1px));
+  }
+  @media (hover: hover) {
+    .ui-btn.ui-icon-btn--outline-on:is([aria-pressed='true'], [data-active]):hover:not([data-disabled]) {
+      background: var(--hover);
+    }
+  }
   .ui-btn:is(.ui-btn--ghost, .ui-btn--secondary)[data-pressed]:not([data-disabled]):not([data-pending]) {
     background: var(--press);
     color: var(--fg);

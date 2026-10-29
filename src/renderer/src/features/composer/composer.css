@@ -557,10 +557,16 @@
     }
   }
 
-  .composer-tools > .composer-group-sep {
-    align-self: center;
-    height: var(--s-16);
-    margin-inline: var(--s-6);
+  .composer-tools :is(.mtp-trigger, .composer-permission:not(.composer-project)).ui-btn--ghost:not(:hover, [aria-expanded='true'], [data-focus-visible], [data-pressed]) {
+    color: var(--fg3);
+  }
+
+  .composer-tools > .composer-project {
+    margin-inline-start: var(--s-10);
+  }
+
+  .composer-tools > .composer-project:not([aria-expanded='true']) {
+    color: var(--fg);
   }
 
   .composer-line-end > .composer-status-sep {

@@ -2,7 +2,7 @@
 @layer tokens {
   :root {
     color-scheme: light dark;
-    --bg: light-dark(#FCFCFB, #181818);
+    --bg: light-dark(#FCFCFB, #1A1A1A);
     --side: light-dark(#F6F9FC, #121213);
     --side-glass: light-dark(rgba(246,249,252,.95), rgba(18,18,19,.95));
     --side-tint: light-dark(rgba(247,249,252,.88), rgba(15,15,16,.96));
@@ -10,9 +10,9 @@
     --side-rim-hi: light-dark(rgba(255,255,255,.95), rgba(255,255,255,.22));
     --side-rim-lo: light-dark(rgba(11,11,11,.07), rgba(255,255,255,.035));
     --side-sheen: light-dark(rgba(255,255,255,.58), rgba(255,255,255,.055));
-    --surface: light-dark(#FFFFFF, #1F1F1E);
+    --surface: light-dark(#FFFFFF, #242423);
     --surface-0: light-dark(#F9F9F7, #0B0B0B);
-    --surface-3: light-dark(#FFFFFF, #252524);
+    --surface-3: light-dark(#FFFFFF, #292928);
     --comp-rim-hi: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.16));
     --comp-rim-lo: light-dark(rgba(11,11,11,.06), rgba(255,255,255,.05));
     --hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.075));
@@ -20,7 +20,7 @@
     --press: light-dark(rgba(11,11,11,.1), rgba(255,255,255,.15));
     --field: light-dark(rgba(255,255,255,.5), rgba(255,255,255,.05));
     --field-hover: light-dark(rgba(11,11,11,.05), rgba(255,255,255,.14));
-    --bubble: light-dark(#F0F0EE, #222221);
+    --bubble: light-dark(#F0F0EE, #262625);
     --sunken: light-dark(#F4F4F2, #131313);
     --code-inline-bg: light-dark(rgba(11,11,11,.055), rgba(255,255,255,.09));
     --fg: light-dark(#20211F, #D4D3CE);
@@ -234,7 +234,7 @@
       --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
       --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
       --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
-      --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      --shadow-comp-float: 0 1px 2px rgba(0,0,0,.18), 0 6px 16px rgba(0,0,0,.14);
       --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
       --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
       --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);
@@ -246,7 +246,7 @@
     --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.3);
     --shadow-lg: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 4px 12px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.35);
     --shadow-comp: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
-    --shadow-comp-float: 0 2px 6px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    --shadow-comp-float: 0 1px 2px rgba(0,0,0,.18), 0 6px 16px rgba(0,0,0,.14);
     --shadow-pop: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.1), 0 8px 24px rgba(0,0,0,.55), 0 2px 6px rgba(0,0,0,.35);
     --shadow-card: inset 0 0 0 var(--hair, 1px) rgba(255,255,255,.13);
     --shadow-side: inset 0 var(--hair, 1px) 0 0 rgba(255,255,255,.07), inset 0 calc(-1 * var(--hair, 1px)) 0 0 rgba(0,0,0,.24), 0 2px 6px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.5);

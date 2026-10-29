@@ -1,7 +1,7 @@
 /* 由 scripts/design/build-tokens.mjs 生成，不要手改。 */
 export const APP_THEME_VARIABLES: Readonly<Record<string, string>> = {
-  "--color-background-primary": "light-dark(#FFFFFF, #1F1F1E)",
-  "--color-background-secondary": "light-dark(#FCFCFB, #181818)",
+  "--color-background-primary": "light-dark(#FFFFFF, #242423)",
+  "--color-background-secondary": "light-dark(#FCFCFB, #1A1A1A)",
   "--color-background-tertiary": "light-dark(#F4F4F2, #131313)",
   "--color-background-inverse": "light-dark(#0B0B0B, #FFFFFF)",
   "--color-background-ghost": "transparent",

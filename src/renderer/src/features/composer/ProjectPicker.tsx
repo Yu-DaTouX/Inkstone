@@ -35,7 +35,8 @@ export function ProjectPicker() {
   return (
     <MenuTrigger>
       <Button
-        variant="ghost"
+        variant="secondary"
+        size="sm"
         className="composer-permission composer-project"
         aria-haspopup="menu"
         data-testid="composer-project"

@@ -24,6 +24,34 @@ export function shortProject(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+export function compactCwd(cwd: string): string {
+  const sep = cwd.includes('\\') ? '\\' : '/'
+  const home = /^(?:[A-Za-z]:[\\/]Users[\\/][^\\/]+|\/(?:home|Users)\/[^/]+)(?=[\\/]|$)/.exec(cwd)
+  const parts = (home ? cwd.slice(home[0].length) : cwd).split(/[\\/]+/).filter(Boolean)
+  const head = home ? ['~'] : cwd.startsWith('/') ? [''] : []
+  const full = [...head, ...parts]
+  if (full.length <= 3) return full.join(sep) || cwd
+  return [full[0], '\u2026', ...parts.slice(-2)].join(sep)
+}
+
+export function segmentPathHints(groups: readonly SidebarGroup[]): Map<string, string> {
+  const keysByLabel = new Map<string, Set<string>>()
+  for (const group of groups) {
+    const label = group.label.toLowerCase()
+    const keys = keysByLabel.get(label) ?? new Set<string>()
+    keys.add(group.key)
+    keysByLabel.set(label, keys)
+  }
+  const hints = new Map<string, string>()
+  for (const group of groups) {
+    if (!group.cwd || hints.has(group.key)) continue
+    const ambiguous = (keysByLabel.get(group.label.toLowerCase())?.size ?? 0) > 1
+    const renamed = group.label.toLowerCase() !== shortProject(group.cwd).toLowerCase()
+    if (ambiguous || renamed) hints.set(group.key, compactCwd(group.cwd))
+  }
+  return hints
+}
+
 function activityOf(session: SessionSummary): number {
   return session.lastActivityAt ?? session.updatedAt
 }
