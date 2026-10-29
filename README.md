@@ -36,7 +36,7 @@
 - **自己决定操作权限**：「自动批准」下，常规操作直接执行，危险操作与项目外写入先确认；可以允许一次、在本会话允许，或附理由拒绝。「不受限制」按 pi 原生行为执行。符合条件的项目还会在发送前保存本地快照，方便预览和回退。
 - **模型、技能和 MCP**：在设置里登录模型服务或填入 API Key，随时切换模型与思考档位；技能和 MCP 可按全局或当前项目配置。输入框显示上下文占用，会话栏展示用量与速度，支持的服务可查看额度窗口。
 - **长任务继续聊**：接近设定的上下文上限时自动压缩，保留摘要和可查回的原文快照；不裁剪正常发给模型的历史工具内容。
-- **更多工作方式**：定时任务、语音输入、同步文件夹，以及两台电脑之间的代码分支拉取、对比与合并。插件市场提供可选扩展，例如 [Minecraft 模组开发](https://github.com/Yu-DaTouX/inkstone-minecraft-plugin)（独立仓库，按需从 GitHub 下载安装）。
+- **更多工作方式**：定时任务、语音输入、同步文件夹，以及两台电脑之间的代码分支拉取、对比与合并。插件市场提供可选扩展：桌宠、ComfyUI 本地出图，以及 [Minecraft 模组开发](https://github.com/Yu-DaTouX/inkstone-minecraft-plugin)（独立仓库，按需从 GitHub 下载安装）。
 
 ## 平台
 
@@ -111,6 +111,7 @@ npm run launch
 | `scripts/` | 构建、测试、打包与设计检查脚本 |
 | `mobile/` | Android 客户端（React Native） |
 | `integrations/hermes-inkstone/` | Hermes 外部控制插件 |
+| `integrations/desktop-pet/`、`integrations/comfyui/` | 随包插件：桌宠、ComfyUI 本地出图，在插件市场安装 |
 
 AI 协作约定见 [AGENTS.md](AGENTS.md)。
 
