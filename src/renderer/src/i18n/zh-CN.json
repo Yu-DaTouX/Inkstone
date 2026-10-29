@@ -448,6 +448,8 @@
   "composer.run": "执行",
   "composer.sendTipTall": "Ctrl+Enter",
   "composer.stop": "停止",
+  "composer.quoteDrop": "松开即可引用这个会话",
+  "composer.quoteFailed": "无法引用会话「{name}」",
   "conn.down": "未连接",
   "conn.ready": "已连接",
   "conn.starting": "连接中…",

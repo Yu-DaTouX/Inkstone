@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { PiRuntimePrefs, QueueMode } from '../../../../../shared/ipc'
+import { effectiveAutoArchiveDays } from '../../../../../shared/session-archive'
 import { useI18n } from '../../../i18n'
 import { useStore } from '../../../state/store'
 import { ListBoxItem, Select, Switch } from '../../../ui'
@@ -10,7 +11,7 @@ import { ContextSettings } from '../context/ContextSettings'
 import { PiRetryDetailRows, PiSessionGroups, usePiNativeSettings } from './PiNativeSettings'
 import { piNativeText } from './pi-native-text'
 
-const ARCHIVE_OPTIONS = [0, 7, 14, 30] as const
+const ARCHIVE_OPTIONS = [0, 3, 7, 14, 30] as const
 const RESPONSE_DETAILS = ['brief', 'standard', 'detailed'] as const
 type ResponseDetailChoice = (typeof RESPONSE_DETAILS)[number]
 const QUEUE_MODES: QueueMode[] = ['one-at-a-time', 'all']
@@ -23,7 +24,7 @@ export function SessionSettings(): ReactElement {
   const settings = useStore((s) => s.settings)
   const patchSettings = useStore((s) => s.patchSettings)
 
-  const archiveDays = settings?.autoArchiveDays ?? 0
+  const archiveDays = effectiveAutoArchiveDays(settings)
   const keepAwake = settings?.keepAwakeWhileWorking !== false
   const keepAwakeBattery = settings?.keepAwakeOnBattery !== false
   const checkpoints = settings?.checkpointsEnabled !== false

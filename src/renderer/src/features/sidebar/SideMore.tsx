@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Clock, Layers, MoreHorizontal, Users, type LucideIcon } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useRunsV3 } from '../../state/runs-v3'
-import { Menu, MenuItem, Popover, StatusDot, StatusSlot } from '../../ui'
+import { IconButton, Menu, MenuItem, Popover, StatusDot, StatusSlot } from '../../ui'
+import { IconTip } from '../../app/IconTip'
 import { v3Text } from '../../app/v3-text'
 import { collabText } from '../collab/collab-text'
 import { usePendingPairInvite } from '../collab/pending-invite'
@@ -14,6 +15,7 @@ interface SideMoreProps {
   onSchedule?: () => void
   onCollab?: () => void
   onArtifacts?: () => void
+  compact?: boolean
 }
 
 interface EntryMeta {
@@ -41,7 +43,7 @@ function useSchedulePendingApproval(enabled: boolean, route: string, activeRuns:
   return pending
 }
 
-export function SideMore({ route, onSchedule, onCollab, onArtifacts }: SideMoreProps): ReactElement | null {
+export function SideMore({ route, onSchedule, onCollab, onArtifacts, compact }: SideMoreProps): ReactElement | null {
   const { lang } = useI18n()
   const t = useT()
   const text = v3Text(lang)
@@ -75,6 +77,56 @@ export function SideMore({ route, onSchedule, onCollab, onArtifacts }: SideMoreP
           </StatusSlot>
         ) : null}
       </button>
+    )
+  }
+
+  if (compact) {
+    const attention = entries.find((entry) => entry.attention)?.attention
+    const current = entries.some((entry) => entry.id === route)
+    return (
+      <>
+        <IconTip label={text.more}>
+          <IconButton
+            ref={moreRef}
+            aria-label={text.more}
+            aria-haspopup="menu"
+            className="v3-side-more-btn"
+            data-selected={current ? '' : undefined}
+            onPress={() => setOpen(true)}
+            data-testid="v3-side-more"
+          >
+            <MoreHorizontal size={18} />
+            {attention ? (
+              <StatusSlot className="v3-side-more-mark" label={attention === 'awaiting' ? own.entryAwaiting : own.entryRunning}>
+                <StatusDot kind={attention === 'awaiting' ? 'awaiting' : 'running'} />
+              </StatusSlot>
+            ) : null}
+          </IconButton>
+        </IconTip>
+        <Popover triggerRef={moreRef} isOpen={open} onOpenChange={setOpen} placement="bottom end" offset={4}>
+          <Menu
+            aria-label={text.more}
+            autoFocus="first"
+            onAction={(key) => {
+              setOpen(false)
+              handlers[key as SideMoreId]?.()
+            }}
+            onClose={() => setOpen(false)}
+            data-testid="v3-side-more-menu"
+          >
+            {entries.map(({ id, attention: mark }) => {
+              const { label, Icon, testId } = meta[id]
+              return (
+                <MenuItem key={id} id={id} textValue={label} data-testid={testId}>
+                  <Icon size={14} aria-hidden />
+                  {label}
+                  {mark ? <StatusDot kind={mark === 'awaiting' ? 'awaiting' : 'running'} /> : null}
+                </MenuItem>
+              )
+            })}
+          </Menu>
+        </Popover>
+      </>
     )
   }
 

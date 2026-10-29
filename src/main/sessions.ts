@@ -214,7 +214,9 @@ async function readBranchOrigin(path: string, forkTs: number): Promise<string | 
   }
 }
 
-async function readLastActivity(path: string, size: number): Promise<{ at?: number; reply?: SessionSummary['lastReply'] }> {
+const MODEL_SCAN_BYTES = 4 * 1024 * 1024
+
+async function readLastActivity(path: string, size: number): Promise<{ at?: number; reply?: SessionSummary['lastReply']; model?: string }> {
   const TAIL = 64 * 1024
   const fh = await open(path, 'r')
   try {
@@ -223,7 +225,8 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
     let carry = Buffer.alloc(0)
     let at: number | undefined
     let reply: SessionSummary['lastReply']
-    while (end > 0 && (at === undefined || !reply)) {
+    let model: string | undefined
+    while (end > 0 && (at === undefined || !reply || (!model && size - end < MODEL_SCAN_BYTES))) {
       const begin = Math.max(0, end - TAIL)
       const buf = Buffer.alloc(end - begin)
       const { bytesRead } = await fh.read(buf, 0, buf.length, begin)
@@ -237,21 +240,24 @@ async function readLastActivity(path: string, size: number): Promise<{ at?: numb
         const line = lines[i]
         if (line.length > 8 * 1024 * 1024 || !line.includes('"type":"message"')) continue
         try {
-          const o = JSON.parse(line) as { id?: string; timestamp?: string; message?: { role?: string; timestamp?: number; content?: Array<{ type?: string; text?: string }> | string } }
+          const o = JSON.parse(line) as { id?: string; timestamp?: string; message?: { role?: string; timestamp?: number; provider?: string; model?: string; content?: Array<{ type?: string; text?: string }> | string } }
           const ts = Date.parse(String(o.timestamp ?? ''))
           if (at === undefined && !Number.isNaN(ts)) at = ts
+          if (!model && o.message?.role === 'assistant' && typeof o.message.model === 'string' && o.message.model) {
+            model = typeof o.message.provider === 'string' && o.message.provider ? `${o.message.provider}/${o.message.model}` : o.message.model
+          }
           if (!reply && o.message?.role === 'assistant') {
             const content = o.message.content
             const body = typeof content === 'string' ? content : Array.isArray(content) ? content.filter((item) => item.type === 'text' && typeof item.text === 'string').map((item) => item.text).join(' ') : ''
             const stamp = typeof o.message.timestamp === 'number' && Number.isFinite(o.message.timestamp) ? o.message.timestamp : !Number.isNaN(ts) ? ts : undefined
             if (body?.trim() && stamp && o.id) reply = { id: o.id, at: stamp, text: body.replace(/\s+/g, ' ').trim().slice(0, 180) }
           }
-          if (at !== undefined && reply) break
+          if (at !== undefined && reply && model) break
         } catch { }
       }
       end = begin
     }
-    return { at, reply }
+    return { at, reply, model }
   } catch {
     return {}
   } finally {
@@ -280,7 +286,7 @@ async function readSessionSummary(f: { path: string; mtimeMs: number; size: numb
       createdAt: head.createdAt || Math.round(f.mtimeMs),
       updatedAt: Math.round(f.mtimeMs),
       messageCount: await countSessionMessages(f.path),
-      model: undefined
+      model: activity.model
     }
     if (head.parentSession) {
       summary.branchOrigin = await readBranchOrigin(f.path, head.createdAt)

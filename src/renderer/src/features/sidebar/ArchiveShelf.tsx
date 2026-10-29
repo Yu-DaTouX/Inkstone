@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { SessionSummary } from '../../../../shared/ipc'
+import type { ModelRef } from '../../../../shared/model-brand'
 import { useSplitDrag } from '../split/split-drag'
 import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
@@ -32,18 +33,22 @@ export interface ArchiveShelfRow {
   isCurrent: boolean
   status: SessionStatusKind
   code?: string
+  model?: string
+  modelRef?: ModelRef
 }
 
 export function ArchiveShelf({
   rows,
   total,
   onOpen,
-  onShowAll
+  onShowAll,
+  renderRow
 }: {
   rows: readonly ArchiveShelfRow[]
   total: number
   onOpen: (item: SessionSummary) => void
   onShowAll: () => void
+  renderRow?: (row: ArchiveShelfRow) => JSX.Element
 }): JSX.Element {
   const { lang } = useI18n()
   const own = sidebarText(lang)
@@ -92,7 +97,7 @@ export function ArchiveShelf({
       ) : null}
       {shown.length || open ? (
         <div className="v3-shelf-list">
-          {shown.map((row) => (
+          {shown.map((row) => renderRow ? renderRow(row) : (
             <SidebarRow
               key={row.item.path}
               item={row.item}

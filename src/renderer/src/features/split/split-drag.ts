@@ -259,12 +259,48 @@ function sidebarZoneUnder(x: number, y: number, selector: string): HTMLElement |
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom ? zone : null
 }
 
+export const SESSION_QUOTE_DROP_EVENT = 'yan-v3-session-quote-drop'
+
+function quoteTargetUnder(x: number, y: number): HTMLElement | null {
+  if (x <= sidebarEdge()) return null
+  for (const target of document.querySelectorAll<HTMLElement>('[data-session-quote-drop]')) {
+    const rect = target.getBoundingClientRect()
+    if (rect.width && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return target
+  }
+  return null
+}
+
+type SidebarZone = { kind: 'archive' | 'restore' | 'pin' | 'unpin'; el: HTMLElement }
+
+function sidebarZoneFor(x: number, y: number, row: HTMLElement): SidebarZone | null {
+  const archived = !!row.closest('[data-archive-shelf]')
+  if (archived) {
+    const el = sidebarZoneUnder(x, y, '[data-archive-restore]')
+    return el ? { kind: 'restore', el } : null
+  }
+  const shelf = sidebarZoneUnder(x, y, '[data-archive-shelf]')
+  if (shelf) return { kind: 'archive', el: shelf }
+  const pinned = !!row.closest('[data-pin-zone]')
+  const pin = pinned ? null : sidebarZoneUnder(x, y, '[data-pin-zone]')
+  if (pin) return { kind: 'pin', el: pin }
+  const unpin = pinned ? sidebarZoneUnder(x, y, '[data-unpin-zone]') : null
+  return unpin ? { kind: 'unpin', el: unpin } : null
+}
+
 export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElement }, item: SessionDragItem, onDragged: () => void): void {
   const row = event.currentTarget.closest<HTMLElement>('.v3-srow') ?? event.currentTarget
   const home = row.closest<HTMLElement>('.v3-group')
   const archived = !!row.closest('[data-archive-shelf]')
   let folder: HTMLElement | null = null
   let shelf: HTMLElement | null = null
+  let zone: SidebarZone | null = null
+  let quote: HTMLElement | null = null
+  const markQuote = (next: HTMLElement | null): void => {
+    if (next === quote) return
+    quote?.removeAttribute('data-quote-over')
+    next?.setAttribute('data-quote-over', '1')
+    quote = next
+  }
   const markFolder = (next: HTMLElement | null): void => {
     if (next === folder) return
     folder?.removeAttribute('data-drop-over')
@@ -303,9 +339,11 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         ghost,
         blocksOverlay: !!ctx,
         hover: ({ x, y }) => {
-          markShelf(sidebarZoneUnder(x, y, archived ? '[data-archive-restore]' : '[data-archive-shelf]'))
+          zone = sidebarZoneFor(x, y, row)
+          markShelf(zone?.el ?? null)
           markFolder(shelf || archived ? null : folderUnder(x, y, home))
-          if (folder || shelf) return { badge: null, over: false }
+          markQuote(shelf || folder ? null : quoteTargetUnder(x, y))
+          if (folder || shelf || quote) return { badge: null, over: false }
           if (!ctx || !geometry) return { badge: null, over: false }
           const next = x > edge ? sessionDropTarget(ctx, geometry, x, y) : null
           if (!sameDropTarget(next, target)) {
@@ -315,8 +353,14 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
           return { badge, over: target !== null }
         },
         drop: () => {
-          if (shelf) {
-            void useStore.getState().setSessionArchived(item.id, !archived)
+          if (shelf && zone) {
+            const store = useStore.getState()
+            if (zone.kind === 'archive' || zone.kind === 'restore') void store.setSessionArchived(item.id, zone.kind === 'archive')
+            else void store.setSessionPinned(item.id, zone.kind === 'pin')
+            return
+          }
+          if (quote) {
+            quote.dispatchEvent(new CustomEvent(SESSION_QUOTE_DROP_EVENT, { detail: item }))
             return
           }
           if (folder) {
@@ -334,6 +378,7 @@ export function startSessionRowDrag(event: DragStart & { currentTarget: HTMLElem
         end: () => {
           markFolder(null)
           markShelf(null)
+          markQuote(null)
         }
       }
     },

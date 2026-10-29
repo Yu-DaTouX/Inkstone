@@ -39,6 +39,12 @@ export interface SidebarText {
   moveDropOwnerOnlyHint: string
   moveDropWithCwd: string
   moveDropWithCwdHint: string
+  projectScope: string
+  allProjects: string
+  clearScope: string
+  workingShelf: string
+  pinDrop: string
+  unpinDrop: string
 }
 
 const zh: SidebarText = {
@@ -81,7 +87,13 @@ const zh: SidebarText = {
   moveDropOwnerOnly: '只改归属',
   moveDropOwnerOnlyHint: '会话显示在新文件夹下，命令仍在原工作目录运行。',
   moveDropWithCwd: '同时改工作目录',
-  moveDropWithCwdHint: '对话保留，之后的命令在 {cwd} 运行。会话正在运行时不能改。'
+  moveDropWithCwdHint: '对话保留，之后的命令在 {cwd} 运行。会话正在运行时不能改。',
+  projectScope: '按项目筛选',
+  allProjects: '全部项目',
+  clearScope: '显示全部项目',
+  workingShelf: '运行中',
+  pinDrop: '松开即可置顶',
+  unpinDrop: '松开即可取消置顶'
 }
 
 const en: SidebarText = {
@@ -124,7 +136,13 @@ const en: SidebarText = {
   moveDropOwnerOnly: 'Change folder only',
   moveDropOwnerOnlyHint: 'The chat is listed under the new folder; commands still run in its original working directory.',
   moveDropWithCwd: 'Also change working directory',
-  moveDropWithCwdHint: 'The conversation is kept and later commands run in {cwd}. Not available while the chat is running.'
+  moveDropWithCwdHint: 'The conversation is kept and later commands run in {cwd}. Not available while the chat is running.',
+  projectScope: 'Filter by project',
+  allProjects: 'All projects',
+  clearScope: 'Show all projects',
+  workingShelf: 'Working',
+  pinDrop: 'Release to pin',
+  unpinDrop: 'Release to unpin'
 }
 
 export function sidebarText(lang: string): SidebarText {

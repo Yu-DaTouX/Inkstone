@@ -11,7 +11,7 @@ import { BrandMark } from './BrandMark'
 import { v3Text, withShortcutKeys } from '../../app/v3-text'
 import { shortcutKeysText, shortcutOverridesFromSettings } from '../../app/shortcuts'
 import type { SessionSummary } from '../../../../shared/ipc'
-import { GROUP_PAGE_SIZE, buildArchivedView, buildSidebarGroups, groupPage, indexRuns, type SidebarGroup } from './sidebar-model'
+import { GROUP_PAGE_SIZE, buildArchivedView, buildFlatSidebar, buildSidebarGroups, groupPage, indexRuns, type SidebarGroup } from './sidebar-model'
 import { isUnreadRun, useRunsV3 } from '../../state/runs-v3'
 import { markSessionRunsSeen } from '../../state/use-current-runs-seen'
 import { useSplitView } from '../../state/split-view'
@@ -23,6 +23,8 @@ import { SidebarRow } from './SidebarRow'
 import { sidebarText } from './sidebar-text'
 import { SideMore } from './SideMore'
 import { ContentMatches, useContentSearch } from './ContentMatches'
+import { FlatSessionList, FlatToolbar, ProjectScopeButton, WorkingShelf, useArchivedSlimRow, useFlatScope, useWorkingSet } from './FlatSessions'
+import { turnModelLabel } from '../session/turn-model-label'
 import { buildContentMatches } from './content-search'
 import { paneShowsSession, sessionStatusKind, sessionUnread, visiblePaneSessions } from './session-status'
 import './Sidebar.css'
@@ -81,6 +83,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const titles = useStore((s) => s.titles)
   const manualTitles = useStore((s) => s.manualTitles)
   const runners = useStore((s) => s.runners)
+  const models = useStore((s) => s.models)
   const activeRunnerId = useStore((s) => s.activeRunnerId)
   const runs = useRunsV3((s) => s.runs)
   const conn = useStore((s) => s.conn)
@@ -113,6 +116,8 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const activeRunner = runners.find((r) => r.id === activeRunnerId || r.runId === activeRunnerId)
   const currentProjectId = activeRunner?.projectId
   const currentCwd = activeRunner?.cwd || session?.cwd
+  const flat = settings?.sidebarLayout === 'flat'
+  const [flatScope, setFlatScope] = useFlatScope()
 
   const groups = useMemo(
     () =>
@@ -125,9 +130,23 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         currentCwd,
         titles,
         manualTitles,
-        pinnedLabel: text.pinnedGroup
+        pinnedLabel: flat ? undefined : text.pinnedGroup
       }),
-    [sessions, query, settings?.projects, settings?.projectNames, currentProjectId, currentCwd, titles, manualTitles, text.pinnedGroup]
+    [sessions, query, settings?.projects, settings?.projectNames, currentProjectId, currentCwd, titles, manualTitles, text.pinnedGroup, flat]
+  )
+  const scopeGroups = useMemo(
+    () =>
+      flat
+        ? buildSidebarGroups({
+            sessions,
+            query: '',
+            projects: settings?.projects ?? [],
+            projectNames: settings?.projectNames ?? {},
+            titles,
+            manualTitles
+          })
+        : [],
+    [flat, sessions, settings?.projects, settings?.projectNames, titles, manualTitles]
   )
 
   const archivedView = useMemo(
@@ -191,11 +210,20 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       title: manualTitles[item.id] ?? titles[item.id] ?? item.title,
       isCurrent,
       status: sessionStatusKind({ phase: run?.phase ?? null, unread, archived: !!item.archivedAt }),
-      code: run?.code
+      code: run?.code,
+      model: run?.model?.label || (item.model ? turnModelLabel(item.model, models).label : undefined),
+      modelRef: run?.model ?? item.model
     }
   }
 
   const showShelf = !showArchived && archivedCount > 0
+
+  const scopeGroup = flat ? groups.find((group) => group.key === flatScope) : undefined
+  const flatView = useMemo(() => buildFlatSidebar(flat ? groups : [], scopeGroup?.key ?? null), [flat, groups, scopeGroup])
+  const runningPaths = flatView.rows.filter((entry) => rowState(entry.session).status === 'running').map((entry) => entry.session.path)
+  const working = useWorkingSet(runningPaths)
+  const workingRows = flatView.rows.filter((entry) => working.has(entry.session.path))
+  const activeRows = workingRows.length ? flatView.rows.filter((entry) => !working.has(entry.session.path)) : flatView.rows
 
   const pageOf = (group: SidebarGroup): ReturnType<typeof groupPage> =>
     groupPage(
@@ -253,6 +281,7 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
       markSessionRunsSeen(item)
     })
   }
+  const archivedSlimRow = useArchivedSlimRow(openSession)
 
   const createGlobal = (): void => {
     useUiV3.getState().navigate({ name: 'chat' })
@@ -298,18 +327,20 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
   const newChatLabel = withShortcutKeys(text.newChatShortcut, shortcutKeysText('newSession', shortcutOverridesFromSettings(settings)))
 
   return (
-    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable">
+    <aside className="v3-side" ref={asideRef} aria-label={text.sidebarLabel} data-testid="v3-sidebar" data-density-scope="comfortable" data-layout={flat ? 'flat' : undefined}>
       <div className="v3-side-top">
         <span className="v3-side-brand">
           <BrandMark size={16} decorative />
           <span className="v3-side-name">Inkstone</span>
         </span>
         <div className="v3-side-top-actions">
-          <IconTip label={newChatLabel}>
-            <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
-              <SquarePen size={16} />
-            </IconButton>
-          </IconTip>
+          {flat ? null : (
+            <IconTip label={newChatLabel}>
+              <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
+                <SquarePen size={16} />
+              </IconButton>
+            </IconTip>
+          )}
           {onClose ? (
             <IconTip label={text.toggleSidebar}>
               <IconButton aria-label={preview ? own.pin : text.toggleSidebar} onPress={preview ? onPin : onClose} className="v3-side-close" data-testid="v3-side-close">
@@ -320,33 +351,60 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         </div>
       </div>
 
-      <div className="v3-side-search">
-        {filtering || query ? (
-          <SearchField
-            aria-label={own.filterSessions}
-            placeholder={own.filterSessions}
-            value={query}
-            onChange={setQuery}
-            autoFocus
-            onBlur={() => { if (!query) setFiltering(false) }}
-            onKeyDown={(event) => { if (event.key === 'Escape' && !query) setFiltering(false) }}
-            data-testid="v3-search"
-          />
-        ) : (
-          <button type="button" className="ui-row ui-row--field" aria-label={own.searchHint} title={own.searchHint} onClick={onSearch} data-testid="v3-search-open">
-            <span className="ui-row__lead"><Search size={16} aria-hidden /></span>
-            <span className="ui-row__label">{own.search}</span>
-          </button>
-        )}
-      </div>
+      {flat ? (
+        <FlatToolbar
+          query={query}
+          onQuery={setQuery}
+          filtering={filtering}
+          onFiltering={setFiltering}
+          tools={
+            <>
+              <ProjectScopeButton groups={scopeGroups} scope={flatScope} onScope={setFlatScope} onNew={createInProject} onAddProject={createInFolder} />
+              <IconTip label={own.newChatInFolder}>
+                <IconButton aria-label={own.newChatInFolder} onPress={createInFolder} data-testid="v3-nav-new-chat-folder">
+                  <FolderPlus size={18} />
+                </IconButton>
+              </IconTip>
+              <IconTip label={newChatLabel}>
+                <IconButton aria-label={newChatLabel} onPress={createGlobal} data-testid="v3-new-chat">
+                  <SquarePen size={18} />
+                </IconButton>
+              </IconTip>
+              <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} compact />
+            </>
+          }
+        />
+      ) : (
+        <>
+          <div className="v3-side-search">
+            {filtering || query ? (
+              <SearchField
+                aria-label={own.filterSessions}
+                placeholder={own.filterSessions}
+                value={query}
+                onChange={setQuery}
+                autoFocus
+                onBlur={() => { if (!query) setFiltering(false) }}
+                onKeyDown={(event) => { if (event.key === 'Escape' && !query) setFiltering(false) }}
+                data-testid="v3-search"
+              />
+            ) : (
+              <button type="button" className="ui-row ui-row--field" aria-label={own.searchHint} title={own.searchHint} onClick={onSearch} data-testid="v3-search-open">
+                <span className="ui-row__lead"><Search size={16} aria-hidden /></span>
+                <span className="ui-row__label">{own.search}</span>
+              </button>
+            )}
+          </div>
 
-      <div className="v3-side-entries">
-        <button type="button" className="ui-row" onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
-          <span className="ui-row__lead"><FolderPlus size={16} aria-hidden /></span>
-          <span className="ui-row__label">{own.newChatInFolder}</span>
-        </button>
-        <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} />
-      </div>
+          <div className="v3-side-entries">
+            <button type="button" className="ui-row" onClick={createInFolder} data-testid="v3-nav-new-chat-folder">
+              <span className="ui-row__lead"><FolderPlus size={16} aria-hidden /></span>
+              <span className="ui-row__label">{own.newChatInFolder}</span>
+            </button>
+            <SideMore route={route} onSchedule={onSchedule} onCollab={onCollab} onArtifacts={onArtifacts} />
+          </div>
+        </>
+      )}
 
       <nav className="v3-side-list" ref={listRef} data-scrolled={scrolled ? '1' : undefined}>
         {showArchived ? (
@@ -359,6 +417,17 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
           <div className="v3-side-active" data-archive-restore data-drop-label={own.restoreDrop}>
             {groups.length === 0 && !contentVisible ? (
             <EmptyState size="sm" title={query ? t('rail.noMatch') : t('rail.empty')} />
+          ) : flat ? (
+            <FlatSessionList
+              scopeGroup={scopeGroup}
+              pinned={flatView.pinned}
+              rows={activeRows}
+              onScope={setFlatScope}
+              projects={projectRecords}
+              rowState={rowState}
+              onOpen={openSession}
+              onNew={createInProject}
+            />
           ) : (
             groups.map((group) => {
               const collapsed = collapsedKeys.has(group.slot)
@@ -430,7 +499,22 @@ export const Sidebar = memo(function Sidebar({ onClose, onSchedule, onCollab, on
         <span className="v3-visually-hidden" role="status">{announcement}</span>
       </nav>
 
-      {showShelf ? (
+      {flat && !showArchived && (workingRows.length || showShelf) ? (
+        <div className="v3-flat-shelves">
+          <WorkingShelf entries={workingRows} rowState={rowState} onOpen={openSession} />
+          {showShelf ? (
+            <ArchiveShelf
+              rows={archivedView.sessions.map(rowState)}
+              total={archivedCount}
+              onOpen={openSession}
+              onShowAll={() => setShowArchived(true)}
+              renderRow={archivedSlimRow}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {showShelf && !flat ? (
         <ArchiveShelf
           rows={archivedView.sessions.map(rowState)}
           total={archivedCount}

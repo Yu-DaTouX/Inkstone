@@ -68,6 +68,26 @@
     opacity: 0;
   }
 
+  .composer-wrap[data-quote-over] .composer {
+    border-color: var(--accent);
+    box-shadow: var(--ring-field);
+  }
+
+  .composer-wrap[data-quote-over] .composer::after {
+    content: attr(data-quote-label);
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--surface-3) 86%, transparent);
+    mask: none;
+    -webkit-mask: none;
+    color: var(--accent-t);
+    font-size: var(--t-footnote);
+    z-index: 2;
+  }
+
   .cborder {
     position: absolute;
     inset: -1px;

@@ -197,6 +197,77 @@ export function groupPage(
   return { rows, hidden, revealable: Math.min(GROUP_PAGE_SIZE, hidden), expanded }
 }
 
+export interface FlatEntry {
+  session: SessionSummary
+  group: SidebarGroup
+}
+
+export interface FlatSidebar {
+  pinned: FlatEntry[]
+  rows: FlatEntry[]
+}
+
+export const FLAT_PAGE_SIZE = 30
+
+export function buildFlatSidebar(groups: readonly SidebarGroup[], scopeKey: string | null): FlatSidebar {
+  const entries: FlatEntry[] = []
+  for (const group of groups) {
+    if (scopeKey && group.key !== scopeKey) continue
+    for (const session of group.list) entries.push({ session, group })
+  }
+  entries.sort((a, b) => activityOf(b.session) - activityOf(a.session))
+  return {
+    pinned: entries.filter((entry) => entry.session.pinned),
+    rows: entries.filter((entry) => !entry.session.pinned)
+  }
+}
+
+export function isGlobalGroup(group: SidebarGroup): boolean {
+  return !group.projectId && group.list.length > 0 && group.list.every((session) => session.scope === 'global')
+}
+
+export function projectMonogram(label: string): string {
+  const words = label.trim().split(/[\s._\-/\\]+/).filter(Boolean)
+  if (!words.length) return '?'
+  const first = [...words[0]]
+  if (/^[\x00-\x7f]+$/.test(words[0]) === false) return first[0]
+  const digit = first.slice(1).find((char) => /\d/.test(char))
+  const second = digit ?? (words.length > 1 ? [...words[words.length - 1]][0] : first[1] ?? '')
+  return (first[0] + second).toUpperCase()
+}
+
+export const PROJECT_TONES = 7
+
+export function projectTone(label: string): number {
+  let hash = 0
+  for (const char of label.toLowerCase()) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
+  return (hash % PROJECT_TONES) + 1
+}
+
+export function compactAgo(at: number, now: number, lang: 'zh-CN' | 'en-US'): string {
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000))
+  if (minutes < 1) return lang === 'en-US' ? 'now' : '刚刚'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d`
+  return new Date(at).toLocaleDateString(lang, { month: 'numeric', day: 'numeric' })
+}
+
+export function sessionActivityAt(session: SessionSummary): number {
+  return activityOf(session)
+}
+
+export function sessionProjectLabel(session: SessionSummary, projects: readonly ProjectRecord[], projectNames: Record<string, string>): { label: string; cwd: string } {
+  const record =
+    (session.projectId ? projects.find((project) => project.id === session.projectId) : undefined) ??
+    (session.cwd ? projects.find((project) => sameCwd(project.cwd, session.cwd)) : undefined)
+  if (record) return { label: record.name || projectNames[record.cwd] || shortProject(record.cwd), cwd: record.cwd }
+  const cwd = session.cwd || ''
+  return { label: (cwd && projectNames[cwd]) || (cwd ? shortProject(cwd) : ''), cwd }
+}
+
 export interface ArchivedProject {
   record: ProjectRecord
   label: string

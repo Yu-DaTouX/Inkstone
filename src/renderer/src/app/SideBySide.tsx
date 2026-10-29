@@ -148,10 +148,8 @@ const TOOL_ICONS: Partial<Record<WorkbenchTabId, LucideIcon>> = {
 function LiveChat(): JSX.Element {
   const convRef = useRef<HTMLDivElement | null>(null)
   const composerRef = useCallback((element: HTMLDivElement | null) => {
-    let base = Infinity
     return observeHeight(element, (height) => {
-      base = Math.min(base, height)
-      convRef.current?.style.setProperty('--composer-grow', `${height - base}px`)
+      convRef.current?.style.setProperty('--composer-h', `${height}px`)
     })
   }, [])
   return (

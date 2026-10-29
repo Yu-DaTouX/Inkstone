@@ -128,9 +128,41 @@
   }
 
   .v3-composer {
-    flex: none;
+    position: absolute;
+    inset: auto 0 0 0;
+    z-index: 4;
     width: 100%;
     padding: 0 var(--col-pad-r) var(--s-20) var(--col-pad-l);
+    pointer-events: none;
+  }
+
+  .v3-composer::before {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    z-index: -1;
+    height: calc(var(--s-20) + var(--s-24));
+    background: linear-gradient(to bottom, transparent, var(--bg) 60%);
+    pointer-events: none;
+  }
+
+  .v3-composer > * {
+    pointer-events: auto;
+  }
+
+  .v3-composer .composer {
+    background: color-mix(in srgb, var(--surface-3) 68%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: var(--shadow-comp-float), 0 16px 40px -12px rgba(0, 0, 0, 0.28);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .v3-composer .composer {
+      background: var(--surface-3);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
 
   .v3-scrim {

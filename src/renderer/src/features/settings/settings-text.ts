@@ -62,6 +62,10 @@ export interface SettingsText {
   densityDesc: string
   densityCompact: string
   densityComfortable: string
+  sidebarLayout: string
+  sidebarLayoutDesc: string
+  sidebarLayoutProjects: string
+  sidebarLayoutFlat: string
   reduceMotion: string
   reduceMotionDesc: string
   fontRead: string
@@ -195,6 +199,10 @@ const ZH: SettingsText = {
   densityDesc: '紧凑：界面 13px、正文 14px；舒适：界面 14px、正文 16px，控件与行距更大。',
   densityCompact: '紧凑',
   densityComfortable: '舒适',
+  sidebarLayout: '左栏布局',
+  sidebarLayoutDesc: '按项目：会话按项目分组（经典）。平铺：所有会话按最近活动排成一列，每行标出项目，可按项目筛选。',
+  sidebarLayoutProjects: '按项目',
+  sidebarLayoutFlat: '平铺',
   reduceMotion: '减少动效',
   reduceMotionDesc: '关闭过渡与动画。系统开启了减少动画时始终生效。',
   fontRead: '阅读字体',
@@ -328,6 +336,10 @@ const EN: SettingsText = {
   densityDesc: 'Compact: 13px interface, 14px body. Comfortable: 14px interface, 16px body, taller controls and rows.',
   densityCompact: 'Compact',
   densityComfortable: 'Comfortable',
+  sidebarLayout: 'Sidebar layout',
+  sidebarLayoutDesc: 'By project groups sessions under each project (classic). Flat lists every session by recent activity, labels each row with its project, and filters by project.',
+  sidebarLayoutProjects: 'By project',
+  sidebarLayoutFlat: 'Flat',
   reduceMotion: 'Reduce motion',
   reduceMotionDesc: 'Turn off transitions and animations. Always on when the system asks for reduced motion.',
   fontRead: 'Reading font',

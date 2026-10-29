@@ -615,6 +615,10 @@ export interface SessionSummary {
 
 export type SessionScope = 'global' | 'project' | 'pending'
 
+export type SessionQuoteResult =
+  | { ok: true; path: string; messages: number }
+  | { ok: false; error: 'not_session' | 'read' | 'write' }
+
 export interface SessionMoveRecord {
   at: number
   fromProjectId?: string
@@ -789,6 +793,7 @@ export interface AppSettings {
   fontSizeUi?: number
   streamWidth?: number
   reduceMotion?: boolean
+  sidebarLayout?: 'projects' | 'flat'
   keepAwakeOnBattery?: boolean
   checkpointsEnabled?: boolean
   guardOutsideWrites?: boolean
@@ -1888,6 +1893,7 @@ export interface YanBridge {
   pathForFile(file: File): string
   describeFiles(paths: string[]): Promise<FileRefInfo[]>
   savePastedText(text: string, name: string): Promise<import('./pasted-text').SavedPastedText>
+  quoteSession(path: string, title: string): Promise<SessionQuoteResult>
   readFileText(path: string): Promise<FileTextResult>
   readPreview(path: string, line?: number, cwd?: string, lineEnd?: number): Promise<FilePreview>
   readPreviewBytes(path: string, cwd?: string): Promise<PreviewBytes>

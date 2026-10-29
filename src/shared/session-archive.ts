@@ -17,6 +17,13 @@ export function normalizeAutoArchiveDays(raw: unknown): number {
   return n <= 0 ? 0 : Math.min(n, MAX_AUTO_ARCHIVE_DAYS)
 }
 
+export const FLAT_AUTO_ARCHIVE_DAYS = 3
+
+export function effectiveAutoArchiveDays(settings: { autoArchiveDays?: number; sidebarLayout?: 'projects' | 'flat' } | null | undefined): number {
+  if (typeof settings?.autoArchiveDays === 'number') return normalizeAutoArchiveDays(settings.autoArchiveDays)
+  return settings?.sidebarLayout === 'flat' ? FLAT_AUTO_ARCHIVE_DAYS : 0
+}
+
 export function selectAutoArchive(
   items: readonly ArchiveCandidate[],
   options: { days: number; now: number; busyFiles: readonly (string | undefined)[] }

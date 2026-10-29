@@ -38,6 +38,7 @@ import { PlanCard } from './PlanCard'
 import { FileDropOverlay, useFileDropZone } from './FileDropZone'
 import { usePastedTextAttach } from './use-pasted-text'
 import { VoiceButton } from './VoiceButton'
+import { useSessionQuoteDrop } from './use-session-quote'
 import { useCompletion } from './useCompletion'
 import {
   composerLocalCommand,
@@ -64,6 +65,7 @@ export function Composer({ className }: { className?: string } = {}) {
   const valueRef = useRef(value)
   valueRef.current = value
   const wrapRef = useRef<HTMLDivElement>(null)
+  useSessionQuoteDrop(wrapRef)
   const editorRef = useRef<ComposerEditorHandle>(null)
   const [cursor, setCursor] = useState<number | null>(null)
   const [composing, setComposing] = useState(false)
@@ -503,10 +505,11 @@ export function Composer({ className }: { className?: string } = {}) {
     <div
       ref={wrapRef}
       className={`composer-wrap ${fileDrop && !fileDrop.dropped ? 'is-dropping' : ''} ${className ?? ''}`}
+      data-session-quote-drop
     >
       <FileDropOverlay state={fileDrop} />
       <IsolationMergeBar />
-      <div className="composer">
+      <div className="composer" data-quote-label={t('composer.quoteDrop')}>
         <ComposerBorder />
         <PlanCard />
         <QueueEditor />

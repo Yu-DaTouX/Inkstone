@@ -21,6 +21,7 @@ import { rewriteSessionCwd } from '../session-move'
 import { AUTO_ARCHIVE_SWEEP_INTERVAL_MS, runAutoArchiveSweep } from '../session-auto-archive'
 import { filterChainRepresentatives } from '../remote-host'
 import { planHistoryRead } from '../../shared/session-chain'
+import { effectiveAutoArchiveDays } from '../../shared/session-archive'
 import { readUsageStats } from '../usage-stats'
 import { closeTerminalsForOwner } from '../terminal'
 
@@ -321,7 +322,7 @@ export function registerSessionIpc(ipc: IpcRegistrar, host: SessionHost): void {
         const settings = await getSettings()
         await runAutoArchiveSweep({
           sessions: await filterChainRepresentatives(await listSessions(Number.MAX_SAFE_INTEGER, settings.projects)),
-          days: settings.autoArchiveDays,
+          days: effectiveAutoArchiveDays(settings),
           busyFiles: (host.runners()?.statuses() ?? []).map((runner) => runner.sessionFile),
           archive: (ids) => archiveSessionsBatch(ids)
         })

@@ -271,7 +271,8 @@ function sanitizeSettings(parsed: Partial<AppSettings>): AppSettings {
   settings.fontSizeUi = sanitizeFontSize(settings.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
   settings.streamWidth = sanitizeStreamWidth(settings.streamWidth)
   settings.reduceMotion = settings.reduceMotion === true ? true : undefined
-  settings.autoArchiveDays = normalizeAutoArchiveDays(settings.autoArchiveDays) || undefined
+  settings.sidebarLayout = settings.sidebarLayout === 'flat' ? 'flat' : undefined
+  settings.autoArchiveDays = typeof settings.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(settings.autoArchiveDays) : undefined
   settings.voiceInput = sanitizeVoiceInput(settings.voiceInput)
   settings.theme = settings.theme === 'light' ? 'light' : 'dark'
   settings.lang = LANGS.includes(parsed.lang as (typeof LANGS)[number]) ? parsed.lang! : detectLang()
@@ -375,7 +376,7 @@ function cleanAllowRoots(value: unknown): string[] {
   return [...new Set(roots)].slice(0, 30)
 }
 
-const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','autoArchiveDays','voiceInput','shortcutOverrides'])
+const RENDERER_SETTINGS_KEYS = new Set<string>(['lastMainModel','lastSubagentModel','subagentDefaultModel','subagentModelForce','modelFavorites','modelHidden','modelProviderOrder','cwd','theme','lang','recentCwds','projectNames','projects','providerBudgets','rightPanelOpen','alwaysOnTop','uiScale','profile','codemodeEnabled','asciiBackground','guardOutsideWrites','permissionMode','checkpointsEnabled','sendKey','responseDetail','density','sound','workspaceMode','subagentNotify','streamLoopAutoContinue','wrapUpCard','workspaceTiles','smoothText','usageCurrency','remoteAccess','keepAwakeWhileWorking','keepAwakeOnBattery','visualAnswers','autoCompactTokens','fontUi','fontUiCustom','fontCode','fontCodeCustom','fontSizeUi','streamWidth','reduceMotion','sidebarLayout','autoArchiveDays','voiceInput','shortcutOverrides'])
 export function validateRendererSettingsPatch(value: unknown): Partial<AppSettings> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置补丁必须是对象')
   for (const key of Object.keys(value)) if (!RENDERER_SETTINGS_KEYS.has(key) || ['__proto__','constructor','prototype'].includes(key)) throw new Error(`不允许修改设置项：${key}`)
@@ -413,6 +414,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   next.guardAllowRoots = cleanAllowRoots(next.guardAllowRoots)
   next.browserAllowedSites = allowedSiteList(next.browserAllowedSites)
   next.usageCurrency = normalizeUsageCurrency(next.usageCurrency)
+  next.sidebarLayout = next.sidebarLayout === 'flat' ? 'flat' : undefined
 
   if (Array.isArray(patch.recentCwds)) {
     next.recentCwds = [...new Set(patch.recentCwds.filter((path): path is string => typeof path === 'string' && isAbsolute(path)))].slice(0, 8)
@@ -448,7 +450,7 @@ async function applyPatch(patch: Partial<AppSettings>): Promise<AppSettings> {
   if ('fontCode' in patch) next.fontCode = sanitizeFontCodePreset(next.fontCode)
   if ('fontCodeCustom' in patch) next.fontCodeCustom = sanitizeFontName(next.fontCodeCustom)
   if ('fontSizeUi' in patch) next.fontSizeUi = sanitizeFontSize(next.fontSizeUi, FONT_UI_MIN, FONT_UI_MAX, FONT_UI_DEFAULT)
-  if ('autoArchiveDays' in patch) next.autoArchiveDays = normalizeAutoArchiveDays(next.autoArchiveDays) || undefined
+  if ('autoArchiveDays' in patch) next.autoArchiveDays = typeof next.autoArchiveDays === 'number' ? normalizeAutoArchiveDays(next.autoArchiveDays) : undefined
   if ('voiceInput' in patch) next.voiceInput = sanitizeVoiceInput(next.voiceInput)
   next.projects = sanitizeProjects(next.projects, next.projectNames, next.recentCwds, next.cwd).map((project) => ({
     ...project,

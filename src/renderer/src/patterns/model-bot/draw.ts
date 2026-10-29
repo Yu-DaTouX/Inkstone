@@ -2,7 +2,7 @@ import formsJson from './bot-forms.json'
 import tokens from '../../design/tokens.json'
 import type { ModelBrand } from '../../../../shared/model-brand'
 
-export type BotMood = 'wake' | 'work' | 'ask' | 'done' | 'fail' | 'rest'
+export type BotMood = 'icon' | 'wake' | 'work' | 'ask' | 'done' | 'fail' | 'rest'
 
 export type BotTool = 'command' | 'read' | 'edit' | 'search'
 
@@ -399,6 +399,8 @@ export function poseAt(mood: BotMood, form: BotForm, clock: PoseClock, tool: Bot
     }
   } else if (mood === 'rest') {
     pose.open = 0.08
+  } else if (mood === 'icon') {
+    pose.morph = 0
   } else if (mood === 'wake' && entrance && !still) {
     pose.morph = elapsed < 0.5 ? 0 : ease((elapsed - 0.5) / 0.6)
     applyHop(pose, form, hopAt(elapsed - 1.18, 0.28, 0.08, 0.12), 0.06 * gain, Math.min(0.1, 0.06 * gain), Math.min(0.05, 0.03 * gain))

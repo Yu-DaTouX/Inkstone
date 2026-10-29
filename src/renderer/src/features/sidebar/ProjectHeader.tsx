@@ -1,13 +1,14 @@
 import { useRef, useState, type JSX } from 'react'
-import { Archive, ChevronRight, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace } from 'lucide-react'
+import { Archive, ChevronRight, FolderOpen, Link, MoreHorizontal, Pencil, Plus, Replace, X } from 'lucide-react'
 import { useI18n, useT } from '../../i18n'
 import { useStore } from '../../state/store'
 import { Button, Dialog, IconButton, Menu, MenuItem, Modal, ModalOverlay, Notice, Popover } from '../../ui'
 import { v3Text } from '../../app/v3-text'
 import type { ProjectRecord } from '../../../../shared/ipc'
 import { warnIfWorkspaceUnfit } from '../../lib/workspace-fit'
-import { sameCwd, type SidebarGroup } from './sidebar-model'
+import { isGlobalGroup, sameCwd, type SidebarGroup } from './sidebar-model'
 import { SidebarTip } from './SidebarTip'
+import { ProjectBadge } from './ProjectBadge'
 import { sidebarText } from './sidebar-text'
 
 type MenuKey = 'new' | 'rename' | 'directory' | 'reveal' | 'copy' | 'archive'
@@ -44,9 +45,10 @@ export interface ProjectHeaderProps {
   collapsed: boolean
   onToggle: () => void
   onNew: (projectId: string) => void
+  clearLabel?: string
 }
 
-export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: ProjectHeaderProps): JSX.Element {
+export function ProjectHeader({ group, record, collapsed, onToggle, onNew, clearLabel }: ProjectHeaderProps): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
@@ -153,12 +155,18 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
           <button
             type="button"
             className="v3-grp-toggle"
-            aria-expanded={!collapsed}
+            aria-expanded={clearLabel ? undefined : !collapsed}
+            aria-label={clearLabel ? `${label} · ${clearLabel}` : undefined}
             onClick={onToggle}
             data-testid="v3-group-toggle"
           >
+            {clearLabel ? <ProjectBadge label={label} global={isGlobalGroup(group)} /> : null}
             <span className="v3-grp-label">{label}</span>
-            <ChevronRight size={12} aria-hidden className="v3-grp-chev" data-open={collapsed ? undefined : '1'} />
+            {clearLabel ? (
+              <X size={12} aria-hidden className="v3-grp-clear" />
+            ) : (
+              <ChevronRight size={12} aria-hidden className="v3-grp-chev" data-open={collapsed ? undefined : '1'} />
+            )}
           </button>
         </SidebarTip>
       )}
@@ -241,7 +249,7 @@ export function ProjectHeader({ group, record, collapsed, onToggle, onNew }: Pro
   )
 }
 
-function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => Promise<boolean> }): JSX.Element {
+export function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => Promise<boolean> }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)
@@ -274,7 +282,7 @@ function ArchiveConfirm({ name, onCancel, onConfirm }: { name: string; onCancel:
   )
 }
 
-function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; onClose: () => void }): JSX.Element {
+export function ProjectDirectoryDialog({ project, onClose }: { project: ProjectRecord; onClose: () => void }): JSX.Element {
   const t = useT()
   const { lang } = useI18n()
   const text = v3Text(lang)

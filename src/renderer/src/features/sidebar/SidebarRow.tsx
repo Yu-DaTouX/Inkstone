@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { MoreHorizontal } from 'lucide-react'
+import { GitBranch, MoreHorizontal, Pin } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useStore } from '../../state/store'
-import { IconButton } from '../../ui'
+import { IconButton, StatusSlot } from '../../ui'
+import { ModelBot, type BotMood } from '../../patterns/ModelBot'
+import { modelBrand, type ModelRef } from '../../../../shared/model-brand'
 import { v3Text } from '../../app/v3-text'
 import type { SessionSummary } from '../../../../shared/ipc'
 import { SessionStatusIcon, sessionStatusHasMark } from './SessionStatusIcon'
@@ -10,6 +12,18 @@ import { sessionStatusLabel, type SessionStatusKind } from './session-status'
 import { startSessionRowDrag, useSplitDrag } from '../split/split-drag'
 import { SessionMenu, openSessionInSplit } from './SessionMenu'
 import { SidebarTip } from './SidebarTip'
+import { ProjectBadge } from './ProjectBadge'
+
+export interface SidebarRowCard {
+  project: string
+  cwd: string
+  global: boolean
+  ago: string
+  model?: string
+  modelRef?: ModelRef
+  branch?: string
+  slim?: boolean
+}
 
 export interface SidebarRowProps {
   item: SessionSummary
@@ -17,7 +31,20 @@ export interface SidebarRowProps {
   isCurrent: boolean
   status: SessionStatusKind
   code?: string
+  card?: SidebarRowCard
   onOpen: () => void
+}
+
+function cardDetail(card: SidebarRowCard, status: string): string {
+  return [card.cwd && card.cwd !== card.project ? `${card.project} · ${card.cwd}` : card.project, card.branch, card.model, status].filter(Boolean).join('\n')
+}
+
+function cardHasBot(status: SessionStatusKind): boolean {
+  return status === 'running' || status === 'awaiting'
+}
+
+function botMood(status: SessionStatusKind): BotMood {
+  return status === 'running' ? 'work' : status === 'awaiting' ? 'ask' : 'icon'
 }
 
 function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | null>; text: string }): JSX.Element {
@@ -28,7 +55,7 @@ function FadeTitleBox({ boxRef, text }: { boxRef: RefObject<HTMLSpanElement | nu
   )
 }
 
-export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: SidebarRowProps): JSX.Element {
+export function SidebarRow({ item, title, isCurrent, status, code, card, onOpen }: SidebarRowProps): JSX.Element {
   const { lang } = useI18n()
   const text = v3Text(lang)
   const statusWord = sessionStatusLabel(status, lang)
@@ -108,6 +135,7 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
     <div
       ref={rowRef}
       className="v3-srow"
+      data-variant={card ? (card.slim ? 'slim' : 'card') : undefined}
       data-session-path={item.path}
       data-current={isCurrent ? '1' : undefined}
       data-menu={menuOpen ? '1' : undefined}
@@ -140,14 +168,21 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
           data-testid="v3-session-rename"
         />
       ) : (
-        <SidebarTip label={title} placement="right" isDisabled={!titleOverflowing || menuOpen || dragging}>
+        <SidebarTip
+          label={title}
+          detail={card ? cardDetail(card, status === 'idle' ? '' : statusLabel) : undefined}
+          placement="right"
+          card={!!card}
+          isDisabled={(!card && !titleOverflowing) || menuOpen || dragging}
+        >
           <button
             type="button"
             className="ui-row v3-row"
+            data-variant={card ? (card.slim ? 'slim' : 'card') : undefined}
             data-menu={menuOpen ? '1' : undefined}
             data-muted={status === 'archived' ? '' : undefined}
             data-status={status}
-            data-mark={sessionStatusHasMark(status) ? '' : undefined}
+            data-mark={sessionStatusHasMark(status) && !(card && !card.slim && cardHasBot(status)) ? '' : undefined}
             aria-current={isCurrent ? 'true' : undefined}
             onPointerDown={onPointerDown}
             onClick={(event) => {
@@ -163,8 +198,42 @@ export function SidebarRow({ item, title, isCurrent, status, code, onOpen }: Sid
             }}
             data-testid="v3-session-row"
           >
-            <FadeTitleBox boxRef={titleBoxRef} text={title} />
-            <SessionStatusIcon kind={status} label={statusLabel} />
+            {card?.slim ? (
+              <>
+                <ProjectBadge label={card.project} global={card.global} />
+                <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                <span className="v3-crow-ago">{card.ago}</span>
+              </>
+            ) : null}
+            {card && !card.slim ? (
+              <span className="v3-crow-meta">
+                <ProjectBadge label={card.project} global={card.global} />
+                <span className="v3-crow-project">{card.project}</span>
+                {item.pinned ? <Pin size={11} className="v3-crow-pin" aria-hidden /> : null}
+                <span className="v3-crow-ago">{card.ago}</span>
+              </span>
+            ) : null}
+            {card?.slim ? null : card ? (
+              <span className="v3-crow-line">
+                <FadeTitleBox boxRef={titleBoxRef} text={title} />
+                {card.modelRef || cardHasBot(status) ? (
+                  <span className="v3-crow-bot" data-idle={cardHasBot(status) ? undefined : ''}>
+                    <StatusSlot label={cardHasBot(status) ? statusLabel : card.model} live={cardHasBot(status)}>
+                      <ModelBot brand={modelBrand(card.modelRef)} mood={botMood(status)} size={16} seedKey={item.id} />
+                    </StatusSlot>
+                  </span>
+                ) : null}
+              </span>
+            ) : (
+              <FadeTitleBox boxRef={titleBoxRef} text={title} />
+            )}
+            {card?.branch && !card.slim ? (
+              <span className="v3-crow-branch">
+                <GitBranch size={11} aria-hidden />
+                <span className="v3-crow-branch-name">{card.branch}</span>
+              </span>
+            ) : null}
+            {card && !card.slim && cardHasBot(status) ? null : <SessionStatusIcon kind={status} label={statusLabel} />}
           </button>
         </SidebarTip>
       )}

@@ -374,6 +374,7 @@ const api: YanBridge = {
   pathForFile: (file) => webUtils.getPathForFile(file),
   describeFiles: (paths) => invoke<FileRefInfo[]>('yan:describeFiles', paths),
   savePastedText: (text, name) => invoke<import('../shared/pasted-text').SavedPastedText>('yan:savePastedText', text, name),
+  quoteSession: (path, title) => invoke<import('../shared/ipc').SessionQuoteResult>('yan:quoteSession', path, title),
   readFileText: (p) => invoke<FileTextResult>('yan:readFileText', p),
   readPreview: (p, line, cwd, lineEnd) => invoke<FilePreview>('yan:readPreview', p, line, cwd, lineEnd),
   readPreviewBytes: (p, cwd) => invoke<PreviewBytes>('yan:readPreviewBytes', p, cwd),

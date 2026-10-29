@@ -190,6 +190,18 @@ export function AppearanceSettings(): ReactElement {
 
         <StreamWidthSetting />
 
+        <SettingsRow settingId="appearance-sidebar-layout" label={text.sidebarLayout} description={text.sidebarLayoutDesc}>
+          <Segmented
+            label={text.sidebarLayout}
+            value={settings?.sidebarLayout === 'flat' ? 'flat' : 'projects'}
+            options={[
+              { value: 'projects', label: text.sidebarLayoutProjects, testId: 'v3-sidebar-layout-projects' },
+              { value: 'flat', label: text.sidebarLayoutFlat, testId: 'v3-sidebar-layout-flat' }
+            ]}
+            onChange={(value) => void patchSettings({ sidebarLayout: value }).catch(reportSaveFailure)}
+          />
+        </SettingsRow>
+
         <SettingsRow settingId="appearance-transcript-view" label={viewText.label} description={viewText.description}>
           <Segmented
             label={viewText.label}

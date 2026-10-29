@@ -448,6 +448,8 @@
   "composer.run": "Run",
   "composer.sendTipTall": "Ctrl+Enter",
   "composer.stop": "Stop",
+  "composer.quoteDrop": "Release to quote this chat",
+  "composer.quoteFailed": "Couldn't quote the chat \"{name}\"",
   "conn.down": "Disconnected",
   "conn.ready": "Connected",
   "conn.starting": "Connecting…",
