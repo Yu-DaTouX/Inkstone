@@ -28,7 +28,7 @@ function headlineWord(key: SubagentOutcomeKey, status: string): string {
 
 export function buildSubagentNotice(
   run: Pick<SubagentRun, 'id' | 'task' | 'status' | 'isolation' | 'model' | 'diff' | 'review' | 'error' | 'result'> &
-    Partial<Pick<SubagentRun, 'endReason'>>
+    Partial<Pick<SubagentRun, 'endReason' | 'resultPath'>>
 ): string {
   const status = run.status === 'done' || run.status === 'error' || run.status === 'cancelled' ? run.status : 'done'
   const mode = run.isolation === 'controlled-cwd' ? '只读' : '可修改'
@@ -47,6 +47,7 @@ export function buildSubagentNotice(
           ? '，已归档为补丁'
           : ''
     lines.push(`改动：${run.diff.files} 个文件 +${run.diff.additions}/-${run.diff.deletions}${review}`)
+    if ((run.review === 'pending' || run.review === 'conflict') && run.resultPath) lines.push(`工作区：${run.resultPath}`)
   }
   lines.push(`完整过程：yan subagent get --id ${run.id}`)
   lines.push('这是宿主自动发出的通知，不是用户的新消息：请据此继续原任务或汇总结果，不要复述本通知。')

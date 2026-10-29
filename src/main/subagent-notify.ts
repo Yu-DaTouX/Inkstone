@@ -83,6 +83,10 @@ interface PendingBatch {
   pollTimer?: ReturnType<typeof setTimeout>
 }
 
+function awaitsReview(run: SubagentRun): boolean {
+  return run.review === 'pending' || run.review === 'conflict'
+}
+
 function unref(timer: ReturnType<typeof setTimeout>): void {
   if (typeof timer === 'object' && timer !== null && 'unref' in timer) timer.unref()
 }
@@ -272,13 +276,14 @@ export function createSubagentNotifier(deps: SubagentNotifierDeps): SubagentNoti
         return
       }
 
+      const urgent = run.status === 'error' || awaitsReview(run)
       if (open) {
         open.runs.push(run)
-        if (run.status === 'error' || siblings <= 0) shorten(key, open)
+        if (urgent || siblings <= 0) shorten(key, open)
         return
       }
 
-      const short = run.status === 'error' || siblings <= 0
+      const short = urgent || siblings <= 0
       const delay = short ? NOTICE_COALESCE_WINDOW_MS : batchWaitMs(run)
       const batch: PendingBatch = { runs: [run], timer: undefined as unknown as ReturnType<typeof setTimeout>, deadlineAt: now() + delay }
       pending.set(key, batch)

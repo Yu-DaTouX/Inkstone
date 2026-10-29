@@ -511,6 +511,27 @@ try {
       }
 
       {
+        const { notify, sent } = scenario({ siblings: { 'sess-review': 1 } })
+        const run = finish('sub-r1', 'sess-review', { isolation: 'worktree', startedAt: 0, endedAt: 600_000, review: 'pending', resultPath: '/tmp/wt', diff: { files: 3, additions: 5, deletions: 2 } })
+        notify(run)
+        await settle()
+        check(deadlines().length === 0 && clock.pending().some((t) => t.ms === NOTICE_COALESCE_WINDOW_MS), '待审阅：有兄弟也只等短窗口', JSON.stringify(clock.pending().map((t) => t.ms)))
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 1 && sent[0].text.includes('工作区：/tmp/wt'), '待审阅：立即投递并带工作区路径', String(sent.length))
+      }
+
+      {
+        const { notify, sent } = scenario({ siblings: { 'sess-review-join': 1 } })
+        notify(finish('sub-rj1', 'sess-review-join', { startedAt: 0, endedAt: 600_000 }))
+        await settle()
+        await clock.advance(10_000)
+        notify(finish('sub-rj2', 'sess-review-join', { isolation: 'worktree', review: 'pending', diff: { files: 1, additions: 1, deletions: 0 } }))
+        await settle()
+        await clock.advance(NOTICE_COALESCE_WINDOW_MS)
+        check(sent.length === 1 && sent[0].text.includes('sub-rj1') && sent[0].text.includes('sub-rj2'), '待审阅并入等待批：整批提前投递', String(sent.length))
+      }
+
+      {
         const { notify, sent, state } = scenario({ siblings: { 'sess-five': 1 } })
         notify(finish('sub-f1', 'sess-five', { startedAt: 0, endedAt: 600_000 }))
         await settle()
